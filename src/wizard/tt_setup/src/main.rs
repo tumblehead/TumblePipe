@@ -2,24 +2,21 @@
 //! PySide6 wizard that used to live at `scripts/tt_setup.py`.
 //!
 //! Runs when the user clicks Configure on the TumblePipe package card in
-//! TumbleTrove. Presents a small wizard with two flows:
+//! TumbleTrove. Asks for one folder:
 //!
-//!   1. Use existing project — browse to a project root that already has a
-//!      valid `_config/` directory. Emits the env var pointing TumblePipe at
-//!      it.
-//!
-//!   2. Create new project — collect name + fps + parent directory, copy the
-//!      bundled `project_template/` into `<parent>/<name>/`, customize the
-//!      JSON databases, and create the standard top-level subdirs.
+//!   - a project (has `_config/db/entity.json`) — TumblePipe is pointed at it;
+//!   - an empty or not-yet-existing folder — the bundled `project_template/`
+//!     is copied into it, the JSON databases customized, and the standard
+//!     top-level subdirs created. Its name (the farm pool) is the desktop's
+//!     `TT_PROJECT_NAME` when passed, else the folder's name; only FPS is
+//!     asked.
 //!
 //! On accept the wizard prints a single JSON object to stdout describing the
 //! project-scope env var overrides:
 //!
 //!     {"envVars":{"TH_PROJECT_PATH":"/abs/path/to/project"}}
 //!
-//! On cancel it exits non-zero with no stdout, which causes TumbleTrove to
-//! surface the error and block the configure action — intentional, the
-//! package can't function without TH_PROJECT_PATH.
+//! On cancel it exits 0 with no stdout — "no env var changes" (see `main`).
 //!
 //! Stdout is reserved for the JSON payload. All UI and diagnostics go through
 //! the GUI or stderr.
@@ -49,7 +46,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use th_project_core::{
-    expanduser, home_dir, is_valid_project_name, looks_like_project, scaffold_project,
+    classify_folder, expanduser, home_dir, project_name_for, scaffold_project, FolderKind,
 };
 
 /// Status colors chosen to contrast on both light and dark themes (egui
@@ -74,8 +71,8 @@ fn main() -> ExitCode {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([640.0, 480.0])
-            .with_min_inner_size([560.0, 420.0]),
+            .with_inner_size([640.0, 260.0])
+            .with_min_inner_size([520.0, 220.0]),
         // Leave follow_system_theme at its default (true) so the wizard adopts
         // the host light/dark theme — the reason the Qt version had to fight
         // the white banner panel.
@@ -162,37 +159,40 @@ fn resolve_template_dir() -> PathBuf {
 
 // ---------- GUI -------------------------------------------------------------
 
-#[derive(PartialEq)]
-enum Page {
-    Mode,
-    Existing,
-    New,
-}
-
+/// One page with one path. Pointing at a project uses it; pointing at an
+/// empty or not-yet-existing folder creates one there. It replaced a
+/// Use-existing / Create-new choice followed by a page per flow (and a
+/// project-name field), which users found confusing: the folder already says
+/// which of the two they mean, and they had named the project in TumbleTrove.
 struct WizardApp {
     template_dir: PathBuf,
     outcome: Arc<Mutex<Outcome>>,
-    page: Page,
-    /// Mode page: true = existing, false = new.
-    mode_existing: bool,
-    existing_path: String,
-    new_name: String,
-    new_parent: String,
+    /// `TT_PROJECT_NAME`, when the desktop passes it.
+    desktop_name: Option<String>,
+    path: String,
+    /// Only asked for when the folder will become a new project.
     new_fps: i64,
     /// Non-empty when a scaffold error should be shown as a modal.
     error: Option<String>,
 }
 
+/// What the accept button would do with the current path, or why it can't.
+enum Plan {
+    Use(PathBuf),
+    Create { target: PathBuf, name: String },
+    Invalid(String),
+}
+
 impl WizardApp {
     fn new(template_dir: PathBuf, outcome: Arc<Mutex<Outcome>>) -> Self {
+        let desktop_name = std::env::var("TT_PROJECT_NAME")
+            .ok()
+            .filter(|name| !name.trim().is_empty());
         Self {
             template_dir,
             outcome,
-            page: Page::Mode,
-            mode_existing: true,
-            existing_path: String::new(),
-            new_name: String::new(),
-            new_parent: String::new(),
+            desktop_name,
+            path: String::new(),
             new_fps: 24,
             error: None,
         }
@@ -208,50 +208,51 @@ impl WizardApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
-    fn existing_target(&self) -> Option<PathBuf> {
-        let text = self.existing_path.trim();
+    fn plan(&self) -> Option<Plan> {
+        let text = self.path.trim();
         if text.is_empty() {
             return None;
         }
-        Some(expanduser(text))
+        let path = expanduser(text);
+        Some(match classify_folder(&path) {
+            FolderKind::Project => Plan::Use(path),
+            FolderKind::NewProject => match project_name_for(self.desktop_name.as_deref(), &path) {
+                Some(name) => Plan::Create { target: path, name },
+                None => Plan::Invalid(
+                    "A new project's folder name needs at least one letter or digit.".into(),
+                ),
+            },
+            FolderKind::NotADirectory => Plan::Invalid("That is a file, not a folder.".into()),
+            FolderKind::NotEmpty => Plan::Invalid(
+                "This folder isn't a TumblePipe project, and it isn't empty. Pick the \
+                 project's own folder (the one containing _config), or an empty folder \
+                 to create a new project in."
+                    .into(),
+            ),
+            FolderKind::ParentMissing => Plan::Invalid("That folder doesn't exist.".into()),
+        })
     }
 
-    fn existing_is_complete(&self) -> bool {
-        match self.existing_target() {
-            Some(path) => path.is_dir() && looks_like_project(&path),
-            None => false,
-        }
-    }
-
-    fn new_target(&self) -> Option<PathBuf> {
-        let name = self.new_name.trim();
-        let parent = self.new_parent.trim();
-        if name.is_empty() || parent.is_empty() {
-            return None;
-        }
-        Some(expanduser(parent).join(name))
-    }
-
-    fn new_is_complete(&self) -> bool {
-        let name = self.new_name.trim();
-        let parent = self.new_parent.trim();
-        if !is_valid_project_name(name) || parent.is_empty() {
-            return false;
-        }
-        if !expanduser(parent).is_dir() {
-            return false;
-        }
-        match self.new_target() {
-            Some(target) => !target.exists(),
-            None => false,
+    fn accept(&mut self, ctx: &egui::Context, plan: Plan) {
+        match plan {
+            Plan::Use(path) => self.finish(ctx, path),
+            Plan::Create { target, name } => {
+                match scaffold_project(&self.template_dir, &target, &name, self.new_fps) {
+                    Ok(()) => self.finish(ctx, target),
+                    Err(err) => {
+                        self.error = Some(format!("Could not create the project:\n\n{err}"))
+                    }
+                }
+            }
+            Plan::Invalid(_) => {}
         }
     }
 }
 
 impl eframe::App for WizardApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Error modal takes precedence: mirror the Qt QMessageBox.critical that
-        // kept the user on the page after a failed scaffold.
+        // Error modal takes precedence and keeps the user on the page after a
+        // failed scaffold.
         if let Some(message) = self.error.clone() {
             egui::Window::new("Project creation failed")
                 .collapsible(false)
@@ -267,6 +268,7 @@ impl eframe::App for WizardApp {
         }
 
         let modal_open = self.error.is_some();
+        let plan = self.plan();
 
         egui::TopBottomPanel::bottom("buttons").show(ctx, |ui| {
             ui.add_enabled_ui(!modal_open, |ui| {
@@ -276,49 +278,14 @@ impl eframe::App for WizardApp {
                         self.cancel(ctx);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        match self.page {
-                            Page::Mode => {
-                                if ui.button("Next").clicked() {
-                                    self.page = if self.mode_existing {
-                                        Page::Existing
-                                    } else {
-                                        Page::New
-                                    };
-                                }
-                            }
-                            Page::Existing => {
-                                let complete = self.existing_is_complete();
-                                if ui.add_enabled(complete, egui::Button::new("Finish")).clicked() {
-                                    if let Some(path) = self.existing_target() {
-                                        self.finish(ctx, path);
-                                    }
-                                }
-                                if ui.button("Back").clicked() {
-                                    self.page = Page::Mode;
-                                }
-                            }
-                            Page::New => {
-                                let complete = self.new_is_complete();
-                                if ui.add_enabled(complete, egui::Button::new("Finish")).clicked() {
-                                    if let Some(target) = self.new_target() {
-                                        match scaffold_project(
-                                            &self.template_dir,
-                                            &target,
-                                            self.new_name.trim(),
-                                            self.new_fps,
-                                        ) {
-                                            Ok(()) => self.finish(ctx, target),
-                                            Err(err) => {
-                                                self.error = Some(format!(
-                                                    "Could not scaffold project:\n\n{err}"
-                                                ));
-                                            }
-                                        }
-                                    }
-                                }
-                                if ui.button("Back").clicked() {
-                                    self.page = Page::Mode;
-                                }
+                        let (label, enabled) = match &plan {
+                            Some(Plan::Create { .. }) => ("Create project", true),
+                            Some(Plan::Use(_)) => ("Use project", true),
+                            _ => ("Use project", false),
+                        };
+                        if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
+                            if let Some(plan) = self.plan() {
+                                self.accept(ctx, plan);
                             }
                         }
                     });
@@ -328,185 +295,60 @@ impl eframe::App for WizardApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add_enabled_ui(!modal_open, |ui| match self.page {
-                Page::Mode => self.ui_mode_page(ui),
-                Page::Existing => self.ui_existing_page(ui),
-                Page::New => self.ui_new_page(ui),
-            });
+            ui.add_enabled_ui(!modal_open, |ui| self.ui_page(ui, plan.as_ref()));
         });
     }
 }
 
 impl WizardApp {
-    fn ui_mode_page(&mut self, ui: &mut egui::Ui) {
+    fn ui_page(&mut self, ui: &mut egui::Ui, plan: Option<&Plan>) {
         ui.add_space(8.0);
-        ui.heading("TumblePipe Project");
+        ui.heading("TumblePipe Project Folder");
         ui.label(
-            "Point TumblePipe at an existing project on disk, or create a new one \
-             from the bundled template.",
+            "Choose the folder your project's files live in. If it's empty, a new \
+             TumblePipe project is created in it.",
         );
-        ui.add_space(16.0);
-
-        ui.radio_value(&mut self.mode_existing, true, "Use an existing project");
-        ui.indent("existing_help", |ui| {
-            ui.label(
-                egui::RichText::new(
-                    "Choose this if you already have a project folder containing a \
-                     _config/ directory.",
-                )
-                .weak(),
-            );
-        });
-
-        ui.add_space(8.0);
-
-        ui.radio_value(&mut self.mode_existing, false, "Create a new project");
-        ui.indent("new_help", |ui| {
-            ui.label(
-                egui::RichText::new(
-                    "Choose this to scaffold a new project from the TumblePipe template \
-                     (config databases, conventions, USD context).",
-                )
-                .weak(),
-            );
-        });
-    }
-
-    fn ui_existing_page(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(8.0);
-        ui.heading("Select Existing Project");
-        ui.label("Browse to the root of a project that already has a _config/ directory.");
         ui.add_space(16.0);
 
         ui.horizontal(|ui| {
-            ui.label("Project root");
+            if ui.button("Browse…").clicked() {
+                let mut dialog = rfd::FileDialog::new().set_title("Choose the project folder");
+                if let Some(start) = existing_start_dir(&self.path) {
+                    dialog = dialog.set_directory(start);
+                }
+                if let Some(chosen) = dialog.pick_folder() {
+                    self.path = chosen.to_string_lossy().into_owned();
+                }
+            }
             ui.add(
-                egui::TextEdit::singleline(&mut self.existing_path)
-                    .hint_text("Path to project root…")
+                egui::TextEdit::singleline(&mut self.path)
+                    .hint_text("Project folder…")
                     .desired_width(f32::INFINITY),
             );
         });
-        ui.add_space(4.0);
-        if ui.button("Browse…").clicked() {
-            let mut dialog = rfd::FileDialog::new();
-            if let Some(start) = existing_start_dir(&self.existing_path) {
-                dialog = dialog.set_directory(start);
-            }
-            if let Some(chosen) = dialog.pick_folder() {
-                self.existing_path = chosen.to_string_lossy().into_owned();
-            }
-        }
 
         ui.add_space(12.0);
-        self.ui_existing_status(ui);
-    }
-
-    fn ui_existing_status(&self, ui: &mut egui::Ui) {
-        let text = self.existing_path.trim();
-        if text.is_empty() {
-            return;
-        }
-        let path = expanduser(text);
-        if !path.exists() {
-            ui.colored_label(STATUS_ERROR, "Path doesn't exist.");
-        } else if !path.is_dir() {
-            ui.colored_label(STATUS_ERROR, "Path is not a directory.");
-        } else if !looks_like_project(&path) {
-            ui.colored_label(
-                STATUS_ERROR,
-                "Couldn't find _config/db/entity.json inside this folder. \
-                 Pick the project root, not a sub-folder.",
-            );
-        } else {
-            ui.colored_label(
-                STATUS_OK,
-                format!("Looks valid — will set TH_PROJECT_PATH to {}.", path.display()),
-            );
-        }
-    }
-
-    fn ui_new_page(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(8.0);
-        ui.heading("Create New Project");
-        ui.label(
-            "Choose where the project goes and a few defaults. TumblePipe's project \
-             template will be copied to <parent>/<name>/.",
-        );
-        ui.add_space(16.0);
-
-        egui::Grid::new("new_project_form")
-            .num_columns(2)
-            .spacing([12.0, 10.0])
-            .show(ui, |ui| {
-                ui.label("Project name");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.new_name)
-                        .hint_text("alphanumeric, e.g. myfilm")
-                        .desired_width(f32::INFINITY),
-                );
-                ui.end_row();
-
-                ui.label("Parent directory");
-                ui.horizontal(|ui| {
-                    if ui.button("Browse…").clicked() {
-                        let mut dialog = rfd::FileDialog::new();
-                        if let Some(start) = existing_start_dir(&self.new_parent) {
-                            dialog = dialog.set_directory(start);
-                        }
-                        if let Some(chosen) = dialog.pick_folder() {
-                            self.new_parent = chosen.to_string_lossy().into_owned();
-                        }
-                    }
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.new_parent)
-                            .hint_text("Parent directory…")
-                            .desired_width(f32::INFINITY),
-                    );
-                });
-                ui.end_row();
-
-                ui.label("FPS");
-                ui.add(egui::DragValue::new(&mut self.new_fps).range(1..=240));
-                ui.end_row();
-            });
-
-        ui.add_space(12.0);
-        self.ui_new_status(ui);
-    }
-
-    fn ui_new_status(&self, ui: &mut egui::Ui) {
-        let name = self.new_name.trim();
-        let parent = self.new_parent.trim();
-
-        if !name.is_empty() && !is_valid_project_name(name) {
-            ui.colored_label(
-                STATUS_ERROR,
-                "Project name must be alphanumeric (no spaces or dashes).",
-            );
-            return;
-        }
-        if !parent.is_empty() {
-            let parent_path = expanduser(parent);
-            if !parent_path.exists() {
-                ui.colored_label(STATUS_ERROR, "Parent directory doesn't exist.");
-                return;
-            }
-            if !parent_path.is_dir() {
-                ui.colored_label(STATUS_ERROR, "Parent path is not a directory.");
-                return;
-            }
-        }
-        if let Some(target) = self.new_target() {
-            if target.exists() {
+        match plan {
+            None => {}
+            Some(Plan::Use(path)) => {
                 ui.colored_label(
-                    STATUS_ERROR,
-                    format!(
-                        "{} already exists — pick a different name or parent.",
-                        target.display()
-                    ),
+                    STATUS_OK,
+                    format!("Existing project — TumblePipe will use {}.", path.display()),
                 );
-            } else {
-                ui.colored_label(STATUS_OK, format!("Will create {}", target.display()));
+            }
+            Some(Plan::Create { target, .. }) => {
+                ui.colored_label(
+                    STATUS_OK,
+                    format!("A new project will be created in {}.", target.display()),
+                );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label("FPS");
+                    ui.add(egui::DragValue::new(&mut self.new_fps).range(1..=240));
+                });
+            }
+            Some(Plan::Invalid(reason)) => {
+                ui.colored_label(STATUS_ERROR, reason);
             }
         }
     }

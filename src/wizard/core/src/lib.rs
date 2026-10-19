@@ -31,6 +31,72 @@ pub fn looks_like_project(path: &Path) -> bool {
     path.join("_config").join("db").join("entity.json").is_file()
 }
 
+/// Files an OS drops into a folder on its own. A folder holding only these
+/// still counts as empty, so browsing to a fresh folder in Explorer or Finder
+/// (which may write `desktop.ini` / `.DS_Store`) doesn't refuse it.
+const OS_LITTER: [&str; 3] = [".DS_Store", "desktop.ini", "Thumbs.db"];
+
+/// What a browsed-to folder would become. The setup app has one path field,
+/// and this is what decides between "use it" and "create a project in it".
+#[derive(Debug, PartialEq, Eq)]
+pub enum FolderKind {
+    /// Already a project (`_config/db/entity.json`): point TumblePipe at it.
+    Project,
+    /// An empty directory, or a path whose parent exists: scaffold here.
+    NewProject,
+    /// A file, not a directory.
+    NotADirectory,
+    /// A directory with other contents that isn't a project. Most often a
+    /// sub-folder of a project, or the folder *above* one.
+    NotEmpty,
+    /// Neither the path nor its parent exists.
+    ParentMissing,
+}
+
+pub fn classify_folder(path: &Path) -> FolderKind {
+    if path.is_dir() {
+        if looks_like_project(path) {
+            FolderKind::Project
+        } else if is_effectively_empty(path) {
+            FolderKind::NewProject
+        } else {
+            FolderKind::NotEmpty
+        }
+    } else if path.exists() {
+        FolderKind::NotADirectory
+    } else if path.parent().is_some_and(Path::is_dir) {
+        FolderKind::NewProject
+    } else {
+        FolderKind::ParentMissing
+    }
+}
+
+fn is_effectively_empty(path: &Path) -> bool {
+    match std::fs::read_dir(path) {
+        Ok(entries) => entries.flatten().all(|entry| {
+            OS_LITTER.contains(&entry.file_name().to_string_lossy().as_ref())
+        }),
+        Err(_) => false,
+    }
+}
+
+/// The name a new project gets, which becomes its farm pool. Nobody is asked
+/// to type it: the user already named the project in TumbleTrove Desktop, so
+/// `desktop_name` (`TT_PROJECT_NAME`) wins when the desktop passes it, and
+/// the folder's name stands in when it doesn't.
+pub fn project_name_for(desktop_name: Option<&str>, path: &Path) -> Option<String> {
+    desktop_name
+        .and_then(sanitize_project_name)
+        .or_else(|| sanitize_project_name(&path.file_name()?.to_string_lossy()))
+}
+
+/// Drop everything but letters and digits (`Hide And Reek` -> `HideAndReek`);
+/// `None` when nothing is left.
+pub fn sanitize_project_name(text: &str) -> Option<String> {
+    let name: String = text.chars().filter(|c| c.is_alphanumeric()).collect();
+    is_valid_project_name(&name).then_some(name)
+}
+
 /// Expand a leading `~` to the user's home directory (mirrors
 /// `Path.expanduser()` for the common cases the wizard sees).
 pub fn expanduser(text: &str) -> PathBuf {
@@ -54,8 +120,9 @@ pub fn home_dir() -> Option<PathBuf> {
 // ---------- scaffolding -----------------------------------------------------
 
 /// Copy the template, create the top-level dirs, and customize the config DBs.
-/// On any failure the partially-created `target` is removed so a retry starts
-/// clean (mirrors the Python validatePage rmtree-on-error).
+/// `target` may be missing or an empty folder the user picked. On any failure
+/// the partial copy is removed so a retry starts clean — the folder itself
+/// too when this created it, only its contents when the user chose it.
 pub fn scaffold_project(
     template_dir: &Path,
     target: &Path,
@@ -69,6 +136,7 @@ pub fn scaffold_project(
         ));
     }
 
+    let existed = target.is_dir();
     let result = (|| -> Result<(), String> {
         copy_template_tree(template_dir, target)
             .map_err(|e| format!("Failed to copy template: {e}"))?;
@@ -80,9 +148,32 @@ pub fn scaffold_project(
     })();
 
     if result.is_err() {
-        let _ = std::fs::remove_dir_all(target);
+        if existed {
+            remove_scaffold_from(target);
+        } else {
+            let _ = std::fs::remove_dir_all(target);
+        }
     }
     result
+}
+
+/// Undo a failed scaffold inside a folder the user picked: it was empty but
+/// for OS litter, so everything else in it came from the scaffold.
+fn remove_scaffold_from(target: &Path) {
+    let Ok(entries) = std::fs::read_dir(target) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if OS_LITTER.contains(&entry.file_name().to_string_lossy().as_ref()) {
+            continue;
+        }
+        let path = entry.path();
+        let _ = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+    }
 }
 
 /// Copy `template_dir` -> `target`, skipping `__pycache__/`, `*.pyc`, `*.bak`
@@ -283,6 +374,56 @@ mod tests {
         assert!(!is_valid_project_name("my film"));
         assert!(!is_valid_project_name("my-film"));
         assert!(!is_valid_project_name("my_film"));
+    }
+
+    #[test]
+    fn project_name_prefers_the_desktop_then_the_folder() {
+        let folder = Path::new("/p/my_folder");
+        assert_eq!(project_name_for(Some("Hide And-Reek 2"), folder).as_deref(), Some("HideAndReek2"));
+        assert_eq!(project_name_for(None, folder).as_deref(), Some("myfolder"));
+        // A desktop name with nothing usable in it falls back to the folder.
+        assert_eq!(project_name_for(Some("--"), folder).as_deref(), Some("myfolder"));
+        assert_eq!(project_name_for(None, Path::new("/p/__")), None);
+    }
+
+    #[test]
+    fn classify_folder_decides_use_or_create() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let project = root.join("existing");
+        std::fs::create_dir_all(project.join("_config").join("db")).unwrap();
+        std::fs::write(project.join("_config").join("db").join("entity.json"), "{}").unwrap();
+        assert_eq!(classify_folder(&project), FolderKind::Project);
+
+        let empty = root.join("empty");
+        std::fs::create_dir(&empty).unwrap();
+        std::fs::write(empty.join("desktop.ini"), "").unwrap();
+        assert_eq!(classify_folder(&empty), FolderKind::NewProject);
+
+        assert_eq!(classify_folder(&root.join("fresh")), FolderKind::NewProject);
+        assert_eq!(classify_folder(&root.join("a").join("b")), FolderKind::ParentMissing);
+        assert_eq!(classify_folder(&project.join("_config")), FolderKind::NotEmpty);
+        assert_eq!(
+            classify_folder(&project.join("_config").join("db").join("entity.json")),
+            FolderKind::NotADirectory
+        );
+    }
+
+    #[test]
+    fn failed_scaffold_into_a_picked_folder_keeps_the_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let template = tmp.path().join("template");
+        std::fs::create_dir(&template).unwrap();
+        std::fs::write(template.join("stray.txt"), "x").unwrap(); // no _config/db -> customize fails
+        let picked = tmp.path().join("picked");
+        std::fs::create_dir(&picked).unwrap();
+        std::fs::write(picked.join(".DS_Store"), "").unwrap();
+
+        assert!(scaffold_project(&template, &picked, "picked", 24).is_err());
+        assert!(picked.is_dir());
+        let left: Vec<_> = std::fs::read_dir(&picked).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(left, vec![std::ffi::OsString::from(".DS_Store")]);
     }
 
     #[test]

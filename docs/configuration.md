@@ -63,19 +63,24 @@ leak into project files.
 ## Project setup wizard
 
 TumblePipe ships a `tt_setup` hook that TumbleTrove Desktop runs when the
-user clicks **Configure** on the package card. The hook launches a small
-native wizard with two flows:
+user clicks **Configure** on the package card. The hook opens a small
+native window that asks for one thing, the project folder:
 
-- **Use an existing project** — browse to a project root that already has a
-  `_config/` directory. The wizard verifies the layout and persists
-  `TH_PROJECT_PATH` as a project-scope override.
-- **Create a new project** — pick a parent directory, project name, and
-  FPS. The wizard copies `scripts/project_template/_config/` into
-  `<parent>/<name>/` — the convention modules, the JSON databases, *and*
-  the `templates/` department scaffolding — customises the JSON databases
-  (farm pool default, fps), creates the standard top-level subdirs
-  (`assets/`, `shots/`, `groups/`, `export/`), and persists
-  `TH_PROJECT_PATH`.
+- **A folder that is already a project** (it has `_config/db/entity.json`) —
+  TumblePipe uses it and persists `TH_PROJECT_PATH` as a project-scope
+  override.
+- **An empty folder, or one that doesn't exist yet** — the window asks only
+  for the FPS, then copies `scripts/project_template/_config/` into it — the
+  convention modules, the JSON databases, *and* the `templates/` department
+  scaffolding — customises the JSON databases (farm pool default, fps),
+  creates the standard top-level subdirs (`assets/`, `shots/`, `groups/`,
+  `export/`), and persists `TH_PROJECT_PATH`. The project's name, which
+  becomes its default farm pool, is the TumbleTrove project's name when
+  Desktop passes it as `TT_PROJECT_NAME` (Desktop 0.58.0 and later), and
+  the folder's name otherwise, with anything other than letters and digits
+  dropped.
+- **Any other folder** is refused, with the reason shown. Usually it is a
+  sub-folder of a project, or the folder above one.
 
 The wizard is a self-contained native binary (Rust/egui, source in
 `src/wizard/`) built per platform into `bin/<platform>/tt_setup` by the
@@ -120,7 +125,7 @@ so, in words that name the fix:
   message (mistyped path, or an unreachable share).
 
 "Configured" means the same thing to both: `<config>/db/entity.json`
-exists. The marker is shared with the wizard's *Use an existing project*
+exists. The marker is shared with the wizard's *existing project*
 check.
 
 ## The convention framework

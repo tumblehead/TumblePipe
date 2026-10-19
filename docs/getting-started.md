@@ -12,7 +12,7 @@ work in. Desktop handles the Houdini package registration; there is nothing
 to edit by hand. (Command-line and manual installs exist too — see
 [Installation](installation.md) — but the rest of this page assumes Desktop.)
 
-TumblePipe needs Houdini 21 or 22 (`hpm.toml` declares `houdini = ">=21, <23"`).
+TumblePipe needs Houdini 22 (`hpm.toml` declares `houdini = ">=22, <23"`).
 
 ## 2. Configure the project
 
@@ -20,42 +20,30 @@ A freshly installed TumblePipe does not know where your project lives.
 Click **Configure** on the TumblePipe package card in TumbleTrove Desktop —
 Desktop also opens the same wizard on its own when the package's required
 `TH_PROJECT_PATH` variable has no value yet. The wizard is a small native
-window titled **TumblePipe — Project Setup** with three screens:
-
-**TumblePipe Project** — choose one of two radio buttons, then **Next**:
-
-- **Use an existing project** — "Choose this if you already have a project
-  folder containing a `_config/` directory."
-- **Create a new project** — "Choose this to scaffold a new project from the
-  TumblePipe template (config databases, conventions, USD context)."
-
-**Select Existing Project** — a **Project root** field with **Browse…**. The
-wizard checks the folder as you type and says what it found:
+window titled **TumblePipe — Project Setup** with one question: **TumblePipe
+Project Folder**. Type a path or click **Browse…**, and the window says what
+it will do with that folder:
 
 | Status line | Meaning |
 |---|---|
-| `Path doesn't exist.` / `Path is not a directory.` | fix the path |
-| `Couldn't find _config/db/entity.json inside this folder. Pick the project root, not a sub-folder.` | you are one level too deep (or the folder was never a TumblePipe project) |
-| `Looks valid — will set TH_PROJECT_PATH to <path>.` | **Finish** is enabled |
+| `Existing project — TumblePipe will use <path>.` | the folder already holds a TumblePipe project; **Use project** is enabled |
+| `A new project will be created in <path>.` | the folder is empty or doesn't exist yet; an **FPS** field (default 24) appears and **Create project** is enabled |
+| `This folder isn't a TumblePipe project, and it isn't empty. …` | you are one level too deep, or in the folder *above* the project; pick the folder that contains `_config`, or an empty one |
+| `That folder doesn't exist.` / `That is a file, not a folder.` | fix the path |
 
-**Create New Project** — three fields:
+There is no name to type. A new project takes the name you gave it in
+TumbleTrove Desktop (Desktop 0.58.0 and later; older versions fall back to
+the folder's name), keeping only its letters and digits. The name becomes
+the project's default farm pool.
 
-- **Project name** — alphanumeric only ("Project name must be alphanumeric
-  (no spaces or dashes).").
-- **Parent directory** — an existing folder; the project is created as
-  `<parent>/<name>/` and must not exist yet (`<path> already exists — pick a
-  different name or parent.`). The status line reads `Will create <path>`
-  when everything is in order.
-- **FPS** — defaults to 24.
-
-**Finish** copies the bundled template (`scripts/project_template/`) into the
-new folder — `_config/` with the convention modules, the JSON databases and
+**Create project** copies the bundled template (`scripts/project_template/`)
+into the folder — `_config/` with the convention modules, the JSON databases and
 the department templates — patches the databases with your fps and farm
-pools, and creates the top-level `assets/`, `shots/`, `groups/` and
+pool, and creates the top-level `assets/`, `shots/`, `groups/` and
 `export/` directories. If the copy fails, a **Project creation failed** modal
-shows the reason and leaves you on the page.
+shows the reason, the partial copy is removed, and you stay on the page.
 
-Either way, Finish hands `TH_PROJECT_PATH` back to Desktop, which stores it as
+Either way, the button hands `TH_PROJECT_PATH` back to Desktop, which stores it as
 a project-scope override. **Cancel** is a real choice: nothing is written and
 Desktop does not report an error. Details and the exit contract are in
 [Configuration → Project setup wizard](configuration.md#project-setup-wizard).
@@ -84,7 +72,7 @@ A project that is current and configured shows neither; Houdini just opens.
 ## 4. What you see in Houdini
 
 **The TumblePipe desktop.** The package ships one desktop layout,
-`desktop/TumblePipe.desk`, and `python3.11libs/uiready.py` makes it the
+`desktop/TumblePipe.desk`, and `python3.13libs/uiready.py` makes it the
 current desktop when the UI comes up (only if a desktop named `TumblePipe`
 exists and is not already current — switching desktops mid-session is
 respected until the next launch). It is a Solaris layout:

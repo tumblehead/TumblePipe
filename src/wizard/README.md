@@ -37,14 +37,21 @@ resolver), so launch is instant with no runtime download.
 
 ### What it does
 
-Two flows, identical in behaviour to the Python original:
+One page with one folder field (`th_project_core::classify_folder` decides):
 
-- **Use existing project** — verify a project root has `_config/db/entity.json`
-  and emit its path.
-- **Create new project** — copy `scripts/project_template/` into
-  `<parent>/<name>/`, create the top-level dirs (`assets shots groups
-  export`), and patch the config DBs (`entity.json` farm pools, `config.json`
-  and `schemas.json` fps).
+- **A project** (`_config/db/entity.json`) — emit its path.
+- **An empty or missing folder** — copy `scripts/project_template/` into it,
+  create the top-level dirs (`assets shots groups export`), and patch the
+  config DBs (`entity.json` farm pools, `config.json` and `schemas.json` fps).
+  Only FPS is asked. The name (farm pool) is `TT_PROJECT_NAME` when the
+  desktop passes it (0.58.0+ passes the `TT_*` block to `tt_setup`), else
+  the folder name (`project_name_for`). A failed scaffold into a folder the
+  user picked empties it again but keeps it.
+- **Anything else** — refused with the reason.
+
+It used to be a Use-existing / Create-new choice with a page per flow and a
+project-name field; users found the choice confusing and resented naming
+the project twice (they already did in TumbleTrove's project creation).
 
 On accept it prints `{"envVars":{"TH_PROJECT_PATH":"…"}}` to stdout (the
 contract TumbleTrove parses) and exits 0.
@@ -129,7 +136,7 @@ notice that points at Configure… on the TumblePipe card (and logs the same
 sentence on a headless launch); it never shows the migration plan for a
 `_config` that does not exist, and `--migrate` refuses such a project in the
 same words. The marker is `th_project_core::looks_like_project`, shared with
-`tt_setup`'s *Use an existing project* check.
+`tt_setup`'s existing-project check (`classify_folder`).
 
 ### Rules the hook contract forces
 
