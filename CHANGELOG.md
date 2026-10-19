@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.76.0 — 2026-10-19
+
+### Breaking Changes
+- feat(wizard)!: a launch migrates the project instead of asking (`db87fd2c`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.75.3 (`8a0ed843`)
+
 ## v1.75.3 — 2026-10-19
 
 ### Fixes

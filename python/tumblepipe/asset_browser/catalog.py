@@ -424,7 +424,7 @@ class PipelineCatalog(Catalog):
             assets=page_items,
             cursor=next_cursor,
             total=len(all_items),
-            errors=tuple(errors),
+            errors=_distinct(errors),
         )
 
     def get_asset(self, asset_id: str):
@@ -1117,3 +1117,18 @@ class PipelineCatalog(Catalog):
         self._clients.clear()
         self._activator.reset()
         self.invalidate_cache()
+
+
+def _distinct(errors: list[CatalogError]) -> tuple[CatalogError, ...]:
+    """``errors`` with repeats dropped, in first-seen order. A project whose
+    Client cannot be built is attempted by ``ensure_all`` and again by the
+    discovery pass, and both report it; the browser counted the one failure
+    as two ("⚠ 2 catalog errors") and listed it twice."""
+    seen: set[str] = set()
+    out: list[CatalogError] = []
+    for err in errors:
+        key = str(err)
+        if key not in seen:
+            seen.add(key)
+            out.append(err)
+    return tuple(out)
