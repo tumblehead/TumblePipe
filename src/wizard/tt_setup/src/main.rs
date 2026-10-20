@@ -11,6 +11,9 @@
 //!     `TT_PROJECT_NAME` when passed, else the folder's name; only FPS is
 //!     asked.
 //!
+//! Anything else is refused, and the commonest wrong picks (the folder that
+//! holds projects, a folder inside one) come with one-click fixes.
+//!
 //! On accept the wizard prints a single JSON object to stdout describing the
 //! project-scope env var overrides:
 //!
@@ -46,8 +49,12 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use th_project_core::{
-    classify_folder, expanduser, home_dir, project_name_for, scaffold_project, FolderKind,
+    classify_folder, enclosing_project, expanduser, home_dir, project_name_for, projects_in,
+    sanitize_project_name, scaffold_project, FolderKind, TOP_LEVEL_DIRS,
 };
+
+/// How many projects found inside a picked folder are offered as fixes.
+const MAX_SUGGESTED_PROJECTS: usize = 5;
 
 /// Status colors chosen to contrast on both light and dark themes (egui
 /// follows the host theme). Mirror the old wizard's STATUS_ERROR/STATUS_OK.
@@ -71,8 +78,8 @@ fn main() -> ExitCode {
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([640.0, 260.0])
-            .with_min_inner_size([520.0, 220.0]),
+            .with_inner_size([680.0, 420.0])
+            .with_min_inner_size([560.0, 360.0]),
         // Leave follow_system_theme at its default (true) so the wizard adopts
         // the host light/dark theme — the reason the Qt version had to fight
         // the white banner panel.
@@ -161,7 +168,20 @@ struct WizardApp {
 enum Plan {
     Use(PathBuf),
     Create { target: PathBuf, name: String },
-    Invalid(String),
+    /// `fixes` are one-click replacements for the path. Users were unsure
+    /// whether to pick the project folder or the folder it goes in, so the
+    /// commonest wrong picks (the folder above a project, a folder inside
+    /// one) name the folder they most likely meant.
+    Invalid { reason: String, fixes: Vec<Fix> },
+}
+
+struct Fix {
+    label: String,
+    path: PathBuf,
+}
+
+fn invalid(reason: impl Into<String>) -> Plan {
+    Plan::Invalid { reason: reason.into(), fixes: Vec::new() }
 }
 
 impl WizardApp {
@@ -199,19 +219,59 @@ impl WizardApp {
             FolderKind::Project => Plan::Use(path),
             FolderKind::NewProject => match project_name_for(self.desktop_name.as_deref(), &path) {
                 Some(name) => Plan::Create { target: path, name },
-                None => Plan::Invalid(
-                    "A new project's folder name needs at least one letter or digit.".into(),
-                ),
+                None => invalid("A new project's folder name needs at least one letter or digit."),
             },
-            FolderKind::NotADirectory => Plan::Invalid("That is a file, not a folder.".into()),
-            FolderKind::NotEmpty => Plan::Invalid(
-                "This folder isn't a TumblePipe project, and it isn't empty. Pick the \
-                 project's own folder (the one containing _config), or an empty folder \
-                 to create a new project in."
-                    .into(),
+            FolderKind::NotADirectory => invalid("That is a file, not a folder."),
+            FolderKind::NotEmpty => self.not_empty_plan(&path),
+            FolderKind::ParentMissing => invalid(
+                "Neither this folder nor the folder it would go in exists. A new project \
+                 folder can be created, but only inside a folder that already exists.",
             ),
-            FolderKind::ParentMissing => Plan::Invalid("That folder doesn't exist.".into()),
         })
+    }
+
+    /// A folder with other things in it that isn't a project: almost always
+    /// one inside a project, or the folder that holds projects.
+    fn not_empty_plan(&self, path: &std::path::Path) -> Plan {
+        if let Some(project) = enclosing_project(path) {
+            return Plan::Invalid {
+                reason: format!(
+                    "This folder is inside the TumblePipe project {}. Pick the project's \
+                     own folder, the one that contains _config.",
+                    project.display()
+                ),
+                fixes: vec![Fix { label: format!("Use {}", project.display()), path: project }],
+            };
+        }
+
+        let mut fixes: Vec<Fix> = projects_in(path)
+            .into_iter()
+            .take(MAX_SUGGESTED_PROJECTS)
+            .map(|project| Fix { label: format!("Use the project {}", folder_name(&project)), path: project })
+            .collect();
+        let new_folder = self
+            .desktop_name
+            .as_deref()
+            .and_then(sanitize_project_name)
+            .map(|name| path.join(name))
+            .filter(|candidate| classify_folder(candidate) == FolderKind::NewProject);
+        let mut reason = String::from(
+            "This folder already has other things in it and isn't a TumblePipe project, \
+             so a project can't be set up directly in it. If this is the folder your \
+             projects go in, pick the project's own folder instead.",
+        );
+        match new_folder {
+            Some(candidate) => fixes.push(Fix {
+                label: format!("Create a new project folder {} here", folder_name(&candidate)),
+                path: candidate,
+            }),
+            None => reason.push_str(&format!(
+                " To start a new project here, add a new folder name to the end of the \
+                 path, such as {}.",
+                path.join("MyProject").display()
+            )),
+        }
+        Plan::Invalid { reason, fixes }
     }
 
     fn accept(&mut self, ctx: &egui::Context, plan: Plan) {
@@ -225,7 +285,7 @@ impl WizardApp {
                     }
                 }
             }
-            Plan::Invalid(_) => {}
+            Plan::Invalid { .. } => {}
         }
     }
 }
@@ -276,7 +336,9 @@ impl eframe::App for WizardApp {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add_enabled_ui(!modal_open, |ui| self.ui_page(ui, plan.as_ref()));
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.add_enabled_ui(!modal_open, |ui| self.ui_page(ui, plan.as_ref()));
+            });
         });
     }
 }
@@ -284,16 +346,27 @@ impl eframe::App for WizardApp {
 impl WizardApp {
     fn ui_page(&mut self, ui: &mut egui::Ui, plan: Option<&Plan>) {
         ui.add_space(8.0);
-        ui.heading("TumblePipe Project Folder");
+        ui.heading("Where is your TumblePipe project?");
+        ui.add_space(4.0);
         ui.label(
-            "Choose the folder your project's files live in. If it's empty, a new \
-             TumblePipe project is created in it.",
+            "Pick the project folder itself: the folder that holds (or will hold) the \
+             project's _config, assets and shots folders. Not the folder above it — \
+             TumblePipe puts its files straight into the folder you pick and does not \
+             make a sub-folder.",
         );
-        ui.add_space(16.0);
+        ui.add_space(6.0);
+        ui.label("•  Existing project: pick the folder that contains _config.");
+        ui.label(
+            "•  New project: pick an empty folder, or type the path of a folder that \
+             doesn't exist yet and it is created.",
+        );
+        ui.add_space(14.0);
 
+        let hint = self.example_path();
         ui.horizontal(|ui| {
             if ui.button("Browse…").clicked() {
-                let mut dialog = rfd::FileDialog::new().set_title("Choose the project folder");
+                let mut dialog = rfd::FileDialog::new()
+                    .set_title("Choose the project folder (not the folder above it)");
                 if let Some(start) = existing_start_dir(&self.path) {
                     dialog = dialog.set_directory(start);
                 }
@@ -303,7 +376,7 @@ impl WizardApp {
             }
             ui.add(
                 egui::TextEdit::singleline(&mut self.path)
-                    .hint_text("Project folder…")
+                    .hint_text(hint)
                     .desired_width(f32::INFINITY),
             );
         });
@@ -314,25 +387,64 @@ impl WizardApp {
             Some(Plan::Use(path)) => {
                 ui.colored_label(
                     STATUS_OK,
-                    format!("Existing project — TumblePipe will use {}.", path.display()),
+                    format!("Existing TumblePipe project — TumblePipe will use {}.", path.display()),
                 );
             }
-            Some(Plan::Create { target, .. }) => {
-                ui.colored_label(
-                    STATUS_OK,
-                    format!("A new project will be created in {}.", target.display()),
-                );
+            Some(Plan::Create { target, name }) => {
+                let what = if target.is_dir() {
+                    "This empty folder becomes the new project."
+                } else {
+                    "This folder will be created and becomes the new project."
+                };
+                ui.colored_label(STATUS_OK, what);
+                ui.add_space(4.0);
+                ui.label("The project's files go directly inside it:");
+                ui.monospace(format!("{}", target.display()));
+                let children: Vec<String> = std::iter::once("_config")
+                    .chain(TOP_LEVEL_DIRS)
+                    .map(|dir| format!("{dir}/"))
+                    .collect();
+                ui.monospace(format!("    {}", children.join("  ")));
                 ui.add_space(8.0);
+                ui.label(format!("Project name (its farm pool): {name}"));
                 ui.horizontal(|ui| {
                     ui.label("FPS");
                     ui.add(egui::DragValue::new(&mut self.new_fps).range(1..=240));
                 });
             }
-            Some(Plan::Invalid(reason)) => {
+            Some(Plan::Invalid { reason, fixes }) => {
                 ui.colored_label(STATUS_ERROR, reason);
+                if !fixes.is_empty() {
+                    ui.add_space(6.0);
+                    ui.label("Did you mean:");
+                    for fix in fixes {
+                        let button = ui.button(&fix.label).on_hover_text(fix.path.display().to_string());
+                        if button.clicked() {
+                            self.path = fix.path.to_string_lossy().into_owned();
+                        }
+                    }
+                }
             }
         }
     }
+
+    /// A hint in the path field that shows a project folder, not a root.
+    fn example_path(&self) -> String {
+        let name = self
+            .desktop_name
+            .as_deref()
+            .and_then(sanitize_project_name)
+            .unwrap_or_else(|| "MyProject".into());
+        if cfg!(windows) {
+            format!("e.g. P:\\Projects\\{name}")
+        } else {
+            format!("e.g. /projects/{name}")
+        }
+    }
+}
+
+fn folder_name(path: &std::path::Path) -> String {
+    path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
 }
 
 /// Directory to open the native picker at: the current text if it's a real

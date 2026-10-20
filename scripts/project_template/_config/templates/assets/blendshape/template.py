@@ -212,11 +212,16 @@ def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
     return sop_node
 
 def _dive_network_editor(sop_node):
-    """Navigate the network editor into the sopcreate subnet."""
+    """Navigate the network editor into the sopcreate's SOP network.
+
+    cd() does not follow an HDA's dive target the way double-clicking does:
+    pointed at the sopcreate itself it opens the LOP internals (sopimport,
+    materiallibrary, ...) instead of sopnet/create, where the work happens.
+    """
     if not hou.isUIAvailable(): return
     network_editor = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.NetworkEditor)
     if network_editor is not None:
-        network_editor.cd(sop_node.path())
+        network_editor.cd(sop_node.node('sopnet/create').path())
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     sop_node = _build(scene_node, entity_uri, department_name)

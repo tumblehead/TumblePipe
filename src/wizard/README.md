@@ -47,7 +47,12 @@ One page with one folder field (`th_project_core::classify_folder` decides):
   desktop passes it (0.58.0+ passes the `TT_*` block to `tt_setup`), else
   the folder name (`project_name_for`). A failed scaffold into a folder the
   user picked empties it again but keeps it.
-- **Anything else** — refused with the reason.
+- **Anything else** — refused with the reason. Users were unsure whether to
+  pick the project folder or the folder it goes in, so the commonest wrong
+  picks come with one-click fixes: a folder inside a project offers the
+  project (`enclosing_project`); a non-empty folder offers the projects
+  directly in it (`projects_in`) and, when Desktop passed a name, a new
+  `<folder>/<name>` to create.
 
 It used to be a Use-existing / Create-new choice with a page per flow and a
 project-name field; users found the choice confusing and resented naming

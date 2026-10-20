@@ -26,7 +26,8 @@
 /// `tests/fixtures/templates/`, and the tests fail when the packaged
 /// templates change without a row here, because a project left on that
 /// version would otherwise read as customised to the next refresh.
-pub const STOCK: [(&str, u64); 73] = [
+pub const STOCK: [(&str, u64); 75] = [
+    ("assets/blendshape", 0x3e996f0cd9278155), // 886fc6b725
     ("assets/blendshape", 0x479bbf9dd255f96a), // 072f370dc7
     ("assets/blendshape", 0x6b8a6905dffbc0c1), // f631e117d8
     ("assets/blendshape", 0x740bf80497e647f2), // d5f2408363
@@ -57,6 +58,7 @@ pub const STOCK: [(&str, u64); 73] = [
     ("assets/rig", 0xa3d1d379078aa532), // ecf4742ba1
     ("assets/rig", 0xb7ca50c09544e91e), // 8a42a5e842
     ("assets/rig", 0xcbdc5d35d52a6bb4), // ac08bc8141
+    ("assets/rig", 0xe656c48d28c37e01), // ca34f0c471
     ("assets/rig", 0xf2911593e5966d02), // 50fc88e3c3
     ("shots/animation", 0x4f22585e6eed577c), // cb38ffa938
     ("shots/animation", 0x54003ebb35343d6b), // 865cc7cb4c

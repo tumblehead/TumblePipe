@@ -73,6 +73,28 @@ pub fn classify_folder(path: &Path) -> FolderKind {
     }
 }
 
+/// The project a folder sits inside, when it is a sub-folder of one
+/// (`<project>/assets`): the commonest wrong pick after the folder above.
+pub fn enclosing_project(path: &Path) -> Option<PathBuf> {
+    path.ancestors().skip(1).find(|a| looks_like_project(a)).map(Path::to_path_buf)
+}
+
+/// The projects directly inside a folder, sorted, for when someone picks the
+/// folder *above* their project (`P:\Projects` instead of
+/// `P:\Projects\HideAndReek`).
+pub fn projects_in(path: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return Vec::new();
+    };
+    let mut projects: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|child| child.is_dir() && looks_like_project(child))
+        .collect();
+    projects.sort();
+    projects
+}
+
 fn is_effectively_empty(path: &Path) -> bool {
     match std::fs::read_dir(path) {
         Ok(entries) => entries.flatten().all(|entry| {
@@ -521,6 +543,29 @@ mod tests {
             classify_folder(&project.join("_config").join("db").join("entity.json")),
             FolderKind::NotADirectory
         );
+    }
+
+    #[test]
+    fn a_wrong_pick_points_at_the_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        for name in ["beta", "alpha"] {
+            let db = root.join(name).join("_config").join("db");
+            std::fs::create_dir_all(&db).unwrap();
+            std::fs::write(db.join("entity.json"), "{}").unwrap();
+        }
+        std::fs::create_dir_all(root.join("alpha").join("assets").join("CHAR")).unwrap();
+        std::fs::create_dir(root.join("notes")).unwrap();
+
+        // The folder above: its projects, sorted; plain folders are not offered.
+        assert_eq!(projects_in(root), vec![root.join("alpha"), root.join("beta")]);
+        assert!(projects_in(&root.join("notes")).is_empty());
+
+        // A folder inside a project, at any depth; a project is not inside itself.
+        let deep = root.join("alpha").join("assets").join("CHAR");
+        assert_eq!(enclosing_project(&deep), Some(root.join("alpha")));
+        assert_eq!(enclosing_project(&root.join("alpha")), None);
+        assert_eq!(enclosing_project(&root.join("notes")), None);
     }
 
     #[test]

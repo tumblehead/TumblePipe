@@ -20,16 +20,25 @@ A freshly installed TumblePipe does not know where your project lives.
 Click **Configure** on the TumblePipe package card in TumbleTrove Desktop —
 Desktop also opens the same wizard on its own when the package's required
 `TH_PROJECT_PATH` variable has no value yet. The wizard is a small native
-window titled **TumblePipe — Project Setup** with one question: **TumblePipe
-Project Folder**. Type a path or click **Browse…**, and the window says what
-it will do with that folder:
+window titled **TumblePipe — Project Setup** with one question: **Where is
+your TumblePipe project?**
+
+Pick the **project folder itself**, not the folder that holds your
+projects. TumblePipe puts its files (`_config/`, `assets/`, `shots/`, …)
+straight into the folder you pick and does not make a sub-folder. For a
+project called HideAndReek that is `P:\Projects\HideAndReek`, not
+`P:\Projects`.
+
+Type a path or click **Browse…**, and the window says what it will do with
+that folder:
 
 | Status line | Meaning |
 |---|---|
-| `Existing project — TumblePipe will use <path>.` | the folder already holds a TumblePipe project; **Use project** is enabled |
-| `A new project will be created in <path>.` | the folder is empty or doesn't exist yet; an **FPS** field (default 24) appears and **Create project** is enabled |
-| `This folder isn't a TumblePipe project, and it isn't empty. …` | you are one level too deep, or in the folder *above* the project; pick the folder that contains `_config`, or an empty one |
-| `That folder doesn't exist.` / `That is a file, not a folder.` | fix the path |
+| `Existing TumblePipe project — TumblePipe will use <path>.` | the folder already holds a TumblePipe project; **Use project** is enabled |
+| `This empty folder becomes the new project.` / `This folder will be created and becomes the new project.` | the folder is empty, or doesn't exist yet but the folder above it does. The window shows the folders that will appear inside it and the project name, an **FPS** field (default 24) appears, and **Create project** is enabled |
+| `This folder is inside the TumblePipe project <path>. …` | you picked a folder inside a project, such as its `assets/`; a **Use** button switches to the project |
+| `This folder already has other things in it and isn't a TumblePipe project …` | most often the folder that *holds* projects. Under **Did you mean:** there is a button for each project in it, and one to create a new project folder there named after the TumbleTrove project |
+| `Neither this folder nor the folder it would go in exists. …` / `That is a file, not a folder.` | fix the path |
 
 There is no name to type. A new project takes the name you gave it in
 TumbleTrove Desktop (Desktop 0.58.0 and later; older versions fall back to

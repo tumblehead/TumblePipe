@@ -74,8 +74,9 @@ by `th::import_model` with Department `blendshape`.
    asset, **Import**. You get the staged build: lookdev over model, at
    `latest`. Re-publishing the model or lookdev later is picked up as in
    [Picking up new versions on open](../composition.md#picking-up-new-versions-on-open).
-4. **Rig (optional).** Right-click the `rig` row, **New from Template**, build
-   the APEX rig inside `rigging` from `enumerate` (the model
+4. **Rig (optional).** Right-click the `rig` row, **New from Template**. The
+   network editor opens inside `rigging`'s SOP network; build
+   the APEX rig there from `enumerate` (the model
    with `name` copied onto points and an `index` point attribute), and press **Export**
    on `export_rig`. The animation shot template's `th::animate` then lists
    the rig in its `th::import_rigs` —

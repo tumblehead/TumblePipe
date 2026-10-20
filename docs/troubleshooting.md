@@ -16,7 +16,8 @@ source with the reason on Houdini's status bar. Two messages:
   <path> has no _config/db/entity.json. Use Configure… on the TumblePipe card
   in TumbleTrove Desktop to set the project up.` — `TH_PROJECT_PATH` names a
   folder that was never set up. Run the wizard: **Configure** on the package
-  card, then pick the project's folder (or an empty one to create it).
+  card, then pick the project's own folder, not the folder that holds your
+  projects (or an empty one to create it).
 - `TumblePipe cannot find this project: TH_PROJECT_PATH points at <path>,
   which does not exist. Check the path in the project's settings in
   TumbleTrove Desktop, or that the share is reachable.` — a mistyped path, or

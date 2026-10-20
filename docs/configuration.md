@@ -82,7 +82,12 @@ native window that asks for one thing, the project folder:
   the folder's name otherwise, with anything other than letters and digits
   dropped.
 - **Any other folder** is refused, with the reason shown. Usually it is a
-  sub-folder of a project, or the folder above one.
+  sub-folder of a project, or the folder above one, so the window offers a
+  one-click fix: the enclosing project, the projects inside the picked
+  folder, or a new folder there named after the TumbleTrove project.
+
+The folder picked is the project itself: the files go straight into it, and
+no sub-folder is made.
 
 The wizard is a self-contained native binary (Rust/egui, source in
 `src/wizard/`) built per platform into `bin/<platform>/tt_setup` by the

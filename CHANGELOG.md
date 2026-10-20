@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.76.1 — 2026-10-19
+
+### Fixes
+- fix(ci): the archive ships its own changelog section (`fe1f513e`)
+- fix(asset-browser): report a project that cannot open once, not twice (`7b52ca07`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.76.0 (`3f57eedc`)
+
 ## v1.76.0 — 2026-10-19
 
 ### Breaking Changes
