@@ -348,6 +348,16 @@ version. The node turns green when the loaded version is the newest, orange
 otherwise, and its comment says which is which. A single-frame cache is
 time-shifted so it holds on that frame.
 
+When a version finishes, the node writes `context.json` into its folder:
+who cached it and when, the frames, and the workfile version and node that
+wrote it, with the TumblePipe and Houdini versions. A version folder without
+one never finished, and **Latest** passes over it (a crashed cache, or one
+someone is still writing), loading the newest finished version instead; for
+caches from before this record, Latest takes the newest as it always did.
+Archives read it to tell a cache a workfile can make
+again from one it cannot, and **Rebuild Caches** re-makes the version from
+it (see [Archiving and restoring projects](../archiving.md)).
+
 Gotchas:
 
 - With **From Entity (Database)** and no authored range, the node refuses

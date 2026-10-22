@@ -15,6 +15,7 @@ from tumblepipe.pipe.paths import (
 )
 from tumblepipe.pipe.paths.naming import version_of
 from tumblepipe.pipe.paths.workspace import scan_workspace
+from tumblepipe.pipe.provenance import scene_producer, tumblepipe_version
 from tumblepipe.util.uri import Uri
 
 logger = logging.getLogger(__name__)
@@ -252,6 +253,7 @@ def save_context(target_path: Path, prev_context, next_context, houdini_version:
             from_version=from_version_name,
             to_version=next_version_name,
             houdini_version=houdini_version,
+            tumblepipe_version=tumblepipe_version(),
             extension=file_extension,
             note=str(note or ""),
         ),
@@ -313,7 +315,8 @@ def save_export_context(
     entity_uri: Uri,
     department_name: str,
     version_name: str,
-    channel_name: str = 'default'
+    channel_name: str = 'default',
+    producer: dict = None
 ):
     """Save simple export context metadata (context.json).
 
@@ -325,6 +328,8 @@ def save_export_context(
         department_name: Department name
         version_name: Version name
         channel_name: Channel name (default: 'default')
+        producer: The ``provenance.producer`` block; None reads it from the
+            open scene (``provenance.scene_producer``).
     """
     logger.info(
         f"Saving export context: uri={entity_uri}, dept={department_name}, "
@@ -338,7 +343,8 @@ def save_export_context(
         channel=channel_name,
         version=version_name,
         timestamp=dt.datetime.now().isoformat(),
-        user=get_user_name()
+        user=get_user_name(),
+        producer=producer if producer is not None else scene_producer(None)
     )
     store_json(context_path, context_data)
 
@@ -352,7 +358,8 @@ def save_layer_context(
     user_name: str,
     channel_name: str = 'default',
     parameters: dict = None,
-    inputs: list = None
+    inputs: list = None,
+    producer: dict = None
 ):
     """Save layer context with inputs/outputs arrays (context.json).
 
@@ -368,6 +375,8 @@ def save_layer_context(
         channel_name: Channel name (default: 'default')
         parameters: Optional parameters dict
         inputs: Optional list of input references
+        producer: The ``provenance.producer`` block (workfile, node, tool
+            versions); None reads it from the open scene.
     """
     input_count = len(inputs) if inputs else 0
     logger.info(
@@ -386,6 +395,7 @@ def save_layer_context(
             timestamp=timestamp,
             user=user_name,
             parameters=parameters or {}
-        )]
+        )],
+        producer=producer if producer is not None else scene_producer(None)
     )
     store_json(context_path, context_data)

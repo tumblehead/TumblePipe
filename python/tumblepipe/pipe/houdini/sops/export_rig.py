@@ -9,6 +9,7 @@ import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.paths.naming import entity_stem
 from tumblepipe.pipe.context import save_layer_context
+from tumblepipe.pipe.provenance import scene_producer
 from tumblepipe.pipe.paths import (
     get_next_version_path,
     get_rig_export_path,
@@ -91,7 +92,8 @@ class ExportRig(EntityNode):
             department_name='rig',
             version_name=version_name,
             timestamp=timestamp,
-            user_name=get_user_name()
+            user_name=get_user_name(),
+            producer=scene_producer(context.path())
         )
 
         return version_name

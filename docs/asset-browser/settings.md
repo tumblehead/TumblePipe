@@ -150,7 +150,8 @@ which departments the Multi's workfile overrides for its members. See
 | `$HOUDINI_USER_PREF_DIR/asset_browser/projects.json` (same fallback) | Apply Project Changes | The registered projects: name, project path, config path. |
 | `<package root>/radial_menus/tumblepipe_recipes.json` and `tumblepipe_asset_favorites.json` | Houdini startup (`tumblepipe.startup.register_radial`, `$TH_PIPELINE_PATH` is the package root) | Generated radial rings (Alt+R recipes, Alt+F asset favourites) for the `tumbleradial` package; `tumblepipe_pipeline.json` there is static and shipped. Regenerated every launch; a ring with fewer than two entries is deleted rather than written. |
 | `$TH_PROJECT_PATH/export/other/logs/$TH_USER.log` | every session, on `import tumblepipe` | The pipeline log — rotating, 5 MB × 3 backups. Written into the **project** share, so it is only attached when `TH_PROJECT_PATH` exists; identity-less sessions share `pipeline.log`. This is the file the failure dialogs name. See [Where the logs are](../development.md#where-the-logs-are). |
-| `$TH_PROJECT_PATH/export/other/jobs/` | farm submissions | The job manifests handed to Deadline. |
+| `$TH_PROJECT_PATH/export/other/jobs/` | farm submissions | The job manifests handed to Deadline, with a copy of the workfile. Never archived; `python -m tumblepipe.prune` deletes the folders Deadline is done with ([Pruning farm job folders](../archiving.md#pruning-farm-job-folders)). |
+| `<archive>.zip` (or `.partNNN.zip`) and `<archive>.manifest.json` | **Archive Project** | A project archive and its manifest, wherever you write it (never inside the project). See [Archiving and restoring projects](../archiving.md). |
 
 ### Temp and scratch
 
@@ -165,13 +166,19 @@ drive is small. `TH_TEMP` is described under
 
 ### Sidecars inside the project
 
-Two per-entity files live beside the entity's folders, not in `export/`:
+Three per-entity files live beside the entity's folders, not in `export/`:
 
 | File | Written by |
 |---|---|
 | `<project>/assets/<category>/<asset>/thumbnail.png` (or `shots/<sequence>/<shot>/`) | **Select thumbnail…** (any image, converted to PNG) and **Capture thumbnail** (the active scene viewer) on a card's right-click menu |
+| `<project>/assets/<category>/<asset>/network_thumbnail.png` (same for shots) | Dropping the card into a network: a copy of `thumbnail.png` at most 256 px across, which the network editor shows above the node. Safe to delete; the next drop writes it again |
 | `<project>/assets/<category>/<asset>/description.txt` (same for shots) | **Edit description…** on a card's right-click menu |
 | `<project>/recipes/<context>/<slug>/` (`entry.json`, `recipe.cpio`, `thumbnail.png`) | **New Recipe...**, or dragging nodes onto the grid; see [Recipes](recipes.md) |
+
+Every `th::cache` version also gets a `context.json` when it finishes (who
+cached it, from which workfile version and node, over which frames), and a
+project restored from an archive keeps the archive's manifest in
+`_archive/`; see [Archiving and restoring projects](../archiving.md).
 
 Workfile version notes and `context.json` sidecars belong to
 [Workfiles](workfiles.md); the `_config/db/*.json` databases to

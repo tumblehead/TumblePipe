@@ -26,6 +26,20 @@ source with the reason on Houdini's status bar. Two messages:
 Background in [If the project was never configured](configuration.md#if-the-project-was-never-configured);
 the wizard screens in [Getting started](getting-started.md#2-configure-the-project).
 
+### "Some catalogs could not be read: [pipeline] entity:/shots/…: 'departments'"
+
+The browser stays empty and lists shot after shot, each failing with just
+`'departments'` (or `'members'`). The shots are fine: the error comes from a
+**Multi** (a group in `_config/db/groups.json`) that has no `departments`
+or `members` list. Reading a shot looks up the Multis it belongs to, so one
+such Multi fails every shot in its context. Multis written by older
+releases can be stored that way, and 1.77.0 and older stop on them.
+
+Later releases read a missing list as empty. On an older release, open
+`_config/db/groups.json` (keep a copy), add `"departments": []` (or
+`"members": []`) to each group's `properties` that lacks it, and restart
+Houdini — a running session reads the configuration once.
+
 ### A window appears before Houdini at launch
 
 Both come from the `tt_prepare` hook, which runs on every launch:

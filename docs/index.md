@@ -42,6 +42,7 @@ the other installed packages' documentation. The same pages are online at
 
 - [Configuration](configuration.md) — environment variables, the setup wizard, the project config and storage table, departments, migrations
 - [Deadline and the render farm](deadline.md) — the farm plugins, worker prerequisites, submitting from Python
+- [Archiving and restoring projects](archiving.md) — pack a delivered project for the client or cold storage, restore it, re-make its caches
 
 ## How it works
 

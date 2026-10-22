@@ -406,6 +406,15 @@ node. `th::import_assets` has neither callback, so the image a *Combined
 X into Y* drop pins stays behind when that node is renamed or deleted.
 A multi-card drop adds no thumbnail.
 
+The network editor shows a copy of the thumbnail at most 256 px across,
+`network_thumbnail.png`, written beside `thumbnail.png` the first time it
+is needed and again whenever the thumbnail is newer. Houdini reloads every
+image in a network each time one is added or removed, on the main thread.
+At full size (2048 px, on the project share) that froze Houdini for a few
+seconds after each drop, longer for each asset already in the network.
+Older scenes still name the full-size image; the next drop, delete or
+rename in that network switches them over.
+
 Any other pane: *Pipeline assets can only be imported into LOP or SOP
 networks.* While you hover a network editor a ghost of the node to be
 created is drawn under the cursor. Dropping an entity from one project into

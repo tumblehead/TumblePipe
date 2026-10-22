@@ -12,6 +12,20 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.77.0 — 2026-10-20
+
+### Features
+- feat(wizard): tt_setup says the folder is the project and fixes wrong picks (`a4120a5a`)
+
+### Fixes
+- fix(templates): rig and blendshape workfiles open in sopnet/create (`391293bc`)
+
+### Documentation
+- docs: the setup window wants the project folder itself, and its fixes (`f1b8661f`)
+- docs(nodes): rig workfile opens inside rigging's SOP network (`3d051ffc`)
+- docs: drop the unpublished v1.74.4 from CHANGELOG.md (`486d013b`)
+- docs: regenerate CHANGELOG.md for v1.76.1 (`eb895ef1`)
+
 ## v1.76.1 — 2026-10-19
 
 ### Fixes

@@ -5,6 +5,11 @@ from tumblepipe.util.uri import Uri
 
 GROUPS_URI = Uri.parse('groups:/')
 
+# A group's ``members``/``departments`` are read with a ``[]`` default: the
+# schemas tree keeps ``group`` beside ``shots``/``assets`` rather than under
+# them, so no schema default reaches a group, and groups written by the old
+# diffing store can lack either key. One such group must not break every read.
+
 @dataclass(frozen=True)
 class Group:
     uri: Uri
@@ -56,7 +61,7 @@ def add_member(group_uri: Uri, member_uri: Uri):
         raise ValueError('Invalid group member')
     properties = api.config.get_properties(group_uri)
     if properties is None: raise ValueError('Group does not exist')
-    members = properties['members']
+    members = properties.get('members', [])
     member_uri_raw = str(member_uri)
     if member_uri_raw in members: raise ValueError('Already a member of group')
     members.append(member_uri_raw)
@@ -75,7 +80,7 @@ def remove_member(group_uri: Uri, member_uri: Uri):
         raise ValueError('Invalid group member')
     properties = api.config.get_properties(group_uri)
     if properties is None: raise ValueError('Group does not exist')
-    members = properties['members']
+    members = properties.get('members', [])
     member_uri_raw = str(member_uri)
     if member_uri_raw not in members: raise ValueError('Not a member of group')
     members.pop(members.index(member_uri_raw))
@@ -90,7 +95,7 @@ def remove_member(group_uri: Uri, member_uri: Uri):
 def add_department(group_uri: Uri, department: str):
     properties = api.config.get_properties(group_uri)
     if properties is None: raise ValueError('Group does not exist')
-    departments = properties['departments']
+    departments = properties.get('departments', [])
     if department in departments: raise ValueError('Already a department of group')
     departments.append(department)
     # Pin just this key onto the entity's OWN overrides. The resolved value
@@ -104,7 +109,7 @@ def add_department(group_uri: Uri, department: str):
 def remove_department(group_uri: Uri, department: str):
     properties = api.config.get_properties(group_uri)
     if properties is None: raise ValueError('Group does not exist')
-    departments = properties['departments']
+    departments = properties.get('departments', [])
     if department not in departments: raise ValueError('Not a department of group')
     departments.pop(departments.index(department))
     # Pin just this key onto the entity's OWN overrides. The resolved value
@@ -120,8 +125,8 @@ def get_group(group_uri: Uri) -> Group | None:
     if properties is None: return None
     return Group(
         uri = group_uri,
-        members = list(map(Uri.parse, properties['members'])),
-        departments = properties['departments']
+        members = list(map(Uri.parse, properties.get('members', []))),
+        departments = properties.get('departments', [])
     )
 
 def list_groups(context: str) -> list[Group]:
@@ -130,8 +135,8 @@ def list_groups(context: str) -> list[Group]:
     return [
         Group(
             uri = entity.uri,
-            members = list(map(Uri.parse, entity.properties['members'])),
-            departments = entity.properties['departments']
+            members = list(map(Uri.parse, entity.properties.get('members', []))),
+            departments = entity.properties.get('departments', [])
         )
         for entity in entities
     ]

@@ -14,6 +14,7 @@ TumblePipe/
 │   └── TumblePipe.desk          # Houdini desktop layout
 ├── otls/                        # Houdini Digital Assets (text format)
 ├── python/tumblepipe/           # Core pipeline Python modules
+│   ├── archive/                 #   project archive / restore / cache rebuild (Desktop buttons, `python -m tumblepipe.archive`)
 │   ├── asset_browser/           #   TumbleTrove asset-browser catalog (declared at startup)
 │   └── vram/                    #   VRAM Inspector (TumbleTrove ▸ TumblePipe ▸ VRAM Inspector)
 │   ├── pythonrc.py
@@ -71,6 +72,17 @@ with `from tumblepipe import ...`. Subpackages:
   `tasks/` per-task build + worker scripts).
 - `config_editor/` — the Qt config-database editor application
   (launched from the asset browser's right-click menu).
+- `archive/` — project archives ([user guide](archiving.md)): `roots`
+  (where a project's files live, from `storage.json`), `inventory`
+  (classify every file), `plan` (profiles, the staged-scene export
+  closure), `references` (absolute paths the scenes name), `pack` (write,
+  verify, restore zip parts and the manifest), `rebuild` +
+  `rebuild_worker` (re-make left-out caches in hython), `app` (the
+  window), `cli`. Pure Python except the worker and the window; never
+  writes to the project it archives.
+- `prune.py` — deletes farm job folders (`export/other/jobs/<id>/`) once
+  Deadline has no job that could run from them again; lists by default,
+  `--apply` deletes.
 - `vram/` — the VRAM Inspector ([user guide](vram-inspector.md)): reads the
   viewport hook's measurements (every memory client, and each viewer prim's
   exact bytes), scans the viewed stage, textures and cooked COP layers, and

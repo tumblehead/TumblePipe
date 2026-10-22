@@ -86,6 +86,43 @@ def _iter_all_entities():
                     yield entity_uri, department_name
 
 
+def _asset_dependencies(context_data: dict) -> list[Uri]:
+    """The assets an export composes, from ``outputs[].parameters.assets``.
+
+    That is where an export records the assets on its stage (one entry per
+    asset, ``asset`` its URI). Its ``inputs`` only ever name shot
+    departments, so reading ``inputs`` alone left every shot without an
+    asset edge and ``find_shots_referencing_asset`` always answered ``[]``.
+    """
+    uris = []
+    for output in context_data.get('outputs', []) or []:
+        if not isinstance(output, dict):
+            continue
+        parameters = output.get('parameters') or {}
+        for entry in parameters.get('assets', []) or []:
+            raw = entry.get('asset') if isinstance(entry, dict) else None
+            if not raw:
+                continue
+            try:
+                uri = Uri.parse(raw)
+            except ValueError:
+                continue
+            if uri not in uris:
+                uris.append(uri)
+    return uris
+
+
+def _link(nodes: dict, key: str, dep_uri: Uri, dep_department) -> None:
+    dep_key = entity_key(dep_uri, dep_department)
+    if dep_key not in nodes:
+        nodes[dep_key] = Node(entity_uri=dep_uri, department_name=dep_department)
+    # Add bidirectional edges
+    if nodes[dep_key] not in nodes[key].dependencies:
+        nodes[key].dependencies.append(nodes[dep_key])
+    if nodes[key] not in nodes[dep_key].references:
+        nodes[dep_key].references.append(nodes[key])
+
+
 def scan() -> Graph:
     """
     Scan all latest context.json files and build dependency graph.
@@ -110,22 +147,16 @@ def scan() -> Graph:
             nodes[key] = Node(entity_uri=entity_uri, department_name=department_name)
 
         # Add dependencies from inputs
-        inputs = context_data.get('inputs', [])
-        for input_data in inputs:
+        for input_data in context_data.get('inputs', []):
             dep_result = entity_from_dict(input_data)
             if dep_result is None:
                 continue
+            _link(nodes, key, *dep_result)
 
-            dep_entity_uri, dep_department = dep_result
-            dep_key = entity_key(dep_entity_uri, dep_department)
-            if dep_key not in nodes:
-                nodes[dep_key] = Node(entity_uri=dep_entity_uri, department_name=dep_department)
-
-            # Add bidirectional edges
-            if nodes[dep_key] not in nodes[key].dependencies:
-                nodes[key].dependencies.append(nodes[dep_key])
-            if nodes[key] not in nodes[dep_key].references:
-                nodes[dep_key].references.append(nodes[key])
+        # And from the assets the export composes (department unknown: the
+        # asset as a whole)
+        for asset_uri in _asset_dependencies(context_data):
+            _link(nodes, key, asset_uri, None)
 
     return Graph(nodes=nodes, scanned=True)
 

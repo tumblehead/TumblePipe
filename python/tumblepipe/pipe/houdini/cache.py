@@ -18,11 +18,13 @@ The HDAs' callbacks call the module-level functions here with their
 """
 
 from pathlib import Path
+import datetime as dt
 
 import hou
 
-from tumblepipe.api import path_str, api
+from tumblepipe.api import path_str, api, get_user_name
 from tumblepipe import naming
+from tumblepipe.pipe import cache_context, provenance
 from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
@@ -209,12 +211,25 @@ class CacheBase(FrameRangeNode, EntityNode):
         native.parm('cache/file').set('')
         native.parm('cache/loadfromdisk').set(0)
 
-    def cache(self):
+    def cache(self, version_name=None):
+        """Write the next version, or the named one (a rebuild, see
+        ``tumblepipe.archive.rebuild``): downstream workfiles load a cache by
+        its version, so a re-made cache must land in the version it was.
+        """
         cache_name = self.get_cache_name()
         if cache_name is None:
             self._clear_inner_cache()
             return
-        version_name = self._next_version_name()
+        if version_name is None:
+            version_name = self._next_version_name()
+        else:
+            cache_path = self._require_cache_path()
+            refusal = named_version_refusal(
+                version_name,
+                cache_context.is_complete(cache_path / cache_name / version_name),
+            )
+            if refusal is not None:
+                raise self._error(refusal)
         output_path = self.cache_file_path(
             self._require_cache_path(), cache_name, version_name
         )
@@ -223,6 +238,35 @@ class CacheBase(FrameRangeNode, EntityNode):
         native.parm('cache/execute').pressButton()
         native.parm('cache/loadfromdisk').set(1)
         self.set_version_name(version_name)
+        self._save_context(output_path.parent, cache_name, version_name)
+
+    def _save_context(self, version_path: Path, cache_name, version_name):
+        """Record who wrote this version, from what, once it is on disk.
+
+        Written last, so the sidecar marks a finished version
+        (cache_context.is_complete). A cook that wrote nothing gets none.
+        """
+        if not version_path.is_dir() or not any(
+            item.name != cache_context.CONTEXT_FILE
+            for item in version_path.iterdir()
+        ):
+            return
+        try:
+            block = self.get_frame_range().full_range()
+            frames = (block.first_frame, block.last_frame, block.step_size)
+        except Exception:
+            frames = None
+        cache_context.save_cache_context(version_path, cache_context.cache_context(
+            entity_uri=self.require_entity_uri(),
+            department_name=self.require_department_name(),
+            cache_name=cache_name,
+            version_name=version_name,
+            cache_format=self.CATEGORY.lower(),
+            frames=frames,
+            timestamp=dt.datetime.now().isoformat(),
+            user_name=get_user_name(),
+            producer=provenance.scene_producer(self.native().path()),
+        ))
 
     def load(self):
         cache_name = self.get_cache_name()
@@ -238,7 +282,7 @@ class CacheBase(FrameRangeNode, EntityNode):
         native.parm('cache/loadfromdisk').set(1)
 
         # Node state: green on the latest version, orange behind it
-        latest_version_name = self.list_version_names()[-1]
+        latest_version_name = self._latest_version_name()
         native.setColor(
             hou.Color(0, .8, .1)
             if version_name == latest_version_name else
@@ -250,10 +294,51 @@ class CacheBase(FrameRangeNode, EntityNode):
             f'Loaded {version_name}'
         )
 
-    def latest(self):
+    def _latest_version_name(self):
+        """The newest finished version (see ``latest_finished``)."""
         version_names = self.list_version_names()
-        if len(version_names) == 0: return
-        self.set_version_name(version_names[-1])
+        if not version_names: return None
+        cache_dir = self._require_cache_path() / self.get_cache_name()
+        finished = {
+            name for name in version_names
+            if cache_context.is_complete(cache_dir / name)
+        }
+        return latest_finished(version_names, finished)
+
+    def latest(self):
+        version_name = self._latest_version_name()
+        if version_name is None: return
+        self.set_version_name(version_name)
+
+
+def latest_finished(version_names: list[str], finished: set[str]) -> str | None:
+    """Which version **Latest** loads: the newest one that finished.
+
+    A version gets its sidecar only once its files are written, so a newer
+    version without one is a cache that crashed or is still being written
+    (by someone else, right now) — loading it reads a partial cache. When no
+    version has a sidecar at all, the caches predate sidecars and the newest
+    is taken, as before.
+    """
+    if not version_names:
+        return None
+    ordered = sorted(version_names, key=naming.get_version_code)
+    done = [name for name in ordered if name in finished]
+    return done[-1] if done else ordered[-1]
+
+
+def named_version_refusal(version_name: str, complete: bool) -> str | None:
+    """Why a cache may not be written into ``version_name``; None when it may.
+
+    A finished version is never overwritten: something may load it. An
+    unfinished one (no sidecar: a crashed or interrupted cache) is written
+    over, which is what re-running it means.
+    """
+    if not naming.is_valid_version_name(version_name):
+        return f"'{version_name}' is not a version name (vNNNN)"
+    if complete:
+        return f"cache version '{version_name}' already exists and finished"
+    return None
 
 
 class LopCache(CacheBase):

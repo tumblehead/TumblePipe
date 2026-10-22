@@ -131,13 +131,24 @@ def deadline_setup_problem(environ = None):
         )
     return None
 
+def deadline_command_name(system = None):
+    """The Deadline Client's command-line tool on ``system`` (default: this one).
+
+    ``deadlinecommand.exe`` on Windows, plain ``deadlinecommand`` on macOS
+    and Linux, where the hard-coded ``.exe`` named a file that does not
+    exist, so submitting (and pruning) found no Deadline there.
+    """
+    import platform
+    system = (system or platform.system()).lower()
+    return 'deadlinecommand.exe' if system == 'windows' else 'deadlinecommand'
+
 def _get_deadline_path():
     problem = deadline_setup_problem()
     if problem is not None:
         raise DeadlineNotInstalled(problem)
     raw_path = os.environ['DEADLINE_PATH'].strip().strip('"')
     bin_path = Path(raw_path.replace('\\', '/'))
-    return bin_path / 'deadlinecommand.exe'
+    return bin_path / deadline_command_name()
 
 def _get_repository_path(deadline_path):
     raw_path = app.run(

@@ -9,7 +9,6 @@ this writes it.
 
 from tempfile import TemporaryDirectory
 from pathlib import Path
-import shutil
 
 from tumblepipe.api import (
     path_str,
@@ -30,6 +29,7 @@ from tumblepipe.pipe.usd.sublayer_refs import (
 )
 from tumblepipe.pipe.usd.usda import generate_usda_content
 from tumblepipe.util.io import (
+    copy_version_contents,
     store_text,
     store_json,
     load_json_if_exists
@@ -457,12 +457,8 @@ def _build_shot(
         _section('Copying files to output')
         output_dir = output_path.parent
         output_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(
-            temp_path,
-            output_dir,
-            dirs_exist_ok=True,
-            copy_function=shutil.copy
-        )
+        # context.json last: it marks the staged version finished.
+        copy_version_contents(temp_path, output_dir)
 
         # Note: _staged/latest/ is no longer created here.
         # Dynamic latest resolution is handled at import time by stripping
@@ -541,12 +537,8 @@ def _build_asset(
         _section('Copying files to output')
         output_dir = output_path.parent
         output_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(
-            temp_path,
-            output_dir,
-            dirs_exist_ok=True,
-            copy_function=shutil.copy
-        )
+        # context.json last: it marks the staged version finished.
+        copy_version_contents(temp_path, output_dir)
 
         # Note: _staged/latest/ is no longer created here.
         # Dynamic latest resolution is handled at import time by stripping

@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.77.0"
+version = "1.78.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -193,6 +193,27 @@ cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\""
 python = "3.11"
 label = "Farm Submit"
 description = "Publish, playblast and render shots on the farm, without opening Houdini"
+
+# archive / unarchive: the project archive window (tumblepipe.archive.app),
+# started the same way as Farm Submit. The same library runs headless as
+# `python -m tumblepipe.archive plan|create|verify|restore`.
+[scripts.archive]
+cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app archive"
+python = "3.11"
+label = "Archive Project"
+description = "Pack the project's workfiles and the exports they load into a zip archive, for the client or cold storage"
+
+[scripts.unarchive]
+cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app restore"
+python = "3.11"
+label = "Restore Archive"
+description = "Check a TumblePipe archive and unpack it into a folder"
+
+[scripts.rebuild-caches]
+cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app rebuild"
+python = "3.11"
+label = "Rebuild Caches"
+description = "In a project restored from an archive, re-make the caches the archive left out by re-running their workfiles in hython (needs a Houdini licence)"
 
 # Operator index. Declares every HDA node type this package bundles so
 # `hpm pack` can emit a searchable asset index for registry-level node

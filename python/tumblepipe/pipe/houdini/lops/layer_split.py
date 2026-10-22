@@ -1,6 +1,5 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
-import shutil
 import logging
 
 import hou
@@ -9,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 from tumblepipe.api import path_str, api
 from tumblepipe.util.progress import report_progress
+from tumblepipe.util.io import copy_version_contents
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import get_fps
 from tumblepipe.pipe.houdini import nodes as ns
@@ -122,13 +122,8 @@ class LayerSplit(FrameRangeNode, EntityNode):
 
             # Copy all files from temp to export path
             report_progress(f"copying {version_name} to server")
-            export_path.mkdir(parents=True, exist_ok=True)
-            for temp_item_path in temp_path.iterdir():
-                output_item_path = export_path / temp_item_path.name
-                if temp_item_path.is_file():
-                    shutil.copy(temp_item_path, output_item_path)
-                if temp_item_path.is_dir():
-                    shutil.copytree(temp_item_path, output_item_path)
+            # context.json last: it marks the version finished.
+            copy_version_contents(temp_path, export_path)
 
         logger.info(
             f"Shared layer export completed: uri={entity_uri}, dept={department_name}, "

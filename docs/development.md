@@ -262,7 +262,13 @@ widget stacks involved are pure PySide6:
   skip-vs-fail split described below, and the footer states: a styled
   Execute, a green Done after a clean run, Close plus retry otherwise).
 
-They need a desktop session and PySide6:
+- `verify_archive_app.py` — the archive window end to end, offscreen: read
+  a small project, refuse a bad part size, write a split archive, check it,
+  restore it under a new name. Run it with Houdini's bundled Python (it has
+  PySide6, takes no licence):
+  `PYTHONPATH="$HFS/python313/lib/site-packages-forced" "$HFS/python313/python.exe" scripts/verify_archive_app.py`.
+
+The other two need a desktop session and PySide6:
 
 ```bash
 cd scripts

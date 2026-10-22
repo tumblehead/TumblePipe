@@ -37,6 +37,8 @@ from tumblepipe.pipe.paths import (
 )
 from tumblepipe.pipe.usd.sublayer_refs import add_sublayer
 from tumblepipe.pipe.context import save_layer_context
+from tumblepipe.util.io import copy_version_contents
+from tumblepipe.pipe.provenance import scene_producer
 from tumblepipe.pipe.build import sourced_from_shot, arrived_from_downstream
 from tumblepipe.config.department import list_departments
 from tumblepipe.pipe.usd.stitch import (
@@ -152,15 +154,13 @@ def _add_shared_sublayer(layer_path: Path, entity_uri, department_name: str):
 
 
 def _copy_to_version(temp_path: Path, version_path: Path):
-    """Copy the exported folder's contents into the version folder."""
+    """Copy the exported folder's contents into the version folder.
+
+    ``context.json`` goes last (``copy_version_contents``): it is what marks
+    the version finished.
+    """
     report_progress(f"copying {version_path.name} to server")
-    version_path.mkdir(parents=True, exist_ok=True)
-    for temp_item_path in temp_path.iterdir():
-        output_item_path = version_path / temp_item_path.name
-        if temp_item_path.is_dir():
-            shutil.copytree(temp_item_path, output_item_path)
-        else:
-            shutil.copy(temp_item_path, output_item_path)
+    copy_version_contents(temp_path, version_path)
 
 
 class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
@@ -345,7 +345,8 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
                     assets=_parameter_assets(assets_by_uri),
                     aov_names=aov_names,
                 ),
-                inputs=list(map(json.loads, asset_inputs))
+                inputs=list(map(json.loads, asset_inputs)),
+                producer=scene_producer(native.path())
             )
             _copy_to_version(temp_path, version_path)
 

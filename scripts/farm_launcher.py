@@ -26,7 +26,12 @@ package files, nor any Houdini install path. So this launcher:
 ``TH_USER`` comes from ``TT_USER_NAME``, which the Desktop does not yet pass
 to scripts; until it does, submissions made from here carry no user name.
 
-    python scripts/farm_launcher.py [--context shots|assets] [--dry-run]
+    python scripts/farm_launcher.py [--app farm|archive|restore]
+                                    [--context shots|assets] [--dry-run]
+
+``--app`` picks what runs: the Farm Submit grid (default), the project
+archive window (``tumblepipe.archive.app``) on its Archive or Restore tab, or
+``rebuild``, which re-makes a restored project's left-out caches in hython.
 """
 
 from __future__ import annotations
@@ -46,6 +51,14 @@ except ImportError:  # Python < 3.11
     tomllib = None
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+
+#: The windows this launcher can open, as `python -m` arguments.
+APPS = {
+    'farm': ('tumblepipe.farm_app',),
+    'archive': ('tumblepipe.archive.app',),
+    'restore': ('tumblepipe.archive.app', '--restore'),
+    'rebuild': ('tumblepipe.archive', 'rebuild'),
+}
 
 _VAR = re.compile(r'\$\{(\w+)\}|\$(\w+)')
 
@@ -277,6 +290,8 @@ def build_env(base: dict, package_dir: Path, hfs: Path, version: tuple[int, ...]
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog='farm_launcher')
     parser.add_argument('--context', choices=('shots', 'assets'), default='shots')
+    parser.add_argument('--app', choices=tuple(APPS), default='farm',
+                        help='which window to open (default: the Farm Submit grid)')
     parser.add_argument('--dry-run', action='store_true',
                         help='print what would run, without starting it')
     parser.add_argument('--run', metavar='SCRIPT',
@@ -304,8 +319,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.run:
         command = [str(python), str(Path(args.run).resolve())]
-    else:
+    elif args.app == 'farm':
         command = [str(python), '-m', 'tumblepipe.farm_app', '--context', args.context]
+    else:
+        command = [str(python), '-m', *APPS[args.app]]
 
     print(f'Houdini {".".join(map(str, version))} at {hfs}')
     print(f'Project: {env.get("TH_PROJECT_PATH", "<unset>")}')
