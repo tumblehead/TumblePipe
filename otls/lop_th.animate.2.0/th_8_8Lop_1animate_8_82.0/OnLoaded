@@ -1,0 +1,3 @@
+from tumblepipe.pipe.houdini.lops import animate_ghost
+
+animate_ghost.on_loaded(kwargs['node'])

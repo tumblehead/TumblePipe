@@ -123,8 +123,12 @@ def entity_channels(catalog_id: str, asset_id: str, uri) -> list[str]:
 
 
 def entity_frame_range(catalog_id: str, asset_id: str, uri):
-    """The entity's ``FrameRange``, or None when it has none."""
+    """The entity's ``FrameRange``, or None when it has none. A Multi's id
+    resolves no entity ``uri`` and has none: its scene keeps the range it
+    has, and the FPS comes from the project."""
     from tumblepipe.config.timeline import get_frame_range
+    if uri is None:
+        return None
     return _lookup(catalog_id, "frame range", asset_id, get_frame_range, uri)
 
 
@@ -139,8 +143,11 @@ def entity_fps(catalog_id: str, asset_id: str, uri):
 
 def entity_animatable(catalog_id: str, asset_id: str, uri) -> bool:
     """Whether the entity is time-dependent (assets set ``animatable:
-    false``; shots and unmarked entities are)."""
+    false``; shots and unmarked entities are, and so is an id that
+    resolves no entity ``uri``)."""
     from tumblepipe.config.timeline import is_animatable
+    if uri is None:
+        return True
     return _lookup(catalog_id, "animatable", asset_id, is_animatable, uri)
 
 

@@ -21,13 +21,19 @@ from tumblepipe.pipe.paths import (
     release_reserved_version,
     reserve_next_hip_file_path,
 )
+from tumblepipe.pipe.houdini import context_options
 from tumblepipe.util.uri import Uri
 
 logger = logging.getLogger(__name__)
 
 
-def save_hip_file(next_path: Path) -> Path:
+def save_hip_file(next_path: Path, context: Context | None = None) -> Path:
     """``hou.hipFile.save`` into ``next_path`` and return where the hip landed.
+
+    ``context`` is the workfile being saved (``workfile_context``): its
+    entity, department and version are set as context options first
+    (:mod:`context_options`), so the hip carries ``@asset``, ``@shot`` and
+    the rest for whoever opens it, a farm job included.
 
     Houdini does not honour a requested extension the session's license is not
     allowed to write: an Education or Apprentice session asked to save
@@ -48,6 +54,7 @@ def save_hip_file(next_path: Path) -> Path:
     that is not where the scene went.
     """
     next_path = Path(next_path)
+    context_options.apply(context)
     hou.hipFile.save(str(next_path))
     saved = Path(hou.hipFile.path())
     if saved.stem != next_path.stem:
@@ -102,7 +109,9 @@ def commit_next_workfile(
     """
     next_path = reserve_next_hip_file_path(entity_uri, department_name, nc_type=nc_type)
     try:
-        next_path = save_hip_file(next_path)
+        next_path = save_hip_file(
+            next_path, workfile_context(entity_uri, department_name, next_path),
+        )
     except BaseException:
         release_reserved_version(next_path)
         raise

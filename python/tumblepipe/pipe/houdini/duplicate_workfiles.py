@@ -127,7 +127,9 @@ def duplicate_workfile(
     )
     try:
         next_path.parent.mkdir(parents=True, exist_ok=True)
-        next_path = save_hip_file(next_path)
+        next_path = save_hip_file(
+            next_path, workfile_context(target_uri, department_name, next_path),
+        )
     except Exception:
         release_reserved_version(next_path)
         raise

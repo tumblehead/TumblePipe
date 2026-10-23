@@ -432,6 +432,11 @@ Buttons:
 | Material | *(empty)* | Menu of the stage's materials, by name (token is the full path) |
 | Purpose | Render | Binding purpose: Render (`full`) or Preview |
 
+Write Primitives against the workfile's asset rather than its literal path —
+`` `@entity_path`/geo/Eyeballs `` instead of `/CHAR/Mom/geo/Eyeballs` — and a
+row keeps working after the asset is renamed or duplicated (see
+[Workfiles → Context options](../asset-browser/workfiles.md#context-options)).
+
 Gotchas:
 
 - A row's Primitives is empty after Initialize; nothing is bound until you

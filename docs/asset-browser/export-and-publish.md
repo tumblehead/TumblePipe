@@ -24,6 +24,11 @@ Right-clicking **Save** offers **Emergency Save (off-thread)**: an inline
 save for when Houdini is wedged behind its crash-report dialog and the
 normal queued save never lands. It never prompts for a note.
 
+**Publish** opens its window over the browser you clicked in — an undocked
+browser included — kept on screen. The window is modal, but the browser
+keeps working underneath it, and refreshes the published entity when the
+window closes.
+
 Save and Publish say so in a dialog when the scene has no
 pipeline context, e.g. "Publish: the loaded scene has no pipeline context,
 so there is nothing to publish. Save the scene through the pipeline first."

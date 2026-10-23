@@ -934,6 +934,38 @@ OnCreated reloads `build_comp`), writes its fixtures with the install's
 `hoiiotool` to a temp dir, and puts this checkout's `python/` first on
 `sys.path`. Run it with hython (e.g. TumbleTrove Desktop's `run_hython`).
 
+## Changing a department template
+
+A project copies `scripts/project_template/_config/templates/` when it is
+created and runs its own copy from then on: "New workfile from template"
+loads `<project>/_config/templates/<context>/<department>/template.py`, not
+the package's. **Editing a packaged template changes new projects only.** An
+existing project gets the change only when a numbered refresh step brings it
+(v2, v9, v12, v14 so far), so a fix nobody migrates is a fix nobody has: the
+rig/blendshape dive fix shipped in 1.77.0 and the animation template's
+`KeyError: 'uri'` fix both sat in the scaffold, unseen by every project past
+v12, until v14.
+
+So a template change comes with:
+
+- **A `STOCK` row and a fixture.** `src/wizard/core/src/templates.rs` lists
+  every version the scaffold has shipped, each one a fixture under
+  `src/wizard/core/tests/fixtures/templates/<context>/<department>/`, named
+  by the first ten characters of its git blob (`git hash-object`). The
+  refresh steps replace only a template that matches one of them, so a
+  version missing from the list reads as the studio's own and is never
+  replaced. `cargo test` fails until the new version is listed.
+- **A refresh step, when existing projects need the change.** Add the next
+  numbered step to `src/wizard/core/src/migration.rs` that re-runs the stock
+  refresh (as v14 does), bump `CONFIG_LAYOUT_VERSION` in
+  `python/tumblepipe/config/layout.py` and the scaffold's
+  `_config/version.json` to match, and describe the step in
+  [Configuration](configuration.md).
+- **An entry in `REMOVED_MODULES` / `REMOVED_CALLS`** when the change goes
+  with removing an API the old templates call, so a customised template
+  still calling it refuses the refresh by name instead of failing at
+  new-workfile time.
+
 ## Renaming across the wire boundary
 
 `channel` (the publish-tree fork, once called a *variant*) is the worked

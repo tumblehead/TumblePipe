@@ -90,7 +90,31 @@ def _all_task_ids(tasks) -> set:
     return ids
 
 
-def open_process_dialog_for_publish(context, dialog_title: str = "Publish") -> None:
+def _show_over(dialog, anchor) -> None:
+    """Show ``dialog`` centred on ``anchor`` (the window the artist was in),
+    in front.
+
+    The dialog stays parented to Houdini's main window, so it outlives a
+    transient anchor such as a popup; only its position follows the anchor.
+    Centred on the main window, it opened wherever that window was: behind an
+    undocked Asset Browser, or on another monitor.
+    """
+    dialog.show()
+    if anchor is not None and anchor.isVisible():
+        frame = dialog.frameGeometry()
+        frame.moveCenter(anchor.frameGeometry().center())
+        # An anchor near a screen edge would push the centred dialog off it.
+        screen = anchor.screen().availableGeometry()
+        frame.moveLeft(max(screen.left(), min(frame.left(), screen.right() - frame.width() + 1)))
+        frame.moveTop(max(screen.top(), min(frame.top(), screen.bottom() - frame.height() + 1)))
+        dialog.move(frame.topLeft())
+    dialog.raise_()
+    dialog.activateWindow()
+
+
+def open_process_dialog_for_publish(
+    context, dialog_title: str = "Publish", on_closed=None,
+):
     """Open ProcessDialog for a whole scene's publish, with every task enabled.
 
     Like :func:`open_process_dialog_for_node`, but for the Asset Browser Publish
@@ -102,10 +126,16 @@ def open_process_dialog_for_publish(context, dialog_title: str = "Publish") -> N
     ``context`` is the loaded scene's workfile context, which the caller
     (``SceneManager.get_loaded_scene_context``) has already read.
 
-    Must run on Houdini's main thread; the browser quick action fires off the
-    GUI thread and marshals here via ``run_on_main_thread``.
+    Returns the dialog, or None when there is nothing to publish (the reason
+    is shown). The dialog is modal but does not block: ``on_closed()`` runs
+    when it closes. The caller runs inside a ``run_on_main_thread`` event-loop
+    callback, and Houdini runs no other such callback until that one returns:
+    blocking here in ``exec_()`` froze every Asset Browser update - the
+    Publish spinner, a reopened browser's cards - for as long as the window
+    stayed open, and for the rest of the session when it opened out of sight.
     """
     import hou
+    from PySide6 import QtCore, QtWidgets
     from .task_collection import collect_publish_tasks
     from .process_dialog import ProcessDialog
 
@@ -114,7 +144,7 @@ def open_process_dialog_for_publish(context, dialog_title: str = "Publish") -> N
             "Publish: the loaded scene has no pipeline context.",
             severity=hou.severityType.Warning,
         )
-        return
+        return None
 
     all_tasks = collect_publish_tasks(context)
     if not all_tasks:
@@ -124,11 +154,12 @@ def open_process_dialog_for_publish(context, dialog_title: str = "Publish") -> N
             details_expanded=True,
             severity=hou.severityType.Warning,
         )
-        return
+        return None
 
     def save_scene():
         hou.hipFile.save()
 
+    anchor = QtWidgets.QApplication.activeWindow()
     dialog = ProcessDialog(
         title=dialog_title,
         tasks=all_tasks,
@@ -137,5 +168,9 @@ def open_process_dialog_for_publish(context, dialog_title: str = "Publish") -> N
         initial_enabled_task_ids=_all_task_ids(all_tasks),
         parent=hou.qt.mainWindow(),
     )
-    dialog.exec_()
+    dialog.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+    if on_closed is not None:
+        dialog.finished.connect(lambda _result: on_closed())
+    _show_over(dialog, anchor)
+    return dialog
 

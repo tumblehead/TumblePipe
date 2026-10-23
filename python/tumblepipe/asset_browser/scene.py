@@ -561,6 +561,22 @@ class SceneManager:
         run_on_main_thread(lambda: self._publish_scene(refresh_cb))
 
     def _publish_scene(self, refresh_cb=None) -> None:
+        def _settle() -> None:
+            # Always notify the browser so the spinner/detail can settle,
+            # whether the publish ran, bailed early or raised.
+            if callable(refresh_cb):
+                refresh_cb()
+
+        def _after_publish() -> None:
+            try:
+                # Drop caches so the next browse re-scans the freshly
+                # published versions (_settle repaints the detail panel).
+                self.refresh_asset(None, None)
+            except Exception as exc:
+                report_failure("Publish", exc)
+            finally:
+                _settle()
+
         try:
             import hou
 
@@ -575,6 +591,7 @@ class SceneManager:
                     "pipeline first.",
                     severity=hou.severityType.Warning,
                 )
+                _settle()
                 return
             # Activate the loaded scene's project so the export node wrappers,
             # config and storage resolve against the correct project before we
@@ -586,19 +603,16 @@ class SceneManager:
             from tumblepipe.pipe.houdini.ui.dialog_launcher import (
                 open_process_dialog_for_publish,
             )
-            # Blocks on the modal dialog until the user runs/closes it.
-            open_process_dialog_for_publish(scene_ctx, dialog_title="Publish")
-
-            # Drop caches so the next browse re-scans the freshly published
-            # versions (refresh_cb below repaints the detail panel).
-            self.refresh_asset(None, None)
+            # Returns at once; _after_publish runs when the window closes.
+            dialog = open_process_dialog_for_publish(
+                scene_ctx, dialog_title="Publish", on_closed=_after_publish,
+            )
         except Exception as exc:
             report_failure("Publish", exc)
-        finally:
-            # Always notify the browser so the spinner/detail can settle even if
-            # publish bailed early or raised.
-            if callable(refresh_cb):
-                refresh_cb()
+            _settle()
+            return
+        if dialog is None:
+            _settle()
 
     def open_farm(self, refresh_cb=None) -> None:
         """Open the Farm Submit grid with the loaded workfile's publish ticked.

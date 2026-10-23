@@ -202,6 +202,8 @@ department template:
 2. `_config/templates/<context>/<department>/template.py` is run against
    `/stage` to build the department's starting graph
    ([Configuration → Department templates](../configuration.md#department-templates)).
+   The import nodes the template created are then run, as when a scene
+   opens, so the new workfile starts with the shot or asset loaded.
 3. The configured frame range and FPS are stamped into the scene. Creation
    is the one time a non-animatable asset receives the config range;
    afterwards the artist owns it.
@@ -289,3 +291,33 @@ press the play button, or right-click the row for **Open vNNNN**. The
 choice is remembered for the session only. A Multi's detail panel works the
 same way: its dropdown lists every saved version of the Multi's workfile in
 that department.
+
+## Context options
+
+A pipeline workfile names its entity in Houdini **context options**, so a
+parm can use them instead of a hard-coded name: `` /CHAR/`@asset`/mtl ``,
+`` `@entity_path`/mtl ``, or `` /out/`@shot`_`@department`_`@version` ``. They show
+in **Edit > Context Options**.
+
+| Option | Asset workfile | Shot workfile | Multi workfile |
+|---|---|---|---|
+| `@entity` | `entity:/assets/CHAR/Mom` | `entity:/shots/SQ010/SH010` | `groups:/shots/<name>` |
+| `@entity_name` | `Mom` | `SH010` | the Multi's name |
+| `@entity_path` | `/CHAR/Mom` (the asset's prim path) | `/SQ010/SH010` | — |
+| `@asset`, `@category` | `Mom`, `CHAR` | — | — |
+| `@sequence`, `@shot` | — | `SQ010`, `SH010` | — |
+| `@multi` | — | — | the Multi's name |
+| `@department` | `lookdev` | `light` | the department |
+| `@version` | `v0003` | `v0012` | the version |
+
+They are set every time the pipeline saves a workfile (Save, New from
+Template, New from Current, Duplicate), before the hip is written, so the
+hip carries them — a farm job included. Opening a scene in Houdini sets
+them too, for a workfile saved before they existed or with File > Save As;
+one the pipeline saved opens unchanged. Houdini clears them when you load a
+hip that has none, so nothing carries over from the previous workfile.
+
+These names belong to the pipeline: a value you type for one of them is
+replaced on the next save or open, and one that does not apply to the
+workfile (`@asset` in a shot's) is removed. Any other context option is
+left alone.

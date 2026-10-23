@@ -145,7 +145,10 @@ Source: [`otls/lop_th.import_shot.1.0`](../../otls/lop_th.import_shot.1.0/th_8_8
 | Load Payloads | on | Currently wired to nothing (payloads always load) |
 
 **Import** runs the node. It also sets the session's FPS and frame range
-from the shot (keeping your current frame).
+from the shot (keeping your current frame). The import starts just after the
+click returns, and so does the one that changing Channel or Version
+triggers; the graph cooks once, when it is done. A scene you open, or a
+workfile made with New from Template, runs it for you.
 
 ### Layer Stack
 
@@ -163,8 +166,9 @@ status is in [Seeing what composed](../composition.md#seeing-what-composed).
 
 Gotchas:
 
-- If the shot has never been staged the node loads nothing and says nothing
-  — no comment, no bypass. Check the Layer Stack folder is present.
+- If the shot has never been staged the node loads nothing and its comment
+  reads *No staged build yet* — no bypass. Build the shot's USD, then
+  Import.
 - With Version `latest` the versions shown in the stack are the ones that
   floated in, which can differ from the pins recorded in the build.
 - With Exclude on **This Department Only**, later departments are marked in
@@ -462,4 +466,14 @@ defaults to packed, which drops the rig geometry's `path`/`name` attributes)
 and **Shapes** `Base`. A `th::animate` placed from the Tab menu has an empty
 dive (just `output0`), so build `th::import_rigs` → APEX Scene Animate →
 APEX Scene Invoke (with those settings) → `output0` inside it yourself.
-Source: [`otls/lop_th.animate.2.0`](../../otls/lop_th.animate.2.0/th_8_8Lop_1animate_8_82.0/DialogScript).
+
+Inside the dive, the SOP viewer ghosts the incoming stage **without the
+characters being animated**, so you don't see each one twice (the posed rig
+and its USD model in rest pose). The ghost hides every asset whose rig a
+`th::import_rig` in the dive loads, including the ones `th::import_rigs`
+creates. All copies of that asset are hidden, and the node's output is
+unaffected. A bypassed rig, or one with no published version yet, leaves its
+asset in the ghost. Scenes saved before this change switch to the new ghost
+when they are opened.
+Source: [`otls/lop_th.animate.2.0`](../../otls/lop_th.animate.2.0/th_8_8Lop_1animate_8_82.0/DialogScript),
+[`lops/animate_ghost.py`](../../python/tumblepipe/pipe/houdini/lops/animate_ghost.py).

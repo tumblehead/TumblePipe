@@ -131,7 +131,8 @@ the TumblePipe pipeline radial in a network editor, **Alt+R** the recipes and
 
    New from Template clears the session, saves an empty hip at the next version
    path (`v0001` for an empty department), records the workfile's context,
-   runs the department's template against `/stage`, applies the shot's frame
+   runs the department's template against `/stage`, runs the import nodes it
+   created (so the shot is already loaded), applies the shot's frame
    range and fps from the project config, and saves again. The status bar
    confirms with `Created <file>`; if the template could not be found it
    appends `(no template)`, and if the timeline did not land it appends

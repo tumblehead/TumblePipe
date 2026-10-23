@@ -552,7 +552,9 @@ class WorkfileManager:
                 _show_stage_in_network_editors()
                 # Houdini may rewrite the extension (Education/Apprentice
                 # save .hip as .hipnc); record the path it actually wrote.
-                next_path = save_hip_file(next_path)
+                next_path = save_hip_file(
+                    next_path, workfile_context(entity_uri, dept, next_path),
+                )
 
                 new_ctx = workfile_context(entity_uri, dept, next_path)
                 save_context(
@@ -565,9 +567,19 @@ class WorkfileManager:
                 # from an empty /stage.
                 template_applied = template_path.exists()
                 if template_applied:
+                    from tumblepipe.pipe.houdini import playbar
+                    from tumblepipe.pipe.houdini.scene_imports import (
+                        refresh_scene_imports,
+                    )
                     from tumblepipe.pipe.houdini.ui.helpers import load_module
                     template = load_module(template_path, module_name)
                     template.create(hou.node("/stage"), entity_uri, dept)
+                    # A template creates its import nodes but need not run
+                    # them (only animation's does), so a new layout or light
+                    # workfile showed no geometry until the artist pressed
+                    # Import. Bring them in as opening a scene does.
+                    with playbar.update_mode(hou.updateMode.Manual):
+                        refresh_scene_imports()
 
                 # Stamp the config timeline into the fresh workfile so it
                 # persists in the hip. force_frame_range=True: creation is
@@ -698,7 +710,11 @@ class WorkfileManager:
                 next_path.parent.mkdir(parents=True, exist_ok=True)
                 # Houdini may rewrite the extension (Education/Apprentice
                 # save .hip as .hipnc); record the path it actually wrote.
-                next_path = save_hip_file(next_path)
+                # The copied scene's context options name its old entity;
+                # save_hip_file replaces them with this workfile's.
+                next_path = save_hip_file(
+                    next_path, workfile_context(entity_uri, dept, next_path),
+                )
 
                 new_ctx = workfile_context(entity_uri, dept, next_path)
                 save_context(

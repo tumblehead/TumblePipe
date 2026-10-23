@@ -411,6 +411,64 @@ kept. Rebuild anything you need from beside them inside the network, then
 save to stop the warning. See
 [`th::create_asset_model`](nodes/assets.md#thcreate_asset_model-lop).
 
+### A new animation workfile fails with `KeyError: 'uri'`
+
+Through 1.78.0 the scaffold's `shots/animation` template read each asset's
+URI from the wrong place, so creating an animation workfile from it failed
+whenever the shot had assets. A project runs its own copy of the template,
+`_config/templates/shots/animation/template.py`. Launching the project from
+TumbleTrove Desktop with a later TumblePipe migrates it to v14, which
+replaces that copy with the fixed one if your project never changed it (see
+[Configuration](configuration.md)). A copy your studio customised is left
+alone; fix it by hand, in `_scrape_rig_imports`, changing
+
+```python
+asset_uri = Uri.parse(asset_info['uri'])
+```
+
+to
+
+```python
+asset_uri = Uri.parse(asset_info['metadata']['uri'])
+```
+
+### Publish spins forever, then a reopened Asset Browser is empty
+
+Through 1.78.0 the Asset Browser's **Publish** opened its window centred on
+Houdini's main window and waited for it to close before the browser could do
+anything else. With the browser undocked, that window could open out of sight
+(behind the browser, or on another monitor). The browser then sat on
+*Publish...*, and a browser opened after that stayed empty, until Houdini was
+restarted. Later releases open the window over the browser you clicked in and
+keep the browser responsive while it is open. On an older release, look for
+the *Process: Publish* window (Alt+Tab, or move the browser aside) and close
+it; everything catches up as soon as it closes.
+
+### `th::import_shot` shows no geometry, or Houdini crashes on Import
+
+Through 1.78.0, pressing **Import** on `th::import_shot` (or changing its
+Channel or Version) rebuilt the node's Layer Stack while that parameter's own
+callback was still running. Houdini then either crashed outright or cooked
+the node with every layer disabled, so the viewport stayed empty until
+something forced another cook — entering the node's state with Enter, for
+one. Separately, a workfile created from a department template had its
+`import_shot` unexecuted, so it showed nothing until Import was pressed.
+Later releases run Import after the callback returns and import a new
+workfile's shot when it is created. On an older release, reopen the workfile
+(opening a scene re-imports it) instead of pressing Import.
+
+### A new Multi workfile is empty, or opening one reports "frame range lookup failed"
+
+In 1.75.0 through 1.78.0, creating a Multi's workfile from a department
+template (double-clicking an empty department) failed after the template had
+run: `ConfigError: [pipeline] frame range lookup failed for group:… 'NoneType'
+object has no attribute 'purpose'`. The scene in memory had the template's
+nodes, but the workfile on disk kept only its first, empty save, so opening
+it later showed none of them. Opening an existing Multi workfile raised the
+same error after the scene loaded. Update TumblePipe, then create the
+department's workfile again; the empty version can be deleted from the
+Multi's department folder.
+
 ### Multi actions do nothing (delete, edit, add members, drag-and-drop)
 
 TumblePipe before **1.45.1** never claimed Multi and Root collections in the

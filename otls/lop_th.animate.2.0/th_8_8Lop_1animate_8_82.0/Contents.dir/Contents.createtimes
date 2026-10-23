@@ -8,7 +8,8 @@
 	"hdaroot/item_kind.def":1725549260,
 	"hdaroot/merge.def":1716298828,
 	"hdaroot/IN_stage.def":1716371892,
-	"hdaroot.def":1764677633,
+	"hdaroot.def":1792675516,
+	"hdaroot/ghost_stage.def":1792675516,
 	"hdaroot/zero_transforms.def":1723031307,
 	"hdaroot/import.def":1747818501
 }

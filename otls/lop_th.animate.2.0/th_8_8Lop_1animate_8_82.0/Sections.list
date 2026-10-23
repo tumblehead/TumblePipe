@@ -10,3 +10,4 @@ Tools.shelf	Tools.shelf
 EditableNodes	EditableNodes
 OnCreated	OnCreated
 ExtraFileOptions	ExtraFileOptions
+OnLoaded	OnLoaded

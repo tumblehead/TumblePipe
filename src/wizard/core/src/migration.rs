@@ -67,6 +67,13 @@ pub enum Step {
     /// property `variants` becomes `channels`, a scene asset entry's
     /// `variant` becomes `channel` (see [`v13_plan`]).
     ChannelKeys,
+    /// v14 — v12 again, for the scaffold template fixes since: the stock
+    /// animation template read `asset_info['uri']` from `list_assets`, which
+    /// returns `{prim_path, metadata}`, so a new animation workfile failed
+    /// with `KeyError: 'uri'` whenever the shot had assets; and the rig and
+    /// blendshape templates opened the sopcreate's LOP internals instead of
+    /// `sopnet/create` (1.77.0's fix, which no project past v12 received).
+    RefreshStockTemplatesAgain,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -110,7 +117,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 13] = [
+pub const STEPS: [Step; 14] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -124,6 +131,7 @@ pub const STEPS: [Step; 13] = [
     Step::ConventionsToData,
     Step::RefreshStockTemplates,
     Step::ChannelKeys,
+    Step::RefreshStockTemplatesAgain,
 ];
 
 impl Step {
@@ -143,6 +151,7 @@ impl Step {
             Step::ConventionsToData => 11,
             Step::RefreshStockTemplates => 12,
             Step::ChannelKeys => 13,
+            Step::RefreshStockTemplatesAgain => 14,
         }
     }
 
@@ -181,6 +190,9 @@ impl Step {
             }
             Step::ChannelKeys => {
                 "store the publish channel under `channels`/`channel` in the config database"
+            }
+            Step::RefreshStockTemplatesAgain => {
+                "refresh the stock _config/templates again, for the template fixes since v12"
             }
         }
     }
@@ -361,7 +373,7 @@ impl Step {
             // leaves "New workfile" broken, so its owner decides. A project
             // still to run v9 is judged as v9 will leave it, since v9
             // replaces every packaged template whatever it holds.
-            Step::RefreshStockTemplates => {
+            Step::RefreshStockTemplates | Step::RefreshStockTemplatesAgain => {
                 let v9_pending =
                     current_version(project_path) < Step::RefreshTemplatesAgain.version();
                 match v12_plan(&cfg, template_dir, v9_pending) {
@@ -838,22 +850,7 @@ impl Step {
                 }
                 Ok(())
             }
-            Step::RefreshStockTemplates => {
-                // Every template is judged before any is written, so a
-                // refusal leaves the project exactly as it was. No backup: a
-                // stock template is one the scaffold shipped, and a
-                // customised one is never written.
-                for (path, text) in v12_plan(&cfg, template_dir, false)? {
-                    if let Some(parent) = path.parent() {
-                        std::fs::create_dir_all(parent)
-                            .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
-                    }
-                    let style = newlines::style_of_file(&path);
-                    std::fs::write(&path, newlines::apply(&text, style))
-                        .map_err(|e| format!("could not write {}: {e}", path.display()))?;
-                }
-                Ok(())
-            }
+            Step::RefreshStockTemplates => refresh_stock_templates(&cfg, template_dir),
             Step::ChannelKeys => {
                 // Every file is planned before any is written, so a refusal
                 // leaves the database exactly as it was. Own backup suffix:
@@ -863,8 +860,30 @@ impl Step {
                 }
                 Ok(())
             }
+            // v12 brought the stock templates up to the scaffold of its day;
+            // a template fixed since never reached a project past it. Same
+            // plan and the same rules: stock is replaced, customised is left
+            // alone unless it calls something removed.
+            Step::RefreshStockTemplatesAgain => refresh_stock_templates(&cfg, template_dir),
         }
     }
+}
+
+/// Write v12's plan: every packaged template whose project copy is missing or
+/// stock. Every template is judged before any is written, so a refusal leaves
+/// the project exactly as it was. No backup: a stock template is one the
+/// scaffold shipped, and a customised one is never written.
+fn refresh_stock_templates(cfg: &Path, template_dir: &Path) -> Result<(), String> {
+    for (path, text) in v12_plan(cfg, template_dir, false)? {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+        }
+        let style = newlines::style_of_file(&path);
+        std::fs::write(&path, newlines::apply(&text, style))
+            .map_err(|e| format!("could not write {}: {e}", path.display()))?;
+    }
+    Ok(())
 }
 
 /// v10's edits to a project, as `(file, new LF text)`: empty when there is
@@ -2709,8 +2728,11 @@ mod tests {
             ("shots/animation", &old_animation),
         ]);
         let preflight = preflight(dir.path(), &packaged_scaffold());
-        let [(Step::RefreshStockTemplates, Readiness::Blocked(why)), (Step::ChannelKeys, Readiness::Ready)] =
-            preflight.as_slice()
+        let [
+            (Step::RefreshStockTemplates, Readiness::Blocked(why)),
+            (Step::ChannelKeys, Readiness::Ready),
+            (Step::RefreshStockTemplatesAgain, Readiness::Blocked(_)),
+        ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
         };
@@ -2815,11 +2837,11 @@ mod tests {
 
     /// A project made from this package is born at v13, with nothing to do.
     #[test]
-    fn a_fresh_scaffold_is_already_at_v13() {
+    fn a_fresh_scaffold_is_already_at_v14() {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 13);
+        assert_eq!(latest_version(), 14);
         assert_eq!(current_version(&target), latest_version());
         assert!(pending(&target).is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -2965,8 +2987,8 @@ mod tests {
         let dir = project_at_v12_with_variants();
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 1);
-        assert_eq!(report.to, 13);
+        assert_eq!(report.applied.len(), 2);
+        assert_eq!(report.to, 14);
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -3023,7 +3045,7 @@ mod tests {
         let template = scaffold();
         let report = migrate(dir.path(), template.path());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 13);
+        assert_eq!(current_version(dir.path()), 14);
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -3041,7 +3063,7 @@ mod tests {
         write_version(&dir.path().join("_config"), 12).unwrap();
         let second = migrate(dir.path(), &packaged_scaffold());
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 13);
+        assert_eq!(second.to, 14);
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -3059,7 +3081,7 @@ mod tests {
 
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.to, 13);
+        assert_eq!(report.to, 14);
         assert_eq!(db_text(dir.path(), "entity.json"), entity);
         let mut files = Vec::new();
         find_files(&db, None, &mut files);
@@ -3094,6 +3116,45 @@ mod tests {
         assert!(why.contains("/park assets[0]"), "{why}");
         assert_eq!(current_version(dir.path()), 12);
         assert_eq!(db_text(dir.path(), "scenes.json"), clash);
+    }
+
+    /// v14 reaches a project v12 already refreshed: HideAndReek, RND and
+    /// SideFXrig2 sat at v13 on the animation template that raised
+    /// `KeyError: 'uri'`, which is stock (67282f6a0f), so v14 replaces it.
+    /// A customised template beside it is left as it is.
+    #[test]
+    fn v14_refreshes_a_stock_template_v12_left_behind() {
+        let shipped_at_v13 = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("67282f6a0f.py"))
+            .unwrap()
+            .2;
+        assert!(shipped_at_v13.contains("asset_info['uri']"));
+        let customised = "# studio layout\n";
+        let dir = project(Some(13));
+        for (relative, text) in [
+            ("shots/animation", shipped_at_v13.replace('\n', "\r\n")),
+            ("shots/layout", customised.to_string()),
+        ] {
+            let path = project_template(dir.path(), relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+        }
+        let report = migrate(dir.path(), &packaged_scaffold());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(current_version(dir.path()), 14);
+        let animation =
+            std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
+        assert_eq!(
+            animation.replace("\r\n", "\n"),
+            packaged_text("shots/animation").replace("\r\n", "\n")
+        );
+        assert!(animation.contains("\r\n"), "a CRLF template stays CRLF");
+        assert!(!animation.contains("asset_info['uri']"));
+        assert_eq!(
+            std::fs::read_to_string(project_template(dir.path(), "shots/layout")).unwrap(),
+            customised
+        );
     }
 
     /// A CRLF database stays CRLF.

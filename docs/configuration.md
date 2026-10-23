@@ -428,7 +428,7 @@ left exactly as it was, rather than stamped part-way at the last step that
 happened to succeed.
 
 A migration never replaces a file without preserving the original — the one
-exception is a template v12 recognises as a version the scaffold shipped, which
+exception is a template v12 or v14 recognises as a version the scaffold shipped, which
 holds nothing of the project's. Which of the two it does depends on how
 load-bearing the file is:
 
@@ -444,8 +444,8 @@ load-bearing the file is:
   HDAs on their `from_context` default instead of baking an entity URI in)
   would otherwise never reach a live project. If you *had* hand-tuned a
   template, reconcile it from the `.bak`. The refresh runs only as a
-  numbered step (v2, then v9 as `template.py.v9.bak`, then v12 for stock
-  templates only), so a later scaffold template change reaches existing
+  numbered step (v2, then v9 as `template.py.v9.bak`, then v12 and v14 for
+  stock templates only), so a later scaffold template change reaches existing
   projects only once another refresh step ships.
 - **`_config/db/schemas.json` gains the `entity.departments` default (v3).**
   Additive and data-neutral — it declares the per-entity department
@@ -612,6 +612,17 @@ load-bearing the file is:
   launch again. Published data (`export/**/context.json`, staged `.usda`
   URIs) is not touched: published versions are immutable and are read in
   either spelling (see *Channels* in `composition.md`).
+
+- **The stock department templates are refreshed again (v14).** v12 brought
+  each stock template up to the scaffold of its day, so a template fixed
+  since never reached a project already past v12. Two fixes had not: the
+  stock `shots/animation` template read each asset's URI from the wrong
+  place, so a new animation workfile failed with `KeyError: 'uri'` whenever
+  the shot had assets; and the `assets/rig` and `assets/blendshape`
+  templates opened the network editor in the sopcreate's LOP internals
+  instead of `sopnet/create`. v14 runs v12's refresh again with the same rules — a
+  stock template is replaced by the packaged one, a customised one is left
+  alone, and one that calls something removed refuses the step and is named.
 
 ### Migrating at launch
 

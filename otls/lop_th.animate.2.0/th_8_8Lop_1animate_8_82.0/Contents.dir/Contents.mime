@@ -19,7 +19,7 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -1.85321 -0.505505
+position 0 0
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
 outputsNamed3
@@ -916,6 +916,8 @@ enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
 prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
 enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
 heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
+enable_usexformcommonapi	[ 0	locks=0 ]	(	"off"	)
+usexformcommonapi	[ 0	locks=0 ]	(	"on"	)
 geometryhandlinggroup	[ 0	locks=0 ]	(	1	)
 enable_polygonsassubd	[ 0	locks=0 ]	(	"off"	)
 polygonsassubd	[ 0	locks=0 ]	(	"off"	)
@@ -957,6 +959,8 @@ enable_subsetgroups	[ 0	locks=0 ]	(	"off"	)
 subsetgroups	[ 0	locks=0 ]	(	""	)
 enable_customattribs	[ 0	locks=0 ]	(	"off"	)
 customattribs	[ 0	locks=0 ]	(	""	)
+enable_captureweighthandling	[ 0	locks=0 ]	(	"off"	)
+captureweighthandling	[ 0	locks=0 ]	(	usdskel	)
 enable_translateuvtost	[ 0	locks=0 ]	(	"off"	)
 translateuvtost	[ 0	locks=0 ]	(	"on"	)
 }
@@ -1050,7 +1054,7 @@ uparmtype	[ 0	locks=0 ]	(	"arc"	)
 pathorient	[ 0	locks=0 ]	(	1	)
 up	[ 0	locks=0 ]	(	0	1	0	)
 bank	[ 0	locks=0 ]	(	0	)
-showlopstage	[ 0	locks=0 ]	(	../IN_stage	)
+showlopstage	[ 0	locks=0 ]	(	../ghost_stage	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -1344,6 +1348,18 @@ Content-Type: text/plain
         }
         parmtag { "usdvaluetype" "token" }
     }
+    parm {
+        name    "allowedprimtypes"
+        baseparm
+        label   "Allowed Primitive Types"
+        export  none
+    }
+    parm {
+        name    "handledisallowedtypes"
+        baseparm
+        label   "Handle Mismatched Types"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/no_default_values.chn"
@@ -1394,6 +1410,8 @@ sample_count	[ 0	locks=0 ]	(	2	)
 sample_includeframe	[ 0	locks=0 ]	(	"on"	)
 editinterface	[ 0	locks=0 ]	(	0	)
 primpattern	[ 0	locks=0 ]	(	*	)
+allowedprimtypes	[ 0	locks=0 ]	(	""	)
+handledisallowedtypes	[ 0	locks=0 ]	(	"ignore"	)
 primpath	[ 0	locks=0 ]	(	/$OS	)
 createprims	[ 0	locks=0 ]	(	"off"	)
 initforedit	[ 0	locks=0 ]	(	0	)
@@ -1424,10 +1442,75 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ghost_stage.init"
+Content-Type: text/plain
+
+type = pythonscript
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ghost_stage.def"
+Content-Type: text/plain
+
+comment "anim_dive ghost: input stage minus the rigged characters"
+position -4.48254 8.8685
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	IN_stage 1 1 "input1"
+}
+inputs
+{
+0 	IN_stage 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ghost_stage.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+python	[ 0	locks=0 ]	(	"# The anim_dive ghost: the input stage minus the USD copies of the
+# characters whose rigs anim_dive imports (they stand in rest pose).
+from tumblepipe.pipe.houdini.lops import animate_ghost
+
+node = hou.pwd()
+animate_ghost.prune_rigged_assets(node, node.node('../anim_dive'))
+"	)
+maintainstate	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/ghost_stage.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-10
+11
 output
 merge
 IN_stage
@@ -1438,6 +1521,7 @@ content_kind
 import
 anim_dive
 no_default_values
+ghost_stage
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

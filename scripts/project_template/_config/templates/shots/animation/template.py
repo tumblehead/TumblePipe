@@ -27,7 +27,7 @@ def _scrape_rig_imports(import_native):
         return rig_imports
     root = stage.GetPseudoRoot()
     for asset_info in prim_metadata.list_assets(root):
-        asset_uri = Uri.parse(asset_info['uri'])
+        asset_uri = Uri.parse(asset_info['metadata']['uri'])
         if asset_uri not in rig_imports:
             rig_imports[asset_uri] = 0
         rig_imports[asset_uri] += 1

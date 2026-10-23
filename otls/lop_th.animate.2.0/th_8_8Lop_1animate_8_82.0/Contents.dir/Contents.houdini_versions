@@ -1,5 +1,5 @@
 {
-	"values":["21.0.547"
+	"values":["22.0.368"
 	],
 	"indexes":{
 		"hdaroot/anim_dive.userdata":0,
@@ -12,6 +12,7 @@
 		"hdaroot/merge.userdata":0,
 		"hdaroot/content_kind.userdata":0,
 		"hdaroot/zero_transforms.userdata":0,
-		"hdaroot/anim_dive/output0.userdata":0
+		"hdaroot/anim_dive/output0.userdata":0,
+		"hdaroot/ghost_stage.userdata":0
 	}
 }

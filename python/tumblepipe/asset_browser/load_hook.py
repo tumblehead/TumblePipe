@@ -46,11 +46,33 @@ def _refresh_if_enabled() -> None:
         report_failure("Refreshing the scene's imports after it opened", exc)
 
 
+def _apply_context_options() -> None:
+    """Name the workfile's entity in context options (``@asset``, ``@shot``
+    ...): a pipeline save already stores them in the hip, but a workfile
+    saved before they existed, or by File > Save As, may not carry them.
+    Upkeep, not an artist's action: a failure is logged, not shown."""
+    import logging
+    from tumblepipe.pipe.houdini import context_options
+    from tumblepipe.pipe.houdini.scene_context import scene_context
+
+    try:
+        context_options.apply(scene_context())
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Setting the workfile's context options failed"
+        )
+
+
+def _on_scene_opened() -> None:
+    _apply_context_options()
+    _refresh_if_enabled()
+
+
 def on_hip_file_event(event_type) -> None:
     import hou
 
     if event_type == hou.hipFileEventType.AfterLoad:
-        _refresh_if_enabled()
+        _on_scene_opened()
 
 
 def _scene_loaded() -> bool:
@@ -80,4 +102,4 @@ def register() -> None:
     hou.hipFile.addEventCallback(on_hip_file_event)
 
     if _scene_loaded():
-        _refresh_if_enabled()
+        _on_scene_opened()

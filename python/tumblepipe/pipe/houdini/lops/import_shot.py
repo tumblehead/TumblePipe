@@ -346,10 +346,11 @@ class ImportShot(EntityNode):
         lighting. This parm expresses that second, strictly-downstream cut,
         and is set by the render stage builder.
 
-        It is a parm rather than a transient attribute on purpose: the HDA
-        rebuilds ``ImportShot(hou.pwd())`` on every cook, so anything not
-        persisted here would be silently lost on a re-cook and the node
-        would quietly go back to composing every department.
+        It is a parm rather than a transient attribute on purpose: every
+        callback and scene refresh wraps the node in a fresh ``ImportShot``,
+        so anything not persisted here would be silently lost on the next
+        import and the node would quietly go back to composing every
+        department.
         """
         department_name = self.parm('exclude_downstream_of').eval()
         if len(department_name) == 0: return None
@@ -806,9 +807,37 @@ def on_created(raw_node):
 
 
 def execute(kwargs):
-    raw_node = kwargs['node']
-    node = ImportShot(raw_node)
-    node.execute()
+    """The Import button's and the Channel/Version menus' callback.
+
+    execute() rebuilds this node's Layer Stack with setParmTemplateGroup,
+    which replaces the HDA instance's parms. Run inside the callback of one
+    of those parms, it frees the parm Houdini is still executing: pressing
+    Import crashed Houdini (access violation in pressButton), and a cook
+    that caught the half-built interface composed with every layer
+    disabled, so the viewport showed nothing until something re-cooked it.
+    The import runs after the callback returns instead, in Manual update
+    mode like a scene-open refresh, so the graph cooks once, complete.
+    """
+    import hou
+
+    path = kwargs['node'].path()
+
+    def _import():
+        native = hou.node(path)
+        if native is None:
+            return
+        try:
+            with playbar.update_mode(hou.updateMode.Manual):
+                ImportShot(native).execute()
+        except Exception as exc:
+            from tumblepipe.pipe.houdini.ui.report import report_failure
+            report_failure(f"Importing the shot into {path}", exc)
+
+    if not hou.isUIAvailable():
+        ImportShot(kwargs['node']).execute()
+        return
+    import hdefereval
+    hdefereval.executeDeferred(_import)
 
 
 def select(kwargs):
