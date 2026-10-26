@@ -21,6 +21,7 @@ services it was constructed with.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -51,6 +52,33 @@ def entity_uri_for(asset_or_detail) -> str | None:
     if "type:shot" in asset_or_detail.tags:
         return str(uris.entity_shot(second, third))
     return None
+
+
+def node_name(text: str) -> str:
+    """*text* made into a name Houdini accepts for a node.
+
+    Node names take letters, digits and underscores only, so anything
+    else becomes ``_``. A leading digit gets a ``_`` in front.
+    """
+    name = re.sub(r"[^A-Za-z0-9_]", "_", text) or "node"
+    return f"_{name}" if name[0].isdigit() else name
+
+
+def entity_node_name(asset_or_detail) -> str:
+    """The node name for a dropped asset or shot, read from its id.
+
+    Not from its card name: in a view that mixes categories the card
+    reads ``CHAR/Bob`` (see ``EntityIndex.apply_category_prefix``), and
+    ``/`` is not allowed in a node name, so those drops failed. A shot is
+    ``<sequence>_<shot>``, as on its card.
+    """
+    parts = asset_or_detail.id.split("/")
+    if len(parts) != 3:
+        return node_name(asset_or_detail.name)
+    _project, bucket, name = parts
+    if "type:shot" in asset_or_detail.tags:
+        return node_name(f"{bucket}_{name}")
+    return node_name(name)
 
 
 def is_import_assets_node(node) -> bool:
@@ -196,17 +224,12 @@ class DropRouter:
         network = drop.network
         if "type:shot" in detail.tags:
             from tumblepipe.pipe.houdini.lops import import_shot
-            # Prefix with sequence so the node name matches the
-            # displayed Asset.name and avoids leading-digit shot
-            # names (e.g. "010") that Houdini rejects.
-            seq = detail.metadata.get("sequence", "")
-            node_name = f"{seq}_{detail.name}" if seq else detail.name
-            node = import_shot.create(network, node_name.replace(" ", "_"))
+            node = import_shot.create(network, entity_node_name(detail))
             node.set_entity_uri(uris.parse(entity_uri))
             node.execute()
         else:
             from tumblepipe.pipe.houdini.lops import import_asset
-            node = import_asset.create(network, detail.name.replace(" ", "_"))
+            node = import_asset.create(network, entity_node_name(detail))
             node.set_entity_uri(uris.parse(entity_uri))
             node.execute()
         raw = node.native()
@@ -269,7 +292,7 @@ class DropRouter:
         uri = uris.parse(entity_uri)
         for index, dept in enumerate(deck_keys):
             node = import_layer.create(
-                drop.network, f"{asset.name}_{dept}".replace(" ", "_"),
+                drop.network, node_name(f"{entity_node_name(asset)}_{dept}"),
             )
             node.set_entity_uri(uri)
             node.set_department_name(dept)
@@ -395,7 +418,7 @@ class DropRouter:
         from tumblepipe.pipe.houdini.sops.import_model import ImportModel
 
         raw = drop.network.createNode(
-            "th::import_model::1.0", detail.name.replace(" ", "_"),
+            "th::import_model::1.0", entity_node_name(detail),
         )
         raw.parm("entity").set(entity_uri)
         raw.parm("department").set(
@@ -444,8 +467,7 @@ class DropRouter:
             self._activate_project(proj)
 
         layer_uri = generate_scene_sublayer_uri(ref.uri)
-        name = (detail.name or "root").replace(" ", "_")
-        node = drop.network.createNode("sublayer", name)
+        node = drop.network.createNode("sublayer", node_name(detail.name or "root"))
         # ``num_files`` controls the multiparm count for layer paths;
         # defaults to 1 on a fresh node but set explicitly in case of
         # future schema changes.

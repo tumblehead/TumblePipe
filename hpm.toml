@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.80.0"
+version = "1.80.1"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"

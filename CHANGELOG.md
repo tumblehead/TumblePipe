@@ -12,6 +12,22 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.80.0 — 2026-10-26
+
+### Breaking Changes
+- feat(wizard)!: migration v15 - layout camera follows the resolution, blshp is a Scope (`085adafe`)
+
+### Features
+- feat(nodes): retire th::create_model from the TAB menu (`204b7c22`)
+
+### Fixes
+- fix(create_asset_model): fetch each variant by output index, not name (`04a354c8`)
+- fix(export): a static asset exports its first frame only (`db3e65ce`)
+- fix(recipes): capture the thumbnail from Houdini's framebuffer (`46533bad`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.78.0 and v1.79.0 (`7a8923a3`)
+
 ## v1.79.0 — 2026-10-23
 
 ### Breaking Changes
