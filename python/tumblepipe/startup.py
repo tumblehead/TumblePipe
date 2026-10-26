@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 #: The desktop layout the package ships (desktop/TumblePipe.desk).
 DESKTOP_NAME = "TumblePipe"
 
+#: Node types kept installed so old scenes still load, but hidden from the
+#: TAB menu (and so from the catalog's Nodes section) so nobody builds new
+#: work on them. th::create_model is the variant-less predecessor of
+#: th::create_asset_model.
+RETIRED_NODE_TYPES = (
+    ("Lop", "th::create_model::1.0"),
+)
+
 
 def bootstrap() -> None:
     """Register everything TumblePipe adds to a Houdini session.
@@ -79,9 +87,24 @@ def _register_tumbletrove() -> None:
     from tumblepipe import workfile_context
     from tumblepipe.asset_browser import load_hook
 
+    # Before the package: its catalog lists only the TAB-visible types.
+    _guarded("retired node types", hide_retired_node_types)
     _guarded("package registration", register_package)
     _guarded("scene-load import refresh", load_hook.register)
     _guarded("workfile context provider", workfile_context.register)
+
+
+def hide_retired_node_types() -> None:
+    """Hide every :data:`RETIRED_NODE_TYPES` entry from the TAB menu. A type
+    that is not installed is skipped."""
+    import hou
+
+    categories = hou.nodeTypeCategories()
+    for category_name, type_name in RETIRED_NODE_TYPES:
+        category = categories.get(category_name)
+        node_type = category.nodeType(type_name) if category else None
+        if node_type is not None:
+            node_type.setHidden(True)
 
 
 def _guarded(label: str, fn) -> None:

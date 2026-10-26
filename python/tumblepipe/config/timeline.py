@@ -160,6 +160,21 @@ def is_animatable(uri: Uri) -> bool:
     if properties is None: return True
     return bool(properties.get('animatable', True))
 
+def get_export_frame_range(uri: Uri) -> FrameRange | None:
+    """The frames an export or publish of *uri* writes.
+
+    An animatable entity exports its whole authored range. A
+    non-animatable one (a static asset) exports only its first frame, no
+    rolls: its authored range is a working range for the scene timeline
+    (assets default to 1001-1200), and writing 200 identical samples
+    only made static exports slow.
+    """
+    frame_range = get_frame_range(uri)
+    if frame_range is None or is_animatable(uri):
+        return frame_range
+    start = frame_range.start_frame
+    return FrameRange(start, start, 0, 0)
+
 def get_fps(uri: Uri | None = None) -> int | None:
     """Get FPS with optional entity override.
 

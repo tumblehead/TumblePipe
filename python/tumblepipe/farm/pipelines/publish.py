@@ -14,7 +14,7 @@ import sys
 
 from tumblepipe.api import get_user_name, path_str
 from tumblepipe.apps.deadline import Job
-from tumblepipe.config.timeline import get_frame_range
+from tumblepipe.config.timeline import get_export_frame_range
 from tumblepipe.farm.jobs import notify as notify_job
 from tumblepipe.farm.jobs import publish as publish_job
 from tumblepipe.farm.pipelines._batch import batch_title, run_cli, submit_batch
@@ -92,7 +92,7 @@ def create_publish_job(
             f'No finished workfile to publish for {entity_uri}/'
             f'{department_name} (a save may still be in flight)'
         )
-    frame_range = get_frame_range(entity_uri)
+    frame_range = get_export_frame_range(entity_uri)
     if frame_range is None:
         raise ValueError(
             f'Cannot get frame range for entity: {entity_uri}. Ensure the '

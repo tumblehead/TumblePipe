@@ -4,7 +4,7 @@ from pathlib import Path
 import json
 
 from tumblepipe.config.entities import get_entity_type
-from tumblepipe.config.timeline import get_frame_range
+from tumblepipe.config.timeline import get_export_frame_range
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import build as build_spec
 from tumblepipe.util.uri import Uri
@@ -17,7 +17,7 @@ def build_range(config) -> tuple[int, int] | None:
     if 'first_frame' in config:
         return config['first_frame'], config['last_frame']
     entity_uri = Uri.parse(config['entity_uri'])
-    frame_range = get_frame_range(entity_uri)
+    frame_range = get_export_frame_range(entity_uri)
     if frame_range is None:
         if get_entity_type(entity_uri) == 'shot':
             raise ValueError(

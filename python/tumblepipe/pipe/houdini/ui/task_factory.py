@@ -10,7 +10,7 @@ import logging
 import uuid
 
 from tumblepipe.util.uri import Uri
-from tumblepipe.config.timeline import get_frame_range
+from tumblepipe.config.timeline import get_export_frame_range
 from tumblepipe.pipe.paths import latest_export_path, current_staged_path
 
 from .process_task import ProcessTask, TaskStatus
@@ -37,12 +37,13 @@ def _get_frame_range_values(entity_uri: Uri, export_node=None) -> tuple[int | No
 
     An export node's own Frame Range setting decides its range (and raises
     when it does not resolve). Without a node, the entity's authored range;
-    (None, None) for an entity with none, such as a static asset.
+    (None, None) for an entity with none. A static asset gets
+    its first frame only (``get_export_frame_range``).
     """
     if export_node is not None:
         frame_range = export_node.get_frame_range()
     else:
-        frame_range = get_frame_range(entity_uri)
+        frame_range = get_export_frame_range(entity_uri)
         if frame_range is None:
             return (None, None)
     render_range = frame_range.full_range()
@@ -370,7 +371,7 @@ def _execute_build_local(entity_uri: Uri, channel_name: str = 'default', first_f
         last_frame: Optional last frame override (from export node)
     """
     from tumblepipe.pipe.paths import next_staged_file_path
-    from tumblepipe.config.timeline import get_frame_range, BlockRange
+    from tumblepipe.config.timeline import get_export_frame_range, BlockRange
     from tumblepipe.pipe.staged_build import build_staged
 
     # Determine entity type for validation
@@ -383,7 +384,7 @@ def _execute_build_local(entity_uri: Uri, channel_name: str = 'default', first_f
     if first_frame is not None and last_frame is not None:
         render_range = BlockRange(first_frame, last_frame)
     else:
-        frame_range = get_frame_range(entity_uri)
+        frame_range = get_export_frame_range(entity_uri)
         render_range = frame_range.full_range() if frame_range is not None else None
 
     # Print diagnostic info (will be captured and shown on error)

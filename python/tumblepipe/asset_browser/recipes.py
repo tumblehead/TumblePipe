@@ -387,21 +387,63 @@ def capture_node_layout(nodes: list) -> tuple[list[dict], list[dict]]:
 def capture_thumbnail() -> bytes | None:
     """A 400×300 PNG of the network editor framed on the selection.
 
-    GUI thread only (grabs a widget). None when there is no network
-    editor to grab — the card then shows the placeholder.
+    GUI thread only (grabs the screen). None when there is no network
+    editor to grab — the card then shows the placeholder. A thumbnail
+    is never worth failing the recipe over, so any error is None too.
     """
+    try:
+        return _capture_thumbnail()
+    except Exception:
+        log.warning("Recipe thumbnail capture failed", exc_info=True)
+        return None
+
+
+def _capture_thumbnail() -> bytes | None:
     import hou
-    from PySide6.QtCore import QBuffer, QByteArray, QIODevice
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPoint, QRect, Qt
+    from PySide6.QtOpenGLWidgets import QOpenGLWidget
+    from PySide6.QtWidgets import QApplication
     editor = None
     for pane_tab in hou.ui.paneTabs():
-        if isinstance(pane_tab, hou.NetworkEditor):
+        if isinstance(pane_tab, hou.NetworkEditor) and pane_tab.isCurrentTab():
             editor = pane_tab
             break
     if editor is None:
         return None
     editor.homeToSelection()
-    pixmap = editor.qtWindow().grab()
-    scaled = pixmap.scaled(400, 300, mode=1)
+    # hou.NetworkEditor has no qtWindow() (only SceneViewer does): Houdini
+    # draws its native panes into one OpenGL widget per window
+    # (RE_WindowDrawable). Read that widget's framebuffer, which is right
+    # even when another window covers Houdini (a screen grab is not), and
+    # crop it to the network area: screenBounds() gives its size, and it
+    # fills the pane's width at the pane's bottom, under the tab bar and
+    # path bar.
+    pane_rect = editor.pane().qtScreenGeometry()
+    drawable = None
+    for widget in QApplication.allWidgets():
+        if (isinstance(widget, QOpenGLWidget) and widget.isVisible()
+                and widget.objectName() == 'RE_WindowDrawable'):
+            origin = widget.mapToGlobal(QPoint(0, 0))
+            if QRect(origin, widget.size()).contains(pane_rect.center()):
+                drawable = widget
+                break
+    if drawable is None:
+        return None
+    image = drawable.grabFramebuffer()
+    ratio = image.devicePixelRatio()
+    bounds = editor.screenBounds().size()
+    width = min(int(bounds[0] / ratio), pane_rect.width())
+    height = min(int(bounds[1] / ratio), pane_rect.height())
+    origin = drawable.mapToGlobal(QPoint(0, 0))
+    left = pane_rect.x() - origin.x() + (pane_rect.width() - width) // 2
+    top = pane_rect.y() - origin.y() + pane_rect.height() - height
+    pixmap = image.copy(QRect(
+        int(left * ratio), int(top * ratio),
+        int(width * ratio), int(height * ratio)))
+    if pixmap.isNull():
+        return None
+    scaled = pixmap.scaled(
+        400, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
     ba = QByteArray()
     buf = QBuffer(ba)
     buf.open(QIODevice.WriteOnly)

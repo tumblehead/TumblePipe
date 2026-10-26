@@ -1,5 +1,6 @@
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
+from tumblepipe.pipe.houdini.render_camera import bind_aspect
 from tumblepipe.pipe.houdini.lops import (
     import_shot,
     export_layer
@@ -19,6 +20,7 @@ def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     # Create the camera node
     camera_node = scene_node.createNode('camera', 'render_camera')
     camera_node.parm('primpath').set('/cameras/render_camera')
+    bind_aspect(camera_node, entity_uri)
     camera_node.setInput(0, prev_node)
     prev_node = camera_node
 
@@ -50,6 +52,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         # Create the camera node
         camera_node = scene_node.createNode('camera', f'render_camera_{member_name}')
         camera_node.parm('primpath').set('/cameras/render_camera')
+        bind_aspect(camera_node, member_uri)
         camera_node.setInput(0, prev_node)
         prev_node = camera_node
 

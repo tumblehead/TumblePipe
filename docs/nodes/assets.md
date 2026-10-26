@@ -18,7 +18,7 @@ A new project ships four asset departments
 | Department | Composes into the staged asset? | What its template scaffolds in `/stage` |
 |---|---|---|
 | `model` | yes (independent, renderable) | `MODEL` (`th::create_asset_model`, one variant per channel with a starter box) → `EXPORT_MODEL` |
-| `blendshape` | **no** (not a render layer) | `IMPORT_MODEL` (`th::import_layer`, Department `model`) → `BLENDSHAPES` (a SOP Create at `<asset>/blshp/`; inside: LOP Import of the model at frame 1001 → Unpack → `sculpt` → `cache` → `name` → `merge`, boxed as *BLENDSHAPE 1* to copy per shape) → `EXPORT_BLENDSHAPES` |
+| `blendshape` | **no** (not a render layer) | `IMPORT_MODEL` (`th::import_layer`, Department `model`) → `BLENDSHAPES` (a SOP Create at `<asset>/blshp/`; inside: LOP Import of the model at frame 1001 → Unpack → `sculpt` → `cache` → `name` → `merge`, boxed as *BLENDSHAPE 1* to copy per shape) → `BLSHP_SCOPE` (a Configure Primitive making `<asset>/blshp` the Scope the export check requires) → `EXPORT_BLENDSHAPES` |
 | `lookdev` | yes (renderable over-layer) | `IMPORT_MODEL` (`th::import_layer`, Department `model`) → `LOOKDEV` (`th::create_asset_lookdev`, one variant per channel; inside: `material_library` with a red `default_mtl` → `material_assigner` → every variant's output) → `EXPORT_LOOKDEV` |
 | `rig` | **no** (not a render layer) | `rigging` (a SOP Create; inside: `import_model` (`th::import_model`), an unwired `import_blendshapes` (`th::import_model`, Department `blendshape`), `promote_name` (Attribute Promote: `name` primitive → point, original kept), `enumerate` (Enumerate, Group Type Points: integer point `index`; holds the display flag), and `export_rig` (`th::export_rig`) wired from `enumerate`) |
 
@@ -242,6 +242,10 @@ way to publish — see
 [its entry](import-and-export.md#thexport_asset-lop).
 
 ## `th::create_model` (LOP)
+
+**Retired.** Hidden from the TAB menu and the catalog since v1.80.0; use
+`th::create_asset_model`, which does the same job with USD variants. It stays
+installed so scenes that already contain one still load and cook.
 
 A stand-alone model builder on top of a SOP Create: it authors the asset
 `Xform` (kind `component`) at the asset's prim path, a `geo` Scope under it,

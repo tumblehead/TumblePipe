@@ -16,7 +16,7 @@ from pathlib import Path
 
 #: The layout the newest migration step writes; the scaffold's
 #: ``scripts/project_template/_config/version.json`` carries the same number.
-CONFIG_LAYOUT_VERSION = 14
+CONFIG_LAYOUT_VERSION = 15
 
 VERSION_FILE = 'version.json'
 

@@ -9,7 +9,8 @@ means the same thing on every node that offers it:
 - ``playback_range``: the playbar's range, its rolls from the global range;
 - ``from_context``: the addressed entity's authored range from the database,
   rolls included — the node must be an ``EntityNode``, and an entity with no
-  range authored raises;
+  range authored raises; an exporting node (``EXPORTS_ENTITY_RANGE``)
+  reads a non-animatable entity as its first frame only;
 - ``from_settings``: the node's own 'frame_settings' (first, last and, when
   the tuple has three components, step) and 'roll_settings' parms.
 
@@ -19,7 +20,9 @@ raises; it never returns None or a ``(range, step)`` pair.
 
 import hou
 
-from tumblepipe.config.timeline import FrameRange, get_frame_range
+from tumblepipe.config.timeline import (
+    FrameRange, get_export_frame_range, get_frame_range,
+)
 from tumblepipe.pipe.houdini import playbar
 
 
@@ -39,6 +42,9 @@ class FrameRangeNode:
     FRAME_SETTINGS_PARM: str = 'frame_settings'
     # The roll parm; None for a node without rolls.
     ROLL_SETTINGS_PARM: str | None = 'roll_settings'
+    # An exporting node reads a static asset's context range as its first
+    # frame only (``get_export_frame_range``); others read it whole.
+    EXPORTS_ENTITY_RANGE: bool = False
 
     def get_frame_range_source(self) -> str:
         if self.FRAME_RANGE_PARM is None:
@@ -55,7 +61,11 @@ class FrameRangeNode:
                 return playbar.get_frame_range()
             case FrameRangeSource.ENTITY:
                 entity_uri = self.require_entity_uri()
-                frame_range = get_frame_range(entity_uri)
+                frame_range = (
+                    get_export_frame_range(entity_uri)
+                    if self.EXPORTS_ENTITY_RANGE
+                    else get_frame_range(entity_uri)
+                )
                 if frame_range is None:
                     raise self._error(
                         f'{entity_uri} has no frame range authored in the '

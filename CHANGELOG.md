@@ -12,6 +12,87 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.79.0 — 2026-10-23
+
+### Breaking Changes
+- feat(wizard)!: migration v14 refreshes the stock templates again (`c2426b71`)
+
+### Features
+- feat(workfiles): name the workfile's entity in Houdini context options (`a5ffd1fa`)
+- feat(anim): th::animate ghost hides the characters being animated (`50b51d0a`)
+
+### Fixes
+- fix(anim): th::animate's ghost re-cooks when a rig is imported or added (`c0d9a58f`)
+- fix(asset-browser): Publish opens over the browser and no longer freezes it (`8ebf95c3`)
+- fix(asset-browser): a workfile created from a template imports its shot (`e5730ecd`)
+- fix(import_shot): Import runs after its callback, so it stops crashing Houdini (`de10c251`)
+- fix(asset-browser): a Multi's workfile takes the timeline again on create and open (`e7f5217b`)
+- fix(anim): ghost_stage passes its node in instead of animate_ghost calling hou.pwd() (`4c5d1fab`)
+- fix(templates): animation template reads the rig URIs from asset metadata (`9d4cddd5`)
+- fix(anim): name the ghost module animate_ghost, not lops.animate (`2ea6634b`)
+
+### Documentation
+- docs(tests): catalogue the properties added since v1.78.0 (`65850592`)
+- docs(nodes): material_assigner patterns can follow the asset via @entity_path (`6e61b7d5`)
+- docs(workfiles): the context options a workfile carries (`d7f46540`)
+- docs(asset-browser): where the Publish window opens, and the browser stays live (`d5624151`)
+- docs(troubleshooting): Publish spins forever, reopened browser empty (`dd75648d`)
+- docs: New from Template runs the imports; when import_shot's Import runs (`a1be4a0f`)
+- docs(troubleshooting): import_shot empty or crashing on Import (`b9637a43`)
+- docs: a packaged template change reaches projects only through a refresh step (`69914133`)
+- docs: migration v14 and the animation template it fixes (`5e63deac`)
+- docs(troubleshooting): empty Multi workfiles from the 1.75-1.78 timeline error (`31eee55d`)
+- docs(troubleshooting): fix a project's animation template that raises KeyError 'uri' (`0b4103a4`)
+- docs(nodes): th::animate's ghost leaves out the animated characters (`e8814e51`)
+
+### Tests
+- test: properties for the changes since v1.78.0 that had none (`a1f5a8f0`)
+
+## v1.78.0 — 2026-10-22
+
+### Features
+- feat(archive): keep only the latest finished export, as the workfiles load it (`1ddb259a`)
+- feat(prune): delete farm job folders once Deadline is done with them (`42f1ef3b`)
+- feat(archive): split an archive into parts from the window (`8f1c2440`)
+- feat(archive): rebuild a restored project's left-out caches in hython (`def86049`)
+- feat(archive): warn about files the archived scenes name by absolute path (`9ffae8e0`)
+- feat(archive): leave installed environments out of archives (`38d443ca`)
+- feat(archive): Archive Project and Restore Archive buttons in TumbleTrove Desktop (`f4db2348`)
+- feat(archive): plan, create, verify and restore project archives (`f7d944b5`)
+- feat(pipe): caches and exports record what produced them (`5257783e`)
+
+### Fixes
+- fix(network_thumbnail): show a 256 px copy, so drops stop freezing Houdini (`bd2e5a2b`)
+- fix(deadline): find deadlinecommand on macOS and Linux (`daa7304e`)
+- fix(cache): Latest loads the newest finished cache version (`976f6ee0`)
+- fix(pipe): a version's context.json lands last, so it means finished (`a9fe5630`)
+- fix(provenance): know TumblePipe's version without TH_PIPELINE_PATH (`d793deef`)
+- fix(archive): find real file references, not base64 and software paths (`0ee4b387`)
+- fix(tests): the harness removes its run folder on Windows, and sweeps old ones (`c2a33049`)
+- fix(archive): a part holding only empty files still rolls over (`eb8698d9`)
+- fix(archive): restore past Windows' 260-character path limit (`52ce1f5a`)
+- fix(graph): shots reference the assets their exports compose (`e1f957cb`)
+- fix(config): a Multi missing members or departments reads them as empty (`d292aff7`)
+
+### Documentation
+- docs(asset-browser): the network editor shows a small thumbnail copy (`e504a04f`)
+- docs(nodes): th::cache Latest skips an unfinished version (`206f88e3`)
+- docs(archiving): how the path check places a reference (`271bd694`)
+- docs(tests): spell the Windows long-path prefix correctly (`5cdb05f1`)
+- docs: list the archive package, prune and the archive window harness (`7d11d842`)
+- docs(archiving): the window's part-size field (`54eb752f`)
+- docs(designs): record what the archive build delivered and deferred (`51f2d60a`)
+- docs: archiving and restoring projects (`207a6586`)
+- docs(designs): plan the project archive and restore tool (`927bbf27`)
+- docs: a Multi without a departments list fails every shot's catalog read (`31284564`)
+- docs: regenerate CHANGELOG.md for v1.77.0 (`ee43d3d4`)
+
+### Tests
+- test(network_thumbnail): load the real module past test_drop_router's stub (`88962c54`)
+- test(archive): the project builder draws from its own generator (`acff57b8`)
+- test(prune): drive the command line against a fake Deadline (`9ce7b51f`)
+- test: cover the archive's overrides, parts, manifest, rebuild run and long paths (`c595f87a`)
+
 ## v1.77.0 — 2026-10-20
 
 ### Features

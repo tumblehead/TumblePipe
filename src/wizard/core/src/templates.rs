@@ -26,7 +26,7 @@
 /// `tests/fixtures/templates/`, and the tests fail when the packaged
 /// templates change without a row here, because a project left on that
 /// version would otherwise read as customised to the next refresh.
-pub const STOCK: [(&str, u64); 76] = [
+pub const STOCK: [(&str, u64); 78] = [
     ("assets/blendshape", 0x3e996f0cd9278155), // 886fc6b725
     ("assets/blendshape", 0x479bbf9dd255f96a), // 072f370dc7
     ("assets/blendshape", 0x6b8a6905dffbc0c1), // f631e117d8
@@ -34,6 +34,7 @@ pub const STOCK: [(&str, u64); 76] = [
     ("assets/blendshape", 0x9d62f20e3517d68b), // 536ee8ae88
     ("assets/blendshape", 0xb60e6ede03b40ab8), // b9f3d2b74a
     ("assets/blendshape", 0xe76b5826a13378a4), // 9be7a5aafe
+    ("assets/blendshape", 0xcd06531206b5db8d), // ad76a88205
     ("assets/lookdev", 0x1b3f29bea006e0a5), // a52ecf9e17
     ("assets/lookdev", 0x5760ea8fa74b4ae6), // 0445abd52a
     ("assets/lookdev", 0x7d544393eea3ca05), // 89fb4b2835
@@ -94,6 +95,7 @@ pub const STOCK: [(&str, u64); 76] = [
     ("shots/layout", 0x1bb8e988a26aa63c), // cb72b1129e
     ("shots/layout", 0x1da682d6e161acdc), // 747683f395
     ("shots/layout", 0xf792f94ff804f1b9), // e5a3cf17a6
+    ("shots/layout", 0xca18ad510e7f6dfe), // 1ac12ada67
     ("shots/light", 0x4675661a9c5030a7), // 7eea2924dc
     ("shots/light", 0x6bb0f682ced4e021), // 33202b26a6
     ("shots/light", 0xd1f2e0f072ade316), // 7438468120

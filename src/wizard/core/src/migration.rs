@@ -74,6 +74,12 @@ pub enum Step {
     /// blendshape templates opened the sopcreate's LOP internals instead of
     /// `sopnet/create` (1.77.0's fix, which no project past v12 received).
     RefreshStockTemplatesAgain,
+    /// v15 — v12 again, for two template fixes: the layout render camera kept
+    /// the Camera LOP's 16:9 aspect whatever the shot's `render.resolution`
+    /// (its aspect now follows it), and the blendshape template authored
+    /// `<asset>/blshp` as an Xform, which the asset structure check refuses
+    /// (it now configures it as a Scope).
+    LayoutCameraFollowsResolution,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -117,7 +123,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 14] = [
+pub const STEPS: [Step; 15] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -132,6 +138,7 @@ pub const STEPS: [Step; 14] = [
     Step::RefreshStockTemplates,
     Step::ChannelKeys,
     Step::RefreshStockTemplatesAgain,
+    Step::LayoutCameraFollowsResolution,
 ];
 
 impl Step {
@@ -152,6 +159,7 @@ impl Step {
             Step::RefreshStockTemplates => 12,
             Step::ChannelKeys => 13,
             Step::RefreshStockTemplatesAgain => 14,
+            Step::LayoutCameraFollowsResolution => 15,
         }
     }
 
@@ -193,6 +201,9 @@ impl Step {
             }
             Step::RefreshStockTemplatesAgain => {
                 "refresh the stock _config/templates again, for the template fixes since v12"
+            }
+            Step::LayoutCameraFollowsResolution => {
+                "refresh the stock _config/templates for the layout camera aspect and the blendshape Scope"
             }
         }
     }
@@ -373,7 +384,9 @@ impl Step {
             // leaves "New workfile" broken, so its owner decides. A project
             // still to run v9 is judged as v9 will leave it, since v9
             // replaces every packaged template whatever it holds.
-            Step::RefreshStockTemplates | Step::RefreshStockTemplatesAgain => {
+            Step::RefreshStockTemplates
+            | Step::RefreshStockTemplatesAgain
+            | Step::LayoutCameraFollowsResolution => {
                 let v9_pending =
                     current_version(project_path) < Step::RefreshTemplatesAgain.version();
                 match v12_plan(&cfg, template_dir, v9_pending) {
@@ -865,6 +878,8 @@ impl Step {
             // plan and the same rules: stock is replaced, customised is left
             // alone unless it calls something removed.
             Step::RefreshStockTemplatesAgain => refresh_stock_templates(&cfg, template_dir),
+            // Same plan again, for the layout and blendshape template fixes.
+            Step::LayoutCameraFollowsResolution => refresh_stock_templates(&cfg, template_dir),
         }
     }
 }
@@ -2732,6 +2747,7 @@ mod tests {
             (Step::RefreshStockTemplates, Readiness::Blocked(why)),
             (Step::ChannelKeys, Readiness::Ready),
             (Step::RefreshStockTemplatesAgain, Readiness::Blocked(_)),
+            (Step::LayoutCameraFollowsResolution, Readiness::Blocked(_)),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -2835,13 +2851,14 @@ mod tests {
             .is_empty());
     }
 
-    /// A project made from this package is born at v13, with nothing to do.
+    /// A project made from this package is born at the latest version, with
+    /// nothing to do.
     #[test]
-    fn a_fresh_scaffold_is_already_at_v14() {
+    fn a_fresh_scaffold_is_already_at_v15() {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 14);
+        assert_eq!(latest_version(), 15);
         assert_eq!(current_version(&target), latest_version());
         assert!(pending(&target).is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -2987,8 +3004,8 @@ mod tests {
         let dir = project_at_v12_with_variants();
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 2);
-        assert_eq!(report.to, 14);
+        assert_eq!(report.applied.len(), 3);
+        assert_eq!(report.to, 15);
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -3045,7 +3062,7 @@ mod tests {
         let template = scaffold();
         let report = migrate(dir.path(), template.path());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 14);
+        assert_eq!(current_version(dir.path()), 15);
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -3063,7 +3080,7 @@ mod tests {
         write_version(&dir.path().join("_config"), 12).unwrap();
         let second = migrate(dir.path(), &packaged_scaffold());
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 14);
+        assert_eq!(second.to, 15);
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -3081,7 +3098,7 @@ mod tests {
 
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.to, 14);
+        assert_eq!(report.to, 15);
         assert_eq!(db_text(dir.path(), "entity.json"), entity);
         let mut files = Vec::new();
         find_files(&db, None, &mut files);
@@ -3142,7 +3159,7 @@ mod tests {
         }
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 14);
+        assert_eq!(current_version(dir.path()), 15);
         let animation =
             std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
         assert_eq!(
@@ -3155,6 +3172,48 @@ mod tests {
             std::fs::read_to_string(project_template(dir.path(), "shots/layout")).unwrap(),
             customised
         );
+    }
+
+    /// v15 brings a project on the previous stock layout template (e5a3cf17a6,
+    /// whose render camera kept a 16:9 aspect) and blendshape template
+    /// (886fc6b725, which left `blshp` an Xform) up to the packaged ones.
+    #[test]
+    fn v15_refreshes_the_stock_layout_and_blendshape_templates() {
+        let shipped_at_v14 = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("e5a3cf17a6.py"))
+            .unwrap()
+            .2;
+        assert!(!shipped_at_v14.contains("bind_aspect"));
+        let dir = project(Some(14));
+        let path = project_template(dir.path(), "shots/layout");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &shipped_at_v14).unwrap();
+        let report = migrate(dir.path(), &packaged_scaffold());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(current_version(dir.path()), 15);
+        let layout = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            layout.replace("
+", "
+"),
+            packaged_text("shots/layout").replace("
+", "
+")
+        );
+        assert!(layout.contains("bind_aspect(camera_node, entity_uri)"));
+
+        let blendshape_at_v14 = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("886fc6b725.py"))
+            .unwrap()
+            .2;
+        let dir = project(Some(14));
+        let path = project_template(dir.path(), "assets/blendshape");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &blendshape_at_v14).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).is_ok());
+        assert!(std::fs::read_to_string(&path).unwrap().contains("UsdGeomScope"));
     }
 
     /// A CRLF database stays CRLF.

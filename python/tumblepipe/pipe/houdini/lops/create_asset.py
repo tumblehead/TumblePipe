@@ -94,6 +94,22 @@ class VariantAsset(CreateAsset):
         return self._variant_outputs()[variant_index - 1]
 
 
+def variant_output_path(fetch_node) -> str:
+    """The output node path the variant loop's FETCH_VARIANT merges.
+
+    Called from FETCH_VARIANT's objpath1 expression inside
+    th::create_asset_model's for-each, which iterates the 'variants' rows
+    in order and sets ITERATION to the 0-based row. The output is found by
+    its outputidx, not by its OUT_<variant> name, so an artist renaming the
+    output node inside the editable network no longer breaks the cook.
+    """
+    hda_node = fetch_node.parent().parent()
+    iteration = hou.contextOption('ITERATION')
+    index = int(iteration) if iteration is not None else 0
+    output = CreateAssetModel(hda_node)._variant_outputs().get(index)
+    return output.path() if output is not None else ''
+
+
 class CreateAssetModel(VariantAsset):
     VARIANT_NETWORK = 'variant_sopnet/create_variants'
 

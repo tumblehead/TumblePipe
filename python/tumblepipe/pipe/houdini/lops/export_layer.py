@@ -168,6 +168,7 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
     POOL_PARM = 'export_pool'
     PRIORITY_PARM = 'export_priority'
     BATCH_SIZE_PARM = 'batch_size'
+    EXPORTS_ENTITY_RANGE = True
 
     def list_department_names(self) -> list[str]:
         entity_type = self.get_entity_type()

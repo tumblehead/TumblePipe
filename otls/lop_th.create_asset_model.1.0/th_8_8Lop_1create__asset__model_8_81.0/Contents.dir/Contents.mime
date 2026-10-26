@@ -2113,7 +2113,8 @@ Content-Type: text/plain
       flags = 0
       segment { options = {	 autoslope  ai ao }
 
-	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "\"../../variant_sopnet/create_variants/OUT_\" + @VARIANTNAME" }
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops.create_asset import variant_output_path
+return variant_output_path(hou.pwd())" language = python }
     }
   }
 

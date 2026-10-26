@@ -13,7 +13,8 @@ from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 # shifted along x by COLUMN_STRIDE.
 IMPORT_POS = hou.Vector2(0.0, 1.55)
 CREATE_POS = hou.Vector2(0.0, 0.42)
-EXPORT_POS = hou.Vector2(0.0, -0.71)
+SCOPE_POS = hou.Vector2(0.0, -0.71)
+EXPORT_POS = hou.Vector2(0.0, -1.84)
 COLUMN_STRIDE = 4.0
 
 STAGE_NOTE = ('Create Blendshapes in here -->',
@@ -172,7 +173,8 @@ def _build_sop_dive(sop_dive_node):
 
 def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
            offset: hou.Vector2 = hou.Vector2(0.0, 0.0), pin: bool = False):
-    """Build one entity's IMPORT_MODEL -> CREATE_BLENDSHAPES -> EXPORT column."""
+    """Build one entity's IMPORT_MODEL -> BLENDSHAPES -> BLSHP_SCOPE -> EXPORT
+    column."""
     prim_path = uri_to_prim_path(entity_uri)
 
     # Import the model department (entity resolves from context)
@@ -197,12 +199,23 @@ def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
 
     _build_sop_dive(sop_node.node('sopnet/create'))
 
+    # The sopcreate authors the prims above its geometry as Xforms, but the
+    # asset structure check wants <asset>/blshp to be a Scope (the model
+    # node does the same for geo), so the export failed until an artist
+    # added this by hand.
+    scope_node = scene_node.createNode('configureprimitive', f'BLSHP_SCOPE{suffix}')
+    scope_node.parm('primpattern').set(f'{prim_path}/blshp')
+    scope_node.parm('settype').set(1)
+    scope_node.parm('type').set('UsdGeomScope')
+    scope_node.setInput(0, sop_node)
+    scope_node.setPosition(SCOPE_POS + offset)
+
     text, position, size = STAGE_NOTE
     _sticky_note(scene_node, text, position + offset, size)
 
     # Create the export node (entity + department resolve from context)
     export_node = export_layer.create(scene_node, f'EXPORT_BLENDSHAPES{suffix}')
-    export_node.setInput(0, sop_node)
+    export_node.setInput(0, scope_node)
     if pin:
         export_node.set_entity_uri(entity_uri)
         export_node.set_department_name(department_name)
