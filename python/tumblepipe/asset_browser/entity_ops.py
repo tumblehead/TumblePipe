@@ -29,6 +29,11 @@ from . import recipes as recipes
 from . import uris as uris
 from .scene import open_submit_jobs_dialog
 
+#: The Entity Editor's entry in the creation lists. It opens the editor
+#: rather than the browser's generic form; see
+#: :meth:`EntityOps.creation_fields`.
+ENTITY_EDITOR = "entity_editor"
+
 if TYPE_CHECKING:
     from .projects import PipelineProjectRegistry
     from .clients import ClientPool
@@ -121,6 +126,8 @@ class EntityOps:
         self._recipes = recipes
         self._refresh = refresh
         self._invalidate_cache = invalidate_cache
+        # One Entity Editor per project, raised when opened again.
+        self._entity_editors: dict = {}
 
     def collection_from_assets_option(self):
         """The shelf's "Create Root from Items…": ``new_scene``, whose
@@ -142,6 +149,7 @@ class EntityOps:
         asset = CreationOption("new_asset", "New Asset...", "plus")
         category = CreationOption("new_category", "New Category...", "folder")
         shot = CreationOption("new_shot", "New Shot...", "plus")
+        editor = CreationOption(ENTITY_EDITOR, "Entity Editor...", "list")
         sequence = CreationOption("new_sequence", "New Sequence...", "folder")
         multi = CreationOption("new_group", "New Multi...", "users")
         root = CreationOption("new_scene", "New Root...", "layers")
@@ -156,10 +164,10 @@ class EntityOps:
         if scope == "nodes":
             return []       # nodes ship with the package; nothing to create
         if scope == "assets":
-            return [asset, category, multi, root]
+            return [asset, editor, category, multi, root]
         if scope == "shots":
-            return [shot, sequence, multi, root]
-        return [asset, shot, recipe, multi, root]
+            return [shot, editor, sequence, multi, root]
+        return [asset, shot, editor, recipe, multi, root]
 
     def node_drop_creation_option(self, tags=frozenset()):
         """Nodes dragged from a network editor onto the grid save a recipe.
@@ -192,6 +200,21 @@ class EntityOps:
 
         if option_id == recipes.CREATE_OPTION:
             return self._recipes.creation_fields(default_proj, projects)
+
+        if option_id == ENTITY_EDITOR:
+            # The browser asks for an option's fields only once the artist
+            # has picked it (the "+" card, a menu), on the GUI thread, and
+            # shows no form and creates nothing when the list is empty. So
+            # this is the moment to open the editor instead of the form,
+            # on the Assets tab from an assets scope and Shots otherwise.
+            kind = "assets" if creation_scope(tags) == "assets" else "shots"
+            prefix = "category:" if kind == "assets" else "sequence:"
+            group = next(
+                (t.partition(":")[2] for t in tags if t.startswith(prefix)),
+                "",
+            )
+            self.open_entity_editor(default_proj, kind, group)
+            return []
 
         if option_id == "new_asset":
             fields = [
@@ -546,6 +569,106 @@ class EntityOps:
             return f"scene:{proj_name}:{name}"
 
         return None
+
+    def open_entity_editor(
+        self, project_name: str, kind: str = "shots", group: str = "",
+        name: str = "",
+    ) -> None:
+        """Open (or raise) *project_name*'s Entity Editor on its *kind* tab
+        (``"assets"`` or ``"shots"``), showing *group* with *name*
+        selected. The project is asked for when several are registered and
+        the scope names none.
+
+        The editor is not modal: a modal ``exec()`` here would run inside
+        the browser's own callback and stall every other one until it
+        closed (the publish window froze the browser that way).
+        """
+        import hou
+        from PySide6.QtWidgets import QInputDialog
+
+        from tumblepipe.pipe import entity_files
+
+        from .entity_editor import EntityEditorSource, EntityEditorWindow
+
+        if not project_name:
+            names = sorted(p.name for p in self._registry.all())
+            project_name, ok = QInputDialog.getItem(
+                hou.qt.mainWindow(), "Entity Editor", "Project:", names, 0, False,
+            )
+            if not ok:
+                return
+        proj = self._registry.get(project_name)
+        if proj is None:
+            hou.ui.displayMessage(f"Unknown project: {project_name}")
+            return
+        window = self._entity_editors.get(project_name)
+        if window is not None:
+            try:
+                window.focus(kind, group, name)
+                window.show()
+                window.raise_()
+                window.activateWindow()
+                return
+            except RuntimeError:
+                pass    # closed: its Qt object is gone
+        self._activator.activate(proj)
+        client = self._clients.get(project_name)
+
+        def on_project(func):
+            # Retire, rename, the files check and Farm Submit work on the
+            # ACTIVE project; another project may have been activated since.
+            def call(*args):
+                self._activator.activate(proj)
+                return func(*args)
+            return call
+
+        def rename_blocker(uri) -> str:
+            if not entity_files.has_entity_files(uri):
+                return ""
+            return (
+                "Has workfiles or exports on disk, so it can't be renamed: "
+                "they would stay under the old name. Use Duplicate… on its "
+                "card, then retire the old one."
+            )
+
+        def submit(context: str, entity_uris: list) -> None:
+            scene_ctx = self._scene.get_loaded_scene_context()
+            open_submit_jobs_dialog(
+                entity_uris, [uri.segments[-1] for uri in entity_uris], context,
+                department=scene_ctx.department_name if scene_ctx is not None else None,
+            )
+
+        def on_applied() -> None:
+            self._index.invalidate()
+            self._refresh.sidebar()
+            self._refresh.grid()
+
+        window = EntityEditorWindow(
+            EntityEditorSource(
+                project=project_name, config=client.config,
+                retire=on_project(entity_files.delete_entity),
+                rename=on_project(entity_files.rename_entity),
+                rename_blocker=on_project(rename_blocker),
+                on_applied=on_applied,
+                submit=on_project(submit),
+            ),
+            parent=hou.qt.mainWindow(),
+            kind=kind,
+        )
+        self._entity_editors[project_name] = window
+        window.focus(kind, group, name)
+        window.show()
+
+    def open_entity_editor_for(self, asset_id: str) -> None:
+        """An asset or shot card's **Open in Entity Editor…**: its
+        project's editor, on its tab and group, with it selected."""
+        parts = self._resolver.split(asset_id)
+        uri = self._resolver.uri_for(asset_id)
+        if parts is None or uri is None:
+            return
+        project_name, group, name = parts
+        kind = "shots" if str(uri).startswith("entity:/shots/") else "assets"
+        self.open_entity_editor(project_name, kind, group, name)
 
     def _frame_seed(self, props: dict, key: str, asset_id: str) -> int:
         """Seed a frame field from the entity's resolved view.

@@ -27,6 +27,7 @@ the other installed packages' documentation. The same pages are online at
   - [Multis and Roots](asset-browser/multis-and-roots.md) — shared multi-shot workfiles and config-driven scenes
   - [Recipes](asset-browser/recipes.md) — node clusters saved into the project and dropped back into any scene
   - [Pipeline settings and files](asset-browser/settings.md) — every option, and every file TumblePipe writes
+  - [The Entity Editor](asset-browser/entity-editor.md) — every asset and shot as spreadsheets: add, retime, choose a shot's assets, rename, retire
   - [The config database editor](asset-browser/config-editor.md) — editing entities, schemas and departments
 - [Pipeline nodes](nodes/index.md) — the `th::` node families and the concepts they share
   - [Importing and exporting](nodes/import-and-export.md) — import_shot, import_asset, export_layer, cache, …

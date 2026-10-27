@@ -455,9 +455,9 @@ Source: [`otls/lop_th.shot_sequencer.1.0`](../../otls/lop_th.shot_sequencer.1.0/
 ## `th::animate` (LOP)
 
 A dive-in SOP network (`anim_dive`) imported as animated USD over the
-incoming stage: topology animated, `P N visibility bounds Cd Alpha` only, no
-material binding, transforms zeroed, and kinds set by depth
-(assembly / component / scope, as `set_kinds` does). No parms.
+incoming stage: topology animated, `P N visibility bounds Cd Alpha` and
+`transform` only, no material binding, transforms zeroed, and kinds set by
+depth (assembly / component / scope, as `set_kinds` does). No parms.
 `_TumblePipe/pipeline`. The animation shot template places one as
 `animate_shot` with `th::import_rigs` and the APEX scene-animate nodes
 inside its dive target; see [Building assets → `th::import_rigs`](assets.md#thimport_rigs-sop).
@@ -466,6 +466,13 @@ defaults to packed, which drops the rig geometry's `path`/`name` attributes)
 and **Shapes** `Base`. A `th::animate` placed from the Tab menu has an empty
 dive (just `output0`), so build `th::import_rigs` → APEX Scene Animate →
 APEX Scene Invoke (with those settings) → `output0` inside it yourself.
+
+Cameras pass through as cameras. A Camera SOP added to the scene with
+APEX Scene Add Camera (with its `path` set, e.g. `/cameras/render_camera`)
+comes out as a USD camera with its own animated transform, as it would from
+a SOP Create. The zeroed transforms and the kinds-by-depth leave cameras
+alone. Up to 1.80.1 the camera came out at the origin, and at depth 1–3 as
+an Xform or Scope instead of a camera.
 
 Inside the dive, the SOP viewer ghosts the incoming stage **without the
 characters being animated**, so you don't see each one twice (the posed rig

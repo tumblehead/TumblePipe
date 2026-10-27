@@ -177,6 +177,14 @@ class PipelineMenus:
                 lambda aid=asset_id: self._ops.open_database_editor(aid),
             ),
         ]
+        if (
+            ("type:shot" in asset.tags or "type:asset" in asset.tags)
+            and "type:group" not in (asset.tags or ())
+        ):
+            items.append((
+                "Open in Entity Editor…",
+                lambda aid=asset_id: self._ops.open_entity_editor_for(aid),
+            ))
         if "type:asset" in asset.tags and "type:group" not in (asset.tags or ()):
             items.insert(2, (
                 "Duplicate…",

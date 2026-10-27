@@ -124,11 +124,11 @@ Right-click menus on sidebar rows. Each starts with the creation options the
 
 | Row | Creation options | Then |
 |---|---|---|
-| **Assets** header, a category | **New Asset...**, **New Category...**, **New Multi...**, **New Root...** | a category adds **Delete category '*category*'…** |
-| **Shots** header, a sequence | **New Shot...**, **New Sequence...**, **New Multi...**, **New Root...** | a sequence adds **Delete sequence '*sequence*'…** |
+| **Assets** header, a category | **New Asset...**, **Entity Editor...**, **New Category...**, **New Multi...**, **New Root...** | a category adds **Delete category '*category*'…** |
+| **Shots** header, a sequence | **New Shot...**, **Entity Editor...**, **New Sequence...**, **New Multi...**, **New Root...** | a sequence adds **Delete sequence '*sequence*'…** |
 | **Multis** subheader, a Multi | **New Multi...** | a Multi adds the Multi card's menu, plus **Add selected to Multi** and **Remove selected from Multi** |
 | **Roots** header | **New Root...** | |
-| a Root | **New Asset...**, **New Shot...**, **New Recipe...**, **New Multi...**, **New Root...** | the Root card's menu, plus **Add selected to Root** and **Remove selected from Root** |
+| a Root | **New Asset...**, **New Shot...**, **Entity Editor...**, **New Recipe...**, **New Multi...**, **New Root...** | the Root card's menu, plus **Add selected to Root** and **Remove selected from Root** |
 | **Recipes** header, a context row | **New Recipe...** | |
 | **Nodes** header, a submenu row | none | |
 
@@ -311,6 +311,7 @@ catalog contributes
 | **Select thumbnail…** / **Capture thumbnail** | See [Cards](#cards). |
 | **Departments…** | Which departments this entity uses (**Departments — *name***, tick boxes, **Use all (inherit)**, **Apply**); see [Configuration → Per-entity assignment](../configuration.md#per-entity-assignment). On a Multi it opens the coverage editor instead. |
 | **Open in Database Editor…** | Opens the **Database Editor** window on this entity. |
+| **Open in Entity Editor…** | Assets and shots. Opens the [Entity Editor](entity-editor.md) on the entity's tab and category or sequence, with it selected. |
 | **Clear Root** | Shots only, and only when a Root is set directly on the shot (not inherited from the sequence). Clears it. |
 | **Remove from Multi: *name*** / **Remove from Root: *name*** | One entry per container the entity belongs to. |
 
@@ -324,13 +325,14 @@ space in either view, and the sidebar menus above all offer the same list for
 the same place
 ([`get_creation_options`](../../python/tumblepipe/asset_browser/catalog.py))
 and lead to the same small forms (`get_creation_fields`). Under Assets (or a
-category) the list is **New Asset...**, **New Category...**, **New
-Multi...** and **New Root...**; under Shots (or a sequence) it is **New
-Shot...**, **New Sequence...**, **New Multi...** and **New Root...**. A
+category) the list is **New Asset...**, **Entity Editor...**, **New
+Category...**, **New Multi...** and **New Root...**; under Shots (or a sequence) it is **New
+Shot...**, **Entity Editor...**, **New Sequence...**, **New Multi...** and
+**New Root...**. A
 Multis subheader offers **New Multi...** alone, the Roots header **New
 Root...** alone, the Recipes section **New Recipe...** alone, and anywhere
-unscoped offers **New Asset...**, **New Shot...**, **New Recipe...**, **New
-Multi...** and **New Root...**. Dragging selected nodes from a network editor
+unscoped offers **New Asset...**, **New Shot...**, **Entity Editor...**, **New
+Recipe...**, **New Multi...** and **New Root...**. Dragging selected nodes from a network editor
 onto the grid also opens **New Recipe**. A
 **Project** dropdown is added to every form when more than one project is
 registered.
@@ -340,6 +342,7 @@ registered.
 | **New Asset** | **Name**; **Category** (dropdown of existing categories) | Started from a category row, the category is fixed. Refuses *Asset 'X' already exists in 'Y'.* |
 | **New Shot** | **Name**; **Sequence** (dropdown); **Frame Start** `1001`; **Frame End** `1100` | Started from a sequence row, the sequence is fixed. |
 | **New category** | **Category** (free text) | Creates an empty category. Refuses a name already used by a sequence. |
+| **Entity Editor** | a window, not a form | Every asset and shot of the project as spreadsheets: add, retime, choose a shot's assets, rename, retire. See [The Entity Editor](entity-editor.md). |
 | **New sequence** | **Sequence** (free text) | Creates an empty sequence. Refuses a name already used by a category. |
 | **New Multi** | **Name**; **Context** (`shots` or `assets`, default `shots`) | See [Multis and Roots](multis-and-roots.md#creating-a-multi). |
 | **New Root** | **Name** | See [Multis and Roots](multis-and-roots.md#creating-a-root). |
@@ -355,6 +358,10 @@ browser works that out from the name; with both kinds sharing one, every
 shot in the sequence opened as an asset that does not exist. A new shot stores its frame range on the shot entity; a new
 asset stores only its name. Neither creates a workfile — that is the
 department row's **New from Template**.
+
+To add many assets or shots at once, or change many frame ranges, rolls,
+fps, Roots or the assets shots import, use the
+[Entity Editor](entity-editor.md).
 
 ## Editing and deleting entities
 

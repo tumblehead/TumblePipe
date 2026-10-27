@@ -8,6 +8,12 @@ selected entity's properties on the right. Source:
 project config these files belong to is described in
 [Configuration](../configuration.md#the-project-config).
 
+For assets and shots, the [Entity Editor](entity-editor.md) is the simpler
+way: every asset and shot as a spreadsheet row, with frame ranges, rolls,
+fps, Animatable, Roots and the assets each shot imports set in place, rows
+added from a pattern or a pasted list, renamed and retired, and nothing
+written until Apply. Values are coloured the same way as here.
+
 ## Opening it
 
 - Right-click a shot or asset card → **Open in Database Editor…**, or use

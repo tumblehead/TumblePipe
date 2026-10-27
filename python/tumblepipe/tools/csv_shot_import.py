@@ -14,7 +14,7 @@ import csv
 from pathlib import Path
 
 from tumblepipe.api import default_client
-from tumblepipe.util.uri import Uri
+from tumblepipe.config import shot_batch
 
 # CSV structure constants
 HEADER_ROW = 29  # 0-indexed, row containing "Cut #, Thumbnail, Sequence, ..."
@@ -67,95 +67,53 @@ def is_valid_shot_row(row: dict) -> bool:
     return True
 
 
-def shot_exists(api, uri: Uri) -> bool:
-    """Check if a shot entity already exists."""
-    return api.config.get_properties(uri) is not None
-
-
-def ensure_sequence(api, sequence: str, dry_run: bool = False) -> bool:
-    """Ensure sequence exists with proper schema. Returns True if created."""
-    seq_uri = Uri.parse(f'entity:/shots/{sequence}')
-
-    if api.config.get_properties(seq_uri) is not None:
-        return False
-
-    if dry_run:
-        print(f"  [ADD SEQ] {seq_uri}")
-    else:
-        api.config.add_entity(seq_uri, {})
-        print(f"  [ADD SEQ] {seq_uri}")
-    return True
-
-
 def sync_from_csv(csv_path: Path, dry_run: bool = False) -> dict:
-    """Import shots from CSV."""
+    """Import shots from CSV.
+
+    The rows go through ``config.shot_batch``, whose name rules the Entity
+    Editor shares: a shot that exists or that an earlier row lists is
+    skipped, a row that cannot be created (a name that is not letters and
+    digits, an end before the start, a case-only clash) is counted as an
+    error, and only the new shots and the sequences they need are written.
+    A dry run prints the same plan and writes nothing.
+    """
     print("Connecting to API...")
     api = default_client()
     print("Connected.")
-
-    stats = {
-        'shots_added': 0,
-        'shots_skipped': 0,
-        'shots_errors': 0,
-        'rows_processed': 0,
-        'rows_skipped': 0,
-        'sequences_added': 0,
-    }
 
     print(f"Reading CSV: {csv_path}")
     rows = parse_csv(csv_path)
     print(f"Found {len(rows)} rows")
 
-    created_sequences = set()
-    # Shots this run has already handled. A dry run adds nothing, so without
-    # this a shot listed twice in the sheet previewed as two additions.
-    handled_shots = set()
+    shot_rows = [
+        shot_batch.ShotRow(
+            row[COL_SEQUENCE].strip(), row[COL_SHOT_NAME].strip(),
+            int(row[COL_START]), int(row[COL_END]),
+        )
+        for row in rows if is_valid_shot_row(row)
+    ]
+    plan = shot_batch.plan(shot_rows, shot_batch.snapshot(api.config))
 
-    for row in rows:
-        if not is_valid_shot_row(row):
-            stats['rows_skipped'] += 1
-            continue
+    for sequence in plan.sequences_to_create:
+        print(f"  [ADD SEQ] entity:/shots/{sequence}")
+    for planned in plan.shots:
+        uri = shot_batch.shot_uri(planned.row.sequence, planned.row.shot)
+        if planned.status is shot_batch.Status.NEW:
+            print(f"  [ADD] {uri} (frames {planned.row.frame_start}-{planned.row.frame_end})")
+        elif planned.status is shot_batch.Status.INVALID:
+            print(f"  [ERROR] {uri}: {planned.reason}")
 
-        stats['rows_processed'] += 1
+    if not dry_run:
+        shot_batch.create(api.config, plan)
 
-        sequence = row[COL_SEQUENCE].strip()
-        shot_name = row[COL_SHOT_NAME].strip()
-        frame_start = int(row[COL_START])
-        frame_end = int(row[COL_END])
-
-        shot_uri = Uri.parse(f'entity:/shots/{sequence}/{shot_name}')
-
-        # Ensure sequence exists with proper schema
-        if sequence not in created_sequences:
-            if ensure_sequence(api, sequence, dry_run):
-                stats['sequences_added'] += 1
-            created_sequences.add(sequence)
-
-        if str(shot_uri) in handled_shots or shot_exists(api, shot_uri):
-            stats['shots_skipped'] += 1
-            continue
-        handled_shots.add(str(shot_uri))
-
-        shot_properties = {
-            'frame_start': frame_start,
-            'frame_end': frame_end,
-            'roll_start': 0,
-            'roll_end': 0,
-        }
-
-        if dry_run:
-            print(f"  [ADD] {shot_uri} (frames {frame_start}-{frame_end})")
-            stats['shots_added'] += 1
-        else:
-            try:
-                api.config.add_entity(shot_uri, shot_properties)
-                print(f"  [ADD] {shot_uri}")
-                stats['shots_added'] += 1
-            except Exception as e:
-                print(f"  [ERROR] {shot_uri}: {e}")
-                stats['shots_errors'] += 1
-
-    return stats
+    return {
+        'shots_added': len(plan.new),
+        'shots_skipped': len(plan.skipped),
+        'shots_errors': len(plan.invalid),
+        'rows_processed': len(shot_rows),
+        'rows_skipped': len(rows) - len(shot_rows),
+        'sequences_added': len(plan.sequences_to_create),
+    }
 
 
 def main():
