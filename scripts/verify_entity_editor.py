@@ -68,13 +68,11 @@ for shot, own in (('SH010', {'frame_end': 1050}), ('SH020', {}), ('SH030', {})):
     config.add_entity(SHOTS / 'sq010' / shot, own)
 
 applied = []
-submitted = []
 source = ee.EntityEditorSource(
     project='verify', config=config,
     retire=entity_files.delete_entity, rename=entity_files.rename_entity,
     rename_blocker=lambda uri: '',
     on_applied=lambda: applied.append(True),
-    submit=lambda context, uris: submitted.append((context, uris)),
 )
 window = ee.EntityEditorWindow(source, kind='shots')
 window.show()
@@ -99,6 +97,8 @@ check('inherited value is grey, not bold',
 _row, assets_cell = cell(shots, 'sq010', 'SH020', es.ASSETS)
 check('Assets column shows the Root list', assets_cell.data() == 'PROP/tree ×3', assets_cell.data())
 check('Assets of an inherited Root are grey', assets_cell.data(Qt.ForegroundRole) == ee._INHERITED)
+check('Status sits beside the name', shots.columns[:3] == (es.GROUP, es.NAME, ee.STATUS))
+check('the legend is one line', not shots.legend.wordWrap() and '\n' not in shots.legend.text())
 
 # ── Shots: typing into a selection ─────────────────────────────────────────
 
@@ -110,6 +110,17 @@ check('typing fills the selected cells',
 _row, typed = cell(shots, 'sq010', 'SH020', es.ROLL_END)
 check('a pending value is bold and tinted',
       typed.data(Qt.FontRole).bold() and typed.data(Qt.BackgroundRole) == ee._PENDING)
+# Selection is an outline: the pending tint still shows inside a selected
+# cell (Houdini's amber highlight used to cover it).
+app.processEvents()
+shot = shots.table.viewport().grab().toImage()
+centre = shots.table.visualRect(typed).center()
+inside = shot.pixelColor(centre.x() + 8, centre.y())
+plain = shots.table.viewport().palette().base().color()
+check('a selected pending cell keeps its tint',
+      inside.red() > inside.blue() + 15 and inside != plain, inside.name())
+check('messages go to the footer, not a line under the table',
+      not hasattr(shots, '_note'))
 
 # ── Root assets: the shared Root ───────────────────────────────────────────
 
@@ -170,11 +181,29 @@ if len(sys.argv) > 1:
     app.processEvents()
     window.grab().save(sys.argv[1].replace('.png', '_shots.png'))
 
-# ── Submit asks for Apply first ────────────────────────────────────────────
+# ── The Add buttons open their dialogs ─────────────────────────────────────
 
-QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.Ok)
-window._on_submit()
-check('Submit waits for Apply', submitted == [])
+opened = []
+_exec = ee.QDialog.exec
+ee.QDialog.exec = lambda self: (opened.append(type(self).__name__), ee.QDialog.Rejected)[1]
+for pane in (shots, assets):
+    next(b for b in pane.findChildren(ee.QPushButton) if b.text().startswith('Add ')).click()
+ee.QDialog.exec = _exec
+check('Add Shots… and Add Assets… open their dialogs',
+      opened == ['AddShotsDialog', 'AddAssetsDialog'], opened)
+
+# A sequence named before the letters-and-digits rule, with no Root.
+config.add_entity(SHOTS / 'sq_0090', {})
+config.add_entity(SHOTS / 'sq_0090' / 'Shot_0030', {})
+window._reload()
+_row, rootless = cell(shots, 'sq_0090', 'Shot_0030', es.ASSETS)
+check('a shot with no Root has an empty Assets cell', rootless.data() == '', rootless.data())
+note = ee.AddShotsDialog(shots, 'sq_0090')._sequence_note.text()
+check('Add Shots says when a sequence\'s names have no pattern', 'without a number pattern' in note, note)
+sized = ee.AddAssetsDialog(assets, 'PROP')
+check('Add Assets is as tall as its content', sized.height() == sized.sizeHint().height(),
+      (sized.height(), sized.sizeHint().height()))
+sized.reject()
 
 # ── Apply ──────────────────────────────────────────────────────────────────
 
@@ -182,6 +211,16 @@ QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
 ok = window.apply()
 check('Apply succeeds', ok and applied == [True])
 check('nothing left pending', not window.dirty)
+app.processEvents()
+footer = window._summary.text()
+check('the footer says what Apply did', footer.startswith('Applied: ') and 'new asset' in footer, footer)
+tops = []
+for kind in ('shots', 'assets'):
+    window.show_kind(kind)
+    app.processEvents()
+    tops.append(window.panes[kind].add_button.mapTo(window, window.panes[kind].add_button.rect().topLeft()).y())
+check('the row actions stay put across tabs after Apply', tops[0] == tops[1], tops)
+window.show_kind('shots')
 forest = config.get_own_properties(Uri.parse('scenes:/forest'))['assets']
 check('shared Root written', [(e['asset'], e['instances']) for e in forest]
       == [('entity:/assets/PROP/tree', 3), ('entity:/assets/VEH/car', 2)], forest)
@@ -193,13 +232,6 @@ check('animatable written', config.get_own_properties(ASSETS / 'PROP' / 'tree').
 spark = config.get_own_properties(ASSETS / 'FX' / 'spark')
 check('new asset in a new category, with its name', spark == {'name': 'spark'}, spark)
 check('retired new row was never created', config.get_own_properties(ASSETS / 'sq010') is None)
-
-shots.select_cells([(shots.sheet.rows[0].id, 1)])
-window.show_kind('shots')
-window._on_submit()
-check('Submit opens Farm Submit on the selection',
-      submitted and submitted[0][0] == 'shots' and str(submitted[0][1][0]) == 'entity:/shots/sq010/SH010',
-      submitted)
 
 window.close()
 app.processEvents()

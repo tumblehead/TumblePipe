@@ -7,7 +7,8 @@ the two cannot disagree about a name or a pasted line:
 
 - :func:`expand_names` and :func:`guess_pattern` build shot names from a
   pattern such as ``SH###`` (``SH010``, ``SH020``, …), continuing a
-  sequence's own numbering (:func:`next_number`).
+  sequence's own numbering (:func:`next_number`); :func:`suggest` is the
+  pattern and first number Add Shots offers.
 - :func:`parse_table` reads rows pasted from a spreadsheet.
 - :func:`name_problem` and :func:`same_but_case` are the name rules.
 - :func:`plan` says, for every row, whether it creates a shot, is skipped
@@ -20,9 +21,11 @@ the two cannot disagree about a name or a pasted line:
   other property is left to inherit, the same as **New Shot...**, so a
   later change to the sequence or project still reaches these shots.
 
-Names follow :func:`tumblepipe.naming.is_valid_entity_name` (ASCII letters
-and digits), and two names that differ only by case are refused: the
+New names follow :func:`tumblepipe.naming.is_valid_entity_name` (ASCII
+letters and digits), and two names that differ only by case are refused: the
 config store rejects them, since case variants split exports and sidecars.
+An existing sequence keeps its name even when it breaks that rule, so new
+shots still go into one named before it.
 """
 
 from __future__ import annotations
@@ -199,6 +202,19 @@ def guess_pattern(existing: Iterable[str]) -> str | None:
     return max(sorted(counts), key=counts.__getitem__)
 
 
+#: The pattern a sequence with no guessable names starts from.
+DEFAULT_PATTERN = 'SH###'
+
+
+def suggest(existing: Iterable[str], step: int) -> tuple[str, int]:
+    """The pattern and first number Add Shots offers for a sequence holding
+    ``existing``: the names' own pattern, continued after the highest."""
+    existing = list(existing)
+    pattern = guess_pattern(existing) or DEFAULT_PATTERN
+    after = next_number(pattern, existing, step)
+    return pattern, after if after is not None else max(step, 1)
+
+
 # ---------------------------------------------------------------------------
 # Pasted rows
 # ---------------------------------------------------------------------------
@@ -301,7 +317,9 @@ def plan(rows: Iterable[ShotRow], project: ProjectShots) -> Plan:
         def invalid(reason: str) -> None:
             planned.append(PlannedShot(row, Status.INVALID, reason))
 
-        reason = name_problem('sequence', row.sequence) \
+        # An existing sequence keeps its name even when today's rules refuse it.
+        sequence_exists = row.sequence in project.sequences
+        reason = ('' if sequence_exists else name_problem('sequence', row.sequence)) \
             or name_problem('shot', row.shot)
         if reason:
             invalid(reason)
@@ -317,7 +335,6 @@ def plan(rows: Iterable[ShotRow], project: ProjectShots) -> Plan:
         if category is not None:
             invalid(f"'{category}' is an asset category; a sequence cannot share its name")
             continue
-        sequence_exists = row.sequence in project.sequences
         if not sequence_exists:
             other = same_but_case(row.sequence, project.sequences)
             if other is not None:

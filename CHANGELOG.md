@@ -12,6 +12,40 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.81.0 — 2026-10-27
+
+### Features
+- feat(asset-browser): Entity Editor, assets and shots as spreadsheets (`c1f207c7`)
+
+### Fixes
+- fix(anim): cameras built in th::animate's dive reach the stage as cameras (`e32f4ffe`)
+
+### Refactors
+- refactor(config): shot_batch holds the shot name and paste rules (`121b0555`)
+
+### Documentation
+- docs(asset-browser): the Entity Editor (`adcf15d4`)
+- docs(nodes): th::animate passes cameras through (`4598fd87`)
+
+### Tests
+- test: pin the Entity Editor's model with random edit scripts (`a12acbf3`)
+- test: guard cameras through th::animate (`4587cb49`)
+
+## v1.80.1 — 2026-10-26
+
+### Fixes
+- fix(asset-browser): name dropped nodes after the asset, not its card (`a77a14b9`)
+
+### Documentation
+- docs(tests): what test_drop_router pins about dropped node names (`6fbdc7d7`)
+- docs: regenerate CHANGELOG.md for v1.80.0 (`bfa58a79`)
+
+### Tests
+- test: guard the v1.80.0 fixes against regressions (`1a03622c`)
+
+### Other Changes
+- Merge pull request 'fix(asset-browser): name dropped nodes after the asset, not its card' (#12) from fix/drop-node-names into master (`af190151`)
+
 ## v1.80.0 — 2026-10-26
 
 ### Breaking Changes

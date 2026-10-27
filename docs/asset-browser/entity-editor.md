@@ -29,14 +29,14 @@ name, and the title, gain a `*` while there are edits not applied.
 |---|---|---|
 | **Category** / **Sequence** | both | Fixed for a stored entity; editable on a new row (a new name makes a new category or sequence). |
 | **Asset** / **Shot** | both | Editing it renames the entity on Apply. |
+| **Status** | both | What Apply does with the row, or why it cannot. A long reason is cut short; its tooltip has all of it. |
 | **Start**, **End** | both | The frame range (`frame_start`, `frame_end`). |
 | **Length** | both | Frames from start to end. Typing a length moves the end frame. |
 | **Pre-roll**, **Post-roll** | both | `roll_start`, `roll_end`: frames added before the start and after the end when rendering. |
 | **FPS** | both | `fps`. Whole numbers are kept whole; `23.976` is fine. |
 | **Animatable** | Assets | `animatable`, as a tick box. Typing `yes` or `no` works too. |
 | **Root** | Shots | The shot's [Root](multis-and-roots.md), picked from a dropdown. **Inherit** puts it back to the sequence's. |
-| **Assets** | Shots | What the shot imports: its Root's assets, then the Root's parents'. See [Which assets a shot imports](#which-assets-a-shot-imports). |
-| **Status** | both | What Apply does with the row, or why it cannot. |
+| **Assets** | Shots | What the shot imports: its Root's assets, then the Root's parents'. Empty for a shot with no Root. See [Which assets a shot imports](#which-assets-a-shot-imports). |
 
 The dropdown above the sheet shows one category or sequence, or all of
 them. **Filter** narrows the rows to names that contain the text.
@@ -60,7 +60,9 @@ every value it does not set itself, from its category or sequence, then
 
 **Tinted** cells hold edits that are not applied yet. New rows have green
 names, a renamed entity's name is tinted, and an entity to be retired is
-struck through.
+struck through. A selected cell has a light outline, so its tint still
+shows. The line above the sheet shows each look on a sample cell; its
+tooltip has the editing tips.
 
 ## Editing
 
@@ -83,7 +85,7 @@ struck through.
   of the tab in front since it was loaded.
 
 A value a field cannot hold (a frame that is not a whole number, a length
-of 0) is refused, with the reason under the sheet.
+of 0) is refused, with the reason in the footer.
 
 ## Which assets a shot imports
 
@@ -117,7 +119,10 @@ Root no shot uses is not created.
 - **Names**: a pattern where `#` is the number, zero-padded to as many
   digits as there are `#` (`SH###` gives `SH010`), plus **from**, **step**
   and **count**. Picking a sequence takes the pattern its shots follow and
-  continues after its highest number (`SH010`–`SH030` → from `40`).
+  continues after its highest number (`SH010`–`SH030` → from `40`). A
+  sequence whose shots follow no letters-digits-letters pattern (such as
+  `Shot_0030`) starts from `SH###` instead, and the note beside the
+  sequence says *"named without a number pattern"*.
 - **Frames**: start and end, defaulting to what the sequence's shots
   inherit. The new shots store this range.
 - **Root**: **Inherit from the sequence**, an existing Root, or **New Root
@@ -154,7 +159,10 @@ old one.
 Only rows you touched are checked, so old data never blocks an Apply. A row
 needs fixing when:
 
-- a name uses anything but letters and digits, or is empty;
+- a new name uses anything but letters and digits, or is empty. This covers
+  a new or renamed asset or shot and a new category or sequence. An
+  existing category or sequence keeps its name, so new rows still go into
+  one named before this rule (such as `Seq_0010`);
 - a name differs only by case from another one (*"Shot 'sh010' differs
   only by case from 'SH010'"*), or names one that already exists;
 - two rows name the same entity (the later row is flagged);
@@ -166,7 +174,9 @@ needs fixing when:
 - it renames an entity with files on disk.
 
 The footer counts what Apply will do in both tabs. **Apply** stays disabled
-while any row needs fixing.
+while any row needs fixing. The same line reports the last action until
+the next edit: a value a field refused, pasted lines that were skipped, or
+*"Applied: 5 new shots, 1 shot changed."*
 
 ## Apply
 
@@ -190,9 +200,6 @@ and says so. Everything before it was applied. Everything after it is still
 in the sheets, still tinted, so fix the cause and Apply again. **Reload**
 re-reads both tabs at any time, keeping your edits. **Discard All** drops
 them.
-
-**Submit…** opens [Farm Submit](submit-jobs.md) on the tab's selected rows.
-Apply first: Farm Submit reads frame ranges and Roots from the database.
 
 Closing the editor with edits not applied asks: **Apply**, **Discard** or
 **Cancel**.

@@ -30,32 +30,36 @@ from PySide6.QtCore import (
     QAbstractTableModel, QItemSelectionModel, QModelIndex, QSortFilterProxyModel,
     Qt, QTimer,
 )
-from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QShortcut
+from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QPen, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QComboBox, QDialog, QFormLayout,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu,
-    QMessageBox, QPushButton, QSpinBox, QStackedWidget, QStyledItemDelegate,
-    QTabBar, QTableView, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QMessageBox, QPushButton, QSpinBox, QStackedWidget, QStyle,
+    QStyledItemDelegate, QStyleOptionViewItem, QTabBar, QTableView,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from tumblepipe.config import entity_sheet as es
 from tumblepipe.config import shot_batch
 from tumblepipe.util.uri import Uri
 from tumbletrove.asset_browser.core.theme import (
-    BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE, COMBO_STYLE, DANGER,
-    FONT_FAMILY, FONT_SMALL, SUCCESS, TEXT_DIM, WARNING, scaled,
+    ACCENT, ACCENT_HOVER, BG_DARK, BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE,
+    COMBO_STYLE, DANGER, FONT_FAMILY, FONT_SMALL, SUCCESS, TEXT_DIM,
+    TEXT_PRIMARY, WARNING, scaled,
 )
 
 STATUS = 'status'
 _TIMING = (es.FRAME_START, es.FRAME_END, es.LENGTH, es.ROLL_START, es.ROLL_END, es.FPS)
+# Status sits beside the name it is about; the last column takes the spare
+# width.
 COLUMNS = {
-    'assets': (es.GROUP, es.NAME, *_TIMING, es.ANIMATABLE, STATUS),
-    'shots': (es.GROUP, es.NAME, *_TIMING, es.ROOT, es.ASSETS, STATUS),
+    'assets': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ANIMATABLE),
+    'shots': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ROOT, es.ASSETS),
 }
 _WIDTHS = {
-    es.GROUP: 100, es.NAME: 110, es.FRAME_START: 64, es.FRAME_END: 64,
-    es.LENGTH: 64, es.ROLL_START: 70, es.ROLL_END: 70, es.FPS: 56,
-    es.ANIMATABLE: 90, es.ROOT: 120, es.ASSETS: 220,
+    es.GROUP: 100, es.NAME: 110, STATUS: 150, es.FRAME_START: 64,
+    es.FRAME_END: 64, es.LENGTH: 64, es.ROLL_START: 70, es.ROLL_END: 70,
+    es.FPS: 56, es.ANIMATABLE: 90, es.ROOT: 120, es.ASSETS: 220,
 }
 _NUMBERS = frozenset({
     es.FRAME_START, es.FRAME_END, es.LENGTH, es.ROLL_START, es.ROLL_END, es.FPS,
@@ -65,16 +69,19 @@ _NUMBERS = frozenset({
 INHERIT = '__inherit__'
 _NEW_ROOT = '__new_root__'
 
-_LEGEND = (
-    'Grey values are inherited from the {group} or the project; bright bold '
-    'ones are set on the {item} itself. Select cells and type to set a value '
-    'on every selected {item}; Delete puts them back to inheriting. Tinted '
-    'cells are not saved until Apply.'
-)
-
 _HINT_STYLE = (
     f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; '
     f'color: {TEXT_DIM}; border: none; background: transparent;'
+)
+
+# Add is the row action to reach for, Retire and Discard All the ones not
+# to hit by accident: Add has the accent outline, the other two turn red
+# under the pointer. Apply alone is filled.
+_BUTTON_ADD_STYLE = BUTTON_GHOST_STYLE + (
+    f'QPushButton {{ color: {ACCENT_HOVER}; border-color: {ACCENT}; }}'
+)
+_BUTTON_DANGER_STYLE = BUTTON_GHOST_STYLE + (
+    f'QPushButton:hover {{ color: {DANGER}; border-color: {DANGER}; }}'
 )
 
 
@@ -93,6 +100,43 @@ _NEW = _brush(SUCCESS, 46)
 _RED = _brush(DANGER)
 _GREEN = _brush(SUCCESS)
 _AMBER = _brush(WARNING)
+# Selection is an outline, not a fill: amber, green and red already say
+# what Apply does with a cell, and Houdini's amber highlight hid that.
+_SELECTED_FILL = _brush(TEXT_PRIMARY, 22)
+_SELECTED_EDGE = QColor(TEXT_PRIMARY)
+
+
+def _over(brush: QBrush, base: str) -> str:
+    """``brush`` painted over ``base``, as a hex colour for rich text."""
+    top, under = brush.color(), QColor(base)
+    a = top.alphaF()
+    mixed = QColor(*(
+        round(t * a + u * (1 - a)) for t, u in (
+            (top.red(), under.red()), (top.green(), under.green()),
+            (top.blue(), under.blue()),
+        )
+    ))
+    return mixed.name()
+
+
+def _legend(kind: es.Kind) -> str:
+    """One line keyed by sample cells drawn the way the sheet draws them."""
+    def sample(style: str) -> str:
+        return f'<span style="{style}">&nbsp;1001&nbsp;</span>'
+    return (
+        f'{sample(f"color: {_INHERITED.color().name()}")} inherited'
+        f' &nbsp; {sample(f"color: {_OVERRIDE.color().name()}; font-weight: bold")}'
+        f' set on the {kind.item}'
+        f' &nbsp; {sample(f"color: {_OVERRIDE.color().name()}; font-weight: bold; background-color: {_over(_PENDING, BG_DARK)}")}'
+        ' waiting for Apply'
+    )
+
+
+_LEGEND_TIP = (
+    'Select cells and type to set a value on every selected {item}. Delete '
+    'puts a value back to inheriting from the {group} or the project. '
+    'New rows have green names; a row to retire is struck through.'
+)
 
 
 def _font(bold: bool = False, italic: bool = False, strike: bool = False) -> QFont:
@@ -115,8 +159,7 @@ class EntityEditorSource:
     ``retire`` and ``rename`` are ``pipe.entity_files.delete_entity`` and
     ``rename_entity`` on this project; ``rename_blocker`` says why an
     entity cannot be renamed ('' if it can). ``on_applied`` hears that the
-    database changed. ``submit`` opens Farm Submit on a context (``'assets'``
-    or ``'shots'``) with these entity URIs ticked.
+    database changed.
     """
     project: str
     config: object
@@ -124,7 +167,6 @@ class EntityEditorSource:
     rename: Callable[[Uri, str], object]
     rename_blocker: Callable[[Uri], str]
     on_applied: Callable[[], None]
-    submit: Callable[[str, list[Uri]], None] | None = None
 
 
 def _hint(text: str = '') -> QLabel:
@@ -134,13 +176,17 @@ def _hint(text: str = '') -> QLabel:
     return label
 
 
-def _button(text: str, slot, primary: bool = False, tip: str = '') -> QPushButton:
+def _button(
+    text: str, slot, primary: bool = False, tip: str = '', style: str = '',
+) -> QPushButton:
     button = QPushButton(text)
     # A dialog's push buttons press on Enter when they are "auto default":
     # Enter in the sheet must never press Apply.
     button.setAutoDefault(False)
-    button.setStyleSheet(BUTTON_PRIMARY_STYLE if primary else BUTTON_GHOST_STYLE)
-    button.clicked.connect(slot)
+    button.setStyleSheet(style or (BUTTON_PRIMARY_STYLE if primary else BUTTON_GHOST_STYLE))
+    # clicked sends its ``checked`` flag, which a slot with an optional
+    # argument (add_dialog's group) would take as that argument.
+    button.clicked.connect(lambda: slot())
     if tip:
         button.setToolTip(tip)
     return button
@@ -310,8 +356,8 @@ class _SheetModel(QAbstractTableModel):
             value = sheet.value(row, column)
             if role == Qt.EditRole and column == es.ROOT:
                 return value if isinstance(value, str) else ''
-            if column == es.ASSETS and role == Qt.DisplayRole and not value:
-                return '' if isinstance(sheet.value(row, es.ROOT), str) else 'No Root'
+            # A shot with no Root shows an empty Assets cell; its tooltip
+            # says why and how to give it assets.
             return cell_text(value, column)
         if role == Qt.CheckStateRole and column == es.ANIMATABLE:
             return Qt.Checked if sheet.value(row, column) else Qt.Unchecked
@@ -455,6 +501,21 @@ class _Delegate(QStyledItemDelegate):
     def __init__(self, pane: '_SheetPane') -> None:
         super().__init__(pane)
         self._pane = pane
+
+    def paint(self, painter, option, index) -> None:
+        # The cell as if unselected, so its tint still shows, then a light
+        # wash and an outline for the selection.
+        selected = bool(option.state & QStyle.State_Selected)
+        plain = QStyleOptionViewItem(option)
+        plain.state &= ~(QStyle.State_Selected | QStyle.State_HasFocus)
+        super().paint(painter, plain, index)
+        if not selected:
+            return
+        painter.save()
+        painter.fillRect(option.rect, _SELECTED_FILL)
+        painter.setPen(QPen(_SELECTED_EDGE, 1))
+        painter.drawRect(option.rect.adjusted(0, 0, -1, -1))
+        painter.restore()
 
     def createEditor(self, parent, option, index):
         column = self._pane.columns[index.column()]
@@ -760,7 +821,7 @@ class AddShotsDialog(QDialog):
         form.addRow('Sequence', row)
 
         names = QHBoxLayout()
-        self._pattern = QLineEdit('SH###')
+        self._pattern = QLineEdit(shot_batch.DEFAULT_PATTERN)
         self._pattern.setToolTip(
             'The shot name; # is the number, zero-padded to as many digits '
             'as there are #.'
@@ -831,17 +892,16 @@ class AddShotsDialog(QDialog):
         if not sequence:
             self._sequence_note.setText('')
         elif sequence in self._sheet.base.groups:
-            self._sequence_note.setText(f'{_plural(len(existing), "shot")} already')
+            note = f'{_plural(len(existing), "shot")} already'
+            if existing and shot_batch.guess_pattern(existing) is None:
+                # Say so, or the new shots silently follow another scheme.
+                note += ', named without a number pattern'
+            self._sequence_note.setText(note)
         else:
             self._sequence_note.setText('New sequence, created with its first shot')
-        pattern = shot_batch.guess_pattern(existing)
-        if pattern is not None:
-            self._pattern.setText(pattern)
-        try:
-            after = shot_batch.next_number(self._pattern.text(), existing, self._step.value())
-        except ValueError:
-            after = None
-        self._first.setValue(after if after is not None else self._step.value())
+        pattern, first = shot_batch.suggest(existing, self._step.value())
+        self._pattern.setText(pattern)
+        self._first.setValue(first)
         inherited = self._sheet.base.inherited(sequence).values
         for spin, name in ((self._frame_start, es.FRAME_START), (self._frame_end, es.FRAME_END)):
             value = inherited.get(name)
@@ -893,7 +953,6 @@ class AddAssetsDialog(QDialog):
         super().__init__(pane)
         self._sheet = pane.sheet
         self.setWindowTitle('Add Assets')
-        self.resize(scaled(480), 0)
         form = QFormLayout(self)
         self._category = QComboBox()
         self._category.setEditable(True)
@@ -918,6 +977,9 @@ class AddAssetsDialog(QDialog):
         buttons.addWidget(self._add)
         form.addRow(buttons)
         self._update()
+        # Its content's height: a height of 0 is raised to the window
+        # system's minimum, which left a gap under the buttons.
+        self.resize(scaled(480), self.sizeHint().height())
 
     def category(self) -> str:
         return self._category.currentText().strip()
@@ -992,7 +1054,11 @@ class _SheetPane(QWidget):
         self._search.textChanged.connect(self._apply_filter)
         top.addWidget(self._search, 1)
         outer.addLayout(top)
-        outer.addWidget(_hint(_LEGEND.format(group=kind.group, item=kind.item)))
+        legend = _hint(_legend(kind))
+        legend.setWordWrap(False)
+        legend.setToolTip(_LEGEND_TIP.format(group=kind.group, item=kind.item))
+        self.legend = legend
+        outer.addWidget(legend)
 
         self.model = _SheetModel(self)
         self.proxy = _Filter()
@@ -1027,40 +1093,40 @@ class _SheetPane(QWidget):
 
         actions = QHBoxLayout()
         plural = f'{kind.item.capitalize()}s'
-        actions.addWidget(_button(
-            f'Add {plural}…', self.add_dialog,
+        self.add_button = _button(
+            f'Add {plural}…', self.add_dialog, style=_BUTTON_ADD_STYLE,
             tip=(
                 'New shots from a name pattern (SH010, SH020, …) and a frame range.'
                 if kind is es.SHOTS_KIND else 'New assets in a category.'
             ),
-        ))
+        )
+        actions.addWidget(self.add_button)
         actions.addWidget(_button(
             f'Paste as New {plural}', self._paste_new,
             tip=f'Add the rows on the clipboard as new {kind.item}s: one per '
                 f'line, as name; {kind.group}, name; name, start, end; or '
                 f'{kind.group}, name, start, end.',
         ))
+        # The edits to selected rows, kept apart from adding, with Retire
+        # last: the one that removes.
+        actions.addSpacing(scaled(24))
+        actions.addWidget(_button(
+            'Revert', self._revert_selected,
+            tip='Drop the selected rows\' edits; new rows are removed.',
+        ))
         self.retire_button = _button(
-            'Retire', self._toggle_retire,
+            'Retire', self._toggle_retire, style=_BUTTON_DANGER_STYLE,
             tip=f'Retire the selected {kind.item}s on Apply: they leave the '
                 'project and their folders move to _deleted/. New rows are '
                 'removed.',
         )
         actions.addWidget(self.retire_button)
-        actions.addWidget(_button(
-            'Revert', self._revert_selected,
-            tip='Drop the selected rows\' edits; new rows are removed.',
-        ))
         actions.addStretch()
         self.undo_button = _button('Undo', self.undo)
         self.redo_button = _button('Redo', self.redo)
         actions.addWidget(self.undo_button)
         actions.addWidget(self.redo_button)
         outer.addLayout(actions)
-
-        self._note = _hint()
-        self._note.hide()
-        outer.addWidget(self._note)
         table.selectionModel().selectionChanged.connect(
             lambda *_a: self.window_.update_footer()
         )
@@ -1145,10 +1211,9 @@ class _SheetPane(QWidget):
         stored = [r for r in rows if not r.is_new]
         self.retire_button.setText('Restore' if stored and all(r.retire for r in stored) else 'Retire')
 
-    def say(self, text: str = '') -> None:
-        """A line under the table about the last action ('' hides it)."""
-        self._note.setText(text)
-        self._note.setVisible(bool(text))
+    def say(self, text: str = '', warn: bool = False) -> None:
+        """The window's footer line about the last action ('' clears it)."""
+        self.window_.say(text, warn)
 
     def edit(self, change: Callable[[], object]) -> None:
         """Run ``change`` as one undo step, then show the result and any
@@ -1161,8 +1226,8 @@ class _SheetPane(QWidget):
             self._errors.append(str(exc))
         self.refresh()
         if self._errors:
-            self.say(self._errors[0])
-        elif self._note.isVisible():
+            self.say(self._errors[0], warn=True)
+        else:
             self.say()
 
     def _set_cell(self, row_id: int, column: str, value) -> None:
@@ -1246,7 +1311,8 @@ class _SheetPane(QWidget):
         if missed and not self._errors:
             self.say(
                 f'{_plural(missed, "pasted line")} ran past the last row; '
-                f'Paste as New {self.kind.item.capitalize()}s adds rows.'
+                f'Paste as New {self.kind.item.capitalize()}s adds rows.',
+                warn=True,
             )
 
     def _paste(self) -> None:
@@ -1270,7 +1336,8 @@ class _SheetPane(QWidget):
             self.say(
                 f'Skipped {_plural(len(rejected), "pasted line")} that '
                 f'{"is" if len(rejected) == 1 else "are"} not {"an" if self.noun[0] in "aeiou" else "a"} '
-                f'{self.noun} (frames must be whole numbers), e.g. "{first}".'
+                f'{self.noun} (frames must be whole numbers), e.g. "{first}".',
+                warn=True,
             )
 
     def _paste_new(self) -> None:
@@ -1426,13 +1493,6 @@ class _SheetPane(QWidget):
                 self.select_cells([(row.id, 1)], (row.id, 1))
                 self.table.scrollTo(self._index_of(row.id, 1))
 
-    def selected_uris(self) -> list[Uri]:
-        """The stored, not retiring, selected entities."""
-        return [
-            row.origin.uri for row in (self.sheet.row(i) for i in self.selected_row_ids())
-            if row.origin is not None and not row.retire
-        ]
-
 
 # ---------------------------------------------------------------------------
 # The window
@@ -1448,6 +1508,8 @@ class EntityEditorWindow(QDialog):
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setModal(False)
         self.source = source
+        # The footer's note about the last action, until the next edit.
+        self._message: tuple[str, bool] = ('', False)
         self.setWindowTitle(f'Entity Editor — {source.project}')
         self.resize(scaled(1180), scaled(700))
         self.panes: dict[str, _SheetPane] = {}
@@ -1491,17 +1553,18 @@ class EntityEditorWindow(QDialog):
         ):
             QShortcut(keys, self, slot)
 
+        # Discard All at the far left, away from Apply; between them the one
+        # line that says what Apply will do, or what the last action did.
         footer = QHBoxLayout()
-        self._summary = _hint()
-        footer.addWidget(self._summary, 1)
-        self._discard = _button('Discard All', self._discard_all)
-        footer.addWidget(self._discard)
-        self._submit = _button(
-            'Submit…', self._on_submit,
-            tip='Open Farm Submit on the selected rows of this tab.',
+        self._discard = _button(
+            'Discard All', self._discard_all, style=_BUTTON_DANGER_STYLE,
+            tip='Drop every edit, in both tabs, that is not applied.',
         )
-        self._submit.setVisible(self.source.submit is not None)
-        footer.addWidget(self._submit)
+        footer.addWidget(self._discard)
+        footer.addSpacing(scaled(12))
+        self._summary = _hint()
+        self._summary.setWordWrap(False)
+        footer.addWidget(self._summary, 1)
         self._apply_button = _button(
             'Apply', self.apply, primary=True,
             tip='Write the edits of both tabs to the database.',
@@ -1544,6 +1607,32 @@ class EntityEditorWindow(QDialog):
     def update_footer(self) -> None:
         if not hasattr(self, '_summary') or len(self.panes) < len(es.KINDS):
             return
+        parts, problems = self._pending()
+        message, warn = self._message
+        if message:
+            text = message
+        else:
+            text = ', '.join(parts) or 'No changes.'
+            if problems:
+                text += (
+                    f'; {problems} row{"s need" if problems != 1 else " needs"} '
+                    'fixing (see Status)'
+                )
+        self._summary.setText(text)
+        self._summary.setToolTip(text)
+        self._summary.setStyleSheet(
+            _HINT_STYLE.replace(TEXT_DIM, WARNING) if problems or warn else _HINT_STYLE
+        )
+        dirty = self.dirty
+        self._apply_button.setEnabled(dirty and not problems)
+        self._discard.setEnabled(dirty)
+        self.setWindowTitle(
+            f'Entity Editor — {self.source.project}{" *" if dirty else ""}'
+        )
+
+    def _pending(self) -> tuple[list[str], int]:
+        """What Apply would do, in short phrases, and how many rows need
+        fixing; also marks the tabs that have edits."""
         parts, problems = [], 0
         for key, pane in self.panes.items():
             summary = pane.sheet.summary()
@@ -1570,25 +1659,13 @@ class EntityEditorWindow(QDialog):
             index = next(i for i in range(self._tabs.count()) if self._tabs.tabData(i) == key)
             self._tabs.setTabText(index, f'{label} *' if pane.sheet.dirty else label)
             pane.update_buttons()
-        text = ' · '.join(parts) or 'No changes.'
-        if problems:
-            text += (
-                f' · {problems} row{"s need" if problems != 1 else " needs"} '
-                'fixing (see Status)'
-            )
-        self._summary.setText(text)
-        self._summary.setStyleSheet(
-            _HINT_STYLE.replace(TEXT_DIM, WARNING) if problems else _HINT_STYLE
-        )
-        dirty = self.dirty
-        self._apply_button.setEnabled(dirty and not problems)
-        self._discard.setEnabled(dirty)
-        self.setWindowTitle(
-            f'Entity Editor — {self.source.project}{" *" if dirty else ""}'
-        )
+        return parts, problems
 
-    def say(self, text: str = '') -> None:
-        self.pane.say(text)
+    def say(self, text: str = '', warn: bool = False) -> None:
+        """Show ``text`` in the footer in place of the summary until the
+        next edit ('' goes back to the summary); ``warn`` colours it."""
+        self._message = (text, warn)
+        self.update_footer()
 
     def focus(self, kind: str = 'shots', group: str = '', name: str = '') -> None:
         """Show ``kind``'s tab on ``group`` ('' for all) with ``name`` selected."""
@@ -1604,18 +1681,6 @@ class EntityEditorWindow(QDialog):
         if answer == QMessageBox.Yes:
             for pane in self.panes.values():
                 pane.edit(pane.sheet.revert_all)
-
-    def _on_submit(self) -> None:
-        if self.source.submit is None:
-            return
-        if self.dirty:
-            QMessageBox.information(
-                self, 'Submit',
-                'Apply your edits first: Farm Submit reads the frame ranges '
-                'and Roots from the database.',
-            )
-            return
-        self.source.submit(self.pane.kind.key, self.pane.selected_uris())
 
     # ── Reload and Apply ─────────────────────────────────
 
@@ -1654,9 +1719,10 @@ class EntityEditorWindow(QDialog):
         for pane in self.panes.values():
             if pane.sheet.problems():
                 self.show_kind(pane.kind.key)
-                self.say(f'{_plural(len(pane.sheet.problems()), "row")} need fixing first (see Status).')
+                self.say(f'{_plural(len(pane.sheet.problems()), "row")} need fixing first (see Status).', warn=True)
                 return False
         changes = [(pane, pane.sheet.changes()) for pane in self.panes.values()]
+        done = ', '.join(self._pending()[0])
         retire = [
             '/'.join(uri.segments) for _pane, change in changes for uri in change.retire
         ]
@@ -1694,7 +1760,7 @@ class EntityEditorWindow(QDialog):
                 'Apply again.',
             )
             return False
-        self.say('Applied.')
+        self.say(f'Applied: {done}.' if done else 'Applied.')
         return True
 
     # ── Closing ──────────────────────────────────────────

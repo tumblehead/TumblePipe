@@ -938,7 +938,8 @@ class Sheet:
     def _row_problem(self, row, known, new_spelling, claimed) -> str:
         kind = self.kind
         if row.is_new:
-            reason = name_problem(kind.group, row.group) \
+            # A stored group keeps its name even when today's rules refuse it.
+            reason = (name_problem(kind.group, row.group) if row.group not in known else '') \
                 or name_problem(kind.item, row.name)
             if reason:
                 return reason

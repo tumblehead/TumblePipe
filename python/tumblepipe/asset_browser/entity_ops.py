@@ -615,7 +615,7 @@ class EntityOps:
         client = self._clients.get(project_name)
 
         def on_project(func):
-            # Retire, rename, the files check and Farm Submit work on the
+            # Retire, rename and the files check work on the
             # ACTIVE project; another project may have been activated since.
             def call(*args):
                 self._activator.activate(proj)
@@ -631,13 +631,6 @@ class EntityOps:
                 "card, then retire the old one."
             )
 
-        def submit(context: str, entity_uris: list) -> None:
-            scene_ctx = self._scene.get_loaded_scene_context()
-            open_submit_jobs_dialog(
-                entity_uris, [uri.segments[-1] for uri in entity_uris], context,
-                department=scene_ctx.department_name if scene_ctx is not None else None,
-            )
-
         def on_applied() -> None:
             self._index.invalidate()
             self._refresh.sidebar()
@@ -650,7 +643,6 @@ class EntityOps:
                 rename=on_project(entity_files.rename_entity),
                 rename_blocker=on_project(rename_blocker),
                 on_applied=on_applied,
-                submit=on_project(submit),
             ),
             parent=hou.qt.mainWindow(),
             kind=kind,
