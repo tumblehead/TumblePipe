@@ -12,6 +12,18 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.82.1 — 2026-10-27
+
+### Fixes
+- fix(farm): update and propagate keep every shot's job (`75e233ff`)
+- fix(config): new entity names are letters and digits, wherever they come from (`a643a90e`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.82.0 (`81907318`)
+
+### Tests
+- test: farm batches build every shot's jobs, whatever their names (`65b6d860`)
+
 ## v1.82.0 — 2026-10-27
 
 ### Features

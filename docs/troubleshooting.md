@@ -353,6 +353,20 @@ left its work under the old name. Delete now moves the folders to
 work, move its folder back out of `_deleted/`. See
 [Delete](asset-browser/index.md) and [Duplicate](asset-browser/index.md#right-click-on-a-card).
 
+### A deleted shot or asset left a folder you can't open
+
+Up to TumblePipe 1.82.1, deleting an entity while one of its folders was open
+(an Explorer window, Houdini) could stop halfway. A full copy went to
+`_deleted/<date-time>/`, the original was emptied up to the open folder, and
+that folder stayed behind. On a network drive it then answers *You do not
+have permission* and the browser shows *A catalog could not be read …
+[WinError 5] Access is denied*. The entity also stays in the project. Close
+Houdini and any Explorer window showing it, and the folder disappears. Then
+**Delete** the entity again. Nothing is lost: the copy in `_deleted/` is
+complete. From the next release a held folder cancels the delete with nothing
+moved, and a folder the browser can't read no longer hides the entity: its
+card stays, with the folder and the reason in its Note.
+
 ### Two assets with the same name in different case
 
 Windows storage is case-insensitive but entity URIs and prim paths are not,

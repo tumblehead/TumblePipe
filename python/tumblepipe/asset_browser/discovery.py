@@ -276,14 +276,23 @@ class EntityIndex:
     ) -> Asset:
         """The card of the asset or shot at ``uri``. ``departments`` is the
         context's pool when the caller already has it (one per project in
-        a discovery pass)."""
+        a discovery pass).
+
+        A department folder that can't be read is left off the card and
+        named in its Note instead of failing the whole card: one such folder
+        (left delete-pending on a network share by an interrupted Delete)
+        otherwise took the entity out of the browser, where it could not be
+        deleted again, and put a catalog-wide error over the page."""
         kind, bucket, name = uri.segments
         asset_id = uris.asset_id_for(proj.name, uri)
-        scanned = self.scan_departments(asset_id, departments)
+        unreadable: list[tuple[str, OSError]] = []
+        scanned = self.scan_departments(asset_id, departments, unreadable)
         depts = {dept: versions[-1] for dept, (versions, _) in scanned.items()}
         latest_update, last_user, last_note = self._latest_update_user_note(
             asset_id, scanned,
         )
+        if unreadable:
+            last_note = unreadable_note(unreadable)
         metadata: dict = {
             "departments": depts,
             "project": proj.name,
@@ -419,6 +428,7 @@ class EntityIndex:
 
     def scan_departments(
         self, asset_id: str, departments: list[str] | None = None,
+        unreadable: list[tuple[str, OSError]] | None = None,
     ) -> dict[str, tuple[list[str], float]]:
         """One scandir per dept workspace: ``{dept: (versions, newest_mtime)}``,
         departments with no workfile left out.
@@ -428,6 +438,10 @@ class EntityIndex:
         ``departments`` is the context's pool when the caller has it; when
         omitted it is read here — one project enumeration, so per-card
         loops must always pass it.
+
+        A workspace that can't be listed raises :class:`WorkfileScanError`,
+        unless ``unreadable`` is given: then the department is skipped and
+        ``(dept, error)`` appended to it.
         """
         from tumblepipe.pipe.paths import department_workspace
         proj = self._resolver.project_for(asset_id)
@@ -437,20 +451,23 @@ class EntityIndex:
         uri = self._resolver.uri_for_ready(asset_id)
         if departments is None:
             departments = self._dept_scope.pool(uri.segments[0])
-        try:
-            result: dict[str, tuple[list[str], float]] = {}
-            for dept in departments:
-                _workfile_uri, workspace = department_workspace(uri, dept)
+        result: dict[str, tuple[list[str], float]] = {}
+        for dept in departments:
+            _workfile_uri, workspace = department_workspace(uri, dept)
+            try:
                 versions, newest = scan_workfiles(workspace)
-                if versions:
-                    result[dept] = (versions, newest)
-            return result
-        except OSError as exc:
-            raise WorkfileScanError(
-                self._catalog_id,
-                f"failed to scan workfile versions for {asset_id}: {exc}",
-                cause=exc,
-            ) from exc
+            except OSError as exc:
+                if unreadable is None:
+                    raise WorkfileScanError(
+                        self._catalog_id,
+                        f"failed to scan workfile versions for {asset_id}: {exc}",
+                        cause=exc,
+                    ) from exc
+                unreadable.append((dept, exc))
+                continue
+            if versions:
+                result[dept] = (versions, newest)
+        return result
 
     def _latest_update_user_note(
         self, asset_id: str, scanned: dict[str, tuple[list[str], float]],
@@ -503,3 +520,15 @@ class EntityIndex:
             return None
         uri = self._resolver.uri_for_ready(asset_id)
         return client.storage.resolve(uris.export_for_entity(uri))
+
+
+def unreadable_note(unreadable: list[tuple[str, OSError]]) -> str:
+    """The Note of a card whose department folders could not be read."""
+    depts = ", ".join(dept for dept, _exc in unreadable)
+    _dept, first = unreadable[0]
+    reason = first.strerror or str(first)
+    folders = "folder" if len(unreadable) == 1 else "folders"
+    return (
+        f"Can't read the {depts} {folders} ({reason}). If it was just deleted, "
+        "close Houdini and any Explorer window showing it, then refresh."
+    )

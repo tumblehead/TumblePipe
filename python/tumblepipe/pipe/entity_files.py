@@ -13,7 +13,7 @@ storage root, and renaming an entity that has files is refused.
 
 import datetime as dt
 import logging
-import shutil
+import os
 from pathlib import Path
 
 from tumblepipe.api import api
@@ -81,6 +81,13 @@ def archive_entity_folders(
     All or nothing: if a folder cannot be moved (a file held open on
     Windows), the ones already moved are put back and ``ArchiveError`` is
     raised naming it. Returns the ``(from, to)`` pairs moved.
+
+    Each folder moves with one rename, never ``shutil.move``: when the rename
+    fails, that falls back to copy-then-delete, which deletes the source file
+    by file up to whatever is held open. An external user's shot was left as
+    a lone undeletable (delete-pending, "access denied") ``layout`` folder
+    that way, with the full copy already in ``_deleted/``. The archive sits
+    in the same storage root, so a rename always suffices.
     """
     if stamp is None:
         stamp = dt.datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')
@@ -93,7 +100,7 @@ def archive_entity_folders(
             n += 1
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(folder), str(target))
+            os.rename(folder, target)
         except OSError as exc:
             restore_entity_folders(moved)
             raise ArchiveError(
@@ -116,7 +123,7 @@ def restore_entity_folders(moved: list[tuple[Path, Path]]) -> None:
     """
     for source, dest in reversed(moved):
         try:
-            shutil.move(str(dest), str(source))
+            os.rename(dest, source)
         except OSError:
             logger.exception('Could not move %s back to %s', dest, source)
 
