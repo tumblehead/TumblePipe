@@ -86,7 +86,9 @@ for a label instead.
 
 Edit the row's label in place (double-click). **Enter** or clicking
 anywhere else commits — exactly one change, persisted at once; **Escape**
-cancels; a label already used by a sibling is rejected. Renaming moves the
+cancels; a label already used by a sibling is rejected, and so is a new
+asset, shot, category or sequence name that is not letters and digits
+only (see [creating entities](index.md)). Renaming moves the
 entity's whole subtree to the new key.
 
 An entity that has workfiles or exports on disk can't be renamed: they live

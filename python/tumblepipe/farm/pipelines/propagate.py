@@ -43,7 +43,6 @@ from tumblepipe.farm.pipelines._batch import batch_title, run_cli, submit_batch
 from tumblepipe.farm.pipelines.publish import bundle_workfile
 from tumblepipe.pipe import graph
 from tumblepipe.pipe.paths import latest_complete_hip_file_path, latest_hip_file_path
-from tumblepipe.pipe.paths.naming import entity_stem
 from tumblepipe.util.uri import Uri
 
 
@@ -125,6 +124,9 @@ def build(
 
     # Publishes, in pipeline order: each waits for the ones before it unless
     # its department is independent; the first waits for depends_on.
+    # Job keys spell the entity as its URI: a name flattened with '_' can
+    # read as two (sq_1/sh10 and sq/1_sh10), and a repeated key silently
+    # replaces the job before it.
     publish_job_names = []
 
     def _add_publish(job_name, target_uri, dept_name):
@@ -160,7 +162,7 @@ def build(
             continue
         for member_uri in _require_group(entity_uri).members:
             _add_publish(
-                f'publish_shot_{entity_stem(member_uri, dept_name)}',
+                f'publish {member_uri} {dept_name}',
                 member_uri, dept_name
             )
 
@@ -168,7 +170,7 @@ def build(
     build_job_names = []
     for shot_uri in affected_shots:
         for channel_name in list_channels(shot_uri):
-            job_name = f'build_{entity_stem(shot_uri, channel_name)}'
+            job_name = f'build {shot_uri} {channel_name}'
             jobs[job_name] = build_pipeline.create({
                 'entity_uri': str(shot_uri),
                 'channel_name': channel_name,

@@ -4,7 +4,7 @@
 
 Run under a project hython with the local source (TumbleTrove Desktop
 run_hython with use_dev_overrides=true). Creates PROP/dupsrc with one model
-workfile, duplicates it to PROP/dupsrc_copy through the same worker the
+workfile, duplicates it to PROP/dupsrcCopy through the same worker the
 Asset Browser runs (``pipe.houdini.duplicate_workfiles``), checks the copy,
 then removes both assets and their folders.
 
@@ -16,7 +16,7 @@ Checks on the copied workfile:
   1. it is the copy's v0001 in the copy's model folder;
   2. its context names the copy;
   3. an export node pinned to the source entity now follows the context;
-  4. a hand-typed /PROP/dupsrc path in a string parm now reads /PROP/dupsrc_copy,
+  4. a hand-typed /PROP/dupsrc path in a string parm now reads /PROP/dupsrcCopy,
      and a /PROP/dupsrc_other path is left alone.
 """
 
@@ -35,7 +35,7 @@ from tumblepipe.pipe.paths import get_workfile_context, reserve_next_hip_file_pa
 from tumblepipe.util.uri import Uri
 
 SOURCE = Uri.parse('entity:/assets/PROP/dupsrc')
-TARGET = Uri.parse('entity:/assets/PROP/dupsrc_copy')
+TARGET = Uri.parse('entity:/assets/PROP/dupsrcCopy')
 FAILURES = []
 
 
@@ -86,7 +86,7 @@ def main() -> int:
     try:
         api.config.add_entity(SOURCE, {'name': 'dupsrc'})
         make_source_workfile()
-        api.config.add_entity(TARGET, {'name': 'dupsrc_copy'})
+        api.config.add_entity(TARGET, {'name': 'dupsrcCopy'})
         plan = duplicate.plan_duplicate(SOURCE, ['model', 'lookdev'])
         check('plan holds the model workfile only', [d for d, _ in plan] == ['model'], str(plan))
 
@@ -108,7 +108,7 @@ def main() -> int:
 
         from tumblepipe.pipe.paths import latest_hip_file_path
         copied = latest_hip_file_path(TARGET, 'model')
-        check('copy is v0001 of the copy', copied is not None and copied.stem.endswith('dupsrc_copy_model_v0001'), str(copied))
+        check('copy is v0001 of the copy', copied is not None and copied.stem.endswith('dupsrcCopy_model_v0001'), str(copied))
         if copied is None:
             return 1
         ctx = get_workfile_context(copied)
@@ -118,7 +118,7 @@ def main() -> int:
         check('pinned export node follows the context', entity == 'from_context', entity)
         mtl = hou.node('/stage/paths').parm('mtl').eval()
         other = hou.node('/stage/paths').parm('other').eval()
-        check('typed prim path repointed', mtl == '/PROP/dupsrc_copy/mtl/', mtl)
+        check('typed prim path repointed', mtl == '/PROP/dupsrcCopy/mtl/', mtl)
         check('longer name left alone', other == '/PROP/dupsrc_other/geo', other)
     finally:
         hou.hipFile.clear(suppress_save_prompt=True)

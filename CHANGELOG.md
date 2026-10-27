@@ -12,6 +12,25 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.82.0 — 2026-10-27
+
+### Features
+- feat(asset-browser): Entity Editor look pass, no Submit shortcut (`02078cfc`)
+
+### Fixes
+- fix(config): new shots and assets go into groups named before the name rule (`febb7647`)
+- fix(asset-browser): Add Shots… and Add Assets… open their dialogs (`e43e8735`)
+
+### Refactors
+- refactor(config): shot_batch.suggest holds Add Shots' defaults (`12bcc8fb`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.81.0 (`87ccc937`)
+
+### Tests
+- test: verify the Entity Editor's look by pixels and positions (`7c69f64f`)
+- test: pin new rows in groups named before the name rule (`f024f494`)
+
 ## v1.81.0 — 2026-10-27
 
 ### Features

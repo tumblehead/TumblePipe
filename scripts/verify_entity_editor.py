@@ -192,9 +192,13 @@ ee.QDialog.exec = _exec
 check('Add Shots… and Add Assets… open their dialogs',
       opened == ['AddShotsDialog', 'AddAssetsDialog'], opened)
 
-# A sequence named before the letters-and-digits rule, with no Root.
-config.add_entity(SHOTS / 'sq_0090', {})
-config.add_entity(SHOTS / 'sq_0090' / 'Shot_0030', {})
+# A sequence named before the letters-and-digits rule, with no Root: written
+# straight into the file, as add_entity refuses such names now.
+legacy = config.snapshot('entity')
+legacy['children']['shots']['children']['sq_0090'] = {
+    'properties': {}, 'children': {'Shot_0030': {'properties': {}, 'children': {}}},
+}
+config.write_root('entity', legacy)
 window._reload()
 _row, rootless = cell(shots, 'sq_0090', 'Shot_0030', es.ASSETS)
 check('a shot with no Root has an empty Assets cell', rootless.data() == '', rootless.data())

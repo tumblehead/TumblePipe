@@ -24,6 +24,8 @@ from tumblepipe.pipe.houdini.ui.report import (
     report_failure, reporting, run_in_background, run_on_main_thread,
 )
 
+from tumblepipe.config import shot_batch
+
 from . import nodes as nodes
 from . import recipes as recipes
 from . import uris as uris
@@ -432,6 +434,14 @@ class EntityOps:
             )
             return True
 
+        # New names are letters and digits only (add_entity refuses the
+        # rest); say so before a URI is built from one.
+        def _misnamed(kind: str, entity_name: str) -> bool:
+            problem = shot_batch.name_problem(kind, entity_name)
+            if problem:
+                hou.ui.displayMessage(f"{problem}.")
+            return bool(problem)
+
         # Parent-only entity creation: ``new_category`` and
         # ``new_sequence`` register a 2-segment URI (no asset/shot name)
         # so the bucket exists in the sidebar even with no children
@@ -441,6 +451,8 @@ class EntityOps:
             category = fields.get("category", "").strip()
             if not category:
                 hou.ui.displayMessage("Category is required.")
+                return None
+            if _misnamed("category", category):
                 return None
             if _bucket_of_other_kind(category, "category"):
                 return None
@@ -458,6 +470,8 @@ class EntityOps:
             sequence = fields.get("sequence", "").strip()
             if not sequence:
                 hou.ui.displayMessage("Sequence is required.")
+                return None
+            if _misnamed("sequence", sequence):
                 return None
             if _bucket_of_other_kind(sequence, "sequence"):
                 return None
@@ -481,12 +495,15 @@ class EntityOps:
             if not category:
                 hou.ui.displayMessage("Category is required.")
                 return None
-            # An existing category is fine; only creating one implicitly
-            # under a sequence's name is refused.
-            if (
-                category not in self._buckets.categories(proj_name)
-                and _bucket_of_other_kind(category, "category")
+            # An existing category is fine, even one named before the name
+            # rule; only creating one implicitly under a sequence's name, or
+            # misnamed, is refused.
+            if category not in self._buckets.categories(proj_name) and (
+                _misnamed("category", category)
+                or _bucket_of_other_kind(category, "category")
             ):
+                return None
+            if _misnamed("asset", name):
                 return None
             entity_uri = uris.entity_asset(category, name)
             if client.config.get_properties(entity_uri) is not None:
@@ -503,7 +520,12 @@ class EntityOps:
             if not sequence:
                 hou.ui.displayMessage("Sequence is required.")
                 return None
-            if _bucket_of_other_kind(sequence, "sequence"):
+            if sequence not in self._buckets.sequences(proj_name) and (
+                _misnamed("sequence", sequence)
+                or _bucket_of_other_kind(sequence, "sequence")
+            ):
+                return None
+            if _misnamed("shot", name):
                 return None
             frame_start = int(fields.get("frame_start", "1001"))
             frame_end = int(fields.get("frame_end", "1100"))
@@ -965,12 +987,19 @@ class EntityOps:
         if source_uri is None:
             return
         category, source_name = source_uri.segments[1], source_uri.segments[-1]
+        # The suggestion follows the name rule even when the source, named
+        # before it, does not (old_tree -> oldtreeCopy).
+        suggested = "".join(c for c in source_name if c.isascii() and c.isalnum())
         new_name, ok = QInputDialog.getText(
             hou.qt.mainWindow(), "Duplicate asset",
-            f"Name for the copy of {source_name}:", text=f"{source_name}_copy",
+            f"Name for the copy of {source_name}:", text=f"{suggested}Copy",
         )
         new_name = new_name.strip() if ok else ""
         if not new_name:
+            return
+        problem = shot_batch.name_problem("asset", new_name)
+        if problem:
+            hou.ui.displayMessage(f"{problem}.")
             return
         client = self._clients.get(proj.name)
         target_uri = uris.entity_asset(category, new_name)

@@ -305,7 +305,7 @@ catalog contributes
 |---|---|
 | **Submit Jobs…** / **Submit Jobs for N selected…** | Opens the [Farm Submit](submit-jobs.md) dialog with this entity's **Render** cell ticked, or every selected card's of the same kind (shots with shots, assets with assets). |
 | **Generate Master…** | Merges each department's latest workfile into `<entity folder>/master/<name>_master.hip`, one network box per department, after a **Generate Master Scene** confirmation. Opens that scene. |
-| **Duplicate…** (assets) | Asks for a name (default `<name>_copy`) and creates that asset in the same category with the source's own properties. In a background hython it then copies each department's latest finished workfile to the new asset as its `v0001`, with the new asset's `context.json`. Nodes pinned to the source entity switch to `from_context`, and the source's prim path typed into string parms (`/CHAR/Pengo/mtl/`) becomes the copy's (`/CHAR/Pengo_copy/mtl/`). A department whose workfile belongs to a Multi is not copied. Nothing is published: publish the copy from its own workfiles. Your open scene is not touched. Use this instead of copying an asset's folder by hand, which leaves the copy pointing at the original. |
+| **Duplicate…** (assets) | Asks for a name (default `<name>Copy`, letters and digits only) and creates that asset in the same category with the source's own properties. In a background hython it then copies each department's latest finished workfile to the new asset as its `v0001`, with the new asset's `context.json`. Nodes pinned to the source entity switch to `from_context`, and the source's prim path typed into string parms (`/CHAR/Pengo/mtl/`) becomes the copy's (`/CHAR/PengoCopy/mtl/`). A department whose workfile belongs to a Multi is not copied. Nothing is published: publish the copy from its own workfiles. Your open scene is not touched. Use this instead of copying an asset's folder by hand, which leaves the copy pointing at the original. |
 | **Edit description…** | Edits the `description.txt` sidecar in the entity's folder (dialog **Edit Description**). Shown on the Info tab. |
 | **Tasks…** | Opens TumbleTrove's **Tasks — *name*** dialog for the entity's todo list. |
 | **Select thumbnail…** / **Capture thumbnail** | See [Cards](#cards). |
@@ -349,7 +349,14 @@ registered.
 | **New Recipe** | **Name**; **Description**; **Tags** | Saves the nodes selected in the network editor. See [Recipes](recipes.md#saving-a-recipe). |
 
 Names are written as typed; the new asset or shot is selected in the grid
-once it appears. A category and a sequence can never share a name, so every
+once it appears. A new asset, shot, category or sequence is named with
+letters and digits only (`SH050`, not `SH_050`): names are joined with `_`
+across the pipeline, so `PROP/old_tree` and `PROP_old/tree` would read the
+same. Every way of creating or renaming one (these forms, **Duplicate…**,
+the [Entity Editor](entity-editor.md), the [Database Editor](config-editor.md),
+CSV import, scripts) refuses anything else with *Asset name 'X' may only
+use letters and digits.* A category or sequence named before this rule
+(`Seq_0010`) keeps working and takes new, well-named entities. A category and a sequence can never share a name, so every
 form that would create one (including a **New Shot** or **New Asset** whose
 sequence or category does not exist yet) refuses with *'X' is already a
 sequence; a category cannot share its name.* (or the reverse). A card's id

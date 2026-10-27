@@ -295,7 +295,9 @@ class DatabaseWindow(QMainWindow):
         from tumblepipe.pipe.entity_files import EntityHasFiles, rename_entity
         try:
             rename_entity(uri, new_label)
-        except EntityHasFiles as exc:
+        except (EntityHasFiles, ValueError) as exc:
+            # ValueError: the store refused the name (taken, case-only
+            # different, or not letters and digits).
             QMessageBox.warning(self, "Rename Entity", str(exc))
             # Put the old label back. Deferred: this runs inside the tree's
             # own edit-commit signal.

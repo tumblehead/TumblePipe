@@ -4,7 +4,7 @@
 
 Run under a project hython with the local source (TumbleTrove Desktop
 run_hython with use_dev_overrides=true). PUBLISHES into the project: it
-creates the shot entity:/shots/verify_seq/verify_library, exports layout and
+creates the shot entity:/shots/verifyseq/verifylibrary, exports layout and
 light, builds the staged stage after each, then removes the shot and its
 exports again. Needs one published asset-free project; any will do.
 
@@ -36,8 +36,8 @@ from tumblepipe.pipe.houdini.lops import export_layer, import_shot
 from tumblepipe.pipe.houdini.ui import task_factory
 from tumblepipe.util.uri import Uri
 
-SEQ = Uri.parse('entity:/shots/verify_seq')
-SHOT = Uri.parse('entity:/shots/verify_seq/verify_library')
+SEQ = Uri.parse('entity:/shots/verifyseq')
+SHOT = Uri.parse('entity:/shots/verifyseq/verifylibrary')
 FAILURES = []
 
 
@@ -94,7 +94,7 @@ def import_into(department):
 
 
 def main():
-    library = Path(tempfile.mkdtemp(prefix='verify_library_'))
+    library = Path(tempfile.mkdtemp(prefix='verifylibrary_'))
     created_seq = api.config.get_properties(SEQ) is None
     created = api.config.get_properties(SHOT) is None
     try:
@@ -137,12 +137,12 @@ def main():
         shutil.rmtree(library, ignore_errors=True)
         if created:
             api.config.remove_entity(SHOT)
-            export_root = Path(api.storage.resolve(Uri.parse('export:/shots/verify_seq/verify_library')))
+            export_root = Path(api.storage.resolve(Uri.parse('export:/shots/verifyseq/verifylibrary')))
             shutil.rmtree(export_root, ignore_errors=True)
         if created_seq:
             api.config.remove_entity(SEQ)
             shutil.rmtree(
-                Path(api.storage.resolve(Uri.parse('export:/shots/verify_seq'))),
+                Path(api.storage.resolve(Uri.parse('export:/shots/verifyseq'))),
                 ignore_errors=True,
             )
 

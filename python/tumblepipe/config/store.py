@@ -30,6 +30,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from tumblepipe import naming
 from tumblepipe.config.schema import Schema, schema_from_properties
 from tumblepipe.util.data import deep_merge as _deep_merge
 from tumblepipe.util.io import load_json, store_json
@@ -73,6 +74,35 @@ def _find_case_collision(data: dict, path: list[str]) -> tuple[str, str] | None:
             return None
         data = children[step]
     return None
+
+
+# The entity kinds whose names follow naming.is_valid_entity_name.
+_NAMED_KINDS = ('assets', 'shots')
+
+
+def _new_name_problem(purpose: str, data: dict, path: list[str]) -> str:
+    """Why a category, sequence, asset or shot that a write to ``path``
+    creates is misnamed, or ''.
+
+    A name is joined to others with ``_`` all over the pipeline (node
+    names, farm jobs, file stems), so one holding ``_`` can read as two:
+    ``PROP/old_tree`` and ``PROP_old/tree`` both flatten to
+    ``PROP_old_tree``. Only the nodes this write creates are checked, so a
+    sequence named before the rule (``Seq_0010``) still takes new shots.
+    """
+    if purpose != 'entity' or len(path) < 2 or path[0] not in _NAMED_KINDS:
+        return ''
+    depth = 0
+    for step in path:
+        children = data.get('children')
+        if children is None or step not in children:
+            break
+        data = children[step]
+        depth += 1
+    for name in path[max(depth, 1):]:
+        if not naming.is_valid_entity_name(name):
+            return f"Name '{name}' may only use letters and digits"
+    return ''
 
 
 def _remove(data, path):
@@ -362,6 +392,9 @@ class JsonConfigStore:
                 f"'{existing}' (names may not differ only by case — "
                 "case-variant hierarchies split exports and sidecars)"
             )
+        problem = _new_name_problem(uri.purpose, data, uri.segments)
+        if problem:
+            raise ValueError(problem)
         # deepcopy so the caller cannot mutate the cached tree through the
         # dict (or the lists inside it) it handed in -- see set_own_properties.
         _insert(data, copy.deepcopy(properties), uri.segments)
@@ -396,6 +429,9 @@ class JsonConfigStore:
                 f"Entity name '{wanted}' collides with existing "
                 f"'{existing}' (names may not differ only by case)"
             )
+        problem = _new_name_problem(uri.purpose, data, new_path)
+        if problem:
+            raise ValueError(problem)
         node = data
         for step in uri.segments[:-1]:
             node = node['children'][step]

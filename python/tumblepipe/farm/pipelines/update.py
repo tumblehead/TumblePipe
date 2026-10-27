@@ -22,7 +22,6 @@ from tumblepipe.config.channels import DEFAULT_CHANNEL
 from tumblepipe.config.department import list_departments
 from tumblepipe.farm.pipelines import publish as publish_pipeline
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
-from tumblepipe.pipe.paths.naming import entity_stem
 from tumblepipe.util.uri import Uri
 
 # Exports are checked against the default channel's.
@@ -47,7 +46,13 @@ def build(
     department_names = department_names[:department_names.index(config['department']) + 1]
 
     terminal_job_names = []
-    for shot_uri in api.config.list_entities(Uri.parse('entity:/shots/*/*')):
+    # The store has no wildcards: 'entity:/shots/*/*' listed nothing, so
+    # this pipeline never published a shot. Shots are three segments deep.
+    shot_uris = [
+        uri for uri in api.config.list_entity_uris(Uri.parse('entity:/shots'), closure=True)
+        if len(uri.segments) == 3
+    ]
+    for shot_uri in shot_uris:
         prev_job_name = None
         for dept_name in department_names:
             if not publish_pipeline.is_submissable(shot_uri, dept_name):
@@ -57,7 +62,9 @@ def build(
                 shot_uri, UPDATE_CHANNEL, dept_name
                 ):
                 continue
-            job_name = entity_stem(shot_uri, dept_name)
+            # The URI, not a '_'-joined name: sq_1/sh10 and sq/1_sh10 would
+            # share one key and the second job would replace the first.
+            job_name = f'publish {shot_uri} {dept_name}'
             jobs[job_name] = publish_pipeline.create_publish_job(
                 shot_uri, dept_name,
                 config['pool_name'], config['priority'],
