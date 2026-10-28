@@ -216,6 +216,41 @@ see [`th::playblast` (LOP)](nodes/lighting-and-rendering.md#thplayblast-lop).
 `th::create_model` and `th::render_debug` read the same pointer and now
 turn a Multi away the same way.
 
+### Playblast fails with "camera '' is not a camera on the stage"
+
+A `th::playblast` (LOP or SOP) dropped into a shot fails the first time
+Playblast is pressed:
+
+```
+EntityNodeError: .../playblast: camera '' is not a camera on the stage (cameras: render_camera)
+```
+
+The Camera menu shows `render_camera`, but nothing is picked: the parm
+starts empty and Houdini displays an empty menu parm as its first entry.
+Pick the camera from the menu once and the playblast runs. From 1.83 an
+empty Camera means the camera the menu shows.
+
+### Playblast in a Multi's animation workfile: "Pick one of its members with the Entity button"
+
+Pressing **Playblast** on a `th::playblast` in a Multi's animation workfile
+pops a traceback ending in
+
+```
+EntityNodeError: .../playblast: entity is 'from_context', but this workfile
+belongs to groups:/shots/<Multi>, a group, not an entity. Pick one of its
+members with the Entity button.
+```
+
+The node is not broken. A Multi's workfile holds several shots and a
+playblast writes one shot's MP4, so Entity left on `from_context` resolves
+nothing. Click **Entity** on the node and pick the shot. Department can stay
+on `from_context`.
+
+From 1.83 this kind of error is a warning dialog, not a traceback. A new
+Multi animation workfile also comes with a playblast already set to its
+shot inside each member's `animate_shot_<member>` dive. Workfiles made
+before that keep their nodes as they are.
+
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
 Each is a deliberate guard in `th::export_layer`, and the dialog names the
@@ -445,6 +480,20 @@ to
 ```python
 asset_uri = Uri.parse(asset_info['metadata']['uri'])
 ```
+
+### Import Rigs in an animation workfile lists props and sets, and errors
+
+Through 1.82 the `shots/animation` template gave `th::import_rigs` a row
+for every asset in the shot, so every prop, set or not-yet-rigged character
+was a row with no rig to import. From 1.83 the node skips a `latest` row
+whose asset has no rig published and names it in its comment (*No rig
+published: Tree, Rock*); press **Import** on an existing workfile to clear
+the errors, and delete those rows with `-` if you like. Launching the
+project with 1.83 also migrates it to v16, which replaces a stock copy of
+the template so new animation workfiles add rows only for rigged assets. A
+copy your studio customised is left alone; in its `_scrape_rig_imports`,
+keep only the assets for which `import_rigs.has_rig_export(asset_uri)` is
+true.
 
 ### Publish spins forever, then a reopened Asset Browser is empty
 

@@ -22,6 +22,32 @@ from tumblepipe.pipe.paths import (
     get_daily_path,
 )
 
+def resolve_camera_path(camera_name: str, camera_paths: list[str]) -> str | None:
+    """The stage camera a playblast's Camera parm names, or None.
+
+    Camera is a menu whose value starts empty, and Houdini shows an empty
+    menu parm as its first entry: the artist sees a camera picked and
+    presses Playblast (Magnus: "just try to click playblast, there is a
+    python error"). Empty is therefore the camera the menu shows, the first
+    one listed. The SOP playblast resolves its parm here too.
+    """
+    camera_names = [path.rsplit('/', 1)[-1] for path in camera_paths]
+    if camera_name == '':
+        return camera_paths[0] if camera_paths else None
+    if camera_name not in camera_names:
+        return None
+    return camera_paths[camera_names.index(camera_name)]
+
+
+def camera_error(camera_name: str, camera_names: list[str]) -> str:
+    if not camera_names:
+        return 'there is no camera on the stage: the shot has no camera published'
+    return (
+        f"camera '{camera_name}' is not a camera on the stage "
+        f"(cameras: {', '.join(camera_names)})"
+    )
+
+
 class Playblast(FrameRangeNode, EntityNode):
 
     # A playblast renders one shot's camera into that shot's folder.
@@ -76,15 +102,14 @@ class Playblast(FrameRangeNode, EntityNode):
         return get_group(context.entity_uri)
 
     def get_camera_path(self):
-        camera_paths = self.list_camera_paths()
-        camera_names = self.list_camera_names()
-        camera_name = self.parm('camera').eval()
-        if camera_name not in camera_names:
-            raise self._error(
-                f"camera '{camera_name}' is not a camera on the stage "
-                f"(cameras: {', '.join(camera_names) or 'none'})"
-            )
-        return camera_paths[camera_names.index(camera_name)]
+        camera_path = resolve_camera_path(
+            self.parm('camera').eval(), self.list_camera_paths()
+        )
+        if camera_path is None:
+            raise self._error(camera_error(
+                self.parm('camera').eval(), self.list_camera_names()
+            ))
+        return camera_path
 
     def set_camera_name(self, camera_name):
         if camera_name not in self.list_camera_names():
@@ -230,14 +255,17 @@ def update_labels(kwargs):
 def export(kwargs):
     raw_node = kwargs['node']
     node = Playblast(raw_node)
-    node.export()
+    with ns.node_errors_as_message('Playblast'):
+        node.export()
 
 def view_latest(kwargs):
     raw_node = kwargs['node']
     node = Playblast(raw_node)
-    node.view_latest()
+    with ns.node_errors_as_message('Playblast'):
+        node.view_latest()
 
 def open_location(kwargs):
     raw_node = kwargs['node']
     node = Playblast(raw_node)
-    node.open_location()
+    with ns.node_errors_as_message('Playblast'):
+        node.open_location()

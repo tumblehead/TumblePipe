@@ -369,6 +369,16 @@ Three rules:
   Likewise a master scene naming the departments that would not merge, and a
   created workfile saying so when its frame range never landed.
 
+A th:: node's parm **button** that fails because a parm does not resolve
+(Entity on `from_context` in a Multi workfile, a camera not on the stage)
+raises `NodeError` (`nodes.py`, built with `self._error(...)`), whose message
+already says what to set. Wrap that callback in
+`with ns.node_errors_as_message('<Node>'):` so the message shows as a plain
+warning dialog. Left alone, Houdini puts it up as a Python traceback, which
+artists report as "the node is broken" (Magnus on `th::playblast`). Any
+other exception keeps its traceback, and without a UI the `NodeError` raises
+too. The playblast LOP and SOP use it so far.
+
 The one deliberate opt-out is the crash-time emergency save
 (`_save_scene(..., report_failures=False)`): its whole premise is that
 Houdini's event loop is wedged behind the crash-report dialog, so putting a
@@ -941,7 +951,7 @@ created and runs its own copy from then on: "New workfile from template"
 loads `<project>/_config/templates/<context>/<department>/template.py`, not
 the package's. **Editing a packaged template changes new projects only.** An
 existing project gets the change only when a numbered refresh step brings it
-(v2, v9, v12, v14 so far), so a fix nobody migrates is a fix nobody has: the
+(v2, v9, v12, v14, v15, v16 so far), so a fix nobody migrates is a fix nobody has: the
 rig/blendshape dive fix shipped in 1.77.0 and the animation template's
 `KeyError: 'uri'` fix both sat in the scaffold, unseen by every project past
 v12, until v14.

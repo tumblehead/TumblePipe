@@ -428,7 +428,7 @@ left exactly as it was, rather than stamped part-way at the last step that
 happened to succeed.
 
 A migration never replaces a file without preserving the original — the one
-exception is a template v12 or v14 recognises as a version the scaffold shipped, which
+exception is a template v12, v14, v15 or v16 recognises as a version the scaffold shipped, which
 holds nothing of the project's. Which of the two it does depends on how
 load-bearing the file is:
 
@@ -444,8 +444,8 @@ load-bearing the file is:
   HDAs on their `from_context` default instead of baking an entity URI in)
   would otherwise never reach a live project. If you *had* hand-tuned a
   template, reconcile it from the `.bak`. The refresh runs only as a
-  numbered step (v2, then v9 as `template.py.v9.bak`, then v12 and v14 for
-  stock templates only), so a later scaffold template change reaches existing
+  numbered step (v2, then v9 as `template.py.v9.bak`, then v12, v14, v15 and
+  v16 for stock templates only), so a later scaffold template change reaches existing
   projects only once another refresh step ships.
 - **`_config/db/schemas.json` gains the `entity.departments` default (v3).**
   Additive and data-neutral — it declares the per-entity department
@@ -623,6 +623,23 @@ load-bearing the file is:
   instead of `sopnet/create`. v14 runs v12's refresh again with the same rules — a
   stock template is replaced by the packaged one, a customised one is left
   alone, and one that calls something removed refuses the step and is named.
+
+- **The layout camera follows the resolution; `blshp` is a Scope (v15).**
+  v12's refresh again, for two template fixes: the `shots/layout` render
+  camera kept the Camera LOP's 16:9 aspect whatever `render.resolution`
+  said, and the `assets/blendshape` template authored `<asset>/blshp` as an
+  Xform, which the asset structure check refuses.
+
+- **Animation imports only published rigs (v16).** v12's refresh again, for
+  the `shots/animation` template: it gave `th::import_rigs` a row for every
+  asset in the shot, props and sets included, and every asset with no rig
+  published was a failing row. It now adds a row only for an asset with a
+  rig. Workfiles made before v16 keep their rows; `th::import_rigs` skips
+  a `latest` row with no rig published and names it in its comment. In a
+  Multi's animation workfile it also gives each member shot's
+  `th::animate` dive a SOP `th::playblast` with **Entity** set to that
+  shot: the Multi's workfile names no one shot, so a playblast left on
+  `from_context` there cannot render.
 
 ### Migrating at launch
 

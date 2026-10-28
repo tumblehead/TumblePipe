@@ -1,4 +1,6 @@
 
+from contextlib import contextmanager
+
 import hou
 
 
@@ -43,6 +45,28 @@ def list_by_node_type(type_name, context):
 class NodeError(Exception):
     """A th:: node's parms do not resolve to something the node can act
     on. The message names the node, and says how to fix it."""
+
+
+@contextmanager
+def node_errors_as_message(title: str):
+    """Show a :class:`NodeError` raised by a node's button as a message.
+
+    A button callback that raises puts a Python traceback in front of the
+    artist, which reads as a crash even when the message underneath says
+    which parm to set (Magnus: "th_playblast is broken" was a traceback of
+    one; an Entity left on from_context in a Multi workfile is another).
+    Any other exception is a bug and
+    keeps its traceback; without a UI (hython, the farm) a NodeError raises
+    too, since nobody would see the message.
+    """
+    try:
+        yield
+    except NodeError as exc:
+        if not hou.isUIAvailable():
+            raise
+        hou.ui.displayMessage(
+            str(exc), title=title, severity=hou.severityType.Warning,
+        )
 
 
 class Node:

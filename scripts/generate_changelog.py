@@ -15,6 +15,12 @@ sanity check.
 Tags are ordered by creation date, not by parsing the version, so v1.9.0
 sorts before v1.10.0 correctly. The oldest tag's section covers every
 commit that led up to it.
+
+Only tags that share history with HEAD count. A clone can hold stray local
+tags from an unrelated older history (v0.1.0-v1.0.2 in one, never on
+origin); listing every tag rendered their history into the file, so the
+output depended on which clone ran it. Reachability from HEAD would be too
+strict: hotfix tags (v1.74.3, v1.4.x) sit on side branches.
 """
 
 from __future__ import annotations
@@ -48,7 +54,8 @@ CI and build commits are omitted deliberately.
 
 
 def _tags() -> List[Tuple[str, str]]:
-    """``(tag, iso_date)`` for every release tag, oldest first."""
+    """``(tag, iso_date)`` for every release tag sharing history with
+    HEAD, oldest first."""
     result = subprocess.run(
         [
             "git", "for-each-ref", "--sort=creatordate",
@@ -62,8 +69,18 @@ def _tags() -> List[Tuple[str, str]]:
         if "\t" not in line:
             continue
         name, date = line.split("\t", 1)
-        tags.append((name.strip(), date.strip()))
+        if _shares_history(name.strip()):
+            tags.append((name.strip(), date.strip()))
     return tags
+
+
+def _shares_history(tag: str) -> bool:
+    """Whether ``tag`` has a common ancestor with HEAD."""
+    result = subprocess.run(
+        ["git", "merge-base", tag, "HEAD"],
+        cwd=REPO, capture_output=True, text=True,
+    )
+    return result.returncode == 0
 
 
 def _render() -> str:

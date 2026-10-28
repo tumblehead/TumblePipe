@@ -144,8 +144,9 @@ out without one. Multi and Root rows also accept dragged cards.
 An asset card is named after the asset; when the view mixes categories (the
 Assets root, a Root's members, the *All* view) the name is prefixed with its
 category, `CHAR/Baby`, so same-named assets in different categories stay
-apart. Inside one category the bare name is shown. A shot card is always
-`sequence_shot`.
+apart. Inside one category the bare name is shown. Shot cards work the same
+way: `SH0030` inside its sequence, `Seq_0010/SH0030` where sequences mix
+(the Shots root, a Root's members, the *All* view).
 
 The card whose workfile is currently open in Houdini is sorted first and
 drawn with a highlight border.
@@ -194,6 +195,7 @@ order.
 | bright | the department of the scene you have open |
 | dark, no version | no workfile yet |
 | **ⓜ** with an orange tint | the department is covered by a Multi; the tooltip names it |
+| a no-entry cursor when dragged | the department is published from SOPs (rig), so there is no USD layer to drop into a LOP network (TumbleTrove 0.50+) |
 
 Labels are the department's `short` from the pool when it has one,
 otherwise `Anim`, `Blend`, `Comp`, `Enviro` or the title-cased name.
@@ -408,7 +410,7 @@ Drop targets and what gets built
 | a shot card | a SOP network | refused: *Shots can only be imported into LOP networks* |
 | a Root card | a LOP network | a stock `sublayer` node whose file path is the Root's `entity:/scenes/…` URI, so it follows the Root's latest export |
 | a recipe card | any network editor | the recipe's nodes, wired and placed at the cursor; another context than the one it was saved in asks **Load Anyway** first. See [Recipes](recipes.md#using-a-recipe) |
-| department deck items or list rows | a LOP network | one `th::import_layer` per department, wired and flagged (TumbleTrove's default path) |
+| department deck items (the deck popup; list-view rows do not drag) | a LOP network | one `th::import_layer` per department, wired and flagged (TumbleTrove's default path). A department published from SOPs (rig: a `.bgeo.sc`, no USD layer) does not drag (TumbleTrove 0.50+); on older TumbleTrove it is skipped on drop with a warning. Bring a rig in with `th::import_rig` in a SOP network |
 | a node card (**Nodes** section) | a network of the node's context | the node at the cursor; dropped on an existing node, it is wired below it and takes its display flag. A SOP node dropped at object level gets a new Geometry node to live in. Another context is refused |
 | several node cards | a network of their context | one node per card, side by side, in one undo step; if any card's context does not fit, none is created |
 

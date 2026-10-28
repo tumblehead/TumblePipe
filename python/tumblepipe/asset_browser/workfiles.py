@@ -339,6 +339,19 @@ class WorkfileManager:
             (str(note) if note else ""),
         )
 
+    def exports_usd(self, asset_id: str, dept: str) -> bool:
+        """Whether ``dept``'s exports of ``asset_id`` are USD layers (see
+        ``drops.publishes_usd``); True for an id naming no entity."""
+        proj = self._resolver.project_for(asset_id)
+        if proj is None:
+            return True
+        self._activator.activate(proj)
+        uri = self._resolver.uri_for_ready(asset_id)
+        if uri is None:
+            return True
+        from .drops import latest_exports, publishes_usd
+        return publishes_usd(latest_exports(uri, dept))
+
     def get_latest_export_mtime(self, asset_id: str, dept: str):
         """Return the latest export folder's mtime for ``dept`` as a
         datetime, or ``None`` if no export exists."""

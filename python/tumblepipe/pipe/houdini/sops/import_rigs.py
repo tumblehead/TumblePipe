@@ -10,6 +10,35 @@ from tumblepipe.config.channels import list_channels
 from tumblepipe.pipe.paths import list_version_paths
 
 
+def has_rig_export(asset_uri: Uri, channel_name: str = 'default') -> bool:
+    """Whether ``asset_uri`` has published a rig in ``channel_name``. A shot
+    imports props and sets that never get one, so the animation template
+    adds a row only for an asset that has."""
+    export_uri = Uri.parse('export:/') / asset_uri.segments / channel_name / 'rig'
+    return len(list_version_paths(api.storage.resolve(export_uri))) > 0
+
+
+def split_unpublished(rig_imports):
+    """``(to_import, unpublished)``: the rows with instances to import, and
+    the assets of the 'latest' rows that have no rig published.
+
+    Those rows are skipped and named in the node comment, not imported as
+    a dead character: the animation template before migration v16 added a
+    row for every asset in the shot (Magnus). A pinned version still has to
+    exist, so its row stays in and fails loudly on import.
+    """
+    to_import, unpublished = [], []
+    for row in rig_imports:
+        asset_uri, channel, version, instances = row
+        if instances <= 0:
+            continue
+        if version == 'latest' and not has_rig_export(asset_uri, channel):
+            unpublished.append(asset_uri)
+        else:
+            to_import.append(row)
+    return to_import, unpublished
+
+
 class ImportRigs(ns.Node):
     """One rig import per multiparm row. Each row's asset, channel and
     version are explicit: a row resolves exactly what it names, or raises
@@ -189,15 +218,17 @@ class ImportRigs(ns.Node):
         ns.clear_network(dive_node, output_node)
 
         # Parameters
-        rig_imports = self.get_rig_imports()
+        active_imports, unpublished = split_unpublished(self.get_rig_imports())
+        unpublished_note = (
+            '\nNo rig published: '
+            + ', '.join(uri.segments[-1] for uri in unpublished)
+            if unpublished else ''
+        )
 
         # Check if any rigs to import
-        active_imports = [
-            (uri, var, ver, inst)
-            for uri, var, ver, inst in rig_imports if inst > 0
-        ]
         if not active_imports:
-            ns.set_node_comment(context, "Bypassed: No rigs configured")
+            ns.set_node_comment(
+                context, f"Bypassed: No rigs configured{unpublished_note}")
             context.bypass(True)
             return
         # Undo a bypass left by an earlier empty run, or the node reports
@@ -206,8 +237,7 @@ class ImportRigs(ns.Node):
 
         # Build asset nodes
         prev_node = None
-        for asset_uri, channel, version, instances in rig_imports:
-            if instances == 0: continue
+        for asset_uri, channel, version, instances in active_imports:
 
             # Create node name from URI segments (include channel for uniqueness)
             uri_name = '_'.join(asset_uri.segments[1:])
@@ -239,7 +269,11 @@ class ImportRigs(ns.Node):
 
         # Set success comment
         rig_count = len(active_imports)
-        ns.set_node_comment(context, f"Imported: {rig_count} rig{'s' if rig_count != 1 else ''}")
+        ns.set_node_comment(
+            context,
+            f"Imported: {rig_count} rig{'s' if rig_count != 1 else ''}"
+            f"{unpublished_note}",
+        )
 
 def create(scene, name):
     return ns.create_node(scene, name, ImportRigs, 'import_rigs', 'Sop')

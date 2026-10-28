@@ -13,7 +13,8 @@ Routes asset / shot / Root drops onto Houdini network panes:
   (or appends to an existing one); shots are skipped (multi-shot drops
   are not supported yet).
 - Deck-item drop: one ``th::import_layer`` per dragged department deck
-  item of an asset or shot, LOP only.
+  item of an asset or shot, LOP only. A department whose exports are not
+  USD layers (rig, published from SOPs) is refused.
 
 The router owns no mutable state — every call routes off the catalog
 services it was constructed with.
@@ -70,7 +71,8 @@ def entity_node_name(asset_or_detail) -> str:
     Not from its card name: in a view that mixes categories the card
     reads ``CHAR/Bob`` (see ``EntityIndex.apply_category_prefix``), and
     ``/`` is not allowed in a node name, so those drops failed. A shot is
-    ``<sequence>_<shot>``, as on its card.
+    ``<sequence>_<shot>`` wherever it is dropped from, though its card
+    shows the bare shot inside its sequence.
     """
     parts = asset_or_detail.id.split("/")
     if len(parts) != 3:
@@ -79,6 +81,39 @@ def entity_node_name(asset_or_detail) -> str:
     if "type:shot" in asset_or_detail.tags:
         return node_name(f"{bucket}_{name}")
     return node_name(name)
+
+
+_USD_SUFFIXES = (".usd", ".usda", ".usdc", ".usdz")
+
+
+def publishes_usd(version_dirs) -> bool:
+    """Whether a department's exports are USD layers, judged from the
+    latest export version of each channel (``None`` where there is none).
+
+    Rig is published from SOPs: its versions hold a ``.bgeo.sc`` and a
+    ``context.json``, no layer, so a ``th::import_layer`` of it is a dead
+    node. A department with no export yet counts as USD — the node then
+    waits, bypassed, for the first publish, as before.
+    """
+    dirs = [d for d in version_dirs if d is not None]
+    if not dirs:
+        return True
+    return any(
+        f.name.lower().endswith(_USD_SUFFIXES)
+        for d in dirs if d.is_dir() for f in d.iterdir()
+    )
+
+
+def latest_exports(entity_uri, department: str) -> list:
+    """The latest export version directory of ``department`` in each of
+    the entity's channels (``None`` for a channel with none)."""
+    from tumblepipe.config.channels import list_channels
+    from tumblepipe.pipe.paths import latest_export_path
+
+    return [
+        latest_export_path(entity_uri, channel, department)
+        for channel in list_channels(entity_uri)
+    ]
 
 
 def is_import_assets_node(node) -> bool:
@@ -290,6 +325,20 @@ class DropRouter:
         from tumblepipe.pipe.houdini.lops import import_layer
 
         uri = uris.parse(entity_uri)
+        sop_only = [
+            dept for dept in deck_keys
+            if not publishes_usd(latest_exports(uri, dept))
+        ]
+        deck_keys = [dept for dept in deck_keys if dept not in sop_only]
+        if not deck_keys:
+            hou.ui.setStatusMessage(
+                f"{', '.join(sop_only)} is published from SOPs, not as a USD "
+                "layer, so it can't be imported into a LOP network. "
+                "Use th::import_rig in a SOP network for a rig.",
+                severity=hou.severityType.Warning,
+            )
+            return True
+
         for index, dept in enumerate(deck_keys):
             node = import_layer.create(
                 drop.network, node_name(f"{entity_node_name(asset)}_{dept}"),
@@ -310,8 +359,15 @@ class DropRouter:
             self.attach_network_thumbnail(asset.id, raw, drop)
 
         hou.ui.setStatusMessage(
-            f"Imported {asset.name} / {', '.join(deck_keys)}",
-            severity=hou.severityType.Message,
+            f"Imported {asset.name} / {', '.join(deck_keys)}"
+            + (
+                f"; skipped {', '.join(sop_only)} (published from SOPs)"
+                if sop_only else ""
+            ),
+            severity=(
+                hou.severityType.Warning if sop_only
+                else hou.severityType.Message
+            ),
         )
         return True
 

@@ -9,6 +9,7 @@ workfile covers a member's department.
 
 from __future__ import annotations
 
+import dataclasses
 from typing import TYPE_CHECKING
 
 from tumbletrove.asset_browser.api.types import Asset, DeckItem
@@ -30,6 +31,10 @@ _MISSING_DEPT_TOOLTIP = (
     "{short} — no workfile yet\n"
     "Double-click to create the first version from the template"
 )
+
+# TumbleTrove 0.50 added ``DeckItem.draggable``; an older build rejects
+# the keyword, and there the drop router's refusal is all there is.
+_HAS_DRAGGABLE = "draggable" in {f.name for f in dataclasses.fields(DeckItem)}
 
 # Group accent — matches ``TYPE_COLORS["group"]`` in the asset browser's
 # theme. The deck item tint where a Multi's workfile covers a member's
@@ -157,6 +162,13 @@ class DeckBuilder:
                 return SHOT_DEPT_ICONS[dept]
             return DEPT_ICONS.get(dept, "package")
 
+        def _drag(dept: str) -> dict:
+            # A dept published from SOPs (rig: a .bgeo.sc) has no layer
+            # for a LOP drop to import, so its item does not drag (Magnus).
+            if _HAS_DRAGGABLE and not self._workfiles.exports_usd(asset.id, dept):
+                return {"draggable": False}
+            return {}
+
         for dept_name in all_depts:
             short = DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
             version = depts.get(dept_name)
@@ -183,6 +195,7 @@ class DeckBuilder:
                         f"{short} — covered by Multi: {group_label}\n"
                         "Double-click to open the Multi's workfile"
                     ),
+                    **_drag(dept_name),
                 ))
             elif version:
                 status = (
@@ -217,6 +230,7 @@ class DeckBuilder:
                     user=user,
                     edited=mtime,
                     note=note,
+                    **_drag(dept_name),
                 ))
             else:
                 # No workfile yet. Double-click creates v0001 from the

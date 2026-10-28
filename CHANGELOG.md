@@ -12,6 +12,20 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.82.2 — 2026-10-27
+
+### Fixes
+- fix(browser): an unreadable department folder no longer hides its entity (`487b3111`)
+- fix(browser): deleting an entity never leaves its folder half-deleted (`728e87a5`)
+
+### Documentation
+- docs: unreadable entity folder keeps its card (`66cc4857`)
+- docs: troubleshooting entry for a half-deleted entity folder (`4a8db7db`)
+- docs: regenerate CHANGELOG.md for v1.82.1 (`a562dced`)
+
+### Tests
+- test: unreadable department folders, generated; Open still raises (`35cf75f9`)
+
 ## v1.82.1 — 2026-10-27
 
 ### Fixes

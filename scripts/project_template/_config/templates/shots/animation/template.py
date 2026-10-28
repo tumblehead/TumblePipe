@@ -10,7 +10,8 @@ from tumblepipe.pipe.houdini.lops import (
     export_layer
 )
 from tumblepipe.pipe.houdini.sops import (
-    import_rigs
+    import_rigs,
+    playblast
 )
 
 def _edit_camera(parent_node, name: str, prim_path: str):
@@ -31,7 +32,11 @@ def _scrape_rig_imports(import_native):
         if asset_uri not in rig_imports:
             rig_imports[asset_uri] = 0
         rig_imports[asset_uri] += 1
-    return rig_imports
+    # Props and sets never get a rig; a row for one only fails to import.
+    return {
+        asset_uri: count for asset_uri, count in rig_imports.items()
+        if import_rigs.has_rig_export(asset_uri)
+    }
 
 def _build_animate_dive(animate_node, rig_imports: dict):
     """Populate the inner anim_dive of an animate HDA with rigs and apex nodes."""
@@ -60,6 +65,16 @@ def _build_animate_dive(animate_node, rig_imports: dict):
     invoke_scene_node.setInput(0, scene_animate_node)
     output_animate_node.setInput(0, invoke_scene_node)
 
+    inner_animate_node.layoutChildren()
+
+def _add_member_playblast(animate_node, member_uri: Uri):
+    """A Multi's workfile names no one shot, so a playblast left on
+    'from_context' cannot render; each member's dive gets one set to it."""
+    inner_animate_node = animate_node.native().node('anim_dive')
+    playblast_node = playblast.create(inner_animate_node, 'playblast')
+    playblast_node.set_entity_uri(member_uri)
+    playblast_node.parm('camera').set('render_camera')
+    playblast_node.native().setInput(0, inner_animate_node.node('scene_invoke'))
     inner_animate_node.layoutChildren()
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
@@ -116,6 +131,7 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         animate_node = ns.create_node(scene_node, f'animate_shot_{member_name}', ns.Node, 'animate')
         animate_node.setInput(0, camera_edit_node)
         _build_animate_dive(animate_node, rig_imports)
+        _add_member_playblast(animate_node, member_uri)
 
         # Create animation camera
         anim_camera = hou.node('/obj').createNode('lopimportcam', f'anim_camera_{member_name}')

@@ -11,6 +11,7 @@ from tumblepipe.config.timeline import get_frame_range, get_fps
 from tumblepipe.pipe.houdini import prim_queries
 from tumblepipe.pipe.houdini import nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode, FROM_CONTEXT
+from tumblepipe.pipe.houdini.lops.playblast import resolve_camera_path, camera_error
 from tumblepipe.pipe.paths import (
     get_next_playblast_path,
     get_latest_playblast_path,
@@ -57,15 +58,15 @@ class Playblast(EntityNode):
         return [FROM_CONTEXT] + super().list_department_names()
 
     def get_camera_path(self):
-        camera_paths = self.list_camera_paths()
-        camera_names = self.list_camera_names()
-        camera_name = self.parm('camera').eval()
-        if camera_name not in camera_names:
-            raise self._error(
-                f"camera '{camera_name}' is not a camera on the stage "
-                f"(cameras: {', '.join(camera_names) or 'none'})"
-            )
-        return camera_paths[camera_names.index(camera_name)]
+        # An empty Camera is the camera its menu shows (see the LOP's).
+        camera_path = resolve_camera_path(
+            self.parm('camera').eval(), self.list_camera_paths()
+        )
+        if camera_path is None:
+            raise self._error(camera_error(
+                self.parm('camera').eval(), self.list_camera_names()
+            ))
+        return camera_path
 
     def set_camera_name(self, camera_name):
         camera_names = self.list_camera_names()
@@ -205,17 +206,20 @@ def on_created(raw_node):
 def export(kwargs):
     raw_node = kwargs['node']
     node = Playblast(raw_node)
-    node.playblast()
+    with ns.node_errors_as_message('Playblast'):
+        node.playblast()
 
 def view_latest(kwargs):
     raw_node = kwargs['node']
     node = Playblast(raw_node)
-    node.view_latest()
+    with ns.node_errors_as_message('Playblast'):
+        node.view_latest()
 
 def open_location(kwargs):
     raw_node = kwargs['node']
     node = Playblast(raw_node)
-    node.open_location()
+    with ns.node_errors_as_message('Playblast'):
+        node.open_location()
 
 def select(kwargs):
     """Entity button."""

@@ -304,7 +304,6 @@ class EntityIndex:
         if kind == "assets":
             tags = {"type:asset", f"category:{bucket}"}
             metadata["category"] = bucket
-            display = name
         else:
             tags = {"type:shot", f"sequence:{bucket}"}
             metadata["sequence"] = bucket
@@ -315,10 +314,9 @@ class EntityIndex:
                 and fr.start_frame is not None and fr.end_frame is not None
                 else ""
             )
-            display = f"{bucket}_{name}"
         return Asset(
             id=asset_id,
-            name=display,
+            name=name,
             thumbnail_url="",
             tags=frozenset({"source:pipeline", f"project:{proj.name}", *tags}),
             has_deck_items=True,
@@ -341,23 +339,30 @@ class EntityIndex:
     def apply_category_prefix(
         items: list[Asset], tags: frozenset[str],
     ) -> list[Asset]:
-        """Prefix asset names with their category when the view mixes
-        categories.
+        """Prefix names with their category or sequence when the view
+        mixes them.
 
         Sibling assets in different categories can share a bare name
-        ("SET" exists in both Clash and PoP), so the Assets-root,
-        project-root, Multi-member and All views render ambiguous rows.
-        Inside a single category node (a ``category:`` tag is in the
-        filter) the bare name stays. Shots are untouched — their names
-        already carry the sequence.
+        ("SET" exists in both Clash and PoP), and every sequence can have
+        its own SH0010, so the Assets-root, Shots-root, project-root,
+        Multi-member and All views render ambiguous rows. Inside a single
+        category or sequence node (a ``category:`` / ``sequence:`` tag is
+        in the filter) the bare name stays: there the prefix only repeats
+        the node's name and pushes the shot out of the Name column.
         """
-        if any(t.startswith("category:") for t in tags):
-            return items
+        in_category = any(t.startswith("category:") for t in tags)
+        in_sequence = any(t.startswith("sequence:") for t in tags)
         out: list[Asset] = []
         for a in items:
-            category = (a.metadata or {}).get("category", "")
-            if category and "type:asset" in a.tags:
-                out.append(dataclasses.replace(a, name=f"{category}/{a.name}"))
+            meta = a.metadata or {}
+            if "type:asset" in a.tags and not in_category:
+                parent = meta.get("category", "")
+            elif "type:shot" in a.tags and not in_sequence:
+                parent = meta.get("sequence", "")
+            else:
+                parent = ""
+            if parent:
+                out.append(dataclasses.replace(a, name=f"{parent}/{a.name}"))
             else:
                 out.append(a)
         return out

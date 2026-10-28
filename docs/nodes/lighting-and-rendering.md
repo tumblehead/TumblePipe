@@ -419,7 +419,7 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 |---|---|---|
 | Entity | `from_context` | The shot — the shared Entity button (shots only, *Select Shot*), as on `th::import_shot`; the label beside it shows what `from_context` resolved to |
 | Department | `from_context` | `from_context` (the workfile's department) or one of the shot's **renderable** departments |
-| Camera | first camera | The cameras in the input stage: under `/cameras` or `/scene/cameras`, else anywhere on the stage |
+| Camera | first camera | The cameras in the input stage: under `/cameras` or `/scene/cameras`, else anywhere on the stage. Left empty it is the first one, the camera the menu shows |
 | Shading Mode, Lighting | Smooth Shaded, Headlight Only | Viewport look of the flipbook |
 | Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**) |
 | Resolution | `1280 720` | |
@@ -438,12 +438,24 @@ Gotchas:
   `from_context`. The Department menu there lists the departments the Multi
   covers. Pressing a button with nothing resolved says which Multi the
   workfile belongs to. `th::lookdev_studio`, which has no entity parm at
-  all, refuses the same way: its turntable renders one asset.
+  all, refuses the same way: its turntable renders one asset. From 1.83 a
+  new Multi animation workfile has this done already: each member's
+  `animate_shot_<member>` dive holds a SOP `th::playblast` set to that shot
+  and `render_camera`.
+- A parm that does not resolve (Entity, Department, Camera, no frame range
+  or fps) shows as a warning dialog titled *Playblast* that names the parm to
+  fix. Before 1.83 it showed as a Python traceback, which read as a crash.
+  Headless (hython, the farm) it still raises.
 - Nodes saved before 1.52.3 carried an *Entity* menu (From context / From
   settings) and a *Shot* menu. Those parms are gone: an old node opens on
   `from_context`, so one that had a shot picked under From settings needs it
   picked again with the Entity button.
-- A stage with no camera at all fails the button with *No camera path found*.
+- A stage with no camera at all fails the button with *there is no camera on
+  the stage: the shot has no camera published*.
+- A new node's Camera is empty, which Houdini shows as the menu's first
+  camera. Before 1.83 pressing Playblast then failed with *camera '' is not a
+  camera on the stage* although the menu showed a camera picked; empty now
+  means that first camera.
 
 ## `th::playblast` (SOP)
 
@@ -457,7 +469,7 @@ Source: [`otls/sop_th.playblast.2.0`](../../otls/sop_th.playblast.2.0/th_8_8Sop_
 |---|---|---|
 | Entity | `from_context` | The shot |
 | Department | `from_context` | Menu of the shot's renderable departments — **pick one**: the node does not resolve `from_context` here, and an unlisted value makes the buttons fail |
-| Camera | *(empty)* | Cameras in the stage the node reads, found as on the LOP |
+| Camera | *(empty)* | Cameras in the stage the node reads, found as on the LOP. Empty is the first one, as on the LOP |
 | Playblast, View Latest, Browse All | | As the LOP |
 
 The frame range is always the shot's configured range plus roll; there is no

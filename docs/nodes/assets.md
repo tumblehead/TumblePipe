@@ -358,15 +358,23 @@ Source: [`otls/sop_th.import_rigs.2.0`](../../otls/sop_th.import_rigs.2.0/th_8_8
 
 **Import** rebuilds the dive network as a chain of `th::import_rig` nodes,
 one per row, each pinned to the row's channel and version (`latest`
-resolves per rig at import time), and comments *Imported: N rigs*. With no
-rows the node bypasses itself with *Bypassed: No rigs configured*.
+resolves per rig at import time), and comments *Imported: N rigs*. A
+`latest` row whose asset has no rig published is skipped and named on a
+second line, *No rig published: Tree, Rock*; a pinned version must exist.
+With nothing to import the node bypasses itself with *Bypassed: No rigs
+configured*.
+
+The animation shot template fills the rows once, when the workfile is
+created: one per asset in the shot that has a rig published, its
+**Instances** the number of times the shot imports it. Rows are not
+re-synced later; add a character rigged after that with `+`.
 
 Gotchas:
 
 - Picking an entity on a row updates its labels but does **not** import;
   press **Import**.
-- A row with an empty entity is filled with the first unused asset when you
-  press Import.
+- A row with an empty entity raises on Import, naming the row; it is never
+  filled with the first asset.
 
 ## `th::export_rig` (SOP)
 

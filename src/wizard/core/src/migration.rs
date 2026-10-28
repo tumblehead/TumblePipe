@@ -80,6 +80,13 @@ pub enum Step {
     /// `<asset>/blshp` as an Xform, which the asset structure check refuses
     /// (it now configures it as a Scope).
     LayoutCameraFollowsResolution,
+    /// v16 — v12 again, for the animation template: it gave `th::import_rigs`
+    /// a row for every asset in the shot, props and sets included, so every
+    /// asset with no rig published was a failing row. It now adds only the
+    /// assets that have one, and in a Multi's workfile gives each member's
+    /// dive a SOP playblast set to that shot (`from_context` names no shot
+    /// there, so a placed one could not render).
+    AnimationRigsArePublished,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -123,7 +130,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 15] = [
+pub const STEPS: [Step; 16] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -139,6 +146,7 @@ pub const STEPS: [Step; 15] = [
     Step::ChannelKeys,
     Step::RefreshStockTemplatesAgain,
     Step::LayoutCameraFollowsResolution,
+    Step::AnimationRigsArePublished,
 ];
 
 impl Step {
@@ -160,6 +168,7 @@ impl Step {
             Step::ChannelKeys => 13,
             Step::RefreshStockTemplatesAgain => 14,
             Step::LayoutCameraFollowsResolution => 15,
+            Step::AnimationRigsArePublished => 16,
         }
     }
 
@@ -204,6 +213,9 @@ impl Step {
             }
             Step::LayoutCameraFollowsResolution => {
                 "refresh the stock _config/templates for the layout camera aspect and the blendshape Scope"
+            }
+            Step::AnimationRigsArePublished => {
+                "refresh the stock _config/templates: animation imports only published rigs, and a Multi gets a playblast per shot"
             }
         }
     }
@@ -386,7 +398,8 @@ impl Step {
             // replaces every packaged template whatever it holds.
             Step::RefreshStockTemplates
             | Step::RefreshStockTemplatesAgain
-            | Step::LayoutCameraFollowsResolution => {
+            | Step::LayoutCameraFollowsResolution
+            | Step::AnimationRigsArePublished => {
                 let v9_pending =
                     current_version(project_path) < Step::RefreshTemplatesAgain.version();
                 match v12_plan(&cfg, template_dir, v9_pending) {
@@ -880,6 +893,8 @@ impl Step {
             Step::RefreshStockTemplatesAgain => refresh_stock_templates(&cfg, template_dir),
             // Same plan again, for the layout and blendshape template fixes.
             Step::LayoutCameraFollowsResolution => refresh_stock_templates(&cfg, template_dir),
+            // Same plan again, for the animation template's rig rows.
+            Step::AnimationRigsArePublished => refresh_stock_templates(&cfg, template_dir),
         }
     }
 }
@@ -2748,6 +2763,7 @@ mod tests {
             (Step::ChannelKeys, Readiness::Ready),
             (Step::RefreshStockTemplatesAgain, Readiness::Blocked(_)),
             (Step::LayoutCameraFollowsResolution, Readiness::Blocked(_)),
+            (Step::AnimationRigsArePublished, Readiness::Blocked(_)),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -2854,11 +2870,11 @@ mod tests {
     /// A project made from this package is born at the latest version, with
     /// nothing to do.
     #[test]
-    fn a_fresh_scaffold_is_already_at_v15() {
+    fn a_fresh_scaffold_is_already_at_v16() {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 15);
+        assert_eq!(latest_version(), 16);
         assert_eq!(current_version(&target), latest_version());
         assert!(pending(&target).is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -3004,8 +3020,8 @@ mod tests {
         let dir = project_at_v12_with_variants();
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 3);
-        assert_eq!(report.to, 15);
+        assert_eq!(report.applied.len(), 4);
+        assert_eq!(report.to, 16);
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -3062,7 +3078,7 @@ mod tests {
         let template = scaffold();
         let report = migrate(dir.path(), template.path());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 15);
+        assert_eq!(current_version(dir.path()), 16);
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -3080,7 +3096,7 @@ mod tests {
         write_version(&dir.path().join("_config"), 12).unwrap();
         let second = migrate(dir.path(), &packaged_scaffold());
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 15);
+        assert_eq!(second.to, 16);
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -3098,7 +3114,7 @@ mod tests {
 
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.to, 15);
+        assert_eq!(report.to, 16);
         assert_eq!(db_text(dir.path(), "entity.json"), entity);
         let mut files = Vec::new();
         find_files(&db, None, &mut files);
@@ -3159,7 +3175,7 @@ mod tests {
         }
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 15);
+        assert_eq!(current_version(dir.path()), 16);
         let animation =
             std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
         assert_eq!(
@@ -3191,7 +3207,7 @@ mod tests {
         std::fs::write(&path, &shipped_at_v14).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 15);
+        assert_eq!(current_version(dir.path()), 16);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             layout.replace("
@@ -3214,6 +3230,31 @@ mod tests {
         std::fs::write(&path, &blendshape_at_v14).unwrap();
         assert!(migrate(dir.path(), &packaged_scaffold()).is_ok());
         assert!(std::fs::read_to_string(&path).unwrap().contains("UsdGeomScope"));
+    }
+
+    /// v16 brings a project on the previous stock animation template
+    /// (b023f4189b, a rig row for every asset in the shot, no playblast in a
+    /// Multi) up to the packaged one.
+    #[test]
+    fn v16_refreshes_the_stock_animation_template() {
+        let shipped_at_v15 = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("b023f4189b.py"))
+            .unwrap()
+            .2;
+        assert!(!shipped_at_v15.contains("has_rig_export"));
+        let dir = project(Some(15));
+        let path = project_template(dir.path(), "shots/animation");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &shipped_at_v15).unwrap();
+        let report = migrate(dir.path(), &packaged_scaffold());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.applied.len(), 1);
+        assert_eq!(current_version(dir.path()), 16);
+        let animation = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(animation, packaged_text("shots/animation"));
+        assert!(animation.contains("import_rigs.has_rig_export(asset_uri)"));
+        assert!(animation.contains("_add_member_playblast(animate_node, member_uri)"));
     }
 
     /// A CRLF database stays CRLF.
