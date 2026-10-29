@@ -75,6 +75,7 @@ def _submit_playblast(config, result, output_dir) -> None:
         pool_name=playblast['pool_name'],
         priority=playblast['priority'],
         res=playblast['res'],
+        look=collapse_spec.playblast_look(playblast),
     ), paths)
 
 

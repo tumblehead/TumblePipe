@@ -39,13 +39,38 @@ name, and the title, gain a `*` while there are edits not applied.
 | **Length** | both | Frames from start to end. Typing a length moves the end frame. |
 | **Pre-roll**, **Post-roll** | both | `roll_start`, `roll_end`: frames added before the start and after the end when rendering. |
 | **FPS** | both | `fps`. Whole numbers are kept whole; `23.976` is fine. |
-| **Animatable** | Assets | `animatable`, as a tick box. Typing `yes` or `no` works too. A shot's copies of an animatable asset, or of one with a rig published, are plain references rather than USD instances, so each copy can carry its own animation. An unticked asset with a rig reads **No, rigged**: its copies already animate, and ticking it also makes its own exports write every frame instead of the first. Copy leaves the note out. |
-| **Root** | Shots | The shot's [Root](multis-and-roots.md), picked from a dropdown. **Inherit** puts it back to the sequence's. |
+| **Animatable** | Assets | `animatable`, as a tick box. Typing `yes` or `no` works too. A shot's copies of an animatable asset, or of one with a rig published, are plain references rather than USD instances, so each copy can carry its own animation. An unticked asset with a rig reads **No, rigged**: its copies already animate, and ticking it also makes its own exports write every frame instead of the first. Copy leaves the note out. The import nodes stamp the answer (ticked, or a rig published) on the asset's prims as `animatable`, which Import Rigs' **Discover** reads ([`th::import_rigs`](../nodes/assets.md#thimport_rigs-sop)); a change shows up on a prim when its import node imports again. |
+| **Root** | Shots | The shot's [Root](multis-and-roots.md), picked from a dropdown. **Inherit** puts it back to the sequence's, set on the [sequence's row](#sequence-and-category-rows). |
 | **Multis** | both | The Multis the entity belongs to. Double-click to change them; see [Multis](#multis). |
 | **Assets** | Shots | What the shot imports: its Root's assets, then the Root's parents'. Empty for a shot with no Root. See [Which assets a shot imports](#which-assets-a-shot-imports). |
 
 The dropdown above the sheet shows one category or sequence, or all of
 them. **Filter** narrows the rows to names that contain the text.
+
+### Sequence and category rows
+
+Each sequence (or category) has a row of its own, shaded, above its shots
+(or assets), which are listed under it. Its **Name** cell counts them. Its
+value cells are the sequence's own values, which every shot in it inherits
+unless the shot sets its own:
+
+- Pick a **Root** on the sequence row and every shot in it with no Root of
+  its own imports that Root's assets. The shots show it grey, as inherited,
+  and so does their **Assets** cell. A shot that needs something else keeps
+  (or gets) its own Root. **Add Shots…**' **Inherit from the sequence**
+  entry names the Root the sequence gives.
+- A frame range, rolls or fps set there works the same way, as does
+  **Animatable** on a category row.
+
+Typing, Delete, Copy, Revert, Undo and Apply work on a sequence row as on
+a shot's; its **Status** says *Changed* while it has edits, or why a value
+cannot be applied. A new sequence (one a new shot's **Group** names) gets
+a row too, but its values wait until it has a name a sequence can have:
+letters and digits, not the same as another sequence but for case, nor a
+category's. A sequence's name, and which shots it holds, are not
+edited here. Click a sequence's name to fold its shots away under it, and
+again to show them. Filtering keeps each sequence row above its matching
+shots.
 
 ### Inherited and set values
 
@@ -67,7 +92,8 @@ every value it does not set itself, from its category or sequence, then
 **Tinted** cells hold edits that are not applied yet. New rows have green
 names, a renamed entity's name is tinted, and an entity to be retired is
 struck through. A selected cell has a light outline, so its tint still
-shows. The line above the sheet shows each look on a sample cell; its
+shows, and the row of the cell you are on is faintly lit across the sheet so
+it can be followed to the far columns. The line above the sheet shows each look on a sample cell; its
 tooltip has the editing tips.
 
 ## Editing
@@ -81,10 +107,12 @@ tooltip has the editing tips.
   clipboard as tab-separated text. Paste writes one value into every
   selected cell, or a block of cells copied from a spreadsheet starting at
   the top-left selected cell. An empty pasted cell puts a value back to
-  inherited. Lines that run past the last row are not added; use **Paste as
-  New** for that.
+  inherited. A block runs down the rows below, passing over a sequence's
+  row rather than pasting into it. Lines that run past the last row are not
+  added; use **Paste as New** for that.
 - **Fill Down** (Ctrl+D) copies each column's top selected value into the
-  selected cells below it.
+  selected cells below it (a sequence row's value can be the top one; it is
+  never filled into).
 - **Shift Frames…** (right-click) moves the selected rows' start and end by
   a number of frames, keeping their lengths.
 - **Undo / Redo** (Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y) step through every edit

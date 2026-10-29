@@ -15,6 +15,31 @@
     inputlabel	4	"Sub-Network Input #4"
 
     groupsimple {
+        name    "discovery"
+        label   "Discovery"
+
+        parm {
+            name    "stage_path"
+            label   "Stage"
+            type    oppath
+            default { "" }
+            help    "LOP node whose stage Discover reads. Empty: the stage fed into the th::animate this node sits in."
+            parmtag { "opfilter" "!!LOP!!" }
+            parmtag { "oprelative" "." }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "discover"
+            label   "Discover"
+            type    button
+            default { "0" }
+            help    "Replace the rows with one per animatable asset on the stage that has a rig published (Instances = its prims), keeping a row's channel and version, then Import."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.discover(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
         name    "selection"
         label   "Selection"
 

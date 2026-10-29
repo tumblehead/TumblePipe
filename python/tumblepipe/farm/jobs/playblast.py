@@ -24,6 +24,7 @@ def build(config, paths, staging_path):
         step_size = config['step_size'],
         fps = config['fps'],
         res = list(config['res']),
+        look = dict(config['look']),
         input_path = config['input_path'],
         output_paths = config['output_paths']
     ), staging_path,

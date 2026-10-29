@@ -1070,7 +1070,8 @@ class DetailSectionBuilder:
         Same items and ordering as the deck popup's
         (:meth:`PipelineCatalog.get_deck_item_menu_items`): a row with
         no workfile leads with **New from Template**, a row with
-        versions leads with **Open**.
+        versions leads with **Open**. A Multi's row has no **View
+        Latest Export**: the deck's per-member submenu has it.
 
         ``pos`` is the click position in ``source_widget`` coordinates;
         the menu pops at the cursor (mapped to global). Falls back to
@@ -1111,10 +1112,14 @@ class DetailSectionBuilder:
             lambda _checked=False: self._workfiles.open_dept_work_dir(asset_id, dept)
         )
 
-        export_act = menu.addAction("View Latest Export")
-        export_act.triggered.connect(
-            lambda _checked=False: self._workfiles.open_latest_export(asset_id, dept)
-        )
+        # A Multi's exports are written per member: the deck's menu lists
+        # them; the panel has no single export to show.
+        if not asset_id.startswith("group:"):
+            export_act = menu.addAction("View Latest Export")
+            export_act.triggered.connect(
+                lambda _checked=False:
+                    self._workfiles.open_latest_export(asset_id, dept)
+            )
 
         if available:
             new_inst_act = menu.addAction("Open in New Houdini")

@@ -106,14 +106,26 @@ it takes it out of them and off the timeline.
 
 ### The Multi's workfiles
 
-The Multi's own rows work like a shot's. A row with a workfile opens it
-(**Open Latest**), **Open Folder** opens
-`<project>/groups/<context>/<name>/<department>/`, and a row without one
-reads *missing* until **New from Template** (or a double-click on the row)
-creates `v0001` there, named `<name>_<department>_v0001.hip`. The template runs its group branch, which
-lays out one pinned graph per member in columns
+The Multi's own rows work like a shot's, with the same right-click menu
+([Asset Browser → Deck items](index.md)). A row with a workfile opens it
+(**Open Latest**, or an older one from **Open Version ▸**), **Open Folder**
+opens `<project>/groups/<context>/<name>/<department>/`, and a row without
+one reads *missing* until **New from Template** (or a double-click on the
+row) creates `v0001` there, named `<name>_<department>_v0001.hip`. The
+template runs its group branch, which lays out one pinned graph per member
+in columns
 ([Configuration → Department templates](../configuration.md#department-templates)).
-The Multi's rows do not offer **New from Current**.
+A Multi's exports are written per member, so **View Latest Export ▸** lists
+the members and opens the chosen one's export folder. The detail panel's
+**Departments** rows leave it out; use the deck item's menu or the member's
+own card.
+
+**New from Current** on a Multi's row needs a Multi's workfile open, for
+example to start the Multi's `anim` from its `layout`. With a shot's or
+asset's scene open it is refused with *New from Current on a Multi needs a
+Multi's workfile open; use New from Template to start one*. That scene's
+nodes are pinned to its own entity, and in a Multi workfile they would
+resolve to nothing.
 
 Only a workfile created from the Multi's own rows is a Multi workfile. A
 multi-shot scene built in a *shot's* department — even a shot named after
@@ -135,9 +147,9 @@ itself never composes anything. **Render** does the same fan-out: the
 [Farm Submit dialog](submit-jobs.md#opening-it) opens with the members' Render
 cells ticked, never the Multi.
 
-The browser's members-list open is Multi-aware, but **Open in New Houdini**
-on a member's row is not: it opens the newest file in the member's own
-department folder (see [Workfiles](workfiles.md#open-in-new-houdini)).
+**Open in New Houdini**, on the Multi's row or on a member's ⓜ row, opens
+the Multi's newest workfile in a second Houdini (see
+[Workfiles](workfiles.md#open-in-new-houdini)).
 
 ### Shared timeline
 
@@ -223,7 +235,9 @@ export time.
 Shots do not appear in a Root's member list. A shot *uses* a Root through
 its own `scene` property (its **Root**, shown on the shot's Info tab as
 `outdoor/forest`, with *(inherited)* when the sequence set it rather than
-the shot).
+the shot). Give a whole sequence a Root on its row in the
+[Entity Editor](entity-editor.md#sequence-and-category-rows): every shot in
+it without a Root of its own then uses that one.
 
 ### Creating a Root
 

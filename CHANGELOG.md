@@ -12,6 +12,88 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.84.0 — 2026-10-29
+
+### Features
+- feat(player): burn-ins, a toolbar, and takes from the clip menu (`f60caa1f`)
+- feat(playlist): a shot knows its sequence (`c8d716af`)
+- feat(asset-browser): Edit Multi sets a shots Multi's Timeline (`a872cd6c`)
+- feat(nodes): import_shot and export_layer follow a Multi's shared timeline (`762e0238`)
+- feat(config): a shots Multi can lay its members end to end on a shared timeline (`afa69f3f`)
+- feat(player): timeline editor under the video, takes opened in the background (`9dc03b7a`)
+- feat(media): thumbnails, and EXR frames read whole and stoppable (`92a79279`)
+- feat(review): every complete render version is a take, and takes say what they are (`4f2f24fe`)
+- feat(entity-editor): New Sequence… and New Category… (`6207c8f6`)
+- feat(entity-editor): a rigged asset's unticked Animatable reads "No, rigged" (`618c8b56`)
+- feat(asset-browser): Entity Editor button on the toolbar, beside Render (`568df138`)
+- feat(entity-editor): set up Multis in the Entity Editor (`55672e56`)
+- feat(entity-sheet): Multis in the Entity Editor's model (`1191dec1`)
+- feat(player): neutral surround, transport buttons, frame numbers in words (`df606238`)
+- feat(farm): every submit from Houdini offers Run on; export_layer runs where it is run (`7c608671`)
+- feat(farm): run farm jobs on this machine, and the Farm Manager (`1240479b`)
+- feat(asset-browser): Root edits stage themselves (`122e2007`)
+- feat(hda): project HDAs in <project>/otls, Create Project HDA on right-click (`763e7d38`)
+- feat(review): play the selected shots in the sequence player (`28418f66`)
+- feat(player): EXR sequences, OCIO display, OTIO playlists, timeline and takes (`88b54e6d`)
+- feat(player): sequence player spike, frame-accurate movie playback (`7f9fbd82`)
+
+### Fixes
+- fix(multi): renamed or deleted members carry their timeline start (`603600c6`)
+- fix(entity-editor): a group that disappears from the dropdown no longer leaves an empty sheet (`536af5c2`)
+- fix(entity-editor): a selected tinted cell keeps its tint (`71d3bd72`)
+- fix(entity-sheet): Reload keeps clashing new rows and Multis, and member order (`e3a11499`)
+- fix(anim): rigs start at their layout placement in th::animate (`1808793c`)
+- fix(import): rigged assets' copies stay plain references, not instances (`8b105836`)
+- fix(export): publish an untransformed Xform geo as a Scope instead of refusing (`3a04253b`)
+- fix: deleting or renaming an entity updates the Multis that list it (`11f082f3`)
+- fix(roots): root layer and Root export readers take the newest finished version (`f74646d3`)
+- fix(roots): a shot's Root assets belong to the Root, never a department (`b231b045`)
+- fix(rig): latest rig imports read past a failed export, which cleans up (`2e60274f`)
+- fix: latest is the newest finished version, past failed exports (`fd614e9c`)
+- fix(player build): regenerate FFmpeg bindings in a build of th_ffmpeg_sys alone (`9d9c2fa5`)
+
+### Refactors
+- refactor(farm): remove the pipelines' command lines, and update and propagate (`ea0c383f`)
+
+### Documentation
+- docs: Multi shared timeline, Time Offset parms, verify harness (`bc0409e1`)
+- docs(player): the timeline track, its keys, and how takes load (`a833cd96`)
+- docs: the Entity Editor adds sequences and categories (`1403b10b`)
+- docs(verify): entity editor script names the rigged note and the packages/ SDK path (`9f6d733d`)
+- docs: Reload keeps clashing new rows; rebase docstrings say what it carries (`950bebee`)
+- docs: rigged copies stay references, rigs start at layout, troubleshooting entry (`ae419f9c`)
+- docs: point Multi setup at the Entity Editor; drop an unused setter (`cf702054`)
+- docs(entity-editor): Multis in the Entity Editor (`5cba97f6`)
+- docs(player): the transport buttons, frame numbers and error line (`2ddcaff3`)
+- docs(tests): put the farm test entries after test_app_run's last line (`4294bd4b`)
+- docs: Root assets belong to the Root; Root edits stage themselves (`199eb69e`)
+- docs: the player in the package build, project structure and test list (`6ff827b3`)
+- docs: latest is the newest finished version (`9ed3a07f`)
+- docs: the player builds on Windows, Linux and macOS (`f2366c5e`)
+- docs: project HDAs page, package layout, and the project HDA harness (`cd83be0e`)
+- docs: the player's git dependencies come over HTTP now (`149352bd`)
+- docs: playing shots, and building and testing the sequence player (`267e0982`)
+- docs: build and test the sequence player (`cdd8a1ab`)
+- docs: regenerate CHANGELOG.md for v1.83.0 (`b4025536`)
+
+### Tests
+- test(multi): pin the shared timeline's invariants and guards (`368f2f82`)
+- test(player): properties for take switching, thumbnail tickets and whole reads (`4fe8a4be`)
+- test(entity-sheet): new groups after someone else's writes; undo covers them (`a9aae892`)
+- test: Reload is a no-op; Multis after others' edits, pending status, no empty writes, sequence renames (`8e502c48`)
+- test(anim): the ghost property's "other" asset can no longer be the rigged one (`df87652e`)
+- test: Root ownership cycle, sync_roots, and the _root path spelling (`6cbc0992`)
+- test: project HDA naming properties and an end-to-end hython harness (`fd9810d8`)
+
+### Chores
+- chore(player): pin Primer 0.11.0 (`fbe494d0`)
+
+### Other Changes
+- Merge branch 'feat/multi-shared-timeline' (`093c2ed0`)
+- Merge branch 'feat/entity-editor-multis' (`1472edd1`)
+- Merge branch 'feat/sequence-player' (`f4c12712`)
+- Merge branch 'feat/root-ownership' (`7d7a61cb`)
+
 ## v1.83.0 — 2026-10-28
 
 ### Features

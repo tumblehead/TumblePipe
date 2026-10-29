@@ -280,7 +280,8 @@ so their versions interleave:
   versioned playblast
   **and** the daily, exactly like the render/composite MP4s above. The
   frame range (rolls included) and fps come from the shot config per
-  shot. So do resolution (720p default) and pool/priority, unless you
+  shot. So do resolution (the shot's render resolution, 1280 × 720 when it
+  has none), the look (Light, Samples, Scene materials) and pool/priority, unless you
   change them in the dialog: those fields are tri-state, and an untouched
   one lets every checked shot use its own configured value rather than
   imposing one shot's on the batch. A field you do set renders upright
@@ -290,9 +291,16 @@ so their versions interleave:
   see [Composition → The department cut](composition.md#the-department-cut).
 
 The two do not look the same. The farm frames are a clay preview, not a
-viewport capture and not a final render: scene materials and lights are
-off, a headlight on the camera shades the stage with ambient occlusion,
-and the stage's display colours still show. That difference is exactly
+viewport capture and not a final render: by default scene materials are
+off and the scene's lights are replaced by one white dome light, and the
+stage's display colours still show. The dialog's **Light** setting can
+instead put a headlight with ambient occlusion on the camera (the look
+before 1.85) or keep the scene's own lights, and **Scene materials** turns
+the materials back on. The dome is authored into the collapsed stage
+(`/TumblePipePlayblastLights/dome`, every scene light deactivated beside
+it); husk's own `--headlight dome` cannot do it, since Karma's headlight
+ignores the mode. Lights inside an instance cannot be deactivated from
+the collapse and stay lit beside the dome. That difference is exactly
 why the in-session node stays — playblast locally when the look must
 match the viewport, submit to the farm to offload a batch. The farm job's
 Deadline group is `karma`, the same GPU workers final renders use, see

@@ -35,6 +35,7 @@ from tumblepipe.pipe.context import (
 )
 from tumblepipe.config.department import list_departments, department_names_up_to
 from tumblepipe.config.timeline import get_fps, get_frame_range
+from tumblepipe.farm.specs.playblast import DEFAULT_LOOK
 from tumblepipe.pipe.paths import latest_export_path, get_latest_staged_file_path
 from tumblepipe.pipe.usd.collapse import (
     LayerCollectionError,
@@ -182,6 +183,7 @@ def collapse_playblast_input(
     department: str,
     temp_path: Path,
     paths: dict,
+    light: str = DEFAULT_LOOK['light'],
 ) -> str:
     """Collapse the ``default`` staged stage for a playblast, cut at ``department``.
 
@@ -189,6 +191,9 @@ def collapse_playblast_input(
     Karma settings: ``playblast=True`` authors a preview
     RenderSettings (one raw colour var) aimed at the camera the project's settings name. Returns
     the relative input path and registers the file in ``paths``.
+
+    ``light`` is the look's light: a 'dome' playblast's dome light and
+    switched-off scene lights are authored into the collapsed stage here.
     """
     staged_path = get_latest_staged_file_path(entity_uri, 'default')
     if staged_path is None or not staged_path.exists():
@@ -202,6 +207,7 @@ def collapse_playblast_input(
     try:
         content = collapse_latest_references(
             staged_path, {}, excluded_refs=excluded, playblast=True,
+            playblast_light=light,
         )
     except LayerCollectionError as error:
         raise PreviewError(
@@ -279,13 +285,15 @@ def playblast_config(
     pool_name: str,
     priority: int,
     res: list[int],
+    look: dict | None = None,
 ) -> dict:
     """The ``playblast/job.py`` config for one shot.
 
     The range and fps are the shot's own (rolls included), matching the
     local playblast HDA — never a form value, so each shot in a batch plays
-    its own full range. ``res`` is the submission's (the dialog resolves it
-    per entity from ``playblast.res_x``/``res_y``).
+    its own full range. ``res`` and ``look`` are the submission's (the
+    dialog resolves them per entity); no look is ``DEFAULT_LOOK``, for a
+    collapse job submitted before the look existed.
     """
     frame_range = get_frame_range(entity_uri)
     if frame_range is None:
@@ -307,6 +315,7 @@ def playblast_config(
             step_size=1,
             fps=fps,
             res=list(res),
+            look=dict(DEFAULT_LOOK if look is None else look),
             channel_name='renders',
         ),
     )

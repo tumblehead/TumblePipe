@@ -13,7 +13,12 @@ from tumblepipe.config.timeline import get_fps
 from tumblepipe.apps import mp4
 from tumblepipe.pipe.houdini import prim_queries
 from tumblepipe.pipe.houdini import nodes as ns
-from tumblepipe.pipe.houdini.entity_node import EntityNode, FROM_CONTEXT
+from tumblepipe.pipe.houdini import render_camera
+from tumblepipe.pipe.houdini.entity_node import (
+    EntityNode,
+    EntityNodeError,
+    FROM_CONTEXT,
+)
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
 from tumblepipe.apps.deadline import log_progress
 from tumblepipe.pipe.paths import (
@@ -233,6 +238,23 @@ class Playblast(FrameRangeNode, EntityNode):
         # Create and open the directory containing the playblast
         output_path.mkdir(parents=True, exist_ok=True)
         hou.ui.showInFileBrowser(f'{path_str(output_path)}')
+
+#: The playblast size when the shot configures no render resolution.
+DEFAULT_RES = (1280, 720)
+
+
+def default_res(raw_node, axis: int) -> int:
+    """One side of the Resolution parm's default (the HDA's expression):
+    the shot's render resolution, so the playblast has the render's frame.
+    A fixed 1280x720 squashed a project that is not 16:9. Falls back to
+    ``DEFAULT_RES`` while no shot resolves."""
+    try:
+        entity_uri = Playblast(raw_node).get_entity_uri()
+    except EntityNodeError:
+        entity_uri = None
+    res = render_camera.resolution(str(entity_uri)) if entity_uri else None
+    return (res or DEFAULT_RES)[axis]
+
 
 def create(scene, name):
     return ns.create_node(scene, name, Playblast, 'playblast')

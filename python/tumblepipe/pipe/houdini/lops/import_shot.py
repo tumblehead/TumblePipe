@@ -14,6 +14,7 @@ import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.config.multi_timeline import shift_range
 from tumblepipe.pipe.houdini import multi_timeline, playbar
 from tumblepipe.pipe.houdini.entity_node import EntityNode, FROM_CONTEXT
+from tumblepipe.pipe.houdini.prim_metadata import ANIMATABLE_KEY
 from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
 from tumblepipe.pipe.houdini.lops import shot_sublayers
 from tumblepipe.pipe.houdini.ui import layer_stack
@@ -102,11 +103,15 @@ def _indent(lines):
     return [f"    {line}" for line in lines]
 
 
-def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
+def _set_shot_metadata_script(
+    shot_uri, frame_range, fps, version_name, assets,
+    animated=copies_are_animated
+):
     """Generate Python script to set shot and asset metadata in USD stage.
 
     Shot metadata is stored in stage-level customLayerData.
-    Asset metadata is stored as customData on each asset's scene prim.
+    Asset metadata is stored as customData on each asset's scene prim,
+    stamped with ``animated(asset_uri)`` (see prim_metadata.ANIMATABLE_KEY).
     """
     from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 
@@ -162,6 +167,7 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
             f"        'instance': '{asset_name}',",
             f"        '{CHANNEL_KEY}': '{asset_channel}',",
             f"        'instances': {instances},",
+            f"        '{ANIMATABLE_KEY}': {bool(animated(asset_uri))},",
             f"        'inputs': {asset_inputs!r}",
             "    })",
         ])

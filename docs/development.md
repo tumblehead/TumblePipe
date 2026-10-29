@@ -1118,6 +1118,28 @@ checks read the directory listing, because `is_file()` ignores case on
 Windows and macOS and would pass a wrong spelling. `VERIFY_KEEP=1` keeps the
 temp project. Exits 1 on any failure.
 
+## Rig discovery harness
+
+`scripts/verify_rig_discovery.py` checks the `animatable` prim stamp and
+`th::import_rigs`' **Discover** ([`th::import_rigs`](nodes/assets.md#thimport_rigs-sop))
+in a throwaway project: the import nodes' metadata scripts stamp a rigged
+character and an animatable prop but not a static one, `import_layer`
+overwrites a stale stamp, and Discover, with Stage set and with it empty
+inside a `th::animate`, makes one row per rigged animatable asset, keeps a
+row's pinned version, judges an untagged prim by the rule and names an
+animatable asset with no rig. The rule itself is
+`tests/test_animation_template.py` and `tests/test_animatable_stamp.py`.
+
+```bash
+HOUDINI_PACKAGE_SKIP=1 HOUDINI_PATH="<repo>;&" PYTHONPATH=<repo>/python \
+    TH_PIPELINE_PATH=<repo> hython scripts/verify_rig_discovery.py
+```
+
+With packages skipped, Houdini's APEX scene SOPs are not loaded, so the rig
+import Discover runs stops at instancing; that is printed as a note. The
+new parms are in the expanded HDA, so rebuild `otls/sop_th.import_rigs.2.0.hda`
+(`hotl -l`) before running it against a checkout.
+
 ## Shared timeline harness
 
 `scripts/verify_multi_timeline.py` drives a shots Multi's

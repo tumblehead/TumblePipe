@@ -235,7 +235,10 @@ worker could take from the same pools.
 | Field | Per-entity source | Default when unset |
 |---|---|---|
 | **Up to** | `submission.render.department` | last renderable department (the whole shot) |
-| **Resolution** (W × H) | `playblast.res_x` / `playblast.res_y` | 1280 × 720 |
+| **Resolution** (W × H) | `playblast.res_x` / `playblast.res_y` | the shot's render resolution (`render.resolution`), else 1280 × 720 |
+| **Light** | `playblast.light` | `dome` |
+| Samples (beside Light) | `playblast.samples` | 32 |
+| **Scene materials** | `playblast.materials` | off (clay) |
 | **Pool** | `farm.default_pool` | `general` |
 | **Priority** | `farm.priority` | 50 |
 
@@ -244,6 +247,12 @@ pipeline order — the same cut the render uses. There is no frame or channel
 field: a playblast always renders the shot's `default` staged stage over the
 shot's configured range (rolls included), at the shot's fps. What it produces
 is described in [Compositing → Playblast](../compositing.md#playblast).
+
+**Light** picks the look: `dome` switches the scene's lights off and lights
+the stage with one white dome light (soft clay shading); `headlight` is a
+light on the camera with ambient occlusion, the look before this setting
+existed; `scene` renders with the shot's own lights. **Samples** is Karma's
+pixel samples: more is cleaner and slower.
 
 ### Render
 

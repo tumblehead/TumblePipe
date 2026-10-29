@@ -3253,7 +3253,8 @@ mod tests {
         assert_eq!(current_version(dir.path()), 16);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
-        assert!(animation.contains("import_rigs.has_rig_export(asset_uri)"));
+        // Only rigged assets get a row (since 80def61306: the animatable ones)
+        assert!(animation.contains("import_rigs.discover_rig_imports("));
         assert!(animation.contains("_add_member_playblast(animate_node, member_uri)"));
     }
 

@@ -108,8 +108,10 @@ Each worker needs the same environment as an artist workstation:
   Without matching drive letters, the job will fail to read project files.
 - **An NVIDIA GPU for the `karma` group** — final renders and playblasts
   both run there. Playblast jobs render with
-  Karma XPU in a preview mode (scene materials and lights off, a camera
-  headlight with ambient occlusion, 4 samples). It draws through CUDA/OptiX
+  Karma XPU in a preview mode (by default scene materials off and the scene's
+  lights replaced by one dome light at 32 samples; the Farm Submit dialog's
+  playblast **Light** / **Samples** / **Scene materials** change it, see
+  [Compositing → Playblast](compositing.md#playblast)). It draws through CUDA/OptiX
   with no GL context or display, and uses the worker's GPU memory (3.5 GiB
   peak on a HideAndReek shot). Hydra Storm (GL) used to be an option and was
   removed: it hung on the first frame and crashed husk on every real shot

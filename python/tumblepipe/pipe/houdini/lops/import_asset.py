@@ -12,7 +12,9 @@ from tumblepipe.pipe.usd.sublayer_refs import generate_staged_sublayer_uri
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
+from tumblepipe.pipe.houdini.prim_metadata import ANIMATABLE_KEY
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
+from tumblepipe.pipe.usd.instances import copies_are_animated
 from tumblepipe.pipe.paths import (
     current_staged_path,
     list_version_paths
@@ -32,7 +34,8 @@ def _subasset_script_lines(
     subassets: list[dict],
     shot_uri: Uri | None = None,
     shot_department: str | None = None,
-    inline: bool = False
+    inline: bool = False,
+    animated=copies_are_animated
 ) -> list[str]:
     """Script lines that re-establish each tracked sub-asset on import.
 
@@ -93,6 +96,7 @@ def _subasset_script_lines(
             }
             if shot_entry not in inputs:
                 inputs.append(shot_entry)
+        animatable = False if inline else bool(animated(sub_uri))
 
         # Deactivate stale numbered duplicates at/beyond the tracked
         # count (see docstring). Runs before the wanted instances are
@@ -135,6 +139,7 @@ def _subasset_script_lines(
                     f"        'uri': '{asset_uri_raw}',",
                     f"        'instance': '{base_name}',",
                     f"        '{CHANNEL_KEY}': '{channel}',",
+                    f"        '{ANIMATABLE_KEY}': {animatable},",
                     f"        'inputs': {inputs!r}",
                     '    })',
                 ]
@@ -173,6 +178,7 @@ def _subasset_script_lines(
                         f"        'uri': '{asset_uri_raw}',",
                         f"        'instance': '{instance_name}',",
                         f"        '{CHANNEL_KEY}': '{channel}',",
+                        f"        '{ANIMATABLE_KEY}': {animatable},",
                         f"        'inputs': {inputs!r}",
                         '    })',
                     ]
@@ -184,7 +190,8 @@ def _metadata_script(
     channel_name: str = 'default',
     shot_uri: Uri | None = None,
     shot_department: str | None = None,
-    subassets: list[dict] | None = None
+    subassets: list[dict] | None = None,
+    animated=copies_are_animated
 ) -> str:
     """
     Generate Python script for setting asset metadata on the scene prim.
@@ -193,7 +200,8 @@ def _metadata_script(
     entry to the inputs array to track which department introduced this asset.
     The channel is recorded so the export scrape can carry it into the
     layer's context.json — staged builds re-reference each tracked asset's
-    staged file by that channel.
+    staged file by that channel. Each asset is stamped with
+    ``animated(asset_uri)`` (see prim_metadata.ANIMATABLE_KEY).
     """
     prim_path = uri_to_prim_path(asset_uri)
     entity_name = asset_uri.segments[-1]
@@ -219,12 +227,14 @@ if prim.IsValid():
         'uri': '{str(asset_uri)}',
         'instance': '{entity_name}',
         '{CHANNEL_KEY}': '{channel_name}',
+        '{ANIMATABLE_KEY}': {bool(animated(asset_uri))},
         'inputs': {inputs_str}
     }}
     prim_metadata.set_metadata(prim, metadata)
 '''
     subasset_lines = _subasset_script_lines(
-        subassets or [], shot_uri, shot_department, inline=False
+        subassets or [], shot_uri, shot_department, inline=False,
+        animated=animated
     )
     if subasset_lines:
         script += '\n' + '\n'.join(subasset_lines)

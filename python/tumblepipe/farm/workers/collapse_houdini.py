@@ -54,6 +54,7 @@ def main(config: dict) -> int:
                 config['playblast']['department'],
                 output_dir,
                 paths,
+                light=collapse_spec.playblast_look(config['playblast'])['light'],
             )
     except preview.PreviewError as failure:
         return error(str(failure))

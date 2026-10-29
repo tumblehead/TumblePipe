@@ -667,6 +667,9 @@ class WorkfileManager:
         the department template (see :meth:`_create_from_template`)."""
         if not asset_id:
             return
+        if asset_id.startswith("group:"):
+            self.new_group_from_template(asset_id, dept, refresh_cb)
+            return
         proj = self._resolver.project_for(asset_id)
         if proj is None:
             return
@@ -711,15 +714,40 @@ class WorkfileManager:
         """
         if not asset_id:
             return
-        proj = self._resolver.project_for(asset_id)
-        if proj is None:
-            return
-        self._activator.activate(proj)
-        # A write path: never save the open scene as a workfile of an entity
-        # the config does not hold (see EntityNotRegistered).
-        entity_uri = self._resolver.registered_uri_for(asset_id)
-        if entity_uri is None:
-            return
+        if asset_id.startswith("group:"):
+            proj = self._group_project(asset_id)
+            if proj is None:
+                return
+            self._activator.activate(proj)
+            # A write path: never save into a Multi groups.json no longer
+            # holds.
+            from tumblepipe.config import groups as grp_mod
+            entity_uri = uris.group(self._split_group_id(asset_id)[1])
+            if grp_mod.get_group(entity_uri) is None:
+                raise ValueError(f"No Multi {entity_uri} in this project")
+            # Only a Multi's scene forks into a Multi: a shot's or asset's
+            # nodes pinned to it would be switched to from_context, which
+            # resolves to nothing in a Multi workfile.
+            import hou
+
+            from tumblepipe.pipe.paths import get_workfile_context
+            hip_str = hou.hipFile.path()
+            open_ctx = get_workfile_context(Path(hip_str)) if hip_str else None
+            if open_ctx is None or open_ctx.entity_uri.purpose != 'groups':
+                raise ValueError(
+                    "New from Current on a Multi needs a Multi's workfile "
+                    "open; use New from Template to start one"
+                )
+        else:
+            proj = self._resolver.project_for(asset_id)
+            if proj is None:
+                return
+            self._activator.activate(proj)
+            # A write path: never save the open scene as a workfile of an
+            # entity the config does not hold (see EntityNotRegistered).
+            entity_uri = self._resolver.registered_uri_for(asset_id)
+            if entity_uri is None:
+                return
 
         def _do_save() -> None:
             try:
@@ -814,11 +842,18 @@ class WorkfileManager:
         """
         if not asset_id:
             return
-        proj = self._resolver.project_for(asset_id)
+        is_group = asset_id.startswith("group:")
+        if is_group:
+            proj = self._group_project(asset_id)
+        else:
+            proj = self._resolver.project_for(asset_id)
         if proj is None:
             return
         self._activator.activate(proj)
-        entity_uri = self._resolver.uri_for_ready(asset_id)
+        entity_uri = (
+            uris.group(self._split_group_id(asset_id)[1]) if is_group
+            else self._resolver.uri_for_ready(asset_id)
+        )
         from tumblepipe.pipe.houdini.workfiles import (
             open_workfile_in_new_instance,
         )

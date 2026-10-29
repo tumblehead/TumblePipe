@@ -6,8 +6,10 @@ from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNodeError
 from tumblepipe.pipe.houdini.sops import import_rig
-from tumblepipe.config.channels import list_channels
+from tumblepipe.config.channels import CHANNEL_KEY, list_channels
+from tumblepipe.pipe.houdini import prim_metadata
 from tumblepipe.pipe.paths import list_version_paths
+from tumblepipe.pipe.usd.instances import copies_are_animated
 
 
 def has_rig_export(asset_uri: Uri, channel_name: str = 'default') -> bool:
@@ -15,6 +17,73 @@ def has_rig_export(asset_uri: Uri, channel_name: str = 'default') -> bool:
     imports props and sets that never get one, so the animation template
     adds a row only for an asset that has."""
     return import_rig.latest_rig_version(asset_uri, channel_name) is not None
+
+
+def rig_channel(asset_uri: Uri, preferred: str) -> str | None:
+    """The channel to import ``asset_uri``'s rig from: ``preferred`` (the
+    channel the shot imports the asset in) when it has a rig, else its
+    first channel that has one; None when no channel has."""
+    channel_names = list_channels(asset_uri)
+    if preferred in channel_names:
+        channel_names = [preferred] + [
+            name for name in channel_names if name != preferred
+        ]
+    return next(
+        (name for name in channel_names if has_rig_export(asset_uri, name)),
+        None
+    )
+
+
+def discover_rig_imports(stage, animated=None):
+    """``(rows, unrigged)`` for the rigs ``stage`` animates.
+
+    Rows are ``(asset_uri, channel, 'latest', instances)``, one per asset
+    whose prims are tagged animatable (prim_metadata.ANIMATABLE_KEY), with
+    a row instance per tagged prim. ``unrigged`` names the animatable
+    assets with no rig published, which get no row. A prim imported
+    before the tag existed is judged by ``animated`` — the rule the import
+    nodes stamp with, copies_are_animated by default — until its import
+    runs again.
+    """
+    if stage is None:
+        return [], []
+    if animated is None:
+        animated = copies_are_animated
+    verdicts = {}
+
+    def untagged(asset_uri):
+        if asset_uri not in verdicts:
+            verdicts[asset_uri] = animated(asset_uri)
+        return verdicts[asset_uri]
+
+    counts, channels = {}, {}
+    for asset_info in prim_metadata.list_animatable_assets(
+        stage.GetPseudoRoot(), untagged
+    ):
+        metadata = asset_info['metadata']
+        asset_uri = Uri.parse(metadata['uri'])
+        counts[asset_uri] = counts.get(asset_uri, 0) + 1
+        channels.setdefault(asset_uri, metadata[CHANNEL_KEY])
+
+    rows, unrigged = [], []
+    for asset_uri in sorted(counts, key=str):
+        channel = rig_channel(asset_uri, channels[asset_uri])
+        if channel is None:
+            unrigged.append(asset_uri)
+            continue
+        rows.append((asset_uri, channel, 'latest', counts[asset_uri]))
+    return rows, unrigged
+
+
+def keep_row_choices(rows, current):
+    """Discovered ``rows`` with the artist's choices kept: an asset in
+    ``current`` ({asset_uri: (channel, version)}, the rows already on the
+    node) keeps that channel and version; Instances always come from the
+    stage."""
+    return [
+        (asset_uri, *current.get(asset_uri, (channel, version)), instances)
+        for asset_uri, channel, version, instances in rows
+    ]
 
 
 def split_unpublished(rig_imports):
@@ -205,7 +274,46 @@ class ImportRigs(ns.Node):
             self.set_version_name(index, version)
             self.set_instances(index, instances)
     
-    def execute(self):
+    def get_stage(self):
+        """The stage Discover reads: the Stage parm's LOP, or with it
+        empty, the stage fed into the th::animate this node sits in."""
+        stage_path = self.parm('stage_path').eval()
+        if len(stage_path) == 0:
+            stage = import_rig._shot_stage(self.native())
+            if stage is None:
+                raise self._error(
+                    'not inside a th::animate, so there is no shot stage to '
+                    'discover rigs in. Set Stage to a LOP node.'
+                )
+            return stage
+        lop_node = self.native().node(stage_path)
+        if lop_node is None or not isinstance(lop_node, hou.LopNode):
+            raise self._error(f"Stage '{stage_path}' is not a LOP node")
+        stage = lop_node.stage()
+        if stage is None:
+            raise self._error(f"Stage '{stage_path}' has no stage: {lop_node.errors()}")
+        return stage
+
+    def discover(self):
+        """Rows from the stage's animatable prims (discover_rig_imports),
+        then Import. A row the stage still animates keeps its channel and
+        version; the rest of the rows go."""
+        rows, unrigged = discover_rig_imports(self.get_stage())
+        current = {}
+        for index in range(1, self.parm('rig_imports').eval() + 1):
+            asset_uri_raw = self.parm(f'entity{index}').eval()
+            if len(asset_uri_raw) == 0:
+                continue
+            current[Uri.parse(asset_uri_raw)] = (
+                self.parm(f'channel{index}').eval(),
+                self.parm(f'version{index}').eval() or 'latest',
+            )
+        self.set_rig_imports(keep_row_choices(rows, current))
+        self.execute(unrigged)
+
+    def execute(self, unrigged=()):
+        """Import every row. ``unrigged``: animatable assets Discover found
+        with no rig, named in the node comment."""
 
         # Update labels for all entries
         count = self.parm('rig_imports').eval()
@@ -220,10 +328,13 @@ class ImportRigs(ns.Node):
 
         # Parameters
         active_imports, unpublished = split_unpublished(self.get_rig_imports())
-        unpublished_note = (
-            '\nNo rig published: '
-            + ', '.join(uri.segments[-1] for uri in unpublished)
-            if unpublished else ''
+        unpublished_note = ''.join(
+            f'\n{label}: ' + ', '.join(uri.segments[-1] for uri in uris)
+            for label, uris in (
+                ('No rig published', unpublished),
+                ('Animatable, no rig published', unrigged),
+            )
+            if uris
         )
 
         # Check if any rigs to import
@@ -283,6 +394,12 @@ def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportRigs(raw_node)
     node.execute()
+
+def discover(kwargs):
+    """The Discover button: rows from the stage's animatable prims."""
+    node = ImportRigs(kwargs['node'])
+    with ns.node_errors_as_message('Discover Rigs'):
+        node.discover()
 
 def select(kwargs):
     """A row's Entity button: pick that row's asset."""

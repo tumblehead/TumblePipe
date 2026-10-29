@@ -57,7 +57,7 @@ does not define, so that path still fails loudly on the farm side.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 # Sentinel: this field has no fallback constant. When it resolves to
 # neither an exception, a pinned form value, nor an entity property, the
@@ -108,6 +108,9 @@ class Field:
             sent at all, so the render uses what the scene says. Sending a
             seeded default here is what rendered motion blur for a scene
             whose render settings turned it off.
+        derive: Reads the entity's value out of another property when
+            ``prop`` carries none, before ``default`` (the playblast size
+            from the shot's render resolution). None when nothing derives.
     """
 
     key: str
@@ -118,6 +121,22 @@ class Field:
     kind: str = 'str'
     preflight: bool = False
     override: bool = False
+    derive: Callable[[dict], Any] | None = None
+
+
+def _resolution_axis(axis: int) -> Callable[[dict], Any]:
+    """One side of the entity's ``render.resolution``, or None when it has
+    no usable one. Both sides or neither: half a resolution beside a
+    default is a size nobody configured."""
+    def derive(properties: dict) -> Any:
+        value = nested(properties, 'render.resolution')
+        if not isinstance(value, (list, tuple)) or len(value) != 2:
+            return None
+        for side in value:
+            if isinstance(side, bool) or not isinstance(side, int) or side <= 0:
+                return None
+        return value[axis]
+    return derive
 
 
 # The field table. Property paths and defaults match what the dialog and
@@ -182,12 +201,27 @@ FIELDS: tuple[Field, ...] = (
     Field('pb_priority', 'playblast', 'Priority', prop='farm.priority',
           default=50, kind='int'),
     # Assembled into the 'pb_res' pair by _finish(); these two keys never
-    # reach batch_submit.
+    # reach batch_submit. A shot with no playblast size of its own plays at
+    # its render resolution: a fixed 1280x720 squashed every playblast of a
+    # project that is not 16:9, since husk's --res overrides the camera.
     Field('pb_res_x', 'playblast', 'Width', prop='playblast.res_x',
-          default=1280, kind='int'),
+          default=1280, kind='int', derive=_resolution_axis(0)),
     Field('pb_res_y', 'playblast', 'Height', prop='playblast.res_y',
-          default=720, kind='int'),
+          default=720, kind='int', derive=_resolution_axis(1)),
+    # The look, assembled into 'pb_look' by _finish(). The defaults match
+    # specs.playblast.DEFAULT_LOOK (tests/test_submit_settings.py pins it).
+    Field('pb_light', 'playblast', 'Light', prop='playblast.light',
+          default='dome', kind='str'),
+    Field('pb_samples', 'playblast', 'Samples', prop='playblast.samples',
+          default=32, kind='int'),
+    Field('pb_materials', 'playblast', 'Materials',
+          prop='playblast.materials', default=False, kind='bool'),
 )
+
+#: The look fields and the ``pb_look`` keys they become.
+PLAYBLAST_LOOK_KEYS = {
+    'pb_light': 'light', 'pb_samples': 'samples', 'pb_materials': 'materials',
+}
 
 FIELDS_BY_KEY: dict[str, Field] = {f.key: f for f in FIELDS}
 
@@ -284,6 +318,10 @@ def entity_value(
     raw = nested(properties, field.prop) if field.prop else None
     if raw is not None:
         return coerce(raw, field)
+    if field.derive is not None:
+        derived = field.derive(properties)
+        if derived is not None:
+            return coerce(derived, field)
     if fallbacks and fallbacks.get(field.key) is not None:
         return coerce(fallbacks[field.key], field)
     return coerce(field.default, field)
@@ -356,16 +394,20 @@ def _finish(settings: dict, sections: Sequence[str]) -> dict:
     """Assemble composite keys and drop the internal ones.
 
     ``pb_res`` is a ``[width, height]`` pair on the wire but two separate
-    entity properties, so it is resolved as two fields and joined here.
+    entity properties, so it is resolved as two fields and joined here;
+    ``pb_look`` is the look fields gathered into one dict the same way.
     """
+    width = settings.pop('pb_res_x', None)
+    height = settings.pop('pb_res_y', None)
+    look = {
+        name: settings.pop(key)
+        for key, name in PLAYBLAST_LOOK_KEYS.items() if key in settings
+    }
     if 'playblast' in set(sections):
-        width = settings.pop('pb_res_x', None)
-        height = settings.pop('pb_res_y', None)
         if width is not None and height is not None:
             settings['pb_res'] = [width, height]
-    else:
-        settings.pop('pb_res_x', None)
-        settings.pop('pb_res_y', None)
+        if len(look) == len(PLAYBLAST_LOOK_KEYS):
+            settings['pb_look'] = look
     return settings
 
 

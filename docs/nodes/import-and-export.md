@@ -469,8 +469,17 @@ Source: [`otls/lop_th.shot_sequencer.1.0`](../../otls/lop_th.shot_sequencer.1.0/
 
 A dive-in SOP network (`anim_dive`) imported as animated USD over the
 incoming stage: topology animated, `P N visibility bounds Cd Alpha` and
-`transform` only, no material binding, transforms zeroed, and kinds set by
-depth (assembly / component / scope, as `set_kinds` does). No parms.
+`transform` only, no material binding, and kinds set by depth (assembly /
+component / scope, as `set_kinds` does).
+
+The posed geometry is world space (each rig starts at its layout
+placement, see [`th::import_rig`](assets.md#thimport_rig-sop)), so the
+transforms are rewritten to keep it there: the prims above the geometry
+keep their transforms from the incoming stage, so a character copy keeps
+its layout placement, and each geometry prim cancels what its parents add
+up to. Parts the rig does not output, a groom say, stay with the
+character. Up to 1.84.0 every prim was zeroed, which left those parts at
+the origin while the rigged body stood at its placement.
 `_TumblePipe/pipeline`. The animation shot template places one as
 `animate_shot` with `th::import_rigs` and the APEX scene-animate nodes
 inside its dive target; see [Building assets → `th::import_rigs`](assets.md#thimport_rigs-sop).
@@ -480,10 +489,48 @@ and **Shapes** `Base`. A `th::animate` placed from the Tab menu has an empty
 dive (just `output0`), so build `th::import_rigs` → APEX Scene Animate →
 APEX Scene Invoke (with those settings) → `output0` inside it yourself.
 
+| Label | Default | What it does |
+|---|---|---|
+| Mode | Classic (SOP Import) | *Classic*: imports what the dive's Scene Invoke outputs, every frame. *Fast (APEX bake)*: Solaris runs the rigs (Houdini 22's Bake APEX Scene) and only the points change per frame |
+
+**Fast mode** gives the same output as Classic, several times faster on
+playback. The rigs run on their own `Base` shapes, as in the Scene Invoke, so
+the points, normals, prims, attributes, GeomSubsets and cameras are the same,
+bit for bit for skinned characters. (Cloth deformers do not give the same
+points twice, in either mode: two Classic cooks of the same frame differ by
+up to a few millimetres on cloth parts. Fast differs from Classic by no more
+than that.) Six production characters and a
+camera played back in the Houdini viewport at 7.8 fps against 2.2. A
+240-frame USD export of one character took 9 s and 2 GB of memory against
+32 s and 10 GB.
+The topology, UVs and primvars are imported once, so they are written once
+instead of on every frame; the points, normals and extents are time samples
+as before. How it works:
+
+- It reads the APEX scene from a second output in the dive, `output1`, wired
+  to the Scene Animate. The animation template adds it. Picking Fast on a
+  dive without one adds it next to the Scene Invoke that feeds `output0`.
+- A character is baked when its `Base` shape is polygons whose `path`
+  attributes all sit under one asset prim (`/CHAR/<asset>/...`), as
+  `th::import_rigs` makes them. Any other character, an APEX camera say, goes
+  through a Scene Invoke as in Classic.
+- After an edit to the animation, the first frame takes longer than in
+  Classic (about 3.4 s against 1.5 s for those six characters): the rigs are
+  compiled again and the rest shapes re-imported. Later frames are fast.
+
+Use Classic when:
+
+- **SOPs after the dive's Scene Invoke matter.** Fast reads the scene before
+  the Scene Invoke, so it does not see them.
+- **The rig changes its point count**, or two parts share points. Fast
+  refuses such a rig with an error that names the asset.
+
+Classic stays the default until Fast has been tried on real shots in the GUI.
+
 Cameras pass through as cameras. A Camera SOP added to the scene with
 APEX Scene Add Camera (with its `path` set, e.g. `/cameras/render_camera`)
 comes out as a USD camera with its own animated transform, as it would from
-a SOP Create. The zeroed transforms and the kinds-by-depth leave cameras
+a SOP Create. The transform rewrite and the kinds-by-depth leave cameras
 alone. Up to 1.80.1 the camera came out at the origin, and at depth 1–3 as
 an Xform or Scope instead of a camera.
 
@@ -496,4 +543,6 @@ unaffected. A bypassed rig, or one with no published version yet, leaves its
 asset in the ghost. Scenes saved before this change switch to the new ghost
 when they are opened.
 Source: [`otls/lop_th.animate.2.0`](../../otls/lop_th.animate.2.0/th_8_8Lop_1animate_8_82.0/DialogScript),
-[`lops/animate_ghost.py`](../../python/tumblepipe/pipe/houdini/lops/animate_ghost.py).
+[`lops/animate_ghost.py`](../../python/tumblepipe/pipe/houdini/lops/animate_ghost.py),
+[`lops/animate_xforms.py`](../../python/tumblepipe/pipe/houdini/lops/animate_xforms.py),
+[`lops/animate_bake.py`](../../python/tumblepipe/pipe/houdini/lops/animate_bake.py).

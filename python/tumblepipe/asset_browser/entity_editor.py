@@ -10,6 +10,11 @@ paste blocks, fill down, shift frame ranges, add rows from a name pattern or
 a pasted list, add empty sequences and categories, rename, retire, undo. A third tab, **Multis**, sets Multis
 up: their members, and a tick box per department they cover.
 
+Each sequence or category has a row of its own above its entities, which
+are nested under it: its values are what they inherit unless they set their
+own, so a sequence's Root gives its assets to every shot in it with no Root
+of its own. Clicking a group's name folds its entities away.
+
 Values look the way the Database Editor shows them: inherited values are
 grey, values set on the entity itself are bright and bold, and edits not
 applied yet are tinted. Nothing is written until **Apply**, which writes
@@ -107,6 +112,9 @@ _AMBER = _brush(WARNING)
 # what Apply does with a cell, and Houdini's amber highlight hid that.
 _SELECTED_FILL = _brush(TEXT_PRIMARY, 22)
 _SELECTED_EDGE = QColor(TEXT_PRIMARY)
+# The current cell's whole row, fainter than a selection, so the eye can
+# follow it across a wide sheet.
+_CURRENT_ROW_FILL = _brush(TEXT_PRIMARY, 16)
 # A cell's text without the notes the display adds (", rigged"): what
 # Copy puts on the clipboard, so it pastes back as the value
 _PLAIN_ROLE = Qt.UserRole + 1
@@ -141,6 +149,8 @@ def _legend(kind: es.Kind) -> str:
 _LEGEND_TIP = (
     'Select cells and type to set a value on every selected {item}. Delete '
     'puts a value back to inheriting from the {group} or the project. '
+    'Each {group}\'s own row, above its {item}s, sets what they inherit; '
+    'click its name to fold them away. '
     'New rows have green names; a row to retire is struck through.'
 )
 
@@ -254,21 +264,45 @@ def _short(names: list[str], limit: int = 6) -> str:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class GroupKey:
+    """A sequence's or category's own row, above its entities: the values
+    they inherit. Entity rows are keyed by their sheet row id (an int)."""
+    name: str
+
+
+_GROUP_FILL = _brush(TEXT_PRIMARY, 14)
+
+
 class _SheetModel(QAbstractTableModel):
-    """The sheet as a table; row ``i`` is the sheet's ``i``-th row."""
+    """The sheet as a table: each group's row, then its entities' rows in
+    sheet order. ``collapsed`` groups show their own row only."""
 
     def __init__(self, pane: '_SheetPane') -> None:
         super().__init__()
         self._pane = pane
         self.sheet = pane.sheet
         self.columns = COLUMNS[self.sheet.kind.key]
-        self._ids = [row.id for row in self.sheet.rows]
+        self.collapsed: set[str] = set()
+        self._ids = self._layout()
         self._rigged: dict[str, bool] = {}
+
+    def _layout(self) -> list:
+        by_group: dict[str, list[int]] = {}
+        for row in self.sheet.rows:
+            by_group.setdefault(row.group, []).append(row.id)
+        keys = []
+        for group in self.sheet.groups():
+            keys.append(GroupKey(group))
+            keys += by_group.pop(group, [])
+        for ids in by_group.values():   # a new row not given a group yet
+            keys += ids
+        return keys
 
     def set_sheet(self, sheet: es.Sheet) -> None:
         self.beginResetModel()
         self.sheet = sheet
-        self._ids = [row.id for row in sheet.rows]
+        self._ids = self._layout()
         self._rigged.clear()    # a reload may follow a rig export
         self.endResetModel()
 
@@ -298,7 +332,7 @@ class _SheetModel(QAbstractTableModel):
     def refresh(self) -> bool:
         """Show the sheet's current state; True when rows came, went or
         moved (the view was reset)."""
-        ids = [row.id for row in self.sheet.rows]
+        ids = self._layout()
         if ids != self._ids:
             self.beginResetModel()
             self._ids = ids
@@ -310,12 +344,14 @@ class _SheetModel(QAbstractTableModel):
             )
         return False
 
-    def row_at(self, source_row: int) -> es.Row:
-        return self.sheet.row(self._ids[source_row])
+    def row_at(self, source_row: int) -> es.Row | GroupKey:
+        key = self._ids[source_row]
+        return key if isinstance(key, GroupKey) else self.sheet.row(key)
 
-    def _shown(self, index) -> es.Row | None:
-        """The row ``index`` shows, or None when the sheet has just dropped
-        it (a new row retired) and the view has not caught up yet."""
+    def _shown(self, index) -> es.Row | GroupKey | None:
+        """The row or group ``index`` shows, or None when the sheet has
+        just dropped it (a new row retired) and the view has not caught up
+        yet."""
         if not index.isValid() or index.row() >= len(self._ids):
             return None
         try:
@@ -323,12 +359,19 @@ class _SheetModel(QAbstractTableModel):
         except KeyError:
             return None
 
-    def id_at(self, source_row: int) -> int:
+    def id_at(self, source_row: int) -> int | GroupKey:
         # The id the view shows, even when the sheet has just dropped it.
         return self._ids[source_row]
 
-    def source_row(self, row_id: int) -> int:
+    def source_row(self, row_id: int | GroupKey) -> int:
         return self._ids.index(row_id) if row_id in self._ids else -1
+
+    def toggle(self, group: str) -> None:
+        """Fold a group's entities away under its row, or show them."""
+        self.collapsed ^= {group}
+        row = self.source_row(GroupKey(group))
+        if row >= 0:
+            self.dataChanged.emit(self.index(row, 0), self.index(row, 0))
 
     def rowCount(self, parent=QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._ids)
@@ -342,8 +385,10 @@ class _SheetModel(QAbstractTableModel):
             return 'Status' if column == STATUS else self.sheet.kind.label(column)
         return None
 
-    @staticmethod
-    def editable(row: es.Row, column: str) -> bool:
+    def editable(self, row: es.Row | GroupKey, column: str) -> bool:
+        if isinstance(row, GroupKey):
+            # A group's values; its name and entities are edited elsewhere.
+            return column in self._pane.values_columns
         if row.retire or column == STATUS:
             return False
         if column == es.GROUP:
@@ -384,11 +429,128 @@ class _SheetModel(QAbstractTableModel):
             parts.append('Multis changed')
         return ', '.join(parts), _AMBER
 
+    def group_status(self, group: str) -> tuple[str, QBrush]:
+        sheet = self.sheet
+        problem = sheet.group_value_problems().get(group) or sheet.group_problems().get(group)
+        if problem:
+            return problem, _RED
+        if group not in sheet.base.groups:
+            return f'New {sheet.kind.group}', _GREEN
+        return ('Changed' if sheet.group_pending(group) else ''), _AMBER
+
+    def _members(self, group: str) -> list[es.Row]:
+        return [r for r in self.sheet.rows if r.group == group and not r.retire]
+
+    def _group_data(self, group: str, column: str, role):
+        sheet = self.sheet
+        kind = sheet.kind
+        if role in (Qt.DisplayRole, Qt.EditRole, _PLAIN_ROLE):
+            if column == STATUS:
+                return self.group_status(group)[0]
+            if column == es.GROUP:
+                if role != Qt.DisplayRole:
+                    return group
+                return f'{"▸" if group in self.collapsed else "▾"} {group}'
+            if column == es.NAME:
+                return '' if role != Qt.DisplayRole else _plural(len(self._members(group)), kind.item)
+            if column == es.MULTIS:
+                return ''
+            if column == es.ASSETS:
+                return assets_label(sheet.root_assets(sheet.group_value(group, es.ROOT)))
+            value = sheet.group_value(group, column)
+            if role == Qt.EditRole and column == es.ROOT:
+                return value if isinstance(value, str) else ''
+            return cell_text(value, column)
+        if role == Qt.CheckStateRole and column == es.ANIMATABLE:
+            return Qt.Checked if sheet.group_value(group, column) else Qt.Unchecked
+        if role == Qt.ToolTipRole:
+            return self._group_tooltip(group, column)
+        if column == STATUS:
+            return self.group_status(group)[1] if role == Qt.ForegroundRole else None
+        valued = column in self._pane.values_columns
+        state = sheet.group_state(group, column) if valued else None
+        if role == Qt.ForegroundRole:
+            if column == es.NAME or state in (es.INHERITED, es.CLEARED):
+                return _INHERITED
+            return _OVERRIDE
+        if role == Qt.FontRole:
+            if column == es.GROUP or state in (es.OWN, es.SET):
+                return _BOLD
+            if column == es.NAME or state == es.CLEARED:
+                return _ITALIC
+            return None
+        if role == Qt.BackgroundRole:
+            if state in (es.SET, es.CLEARED):
+                return _PENDING
+            if column == es.GROUP and group not in sheet.base.groups:
+                return _NEW
+            return _GROUP_FILL
+        if role == Qt.TextAlignmentRole and column in _NUMBERS:
+            return int(Qt.AlignRight | Qt.AlignVCenter)
+        return None
+
+    def _group_tooltip(self, group: str, column: str) -> str:
+        sheet = self.sheet
+        kind = sheet.kind
+        what = f'{kind.group} {group}'
+        if column == STATUS:
+            return self.group_status(group)[0]
+        if column == es.GROUP:
+            return (
+                f'The {kind.group}\'s own values, which every {kind.item} in it '
+                'inherits unless it sets its own. Click to fold its '
+                f'{kind.item}s away or show them.'
+            )
+        if column == es.NAME:
+            return f'The {kind.item}s in {what}.'
+        if column == es.MULTIS:
+            return f'A Multi lists {kind.item}s, not {_plurals(kind.group)}.'
+        if column == es.ASSETS:
+            root = sheet.group_value(group, es.ROOT)
+            if not isinstance(root, str):
+                return (
+                    f'{what.capitalize()} has no Root. Give it one in the Root '
+                    f'column and its {kind.item}s with none of their own import '
+                    'its assets.'
+                )
+            return (
+                f'The assets of Root {root_label(root)}, which the {kind.item}s '
+                f'of {what} with no Root of their own import. Change the list '
+                f'from one of those {kind.item}s\' Assets cell.'
+            )
+        state = sheet.group_state(group, column)
+        text = cell_text(sheet.group_value(group, column), column) or 'nothing'
+        source = sheet.group_source(group, column) or 'the project'
+        users = sum(
+            1 for row in self._members(group)
+            if sheet.state(row, column) in (es.INHERITED, es.CLEARED)
+        )
+        reach = (
+            f' {_plural(users, kind.item)} of it inherit{"s" if users == 1 else ""} this.'
+            if users else ''
+        )
+        if state == es.INHERITED:
+            return (
+                f'{text}, inherited from {source}. Type a value to set it on '
+                f'{what}: its {kind.item}s inherit it unless they set their own.{reach}'
+            )
+        if state == es.CLEARED:
+            return f'Goes back to inheriting {text} from {source} on Apply.{reach}'
+        if state == es.SET:
+            return f'Set to {text} on {what} on Apply.{reach}'
+        inherited = cell_text(sheet.base.for_new_group.values.get(column), column) or 'nothing'
+        return (
+            f'{text}, set on {what}.{reach} Delete puts it back to inheriting '
+            f'{inherited} from {source}.'
+        )
+
     def data(self, index, role=Qt.DisplayRole):
         row = self._shown(index)
         if row is None:
             return None
         column = self.columns[index.column()]
+        if isinstance(row, GroupKey):
+            return self._group_data(row.name, column, role)
         sheet = self.sheet
         if role in (Qt.DisplayRole, Qt.EditRole, _PLAIN_ROLE):
             if column == STATUS:
@@ -414,7 +576,9 @@ class _SheetModel(QAbstractTableModel):
         valued = column not in (es.GROUP, es.NAME)
         state = sheet.state(row, column) if valued else None
         if role == Qt.ForegroundRole:
-            if row.retire or state in (es.INHERITED, es.CLEARED):
+            # A stored entity's group is its row's above: dim, as nested.
+            if row.retire or state in (es.INHERITED, es.CLEARED) \
+                    or (column == es.GROUP and not row.is_new):
                 return _INHERITED
             if state in (es.OWN, es.SET):
                 return _OVERRIDE
@@ -548,7 +712,9 @@ def index_of_proxy(pane: '_SheetPane', source_index):
 
 
 class _Filter(QSortFilterProxyModel):
-    """Rows of one group, and names containing some text."""
+    """Rows of one group, and names containing some text. A group's own row
+    shows while it or one of its entities matches; a collapsed group's
+    entities show only when it is the group picked."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -561,8 +727,18 @@ class _Filter(QSortFilterProxyModel):
         self.invalidateFilter()
 
     def filterAcceptsRow(self, source_row, parent) -> bool:
-        row = self.sourceModel().row_at(source_row)
+        model = self.sourceModel()
+        row = model.row_at(source_row)
+        if isinstance(row, GroupKey):
+            if self.group and row.name != self.group:
+                return False
+            return not self.text or self.text in row.name.casefold() or any(
+                self.text in r.name.casefold()
+                for r in model.sheet.rows if r.group == row.name
+            )
         if self.group and row.group != self.group:
+            return False
+        if not self.group and row.group in model.collapsed:
             return False
         return not self.text or self.text in row.name.casefold()
 
@@ -589,6 +765,9 @@ class _Delegate(QStyledItemDelegate):
             painter.fillRect(option.rect, option.palette.alternateBase()
                              if alternate else option.palette.base())
         super().paint(painter, plain, index)
+        view = option.widget
+        if view is not None and view.currentIndex().row() == index.row():
+            painter.fillRect(option.rect, _CURRENT_ROW_FILL)
         if not selected:
             return
         painter.save()
@@ -959,6 +1138,8 @@ class AddShotsDialog(QDialog):
         self._root.addItem('New Root from assets…', _NEW_ROOT)
         if select is not None:
             self._root.setCurrentIndex(max(self._root.findData(select), 0))
+        if hasattr(self, '_sequence'):
+            self._name_inherit()
 
     def _on_root_picked(self, _index: int) -> None:
         if self._root.currentData() != _NEW_ROOT:
@@ -985,12 +1166,21 @@ class AddShotsDialog(QDialog):
         pattern, first = shot_batch.suggest(existing, self._step.value())
         self._pattern.setText(pattern)
         self._first.setValue(first)
-        inherited = self._sheet.base.inherited(sequence).values
+        inherited = self._sheet.group_inherited(sequence).values
         for spin, name in ((self._frame_start, es.FRAME_START), (self._frame_end, es.FRAME_END)):
             value = inherited.get(name)
             if isinstance(value, int):
                 spin.setValue(value)
+        self._name_inherit()
         self._update()
+
+    def _name_inherit(self) -> None:
+        """The Inherit entry names the Root the sequence gives its shots."""
+        root = self._sheet.group_inherited(self.sequence()).values.get(es.ROOT)
+        self._root.setItemText(0, (
+            f'Inherit from the sequence ({root_label(root)})' if isinstance(root, str)
+            else 'Inherit from the sequence (no Root)'
+        ))
 
     def _names(self) -> list[str]:
         return shot_batch.expand_names(
@@ -1119,6 +1309,11 @@ class _SheetPane(QWidget):
     def noun(self) -> str:
         return self.kind.item
 
+    @property
+    def values_columns(self) -> frozenset[str]:
+        """The columns that hold a value (not names, Status or dialogs)."""
+        return self._values
+
     # ── UI ───────────────────────────────────────────────
 
     def _build_ui(self) -> None:
@@ -1168,6 +1363,7 @@ class _SheetPane(QWidget):
                 table.setColumnWidth(i, scaled(_WIDTHS[column]))
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(self._context_menu)
+        table.clicked.connect(self._on_clicked)
         outer.addWidget(table, 1)
         for keys, slot in (
             (QKeySequence.Copy, self._copy),
@@ -1220,10 +1416,17 @@ class _SheetPane(QWidget):
         table.selectionModel().selectionChanged.connect(
             lambda *_a: self.window_.update_footer()
         )
+        # Qt repaints only the old and new current cells; the row tint
+        # (see _Delegate.paint) needs both rows.
+        table.selectionModel().currentRowChanged.connect(
+            lambda *_a: table.viewport().update()
+        )
 
     # ── Refresh ──────────────────────────────────────────
 
-    def _row_id(self, index) -> int:
+    def _row_id(self, index) -> int | GroupKey:
+        """The entity row id ``index`` shows, or the :class:`GroupKey` of a
+        group's own row."""
         return self.model.id_at(self.proxy.mapToSource(index).row())
 
     def _selected(self) -> list:
@@ -1234,7 +1437,24 @@ class _SheetPane(QWidget):
         )
 
     def selected_row_ids(self) -> list[int]:
-        return list(dict.fromkeys(self._row_id(i) for i in self._selected()))
+        """The entity rows selected; groups' own rows are not entities."""
+        return [
+            key for key in dict.fromkeys(self._row_id(i) for i in self._selected())
+            if not isinstance(key, GroupKey)
+        ]
+
+    def selected_groups(self) -> list[str]:
+        return [
+            key.name for key in dict.fromkeys(self._row_id(i) for i in self._selected())
+            if isinstance(key, GroupKey)
+        ]
+
+    def _on_clicked(self, index) -> None:
+        # A click on a group's name folds its entities away, or shows them.
+        key = self._row_id(index)
+        if isinstance(key, GroupKey) and self.columns[index.column()] == es.GROUP:
+            self.model.toggle(key.name)
+            self.proxy.invalidateFilter()
 
     def refresh(self, sheet: es.Sheet | None = None) -> None:
         """Show the sheet after an edit, keeping the selection by row. A
@@ -1333,9 +1553,23 @@ class _SheetPane(QWidget):
         else:
             self.say()
 
-    def _set_cell(self, row_id: int, column: str, value) -> None:
+    def _set_cell(self, row_id: int | GroupKey, column: str, value) -> None:
         """One cell, as typed or pasted: '' or Inherit in a value column
-        puts it back to inheriting."""
+        puts it back to inheriting. A group's row sets the group's value."""
+        if isinstance(row_id, GroupKey):
+            if not self.model.editable(row_id, column):
+                return
+            group = row_id.name
+            try:
+                if value == INHERIT or str(value).strip() == '':
+                    self.sheet.reset_group(group, column)
+                elif column == es.ROOT:
+                    self.sheet.set_group_value(group, column, self._root_value(value))
+                else:
+                    self.sheet.set_group_value(group, column, value)
+            except ValueError as exc:
+                self._errors.append(str(exc))
+            return
         row = self.sheet.row(row_id)
         if not self.model.editable(row, column) or column in _DIALOG_COLUMNS:
             return
@@ -1404,12 +1638,18 @@ class _SheetPane(QWidget):
             return
         top = min(i.row() for i in cells)
         left = min(i.column() for i in cells)
+        # A block runs down the entity rows: a group's row below the first
+        # line is passed over, not pasted into (it is not one of them).
+        rows = [
+            key for p in range(top, self.proxy.rowCount())
+            if not isinstance(key := self._row_id(self.proxy.index(p, 0)), GroupKey) or p == top
+        ]
         targets = [
-            (self._row_id(self.proxy.index(top + r, 0)), self.columns[left + c], value)
-            for r, line in enumerate(lines) if top + r < self.proxy.rowCount()
+            (rows[r], self.columns[left + c], value)
+            for r, line in enumerate(lines) if r < len(rows)
             for c, value in enumerate(line) if left + c < len(self.columns)
         ]
-        missed = sum(1 for r in range(len(lines)) if top + r >= self.proxy.rowCount())
+        missed = max(0, len(lines) - len(rows))
         self.edit(lambda: [self._set_cell(*target) for target in targets])
         if missed and not self._errors:
             self.say(
@@ -1451,7 +1691,11 @@ class _SheetPane(QWidget):
             (self._row_id(i), self.columns[i.column()]) for i in self._selected()
             if self.columns[i.column()] in self._values
         ]
-        self.edit(lambda: [self.sheet.reset(row_id, column) for row_id, column in cells])
+        self.edit(lambda: [
+            self.sheet.reset_group(key.name, column) if isinstance(key, GroupKey)
+            else self.sheet.reset(key, column)
+            for key, column in cells
+        ])
 
     def _fill_down(self) -> None:
         by_column: dict[int, list] = {}
@@ -1463,12 +1707,17 @@ class _SheetPane(QWidget):
                 column = self.columns[col]
                 if column not in self._values or len(indexes) < 2:
                     continue
-                top = self.sheet.row(self._row_id(indexes[0]))
-                value = self.sheet.value(top, column)
+                top = self._row_id(indexes[0])
+                value = (
+                    self.sheet.group_value(top.name, column) if isinstance(top, GroupKey)
+                    else self.sheet.value(self.sheet.row(top), column)
+                )
                 if value is None:
                     continue
                 for index in indexes[1:]:
-                    self._set_cell(self._row_id(index), column, value)
+                    key = self._row_id(index)
+                    if not isinstance(key, GroupKey):   # down the entities only
+                        self._set_cell(key, column, value)
         self.edit(change)
 
     def _shift_frames(self) -> None:
@@ -1491,7 +1740,8 @@ class _SheetPane(QWidget):
 
     def _revert_selected(self) -> None:
         ids = self.selected_row_ids()
-        self.edit(lambda: self.sheet.revert(ids))
+        groups = self.selected_groups()
+        self.edit(lambda: (self.sheet.revert(ids), self.sheet.revert_groups(groups)))
 
     def undo(self) -> None:
         if self.sheet.undo():
@@ -1547,7 +1797,7 @@ class _SheetPane(QWidget):
 
     def edit_assets(self, index) -> None:
         """The Assets cell of ``index``'s shot: its Root's list, ticked."""
-        if not index.isValid():
+        if not index.isValid() or isinstance(self._row_id(index), GroupKey):
             return
         row = self.sheet.row(self._row_id(index))
         if row.retire:
@@ -1572,6 +1822,7 @@ class _SheetPane(QWidget):
         """The rows an action on ``index`` is about: the selected ones when
         it is among them, else its own; never a row being retired."""
         ids = [self._row_id(index)] if index.isValid() else []
+        ids = [i for i in ids if not isinstance(i, GroupKey)]
         selected = self.selected_row_ids()
         if not ids or ids[0] in selected:
             ids = selected
@@ -2282,6 +2533,9 @@ class _MultiPane(QWidget):
         actions.addWidget(self.redo_button)
         outer.addLayout(actions)
         table.selectionModel().selectionChanged.connect(lambda *_a: self.update_buttons())
+        table.selectionModel().currentRowChanged.connect(
+            lambda *_a: table.viewport().update()
+        )
         self.refresh()
 
     def set_context(self, key: str) -> None:
@@ -2617,6 +2871,8 @@ class EntityEditorWindow(QDialog):
                 bits.append(text)
             elif summary.new_groups:
                 bits.append(_plural(len(summary.new_groups), f'new {kind.group}'))
+            if summary.groups_changed:
+                bits.append(f'{_plural(summary.groups_changed, kind.group)} changed')
             if summary.changed:
                 bits.append(f'{_plural(summary.changed, kind.item)} changed')
             if summary.renamed:
@@ -2717,6 +2973,11 @@ class EntityEditorWindow(QDialog):
                 self.show_kind(pane.kind.key)
                 name, reason = next(iter(pane.sheet.group_problems().items()))
                 self.say(f'New {pane.kind.group} {name}: {reason}.', warn=True)
+                return False
+            if pane.sheet.group_value_problems():
+                self.show_kind(pane.kind.key)
+                name, reason = next(iter(pane.sheet.group_value_problems().items()))
+                self.say(f'{pane.kind.group.capitalize()} {name}: {reason}.', warn=True)
                 return False
             if pane.sheet.multi_problems():
                 self.show_kind('multis')

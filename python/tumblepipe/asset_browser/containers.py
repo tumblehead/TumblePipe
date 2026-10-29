@@ -589,13 +589,31 @@ class ContainerManager:
             return []
         return list(grp.departments)
 
+    def group_member_ids(self, group_tag: str) -> list[tuple[str, str]]:
+        """``[(member_asset_id, member_name)]`` of a Multi, in its
+        groups.json order; ``[]`` while the project's Client is not READY
+        or for a Multi that no longer exists."""
+        _, proj_name, path = group_tag.split(":", 2)
+        proj = self._registry.get(proj_name)
+        if proj is None or not self._clients.is_ready(proj_name):
+            return []
+        self._activator.activate(proj)
+        from tumblepipe.config import groups as grp_mod
+        grp = grp_mod.get_group(uris.group(path))
+        if grp is None:
+            return []
+        return [
+            (uris.asset_id_for(proj_name, member), member.segments[-1])
+            for member in grp.members
+        ]
+
     def _group_dept_latest_hips(self, group_tag: str) -> dict:
         """Return ``{dept: latest_hip_Path}`` for a group's workfile
         tree.
 
         Resolution goes through ``latest_hip_file_path_with_context``
-        (the same helper :meth:`_open_group_workfile` and
-        :meth:`_new_group_from_template` use), so paths line up with
+        (the same helper :meth:`WorkfileManager.open_group_workfile` and
+        :meth:`WorkfileManager.new_group_from_template` use), so paths line up with
         the open/create flows even if the on-disk layout doesn't match
         a naive ``<root>/groups/<ctx>/<name>/<dept>`` walk. ``{}`` while
         the project's Client is not READY, or for a Multi that no longer
@@ -622,7 +640,7 @@ class ContainerManager:
             result[dept_name] = hip_path
         return result
 
-    def _get_group_department_workfile_info(
+    def group_department_versions(
         self, group_tag: str,
     ) -> dict[str, list[str]]:
         """Return ``{dept: [versions]}`` (ascending) for a group's
@@ -788,7 +806,7 @@ class ContainerManager:
             # favourite / shelf refs. The covered/uncovered toggle
             # state lives separately in ``covered_departments``.
             group_dept_versions = (
-                self._get_group_department_workfile_info(asset_id)
+                self.group_department_versions(asset_id)
             )
             metadata["departments"] = latest_by_dept(group_dept_versions)
             metadata["department_versions"] = group_dept_versions

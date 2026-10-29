@@ -3,7 +3,7 @@ from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
-from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.entity_node import FROM_CONTEXT, EntityNode
 from tumblepipe.pipe.houdini.sops import rename_packed
 from tumblepipe.pipe.paths import (
     get_latest_version_path,
@@ -20,6 +20,17 @@ def latest_rig_version(asset_uri: Uri, channel_name: str) -> str | None:
     and failed with "has no rig file"."""
     version_path = get_latest_version_path(get_rig_export_path(asset_uri, channel_name))
     return None if version_path is None else version_path.name
+
+
+def instance_names(asset_uri: Uri, instances: int) -> list[str]:
+    """The characters an import of ``instances`` copies adds, in order:
+    the asset name for one, else ``<asset>0`` .. ``<asset><N-1>``, the
+    names import_assets' Duplicate LOP gives the layout copies. execute
+    names the characters and place_characters finds their prims by it."""
+    base_name = asset_uri.segments[-1]
+    if instances == 1:
+        return [base_name]
+    return [f'{base_name}{index}' for index in range(instances)]
 
 
 # The top world control TumbleRig builds on every rig (apex_joints: Main,
@@ -74,36 +85,97 @@ def layout_placement(native, prim_path: str):
     )
 
 
-def place_character(sop_node, translate, rotate, scale):
-    """Python SOP body: set the rig parms of the placement control on the
-    packed '.rig' of the character in ``sop_node``'s geometry. Warns and
-    leaves the rig as it is when the rig has no such control."""
+def _place_rigs(geo, translate, rotate, scale) -> list[str]:
+    """Set the rig parms of the placement control on every packed '.rig'
+    in ``geo`` (edited in place). Returns the names of the rigs with no
+    such control, which are left as they are."""
     import apex
     import hou
 
-    geo = sop_node.geometry()
     values = {
         f'{PLACEMENT_CONTROL}_t': hou.Vector3(translate),
         f'{PLACEMENT_CONTROL}_r': hou.Vector3(rotate),
         f'{PLACEMENT_CONTROL}_s': hou.Vector3(scale),
     }
+    unplaced = []
+    if geo.findPrimAttrib('name') is None:
+        return unplaced
     for prim in geo.prims():
-        name = prim.attribValue('name') if geo.findPrimAttrib('name') else ''
+        name = prim.attribValue('name')
         if not name.endswith('.rig'):
             continue
         rig_geo = prim.getEmbeddedGeometry().freeze()
         graph = apex.Graph()
         graph.loadFromGeometry(rig_geo)
         if not graph.matchGraphInputs(f'{PLACEMENT_CONTROL}_t'):
-            raise hou.NodeWarning(
-                f"{name} has no '{PLACEMENT_CONTROL}' control: the "
-                "character starts at the origin, not at its layout placement."
-            )
+            unplaced.append(name)
+            continue
         parms = rig_geo.dictAttribValue('parms')
         for key, value in values.items():
             parms[key] = value
         rig_geo.setGlobalAttribValue('parms', parms)
         prim.setEmbeddedGeometry(rig_geo)
+    return unplaced
+
+
+def _warn_unplaced(unplaced: list[str]):
+    import hou
+
+    if unplaced:
+        raise hou.NodeWarning(
+            f"{', '.join(unplaced)} has no '{PLACEMENT_CONTROL}' control: "
+            "the character starts at the origin, not at its layout placement."
+        )
+
+
+def place_character(sop_node, translate, rotate, scale):
+    """Python SOP body 1.84.0 wrote into the import's dive, one per copy,
+    with the placement baked in at Import. Workfiles saved then still call
+    it; th::import_rig's ``place`` node runs after it and sets the
+    placement the stage gives now."""
+    _warn_unplaced(_place_rigs(sop_node.geometry(), translate, rotate, scale))
+
+
+def _imported_asset_uri(import_node) -> Uri | None:
+    entity_uri_raw = import_node.parm('entity').eval()
+    if entity_uri_raw == FROM_CONTEXT:
+        return ImportRig(import_node).get_entity_uri()
+    return Uri.parse(entity_uri_raw) if entity_uri_raw else None
+
+
+def place_characters(sop_node):
+    """Python SOP body of th::import_rig's ``place`` node: start each
+    character the import adds where layout placed it (layout_placement).
+
+    It reads the placement as it cooks. 1.84.0 read it once, at Import,
+    into a node per copy: a layout published afterwards, or a workfile
+    imported before 1.84, kept every copy stacked at the origin until
+    Import was pressed again (Martin). In the HDA itself, this also reaches
+    workfiles imported before it existed.
+    """
+    import_node = sop_node.parent()
+    asset_uri = _imported_asset_uri(import_node)
+    geo = sop_node.geometry()
+    if asset_uri is None or geo.findPrimAttrib('name') is None:
+        return
+
+    names = set(instance_names(asset_uri, import_node.parm('instances').eval()))
+    prim_parent_path = '/'.join(asset_uri.segments[1:-1])
+
+    unplaced = []
+    for prim in geo.prims():
+        char_name = prim.attribValue('name').removesuffix('.char')
+        if char_name not in names:
+            continue
+        placement = layout_placement(
+            sop_node, f'/{prim_parent_path}/{char_name}'
+        )
+        if placement is None:
+            continue
+        char_geo = prim.getEmbeddedGeometry().freeze()
+        unplaced += _place_rigs(char_geo, *placement)
+        prim.setEmbeddedGeometry(char_geo)
+    _warn_unplaced(unplaced)
 
 
 class ImportRig(EntityNode):
@@ -224,12 +296,10 @@ class ImportRig(EntityNode):
         # Create instances
         prev_node = dive_node.indirectInputs()[0]
         source_node = dive_node.indirectInputs()[1]
-        base_name = asset_uri.segments[-1]  # Last segment is the asset name
         prim_base_path = '/'.join(asset_uri.segments[1:])  # e.g., "char/hero"
         prim_parent_path = '/'.join(asset_uri.segments[1:-1])  # e.g., "char"
-        for instance_index in range(instances):
+        for instance_name in instance_names(asset_uri, instances):
             anchor_node = source_node
-            instance_name = base_name if instances == 1 else f'{base_name}{instance_index}'
 
             # Rename the packed primitives if necessary
             if instances > 1:
@@ -238,21 +308,6 @@ class ImportRig(EntityNode):
                 rename_node.set_to_path(f'/{prim_parent_path}/{instance_name}/*')
                 rename_node.native().setInput(0, anchor_node)
                 anchor_node = rename_node.native()
-
-            # Start the character where layout placed it
-            placement = layout_placement(
-                context, f'/{prim_parent_path}/{instance_name}'
-            )
-            if placement is not None:
-                place_node = dive_node.createNode(
-                    'python', f'{uri_name}_{instance_name}_place'
-                )
-                place_node.parm('python').set(
-                    'from tumblepipe.pipe.houdini.sops import import_rig\n'
-                    f'import_rig.place_character(hou.pwd(), *{placement!r})\n'
-                )
-                place_node.setInput(0, anchor_node)
-                anchor_node = place_node
 
             # Create the add character to scene node
             add_node = dive_node.createNode('apex::sceneaddcharacter', f'{uri_name}_{instance_name}_add')

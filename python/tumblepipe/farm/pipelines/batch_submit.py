@@ -187,7 +187,8 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   undefined one raises before any job is
                                   created.
                 - Playblast section: pb_department, pb_pool, pb_priority,
-                                     pb_res
+                                     pb_res, pb_look
+                                     (specs.playblast.valid_look)
 
     Returns:
         List of submitted job IDs
@@ -256,6 +257,7 @@ def submit_entity_batch(config: dict) -> list[str]:
         pb_pool = settings['pb_pool']
         pb_priority = settings['pb_priority']
         pb_res = settings['pb_res']
+        pb_look = settings['pb_look']
 
     # A Multi owns no staged stage, frame range or channels — its members
     # do. Without this, it got as far as the staged-file lookup and failed
@@ -576,11 +578,13 @@ def submit_entity_batch(config: dict) -> list[str]:
                     pool_name=pb_pool,
                     priority=pb_priority,
                     res=list(pb_res),
+                    look=dict(pb_look),
                 )
             else:
                 try:
                     playblast_input = preview.collapse_playblast_input(
                         entity_uri, pb_department, temp_path, paths,
+                        light=pb_look['light'],
                     )
                     playblast_config = preview.playblast_config(
                         entity_uri,
@@ -590,6 +594,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         pool_name=pb_pool,
                         priority=pb_priority,
                         res=pb_res,
+                        look=pb_look,
                     )
                 except preview.PreviewError as e:
                     raise BatchSubmitError(str(e)) from e

@@ -4,7 +4,7 @@
 A playblast is monolithic: unlike a render (frames chunked across many
 Deadline tasks), the mp4 encode needs every frame, so one task renders the
 whole range with Karma XPU in a preview mode (see ``workers.playblast.
-XPU_ARGS``) and encodes the video.
+xpu_args``) and encodes the video.
 
 config = {
     'title': 'string',
@@ -15,6 +15,11 @@ config = {
     'step_size': 'int',
     'fps': 'int',
     'res': ['int', 'int'],
+    'look': {                      # see valid_look
+        'light': 'dome' | 'headlight' | 'scene',
+        'samples': 'int',
+        'materials': 'bool'        # scene materials instead of clay
+    },
     'input_path': 'string',        # collapsed staged USD, relative to job data
     'output_paths': ['string']     # versioned playblast mp4 + rolling daily mp4
 }
@@ -23,6 +28,7 @@ The worker's context is the config without the job header.
 """
 
 from tumblepipe.farm.checks import (
+    check_bool,
     check_int,
     check_list,
     check_str,
@@ -31,6 +37,23 @@ from tumblepipe.farm.checks import (
     valid_frame_range,
     valid_job_header,
 )
+from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
+
+# The look a playblast gets when its submission names none: a collapse job
+# submitted before the look existed. The dialog's defaults
+# (farm.submit.settings) match it; tests/test_submit_settings.py pins that.
+DEFAULT_LOOK = {'light': 'dome', 'samples': 32, 'materials': False}
+
+
+def valid_look(look) -> bool:
+    """A playblast look: how it is lit, its samples, clay or materials."""
+    if not isinstance(look, dict): return False
+    if not check_str(look, 'light'): return False
+    if look['light'] not in PLAYBLAST_LIGHTS: return False
+    if not check_int(look, 'samples'): return False
+    if look['samples'] < 1: return False
+    if not check_bool(look, 'materials'): return False
+    return True
 
 
 def is_valid_context(config) -> bool:
@@ -39,6 +62,7 @@ def is_valid_context(config) -> bool:
     if not check_list(config, 'res'): return False
     if len(config['res']) != 2: return False
     if not all(is_int(value) for value in config['res']): return False
+    if not valid_look(config.get('look')): return False
     if not check_str(config, 'input_path'): return False
     if not check_str_list(config, 'output_paths'): return False
     if len(config['output_paths']) == 0: return False

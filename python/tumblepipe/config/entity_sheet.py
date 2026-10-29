@@ -11,8 +11,8 @@ tested without Qt:
   values, what each field inherits from its group, the kind's root, the
   project and the schema defaults, and for shots the Roots' asset lists.
 - :class:`Sheet` holds the edits not yet applied on top of that (values set
-  or put back to inherited, renames, new entities, entities to retire, Root
-  asset lists and new Roots) with undo. :meth:`Sheet.problems` names what is
+  or put back to inherited, on entities and on their groups; renames, new
+  entities, entities to retire, Root asset lists and new Roots) with undo. :meth:`Sheet.problems` names what is
   wrong with the rows that were touched; :meth:`Sheet.changes` turns the
   rest into writes.
 - :func:`apply` makes the writes in an order that cannot trip over itself
@@ -35,6 +35,11 @@ A shot imports the assets of its Root (``scenes:/…``): the Root's own list
 plus its parent Roots' lists. Roots are shared, so a Root's asset list is
 edited as the Root's (:meth:`Sheet.set_root_assets`), not the shot's; a shot
 that needs its own list gets its own Root (:meth:`Sheet.add_root`).
+
+A sequence or category holds values too, which its entities inherit unless
+they pin their own (a sequence's Root is every shot's in it that has none
+of its own). They are edited with :meth:`Sheet.set_group_value`, and an
+entity shows what its group will hold once applied.
 
 Retiring an entity is the browser's Delete: it leaves the database and its
 folders move to ``_deleted/`` (``pipe.entity_files.delete_entity``).
@@ -302,6 +307,8 @@ class Base:
     multis: tuple[MultiRecord, ...] = ()
     #: The departments a Multi of this kind can cover, in pipeline order.
     pool: tuple[str, ...] = ()
+    #: Each stored group's own values of the kind's fields.
+    group_own: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
     def inherited(self, group: str) -> Inherited:
         return self.by_group.get(group, self.for_new_group)
@@ -416,7 +423,13 @@ def load(config, kind: Kind = SHOTS_KIND) -> Base:
             assets=assets,
             multis=_load_multis(config, kind),
             pool=_load_pool(config, kind),
+            group_own={g: _own_fields(config, kind, kind.root / g) for g in groups},
         )
+
+
+def _own_fields(config, kind: Kind, uri: Uri) -> dict[str, object]:
+    own = config.get_own_properties(uri) or {}
+    return {name: own[name] for name in kind.fields if name in own}
 
 
 # ---------------------------------------------------------------------------
@@ -509,12 +522,14 @@ class Changes:
     multis_rename: tuple[tuple[Uri, str], ...] = ()
     multis_create: tuple[tuple[Uri, Mapping[str, object]], ...] = ()
     multis_update: tuple[tuple[Uri, Mapping[str, object]], ...] = ()  # URI after any rename
+    #: Groups' own values, written after the groups and Roots they need.
+    group_update: tuple[tuple[Uri, Mapping[str, object]], ...] = ()
 
     def __bool__(self) -> bool:
         return any((
             self.retire, self.rename, self.groups, self.roots,
             self.create, self.update, self.multis_retire, self.multis_rename,
-            self.multis_create, self.multis_update,
+            self.multis_create, self.multis_update, self.group_update,
         ))
 
 
@@ -531,6 +546,7 @@ class Summary:
     multis_new: int = 0
     multis_changed: int = 0
     multis_retired: int = 0
+    groups_changed: int = 0
 
 
 class Sheet:
@@ -560,6 +576,8 @@ class Sheet:
         self._new_roots: dict[str, tuple[RootAsset, ...]] = {}
         # Groups to create on Apply even with no new row in them yet.
         self._new_groups: list[str] = []
+        # Pending values (or RESET) of groups, stored and new, by group.
+        self._group_edits: dict[str, dict[str, object]] = {}
         by_uri = {str(row.origin.uri): row.id for row in self._rows}
         self._multis: list[Multi] = []
         for i, record in enumerate(base.multis):
@@ -605,7 +623,7 @@ class Sheet:
         return names
 
     def inherited(self, row: Row) -> Inherited:
-        return self.base.inherited(row.group)
+        return self.group_inherited(row.group)
 
     def value(self, row: Row, name: str) -> object:
         """What the entity holds for ``name`` once applied (None: nothing)."""
@@ -666,7 +684,7 @@ class Sheet:
             any(row.touched for row in self._rows)
             or bool(self._root_edits) or bool(self._used_new_roots())
             or any(multi.touched for multi in self._multis)
-            or bool(self._new_groups)
+            or bool(self._new_groups) or bool(self._live_group_edits())
         )
 
     def summary(self) -> Summary:
@@ -681,7 +699,7 @@ class Sheet:
             renamed=sum(1 for row in rows if row.renamed and not row.retire),
             retired=sum(row.retire for row in rows),
             problems=len(self.problems()) + len(self.multi_problems())
-            + len(self.group_problems()),
+            + len(self.group_problems()) + len(self.group_value_problems()),
             new_groups=tuple(dict.fromkeys([
                 *self._new_groups,
                 *(row.group for row in rows if row.is_new and row.group not in known),
@@ -693,6 +711,7 @@ class Sheet:
                 1 for m in self._multis if not m.is_new and not m.retire and m.touched
             ),
             multis_retired=sum(m.retire for m in self._multis),
+            groups_changed=len(self._live_group_edits()),
         )
 
     # ── Roots (shots) ────────────────────────────────────
@@ -734,7 +753,10 @@ class Sheet:
         (``pipe.build._iter_scene_assets`` with ``setdefault``,
         ``import_shot``'s override), so a parent's tree ×1 under the Root's
         tree ×3 imports three trees, not four."""
-        root = self.value(row, ROOT)
+        return self.root_assets(self.value(row, ROOT))
+
+    def root_assets(self, root) -> tuple[RootAsset, ...]:
+        """What a Root gives a shot: :meth:`shot_assets` of its shots."""
         if not isinstance(root, str) or not root:
             return ()
         found: dict[str, RootAsset] = {}
@@ -756,8 +778,10 @@ class Sheet:
         """New Roots some row will use (directly, or as a parent of its
         Root): an unused new Root is not created."""
         used = set()
-        for row in self._rows:
-            root = self.value(row, ROOT) if not row.retire else None
+        # A sequence's Root is used even before it has shots.
+        roots = [self.value(row, ROOT) for row in self._rows if not row.retire]
+        roots += [self.group_own(group).get(ROOT) for group in self._live_group_edits()]
+        for root in roots:
             if isinstance(root, str):
                 used.add(root)
                 used.update(_root_parents(root))
@@ -816,6 +840,147 @@ class Sheet:
         del self._root_edits[uri]
         return True
 
+    # ── Group values ─────────────────────────────────────
+
+    def group_own(self, group: str) -> dict[str, object]:
+        """The group's own values, as they will be once applied."""
+        own = dict(self.base.group_own.get(group, {}))
+        for name, value in self._group_edits.get(group, {}).items():
+            if value is RESET:
+                own.pop(name, None)
+            else:
+                own[name] = value
+        return own
+
+    def group_inherited(self, group: str) -> Inherited:
+        """What an entity in ``group`` inherits once applied: the group's
+        pending values included."""
+        if not self._group_edits.get(group):
+            return self.base.inherited(group)
+        base = self.base.for_new_group
+        values, sources = dict(base.values), dict(base.sources)
+        for name, value in self.group_own(group).items():
+            values[name] = value
+            sources[name] = f'{self.kind.group} {group}'
+        return Inherited(values, sources)
+
+    def group_value(self, group: str, name: str) -> object:
+        """What the group holds for ``name`` once applied (None: nothing)."""
+        if name == LENGTH:
+            start = self.group_value(group, FRAME_START)
+            end = self.group_value(group, FRAME_END)
+            return end - start + 1 if _is_int(start) and _is_int(end) else None
+        own = self.group_own(group)
+        if name in own:
+            return own[name]
+        return self.base.for_new_group.values.get(name)
+
+    def group_state(self, group: str, name: str) -> str:
+        """:meth:`state` for a group's value."""
+        if name == LENGTH:
+            states = {self.group_state(group, FRAME_START), self.group_state(group, FRAME_END)}
+            if states & {SET, CLEARED}:
+                return SET
+            return OWN if OWN in states else INHERITED
+        edit = self._group_edits.get(group, {}).get(name, _MISSING)
+        if edit is RESET:
+            return CLEARED
+        if edit is not _MISSING:
+            return SET
+        return OWN if name in self.base.group_own.get(group, {}) else INHERITED
+
+    def group_source(self, group: str, name: str) -> str:
+        """Where a group's inherited value of ``name`` comes from."""
+        return self.base.for_new_group.sources.get(name, '')
+
+    def group_pending(self, group: str) -> bool:
+        return bool(self._group_edits.get(group))
+
+    def _live_group_edits(self) -> dict[str, dict[str, object]]:
+        """Pending group values of groups that will exist: a new group that
+        was removed (or whose new rows went) takes its values with it."""
+        groups = set(self.groups())
+        return {g: e for g, e in self._group_edits.items() if e and g in groups}
+
+    def set_group_value(self, group: str, name: str, value) -> bool:
+        """Set a group's value, which its entities inherit unless they pin
+        their own; False when that changes nothing. Raises ValueError as
+        :meth:`set_value` does."""
+        if group not in self.groups():
+            raise ValueError(f"No {self.kind.group} named '{group}'")
+        if name == LENGTH:
+            length = parse_value(LENGTH, value)
+            if length < 1:
+                raise ValueError('Length must be at least 1 frame')
+            start = self.group_value(group, FRAME_START)
+            if not _is_int(start):
+                raise ValueError(f'Give the {self.kind.group} a start frame first')
+            return self.set_group_value(group, FRAME_END, start + length - 1)
+        if name not in self.kind.fields:
+            raise ValueError(f'{self.kind.group.capitalize()}s have no {self.kind.label(name)}')
+        value = parse_value(name, value)
+        if name == ROOT and not self.root_exists(value):
+            raise ValueError(f"No Root named '{root_path(value)}'")
+        if value == self.group_value(group, name):
+            return False
+        stored = self.base.group_own.get(group, {})
+        self._changing()
+        edits = self._group_edits.setdefault(group, {})
+        if name in stored:
+            if value == stored[name]:
+                edits.pop(name, None)
+            else:
+                edits[name] = value
+        elif value == self.base.for_new_group.values.get(name, _MISSING):
+            edits.pop(name, None)         # what it inherits: nothing to pin
+        else:
+            edits[name] = value
+        if not edits:
+            del self._group_edits[group]
+        return True
+
+    def reset_group(self, group: str, name: str) -> bool:
+        """Put a group's value back to inherited (Length: the end frame)."""
+        if name == LENGTH:
+            name = FRAME_END
+        if name not in self.kind.fields:
+            return False
+        edits = self._group_edits.get(group, {})
+        if name in self.base.group_own.get(group, {}):
+            if edits.get(name, _MISSING) is RESET:
+                return False
+            self._changing()
+            self._group_edits.setdefault(group, {})[name] = RESET
+            return True
+        if name not in edits:
+            return False
+        self._changing()
+        del edits[name]
+        if not edits:
+            del self._group_edits[group]
+        return True
+
+    def revert_groups(self, groups: Iterable[str]) -> bool:
+        """Drop the pending values of these groups."""
+        groups = [g for g in dict.fromkeys(groups) if self._group_edits.get(g)]
+        if not groups:
+            return False
+        self._changing()
+        for group in groups:
+            del self._group_edits[group]
+        return True
+
+    def group_value_problems(self) -> dict[str, str]:
+        """Why each group with pending values cannot be applied, by name. A
+        new group needs a name it can be created under (its new rows' typed
+        group, say ``b d``, may not have one)."""
+        known = set(self.base.groups)
+        return {
+            group: reason for group in self._live_group_edits()
+            if (reason := (self.group_problem(group, group) if group not in known else '')
+                or self._values_problem(lambda n, g=group: self.group_value(g, n)))
+        }
+
     # ── New groups ───────────────────────────────────────
 
     @property
@@ -864,6 +1029,8 @@ class Sheet:
             return False
         self._changing()
         self._new_groups.remove(name)
+        if name not in self.groups():
+            self._group_edits.pop(name, None)
         return True
 
     def group_problems(self) -> dict[str, str]:
@@ -1131,11 +1298,13 @@ class Sheet:
             self._next_id, dict(self._root_edits), dict(self._new_roots),
             [replace(multi, members=list(multi.members)) for multi in self._multis],
             self._next_multi_id, list(self._new_groups),
+            {group: dict(edits) for group, edits in self._group_edits.items()},
         )
 
     def _restore(self, state: tuple) -> None:
         (self._rows, self._next_id, self._root_edits, self._new_roots,
-         self._multis, self._next_multi_id, self._new_groups) = state
+         self._multis, self._next_multi_id, self._new_groups,
+         self._group_edits) = state
         self._by_id = {row.id: row for row in self._rows}
         self._problems = None
         self._multi_problems = None
@@ -1332,11 +1501,12 @@ class Sheet:
     def revert_all(self) -> bool:
         with self.batch():
             changed = self.revert([row.id for row in self._rows])
-            if self._root_edits or self._new_roots or self._new_groups:
+            if self._root_edits or self._new_roots or self._new_groups or self._group_edits:
                 self._changing()
                 self._root_edits.clear()
                 self._new_roots.clear()
                 self._new_groups.clear()
+                self._group_edits.clear()
                 changed = True
             changed |= self.revert_multis([m.id for m in self._multis])
         return changed
@@ -1455,14 +1625,18 @@ class Sheet:
         return self._blocked[key]
 
     def _value_problem(self, row: Row) -> str:
-        start, end = self.value(row, FRAME_START), self.value(row, FRAME_END)
+        return self._values_problem(lambda name: self.value(row, name))
+
+    @staticmethod
+    def _values_problem(value: Callable[[str], object]) -> str:
+        start, end = value(FRAME_START), value(FRAME_END)
         if _is_int(start) and _is_int(end) and end < start:
             return f'Ends ({end}) before it starts ({start})'
         for name in (ROLL_START, ROLL_END):
-            value = self.value(row, name)
-            if _is_int(value) and value < 0:
+            number = value(name)
+            if _is_int(number) and number < 0:
                 return f'{_LABELS[name]} cannot be negative'
-        fps = self.value(row, FPS)
+        fps = value(FPS)
         if _is_number(fps) and fps <= 0:
             return 'FPS must be above 0'
         return ''
@@ -1507,9 +1681,19 @@ class Sheet:
             roots.append((uri, self.root_own(uri), True))
         for uri, assets in self._root_edits.items():
             roots.append((uri, assets, False))
+        group_update = []
+        value_problems = self.group_value_problems()
+        for name, edits in self._live_group_edits().items():
+            if name in value_problems or name in group_problems:
+                continue
+            uri = kind.root / name
+            if name not in known and uri not in groups:
+                groups.append(uri)      # a new group whose rows have problems
+            group_update.append((uri, dict(edits)))
         return Changes(
             tuple(retire), tuple(rename), tuple(groups), tuple(roots),
             tuple(create), tuple(update), *self._multi_changes(problems),
+            group_update=tuple(group_update),
         )
 
     def _member_uris(self, problems: Mapping[int, str]) -> dict[int, str]:
@@ -1643,7 +1827,31 @@ class Sheet:
                 target.name = old.name
             _carry(target, old.edits)
         sheet._carry_multis(self._multis, moved, notes)
+        sheet._carry_group_edits(self._live_group_edits(), notes)
         return sheet, notes
+
+    def _carry_group_edits(self, old: Mapping[str, Mapping[str, object]], notes: list[str]) -> None:
+        """:meth:`rebase` for group values: an edit already stored falls
+        away; a group that is gone takes its edits with it."""
+        groups = set(self.groups())
+        for group, edits in old.items():
+            if group not in groups:
+                if any(value is not RESET for value in edits.values()):
+                    notes.append(
+                        f'{self.kind.group.capitalize()} {group} is no longer in '
+                        'the project; its changes were dropped'
+                    )
+                continue
+            stored = self.base.group_own.get(group, {})
+            carried = {}
+            for name, value in edits.items():
+                if value is RESET:
+                    if name in stored:
+                        carried[name] = RESET
+                elif stored.get(name, _MISSING) != value:
+                    carried[name] = value
+            if carried:
+                self._group_edits[group] = carried
 
     def _carry_multis(self, old_multis: list[Multi], moved: Mapping[int, int], notes: list[str]) -> None:
         """:meth:`rebase` for Multis: what each one's edits added and took
@@ -1803,6 +2011,8 @@ def apply(
     for uri, assets, new in changes.roots:
         what = 'Creating Root' if new else 'Updating the assets of Root'
         step(f'{what} {root_path(uri)}', _write_root, config, uri, assets, new)
+    for uri, edits in changes.group_update:
+        step(f'Updating {_label(uri)}', _update, config, uri, edits)
     for uri, own in changes.create:
         step(f'Creating {_label(uri)}', config.add_entity, uri, dict(own))
     for uri, edits in changes.update:

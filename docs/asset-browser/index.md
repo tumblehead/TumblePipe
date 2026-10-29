@@ -219,8 +219,9 @@ version from the department template instead. Right-click one for:
 The item an artist almost always wants comes first: creating the first
 version on an empty item, opening the latest on one that has versions. What
 each does is on the [Workfiles](workfiles.md) page. A Multi's own deck items
-offer **New from Template** and **Open Folder**, plus **Open Latest** once a
-version exists.
+offer the same menu, except that **View Latest Export ▸** lists the Multi's
+members, each opening that member's export (see
+[Multis and Roots](multis-and-roots.md#the-multis-workfiles)).
 
 ### List view columns
 

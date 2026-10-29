@@ -199,6 +199,67 @@ def generate_playblast_settings_section(camera_prim_path: str) -> str:
     ])
 
 
+# How a farm playblast is lit, the submit dialog's playblast Light:
+#   dome      -- the scene's lights switched off and one white dome light
+#                put in their place: soft clay shading, the occlusion coming
+#                from the dome itself. The default.
+#   headlight -- Karma's headlight: a distant light on the camera shaded
+#                with ambient occlusion. The look before the setting existed.
+#   scene     -- the scene's own lights (a headlight only when it has none).
+# husk's own --headlight dome is no way to the first: verified against husk
+# 22.0.429, Karma's --autoheadlight ignores the mode, and without it husk
+# creates no light at all once --disable-scene-lights is on.
+PLAYBLAST_LIGHTS = ('dome', 'headlight', 'scene')
+PLAYBLAST_DOME_PRIM_PATH = '/TumblePipePlayblastLights/dome'
+
+
+def find_light_prim_paths(stage) -> list[str]:
+    """The prim paths of every active light on *stage*.
+
+    Lights inside instances are not reached: their instance proxies cannot
+    be authored over, so a dome playblast keeps them lit beside the dome.
+    """
+    from pxr import UsdLux
+
+    return [
+        prim.GetPath().pathString
+        for prim in stage.Traverse()
+        if prim.HasAPI(UsdLux.LightAPI)
+    ]
+
+
+def apply_playblast_dome(usda_content: str, light_prim_paths: list[str]) -> str:
+    """*usda_content* with the scene's lights switched off and a dome light
+    added (``PLAYBLAST_DOME_PRIM_PATH``).
+
+    Authored through Sdf rather than appended as text: a light inside an
+    asset copy lives under a ``def`` the collapse already wrote, and a second
+    root-level ``over`` of that prim in the same layer does not load.
+    husk must then render without --disable-scene-lights, which would switch
+    the dome off too.
+    """
+    from pxr import Sdf
+
+    layer = Sdf.Layer.CreateAnonymous('.usda')
+    if not layer.ImportFromString(usda_content):
+        raise RenderSettingsError(
+            'the collapsed playblast stage does not parse, so no dome light '
+            'can be added to it'
+        )
+    for path in light_prim_paths:
+        Sdf.CreatePrimInLayer(layer, Sdf.Path(path)).active = False
+    dome_path = Sdf.Path(PLAYBLAST_DOME_PRIM_PATH)
+    scope = Sdf.CreatePrimInLayer(layer, dome_path.GetParentPath())
+    scope.specifier = Sdf.SpecifierDef
+    scope.typeName = 'Scope'
+    dome = Sdf.PrimSpec(scope, dome_path.name, Sdf.SpecifierDef, 'DomeLight')
+    intensity = Sdf.AttributeSpec(
+        dome, 'inputs:intensity', Sdf.ValueTypeNames.Float
+    )
+    intensity.default = 1.0
+    return layer.ExportToString()
+
+
 def generate_render_overrides_section(
     overrides: dict,
     settings_prim_path: str,

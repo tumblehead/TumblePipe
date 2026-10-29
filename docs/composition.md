@@ -561,6 +561,18 @@ sites call it — `import_shot` (GUI + farm stage graph) and
 its individual animation identically in either. An existing scene picks
 the change up when its import node is re-imported.
 
+The same answer is stamped on the asset's prims as `animatable` in the
+pipeline `customData` (`prim_metadata.ANIMATABLE_KEY`), next to `uri`,
+`instance` and `channel`, so a stage says which of its assets are
+animated. `import_shot`, `import_asset`, `import_assets` and
+`import_layer` (which overwrites whatever a layer's export carried) write
+it when they import; copies inherit it from their prototype.
+[`th::import_rigs`' **Discover**](nodes/assets.md#thimport_rigs-sop)
+reads it to find a shot's rigs. A prim imported before the stamp existed
+carries none until its import node imports again, and readers judge it by
+`copies_are_animated` meanwhile. The stamp stays in the USD: the export's
+`context.json` asset records do not carry it.
+
 Non-instanceable here means a plain *reference* to the base, not a
 flattened **Copy** (`reference_type = copy`). Both let per-copy
 animation compose in the live session, but only the reference survives

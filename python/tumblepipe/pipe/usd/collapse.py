@@ -21,6 +21,8 @@ from tumblepipe.pipe.usd.instances import (
 )
 from tumblepipe.pipe.usd.render_settings import (
     PLAYBLAST_SETTINGS_PRIM_PATH,
+    apply_playblast_dome,
+    find_light_prim_paths,
     find_render_camera_prim_path,
     find_render_settings_prim_path,
     generate_playblast_settings_section,
@@ -342,7 +344,8 @@ def collapse_latest_references(
     staged_file_path: Path,
     render_overrides: dict | None = None,
     excluded_refs: set[str] | None = None,
-    playblast: bool = False
+    playblast: bool = False,
+    playblast_light: str = 'dome'
 ) -> str:
     """
     Create a fully baked USDA with all sublayers resolved to filesystem paths.
@@ -368,6 +371,9 @@ def collapse_latest_references(
                    authors a preview RenderSettings (one raw colour var) and
                    points the stage at it. See
                    generate_playblast_settings_section.
+        playblast_light: How the playblast is lit (``PLAYBLAST_LIGHTS``);
+                   ``'dome'`` switches the scene's lights off and adds a
+                   dome light (apply_playblast_dome). Ignored for a render.
 
     Returns:
         USDA file content as string with all leaf layers as absolute paths,
@@ -452,6 +458,10 @@ def collapse_latest_references(
 
     if playblast_section:
         usda_content = usda_content + '\n' + playblast_section
+        if playblast_light == 'dome':
+            usda_content = apply_playblast_dome(
+                usda_content, find_light_prim_paths(stage)
+            )
 
     # Generate render settings overrides. The prim path comes from the
     # composed stage, never a constant: the project decides where its

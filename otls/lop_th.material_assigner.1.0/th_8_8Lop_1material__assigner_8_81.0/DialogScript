@@ -87,6 +87,7 @@
                 type    string
                 default { "full" }
                 menu {
+                    ""          "All"
                     "full"      "Render"
                     "preview"   "Preview"
                 }

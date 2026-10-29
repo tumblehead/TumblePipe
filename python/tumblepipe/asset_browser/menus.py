@@ -244,40 +244,20 @@ class PipelineMenus:
         dept = deck_item_key
         asset_id = asset.id
 
-        # Group container deck items: simpler menu — New from Template
-        # / Open Latest / Open Folder. "New from Current" is
-        # intentionally omitted for v1 since the active-scene-context
-        # resolver doesn't track group workfiles yet.
-        if asset_id.startswith("group:"):
-            new_tmpl = (
-                "New from Template",
-                lambda aid=asset_id, dn=dept:
-                    self._workfiles.new_group_from_template(
-                        aid, dn, self._refresh.detail,
-                    ),
+        # A Multi's department is one workfile shared by its members: the
+        # same menu as a shot's, with its exports (written per member)
+        # reached through a member submenu.
+        is_group = asset_id.startswith("group:")
+        if is_group:
+            versions = self._containers.group_department_versions(
+                asset_id,
+            ).get(dept, [])
+        else:
+            if self._resolver.uri_for(asset_id) is None:
+                return []
+            versions = self._index.department_versions(asset_id).get(
+                dept, [],
             )
-            open_folder = (
-                "Open Folder",
-                lambda aid=asset_id, dn=dept:
-                    self._workfiles.open_group_dept_work_dir(aid, dn),
-            )
-            group_depts = asset.metadata.get("departments") or {}
-            if not group_depts.get(dept):
-                return [new_tmpl, ("__separator__", None), open_folder]
-            return [
-                (
-                    "Open Latest",
-                    lambda aid=asset_id, dn=dept:
-                        self._workfiles.open_group_workfile(aid, dn),
-                ),
-                open_folder,
-                ("__separator__", None),
-                new_tmpl,
-            ]
-
-        if self._resolver.uri_for(asset_id) is None:
-            return []
-        versions = self._index.department_versions(asset_id).get(dept, [])
         available = bool(versions)
         latest = latest_version(versions)
         scene_dv = self._scene.get_scene_dept_version(asset_id)
@@ -297,10 +277,13 @@ class PipelineMenus:
                     aid, dn, self._refresh.detail,
                 ),
         )
+        open_dir = (
+            self._workfiles.open_group_dept_work_dir if is_group
+            else self._workfiles.open_dept_work_dir
+        )
         open_folder = (
             "Open Folder",
-            lambda aid=asset_id, dn=dept:
-                self._workfiles.open_dept_work_dir(aid, dn),
+            lambda aid=asset_id, dn=dept: open_dir(aid, dn),
         )
 
         items: list = []
@@ -338,11 +321,26 @@ class PipelineMenus:
                     "Open Version", [open_item(v, v) for v in older],
                 ))
             items.append(open_folder)
-            items.append((
-                "View Latest Export",
-                lambda aid=asset_id, dn=dept:
-                    self._workfiles.open_latest_export(aid, dn),
-            ))
+            if is_group:
+                members = self._containers.group_member_ids(asset_id)
+                if members:
+                    items.append((
+                        "View Latest Export",
+                        [
+                            (
+                                name,
+                                lambda aid=member_id, dn=dept:
+                                    self._workfiles.open_latest_export(aid, dn),
+                            )
+                            for member_id, name in members
+                        ],
+                    ))
+            else:
+                items.append((
+                    "View Latest Export",
+                    lambda aid=asset_id, dn=dept:
+                        self._workfiles.open_latest_export(aid, dn),
+                ))
             items.append((
                 "Open in New Houdini",
                 lambda aid=asset_id, dn=dept:
@@ -366,8 +364,9 @@ class PipelineMenus:
         # Removing the member from the group is global (affects every
         # dept the group covers for this member), so the label is
         # phrased as "Remove from <group>" rather than per-dept.
-        dept_groups = self._containers.member_coverage(asset_id)
-        group_info = dept_groups.get(dept)
+        group_info = None if is_group else (
+            self._containers.member_coverage(asset_id).get(dept)
+        )
         if group_info:
             group_id, group_label = group_info
             items.append(("__separator__", None))

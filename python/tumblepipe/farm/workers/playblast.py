@@ -23,8 +23,9 @@ from tumblepipe.farm.frames import frame_file, HOUDINI_FRAME_TOKEN
 from tumblepipe.farm.specs import playblast as playblast_spec
 from tumblepipe.farm.worker import ensure_dir, error, headline
 
-# Karma XPU as a playblast: a clay look instead of the scene's shading.
-# It draws through CUDA/OptiX, so it needs a GPU but no GL context or display.
+# Karma XPU as a playblast, by default a clay look instead of the scene's
+# shading. It draws through CUDA/OptiX, so it needs a GPU but no GL context
+# or display.
 #
 # There is deliberately no Storm (GL) option. It was the default until 1.57,
 # and on real shots it never finished: HideAndReek/010 on maria-2060 and 030
@@ -32,33 +33,52 @@ from tumblepipe.farm.worker import ensure_dir, error, headline
 # 0xE06D7363. XPU rendered 030's first frame in 72 s, most of it scene load.
 # The viewport look belongs to the local playblast node, not the farm.
 #
-# --autoheadlight is the load-bearing flag -- --disable-scene-lights alone
-# leaves no light at all and every frame renders black; with it husk puts a
-# light on the camera, and --ao-* shades that headlight with occlusion so form
-# reads. -p 4 instead of 128 samples: noise is acceptable in a preview.
 # --timelimit-image stops a runaway frame at XPU_FRAME_SECONDS and keeps the
 # partial image, so one heavy frame cannot hold the whole shot.
 XPU_FRAME_SECONDS = 120
-XPU_ARGS = [
-    '--engine', 'xpu',
-    '--threads', '-1',
-    '--pixel-samples', '4',
-    '--disable-scene-materials',
-    '--disable-scene-lights',
-    '--autoheadlight',
-    '--headlight', 'distant',
-    '--ao-samples', '4',
-    '--ao-distance', '2',
-    '--disable-motionblur',
-    '--timelimit', str(XPU_FRAME_SECONDS),
-    '--timelimit-image',
-]
+
+
+def xpu_args(look: dict) -> list[str]:
+    """husk's arguments for ``look`` (``specs.playblast.valid_look``).
+
+    The light itself is authored by the collapse for 'dome'
+    (``render_settings.apply_playblast_dome``): the scene's lights are already
+    off in the input, so husk must not disable scene lights, which would take
+    the dome with them. For 'headlight', --autoheadlight is the load-bearing
+    flag: --disable-scene-lights alone leaves no light at all and every frame
+    renders black; with it husk puts a light on the camera, and --ao-* shades
+    it with occlusion so form reads. For 'scene' it only fills in for a stage
+    with no lights.
+    """
+    args = [
+        '--engine', 'xpu',
+        '--threads', '-1',
+        '--pixel-samples', str(look['samples']),
+    ]
+    if not look['materials']:
+        args.append('--disable-scene-materials')
+    if look['light'] == 'headlight':
+        args += [
+            '--disable-scene-lights',
+            '--autoheadlight',
+            '--headlight', 'distant',
+            '--ao-samples', '4',
+            '--ao-distance', '2',
+        ]
+    elif look['light'] == 'scene':
+        args.append('--autoheadlight')
+    return args + [
+        '--disable-motionblur',
+        '--timelimit', str(XPU_FRAME_SECONDS),
+        '--timelimit-image',
+    ]
 
 
 def main(
     render_range: BlockRange,
     fps: int,
     resolution: tuple[int, int],
+    look: dict,
     input_path: Path,
     output_paths: list[Path]
     ) -> int:
@@ -87,7 +107,7 @@ def main(
         env = get_base_env()
         print_env()
 
-        # Render the whole range in one husk invocation (see XPU_ARGS).
+        # Render the whole range in one husk invocation (see xpu_args).
         # No --camera: husk resolves the render camera from the staged stage's
         # RenderSettings prim, exactly as the Karma render worker relies on.
         # --resolver-context is required for the custom ArResolver (entity:/
@@ -122,7 +142,7 @@ def main(
                 [
                     '--resolver-context', path_str(input_path),
                     '--check-licenses', 'Karma Renderer',
-                    *XPU_ARGS,
+                    *xpu_args(look),
                     '--verbose', 'a2',
                     '--make-output-path',
                     '--no-mplay',
@@ -200,6 +220,7 @@ def from_config(config: dict, _frame_span: BlockRange) -> int:
         ),
         config['fps'],
         tuple(config['res']),
+        config['look'],
         input_path,
         list(map(Path, config['output_paths']))
     )

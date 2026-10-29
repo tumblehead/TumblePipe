@@ -13,6 +13,12 @@ from tumblepipe.pipe.houdini.prim_queries import iter_prim_children, iter_scene
 
 logger = logging.getLogger(__name__)
 
+# Whether the asset is animated in a shot: its Animatable box, or a rig
+# published in any channel (pipe.usd.instances.copies_are_animated). The
+# import nodes stamp it when they author the rest of the metadata, and
+# Import Rigs reads it to find the rigs a shot needs.
+ANIMATABLE_KEY = 'animatable'
+
 
 def get_metadata(prim):
     """The prim's pipeline customData, or None when it carries none.
@@ -100,6 +106,25 @@ def list_assets(root):
         if info is not None:
             results.append(info)
     return results
+
+
+def list_animatable_assets(root, untagged=None):
+    """The :func:`list_assets` entries whose prim is tagged animatable.
+
+    A prim imported before the tag existed carries none until the node
+    that brought it in imports again. ``untagged(uri)`` answers for those
+    (the tag's own rule, read from the project now); without it they are
+    left out.
+    """
+    def animatable(metadata):
+        if ANIMATABLE_KEY in metadata:
+            return bool(metadata[ANIMATABLE_KEY])
+        return untagged is not None and untagged(Uri.parse(metadata['uri']))
+
+    return [
+        asset_info for asset_info in list_assets(root)
+        if animatable(asset_info['metadata'])
+    ]
 
 
 def _normcased_roots(roots) -> list[str]:

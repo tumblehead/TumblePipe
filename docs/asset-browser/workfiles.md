@@ -248,8 +248,9 @@ is switched. Houdini's own **File > Save As** does none of this.
 
 It refuses a shot or asset that is not in the project configuration, the same
 way **New from Template** does, with *New from Current for … failed:
-EntityNotRegistered: …*. It is not offered on a Multi's rows, and it cannot
-turn a shot's workfile into a Multi's.
+EntityNotRegistered: …*. On a Multi's rows it needs a Multi's workfile open,
+so it cannot turn a shot's workfile into a Multi's (see
+[Multis and Roots](multis-and-roots.md#the-multis-workfiles)).
 
 ## Open in New Houdini
 
@@ -260,9 +261,9 @@ browser does this on its own when you open a workfile from a project other
 than the one your current scene belongs to; the status bar reads *Opening
 X scene in a new Houdini instance...*.
 
-This path picks the newest file by modification time in the entity's own
-department folder, so for a department covered by a Multi it does not
-redirect to the Multi's hip the way an in-session open does.
+It opens the same file an in-session open lands on: for a department a
+Multi covers, the Multi's newest hip. On a Multi's own row it opens the
+Multi's.
 
 ## Open Folder and View Latest Export
 

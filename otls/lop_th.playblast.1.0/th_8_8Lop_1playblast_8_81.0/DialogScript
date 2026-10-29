@@ -161,7 +161,7 @@
             label   "Resolution"
             type    integer
             size    2
-            default { "1280" "720" }
+            default { [ "__import__('tumblepipe.pipe.houdini.lops.playblast', fromlist=['default_res']).default_res(hou.pwd(), 0)" python ] [ "__import__('tumblepipe.pipe.houdini.lops.playblast', fromlist=['default_res']).default_res(hou.pwd(), 1)" python ] }
             range   { 0 10 }
             parmtag { "autoscope" "0000000000000000" }
             parmtag { "script_callback_language" "python" }

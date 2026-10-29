@@ -12,7 +12,9 @@ from tumblepipe.config.channels import list_channels
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
+from tumblepipe.pipe.houdini.prim_metadata import ANIMATABLE_KEY
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
+from tumblepipe.pipe.usd.instances import copies_are_animated
 from tumblepipe.pipe.houdini.lops import import_asset
 import tumblepipe.pipe.context as ctx
 from tumblepipe.pipe.paths import (
@@ -30,13 +32,16 @@ def _metadata_update_script(
     entity_uri: Uri,
     department_name: str,
     version_name: str,
-    assets: list[dict]
+    assets: list[dict],
+    animated=copies_are_animated
 ) -> str:
     """
     Generate Python script to update asset metadata inputs on scene prims.
 
     For each asset in the imported layer, adds the current department/version
-    to the asset's inputs array (if not already present).
+    to the asset's inputs array (if not already present), and stamps
+    ``animated(asset_uri)`` over whatever the layer's export carried (see
+    prim_metadata.ANIMATABLE_KEY).
     """
     def _indent(lines):
         return [f"    {line}" for line in lines]
@@ -72,6 +77,7 @@ def _metadata_update_script(
             f"        'department': '{department_name}',",
             f"        'version': '{version_name}',",
             "    })",
+            f"    metadata['{ANIMATABLE_KEY}'] = {bool(animated(asset_uri))}",
             "    prim_metadata.set_metadata(prim, metadata)",
             "",
         ])

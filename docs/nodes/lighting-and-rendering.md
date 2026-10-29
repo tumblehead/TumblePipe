@@ -422,7 +422,7 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 | Camera | first camera | The cameras in the input stage: under `/cameras` or `/scene/cameras`, else anywhere on the stage. Left empty it is the first one, the camera the menu shows |
 | Shading Mode, Lighting | Smooth Shaded, Headlight Only | Viewport look of the flipbook |
 | Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**) |
-| Resolution | `1280 720` | |
+| Resolution | the shot's render resolution | An expression: the shot's `render.resolution`, so the playblast has the render's frame; `1280 720` while no shot resolves. Type over it for your own size; Revert to Defaults brings the shot's back. A node made before 1.85 keeps the size it had |
 | Playblast | | Render, encode and publish |
 | View latest | | Open the newest MP4 for this shot and department (a message if there is none) |
 | Browse All | | Open the playblast folder |

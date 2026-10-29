@@ -13,6 +13,7 @@ from tumblepipe.config.channels import CHANNEL_KEY, list_channels
 from tumblepipe.pipe.paths import current_staged_path, list_version_paths
 from tumblepipe.pipe.usd.instances import copies_are_animated
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
+from tumblepipe.pipe.houdini.prim_metadata import ANIMATABLE_KEY
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
@@ -73,7 +74,8 @@ def _update_script(instances):
 def _assets_metadata_script(
     asset_imports: list[tuple[Uri, str, str, int]],
     shot_uri: Uri | None = None,
-    shot_department: str | None = None
+    shot_department: str | None = None,
+    animated=copies_are_animated
 ) -> str:
     """
     Generate Python script for setting asset metadata on scene prims.
@@ -86,6 +88,7 @@ def _assets_metadata_script(
         asset_imports: List of (asset_uri, channel, version, instances) tuples
         shot_uri: Optional shot entity URI for provenance tracking
         shot_department: Optional shot department name for provenance tracking
+        animated: Each asset's prim_metadata.ANIMATABLE_KEY stamp
 
     Returns:
         Python script string to execute in the set_metadata node
@@ -124,6 +127,7 @@ def _assets_metadata_script(
             f"        'uri': '{str(asset_uri)}',",
             f"        'instance': '{base_name}',",
             f"        '{CHANNEL_KEY}': '{channel}',",
+            f"        '{ANIMATABLE_KEY}': {bool(animated(asset_uri))},",
             f"        'inputs': {inputs_str}",
             '    })',
             '',

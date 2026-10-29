@@ -17,6 +17,7 @@ config = {
         'step_size': 'int',
         'fps': 'int',
         'res': ['int', 'int'],
+        'look': {...},              # specs.playblast.valid_look
         'channel_name': 'string'    # Discord channel for the notify
     }
 }
@@ -37,6 +38,7 @@ from tumblepipe.farm.checks import (
 from tumblepipe.farm.jobs import notify as notify_job
 from tumblepipe.farm.jobs import playblast as playblast_job
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
+from tumblepipe.farm.specs import playblast as playblast_spec
 from tumblepipe.pipe.paths import get_daily_path, get_next_playblast_path
 from tumblepipe.util.uri import Uri
 
@@ -52,6 +54,7 @@ def _valid_settings(settings) -> bool:
     if not check_list(settings, 'res'): return False
     if len(settings['res']) != 2: return False
     if not all(is_int(value) for value in settings['res']): return False
+    if not playblast_spec.valid_look(settings.get('look')): return False
     if not check_str(settings, 'channel_name'): return False
     return True
 
@@ -94,6 +97,7 @@ def build(
         step_size = settings['step_size'],
         fps = settings['fps'],
         res = list(settings['res']),
+        look = dict(settings['look']),
         input_path = settings['input_path'],
         output_paths = [path_str(playblast_path), path_str(daily_path)]
     ), paths, temp_path)

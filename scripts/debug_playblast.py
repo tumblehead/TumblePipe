@@ -210,7 +210,8 @@ def _run_husk(
     from tumblepipe.api import path_str
     from tumblepipe.apps.houdini import Husk
     from tumblepipe.farm.env import get_base_env
-    from tumblepipe.farm.workers.playblast import XPU_ARGS
+    from tumblepipe.farm.specs.playblast import DEFAULT_LOOK
+    from tumblepipe.farm.workers.playblast import xpu_args
 
     out_path = out_dir / 'debug_playblast.$F4.jpg'
     width, height = resolution
@@ -220,7 +221,7 @@ def _run_husk(
         [
             '--resolver-context', path_str(collapsed_path),
             '--check-licenses', 'Karma Renderer',
-            *XPU_ARGS,
+            *xpu_args(DEFAULT_LOOK),
             '--verbose', 'a2',
             '--make-output-path',
             '--no-mplay',

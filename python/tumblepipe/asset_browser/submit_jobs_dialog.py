@@ -69,6 +69,7 @@ from tumblepipe.farm.submit import status as farm_status
 from tumblepipe.farm.submit import camera as render_camera
 from tumblepipe.farm.submit import settings as resolve
 from tumblepipe.pipe.houdini.ui.report import report_failure
+from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
 
 log = logging.getLogger(__name__)
 
@@ -1730,8 +1731,28 @@ class _ContextPane(QWidget):
         form.addRow("Up to:", self._pb_dept)
         self._pb_width = self._spin('pb_res_x', 16, 8192)
         self._pb_height = self._spin('pb_res_y', 16, 8192)
+        self._pb_width.setToolTip(
+            "Each shot plays at its own render resolution unless set here."
+        )
         form.addRow("Resolution:", self._row(
             self._pb_width, "×", self._pb_height, revert=('pb_res_x', 'pb_res_y'),
+        ))
+        self._pb_light = self._combo('pb_light', PLAYBLAST_LIGHTS)
+        self._pb_light.setToolTip(
+            "dome: the scene's lights off, one white dome light — soft clay "
+            "shading.\nheadlight: a light on the camera with ambient "
+            "occlusion.\nscene: the scene's own lights."
+        )
+        self._pb_samples = self._spin('pb_samples', 1, 4096)
+        self._pb_materials = self._check('pb_materials', "Scene materials")
+        self._pb_materials.setToolTip(
+            "Shade with the scene's materials instead of clay. Partially "
+            "checked = each entity keeps its own configured value."
+        )
+        form.addRow("Light:", self._row(self._pb_light, revert=('pb_light',)))
+        form.addRow("Samples:", self._row(
+            self._pb_samples, self._pb_materials,
+            revert=('pb_samples', 'pb_materials'),
         ))
         self._pb_pool = self._line('pb_pool', 'general')
         form.addRow("Pool:", self._pb_pool)

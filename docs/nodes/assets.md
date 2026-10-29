@@ -335,14 +335,16 @@ input** — the APEX scene you are adding to — with *Character Name* the
 asset name (`hero`) or, for several instances, `hero0`, `hero1`, …, each
 preceded by a [`th::rename_packed`](#threname_packed-sop) rewriting
 `/<category>/<asset>/*` to `/<category>/<asset><n>/*`. Inside
-`th::animate`, a Python SOP before each `apex::sceneaddcharacter` starts
-the character where layout placed it: the world transform of
+`th::animate`, the node's `place` Python SOP, after the dive, starts each
+character it added where layout placed it: the world transform of
 `/<category>/<asset><n>` on the shot stage (`IN_stage`) at the playbar
 start becomes the rig parms `Main_t` / `Main_r` / `Main_s` of TumbleRig's
-top `Main` control. The animated output is then world space, which is
-what `th::animate`'s zero_transforms expects. A rig without a `Main`
-control warns and starts at the origin; a placement changed in layout
-later is picked up by pressing **Import** again. When it cannot
+top `Main` control. It reads the placement as it cooks, so a layout
+published later moves the character, and a workfile imported before the
+placement was read picks it up, without pressing **Import** again. The
+animated output is then world space, which is what `th::animate`'s
+zero_transforms expects. A rig without a `Main` control warns and starts
+at the origin. When it cannot
 import it bypasses itself and passes the input through, with the comment
 *Bypassed: No asset selected* / *No versions available* / *Rig file not
 found*; on success *Imported: <asset>* and the version.
@@ -354,6 +356,17 @@ Several rigs in one node, one row each, with a version pin per row.
 `th::animate`'s dive ([`th::animate`](import-and-export.md#thanimate-lop)).
 Source: [`otls/sop_th.import_rigs.2.0`](../../otls/sop_th.import_rigs.2.0/th_8_8Sop_1import__rigs_8_82.0/DialogScript),
 [`sops/import_rigs.py`](../../python/tumblepipe/pipe/houdini/sops/import_rigs.py).
+
+**Discovery** finds the rows on a USD stage:
+
+| Label | Default | What it does |
+|---|---|---|
+| Stage | *(empty)* | LOP node whose stage **Discover** reads. Empty: the stage fed into the `th::animate` this node sits in; outside one, Discover says to set it |
+| Discover | | Replaces the rows with one per asset whose prims are tagged `animatable` ([the stamp](../composition.md#instanceable-copies-and-animatable-assets)) and that has a rig published, **Instances** = its tagged prims, then imports. A row the stage still animates keeps its Channel and Version; a new row takes the channel the shot imports the asset in when that has a rig, else the first one that does, on `latest`. Animatable assets with no rig are named in the comment, *Animatable, no rig published: Ball* |
+
+An asset is animatable when its **Animatable** box is on or it has a rig
+published in any channel (the Entity Editor's *No, rigged*), so a rigged
+character is found with the box off and a prop needs the box and a rig.
 
 **Rig imports** is a multiparm; each row has:
 
@@ -373,9 +386,9 @@ With nothing to import the node bypasses itself with *Bypassed: No rigs
 configured*.
 
 The animation shot template fills the rows once, when the workfile is
-created: one per asset in the shot that has a rig published, its
-**Instances** the number of times the shot imports it. Rows are not
-re-synced later; add a character rigged after that with `+`.
+created, the way Discover does from the imported shot. Rows are not
+re-synced later: press **Discover** to pick up a character rigged or made
+animatable since, or add one with `+`.
 
 Gotchas:
 
@@ -450,7 +463,7 @@ Buttons:
 |---|---|---|
 | Primitives | *(empty)* | Pattern to bind to; the menu offers *Meshes* (`%type:Mesh ^%instanceproxy()`) and *Volumes* (`%type:Volume`) |
 | Material | *(empty)* | Menu of the stage's materials, by name (token is the full path) |
-| Purpose | Render | Binding purpose: Render (`full`) or Preview |
+| Purpose | Render | Binding purpose: All (one binding that every purpose falls back to), Render (`full`) or Preview |
 
 Write Primitives against the workfile's asset rather than its literal path —
 `` `@entity_path`/geo/Eyeballs `` instead of `/CHAR/Mom/geo/Eyeballs` — and a

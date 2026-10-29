@@ -272,8 +272,15 @@ scenes still need the re-import.
 The placement: up to 1.83 `th::import_rig` loaded every rig at the origin,
 and `th::animate` resets the transforms of the prims it animates. From
 1.84 each rig starts at its layout placement (the rig's `Main` control is
-set to it), so the animation keeps it. Press **Import** on Import Rigs to
-pick that up in an existing workfile. Keys already set on a rig's `Main`
+set to it), so the animation keeps it. In 1.84.0 the placement was read
+once, when Import ran: a layout published afterwards, or a workfile made
+before 1.84, kept every copy stacked at the origin; and the parts of a
+character the rig does not output (a groom) stayed at the origin while
+the rigged body moved. From 1.85 `th::import_rig` reads the placement as
+the scene cooks and follows each layout publish, existing workfiles
+included, with no re-import; and `th::animate` keeps the placement on the
+copy, cancelling it only on the posed geometry, so those parts stay with
+the character. Keys already set on a rig's `Main`
 control still win over the layout placement; a character moved by hand
 with another control (a COG or root) ends up offset from layout by that
 much, so zero that control.
@@ -521,7 +528,10 @@ project with 1.83 also migrates it to v16, which replaces a stock copy of
 the template so new animation workfiles add rows only for rigged assets. A
 copy your studio customised is left alone; in its `_scrape_rig_imports`,
 keep only the assets for which `import_rigs.has_rig_export(asset_uri)` is
-true.
+true, or return the rows of `import_rigs.discover_rig_imports(stage)` as
+the packaged template now does (the assets tagged animatable that have a
+rig). In an existing workfile, **Discover** on Import Rigs rebuilds the
+rows the same way.
 
 ### Publish spins forever, then a reopened Asset Browser is empty
 

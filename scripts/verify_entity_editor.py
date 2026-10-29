@@ -70,6 +70,13 @@ config.add_entity(Uri.parse('scenes:/forest'), {'assets': [
 config.add_entity(SHOTS / 'sq010', {'scene': 'scenes:/forest'})
 for shot, own in (('SH010', {'frame_end': 1050}), ('SH020', {}), ('SH030', {})):
     config.add_entity(SHOTS / 'sq010' / shot, own)
+# A sequence with no Root yet, given one in its own row below.
+config.add_entity(Uri.parse('scenes:/town'), {'assets': [
+    {'asset': 'entity:/assets/VEH/car', 'instances': 1, 'channel': 'default'},
+]})
+config.add_entity(SHOTS / 'sq020', {})
+for shot in ('SH010', 'SH020'):
+    config.add_entity(SHOTS / 'sq020' / shot, {})
 
 # One shot Multi, covering the first two shot departments, with SH010.
 MULTIS = es.GROUPS_URI / 'shots'
@@ -116,7 +123,7 @@ check('the legend is one line', not shots.legend.wordWrap() and '\n' not in shot
 
 # ── Shots: typing into a selection ─────────────────────────────────────────
 
-ids = [r.id for r in shots.sheet.rows if r.name in ('SH020', 'SH030')]
+ids = [r.id for r in shots.sheet.rows if r.group == 'sq010' and r.name in ('SH020', 'SH030')]
 shots.select_cells([(i, shots.columns.index(es.ROLL_END)) for i in ids])
 shots.commit(shots.index_of(ids[0], es.ROLL_END), '4')
 check('typing fills the selected cells',
@@ -135,6 +142,23 @@ check('a selected pending cell keeps its tint',
       inside.red() > inside.blue() + 15 and inside != plain, inside.name())
 check('messages go to the footer, not a line under the table',
       not hasattr(shots, '_note'))
+
+# The current cell's row is tinted along its whole width, selected or not.
+from PySide6.QtCore import QItemSelectionModel  # noqa: E402
+shots.table.clearSelection()
+_row, other = cell(shots, 'sq010', 'SH030', es.NAME)
+shots.table.selectionModel().setCurrentIndex(other, QItemSelectionModel.NoUpdate)
+app.processEvents()
+probe = shots.table.visualRect(cell(shots, 'sq010', 'SH020', es.NAME)[1]).center()
+before = shots.table.viewport().grab().toImage().pixelColor(probe.x(), probe.y() + 6)
+_row, current = cell(shots, 'sq010', 'SH020', es.FPS)
+shots.table.selectionModel().setCurrentIndex(current, QItemSelectionModel.NoUpdate)
+app.processEvents()
+after = shots.table.viewport().grab().toImage().pixelColor(probe.x(), probe.y() + 6)
+check('the current row is tinted beyond its current cell',
+      after.lightness() > before.lightness(), f'{before.name()} -> {after.name()}')
+if len(sys.argv) > 1:
+    shots.table.viewport().grab().save(sys.argv[1].replace('.png', '-current-row.png'))
 
 # ── Root assets: the shared Root ───────────────────────────────────────────
 
@@ -245,7 +269,7 @@ check('the Multis tab has a box per department',
       multis.columns)
 
 # The Multis cell's dialog: SH020 and SH030 join Crowd.
-ids = [r.id for r in shots.sheet.rows if r.name in ('SH020', 'SH030')]
+ids = [r.id for r in shots.sheet.rows if r.group == 'sq010' and r.name in ('SH020', 'SH030')]
 
 
 def _join(dialog):
@@ -320,6 +344,74 @@ shots.undo()
 check('undo brings it back', shots.sheet.new_groups == ('sq090',))
 shots.focus('')
 
+# ── A sequence's own row ───────────────────────────────────────────────────
+
+SQ010, SQ020 = ee.GroupKey('sq010'), ee.GroupKey('sq020')
+keys = shots.model._ids
+check('each sequence has its own row above its shots',
+      keys[0] == SQ010 and all(shots.sheet.row(k).group == 'sq010' for k in keys[1:4])
+      and keys[4] == SQ020 and all(shots.sheet.row(k).group == 'sq020' for k in keys[5:7]),
+      keys)
+seq_root = shots.index_of(SQ010, es.ROOT)
+check('the sequence row shows its own Root, bold',
+      seq_root.data() == 'forest' and seq_root.data(Qt.FontRole).bold(), seq_root.data())
+check('its name cell counts its shots', shots.index_of(SQ010, es.NAME).data() == '3 shots',
+      shots.index_of(SQ010, es.NAME).data())
+_row, shot_root = cell(shots, 'sq010', 'SH020', es.ROOT)
+check('a shot shows the Root it inherits from its sequence',
+      shot_root.data() == 'forest' and shot_root.data(Qt.ForegroundRole) == ee._INHERITED
+      and 'sequence sq010' in shot_root.data(Qt.ToolTipRole), shot_root.data(Qt.ToolTipRole))
+check('a sequence\'s Status, Group and Name cannot be typed into', not any(
+    shots.index_of(SQ020, c).flags() & Qt.ItemIsEditable for c in (es.GROUP, es.NAME, ee.STATUS)
+))
+shots.select_cells([(SQ020, shots.columns.index(es.ROOT))])
+shots.commit(shots.index_of(SQ020, es.ROOT), 'scenes:/town')
+_row, sq020_root = cell(shots, 'sq020', 'SH010', es.ROOT)
+_row, sq020_assets = cell(shots, 'sq020', 'SH020', es.ASSETS)
+check('a Root typed on a sequence reaches its shots at once',
+      sq020_root.data() == 'town' and sq020_assets.data() == 'VEH/car'
+      and sq020_root.data(Qt.ForegroundRole) == ee._INHERITED,
+      (sq020_root.data(), sq020_assets.data()))
+check('the sequence row is pending, its status says so',
+      shots.index_of(SQ020, es.ROOT).data(Qt.BackgroundRole) == ee._PENDING
+      and shots.index_of(SQ020, ee.STATUS).data() == 'Changed')
+check('its Assets cell shows what its shots get', shots.index_of(SQ020, es.ASSETS).data() == 'VEH/car')
+pending = ' '.join(window._pending()[0])
+check('Apply counts the changed sequence', '1 sequence changed' in pending, pending)
+shots._on_clicked(shots.index_of(SQ020, es.GROUP))
+folded = shots.index_of(SQ020, es.GROUP).data()
+hidden = [shots.index_of(r.id, es.NAME).isValid() for r in shots.sheet.rows if r.group == 'sq020']
+check('clicking a sequence\'s name folds its shots away',
+      folded.startswith('▸') and hidden == [False, False], (folded, hidden))
+shots._on_clicked(shots.index_of(SQ020, es.GROUP))
+check('and again shows them', all(
+    shots.index_of(r.id, es.NAME).isValid() for r in shots.sheet.rows if r.group == 'sq020'
+))
+shots._search.setText('SH020')
+shown = [shots._row_id(shots.proxy.index(p, 0)) for p in range(shots.proxy.rowCount())]
+check('filtering keeps each sequence row above its matching shots',
+      [k if isinstance(k, ee.GroupKey) else shots.sheet.row(k).name for k in shown]
+      == [SQ010, 'SH020', SQ020, 'SH020'], shown)
+shots._search.setText('')
+r030, _i = cell(shots, 'sq010', 'SH030', es.ROLL_START)
+r2010, _i = cell(shots, 'sq020', 'SH010', es.ROLL_START)
+shots.select_cells([(r030.id, shots.columns.index(es.ROLL_START))])
+shots.paste_text('2\n3\n')
+check('a pasted block runs over a sequence row, not into it',
+      shots.sheet.value(r030, es.ROLL_START) == 2 and shots.sheet.value(r2010, es.ROLL_START) == 3
+      and es.ROLL_START not in shots.sheet.group_own('sq020'),
+      (shots.sheet.value(r030, es.ROLL_START), shots.sheet.value(r2010, es.ROLL_START)))
+shots.select_cells([(SQ010, shots.columns.index(es.FPS))])
+shots.commit(shots.index_of(SQ010, es.FPS), '0')
+check('a bad sequence value is a problem that blocks Apply',
+      'FPS' in shots.index_of(SQ010, ee.STATUS).data() and not window._apply_button.isEnabled(),
+      shots.index_of(SQ010, ee.STATUS).data())
+shots._reset_cells()
+check('Delete puts it back', 'fps' not in shots.sheet.group_own('sq010') and window._apply_button.isEnabled())
+if len(sys.argv) > 1:
+    app.processEvents()
+    window.grab().save(sys.argv[1].replace('.png', '-sequences.png'))
+
 # ── Apply ──────────────────────────────────────────────────────────────────
 
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
@@ -356,6 +448,15 @@ check('the new sequence is created, empty', config.get_own_properties(SHOTS / 's
       config.get_own_properties(SHOTS / 'sq090'))
 hero = config.get_own_properties(MULTIS / 'Hero')
 check('new Multi created', hero == {'members': ['entity:/shots/sq010/SH010'], 'departments': POOL[3:4]}, hero)
+check('the sequence\'s Root written on the sequence',
+      config.get_own_properties(SHOTS / 'sq020') == {'scene': 'scenes:/town'},
+      config.get_own_properties(SHOTS / 'sq020'))
+check('its shots keep no Root of their own', all(
+    'scene' not in config.get_own_properties(SHOTS / 'sq020' / s) for s in ('SH010', 'SH020')
+))
+check('they resolve the sequence\'s Root', all(
+    config.get_properties(SHOTS / 'sq020' / s).get('scene') == 'scenes:/town' for s in ('SH010', 'SH020')
+))
 
 window.close()
 app.processEvents()

@@ -1075,14 +1075,10 @@ class PipelineCatalog(Catalog):
             # the same thing its right-click "New from Template" does.
             dept = action_id.split(":", 1)[1]
             target_id = detail.id if detail else ""
-            if target_id.startswith("group:"):
-                self._workfiles.new_group_from_template(
-                    target_id, dept, self._refresh.detail,
-                )
-            else:
-                self._workfiles.new_from_template(
-                    target_id, dept, self._refresh.detail,
-                )
+            # new_from_template routes a Multi id to its group create.
+            self._workfiles.new_from_template(
+                target_id, dept, self._refresh.detail,
+            )
 
     # ── Sort & List columns ───────────────────────────────
 

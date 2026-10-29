@@ -3,7 +3,6 @@ import hou
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.groups import get_group
-from tumblepipe.pipe.houdini import prim_metadata
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import (
     import_shot,
@@ -22,31 +21,18 @@ def _edit_camera(parent_node, name: str, prim_path: str):
     return camera_node
 
 def _scrape_rig_imports(import_native):
-    rig_imports = dict()
-    stage = import_native.stage()
-    if stage is None:
-        return rig_imports
-    root = stage.GetPseudoRoot()
-    for asset_info in prim_metadata.list_assets(root):
-        asset_uri = Uri.parse(asset_info['metadata']['uri'])
-        if asset_uri not in rig_imports:
-            rig_imports[asset_uri] = 0
-        rig_imports[asset_uri] += 1
-    # Props and sets never get a rig; a row for one only fails to import.
-    return {
-        asset_uri: count for asset_uri, count in rig_imports.items()
-        if import_rigs.has_rig_export(asset_uri)
-    }
+    # A row per animatable asset with a rig; props and sets get none.
+    rig_imports, _unrigged = import_rigs.discover_rig_imports(import_native.stage())
+    return rig_imports
 
-def _build_animate_dive(animate_node, rig_imports: dict):
+def _build_animate_dive(animate_node, rig_imports: list):
     """Populate the inner anim_dive of an animate HDA with rigs and apex nodes."""
     inner_animate_node = animate_node.native().node('anim_dive')
     output_animate_node = inner_animate_node.node('output0')
 
     # Import the rigs
     rigs_node = import_rigs.create(inner_animate_node, 'import_rigs')
-    rig_imports_list = [(uri, 'default', 'latest', count) for uri, count in rig_imports.items()]
-    rigs_node.set_rig_imports(rig_imports_list)
+    rigs_node.set_rig_imports(rig_imports)
     rigs_node.execute()
 
     # Create the scene animate nodes
@@ -64,6 +50,11 @@ def _build_animate_dive(animate_node, rig_imports: dict):
     invoke_scene_node.parm('shapepattern').set('Base')
     invoke_scene_node.setInput(0, scene_animate_node)
     output_animate_node.setInput(0, invoke_scene_node)
+
+    # th::animate's Fast mode bakes the APEX scene itself, read from here
+    scene_output_node = inner_animate_node.createNode('output', 'output1')
+    scene_output_node.parm('outputidx').set(1)
+    scene_output_node.setInput(0, scene_animate_node)
 
     inner_animate_node.layoutChildren()
 
