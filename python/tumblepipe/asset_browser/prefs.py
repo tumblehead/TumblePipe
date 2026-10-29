@@ -40,6 +40,9 @@ class PipelinePrefs:
     autosave_on_scene_change: bool = False
     auto_refresh_on_open: bool = True
     prompt_note_on_save: bool = True
+    # Where Farm Submit sends work: 'farm' (Deadline) or 'local' (this
+    # machine, farm.local). Remembered from the last submission.
+    farm_backend: str = "farm"
     prefs_version: int = _PREFS_VERSION
 
 
@@ -74,6 +77,7 @@ def load_prefs() -> PipelinePrefs:
         prompt_note_on_save=bool(
             data.get("prompt_note_on_save", True)
         ),
+        farm_backend="local" if data.get("farm_backend") == "local" else "farm",
     )
 
 

@@ -614,4 +614,8 @@ def preview(kwargs):
 
 
 def submit(kwargs):
-    comp_farm.submit(BuildComp(kwargs['node']))
+    from tumblepipe.pipe.houdini.ui import farm_submit
+    node = BuildComp(kwargs['node'])
+    farm_submit.submit(
+        'the composite', 'Submit Composite', lambda: comp_farm.submit(node),
+    )

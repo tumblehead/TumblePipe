@@ -324,7 +324,7 @@ Source: [`otls/sop_th.import_rig.1.0`](../../otls/sop_th.import_rig.1.0/th_8_8So
 |---|---|---|
 | Entity | `from_context` | The asset (button opens *Select Asset*; picking one imports) |
 | Channel | `default` | Which channel's rig export |
-| Version | `latest` | `latest` or a `v####` found under `export/<asset>/<channel>/rig/`; the label shows the version that resolved |
+| Version | `latest` | `latest` (the newest finished rig export; a failed export's folder is passed over) or a `v####` found under `export/<asset>/<channel>/rig/`; the label shows the version that resolved |
 | Instances | `1` | Copies to add (1–10) |
 
 **Import** loads
@@ -334,7 +334,15 @@ through a File SOP, clears the dive network and rebuilds it: one
 input** — the APEX scene you are adding to — with *Character Name* the
 asset name (`hero`) or, for several instances, `hero0`, `hero1`, …, each
 preceded by a [`th::rename_packed`](#threname_packed-sop) rewriting
-`/<category>/<asset>/*` to `/<category>/<asset><n>/*`. When it cannot
+`/<category>/<asset>/*` to `/<category>/<asset><n>/*`. Inside
+`th::animate`, a Python SOP before each `apex::sceneaddcharacter` starts
+the character where layout placed it: the world transform of
+`/<category>/<asset><n>` on the shot stage (`IN_stage`) at the playbar
+start becomes the rig parms `Main_t` / `Main_r` / `Main_s` of TumbleRig's
+top `Main` control. The animated output is then world space, which is
+what `th::animate`'s zero_transforms expects. A rig without a `Main`
+control warns and starts at the origin; a placement changed in layout
+later is picked up by pressing **Import** again. When it cannot
 import it bypasses itself and passes the input through, with the comment
 *Bypassed: No asset selected* / *No versions available* / *Rig file not
 found*; on success *Imported: <asset>* and the version.

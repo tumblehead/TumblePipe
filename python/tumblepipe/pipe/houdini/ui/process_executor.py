@@ -12,6 +12,7 @@ import sys
 
 from PySide6.QtCore import QObject, Signal, QTimer
 
+from tumblepipe.farm import backend as farm_backend
 from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import progress_reporter
 
@@ -125,6 +126,7 @@ class ProcessExecutor(QObject):
         super().__init__(parent)
         self._tasks: list[ProcessTask] = []
         self._mode: str = 'local'
+        self._backend: str = farm_backend.FARM
         self._is_running: bool = False
         self._current_index: int = 0
         self._executed_split_paths: set[str] = set()  # Track executed layer_split nodes
@@ -133,9 +135,14 @@ class ProcessExecutor(QObject):
         """Set the list of tasks to execute"""
         self._tasks = tasks
 
-    def set_mode(self, mode: str):
-        """Set execution mode: 'local' or 'farm'"""
+    def set_mode(self, mode: str, backend: str = farm_backend.FARM):
+        """Set execution mode: 'local' (this session) or 'farm'.
+
+        ``backend`` is where a farm run's jobs go: the render farm or this
+        machine (``farm.backend``); each farm task submits under it.
+        """
         self._mode = mode
+        self._backend = farm_backend.normalize(backend)
 
     def is_running(self) -> bool:
         """Check if executor is currently running"""
@@ -262,7 +269,8 @@ class ProcessExecutor(QObject):
         else:  # farm
             # Farm mode - let output go to farm logs (no capture)
             if task.execute_farm is not None:
-                task.exported_version = _version_of(task.execute_farm())
+                with farm_backend.using(self._backend):
+                    task.exported_version = _version_of(task.execute_farm())
             else:
                 raise RuntimeError("No farm executor defined for task")
 
@@ -300,7 +308,8 @@ class ProcessExecutor(QObject):
                         raise RuntimeError(f"No local executor defined for child task: {child.description}")
                 else:  # farm
                     if child.execute_farm is not None:
-                        child.exported_version = _version_of(child.execute_farm())
+                        with farm_backend.using(self._backend):
+                            child.exported_version = _version_of(child.execute_farm())
                     else:
                         raise RuntimeError(f"No farm executor defined for child task: {child.description}")
 

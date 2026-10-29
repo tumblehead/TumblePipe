@@ -1,23 +1,21 @@
 """The publish pipeline: publish a department (and the downstream ones the
 config names) from a bundled workfile, then post a notify.
 
-Also the publish pieces the batch submitters share (``batch_submit``,
-``update``): which workfiles can be published, and the publish job of an
-entity's latest finished workfile, bundled.
+Also the publish pieces the batch submitter (``batch_submit``) uses:
+which workfiles can be published, and the publish job of an entity's
+latest finished workfile, bundled.
 
-Config: ``specs.publish``. Command line:
-``python -m tumblepipe.farm.pipelines.publish <config.json>``.
+Config: ``specs.publish``.
 """
 
 from pathlib import Path
-import sys
 
 from tumblepipe.api import get_user_name, path_str
 from tumblepipe.apps.deadline import Job
 from tumblepipe.config.timeline import get_export_frame_range
 from tumblepipe.farm.jobs import notify as notify_job
 from tumblepipe.farm.jobs import publish as publish_job
-from tumblepipe.farm.pipelines._batch import batch_title, run_cli, submit_batch
+from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.farm.specs import publish as publish_spec
 from tumblepipe.pipe.paths import (
     latest_complete_hip_file_path,
@@ -154,7 +152,3 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
     return submit_batch(batch_title(
         'publish', config['entity']['uri'], get_user_name()
     ) + _downstream_suffix(config), build, config, paths)
-
-
-if __name__ == '__main__':
-    sys.exit(run_cli(publish_spec.is_valid_config, submit))

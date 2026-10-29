@@ -6,8 +6,6 @@ them; a *full* composite does the whole range (into the partial's
 version), encodes each layer's review mp4, and adds the slapcomp chain
 over the latest beauty of every channel.
 
-Command line: ``python -m tumblepipe.farm.pipelines.composite <config.json>``.
-
 config = {
     'entity': {'uri': 'entity:/shots/sequence/shot', 'department': 'string'},
     'settings': {
@@ -35,7 +33,6 @@ config = {
 
 from pathlib import Path
 import logging
-import sys
 
 from tumblepipe.api import path_str
 from tumblepipe.apps.deadline import Job
@@ -51,7 +48,7 @@ from tumblepipe.farm.checks import (
 )
 from tumblepipe.farm.jobs import composite as composite_job
 from tumblepipe.farm.pipelines import post_render
-from tumblepipe.farm.pipelines._batch import batch_title, run_cli, submit_batch
+from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.pipe.paths import (
     get_aov_frame_path,
     get_frame_path,
@@ -254,7 +251,3 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
     return submit_batch(batch_title(
         settings['purpose'], config['entity']['uri'], settings['user_name']
     ), build, config, paths)
-
-
-if __name__ == '__main__':
-    sys.exit(run_cli(is_valid_config, submit))

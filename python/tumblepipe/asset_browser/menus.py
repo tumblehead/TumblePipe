@@ -177,13 +177,18 @@ class PipelineMenus:
                 lambda aid=asset_id: self._ops.open_database_editor(aid),
             ),
         ]
-        if (
-            ("type:shot" in asset.tags or "type:asset" in asset.tags)
-            and "type:group" not in (asset.tags or ())
-        ):
+        if "type:shot" in asset.tags or "type:asset" in asset.tags                 or "type:group" in (asset.tags or ()):
             items.append((
                 "Open in Entity Editor…",
                 lambda aid=asset_id: self._ops.open_entity_editor_for(aid),
+            ))
+        if "type:shot" in asset.tags and "type:group" not in (asset.tags or ()):
+            # The selected shots' playblasts and renders, back to back in
+            # the sequence player.
+            shots = [a for a in submit_targets if "type:shot" in (a.tags or ())] or [asset]
+            items.insert(1, (
+                "Play" if len(shots) <= 1 else f"Play {len(shots)} Shots",
+                lambda targets=shots: self._play_shots(targets),
             ))
         if "type:asset" in asset.tags and "type:group" not in (asset.tags or ()):
             items.insert(2, (
@@ -224,6 +229,14 @@ class PipelineMenus:
                         self._containers.remove_member(aid, c),
                 ))
         return items
+
+    def _play_shots(self, shots: list[Asset]) -> None:
+        from tumblepipe.pipe import review_playlist
+        uris = [uri for uri in (self._resolver.uri_for(a.id) for a in shots) if uri is not None]
+        if not uris:
+            raise ValueError("No shot to play: the selection resolves to no entity")
+        name = shots[0].name if len(shots) == 1 else f"{len(shots)} shots"
+        review_playlist.play_shots(uris, name)
 
     def deck_item_items(self, asset: Asset, deck_item_key: str) -> list:
         """A department deck item's right-click items (see

@@ -1,0 +1,5 @@
+# Primer and otio-rs come from 3db Gitea over plain HTTP (both are readable
+# without credentials, so CI needs no key). Fetch with the git CLI rather
+# than cargo's built-in libgit2.
+[net]
+git-fetch-with-cli = true

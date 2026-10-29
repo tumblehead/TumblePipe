@@ -63,9 +63,27 @@ def _apply_context_options() -> None:
         )
 
 
+def _apply_multi_timeline() -> None:
+    """Lay a shared-timeline Multi's workfile out: the playbar over every
+    shot and, when the Multi asks for them, a bookmark per shot (they are
+    not saved in the hip). After the refresh, whose import_shot nodes do
+    the same, so a scene with none or with refresh off still gets it.
+    Upkeep like the context options: a failure is logged, not shown."""
+    import logging
+    from tumblepipe.pipe.houdini import multi_timeline
+
+    try:
+        multi_timeline.apply()
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Laying out the Multi's shared timeline failed"
+        )
+
+
 def _on_scene_opened() -> None:
     _apply_context_options()
     _refresh_if_enabled()
+    _apply_multi_timeline()
 
 
 def on_hip_file_event(event_type) -> None:

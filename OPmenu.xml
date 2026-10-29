@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TumblePipe's entries on the network editor's node right-click menu.
+     Houdini merges every OPmenu.xml on HOUDINI_PATH; the package root is on
+     it. The code lives in tumblepipe.pipe.houdini.project_hda. -->
+<menuDocument>
+    <menu>
+        <subMenu id="tumblepipe_menu">
+            <insertAfter>opmenu.vhda_create</insertAfter>
+            <label>TumblePipe</label>
+            <scriptItem id="tumblepipe_create_project_hda">
+                <label>Create Project HDA...</label>
+                <context>
+                    <expression><![CDATA[
+from tumblepipe.pipe.houdini import project_hda
+return project_hda.can_create(kwargs["node"])
+]]></expression>
+                </context>
+                <scriptCode><![CDATA[
+from tumblepipe.pipe.houdini import project_hda
+project_hda.show_dialog(kwargs["node"])
+]]></scriptCode>
+            </scriptItem>
+        </subMenu>
+    </menu>
+</menuDocument>

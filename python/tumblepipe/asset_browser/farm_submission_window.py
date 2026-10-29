@@ -121,10 +121,14 @@ class FarmSubmissionWindow(QWidget):
         self._configs = list(configs)
         self._offset = 0
         self._state = submit_plan.fold_events([])
+        # Where the batches go: the Deadline farm, or this machine.
+        self._backend = submit_plan.plan_backend(submit_plan.read_plan(self._plan_path))
         self._items: dict[str, QTreeWidgetItem] = {}
         self._cancelling = False
 
-        self.setWindowTitle("Farm submission")
+        self.setWindowTitle(
+            "Farm submission" if self._backend == "farm" else "Local farm submission"
+        )
         self.setMinimumSize(560, 420)
         self.setStyleSheet(_STYLE)
 
@@ -169,6 +173,10 @@ class FarmSubmissionWindow(QWidget):
         log_btn = QPushButton("Open log folder")
         log_btn.clicked.connect(self._open_folder)
         buttons.addWidget(log_btn)
+        # Where the submitted jobs are followed: their tasks, progress and logs.
+        manager_btn = QPushButton("Farm Manager")
+        manager_btn.clicked.connect(self._open_manager)
+        buttons.addWidget(manager_btn)
         buttons.addStretch(1)
         self._retry = QPushButton("Retry failed")
         # Shown only once a finished run has failures: a greyed-out retry
@@ -230,7 +238,8 @@ class FarmSubmissionWindow(QWidget):
             item.setForeground(1, QColor(RUNNING_COLOUR))
         elif status == 'done':
             jobs = event.get('jobs', 0)
-            item.setText(1, f"submitted · {jobs} job{'' if jobs == 1 else 's'}")
+            where = "submitted" if self._backend == "farm" else "queued on this machine"
+            item.setText(1, f"{where} · {jobs} job{'' if jobs == 1 else 's'}")
             item.setForeground(1, QColor(DONE_COLOUR))
         elif status == 'failed':
             item.setText(1, "failed")
@@ -304,6 +313,13 @@ class FarmSubmissionWindow(QWidget):
     def _open_folder(self) -> None:
         desktop.open_in_file_browser(self._plan_path.parent)
 
+    def _open_manager(self) -> None:
+        try:
+            from tumblepipe.farm.manager.window import show_manager
+            show_manager(parent=self.parentWidget(), source=self._backend)
+        except Exception as error:
+            report_failure("Opening the Farm Manager", error)
+
     def _cancel_submission(self) -> None:
         try:
             submit_plan.request_cancel(self._plan_path)
@@ -329,7 +345,7 @@ class FarmSubmissionWindow(QWidget):
             return
         from .submit_jobs_dialog import start_submission
         try:
-            window = start_submission(configs, parent=self.parentWidget())
+            window = start_submission(configs, parent=self.parentWidget(), backend=self._backend)
         except Exception as error:
             report_failure("Resubmitting the unfinished entities", error)
             return

@@ -55,6 +55,29 @@ log = logging.getLogger(__name__)
 #: The ``type:`` tag value of the cards a Multi of each context takes.
 _CONTEXT_TYPE = {"assets": "asset", "shots": "shot"}
 
+#: A shots Multi's Timeline in the Edit dialog, and the (shared timeline,
+#: bookmarks) settings each choice stands for (``config.multi_timeline``).
+#: Bookmarks come only with a shared timeline: on separate timelines every
+#: shot's bookmark would cover the same frames.
+_TIMELINE_SETTINGS = {
+    "Per shot": (False, False),
+    "Shared": (True, False),
+    "Shared, with bookmarks": (True, True),
+}
+TIMELINE_CHOICES = tuple(_TIMELINE_SETTINGS)
+
+
+def timeline_choice(shared: bool, bookmarks: bool) -> str:
+    """The Timeline choice for a Multi's settings."""
+    if not shared:
+        return "Per shot"
+    return "Shared, with bookmarks" if bookmarks else "Shared"
+
+
+def timeline_settings(choice: str) -> tuple[bool, bool]:
+    """``(shared timeline, bookmarks)`` for a Timeline choice."""
+    return _TIMELINE_SETTINGS[choice]
+
 
 def _hip_context_user_note(hip_path) -> tuple[str, str]:
     """``(user, note)`` for a workfile, from the ``_context/{version}.json``
@@ -518,9 +541,10 @@ class ContainerManager:
         Compares the Root's current ``assets`` list against the asset
         list recorded in the latest exported version's ``context.json``.
         If they differ — or no export exists yet and the Root has any
-        members — the Root is dirty. Used to surface a visual cue on
-        the card so users know when an explicit ``Export Root USD`` is
-        needed before downstream shots rebuild correctly.
+        members — the Root is dirty. Root edits stage themselves, so a
+        dot that stays on the card means staging failed (the Python Shell
+        says why) or the Root was edited outside the browser; Export Root
+        USD clears it by hand.
         """
         ref = parse(scene_id)
         if not isinstance(ref, SceneContainer):
@@ -529,28 +553,8 @@ class ContainerManager:
         if proj is None or not self._clients.is_ready(ref.project_name):
             return False
         self._activator.activate(proj)
-        from tumblepipe.config import scene as scn_mod
-        scene = scn_mod.get_scene_by_uri(ref.uri)
-        if scene is None:
-            return False
-        current = [(e.asset, e.instances, e.channel) for e in scene.assets]
-        from tumblepipe.pipe.paths import get_latest_version_path, get_scene_staged_path
-        latest = get_latest_version_path(get_scene_staged_path(ref.uri))
-        # Never exported (no folder, no version, or a version without its
-        # context): dirty as soon as the Root holds anything.
-        if latest is None:
-            return bool(current)
-        from tumblepipe.util.io import load_json_if_exists
-        context = load_json_if_exists(latest / "context.json")
-        if context is None:
-            return bool(current)
-        from tumblepipe.config.channels import read_published_channel
-        exported = [
-            (a["asset"], a["instances"],
-             read_published_channel(a, where=f"{latest}/context.json"))
-            for a in context["parameters"]["assets"]
-        ]
-        return sorted(current) != sorted(exported)
+        from tumblepipe.pipe.root_staging import root_export_is_stale
+        return root_export_is_stale(ref.uri)
 
     def _group_context_from_tag(self, group_tag: str) -> str | None:
         """Return the member-scoping context for a ``group:`` id, or
@@ -1032,12 +1036,6 @@ class ContainerManager:
             self._refresh.detail()
         if new_entries != list(existing):
             scn_mod.set_scene_assets(ref.uri, new_entries)
-        # Staging the Root (export_scene_version, generate_root_version,
-        # build) used to happen here automatically, but heavy USD
-        # operations on every drag-drop turned out to be too punishing.
-        # They're now explicit context-menu actions on the Root card
-        # (see ``export_root_usd``). The membership write above still
-        # happens unconditionally so data is never lost.
         return (added, skipped, skip_reasons)
 
     def _remove_assets_from_group(
@@ -1156,10 +1154,6 @@ class ContainerManager:
                 kept.append(entry)
         if len(kept) != len(scene.assets):
             scn_mod.set_scene_assets(ref.uri, kept)
-            # Staging (export_scene_version) is a manual context-menu
-            # action on the Root card; see ``export_root_usd``. We
-            # keep the membership write strictly automatic so users
-            # never lose data.
         if shot_uris_to_clear:
             # Shot detail panels show the assigned Root — refresh so
             # the user sees the change without re-selecting.
@@ -1268,8 +1262,8 @@ class ContainerManager:
     def export_root_usd(self, collection_id: str) -> bool:
         """Re-export a Root's scene USD via ``export_scene_version``.
 
-        Manual replacement for the auto-staging that used to fire on
-        every membership edit. Returns ``True`` on success; a failed
+        Root edits stage themselves (``pipe.root_staging.sync_roots``);
+        this is the by-hand fallback. Returns ``True`` on success; a failed
         export raises, and the host reports it.
         """
         ref = parse(collection_id)
@@ -1337,7 +1331,7 @@ class ContainerManager:
             d.name for d in
             dept_mod.list_departments(ref.context, include_generated=False)
         )
-        return [
+        fields = [
             CreationField(
                 key="departments",
                 label="Departments",
@@ -1347,6 +1341,37 @@ class ContainerManager:
                 required=False,
             ),
         ]
+        # Only shots have frames to lay end to end.
+        if ref.context == "shots":
+            fields.append(CreationField(
+                key="timeline",
+                label="Timeline",
+                field_type="dropdown",
+                choices=TIMELINE_CHOICES,
+                initial=timeline_choice(
+                    grp.shared_timeline, grp.timeline_bookmarks,
+                ),
+                required=False,
+            ))
+        return fields
+
+    def _edit_timeline(self, ref: GroupContainer, grp, choice) -> bool:
+        """Apply the Edit dialog's Timeline choice; whether it changed."""
+        if choice not in TIMELINE_CHOICES:
+            return False
+        shared, bookmarks = timeline_settings(choice)
+        if (shared, bookmarks) == (grp.shared_timeline, grp.timeline_bookmarks):
+            return False
+        from tumblepipe.config import multi_timeline
+        multi_timeline.set_timeline(ref.uri, shared, bookmarks)
+        # The Multi's workfile may be the open scene: lay it out now, not
+        # on its next open.
+        try:
+            from tumblepipe.pipe.houdini import multi_timeline as session
+            session.apply_if_open(ref.uri)
+        except ImportError:
+            pass  # no Houdini session
+        return True
 
     def edit(self, collection_id: str, fields: dict) -> bool:
         ref = self._activated(collection_id)
@@ -1365,6 +1390,7 @@ class ContainerManager:
                 ) from exc
             if changed:
                 self.invalidate_membership_cache()
+                self._sync_roots(collection_id)
             return True
         from tumblepipe.config import groups as grp_mod
         grp = grp_mod.get_group(ref.uri)
@@ -1379,6 +1405,7 @@ class ContainerManager:
                 grp_mod.add_department(ref.uri, d)
             for d in to_remove:
                 grp_mod.remove_department(ref.uri, d)
+            self._edit_timeline(ref, grp, fields.get("timeline"))
         except Exception as exc:
             raise ConfigError(
                 self._catalog_id,
@@ -1412,6 +1439,8 @@ class ContainerManager:
             msg = f"Skipped {skipped} ({why})"
         else:
             msg = f"Added {added}"
+        if added and isinstance(ref, SceneContainer):
+            msg = self._with_sync(msg, self._sync_roots(collection_id))
         return (added, skipped, msg)
 
     def remove_assets(
@@ -1433,7 +1462,26 @@ class ContainerManager:
             msg = f"Skipped {skipped}"
         else:
             msg = f"Removed {removed}"
+        if removed and isinstance(ref, SceneContainer):
+            msg = self._with_sync(msg, self._sync_roots(collection_id))
         return (removed, skipped, msg)
+
+    def _sync_roots(self, collection_id: str) -> str:
+        """Bring the shots up to date after a Root edit; the summary.
+
+        A Root edit reaches import_shot only through files (the Root's
+        export, the shot's root layer, its staged build); without them a
+        layout workfile opened next imports none of it. ``sync_roots``
+        writes only what changed, and the Root's card drops its drift dot.
+        """
+        from tumblepipe.pipe.root_staging import sync_roots
+        result = sync_roots()
+        self._refresh.card(collection_id)
+        return result.summary()
+
+    @staticmethod
+    def _with_sync(msg: str, summary: str) -> str:
+        return f"{msg}; {summary}" if summary else msg
 
     def card(self, collection_id: str) -> Asset | None:
         """A fresh card for a Multi or Root (after a create or an edit); None

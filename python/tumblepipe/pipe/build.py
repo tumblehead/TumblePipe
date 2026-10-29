@@ -16,9 +16,9 @@ from tumblepipe.config.department import list_departments
 from tumblepipe.pipe.paths import (
     latest_export_path,
     get_root_layer_file_name,
-    get_current_scene_staged_file_path,
-    get_latest_version_path
+    latest_root_version_path,
 )
+from tumblepipe.pipe.scene_build import root_assets, root_marker, shot_root
 from tumblepipe.pipe.graph import Graph
 import tumblepipe.pipe.context as ctx
 
@@ -207,39 +207,6 @@ def _latest_asset_layer_paths(
     return layer_data
 
 
-def _get_root_scene_uri(root_version_path: Path) -> Optional[Uri]:
-    """Read the scene reference from a root layer's context.json."""
-    root_context_data = load_json(root_version_path / 'context.json')
-    scene_ref = root_context_data.get('parameters', {}).get('scene')
-    if scene_ref is None:
-        return None
-    return Uri.parse(scene_ref)
-
-
-def _iter_scene_assets(scene_uri: Uri):
-    """
-    Yield (asset_uri, channel_name, instances) for every asset composed
-    by a scene.
-
-    Direct scene assets come first so they take precedence over assets
-    inherited from parent scenes.
-    """
-    scene_path = get_current_scene_staged_file_path(scene_uri)
-    if scene_path is not None:
-        scene_context_data = load_json(scene_path.parent / 'context.json')
-        for asset_datum in scene_context_data.get('parameters', {}).get('assets', []):
-            asset_uri = Uri.parse(asset_datum['asset'])
-            yield (
-                asset_uri,
-                read_published_channel(asset_datum, where=f'{scene_path.parent} context.json'),
-                asset_datum.get('instances', 1)
-            )
-
-    from tumblepipe.config.scene import get_inherited_assets
-    for entry, _parent_uri in get_inherited_assets(scene_uri):
-        yield Uri.parse(entry.asset), entry.channel, entry.instances
-
-
 def resolve_shot_build(
     graph: Graph,
     api,
@@ -291,31 +258,30 @@ def resolve_shot_build(
 
     # Find root department layer (shot-level, stored at _root/)
     root_layer = None
-    export_uri = Uri.parse('export:/') / shot_uri.segments / '_root'
-    export_path = api.storage.resolve(export_uri)
-    root_version_path = get_latest_version_path(export_path)
+    root_version_path = latest_root_version_path(shot_uri)
     if root_version_path is not None:
         layer_file_name = get_root_layer_file_name(shot_uri, root_version_path.name)
         root_layer_path = root_version_path / layer_file_name
         if root_layer_path.exists():
             root_layer = root_layer_path
 
-    # Extract assets by following the scene reference in the root layer's
-    # context.json ({parameters: {scene: "scenes:/..."}}), so scene changes
-    # don't require root regeneration. Track which assets come from the scene
-    # (vs. shot-flow assets from department exports).
+    # The root layer's Root brings its assets in (root -> Root -> asset
+    # staged files), read from the Root's exports so the build follows a
+    # re-exported Root without a new root layer. A Root's assets are the
+    # Root's: its count, channel and marker replace whatever a department
+    # export recorded for the asset (exports from before the rule claimed
+    # them, Sigurd_Fortaeller 2026-01), so no department cut or stale count
+    # reaches them.
     scene_asset_uris = set()
-    scene_uri = None
-    if root_version_path is not None:
-        scene_uri = _get_root_scene_uri(root_version_path)
+    scene_uri = shot_root(shot_uri)
     if scene_uri is not None:
-        for asset_uri, channel, instances in _iter_scene_assets(scene_uri):
+        marker = root_marker(scene_uri)
+        for entry in root_assets(scene_uri):
+            asset_uri = Uri.parse(entry.asset)
             scene_asset_uris.add(asset_uri)
-            # Shot-flow entries win over the scene's count (setdefault):
-            # a department that re-imported the asset is the fresher
-            # authority, matching the pre-count behaviour.
-            assets.setdefault(asset_uri, instances)
-            asset_channels.setdefault(asset_uri, channel)
+            assets[asset_uri] = entry.instances
+            asset_channels[asset_uri] = entry.channel
+            asset_inputs[asset_uri] = marker
 
     # Done
     return dict(

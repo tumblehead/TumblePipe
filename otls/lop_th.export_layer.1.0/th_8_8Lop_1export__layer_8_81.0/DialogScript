@@ -190,6 +190,28 @@
             range   { 0! 999999! }
             parmtag { "script_callback_language" "python" }
         }
+        parm {
+            name    "time_offset_mode"
+            label   "Time Offset"
+            type    string
+            default { "from_multi" }
+            help    "Where the shot's frames sit in this scene. The export cooks them there and writes them back on the shot's own frames. From Multi: the shot's place on a Multi's shared timeline (no offset anywhere else)."
+            menu {
+                "from_multi"    "From Multi"
+                "none"          "None"
+                "manual"        "Manual"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "time_offset"
+            label   "Offset Frames"
+            type    integer
+            default { "0" }
+            disablewhen "{ time_offset_mode != manual }"
+            range   { -1000 1000 }
+            parmtag { "script_callback_language" "python" }
+        }
     }
 
     groupsimple {

@@ -27,6 +27,13 @@ behaviour.
 
 ## Multis
 
+The [Entity Editor](entity-editor.md#multis) is the easiest place to set
+Multis up: a **Multis** column on the Assets and Shots tabs for who belongs
+where, and a **Multis** tab with a tick box per covered department. It
+checks that no member's department is covered by two Multis and writes
+everything on Apply. The browser surfaces below edit the same data one
+Multi at a time, written at once.
+
 ### Where they are
 
 Each project's **Assets** and **Shots** sections start with a **Multis**
@@ -55,7 +62,7 @@ writing the same list:
 
 | Where | Label | Dialog |
 |---|---|---|
-| Multi card or sidebar row right-click, or the detail panel's **Edit…** | **Edit Multi…** | **Edit *name***, a **Departments** multi-select; **OK** applies. |
+| Multi card or sidebar row right-click, or the detail panel's **Edit…** | **Edit Multi…** | **Edit *name***, a **Departments** multi-select and, on a shots Multi, the **Timeline** ([Shared timeline](#shared-timeline)); **OK** applies. |
 | Multi card right-click | **Departments…** | **Departments — *name***: one row per department in the pool with a checkbox; each toggle writes immediately, **Close** dismisses. |
 
 What coverage does to a member, as soon as it is written:
@@ -93,6 +100,10 @@ with **Remove selected from Multi** on the row, **Remove from Multi:
 Double-click the Multi card to see its members. A member's card also lists
 the Multi on the detail panel's Departments tab as an `M` pill.
 
+Renaming a member (in the browser or the Entity Editor) renames it in its
+Multis too, keeping its place on a shared timeline, and deleting or retiring
+it takes it out of them and off the timeline.
+
 ### The Multi's workfiles
 
 The Multi's own rows work like a shot's. A row with a workfile opens it
@@ -127,6 +138,65 @@ cells ticked, never the Multi.
 The browser's members-list open is Multi-aware, but **Open in New Houdini**
 on a member's row is not: it opens the newest file in the member's own
 department folder (see [Workfiles](workfiles.md#open-in-new-houdini)).
+
+### Shared timeline
+
+By default a shots Multi keeps every member on its own frames: the
+template's graph per member runs over that shot's range, so ten shots that
+all start at 1001 overlap in the Multi's hip. That is right for ten
+separate graphs, and wrong for **one graph that flows through all of
+them**: a simulation that carries on from shot to shot, a crowd that keeps
+walking across a cut. For that, set **Edit Multi…** › **Timeline**:
+
+| Timeline | What the Multi's workfile gets |
+|---|---|
+| **Per shot** (default) | Every member on its own frames, as before |
+| **Shared** | The members end to end on one timeline, in member order |
+| **Shared, with bookmarks** | The same, plus a playbar bookmark per shot |
+
+On a shared timeline each member has a **start**, the frame its own first
+frame lands on. sh010 (1001-1050) and sh020 (1001-1040) become 1001-1050 and
+1051-1090: sh020 has an offset of +50. Then, in the Multi's workfile:
+
+- `th::import_shot` moves each shot's layers forward by its offset, so the
+  shared graph sees sh020's camera and animation at 1051-1090.
+- `th::export_layer` cooks sh020's export at 1051-1090 and moves the written
+  samples back to 1001-1040, so what is published is an ordinary sh020
+  layer. Nothing downstream knows the shared timeline existed. The
+  published `context.json` records the offset (`parameters.time_offset`).
+- The playbar spans every shot. With bookmarks, each shot has a bookmark
+  named after it (`sq010_sh020`) on its shared frames: **double-click** one
+  to zoom the playbar to that shot, double-click again to zoom back out.
+
+Both nodes read the offset through their **Time Offset** parm, which
+defaults to **From Multi**. Set it to **None** to keep one node on its
+shot's own frames, or **Manual** for an offset of your own
+([Import and export nodes](../nodes/import-and-export.md#thimport_shot-lop)).
+In any workfile that is not a shared-timeline Multi, From Multi is no
+offset, so existing workfiles are unchanged.
+
+What to know:
+
+- **Starts are stored, not recomputed** (`timeline_starts` on the Multi in
+  `_config/db/groups.json`). Members are placed when shared timeline is
+  switched on and when they join, after the last frame any placed shot
+  reaches. If a shot's length changes later, the shots after it keep their
+  frames: moving them would move work already made against them. A longer
+  shot can then overlap the next one.
+- A member that leaves takes its start with it; nobody else moves. Back to
+  **Per shot** keeps the starts, so switching shared on again puts every shot
+  back where it was.
+- Rolls are not counted in the layout: neighbouring shots' rolls overlap, as
+  continuous action does. The playbar includes the first shot's pre-roll and
+  the last shot's post-roll.
+- A member with no frame range authored is not placed and keeps offset 0.
+- The bookmarks are Houdini's own, marked temporary: they are not saved in
+  the hip, and are remade from the configuration whenever the workfile opens
+  or the Timeline changes while it is open. Dragging one does not move a
+  shot. Bookmarks of your own are never touched.
+- Only `import_shot` and `export_layer` read the offset. Other nodes that
+  work on one shot's frames (`import_layer`, playblasts, caches) still use
+  the shot's own frames; set them by hand inside a shared-timeline Multi.
 
 ### Open Location and Delete
 
@@ -184,8 +254,17 @@ labelled `CATEGORY/name` and ticked where the Root holds them. Untick to
 remove, tick to add; assets the Root already held keep their instance count
 and channel. Status: *Updated forest*.
 
-Membership edits write the configuration immediately and nothing else: no
-USD is produced until you export.
+Membership edits write the configuration, then bring the shots up to
+date: the Root is exported, a shot whose Root changed gets a new root
+layer, and a shot with no staged build yet is built. The status bar says
+so, e.g. *Added 2; staged Root forest; updated 1 shot*. Shots without a
+Root are not touched. The Entity Editor's Apply and **New from Template**
+do the same, so a layout workfile opened next imports the Root's assets.
+
+A Root's assets belong to the Root: departments can move and edit them,
+but no export claims them, and an export that imports one again through
+its own import node is refused. See
+[Composition → A shot's Root assets belong to the Root](../composition.md#a-shots-root-assets-belong-to-the-root).
 
 ### The drift dot
 
@@ -193,7 +272,10 @@ A Root card carries a small orange dot when its asset list (asset,
 instances, channel) differs from what its latest export recorded in
 `context.json`, or when it has members and has never been exported. It
 means the shots that use this Root are composing an older asset list.
-**Export Root USD** clears it.
+Root edits made in the browser or the Entity Editor export the Root
+themselves, so a dot that stays means that export failed (the Python
+Shell says why) or the Root was edited elsewhere (the Database Editor, a
+script). **Export Root USD** clears it.
 
 ### Root actions
 
@@ -209,7 +291,8 @@ Right-click a Root card, its list row, or its sidebar row:
 | **Edit Root…** | See Members above. |
 | **Delete Root** | *Delete Root 'forest'? This cannot be undone from the browser.* Removes the Root from the configuration; exported layers stay on disk. |
 
-The two build actions run in this Houdini session and block it while they
+These actions are the by-hand fallback for the staging Root edits now do
+themselves. The two build actions run in this Houdini session and block it while they
 work; the status bar reports the outcome, and per-shot failures are logged
 (see [Development → Where the logs are](../development.md#where-the-logs-are)).
 

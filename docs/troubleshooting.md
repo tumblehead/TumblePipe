@@ -251,6 +251,33 @@ Multi animation workfile also comes with a playblast already set to its
 shot inside each member's `animate_shot_<member>` dive. Workfiles made
 before that keep their nodes as they are.
 
+### Animated characters lose their layout placement, or come back at rest pose
+
+In an animation workfile with several copies of a character (`FF0`, `FF1`,
+`FF2`), either of these:
+
+- the rigs start stacked at the origin in the APEX scene, and the layout
+  positions are gone on the stage after `th::animate`;
+- back on the stage the characters stand in rest pose with no animation.
+  Switching Scene Invoke's Output to Packed "fixes" that but puts them at
+  `/Geometry/FF0_char/...`, beside `/CHAR/FF0` instead of on it.
+
+The rest pose comes from the copies being USD instances: copies are
+instanceable unless the asset is animated, and USD drops anything authored
+beneath an instance. Tick **Animatable** on the asset in the Entity Editor,
+press **Import** on `import_shot`, and set Scene Invoke back to Unpacked.
+From 1.84 a rigged asset counts as animated without the tick; existing
+scenes still need the re-import.
+
+The placement: up to 1.83 `th::import_rig` loaded every rig at the origin,
+and `th::animate` resets the transforms of the prims it animates. From
+1.84 each rig starts at its layout placement (the rig's `Main` control is
+set to it), so the animation keeps it. Press **Import** on Import Rigs to
+pick that up in an existing workfile. Keys already set on a rig's `Main`
+control still win over the layout placement; a character moved by hand
+with another control (a COG or root) ends up offset from layout by that
+much, so zero that control.
+
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
 Each is a deliberate guard in `th::export_layer`, and the dialog names the
@@ -417,7 +444,8 @@ A category and a sequence with the same name break the browser's addressing:
 a card's id does not say which kind its middle part is, so the browser
 decides from the name, and every shot in such a sequence resolves to an
 asset that does not exist. **New Category**, **New Sequence**, **New Shot**
-and **New Asset** now refuse a name the other kind already uses. A project
+and **New Asset** now refuse a name the other kind already uses, in the
+browser and in the [Entity Editor](asset-browser/entity-editor.md). A project
 that already holds such a pair (created before the guard) still shows the
 symptom, and there is no automatic repair: entity names are also folder
 names under `export/` and the workfile tree, so renaming one side in the
@@ -572,6 +600,10 @@ The submitting machine has no Deadline Client, so there is no
 `DEADLINE_PATH` to submit through (older versions showed this as
 `Invalid Deadline installation path: "%DEADLINE_PATH%"`). Install the
 client and restart Houdini; see [Deadline and the render farm](deadline.md).
+Or pick **This machine** instead of **Render farm** (Farm Submit's **Run on**,
+the publish dialog, or the choice a node's Submit asks for): the same jobs
+then run here in the background, with no Deadline needed; see
+[Running farm jobs on this machine](deadline.md#running-farm-jobs-on-this-machine).
 With no farm at all, see
 [Rendering without a farm](compositing.md#rendering-without-a-farm).
 

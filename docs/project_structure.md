@@ -13,6 +13,7 @@ TumblePipe/
 ├── desktop/
 │   └── TumblePipe.desk          # Houdini desktop layout
 ├── otls/                        # Houdini Digital Assets (text format)
+├── OPmenu.xml                   # Node right-click menu: TumblePipe ▸ Create Project HDA...
 ├── python/tumblepipe/           # Core pipeline Python modules
 │   ├── archive/                 #   project archive / restore / cache rebuild (Desktop buttons, `python -m tumblepipe.archive`)
 │   ├── asset_browser/           #   TumbleTrove asset-browser catalog (declared at startup)
@@ -20,12 +21,13 @@ TumblePipe/
 │   ├── pythonrc.py
 │   └── uiready.py
 ├── python3.13libs/              # Houdini 22 startup stubs (byte-identical to 3.11)
-├── bin/                         # Pre-built hook apps (tt_setup, tt_prepare; per-platform)
+├── bin/                         # Pre-built apps (tt_setup, tt_prepare, th_player + its FFmpeg; per-platform)
 ├── resolver/                    # Pre-built USD asset resolver (native, per Houdini major)
 ├── dso/                         # Pre-built VRAM Inspector viewport hook (per Houdini major.minor)
 ├── src/                         # Native (Rust/C++) sources — built, not shipped as source
 │   ├── resolver/                #   `entity://` USD resolver (Rust core + C++ ArResolver shim)
 │   ├── wizard/                  #   hook apps: core + tt_setup + tt_prepare (Rust/egui)
+│   ├── player/                  #   th_player sequence player: FFmpeg, EXR, OCIO, OTIO playlist (Rust/Primer)
 │   └── vram/                    #   VRAM Inspector: viewport hook DSO (C++) + size-model calibration (dev-only)
 ├── resources/                   # Icons, UI resources, templates
 ├── scripts/                     # TumbleTrove hooks, node event scripts, maintenance CLIs
@@ -44,6 +46,17 @@ text-expanded directories (one directory per HDA) so they diff well in git.
 The release pipeline compiles them to binary `.hda` files via `hotl` before
 packaging.
 
+A project has an `otls/` folder of its own for assets that belong to it, not
+to the pipeline; see [Project HDAs](project-hdas.md).
+
+### `OPmenu.xml`
+
+TumblePipe's entries on the network editor's node right-click menu, merged
+by Houdini with every other `OPmenu.xml` on `HOUDINI_PATH`. It holds
+**TumblePipe ▸ Create Project HDA...**, whose code is
+`tumblepipe.pipe.houdini.project_hda`; `tests/test_project_hda.py` checks
+every function it calls exists.
+
 ### `python/tumblepipe/`
 
 The pipeline's Python package. This is on Houdini's Python path; import
@@ -61,7 +74,8 @@ with `from tumblepipe import ...`. Subpackages:
 - `pipe/` — pipeline core: `paths/` (all filesystem addressing),
   `graph.py` (dependency graph), `build.py` (shot/asset build
   resolution), `context.py`, `usd/` (USD text, sublayer refs, render
-  settings, the farm collapse, composition arcs), `scene_build.py`, and
+  settings, the farm collapse, composition arcs), `scene_build.py` and
+  `root_staging.py` (Roots: their exports, shot root layers, staging), and
   `houdini/` (HDA node wrappers under `lops/`/`sops/`/`cops/`, shared
   `entity_node.py` base, `render_stage.py` — the single render-stage
   LOP graph builder shared by the farm stage tasks and the

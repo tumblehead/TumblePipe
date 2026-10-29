@@ -20,12 +20,9 @@ config = {
         'channel_name': 'string'    # Discord channel for the notify
     }
 }
-
-Command line: ``python -m tumblepipe.farm.pipelines.playblast <config.json>``.
 """
 
 from pathlib import Path
-import sys
 
 from tumblepipe.api import path_str
 from tumblepipe.apps.deadline import Job
@@ -39,7 +36,7 @@ from tumblepipe.farm.checks import (
 )
 from tumblepipe.farm.jobs import notify as notify_job
 from tumblepipe.farm.jobs import playblast as playblast_job
-from tumblepipe.farm.pipelines._batch import batch_title, run_cli, submit_batch
+from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.pipe.paths import get_daily_path, get_next_playblast_path
 from tumblepipe.util.uri import Uri
 
@@ -125,7 +122,3 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
         batch_title('playblast', entity['uri'], entity['department']),
         build, config, paths
     )
-
-
-if __name__ == '__main__':
-    sys.exit(run_cli(is_valid_config, submit))

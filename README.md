@@ -39,6 +39,7 @@ documents both.
 ## Package layout
 
 - `otls/` — Houdini Digital Assets (HDAs), text-format for version control.
+- `OPmenu.xml` — the node right-click menu's TumblePipe entries (Create Project HDA).
 - `python/tumblepipe/` — pipeline Python modules.
 - `python3.Xlibs/` — per-Python-version libraries and Houdini startup hooks.
 - `scripts/` — bundled project template and maintenance CLIs.

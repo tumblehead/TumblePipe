@@ -384,10 +384,12 @@ class ImportAsset(EntityNode):
         # Resolve version name (resolve 'latest' to actual version)
         version_name = self.get_version_name()
         if version_name == 'latest':
-            version_names = self.list_version_names()
-            actual_versions = [v for v in version_names if v not in ('latest', 'current')]
-            if actual_versions:
-                version_name = actual_versions[-1]
+            # What the resolver's latest mode loads: the newest finished build
+            asset_uri = self.get_entity_uri()
+            if asset_uri is not None:
+                latest = current_staged_path(asset_uri, self.get_channel_name())
+                if latest is not None:
+                    version_name = latest.name
         self.parm('version_label').set(version_name)
 
     def execute(self):

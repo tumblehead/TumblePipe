@@ -242,10 +242,15 @@ Import nodes carry a **Version** menu listing `latest`, `current` and the
 - **`latest`** puts the resolver in *latest mode*: the top-level reference is
   left unpinned, and every `entity:` reference nested inside the loaded layer
   also floats to the newest publish. This is the working default.
-- **`current`** loads the highest staged version on disk but keeps the
+- **`current`** loads the newest finished staged version on disk but keeps the
   version pins the staged build froze into its sublayers, so what you see is
   exactly that build.
 - **`v####`** pins to that folder.
+
+`latest` and `current` pass over a version folder with no `context.json` (a
+build or export that failed or is still being written) and take the newest
+finished one; see
+[Which version is the latest](../composition.md#which-version-is-the-latest).
 
 `th::import_layer` has no `latest`; its default is `current` and it always
 pins. A plain scene load does not re-resolve any of this — see

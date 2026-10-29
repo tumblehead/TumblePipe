@@ -16,6 +16,7 @@ from tumblepipe.pipe.paths.version import (
     get_next_version_name,
     version_name_from_path,
     list_version_paths,
+    is_finished_version,
     get_latest_version_path,
     get_next_version_path,
 )
@@ -66,6 +67,8 @@ from tumblepipe.pipe.paths.export import (
     get_rig_export_path,
     get_layer_file_name,
     get_root_layer_file_name,
+    get_root_export_path,
+    latest_root_version_path,
     SHARED_CHANNEL,
     get_shared_layer_file_name,
 )
@@ -90,6 +93,7 @@ __all__ = [
     'get_next_version_name',
     'version_name_from_path',
     'list_version_paths',
+    'is_finished_version',
     'get_latest_version_path',
     'get_next_version_path',
     # render
@@ -136,6 +140,8 @@ __all__ = [
     'get_rig_export_path',
     'get_layer_file_name',
     'get_root_layer_file_name',
+    'get_root_export_path',
+    'latest_root_version_path',
     'SHARED_CHANNEL',
     'get_shared_layer_file_name',
     # staged

@@ -5,8 +5,106 @@ from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.sops import rename_packed
-from tumblepipe.pipe.paths import list_version_paths
+from tumblepipe.pipe.paths import (
+    get_latest_version_path,
+    get_rig_export_path,
+    list_version_paths,
+)
 from tumblepipe.pipe.paths.naming import entity_stem
+
+
+def latest_rig_version(asset_uri: Uri, channel_name: str) -> str | None:
+    """The version 'latest' loads: the newest finished rig export
+    (``get_latest_version_path``), None while there is none. A failed rig
+    export leaves a newer, empty folder; taking the newest folder loaded it
+    and failed with "has no rig file"."""
+    version_path = get_latest_version_path(get_rig_export_path(asset_uri, channel_name))
+    return None if version_path is None else version_path.name
+
+
+# The top world control TumbleRig builds on every rig (apex_joints: Main,
+# then Layout, Offset_NN chained under it). Its t/r/s are the rig parms
+# Main_t/Main_r/Main_s, with no rest offset and no parent, so setting them
+# moves the whole character.
+PLACEMENT_CONTROL = 'Main'
+
+
+def _shot_stage(native):
+    """The stage fed into the th::animate this node sits in (its IN_stage),
+    None when it is not inside one."""
+    ancestor = native.parent()
+    while ancestor is not None:
+        stage_node = ancestor.node('IN_stage')
+        if stage_node is not None and ancestor.type().category().name() == 'Lop':
+            return stage_node.stage()
+        ancestor = ancestor.parent()
+    return None
+
+
+def layout_placement(native, prim_path: str):
+    """The world transform the shot stage gives ``prim_path`` at the start
+    of the playbar, as (translate, rotate, scale) for the placement control;
+    None outside th::animate, without that prim, or at the identity.
+
+    Layout places a character on its USD prim, but the rig loads at the
+    origin: every copy of a character started stacked there in APEX, and
+    th::animate's zero_transforms then wiped the layout placement off the
+    prim (Martin). Starting the rig at the placement keeps both in step:
+    the posed geometry is world space, and zero_transforms is right.
+    """
+    import hou
+    from pxr import Usd, UsdGeom
+
+    stage = _shot_stage(native)
+    if stage is None:
+        return None
+    prim = stage.GetPrimAtPath(prim_path)
+    if not prim.IsValid() or not prim.IsA(UsdGeom.Xformable):
+        return None
+    time = Usd.TimeCode(hou.playbar.playbackRange()[0])
+    matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(time)
+    matrix = hou.Matrix4([list(matrix.GetRow(row)) for row in range(4)])
+    if matrix.isAlmostEqual(hou.hmath.identityTransform()):
+        return None
+    parts = matrix.explode(transform_order='srt', rotate_order='xyz')
+    return (
+        tuple(parts['translate']),
+        tuple(parts['rotate']),
+        tuple(parts['scale']),
+    )
+
+
+def place_character(sop_node, translate, rotate, scale):
+    """Python SOP body: set the rig parms of the placement control on the
+    packed '.rig' of the character in ``sop_node``'s geometry. Warns and
+    leaves the rig as it is when the rig has no such control."""
+    import apex
+    import hou
+
+    geo = sop_node.geometry()
+    values = {
+        f'{PLACEMENT_CONTROL}_t': hou.Vector3(translate),
+        f'{PLACEMENT_CONTROL}_r': hou.Vector3(rotate),
+        f'{PLACEMENT_CONTROL}_s': hou.Vector3(scale),
+    }
+    for prim in geo.prims():
+        name = prim.attribValue('name') if geo.findPrimAttrib('name') else ''
+        if not name.endswith('.rig'):
+            continue
+        rig_geo = prim.getEmbeddedGeometry().freeze()
+        graph = apex.Graph()
+        graph.loadFromGeometry(rig_geo)
+        if not graph.matchGraphInputs(f'{PLACEMENT_CONTROL}_t'):
+            raise hou.NodeWarning(
+                f"{name} has no '{PLACEMENT_CONTROL}' control: the "
+                "character starts at the origin, not at its layout placement."
+            )
+        parms = rig_geo.dictAttribValue('parms')
+        for key, value in values.items():
+            parms[key] = value
+        rig_geo.setGlobalAttribValue('parms', parms)
+        prim.setEmbeddedGeometry(rig_geo)
+
 
 class ImportRig(EntityNode):
 
@@ -64,10 +162,12 @@ class ImportRig(EntityNode):
         # Resolve version name (resolve 'latest' to actual version)
         version_name = self.get_version_name()
         if version_name == 'latest':
-            version_names = self.list_version_names()
-            actual_versions = [v for v in version_names if v != 'latest']
-            if actual_versions:
-                version_name = actual_versions[-1]
+            asset_uri = self.get_entity_uri()
+            if asset_uri is not None:
+                version_name = (
+                    latest_rig_version(asset_uri, self.get_channel_name())
+                    or version_name
+                )
         self.parm('version_label').set(version_name)
 
     def latest(self):
@@ -96,13 +196,11 @@ class ImportRig(EntityNode):
         # Resolve 'latest' to actual version. No rig exported yet is the one
         # expected empty state; everything else raises.
         if version_name == 'latest':
-            version_names = self.list_version_names()
-            actual_versions = [v for v in version_names if v != 'latest']
-            if not actual_versions:
+            version_name = latest_rig_version(asset_uri, channel_name)
+            if version_name is None:
                 ns.set_node_comment(context, "Bypassed: No versions available")
                 bypass_node.parm('input').set(0)
                 return
-            version_name = actual_versions[-1]  # Get last (newest)
 
         uri_name = entity_stem(asset_uri)
 
@@ -140,6 +238,21 @@ class ImportRig(EntityNode):
                 rename_node.set_to_path(f'/{prim_parent_path}/{instance_name}/*')
                 rename_node.native().setInput(0, anchor_node)
                 anchor_node = rename_node.native()
+
+            # Start the character where layout placed it
+            placement = layout_placement(
+                context, f'/{prim_parent_path}/{instance_name}'
+            )
+            if placement is not None:
+                place_node = dive_node.createNode(
+                    'python', f'{uri_name}_{instance_name}_place'
+                )
+                place_node.parm('python').set(
+                    'from tumblepipe.pipe.houdini.sops import import_rig\n'
+                    f'import_rig.place_character(hou.pwd(), *{placement!r})\n'
+                )
+                place_node.setInput(0, anchor_node)
+                anchor_node = place_node
 
             # Create the add character to scene node
             add_node = dive_node.createNode('apex::sceneaddcharacter', f'{uri_name}_{instance_name}_add')

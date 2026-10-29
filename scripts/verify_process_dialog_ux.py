@@ -332,7 +332,9 @@ def main() -> int:
     )
     check(
         'clean run locks the execution mode',
-        not clean._local_radio.isEnabled() and not clean._farm_radio.isEnabled(),
+        not clean._local_radio.isEnabled()
+        and not clean._machine_radio.isEnabled()
+        and not clean._farm_radio.isEnabled(),
     )
     # Ticking a row afterwards must not overwrite the result line with
     # "Ready to execute" — there is no Execute button to honour it.

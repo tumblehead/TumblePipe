@@ -25,10 +25,8 @@ from tumblepipe.config.channels import (
     read_channel_names,
 )
 from tumblepipe.config.department import list_departments, department_names_up_to
-from tumblepipe.apps.deadline import (
-    Deadline,
-    Batch
-)
+from tumblepipe.apps.deadline import Batch
+from tumblepipe.farm.backend import get_farm
 from tumblepipe.config.timeline import FrameRange
 from tumblepipe.farm.jobs import stage as stage_job
 from tumblepipe.farm.jobs import collapse as collapse_job
@@ -337,8 +335,8 @@ def submit_entity_batch(config: dict) -> list[str]:
             'Playblast', pb_department, department_names, renderable_names
         )
 
-    # Connect to Deadline
-    farm = Deadline()
+    # Deadline, or this machine's local farm (farm.backend)
+    farm = get_farm()
 
     # Create batch
     user_name = get_user_name()

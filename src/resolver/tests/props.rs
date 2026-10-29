@@ -22,7 +22,7 @@ use proptest::prelude::*;
 
 use th_resolver_core::env::{EXPORT_PATH_VAR, LATEST_MODE_VAR};
 use th_resolver_core::uri::{CHANNEL_KEY, DEFAULT_CHANNEL, LEGACY_CHANNEL_KEY};
-use th_resolver_core::version::find_latest;
+use th_resolver_core::version::{find_latest, VERSION_MARKER};
 use th_resolver_core::{resolve_uri, EntityUri};
 
 // Env vars are process-wide and the test harness runs tests on threads;
@@ -325,6 +325,35 @@ proptest! {
         }
         let expected = format!("v{max:04}");
         prop_assert_eq!(find_latest(td.path()), Some(expected));
+    }
+
+    /// "latest" is the newest *finished* version: one holding the
+    /// `context.json` its writer puts in last. Newer folders without it are
+    /// failed or in-progress exports and are read past; a `context.json`
+    /// that is a directory does not count. With no finished version, the
+    /// newest is taken (layouts that never wrote sidecars).
+    #[test]
+    fn find_latest_is_the_newest_finished_version(
+        stack in prop::collection::btree_map(1u32..20_000, 0u8..3, 1..10),
+    ) {
+        let td = tempfile::tempdir().unwrap();
+        for (&v, &state) in &stack {
+            let dir = td.path().join(format!("v{v:04}"));
+            fs::create_dir(&dir).unwrap();
+            match state {
+                0 => {}
+                1 => fs::write(dir.join(VERSION_MARKER), b"{}").unwrap(),
+                _ => fs::create_dir(dir.join(VERSION_MARKER)).unwrap(),
+            }
+        }
+        let newest = *stack.keys().max().unwrap();
+        let expected = stack
+            .iter()
+            .filter(|(_, &state)| state == 1)
+            .map(|(&v, _)| v)
+            .max()
+            .unwrap_or(newest);
+        prop_assert_eq!(find_latest(td.path()), Some(format!("v{expected:04}")));
     }
 
     /// A department URI with an explicit version resolves inside the export

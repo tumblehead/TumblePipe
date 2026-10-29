@@ -6,7 +6,6 @@ from tumblepipe.util.uri import Uri
 
 from tumblepipe.pipe.paths.naming import entity_stem
 from tumblepipe.pipe.paths.version import (
-    list_version_paths,
     get_latest_version_path,
     get_next_version_path,
 )
@@ -48,18 +47,15 @@ def current_staged_path(
     entity_uri: Uri,
     channel_name: str = 'default'
     ) -> Optional[Path]:
-    """Get path to the highest numbered staged version directory."""
+    """Get path to the newest finished staged version directory
+    (``get_latest_version_path``: a failed build is read past)."""
     staged_uri = (
         Uri.parse('export:/') /
         entity_uri.segments /
         '_staged' /
         channel_name
     )
-    staged_path = api.storage.resolve(staged_uri)
-    version_paths = list_version_paths(staged_path)
-    if len(version_paths) == 0: return None
-    current_version_path = version_paths[-1]
-    return current_version_path
+    return get_latest_version_path(api.storage.resolve(staged_uri))
 
 def current_staged_file_path(
     entity_uri: Uri,

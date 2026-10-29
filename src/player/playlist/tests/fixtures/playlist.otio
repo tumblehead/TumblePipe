@@ -1,0 +1,115 @@
+{
+    "OTIO_SCHEMA": "Timeline.1",
+    "name": "HideAndReek review",
+    "metadata": {"tumblepipe": {"ocio": "P:/HideAndReek/_config/ocio/tumblehead.ocio"}},
+    "global_start_time": null,
+    "tracks": {
+        "OTIO_SCHEMA": "Stack.1",
+        "name": "tracks",
+        "metadata": {},
+        "children": [
+            {
+                "OTIO_SCHEMA": "Track.1",
+                "name": "Shots",
+                "kind": "Video",
+                "metadata": {},
+                "source_range": null,
+                "children": [
+                    {
+                        "OTIO_SCHEMA": "Clip.2",
+                        "name": "010",
+                        "metadata": {"tumblepipe": {
+                            "entity": "entity:/shots/HideAndReek/010",
+                            "take": 1,
+                            "takes": [
+                                {"label": "layout v0003", "department": "layout", "version": "v0003", "kind": "movie",
+                                 "path": "P:/HideAndReek_render/playblast/shots/HideAndReek/010/layout/v0003.mp4"},
+                                {"label": "animation v0015", "department": "animation", "version": "v0015", "kind": "movie",
+                                 "path": "P:/HideAndReek_render/playblast/shots/HideAndReek/010/animation/v0015.mp4"},
+                                {"label": "denoise v0030 beauty", "department": "denoise", "version": "v0030", "kind": "exr",
+                                 "path": "P:/HideAndReek_render/render/shots/HideAndReek/010/denoise/default/v0030/beauty/HideAndReek_010_default_beauty_v0030.1001.exr"}
+                            ]
+                        }},
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": 24.0, "value": 0.0},
+                            "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": 24.0, "value": 117.0}
+                        },
+                        "media_reference": {
+                            "OTIO_SCHEMA": "ExternalReference.1",
+                            "name": "",
+                            "metadata": {},
+                            "target_url": "file:///P:/HideAndReek_render/playblast/shots/HideAndReek/010/animation/v0015.mp4",
+                            "available_range": null
+                        },
+                        "markers": [],
+                        "effects": [],
+                        "enabled": true
+                    },
+                    {
+                        "OTIO_SCHEMA": "Gap.1",
+                        "name": "",
+                        "metadata": {},
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": 24.0, "value": 0.0},
+                            "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": 24.0, "value": 12.0}
+                        },
+                        "markers": [],
+                        "effects": [],
+                        "enabled": true
+                    },
+                    {
+                        "OTIO_SCHEMA": "Clip.2",
+                        "name": "020",
+                        "metadata": {"tumblepipe": {
+                            "entity": "entity:/shots/HideAndReek/020",
+                            "take": 7,
+                            "fps": 25,
+                            "takes": [
+                                {"label": "animation v0009", "department": "animation", "version": "v0009", "kind": "movie",
+                                 "path": "P:/HideAndReek_render/playblast/shots/HideAndReek/020/animation/v0009.mp4"}
+                            ]
+                        }},
+                        "source_range": null,
+                        "media_reference": null,
+                        "markers": [],
+                        "effects": [],
+                        "enabled": true
+                    },
+                    {
+                        "OTIO_SCHEMA": "Clip.2",
+                        "name": "disabled",
+                        "metadata": {},
+                        "source_range": null,
+                        "media_reference": {"OTIO_SCHEMA": "ExternalReference.1", "name": "", "metadata": {},
+                                            "target_url": "C:/review/disabled.mov", "available_range": null},
+                        "markers": [],
+                        "effects": [],
+                        "enabled": false
+                    },
+                    {
+                        "OTIO_SCHEMA": "Clip.2",
+                        "name": "plain",
+                        "metadata": {},
+                        "source_range": null,
+                        "media_reference": {
+                            "OTIO_SCHEMA": "ExternalReference.1",
+                            "name": "",
+                            "metadata": {},
+                            "target_url": "file:///C:/review/plain%20v2.mov",
+                            "available_range": {
+                                "OTIO_SCHEMA": "TimeRange.1",
+                                "start_time": {"OTIO_SCHEMA": "RationalTime.1", "rate": 25.0, "value": 0.0},
+                                "duration": {"OTIO_SCHEMA": "RationalTime.1", "rate": 25.0, "value": 50.0}
+                            }
+                        },
+                        "markers": [],
+                        "effects": [],
+                        "enabled": true
+                    }
+                ]
+            }
+        ]
+    }
+}

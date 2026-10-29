@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.83.0"
+version = "1.84.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -40,6 +40,10 @@ TH_USER = { method = "set", value = "$TT_USER_NAME" }
 # TumbleTrove's asset-browser downloads land project-local, under
 # <project>/library/<catalog>.
 TT_DOWNLOADS_PATH = { method = "set", value = "$TH_PROJECT_PATH/library" }
+# Project HDAs: TumblePipe ▸ Create Project HDA... saves to <project>/otls/
+# (tumblepipe.pipe.houdini.project_hda). Houdini's package loader keeps the
+# default scan path behind a prepend, so the package's own otls/ still loads.
+HOUDINI_OTLSCAN_PATH = { method = "prepend", value = "$TH_PROJECT_PATH/otls" }
 # The color config belongs to the project (scaffolded from
 # scripts/project_template/_config/ocio/), not to the package.
 OCIO = { method = "set", value = "$TH_CONFIG_PATH/ocio/tumblehead.ocio" }
@@ -75,9 +79,10 @@ tomli-w = ">=1.0"
 # gitignored, so .hpmignore re-includes them.
 #   build-resolver — tumbleResolver USD plugin -> resolver/houdini<major>/
 #   build-wizard   — tt_setup + tt_prepare hook apps -> bin/<platform>/
+#   build-player   — th_player sequence player + its FFmpeg -> bin/<platform>/
 #   build-vramhook — VRAM Inspector hook DSO -> dso/<major>.<minor>/
 #   compile-hdas   — expanded otls/<name>/ -> otls/<name>.hda
-prepack = ["build-resolver", "build-wizard", "build-vramhook", "compile-hdas"]
+prepack = ["build-resolver", "build-wizard", "build-player", "build-vramhook", "compile-hdas"]
 
 # Archive contents: an allowlist. It is also the public source mirror's list,
 # plus .ci/_packaging.py MIRROR_EXTRAS (src/ and repo metadata).
@@ -94,6 +99,7 @@ include = [
     # radial_menus/, which is read as the package layer.
     "stock/**",
     "otls/**",
+    "OPmenu.xml",                # the node right-click menu's TumblePipe entries
     "python/tumblepipe/**",
     "python3.13libs/**",
     "desktop/TumblePipe.desk",
@@ -131,6 +137,14 @@ cmd = [
     { when = { os = "windows" }, set = "python .ci/build_wizard.py --platform windows-x86_64" },
     { when = { os = "linux" }, set = "python .ci/build_wizard.py --platform linux-x86_64" },
     { when = { os = "macos" }, set = "python .ci/build_wizard.py --platform macos-aarch64" },
+]
+python = "3.11"
+
+[scripts.build-player]
+cmd = [
+    { when = { os = "windows" }, set = "python .ci/build_player.py --platform windows-x86_64" },
+    { when = { os = "linux" }, set = "python .ci/build_player.py --platform linux-x86_64" },
+    { when = { os = "macos" }, set = "python .ci/build_player.py --platform macos-aarch64" },
 ]
 python = "3.11"
 
@@ -202,6 +216,14 @@ cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app archive"
 python = "3.11"
 label = "Archive Project"
 description = "Pack the project's workfiles and the exports they load into a zip archive, for the client or cold storage"
+
+# farm-manager: the Farm Manager — this machine's local farm jobs and the
+# Deadline farm's, their tasks, progress and logs — started like Farm Submit.
+[scripts.farm-manager]
+cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app manager"
+python = "3.11"
+label = "Farm Manager"
+description = "Follow farm and local render jobs: queued, progress, logs and errors"
 
 [scripts.unarchive]
 cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app restore"

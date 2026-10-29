@@ -268,7 +268,7 @@ redirect to the Multi's hip the way an in-session open does.
 
 - **Open Folder** opens the department folder in Explorer, or the entity's
   folder when the department has no folder yet.
-- **View Latest Export** opens the department's newest export folder
+- **View Latest Export** opens the department's newest finished export folder
   (default channel). Nothing published yet: *No export found for dept.*
 - **Open Export Folder** (detail panel) opens the entity's export root.
 

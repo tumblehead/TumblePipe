@@ -26,10 +26,11 @@ package files, nor any Houdini install path. So this launcher:
 ``TH_USER`` comes from ``TT_USER_NAME``, which the Desktop does not yet pass
 to scripts; until it does, submissions made from here carry no user name.
 
-    python scripts/farm_launcher.py [--app farm|archive|restore]
+    python scripts/farm_launcher.py [--app farm|manager|archive|restore]
                                     [--context shots|assets] [--dry-run]
 
-``--app`` picks what runs: the Farm Submit grid (default), the project
+``--app`` picks what runs: the Farm Submit grid (default), the Farm Manager
+(``tumblepipe.farm.manager``: local and farm jobs, their logs), the project
 archive window (``tumblepipe.archive.app``) on its Archive or Restore tab, or
 ``rebuild``, which re-makes a restored project's left-out caches in hython.
 """
@@ -55,6 +56,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 #: The windows this launcher can open, as `python -m` arguments.
 APPS = {
     'farm': ('tumblepipe.farm_app',),
+    'manager': ('tumblepipe.farm.manager',),
     'archive': ('tumblepipe.archive.app',),
     'restore': ('tumblepipe.archive.app', '--restore'),
     'rebuild': ('tumblepipe.archive', 'rebuild'),

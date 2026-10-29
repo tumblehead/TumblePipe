@@ -422,14 +422,22 @@ def _execute_build_farm(entity_uri: Uri, channel_name: str = 'default', first_fr
         first_frame: Optional first frame override (from export node)
         last_frame: Optional last frame override (from export node)
     """
+    from tumblepipe.config.farm import get_default_pool, get_default_priority
     from tumblepipe.farm.pipelines import build as build_job
 
-    # Prepare config for farm submission
+    # The build task has no node of its own to carry a pool or priority, so
+    # it takes the project's defaults, as a node left on them would.
+    pool_name = get_default_pool()
+    if pool_name is None:
+        raise RuntimeError(
+            'The build job takes the project\'s default pool, but the '
+            'project sets none. Set farm.default_pool in the project config.'
+        )
     config = {
         'entity_uri': str(entity_uri),
         'channel_name': channel_name,
-        'priority': 50,  # Default priority
-        'pool_name': 'houdini'  # Default pool
+        'priority': get_default_priority(),
+        'pool_name': pool_name,
     }
 
     # Pass custom frame range if provided

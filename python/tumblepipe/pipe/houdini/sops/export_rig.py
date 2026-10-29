@@ -72,7 +72,19 @@ class ExportRig(EntityNode):
 
         # Export rig
         version_path.mkdir(parents=True, exist_ok=True)
-        export_node.parm('execute').pressButton()
+        try:
+            export_node.parm('execute').pressButton()
+        finally:
+            # A cook that wrote nothing, or raised, takes its empty version
+            # folder back out: left behind it is the highest rig version
+            # with nothing in it (an external user had to delete such
+            # folders by hand before shots would build again). rmdir only
+            # ever removes an empty folder.
+            if not output_file_path.exists():
+                try:
+                    version_path.rmdir()
+                except OSError:
+                    pass
 
         # The export node saves synchronously (foreground), so once pressButton
         # returns the cache must exist. A missing file means the cook failed -

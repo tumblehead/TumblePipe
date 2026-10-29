@@ -98,6 +98,16 @@ def get_next_playblast_path(
         _MOVIE_EXTENSION
     )
 
+def list_playblast_versions(
+    entity_uri: Uri,
+    department_name: str,
+    purpose: str = 'render'
+    ) -> list[str]:
+    """The version names of a department's playblasts, ascending."""
+    directory = _playblast_dir(entity_uri, department_name, None, purpose)
+    if not directory.is_dir(): return []
+    return _file_versions(directory, _MOVIE_EXTENSION)
+
 def get_latest_playblast_path(
     entity_uri: Uri,
     department_name: str,

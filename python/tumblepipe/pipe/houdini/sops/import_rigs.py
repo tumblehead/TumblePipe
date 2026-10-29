@@ -14,8 +14,7 @@ def has_rig_export(asset_uri: Uri, channel_name: str = 'default') -> bool:
     """Whether ``asset_uri`` has published a rig in ``channel_name``. A shot
     imports props and sets that never get one, so the animation template
     adds a row only for an asset that has."""
-    export_uri = Uri.parse('export:/') / asset_uri.segments / channel_name / 'rig'
-    return len(list_version_paths(api.storage.resolve(export_uri))) > 0
+    return import_rig.latest_rig_version(asset_uri, channel_name) is not None
 
 
 def split_unpublished(rig_imports):
@@ -186,10 +185,12 @@ class ImportRigs(ns.Node):
         # Resolve version name (resolve 'latest' to actual version)
         version_name = self.get_version_name(index)
         if version_name == 'latest':
-            version_names = self.list_version_names(index)
-            actual_versions = [v for v in version_names if v != 'latest']
-            if actual_versions:
-                version_name = actual_versions[-1]
+            asset_uri = self.get_entity_uri(index)
+            if asset_uri is not None:
+                version_name = (
+                    import_rig.latest_rig_version(asset_uri, self.get_channel_name(index))
+                    or version_name
+                )
         self.parm(f'version_label{index}').set(version_name)
 
     def set_rig_imports(self, rig_imports: list[tuple[Uri, str, str, int]]):

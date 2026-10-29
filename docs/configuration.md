@@ -242,8 +242,7 @@ cosmetic:
   the pool means a **stronger USD layer**;
 - **downstream** is everything below a department in the pool — it drives the
   Downstream Exports menu, `import_shot`'s layer/asset exclusion (in its
-  default *Exclude* mode), the publish task graph, and the propagate/update
-  farm jobs;
+  default *Exclude* mode), and the publish task graph;
 - AOV precedence ranks by pool index.
 
 So reordering an established pool restages composition for every existing
@@ -321,8 +320,15 @@ What coverage means, mechanically:
 - Export and publish from the Multi's hip collect the export nodes per
   member and publish each member's layer under its own entity; the Multi
   itself composes nothing (it is not a Root).
+- A shots Multi can lay its members end to end on one **shared timeline**
+  (`shared_timeline`, `timeline_bookmarks` and the stored `timeline_starts`
+  on the group), so one graph runs through every shot; `import_shot` and
+  `export_layer` move each shot to and from its place there
+  ([Multis and Roots → Shared timeline](asset-browser/multis-and-roots.md#shared-timeline)).
 
-In the asset browser, Multis sit in a **Multis** subheader at the top of
+The [Entity Editor](asset-browser/entity-editor.md#multis) sets Multis up
+in one place: members, coverage as tick boxes, and a check that no
+member's department is covered twice. In the asset browser, Multis sit in a **Multis** subheader at the top of
 the Assets and Shots sections of each project (a side with no Multi has
 no subheader). **New Multi…** creates one
 (name + context), and a new Multi **covers its context's whole department

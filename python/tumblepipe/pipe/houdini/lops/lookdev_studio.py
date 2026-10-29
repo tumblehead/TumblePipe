@@ -153,13 +153,18 @@ def _scene_viewer():
 
 def submit_to_farm(kwargs):
     """Submit the turntable with the batch-render switch on for the submit."""
+    from tumblepipe.pipe.houdini.ui import farm_submit
     raw_node = kwargs['node']
-    batchrender = raw_node.parm('batchrender')
-    batchrender.set(1)
-    try:
-        LookdevStudio(raw_node).submit()
-    finally:
-        batchrender.set(0)
+
+    def _submit():
+        batchrender = raw_node.parm('batchrender')
+        batchrender.set(1)
+        try:
+            LookdevStudio(raw_node).submit()
+        finally:
+            batchrender.set(0)
+
+    farm_submit.submit('the turntable', 'Submit Turntable', _submit)
 
 
 def set_view_transform(kwargs):

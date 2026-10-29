@@ -77,8 +77,16 @@ def _copy_path(from_path: Path, to_path: Path):
             to_file_path
         )
 
-def _write_key_value(path, data):
-    with open(path, 'w') as file:
+def _write_key_value(path, data, encoding=None):
+    """``KEY=VALUE`` lines; ``encoding`` None is the process's default.
+
+    The job's env file is written UTF-8 (the HPM plugin and the local runner
+    read UTF-8 first): in the default encoding a non-ASCII value (a user, a
+    path) came out UTF-8 from the Farm Submit process and cp1252 from inside
+    Houdini, and the reader garbled whichever it did not expect. The job and
+    plugin info files ``deadlinecommand`` reads keep the default.
+    """
+    with open(path, 'w', encoding=encoding) as file:
         for key, value in data.items():
             file.write(f'{key}={value}\n')
 
@@ -149,6 +157,10 @@ def _get_deadline_path():
     raw_path = os.environ['DEADLINE_PATH'].strip().strip('"')
     bin_path = Path(raw_path.replace('\\', '/'))
     return bin_path / deadline_command_name()
+
+def deadline_command():
+    """This machine's ``deadlinecommand``; raises :class:`DeadlineNotInstalled`."""
+    return _get_deadline_path()
 
 def _get_repository_path(deadline_path):
     raw_path = app.run(
@@ -328,6 +340,46 @@ class Job:
             result['EnvironmentFile'] = path_str(env_file_path)
         return result
 
+def open_job_folder(jobs_path):
+    """A new, empty job folder (with its ``data`` dir) under ``jobs_path``."""
+    job_path = _find_free_job_path(jobs_path)
+    assert not job_path.exists(), f'Job path already exists: {job_path}'
+    job_path.mkdir(parents = True)
+    (job_path / 'data').mkdir(parents=True, exist_ok=True)
+    logging.debug(f'Creating job path: {job_path}')
+    return job_path
+
+def write_job_files(job_path, job_index, job):
+    """Write ``job``'s env file and manifest, bundle its data; return its plugin info.
+
+    What the HPM plugin reads on the worker, the same for a Deadline
+    submission and a local one (``farm.local.backend``).
+    """
+    # Prepare environment file
+    env_file_path = job_path / f'{str(job_index).zfill(2)}.env'
+    _write_key_value(env_file_path, job.env, encoding='utf-8')
+
+    # Prepare plugin info
+    plugin_info = job.plugin_info(job_path, env_file_path)
+
+    # Write the caller-provided manifest into the shared job dir (a
+    # reachable job artifact) and point the plugin at it via Manifest.
+    if job.manifest is not None:
+        manifest_path = (
+            job_path /
+            f'{str(job_index).zfill(2)}_hpm.toml'
+        )
+        manifest_path.write_text(job.manifest)
+        plugin_info['Manifest'] = path_str(manifest_path)
+
+    # Copy files to workspace
+    job_data_path = job_path / 'data'
+    for from_path, rel_to_path in job.paths.items():
+        to_path = job_data_path / rel_to_path
+        if to_path.exists(): continue
+        _copy_path(from_path, to_path)
+    return plugin_info
+
 DEADLINE_PATH = None
 REPOSITORY_PATH = None
 POOL_NAMES = None
@@ -370,13 +422,7 @@ class Deadline:
         jobs_path
         ):
 
-        # Open work directory
-        job_path = _find_free_job_path(jobs_path)
-        assert not job_path.exists(), f'Job path already exists: {job_path}'
-        job_path.mkdir(parents = True)
-        job_data_path = job_path / 'data'
-        job_data_path.mkdir(parents=True, exist_ok=True)
-        logging.debug(f'Creating job path: {job_path}')
+        job_path = open_job_folder(jobs_path)
 
         # Job creation order
         job_ids = dict()
@@ -399,36 +445,14 @@ class Deadline:
                     for dep_index in job_deps
                 ])
             _write_key_value(job_info_path, job_info)
-            
-            # Prepare environment file
-            env_file_path = job_path / f'{str(job_index).zfill(2)}.env'
-            _write_key_value(env_file_path, job.env)
 
-            # Prepare plugin info
+            plugin_info = write_job_files(job_path, job_index, job)
             plugin_info_path = (
                 job_path /
                 f'{str(job_index).zfill(2)}_plugin_info.job'
             )
-            plugin_info = job.plugin_info(job_path, env_file_path)
-
-            # Write the caller-provided manifest into the shared job dir (a
-            # reachable job artifact) and point the plugin at it via Manifest.
-            if job.manifest is not None:
-                manifest_path = (
-                    job_path /
-                    f'{str(job_index).zfill(2)}_hpm.toml'
-                )
-                manifest_path.write_text(job.manifest)
-                plugin_info['Manifest'] = path_str(manifest_path)
-
             _write_key_value(plugin_info_path, plugin_info)
 
-            # Copy files to workspace
-            for from_path, rel_to_path in job.paths.items():
-                to_path = job_data_path / rel_to_path
-                if to_path.exists(): continue
-                _copy_path(from_path, to_path)
-            
             # Submit job
             job_ids[job_index] = _parse_submission(app.run([
                 str(DEADLINE_PATH),

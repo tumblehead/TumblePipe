@@ -24,10 +24,11 @@ the other installed packages' documentation. The same pages are online at
   - [Workfiles and versions](asset-browser/workfiles.md) — opening, creating and saving department workfiles
   - [Export and publish](asset-browser/export-and-publish.md) — what Export and Publish do, the process dialog, validators
   - [Submitting to the farm](asset-browser/submit-jobs.md) — the Farm Submit dialog and the jobs it creates
+  - [Playing shots](asset-browser/play-shots.md) — the selected shots' playblasts and renders back to back in the sequence player
   - [Multis and Roots](asset-browser/multis-and-roots.md) — shared multi-shot workfiles and config-driven scenes
   - [Recipes](asset-browser/recipes.md) — node clusters saved into the project and dropped back into any scene
   - [Pipeline settings and files](asset-browser/settings.md) — every option, and every file TumblePipe writes
-  - [The Entity Editor](asset-browser/entity-editor.md) — every asset and shot as spreadsheets: add, retime, choose a shot's assets, rename, retire
+  - [The Entity Editor](asset-browser/entity-editor.md) — every asset and shot as spreadsheets: add shots, assets, sequences and categories, retime, choose a shot's assets, set up Multis, rename, retire
   - [The config database editor](asset-browser/config-editor.md) — editing entities, schemas and departments
 - [Pipeline nodes](nodes/index.md) — the `th::` node families and the concepts they share
   - [Importing and exporting](nodes/import-and-export.md) — import_shot, import_asset, export_layer, cache, …
@@ -35,6 +36,7 @@ the other installed packages' documentation. The same pages are online at
   - [Lighting and rendering](nodes/lighting-and-rendering.md) — render settings, AOVs, LPE tags, lookdev studio, playblast
   - [Compositing nodes](nodes/comp.md) — build_comp and the COP toolkit
   - [Modelling and utility nodes](nodes/tools.md) — mesh tools, recipes, the VOP menu
+- [Project HDAs](project-hdas.md) — turn a subnet into a digital asset stored in the project: right-click ▸ TumblePipe ▸ Create Project HDA...
 - [VRAM Inspector](vram-inspector.md) — what is using the GPU's memory, by node, prim, primvar and texture
 - [Radial menus and shortcuts](radial-menus.md) — Alt+T, Alt+R, Alt+F, the network context menus and the Shift+Space department menus
 - [Troubleshooting](troubleshooting.md) — symptoms, causes, fixes, and where the logs are

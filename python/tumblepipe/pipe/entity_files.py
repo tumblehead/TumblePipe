@@ -132,14 +132,21 @@ def delete_entity(entity_uri: Uri) -> None:
     """Remove ``entity_uri`` from the config, archiving its folders first.
 
     Left in place, the folders would be picked up by a new entity of the same
-    name. All or nothing: the folders move first (:class:`ArchiveError` when
-    one cannot, with none moved), and if the config removal then fails they
-    are moved back before the error propagates. Works on the active project.
+    name. It also leaves every Multi it (or anything under it) was a member
+    of: left listed, the Multi's template would lay out a graph for an
+    entity that is gone. All or nothing: the folders move first
+    (:class:`ArchiveError` when one cannot, with none moved), and if the
+    config writes then fail the folders and the Multis' member lists are
+    put back before the error propagates. Works on the active project.
     """
+    from tumblepipe.config.groups import drop_member_everywhere, restore_members
     moved = archive_entity_folders(entity_uri)
+    memberships = []
     try:
+        memberships = drop_member_everywhere(entity_uri)
         api.config.remove_entity(entity_uri)
     except BaseException:
+        restore_members(memberships)
         restore_entity_folders(moved)
         raise
 
@@ -155,7 +162,8 @@ def rename_entity(entity_uri: Uri, new_name: str) -> Uri:
     and published layers name it inside, so renaming one that has files
     would leave all of that under the old name and the renamed entity empty:
     refused with :class:`EntityHasFiles`. Duplicate it under the new name
-    instead. Works on the active project.
+    instead. Every Multi listing the entity lists it under its new name.
+    Works on the active project.
     """
     if has_entity_files(entity_uri):
         raise EntityHasFiles(
@@ -165,5 +173,8 @@ def rename_entity(entity_uri: Uri, new_name: str) -> Uri:
             "in the Asset Browser to make a copy under the new name, then "
             "delete the old one."
         )
+    from tumblepipe.config.groups import rename_member_everywhere
+    new_uri = Uri(entity_uri.purpose, [*entity_uri.segments[:-1], new_name])
     api.config.rename_entity(entity_uri, new_name)
-    return Uri(entity_uri.purpose, [*entity_uri.segments[:-1], new_name])
+    rename_member_everywhere(entity_uri, new_uri)
+    return new_uri

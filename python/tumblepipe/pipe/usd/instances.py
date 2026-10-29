@@ -42,6 +42,38 @@ IDENTITY_PLACEMENT_OPS_USDA = (
 )
 
 
+def copies_are_animated(asset_uri) -> bool:
+    """Whether an asset's copies must stay plain references, not instances.
+
+    USD drops anything authored beneath an instance, so an instanced copy of
+    a character imports at rest pose with its animation gone. That held for
+    every rigged asset left at the schema's ``animatable: false`` (Martin's
+    characters), so a published rig in any channel counts as animatable too:
+    a rig is only made to be animated. import_shot and import_assets set
+    the Duplicate LOP's makeinstances from this; keep them on it.
+    """
+    from tumblepipe.api import api
+
+    properties = api.config.get_properties(asset_uri)
+    if properties and properties.get('animatable', False):
+        return True
+    return has_published_rig(asset_uri)
+
+
+def has_published_rig(asset_uri) -> bool:
+    """Whether the asset has a rig in any channel, found the way
+    import_rig's 'latest' finds one. The Entity Editor shows it beside
+    Animatable, since it animates a shot's copies whatever the box says."""
+    from tumblepipe.config.channels import list_channels
+    from tumblepipe.pipe.paths import get_latest_version_path, get_rig_export_path
+
+    return any(
+        get_latest_version_path(get_rig_export_path(asset_uri, channel_name))
+        is not None
+        for channel_name in list_channels(asset_uri)
+    )
+
+
 def composed_placement_op_order(prim) -> list[str]:
     """xformOpOrder applying the placement op values composed on ``prim``.
 

@@ -2128,10 +2128,12 @@ class _ContextPane(QWidget):
                 "submitting.",
             )
             return
-        # Every job family ends in a Deadline submission; say so before the
-        # artist confirms anything, not as a per-row failure afterwards.
-        from tumblepipe.apps.deadline import deadline_setup_problem
-        problem = deadline_setup_problem()
+        # Every job family ends in a Deadline submission, unless it runs on
+        # this machine; say so before the artist confirms anything, not as
+        # a per-row failure afterwards.
+        from tumblepipe.farm.backend import setup_problem
+        backend = self._dialog.backend()
+        problem = setup_problem(backend)
         if problem is not None:
             QMessageBox.warning(self, "Farm Submit", problem)
             return
@@ -2180,10 +2182,13 @@ class _ContextPane(QWidget):
             for uri, settings, _w, _e in rows
         ]
         try:
-            window = start_submission(configs, parent=self._dialog.parentWidget())
+            window = start_submission(
+                configs, parent=self._dialog.parentWidget(), backend=backend,
+            )
         except Exception as error:
             report_failure("Starting the farm submission", error)
             return
+        self._dialog.remember_backend()
         window.show()
         self._dialog.accept()
 
@@ -2271,6 +2276,21 @@ class SubmitJobsDialog(QDialog):
         self._summary = QLabel()
         self._summary.setStyleSheet(f"color: {TEXT_PRIMARY};")
         footer.addWidget(self._summary, 1)
+        run_on = QLabel("Run on")
+        run_on.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        footer.addWidget(run_on)
+        self._backend = QComboBox()
+        self._backend.addItem("Render farm", "farm")
+        self._backend.addItem("This machine", "local")
+        self._backend.setToolTip(
+            "Render farm: the jobs go to Deadline. "
+            "This machine: the same jobs run here, in the background, one "
+            "task at a time — as a render node would run them. Follow them "
+            "in the Farm Manager."
+        )
+        self._backend.setCurrentIndex(max(0, self._backend.findData(_saved_backend())))
+        footer.addWidget(self._backend)
+        footer.addSpacing(12)
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.reject)
         self._submit_btn = QPushButton("Submit")
@@ -2334,6 +2354,20 @@ class SubmitJobsDialog(QDialog):
 
     # ── Submit ────────────────────────────────────────────
 
+    def backend(self) -> str:
+        """Where Submit sends the work: ``farm`` or ``local`` (``farm.backend``)."""
+        return self._backend.currentData()
+
+    def remember_backend(self) -> None:
+        """Open on the same choice next time; a prefs file we cannot write only loses that."""
+        try:
+            from .prefs import load_prefs, save_prefs
+            prefs = load_prefs()
+            prefs.farm_backend = self.backend()
+            save_prefs(prefs)
+        except Exception:
+            log.warning("Could not remember the Farm Submit 'Run on' choice", exc_info=True)
+
     def _on_submit(self) -> None:
         pane = self._stack.currentWidget()
         if isinstance(pane, _ContextPane):
@@ -2345,11 +2379,24 @@ class SubmitJobsDialog(QDialog):
         super().done(result)
 
 
-def start_submission(configs: list[dict], parent: QWidget | None = None):
+def _saved_backend() -> str:
+    """The 'Run on' choice of the last submission; the farm when unknown."""
+    try:
+        from .prefs import load_prefs
+        return load_prefs().farm_backend
+    except Exception:
+        log.warning("Could not read the Farm Submit 'Run on' choice", exc_info=True)
+        return "farm"
+
+
+def start_submission(
+    configs: list[dict], parent: QWidget | None = None, backend: str = "farm",
+    ):
     """Write ``configs`` as a plan, launch the runner, return its status window.
 
     Shared by the dialog and the status window's **Retry failed** /
-    **Submit the rest**.
+    **Submit the rest**. ``backend`` is where the batches go: the Deadline
+    farm or this machine (``farm.backend``).
     """
     import datetime as dt
     import os
@@ -2368,7 +2415,9 @@ def start_submission(configs: list[dict], parent: QWidget | None = None):
     directory = Path(api.storage.resolve(
         Uri.parse('temp:/farm_submissions')
     )) / f'{stamp}_{uuid.uuid4().hex[:6]}'
-    plan = submit_plan.make_plan(configs, env=dict(os.environ), houdini_version=houdini_version)
+    plan = submit_plan.make_plan(
+        configs, env=dict(os.environ), houdini_version=houdini_version, backend=backend,
+    )
     plan_path = submit_plan.write_plan(directory, plan)
     process = submit_plan.launch(plan_path)
     window = FarmSubmissionWindow(plan_path, process, configs, parent=parent)

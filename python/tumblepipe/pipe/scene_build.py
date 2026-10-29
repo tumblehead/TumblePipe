@@ -13,16 +13,24 @@ from pathlib import Path
 
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
-from tumblepipe.util.io import store_text, store_json
+from tumblepipe.util.io import load_json, store_text, store_json
+from tumblepipe.config.channels import read_published_channel
 from tumblepipe.config.scene import (
     SCENES_URI,
+    AssetEntry,
     get_scene_by_uri,
     get_inherited_scene_ref,
 )
 from tumblepipe.config.timeline import get_frame_range, require_fps
+from tumblepipe.pipe.context import root_input
 from tumblepipe.pipe.paths import (
     get_next_version_path,
+    get_root_export_path,
     get_root_layer_file_name,
+    get_scene_staged_path,
+    is_finished_version,
+    latest_root_version_path,
+    list_version_paths,
     next_scene_staged_path,
     get_scene_layer_file_name,
 )
@@ -31,6 +39,80 @@ from tumblepipe.pipe.usd.sublayer_refs import (
     generate_staged_sublayer_uri,
 )
 from tumblepipe.pipe.usd.usda import generate_usda_content
+
+
+def root_chain(scene_uri: Uri) -> list[Uri]:
+    """``scenes:/a/b/c``, then its parent Roots, closest first."""
+    segments = list(scene_uri.segments)
+    chain = []
+    while segments:
+        uri = SCENES_URI
+        for segment in segments:
+            uri = uri / segment
+        chain.append(uri)
+        segments = segments[:-1]
+    return chain
+
+
+def _latest_root_export(scene_uri: Uri) -> Path | None:
+    """A Root's newest finished export directory, or None: its assets are
+    read from that export's context.json."""
+    for version_path in reversed(list_version_paths(get_scene_staged_path(scene_uri))):
+        if is_finished_version(version_path):
+            return version_path
+    return None
+
+
+def root_assets(scene_uri: Uri) -> list[AssetEntry]:
+    """The assets a Root composes, as its exported layers say.
+
+    A Root's layer sublayers its own assets, then its parent Roots' layers
+    (each at their latest export), so this reads the same: the Root's own
+    exported list, then each parent's, closest first. One entry per asset,
+    the first met: a Root's own entry beats a parent's, and of two own
+    entries the first. Everything that asks which assets a shot's Root
+    gives it (import_shot, the build, the export check) asks this.
+    """
+    found: dict[str, AssetEntry] = {}
+    for uri in root_chain(scene_uri):
+        version_path = _latest_root_export(uri)
+        if version_path is None:
+            continue
+        data = load_json(version_path / 'context.json')
+        for item in data.get('parameters', {}).get('assets', []):
+            entry = AssetEntry(
+                asset=item['asset'],
+                instances=item.get('instances', 1),
+                channel=read_published_channel(
+                    item, where=f'{version_path}/context.json'
+                ),
+            )
+            found.setdefault(entry.asset, entry)
+    return list(found.values())
+
+
+def root_marker(scene_uri: Uri) -> list[dict]:
+    """The inputs a Root's assets carry: the Root and its exported version."""
+    version_path = _latest_root_export(scene_uri)
+    return [root_input(scene_uri, version_path.name if version_path else None)]
+
+
+def shot_root(shot_uri: Uri) -> Uri | None:
+    """The Root the shot's newest root layer composes, or None."""
+    version_path = latest_root_version_path(shot_uri)
+    if version_path is None:
+        return None
+    scene_ref = load_json(version_path / 'context.json').get('parameters', {}).get('scene')
+    return None if scene_ref is None else Uri.parse(scene_ref)
+
+
+def root_layer_is_stale(shot_uri: Uri) -> bool:
+    """True when the shot has no root layer, or its newest one names
+    another Root than the shot (or its sequence) now points at."""
+    if latest_root_version_path(shot_uri) is None:
+        return True
+    scene_ref, _ = get_inherited_scene_ref(shot_uri)
+    return shot_root(shot_uri) != scene_ref
 
 
 def export_scene_version(scene_uri: Uri) -> Path:
@@ -159,9 +241,7 @@ def generate_root_version(shot_uri: Uri) -> Path:
         layer_refs.append(root_defaults_path)
 
     # Get next version path for root (shot-level, not channel-specific)
-    export_uri = Uri.parse('export:/') / shot_uri.segments / '_root'
-    export_path = api.storage.resolve(export_uri)
-    version_path = get_next_version_path(export_path)
+    version_path = get_next_version_path(get_root_export_path(shot_uri))
     version_name = version_path.name
 
     # Generate output path (no channel in filename for shot-level root)

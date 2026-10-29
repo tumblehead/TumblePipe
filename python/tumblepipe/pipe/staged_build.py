@@ -17,12 +17,11 @@ from tumblepipe.api import (
 from tumblepipe.config.channels import DEFAULT_CHANNEL, read_published_channel
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.entities import get_entity_type as _get_entity_type
-from tumblepipe.config.scene import get_scene
 from tumblepipe.config.timeline import BlockRange, require_fps
 from tumblepipe.pipe import build as pipe_build
 from tumblepipe.pipe import graph
 from tumblepipe.pipe.paths import current_staged_path
-from tumblepipe.pipe.scene_build import generate_root_version
+from tumblepipe.pipe.scene_build import generate_root_version, root_layer_is_stale
 from tumblepipe.pipe.usd.sublayer_refs import (
     generate_entity_sublayer_uri,
     generate_staged_sublayer_uri
@@ -358,9 +357,11 @@ def _build_shot(
     shot_uri: Uri,
     output_path: Path,
     render_range: BlockRange,
-    channel_name: str
+    channel_name: str,
+    dependency_graph=None,
 ) -> None:
-    """Build staged .usda for a shot."""
+    """Build staged .usda for a shot; ``dependency_graph`` is a scan to
+    reuse (staging several shots scans once), else one is made."""
     _section('Shot Build')
     print(f'Shot URI: {shot_uri}')
     print(f'Output path: {output_path}')
@@ -378,17 +379,20 @@ def _build_shot(
     print(f'Shot departments configured: {shot_departments}')
     print(f'Asset departments configured: {asset_departments}')
 
-    # Get asset channels from scene configuration
-    scene = get_scene(shot_uri)
-    asset_channels = {}
-    for entry in scene.assets:
-        asset_uri = Uri.parse(entry.asset)
-        asset_channels[asset_uri] = entry.channel
-    print(f'Asset channels from scene: {dict((str(k), v) for k, v in asset_channels.items())}')
+    # A root layer that is missing, or that names another Root than the
+    # shot now points at (the Entity Editor gave it its own Root), is
+    # regenerated: otherwise the build keeps composing the old Root. A shot
+    # whose root cannot be generated (no frame range) fails the task: a
+    # build without its root has no Root assets.
+    if root_layer_is_stale(shot_uri):
+        print('Root layer missing or out of date, generating...')
+        root_layer_path = generate_root_version(shot_uri)
+        print(f'Generated root layer: {root_layer_path}')
 
     # Scan dependency graph and resolve all needed layers for shot
-    print('Scanning dependency graph...')
-    dependency_graph = graph.scan()
+    if dependency_graph is None:
+        print('Scanning dependency graph...')
+        dependency_graph = graph.scan()
     try:
         resolved_context = pipe_build.resolve_shot_build(
             dependency_graph,
@@ -397,35 +401,11 @@ def _build_shot(
             shot_departments=shot_departments,
             asset_departments=asset_departments,
             shot_channel=channel_name,
-            asset_channels=asset_channels
         )
     except pipe_build.ChannelNotExportedError as e:
         # Fail the build: an all-default "channel" stage would render the
         # default scene again under the channel's name.
         raise StagedBuildError(str(e)) from e
-
-    # Auto-generate root layer if missing
-    # This handles shots without a scene attached that never had a root
-    # generated. A shot whose root cannot be generated (no frame range)
-    # fails the task: a build without its root has no scene assets.
-    if resolved_context['root_layer'] is None:
-        print('Root layer not found, auto-generating...')
-        root_layer_path = generate_root_version(shot_uri)
-        print(f'Generated root layer: {root_layer_path}')
-
-        # Re-resolve to pick up the new root layer and scene assets
-        # The newly generated root contains the scene reference, so we need
-        # to re-resolve to properly include scene assets in the build
-        print('Re-resolving with new root layer...')
-        resolved_context = pipe_build.resolve_shot_build(
-            dependency_graph,
-            api,
-            shot_uri,
-            shot_departments=shot_departments,
-            asset_departments=asset_departments,
-            shot_channel=channel_name,
-            asset_channels=asset_channels
-        )
 
     # Print resolved context summary
     found_shot_layers = list(resolved_context['shot_layers'].keys())
@@ -553,19 +533,21 @@ def build_staged(
     entity_uri: Uri,
     output_path: Path,
     render_range: BlockRange | None = None,
-    channel_name: str = DEFAULT_CHANNEL
+    channel_name: str = DEFAULT_CHANNEL,
+    dependency_graph=None,
 ) -> None:
     """Build the staged .usda of a shot or an asset at ``output_path``.
 
     A shot needs ``render_range``; an asset takes one only when it is
     animated (its timing goes into the layer). Nothing is written when
-    ``output_path`` already exists. Raises :class:`StagedBuildError`.
+    ``output_path`` already exists. A shot build reuses
+    ``dependency_graph`` when given a scan. Raises :class:`StagedBuildError`.
     """
     entity_type = _get_entity_type(entity_uri)
     if entity_type == 'shot':
         if render_range is None:
             raise StagedBuildError(f'A frame range is required to build shot {entity_uri}')
-        _build_shot(entity_uri, output_path, render_range, channel_name)
+        _build_shot(entity_uri, output_path, render_range, channel_name, dependency_graph)
     elif entity_type == 'asset':
         _build_asset(entity_uri, output_path, render_range, channel_name)
     else:

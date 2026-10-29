@@ -11,8 +11,10 @@ from tumblepipe.config.department import (
 )
 from tumblepipe.config.channels import CHANNEL_KEY, list_channels, read_published_channel
 import tumblepipe.pipe.houdini.nodes as ns
-from tumblepipe.pipe.houdini import playbar
+from tumblepipe.config.multi_timeline import shift_range
+from tumblepipe.pipe.houdini import multi_timeline, playbar
 from tumblepipe.pipe.houdini.entity_node import EntityNode, FROM_CONTEXT
+from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
 from tumblepipe.pipe.houdini.lops import shot_sublayers
 from tumblepipe.pipe.houdini.ui import layer_stack
 from tumblepipe.pipe.paths import (
@@ -22,6 +24,7 @@ from tumblepipe.pipe.paths import (
     list_version_paths,
 )
 from tumblepipe.pipe.context import get_source_department
+from tumblepipe.pipe.usd.instances import copies_are_animated
 from tumblepipe.pipe.usd.sublayer_refs import (
     nested_asset_department_refs,
 )
@@ -71,6 +74,27 @@ def split_excluded_assets(assets, departments_to_exclude, all_shot_departments):
             excluded_uris.add(asset_info['asset'])
     kept = [a for a in assets if a['asset'] not in excluded_uris]
     return kept, excluded_uris
+
+
+def select_import_assets(scene_assets, context_assets):
+    """The asset records an import tags and duplicates.
+
+    ``context_assets`` is the staged build's context.json list. With
+    ``scene_assets`` None (a pinned version) that list is the answer: the
+    build froze it. Otherwise the shot's live Root assets come first, as the
+    Root has them (count and marker: the Root owns them, whatever a
+    department export once recorded), then the build's other assets.
+    """
+    if scene_assets is None:
+        return list(context_assets)
+    scene_asset_uris = {scene_asset['asset'] for scene_asset in scene_assets}
+    return [
+        *(dict(scene_asset) for scene_asset in scene_assets),
+        *(
+            ctx_asset for ctx_asset in context_assets
+            if ctx_asset.get('asset') not in scene_asset_uris
+        ),
+    ]
 
 
 def _indent(lines):
@@ -149,88 +173,29 @@ def _set_shot_metadata_script(shot_uri, frame_range, fps, version_name, assets):
 
 
 def _get_scene_assets(shot_uri: Uri) -> list[dict]:
-    """Get current asset data from scene context.json, including inherited assets.
+    """The asset records of the shot's Root, as its root layer composes them.
 
-    Reads scene reference from root layer's context.json (same source as USD composition).
-    Also includes inherited assets from parent scenes in the hierarchy.
-
-    Args:
-        shot_uri: The shot entity URI
-
-    Returns:
-        List of asset dicts with keys: asset, instance, channel, instances, inputs
-        Inherited assets appear first, direct scene assets can override them.
+    The Root is the one the shot's newest root layer names, its assets read
+    from the Root's exports (its own, then its parents'), so an import
+    follows a re-exported Root without a new build. Each record carries the
+    Root marker as its inputs: no department cut leaves it out.
     """
-    from tumblepipe.pipe.paths import latest_export_path, get_current_scene_staged_file_path
-    from tumblepipe.config.channels import DEFAULT_CHANNEL
-    from tumblepipe.config.scene import get_inherited_assets
+    from tumblepipe.pipe.scene_build import root_assets, root_marker, shot_root
 
-    # Get root layer to find scene reference (same approach as graph.py Fix 2)
-    root_version_path = latest_export_path(shot_uri, DEFAULT_CHANNEL, 'root')
-    if root_version_path is None:
+    scene_uri = shot_root(shot_uri)
+    if scene_uri is None:
         return []
-
-    # Read scene reference from root's context.json
-    root_context_data = load_json(root_version_path / 'context.json')
-
-    scene_ref = root_context_data.get('parameters', {}).get('scene')
-    if scene_ref is None:
-        return []
-
-    # Follow scene reference to get current assets
-    scene_uri = Uri.parse(scene_ref)
-    scene_layer_path = get_current_scene_staged_file_path(scene_uri)
-    if scene_layer_path is None:
-        return []
-
-    scene_context = load_json(scene_layer_path.parent / 'context.json')
-
-    # Get direct scene assets
-    scene_assets = scene_context.get('parameters', {}).get('assets', [])
-
-    # Get inherited assets from parent scenes
-    inherited = get_inherited_assets(scene_uri)
-
-    # Build result: inherited first, then direct (direct overrides inherited)
-    result = []
-    seen_assets = set()
-
-    # Add inherited assets (from furthest parent to closest)
-    for entry, parent_uri in reversed(inherited):
-        if entry.asset not in seen_assets:
-            asset_uri = Uri.parse(entry.asset)
-            result.append({
-                'asset': entry.asset,
-                'instance': asset_uri.segments[-1],
-                CHANNEL_KEY: entry.channel,
-                'instances': entry.instances,
-                'inputs': []
-            })
-            seen_assets.add(entry.asset)
-
-    # Add/override with direct scene assets
-    for asset_data in scene_assets:
-        asset_uri_str = asset_data['asset']
-        asset_uri = Uri.parse(asset_uri_str)
-        new_entry = {
-            'asset': asset_uri_str,
-            'instance': asset_uri.segments[-1],
-            CHANNEL_KEY: read_published_channel(asset_data, where=f'scene asset {asset_uri_str}'),
-            'instances': asset_data.get('instances', 1),
-            'inputs': []
+    marker = root_marker(scene_uri)
+    return [
+        {
+            'asset': entry.asset,
+            'instance': Uri.parse(entry.asset).segments[-1],
+            CHANNEL_KEY: entry.channel,
+            'instances': entry.instances,
+            'inputs': list(marker),
         }
-        if asset_uri_str in seen_assets:
-            # Override inherited entry
-            for i, item in enumerate(result):
-                if item['asset'] == asset_uri_str:
-                    result[i] = new_entry
-                    break
-        else:
-            result.append(new_entry)
-            seen_assets.add(asset_uri_str)
-
-    return result
-
+        for entry in root_assets(scene_uri)
+    ]
 
 
 # The Department token that imports the whole staged stack with no
@@ -240,7 +205,7 @@ def _get_scene_assets(shot_uri: Uri) -> list[dict]:
 NO_DEPARTMENT = 'none'
 
 
-class ImportShot(EntityNode):
+class ImportShot(TimeOffsetNode, EntityNode):
 
     # A shot import only ever addresses a shot: 'from_context' in an asset
     # workfile or a Multi's resolves to nothing, and the node bypasses.
@@ -468,51 +433,17 @@ class ImportShot(EntityNode):
             ns.set_node_comment(context, "No staged build yet")
             return
 
-        # Get assets based on version type
-        if version_name in ('latest', 'current'):
-            # For latest/current: union of scene assets + context.json assets
-            # - Scene assets: what's currently in live scene (USD composition follows latest)
-            # - Context.json: what was built (has provenance inputs from department exports)
-            scene_assets = _get_scene_assets(shot_uri)
-
-            # Read context.json for additional assets from department exports
-            context_path = staged_file_path.parent / 'context.json'
-            context_data = load_json(context_path) if context_path.exists() else None
-            context_assets = []
-            if context_data is not None:
-                context_assets = context_data.get('parameters', {}).get('assets', [])
-
-            # Build lookup for context asset inputs (provenance tracking)
-            context_inputs_lookup = {
-                ctx_asset.get('asset'): ctx_asset.get('inputs', [])
-                for ctx_asset in context_assets
-            }
-
-            # Union: use scene assets as base, but merge inputs from context
-            # This preserves provenance info (which department introduced each asset)
-            assets = []
-            scene_asset_uris = set()
-            for scene_asset in scene_assets:
-                asset_uri = scene_asset['asset']
-                scene_asset_uris.add(asset_uri)
-                # Merge inputs from context if available
-                merged_asset = scene_asset.copy()
-                if asset_uri in context_inputs_lookup:
-                    merged_asset['inputs'] = context_inputs_lookup[asset_uri]
-                assets.append(merged_asset)
-
-            # Add any context assets not in scene
-            for ctx_asset in context_assets:
-                if ctx_asset.get('asset') not in scene_asset_uris:
-                    assets.append(ctx_asset)
-        else:
-            # For specific versions: only context.json (frozen state at build time)
-            # USD dependencies are fixed in versioned builds
-            context_path = staged_file_path.parent / 'context.json'
-            context_data = load_json(context_path) if context_path.exists() else None
-            assets = []
-            if context_data is not None:
-                assets = context_data.get('parameters', {}).get('assets', [])
+        context_path = staged_file_path.parent / 'context.json'
+        context_data = load_json(context_path) if context_path.exists() else None
+        context_assets = []
+        if context_data is not None:
+            context_assets = context_data.get('parameters', {}).get('assets', [])
+        # A pinned version imports what was built then, never the live Root.
+        scene_assets = (
+            _get_scene_assets(shot_uri)
+            if version_name in ('latest', 'current') else None
+        )
+        assets = select_import_assets(scene_assets, context_assets)
 
         # Parse sublayers from staged file
         sublayers = shot_sublayers.parse_staged_sublayers(staged_file_path)
@@ -563,8 +494,10 @@ class ImportShot(EntityNode):
             if info['type'] == 'shot_department':
                 info['downstream'] = info['department'] in downstream_departments
 
-        # Configure Sublayer LOP with filtered layers
+        # Configure Sublayer LOP with filtered layers. On a Multi's shared
+        # timeline every layer moves to where the shot sits there.
         import_node.parm('num_files').set(len(layers_to_load))
+        time_offset = self.get_time_offset()
 
         loaded_refs = []
         for i, info in enumerate(layers_to_load):
@@ -579,6 +512,7 @@ class ImportShot(EntityNode):
                 pin_stripped = True
             layer_path = str(uri)
             import_node.parm(f'filepath{i+1}').set(layer_path)
+            import_node.parm(f'timeoffset{i+1}').set(time_offset)
             loaded_refs.append(layer_path)
 
             # Stamp what the resolver actually lands on, so the Layer Stack
@@ -615,9 +549,15 @@ class ImportShot(EntityNode):
         if fps is None:
             raise self._error(f'no fps configured for {shot_uri} or the project')
         playbar.set_fps(fps)
+        # A shared-timeline Multi's playbar spans all its shots, not this
+        # one. Otherwise the shot's range, moved by any manual offset.
         # Don't yank the playhead back to the start on every re-import;
         # only reset it when the current frame is outside the shot range.
-        playbar.set_frame_range(frame_range, preserve_current_frame=True)
+        if not multi_timeline.apply():
+            playbar.set_frame_range(
+                shift_range(frame_range, time_offset),
+                preserve_current_frame=True,
+            )
 
         # Set the shot metadata script on the metadata pythonscript node
         metadata_node.parm('python').set(_set_shot_metadata_script(
@@ -665,9 +605,6 @@ class ImportShot(EntityNode):
         composed stage.
         """
         from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
-        from tumblepipe.api import default_client
-
-        api = default_client()
 
         # Get the duplicates subnet (part of HDA template)
         duplicates_node = context.node('duplicates')
@@ -712,9 +649,8 @@ class ImportShot(EntityNode):
             asset_prim_path = uri_to_prim_path(asset_uri)
             asset_name = asset_uri.segments[-1] if asset_uri.segments else 'asset'
 
-            # Check if asset is animatable
-            properties = api.config.get_properties(asset_uri)
-            animatable = properties.get('animatable', False) if properties else False
+            # Animatable or rigged copies stay plain references
+            animatable = copies_are_animated(asset_uri)
 
             # Create asset duplicate node (metadata in customData travels with the prim)
             dup_node = duplicates_node.createNode('duplicate', f'{asset_name}_dup')

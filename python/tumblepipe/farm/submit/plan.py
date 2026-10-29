@@ -17,7 +17,8 @@ it carries ``pxr`` for the snapshots and takes **no licence**.
 
 Files, both in one per-submission folder under ``temp:/farm_submissions/``::
 
-    plan.json       {'version', 'created', 'env', 'houdini_version', 'rows': [...]}
+    plan.json       {'version', 'created', 'env', 'houdini_version', 'backend',
+                     'rows': [...]}
     progress.jsonl  one JSON event per line:
                     {'event': 'start', 'total': N}
                     {'event': 'row', 'uri': ..., 'status': 'running'}
@@ -32,6 +33,8 @@ Files, both in one per-submission folder under ``temp:/farm_submissions/``::
 
 Each plan row is exactly the config ``batch_submit.submit_entity_batch``
 takes: ``{'entity': {'uri', 'name', 'context'}, 'settings': {...}}``.
+``backend`` is where the batches go (``farm.backend``): the Deadline farm, or
+this machine's local farm. A plan without one is a farm plan.
 """
 
 from __future__ import annotations
@@ -61,14 +64,23 @@ PROJECT_ENV_KEYS = (
 
 # ── plan and progress files ───────────────────────────────
 
-def make_plan(rows: list[dict], *, env: dict, houdini_version: str | None) -> dict:
+def make_plan(
+    rows: list[dict], *, env: dict, houdini_version: str | None, backend: str = 'farm',
+    ) -> dict:
     return {
         'version': PLAN_VERSION,
         'created': dt.datetime.now().isoformat(timespec='seconds'),
         'env': {key: env[key] for key in PROJECT_ENV_KEYS if env.get(key)},
         'houdini_version': houdini_version,
+        'backend': backend,
         'rows': list(rows),
     }
+
+
+def plan_backend(plan: dict) -> str:
+    """Where the plan's batches go; ``farm`` for a plan made before there was a choice."""
+    from tumblepipe.farm.backend import FARM, LOCAL
+    return LOCAL if plan.get('backend') == LOCAL else FARM
 
 
 def write_plan(directory: Path, plan: dict) -> Path:
@@ -242,6 +254,8 @@ def run(plan_path: Path) -> int:
     progress_path = plan_path.parent / PROGRESS_NAME
     plan = read_plan(plan_path)
     os.environ.update(plan['env'])
+    from tumblepipe.farm.backend import BACKEND_ENV
+    os.environ[BACKEND_ENV] = plan_backend(plan)
     _add_houdini_dll_directory()
 
     rows = plan['rows']

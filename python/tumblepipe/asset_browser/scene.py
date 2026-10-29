@@ -553,7 +553,7 @@ class SceneManager:
         thread, and opening a Qt dialog (or touching ``hou.hipFile``) off-thread
         is unsupported — the same reason Save/Reload marshal back here. One
         dialog publishes the whole asset (all its export/build tasks, grouped by
-        entity, user-toggleable, with the Local/Farm choice). A bare per-node
+        entity, user-toggleable, with the Run on choice). A bare per-node
         ``execute()`` opened one window per export node; ``3e2d12a`` dodged that
         by going headless, which removed the window users publish through — this
         restores the window without the one-per-node bug.
@@ -627,6 +627,20 @@ class SceneManager:
         run_on_main_thread(lambda: self._open_farm_grid(
             refresh_cb, tick_kinds=(farm_grid.PUBLISH,), action="Opening the Farm Submit dialog",
         ))
+
+    def open_farm_manager(self, refresh_cb=None) -> None:
+        """Open the Farm Manager: local and farm jobs, their tasks and logs."""
+        def _open():
+            try:
+                import hou
+                from tumblepipe.farm.manager.window import show_manager
+                show_manager(parent=hou.qt.mainWindow())
+            except Exception as exc:
+                report_failure("Opening the Farm Manager", exc)
+            finally:
+                if callable(refresh_cb):
+                    refresh_cb()
+        run_on_main_thread(_open)
 
     def render_current_scene(self, refresh_cb=None) -> None:
         """Open the Farm Submit grid with the loaded workfile's Render ticked.

@@ -113,7 +113,8 @@ Gotchas:
   set on the same asset, keep a Set Variant LOP downstream.
 - A row with an empty entity is filled with the first unused asset when you
   press Import.
-- Copies are instanceable unless the asset is marked `animatable` —
+- Copies are instanceable unless the asset is marked `animatable` or has
+  a rig published —
   [Instanceable copies and animatable assets](../composition.md#instanceable-copies-and-animatable-assets).
   Instance count is what the staged `context.json` records, so it survives
   export and re-import.
@@ -143,9 +144,12 @@ Source: [`otls/lop_th.import_shot.1.0`](../../otls/lop_th.import_shot.1.0/th_8_8
 | Exclude Asset Departments | *(none)* | Checkable list of asset departments (e.g. `lookdev`) to leave out of **every** asset in the shot, nested ones included; ticking re-imports immediately |
 | Preview Procedurals | off | Runs a *Preview Houdini Procedurals* LOP on the imported shot, so Houdini procedurals (e.g. hair) cook in the viewport. It only acts on prims with a Houdini procedural applied (e.g. from a *Houdini Procedural: Hair* LOP); if the shot has none, or the hair is published as baked curves, it does nothing. The LOP lives inside the node's `procedurals` subnet. It sits above the node's layer break, so the result is never exported, and the farm render stage leaves it off (husk runs procedurals at render time) |
 | Load Payloads | on | Currently wired to nothing (payloads always load) |
+| Time Offset | From Multi | Moves every layer the node loads by that many frames (the Sublayer LOP's time offset). **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** keeps the shot on its own frames; **Manual** uses **Offset Frames**. Changing it re-imports immediately |
+| Offset Frames | `0` | With Manual |
 
 **Import** runs the node. It also sets the session's FPS and frame range
-from the shot (keeping your current frame). The import starts just after the
+from the shot, moved by the time offset (keeping your current frame); in a
+Multi with a shared timeline it sets the range over every shot instead. The import starts just after the
 click returns, and so does the one that changing Channel or Version
 triggers; the graph cooks once, when it is done. A scene you open, or a
 workfile made with New from Template, runs it for you.
@@ -166,6 +170,13 @@ status is in [Seeing what composed](../composition.md#seeing-what-composed).
 
 Gotchas:
 
+- The shot's Root assets (Entity Editor, **Shots** tab, **Assets**) come
+  in through the `Root` layer in every department, with the Root's count,
+  and no **Exclude** setting leaves them out. They are read from the Root's
+  newest export, so a Root edit reaches the next Import without a rebuild.
+  Your export never records them, and refuses if an import node in the
+  workfile brings one in again
+  ([A shot's Root assets belong to the Root](../composition.md#a-shots-root-assets-belong-to-the-root)).
 - If the shot has never been staged the node loads nothing and its comment
   reads *No staged build yet* — no bypass. Build the shot's USD, then
   Import.
@@ -216,7 +227,7 @@ Source: [`otls/lop_th.import_layer.1.0`](../../otls/lop_th.import_layer.1.0/th_8
 | Entity | `from_context` | Any asset or shot |
 | Channel | `default` | Which channel's export; the entity's `_shared` layer is sublayered underneath when it has one |
 | Department | `from_context` | Whose export to load. `from_context` is **your own** department — almost never what you want on an import |
-| Version | `current` | `current` (highest export on disk) or a `v####`. There is no `latest`; the load is always pinned |
+| Version | `current` | `current` (newest finished export on disk) or a `v####`. There is no `latest`; the load is always pinned |
 | Import Mode | Reference | As on `import_asset` |
 
 Buttons: **Import**; **Open Location** opens the latest export folder in the
@@ -246,6 +257,8 @@ Source: [`otls/lop_th.export_layer.1.0`](../../otls/lop_th.export_layer.1.0/th_8
 | Department | `from_context` | Department to publish; menu lists the entity's publishable departments |
 | Frame Range | From context | From context (the entity's database range, roll included) or From settings |
 | First/Last/Step-Frame, Pre/Post-Roll | `1001 1001 1`, `0 0` | Only with From settings. **Step is ignored** — exports always run every frame |
+| Time Offset | From Multi | Where the frame range sits in this scene: the export cooks the range moved by the offset, then moves the written samples back, so the published layer is on the range's own frames. **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** and **Manual** (**Offset Frames**) as on `import_shot` |
+| Offset Frames | `0` | With Manual |
 | Type | Local | Local export, or Farm submission |
 | Downstream Exports | *(none)* | Farm only: departments after this one to re-export in the same job |
 | Pool / Priority | first pool / `50` | Farm only |

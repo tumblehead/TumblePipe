@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc edf6dae2925a5fbfd6970232525b36211ebe549948a7695c223ed229e25c0082 # shrinks to spec = ImageSpec { display: (-1, 1, 1, 1), data: (-2, 0, 2, 1), layers: [LayerSpec { name: "beauty", channels: [("R", false)] }], multipart: false }, tag = 0
+cc 6ba9052f0260ac381366a117d41083f1b3cdee65be0df1d2644b60a9407b019a # shrinks to names = ["x", "y", "z"]

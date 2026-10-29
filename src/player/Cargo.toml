@@ -1,0 +1,48 @@
+# The sequence player: plays shots back to back from TumblePipe's review media
+# (playblasts, dailies, EXR renders), frame-accurately. It links the FFmpeg
+# that .ci/build_ffmpeg.py builds; .ci/build_player.py (the build-player
+# prepack script) ships those shared libraries beside the executable in
+# bin/<platform>/. See docs/development.md, "Sequence player".
+#
+# `media` holds every decoding rule (frame index, seek-and-decode, EXR channel
+# selection, the decoded-frame buffer) and links no GUI, so frame accuracy is
+# testable headless; `player` is the Primer app on top.
+[workspace]
+resolver = "3"
+members = ["ffmpeg-sys", "media", "playlist", "player"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.1"
+publish = false
+
+[workspace.dependencies]
+th_ffmpeg_sys = { path = "ffmpeg-sys" }
+th_media = { path = "media" }
+th_playlist = { path = "playlist" }
+serde_json = "1"
+# In-house UI framework (wgpu + winit). Pinned by revision: Primer is not
+# published to a registry. Without its default `os` feature (native menus
+# and tray icons, which the player has none of): on Linux that feature links
+# GTK and libxdo, which artists' machines would then need installed.
+primer = { git = "http://10.100.36.15:3000/soren-n/primer.git", rev = "6e628e0f7c7b85b178c4207973b2ee6d335f5a25", default-features = false }
+exr = "1.74"
+half = { version = "2", features = ["bytemuck"] }
+thiserror = "2"
+bytemuck = { version = "1", features = ["derive"] }
+# In-house OpenTimelineIO, the playlist format. Pinned by tag; not on a
+# registry either.
+otio = { git = "http://10.100.36.15:3000/tumblehead/otio-rs.git", tag = "v0.4.0" }
+# Real OpenColorIO, built from its vendored source (`bundled`).
+ocio-rs = { version = "=0.3.0", features = ["bundled"] }
+proptest = { version = "1", default-features = false, features = ["std"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+# Graphics and decoding are unusably slow unoptimized, even in a debug build.
+[profile.dev.package."*"]
+opt-level = 3

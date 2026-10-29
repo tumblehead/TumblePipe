@@ -5,17 +5,20 @@ licence, no ``hou``) against a temp project made by ``tests/_harness``::
 
     S=<scratch dir with a sitecustomize adding Houdini's DLL dirs>
     TTW=$(cygpath -m ~/.hpm/fetch/tumbletrove-tumbletrove-<ver>/python)
+    # (or ~/.hpm/packages/tumbletrove@<ver>/python when fetch/ is empty)
     HW="C:/Program Files/Side Effects Software/Houdini <ver>"
     HOUDINI_BIN="$HW/bin" PYTHONUTF8=1 \\
     PYTHONPATH="$S;$TTW;$HW/python313/lib/site-packages-forced" \\
         "$HW/python313/python.exe" scripts/verify_entity_editor.py [shot.png]
 
 Covers both tabs: inherited cells grey and own cells bold (the Database
-Editor's look), typing into a selection, Animatable ticks, Add Assets,
+Editor's look), typing into a selection, Animatable ticks and the
+"No, rigged" note (kept out of Copy), Add Assets,
 Paste as New, a Root's assets edited for every shot using it, a shot given
-its own Root, the Root dialog's shared-Root warning, problems blocking
-Apply, Apply of both tabs through the real ``pipe.entity_files``, and the
-database afterwards. Prints OK/FAIL per check; exits 1 on any FAIL.
+its own Root, the Root dialog's shared-Root warning, the Multis tab
+(coverage ticks across a selection, the Multis cell's dialog, overlapping
+coverage refused), New Sequence…, problems blocking Apply, Apply of every tab through the
+real ``pipe.entity_files``, and the database afterwards. Prints OK/FAIL per check; exits 1 on any FAIL.
 """
 
 import sys
@@ -28,10 +31,11 @@ import _harness  # noqa: E402,F401  (temp project, python/ on sys.path)
 from _harness import reset_project  # noqa: E402
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QPushButton  # noqa: E402
 
 from tumblepipe.api import default_client  # noqa: E402
 from tumblepipe.config import entity_sheet as es  # noqa: E402
+from tumblepipe.config.department import list_departments  # noqa: E402
 from tumblepipe.pipe import entity_files  # noqa: E402
 from tumblepipe.util.uri import Uri  # noqa: E402
 
@@ -67,12 +71,22 @@ config.add_entity(SHOTS / 'sq010', {'scene': 'scenes:/forest'})
 for shot, own in (('SH010', {'frame_end': 1050}), ('SH020', {}), ('SH030', {})):
     config.add_entity(SHOTS / 'sq010' / shot, own)
 
+# One shot Multi, covering the first two shot departments, with SH010.
+MULTIS = es.GROUPS_URI / 'shots'
+for uri in list(config.list_entity_uris(MULTIS)):
+    config.remove_entity(uri)
+POOL = [d.name for d in list_departments('shots', include_generated=False)]
+config.add_entity(MULTIS / 'Crowd', {
+    'members': ['entity:/shots/sq010/SH010'], 'departments': POOL[:2],
+})
+
 applied = []
 source = ee.EntityEditorSource(
     project='verify', config=config,
     retire=entity_files.delete_entity, rename=entity_files.rename_entity,
     rename_blocker=lambda uri: '',
     on_applied=lambda: applied.append(True),
+    rigged=lambda uri: uri == ASSETS / 'VEH' / 'car',
 )
 window = ee.EntityEditorWindow(source, kind='shots')
 window.show()
@@ -154,6 +168,13 @@ _row, rock = cell(assets, 'PROP', 'rock', es.ANIMATABLE)
 _row, tree = cell(assets, 'PROP', 'tree', es.ANIMATABLE)
 check('Animatable shows a box', rock.data(Qt.CheckStateRole) == Qt.Checked
       and tree.data(Qt.CheckStateRole) == Qt.Unchecked)
+car_row, car = cell(assets, 'VEH', 'car', es.ANIMATABLE)
+check('a rigged, unticked asset says so', car.data() == 'No, rigged', car.data())
+check('its tooltip says what the rig does', car.data(Qt.ToolTipRole).startswith('Has a rig published'))
+check('an unrigged one says nothing extra', tree.data() == 'No' and rock.data() == 'Yes', (tree.data(), rock.data()))
+assets.select_cells([(car_row.id, assets.columns.index(es.ANIMATABLE))])
+assets._copy()
+check('Copy leaves the rig note out', QApplication.clipboard().text() == 'No', QApplication.clipboard().text())
 assets.proxy.setData(tree, Qt.Checked, Qt.CheckStateRole)
 check('ticking Animatable sets it', assets.sheet.value(assets.sheet.row(_row.id), es.ANIMATABLE) is True)
 add = ee.AddAssetsDialog(assets, 'PROP')
@@ -209,6 +230,96 @@ check('Add Assets is as tall as its content', sized.height() == sized.sizeHint()
       (sized.height(), sized.sizeHint().height()))
 sized.reject()
 
+# ── Multis ─────────────────────────────────────────────────────────────────
+
+_row, crowd_cell = cell(shots, 'sq010', 'SH010', es.MULTIS)
+check('the Multis column names the Multi', crowd_cell.data() == 'Crowd', crowd_cell.data())
+check('a Multis tab', window._tabs.tabText(window._tab_index('multis')) == 'Multis')
+window.show_kind('multis')
+app.processEvents()
+multis = window.multis_pane
+multis.set_context('shots')
+crowd = next(m for m in shots.sheet.multis if m.name == 'Crowd')
+check('the Multis tab has a box per department',
+      list(multis.columns[3:]) == list(shots.sheet.base.pool) and multis.columns[3:3 + 2] == POOL[:2],
+      multis.columns)
+
+# The Multis cell's dialog: SH020 and SH030 join Crowd.
+ids = [r.id for r in shots.sheet.rows if r.name in ('SH020', 'SH030')]
+
+
+def _join(dialog):
+    dialog.list.set_state(crowd.id, Qt.Checked)
+    dialog._on_ok()
+    return QDialog.Accepted
+
+
+ee.MultiMembershipDialog.exec = _join
+shots.select_cells([(i, shots.columns.index(es.MULTIS)) for i in ids])
+shots.edit_multis(shots.index_of(ids[0], es.MULTIS))
+check('the Multis cell joins the selected shots',
+      all(i in crowd.members for i in ids), crowd.members)
+_row, joined = cell(shots, 'sq010', 'SH020', es.MULTIS)
+check('a joined shot shows the Multi, pending',
+      joined.data() == 'Crowd' and joined.data(Qt.BackgroundRole) == ee._PENDING)
+check('its status says so', 'Multis changed' in shots.model.status(shots.sheet.row(ids[0]))[0])
+
+# Coverage: untick the second department, tick the third.
+column = multis.columns.index(POOL[1])
+multis.tick(multis._index_of(crowd.id, column), False)
+if len(POOL) > 2:
+    multis.tick(multis._index_of(crowd.id, multis.columns.index(POOL[2])), True)
+check('ticking sets the coverage',
+      set(crowd.departments) == {POOL[0], *POOL[2:3]}, crowd.departments)
+check('the Multis tab shows it is changed', window._tabs.tabText(window._tab_index('multis')) == 'Multis *')
+
+# Overlap is refused: a new Multi covering POOL[0] over SH010 too.
+shots.edit(lambda: shots.sheet.add_multi('Hero', [shots.sheet.rows[0].id], POOL[:1]))
+hero = next(m for m in shots.sheet.multis if m.name == 'Hero')
+check('overlapping coverage is a problem', bool(shots.sheet.multi_problems()), shots.sheet.multi_problems())
+check('Apply is disabled while a Multi overlaps', not window._apply_button.isEnabled())
+shots.edit(lambda: shots.sheet.set_multi_departments(hero.id, POOL[3:4]))
+check('the overlap clears', not shots.sheet.multi_problems(), shots.sheet.multi_problems())
+check('Apply is enabled again', window._apply_button.isEnabled())
+if len(sys.argv) > 1:
+    window.show_kind('multis')
+    multis.select_cells([(crowd.id, column)])
+    app.processEvents()
+    window.grab().save(sys.argv[1].replace('.png', '-multis.png'))
+window.show_kind('shots')
+
+# ── New Sequence… ──────────────────────────────────────────────────────────
+
+check('a New Sequence… button', any(
+    b.text() == 'New Sequence…' for b in shots.findChildren(QPushButton)
+))
+taken = ee.NewGroupDialog(shots.sheet)
+taken._name.setText('SQ010')
+check('a name taken in another case is refused',
+      'differs only by case' in taken.problem() and not taken._create.isEnabled(), taken.problem())
+taken.reject()
+
+
+def _name_it(dialog):
+    dialog._name.setText('sq090')
+    return QDialog.Accepted
+
+
+ee.NewGroupDialog.exec = _name_it
+shots.new_group()
+check('New Sequence… adds an empty sequence, pending', shots.sheet.new_groups == ('sq090',))
+check('the dropdown shows it, marked new', shots._group_filter.currentText() == 'sq090 (new)',
+      shots._group_filter.currentText())
+pending = ' '.join(window._pending()[0])
+check('Apply counts it', '1 new sequence' in pending, pending)
+shots.remove_new_group('sq090')
+check('removing the one shown shows every row again',
+      shots.proxy.group == '' and shots.proxy.rowCount() == shots.model.rowCount() > 0,
+      (shots.proxy.group, shots.proxy.rowCount(), shots.model.rowCount()))
+shots.undo()
+check('undo brings it back', shots.sheet.new_groups == ('sq090',))
+shots.focus('')
+
 # ── Apply ──────────────────────────────────────────────────────────────────
 
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
@@ -236,6 +347,15 @@ check('animatable written', config.get_own_properties(ASSETS / 'PROP' / 'tree').
 spark = config.get_own_properties(ASSETS / 'FX' / 'spark')
 check('new asset in a new category, with its name', spark == {'name': 'spark'}, spark)
 check('retired new row was never created', config.get_own_properties(ASSETS / 'sq010') is None)
+stored = config.get_own_properties(MULTIS / 'Crowd')
+check('Multi members written', stored['members'] == [
+    'entity:/shots/sq010/SH010', 'entity:/shots/sq010/SH020', 'entity:/shots/sq010/SH030',
+], stored)
+check('Multi coverage written', stored['departments'] == [POOL[0], *POOL[2:3]], stored)
+check('the new sequence is created, empty', config.get_own_properties(SHOTS / 'sq090') == {},
+      config.get_own_properties(SHOTS / 'sq090'))
+hero = config.get_own_properties(MULTIS / 'Hero')
+check('new Multi created', hero == {'members': ['entity:/shots/sq010/SH010'], 'departments': POOL[3:4]}, hero)
 
 window.close()
 app.processEvents()

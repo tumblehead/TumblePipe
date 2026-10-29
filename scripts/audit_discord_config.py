@@ -38,7 +38,7 @@ from pathlib import Path
 # this in step with `grep -rn "channel_name\s*=\s*'" python/`.
 ADDRESSED_CHANNELS = {
     'renders': 'render + playblast notifies (batch_submit)',
-    'exports': 'publish, stage, propagate + lookdev/comp export notifies',
+    'exports': 'publish, stage + lookdev/comp export notifies',
     'previews': 'th::build_comp and th::lookdev_studio previews',
     'comp': 'th::build_comp composite notifies',
 }

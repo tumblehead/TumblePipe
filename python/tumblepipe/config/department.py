@@ -124,8 +124,7 @@ def reorder_departments(context: str, names: list[str]):
     * the staged build sublayers departments in ``reversed()`` pool order, so
       **later in the pool = stronger USD layer**;
     * "downstream" is ``names[index + 1:]`` — it drives the Downstream Exports
-      menu, import_shot's layer/asset exclusion, the publish task graph, and
-      the propagate/update farm jobs;
+      menu, import_shot's layer/asset exclusion, and the publish task graph;
     * AOV precedence ranks by pool index.
 
     So reordering an established pool restages composition for every existing

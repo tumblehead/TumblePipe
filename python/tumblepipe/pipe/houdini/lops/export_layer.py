@@ -14,15 +14,19 @@ from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.channels import CHANNEL_KEY, list_channels
+from tumblepipe.config.multi_timeline import shift_block_range
 from tumblepipe.config.timeline import get_fps
 from tumblepipe.pipe.houdini import prim_metadata, prim_queries
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.farm_node import FarmNode
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
+from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
+from tumblepipe.pipe.usd.retime import shift_directory
 from tumblepipe.pipe.houdini.export_checks import (
     ExportLayerError,
     check_no_dropped_assets,
+    check_no_root_asset_imports,
     cook_errors,
     list_expected_asset_uris,
     make_portable,
@@ -36,7 +40,7 @@ from tumblepipe.pipe.paths import (
     latest_hip_file_path
 )
 from tumblepipe.pipe.usd.sublayer_refs import add_sublayer
-from tumblepipe.pipe.context import save_layer_context
+from tumblepipe.pipe.context import save_layer_context, sourced_from_root
 from tumblepipe.util.io import copy_version_contents
 from tumblepipe.pipe.provenance import scene_producer
 from tumblepipe.pipe.build import sourced_from_shot, arrived_from_downstream
@@ -63,7 +67,8 @@ def _scrape_assets(root, entity_uri, department_name, version_name, expected_ass
     asset workfile does not track the assets of a shot layer it imported for
     context; a shot export does not track an asset a downstream department
     layer brought in, unless this workfile imports it too. A shot export
-    records itself in each tracked asset's inputs.
+    records itself in each tracked asset's inputs. Neither tracks an asset
+    of a shot's Root: those are the Root's.
     """
     is_shot_export = entity_uri.segments[0] == 'shots'
     downstream_departments = (
@@ -76,6 +81,12 @@ def _scrape_assets(root, entity_uri, department_name, version_name, expected_ass
         asset_metadata = asset_info['metadata']
         asset_uri_str = asset_metadata['uri']
 
+        if sourced_from_root(asset_metadata.get('inputs')):
+            logger.info(
+                "Not tracking %s at %s: it is the shot's Root's",
+                asset_uri_str, prim_path,
+            )
+            continue
         if not is_shot_export and sourced_from_shot(asset_metadata.get('inputs')):
             logger.info(
                 "Not tracking %s at %s: it came in through a shot layer",
@@ -153,6 +164,26 @@ def _add_shared_sublayer(layer_path: Path, entity_uri, department_name: str):
     logger.info(f"Added shared layer sublayer: {shared_uri}")
 
 
+def _retype_asset_structure(layer_path: Path, entity_uri):
+    """Give the asset prim and its geo/blshp/mtl child the types the
+    structure validator expects, where it only warned (no transform)."""
+    from pxr import Sdf
+    from tumblepipe.pipe.houdini.validators.asset_structure import (
+        retype_asset_structure,
+    )
+    layer = Sdf.Layer.FindOrOpen(path_str(layer_path))
+    if layer is None:
+        raise ExportLayerError(f"Could not open the exported layer {layer_path}")
+    changes = retype_asset_structure(
+        layer, prim_queries.uri_to_prim_path(entity_uri)
+    )
+    if not changes:
+        return
+    if not layer.Save():
+        raise ExportLayerError(f"Could not save the exported layer {layer_path}")
+    logger.info("Retyped in the published layer:\n" + "\n".join(changes))
+
+
 def _copy_to_version(temp_path: Path, version_path: Path):
     """Copy the exported folder's contents into the version folder.
 
@@ -163,7 +194,7 @@ def _copy_to_version(temp_path: Path, version_path: Path):
     copy_version_contents(temp_path, version_path)
 
 
-class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
+class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
 
     POOL_PARM = 'export_pool'
     PRIORITY_PARM = 'export_priority'
@@ -221,10 +252,6 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
         selected.sort(key=department_names.index)
         return selected
 
-    def get_export_type(self) -> str:
-        """Get export type ('local' or 'farm')."""
-        return self.parm('export_type').eval()
-
     def _update_labels(self):
         """Update label parameters to show current entity/department selection."""
         self.parm('entity_label').set(self._entity_label())
@@ -238,8 +265,9 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
         """
         Execute export.
 
-        If force_local=True, executes directly (used by ProcessDialog callbacks).
-        Otherwise, opens the ProcessDialog for task selection and execution.
+        If force_local=True, exports here and now: the publish dialog's
+        *In this session*, and the farm's publish worker. Otherwise, opens
+        the ProcessDialog for task selection and execution.
         """
         if force_local:
             return self._execute()
@@ -250,21 +278,22 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
         open_process_dialog_for_node(self, dialog_title="Export Layer")
 
     def _execute(self):
-        """Internal execution - called by ProcessDialog callbacks.
+        """The export itself, in this process.
+
+        Always local, whatever the node's **Type** parm says. Where an
+        export runs is chosen by whoever runs it: the publish dialog's mode
+        (a farm mode calls ``_export_farm`` itself) or being the farm's
+        publish worker. Following the parm, a workfile saved with Type =
+        Farm (the setting that enables Downstream Exports) made *In this
+        session* submit a farm job instead, and the farm's publish worker
+        submit yet another publish instead of exporting.
 
         The config cache is refreshed once up front in
         open_process_dialog_for_node (the single entry point for every
         interactive export/publish flow), so entity-derived values resolved
         here are read from fresh on-disk config.
         """
-        export_type = self.get_export_type()
-        match export_type:
-            case 'local':
-                return self._export_local()
-            case 'farm':
-                return self._export_farm()
-            case _:
-                assert False, f'Unknown export type: {export_type}'
+        return self._export_local()
 
     def _export_local(self):
         native = self.native()
@@ -289,6 +318,9 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
         # on 1s (export_f3) matches the farm exporter, which has always
         # discarded step (see the farm submit path and export_houdini).
         render_range = frame_range.full_range()
+        # On a Multi's shared timeline the shot's frames are cooked where
+        # the shot sits there, then written back on the shot's own frames.
+        time_offset = self.get_time_offset()
         user_name = get_user_name()
         timestamp = dt.datetime.now()
         version_path = next_export_path(entity_uri, channel_name, department_name)
@@ -305,6 +337,7 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
             str(uri) for uri in list_expected_asset_uris(native)
             if uri != entity_uri
         }
+        check_no_root_asset_imports(entity_uri, expected_asset_uris)
         assets_by_uri, asset_inputs = _scrape_assets(
             root, entity_uri, department_name, version_name, expected_asset_uris
         )
@@ -322,9 +355,16 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
                 entity_uri, channel_name, department_name, version_name
             )
             self._write_layer(
-                temp_path, layer_file_name, render_range, self.get_batch_size()
+                temp_path, layer_file_name,
+                shift_block_range(render_range, time_offset),
+                self.get_batch_size(),
             )
+            if time_offset != 0:
+                report_progress(f"moving frames back by {time_offset}")
+                shift_directory(temp_path, -time_offset)
             layer_path = temp_path / layer_file_name
+            if entity_uri.segments[0] == 'assets':
+                _retype_asset_structure(layer_path, entity_uri)
             make_portable(layer_path)
             _add_shared_sublayer(layer_path, entity_uri, department_name)
 
@@ -345,6 +385,8 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
                 parameters=dict(
                     assets=_parameter_assets(assets_by_uri),
                     aov_names=aov_names,
+                    # Provenance only: the layer is on the shot's frames.
+                    **({'time_offset': time_offset} if time_offset else {}),
                 ),
                 inputs=list(map(json.loads, asset_inputs)),
                 producer=scene_producer(native.path())
@@ -485,35 +527,34 @@ class ExportLayer(FrameRangeNode, FarmNode, EntityNode):
             'workfile_path': path_str(workfile_dest)
         }
 
+        # A failed submit raises, so the publish dialog marks the task failed
+        # (with the error in its report). It used to show the error and
+        # return, and the task read as completed with nothing submitted.
         from tumblepipe.farm.pipelines import publish as publish_job
         try:
             publish_job.submit(config, paths)
         except Exception as e:
-            hou.ui.displayMessage(
-                f"Failed to submit farm job: {str(e)}",
-                severity=hou.severityType.Error
-            )
-            return
+            raise ExportLayerError(f'Failed to submit farm job: {e}') from e
 
+        # Where it went: the publish dialog submits under its Run on choice
+        # (farm.backend.using).
+        from tumblepipe.farm import backend as farm_backend
+        backend = farm_backend.selected()
+        where = 'this machine' if backend == farm_backend.LOCAL else 'farm'
         native = self.native()
         timestamp = dt.datetime.now()
         user_name = get_user_name()
         native.setComment(
-            f'farm export submitted:\n'
+            f'{where} export submitted:\n'
             f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")}\n'
             f'by {user_name}\n'
             f'downstream: {", ".join(downstream_deps) if downstream_deps else "None"}'
         )
         native.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+        # No dialog per export: the publish dialog that runs this says where
+        # the run's jobs went and opens the Farm Manager. One modal per
+        # channel used to stop the run until each was dismissed.
 
-        downstream_msg = f"\nDownstream: {', '.join(downstream_deps)}" if downstream_deps else ""
-        hou.ui.displayMessage(
-            f"Export job submitted to farm\n"
-            f"Department: {department_name}"
-            f"{downstream_msg}",
-            title="Farm Export Submitted"
-        )
-    
     def open_location(self):
         entity_uri = self.get_entity_uri()
         if entity_uri is None:

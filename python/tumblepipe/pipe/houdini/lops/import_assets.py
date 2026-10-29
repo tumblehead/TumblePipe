@@ -10,7 +10,8 @@ from tumblepipe.config.department import (
     list_entity_departments,
 )
 from tumblepipe.config.channels import CHANNEL_KEY, list_channels
-from tumblepipe.pipe.paths import list_version_paths
+from tumblepipe.pipe.paths import current_staged_path, list_version_paths
+from tumblepipe.pipe.usd.instances import copies_are_animated
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 import tumblepipe.pipe.houdini.nodes as ns
@@ -487,10 +488,12 @@ class ImportAssets(EntityNode):
         # Resolve version name (resolve 'latest' to actual version)
         version_name = self.get_version_name(index)
         if version_name == 'latest':
-            version_names = self.list_version_names(index)
-            actual_versions = [v for v in version_names if v not in ('latest', 'current')]
-            if actual_versions:
-                version_name = actual_versions[-1]
+            # What the resolver's latest mode loads: the newest finished build
+            asset_uri = self.get_entity_uri(index)
+            if asset_uri is not None:
+                latest = current_staged_path(asset_uri, self.get_channel_name(index))
+                if latest is not None:
+                    version_name = latest.name
         self.parm(f'version_label{index}').set(version_name)
 
     def _initialize(self):
@@ -585,10 +588,9 @@ class ImportAssets(EntityNode):
             # per-instance overrides (USD forbids editing descendants beneath an
             # instance), so an animatable character imported this way would lose
             # its individual animation and read as default pose. This mirrors
-            # import_shot.py, which sets the same makeinstances flag from the same
-            # 'animatable' property with the same default — keep the two in step.
-            properties = api.config.get_properties(asset_uri)
-            animatable = properties.get('animatable', False) if properties else False
+            # import_shot.py: both read copies_are_animated, which also counts a
+            # published rig as animatable.
+            animatable = copies_are_animated(asset_uri)
             duplicate_node = dive_node.createNode(
                 'duplicate',
                 f'{uri_name}_duplicate'

@@ -6,7 +6,7 @@ what refuses to.
 
 ## The quick actions
 
-The Asset Browser's toolbar carries six quick actions; all but **Farm Submit** act on
+The Asset Browser's toolbar carries these quick actions; all but **Farm Submit** and **Entity Editor** act on
 the **currently loaded** `.hip`. The toolbar label is the loaded hip's filename; every action
 first resolves the scene's pipeline context (entity, department, version) and
 tells you when there is none.
@@ -16,6 +16,7 @@ tells you when there is none.
 | **Save** | Save current scene | Saves the scene as the **next workfile version** of its own context (never in place). With *Ask for a version note on save* on (the default), a **Save Version** dialog asks "Note for the next `<dept>` version of `<entity>` (after `vNNNN`) — optional:". Cancel there aborts the save without burning a version. Status line: `Saved <file>`. |
 | **Publish** | Publish exports | Opens the process dialog (title **Process: Publish**) with every export and build task for the scene's entity, current department **and all departments downstream of it**. See below. |
 | **Render** | Submit render jobs for the current scene's entity | Opens the [Farm Submit dialog](submit-jobs.md) with the loaded scene's entity's **Render** cell ticked — or every member's, for a Multi workfile — and the Playblast / Render cut pinned to the workfile's department. With no pipeline workfile loaded it opens with nothing ticked. |
+| **Entity Editor** | The project's assets and shots as spreadsheets: add, edit and retire them | Opens the [Entity Editor](entity-editor.md) of the loaded workfile's project, on its shot or asset's tab and group with its row selected. An untitled or off-pipeline scene opens it on **Shots**, asking for the project when several are registered. |
 | **Farm Submit** | Publish, playblast and render any shots or assets on the farm | Opens the [Farm Submit dialog](submit-jobs.md) on its **Shots** tab (**Assets**, when the loaded scene is an asset's; switch tabs for the other) with the loaded workfile's entity's publish cell for its department ticked (every member's, for a Multi workfile). Works with no scene loaded, with nothing ticked. |
 | **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every import node in place (`import_shot`, `import_assets`, `import_asset`, `import_layer`, `import_rigs`, `import_rig`, `import_model`), so `current` and `latest` pick up the newest publish. Status line: `Imports updated to latest published versions (N node(s)).` If any node fails you get a warning dialog instead — the scene may still reference older versions. |
 | **Reload** | Reload current scene | Reloads the hip from disk. Unsaved changes get the **Save Scene** prompt ("Save a new version before switching?" with **Save new version** / **Discard changes** / **Cancel**) — or a silent version-up when *Autosave (version up) on scene change* is on. After the load the timeline is re-applied and, if *Auto-import latest on workfile open* is on, imports are refreshed. |
@@ -83,7 +84,7 @@ but left unchecked; tick them to publish them in the same run.
 | ⤷ `Export Shared` | a connected `th::layer_split` | Writes the shared layer under `_shared/<dept>/`. |
 | ⤷ `Export (<channel>)` | each `th::export_layer` | One child per channel the department exports. |
 | `Build USD` → `Build USD (<channel>)` | one per channel found on the export nodes | Department column reads `staged`. Depends on every export row of the entity. |
-| `Export rig: <asset>` | `th::export_rig` (rig department only) | Local only — no farm mode. |
+| `Export rig: <asset>` | `th::export_rig` (rig department only) | Local only — no farm mode. A cook that writes no rig file fails the task and removes its empty version folder. |
 
 Bypassed nodes, nodes addressing another entity, and `layer_split` nodes not
 wired into an export node are left out. Ticking a parent ticks its children;
@@ -123,17 +124,24 @@ departments to the Multi: the file still belongs to the shot. See
 
 | Mode | Default | Effect on the tree |
 |---|---|---|
-| **Local** | yes | Executes in this Houdini session. Only the **current department's** export rows (and the builds) are enabled; downstream departments are unticked. |
-| **Farm** | | Submits to Deadline. Every department listed — current and downstream — is enabled. |
+| **In this session** | yes | Executes now, in this Houdini session. Only the **current department's** export rows (and the builds) are enabled; downstream departments are unticked. |
+| **This machine** | | Submits the farm jobs to the background queue on this machine: they run one task at a time, as a render node would run them. Every department listed — current and downstream — is enabled. |
+| **Render farm** | | Submits the same farm jobs to Deadline. The same tasks as *This machine* are enabled. |
 
-The group is hidden when the tasks only support one mode (a Submit Jobs
-batch is farm-only, a rig export is local-only).
+Moving between *This machine* and *Render farm* keeps your ticks. The farm
+choice is shared with Farm Submit's **Run on** and remembered: a farm-only
+dialog opens on the one you used last. *Render farm* without the Deadline
+Client says so on **Execute** and submits nothing. See
+[Running farm jobs on this machine](../deadline.md#running-farm-jobs-on-this-machine).
+
+The group is hidden when the tasks can only run in this session (a rig
+export). A farm-only list (a Submit Jobs batch) hides *In this session*.
 
 ### Running it
 
 1. **Select All** / **Select None** adjust the checkboxes; the status line
-   reads `Ready to execute N task(s) locally` (or `on farm`), or `No tasks
-   selected`.
+   reads `Ready to execute N task(s) in this session` (or `on this machine,
+   in the background`, `on the render farm`), or `No tasks selected`.
 2. **Execute** first **saves the hip in place** (the "Preparing..." step),
    then runs tasks top to bottom. The status line shows
    `Running: <parent> — <child>: <progress>` as each task reports.
@@ -147,7 +155,8 @@ batch is farm-only, a rig export is local-only).
    **Done** button (Execute and the selection buttons disappear; the
    execution mode locks). After a failed or cancelled run the footer stays
    as it was: fix the selection and **Execute** again to retry, or
-   **Close**.
+   **Close**. After a farm run (*This machine* or *Render farm*) a **Farm
+   Manager** button opens the submitted jobs, their progress and logs.
 
 Outcomes:
 
@@ -194,21 +203,35 @@ For each `Export (<channel>)` child, `th::export_layer` (source:
 composes the entity's staged file, `_staged/<channel>/vNNNN/<Entity>_vNNNN.usda`,
 which is what every import loads.
 
-## What Farm mode does
+## What the farm modes do
 
-Farm mode submits instead of writing:
+*This machine* and *Render farm* submit the same jobs instead of writing;
+only where they run differs:
 
 - each `Export (<channel>)` child submits a **publish** job for the
   department (plus the *Downstream Exports* ticked on the node), bundling
   the department's **latest saved workfile** — so an unsaved edit is not
   what the farm exports. A version still being saved is passed over for the
-  one before it. It needs a Deadline pool and a priority (the node's
-  **Pool** / **Priority** parms); you get a **Farm Export Submitted** dialog
-  naming the department and downstream departments, and the node's comment
-  reads `farm export submitted`. A submission error shows
-  `Failed to submit farm job: …`.
-- each `Build USD (<channel>)` child submits a **build** job (priority 50,
-  pool `houdini`).
+  one before it. It needs a pool and a priority (the node's **Pool** /
+  **Priority** parms, used wherever the job runs). The node's comment reads
+  `farm export submitted` (or `this machine export submitted`) with the
+  downstream departments. A submission error fails the task with
+  `Failed to submit farm job: …` in the Error Report.
+
+When the run finishes, the status line says where the jobs went
+(`… — submitted to the render farm`, or `… — queued on this machine`) and
+the **Farm Manager** button opens them. A run no longer stops on a
+"submitted" message per export.
+
+The node's **Type** parm (*Local* / *Farm*) does not choose where an
+export runs: the dialog's mode does. *Farm* only enables the node's
+**Downstream Exports**. (Before 1.84, *In this session* on a node left on
+*Farm* submitted a farm job instead, and a farm publish of such a workfile
+submitted another publish instead of exporting.)
+- each `Build USD (<channel>)` child submits a **build** job with the
+  project's default pool and priority (`farm.default_pool`, the default
+  priority preset). A project with no default pool fails the task with a
+  message saying so.
 
 The farm publish task runs the same export code headlessly, then posts a
 Discord notify. It does **not** save a new workfile version: the export
@@ -248,7 +271,7 @@ Passed With Warnings**, or the issue list with a **Close** button.
 
 | Validator | Error messages (what fixes them) |
 |---|---|
-| `model_structure`, `blendshape_structure`, `lookdev_structure` | `Asset prim not found at path: <path>` (author the asset prim — `create_asset_model` does); `Asset prim must be of type 'Xform', found '<type>'`; `Missing required '<geo|blendshape|mtl>' child prim` (create the Scope under the asset); `'<name>' prim must be of type 'Scope', found '<type>'`. Warns `No entity URI provided` when the export node's Entity is unresolved. |
+| `model_structure`, `blendshape_structure`, `lookdev_structure` | `Asset prim not found at path: <path>` (author the asset prim — `create_asset_model` does); `Asset prim must be of type 'Xform', found '<type>'`; `Missing required '<geo|blendshape|mtl>' child prim` (create the Scope under the asset); `'<name>' prim must be of type 'Scope', found '<type>'`. A wrong type with no transform on it only warns (`... it will be published as a Scope` / `as an Xform`) and the export retypes it in the published layer: an asset prim with no type or a Scope becomes an Xform; a geo/blshp/mtl with no type or an Xform (what SOP Import makes) becomes a Scope. A transform on it, or any other type, stays an error. Warns `No entity URI provided` when the export node's Entity is unresolved. |
 | `rest_geometry` | Warnings only: `Mesh missing rest positions (primvars:rest or primvars:Pref)`, `Mesh missing normals (primvars:normals or normals)`. |
 | `material_bindings` | Warning only: `Mesh has no material binding`. |
 | `shot_root_prims` | `Disallowed root prim '<name>'. Only asset categories, collections, lights, cameras, Render, and scene are allowed.` — reparent the content under an allowed root. Houdini's own `/HoudiniLayerInfo` is ignored. A `/_METADATA` (from an upstream layer published before metadata moved to customData) is disallowed like any other root: re-export that upstream department. |
@@ -278,6 +301,7 @@ up in the Error Report:
 | `Entity URI is not set. Check 'Entity Source' setting or workfile context.` / `Department name is not set for entity: …` | The node cannot resolve its entity or department — save through the pipeline or set the parms explicitly. |
 | `Frame range could not be determined for entity: …` | The entity's config resolves no frame range. Set one on the entity, or switch the node's frame range source to **From settings**. |
 | `Export aborted: channel '<x>' is not a channel of <entity> (listed: …)` | The node's **Channel** parm names an unlisted channel; it would otherwise publish under `default`. Fix the parm or register the channel. See [Channels](../composition.md#channels-and-why-they-are-not-usd-variants). |
+| `Export aborted: this workfile imports asset(s) that the shot's Root '<root>' already provides: …` | An import node in a shot workfile brings in an asset the shot's Root already gives it through `import_shot`. A Root's assets belong to the Root, so no export may claim them. Remove the asset from the import node, or change its count in the Root (Entity Editor, **Shots** tab, **Assets**). See [A shot's Root assets belong to the Root](../composition.md#a-shots-root-assets-belong-to-the-root). |
 | *skipped* — `Nothing exported for channel '<x>': the node <path> has no stage input connected.` | Not a failure: a disconnected export node is skipped and its siblings still run. |
 | `Nothing exported for channel '<x>': the input of <path> failed to cook.` followed by `Cook error:` | The node is connected, but what feeds it errored — look for the red node upstream; the quoted error names it. On the farm, a rig that cooks at your desk but not here usually means a package the project uses is missing from the job (see [Farm job: rig fails to compile](../troubleshooting.md#farm-job-failed-rig-fails-to-compile-failed-to-load-subnet)). |
 | `Export aborted: asset(s) on the stage carry no pipeline metadata …` / `… asset(s) configured on upstream import nodes carry no pipeline metadata …` | An imported asset lost its `customData` tag and would vanish downstream. Re-run the import node (its **Import** button) and re-export; to bake an asset in on purpose set the import node's *Import Mode* to Inline. See [Dropped-metadata guard](../composition.md#dropped-metadata-guard). |

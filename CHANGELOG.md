@@ -12,6 +12,32 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.83.0 — 2026-10-28
+
+### Features
+- feat(templates): animation lists only rigged assets, a Multi gets a playblast per shot (`7e9010f5`)
+- feat(asset_browser): bare shot names inside a sequence (`5f60d97b`)
+
+### Fixes
+- fix(playblast): an empty Camera is the camera its menu shows (`41b4b0d9`)
+- fix(playblast): show an unresolved parm as a warning, not a traceback (`6510820a`)
+- fix(import_rigs): skip rows whose asset has no rig published (`c8d1bd90`)
+- fix(asset_browser): rig deck card no longer imports into LOPs (`a93661ed`)
+- fix(scripts): changelog ignores tags from an unrelated history (`afe5f19f`)
+
+### Documentation
+- docs: playblast empty Camera means the camera the menu shows (`4ae2574a`)
+- docs: import_rigs skips unrigged assets, Multi playblast, config v15/v16 (`630cdb97`)
+- docs: shot card names, non-draggable rig deck items (`4bf91f98`)
+- docs: regenerate CHANGELOG.md for v1.82.2 (`47b1d0fa`)
+
+### Tests
+- test: playblast buttons show node errors; Multi template playblast per member (`935b8c1c`)
+- test: skip case-variant Multi names in the open-workfile property (`831b7cb6`)
+
+### Chores
+- chore: correct comments that tied Magnus's playblast report to Multis (`72b49c45`)
+
 ## v1.82.2 — 2026-10-27
 
 ### Fixes

@@ -66,6 +66,30 @@ def _show_stage_in_network_editors() -> None:
         pane_tab.setPwd(stage)
 
 
+def _stage_shot_roots(entity_uri) -> None:
+    """Bring a new workfile's shots up to date with their Roots.
+
+    A shot workfile's own shot, a shots Multi's members; nothing for an
+    asset. A failure is logged and the workfile is still made: it then
+    imports what the shot had before, as it did without this.
+    """
+    from tumblepipe.pipe.root_staging import sync_roots
+    segments = list(entity_uri.segments)
+    if not segments or segments[0] != 'shots':
+        return
+    if entity_uri.purpose == 'groups':
+        from tumblepipe.config import groups as grp_mod
+        group = grp_mod.get_group(entity_uri)
+        shots = [] if group is None else list(group.members)
+    else:
+        shots = [entity_uri]
+    if not shots:
+        return
+    result = sync_roots(shots)
+    for uri, why in result.failures:
+        log.warning("Staging %s's Root before the template: %s", uri, why)
+
+
 def _action(label: str):
     """Make an ``(asset_id, dept, ...)`` action method its own boundary.
 
@@ -580,6 +604,11 @@ class WorkfileManager:
                 # from an empty /stage.
                 template_applied = template_path.exists()
                 if template_applied:
+                    # The template's import_shot (and animation's rig scrape,
+                    # inside create) imports nothing for a shot with no
+                    # staged build, or the old Root's assets for one whose
+                    # Root changed: bring its files up to date first.
+                    _stage_shot_roots(entity_uri)
                     from tumblepipe.pipe.houdini import playbar
                     from tumblepipe.pipe.houdini.scene_imports import (
                         refresh_scene_imports,

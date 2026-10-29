@@ -279,8 +279,9 @@ them is the open `.hip`'s filename.
 | Button | Tooltip | Does |
 |---|---|---|
 | **Save** | Save current scene | Saves the open scene as the **next version** of its own department. Asks for a note first. See [Workfiles → Saving](workfiles.md#saving-a-new-version). |
-| **Publish** | Publish exports | Opens the **Publish** process dialog for the open scene's entity, with every export task listed and a local/farm choice. |
+| **Publish** | Publish exports | Opens the **Publish** process dialog for the open scene's entity, with every export task listed and a choice of where to run them: in this session, on this machine in the background, or on the render farm. |
 | **Render** | Submit render jobs for the current scene's entity | Opens the [Farm Submit](submit-jobs.md) dialog with the scene's shot or asset's **Render** cell ticked (for a Multi workfile, its member shots'), and the preview cut pinned to the open workfile's department. With no workfile open it opens with nothing ticked. |
+| **Entity Editor** | The project's assets and shots as spreadsheets: add, edit and retire them | Opens the [Entity Editor](entity-editor.md) of the open workfile's project, on its shot or asset's tab and group with its row selected (on **Shots** with no workfile open). |
 | **Farm Submit** | Publish, playblast and render any shots or assets on the farm | Opens the [Farm Submit](submit-jobs.md) dialog on its **Shots** tab (**Assets** from an asset workfile; switch tabs for the other), the open workfile's publish cell ticked (nothing, with no workfile open): tick publish, playblast and render cells for any number of shots or assets and submit them in the background. |
 | **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every `th::import_*` node. Status: *Imports updated to latest published versions (N node(s)).* If any node failed a warning dialog says how many. See [Composition → Picking up new versions mid-session](../composition.md#picking-up-new-versions-mid-session). |
 | **Reload** | Reload current scene | Reloads the open `.hip` from disk (after the unsaved-changes prompt), then re-applies the timeline and the import refresh. |
@@ -313,7 +314,7 @@ catalog contributes
 | **Select thumbnail…** / **Capture thumbnail** | See [Cards](#cards). |
 | **Departments…** | Which departments this entity uses (**Departments — *name***, tick boxes, **Use all (inherit)**, **Apply**); see [Configuration → Per-entity assignment](../configuration.md#per-entity-assignment). On a Multi it opens the coverage editor instead. |
 | **Open in Database Editor…** | Opens the **Database Editor** window on this entity. |
-| **Open in Entity Editor…** | Assets and shots. Opens the [Entity Editor](entity-editor.md) on the entity's tab and category or sequence, with it selected. |
+| **Open in Entity Editor…** | Assets, shots and Multis. Opens the [Entity Editor](entity-editor.md) on the entity's tab and category or sequence (a Multi: on the Multis tab), with it selected. |
 | **Clear Root** | Shots only, and only when a Root is set directly on the shot (not inherited from the sequence). Clears it. |
 | **Remove from Multi: *name*** / **Remove from Root: *name*** | One entry per container the entity belongs to. |
 
@@ -344,7 +345,7 @@ registered.
 | **New Asset** | **Name**; **Category** (dropdown of existing categories) | Started from a category row, the category is fixed. Refuses *Asset 'X' already exists in 'Y'.* |
 | **New Shot** | **Name**; **Sequence** (dropdown); **Frame Start** `1001`; **Frame End** `1100` | Started from a sequence row, the sequence is fixed. |
 | **New category** | **Category** (free text) | Creates an empty category. Refuses a name already used by a sequence. |
-| **Entity Editor** | a window, not a form | Every asset and shot of the project as spreadsheets: add, retime, choose a shot's assets, rename, retire. See [The Entity Editor](entity-editor.md). |
+| **Entity Editor** | a window, not a form | Every asset and shot of the project as spreadsheets: add shots, assets, sequences and categories, retime, choose a shot's assets, set up Multis, rename, retire. See [The Entity Editor](entity-editor.md). |
 | **New sequence** | **Sequence** (free text) | Creates an empty sequence. Refuses a name already used by a category. |
 | **New Multi** | **Name**; **Context** (`shots` or `assets`, default `shots`) | See [Multis and Roots](multis-and-roots.md#creating-a-multi). |
 | **New Root** | **Name** | See [Multis and Roots](multis-and-roots.md#creating-a-root). |

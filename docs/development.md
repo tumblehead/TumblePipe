@@ -508,6 +508,155 @@ The size constants in `vram/sizes.py` were measured in a live viewport;
 `src/vram/calibration/README.md` has the protocol and the scripts to measure
 them again.
 
+## Sequence player
+
+`src/player/` is a stand-alone Rust app (no Houdini) that plays shots' review
+media back to back, frame-accurately: playblasts and other movies through
+FFmpeg, and EXR sequences shown through OCIO. Artists start it from a shot
+card's **Play** entry ([Playing shots](asset-browser/play-shots.md)).
+`tumblepipe.pipe.review_playlist` finds each shot's takes, writes them as an
+OTIO timeline, and starts `bin/<platform>/th_player` on it. The player is its
+own cargo workspace:
+
+- `ffmpeg-sys`: FFmpeg bindings. They are generated once per platform and
+  committed (`src/bindings/<platform>.rs`, one per platform), so builds
+  need no libclang.
+- `media`: decoding and the decoded-frame buffer. It covers the movie frame
+  index with seek-and-decode, and EXR sequences through the `exr` crate:
+  layers, channels, multipart files, data windows and gaps. An EXR frame is
+  read whole, in 1 MB pieces, before it is decoded: the `exr` crate's own
+  reads are 8 KB each, a round trip apiece on the file server (a 40 MB
+  frame took 28 s from the NAS that way, 5 s read whole).
+  `Source::decode_while` stops between pieces once the frame is no longer
+  wanted. It links no GUI, so it is tested headless.
+- `playlist` (`th_playlist`): reads the OTIO playlist through otio-rs. The
+  takes of each shot are in the clip's `tumblepipe` metadata
+  (`{entity, take, fps, takes: [{label, department, version, kind, layer,
+  path}]}`). The timeline's metadata names the OCIO config. A clip without
+  that metadata plays its media reference. The takes come ordered by kind,
+  department (pipeline order), render layer and version. A department (and
+  a render's layer) is a *stream*. `Shot::version_step`,
+  `Shot::department_step` and `Shot::last_of_kind` move along that order;
+  the player's Up/Down keys are built on them.
+- `player`: the window, built on the in-house Primer UI crate. The `ocio`
+  feature (on by default) bakes the chosen display/view into a 3D LUT
+  through `ocio-rs`, which builds OpenColorIO from source. `track.rs` is
+  the track under the video (the clips, their thumbnails, the selection);
+  a right press on a clip names its shot to the take menu `main.rs` wraps
+  around it; `take_menu.rs` builds that menu's Source, Department
+  and Version submenus from the take shown.
+  `burnin.rs` writes the burn-ins over the picture, placed by the same fit
+  `video.wgsl` gives the frame.
+  `thumbnails.rs` makes each take's thumbnail on threads of its own, with a
+  fresh `Source`, so the engine's movie decoders keep their place; an EXR
+  take's waits until the frame on screen is in. `opener.rs` opens a take on
+  a thread of its own, so the window stays live while the file server
+  answers; until it has, the shot shows its old take and the keys step on
+  from the one opening. `Engine::replace_clip` swaps one shot's take in
+  place: that clip's frames go and every other clip's stay, and the EXR
+  reads still running for it stop. One engine worker decodes the movies and
+  six the EXR frames, so a movie never waits behind an EXR read; while the
+  playhead's EXR frame is read, no other EXR read starts. The controls are
+  built `.focusable(false)`, so the player's keys keep working after a click
+  on one.
+
+Primer and otio-rs are git dependencies that cargo fetches from 3db Gitea
+over plain HTTP (`http://10.100.36.15:3000/...`). Both are readable without
+credentials, so the studio network is all a build needs; CI needs no key.
+
+**FFmpeg.** The player links its own FFmpeg, not Houdini's.
+`.ci/build_ffmpeg.py` builds a decode-only, LGPL-only release into
+`build-ffmpeg-<platform>/install/`. On Windows it needs MSYS2 and Visual
+Studio; the Windows build worker has MSYS2 in `C:\msys64`. The player's
+build looks for FFmpeg there, or in `TH_FFMPEG_DIR`. Because FFmpeg is LGPL, it ships as
+separate shared libraries beside `th_player`, never linked statically.
+
+**Packaging.** `.ci/build_player.py --platform <platform>` runs as the
+`build-player` prepack script. It builds FFmpeg when there is none, then
+`th_player` in release, and copies the exe and FFmpeg's shared libraries into
+`bin/<platform>/`.
+
+- The Linux and macOS binaries carry an rpath of `$ORIGIN` or
+  `@executable_path`, so they find the libraries beside them. macOS FFmpeg is
+  built with `@rpath` install names for this.
+- A platform with no committed bindings regenerates them on its first build.
+  This needs libclang. Commit the file that build writes.
+- Primer is used without its default `os` feature (native menus and tray
+  icons). On Linux that feature links GTK and libxdo, which every artist
+  machine would then need.
+- All three platforms have been built from a clean clone on the build
+  workers, and the media and playlist tests pass on each.
+
+**Building and testing on Windows.** Run cargo from a Visual Studio developer
+environment (`vcvars64.bat`), because Git Bash's `link` is coreutils, not the
+MSVC linker.
+
+With both VS 2022 and VS 18 installed, use VS 2022's `vcvars64.bat`. The
+OpenColorIO build (cmake) takes its own Visual Studio generator. VS 18's
+vcvars mixed with that generator's compiler fails with `STL1001`.
+`build_player.py` picks VS 2022 and names its generator for you.
+
+From `src/player/`:
+
+```bat
+set PATH=%CD%\..\..\build-ffmpeg-windows-x86_64\install\bin;%PATH%
+cargo test --workspace
+cargo run --release -p th_player -- shot010.mp4 shot020.mp4
+cargo run --release -p th_player -- --ocio P:/proj/_config/ocio/tumblehead.ocio playlist.otio
+```
+
+The tests:
+
+- `media/tests/frame_accuracy.rs` decodes fixture movies whose frames encode
+  their own number, in every order, and checks each frame. Set
+  `TH_PLAYER_TEST_MOVIE` to a real playblast to also check that random access
+  matches a straight decode byte for byte.
+- `media/tests/exr_props.rs` writes random EXRs with the `exr` crate and reads
+  them back. They cover layers, multipart files, data windows, f16 and f32,
+  the default view, channel picking, frame-name splitting, gaps, and a
+  decode that stops once it is no longer wanted.
+- `media/tests/buffer_props.rs` covers the buffer. The tests in
+  `player/src/engine.rs` cover decode scheduling, including a simulated
+  interleaving showing that a layer/channel change, or a clip replaced by
+  another take, never leaves a stale frame, that a decode stopped for it is
+  no failure, that each worker takes only its own kind of frame, and that
+  no EXR read starts beside the playhead's. `colour.rs` covers the LUT
+  layout and shaper. `track.rs` covers seeking, thumbnail placement and how
+  a click changes the selection. `opener.rs` covers a take that does not
+  open and one asked for twice. A property there steps a shot through any
+  interleaving of asked-for takes and opens finishing, in any order, some
+  failing. The shot only shows an open take, and a take that finishes after
+  the shot moved on never shows. Once every open is done, the shot shows the
+  take last asked for. In `thumbnails.rs`, a property shows that a thumbnail
+  forgotten while it is being made (a display change) is never kept, even
+  when it is asked for again. `media/src/thumbnail.rs` covers scaling and
+  the colour of thumbnails. `media/src/exr_sequence.rs` reads files on and
+  around the 1 MB piece boundaries whole, and stops a read where asked.
+  `burnin.rs` checks that its picture is placed as the video fits the
+  frame: inside its bounds, its shape kept, centred. `take_menu.rs` checks
+  that each submenu lists its choices once (every kind, every stream of the
+  shown kind going to its newest version, the shown stream's versions newest
+  first) and marks only what is shown.
+- `playlist/tests/` reads a hand-written OTIO fixture, and the properties in
+  `playlist/src/lib.rs` cover stepping through versions, departments and
+  kinds, and reading a shot's sequence from its entity.
+- `tests/test_review_playlist.py` (minigun) checks take discovery against
+  playblasts and renders written to the harness project. It also has the
+  Python/Rust parity property: whatever `playlist_document` writes, the
+  Rust reader reads back the same shots, their sequences, takes (with
+  their kind, department, layer and version), chosen take and rate. It
+  builds `th_playlist`'s `playlist_lines` example (`tests/_cargo.py`), and
+  `.ci/test.sh` also runs `cargo test -p th_playlist`.
+
+Commit any new seeds proptest writes under `proptest-regressions/`.
+
+**Regenerating the bindings** (after an FFmpeg bump, or for a new platform)
+needs libclang (`LIBCLANG_PATH`):
+
+```bat
+cargo build -p th_ffmpeg_sys --features regenerate
+```
+
 ## HDA spare-parm UI harness
 
 `scripts/verify_import_shot_layer_stack.py` pins the import_shot Layer
@@ -944,6 +1093,58 @@ OnCreated reloads `build_comp`), writes its fixtures with the install's
 `hoiiotool` to a temp dir, and puts this checkout's `python/` first on
 `sys.path`. Run it with hython (e.g. TumbleTrove Desktop's `run_hython`).
 
+## Project HDA harness
+
+`scripts/verify_project_hda.py` drives **TumblePipe ▸ Create Project
+HDA...** ([Project HDAs](project-hdas.md)) end to end in a throwaway project:
+the menu entry's context expression as `OPmenu.xml` has it, `create` on SOP
+and LOP subnets (type, file, wiring, promoted spare parm, Tools.shelf
+submenu, no backups), the version bump and kept spelling, the dialog
+offscreen, and `show_dialog`'s Cancel, Create and failure paths. It then
+starts a second hython whose only extra package carries `hpm.toml`'s own
+`HOUDINI_OTLSCAN_PATH` entry and checks that session loads the files, keeps
+Houdini's stock assets, and files the Tab entries under the project. The
+naming rules themselves are `tests/test_project_hda.py`.
+
+```bash
+hython scripts/verify_project_hda.py
+```
+
+It sets `TH_*` and drops any already-imported tumblepipe before importing
+this checkout's, so a stale Houdini package's project (one workstation's
+sets `P:/growth`) is never written to; hython has no `hou.ui` or `hou.qt`,
+so it installs stand-ins that record what would have been shown. File-name
+checks read the directory listing, because `is_file()` ignores case on
+Windows and macOS and would pass a wrong spelling. `VERIFY_KEEP=1` keeps the
+temp project. Exits 1 on any failure.
+
+## Shared timeline harness
+
+`scripts/verify_multi_timeline.py` drives a shots Multi's
+[shared timeline](asset-browser/multis-and-roots.md#shared-timeline) in a
+throwaway project: two shots in a Multi with shared timeline and bookmarks
+on, the second placed at +10. It exports both through `th::export_layer`
+from the Multi's workfile and checks each published layer sits on its shot's
+own frames with the values cooked at its shared ones; checks the Time Offset
+modes (From Multi, None, Manual) on `import_shot` and `export_layer`; checks
+that the Sublayer LOP offset `import_shot` sets moves the published layer
+back to its shared frames; and checks the playbar span, one temporary
+bookmark per shot, bookmarks off leaving an artist's own bookmark, and 0
+outside a Multi. The pure logic is `tests/test_multi_timeline.py`.
+
+Compile the HDAs first, so the new parms exist:
+
+```bash
+hython .ci/compile_hdas.py
+HOUDINI_PACKAGE_SKIP=1 HOUDINI_PATH="<repo>;&" PYTHONPATH=<repo>/python \
+    TH_PIPELINE_PATH=<repo> hython scripts/verify_multi_timeline.py
+```
+
+Why the export rewrites samples instead of using a Time Shift LOP: Time
+Shift cooks its input at the other frame but stamps the samples there too,
+and a USD ROP writing through it collapses the range to a single sample.
+`VERIFY_KEEP=1` keeps the temp project. Exits 1 on any failure.
+
 ## Changing a department template
 
 A project copies `scripts/project_template/_config/templates/` when it is
@@ -1163,9 +1364,8 @@ the animation must be authored as time samples upstream.
   import nothing else, so both sides can load them.
 - **`pipelines/<name>.py`** builds a batch of jobs:
   `build(config, paths, temp_path, jobs, deps, depends_on)` and
-  `submit(config, paths)`, both on `pipelines/_batch.py`'s `submit_batch`, and a
-  command line (`python -m tumblepipe.farm.pipelines.<name> <config.json>`;
-  `update` takes `<department> <pool> <priority>`). `post_render` is the review
+  `submit(config, paths)`, both on `pipelines/_batch.py`'s `submit_batch`.
+  `post_render` is the review
   chain the render and composite pipelines end in; `batch_submit` is the Farm
   Submit dialog's per-entity submission.
 - **`submit/`** is the Qt-free half of the Farm Submit dialog: `settings`
@@ -1191,11 +1391,14 @@ ruff check --select E9,F python/tumblepipe/farm/
 `hpm build` produces the install image: it runs the `[stage].prepack`
 scripts (`build-resolver` cmake-builds the tumbleResolver USD plugin into
 `resolver/houdini<major>/`; `build-wizard` cargo-builds both hook apps
-(`tt_setup` and `tt_prepare`) into `bin/<platform>/`; `compile-hdas` collapses the
+(`tt_setup` and `tt_prepare`) into `bin/<platform>/`; `build-player` builds the
+sequence player and its FFmpeg into the same place ([Sequence
+player](#sequence-player)); `compile-hdas` collapses the
 expanded `otls/<name>/` sources into binary `.hda` files) and stages the
 tree per `[stage].include`/`exclude`. Requirements: cmake, a Rust
 toolchain, and at least one Houdini install. (The hook apps are
-Houdini-independent — `build-wizard` needs only cargo, no HFS.)
+Houdini-independent — `build-wizard` needs only cargo, no HFS; `build-player`
+also needs MSYS2 on Windows for FFmpeg's configure.)
 
 The resolver and VRAM hook build for the Houdini majors in
 `HPM_HOUDINI_MAJORS` (bare space-separated majors, e.g. `22`); without it

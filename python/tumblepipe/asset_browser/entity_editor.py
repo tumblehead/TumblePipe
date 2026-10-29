@@ -4,15 +4,16 @@
 with an **Assets** and a **Shots** tab laid out like Farm Submit's. Every
 entity is a row: category or sequence, name, start, end, length, pre/post
 roll and fps, plus Animatable for assets and the Root and the assets it
-imports for shots. The sheet edits them the way a spreadsheet does: select
-cells and type to set them all, copy and paste blocks, fill down, shift
-frame ranges, add rows from a name pattern or a pasted list, rename,
-retire, undo.
+imports for shots, and the Multis each belongs to. The sheet edits them
+the way a spreadsheet does: select cells and type to set them all, copy and
+paste blocks, fill down, shift frame ranges, add rows from a name pattern or
+a pasted list, add empty sequences and categories, rename, retire, undo. A third tab, **Multis**, sets Multis
+up: their members, and a tick box per department they cover.
 
 Values look the way the Database Editor shows them: inherited values are
 grey, values set on the entity itself are bright and bold, and edits not
 applied yet are tinted. Nothing is written until **Apply**, which writes
-both tabs.
+every tab.
 
 The model, its checks and the writes are
 :mod:`tumblepipe.config.entity_sheet`. This module is only the widgets: it
@@ -53,14 +54,16 @@ _TIMING = (es.FRAME_START, es.FRAME_END, es.LENGTH, es.ROLL_START, es.ROLL_END, 
 # Status sits beside the name it is about; the last column takes the spare
 # width.
 COLUMNS = {
-    'assets': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ANIMATABLE),
-    'shots': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ROOT, es.ASSETS),
+    'assets': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ANIMATABLE, es.MULTIS),
+    'shots': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ROOT, es.MULTIS, es.ASSETS),
 }
 _WIDTHS = {
     es.GROUP: 100, es.NAME: 110, STATUS: 150, es.FRAME_START: 64,
     es.FRAME_END: 64, es.LENGTH: 64, es.ROLL_START: 70, es.ROLL_END: 70,
-    es.FPS: 56, es.ANIMATABLE: 90, es.ROOT: 120, es.ASSETS: 220,
+    es.FPS: 56, es.ANIMATABLE: 90, es.ROOT: 120, es.MULTIS: 150, es.ASSETS: 220,
 }
+#: Edited through a dialog, never typed or pasted into.
+_DIALOG_COLUMNS = frozenset({es.ASSETS, es.MULTIS})
 _NUMBERS = frozenset({
     es.FRAME_START, es.FRAME_END, es.LENGTH, es.ROLL_START, es.ROLL_END, es.FPS,
 })
@@ -104,6 +107,9 @@ _AMBER = _brush(WARNING)
 # what Apply does with a cell, and Houdini's amber highlight hid that.
 _SELECTED_FILL = _brush(TEXT_PRIMARY, 22)
 _SELECTED_EDGE = QColor(TEXT_PRIMARY)
+# A cell's text without the notes the display adds (", rigged"): what
+# Copy puts on the clipboard, so it pastes back as the value
+_PLAIN_ROLE = Qt.UserRole + 1
 
 
 def _over(brush: QBrush, base: str) -> str:
@@ -158,8 +164,14 @@ class EntityEditorSource:
 
     ``retire`` and ``rename`` are ``pipe.entity_files.delete_entity`` and
     ``rename_entity`` on this project; ``rename_blocker`` says why an
-    entity cannot be renamed ('' if it can). ``on_applied`` hears that the
-    database changed.
+    entity cannot be renamed ('' if it can), ``multi_rename_blocker`` the
+    same of a Multi (whose workfiles sit in a folder named after it).
+    ``on_applied`` hears that the database changed. ``stage_roots`` brings
+    the shots up to date with the Roots after an Apply
+    (``pipe.root_staging.sync_roots`` on this project) and returns what it
+    did, for the footer. ``rigged`` says whether an asset has a rig
+    published (``pipe.usd.instances.has_published_rig`` on this project),
+    shown beside its Animatable box.
     """
     project: str
     config: object
@@ -167,6 +179,9 @@ class EntityEditorSource:
     rename: Callable[[Uri, str], object]
     rename_blocker: Callable[[Uri], str]
     on_applied: Callable[[], None]
+    stage_roots: Callable[[], str] = lambda: ''
+    rigged: Callable[[Uri], bool] = lambda uri: False
+    multi_rename_blocker: Callable[[Uri], str] = lambda uri: ''
 
 
 def _hint(text: str = '') -> QLabel:
@@ -225,6 +240,8 @@ def assets_label(assets) -> str:
 def cell_text(value, column: str) -> str:
     if column == es.ASSETS:
         return assets_label(value or ())
+    if column == es.MULTIS:
+        return ', '.join(value or ())
     return es.format_value(column, value)
 
 
@@ -246,12 +263,37 @@ class _SheetModel(QAbstractTableModel):
         self.sheet = pane.sheet
         self.columns = COLUMNS[self.sheet.kind.key]
         self._ids = [row.id for row in self.sheet.rows]
+        self._rigged: dict[str, bool] = {}
 
     def set_sheet(self, sheet: es.Sheet) -> None:
         self.beginResetModel()
         self.sheet = sheet
         self._ids = [row.id for row in sheet.rows]
+        self._rigged.clear()    # a reload may follow a rig export
         self.endResetModel()
+
+    def rigged(self, row: es.Row) -> bool:
+        """Whether the stored asset has a rig published, asked once per
+        asset: a rig makes a shot's copies plain references whatever its
+        Animatable box says (``copies_are_animated``)."""
+        if row.origin is None:
+            return False
+        key = str(row.origin.uri)
+        if key not in self._rigged:
+            try:
+                self._rigged[key] = bool(
+                    self._pane.window_.source.rigged(row.origin.uri)
+                )
+            except Exception:
+                self._rigged[key] = False
+        return self._rigged[key]
+
+    def _rig_note(self, row: es.Row, column: str) -> bool:
+        """An unticked Animatable on a rigged asset, which the cell notes."""
+        return (
+            column == es.ANIMATABLE and not row.retire
+            and not self.sheet.value(row, column) and self.rigged(row)
+        )
 
     def refresh(self) -> bool:
         """Show the sheet's current state; True when rows came, went or
@@ -338,6 +380,8 @@ class _SheetModel(QAbstractTableModel):
         root = self.sheet.value(row, es.ROOT) if es.ROOT in self.columns else None
         if isinstance(root, str) and self.sheet.root_pending(root):
             parts.append('Root assets changed')
+        if self.sheet.membership_pending(row):
+            parts.append('Multis changed')
         return ', '.join(parts), _AMBER
 
     def data(self, index, role=Qt.DisplayRole):
@@ -346,7 +390,7 @@ class _SheetModel(QAbstractTableModel):
             return None
         column = self.columns[index.column()]
         sheet = self.sheet
-        if role in (Qt.DisplayRole, Qt.EditRole):
+        if role in (Qt.DisplayRole, Qt.EditRole, _PLAIN_ROLE):
             if column == STATUS:
                 return self.status(row)[0]
             if column == es.GROUP:
@@ -356,6 +400,8 @@ class _SheetModel(QAbstractTableModel):
             value = sheet.value(row, column)
             if role == Qt.EditRole and column == es.ROOT:
                 return value if isinstance(value, str) else ''
+            if role == Qt.DisplayRole and self._rig_note(row, column):
+                return f'{cell_text(value, column)}, rigged'
             # A shot with no Root shows an empty Assets cell; its tooltip
             # says why and how to give it assets.
             return cell_text(value, column)
@@ -394,7 +440,15 @@ class _SheetModel(QAbstractTableModel):
         if role == Qt.TextAlignmentRole and column in _NUMBERS:
             return int(Qt.AlignRight | Qt.AlignVCenter)
         if role == Qt.ToolTipRole:
-            return self._tooltip(row, column)
+            tooltip = self._tooltip(row, column)
+            if self._rig_note(row, column):
+                tooltip = (
+                    'Has a rig published, so a shot\'s copies of it are plain '
+                    'references and each can carry its own animation, ticked '
+                    'or not. Ticking it also makes its own exports write '
+                    'every frame instead of the first.\n\n' + tooltip
+                )
+            return tooltip
         return None
 
     def setData(self, index, value, role=Qt.EditRole) -> bool:
@@ -427,6 +481,8 @@ class _SheetModel(QAbstractTableModel):
             return 'Frames from start to end. Typing a length moves the end frame.'
         if column == es.ASSETS:
             return self._assets_tooltip(row)
+        if column == es.MULTIS:
+            return self._multis_tooltip(row)
         state = sheet.state(row, column)
         text = cell_text(sheet.value(row, column), column) or 'nothing'
         source = sheet.source(row, column) or 'the project'
@@ -444,6 +500,24 @@ class _SheetModel(QAbstractTableModel):
             f'{text}, set on this {kind.item}. Delete puts it back to inheriting '
             f'{inherited} from {source}.'
         )
+
+    def _multis_tooltip(self, row: es.Row) -> str:
+        multis = self.sheet.row_multis(row)
+        kind = self.sheet.kind
+        if not multis:
+            lines = [f'In no Multi: the {kind.item} has its own workfiles.']
+        else:
+            lines = [
+                f'{multi.name}: covers {", ".join(multi.departments) or "no departments"}'
+                for multi in multis
+            ]
+            lines.append(
+                'For the departments a Multi covers, the workfile is the Multi\'s.'
+            )
+        if self.sheet.membership_pending(row):
+            lines.append('Changed; saved on Apply.')
+        lines.append('Double-click to change.')
+        return '\n'.join(lines)
 
     def _assets_tooltip(self, row: es.Row) -> str:
         sheet = self.sheet
@@ -504,10 +578,16 @@ class _Delegate(QStyledItemDelegate):
 
     def paint(self, painter, option, index) -> None:
         # The cell as if unselected, so its tint still shows, then a light
-        # wash and an outline for the selection.
+        # wash and an outline for the selection. The view has already
+        # filled a selected cell with the highlight colour, so cover that
+        # with the cell's own base first.
         selected = bool(option.state & QStyle.State_Selected)
         plain = QStyleOptionViewItem(option)
         plain.state &= ~(QStyle.State_Selected | QStyle.State_HasFocus)
+        if selected:
+            alternate = option.features & QStyleOptionViewItem.Alternate
+            painter.fillRect(option.rect, option.palette.alternateBase()
+                             if alternate else option.palette.base())
         super().paint(painter, plain, index)
         if not selected:
             return
@@ -523,6 +603,9 @@ class _Delegate(QStyledItemDelegate):
             # Not a cell editor: the Root's asset list has its own dialog,
             # opened once the view has finished starting the edit.
             QTimer.singleShot(0, lambda i=QModelIndex(index): self._pane.edit_assets(i))
+            return None
+        if column == es.MULTIS:
+            QTimer.singleShot(0, lambda i=QModelIndex(index): self._pane.edit_multis(i))
             return None
         if column == es.ROOT:
             combo = QComboBox(parent)
@@ -1025,7 +1108,10 @@ class _SheetPane(QWidget):
             c for c in self.columns if c in kind.fields or c == es.LENGTH
         )
         source = window.source
-        self.sheet = es.Sheet(es.load(source.config, kind), source.rename_blocker)
+        self.sheet = es.Sheet(
+            es.load(source.config, kind), source.rename_blocker,
+            source.multi_rename_blocker,
+        )
         self._errors: list[str] = []
         self._build_ui()
 
@@ -1107,6 +1193,10 @@ class _SheetPane(QWidget):
                 f'line, as name; {kind.group}, name; name, start, end; or '
                 f'{kind.group}, name, start, end.',
         ))
+        actions.addWidget(_button(
+            f'New {kind.group.capitalize()}…', self.new_group,
+            tip=f'A new, empty {kind.group}, created on Apply.',
+        ))
         # The edits to selected rows, kept apart from adding, with Retire
         # last: the one that removes.
         actions.addSpacing(scaled(24))
@@ -1162,6 +1252,10 @@ class _SheetPane(QWidget):
                 self.select_cells(selection, current)
         self.table.verticalScrollBar().setValue(scroll)
         self._fill_group_filter()
+        # The Multis tab shows this sheet's Multis too.
+        multis = getattr(self.window_, 'multis_pane', None)
+        if multis is not None and multis.key == self.kind.key:
+            multis.refresh()
         self.window_.update_footer()
 
     def _index_of(self, row_id: int, column: int):
@@ -1190,16 +1284,25 @@ class _SheetPane(QWidget):
         wanted = [''] + self.sheet.groups()
         combo = self._group_filter
         have = [combo.itemData(i) for i in range(combo.count())]
-        if have == wanted:
+        tips = [combo.itemData(i, Qt.ToolTipRole) or '' for i in range(combo.count())]
+        problems = self.sheet.group_problems()
+        if have == wanted and tips == ['', *(problems.get(g, '') for g in wanted[1:])]:
             return
         current = combo.currentData() or ''
         combo.blockSignals(True)
         combo.clear()
         combo.addItem(f'All {_plurals(self.kind.group)}', '')
+        stored = set(self.sheet.base.groups)
         for group in wanted[1:]:
-            combo.addItem(group, group)
+            combo.addItem(group if group in stored else f'{group} (new)', group)
+            if group in problems:
+                combo.setItemData(combo.count() - 1, problems[group], Qt.ToolTipRole)
         combo.setCurrentIndex(max(combo.findData(current), 0))
         combo.blockSignals(False)
+        if (combo.currentData() or '') != current:
+            # The group shown is gone (undone, removed): show them all, not
+            # an empty sheet still filtered on it.
+            self._apply_filter()
 
     def _apply_filter(self, *_args) -> None:
         self.proxy.set_filter(self._group_filter.currentData() or '', self._search.text())
@@ -1234,7 +1337,7 @@ class _SheetPane(QWidget):
         """One cell, as typed or pasted: '' or Inherit in a value column
         puts it back to inheriting."""
         row = self.sheet.row(row_id)
-        if not self.model.editable(row, column) or column == es.ASSETS:
+        if not self.model.editable(row, column) or column in _DIALOG_COLUMNS:
             return
         try:
             if column in self._values and (value == INHERIT or str(value).strip() == ''):
@@ -1277,7 +1380,7 @@ class _SheetPane(QWidget):
         chosen = {(i.row(), i.column()) for i in cells}
         QApplication.clipboard().setText('\n'.join(
             '\t'.join(
-                (self.proxy.index(r, c).data() or '') if (r, c) in chosen else ''
+                (self.proxy.index(r, c).data(_PLAIN_ROLE) or '') if (r, c) in chosen else ''
                 for c in columns
             )
             for r in rows
@@ -1408,6 +1511,24 @@ class _SheetPane(QWidget):
             return
         self.add_rows(dialog.rows())
 
+    def new_group(self) -> None:
+        """New Sequence… / New Category…: an empty one, shown at once."""
+        dialog = NewGroupDialog(self.sheet, parent=self)
+        if dialog.exec() != QDialog.Accepted or dialog.problem():
+            return
+        added = []
+        self.edit(lambda: added.append(self.sheet.add_group(dialog.name())))
+        if added:
+            self.focus(added[0])
+            kind = self.kind
+            self.say(
+                f'New {kind.group} {added[0]}, created on Apply. '
+                f'Add {kind.item.capitalize()}s… fills it.'
+            )
+
+    def remove_new_group(self, name: str) -> None:
+        self.edit(lambda: self.sheet.remove_group(name))
+
     def add_rows(self, rows: list[tuple[str, str, dict]]) -> None:
         added = []
         self.edit(lambda: [added.append(self.sheet.add(*row)) for row in rows])
@@ -1447,6 +1568,71 @@ class _SheetPane(QWidget):
                 self.sheet.set_value(row_id, es.ROOT, uri)
         self.edit(change)
 
+    def _target_rows(self, index) -> list[int]:
+        """The rows an action on ``index`` is about: the selected ones when
+        it is among them, else its own; never a row being retired."""
+        ids = [self._row_id(index)] if index.isValid() else []
+        selected = self.selected_row_ids()
+        if not ids or ids[0] in selected:
+            ids = selected
+        return [i for i in ids if not self.sheet.row(i).retire]
+
+    def edit_multis(self, index) -> None:
+        """The Multis cell: which Multis the rows belong to, ticked."""
+        ids = self._target_rows(index)
+        if not ids:
+            return
+        dialog = MultiMembershipDialog(self, ids)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        def change():
+            for multi_id, member in dialog.changes.items():
+                self.sheet.set_membership(ids, multi_id, member)
+            if dialog.new_multi is not None:
+                name, departments = dialog.new_multi
+                self.sheet.add_multi(name, ids, departments)
+        self.edit(change)
+
+    def set_membership(self, multi_id: int, member: bool) -> None:
+        ids = self._target_rows(self.table.currentIndex())
+        self.edit(lambda: self.sheet.set_membership(ids, multi_id, member))
+
+    def new_multi_from_selected(self) -> None:
+        ids = self._target_rows(self.table.currentIndex())
+        if not ids:
+            return
+        dialog = NewMultiDialog(
+            self.sheet, parent=self,
+            note=f'Starts with the {_plural(len(ids), self.kind.item)} selected. '
+                 'Created on Apply.',
+        )
+        if dialog.exec() != QDialog.Accepted or dialog.problem():
+            return
+        self.edit(lambda: self.sheet.add_multi(dialog.name(), ids, dialog.chosen()))
+
+    def _multi_menus(self, menu: QMenu) -> None:
+        ids = self._target_rows(self.table.currentIndex())
+        live = [m for m in self.sheet.multis if not m.retire]
+        add = menu.addMenu('Add to Multi')
+        remove = menu.addMenu('Remove from Multi')
+        for multi in live:
+            if any(i not in multi.members for i in ids):
+                action = add.addAction(multi.name)
+                action.triggered.connect(lambda _c=False, m=multi.id: self.set_membership(m, True))
+            if any(i in multi.members for i in ids):
+                action = remove.addAction(multi.name)
+                action.triggered.connect(lambda _c=False, m=multi.id: self.set_membership(m, False))
+        add.setEnabled(bool(ids) and not add.isEmpty())
+        remove.setEnabled(bool(ids) and not remove.isEmpty())
+        action = menu.addAction('New Multi from Selected…')
+        action.setEnabled(bool(ids))
+        action.triggered.connect(self.new_multi_from_selected)
+        current = self.table.currentIndex()
+        action = menu.addAction('Edit Multis…')
+        action.setEnabled(bool(ids))
+        action.triggered.connect(lambda: self.edit_multis(current))
+
     def _context_menu(self, pos) -> None:
         menu = QMenu(self)
         cells = self._selected()
@@ -1464,7 +1650,15 @@ class _SheetPane(QWidget):
         if self.kind is es.SHOTS_KIND:
             current = self.table.currentIndex()
             entries.append(('Edit Assets…', lambda: self.edit_assets(current), current.isValid()))
+        group = self.proxy.group
+        if group in self.sheet.new_groups:
+            entries += [None, (
+                f'Remove New {self.kind.group.capitalize()} {group}',
+                lambda: self.remove_new_group(group), True,
+            )]
         entries += [
+            None,
+            'multis',
             None,
             (self.retire_button.text(), self._toggle_retire, bool(cells)),
             ('Revert', self._revert_selected, bool(cells)),
@@ -1475,6 +1669,9 @@ class _SheetPane(QWidget):
         for entry in entries:
             if entry is None:
                 menu.addSeparator()
+                continue
+            if entry == 'multis':
+                self._multi_menus(menu)
                 continue
             text, slot, enabled = entry
             action = menu.addAction(text)
@@ -1492,6 +1689,772 @@ class _SheetPane(QWidget):
             if row is not None:
                 self.select_cells([(row.id, 1)], (row.id, 1))
                 self.table.scrollTo(self._index_of(row.id, 1))
+
+
+# ---------------------------------------------------------------------------
+# Multis
+# ---------------------------------------------------------------------------
+
+#: The Multis tab's own columns; the departments of the pool follow them.
+MULTI_NAME = 'multi'
+MEMBERS = 'members'
+
+class NewGroupDialog(QDialog):
+    """A name for a new, empty sequence or category, checked as typed."""
+
+    def __init__(self, sheet: es.Sheet, parent=None) -> None:
+        super().__init__(parent)
+        self._sheet = sheet
+        kind = sheet.kind
+        self.setWindowTitle(f'New {kind.group.capitalize()}')
+        self.resize(scaled(380), 0)
+        layout = QFormLayout(self)
+        self._name = QLineEdit()
+        self._name.setPlaceholderText('e.g. sq030' if kind is es.SHOTS_KIND else 'e.g. PROP')
+        self._name.textChanged.connect(self._update)
+        layout.addRow('Name', self._name)
+        layout.addRow(_hint(
+            f'Created on Apply, empty: Add {kind.item.capitalize()}s… fills it. '
+            f'Its {kind.item}s inherit the values set on it.'
+        ))
+        self._problem = _hint()
+        layout.addRow(self._problem)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        buttons.addWidget(_button('Cancel', self.reject))
+        self._create = _button(f'Add {kind.group.capitalize()}', self.accept, primary=True)
+        self._create.setDefault(True)
+        buttons.addWidget(self._create)
+        layout.addRow(buttons)
+        self._update()
+
+    def name(self) -> str:
+        return self._name.text().strip()
+
+    def problem(self) -> str:
+        return self._sheet.group_problem(self.name())
+
+    def _update(self, *_args) -> None:
+        problem = self.problem()
+        self._problem.setText(problem if self.name() else '')
+        self._create.setEnabled(not problem)
+
+
+_LATE_MEMBER_NOTE = (
+    'A member added to a Multi whose workfile already exists is not in that '
+    'workfile until a new version is made from the template.'
+)
+
+
+def _multi_label(multi: es.Multi) -> str:
+    return multi.name or '(no name)'
+
+
+class _CheckList(QWidget):
+    """A filterable list of tick boxes, with an optional detail column."""
+
+    def __init__(self, placeholder: str, headers: tuple[str, ...] = ('Name',)) -> None:
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self._filter = QLineEdit()
+        self._filter.setPlaceholderText(placeholder)
+        self._filter.setClearButtonEnabled(True)
+        self._filter.textChanged.connect(self._on_filter)
+        layout.addWidget(self._filter)
+        table = self.table = QTableWidget(0, len(headers))
+        table.setHorizontalHeaderLabels(list(headers))
+        table.verticalHeader().setVisible(False)
+        table.setSelectionMode(QAbstractItemView.NoSelection)
+        table.horizontalHeader().setSectionResizeMode(len(headers) - 1, QHeaderView.Stretch)
+        layout.addWidget(table, 1)
+        self._items: list[QTableWidgetItem] = []
+
+    def add(
+        self, text: str, data, state=Qt.Unchecked, detail: str = '',
+        enabled: bool = True, tristate: bool = False,
+    ) -> None:
+        table = self.table
+        r = table.rowCount()
+        table.insertRow(r)
+        item = QTableWidgetItem(text)
+        item.setData(Qt.UserRole, data)
+        flags = Qt.ItemIsEnabled
+        if enabled:
+            flags |= Qt.ItemIsUserCheckable
+            if tristate:
+                flags |= Qt.ItemIsUserTristate
+        else:
+            item.setForeground(_INHERITED)
+        item.setFlags(flags)
+        item.setCheckState(state)
+        table.setItem(r, 0, item)
+        if table.columnCount() > 1:
+            extra = QTableWidgetItem(detail)
+            extra.setFlags(Qt.ItemIsEnabled)
+            extra.setForeground(_INHERITED)
+            table.setItem(r, 1, extra)
+        self._items.append(item)
+
+    def _on_filter(self, text: str) -> None:
+        needle = text.strip().casefold()
+        for r, item in enumerate(self._items):
+            self.table.setRowHidden(r, bool(needle) and needle not in item.text().casefold())
+
+    def states(self) -> dict:
+        return {item.data(Qt.UserRole): item.checkState() for item in self._items}
+
+    def checked(self) -> list:
+        return [
+            item.data(Qt.UserRole) for item in self._items
+            if item.flags() & Qt.ItemIsUserCheckable and item.checkState() == Qt.Checked
+        ]
+
+    def set_state(self, data, state) -> None:
+        for item in self._items:
+            if item.data(Qt.UserRole) == data:
+                item.setCheckState(state)
+                return
+        raise KeyError(data)
+
+
+class NewMultiDialog(QDialog):
+    """Name a Multi and tick the departments it covers (all of them to
+    start with, as the browser's New Multi). It joins the sheet; Apply
+    creates it."""
+
+    def __init__(self, sheet: es.Sheet, note: str = '', start_with: str = '', parent=None) -> None:
+        super().__init__(parent)
+        self._sheet = sheet
+        kind = sheet.kind
+        self.setWindowTitle(f'New Multi of {kind.item}s')
+        self.resize(scaled(420), scaled(480))
+        layout = QFormLayout(self)
+        self._name = QLineEdit()
+        self._name.setPlaceholderText('e.g. Lighting')
+        self._name.textChanged.connect(self._update)
+        layout.addRow('Name', self._name)
+        self.departments = _CheckList('Filter departments', ('Covers',))
+        for department in sheet.base.pool:
+            self.departments.add(department, department, Qt.Checked)
+        layout.addRow(self.departments)
+        self.start_with = None
+        if start_with:
+            self.start_with = QPushButton()
+            self.start_with.setCheckable(True)
+            self.start_with.setChecked(True)
+            self.start_with.setText(start_with)
+            self.start_with.setStyleSheet(BUTTON_GHOST_STYLE)
+            layout.addRow(self.start_with)
+        layout.addRow(_hint(
+            note or f'For the departments it covers, every member {kind.item}\'s '
+            'workfile is the Multi\'s. Created on Apply.'
+        ))
+        self._problem = _hint()
+        layout.addRow(self._problem)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        buttons.addWidget(_button('Cancel', self.reject))
+        self._create = _button('Add Multi', self.accept, primary=True)
+        self._create.setDefault(True)
+        buttons.addWidget(self._create)
+        layout.addRow(buttons)
+        self._update()
+
+    def name(self) -> str:
+        return self._name.text().strip()
+
+    def chosen(self) -> list[str]:
+        return self.departments.checked()
+
+    def with_selection(self) -> bool:
+        return self.start_with is None or self.start_with.isChecked()
+
+    def problem(self) -> str:
+        return self._sheet.multi_name_problem(self.name())
+
+    def _update(self, *_args) -> None:
+        problem = self.problem()
+        self._problem.setText(problem if self.name() else '')
+        self._create.setEnabled(not problem)
+
+
+class MultiMembershipDialog(QDialog):
+    """Which Multis some rows belong to, ticked. A Multi only some of the
+    rows are in shows partly ticked and is left alone unless clicked.
+    ``changes`` is ``{multi id: member}`` after OK; ``new_multi`` is
+    ``(name, departments)`` when **New Multi…** was used."""
+
+    def __init__(self, pane: '_SheetPane', row_ids: list[int]) -> None:
+        super().__init__(pane)
+        sheet = self._sheet = pane.sheet
+        kind = sheet.kind
+        rows = [sheet.row(i) for i in row_ids]
+        self._row_ids = row_ids
+        self.changes: dict[int, bool] = {}
+        self.new_multi: tuple[str, list[str]] | None = None
+        who = rows[0].name if len(rows) == 1 else _plural(len(rows), kind.item)
+        self.setWindowTitle(f'Multis of {who}')
+        self.resize(scaled(480), scaled(460))
+        layout = QVBoxLayout(self)
+        intro = QLabel(
+            f'Tick the Multis {who} {"belongs" if len(rows) == 1 else "belong"} '
+            f'to. For the departments a Multi covers, its members\' workfile '
+            'is the Multi\'s.'
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        self.list = _CheckList('Filter Multis', ('Multi', 'Covers'))
+        self._before: dict[int, object] = {}
+        for multi in sheet.multis:
+            if multi.retire:
+                continue
+            inside = sum(row.id in multi.members for row in rows)
+            state = (
+                Qt.Checked if inside == len(rows)
+                else Qt.Unchecked if inside == 0 else Qt.PartiallyChecked
+            )
+            self._before[multi.id] = state
+            self.list.add(
+                _multi_label(multi), multi.id, state,
+                ', '.join(multi.departments) or 'no departments',
+                tristate=state == Qt.PartiallyChecked,
+            )
+        layout.addWidget(self.list, 1)
+        if not self._before:
+            layout.addWidget(_hint(f'The project has no Multis of {kind.item}s yet.'))
+        layout.addWidget(_hint(_LATE_MEMBER_NOTE))
+        buttons = QHBoxLayout()
+        buttons.addWidget(_button('New Multi…', self._on_new, style=_BUTTON_ADD_STYLE))
+        buttons.addStretch()
+        buttons.addWidget(_button('Cancel', self.reject))
+        ok = _button('OK', self._on_ok, primary=True)
+        ok.setDefault(True)
+        buttons.addWidget(ok)
+        layout.addLayout(buttons)
+
+    def _on_ok(self) -> None:
+        for multi_id, state in self.list.states().items():
+            if state == self._before.get(multi_id) or state == Qt.PartiallyChecked:
+                continue
+            self.changes[multi_id] = state == Qt.Checked
+        self.accept()
+
+    def _on_new(self) -> None:
+        dialog = NewMultiDialog(self._sheet, parent=self)
+        if dialog.exec() != QDialog.Accepted or dialog.problem():
+            return
+        self.new_multi = (dialog.name(), dialog.chosen())
+        self._on_ok()
+
+
+class MultiMembersDialog(QDialog):
+    """A Multi's members, ticked from every row of its kind."""
+
+    def __init__(self, parent, sheet: es.Sheet, multi: es.Multi) -> None:
+        super().__init__(parent)
+        kind = sheet.kind
+        self.setWindowTitle(f'Members of {_multi_label(multi)}')
+        self.resize(scaled(460), scaled(560))
+        layout = QVBoxLayout(self)
+        self.list = _CheckList(f'Filter {kind.item}s', (kind.item.capitalize(), 'Also in'))
+        for row in sheet.rows:
+            if row.retire:
+                continue
+            others = [m.name for m in sheet.row_multis(row) if m is not multi]
+            self.list.add(
+                f'{row.group}/{row.name}', row.id,
+                Qt.Checked if row.id in multi.members else Qt.Unchecked,
+                ', '.join(others),
+            )
+        for stray in sheet.multi_strays(multi):
+            self.list.add(
+                stray.removeprefix(f'{kind.root}/'), stray, Qt.Checked,
+                'no longer in the project; kept', enabled=False,
+            )
+        layout.addWidget(self.list, 1)
+        layout.addWidget(_hint(_LATE_MEMBER_NOTE))
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        buttons.addWidget(_button('Cancel', self.reject))
+        ok = _button('OK', self.accept, primary=True)
+        ok.setDefault(True)
+        buttons.addWidget(ok)
+        layout.addLayout(buttons)
+
+    def row_ids(self) -> list[int]:
+        return [data for data in self.list.checked() if isinstance(data, int)]
+
+
+class _MultiModel(QAbstractTableModel):
+    """One kind's Multis as a table: name, status, members, then a tick
+    box per department of the pool."""
+
+    def __init__(self, pane: '_MultiPane') -> None:
+        super().__init__()
+        self._pane = pane
+        self._ids: list[int] = []
+        self.columns: list[str] = []
+
+    @property
+    def sheet(self) -> es.Sheet:
+        return self._pane.sheet
+
+    def _wanted(self) -> tuple[list[int], list[str]]:
+        sheet = self.sheet
+        return [m.id for m in sheet.multis], [MULTI_NAME, STATUS, MEMBERS, *sheet.base.pool]
+
+    def refresh(self) -> bool:
+        """Show the sheet's Multis; True when rows or columns changed."""
+        ids, columns = self._wanted()
+        if ids != self._ids or columns != self.columns:
+            self.beginResetModel()
+            self._ids, self.columns = ids, columns
+            self.endResetModel()
+            return True
+        if ids:
+            self.dataChanged.emit(
+                self.index(0, 0), self.index(len(ids) - 1, len(columns) - 1),
+            )
+        return False
+
+    def id_at(self, source_row: int) -> int:
+        return self._ids[source_row]
+
+    def source_row(self, multi_id: int) -> int:
+        return self._ids.index(multi_id) if multi_id in self._ids else -1
+
+    def multi_at(self, index) -> es.Multi | None:
+        if not index.isValid() or index.row() >= len(self._ids):
+            return None
+        try:
+            return self.sheet.multi(self._ids[index.row()])
+        except KeyError:
+            return None
+
+    def rowCount(self, parent=QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self._ids)
+
+    def columnCount(self, parent=QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self.columns)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            column = self.columns[section]
+            return {MULTI_NAME: 'Multi', STATUS: 'Status', MEMBERS: 'Members'}.get(column, column)
+        return None
+
+    def flags(self, index):
+        multi = self.multi_at(index)
+        if multi is None:
+            return Qt.NoItemFlags
+        flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+        column = self.columns[index.column()]
+        if multi.retire or column == STATUS:
+            return flags
+        if column in (MULTI_NAME, MEMBERS):
+            return flags | Qt.ItemIsEditable
+        return flags | Qt.ItemIsUserCheckable
+
+    def status(self, multi: es.Multi) -> tuple[str, QBrush]:
+        problem = self.sheet.multi_problems().get(multi.id)
+        if problem:
+            return problem, _RED
+        if multi.retire:
+            return 'Retire', _RED
+        if multi.is_new:
+            return 'New', _GREEN
+        parts = []
+        if multi.renamed:
+            parts.append(f'Renamed from {multi.origin.name}')
+        if multi.members_changed:
+            parts.append('Members changed')
+        if multi.departments_changed:
+            parts.append('Departments changed')
+        return ', '.join(parts), _AMBER
+
+    def _members_text(self, multi: es.Multi) -> str:
+        count = len(self.sheet.multi_rows(multi)) + len(self.sheet.multi_strays(multi))
+        return _plural(count, self.sheet.kind.item)
+
+    def data(self, index, role=Qt.DisplayRole):
+        multi = self.multi_at(index)
+        if multi is None:
+            return None
+        column = self.columns[index.column()]
+        covers = column not in (MULTI_NAME, STATUS, MEMBERS)
+        if role in (Qt.DisplayRole, Qt.EditRole):
+            if column == MULTI_NAME:
+                return multi.name
+            if column == STATUS:
+                return self.status(multi)[0]
+            if column == MEMBERS:
+                return self._members_text(multi)
+            return None
+        if role == Qt.CheckStateRole and covers:
+            return Qt.Checked if column in multi.departments else Qt.Unchecked
+        if role == Qt.ForegroundRole:
+            if column == STATUS:
+                return self.status(multi)[1]
+            return _INHERITED if multi.retire else _OVERRIDE
+        if role == Qt.FontRole:
+            if multi.retire:
+                return _STRUCK
+            return _BOLD if column == MULTI_NAME else None
+        if role == Qt.BackgroundRole and not multi.retire:
+            if column == MULTI_NAME:
+                return _NEW if multi.is_new else (_PENDING if multi.renamed else None)
+            if column == MEMBERS and not multi.is_new and multi.members_changed:
+                return _PENDING
+            if covers and not multi.is_new and (
+                (column in multi.departments) != (column in multi.origin.departments)
+            ):
+                return _PENDING
+            return None
+        if role == Qt.ToolTipRole:
+            return self._tooltip(multi, column)
+        return None
+
+    def _tooltip(self, multi: es.Multi, column: str) -> str:
+        sheet = self.sheet
+        kind = sheet.kind
+        if column == STATUS:
+            return self.status(multi)[0]
+        if multi.retire:
+            return (
+                f'Multi {multi.origin.name} leaves the project on Apply; its '
+                'workfiles stay on disk. Revert or Restore keeps it.'
+            )
+        if column == MULTI_NAME:
+            extra = [d for d in multi.departments if d not in sheet.base.pool]
+            lines = ['Type to rename. A Multi with workfiles on disk cannot be renamed.']
+            if extra:
+                lines.append(f'Also covers {", ".join(extra)}, no longer a department; kept.')
+            return '\n'.join(lines)
+        if column == MEMBERS:
+            names = [f'{r.group}/{r.name}' for r in sheet.multi_rows(multi)]
+            strays = sheet.multi_strays(multi)
+            lines = [_short(names, 30) or f'No {kind.item}s yet.']
+            if strays:
+                lines.append(
+                    f'{_plural(len(strays), "member")} no longer in the project: '
+                    f'{_short(strays)}; kept.'
+                )
+            lines.append('Double-click to choose them.')
+            return '\n'.join(lines)
+        if column in multi.departments:
+            return (
+                f'{multi.name} covers {column}: every member\'s {column} '
+                'workfile is the Multi\'s. Untick to give them back their own.'
+            )
+        return f'{multi.name} does not cover {column}: members keep their own {column} workfiles.'
+
+    def setData(self, index, value, role=Qt.EditRole) -> bool:
+        if role != Qt.CheckStateRole or not index.isValid():
+            return False
+        checked = value in (Qt.Checked, getattr(Qt.Checked, 'value', 2), 2)
+        self._pane.tick(self._pane.proxy.mapFromSource(index), checked)
+        return True
+
+
+class _MultiFilter(QSortFilterProxyModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.text = ''
+
+    def set_text(self, text: str) -> None:
+        self.text = text.strip().casefold()
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, source_row, parent) -> bool:
+        if not self.text:
+            return True
+        multi = self.sourceModel().multi_at(self.sourceModel().index(source_row, 0))
+        return multi is not None and self.text in multi.name.casefold()
+
+
+class _MultiDelegate(_Delegate):
+    """The name as a line edit (a rename), Members as a dialog."""
+
+    def createEditor(self, parent, option, index):
+        column = self._pane.columns[index.column()]
+        if column == MEMBERS:
+            QTimer.singleShot(0, lambda i=QModelIndex(index): self._pane.edit_members(i))
+            return None
+        if column == MULTI_NAME:
+            return QLineEdit(parent)
+        return None
+
+    def setEditorData(self, editor, index) -> None:
+        editor.setText(index.data(Qt.EditRole) or '')
+
+    def setModelData(self, editor, model, index) -> None:
+        self._pane.rename(index, editor.text())
+
+
+class _MultiPane(QWidget):
+    """The Multis tab: one kind's Multis at a time. Its edits live in that
+    kind's sheet, so they undo with the Shots or Assets tab's edits."""
+
+    def __init__(self, window: 'EntityEditorWindow') -> None:
+        super().__init__(window)
+        self.window_ = window
+        self.key = 'shots'
+        self._build_ui()
+
+    @property
+    def entity_pane(self) -> '_SheetPane':
+        return self.window_.panes[self.key]
+
+    @property
+    def sheet(self) -> es.Sheet:
+        return self.entity_pane.sheet
+
+    @property
+    def columns(self) -> list[str]:
+        return self.model.columns
+
+    def _build_ui(self) -> None:
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(scaled(6))
+        top = QHBoxLayout()
+        top.addWidget(QLabel('Multis of'))
+        self._context = QComboBox()
+        self._context.setStyleSheet(COMBO_STYLE)
+        self._context.addItem('Shots', 'shots')
+        self._context.addItem('Assets', 'assets')
+        self._context.currentIndexChanged.connect(
+            lambda _i: self.set_context(self._context.currentData())
+        )
+        top.addWidget(self._context)
+        self._search = QLineEdit()
+        self._search.setPlaceholderText('Filter Multis')
+        self._search.setClearButtonEnabled(True)
+        self._search.textChanged.connect(lambda text: self.proxy.set_text(text))
+        top.addWidget(self._search, 1)
+        outer.addLayout(top)
+        outer.addWidget(_hint(
+            'A Multi is one workfile for several shots or assets. Tick the '
+            'departments it covers: for those, every member\'s workfile is '
+            'the Multi\'s. Double-click Members to choose them.'
+        ))
+
+        self.model = _MultiModel(self)
+        self.proxy = _MultiFilter()
+        self.proxy.setSourceModel(self.model)
+        table = self.table = QTableView()
+        table.setModel(self.proxy)
+        table.setItemDelegate(_MultiDelegate(self))
+        table.setSelectionBehavior(QAbstractItemView.SelectItems)
+        table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(scaled(24))
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        table.setContextMenuPolicy(Qt.CustomContextMenu)
+        table.customContextMenuRequested.connect(self._context_menu)
+        outer.addWidget(table, 1)
+
+        actions = QHBoxLayout()
+        actions.addWidget(_button(
+            'Add Multi…', self.add_dialog, style=_BUTTON_ADD_STYLE,
+            tip='A new Multi: a name and the departments it covers. It can '
+                'start with the rows selected on the Shots or Assets tab.',
+        ))
+        actions.addSpacing(scaled(24))
+        actions.addWidget(_button(
+            'Revert', self._revert_selected,
+            tip='Drop the selected Multis\' edits; new Multis are removed.',
+        ))
+        self.retire_button = _button(
+            'Retire', self._toggle_retire, style=_BUTTON_DANGER_STYLE,
+            tip='Retire the selected Multis on Apply: they leave the project; '
+                'their workfiles stay on disk and the members go back to '
+                'their own. New Multis are removed.',
+        )
+        actions.addWidget(self.retire_button)
+        actions.addStretch()
+        self.undo_button = _button('Undo', self.undo)
+        self.redo_button = _button('Redo', self.redo)
+        actions.addWidget(self.undo_button)
+        actions.addWidget(self.redo_button)
+        outer.addLayout(actions)
+        table.selectionModel().selectionChanged.connect(lambda *_a: self.update_buttons())
+        self.refresh()
+
+    def set_context(self, key: str) -> None:
+        if key == self.key:
+            return
+        self.key = key
+        index = self._context.findData(key)
+        if self._context.currentIndex() != index:
+            self._context.blockSignals(True)
+            self._context.setCurrentIndex(index)
+            self._context.blockSignals(False)
+        self.table.selectionModel().clearSelection()
+        self.refresh()
+        self.window_.update_footer()
+
+    def refresh(self) -> None:
+        selection = [(self._multi_id(i), i.column()) for i in self._selected()]
+        if self.model.refresh():
+            header = self.table.horizontalHeader()
+            for i, column in enumerate(self.model.columns):
+                self.table.setColumnWidth(i, scaled(
+                    {MULTI_NAME: 130, STATUS: 170, MEMBERS: 90}.get(column, 84)
+                ))
+            header.setStretchLastSection(False)
+            self.select_cells(selection)
+        self.update_buttons()
+
+    def _multi_id(self, index) -> int:
+        return self.model.id_at(self.proxy.mapToSource(index).row())
+
+    def _selected(self) -> list:
+        return sorted(
+            self.table.selectionModel().selectedIndexes(),
+            key=lambda i: (i.row(), i.column()),
+        )
+
+    def selected_ids(self) -> list[int]:
+        return list(dict.fromkeys(self._multi_id(i) for i in self._selected()))
+
+    def _index_of(self, multi_id: int, column: int):
+        source_row = self.model.source_row(multi_id)
+        if source_row < 0 or column >= len(self.model.columns):
+            return QModelIndex()
+        return self.proxy.mapFromSource(self.model.index(source_row, column))
+
+    def select_cells(self, cells, current=None) -> None:
+        model = self.table.selectionModel()
+        model.clearSelection()
+        for multi_id, column in cells:
+            index = self._index_of(multi_id, column)
+            if index.isValid():
+                model.select(index, QItemSelectionModel.Select)
+        if current is not None:
+            index = self._index_of(*current)
+            if index.isValid():
+                model.setCurrentIndex(index, QItemSelectionModel.NoUpdate)
+
+    def update_buttons(self) -> None:
+        sheet = self.sheet
+        self.undo_button.setEnabled(sheet.can_undo)
+        self.redo_button.setEnabled(sheet.can_redo)
+        multis = [sheet.multi(i) for i in self.selected_ids() if self._exists(i)]
+        stored = [m for m in multis if not m.is_new]
+        self.retire_button.setText('Restore' if stored and all(m.retire for m in stored) else 'Retire')
+
+    def _exists(self, multi_id: int) -> bool:
+        try:
+            self.sheet.multi(multi_id)
+        except KeyError:
+            return False
+        return True
+
+    def say(self, text: str = '', warn: bool = False) -> None:
+        self.window_.say(text, warn)
+
+    def edit(self, change: Callable[[], object]) -> None:
+        """One undo step in the kind's sheet; its tab and this one both
+        show the result."""
+        self.entity_pane.edit(change)
+
+    # ── Editing ──────────────────────────────────────────
+
+    def tick(self, index, checked: bool) -> None:
+        """A department box ticked: every selected cell of its column follows."""
+        column = self.columns[index.column()]
+        targets = [self._multi_id(index)]
+        selected = [i for i in self._selected() if i.column() == index.column()]
+        if any(i.row() == index.row() for i in selected):
+            targets = [self._multi_id(i) for i in selected]
+        self.edit(lambda: self.sheet.set_covers(targets, column, checked))
+
+    def rename(self, index, text: str) -> None:
+        multi_id = self._multi_id(index)
+        self.edit(lambda: self.sheet.rename_multi(multi_id, text))
+
+    def edit_members(self, index) -> None:
+        if not index.isValid():
+            return
+        multi = self.sheet.multi(self._multi_id(index))
+        if multi.retire:
+            return
+        dialog = MultiMembersDialog(self, self.sheet, multi)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        ids = dialog.row_ids()
+        self.edit(lambda: self.sheet.set_multi_members(multi.id, ids))
+
+    def add_dialog(self) -> None:
+        rows = [
+            row_id for row_id in self.entity_pane.selected_row_ids()
+            if not self.sheet.row(row_id).retire
+        ]
+        kind = self.sheet.kind
+        start = f'Start with the {_plural(len(rows), kind.item)} selected on the {kind.key.capitalize()} tab' if rows else ''
+        dialog = NewMultiDialog(self.sheet, start_with=start, parent=self)
+        if dialog.exec() != QDialog.Accepted or dialog.problem():
+            return
+        members = rows if dialog.with_selection() else []
+        created = []
+        self.edit(lambda: created.append(
+            self.sheet.add_multi(dialog.name(), members, dialog.chosen())
+        ))
+        if created:
+            self.select_cells([(created[0], 0)], (created[0], 0))
+
+    def _toggle_retire(self) -> None:
+        ids = [i for i in self.selected_ids() if self._exists(i)]
+        stored = [self.sheet.multi(i) for i in ids if not self.sheet.multi(i).is_new]
+        restore = bool(stored) and all(m.retire for m in stored)
+        self.edit(lambda: self.sheet.retire_multis(ids, not restore))
+
+    def _revert_selected(self) -> None:
+        ids = [i for i in self.selected_ids() if self._exists(i)]
+        self.edit(lambda: self.sheet.revert_multis(ids))
+
+    def undo(self) -> None:
+        self.entity_pane.undo()
+
+    def redo(self) -> None:
+        self.entity_pane.redo()
+
+    def _context_menu(self, pos) -> None:
+        menu = QMenu(self)
+        ids = self.selected_ids()
+        current = self.table.currentIndex()
+        entries = [
+            ('Add Multi…', self.add_dialog, True),
+            ('Members…', lambda: self.edit_members(current), current.isValid()),
+            None,
+            (self.retire_button.text(), self._toggle_retire, bool(ids)),
+            ('Revert', self._revert_selected, bool(ids)),
+            None,
+            ('Undo', self.undo, self.sheet.can_undo),
+            ('Redo', self.redo, self.sheet.can_redo),
+        ]
+        for entry in entries:
+            if entry is None:
+                menu.addSeparator()
+                continue
+            text, slot, enabled = entry
+            action = menu.addAction(text)
+            action.setEnabled(enabled)
+            action.triggered.connect(slot)
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def focus(self, key: str = '', name: str = '') -> None:
+        """Show ``key``'s Multis with ``name`` selected."""
+        if key in ('shots', 'assets'):
+            self.set_context(key)
+        multi = next((m for m in self.sheet.multis if m.name == name), None)
+        if multi is not None:
+            self.select_cells([(multi.id, 0)], (multi.id, 0))
+            self.table.scrollTo(self._index_of(multi.id, 0))
 
 
 # ---------------------------------------------------------------------------
@@ -1513,6 +2476,7 @@ class EntityEditorWindow(QDialog):
         self.setWindowTitle(f'Entity Editor — {source.project}')
         self.resize(scaled(1180), scaled(700))
         self.panes: dict[str, _SheetPane] = {}
+        self.multis_pane: _MultiPane | None = None
         self._build_ui()
         self.show_kind(kind)
         self.update_footer()
@@ -1541,6 +2505,10 @@ class EntityEditorWindow(QDialog):
             self._stack.addWidget(pane)
             index = self._tabs.addTab(f'{kind.key.capitalize()}')
             self._tabs.setTabData(index, kind.key)
+        self.multis_pane = _MultiPane(self)
+        self._stack.addWidget(self.multis_pane)
+        index = self._tabs.addTab('Multis')
+        self._tabs.setTabData(index, 'multis')
         for pane in self.panes.values():
             pane.refresh()
         self._tabs.currentChanged.connect(
@@ -1558,7 +2526,7 @@ class EntityEditorWindow(QDialog):
         footer = QHBoxLayout()
         self._discard = _button(
             'Discard All', self._discard_all, style=_BUTTON_DANGER_STYLE,
-            tip='Drop every edit, in both tabs, that is not applied.',
+            tip='Drop every edit, in every tab, that is not applied.',
         )
         footer.addWidget(self._discard)
         footer.addSpacing(scaled(12))
@@ -1567,18 +2535,20 @@ class EntityEditorWindow(QDialog):
         footer.addWidget(self._summary, 1)
         self._apply_button = _button(
             'Apply', self.apply, primary=True,
-            tip='Write the edits of both tabs to the database.',
+            tip='Write the edits of every tab to the database.',
         )
         self._apply_button.setMinimumWidth(scaled(110))
         footer.addWidget(self._apply_button)
         outer.addLayout(footer)
 
     @property
-    def pane(self) -> _SheetPane:
+    def pane(self):
+        """The tab in front: a :class:`_SheetPane`, or the Multis tab."""
         return self._stack.currentWidget()
 
     def show_kind(self, key: str) -> None:
-        pane = self.panes[key]
+        """Show the ``assets``, ``shots`` or ``multis`` tab."""
+        pane = self.multis_pane if key == 'multis' else self.panes[key]
         self._stack.setCurrentWidget(pane)
         index = next(i for i in range(self._tabs.count()) if self._tabs.tabData(i) == key)
         if self._tabs.currentIndex() != index:
@@ -1605,7 +2575,8 @@ class EntityEditorWindow(QDialog):
         return sorted(stored) + new
 
     def update_footer(self) -> None:
-        if not hasattr(self, '_summary') or len(self.panes) < len(es.KINDS):
+        if not hasattr(self, '_summary') or len(self.panes) < len(es.KINDS) \
+                or self.multis_pane is None:
             return
         parts, problems = self._pending()
         message, warn = self._message
@@ -1644,6 +2615,8 @@ class EntityEditorWindow(QDialog):
                 if summary.new_groups:
                     text += f' ({_plural(len(summary.new_groups), f"new {kind.group}")})'
                 bits.append(text)
+            elif summary.new_groups:
+                bits.append(_plural(len(summary.new_groups), f'new {kind.group}'))
             if summary.changed:
                 bits.append(f'{_plural(summary.changed, kind.item)} changed')
             if summary.renamed:
@@ -1654,12 +2627,26 @@ class EntityEditorWindow(QDialog):
                 bits.append(_plural(summary.roots_new, 'new Root'))
             if summary.roots_changed:
                 bits.append(f'{_plural(summary.roots_changed, "Root")} with new assets')
+            if summary.multis_new:
+                bits.append(_plural(summary.multis_new, f'new {kind.item} Multi'))
+            if summary.multis_changed:
+                bits.append(f'{_plural(summary.multis_changed, f"{kind.item} Multi")} changed')
+            if summary.multis_retired:
+                bits.append(f'{_plural(summary.multis_retired, f"{kind.item} Multi")} to retire')
             parts.extend(bits)
             label = kind.key.capitalize()
-            index = next(i for i in range(self._tabs.count()) if self._tabs.tabData(i) == key)
+            index = self._tab_index(key)
             self._tabs.setTabText(index, f'{label} *' if pane.sheet.dirty else label)
             pane.update_buttons()
+        multis_dirty = any(
+            multi.touched for pane in self.panes.values() for multi in pane.sheet.multis
+        )
+        self._tabs.setTabText(self._tab_index('multis'), 'Multis *' if multis_dirty else 'Multis')
+        self.multis_pane.update_buttons()
         return parts, problems
+
+    def _tab_index(self, key: str) -> int:
+        return next(i for i in range(self._tabs.count()) if self._tabs.tabData(i) == key)
 
     def say(self, text: str = '', warn: bool = False) -> None:
         """Show ``text`` in the footer in place of the summary until the
@@ -1668,15 +2655,19 @@ class EntityEditorWindow(QDialog):
         self.update_footer()
 
     def focus(self, kind: str = 'shots', group: str = '', name: str = '') -> None:
-        """Show ``kind``'s tab on ``group`` ('' for all) with ``name`` selected."""
+        """Show ``kind``'s tab on ``group`` ('' for all) with ``name``
+        selected. For ``multis``, ``group`` is the Multi's kind."""
         self.show_kind(kind)
-        self.panes[kind].focus(group, name)
+        if kind == 'multis':
+            self.multis_pane.focus(group, name)
+        else:
+            self.panes[kind].focus(group, name)
 
     def _discard_all(self) -> None:
         if not self.dirty:
             return
         answer = QMessageBox.question(
-            self, 'Discard All', 'Drop every edit, in both tabs, that is not applied?',
+            self, 'Discard All', 'Drop every edit, in every tab, that is not applied?',
         )
         if answer == QMessageBox.Yes:
             for pane in self.panes.values():
@@ -1701,8 +2692,9 @@ class EntityEditorWindow(QDialog):
         self.say(' '.join(notes) or ('Reloaded.' if changed else 'Nothing had changed.'))
 
     def apply(self) -> bool:
-        """Write the edits of both tabs, assets first (a Root may list a
-        new asset); True when nothing is left pending."""
+        """Write the edits of every tab, assets first (a Root may list a
+        new asset), each kind's Multis after its entities; True when nothing
+        is left pending."""
         if not self.dirty:
             return True
         changed, notes = self._rebase()
@@ -1721,22 +2713,46 @@ class EntityEditorWindow(QDialog):
                 self.show_kind(pane.kind.key)
                 self.say(f'{_plural(len(pane.sheet.problems()), "row")} need fixing first (see Status).', warn=True)
                 return False
+            if pane.sheet.group_problems():
+                self.show_kind(pane.kind.key)
+                name, reason = next(iter(pane.sheet.group_problems().items()))
+                self.say(f'New {pane.kind.group} {name}: {reason}.', warn=True)
+                return False
+            if pane.sheet.multi_problems():
+                self.show_kind('multis')
+                self.multis_pane.set_context(pane.kind.key)
+                self.say(f'{_plural(len(pane.sheet.multi_problems()), "Multi")} need fixing first (see Status).', warn=True)
+                return False
         changes = [(pane, pane.sheet.changes()) for pane in self.panes.values()]
         done = ', '.join(self._pending()[0])
         retire = [
             '/'.join(uri.segments) for _pane, change in changes for uri in change.retire
         ]
-        if retire:
-            shown = '\n'.join(retire[:12]) + ('\n…' if len(retire) > 12 else '')
-            answer = QMessageBox.question(
-                self, 'Retire',
-                f'Retire {len(retire)}? They leave the project, and their '
-                'workfiles, exports and renders move to the _deleted folder '
-                f'of each storage location.\n\n{shown}',
-            )
+        retire_multis = [
+            f'Multi {uri.segments[-1]} ({uri.segments[0]})'
+            for _pane, change in changes for uri in change.multis_retire
+        ]
+        if retire or retire_multis:
+            text = []
+            if retire:
+                shown = '\n'.join(retire[:12]) + ('\n…' if len(retire) > 12 else '')
+                text.append(
+                    f'Retire {len(retire)}? They leave the project, and their '
+                    'workfiles, exports and renders move to the _deleted folder '
+                    f'of each storage location.\n\n{shown}'
+                )
+            if retire_multis:
+                text.append(
+                    f'Retire {_plural(len(retire_multis), "Multi")}? They leave '
+                    'the project; their workfiles stay on disk, and their '
+                    'members go back to their own.\n\n' + '\n'.join(retire_multis)
+                )
+            answer = QMessageBox.question(self, 'Retire', '\n\n'.join(text))
             if answer != QMessageBox.Yes:
                 return False
         error = None
+        staged = ''
+        staging_error = None
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             for _pane, change in changes:
@@ -1746,6 +2762,15 @@ class EntityEditorWindow(QDialog):
                 )
         except es.ApplyError as exc:
             error = exc
+        else:
+            # A shot imports its Root's assets from files (the Root's
+            # export, its root layer, its staged build), not from the
+            # database: stage them now, or the layout workfile opened next
+            # imports none of what was just ticked.
+            try:
+                staged = self.source.stage_roots()
+            except Exception as exc:
+                staging_error = exc
         finally:
             QApplication.restoreOverrideCursor()
         for pane in self.panes.values():
@@ -1760,7 +2785,15 @@ class EntityEditorWindow(QDialog):
                 'Apply again.',
             )
             return False
-        self.say(f'Applied: {done}.' if done else 'Applied.')
+        if staging_error is not None:
+            QMessageBox.warning(
+                self, 'Entity Editor',
+                'Applied, but the shots could not be brought up to date with '
+                f'their Roots:\n\n{staging_error}\n\nRun Stage Root & '
+                'Rebuild Shots… on the Root card in the browser.',
+            )
+        applied = f'Applied: {done}' if done else 'Applied'
+        self.say(f'{applied}; {staged}.' if staged else f'{applied}.')
         return True
 
     # ── Closing ──────────────────────────────────────────

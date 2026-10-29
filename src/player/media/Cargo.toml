@@ -1,0 +1,16 @@
+[package]
+name = "th_media"
+description = "Frame-accurate decoding for the sequence player: movies, EXR sequences, the decoded-frame buffer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+th_ffmpeg_sys.workspace = true
+exr.workspace = true
+half.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

@@ -3,18 +3,15 @@
 One export job, which exports the workfile's stage and then submits the
 render pipeline over it, and a notify once the export is through.
 
-Config: ``specs.export``. Command line:
-``python -m tumblepipe.farm.pipelines.export_render <config.json>``.
+Config: ``specs.export``.
 """
 
 from pathlib import Path
-import sys
 
 from tumblepipe.apps.deadline import Job
 from tumblepipe.farm.jobs import export as export_job
 from tumblepipe.farm.jobs import notify as notify_job
-from tumblepipe.farm.pipelines._batch import batch_title, run_cli, submit_batch
-from tumblepipe.farm.specs import export as export_spec
+from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 
 
 def build(
@@ -51,7 +48,3 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
         settings['channel_name'],
         settings['user_name']
     ), build, config, paths)
-
-
-if __name__ == '__main__':
-    sys.exit(run_cli(export_spec.is_valid_config, submit))

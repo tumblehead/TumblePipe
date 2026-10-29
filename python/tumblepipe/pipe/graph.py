@@ -10,16 +10,20 @@ Terminology:
 - References: What depends on an entity (reverse: "what uses me")
 """
 
+import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 from tumblepipe.api import api
-from tumblepipe.util.io import load_json
+from tumblepipe.util.io import VERSION_MARKER, load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.channels import DEFAULT_CHANNEL
 from tumblepipe.config.department import list_entity_department_names
 from tumblepipe.config.entities import get_entity_type, is_terminal_entity
-from tumblepipe.pipe.paths import latest_export_path
+from tumblepipe.pipe.paths import is_finished_version, latest_export_path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -123,6 +127,24 @@ def _link(nodes: dict, key: str, dep_uri: Uri, dep_department) -> None:
         nodes[dep_key].references.append(nodes[key])
 
 
+def _latest_finished_export(entity_uri: Uri, department_name: str) -> Optional[Path]:
+    """The newest default-channel export version that has its context.json.
+
+    scan walks every entity in the project, so one unreadable export failed
+    every shot build over an unrelated asset (an external user's rig export
+    left ``rig/v0006`` empty and no shot in the project would build).
+    ``latest_export_path`` reads past a newer unfinished folder; this also
+    skips the one it falls back to when no version is finished.
+    """
+    version_path = latest_export_path(entity_uri, DEFAULT_CHANNEL, department_name)
+    if version_path is None:
+        return None
+    if not is_finished_version(version_path):
+        logger.warning('Skipping unfinished export %s (no %s)', version_path, VERSION_MARKER)
+        return None
+    return version_path
+
+
 def scan() -> Graph:
     """
     Scan all latest context.json files and build dependency graph.
@@ -134,12 +156,11 @@ def scan() -> Graph:
     # Scan all entities
     for entity_uri, department_name in _iter_all_entities():
         # Every edge is recorded in the default channel's latest export
-        latest_path = latest_export_path(entity_uri, DEFAULT_CHANNEL, department_name)
+        latest_path = _latest_finished_export(entity_uri, department_name)
         if latest_path is None:
             continue
 
-        # Every export writes its context.json; one missing is a broken export
-        context_data = load_json(latest_path / 'context.json')
+        context_data = load_json(latest_path / VERSION_MARKER)
 
         # Create node for this entity
         key = entity_key(entity_uri, department_name)

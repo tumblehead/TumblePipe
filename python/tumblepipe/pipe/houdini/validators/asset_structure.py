@@ -1,8 +1,63 @@
-"""Asset structure validation for USD stages."""
+"""Asset structure validation for USD stages.
+
+A wrong type that carries no transform is only a warning: the export
+retypes it in the published layer (``retype_asset_structure``). SOP Import
+makes the parents of its prims Xforms, so a ``geo`` authored that way came
+out an Xform and every such model export was refused, though an Xform with
+no transform ops places nothing and a Scope groups the same prims.
+"""
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 from .base import ValidationResult
+
+# The grouping children an asset carries, by department: model and rig
+# 'geo', blendshape 'blshp', lookdev 'mtl'
+STRUCTURE_CHILDREN = ('geo', 'blshp', 'mtl')
+
+# Types the export may retype without moving anything
+_RETYPE_TO_XFORM = ('', 'Scope')
+_RETYPE_TO_SCOPE = ('', 'Xform')
+
+
+def _is_transform_property(name: str) -> bool:
+    return name == 'xformOpOrder' or name.startswith('xformOp:')
+
+
+def _has_transform(prim) -> bool:
+    """Whether the composed prim authors any transform op."""
+    return any(
+        _is_transform_property(name)
+        for name in prim.GetAuthoredPropertyNames()
+    )
+
+
+def retype_asset_structure(layer, asset_prim_path: str) -> list[str]:
+    """Retype, in the exported ``layer``, what the validator only warned
+    about: a typeless or Scope asset prim becomes an Xform, a typeless or
+    Xform grouping child becomes a Scope. Only ``def`` specs with no
+    transform ops in this layer are touched. Returns one line per retype."""
+    from pxr import Sdf
+
+    changes = []
+
+    def _retype(path: str, from_types, to_type: str):
+        spec = layer.GetPrimAtPath(path)
+        if spec is None or spec.specifier != Sdf.SpecifierDef:
+            return
+        if spec.typeName not in from_types:
+            return
+        if any(_is_transform_property(name) for name in spec.properties.keys()):
+            return
+        changes.append(
+            f"{path}: '{spec.typeName or '(no type)'}' -> '{to_type}'"
+        )
+        spec.typeName = to_type
+
+    _retype(asset_prim_path, _RETYPE_TO_XFORM, 'Xform')
+    for child_name in STRUCTURE_CHILDREN:
+        _retype(f"{asset_prim_path}/{child_name}", _RETYPE_TO_SCOPE, 'Scope')
+    return changes
 
 
 def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> ValidationResult:
@@ -64,7 +119,13 @@ def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> Va
     # Check asset prim type is Xform (project convention — asset roots are
     # transformable so they can be placed/instanced in shots).
     prim_type = asset_prim.GetTypeName()
-    if prim_type != 'Xform':
+    if prim_type in _RETYPE_TO_XFORM and not _has_transform(asset_prim):
+        result.add_warning(
+            f"Asset prim is '{prim_type or '(no type)'}', not 'Xform'; "
+            "it will be published as an Xform",
+            asset_prim_path,
+        )
+    elif prim_type != 'Xform':
         result.add_error(
             f"Asset prim must be of type 'Xform', found '{prim_type}'",
             asset_prim_path,
@@ -93,14 +154,21 @@ def _validate_asset_base(root, context: dict | None, child_prim_name: str) -> Va
 
     # Check child prim type is Scope
     child_type = child_prim.GetTypeName()
-    if child_type != 'Scope':
+    if child_type in _RETYPE_TO_SCOPE and not _has_transform(child_prim):
+        result.add_warning(
+            f"'{child_prim_name}' prim is '{child_type or '(no type)'}', not "
+            "'Scope'; it will be published as a Scope",
+            child_prim_path,
+        )
+    elif child_type != 'Scope':
         result.add_error(
             f"'{child_prim_name}' prim must be of type 'Scope', found '{child_type}'",
             child_prim_path,
             suggestion=(
                 f"Set the type of '{child_prim_name}' to UsdGeomScope via a "
                 "Configure Primitive LOP. Use the set_kinds LOP for the full "
-                "asset hierarchy in one shot."
+                "asset hierarchy in one shot. A transform on it cannot be "
+                "kept on a Scope: move it to the asset prim or the meshes."
             ),
         )
 

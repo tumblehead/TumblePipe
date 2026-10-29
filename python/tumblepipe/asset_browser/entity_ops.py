@@ -12,6 +12,7 @@ ids before anything reaches here.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
@@ -30,6 +31,8 @@ from . import nodes as nodes
 from . import recipes as recipes
 from . import uris as uris
 from .scene import open_submit_jobs_dialog
+
+log = logging.getLogger(__name__)
 
 #: The Entity Editor's entry in the creation lists. It opens the editor
 #: rather than the browser's generic form; see
@@ -597,7 +600,8 @@ class EntityOps:
         name: str = "",
     ) -> None:
         """Open (or raise) *project_name*'s Entity Editor on its *kind* tab
-        (``"assets"`` or ``"shots"``), showing *group* with *name*
+        (``"assets"``, ``"shots"`` or ``"multis"``, where *group* is the
+        Multi's context), showing *group* with *name*
         selected. The project is asked for when several are registered and
         the scope names none.
 
@@ -609,6 +613,7 @@ class EntityOps:
         from PySide6.QtWidgets import QInputDialog
 
         from tumblepipe.pipe import entity_files
+        from tumblepipe.pipe.usd.instances import has_published_rig
 
         from .entity_editor import EntityEditorSource, EntityEditorWindow
 
@@ -653,10 +658,30 @@ class EntityOps:
                 "card, then retire the old one."
             )
 
+        def multi_rename_blocker(uri) -> str:
+            # A Multi's workfiles sit under groups:/<context>/<name>.
+            from tumblepipe.api import api
+            folder = api.storage.resolve(uri)
+            if not any(p.is_file() for p in folder.rglob("*")):
+                return ""
+            return (
+                "Has workfiles on disk, so it can't be renamed: they would "
+                "stay under the old name. Retire it and add a new Multi."
+            )
+
         def on_applied() -> None:
+            # The Multi membership cache too: Apply can change who is in one.
+            self._invalidate_cache()
             self._index.invalidate()
             self._refresh.sidebar()
             self._refresh.grid()
+
+        def stage_roots() -> str:
+            from tumblepipe.pipe.root_staging import sync_roots
+            result = sync_roots()
+            for uri, why in result.failures:
+                log.warning("Staging Roots: %s: %s", uri, why)
+            return result.summary()
 
         window = EntityEditorWindow(
             EntityEditorSource(
@@ -665,6 +690,9 @@ class EntityOps:
                 rename=on_project(entity_files.rename_entity),
                 rename_blocker=on_project(rename_blocker),
                 on_applied=on_applied,
+                stage_roots=on_project(stage_roots),
+                rigged=on_project(has_published_rig),
+                multi_rename_blocker=on_project(multi_rename_blocker),
             ),
             parent=hou.qt.mainWindow(),
             kind=kind,
@@ -674,8 +702,16 @@ class EntityOps:
         window.show()
 
     def open_entity_editor_for(self, asset_id: str) -> None:
-        """An asset or shot card's **Open in Entity Editor…**: its
+        """An asset, shot or Multi card's **Open in Entity Editor…**: its
         project's editor, on its tab and group, with it selected."""
+        from . import containers
+        container = containers.parse(asset_id)
+        if isinstance(container, containers.GroupContainer):
+            self.open_entity_editor(
+                container.project_name, "multis", container.context,
+                container.path.rsplit("/", 1)[-1],
+            )
+            return
         parts = self._resolver.split(asset_id)
         uri = self._resolver.uri_for(asset_id)
         if parts is None or uri is None:
@@ -1170,6 +1206,14 @@ class EntityOps:
         if uri is None:
             return
         scene_mod.set_scene_ref(uri, None)
+        # Its root layer still names the Root until it is regenerated.
+        from tumblepipe.pipe.root_staging import sync_roots
+        summary = sync_roots([uri]).summary()
+        if summary:
+            import hou
+            hou.ui.setStatusMessage(
+                f"Cleared Root; {summary}", severity=hou.severityType.Message
+            )
         self._invalidate_cache()
         self._refresh.detail()
 

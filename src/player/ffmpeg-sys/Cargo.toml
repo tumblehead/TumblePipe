@@ -1,0 +1,16 @@
+[package]
+name = "th_ffmpeg_sys"
+description = "Raw bindings to the player's vendored, decode-only FFmpeg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+links = "avcodec"
+
+[features]
+# Regenerate src/bindings/<target>.rs from the FFmpeg headers (needs libclang).
+# Normal builds use the committed file, so CI never needs libclang.
+regenerate = ["dep:bindgen"]
+
+[build-dependencies]
+bindgen = { version = "0.72", optional = true }

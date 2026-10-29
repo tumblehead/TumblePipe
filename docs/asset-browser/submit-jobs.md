@@ -449,7 +449,6 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | **playblast** | Playblast cells | `playblast` (`playblast`) → `playblast_notify` (`general`) | `render:/playblast/<shot>/<dept>/vNNNN.mp4` + the daily |
 | **composite** | the `th::build_comp` node's **Submit** | see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s) | `render:/render/<shot>/composite/…` |
 | **export_render** | the `th::lookdev_studio` HDA | `export` (`houdini`) → `notify` | lookdev turntable renders |
-| **propagate**, **update** | command line only (`propagate`: re-publish dependents of a department; `update`: republish every shot up to a department) | publish/build jobs → `notify` | exports and staged builds |
 
 Job priorities come from the settings, inside the
 [Farm priorities](#farm-priorities) bands; every notify job runs at 100,

@@ -1,10 +1,18 @@
 use std::path::Path;
 
-/// Find the highest `v\d+` directory entry under `root`. Returns `None`
-/// if the directory doesn't exist or contains no version dirs.
+/// The sidecar every writer puts in a version folder last; a folder without
+/// it is an export or build that failed or is still being written.
+pub const VERSION_MARKER: &str = "context.json";
+
+/// Find the newest finished `v\d+` directory under `root`: the highest one
+/// holding [`VERSION_MARKER`]. A newer unfinished folder is read past (an
+/// external user's failed rig export left an empty `rig/v0006`). When no
+/// version is finished the layout never wrote sidecars, and the highest is
+/// taken. Returns `None` if the directory doesn't exist or contains no
+/// version dirs. Python's `get_latest_version_path` has the same rule.
 pub fn find_latest(root: &Path) -> Option<String> {
     let entries = std::fs::read_dir(root).ok()?;
-    let mut best: Option<(u64, String)> = None;
+    let mut versions: Vec<(u64, String)> = Vec::new();
 
     for entry in entries.flatten() {
         if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
@@ -15,14 +23,16 @@ pub fn find_latest(root: &Path) -> Option<String> {
             Err(_) => continue,
         };
         if let Some(n) = parse_v(&name) {
-            match &best {
-                Some((b, _)) if *b >= n => {}
-                _ => best = Some((n, name)),
-            }
+            versions.push((n, name));
         }
     }
 
-    best.map(|(_, name)| name)
+    // Newest first; the common case stops at the first stat.
+    versions.sort_by(|a, b| b.0.cmp(&a.0));
+    let finished = versions
+        .iter()
+        .find(|(_, name)| root.join(name).join(VERSION_MARKER).is_file());
+    finished.or(versions.first()).map(|(_, name)| name.clone())
 }
 
 fn parse_v(name: &str) -> Option<u64> {
@@ -60,6 +70,16 @@ mod tests {
             std::fs::create_dir(td.path().join(v)).unwrap();
         }
         assert_eq!(find_latest(td.path()).as_deref(), Some("v0013"));
+    }
+
+    #[test]
+    fn reads_past_unfinished_versions() {
+        let td = tempfile::tempdir().unwrap();
+        for v in ["v0001", "v0002", "v0003"] {
+            std::fs::create_dir(td.path().join(v)).unwrap();
+        }
+        std::fs::write(td.path().join("v0002").join(VERSION_MARKER), b"{}").unwrap();
+        assert_eq!(find_latest(td.path()).as_deref(), Some("v0002"));
     }
 
     #[test]

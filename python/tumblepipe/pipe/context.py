@@ -29,6 +29,33 @@ def find_output(data, **kwargs):
     return None
 
 
+#: The ``department`` of the input a Root asset carries: it reached the shot
+#: through the shot's root layer, not through a department's layer.
+ROOT_DEPARTMENT = 'root'
+
+
+def root_input(scene_uri, version_name) -> dict:
+    """The input that marks an asset as the shot's Root's (``scenes:/…``)."""
+    return {
+        'uri': str(scene_uri),
+        'department': ROOT_DEPARTMENT,
+        'version': version_name,
+    }
+
+
+def sourced_from_root(inputs) -> bool:
+    """True if an asset reached the stage through a shot's Root.
+
+    A Root's assets are the Root's: no export claims them, and no
+    department cut leaves them out. :func:`get_source_department` ignores
+    the marker (it reads shot departments only), so a cut never sees one.
+    """
+    return any(
+        isinstance(entry, dict) and str(entry.get('uri', '')).startswith('scenes:/')
+        for entry in inputs or ()
+    )
+
+
 def get_source_department(inputs: list[dict], department_order: list[str]) -> str | None:
     """The shot department that introduced an asset, from its ``inputs``.
 

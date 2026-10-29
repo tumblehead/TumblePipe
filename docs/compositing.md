@@ -187,9 +187,12 @@ after the renders land builds normally.
 Submit Render Jobs, the composite chain, farm playblasts and farm publishes
 all submit to a Thinkbox **Deadline** farm. A machine without the Deadline
 Client (whose installer sets `DEADLINE_PATH`) is told so when it presses
-Submit; see `docs/deadline.md` for setting one up. Without a farm:
+Submit; see `docs/deadline.md` for setting one up. Choosing **This machine**
+(Farm Submit's **Run on**, the publish dialog, or the choice `build_comp`'s
+Submit asks for) runs the same jobs here instead, in the background (see
+*Running farm jobs on this machine* in `docs/deadline.md`). Without either:
 
-- **Publish** — choose *Local* in the publish process dialog.
+- **Publish** — choose *In this session* in the publish process dialog.
 - **Playblast** — the `th::playblast` node renders and publishes locally.
 - **Renders for comp** — render with Karma yourself and write the frames
   where `build_comp` looks:
@@ -227,8 +230,9 @@ geometry, so composing it would be a large bill for nothing.
 
 ## Farm submission and MP4s
 
-**Submit** on the node hands the saved workfile to the composite job
-family, which chains on Deadline:
+**Submit** on the node asks where to run (Render farm or This machine) and
+hands the saved workfile to the composite job family, which chains on
+Deadline, or in the same order on this machine:
 
 1. *stage* — package the workfile,
 2. *partial/full composite* — render the node's COP graph per channel on

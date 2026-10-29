@@ -9,6 +9,8 @@ from .process_task import ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_RO
 from .process_executor import ProcessExecutor
 from .helpers import has_staged_export
 from .report import report_failure
+from . import farm_submit
+from tumblepipe.farm import backend as farm_backend
 
 
 def _primary_button_style(base: str, hover: str, pressed: str, border: str) -> str:
@@ -46,7 +48,7 @@ DONE_BUTTON_STYLE = _primary_button_style('#3c9a4e', '#48ad5b', '#33853f', '#2e7
 
 
 class ProcessDialog(QtWidgets.QDialog):
-    """Dialog for executing process tasks with local/farm mode selection"""
+    """Dialog for executing process tasks: in this session, on this machine, or on the farm"""
 
     process_completed = Signal(dict)  # {completed: [...], failed: [...], skipped: [...]}
 
@@ -143,15 +145,32 @@ class ProcessDialog(QtWidgets.QDialog):
         mode_layout = QtWidgets.QHBoxLayout()
         self._mode_group.setLayout(mode_layout)
 
-        self._local_radio = QtWidgets.QRadioButton("Local")
-        self._local_radio.setToolTip("Execute tasks locally in the current Houdini session")
+        # In this session: the tasks run here and now, in this Houdini.
+        # This machine / Render farm: the same farm jobs, submitted to the
+        # background queue on this machine (farm.local) or to Deadline.
+        self._local_radio = QtWidgets.QRadioButton("In this session")
+        self._local_radio.setToolTip(
+            "Run the tasks now, in this Houdini session; the dialog waits for them"
+        )
+
+        self._machine_radio = QtWidgets.QRadioButton("This machine")
+        self._machine_radio.setToolTip(
+            "Submit the tasks as farm jobs that run here, in the background, "
+            "one task at a time, as a render node would run them. Follow "
+            "them in the Farm Manager."
+        )
+
+        self._farm_radio = QtWidgets.QRadioButton("Render farm")
+        self._farm_radio.setToolTip("Submit the tasks as farm jobs to Deadline")
+
+        # One exclusive group from the start: auto-exclusivity only binds
+        # radios that already share a parent, and these get checked before
+        # the layout reparents them.
+        self._mode_buttons = QtWidgets.QButtonGroup(self)
+        for radio in (self._local_radio, self._machine_radio, self._farm_radio):
+            self._mode_buttons.addButton(radio)
+            mode_layout.addWidget(radio)
         self._local_radio.setChecked(True)
-
-        self._farm_radio = QtWidgets.QRadioButton("Farm")
-        self._farm_radio.setToolTip("Submit tasks to the render farm")
-
-        mode_layout.addWidget(self._local_radio)
-        mode_layout.addWidget(self._farm_radio)
 
         layout.addWidget(self._mode_group)
 
@@ -183,6 +202,16 @@ class ProcessDialog(QtWidgets.QDialog):
         button_layout.addStretch()
 
         # Execute/Cancel buttons
+        # The farm jobs a run submitted, one click away (shown after a
+        # farm run).
+        self._manager_button = QtWidgets.QPushButton("Farm Manager")
+        self._manager_button.setToolTip("See the submitted jobs, their progress and logs")
+        self._manager_button.clicked.connect(
+            lambda: farm_submit.open_manager(self._backend())
+        )
+        self._manager_button.hide()
+        button_layout.addWidget(self._manager_button)
+
         self._execute_button = QtWidgets.QPushButton("Execute")
         self._execute_button.setDefault(True)
         self._execute_button.setStyleSheet(EXECUTE_BUTTON_STYLE)
@@ -236,9 +265,12 @@ class ProcessDialog(QtWidgets.QDialog):
         # Auto-expand/collapse based on checkbox state
         self._model.itemChanged.connect(self._on_item_changed)
 
-        # Connect mode radio buttons to filter tasks
+        # Connect mode radio buttons to filter tasks. The tasks a mode allows
+        # differ only between this session and a farm, so only the session
+        # radio refilters; moving between the two farms keeps the ticks.
         self._local_radio.toggled.connect(self._on_mode_changed)
-        self._farm_radio.toggled.connect(self._on_mode_changed)
+        self._machine_radio.toggled.connect(lambda _checked: self._update_status())
+        self._farm_radio.toggled.connect(lambda _checked: self._update_status())
 
     def _select_all(self):
         """Select all tasks"""
@@ -291,7 +323,12 @@ class ProcessDialog(QtWidgets.QDialog):
         else:
             # Only show mode in status if mode group is visible
             if self._mode_group.isVisible():
-                mode = "locally" if self._local_radio.isChecked() else "on farm"
+                if self._local_radio.isChecked():
+                    mode = "in this session"
+                elif self._machine_radio.isChecked():
+                    mode = "on this machine, in the background"
+                else:
+                    mode = "on the render farm"
                 self._status_label.setText(f"Ready to execute {enabled_count} task(s) {mode}")
             else:
                 self._status_label.setText(f"Ready to execute {enabled_count} task(s)")
@@ -314,17 +351,26 @@ class ProcessDialog(QtWidgets.QDialog):
 
         # Hide individual radio buttons if mode not available
         self._local_radio.setVisible(has_local)
+        self._machine_radio.setVisible(has_farm)
         self._farm_radio.setVisible(has_farm)
 
-        # Hide entire group if only one mode available (no choice needed)
+        # Hide the group when there is no choice: this session only. Farm
+        # tasks always offer two places to run.
         if has_local and not has_farm:
             self._mode_group.setVisible(False)
             self._local_radio.setChecked(True)
         elif has_farm and not has_local:
-            self._mode_group.setVisible(False)
-            self._farm_radio.setChecked(True)
+            self._mode_group.setVisible(True)
+            self._check_saved_farm()
         else:
             self._mode_group.setVisible(True)
+
+    def _check_saved_farm(self):
+        """Select the farm the artist chose last time, here or in Farm Submit."""
+        if farm_submit.saved_backend() == farm_backend.LOCAL:
+            self._machine_radio.setChecked(True)
+        else:
+            self._farm_radio.setChecked(True)
 
     def _on_cancel_clicked(self):
         """Handle cancel button click"""
@@ -341,11 +387,25 @@ class ProcessDialog(QtWidgets.QDialog):
             # Close dialog
             self.reject()
 
+    def _is_farm_mode(self) -> bool:
+        return not self._local_radio.isChecked()
+
+    def _backend(self) -> str:
+        """Where farm tasks go: this machine or the render farm (``farm.backend``)."""
+        return farm_backend.LOCAL if self._machine_radio.isChecked() else farm_backend.FARM
+
     def _on_execute_clicked(self):
         """Handle execute button click"""
         enabled_tasks = self._model.get_enabled_tasks()
         if not enabled_tasks:
             return
+
+        # A farm run needs Deadline only when it goes to Deadline; say so
+        # before anything is saved or submitted.
+        if self._is_farm_mode():
+            if not farm_submit.check_backend(self._backend(), f"Process: {self._title}"):
+                return
+            farm_submit.remember_backend(self._backend())
 
         # Run pre-execute callback (e.g., save scene) before starting tasks
         if self._pre_execute_callback is not None:
@@ -367,9 +427,10 @@ class ProcessDialog(QtWidgets.QDialog):
         self._model.reset_all_status()
 
         # Configure executor
-        mode = 'local' if self._local_radio.isChecked() else 'farm'
+        mode = 'farm' if self._is_farm_mode() else 'local'
         self._executor.set_tasks(self._model.get_tasks())
-        self._executor.set_mode(mode)
+        self._executor.set_mode(mode, self._backend())
+        self._manager_button.hide()
 
         # Start execution
         self._status_label.setText("Executing...")
@@ -380,6 +441,7 @@ class ProcessDialog(QtWidgets.QDialog):
         """Enable/disable UI elements during execution"""
         self._tree_view.setEnabled(not executing)
         self._local_radio.setEnabled(not executing)
+        self._machine_radio.setEnabled(not executing)
         self._farm_radio.setEnabled(not executing)
         self._select_all_button.setEnabled(not executing)
         self._select_none_button.setEnabled(not executing)
@@ -403,6 +465,7 @@ class ProcessDialog(QtWidgets.QDialog):
         self._select_all_button.hide()
         self._select_none_button.hide()
         self._local_radio.setEnabled(False)
+        self._machine_radio.setEnabled(False)
         self._farm_radio.setEnabled(False)
         self._cancel_button.setText("Done")
         self._cancel_button.setStyleSheet(DONE_BUTTON_STYLE)
@@ -476,6 +539,8 @@ class ProcessDialog(QtWidgets.QDialog):
         """Handle all tasks completed signal"""
         self._is_executing = False
         self._set_ui_executing(False)
+        # Whatever a farm run submitted is followed in the Farm Manager.
+        self._manager_button.setVisible(self._is_farm_mode())
 
         # Count results
         tasks = self._model.get_tasks()
@@ -509,8 +574,15 @@ class ProcessDialog(QtWidgets.QDialog):
             self._status_label.setStyleSheet("color: orange; font-weight: bold;")
             self._show_cancelled_incomplete_warning(unrun)
         else:
+            where = ""
+            if self._is_farm_mode():
+                where = (
+                    " — queued on this machine, see the Farm Manager"
+                    if self._backend() == farm_backend.LOCAL
+                    else " — submitted to the render farm"
+                )
             self._status_label.setText(
-                f"All tasks completed ({len(completed)} succeeded, {len(skipped)} skipped)"
+                f"All tasks completed ({len(completed)} succeeded, {len(skipped)} skipped){where}"
             )
             self._status_label.setStyleSheet("color: green; font-weight: bold;")
             self._show_done_state()

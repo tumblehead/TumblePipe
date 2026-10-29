@@ -318,6 +318,39 @@ def localize_external_sidecars(layer_path: Path, skip_roots: list[Path] = ()):
     return localize_external_arcs(layer_path, skip_roots=skip_roots)
 
 
+def check_no_root_asset_imports(entity_uri, expected_asset_uris):
+    """Refuse a shot export whose workfile imports an asset its Root provides.
+
+    A shot's Root assets come in through import_shot and belong to the Root:
+    no export claims them, and their count is the Root's. A workfile import
+    node bringing one in again would make the export claim it, and the shot
+    would have two sources for one asset that can disagree on its count.
+    """
+    if not entity_uri.segments or entity_uri.segments[0] != 'shots':
+        return
+    from tumblepipe.pipe.scene_build import root_assets, shot_root
+    scene_uri = shot_root(entity_uri)
+    if scene_uri is None:
+        return
+    provided = {entry.asset: entry for entry in root_assets(scene_uri)}
+    clashes = sorted(str(uri) for uri in expected_asset_uris if str(uri) in provided)
+    if not clashes:
+        return
+    root_name = '/'.join(scene_uri.segments)
+    bullets = "\n  - ".join(
+        f"{'/'.join(Uri.parse(uri).segments[1:])} (the Root has "
+        f"{provided[uri].instances})"
+        for uri in clashes
+    )
+    raise ExportLayerError(
+        f"Export aborted: this workfile imports asset(s) that the shot's "
+        f"Root '{root_name}' already provides:\n  - {bullets}\n\n"
+        "A Root's assets come in through import_shot and belong to the "
+        "Root. Remove them from the import node here, or change their count "
+        "in the Root (Entity Editor, Shots tab, Assets)."
+    )
+
+
 def check_no_dropped_assets(root, entity_uri, expected_asset_uris, tracked_asset_uris):
     """Refuse to publish a stage that lost an asset's pipeline metadata.
 

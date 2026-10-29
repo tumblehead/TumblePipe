@@ -730,8 +730,17 @@ class PipelineCatalog(Catalog):
                 tooltip="Submit render jobs for the current scene's entity",
             ),
             QuickAction(
+                id="entity_editor", label="Entity Editor", icon="list",
+                tooltip="The project's assets and shots as spreadsheets: add, "
+                        "edit and retire them",
+            ),
+            QuickAction(
                 id="farm", label="Farm Submit", icon="layout-grid",
                 tooltip="Publish, playblast and render any shots on the farm",
+            ),
+            QuickAction(
+                id="farm_manager", label="Farm Manager", icon="server",
+                tooltip="Follow farm and local render jobs: progress, logs and errors",
             ),
             QuickAction(
                 id="update", label="Update", icon="download",
@@ -754,12 +763,49 @@ class PipelineCatalog(Catalog):
             self._scene.publish_current_scene(done_cb)
         elif action_id == "render":
             self._scene.render_current_scene(done_cb)
+        elif action_id == "entity_editor":
+            self._open_scene_entity_editor(done_cb)
         elif action_id == "farm":
             self._scene.open_farm(done_cb)
+        elif action_id == "farm_manager":
+            self._scene.open_farm_manager(done_cb)
         elif action_id == "update":
             self._scene.update_scene_imports(done_cb)
         elif action_id == "reload":
             self._scene.reload_current_scene(done_cb)
+
+    def _open_scene_entity_editor(self, done_cb=None) -> None:
+        """The Entity Editor quick action. Magnus asked for it beside Render:
+        the editor was only reachable from the "+" card and card menus.
+
+        Opens the loaded workfile's project on its entity's tab, group and
+        row; an untitled or off-pipeline scene opens on Shots and asks for
+        the project when several are registered.
+        """
+        def _open():
+            try:
+                import hou
+                from tumblepipe.pipe.paths import get_workfile_context
+                project_name, kind, group, name = "", "shots", "", ""
+                hip_path = Path(hou.hipFile.path())
+                proj = (
+                    None if hou.hipFile.isNewFile()
+                    else self._resolver.project_for_path(hip_path)
+                )
+                if proj is not None:
+                    project_name = proj.name
+                    context = get_workfile_context(hip_path)
+                    segments = (
+                        context.entity_uri.segments if context is not None else []
+                    )
+                    if len(segments) == 3 and segments[0] in ("assets", "shots"):
+                        kind, group, name = segments
+                self._ops.open_entity_editor(project_name, kind, group, name)
+            finally:
+                if callable(done_cb):
+                    done_cb()
+
+        run_on_main_thread(reporting("Opening the Entity Editor", _open))
 
     def get_quick_action_menu_items(self, action_id: str):
         """Right-click items for a quick-action toolbar button.

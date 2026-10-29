@@ -5,7 +5,7 @@ from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 
 from tumblepipe.pipe.paths.version import (
-    list_version_paths,
+    get_latest_version_path,
     get_next_version_path,
 )
 
@@ -53,10 +53,10 @@ def latest_export_path(
     channel_name: str,
     department_name: str
     ) -> Optional[Path]:
-    """The newest version's export directory, or None when there is none."""
-    version_paths = list_version_paths(api.storage.resolve(
+    """The newest finished version's export directory, or None when there is
+    none (``get_latest_version_path``: a failed export is read past)."""
+    return get_latest_version_path(api.storage.resolve(
         get_export_uri(entity_uri, channel_name, department_name)))
-    return version_paths[-1] if version_paths else None
 
 def next_export_path(
     entity_uri: Uri,
@@ -87,6 +87,19 @@ def get_layer_file_name(
     )
     entity_name = '_'.join(entity_uri.segments)
     return f'{entity_name}_{channel_name}_{department_name}_{version_name}.usd'
+
+def get_root_export_path(shot_uri: Uri) -> Path:
+    """export:/{shot}/_root — the directory holding a shot's root layers.
+
+    The root layer is shot-level, so unlike a department it has no channel
+    directory (the resolver maps ``dept=root`` here).
+    """
+    return api.storage.resolve(Uri.parse('export:/') / shot_uri.segments / '_root')
+
+def latest_root_version_path(shot_uri: Uri) -> Optional[Path]:
+    """The newest finished root layer version directory, or None when there
+    is none (``get_latest_version_path``: a failed build is read past)."""
+    return get_latest_version_path(get_root_export_path(shot_uri))
 
 def get_root_layer_file_name(
     entity_uri: Uri,

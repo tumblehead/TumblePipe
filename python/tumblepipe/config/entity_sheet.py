@@ -66,8 +66,12 @@ GROUP = 'group'
 NAME = 'name'
 #: Not stored on the shot: the assets its Root imports.
 ASSETS = 'assets'
+#: Not stored on the entity: the Multis that list it as a member.
+MULTIS = 'multis'
 
 SCENES_URI = Uri.parse('scenes:/')
+GROUPS_URI = Uri.parse('groups:/')
+DEPARTMENTS_URI = Uri.parse('departments:/')
 #: How ``config.scene`` stores a Root's asset list entries.
 CHANNEL_KEY = 'channel'
 DEFAULT_CHANNEL = 'default'
@@ -75,7 +79,7 @@ DEFAULT_CHANNEL = 'default'
 _LABELS = {
     FRAME_START: 'Start', FRAME_END: 'End', LENGTH: 'Length',
     ROLL_START: 'Pre-roll', ROLL_END: 'Post-roll', FPS: 'FPS', ROOT: 'Root',
-    ANIMATABLE: 'Animatable', ASSETS: 'Assets',
+    ANIMATABLE: 'Animatable', ASSETS: 'Assets', MULTIS: 'Multis',
 }
 
 _INT_FIELDS = frozenset({FRAME_START, FRAME_END, ROLL_START, ROLL_END, LENGTH})
@@ -264,6 +268,16 @@ class Record:
 
 
 @dataclass(frozen=True)
+class MultiRecord:
+    """A Multi as stored (``groups:/<kind>/<name>``): its members' URI
+    strings and the departments it covers, in stored order."""
+    name: str
+    uri: Uri
+    members: tuple[str, ...]
+    departments: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Inherited:
     """What an entity in one group inherits: each field's value, and where
     it comes from ("sequence sq010", "the project's defaults", ...)."""
@@ -284,6 +298,10 @@ class Base:
     roots: Mapping[str, tuple[RootAsset, ...]] = field(default_factory=dict)
     #: Every asset URI string (what a Root can list).
     assets: tuple[str, ...] = ()
+    #: The kind's Multis, in database order.
+    multis: tuple[MultiRecord, ...] = ()
+    #: The departments a Multi of this kind can cover, in pipeline order.
+    pool: tuple[str, ...] = ()
 
     def inherited(self, group: str) -> Inherited:
         return self.by_group.get(group, self.for_new_group)
@@ -331,6 +349,34 @@ def _load_roots(config) -> dict[str, tuple[RootAsset, ...]]:
     return dict(sorted(found.items()))
 
 
+def _load_multis(config, kind: Kind) -> tuple[MultiRecord, ...]:
+    found = []
+    for uri in config.list_entity_uris(GROUPS_URI / kind.key):
+        if len(uri.segments) != 2:
+            continue
+        # Resolved, as config.groups reads them; the schema gives neither
+        # key a default, so a Multi may lack one (config.groups).
+        props = config.get_properties(uri) or {}
+        found.append(MultiRecord(
+            uri.segments[1], uri,
+            tuple(props.get('members', [])), tuple(props.get('departments', [])),
+        ))
+    return tuple(found)
+
+
+def _load_pool(config, kind: Kind) -> tuple[str, ...]:
+    """``config.department.list_departments(kind, include_generated=False)``
+    on ``config``: what New Multi covers, in pipeline order."""
+    data = (config.root('departments') or {}).get('children', {})
+    pool = []
+    for name in data.get(kind.key, {}).get('children', {}):
+        props = config.get_properties(DEPARTMENTS_URI / kind.key / name) or {}
+        if props.get('generated', False) or not props.get('enabled', True):
+            continue
+        pool.append(name)
+    return tuple(pool)
+
+
 def load(config, kind: Kind = SHOTS_KIND) -> Base:
     """The project's ``kind`` entities, in database order, with what they
     inherit."""
@@ -368,6 +414,8 @@ def load(config, kind: Kind = SHOTS_KIND) -> Base:
             for_new_group=_inherited(config, kind, None),
             roots=_load_roots(config) if kind is SHOTS_KIND else {},
             assets=assets,
+            multis=_load_multis(config, kind),
+            pool=_load_pool(config, kind),
         )
 
 
@@ -404,6 +452,48 @@ class Row:
         return self.is_new or self.renamed or bool(self.edits) or self.retire
 
 
+@dataclass
+class Multi:
+    """One Multi in the sheet: a stored one (``origin``) or a new one.
+
+    ``members`` are the sheet's row ids, so a member renamed or retired in
+    the sheet stays itself: its URI is only worked out on Apply. A stored
+    member the sheet has no row for (an entity no longer in the project) is
+    kept as its URI string. ``base_members`` is what ``members`` was when
+    loaded, to tell a changed list. Read-only outside :class:`Sheet`.
+    """
+    id: int
+    origin: MultiRecord | None
+    name: str
+    members: list
+    departments: tuple[str, ...]
+    base_members: tuple = ()
+    retire: bool = False
+
+    @property
+    def is_new(self) -> bool:
+        return self.origin is None
+
+    @property
+    def renamed(self) -> bool:
+        return self.origin is not None and self.name != self.origin.name
+
+    @property
+    def members_changed(self) -> bool:
+        return set(self.members) != set(self.base_members)
+
+    @property
+    def departments_changed(self) -> bool:
+        return self.origin is not None and set(self.departments) != set(self.origin.departments)
+
+    @property
+    def touched(self) -> bool:
+        return (
+            self.is_new or self.renamed or self.retire
+            or self.members_changed or self.departments_changed
+        )
+
+
 @dataclass(frozen=True)
 class Changes:
     """The writes an Apply makes, in the order :func:`apply` makes them."""
@@ -414,11 +504,17 @@ class Changes:
     roots: tuple[tuple[str, tuple[RootAsset, ...], bool], ...] = ()  # (uri, assets, new)
     create: tuple[tuple[Uri, Mapping[str, object]], ...] = ()
     update: tuple[tuple[Uri, Mapping[str, object]], ...] = ()  # URI after any rename
+    #: Multis, written after the entities (a new shot can be a member).
+    multis_retire: tuple[Uri, ...] = ()
+    multis_rename: tuple[tuple[Uri, str], ...] = ()
+    multis_create: tuple[tuple[Uri, Mapping[str, object]], ...] = ()
+    multis_update: tuple[tuple[Uri, Mapping[str, object]], ...] = ()  # URI after any rename
 
     def __bool__(self) -> bool:
         return any((
             self.retire, self.rename, self.groups, self.roots,
-            self.create, self.update,
+            self.create, self.update, self.multis_retire, self.multis_rename,
+            self.multis_create, self.multis_update,
         ))
 
 
@@ -432,20 +528,26 @@ class Summary:
     new_groups: tuple[str, ...]
     roots_changed: int = 0
     roots_new: int = 0
+    multis_new: int = 0
+    multis_changed: int = 0
+    multis_retired: int = 0
 
 
 class Sheet:
     """A project's assets or shots with the edits not yet applied; see the
     module docstring. ``rename_blocker`` says why a stored entity cannot be
     renamed ('' when it can): ``pipe.entity_files`` refuses one with files
-    on disk."""
+    on disk. ``multi_rename_blocker`` says the same of a stored Multi, whose
+    workfiles live in a folder named after it."""
 
     def __init__(
         self, base: Base, rename_blocker: Callable[[Uri], str] | None = None,
+        multi_rename_blocker: Callable[[Uri], str] | None = None,
     ) -> None:
         self.base = base
         self.kind = base.kind
         self._rename_blocker = rename_blocker
+        self._multi_rename_blocker = multi_rename_blocker
         self._blocked: dict[str, str] = {}
         self._rows = [
             Row(i, record, record.group, record.name)
@@ -456,11 +558,22 @@ class Sheet:
         # Pending asset lists of stored Roots, and Roots not created yet.
         self._root_edits: dict[str, tuple[RootAsset, ...]] = {}
         self._new_roots: dict[str, tuple[RootAsset, ...]] = {}
+        # Groups to create on Apply even with no new row in them yet.
+        self._new_groups: list[str] = []
+        by_uri = {str(row.origin.uri): row.id for row in self._rows}
+        self._multis: list[Multi] = []
+        for i, record in enumerate(base.multis):
+            members = [by_uri.get(member, member) for member in record.members]
+            self._multis.append(Multi(
+                i, record, record.name, members, record.departments, tuple(members),
+            ))
+        self._next_multi_id = len(self._multis)
         self._undo: list[tuple] = []
         self._redo: list[tuple] = []
         self._batch_depth = 0
         self._batch_saved = False
         self._problems: dict[int, str] | None = None
+        self._multi_problems: dict[int, str] | None = None
 
     # ── Reading ──────────────────────────────────────────
 
@@ -472,8 +585,10 @@ class Sheet:
         return self._by_id[row_id]
 
     def groups(self) -> list[str]:
-        """Every group, stored ones first, then those new rows name."""
+        """Every group, stored ones first, then new ones: those added with
+        :meth:`add_group`, then those new rows name."""
         found = list(self.base.groups)
+        found += [g for g in self._new_groups if g not in found]
         for row in self._rows:
             if row.group and row.group not in found:
                 found.append(row.group)
@@ -500,6 +615,8 @@ class Sheet:
             return end - start + 1 if _is_int(start) and _is_int(end) else None
         if name == ASSETS:
             return self.shot_assets(row)
+        if name == MULTIS:
+            return tuple(multi.name for multi in self.row_multis(row))
         edit = row.edits.get(name, _MISSING)
         if edit is not _MISSING and edit is not RESET:
             return edit
@@ -522,6 +639,10 @@ class Sheet:
                 return SET
             state = self.state(row, ROOT)
             return INHERITED if state == CLEARED else state
+        if name == MULTIS:
+            if self.membership_pending(row):
+                return SET
+            return OWN if self.row_multis(row) else INHERITED
         edit = row.edits.get(name, _MISSING)
         if edit is RESET:
             return CLEARED
@@ -535,6 +656,8 @@ class Sheet:
         """Where an inherited value of ``name`` comes from."""
         if name == ASSETS:
             name = ROOT
+        if name == MULTIS:
+            return ''
         return self.inherited(row).sources.get(name, '')
 
     @property
@@ -542,6 +665,8 @@ class Sheet:
         return (
             any(row.touched for row in self._rows)
             or bool(self._root_edits) or bool(self._used_new_roots())
+            or any(multi.touched for multi in self._multis)
+            or bool(self._new_groups)
         )
 
     def summary(self) -> Summary:
@@ -555,13 +680,19 @@ class Sheet:
             ),
             renamed=sum(1 for row in rows if row.renamed and not row.retire),
             retired=sum(row.retire for row in rows),
-            problems=len(self.problems()),
-            new_groups=tuple(dict.fromkeys(
-                row.group for row in rows
-                if row.is_new and row.group not in known
-            )),
+            problems=len(self.problems()) + len(self.multi_problems())
+            + len(self.group_problems()),
+            new_groups=tuple(dict.fromkeys([
+                *self._new_groups,
+                *(row.group for row in rows if row.is_new and row.group not in known),
+            ])),
             roots_changed=len(self._root_edits),
             roots_new=len(self._used_new_roots()),
+            multis_new=sum(m.is_new for m in self._multis),
+            multis_changed=sum(
+                1 for m in self._multis if not m.is_new and not m.retire and m.touched
+            ),
+            multis_retired=sum(m.retire for m in self._multis),
         )
 
     # ── Roots (shots) ────────────────────────────────────
@@ -685,23 +816,335 @@ class Sheet:
         del self._root_edits[uri]
         return True
 
+    # ── New groups ───────────────────────────────────────
+
+    @property
+    def new_groups(self) -> tuple[str, ...]:
+        """Groups added with :meth:`add_group`, to create on Apply."""
+        return tuple(self._new_groups)
+
+    def group_problem(self, name: str, group: str | None = None) -> str:
+        """Why ``name`` cannot name a new group (``group``, one already
+        added, aside), or ''."""
+        kind = self.kind
+        text = name.strip()
+        reason = name_problem(kind.group, text)
+        if reason:
+            return reason
+        other = next(
+            (g for g in self.base.other_groups if g.casefold() == text.casefold()), None,
+        )
+        if other is not None:
+            return f"'{other}' is {kind.other_group}; a {kind.group} cannot share its name"
+        for existing in self.groups():
+            if existing == group or existing.casefold() != text.casefold():
+                continue
+            if existing != text:
+                return f"{kind.group.capitalize()} '{text}' differs only by case from '{existing}'"
+            if existing in self.base.groups:
+                return f"{kind.group.capitalize()} '{text}' already exists"
+            return f"'{text}' is already a new {kind.group}"
+        return ''
+
+    def add_group(self, name: str) -> str:
+        """A new, empty group, created on Apply; its name. Refused (a
+        ``ValueError``) when :meth:`group_problem` has a reason."""
+        text = name.strip()
+        reason = self.group_problem(text)
+        if reason:
+            raise ValueError(reason)
+        self._changing()
+        self._new_groups.append(text)
+        return text
+
+    def remove_group(self, name: str) -> bool:
+        """Drop a group added with :meth:`add_group`; new rows in it keep
+        it (they create it on Apply)."""
+        if name not in self._new_groups:
+            return False
+        self._changing()
+        self._new_groups.remove(name)
+        return True
+
+    def group_problems(self) -> dict[str, str]:
+        """Why each group added with :meth:`add_group` cannot be created
+        (after a rebase, say: someone else made the other kind's group of
+        that name), by name."""
+        return {
+            group: reason for group in self._new_groups
+            if (reason := self.group_problem(group, group))
+        }
+
+    # ── Multis ───────────────────────────────────────────
+
+    @property
+    def multis(self) -> tuple[Multi, ...]:
+        """Every Multi of the kind, stored ones first, then new ones."""
+        return tuple(self._multis)
+
+    def multi(self, multi_id: int) -> Multi:
+        for multi in self._multis:
+            if multi.id == multi_id:
+                return multi
+        raise KeyError(multi_id)
+
+    def multi_rows(self, multi: Multi) -> list[Row]:
+        """The rows ``multi`` lists, in its order."""
+        return [
+            self._by_id[member] for member in multi.members
+            if isinstance(member, int) and member in self._by_id
+        ]
+
+    def multi_strays(self, multi: Multi) -> list[str]:
+        """Members the project no longer has: kept as stored."""
+        return [member for member in multi.members if isinstance(member, str)]
+
+    def row_multis(self, row: Row) -> list[Multi]:
+        """The Multis that will list ``row``; none for a row being retired
+        (retiring takes it out of every Multi)."""
+        if row.retire:
+            return []
+        return [m for m in self._multis if not m.retire and row.id in m.members]
+
+    def membership_pending(self, row: Row) -> bool:
+        """Whether Apply changes which Multis list ``row``."""
+        for multi in self._multis:
+            now = row.id in multi.members and not multi.retire
+            before = not multi.is_new and row.id in multi.base_members
+            if now != before:
+                return True
+        return False
+
+    def multi_name_problem(self, name: str, multi: Multi | None = None) -> str:
+        """Why ``name`` cannot name a new Multi (or ``multi`` renamed), or ''."""
+        text = name.strip()
+        reason = name_problem('Multi', text)
+        if reason:
+            return reason
+        folded = text.casefold()
+        for other in self._multis:
+            if other is multi:
+                continue
+            if other.name.casefold() == folded:
+                if other.name != text:
+                    return f"Multi '{text}' differs only by case from '{other.name}'"
+                if other.is_new:
+                    return f"'{text}' is also a new Multi"
+                if other.retire:
+                    return f"Multi {text} is being retired; Apply that first, then reuse its name"
+                return f"A Multi named '{text}' already exists"
+            if other.origin is not None and other.origin.name.casefold() == folded \
+                    and other.name != other.origin.name:
+                return (
+                    f'Multi {other.origin.name} keeps its name until its rename to '
+                    f'{other.name} is applied; Apply that first'
+                )
+        return ''
+
+    def _live_ids(self, row_ids: Iterable[int]) -> list[int]:
+        return list(dict.fromkeys(
+            row_id for row_id in row_ids
+            if row_id in self._by_id and not self._by_id[row_id].retire
+        ))
+
+    def _ordered(self, departments: Iterable[str]) -> tuple[str, ...]:
+        """Departments in pipeline order; ones the pool no longer has last."""
+        wanted = list(dict.fromkeys(departments))
+        pool = self.base.pool
+        return (
+            *(d for d in pool if d in wanted),
+            *(d for d in wanted if d not in pool),
+        )
+
+    def add_multi(
+        self, name: str, members: Iterable[int] = (),
+        departments: Iterable[str] | None = None,
+    ) -> int:
+        """A new Multi, created on Apply; its id. It covers the whole pool
+        unless ``departments`` says otherwise, as the browser's New Multi
+        does. A name with a problem is allowed here and shown by
+        :meth:`multi_problems`."""
+        self._changing()
+        multi = Multi(
+            self._next_multi_id, None, name.strip(), self._live_ids(members),
+            self._ordered(self.base.pool if departments is None else departments),
+        )
+        self._next_multi_id += 1
+        self._multis.append(multi)
+        return multi.id
+
+    def rename_multi(self, multi_id: int, name: str) -> bool:
+        multi = self.multi(multi_id)
+        text = name.strip()
+        if multi.retire or text == multi.name:
+            return False
+        self._changing()
+        multi.name = text
+        return True
+
+    def set_membership(self, row_ids: Iterable[int], multi_id: int, member: bool) -> bool:
+        """Put these rows into the Multi, or take them out."""
+        multi = self.multi(multi_id)
+        if multi.retire:
+            return False
+        ids = self._live_ids(row_ids) if member else [
+            row_id for row_id in dict.fromkeys(row_ids) if row_id in multi.members
+        ]
+        if member:
+            ids = [row_id for row_id in ids if row_id not in multi.members]
+        if not ids:
+            return False
+        self._changing()
+        if member:
+            multi.members.extend(ids)
+        else:
+            multi.members[:] = [m for m in multi.members if m not in ids]
+        return True
+
+    def set_multi_members(self, multi_id: int, row_ids: Iterable[int]) -> bool:
+        """The Multi lists exactly these rows (members the project no longer
+        has stay listed)."""
+        multi = self.multi(multi_id)
+        wanted = self._live_ids(row_ids)
+        members = [
+            m for m in multi.members if isinstance(m, str) or m in wanted
+        ] + [row_id for row_id in wanted if row_id not in multi.members]
+        if multi.retire or members == multi.members:
+            return False
+        self._changing()
+        multi.members[:] = members
+        return True
+
+    def set_multi_departments(self, multi_id: int, departments: Iterable[str]) -> bool:
+        multi = self.multi(multi_id)
+        ordered = self._ordered(departments)
+        if multi.retire or set(ordered) == set(multi.departments):
+            return False
+        self._changing()
+        multi.departments = ordered
+        return True
+
+    def set_covers(self, multi_ids: Iterable[int], department: str, covered: bool) -> bool:
+        """Tick (or untick) one department on these Multis, as one edit."""
+        changed = False
+        with self.batch():
+            for multi_id in list(multi_ids):
+                multi = self.multi(multi_id)
+                has = department in multi.departments
+                if has == covered:
+                    continue
+                departments = (
+                    (*multi.departments, department) if covered
+                    else tuple(d for d in multi.departments if d != department)
+                )
+                changed |= self.set_multi_departments(multi_id, departments)
+        return changed
+
+    def retire_multis(self, multi_ids: Iterable[int], retired: bool = True) -> bool:
+        """Mark stored Multis to retire (or not); a new one is just removed.
+        A retired Multi leaves the database; its workfiles stay on disk."""
+        changed = False
+        with self.batch():
+            for multi_id in list(multi_ids):
+                multi = self.multi(multi_id)
+                if multi.is_new:
+                    if retired:
+                        self._changing()
+                        self._multis.remove(multi)
+                        changed = True
+                elif multi.retire != retired:
+                    self._changing()
+                    multi.retire = retired
+                    changed = True
+        return changed
+
+    def revert_multis(self, multi_ids: Iterable[int]) -> bool:
+        """Drop every pending edit of these Multis; new ones go."""
+        changed = False
+        with self.batch():
+            for multi_id in list(multi_ids):
+                multi = self.multi(multi_id)
+                if not multi.touched and list(multi.members) == list(multi.base_members):
+                    continue
+                self._changing()
+                changed = True
+                if multi.is_new:
+                    self._multis.remove(multi)
+                else:
+                    multi.name = multi.origin.name
+                    multi.members[:] = list(multi.base_members)
+                    multi.departments = multi.origin.departments
+                    multi.retire = False
+        return changed
+
+    def multi_problems(self) -> dict[int, str]:
+        """Why each touched Multi cannot be applied, by Multi id. Untouched
+        ones are not checked, so old data never blocks an Apply."""
+        if self._multi_problems is None:
+            self._multi_problems = self._find_multi_problems()
+        return self._multi_problems
+
+    def _find_multi_problems(self) -> dict[int, str]:
+        found = {}
+        for multi in self._multis:
+            if multi.retire or not multi.touched:
+                continue
+            reason = ''
+            if multi.is_new or multi.renamed:
+                reason = self.multi_name_problem(multi.name, multi)
+                if not reason and multi.renamed and self._multi_rename_blocker is not None:
+                    reason = self._multi_rename_blocker(multi.origin.uri) or ''
+            reason = reason or self._overlap(multi)
+            if reason:
+                found[multi.id] = reason
+        return found
+
+    def _overlap(self, multi: Multi) -> str:
+        """A member whose department another Multi covers too: which Multi's
+        workfile it opens would be a guess (``config.groups.find_group``
+        takes the first)."""
+        for member in multi.members:
+            if isinstance(member, int):
+                row = self._by_id.get(member)
+                if row is None or row.retire:
+                    continue
+                label = row.name
+            else:
+                label = member.rsplit('/', 1)[-1]
+            for other in self._multis:
+                if other is multi or other.retire or member not in other.members:
+                    continue
+                shared = [d for d in multi.departments if d in other.departments]
+                if shared:
+                    verb = 'is' if len(shared) == 1 else 'are'
+                    return (
+                        f"{label}'s {', '.join(shared)} {verb} also covered by "
+                        f'Multi {other.name}'
+                    )
+        return ''
+
     # ── Undo ─────────────────────────────────────────────
 
     def _snapshot(self) -> tuple:
         return (
             [replace(row, edits=dict(row.edits)) for row in self._rows],
             self._next_id, dict(self._root_edits), dict(self._new_roots),
+            [replace(multi, members=list(multi.members)) for multi in self._multis],
+            self._next_multi_id, list(self._new_groups),
         )
 
     def _restore(self, state: tuple) -> None:
-        self._rows, self._next_id, self._root_edits, self._new_roots = state
+        (self._rows, self._next_id, self._root_edits, self._new_roots,
+         self._multis, self._next_multi_id, self._new_groups) = state
         self._by_id = {row.id: row for row in self._rows}
         self._problems = None
+        self._multi_problems = None
 
     def _changing(self) -> None:
         """Called right before every change: one undo step per edit, or
         per :meth:`batch`."""
         self._problems = None
+        self._multi_problems = None
         if self._batch_depth and self._batch_saved:
             return
         self._undo.append(self._snapshot())
@@ -844,6 +1287,9 @@ class Sheet:
     def _remove(self, row: Row) -> None:
         self._rows.remove(row)
         del self._by_id[row.id]
+        for multi in self._multis:
+            if row.id in multi.members:
+                multi.members.remove(row.id)
 
     def set_retired(self, row_ids: Iterable[int], retired: bool = True) -> bool:
         """Mark stored entities to retire (or not); a new row is just removed."""
@@ -886,11 +1332,13 @@ class Sheet:
     def revert_all(self) -> bool:
         with self.batch():
             changed = self.revert([row.id for row in self._rows])
-            if self._root_edits or self._new_roots:
+            if self._root_edits or self._new_roots or self._new_groups:
                 self._changing()
                 self._root_edits.clear()
                 self._new_roots.clear()
+                self._new_groups.clear()
                 changed = True
+            changed |= self.revert_multis([m.id for m in self._multis])
         return changed
 
     def shift(self, row_ids: Iterable[int], offset: int) -> bool:
@@ -920,7 +1368,7 @@ class Sheet:
 
     def _find_problems(self) -> dict[int, str]:
         known = set(self.base.groups)
-        new_spelling: dict[str, str] = {}
+        new_spelling: dict[str, str] = {g.casefold(): g for g in self._new_groups}
         # A stored entity's name stays taken until Apply moves it.
         claimed: dict[tuple[str, str], Row] = {
             (row.origin.group, row.origin.name.casefold()): row
@@ -1026,6 +1474,10 @@ class Sheet:
         known = set(self.base.groups)
         kind = self.kind
         retire, rename, groups, create, update = [], [], [], [], []
+        group_problems = self.group_problems()
+        for name in self._new_groups:
+            if name not in known and name not in group_problems:
+                groups.append(kind.root / name)
         for row in self._rows:
             if row.id in problems or not row.touched:
                 continue
@@ -1057,8 +1509,69 @@ class Sheet:
             roots.append((uri, assets, False))
         return Changes(
             tuple(retire), tuple(rename), tuple(groups), tuple(roots),
-            tuple(create), tuple(update),
+            tuple(create), tuple(update), *self._multi_changes(problems),
         )
+
+    def _member_uris(self, problems: Mapping[int, str]) -> dict[int, str]:
+        """Each row's URI once applied: a stored row with a problem keeps
+        its name (it is not renamed); a new one with a problem and a retired
+        one have none (not created; leaving the project)."""
+        uris = {}
+        for row in self._rows:
+            if row.retire:
+                continue
+            if row.id in problems:
+                if row.origin is not None:
+                    uris[row.id] = str(row.origin.uri)
+                continue
+            uris[row.id] = str(self.kind.root / row.group / row.name)
+        return uris
+
+    def _multi_changes(self, problems: Mapping[int, str]) -> tuple:
+        multi_problems = self.multi_problems()
+        uris = self._member_uris(problems)
+
+        def members(multi: Multi) -> list[str]:
+            return [
+                uris[m] if isinstance(m, int) else m
+                for m in multi.members
+                if not isinstance(m, int) or m in uris
+            ]
+
+        retire, rename, create, update = [], [], [], []
+        for multi in self._multis:
+            if multi.id in multi_problems:
+                continue
+            if multi.retire:
+                retire.append(multi.origin.uri)
+                continue
+            uri = GROUPS_URI / self.kind.key / multi.name
+            if multi.is_new:
+                create.append((uri, {
+                    'members': members(multi), 'departments': list(multi.departments),
+                }))
+                continue
+            if multi.renamed:
+                rename.append((multi.origin.uri, multi.name))
+            edits = {}
+            # A member renamed or retired in the sheet changes the stored
+            # list too, even with the membership as it was:
+            # pipe.entity_files does that on its own, but a bare config
+            # rename or removal would not.
+            stale = any(
+                isinstance(m, int) and m in self._by_id
+                and (self._by_id[m].renamed or self._by_id[m].retire)
+                for m in multi.members
+            )
+            if multi.members_changed or stale:
+                written = members(multi)
+                if written != list(multi.origin.members):
+                    edits['members'] = written
+            if multi.departments_changed:
+                edits['departments'] = list(multi.departments)
+            if edits:
+                update.append((uri, edits))
+        return tuple(retire), tuple(rename), tuple(create), tuple(update)
 
     # ── Rebase ───────────────────────────────────────────
 
@@ -1068,11 +1581,16 @@ class Sheet:
 
         An edit already in ``base`` falls away: after an Apply, what was
         written is no longer pending and what was not still is. A new row
-        whose entity now exists becomes edits to it where its values
-        differ; so does a new Root that now exists. Undo starts over.
+        whose entity now exists, and did not when the edits began, becomes
+        edits to it where its values differ; so does a new Root that now
+        exists. A new row named like an entity that already existed stays
+        new (still a problem). Multis are carried by
+        :meth:`_carry_multis`. Undo starts over.
         """
-        sheet = Sheet(base, self._rename_blocker)
+        sheet = Sheet(base, self._rename_blocker, self._multi_rename_blocker)
+        sheet._new_groups = [g for g in self._new_groups if g not in base.groups]
         notes = []
+        moved: dict[int, int] = {}   # this sheet's row ids -> the new sheet's
         for uri, assets in self._new_roots.items():
             if uri in base.roots:
                 if assets != base.roots[uri]:
@@ -1088,16 +1606,22 @@ class Sheet:
             elif assets != base.roots[uri]:
                 sheet._root_edits[uri] = assets
         stored = {(row.origin.group, row.origin.name): row for row in sheet._rows}
+        # A new row named like an entity stored before the edits was never
+        # written (it is a problem, so Apply skips it): it stays a new row,
+        # not edits to that entity.
+        had = {(row.origin.group, row.origin.name) for row in self._rows if row.origin is not None}
         for old in self._rows:
             if old.origin is None:
-                target = stored.get((old.group, old.name))
+                target = None if (old.group, old.name) in had else stored.get((old.group, old.name))
                 if target is None:
                     sheet._insert(Row(
                         sheet._next_id, None, old.group, old.name, dict(old.edits),
                     ))
+                    moved[old.id] = sheet._next_id
                     sheet._next_id += 1
                 else:
                     _carry(target, old.edits)
+                    moved[old.id] = target.id
                 continue
             target = stored.get((old.origin.group, old.origin.name))
             renamed_done = False
@@ -1113,11 +1637,83 @@ class Sheet:
                         'in the project; its changes were dropped'
                     )
                 continue
+            moved[old.id] = target.id
             target.retire = old.retire
             if old.renamed and not renamed_done:
                 target.name = old.name
             _carry(target, old.edits)
+        sheet._carry_multis(self._multis, moved, notes)
         return sheet, notes
+
+    def _carry_multis(self, old_multis: list[Multi], moved: Mapping[int, int], notes: list[str]) -> None:
+        """:meth:`rebase` for Multis: what each one's edits added and took
+        away, onto the Multi as now stored, in the sheet's member order, so
+        a member someone else added meanwhile stays (after the sheet's). A
+        rename or a new Multi that is now stored (this Apply wrote it)
+        falls away like a row's; a new Multi named like one stored before
+        the edits stays new."""
+        by_uri = {str(row.origin.uri): row.id for row in self._rows if row.origin is not None}
+
+        def mapped(members) -> list:
+            out = []
+            for member in members:
+                if isinstance(member, int):
+                    if member in moved:
+                        out.append(moved[member])
+                else:
+                    out.append(by_uri.get(member, member))
+            return out
+
+        stored = {multi.origin.name: multi for multi in self._multis}
+        # A new Multi named like one stored before the edits was never
+        # written (Apply skips it for the clash); it stays new.
+        had = {m.origin.name.casefold() for m in old_multis if m.origin is not None}
+        for old in old_multis:
+            # Untouched can still be reordered (a member out and back in).
+            if not old.touched and list(old.members) == list(old.base_members):
+                continue
+            base_members = [] if old.is_new else mapped(old.base_members)
+            now = mapped(old.members)
+            added = [m for m in now if m not in base_members]
+            removed = [m for m in base_members if m not in now]
+            base_departments = () if old.is_new else old.origin.departments
+            gained = [d for d in old.departments if d not in base_departments]
+            lost = [d for d in base_departments if d not in old.departments]
+            key = old.name if old.is_new else old.origin.name
+            target = None if old.is_new and key.casefold() in had else stored.get(key)
+            if target is None and not old.is_new and old.renamed:
+                target = stored.get(old.name)   # the rename was applied
+                if target is not None:
+                    key = old.name
+            if target is None:
+                if not old.is_new:
+                    if not old.retire:
+                        notes.append(
+                            f'Multi {old.origin.name} is no longer in the '
+                            'project; its changes were dropped'
+                        )
+                    continue
+                self._multis.append(Multi(
+                    self._next_multi_id, None, old.name, now, old.departments,
+                ))
+                self._next_multi_id += 1
+                continue
+            target.retire = old.retire
+            if not old.is_new and old.renamed and key == old.origin.name:
+                target.name = old.name
+            # The sheet's order, less what someone else took out, then what
+            # they added.
+            theirs = list(target.members)
+            target.members[:] = [
+                m for m in now if m in theirs or m in added
+            ] + [m for m in theirs if m not in now and m not in removed]
+            target.departments = self._ordered(
+                [d for d in target.departments if d not in lost]
+                + [d for d in gained if d not in target.departments]
+            ) if (gained or lost) else (
+                old.departments if set(old.departments) == set(target.departments)
+                else target.departments
+            )
 
 
 def _carry(target: Row, edits: Mapping[str, object]) -> None:
@@ -1211,3 +1807,13 @@ def apply(
         step(f'Creating {_label(uri)}', config.add_entity, uri, dict(own))
     for uri, edits in changes.update:
         step(f'Updating {_label(uri)}', _update, config, uri, edits)
+    # Multis last: a new shot can be a member, and a retired Multi frees
+    # its name for a new one.
+    for uri in changes.multis_retire:
+        step(f'Retiring Multi {uri.segments[-1]}', config.remove_entity, uri)
+    for uri, name in changes.multis_rename:
+        step(f'Renaming Multi {uri.segments[-1]} to {name}', config.rename_entity, uri, name)
+    for uri, own in changes.multis_create:
+        step(f'Creating Multi {uri.segments[-1]}', config.add_entity, uri, dict(own))
+    for uri, edits in changes.multis_update:
+        step(f'Updating Multi {uri.segments[-1]}', _update, config, uri, edits)

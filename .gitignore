@@ -27,6 +27,7 @@ build-linux-houdini*/
 build-macos-houdini*/
 build-windows-houdini*/
 build-vramhook-*/
+build-ffmpeg-*/
 
 # Local Sphinx build output (source in docs/ is mirrored; _build/ is not)
 docs/_build/

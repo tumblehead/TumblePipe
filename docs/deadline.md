@@ -36,6 +36,14 @@ Install the plugin by copying its directory into
 `<DeadlineRepository>/custom/plugins/HPM/` and restarting the workers that
 should pick it up.
 
+The job's env file (`NN.env`, the plugin's `EnvironmentFile`) is written
+UTF-8, so a value with a non-ASCII character (a user, a path) reaches the
+task intact. The plugin reads UTF-8, else the worker's locale encoding, for
+jobs written before 1.84 in the submitter's default encoding (cp1252 inside
+Houdini). Update the plugin before TumblePipe 1.84 reaches the artists: an
+older plugin reads the file in the worker's default encoding and garbles
+such a value.
+
 ## Farm worker prerequisites
 
 Each worker needs the same environment as an artist workstation:
@@ -188,6 +196,85 @@ Use `Batch.add_dep(first, second)` to mark `second` as a dependency of
 `first`, or `Batch.add_jobs_with_deps(jobs, deps)` to wire a whole graph
 at once. The job builders in `python/tumblepipe/farm/jobs/` and the
 pipelines in `python/tumblepipe/farm/pipelines/` are complete examples.
+
+## Running farm jobs on this machine
+
+Farm Submit's **Run on** choice (beside Close and Submit) sends a submission
+either to the **Render farm** (Deadline) or to **This machine**. The choice is
+remembered between submissions. With *This machine*, the very same batch is
+built: the same job folder under `export:/other/jobs/`, the same env files,
+the same `hpm.toml` manifests. It is then queued on this machine instead of
+on Deadline, and runs in the background as a render node would run it.
+
+- **One runner per machine** (`python -m tumblepipe.farm.local.runner`) works
+  the queue one task at a time, below normal priority. It starts when work is
+  queued and stops by itself once the queue is empty. Closing Houdini does not
+  stop it.
+- **Per task, it does what the HPM plugin does:** it loads the job's env file,
+  sets `TH_FARM_DATA`, copies the manifest into a scratch dir, runs
+  `hpm install` there, then runs `hpm run task -- <context> <first> <last>`.
+  Before that it strips the session that started it (Houdini's variables,
+  `PYTHONPATH`, `$HFS` on `PATH`, the pipeline's `TH_*`/`TT_*`/`HPM_*`). A
+  task sees only this machine's environment plus the job's, as on the farm.
+- **hpm:** the runner keeps its own `hpm` (artist machines have none on
+  `PATH`). It downloads `$HPM_VERSION` (else the plugin's pinned default)
+  from the hpm releases, as the plugin does on a render node.
+  `$TH_LOCAL_FARM_HPM` names an executable outright.
+- **Chained work stays local:** every local job's env file carries
+  `TH_FARM_BACKEND=local`. A collapse that submits its playblast, or a stage
+  that submits its render, queues them here too.
+- **The queue** lives in `%LOCALAPPDATA%\TumblePipe\local_farm` (Windows),
+  `~/Library/Application Support/TumblePipe/local_farm` (macOS) or
+  `~/.local/share/tumblepipe/local_farm` (Linux); `$TH_LOCAL_FARM_DIR`
+  overrides it. Each batch has a `batch.json`, the runner's `state.json`, and
+  a log per task under `logs/`.
+
+A local render takes this machine's licences: a `hython` beside the open
+Houdini, and `husk` a Karma licence. It also shares the GPU with the
+viewport.
+
+**Every farm submit offers the same choice**, and they all share the
+remembered one:
+
+| Where | The choice |
+|---|---|
+| Farm Submit (Asset Browser) | **Run on** beside Close and Submit |
+| Publish dialog | **In this session** (run now, in this Houdini), **This machine**, **Render farm** |
+| `th::build_comp` **Submit to farm** | asked on press: Render farm / This machine / Cancel |
+| `th::lookdev_studio` turntable submit | asked on press, the same |
+
+The Deadline check runs only when the work goes to Deadline. After a
+submit, the answer says where the work went and opens the Farm Manager. A
+node's own settings (pool, priority, range, batch) are used wherever the work
+runs. The publish dialog's farm build task, which has no node, takes the
+project's default pool and priority.
+
+In code, `tumblepipe.farm.backend.get_farm()` returns `LocalFarm` or `Deadline`
+from `$TH_FARM_BACKEND`. Both take the same `submit(batch, jobs_dir)`.
+Houdini-side submits set the variable for the call with
+`farm.backend.using(backend)`, through `pipe.houdini.ui.farm_submit`.
+
+## The Farm Manager
+
+The **Farm Manager** shows the jobs on this machine and on the Deadline farm
+in one list. Each batch is a row, with its jobs under it, showing state,
+progress, task count, errors, user and submit time. To open it, use the
+browser's **Farm Manager** quick action, the **Farm Manager** button of a
+submission's status window, or the **Farm Manager** script in TumbleTrove
+Desktop (`python -m tumblepipe.farm.manager`).
+
+- **Filters:** *Show* (all, this machine, the farm), *Only mine*, *Only
+  <project>*, *Hide finished*, and a name filter.
+- **Tasks and logs:** selecting a job lists its tasks. Selecting a task shows
+  its log. A local task's log is followed while it renders. A farm task's
+  Deadline reports are listed newest first, error reports with their message.
+- **Actions:** on this machine *Suspend*, *Resume*, *Retry failed*, *Cancel*
+  and *Remove*. On the farm *Suspend*, *Resume*, *Retry failed*, *Requeue* and
+  *Delete* (asks first). A selected batch row stands for all of its jobs.
+
+The farm is read with `deadlinecommand -Json` (`GetJobs`, `GetJobTasks`, the
+report listings) on a worker thread every few seconds. Without a Deadline
+Client the window shows this machine's jobs alone.
 
 ## Further reading
 

@@ -7,21 +7,18 @@ Per channel, a *partial* render does the first, middle and last frames
 cross-channel chain: sync to the edit, slapcomp, its mp4 and notify.
 Each channel keeps its own version counter.
 
-Config: ``specs.render_pipeline``. Command line:
-``python -m tumblepipe.farm.pipelines.render <config.json>``.
+Config: ``specs.render_pipeline``.
 """
 
 from pathlib import Path
 import logging
-import sys
 
 from tumblepipe.api import path_str
 from tumblepipe.apps.deadline import Job
 from tumblepipe.farm.jobs import denoise as denoise_job
 from tumblepipe.farm.jobs import render as render_job
 from tumblepipe.farm.pipelines import post_render
-from tumblepipe.farm.pipelines._batch import batch_title, run_cli, submit_batch
-from tumblepipe.farm.specs import render_pipeline as render_pipeline_spec
+from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.pipe.paths import (
     get_aov_frame_path,
     get_frame_path,
@@ -286,7 +283,3 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
         f"[{', '.join(channel_names)}]",
         settings['user_name']
     ), build, config, paths)
-
-
-if __name__ == '__main__':
-    sys.exit(run_cli(render_pipeline_spec.is_valid_config, submit))

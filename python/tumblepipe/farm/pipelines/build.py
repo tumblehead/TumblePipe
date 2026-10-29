@@ -8,12 +8,9 @@ config = {
     'first_frame': 'int',           # optional, both or neither (default:
     'last_frame': 'int'             # the entity's own range)
 }
-
-Command line: ``python -m tumblepipe.farm.pipelines.build <config.json>``.
 """
 
 from pathlib import Path
-import sys
 
 from tumblepipe.api import path_str
 from tumblepipe.apps.deadline import Job
@@ -24,7 +21,7 @@ from tumblepipe.farm.checks import (
     valid_frame_range,
 )
 from tumblepipe.farm.jobs import build as build_job
-from tumblepipe.farm.pipelines._batch import batch_title, run_cli, submit_batch
+from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.pipe.paths import next_staged_file_path
 from tumblepipe.util.uri import Uri
 
@@ -81,7 +78,3 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
     return submit_batch(
         batch_title('build', config['entity_uri']), build, config, paths
     )
-
-
-if __name__ == '__main__':
-    sys.exit(run_cli(is_valid_config, submit))

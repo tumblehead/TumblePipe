@@ -1,10 +1,11 @@
 # The Entity Editor
 
 The **Entity Editor** shows a project's assets and shots as two
-spreadsheets, an **Assets** tab and a **Shots** tab, one row per entity.
+spreadsheets, an **Assets** tab and a **Shots** tab, one row per entity,
+and their [Multis](multis-and-roots.md#multis) on a third, **Multis** tab.
 Add assets and shots, change frame ranges, rolls, fps, Animatable and
-Roots, choose which assets each shot imports, rename and retire, then
-**Apply**. The [Database Editor](config-editor.md) can change the same data
+Roots, choose which assets each shot imports, set up Multis, rename and
+retire, then **Apply**. The [Database Editor](config-editor.md) can change the same data
 one raw property at a time; this is the friendly way. Source:
 [`entity_editor.py`](../../python/tumblepipe/asset_browser/entity_editor.py)
 (window) and [`entity_sheet.py`](../../python/tumblepipe/config/entity_sheet.py)
@@ -12,12 +13,16 @@ one raw property at a time; this is the friendly way. Source:
 
 ## Opening it
 
+- The **Entity Editor** button on the toolbar, beside **Render**: opens
+  the open workfile's project on its shot or asset, selected (on Shots
+  with no workfile open).
 - **Entity Editor...** in the creation list of the **Assets** and **Shots**
   headers, a category or sequence row, the **+** card and the empty-space
   menus. From the Assets side it opens on the Assets tab, from the Shots
   side on the Shots tab; from a category or sequence, on that one.
 - Right-click an asset or shot card → **Open in Entity Editor…**: opens on
-  its tab and group with it selected.
+  its tab and group with it selected. On a Multi card it opens the Multis
+  tab with that Multi selected.
 
 There is one editor per project. Opening it again raises the open one. It
 is not modal, so the browser and Houdini stay usable beside it. A tab's
@@ -27,15 +32,16 @@ name, and the title, gain a `*` while there are edits not applied.
 
 | Column | Tab | What it is |
 |---|---|---|
-| **Category** / **Sequence** | both | Fixed for a stored entity; editable on a new row (a new name makes a new category or sequence). |
+| **Category** / **Sequence** | both | Fixed for a stored entity; editable on a new row (a new name makes a new category or sequence; so does **New Sequence…** / **New Category…**). |
 | **Asset** / **Shot** | both | Editing it renames the entity on Apply. |
 | **Status** | both | What Apply does with the row, or why it cannot. A long reason is cut short; its tooltip has all of it. |
 | **Start**, **End** | both | The frame range (`frame_start`, `frame_end`). |
 | **Length** | both | Frames from start to end. Typing a length moves the end frame. |
 | **Pre-roll**, **Post-roll** | both | `roll_start`, `roll_end`: frames added before the start and after the end when rendering. |
 | **FPS** | both | `fps`. Whole numbers are kept whole; `23.976` is fine. |
-| **Animatable** | Assets | `animatable`, as a tick box. Typing `yes` or `no` works too. |
+| **Animatable** | Assets | `animatable`, as a tick box. Typing `yes` or `no` works too. A shot's copies of an animatable asset, or of one with a rig published, are plain references rather than USD instances, so each copy can carry its own animation. An unticked asset with a rig reads **No, rigged**: its copies already animate, and ticking it also makes its own exports write every frame instead of the first. Copy leaves the note out. |
 | **Root** | Shots | The shot's [Root](multis-and-roots.md), picked from a dropdown. **Inherit** puts it back to the sequence's. |
+| **Multis** | both | The Multis the entity belongs to. Double-click to change them; see [Multis](#multis). |
 | **Assets** | Shots | What the shot imports: its Root's assets, then the Root's parents'. Empty for a shot with no Root. See [Which assets a shot imports](#which-assets-a-shot-imports). |
 
 The dropdown above the sheet shows one category or sequence, or all of
@@ -108,7 +114,47 @@ assets and set instance counts:
   own Root.
 
 Root changes are tinted like any other edit and are written on Apply. A new
-Root no shot uses is not created.
+Root no shot uses is not created. Apply then brings the shots up to date
+(see [Apply](#apply)), so a workfile opened next imports what was ticked.
+
+## Multis
+
+A [Multi](multis-and-roots.md#multis) gives several shots (or several
+assets) one workfile for the departments it *covers*. The editor sets them
+up from both sides.
+
+**From the Assets or Shots tab.** The **Multis** column lists each row's
+Multis; its tooltip says which departments each covers. Select rows and
+double-click the column (or right-click → **Edit Multis…**) for a list of
+the Multis of that kind, ticked where the rows belong. A Multi only some of
+the selected rows are in is partly ticked and left alone unless clicked.
+**New Multi…** in that dialog makes one holding the rows. The right-click
+menu also has **Add to Multi ▸**, **Remove from Multi ▸** and **New Multi
+from Selected…**. A row whose Multis changed says *Multis changed* in its
+Status.
+
+**On the Multis tab.** One row per Multi of the kind the dropdown shows
+(**Shots** or **Assets**), with **Multi** (its name: edit to rename),
+**Status**, **Members** (a count: double-click for a list of every row of
+the kind, ticked where it is a member) and a tick box for each department
+in the pool, in pipeline order. Ticking a box covers that department; with
+several cells of a column selected, one tick sets them all. **Add Multi…**
+asks for a name and the departments (all of the pool to start with) and can
+start with the rows selected on the Assets or Shots tab. **Retire**,
+**Revert**, **Undo** and **Redo** work as on the other tabs. The Multis tab
+shares its kind's undo history: an undo on the Shots tab can undo a shot
+Multi's edit, and the other way round.
+
+Members follow the sheet: rename a shot and its Multis list the new name on
+Apply; retire it and it leaves every Multi. A member the project no longer
+has stays listed, greyed in the members list.
+
+Retiring a Multi removes it from the project; its workfiles stay on disk
+under `groups/<context>/<name>`, and its members open their own workfiles
+again. A Multi that has workfiles cannot be renamed (they would stay under
+the old name): retire it and add a new one. A member added to a Multi whose
+workfile already exists is not in that workfile until a new version is made
+from the template.
 
 ## Adding assets and shots
 
@@ -140,6 +186,16 @@ before Apply: Apply creates the assets first.
 into the category or sequence shown. A line whose frames are not whole
 numbers, or a line of column titles, is skipped and named.
 
+**New Sequence…** (Shots tab) or **New Category…** (Assets tab) asks for a
+name and adds an empty one, created on Apply. The dropdown above the sheet
+switches to it, shown as *sq030 (new)*, so **Add Shots…** or **Add
+Assets…** goes straight into it. Its shots or assets inherit whatever is
+later set on it (in the [Database Editor](config-editor.md), say). The name
+follows the rules under [Problems](#problems): the dialog says why a name
+is refused, and **Add** stays disabled until it is fine. While the new one
+is shown in the dropdown, right-click → **Remove New Sequence *name*** (or
+Undo) takes it back; new rows already in it still create it.
+
 ## Retiring and renaming
 
 **Retire** marks the selected rows. On Apply each leaves the project and
@@ -169,21 +225,30 @@ needs fixing when:
 - a name is still taken by an entity being retired or renamed in the same
   Apply (*"Apply that first"*);
 - a new category is named like a sequence, or a new sequence like a
-  category;
+  category (a sequence or category added with **New Sequence…** / **New
+  Category…** is held to these rules too, and Apply stops on one that
+  breaks them after a Reload);
 - it ends before it starts, a roll is negative, or the fps is not above 0;
 - it renames an entity with files on disk.
 
-The footer counts what Apply will do in both tabs. **Apply** stays disabled
+Touched Multis are checked the same way. A Multi needs fixing when its new
+name breaks the name rules or is taken, when it is renamed with workfiles
+on disk, or when it covers a department another Multi also covers for the
+same member (*"SH010's lighting is also covered by Multi seqA"*): which
+Multi's workfile that member opens would be a guess.
+
+The footer counts what Apply will do in every tab. **Apply** stays disabled
 while any row needs fixing. The same line reports the last action until
 the next edit: a value a field refused, pasted lines that were skipped, or
 *"Applied: 5 new shots, 1 shot changed."*
 
 ## Apply
 
-Apply writes both tabs. It first re-reads the assets and shots. If someone
-changed them in the meantime, your edits are carried over on top of the new
-values, and the editor stops so you can check them. Otherwise it writes the
-Assets tab, then the Shots tab, each in this order:
+Apply writes every tab. It first re-reads the assets, shots and Multis. If
+someone changed them in the meantime, your edits are carried over on top of
+the new values (a member someone else added to a Multi stays), and the
+editor stops so you can check them. Otherwise it writes the assets, then
+the shots, each in this order:
 
 1. retires,
 2. renames,
@@ -193,13 +258,26 @@ Assets tab, then the Shots tab, each in this order:
 5. new assets or shots (each with only the values the sheet set: for shots
    usually their frame range and Root),
 6. changed values, merged into each entity's own values as they are on
-   disk then. Properties the editor does not show are left alone.
+   disk then. Properties the editor does not show are left alone,
+7. Multis: retires, renames, new ones, then changed members and coverage.
+   They come last so a new shot can be a member and a retired Multi's name
+   is free for a new one.
+
+After the writes, Apply stages the Roots: a Root whose list changed is
+exported, a shot whose Root changed gets a new root layer, and a shot that
+has no staged build yet is built (one graph scan for all of them, a few
+seconds on a large project). The footer says what it did, e.g. *Applied:
+3 shots; staged Root forest; updated 2 shots*. Shots without a Root are not
+touched. If staging fails, Apply says so; the writes stay, and **Stage Root
+& Rebuild Shots…** on the Root card in the browser runs it by hand. See
+[Composition → A shot's Root assets belong to the Root](../composition.md#a-shots-root-assets-belong-to-the-root).
 
 If a write fails (a retire whose files are open, say), Apply stops there
 and says so. Everything before it was applied. Everything after it is still
 in the sheets, still tinted, so fix the cause and Apply again. **Reload**
-re-reads both tabs at any time, keeping your edits. **Discard All** drops
-them.
+re-reads every tab at any time, keeping your edits as they are, including
+rows still flagged: a new row named like an existing asset or shot stays a
+new row, never edits to that one. **Discard All** drops them.
 
 Closing the editor with edits not applied asks: **Apply**, **Discard** or
 **Cancel**.

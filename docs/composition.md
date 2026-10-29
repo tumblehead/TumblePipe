@@ -138,9 +138,8 @@ and scrapes it back into its own next export.
 Shot staged files work the same way: shot department layers, then
 shot-flow assets, then the root department (which carries the scene
 reference). The newest-export-wins merge applies to shot-flow asset
-counts and inputs too; scene assets carry the instance counts from
-their scene context, with shot-flow entries taking precedence when an
-asset appears in both.
+counts and inputs too. A Root asset is not a shot-flow asset: see
+[A shot's Root assets belong to the Root](#a-shots-root-assets-belong-to-the-root).
 
 A channel's staged build only *overrides* the departments that actually
 exported under that channel: a department with no export under the
@@ -152,6 +151,20 @@ without the fallback the channel's staged stage held only the
 channel-exporting department plus root, and the farm rendered an empty
 (black) scene that the live session, which composes the full node
 graph rather than the staged file, never showed.
+
+### Which version is the latest
+
+A version folder is finished once its `context.json` is in, and every
+writer puts it in last: department exports, `_shared` splits, rigs, staged
+builds, scene and root layers. Everything that takes the latest version
+takes the newest *finished* one: import nodes on `latest` or `current`, the
+staged build, the dependency scan behind Build USD, and the resolver's
+latest mode alike. A newer folder without a sidecar is an export that
+failed or is still being written, and is passed over. One failed rig export
+once left an empty `rig/v0006`, and every shot build in the project stopped
+on it. New versions are still numbered past every folder, finished or not.
+Where no version of a department has a sidecar (layouts that never wrote
+one), the newest folder is taken, as before.
 
 ## Where model geometry lands under the asset
 
@@ -378,6 +391,37 @@ on every machine with the same Houdini install and is allowed through.
 Both compose transparently: a shot that imports the set (or a scene
 containing it) resolves the nested assets through the set's staged file.
 
+### A shot's Root assets belong to the Root
+
+A shot gets assets two ways: from its Root, through the root layer, and
+from the departments' own import nodes, tracked by each export's
+`context.json`. The two never overlap:
+
+- **import_shot tags every Root asset**, in every department's workfile,
+  with the Root as its input (`{uri: scenes:/…, department: root}`). No
+  department cut leaves a Root asset out: it is not any department's.
+- **No export claims a Root asset.** A department's moves and edits on it
+  still publish in its layer; the export just does not list it as one of
+  its assets. (Before this, the first department to export recorded every
+  Root asset as its own, and then left it untagged in its own workfile.)
+- **A workfile that imports a Root asset again is refused at export**,
+  naming the asset and the Root's count. Change the count in the Root
+  instead (Entity Editor, Shots tab, **Assets**).
+- **The Root's count, channel and input win** in the staged build and in
+  import_shot, over any department export that recorded the asset before
+  the rule existed.
+
+What a Root gives a shot is read from the Root's exports: its own list,
+then each parent Root's, closest first, one entry per asset (a Root's own
+entry beats a parent's; of two own entries, the first wins). A Root edit
+reaches the shots on its own: the browser's Root edits, **Clear Root**, the
+Entity Editor's Apply and **New from Template** run
+`pipe.root_staging.sync_roots`, which exports a changed Root, gives a
+shot a new root layer when its Root changed, and builds a shot that has no
+staged build yet. Shots without a Root are never touched. Source:
+[`root_staging.py`](../python/tumblepipe/pipe/root_staging.py),
+[`scene_build.py`](../python/tumblepipe/pipe/scene_build.py).
+
 ### Nesting is not containment
 
 "Tower in Arena in Set" describes the *bookkeeping*, not the stage. A
@@ -501,20 +545,21 @@ share a single prototype, which is what makes a 30-haybale set cheap —
 but USD forbids overriding prims *beneath* an instance, so a character
 duplicated this way cannot carry per-copy animation and every instance
 reads as the default pose. The copies are therefore instanceable only
-when the asset is not time-dependent:
+when the asset is not animated:
 
 ```
-duplicate.parm('makeinstances').set(int(not animatable))
+duplicate.parm('makeinstances').set(int(not copies_are_animated(asset_uri)))
 ```
 
-`animatable` comes from the entity's config properties
-(`api.config.get_properties`), defaulting to **False** (an unset asset
-is treated as static, hence instanceable). Both build sites read the
-same property with the same default — `import_shot` (GUI + farm stage
-graph) and `import_assets` (workfile import) — so a marked-animatable
-character composes its individual animation identically in either. Set
-`animatable: true` at the character schema level so every entity under
-it inherits it.
+`copies_are_animated` (`pipe/usd/instances.py`) is true when the
+entity's `animatable` property is set (`api.config.get_properties`,
+default **False**) **or** the asset has a rig published in any channel:
+a rig is only made to be animated, and a rigged character left at the
+schema default came back from `th::animate` at rest pose. Both build
+sites call it — `import_shot` (GUI + farm stage graph) and
+`import_assets` (workfile import) — so an animated character composes
+its individual animation identically in either. An existing scene picks
+the change up when its import node is re-imported.
 
 Non-instanceable here means a plain *reference* to the base, not a
 flattened **Copy** (`reference_type = copy`). Both let per-copy
@@ -628,9 +673,10 @@ files, double-clicking a `.hip`, Open in New Instance or the asset layer
 inspector. A `hou.hipFile` load callback
 (`tumblepipe.asset_browser.load_hook`) re-executes every import node in the
 scene (`tumblepipe.pipe.houdini.scene_imports.refresh_scene_imports`). A node
-on `current` takes the newest version on disk. A node on `latest` also
+on `current` takes the newest finished version on disk. A node on `latest` also
 re-resolves under resolver latest-mode, which ignores the baked `version=`
-pins and floats to the newest published version, the same cascade a fresh
+pins and floats to the newest published version (§*Which version is the
+latest*), the same cascade a fresh
 import would get. So a newly published upstream department reaches a
 downstream workfile the next time it is opened, with no re-import. This is
 governed by the **Auto-import latest on workfile open** preference (Asset

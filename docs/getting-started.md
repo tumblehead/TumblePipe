@@ -164,7 +164,8 @@ the TumblePipe pipeline radial in a network editor, **Alt+R** the recipes and
    open file in place; the browser's Save is what advances the version.
 5. **Publish.** With the light workfile loaded, click **Publish**. The
    **Publish** dialog lists the scene's export tasks (one per export node,
-   grouped by entity) with a Local/Farm choice; run it and the department's
+   grouped by entity) with a choice of where to run it: *In this session*,
+   *This machine* (in the background) or *Render farm*; run it and the department's
    layer lands under `export/` as a new version. If the loaded scene has no
    pipeline context the button says so in a dialog rather than doing
    nothing: `Publish: the loaded scene has no pipeline context, so there is

@@ -12,8 +12,7 @@ position in the pool is the pipeline order:
 * the staged build sublayers departments in ``reversed()`` pool order, so
   later in the pool = stronger USD layer;
 * "downstream" is ``names[index + 1:]`` — the Downstream Exports menu,
-  import_shot's exclusion, the publish task graph, the propagate/update farm
-  jobs;
+  import_shot's exclusion, the publish task graph;
 * AOV precedence ranks by pool index.
 
 So reordering an established pool restages composition for every existing

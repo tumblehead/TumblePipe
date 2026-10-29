@@ -1,0 +1,4 @@
+# Primer requires 1.98.1.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]

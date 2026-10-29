@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 74b99419051f36975f5c6160c7cb1e9443fbec6e376aa15d6342d045ca483f58 # shrinks to frames = [4], here = Index(0), spare = 0, gop = 3, broken = [Index(0)]
+cc 20db67d4c082d228aa9854897c241942b27d7d8de54ea10a6833ae8e41bd5c8f # shrinks to frames = [165, 78], here = Index(14128397680728251889), spare = 7, gop = 28, broken = [Index(7949906203290828140), Index(4210646551131984673), Index(4352794933054684291), Index(3956462471562487481)]
