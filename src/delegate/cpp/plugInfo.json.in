@@ -1,0 +1,19 @@
+{
+    "Plugins": [
+        {
+            "Info": {
+                "Types": {
+                    "HdThPlayblastRendererPlugin": {
+                        "bases": ["HdRendererPlugin"],
+                        "displayName": "TumblePipe Playblast",
+                        "priority": 0
+                    }
+                }
+            },
+            "LibraryPath": "../lib/@PLUGIN_LIBRARY_FILENAME@",
+            "Name": "hdThPlayblast",
+            "Root": ".",
+            "Type": "library"
+        }
+    ]
+}

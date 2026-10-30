@@ -90,7 +90,9 @@ def read_env_file(path: Path) -> dict:
     ``apps.deadline.write_job_files`` writes it UTF-8. Jobs written before
     that used the submitting process's default encoding: UTF-8 from the Farm
     Submit process (``PYTHONUTF8=1``), the locale's (cp1252) from inside
-    Houdini. So read UTF-8, else the locale's.
+    Houdini on Windows. So read UTF-8, else the locale's, else cp1252: where
+    the locale is UTF-8 (Linux, macOS) a file that is not UTF-8 can only
+    have come from a Windows submitter.
     """
     data = Path(path).read_bytes()
     try:
@@ -98,8 +100,11 @@ def read_env_file(path: Path) -> dict:
     except UnicodeDecodeError:
         # The locale's own encoding, not Python's preferred one: under
         # PYTHONUTF8=1 (the runner's) that would be UTF-8 again.
-        encoding = getattr(locale, 'getencoding', None)
-        text = data.decode(encoding() if encoding else locale.getpreferredencoding(False), errors='replace')
+        get = getattr(locale, 'getencoding', None)
+        encoding = get() if get else locale.getpreferredencoding(False)
+        if encoding.lower().replace('-', '').replace('_', '') in ('utf8', 'ascii', 'ansix3.41968'):
+            encoding = 'cp1252'
+        text = data.decode(encoding, errors='replace')
     env = {}
     for line in text.splitlines():
         line = line.strip()

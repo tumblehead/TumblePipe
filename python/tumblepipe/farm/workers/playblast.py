@@ -1,5 +1,6 @@
-"""Render a shot's collapsed stage as a Karma XPU clay preview and encode
-it into the versioned playblast mp4 and the rolling daily."""
+"""Render a shot's collapsed stage as a preview, with our viewport delegate or
+Karma XPU, and encode it into the versioned playblast mp4 and the rolling
+daily."""
 
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -15,13 +16,49 @@ from tumblepipe.api import (
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.app import CommandFailed
-from tumblepipe.apps.houdini import Husk
+from tumblepipe.apps.houdini import HOUDINI_VERSION_ENV, Husk
 from tumblepipe.apps import mp4
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import get_base_env, print_env, job_data_dir
 from tumblepipe.farm.frames import frame_file, HOUDINI_FRAME_TOKEN
 from tumblepipe.farm.specs import playblast as playblast_spec
 from tumblepipe.farm.worker import ensure_dir, error, headline
+
+# The viewport renderer: hdThPlayblast (src/delegate), our own Hydra render
+# delegate, shipped under plugins/houdini<major>/ and registered here rather
+# than by the farm env (farm.env.get_base_env), which is built on the
+# submitting machine. It rasterises on the CPU with the viewport's look --
+# display colours and textures under a headlight -- and husk takes no licence
+# for it: Houdini's licence is only checked out for Karma. HideAndReek/010
+# (6.8M triangles) renders in ~0.2 s a frame at 1280x720, behind husk's own
+# ~3 s per-frame stage sync.
+#
+# --purpose geometry,proxy draws what the viewport draws: proxies where an
+# asset has them, never its render-purpose meshes.
+VIEWPORT_DELEGATE = 'HdThPlayblastRendererPlugin'
+
+
+def viewport_args() -> list[str]:
+    """husk's arguments for the viewport renderer."""
+    return ['-R', VIEWPORT_DELEGATE, '--purpose', 'geometry,proxy']
+
+
+def viewport_env(env: dict, pipeline_path: Path, houdini_major: int) -> dict:
+    """``env`` with the viewport delegate registered for USD, ahead of the
+    resolver."""
+    resources = (
+        pipeline_path / 'plugins' / f'houdini{houdini_major}'
+        / 'hdThPlayblast' / 'resources'
+    )
+    current = env.get('PXR_PLUGINPATH_NAME')
+    return {
+        **env,
+        'PXR_PLUGINPATH_NAME': (
+            f'{path_str(resources)}{os.pathsep}{current}' if current
+            else path_str(resources)
+        ),
+    }
+
 
 # Karma XPU as a playblast, by default a clay look instead of the scene's
 # shading. It draws through CUDA/OptiX, so it needs a GPU but no GL context
@@ -127,11 +164,20 @@ def main(
         # which Deadline reads as task progress.
         #
         # --check-licenses 'Karma Renderer' is what the render worker passes,
-        # and a playblast needs it too: without it husk takes a Houdini
+        # and a Karma playblast needs it too: without it husk takes a Houdini
         # Core/FX seat (five, shared with artists) and fails "No licenses
-        # could be found" while Karma licences sit free.
+        # could be found" while Karma licences sit free. The viewport
+        # renderer needs none.
         headline('Rendering playblast frames')
         width, height = resolution
+        renderer = playblast_spec.look_renderer(look)
+        print(f'Renderer: {renderer}')
+        if renderer == 'viewport':
+            houdini_major = int(env[HOUDINI_VERSION_ENV].split('.')[0])
+            env = viewport_env(env, Path(api.PIPELINE_PATH), houdini_major)
+            renderer_args = viewport_args()
+        else:
+            renderer_args = ['--check-licenses', 'Karma Renderer', *xpu_args(look)]
         # A failing husk is reported, then the frames it did write are encoded:
         # a husk that dies halfway leaves enough frames behind for a
         # plausible short mp4, and the frame check below catches one that
@@ -141,8 +187,7 @@ def main(
                 input_path,
                 [
                     '--resolver-context', path_str(input_path),
-                    '--check-licenses', 'Karma Renderer',
-                    *xpu_args(look),
+                    *renderer_args,
                     '--verbose', 'a2',
                     '--make-output-path',
                     '--no-mplay',
@@ -171,7 +216,10 @@ def main(
                 'is a submission problem, not a machine one. "No licenses '
                 'could be found" is licensing, not the GPU. "Unable to load '
                 'render plugin: BRAY_HdKarmaXPU" or a CUDA/OptiX error means '
-                'this worker has no usable NVIDIA GPU for Karma XPU.'
+                'this worker has no usable NVIDIA GPU for Karma XPU. '
+                f'"Unable to load render plugin: {VIEWPORT_DELEGATE}" means '
+                'this TumblePipe install has no plugins/houdini<major>/ '
+                'delegate build for the job\'s Houdini.'
             )
         print(f'Rendered {rendered}/{len(render_range)} frames')
 

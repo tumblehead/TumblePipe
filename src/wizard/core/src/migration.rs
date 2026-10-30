@@ -87,6 +87,13 @@ pub enum Step {
     /// dive a SOP playblast set to that shot (`from_context` names no shot
     /// there, so a placed one could not render).
     AnimationRigsArePublished,
+    /// v17 — take the WSL-era `/mnt/<drive>/…` paths out of machine-local
+    /// storage: `temp` becomes the packaged local scratch, and a path under a
+    /// WSL home (`/mnt/c/users/<name>/…`) is re-rooted at `{home}`. On
+    /// Windows a drive-less `/mnt/c/…` resolves against the current drive,
+    /// so scratch landed in a literal `C:\mnt\c\users\tumblehead\…` on every
+    /// machine, whoever was logged in (see [`v17_plan`]).
+    ScratchOffWslPaths,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -123,14 +130,15 @@ fn is_kits_line(line: &str) -> bool {
 /// share only 1 of 16 projects is in that state. The other 15 keep scratch at
 /// a WSL-era `_home / 'th_temp' / project_name`, which is machine-local and so
 /// never produced a stray `<project>_temp`; those say nothing about
-/// `project_path` and are left exactly as they are.
+/// `project_path` and are left exactly as they are. (On Windows that WSL
+/// path is broken in its own way; v17 moves it, in `storage.json`.)
 fn is_project_drive_temp_line(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed.starts_with("self.temp_path") && trimmed.contains("project_path")
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 16] = [
+pub const STEPS: [Step; 17] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -147,6 +155,7 @@ pub const STEPS: [Step; 16] = [
     Step::RefreshStockTemplatesAgain,
     Step::LayoutCameraFollowsResolution,
     Step::AnimationRigsArePublished,
+    Step::ScratchOffWslPaths,
 ];
 
 impl Step {
@@ -169,6 +178,7 @@ impl Step {
             Step::RefreshStockTemplatesAgain => 14,
             Step::LayoutCameraFollowsResolution => 15,
             Step::AnimationRigsArePublished => 16,
+            Step::ScratchOffWslPaths => 17,
         }
     }
 
@@ -216,6 +226,9 @@ impl Step {
             }
             Step::AnimationRigsArePublished => {
                 "refresh the stock _config/templates: animation imports only published rigs, and a Multi gets a playblast per shot"
+            }
+            Step::ScratchOffWslPaths => {
+                "repoint WSL-era /mnt/<drive> temp and home paths in _config/storage.json"
             }
         }
     }
@@ -411,6 +424,13 @@ impl Step {
             // different values, or a database file is unreadable: keeping
             // either value would be a guess with a wrong render behind it.
             Step::ChannelKeys => match v13_plan(&cfg) {
+                Ok(_) => Readiness::Ready,
+                Err(why) => Readiness::Blocked(why),
+            },
+            // Blocked only when storage.json is there but unreadable. A
+            // project still to run v11 has none yet and is Ready: v11
+            // writes it earlier in the same run, and apply reads it then.
+            Step::ScratchOffWslPaths => match v17_plan(&cfg) {
                 Ok(_) => Readiness::Ready,
                 Err(why) => Readiness::Blocked(why),
             },
@@ -895,8 +915,98 @@ impl Step {
             Step::LayoutCameraFollowsResolution => refresh_stock_templates(&cfg, template_dir),
             // Same plan again, for the animation template's rig rows.
             Step::AnimationRigsArePublished => refresh_stock_templates(&cfg, template_dir),
+            Step::ScratchOffWslPaths => {
+                // Own backup suffix: the `.v11.bak` v11 left is that step's
+                // original and stays.
+                if let Some(table) = v17_plan(&cfg)? {
+                    let path = cfg.join(conventions::STORAGE_FILE);
+                    let text = crate::to_json_string(&Value::Object(table));
+                    write_preserving_as(&path, &text, "v17.bak")?;
+                }
+                Ok(())
+            }
         }
     }
+}
+
+/// `template` with its WSL drive mount (`/mnt/c`) taken off: the
+/// drive-relative rest (`users/tumblehead/th_temp/…`, possibly empty), or
+/// None when it is not a `/mnt/<letter>` path.
+fn wsl_drive_relative(template: &str) -> Option<&str> {
+    let rest = template.strip_prefix("/mnt/")?;
+    let mut chars = rest.chars();
+    let drive = chars.next()?;
+    if !drive.is_ascii_alphabetic() {
+        return None;
+    }
+    let after = chars.as_str();
+    if after.is_empty() {
+        return Some("");
+    }
+    after.strip_prefix('/')
+}
+
+/// v17's storage table for a project: `Ok(Some(table))` when a path moves,
+/// `Ok(None)` when there is nothing to do (no `storage.json` yet, or no WSL
+/// path in it).
+///
+/// Projects that came from WSL kept `_home = Path('/mnt/c') / 'users' /
+/// 'tumblehead'` in their storage convention, and v11 carried the literal
+/// paths into the table (v8 deliberately left them, as machine-local). On
+/// Windows a drive-less path resolves against the current drive, so every
+/// machine wrote scratch to `C:\mnt\c\users\tumblehead\th_temp\…` and kept
+/// proxies the same way, whatever its user.
+///
+/// `temp` goes to the packaged local scratch, as v8 did for the project-drive
+/// form. Any other path under a WSL home (`/mnt/<d>/users/<name>/…`) is the
+/// machine's home in WSL spelling and becomes `{home}/…`. A WSL path
+/// anywhere else — a whole mounted drive such as an `edit` root on
+/// `/mnt/e/Sources/…` — is a studio decision about a shared drive, not a
+/// spelling, and is left alone.
+fn v17_plan(cfg: &Path) -> Result<Option<serde_json::Map<String, Value>>, String> {
+    let path = cfg.join(conventions::STORAGE_FILE);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let Value::Object(table) = load_json(&path)? else {
+        return Err(format!("{} is not a JSON object", path.display()));
+    };
+    Ok(v17_table(table))
+}
+
+/// [`v17_plan`]'s rewrite of one table: the table with its WSL paths moved,
+/// or None when it has none.
+fn v17_table(
+    mut table: serde_json::Map<String, Value>,
+) -> Option<serde_json::Map<String, Value>> {
+    let mut changed = false;
+    for (purpose, value) in table.iter_mut() {
+        let Some(template) = value.as_str() else {
+            continue; // validate_table's to refuse, not this step's
+        };
+        let Some(relative) = wsl_drive_relative(template) else {
+            continue;
+        };
+        let moved = if purpose == "temp" {
+            conventions::LOCAL_SCRATCH.to_string()
+        } else {
+            let mut parts = relative.splitn(3, '/');
+            let (Some(users), Some(name), rest) = (parts.next(), parts.next(), parts.next())
+            else {
+                continue;
+            };
+            if !users.eq_ignore_ascii_case("users") || name.is_empty() {
+                continue;
+            }
+            match rest {
+                Some(rest) if !rest.is_empty() => format!("{{home}}/{rest}"),
+                _ => "{home}".to_string(),
+            }
+        };
+        *value = Value::String(moved);
+        changed = true;
+    }
+    changed.then_some(table)
 }
 
 /// Write v12's plan: every packaged template whose project copy is missing or
@@ -1963,8 +2073,8 @@ mod tests {
     /// somewhere is — including the WSL-era `_home / 'th_temp'` form that 15 of
     /// the 16 live projects still carry (`_home = Path('/mnt/c') / 'users' /
     /// 'tumblehead'`, which is machine-local, so it never produced the stray
-    /// `<project>_temp` this step exists for). Repointing those at the packaged
-    /// helper is a separate call, not a side effect of this one.
+    /// `<project>_temp` this step exists for). v17 repoints those, after v11
+    /// has turned them into `storage.json`; it is not a side effect of v8.
     #[test]
     fn a_hand_pointed_temp_is_left_alone() {
         let dir = database_project();
@@ -2433,7 +2543,8 @@ mod tests {
         std::fs::write(cfg.join("storage_convention.py"), &mine).unwrap();
         write_version(&cfg, 10).unwrap();
 
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        // v17 moves the WSL paths on; v11's own job is to carry them over.
+        assert!(migrate_through(dir.path(), template.path(), 11).is_ok());
         let table = load_json(&cfg.join(conventions::STORAGE_FILE)).unwrap();
         assert_eq!(table["temp"], "/mnt/c/users/tumblehead/th_temp/{project_name}");
         assert_eq!(table["edit"], "/mnt/e/Sources/Buzz");
@@ -2443,6 +2554,295 @@ mod tests {
             mine,
             "the original keeps its bytes, CRLF included"
         );
+    }
+
+    /// The storage table v11 makes of a WSL-era convention, as RND and
+    /// SideFXrig2 carry it.
+    const WSL_STORAGE: &str = concat!(
+        "{\n",
+        "    \"assets\": \"{project_path}/assets\",\n",
+        "    \"shots\": \"{project_path}/shots\",\n",
+        "    \"groups\": \"{project_path}/groups\",\n",
+        "    \"export\": \"{project_path}/export\",\n",
+        "    \"cache\": \"{project_parent}/{project_name}_cache\",\n",
+        "    \"render\": \"{project_parent}/{project_name}_render\",\n",
+        "    \"turntable\": \"{project_parent}/{project_name}_turntable\",\n",
+        "    \"temp\": \"/mnt/c/users/tumblehead/th_temp/{project_name}\",\n",
+        "    \"proxy\": \"/mnt/c/users/tumblehead/th_proxy/{project_name}\",\n",
+        "    \"preset\": \"{config_path}/presets\",\n",
+        "    \"edit\": \"/mnt/e/Sources/Buzz\"\n",
+        "}\n",
+    );
+
+    /// A database project at v16 with `storage` as its table.
+    fn project_at_v16(storage: &str) -> tempfile::TempDir {
+        let dir = database_project();
+        let cfg = dir.path().join("_config");
+        std::fs::write(cfg.join(conventions::STORAGE_FILE), storage).unwrap();
+        write_version(&cfg, 16).unwrap();
+        dir
+    }
+
+    /// On Windows a drive-less `/mnt/c/...` resolves against the current
+    /// drive, so scratch landed in `C:\mnt\c\users\tumblehead\...` on every
+    /// machine. temp goes to local scratch, a WSL home path to `{home}`, and
+    /// a mounted shared drive stays where the studio put it.
+    #[test]
+    fn v17_takes_wsl_paths_off_machine_local_storage() {
+        let original = WSL_STORAGE.replace('\n', "\r\n");
+        let dir = project_at_v16(&original);
+        let template = scaffold();
+        let cfg = dir.path().join("_config");
+        let report = migrate(dir.path(), template.path());
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(current_version(dir.path()), 17);
+
+        let path = cfg.join(conventions::STORAGE_FILE);
+        let table = load_json(&path).unwrap();
+        assert_eq!(table["temp"], conventions::LOCAL_SCRATCH);
+        assert_eq!(table["proxy"], "{home}/th_proxy/{project_name}");
+        assert_eq!(table["edit"], "/mnt/e/Sources/Buzz", "a shared drive is the studio's call");
+        assert_eq!(table["cache"], "{project_parent}/{project_name}_cache");
+        let object = table.as_object().unwrap();
+        assert_eq!(
+            object.keys().map(String::as_str).collect::<Vec<_>>(),
+            conventions::PURPOSES.to_vec(),
+            "purposes keep their order"
+        );
+        conventions::validate_table(object).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().contains("\r\n"), "CRLF kept");
+        assert_eq!(
+            std::fs::read_to_string(cfg.join("storage.json.v17.bak")).unwrap(),
+            original,
+            "the original keeps its bytes"
+        );
+    }
+
+    #[test]
+    fn v17_leaves_a_portable_table_alone() {
+        let dir = project_at_v16(SCAFFOLD_STORAGE);
+        let template = scaffold();
+        let cfg = dir.path().join("_config");
+        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert_eq!(
+            std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
+            SCAFFOLD_STORAGE
+        );
+        assert!(!cfg.join("storage.json.v17.bak").exists(), "nothing to back up");
+    }
+
+    #[test]
+    fn v17_is_idempotent() {
+        let dir = project_at_v16(WSL_STORAGE);
+        let template = scaffold();
+        let cfg = dir.path().join("_config");
+        assert!(migrate(dir.path(), template.path()).is_ok());
+        let once = std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap();
+        write_version(&cfg, 16).unwrap();
+        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert_eq!(std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(), once);
+        assert_eq!(
+            std::fs::read_to_string(cfg.join("storage.json.v17.bak")).unwrap(),
+            WSL_STORAGE,
+            "a re-run keeps the true original"
+        );
+    }
+
+    /// A project coming from before v11 has no table at preflight; v11
+    /// writes one in the same run and v17 then moves its WSL paths.
+    #[test]
+    fn v17_follows_v11_in_one_run() {
+        let dir = database_project();
+        let template = scaffold();
+        let cfg = dir.path().join("_config");
+        let mine = include_str!("../tests/fixtures/storage_convention_v8.py")
+            .replace(
+                "        project_name = get_project_name()\n",
+                concat!(
+                    "        project_name = get_project_name()\n",
+                    "        _home = Path('/mnt/c') / 'users' / 'tumblehead'\n",
+                ),
+            )
+            .replace(
+                "self.temp_path = default_temp_path()",
+                "self.temp_path = _home / 'th_temp' / project_name",
+            );
+        std::fs::write(cfg.join("storage_convention.py"), &mine).unwrap();
+        write_version(&cfg, 10).unwrap();
+
+        let report = migrate(dir.path(), template.path());
+        assert!(report.is_ok(), "{report:?}");
+        let table = load_json(&cfg.join(conventions::STORAGE_FILE)).unwrap();
+        assert_eq!(table["temp"], conventions::LOCAL_SCRATCH);
+    }
+
+    #[test]
+    fn v17_blocks_on_an_unreadable_table_and_writes_nothing() {
+        let dir = project_at_v16("{ not json");
+        let template = scaffold();
+        let report = migrate(dir.path(), template.path());
+        assert!(
+            matches!(report.refused, Some((Step::ScratchOffWslPaths, _))),
+            "{report:?}"
+        );
+        assert_eq!(current_version(dir.path()), 16);
+    }
+
+    #[test]
+    fn only_a_drive_mount_reads_as_wsl() {
+        assert_eq!(wsl_drive_relative("/mnt/c/users/x"), Some("users/x"));
+        assert_eq!(wsl_drive_relative("/mnt/E"), Some(""));
+        assert_eq!(wsl_drive_relative("/mnt/scratch/th_temp"), None);
+        assert_eq!(wsl_drive_relative("/mnt/c2/x"), None);
+        assert_eq!(wsl_drive_relative("{local_temp}/th_temp"), None);
+        assert_eq!(wsl_drive_relative("//studio/mnt/c"), None);
+    }
+
+    /// v17 over generated storage tables: each purpose gets a portable
+    /// template, a whole-drive WSL path or a WSL home path, so every way a
+    /// table can be shaped meets every rule.
+    mod v17_props {
+        use super::*;
+        use proptest::prelude::*;
+
+        /// How a generated template is shaped, with what v17 must make of it.
+        #[derive(Debug, Clone)]
+        enum Shape {
+            /// Not a `/mnt/<letter>` path: never touched.
+            Portable(String),
+            /// `/mnt/<letter>[/rest]` outside a home: only `temp` moves.
+            Drive(String),
+            /// `/mnt/<letter>/users/<name>[/rest]`: becomes `{home}[/rest]`.
+            Home { template: String, rest: Option<String> },
+        }
+
+        impl Shape {
+            fn template(&self) -> &str {
+                match self {
+                    Shape::Portable(t) | Shape::Drive(t) => t,
+                    Shape::Home { template, .. } => template,
+                }
+            }
+        }
+
+        fn tail() -> impl Strategy<Value = String> {
+            prop::collection::vec(
+                prop_oneof!["[a-z_]{1,6}", Just("{project_name}".to_string())],
+                1..4,
+            )
+            .prop_map(|parts| parts.join("/"))
+        }
+
+        fn shape() -> impl Strategy<Value = Shape> {
+            let portable = (
+                prop::sample::select(vec![
+                    "{project_path}", "{project_parent}", "{home}", "{local_temp}",
+                    "{config_path}", "//studio/share", "D:/scratch", "/mnt/scratch",
+                    "/mnt/c2", "/srv",
+                ]),
+                tail(),
+            )
+                .prop_map(|(root, tail)| Shape::Portable(format!("{root}/{tail}")));
+            let drive = ("[a-zA-Z]", prop::option::of(tail())).prop_map(|(d, tail)| {
+                Shape::Drive(match tail {
+                    // A first segment `users` would make it a home path
+                    Some(tail) if !tail.to_ascii_lowercase().starts_with("users") => {
+                        format!("/mnt/{d}/{tail}")
+                    }
+                    _ => format!("/mnt/{d}"),
+                })
+            });
+            let home = (
+                "[a-zA-Z]",
+                prop::sample::select(vec!["users", "Users", "USERS"]),
+                "[a-z][a-z0-9]{0,7}",
+                prop::option::of(tail()),
+            )
+                .prop_map(|(d, users, name, rest)| Shape::Home {
+                    template: match &rest {
+                        Some(rest) => format!("/mnt/{d}/{users}/{name}/{rest}"),
+                        None => format!("/mnt/{d}/{users}/{name}"),
+                    },
+                    rest,
+                });
+            prop_oneof![portable, drive, home]
+        }
+
+        fn table() -> impl Strategy<Value = Vec<(&'static str, Shape)>> {
+            prop::collection::vec(shape(), conventions::PURPOSES.len()).prop_map(|shapes| {
+                conventions::PURPOSES.iter().copied().zip(shapes).collect()
+            })
+        }
+
+        fn as_map(rows: &[(&str, Shape)]) -> serde_json::Map<String, Value> {
+            rows.iter()
+                .map(|(p, s)| (p.to_string(), Value::String(s.template().to_string())))
+                .collect()
+        }
+
+        proptest! {
+            #[test]
+            fn v17_moves_exactly_the_wsl_paths_it_should(rows in table()) {
+                let input = as_map(&rows);
+                prop_assert!(conventions::validate_table(&input).is_ok());
+                let out = v17_table(input.clone());
+                let expect_change = rows.iter().any(|(p, s)| match s {
+                    Shape::Portable(_) => false,
+                    Shape::Drive(_) => *p == "temp",
+                    Shape::Home { .. } => true,
+                });
+                prop_assert_eq!(out.is_some(), expect_change);
+                let out = out.unwrap_or(input);
+
+                prop_assert_eq!(
+                    out.keys().map(String::as_str).collect::<Vec<_>>(),
+                    conventions::PURPOSES.to_vec(),
+                    "purposes keep their order"
+                );
+                for (purpose, shape) in &rows {
+                    let got = out[*purpose].as_str().unwrap();
+                    let want = match shape {
+                        Shape::Portable(t) => t.clone(),
+                        _ if *purpose == "temp" => conventions::LOCAL_SCRATCH.to_string(),
+                        Shape::Drive(t) => t.clone(),
+                        Shape::Home { rest: Some(rest), .. } => format!("{{home}}/{rest}"),
+                        Shape::Home { rest: None, .. } => "{home}".to_string(),
+                    };
+                    prop_assert_eq!(got, want.as_str(), "{}", purpose);
+                }
+                prop_assert!(conventions::validate_table(&out).is_ok(), "still a valid table");
+                prop_assert!(
+                    wsl_drive_relative(out["temp"].as_str().unwrap()).is_none(),
+                    "temp never stays on a WSL path"
+                );
+                prop_assert!(v17_table(out).is_none(), "a second run has nothing to do");
+            }
+
+            /// A drive mount reads back as the tail it was built from.
+            #[test]
+            fn a_drive_mount_reads_back_its_tail(d in "[a-zA-Z]", tail in prop::option::of(tail())) {
+                let s = match &tail {
+                    Some(tail) => format!("/mnt/{d}/{tail}"),
+                    None => format!("/mnt/{d}"),
+                };
+                prop_assert_eq!(wsl_drive_relative(&s), Some(tail.as_deref().unwrap_or("")));
+            }
+
+            /// Anything else is not one: a longer or non-letter mount name,
+            /// a prefix before `/mnt`, a placeholder root.
+            #[test]
+            fn nothing_else_reads_as_a_drive_mount(
+                head in prop::sample::select(vec!["", "/", "//studio", "{home}", "C:", "/srv"]),
+                name in "[a-zA-Z0-9_]{0,4}",
+                tail in "(/[a-z]{1,4}){0,2}",
+            ) {
+                let is_mount = head.is_empty()
+                    && name.len() == 1
+                    && name.chars().all(|c| c.is_ascii_alphabetic());
+                let s = format!("{head}/mnt/{name}{tail}");
+                prop_assert_eq!(wsl_drive_relative(&s).is_some(), is_mount, "{}", s);
+            }
+        }
     }
 
     /// What v11 cannot carry over blocks the run before anything is written.
@@ -2764,6 +3164,7 @@ mod tests {
             (Step::RefreshStockTemplatesAgain, Readiness::Blocked(_)),
             (Step::LayoutCameraFollowsResolution, Readiness::Blocked(_)),
             (Step::AnimationRigsArePublished, Readiness::Blocked(_)),
+            (Step::ScratchOffWslPaths, Readiness::Ready),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -2870,11 +3271,11 @@ mod tests {
     /// A project made from this package is born at the latest version, with
     /// nothing to do.
     #[test]
-    fn a_fresh_scaffold_is_already_at_v16() {
+    fn a_fresh_scaffold_is_already_at_the_latest_version() {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 16);
+        assert_eq!(latest_version(), 17);
         assert_eq!(current_version(&target), latest_version());
         assert!(pending(&target).is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -3020,8 +3421,8 @@ mod tests {
         let dir = project_at_v12_with_variants();
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 4);
-        assert_eq!(report.to, 16);
+        assert_eq!(report.applied.len(), 5);
+        assert_eq!(report.to, 17);
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -3078,7 +3479,7 @@ mod tests {
         let template = scaffold();
         let report = migrate(dir.path(), template.path());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 16);
+        assert_eq!(current_version(dir.path()), 17);
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -3096,7 +3497,7 @@ mod tests {
         write_version(&dir.path().join("_config"), 12).unwrap();
         let second = migrate(dir.path(), &packaged_scaffold());
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 16);
+        assert_eq!(second.to, 17);
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -3114,7 +3515,7 @@ mod tests {
 
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.to, 16);
+        assert_eq!(report.to, 17);
         assert_eq!(db_text(dir.path(), "entity.json"), entity);
         let mut files = Vec::new();
         find_files(&db, None, &mut files);
@@ -3175,7 +3576,7 @@ mod tests {
         }
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 16);
+        assert_eq!(current_version(dir.path()), 17);
         let animation =
             std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
         assert_eq!(
@@ -3207,7 +3608,7 @@ mod tests {
         std::fs::write(&path, &shipped_at_v14).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 16);
+        assert_eq!(current_version(dir.path()), 17);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             layout.replace("
@@ -3249,8 +3650,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v15).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold());
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 1);
-        assert_eq!(current_version(dir.path()), 16);
+        assert_eq!(report.applied.len(), 2);
+        assert_eq!(current_version(dir.path()), 17);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         // Only rigged assets get a row (since 80def61306: the animatable ones)

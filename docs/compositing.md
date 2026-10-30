@@ -270,7 +270,8 @@ so their versions interleave:
   the same row run first, and the playblast then shows what they publish)
   and each ticked shot gets one job:
   a single task renders the shot's staged `default` stage with husk and
-  **Karma XPU** in a preview mode — through a `RenderSettings` prim the
+  the dialog's **Renderer**: `viewport` (the default) or **Karma XPU** in
+  a preview mode — through a `RenderSettings` prim the
   submitter authors on the collapsed stage at
   `/Render/tumblepipe_playblast`, aimed at the same render camera the
   project's own settings name (one raw colour buffer instead of the Karma
@@ -281,7 +282,7 @@ so their versions interleave:
   **and** the daily, exactly like the render/composite MP4s above. The
   frame range (rolls included) and fps come from the shot config per
   shot. So do resolution (the shot's render resolution, 1280 × 720 when it
-  has none), the look (Light, Samples, Scene materials) and pool/priority, unless you
+  has none), the look (Renderer, Light, Samples, Scene materials) and pool/priority, unless you
   change them in the dialog: those fields are tri-state, and an untouched
   one lets every checked shot use its own configured value rather than
   imposing one shot's on the batch. A field you do set renders upright
@@ -290,18 +291,40 @@ so their versions interleave:
   stack the same way a render's does — up to and including the one picked,
   see [Composition → The department cut](composition.md#the-department-cut).
 
-The two do not look the same. The farm frames are a clay preview, not a
-viewport capture and not a final render: by default scene materials are
-off and the scene's lights are replaced by one white dome light, and the
-stage's display colours still show. The dialog's **Light** setting can
+The `viewport` renderer is TumblePipe's own Hydra render delegate,
+`hdThPlayblast`, shipped with the package. It draws what the viewport draws
+— proxy geometry where an asset has one, USD shapes (cubes, spheres,
+cylinders, cones, capsules) as meshes, the stage's display colours and
+textures (including the colours Karma materials take from them), lit by a
+light on the camera — on the worker's CPU. As in the viewport, a polygon
+mesh with no normals of its own is drawn faceted and a subdivision surface
+smooth. It needs no GPU and husk takes no licence for it, and
+HideAndReek/010's 6.8 million triangles draw in about 0.2 s a frame at
+1280 × 720. It ignores Light, Samples and Scene materials. It is close to
+the in-session node's look, not identical: no viewport lighting, shadows or
+ambient occlusion.
+
+A worker can draw the same picture on its GPU instead (Vulkan or DX12, no
+display needed): set `TH_PLAYBLAST_GPU=1` in that worker's environment.
+Windows builds only for now. It is opt-in because it is not faster: on an
+RTX 3070, HideAndReek/010 takes about 0.6 s a frame on the GPU against
+0.2 s on the CPU, since every frame's geometry is sent to the card again.
+A worker whose GPU fails falls back to the CPU and says so in the task
+log. `TH_PLAYBLAST_COMPARE=1` draws every mesh both ways and logs the ones
+that differ, a check for a new GPU or driver.
+
+The `karma` renderer does not look like the viewport. Its frames are a clay
+preview, not a viewport capture and not a final render: by default scene
+materials are off and the scene's lights are replaced by one white dome
+light, and the stage's display colours still show. The dialog's **Light** setting can
 instead put a headlight with ambient occlusion on the camera (the look
 before 1.85) or keep the scene's own lights, and **Scene materials** turns
 the materials back on. The dome is authored into the collapsed stage
 (`/TumblePipePlayblastLights/dome`, every scene light deactivated beside
 it); husk's own `--headlight dome` cannot do it, since Karma's headlight
 ignores the mode. Lights inside an instance cannot be deactivated from
-the collapse and stay lit beside the dome. That difference is exactly
-why the in-session node stays — playblast locally when the look must
+the collapse and stay lit beside the dome. A Karma playblast takes a Karma
+licence. That difference is exactly why the in-session node stays — playblast locally when the look must
 match the viewport, submit to the farm to offload a batch. The farm job's
 Deadline group is `karma`, the same GPU workers final renders use, see
 [Farm worker prerequisites](deadline.md#farm-worker-prerequisites).

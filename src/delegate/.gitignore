@@ -1,0 +1,4 @@
+/target/
+# cmake build trees (the Rust staticlib lands under build/rust-target/)
+/build/
+/build-*/

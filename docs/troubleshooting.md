@@ -313,6 +313,29 @@ offending paths or prims:
   asset in instead, set the import node's *Import Mode* to Inline. See
   [Dropped-metadata guard](composition.md#dropped-metadata-guard).
 
+### Export failed: "Houdini wrote stage.usdnc instead of stage.usd"
+
+Houdini is running on an Apprentice or Education licence. Those always
+save USD as `.usdnc`, whatever extension was asked for, and no commercial
+or Indie Houdini (nor the farm) can read the result, so the export stops.
+TumblePipe exports need Houdini Indie or a commercial licence. Before
+1.86 the same failure read *Expected file not created: stage.usd* with
+`Files found: ['stage.usdnc']` and blamed the disk.
+
+### Exports and scratch land in `C:\mnt\c\users\tumblehead\...`
+
+The project's `_config/storage.json` still has a WSL-era path such as
+`/mnt/c/users/tumblehead/th_temp/{project_name}`. Windows has no `/mnt`,
+so a path without a drive resolves against the current drive: scratch
+ends up in that literal folder on every machine, whoever is logged in.
+Launching the project with 1.86 or later migrates it to v17, which points
+`temp` at `{local_temp}/th_temp/{project_name}` and any other path under a
+WSL home (often `proxy`) at `{home}`. A WSL path to a whole drive (an
+`edit` root on `/mnt/e/...`) is left for you to set: write the Windows
+path (`E:/Sources/...`) or a share into `storage.json` by hand. See
+[Configuration](configuration.md). The old `C:\mnt\...` folder is only
+scratch and proxies and can be deleted once nothing is running.
+
 ### A new publish does not show in my scene
 
 Two different staleness layers:
@@ -790,6 +813,15 @@ like this on every real shot the farm tried (HideAndReek/010 on maria-2060,
 030 on judas, and 030 locally), which is why it was removed. Update the
 pipeline and resubmit; playblasts now render with Karma XPU. See
 [Playblast](compositing.md#playblast).
+
+### "Unable to load render plugin: HdThPlayblastRendererPlugin"
+
+A `viewport` playblast failed because husk could not find TumblePipe's
+render delegate. The worker looks for it under the installed package's
+`plugins/houdini<major>/hdThPlayblast/`, for the Houdini major the job was
+submitted from. A TumblePipe built without it (a dev checkout that never ran
+`.ci/build_delegate.py`) or a Houdini major the package has no build for
+ends here. Resubmit with **Renderer** `karma` meanwhile.
 
 ### Playblast frames are black or missing on the farm
 

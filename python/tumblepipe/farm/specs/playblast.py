@@ -3,8 +3,9 @@
 
 A playblast is monolithic: unlike a render (frames chunked across many
 Deadline tasks), the mp4 encode needs every frame, so one task renders the
-whole range with Karma XPU in a preview mode (see ``workers.playblast.
-xpu_args``) and encodes the video.
+whole range and encodes the video. It renders with the look's renderer: the
+viewport look (hdThPlayblast, no licence) or Karma XPU in a preview mode (see
+``workers.playblast.xpu_args``).
 
 config = {
     'title': 'string',
@@ -16,9 +17,10 @@ config = {
     'fps': 'int',
     'res': ['int', 'int'],
     'look': {                      # see valid_look
-        'light': 'dome' | 'headlight' | 'scene',
-        'samples': 'int',
-        'materials': 'bool'        # scene materials instead of clay
+        'renderer': 'viewport' | 'karma',   # optional, absent = 'karma'
+        'light': 'dome' | 'headlight' | 'scene',   # karma only
+        'samples': 'int',          # karma only
+        'materials': 'bool'        # karma only: scene materials, not clay
     },
     'input_path': 'string',        # collapsed staged USD, relative to job data
     'output_paths': ['string']     # versioned playblast mp4 + rolling daily mp4
@@ -39,15 +41,31 @@ from tumblepipe.farm.checks import (
 )
 from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
 
+# What renders a playblast:
+#   viewport -- hdThPlayblast (src/delegate), our Hydra render delegate: the
+#               viewport's look of the scene's display colours and textures
+#               under a headlight, on the CPU, with no licence. The default.
+#   karma    -- Karma XPU in a preview mode, lit and sampled by the look's
+#               other keys. Takes a Karma licence and an NVIDIA GPU.
+PLAYBLAST_RENDERERS = ('viewport', 'karma')
+
 # The look a playblast gets when its submission names none: a collapse job
 # submitted before the look existed. The dialog's defaults
 # (farm.submit.settings) match it; tests/test_submit_settings.py pins that.
-DEFAULT_LOOK = {'light': 'dome', 'samples': 32, 'materials': False}
+DEFAULT_LOOK = {'renderer': 'viewport', 'light': 'dome', 'samples': 32, 'materials': False}
+
+
+def look_renderer(look: dict) -> str:
+    """The renderer of a valid look. A look submitted before the renderer
+    existed was asked of Karma, and keeps it."""
+    return look.get('renderer', 'karma')
 
 
 def valid_look(look) -> bool:
-    """A playblast look: how it is lit, its samples, clay or materials."""
+    """A playblast look: its renderer, how it is lit, its samples, clay or
+    materials."""
     if not isinstance(look, dict): return False
+    if look_renderer(look) not in PLAYBLAST_RENDERERS: return False
     if not check_str(look, 'light'): return False
     if look['light'] not in PLAYBLAST_LIGHTS: return False
     if not check_int(look, 'samples'): return False

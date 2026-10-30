@@ -71,7 +71,7 @@ const RETIRED: [&str; 1] = ["kits"];
 
 /// What `tumblepipe.storage.default_temp_path()` resolved to (v8 pointed
 /// `temp` at it), spelled as a template.
-const LOCAL_SCRATCH: &str = "{local_temp}/th_temp/{project_name}";
+pub(crate) const LOCAL_SCRATCH: &str = "{local_temp}/th_temp/{project_name}";
 
 /// Strip CR so the reader sees one newline style.
 fn normalize(text: &str) -> String {

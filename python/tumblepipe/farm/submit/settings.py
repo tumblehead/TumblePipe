@@ -210,6 +210,8 @@ FIELDS: tuple[Field, ...] = (
           default=720, kind='int', derive=_resolution_axis(1)),
     # The look, assembled into 'pb_look' by _finish(). The defaults match
     # specs.playblast.DEFAULT_LOOK (tests/test_submit_settings.py pins it).
+    Field('pb_renderer', 'playblast', 'Renderer', prop='playblast.renderer',
+          default='viewport', kind='str'),
     Field('pb_light', 'playblast', 'Light', prop='playblast.light',
           default='dome', kind='str'),
     Field('pb_samples', 'playblast', 'Samples', prop='playblast.samples',
@@ -220,7 +222,8 @@ FIELDS: tuple[Field, ...] = (
 
 #: The look fields and the ``pb_look`` keys they become.
 PLAYBLAST_LOOK_KEYS = {
-    'pb_light': 'light', 'pb_samples': 'samples', 'pb_materials': 'materials',
+    'pb_renderer': 'renderer', 'pb_light': 'light', 'pb_samples': 'samples',
+    'pb_materials': 'materials',
 }
 
 FIELDS_BY_KEY: dict[str, Field] = {f.key: f for f in FIELDS}

@@ -21,14 +21,15 @@ from pathlib import Path
 from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel,
-    QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSplitter,
-    QStyledItemDelegate, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QHBoxLayout, QHeaderView,
+    QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QStyle,
+    QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QTreeWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from tumbletrove.asset_browser.core.theme import (
-    ACCENT, BG_DARK, BG_DARKEST, BORDER, FONT_BODY, FONT_FAMILY,
-    TEXT_PRIMARY, TEXT_SECONDARY,
+    ACCENT, BG_DARK, BG_DARKEST, BG_LIGHT, BORDER, DANGER, FONT_BODY, FONT_FAMILY,
+    TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY, WARNING,
 )
 
 from tumblepipe.farm.local import queue, runner
@@ -41,17 +42,24 @@ LOCAL_INTERVAL_MS = 1000
 FARM_INTERVAL_MS = 8000
 FUTURES_INTERVAL_MS = 150
 
+# Finished work recedes so failed and live work stand out: a list is mostly
+# completed jobs, and a wall of bright green bars hid the one red row.
+# Failed is red, as Houdini's errors are; the Errors count stays amber,
+# since a job that completed after a retried task did not fail.
 STATUS_COLOURS = {
-    queue.COMPLETED: '#2bae86',
-    queue.FAILED: '#f0a030',
+    queue.COMPLETED: '#4f8f7a',
+    queue.FAILED: DANGER,
     queue.RENDERING: '#7fb2f0',
     queue.QUEUED: TEXT_SECONDARY,
     queue.PENDING: '#b8a860',
     queue.SUSPENDED: '#b48ad8',
-    queue.CANCELLED: '#8a8a8a',
-    rows.UNKNOWN: '#8a8a8a',
+    queue.CANCELLED: TEXT_DIM,
+    rows.UNKNOWN: TEXT_DIM,
 }
 WHERE = {rows.LOCAL: 'This machine', rows.FARM: 'Farm'}
+# The headers above the task list and the log share a height, so the two
+# panes start on the same line whether or not a header holds buttons.
+PANE_HEADER_HEIGHT = 30
 
 # Job tree columns.
 NAME, WHERE_COL, STATUS, PROGRESS, TASKS, ERRORS, USER, SUBMITTED = range(8)
@@ -62,6 +70,7 @@ TASK_HEADERS = ['Task', 'Frames', 'Status', 'Progress', 'Worker', 'Started', 'Fi
 
 KEY_ROLE = Qt.UserRole
 PROGRESS_ROLE = Qt.UserRole + 1
+FINISHED_ROLE = Qt.UserRole + 2
 
 # Labels of the actions, by command; which are offered depends on the source.
 ACTION_LABELS = {
@@ -109,39 +118,78 @@ QLineEdit, QComboBox {{
 QComboBox::drop-down {{ border: none; width: 16px; }}
 QComboBox QAbstractItemView {{ background-color: {BG_DARK}; border: 1px solid {BORDER}; }}
 QSplitter::handle {{ background-color: {BG_DARKEST}; }}
+QPlainTextEdit {{ padding: 4px; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0; }}
+QScrollBar::handle {{ background-color: {BG_LIGHT}; border-radius: 4px; margin: 2px; }}
+QScrollBar::handle:hover {{ background-color: #4a4a4a; }}
+QScrollBar::handle:vertical {{ min-height: 30px; }}
+QScrollBar::handle:horizontal {{ min-width: 30px; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; border: none; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
 """
+
+# Cancel, Remove and Delete stop or throw away work: red under the pointer,
+# as the Entity Editor's Retire is.
+_DANGER_BUTTON_STYLE = f'QPushButton:hover {{ color: {DANGER}; border-color: {DANGER}; }}'
+_MESSAGE_STYLE = f'color: {TEXT_PRIMARY};'
+_ERROR_MESSAGE_STYLE = f'color: {DANGER};'
+_PANE_LABEL_STYLE = f'color: {TEXT_SECONDARY};'
+# What an empty pane asks for.
+_NO_JOB = 'Select a job to see its tasks'
+_NO_TASK = 'Select a task to see its log'
 
 
 def _when(iso: str) -> str:
-    """``2026-10-29T14:03:11`` as ``10-29 14:03``."""
-    if not iso or 'T' not in iso:
-        return iso or ''
-    date, time = iso.split('T', 1)
-    return f'{date[5:]} {time[:5]}'
+    """``Today 14:03``, ``Oct 29 14:03``: see :func:`rows.when_text`."""
+    return rows.when_text(iso)
+
+
+def _is_finished(status: str) -> bool:
+    return status in rows.FINISHED
+
+
+def _jobs(count: int) -> str:
+    return f"{count} job{'' if count == 1 else 's'}"
 
 
 class ProgressDelegate(QStyledItemDelegate):
-    """A thin bar behind the progress text, coloured by the row's state."""
+    """A bar behind the progress text, coloured by the row's state.
+
+    The cell's own background (alternate rows, the selection) is drawn
+    first, so a selected row stays highlighted across this column too.
+    Finished rows get a faint bar: only live and failed work is loud.
+    """
 
     def paint(self, painter: QPainter, option, index) -> None:
         value = index.data(PROGRESS_ROLE)
         if value is None:
             super().paint(painter, option, index)
             return
+        background = QStyleOptionViewItem(option)
+        self.initStyleOption(background, index)
+        background.text = ''
+        widget = option.widget
+        style = widget.style() if widget is not None else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, background, painter, widget)
+
         painter.save()
-        rect = option.rect.adjusted(4, 5, -4, -5)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = option.rect.adjusted(6, 5, -6, -5)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor('#2a2a2a'))
+        painter.setBrush(QColor(255, 255, 255, 14))
         painter.drawRoundedRect(rect, 3, 3)
         colour = index.data(Qt.ForegroundRole)
         fill = QColor(colour.color() if hasattr(colour, 'color') else ACCENT)
-        fill.setAlpha(150)
+        finished = bool(index.data(FINISHED_ROLE))
+        fill.setAlpha(70 if finished else 170)
         width = int(rect.width() * max(0.0, min(100.0, float(value))) / 100)
         if width > 0:
             painter.setBrush(fill)
             painter.drawRoundedRect(QRect(rect.x(), rect.y(), width, rect.height()), 3, 3)
-        painter.setPen(QColor(TEXT_PRIMARY))
-        painter.drawText(rect, Qt.AlignCenter, index.data(Qt.DisplayRole) or '')
+        painter.setPen(QColor(TEXT_SECONDARY if finished else TEXT_PRIMARY))
+        # The text gets the row's full height; the bar's would clip it.
+        painter.drawText(option.rect, Qt.AlignCenter, index.data(Qt.DisplayRole) or '')
         painter.restore()
 
 
@@ -203,15 +251,24 @@ class ManagerWindow(QWidget):
         bottom.setChildrenCollapsible(False)
         bottom.addWidget(self._build_tasks_tree())
         bottom.addWidget(self._build_log_panel())
-        bottom.setSizes([620, 780])
+        bottom.setSizes([700, 700])
         splitter.addWidget(bottom)
         splitter.setSizes([460, 380])
         root.addWidget(splitter, 1)
 
+        # The footer: where both farms stand on the left, refreshed every
+        # second; on the right the last action's answer, which stays until
+        # the next one (it used to share the left label and was overwritten
+        # within a second).
+        footer = QHBoxLayout()
+        footer.setSpacing(16)
         self._status = QLabel()
         self._status.setStyleSheet(f'color: {TEXT_SECONDARY};')
-        self._status.setWordWrap(True)
-        root.addWidget(self._status)
+        footer.addWidget(self._status, 1)
+        self._message = QLabel()
+        self._message.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        footer.addWidget(self._message)
+        root.addLayout(footer)
 
         self._local_timer = QTimer(self, interval=LOCAL_INTERVAL_MS, timeout=self._refresh_local)
         self._farm_timer = QTimer(self, interval=FARM_INTERVAL_MS, timeout=self._refresh_farm)
@@ -290,11 +347,19 @@ class ManagerWindow(QWidget):
         bar = QHBoxLayout()
         bar.setSpacing(6)
         self._action_buttons: dict[str, QPushButton] = {}
-        for command in ('suspend', 'resume', 'retry', 'requeue', 'cancel', 'remove', 'delete'):
-            button = QPushButton(ACTION_LABELS[command])
-            button.clicked.connect(lambda _checked=False, c=command: self._run_action(c))
-            bar.addWidget(button)
-            self._action_buttons[command] = button
+        # Pause and continue, run again, stop for good: a gap between the
+        # groups, and the last group red under the pointer.
+        groups = (('suspend', 'resume'), ('retry', 'requeue'), ('cancel', 'remove', 'delete'))
+        for position, group in enumerate(groups):
+            if position:
+                bar.addSpacing(18)
+            for command in group:
+                button = QPushButton(ACTION_LABELS[command])
+                button.clicked.connect(lambda _checked=False, c=command: self._run_action(c))
+                if group is groups[-1]:
+                    button.setStyleSheet(_DANGER_BUTTON_STYLE)
+                bar.addWidget(button)
+                self._action_buttons[command] = button
         self._action_buttons['requeue'].setToolTip('Farm: render every task of the job again')
         self._action_buttons['remove'].setToolTip(
             'This machine: take the batch off the list (its outputs stay)'
@@ -314,9 +379,14 @@ class ManagerWindow(QWidget):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-        self._tasks_label = QLabel('Tasks')
-        self._tasks_label.setStyleSheet(f'color: {TEXT_SECONDARY};')
-        layout.addWidget(self._tasks_label)
+        head = QWidget()
+        head.setFixedHeight(PANE_HEADER_HEIGHT)
+        head_layout = QHBoxLayout(head)
+        head_layout.setContentsMargins(0, 0, 0, 0)
+        self._tasks_label = QLabel(_NO_JOB)
+        self._tasks_label.setStyleSheet(_PANE_LABEL_STYLE)
+        head_layout.addWidget(self._tasks_label)
+        layout.addWidget(head)
         tree = QTreeWidget()
         tree.setColumnCount(len(TASK_HEADERS))
         tree.setHeaderLabels(TASK_HEADERS)
@@ -325,8 +395,10 @@ class ManagerWindow(QWidget):
         tree.setUniformRowHeights(True)
         tree.setItemDelegateForColumn(T_PROGRESS, ProgressDelegate(tree))
         header = tree.header()
-        for column, width in ((T_TASK, 50), (T_FRAMES, 90), (T_STATUS, 85), (T_PROGRESS, 110),
-                              (T_WORKER, 100), (T_STARTED, 90), (T_FINISHED, 90)):
+        # Fixed columns narrow enough that the Error column, the one worth
+        # reading, keeps the spare width instead of scrolling off the side.
+        for column, width in ((T_TASK, 44), (T_FRAMES, 84), (T_STATUS, 80), (T_PROGRESS, 90),
+                              (T_WORKER, 90), (T_STARTED, 104), (T_FINISHED, 104)):
             tree.setColumnWidth(column, width)
         header.setStretchLastSection(True)
         tree.itemSelectionChanged.connect(self._on_task_selection)
@@ -339,9 +411,12 @@ class ManagerWindow(QWidget):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-        head = QHBoxLayout()
+        head_widget = QWidget()
+        head_widget.setFixedHeight(PANE_HEADER_HEIGHT)
+        head = QHBoxLayout(head_widget)
+        head.setContentsMargins(0, 0, 0, 0)
         self._log_label = QLabel('Log')
-        self._log_label.setStyleSheet(f'color: {TEXT_SECONDARY};')
+        self._log_label.setStyleSheet(_PANE_LABEL_STYLE)
         head.addWidget(self._log_label, 1)
         self._report_combo = QComboBox()
         self._report_combo.setVisible(False)
@@ -354,9 +429,10 @@ class ManagerWindow(QWidget):
         self._open_log = QPushButton('Open log file')
         self._open_log.clicked.connect(self._on_open_log)
         head.addWidget(self._open_log)
-        layout.addLayout(head)
+        layout.addWidget(head_widget)
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
+        self._log.setPlaceholderText(_NO_TASK)
         self._log.setLineWrapMode(QPlainTextEdit.NoWrap)
         self._log.setMaximumBlockCount(50000)
         mono = QFont('Consolas')
@@ -428,7 +504,7 @@ class ManagerWindow(QWidget):
             if self._report_combo.currentData() == key[1]:
                 self._set_log_text(result, follow=False)
         elif kind == 'farm_control':
-            self._status.setText(f'Farm: {ACTION_LABELS[key[1]].lower()} sent for {key[2]} job(s)')
+            self._say(f'{ACTION_LABELS[key[1]]} sent to the farm for {_jobs(key[2])}')
             self._refresh_farm()
 
     def _on_future_failed(self, key: tuple, error: Exception) -> None:
@@ -444,6 +520,7 @@ class ManagerWindow(QWidget):
                 self._sync_jobs()
             self._update_status()
         elif kind == 'farm_control':
+            self._say(f'{ACTION_LABELS[key[1]]} failed on the farm', error=True)
             QMessageBox.warning(self, 'Farm Manager', f'{ACTION_LABELS[key[1]]} failed:\n\n{error}')
         elif kind in ('farm_tasks', 'farm_reports', 'farm_report_text'):
             self._set_log_text(f'Could not read from Deadline: {error}', follow=False)
@@ -521,7 +598,7 @@ class ManagerWindow(QWidget):
                     tree.insertTopLevelItem(position, item)
                     item.setExpanded(expanded)
                     item.setSelected(selected)
-                self._fill_batch_item(item, jobs)
+                batch_submitted = self._fill_batch_item(item, jobs)
                 wanted = {row.id for row in jobs}
                 for i in reversed(range(item.childCount())):
                     child = item.child(i)
@@ -534,7 +611,7 @@ class ManagerWindow(QWidget):
                         child = QTreeWidgetItem(item)
                         child.setData(NAME, KEY_ROLE, row.id)
                         self._job_items[row.id] = child
-                    self._fill_job_item(child, row)
+                    self._fill_job_item(child, row, batch_submitted)
         finally:
             tree.setUpdatesEnabled(True)
         job = self._current_job
@@ -542,45 +619,52 @@ class ManagerWindow(QWidget):
             self._current_job = self._rows_by_id[job.id]
         self._update_actions()
 
-    def _fill_job_item(self, item: QTreeWidgetItem, row: rows.JobRow) -> None:
-        colour = QColor(STATUS_COLOURS.get(row.status, TEXT_SECONDARY))
+    def _fill_job_item(self, item: QTreeWidgetItem, row: rows.JobRow, batch_submitted: str) -> None:
+        """A job under its batch row: where and who are the batch's, so its
+        cells stay empty; Submitted shows only when it differs."""
+        self._fill_state(item, row.status, row.progress, f'{row.done}/{row.total}', row.errors)
         item.setText(NAME, row.name)
-        item.setText(WHERE_COL, WHERE[row.source])
-        item.setText(STATUS, row.status)
-        item.setForeground(STATUS, colour)
-        item.setText(PROGRESS, f'{row.progress:.0f}%')
-        item.setData(PROGRESS, PROGRESS_ROLE, row.progress)
-        item.setForeground(PROGRESS, colour)
-        item.setText(TASKS, f'{row.done}/{row.total}')
-        item.setText(ERRORS, str(row.errors) if row.errors else '')
-        item.setForeground(ERRORS, QColor(STATUS_COLOURS[queue.FAILED]))
-        item.setText(USER, row.user)
-        item.setText(SUBMITTED, _when(row.submitted))
         item.setToolTip(NAME, f'{row.name}\n{row.id}')
+        submitted = _when(row.submitted)
+        item.setText(SUBMITTED, '' if submitted == batch_submitted else submitted)
 
-    def _fill_batch_item(self, item: QTreeWidgetItem, jobs: list[rows.JobRow]) -> None:
+    def _fill_batch_item(self, item: QTreeWidgetItem, jobs: list[rows.JobRow]) -> str:
+        """The batch row; returns its Submitted text for its jobs to compare with."""
         status = rows.batch_status([row.status for row in jobs])
-        colour = QColor(STATUS_COLOURS.get(status, TEXT_SECONDARY))
         done = sum(row.done for row in jobs)
         total = sum(row.total for row in jobs)
         progress = sum(row.progress * row.total for row in jobs) / total if total else 0.0
+        errors = sum(row.errors for row in jobs)
+        self._fill_state(item, status, progress, f'{done}/{total}', errors)
         bold = item.font(NAME)
         bold.setBold(True)
         item.setFont(NAME, bold)
-        item.setText(NAME, jobs[0].batch)
+        item.setText(NAME, rows.batch_title(jobs[0].batch, jobs[0].user))
         item.setToolTip(NAME, jobs[0].batch)
         item.setText(WHERE_COL, WHERE[jobs[0].source])
+        item.setText(USER, jobs[0].user)
+        submitted = _when(min(row.submitted for row in jobs))
+        item.setText(SUBMITTED, submitted)
+        return submitted
+
+    def _fill_state(self, item: QTreeWidgetItem, status: str, progress: float,
+                    tasks: str, errors: int) -> None:
+        """The cells a job and a batch row share. A finished row's text is
+        dimmed, so the eye lands on the failed and live ones."""
+        finished = _is_finished(status)
+        text = QColor(TEXT_SECONDARY if finished else TEXT_PRIMARY)
+        for column in (NAME, WHERE_COL, TASKS, USER, SUBMITTED):
+            item.setForeground(column, text)
+        colour = QColor(STATUS_COLOURS.get(status, TEXT_SECONDARY))
         item.setText(STATUS, status)
         item.setForeground(STATUS, colour)
         item.setText(PROGRESS, f'{progress:.0f}%')
         item.setData(PROGRESS, PROGRESS_ROLE, progress)
+        item.setData(PROGRESS, FINISHED_ROLE, finished)
         item.setForeground(PROGRESS, colour)
-        item.setText(TASKS, f'{done}/{total}')
-        errors = sum(row.errors for row in jobs)
+        item.setText(TASKS, tasks)
         item.setText(ERRORS, str(errors) if errors else '')
-        item.setForeground(ERRORS, QColor(STATUS_COLOURS[queue.FAILED]))
-        item.setText(USER, jobs[0].user)
-        item.setText(SUBMITTED, _when(min(row.submitted for row in jobs)))
+        item.setForeground(ERRORS, QColor(WARNING))
 
     def _selected_rows(self) -> list[rows.JobRow]:
         """The selected jobs; a selected batch stands for all of its shown jobs."""
@@ -615,7 +699,7 @@ class ManagerWindow(QWidget):
             self._tasks = []
             self._clear_log()
             if job is None:
-                self._tasks_label.setText('Tasks')
+                self._tasks_label.setText(_NO_JOB)
             else:
                 self._tasks_label.setText(f'Tasks of {job.name}')
                 if job.source == rows.LOCAL:
@@ -654,14 +738,19 @@ class ManagerWindow(QWidget):
             item.setForeground(T_STATUS, colour)
             item.setText(T_PROGRESS, f'{task.progress}%')
             item.setData(T_PROGRESS, PROGRESS_ROLE, task.progress)
+            item.setData(T_PROGRESS, FINISHED_ROLE, _is_finished(task.status))
             item.setForeground(T_PROGRESS, colour)
+            text = QColor(TEXT_SECONDARY if _is_finished(task.status) else TEXT_PRIMARY)
+            for column in (T_TASK, T_FRAMES, T_WORKER, T_STARTED, T_FINISHED):
+                item.setForeground(column, text)
             item.setText(T_WORKER, task.worker)
             item.setText(T_STARTED, _when(task.started))
             item.setText(T_FINISHED, _when(task.finished))
             error = task.error or (f'{task.errors} error report(s)' if task.errors else '')
             item.setText(T_ERROR, error.splitlines()[0] if error else '')
             item.setToolTip(T_ERROR, error)
-            item.setForeground(T_ERROR, QColor(STATUS_COLOURS[queue.FAILED]))
+            # Red for the task that failed, amber for errors a task got past.
+            item.setForeground(T_ERROR, QColor(DANGER if task.status == queue.FAILED else WARNING))
         if not tree.selectedItems() and tasks:
             # Open on the task worth reading: the one rendering, else the
             # last that failed, else the last that ran.
@@ -831,7 +920,13 @@ class ManagerWindow(QWidget):
         # The runner applies requests; start it if it stopped (a resume or
         # retry is work for it again).
         runner.ensure_running(self._root)
-        self._status.setText(f'This machine: {ACTION_LABELS[command].lower()} requested for {len(selected)} job(s)')
+        self._say(f'{ACTION_LABELS[command]} requested on this machine for {_jobs(len(selected))}')
+
+    def _say(self, text: str, error: bool = False) -> None:
+        """Answer an action in the footer, with the time it was answered."""
+        from datetime import datetime
+        self._message.setStyleSheet(_ERROR_MESSAGE_STYLE if error else _MESSAGE_STYLE)
+        self._message.setText(f"{text} at {datetime.now().strftime('%H:%M:%S')}")
 
     def _on_open_job_dir(self) -> None:
         for row in self._selected_rows():

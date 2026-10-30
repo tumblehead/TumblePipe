@@ -647,6 +647,19 @@ load-bearing the file is:
   shot: the Multi's workfile names no one shot, so a playblast left on
   `from_context` there cannot render.
 
+- **WSL-era paths leave machine-local storage (v17).** Projects that came
+  from WSL kept `/mnt/c/users/tumblehead/...` for `temp` (and often
+  `proxy`), and v11 carried them into `storage.json`. On Windows a path
+  with no drive resolves against the current one, so every machine wrote
+  scratch to a literal `C:\mnt\c\users\tumblehead\th_temp\...`, whoever was
+  logged in. v17 points `temp` at `{local_temp}/th_temp/{project_name}` and
+  re-roots any other path under a WSL home (`/mnt/<drive>/users/<name>/...`)
+  at `{home}`. A WSL path to a whole mounted drive, such as an `edit` root on
+  `/mnt/e/Sources/...`, is left alone: which Windows drive that is is the
+  studio's call. The table it replaces is kept as `storage.json.v17.bak`.
+  Proxies made under the old path are not moved; they are rebuilt where the
+  new one points.
+
 ### Migrating at launch
 
 You do not have to remember to run the command above. The `tt_prepare` package

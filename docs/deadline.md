@@ -107,7 +107,9 @@ Each worker needs the same environment as an artist workstation:
   the workstations use, so jobs that reference `P:\...` resolve identically.
   Without matching drive letters, the job will fail to read project files.
 - **An NVIDIA GPU for the `karma` group** — final renders and playblasts
-  both run there. Playblast jobs render with
+  both run there. A playblast with the default `viewport` renderer draws on
+  the CPU with TumblePipe's own render delegate and takes no licence; with
+  the `karma` renderer it renders with
   Karma XPU in a preview mode (by default scene materials off and the scene's
   lights replaced by one dome light at 32 samples; the Farm Submit dialog's
   playblast **Light** / **Samples** / **Scene materials** change it, see
@@ -211,7 +213,8 @@ on Deadline, and runs in the background as a render node would run it.
 - **One runner per machine** (`python -m tumblepipe.farm.local.runner`) works
   the queue one task at a time, below normal priority. It starts when work is
   queued and stops by itself once the queue is empty. Closing Houdini does not
-  stop it.
+  stop it. Low priority means a render waits for your own work: while the
+  machine is busy, a task can take up to a minute just to start.
 - **Per task, it does what the HPM plugin does:** it loads the job's env file,
   sets `TH_FARM_DATA`, copies the manifest into a scratch dir, runs
   `hpm install` there, then runs `hpm run task -- <context> <first> <last>`.
@@ -260,7 +263,11 @@ Houdini-side submits set the variable for the call with
 
 The **Farm Manager** shows the jobs on this machine and on the Deadline farm
 in one list. Each batch is a row, with its jobs under it, showing state,
-progress, task count, errors, user and submit time. To open it, use the
+progress, task count, errors, user and submit time. Failed jobs are red and
+rendering ones blue; finished jobs are dimmed so the ones that need you stand
+out. A batch is listed under its project, kind and entity (hover it for the
+full Deadline batch name). To open it, use
+**TumbleTrove ▸ TumblePipe ▸ Farm Manager** in Houdini's menu bar, the
 browser's **Farm Manager** quick action, the **Farm Manager** button of a
 submission's status window, or the **Farm Manager** script in TumbleTrove
 Desktop (`python -m tumblepipe.farm.manager`).
@@ -273,6 +280,8 @@ Desktop (`python -m tumblepipe.farm.manager`).
 - **Actions:** on this machine *Suspend*, *Resume*, *Retry failed*, *Cancel*
   and *Remove*. On the farm *Suspend*, *Resume*, *Retry failed*, *Requeue* and
   *Delete* (asks first). A selected batch row stands for all of its jobs.
+  The footer answers each action on its right, and keeps the answer until
+  the next one.
 
 The farm is read with `deadlinecommand -Json` (`GetJobs`, `GetJobTasks`, the
 report listings) on a worker thread every few seconds. Without a Deadline

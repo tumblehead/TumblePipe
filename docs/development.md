@@ -63,8 +63,9 @@ the recorded URI to. `test_wizard_json_parity` checks that the `_config`
 migrator in `src/wizard` rewrites JSON byte for byte as `json.dump` wrote it.
 Each builds a small example from its crate on first use and drives it as a
 subprocess (`tests/_cargo.py`). Without cargo they fail rather than skip.
-The crates have their own tests, including the resolver's `proptest`
-properties: run `cargo test` in `src/resolver` and in `src/wizard`.
+The crates have their own tests, including `proptest` properties in the
+resolver and in the wizard's migrations: run `cargo test` in `src/resolver`
+and in `src/wizard`.
 
 The asset-browser catalog tests (`test_catalog*.py`) and the docs link
 check run against the **shipped TumbleTrove SDK**: `tests/_catalog.py`
@@ -1412,7 +1413,13 @@ ruff check --select E9,F python/tumblepipe/farm/
 
 `hpm build` produces the install image: it runs the `[stage].prepack`
 scripts (`build-resolver` cmake-builds the tumbleResolver USD plugin into
-`resolver/houdini<major>/`; `build-wizard` cargo-builds both hook apps
+`resolver/houdini<major>/`; `build-delegate` builds hdThPlayblast, the
+farm playblast's Hydra render delegate (`src/delegate`: a Rust rasteriser
+behind a C++ Hydra shim, plus an opt-in wgpu path, the `gpu` cargo feature
+and CMake's `TH_DELEGATE_GPU`, on by default on Windows only; `cargo test
+--features gpu` compares the two paths on the machine's GPU;
+`.ci/smoke_delegate.py` renders a test stage through a finished build with
+husk), into `plugins/houdini<major>/`; `build-wizard` cargo-builds both hook apps
 (`tt_setup` and `tt_prepare`) into `bin/<platform>/`; `build-player` builds the
 sequence player and its FFmpeg into the same place ([Sequence
 player](#sequence-player)); `compile-hdas` collapses the

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import tempfile
 import time
@@ -190,6 +191,7 @@ def main() -> int:
         print(f'  screenshot: {sys.argv[1]}')
     win.close()
     pump(app, 0.2)
+    shutil.rmtree(TEMP, ignore_errors=True)
 
     failed = [name for name, ok, _ in _checks if not ok]
     print(f"\n{len(_checks) - len(failed)}/{len(_checks)} checks passed")

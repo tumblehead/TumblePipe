@@ -647,9 +647,20 @@ def register_package():
         docs=_package_root() / "docs",
         extra_docs=[("Online documentation", "https://tumblepipe.readthedocs.io")],
         icon="lucide:database",
-        menu=[package.item("VRAM Inspector", _open_vram_inspector)],
+        menu=[
+            package.item("Farm Manager", _open_farm_manager),
+            package.item("VRAM Inspector", _open_vram_inspector),
+        ],
         catalogs=[package.catalog("pipeline", _make_pipeline_catalog)],
     )
+
+
+def _open_farm_manager() -> None:
+    """Open the Farm Manager without submitting anything (imported on click: Qt)."""
+    import hou
+
+    from tumblepipe.farm.manager.window import show_manager
+    show_manager(parent=hou.qt.mainWindow())
 
 
 def _open_vram_inspector() -> None:

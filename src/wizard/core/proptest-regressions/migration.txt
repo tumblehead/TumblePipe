@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc eef61a3d1d856362759a8d0e06c66be28a007353b361d341c91fef665db5882c # shrinks to rows = [("assets", Portable("{project_path}/a")), ("shots", Portable("{project_path}/a")), ("groups", Portable("{project_path}/_")), ("export", Portable("{project_path}/_")), ("cache", Portable("{project_path}/_")), ("render", Portable("{project_path}/a")), ("turntable", Portable("{project_path}/_")), ("temp", Portable("/mnt/a")), ("proxy", Portable("{project_path}/_")), ("preset", Portable("{project_path}/_")), ("edit", Portable("{project_path}/_"))]
+cc cc926b41f6c1780d2cd119da895c5d09533cadb641075884cdefee7b968d6c4a # shrinks to rows = [("assets", Portable("{project_path}/a")), ("shots", Portable("{project_path}/a")), ("groups", Portable("{project_path}/a")), ("export", Portable("{project_path}/_")), ("cache", Portable("{project_path}/_")), ("render", Portable("{project_path}/a")), ("turntable", Portable("{project_path}/a")), ("temp", Drive("/mnt/A")), ("proxy", Portable("{project_path}/a")), ("preset", Portable("{project_path}/a")), ("edit", Portable("{project_path}/a"))]

@@ -70,6 +70,7 @@ from tumblepipe.farm.submit import camera as render_camera
 from tumblepipe.farm.submit import settings as resolve
 from tumblepipe.pipe.houdini.ui.report import report_failure
 from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
+from tumblepipe.farm.specs.playblast import PLAYBLAST_RENDERERS
 
 log = logging.getLogger(__name__)
 
@@ -1737,8 +1738,17 @@ class _ContextPane(QWidget):
         form.addRow("Resolution:", self._row(
             self._pb_width, "×", self._pb_height, revert=('pb_res_x', 'pb_res_y'),
         ))
+        self._pb_renderer = self._combo('pb_renderer', PLAYBLAST_RENDERERS)
+        self._pb_renderer.setToolTip(
+            "viewport: the viewport's look — display colours and textures "
+            "under a headlight. Fast, on the CPU, takes no licence.\n"
+            "karma: Karma XPU, lit and sampled as set below. Takes a Karma "
+            "licence and an NVIDIA GPU."
+        )
+        form.addRow("Renderer:", self._row(self._pb_renderer, revert=('pb_renderer',)))
         self._pb_light = self._combo('pb_light', PLAYBLAST_LIGHTS)
         self._pb_light.setToolTip(
+            "Karma only.\n"
             "dome: the scene's lights off, one white dome light — soft clay "
             "shading.\nheadlight: a light on the camera with ambient "
             "occlusion.\nscene: the scene's own lights."

@@ -1,0 +1,33 @@
+[package]
+name = "th_delegate_core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.76"
+description = "Rendering core for TumblePipe's playblast Hydra render delegate"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "th_delegate_core"
+crate-type = ["staticlib", "rlib"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+# No `panic = "abort"`: the staticlib lives inside husk, and every C ABI
+# entry point catches panics (`ffi_guard`) and reports them as an error
+# code. Abort would turn any core bug into a dead render.
+strip = "symbols"
+
+[features]
+default = []
+# The opt-in GPU path (src/gpu.rs), switched on per process by
+# TH_PLAYBLAST_GPU=1. CMake's TH_DELEGATE_GPU option builds with it.
+gpu = ["dep:wgpu", "dep:pollster"]
+
+[dependencies]
+wgpu = { version = "22", optional = true }
+pollster = { version = "0.3", optional = true }
+
+[dev-dependencies]
+proptest = { version = "1", default-features = false, features = ["std"] }

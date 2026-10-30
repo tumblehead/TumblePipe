@@ -27,6 +27,7 @@ build-linux-houdini*/
 build-macos-houdini*/
 build-windows-houdini*/
 build-vramhook-*/
+build-delegate-*/
 build-ffmpeg-*/
 
 # Local Sphinx build output (source in docs/ is mirrored; _build/ is not)
@@ -51,3 +52,6 @@ otls/backup/
 # the authored tumblepipe_pipeline.json stays tracked and shipped.
 radial_menus/tumblepipe_recipes.json
 radial_menus/tumblepipe_asset_favorites.json
+
+# Built playblast render delegate (src/delegate), never committed.
+/plugins/

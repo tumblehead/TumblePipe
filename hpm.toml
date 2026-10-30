@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.85.1"
+version = "1.86.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -53,7 +53,15 @@ OCIO = { method = "set", value = "$TH_CONFIG_PATH/ocio/tumblehead.ocio" }
 # each Houdini picks its own resolver/houdini<major>/. The library-path
 # entries serve child processes (husk, hython, farm tasks); in-process
 # loading relies on the resolver's rpath.
-PXR_PLUGINPATH_NAME = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/resources" }
+# The same variable registers hdThPlayblast, the Hydra render delegate farm
+# playblasts render with (husk -R HdThPlayblastRendererPlugin;
+# farm/workers/playblast.py). A var takes one value, so the two paths share
+# it, joined by the OS's path separator. The delegate needs no library-path
+# entry: its only dependencies are Houdini's own USD libs.
+PXR_PLUGINPATH_NAME = { method = "prepend", value = [
+    { when = { os = "windows" }, set = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/resources;$HPM_PACKAGE_ROOT/plugins/houdini$HOUDINI_MAJOR_RELEASE/hdThPlayblast/resources" },
+    { set = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/resources:$HPM_PACKAGE_ROOT/plugins/houdini$HOUDINI_MAJOR_RELEASE/hdThPlayblast/resources" },
+] }
 PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/lib" }
 LD_LIBRARY_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/lib" }
 DYLD_LIBRARY_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/resolver/houdini$HOUDINI_MAJOR_RELEASE/tumbleResolver/lib" }
@@ -78,11 +86,12 @@ tomli-w = ">=1.0"
 # `hpm run <script>`) runs these; `hpm pack` does not. The outputs are
 # gitignored, so .hpmignore re-includes them.
 #   build-resolver — tumbleResolver USD plugin -> resolver/houdini<major>/
+#   build-delegate — hdThPlayblast render delegate -> plugins/houdini<major>/
 #   build-wizard   — tt_setup + tt_prepare hook apps -> bin/<platform>/
 #   build-player   — th_player sequence player + its FFmpeg -> bin/<platform>/
 #   build-vramhook — VRAM Inspector hook DSO -> dso/<major>.<minor>/
 #   compile-hdas   — expanded otls/<name>/ -> otls/<name>.hda
-prepack = ["build-resolver", "build-wizard", "build-player", "build-vramhook", "compile-hdas"]
+prepack = ["build-resolver", "build-delegate", "build-wizard", "build-player", "build-vramhook", "compile-hdas"]
 
 # Archive contents: an allowlist. It is also the public source mirror's list,
 # plus .ci/_packaging.py MIRROR_EXTRAS (src/ and repo metadata).
@@ -107,6 +116,7 @@ include = [
     "resources/**",
     # Built native artifacts (prepack); their sources under src/ do not ship.
     "resolver/**",
+    "plugins/**",
     "bin/**",
     "dso/**",
 ]
@@ -129,6 +139,14 @@ cmd = [
     { when = { os = "windows" }, set = "python .ci/build_resolver.py --platform windows-x86_64" },
     { when = { os = "linux" }, set = "python .ci/build_resolver.py --platform linux-x86_64" },
     { when = { os = "macos" }, set = "python .ci/build_resolver.py --platform macos-aarch64" },
+]
+python = "3.11"
+
+[scripts.build-delegate]
+cmd = [
+    { when = { os = "windows" }, set = "python .ci/build_delegate.py --platform windows-x86_64" },
+    { when = { os = "linux" }, set = "python .ci/build_delegate.py --platform linux-x86_64" },
+    { when = { os = "macos" }, set = "python .ci/build_delegate.py --platform macos-aarch64" },
 ]
 python = "3.11"
 

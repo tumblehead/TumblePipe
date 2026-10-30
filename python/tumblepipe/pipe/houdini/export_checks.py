@@ -135,6 +135,19 @@ def validate_export_files(temp_path: Path, expected_filename: str, operation_des
         # List what files DO exist for diagnostics
         existing_files = [f.name for f in temp_path.iterdir()] if temp_path.exists() else []
 
+        # Apprentice and Education Houdini force every USD save to .usdnc,
+        # whatever extension was asked for. Nothing downstream can read
+        # those, so name the licence instead of guessing at the disk.
+        if expected_file.suffix == '.usd' and expected_file.with_suffix('.usdnc').exists():
+            raise ExportLayerError(
+                f"Export failed during {operation_desc}: "
+                f"Houdini wrote {expected_file.stem}.usdnc instead of {expected_filename}\n"
+                f"Export path: {temp_path}\n\n"
+                f"This Houdini is running on a non-commercial (Apprentice or "
+                f"Education) licence, which saves all USD as .usdnc. "
+                f"TumblePipe exports need a Houdini Indie or commercial licence."
+            )
+
         raise ExportLayerError(
             f"Export failed during {operation_desc}: "
             f"Expected file not created: {expected_filename}\n"

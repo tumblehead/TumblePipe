@@ -9,6 +9,7 @@ the window draws and filters them the same way. Qt-free.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -257,3 +258,42 @@ def batch_status(statuses: list[str]) -> str:
         if status in statuses:
             return status
     return queue.COMPLETED
+
+
+# ── display ───────────────────────────────────────────────
+
+_STAMP = re.compile(r'\s+\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}$')
+_ENTITY = re.compile(r'\bentity:/(?:shots|assets|groups)/(\S+)')
+
+
+def batch_title(name: str, user: str = '') -> str:
+    """A batch's name without what its row's columns already say.
+
+    Batches are named ``<project> <kinds...> <entity> <user> <timestamp>``
+    (``pipelines._batch.batch_title``); the User and Submitted columns
+    carry the last two, and ``entity:/shots/SQ010/SH0030`` reads as
+    ``SQ010/SH0030``. A name in any other shape is shortened only where
+    it matches.
+    """
+    title = _STAMP.sub('', name)
+    if user and title.endswith(' ' + user):
+        title = title[:-len(user) - 1]
+    return _ENTITY.sub(r'\1', title) or name
+
+
+def when_text(iso: str, today: dt.date | None = None) -> str:
+    """``2026-10-29T14:03:11`` as ``Today 14:03``, ``Yesterday 14:03``,
+    ``Oct 29 14:03`` within the year, else ``2025-10-29``."""
+    try:
+        moment = dt.datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return iso or ''
+    today = today or dt.date.today()
+    clock = moment.strftime('%H:%M')
+    if moment.date() == today:
+        return f'Today {clock}'
+    if moment.date() == today - dt.timedelta(days=1):
+        return f'Yesterday {clock}'
+    if moment.year == today.year:
+        return f"{moment.strftime('%b')} {moment.day} {clock}"
+    return moment.date().isoformat()
