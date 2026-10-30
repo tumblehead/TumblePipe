@@ -337,8 +337,9 @@ preceded by a [`th::rename_packed`](#threname_packed-sop) rewriting
 `/<category>/<asset>/*` to `/<category>/<asset><n>/*`. Inside
 `th::animate`, the node's `place` Python SOP, after the dive, starts each
 character it added where layout placed it: the world transform of
-`/<category>/<asset><n>` on the shot stage (`IN_stage`) at the playbar
-start becomes the rig parms `Main_t` / `Main_r` / `Main_s` of TumbleRig's
+`/<category>/<asset><n>` on the shot stage at the playbar start
+(`th::animate`'s `IN_stage_start`, which keeps the node from turning time
+dependent) becomes the rig parms `Main_t` / `Main_r` / `Main_s` of TumbleRig's
 top `Main` control. It reads the placement as it cooks, so a layout
 published later moves the character, and a workfile imported before the
 placement was read picks it up, without pressing **Import** again. The

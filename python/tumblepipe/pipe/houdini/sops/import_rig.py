@@ -41,13 +41,20 @@ PLACEMENT_CONTROL = 'Main'
 
 
 def _shot_stage(native):
-    """The stage fed into the th::animate this node sits in (its IN_stage),
-    None when it is not inside one."""
+    """The stage fed into the th::animate this node sits in, held at the
+    playbar start (its IN_stage_start), None when it is not inside one.
+
+    Not IN_stage itself: ``place`` reads this as it cooks, and a node that
+    reads a time-dependent stage turns time dependent, so every rig in the
+    dive recooked each frame whenever the shot stage was animated (1.85.0).
+    """
     ancestor = native.parent()
     while ancestor is not None:
-        stage_node = ancestor.node('IN_stage')
-        if stage_node is not None and ancestor.type().category().name() == 'Lop':
-            return stage_node.stage()
+        if ancestor.type().category().name() == 'Lop':
+            for name in ('IN_stage_start', 'IN_stage'):
+                stage_node = ancestor.node(name)
+                if stage_node is not None:
+                    return stage_node.stage()
         ancestor = ancestor.parent()
     return None
 

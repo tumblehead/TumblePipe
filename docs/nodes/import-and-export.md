@@ -480,6 +480,12 @@ its layout placement, and each geometry prim cancels what its parents add
 up to. Parts the rig does not output, a groom say, stay with the
 character. Up to 1.84.0 every prim was zeroed, which left those parts at
 the origin while the rigged body stood at its placement.
+
+The placement is read from `IN_stage_start`, a Time Shift that holds the
+incoming stage at the playbar start: layout's placement there is where each
+rig starts, and the transforms come out static. Reading the incoming stage
+as it is would make `th::animate` time dependent whenever that stage is,
+recooking the node and every rig in its dive each frame, as 1.85.0 did.
 `_TumblePipe/pipeline`. The animation shot template places one as
 `animate_shot` with `th::import_rigs` and the APEX scene-animate nodes
 inside its dive target; see [Building assets → `th::import_rigs`](assets.md#thimport_rigs-sop).

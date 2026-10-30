@@ -15,6 +15,10 @@ input stage, and each geometry prim cancels what they add up to, so the
 posed geometry still lands in world space. The cancel sits on the
 geometry itself: a prim above it can end up a Scope (an asset's ``geo``),
 which ignores a transform.
+
+The HDA hands it IN_stage_start, the shot stage held at the playbar start,
+not IN_stage: a Python LOP that reads a time-dependent stage turns time
+dependent, and 1.85.0 made th::animate recook every frame that way.
 """
 
 from pxr import Gf, Usd, UsdGeom
@@ -57,7 +61,7 @@ def _copy_ops(prim, source):
 def zero_transforms(stage, input_stage=None, time=Usd.TimeCode.Default()):
     """Rewrite the transforms of the animated layer ``stage`` so its posed
     geometry lands in world space over ``input_stage`` (th::animate's
-    IN_stage; None when there is none).
+    IN_stage_start; None when there is none).
 
     Cameras keep the transform they arrive with. Every other prim the
     input stage has keeps its input transform (a character's layout

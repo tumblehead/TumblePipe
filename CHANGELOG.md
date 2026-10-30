@@ -12,6 +12,41 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.85.0 — 2026-10-29
+
+### Features
+- feat(template): animation rows come from the animatable stamp (`2322ac0b`)
+- feat(import_rigs): Discover finds the rigs a stage animates (`602c004f`)
+- feat(metadata): asset prims carry an animatable stamp (`c783dc3c`)
+- feat(asset_browser): a Multi's department rows get the shot menu (`ed61ad1c`)
+- feat(entity_editor): tint the current cell's row (`4bb3398e`)
+- feat(playblast): th::playblast's Resolution follows the shot (`d93b66d5`)
+- feat(playblast): farm playblasts play at the shot's resolution, with a look to pick (`8ea1c60a`)
+- feat(entity_editor): sequences and categories get a row of their own (`78e9af10`)
+- feat(entity_sheet): a sequence's or category's own values (`8f7c72fa`)
+- feat(material_assigner): an All binding purpose (`9eac7732`)
+- feat(template): the animation dive outputs its APEX scene (`b0d49fc3`)
+- feat(animate): Fast mode runs the rigs with Solaris' APEX bake (`dbe66cf7`)
+
+### Fixes
+- fix(anim): th::animate keeps the layout placement on a character copy (`eecd89b4`)
+- fix(anim): th::import_rig reads the layout placement as it cooks (`fcd8fff9`)
+- fix(entity_sheet): values on a new group with a bad name block Apply (`028c0895`)
+
+### Documentation
+- docs: rig placement in 1.84.0 and the tests that pin its fix (`a1875491`)
+- docs(entity_editor): a new sequence's values wait for a valid name (`0ad24a5a`)
+- docs(entity_editor): sequence and category rows (`771bc371`)
+- docs: regenerate CHANGELOG.md for v1.84.0 (`9d9b26d0`)
+
+### Tests
+- test(entity_sheet): group values under concurrent writes and problems (`1315aef5`)
+- test(entity_sheet): Reload compares what it writes, not row order (`15045ae3`)
+
+### Other Changes
+- Merge branch 'fix/rig-layout-placement' (`f612a2ee`)
+- Merge branch 'remy-rfes': sequence Roots shots inherit + All binding purpose (`024ece08`)
+
 ## v1.84.0 — 2026-10-29
 
 ### Features
@@ -23,7 +58,7 @@ CI and build commits are omitted deliberately.
 - feat(player): timeline editor under the video, takes opened in the background (`9dc03b7a`)
 - feat(media): thumbnails, and EXR frames read whole and stoppable (`92a79279`)
 - feat(review): every complete render version is a take, and takes say what they are (`4f2f24fe`)
-- feat(entity-editor): New Sequence… and New Category… (`6207c8f6`)
+- feat(entity-editor): New Sequenceâ€¦ and New Categoryâ€¦ (`6207c8f6`)
 - feat(entity-editor): a rigged asset's unticked Animatable reads "No, rigged" (`618c8b56`)
 - feat(asset-browser): Entity Editor button on the toolbar, beside Render (`568df138`)
 - feat(entity-editor): set up Multis in the Entity Editor (`55672e56`)
@@ -153,7 +188,7 @@ CI and build commits are omitted deliberately.
 
 ### Fixes
 - fix(config): new shots and assets go into groups named before the name rule (`febb7647`)
-- fix(asset-browser): Add Shots… and Add Assets… open their dialogs (`e43e8735`)
+- fix(asset-browser): Add Shotsâ€¦ and Add Assetsâ€¦ open their dialogs (`e43e8735`)
 
 ### Refactors
 - refactor(config): shot_batch.suggest holds Add Shots' defaults (`12bcc8fb`)
@@ -817,7 +852,7 @@ CI and build commits are omitted deliberately.
 - fix(farm): rename copy-to-edit task to sync; composites honour copy_to_edit (`b2e188c5`)
 
 ### Documentation
-- docs(design): note the import_assets Variant menu against §4.2 (`8d67f832`)
+- docs(design): note the import_assets Variant menu against Â§4.2 (`8d67f832`)
 - docs(otls): updateFromNode on an installed source dir rewrites the repo (`bbc67da2`)
 - docs(context): stock radials sit outside the package layer, now that contributions are declared (`977de214`)
 - docs: release CI runs on version tags only; keep master linear (`5da3fb3f`)
@@ -916,7 +951,7 @@ CI and build commits are omitted deliberately.
 - feat(farm): Farm Submit opens anywhere, ticks the workfile, shows only live settings (`a9be7527`)
 
 ### Fixes
-- fix(farm): the Farm Submit legend names the dim ○ (`83163e14`)
+- fix(farm): the Farm Submit legend names the dim â—‹ (`83163e14`)
 - fix(farm): a closed Farm Submit dialog is deleted (`bc4bdaf3`)
 - fix(farm): Farm Submit from an empty Multi's workfile opens instead of erroring (`d1acc482`)
 - fix(farm): the Desktop launcher blanks package variables nothing sets (`3877bf95`)
@@ -925,7 +960,7 @@ CI and build commits are omitted deliberately.
 - fix(hpm): migrate-config script resolves via $HPM_PACKAGE_ROOT (`3748edb9`)
 
 ### Documentation
-- docs: the dim ○ of a Multi that never exported a member (`ae10c5b8`)
+- docs: the dim â—‹ of a Multi that never exported a member (`ae10c5b8`)
 - docs: Farm Submit opens without a workfile, ticks it with one, and hides idle settings (`51acfe02`)
 
 ## v1.54.2 — 2026-09-25
@@ -1760,7 +1795,7 @@ CI and build commits are omitted deliberately.
 ## v1.28.0 — 2026-07-13
 
 ### Features
-- feat(browser): add Update quick action — refresh imports without reloading (`d43ff74c`)
+- feat(browser): add Update quick action â€” refresh imports without reloading (`d43ff74c`)
 
 ### Fixes
 - fix(resolver): make refresh_context() reload stale entity layers (`02a8869d`)
@@ -1989,7 +2024,7 @@ CI and build commits are omitted deliberately.
 ### Performance
 - perf(asset_browser): one enumeration + one scandir per card, GUI-thread guard (`1c8bc2e0`)
 - perf(config): list_entity_uris for uri-only listings + coherent() batching (`91179757`)
-- perf(config): stamp once per read + memoize results — fix v1.16.5 stat storm (`fca16179`)
+- perf(config): stamp once per read + memoize results â€” fix v1.16.5 stat storm (`fca16179`)
 
 ### Documentation
 - docs: document the shipped recipes/ directory (`c0211841`)
@@ -2041,7 +2076,7 @@ CI and build commits are omitted deliberately.
 - feat(export): recognize deliberately inlined assets in the publish guards (`32f97a3d`)
 
 ### Fixes
-- fix(catalogue): preserve case in category/sequence tags — pipeline naming is case-sensitive (`e48b8253`)
+- fix(catalogue): preserve case in category/sequence tags â€” pipeline naming is case-sensitive (`e48b8253`)
 
 ### Refactors
 - refactor(catalogue): drop unused Qt import and ctx_seg local left by the case-preservation fix (`de1be61c`)
@@ -2133,7 +2168,7 @@ CI and build commits are omitted deliberately.
 ## v1.16.1 — 2026-06-24
 
 ### Fixes
-- fix(catalogue): drop stale schema arg from add_entity — silent shot/asset create failure (`f5320ec9`)
+- fix(catalogue): drop stale schema arg from add_entity â€” silent shot/asset create failure (`f5320ec9`)
 
 ### Refactors
 - refactor(catalogue): remove dead schema_* URI helpers (`37abde21`)
@@ -2200,7 +2235,7 @@ CI and build commits are omitted deliberately.
 ## v1.13.0 — 2026-06-16
 
 ### Features
-- feat(farm): drop WSL2 — use Houdini's native hoiiotool/hffmpeg (`2add15cd`)
+- feat(farm): drop WSL2 â€” use Houdini's native hoiiotool/hffmpeg (`2add15cd`)
 - feat(farm): run tasks in native Windows python via hpm package-env (`7e252be7`)
 
 ### Documentation
@@ -2336,7 +2371,7 @@ _No user-facing changes._
 ## v1.6.0 — 2026-06-08
 
 ### Features
-- feat(asset_browser): entity lifecycle — bucket create/delete + asset delete (`ab375704`)
+- feat(asset_browser): entity lifecycle â€” bucket create/delete + asset delete (`ab375704`)
 - feat(asset_browser): rewrite asset hover popup as a widget tree with dept icons (`d587bab9`)
 - feat(asset_browser): auto-import latest on workfile open (`1a8ed8ed`)
 
@@ -2464,7 +2499,7 @@ _No user-facing changes._
 - chore(asset_browser): retag the now-tiny "Detail panel layout" section (`ab24f9d0`)
 - chore(asset_browser): drop _mix_hex residue + extend docs for the new managers (`ce520791`)
 - chore(asset_browser): post-sweep cleanup + flesh out the docs (`a6da1d24`)
-- chore(asset_browser): defensive sweep — flatten _publish_current_scene_impl (`6762a843`)
+- chore(asset_browser): defensive sweep â€” flatten _publish_current_scene_impl (`6762a843`)
 - chore(asset_browser): first pass of the defensive try/except sweep (`3345a9d5`)
 - chore(asset_browser): post-refactor cleanup + document the catalog directory (`0832c0c7`)
 - chore(asset_browser): tidy post-refactor stragglers (`21dfb382`)
@@ -2502,7 +2537,7 @@ _No user-facing changes._
 - test: property-based tests for the config layer (uv + minigun-soren-n) (`596c0f63`)
 
 ### Chores
-- chore(tests): drop the tumblehead→tumblepipe convention patch shim (`d438205d`)
+- chore(tests): drop the tumbleheadâ†’tumblepipe convention patch shim (`d438205d`)
 - chore(otls): drop stale .OPdummydefs / .OPfallbacks from create_asset_model (`062286d6`)
 - chore(asset_browser): clean up post-refactor stragglers (`80ad0e09`)
 
@@ -2519,7 +2554,7 @@ _No user-facing changes._
 - feat(asset_browser): drop assets into SOP networks as th::import_model (`12cb40c3`)
 
 ### Fixes
-- fix(otls): import_model — swap Variant parm for Department picker (`6d7738cc`)
+- fix(otls): import_model â€” swap Variant parm for Department picker (`6d7738cc`)
 
 ## v1.4.1 — 2026-05-19
 
@@ -2642,12 +2677,12 @@ _No user-facing changes._
 ## v1.1.23 — 2026-05-05
 
 ### Chores
-- chore: bump to 1.1.23 — CI fix for new TumbleTrove API shape (`5348e4c3`)
+- chore: bump to 1.1.23 â€” CI fix for new TumbleTrove API shape (`5348e4c3`)
 
 ## v1.1.22 — 2026-05-05
 
 ### Chores
-- chore: bump to 1.1.22 — Houdini 22 support (`62552fc2`)
+- chore: bump to 1.1.22 â€” Houdini 22 support (`62552fc2`)
 
 ### Other Changes
 - houdini_majors: link 'add a new major' to hpm.toml max_version bump (`af89b693`)
@@ -2663,7 +2698,7 @@ _No user-facing changes._
 
 ### Features
 - feat(asset_browser): playblast preview cards + department short labels (`365761c8`)
-- feat(asset_browser): add Render asset type — browse on-disk renders + dailies (`b8f1d0bf`)
+- feat(asset_browser): add Render asset type â€” browse on-disk renders + dailies (`b8f1d0bf`)
 - feat(asset_browser): consolidated Info tab + Tasks rename (`4509a0e1`)
 - feat(asset_browser): ship TumblePipe brand logo as catalog icon (`d7d04b7c`)
 
@@ -2675,7 +2710,7 @@ _No user-facing changes._
 - docs(resolver): document imperative factory registration and file-based debug log (`e02ef02d`)
 
 ### Chores
-- chore: bump to 1.1.21 — shot drop fix (`1f9deb06`)
+- chore: bump to 1.1.21 â€” shot drop fix (`1f9deb06`)
 
 ## v1.1.20 — 2026-04-29
 
@@ -2751,7 +2786,7 @@ _No user-facing changes._
 ## v1.1.11 — 2026-04-27
 
 ### Chores
-- chore: bump to 1.1.11 — add asset_browser_catalogs to INCLUDE_PATTERNS (`f032134c`)
+- chore: bump to 1.1.11 â€” add asset_browser_catalogs to INCLUDE_PATTERNS (`f032134c`)
 
 ## v1.1.10 — 2026-04-27
 
@@ -2777,7 +2812,7 @@ _No user-facing changes._
 - fix(ci): use GET /v1/storage list to resolve storage public URL (`522d8c94`)
 - fix(ci): update release script to use creator storage API (`38acfd72`)
 - fix(ci): update storage presign URL to new /v1/storage/{id}/upload route (`8681b46f`)
-- fix(ci): remove binary HDAs from otls — only decompiled dirs should be tracked (`4e22907a`)
+- fix(ci): remove binary HDAs from otls â€” only decompiled dirs should be tracked (`4e22907a`)
 - fix(hda): remove accidentally saved subnet contents from create_asset_lookdev (`0e8f3e0c`)
 - fix(hda): remove auto-layout on variant add in create_asset_lookdev (`151b1444`)
 
@@ -2861,7 +2896,7 @@ _No user-facing changes._
 - feat: initial TumblePipe Houdini package (`52df04b9`)
 
 ### Fixes
-- fix(release): curl PUT — disable Expect/chunked/default CT, log URL (`98e31acc`)
+- fix(release): curl PUT â€” disable Expect/chunked/default CT, log URL (`98e31acc`)
 - fix(release): only send Content-Type header if it is signed (`f64f17b2`)
 - fix(release): upload archive via curl, not urllib (`11ecbf2c`)
 - fix(release): resolve creator/slug to package id via /v1/creator/packages (`69c8c74b`)
