@@ -199,6 +199,7 @@ pool is the pipeline order; the flags are explained under
 |---|---|
 | `model` | independent; publishes and composes into the asset (renderable) |
 | `blendshape` | publishes, but is **not** a render layer — it never composes into the staged asset |
+| `groom` | publishes hair curves at `<asset>/groom/` that compose into the asset (renderable); before `lookdev`, so lookdev and rig sit downstream of it |
 | `lookdev` | publishes an over-layer of materials that composes over the model (renderable) |
 | `rig` | publishes, **not** a render layer; its export is read by `th::import_rigs` (inside the animation template's `th::animate`), not by composition |
 

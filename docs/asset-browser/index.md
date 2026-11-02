@@ -301,7 +301,9 @@ Publish and Render.
 ## Right-click on a card
 
 Besides TumbleTrove's own entries (favourites, collections, **Add to
-Multi ▸**, **Add to Root ▸**, **Delete asset…** / **Delete shot…**), the
+Multi ▸**, **Add to Root ▸**, **Delete asset…** / **Delete shot…**, and —
+TumbleTrove 0.52+ — **Open Folder**, which opens an asset's or shot's entity
+folder, where its `description.txt` and `thumbnail.png` live), the
 catalog contributes
 ([`get_card_menu_items`](../../python/tumblepipe/asset_browser/catalog.py)):
 

@@ -47,6 +47,9 @@ class PipelinePrefs:
     # (pipe.houdini.ui.shot_slate), and its size: 'full', 'mini' or 'dot'.
     shot_slate: bool = True
     shot_slate_size: str = "full"
+    # Cards and hovers leave out the departments an entity has no workfile
+    # in (the detail panel still lists them all, to start one from).
+    hide_unused_departments: bool = False
     prefs_version: int = _PREFS_VERSION
 
 
@@ -88,6 +91,9 @@ def load_prefs() -> PipelinePrefs:
             data.get("shot_slate_size")
             if data.get("shot_slate_size") in ("full", "mini", "dot")
             else "full"
+        ),
+        hide_unused_departments=bool(
+            data.get("hide_unused_departments", False)
         ),
     )
 

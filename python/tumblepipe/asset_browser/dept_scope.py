@@ -6,12 +6,14 @@ Two answers that read alike and must not be confused:
   ``assets`` / ``shots``, in pipeline order;
 - :meth:`DepartmentScope.for_entity` — the departments one entity shows:
   its assignment (``config.department.list_entity_departments``, the whole
-  pool when it has none) plus any department that already has work.
+  pool when it has none) plus any department that already has work. With
+  the *Hide departments with no workfile* preference on, a card asks for
+  only the departments that have work.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable
 
 from .types import DEPT_API_SHORT_FALLBACK
 
@@ -25,9 +27,17 @@ class DepartmentScope:
 
     def __init__(
         self, resolver: "AssetResolver", activator: "ProjectActivator",
+        hide_unused: Callable[[], bool] = lambda: False,
     ) -> None:
+        """``hide_unused`` reads the *Hide departments with no workfile*
+        preference, asked on every call so a toggle applies at once."""
         self._resolver = resolver
         self._activator = activator
+        self._hide_unused = hide_unused
+
+    def hides_unused(self) -> bool:
+        """Whether cards leave out departments with no workfile."""
+        return bool(self._hide_unused())
 
     def pool(self, context: str) -> list[str]:
         """The active project's department pool for ``context``, in
@@ -37,6 +47,7 @@ class DepartmentScope:
 
     def for_entity(
         self, asset_id: str, context: str, with_work: Iterable[str] = (),
+        *, card: bool = False,
     ) -> tuple[list[str], set[str]]:
         """``(departments_to_show, assigned)`` for one entity, in pool order.
 
@@ -45,9 +56,22 @@ class DepartmentScope:
         Departments in ``with_work`` (those that already have a workfile)
         are shown even when they are not assigned — scoping states what an
         entity is *expected* to have, it never hides work that exists.
+
+        ``card``: the answer is for a card's deck or hover, which leave out
+        every department without work when :meth:`hides_unused`. The
+        detail panel never passes it: it is where a first workfile is
+        started, so it keeps listing them.
         """
-        pool = self.pool(context)
         worked = list(with_work)
+        shown, assigned = self._for_entity(asset_id, context, worked)
+        if card and self.hides_unused():
+            shown = [name for name in shown if name in worked]
+        return shown, assigned
+
+    def _for_entity(
+        self, asset_id: str, context: str, worked: list[str],
+    ) -> tuple[list[str], set[str]]:
+        pool = self.pool(context)
         assigned: list[str] = []
         proj = self._resolver.project_for(asset_id)
         entity_uri = self._resolver.uri_for(asset_id)

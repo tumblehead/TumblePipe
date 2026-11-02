@@ -206,6 +206,7 @@ class AssetHover:
             with_work=(
                 raw_depts.keys() if isinstance(raw_depts, dict) else ()
             ),
+            card=True,
         )
         by_name = {
             d.name: d for d in list_departments(

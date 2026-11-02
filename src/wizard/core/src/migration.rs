@@ -111,6 +111,10 @@ pub enum Step {
     /// character, between the rigs and the Scene Animate), and copies those
     /// keys into the Scene Animate once. Off, the template builds what it did.
     AnimationCopiesLayoutKeys,
+    /// v21 — add the `groom` asset department to the pool, before `lookdev`
+    /// (see [`v21_plan`]), and v12 again, which installs its stock template.
+    /// A project that already has a `groom` keeps it as it is.
+    AddGroomDepartment,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -155,7 +159,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 20] = [
+pub const STEPS: [Step; 21] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -176,6 +180,7 @@ pub const STEPS: [Step; 20] = [
     Step::AnimationCameraReadsItsEdit,
     Step::LayoutInAnimate,
     Step::AnimationCopiesLayoutKeys,
+    Step::AddGroomDepartment,
 ];
 
 impl Step {
@@ -202,6 +207,7 @@ impl Step {
             Step::AnimationCameraReadsItsEdit => 18,
             Step::LayoutInAnimate => 19,
             Step::AnimationCopiesLayoutKeys => 20,
+            Step::AddGroomDepartment => 21,
         }
     }
 
@@ -261,6 +267,9 @@ impl Step {
             }
             Step::AnimationCopiesLayoutKeys => {
                 "refresh the stock _config/templates: animation copies layout's keys per character (Layout in Animate)"
+            }
+            Step::AddGroomDepartment => {
+                "add the groom asset department (before lookdev) and its template"
             }
         }
     }
@@ -483,6 +492,21 @@ impl Step {
                 Ok(_) => Readiness::Ready,
                 Err(why) => Readiness::Blocked(why),
             },
+            // Blocked when the pool is unreadable, or when the template
+            // refresh would be (v12's rules).
+            Step::AddGroomDepartment => {
+                if let Err(why) = v21_plan(&cfg) {
+                    return Readiness::Blocked(why);
+                }
+                let v9_pending = match current_version(project_path) {
+                    Ok(at) => at < Step::RefreshTemplatesAgain.version(),
+                    Err(why) => return Readiness::Blocked(why),
+                };
+                match v12_plan(&cfg, template_dir, v9_pending) {
+                    Ok(_) => Readiness::Ready,
+                    Err(why) => Readiness::Blocked(why),
+                }
+            }
         }
     }
 }
@@ -976,6 +1000,19 @@ impl Step {
             Step::LayoutInAnimate => refresh_stock_templates(&cfg, template_dir),
             // Same plan again, for the animation template's layout keys.
             Step::AnimationCopiesLayoutKeys => refresh_stock_templates(&cfg, template_dir),
+            Step::AddGroomDepartment => {
+                // Both halves are planned before either is written. The
+                // template goes down first: a pool naming groom with no
+                // template would offer a department whose New workfile is
+                // empty, while a template with no pool entry is inert.
+                let pool = v21_plan(&cfg)?;
+                refresh_stock_templates(&cfg, template_dir)?;
+                if let Some(data) = pool {
+                    let path = cfg.join("db").join("departments.json");
+                    write_preserving_as(&path, &crate::to_json_string(&data), "v21.bak")?;
+                }
+                Ok(())
+            }
             Step::ScratchOffWslPaths => {
                 // Own backup suffix: the `.v11.bak` v11 left is that step's
                 // original and stays.
@@ -1085,6 +1122,72 @@ fn refresh_stock_templates(cfg: &Path, template_dir: &Path) -> Result<(), String
             .map_err(|e| format!("could not write {}: {e}", path.display()))?;
     }
     Ok(())
+}
+
+/// The asset department v21 adds, and its properties: it publishes, and the
+/// hair it exports renders.
+const GROOM: &str = "groom";
+
+/// v21's department pool for a project: `Ok(Some(pool))` with `groom` added
+/// to the asset departments, `Ok(None)` when there is nothing to do (no
+/// `departments.json`, no `assets` context, or a `groom` already there,
+/// whatever its properties or place).
+///
+/// Pool order is the pipeline order (later = stronger USD layer, and
+/// "downstream" is everything after), so where groom lands matters: right
+/// before `lookdev`, so lookdev and rig sit downstream of it. A pool with no
+/// lookdev takes it after the last of `model`/`blendshape`, and one with
+/// neither at the end.
+fn v21_plan(cfg: &Path) -> Result<Option<Value>, String> {
+    let path = cfg.join("db").join("departments.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let mut data = load_json(&path)?;
+    let Some(assets) = data
+        .get_mut("children")
+        .and_then(|c| c.get_mut("assets"))
+        .and_then(|a| a.get_mut("children"))
+    else {
+        return Ok(None);
+    };
+    let Value::Object(pool) = assets else {
+        return Err(format!(
+            "{}: the assets departments are not a JSON object",
+            path.display()
+        ));
+    };
+    if pool.contains_key(GROOM) {
+        return Ok(None);
+    }
+    let names: Vec<String> = pool.keys().cloned().collect();
+    let at = match names.iter().position(|n| n == "lookdev") {
+        Some(at) => at,
+        None => names
+            .iter()
+            .rposition(|n| n == "model" || n == "blendshape")
+            .map_or(names.len(), |at| at + 1),
+    };
+    let groom = serde_json::json!({
+        "properties": {
+            "independent": false,
+            "publishable": true,
+            "renderable": true
+        },
+        "children": {}
+    });
+    let mut rebuilt = serde_json::Map::new();
+    for (index, (name, value)) in std::mem::take(pool).into_iter().enumerate() {
+        if index == at {
+            rebuilt.insert(GROOM.to_string(), groom.clone());
+        }
+        rebuilt.insert(name, value);
+    }
+    if at == names.len() {
+        rebuilt.insert(GROOM.to_string(), groom);
+    }
+    *pool = rebuilt;
+    Ok(Some(data))
 }
 
 /// v10's edits to a project, as `(file, new LF text)`: empty when there is
@@ -2725,7 +2828,7 @@ mod tests {
         let cfg = dir.path().join("_config");
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        assert_eq!(current_version(dir.path()).unwrap(), 21);
 
         let path = cfg.join(conventions::STORAGE_FILE);
         let table = load_json(&path).unwrap();
@@ -3298,6 +3401,7 @@ mod tests {
             (Step::AnimationCameraReadsItsEdit, Readiness::Blocked(_)),
             (Step::LayoutInAnimate, Readiness::Blocked(_)),
             (Step::AnimationCopiesLayoutKeys, Readiness::Blocked(_)),
+            (Step::AddGroomDepartment, Readiness::Blocked(_)),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -3408,7 +3512,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 20);
+        assert_eq!(latest_version(), 21);
         assert_eq!(current_version(&target).unwrap(), latest_version());
         assert!(pending(&target).unwrap().is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -3554,8 +3658,8 @@ mod tests {
         let dir = project_at_v12_with_variants();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 8);
-        assert_eq!(report.to, 20);
+        assert_eq!(report.applied.len(), 9);
+        assert_eq!(report.to, 21);
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -3612,7 +3716,7 @@ mod tests {
         let template = scaffold();
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        assert_eq!(current_version(dir.path()).unwrap(), 21);
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -3630,7 +3734,7 @@ mod tests {
         write_version(&dir.path().join("_config"), 12).unwrap();
         let second = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 20);
+        assert_eq!(second.to, 21);
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -3648,7 +3752,7 @@ mod tests {
 
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.to, 20);
+        assert_eq!(report.to, 21);
         assert_eq!(db_text(dir.path(), "entity.json"), entity);
         let mut files = Vec::new();
         find_files(&db, None, &mut files);
@@ -3709,7 +3813,7 @@ mod tests {
         }
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        assert_eq!(current_version(dir.path()).unwrap(), 21);
         let animation =
             std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
         assert_eq!(
@@ -3741,7 +3845,7 @@ mod tests {
         std::fs::write(&path, &shipped_at_v14).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        assert_eq!(current_version(dir.path()).unwrap(), 21);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             layout.replace("
@@ -3783,8 +3887,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v15).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 5);
-        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        assert_eq!(report.applied.len(), 6);
+        assert_eq!(current_version(dir.path()).unwrap(), 21);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         // Only rigged assets get a row (since 80def61306: the animatable ones)
@@ -3809,8 +3913,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v17).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 3);
-        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        assert_eq!(report.applied.len(), 4);
+        assert_eq!(current_version(dir.path()).unwrap(), 21);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("anim_camera.parm('loppath').set(camera_edit_node.path())"));
@@ -3832,8 +3936,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v18).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 2);
-        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        assert_eq!(report.applied.len(), 3);
+        assert_eq!(current_version(dir.path()).unwrap(), 21);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(layout, packaged_text("shots/layout"));
         assert!(layout.contains("layout_rigs.add_layout_animate(scene_node, camera_node, entity_uri)"));
@@ -3855,8 +3959,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v19).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 1);
-        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        assert_eq!(report.applied.len(), 2);
+        assert_eq!(current_version(dir.path()).unwrap(), 21);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("layout_keys_rows.add_to_dive("));
@@ -3874,5 +3978,136 @@ mod tests {
         let after = db_text(dir.path(), "entity.json");
         assert!(after.contains("\"channels\"") && after.contains("\r\n"));
         assert!(!after.replace("\r\n", "").contains('\n'));
+    }
+
+    /// The packaged pool as a v20 project has it: the scaffold's, without
+    /// groom.
+    fn pool_at_v20() -> Value {
+        let mut pool = load_json(
+            &packaged_scaffold().join("_config").join("db").join("departments.json"),
+        )
+        .unwrap();
+        pool["children"]["assets"]["children"]
+            .as_object_mut()
+            .unwrap()
+            .shift_remove(GROOM)
+            .expect("the scaffold pool has groom");
+        pool
+    }
+
+    fn asset_departments(dir: &Path) -> Vec<String> {
+        let pool = load_json(&dir.join("_config").join("db").join("departments.json")).unwrap();
+        pool["children"]["assets"]["children"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    fn write_pool(dir: &Path, assets: &[&str]) {
+        let mut children = serde_json::Map::new();
+        for name in assets {
+            children.insert(
+                name.to_string(),
+                serde_json::json!({"properties": {"publishable": true}, "children": {}}),
+            );
+        }
+        let pool = serde_json::json!({
+            "properties": {},
+            "children": {"assets": {"properties": {}, "children": children}}
+        });
+        std::fs::write(
+            dir.join("_config").join("db").join("departments.json"),
+            crate::to_json_string(&pool),
+        )
+        .unwrap();
+    }
+
+    /// v21 puts groom right before lookdev in a v20 project's pool, keeps
+    /// the file's line endings and a backup, and installs the groom
+    /// template; the result is the packaged pool.
+    #[test]
+    fn v21_adds_groom_before_lookdev_and_its_template() {
+        let dir = project(Some(20));
+        let path = dir.path().join("_config").join("db").join("departments.json");
+        let original = crate::to_json_string(&pool_at_v20()).replace('\n', "\r\n");
+        std::fs::write(&path, &original).unwrap();
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.applied, vec![(Step::AddGroomDepartment, Ok(()))]);
+        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(
+            asset_departments(dir.path()),
+            ["model", "blendshape", "groom", "lookdev", "rig"]
+        );
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(!after.replace("\r\n", "").contains('\n'), "CRLF kept");
+        assert_eq!(
+            load_json(&path).unwrap(),
+            load_json(&packaged_scaffold().join("_config").join("db").join("departments.json"))
+                .unwrap()
+        );
+        assert_eq!(
+            std::fs::read_to_string(path.with_file_name("departments.json.v21.bak")).unwrap(),
+            original
+        );
+        let groom = std::fs::read_to_string(project_template(dir.path(), "assets/groom")).unwrap();
+        assert_eq!(groom, packaged_text("assets/groom"));
+    }
+
+    /// Without lookdev, groom follows the last of model and blendshape; with
+    /// neither it goes last.
+    #[test]
+    fn v21_places_groom_in_a_pool_without_lookdev() {
+        let cases: [(&[&str], &[&str]); 4] = [
+            (&["model", "rig"], &["model", "groom", "rig"]),
+            (&["blendshape", "rig", "model", "fx"], &["blendshape", "rig", "model", "groom", "fx"]),
+            (&["rig", "lookdev", "model"], &["rig", "groom", "lookdev", "model"]),
+            (&["rig"], &["rig", "groom"]),
+        ];
+        for (before, after) in cases {
+            let dir = project(Some(20));
+            write_pool(dir.path(), before);
+            let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+            assert!(report.is_ok(), "{report:?}");
+            assert_eq!(asset_departments(dir.path()), after, "{before:?}");
+        }
+    }
+
+    /// A project that already has a groom, wherever and however it is set
+    /// up, keeps it: nothing is written and no backup appears. Re-running
+    /// the step changes nothing either.
+    #[test]
+    fn v21_leaves_an_existing_groom_alone_and_is_idempotent() {
+        let dir = project(Some(20));
+        write_pool(dir.path(), &["model", "lookdev", "groom"]);
+        let path = dir.path().join("_config").join("db").join("departments.json");
+        let before = std::fs::read_to_string(&path).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+        assert!(!path.with_file_name("departments.json.v21.bak").exists());
+
+        let dir = project(Some(20));
+        std::fs::write(path_in(dir.path()), crate::to_json_string(&pool_at_v20())).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        let first = std::fs::read_to_string(path_in(dir.path())).unwrap();
+        write_version(&dir.path().join("_config"), 20).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        assert_eq!(std::fs::read_to_string(path_in(dir.path())).unwrap(), first);
+    }
+
+    fn path_in(dir: &Path) -> PathBuf {
+        dir.join("_config").join("db").join("departments.json")
+    }
+
+    /// A pool v21 cannot read blocks the step before anything is written.
+    #[test]
+    fn v21_blocks_on_an_unreadable_pool() {
+        let dir = project(Some(20));
+        std::fs::write(path_in(dir.path()), "{ not json").unwrap();
+        let readiness = Step::AddGroomDepartment.readiness(dir.path(), &packaged_scaffold());
+        assert!(matches!(readiness, Readiness::Blocked(_)), "{readiness:?}");
+        assert!(!project_template(dir.path(), "assets/groom").exists());
     }
 }

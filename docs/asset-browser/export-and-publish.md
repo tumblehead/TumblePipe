@@ -254,6 +254,7 @@ A department with no entry runs nothing.
 |---|---|
 | assets / model, rig | `model_structure`, plus `rest_geometry` for model |
 | assets / blendshape | `blendshape_structure` |
+| assets / groom | `groom_structure` |
 | assets / lookdev | `lookdev_structure`, `material_bindings` |
 | shots / layout, environment, animation, crowd, cfx, effects, light | `shot_root_prims` |
 | shots / render | `shot_root_prims`, `cameras`, `render_settings`, `render_products`, `render_var_names`, `ordered_vars` |
@@ -271,7 +272,7 @@ Passed With Warnings**, or the issue list with a **Close** button.
 
 | Validator | Error messages (what fixes them) |
 |---|---|
-| `model_structure`, `blendshape_structure`, `lookdev_structure` | `Asset prim not found at path: <path>` (author the asset prim — `create_asset_model` does); `Asset prim must be of type 'Xform', found '<type>'`; `Missing required '<geo|blendshape|mtl>' child prim` (create the Scope under the asset); `'<name>' prim must be of type 'Scope', found '<type>'`. A wrong type with no transform on it only warns (`... it will be published as a Scope` / `as an Xform`) and the export retypes it in the published layer: an asset prim with no type or a Scope becomes an Xform; a geo/blshp/mtl with no type or an Xform (what SOP Import makes) becomes a Scope. A transform on it, or any other type, stays an error. Warns `No entity URI provided` when the export node's Entity is unresolved. |
+| `model_structure`, `blendshape_structure`, `groom_structure`, `lookdev_structure` | `Asset prim not found at path: <path>` (author the asset prim — `create_asset_model` does); `Asset prim must be of type 'Xform', found '<type>'`; `Missing required '<geo|blshp|groom|mtl>' child prim` (create the Scope under the asset); `'<name>' prim must be of type 'Scope', found '<type>'`. A wrong type with no transform on it only warns (`... it will be published as a Scope` / `as an Xform`) and the export retypes it in the published layer: an asset prim with no type or a Scope becomes an Xform; a geo/blshp/groom/mtl with no type or an Xform (what SOP Import makes) becomes a Scope. A transform on it, or any other type, stays an error. Warns `No entity URI provided` when the export node's Entity is unresolved. |
 | `rest_geometry` | Warnings only: `Mesh missing rest positions (primvars:rest or primvars:Pref)`, `Mesh missing normals (primvars:normals or normals)`. |
 | `material_bindings` | Warning only: `Mesh has no material binding`. |
 | `shot_root_prims` | `Disallowed root prim '<name>'. Only asset categories, collections, lights, cameras, Render, and scene are allowed.` — reparent the content under an allowed root. Houdini's own `/HoudiniLayerInfo` is ignored. A `/_METADATA` (from an upstream layer published before metadata moved to customData) is disallowed like any other root: re-export that upstream department. |

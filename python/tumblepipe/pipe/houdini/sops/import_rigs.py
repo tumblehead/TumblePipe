@@ -393,13 +393,19 @@ def create(scene, name):
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportRigs(raw_node)
-    node.execute()
+    try:
+        node.execute()
+    finally:
+        import_rig._refresh_ghost(raw_node)
 
 def discover(kwargs):
     """The Discover button: rows from the stage's animatable prims."""
     node = ImportRigs(kwargs['node'])
-    with ns.node_errors_as_message('Discover Rigs'):
-        node.discover()
+    try:
+        with ns.node_errors_as_message('Discover Rigs'):
+            node.discover()
+    finally:
+        import_rig._refresh_ghost(kwargs['node'])
 
 def select(kwargs):
     """A row's Entity button: pick that row's asset."""

@@ -232,6 +232,24 @@ class PipelineSettingsWidget(QWidget):
         self._slate_checkbox.toggled.connect(self._on_shot_slate_toggled)
         outer.addWidget(self._slate_checkbox)
 
+        self._hide_unused_checkbox = QCheckBox(
+            "Hide departments with no workfile"
+        )
+        self._hide_unused_checkbox.setToolTip(
+            "On an asset, shot or Multi card, its deck and its hover show "
+            "only the departments that have a workfile (or a Multi's "
+            "workfile covering them).\n"
+            "The detail panel still lists every department, so a first "
+            "workfile can be started there."
+        )
+        self._hide_unused_checkbox.setChecked(
+            self._catalog._prefs.hide_unused_departments
+        )
+        self._hide_unused_checkbox.toggled.connect(
+            self._on_hide_unused_toggled
+        )
+        outer.addWidget(self._hide_unused_checkbox)
+
         # ── Project defaults: the selected project's shared configuration ──
         outer.addWidget(section_header(
             "Project defaults",
@@ -308,6 +326,17 @@ class PipelineSettingsWidget(QWidget):
             save_prefs(self._catalog._prefs)
         except Exception as exc:
             report_failure("Saving the auto-import preference", exc)
+
+    def _on_hide_unused_toggled(self, checked: bool) -> None:
+        """Hide or show departments with no workfile: saved on every click
+        like the toggles here, and the cards rebuild at once."""
+        from .prefs import save_prefs
+        self._catalog._prefs.hide_unused_departments = bool(checked)
+        try:
+            save_prefs(self._catalog._prefs)
+        except Exception as exc:
+            report_failure("Saving the hide-departments preference", exc)
+        self._catalog._refresh.grid()
 
     def _on_shot_slate_toggled(self, checked: bool) -> None:
         """The shot slate on / off: saved on every click like the toggles

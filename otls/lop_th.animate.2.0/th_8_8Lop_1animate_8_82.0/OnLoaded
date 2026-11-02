@@ -1,3 +1,4 @@
-from tumblepipe.pipe.houdini.lops import animate_ghost
+from tumblepipe.pipe.houdini.lops import animate_ghost, animate_points
 
 animate_ghost.on_loaded(kwargs['node'])
+animate_points.on_loaded(kwargs['node'])

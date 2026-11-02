@@ -151,33 +151,12 @@ uvx ruff check python/ .ci/ python3.13libs/ \
   scripts/ tests/ --select E9,F
 ```
 
-This runs automatically as a **pre-commit hook** (`.githooks/pre-commit`),
-which blocks a commit that fails the lint. Arm the hooks once per clone:
-
-```bash
-sh .githooks/install
-```
-
-`core.hooksPath` is local, uncommitted git config, so a fresh clone is
-**unarmed** — git forbids a repository arming its own hooks, precisely so
-that cloning cannot execute a repo's code. There is no way around that which
-is not also a way for a hostile repo to run code on clone; in particular do
-not reach for a global `init.templateDir` dispatcher, which would arm
-`.githooks/` in every future clone including third-party ones. What the repo
-can do is make the unarmed state loud rather than silent:
-
-```bash
-sh .githooks/install --check
-```
-
-exits non-zero and says so when this clone has no hooks.
-
-The same hook also runs `.ci/quality_gates/check_forbidden_files.py` over
-the **staged** `*.md` files, blocking a commit that adds an AI-generated
-report/summary (matched by content markers, not filename). It checks only
-staged files on purpose — an untracked scratch report in the working tree
-must not block an unrelated commit. Run with no arguments (as CI/preflight
-does) it scans the whole tree instead.
+No git hook runs it: lint, like the tests, is yours to run before you push.
+`uv run --no-project python .ci/preflight.py` runs it together with every
+other gate, including `.ci/quality_gates/check_forbidden_files.py`, which
+refuses an AI-generated report/summary `.md` (matched by content markers,
+not filename). Given file paths it checks only those; with no arguments (as
+preflight runs it) it scans the whole tree.
 
 The hook **blocks** if `uv`/`ruff` isn't on `PATH`, rather than skipping. A
 gate that silently passes when it cannot run is worse than no gate: it
@@ -1194,7 +1173,7 @@ created and runs its own copy from then on: "New workfile from template"
 loads `<project>/_config/templates/<context>/<department>/template.py`, not
 the package's. **Editing a packaged template changes new projects only.** An
 existing project gets the change only when a numbered refresh step brings it
-(v2, v9, v12, v14, v15, v16 so far), so a fix nobody migrates is a fix nobody has: the
+(v2, v9, v12, v14–v16 and v18–v21 so far), so a fix nobody migrates is a fix nobody has: the
 rig/blendshape dive fix shipped in 1.77.0 and the animation template's
 `KeyError: 'uri'` fix both sat in the scaffold, unseen by every project past
 v12, until v14.
@@ -1421,7 +1400,7 @@ a worker or a pipeline. A job references its worker by name only.
 `tests/test_farm_layout.py` pins these rules, and imports every farm module
 (the hython halves against the headless `hou` stub), so a broken import fails
 the test run rather than a render node. Gate changes with the test suite and
-the same lint the pre-commit hook enforces:
+the same lint preflight runs:
 
 ```bash
 python -m compileall -q python/tumblepipe/farm/
@@ -1454,6 +1433,13 @@ installs it up front, locally `rustup toolchain install` it once), and at least 
 Houdini install. (The hook apps are
 Houdini-independent — `build-wizard` needs only cargo, no HFS; `build-player`
 also needs MSYS2 on Windows for FFmpeg's configure.)
+
+The HDK builds (resolver, delegate, VRAM hook) configure from scratch each
+time: the cmake build dir (`build-delegate-<os>-houdini<major>/`, say) is
+deleted first. The resolver's and the delegate's cargo output is kept
+beside it, in the same name with `-rust` added (`TH_RUST_TARGET_DIR`), so a
+rebuild only compiles what changed: about 7 s for the delegate instead of
+90 s. Deleting a `-rust` dir forces a full Rust rebuild.
 
 The resolver and VRAM hook build for the Houdini majors in
 `HPM_HOUDINI_MAJORS` (bare space-separated majors, e.g. `22`); without it

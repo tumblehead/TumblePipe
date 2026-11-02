@@ -48,7 +48,13 @@ if(TH_DELEGATE_GPU)
     set(RUST_FEATURES --features gpu)
 endif()
 
-set(RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/rust-target")
+# The build scripts keep cargo's target outside the build dir (they
+# configure fresh each time); a standalone configure builds it inside.
+if(DEFINED TH_RUST_TARGET_DIR)
+    set(RUST_TARGET_DIR "${TH_RUST_TARGET_DIR}")
+else()
+    set(RUST_TARGET_DIR "${CMAKE_BINARY_DIR}/rust-target")
+endif()
 set(RUST_STATICLIB
     "${RUST_TARGET_DIR}/release/${CMAKE_STATIC_LIBRARY_PREFIX}th_delegate_core${CMAKE_STATIC_LIBRARY_SUFFIX}")
 

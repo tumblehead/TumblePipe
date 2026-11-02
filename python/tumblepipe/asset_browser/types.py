@@ -263,6 +263,7 @@ DEPT_ICONS = {
     "composite": "layers",      # compositing layers
     "effects": "zap",           # VFX
     "blendshape": "blend",      # blending shapes
+    "groom": "brush",           # combed hair
     "environment": "mountain",  # environment/landscape
     "crowd": "users",           # crowd of people
 }
@@ -296,6 +297,7 @@ DEPT_API_SHORT_FALLBACK = {
     "model": "mdl",
     "blendshape": "blndsp",
     "blendshapes": "blndsp",
+    "groom": "grm",
     "lookdev": "lkd",
     "lighting": "lgt",
     "rig": "rig",

@@ -301,7 +301,8 @@ touched. If staging fails, Apply says so; the writes stay, and **Stage Root
 [Composition → A shot's Root assets belong to the Root](../composition.md#a-shots-root-assets-belong-to-the-root).
 
 If a write fails (a retire whose files are open, say), Apply stops there
-and says so. Everything before it was applied. Everything after it is still
+and says so. Another session reading the database at that moment no longer
+counts: the write waits for the read to finish (up to a few seconds). Everything before it was applied. Everything after it is still
 in the sheets, still tinted, so fix the cause and Apply again. **Reload**
 re-reads every tab at any time, keeping your edits as they are, including
 rows still flagged: a new row named like an existing asset or shot stays a

@@ -72,7 +72,7 @@ def _shot_stage(native):
     return None
 
 
-def layout_placement(native, prim_path: str):
+def layout_placement(native, prim_path: str, *, stage=None, start=None):
     """The world transform the shot stage gives ``prim_path`` at the start
     of the shot (``shot_start.start_frame``: the playbar start, or in a
     Multi's workfile the member's own first frame), as (translate, rotate,
@@ -84,19 +84,26 @@ def layout_placement(native, prim_path: str):
     th::animate's zero_transforms then wiped the layout placement off the
     prim (Martin). Starting the rig at the placement keeps both in step:
     the posed geometry is world space, and zero_transforms is right.
+
+    ``stage`` and ``start`` are the shot stage and start frame when the
+    caller has them already (``place_characters`` looks them up once per
+    cook, not once per character).
     """
     import hou
     from pxr import Usd, UsdGeom
 
-    stage = _shot_stage(native)
+    if stage is None:
+        stage = _shot_stage(native)
     if stage is None:
         return None
     prim = stage.GetPrimAtPath(prim_path)
     if not prim.IsValid() or not prim.IsA(UsdGeom.Xformable):
         return None
-    from tumblepipe.pipe.houdini import shot_start
+    if start is None:
+        from tumblepipe.pipe.houdini import shot_start
+        start = shot_start.start_frame(native)
 
-    time = Usd.TimeCode(shot_start.start_frame(native))
+    time = Usd.TimeCode(start)
     matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(time)
     matrix = hou.Matrix4([list(matrix.GetRow(row)) for row in range(4)])
     if matrix.isAlmostEqual(hou.hmath.identityTransform()):
@@ -193,13 +200,23 @@ def place_characters(sop_node):
     prim_parent_path = '/'.join(asset_uri.segments[1:-1])
 
     keyed = layout_keys_rows.keyed_placement(sop_node)
+    stage = _shot_stage(sop_node)
+    if stage is None:
+        return
+    # Once per cook: the start frame reads the workfile's context and the
+    # shot's range from the project drive (12 calls, about 1 s, per edit
+    # for one import of 12 pawns).
+    from tumblepipe.pipe.houdini import shot_start
+    with api.config.coherent():
+        start = shot_start.start_frame(sop_node)
     unplaced = []
     for prim in geo.prims():
         char_name = prim.attribValue('name').removesuffix('.char')
         if char_name not in names or char_name in keyed:
             continue
         placement = layout_placement(
-            sop_node, f'/{prim_parent_path}/{char_name}'
+            sop_node, f'/{prim_parent_path}/{char_name}',
+            stage=stage, start=start,
         )
         if placement is None:
             continue
@@ -372,13 +389,25 @@ def on_created(raw_node):
     node._update_labels()
 
 
+def _refresh_ghost(raw_node):
+    """A th::animate's ghost hides the characters whose rigs are imported;
+    it finds rig nodes when it cooks, so tell it about this one."""
+    from tumblepipe.pipe.houdini.lops import animate_ghost
+    animate_ghost.refresh_ghost(raw_node)
+
 def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportRig(raw_node)
-    node.execute()
+    try:
+        node.execute()
+    finally:
+        _refresh_ghost(raw_node)
 
 def select(kwargs):
     """Entity button: pick the asset, then import its rig."""
     node = ImportRig(kwargs['node'])
     if node.pick_entity('Select Asset'):
-        node.execute()
+        try:
+            node.execute()
+        finally:
+            _refresh_ghost(kwargs['node'])

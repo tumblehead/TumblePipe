@@ -274,15 +274,17 @@ In an animation workfile with several copies of a character (`FF0`, `FF1`,
 - the rigs start stacked at the origin in the APEX scene, and the layout
   positions are gone on the stage after `th::animate`;
 - back on the stage the characters stand in rest pose with no animation.
-  Switching Scene Invoke's Output to Packed "fixes" that but puts them at
-  `/Geometry/FF0_char/...`, beside `/CHAR/FF0` instead of on it.
+  Up to 1.88, switching Scene Invoke's Output to Packed "fixed" that but put
+  them at `/Geometry/FF0_char/...`, beside `/CHAR/FF0` instead of on it.
 
 The rest pose comes from the copies being USD instances: copies are
 instanceable unless the asset is animated, and USD drops anything authored
-beneath an instance. Tick **Animatable** on the asset in the Entity Editor,
-press **Import** on `import_shot`, and set Scene Invoke back to Unpacked.
-From 1.84 a rigged asset counts as animated without the tick; existing
-scenes still need the re-import.
+beneath an instance. Tick **Animatable** on the asset in the Entity Editor
+and press **Import** on `import_shot`. From 1.84 a rigged asset counts as
+animated without the tick; existing scenes still need the re-import.
+Scene Invoke's Output does not matter here: from 1.89 `th::animate`
+unpacks Packed Folders itself and the characters land on `/CHAR/FF0` either
+way (Packed Folders, the template's setting, plays back faster).
 
 The placement: up to 1.83 `th::import_rig` loaded every rig at the origin,
 and `th::animate` resets the transforms of the prims it animates. From
@@ -310,6 +312,24 @@ If a character still starts at the origin:
   the origin, not at its layout placement.` on the rig import. Placement is
   set on TumbleRig's top `Main` control, and a rig built without one cannot
   be placed.
+
+### `th::animate` is slow: every upstream edit stalls, the dive plays at a few fps
+
+Up to 1.88, in a shot with several rigs:
+
+- every change above `th::animate` (moving a camera, say) stalled for
+  seconds, about 3.5 s with eight rigs. Each `th::import_rig` re-reads the
+  layout placement when the shot stage changes, and it looked up the
+  shot's start frame once per character, reading the workfile's
+  `context.json` and the shot's range from the project drive every time;
+- playback inside the `anim_dive` ran at about a quarter of the speed with
+  the ghost shown. With anything upstream animated (a keyed camera), the
+  ghost was rebuilt and re-synced in the viewport every frame.
+
+From 1.89 the start frame is looked up once per cook and the ghost is the
+shot stage as it stands on the shot's first frame, so it holds still.
+Existing scenes pick both up when opened. On 1.88, hiding the ghost in the
+dive's viewer restores playback speed.
 
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
@@ -484,6 +504,18 @@ Houdini and any Explorer window showing it, and the folder disappears. Then
 complete. From the next release a held folder cancels the delete with nothing
 moved, and a folder the browser can't read no longer hides the entity: its
 card stays, with the folder and the reason in its Note.
+
+### Entity Editor Apply stopped with "Access is denied"
+
+Up to TumblePipe 1.88.1, Apply could stop with *Apply stopped at: Updating …:
+[WinError 5] Access is denied* on a database file under `_config/db/`. Every
+open session re-reads the database when it changes, and on Windows a file
+being read cannot be replaced, so a write that landed mid-read failed.
+Nothing is lost: the edits not yet written stay in the sheets, and **Apply**
+again finishes them. From the next release the write waits for the read
+instead. If the message names a folder and says *Close any scene or viewer
+using its files*, that is a retire with files held open: see
+[A deleted shot or asset left a folder you can't open](#a-deleted-shot-or-asset-left-a-folder-you-cant-open).
 
 ### Two assets with the same name in different case
 

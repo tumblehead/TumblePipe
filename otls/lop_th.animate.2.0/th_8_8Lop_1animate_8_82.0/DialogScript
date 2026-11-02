@@ -15,16 +15,12 @@
     inputlabel	4	"Input 4"
 
     parm {
-        name    "mode"
-        label   "Mode"
-        type    ordinal
+        name    "ghost_refresh"
+        label   "Ghost Refresh"
+        type    integer
+        invisible
         default { "0" }
-        help    "Classic imports what the dive's Scene Invoke outputs, every frame. Fast runs the rigs with Bake APEX Scene and copies the points onto parts imported once: the same output as Classic, several times faster. Fast reads the APEX scene from anim_dive's second output and outputs each character's Base shape; SOPs after the dive's Scene Invoke are not seen."
-        menu {
-            "classic"   "Classic (SOP Import)"
-            "fast"      "Fast (APEX bake)"
-        }
-        parmtag { "script_callback" "from tumblepipe.pipe.houdini.lops import animate_bake; animate_bake.on_mode_changed(kwargs['node'])" }
-        parmtag { "script_callback_language" "python" }
+        help    "Bumped by th::import_rig(s) after an import, so the dive's ghost sees rigs it was not watching yet."
+        range   { 0 10 }
     }
 }

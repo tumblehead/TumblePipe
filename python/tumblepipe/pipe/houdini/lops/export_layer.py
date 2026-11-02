@@ -308,7 +308,6 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             f"Starting local export: uri={entity_uri}, dept={department_name}, "
             f"channel={channel_name}"
         )
-        self._warn_fast_mode(native)
 
         # The render step is deliberately dropped: a published stage cache
         # must carry every frame so downstream renders can sample any frame
@@ -409,25 +408,6 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             f"version={version_name}, output={version_path}"
         )
         return version_name
-
-    @staticmethod
-    def _warn_fast_mode(native):
-        """Say when a th::animate upstream is in Fast mode and so leaves out
-        SOPs after its Scene Invoke (a Camera Lattice, say). A warning, not
-        an error: the export goes on, as the artist may mean it."""
-        from tumblepipe.pipe.houdini.lops import animate_bake
-
-        warnings = animate_bake.fast_mode_warnings(native)
-        if not warnings:
-            return
-        message = '\n\n'.join(warnings)
-        logger.warning(message)
-        if hou.isUIAvailable():
-            hou.ui.displayMessage(
-                message,
-                severity=hou.severityType.Warning,
-                title='th::animate Fast mode',
-            )
 
     def _write_layout_keys(self,temp_path, layer_file_name, time_offset):
         """With Layout in Animate on and an APEX Animate LOP feeding this

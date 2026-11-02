@@ -57,16 +57,13 @@ def _build_animate_dive(animate_node, rig_imports: list, entity_uri=None):
         'apex::sceneinvoke',
         'scene_invoke'
     )
-    # Unpacked keeps the rig geometry's path/name attributes for export
-    invoke_scene_node.parm('outputmode').set('unpacked')
+    # Packed folders: th::animate unpacks the rigs itself, cheaper than the
+    # Scene Invoke unpacking them every frame. SOPs placed after this node
+    # get packed geometry, so unpack (twice) before them.
+    invoke_scene_node.parm('outputmode').set('packedfolders')
     invoke_scene_node.parm('shapepattern').set('Base')
     invoke_scene_node.setInput(0, scene_animate_node)
     output_animate_node.setInput(0, invoke_scene_node)
-
-    # th::animate's Fast mode bakes the APEX scene itself, read from here
-    scene_output_node = inner_animate_node.createNode('output', 'output1')
-    scene_output_node.parm('outputidx').set(1)
-    scene_output_node.setInput(0, scene_animate_node)
 
     inner_animate_node.layoutChildren()
 

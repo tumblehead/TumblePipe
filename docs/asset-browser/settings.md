@@ -51,6 +51,7 @@ Each checkbox is saved the moment you click it — no Apply needed.
 | **Auto-import latest on workfile open** | on | `auto_refresh_on_open` | Whenever this Houdini loads a scene, through the browser or any other way, re-execute its import nodes so `current` and `latest` pick up the newest publish. Runs in manual update mode and skips `create_model` / `build_comp`. See [Picking up new versions on open](../composition.md#picking-up-new-versions-on-open). |
 | **Ask for a version note on save** | on | `prompt_note_on_save` | The **Save** quick action, and **Save new version** when switching scenes, ask for a note that shows in the browser's Note column; Cancel aborts the save without burning a version (and, when switching, the switch). Off saves with a blank note. Autosave-on-scene-change and the emergency save never prompt. |
 | **Show the shot in the camera view** | on | `shot_slate` | The [shot slate](#the-shot-slate). Off hides it in every Scene Viewer at once. |
+| **Hide departments with no workfile** | off | `hide_unused_departments` | An asset, shot or Multi card's department deck, and its hover, show only the departments with a workfile (a member's department covered by a Multi's workfile counts). The detail panel still lists every department, so start a department's first workfile there. |
 
 A failed write shows `Failed to persist … preference — see Houdini console`
 but keeps the checkbox as clicked.

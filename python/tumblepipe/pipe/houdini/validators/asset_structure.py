@@ -12,8 +12,8 @@ from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 from .base import ValidationResult
 
 # The grouping children an asset carries, by department: model and rig
-# 'geo', blendshape 'blshp', lookdev 'mtl'
-STRUCTURE_CHILDREN = ('geo', 'blshp', 'mtl')
+# 'geo', blendshape 'blshp', groom 'groom', lookdev 'mtl'
+STRUCTURE_CHILDREN = ('geo', 'blshp', 'groom', 'mtl')
 
 # Types the export may retype without moving anything
 _RETYPE_TO_XFORM = ('', 'Scope')
@@ -215,6 +215,28 @@ def validate_blendshape_structure(root, context: dict | None = None) -> Validati
         ValidationResult with any structure errors
     """
     return _validate_asset_base(root, context, 'blshp')
+
+
+def validate_groom_structure(root, context: dict | None = None) -> ValidationResult:
+    """Validate groom department asset structure.
+
+    For groom exports, validates:
+    - Asset prim exists at path derived from entity URI (e.g., /CHAR/Frog)
+    - Asset prim is of type Xform
+    - 'groom' child prim exists (e.g., /CHAR/Frog/groom)
+    - 'groom' prim is of type Scope
+
+    The groom template's sopcreate sets pathprefix to '{prim_path}/groom/',
+    so the hair curves land under <asset>/groom/.
+
+    Args:
+        root: USD stage pseudo root prim
+        context: Optional dict containing 'entity_uri' for the asset
+
+    Returns:
+        ValidationResult with any structure errors
+    """
+    return _validate_asset_base(root, context, 'groom')
 
 
 def validate_lookdev_structure(root, context: dict | None = None) -> ValidationResult:

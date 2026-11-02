@@ -137,7 +137,9 @@ What happens under the hood:
 
 1. CMake loads Houdini's CMake package from `$HFS/toolkit/cmake`.
 2. `ExternalProject_Add` shells out to `cargo build --release` to produce
-   the `th_resolver_core` staticlib into `build/rust-target/release/`.
+   the `th_resolver_core` staticlib into `build/rust-target/release/`
+   (`.ci/build_resolver.py` passes `-DTH_RUST_TARGET_DIR` to keep it
+   beside its fresh build dir instead, so cargo stays incremental).
    Builds are native: cargo follows the host, which is the target on
    every CI worker (the macOS one is Apple Silicon).
 3. `tumbleResolver` (C++ MODULE library) is linked against `ar`, `arch`,

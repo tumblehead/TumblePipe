@@ -537,53 +537,52 @@ recooking the node and every rig in its dive each frame, as 1.85.0 did.
 `_TumblePipe/pipeline`. The animation shot template places one as
 `animate_shot` with `th::import_rigs` and the APEX scene-animate nodes
 inside its dive target; see [Building assets → `th::import_rigs`](assets.md#thimport_rigs-sop).
-Its APEX Scene Invoke is set to **Unpacked Geometry** output (the node
-defaults to packed, which drops the rig geometry's `path`/`name` attributes)
-and **Shapes** `Base`. A `th::animate` placed from the Tab menu has an empty
-dive (just `output0`), so build `th::import_rigs` → APEX Scene Animate →
-APEX Scene Invoke (with those settings) → `output0` inside it yourself.
+Its APEX Scene Invoke is set to **Packed Folders** output and **Shapes**
+`Base`. A `th::animate` placed from the Tab menu has an empty dive (just
+`output0`), so build `th::import_rigs` → APEX Scene Animate → APEX Scene
+Invoke (with those settings) → `output0` inside it yourself.
 
-| Label | Default | What it does |
-|---|---|---|
-| Mode | Classic (SOP Import) | *Classic*: imports what the dive's Scene Invoke outputs, every frame. *Fast (APEX bake)*: Solaris runs the rigs (Houdini 22's Bake APEX Scene) and only the points change per frame |
+The node reads the dive's output the way Houdini does for a SOP network:
+the Output SOP whose **Output Index** is 0, whatever it is called, or the
+display node when there is none. You can rename `output0`, or wire a
+different Output SOP as index 0, and the node follows it. Placing a node
+in the dive that is not wired in does not make it cook again.
 
-**Fast mode** gives the same output as Classic, several times faster on
-playback. The rigs run on their own `Base` shapes, as in the Scene Invoke, so
-the points, normals, prims, attributes, GeomSubsets and cameras are the same,
-bit for bit for skinned characters. (Cloth deformers do not give the same
-points twice, in either mode: two Classic cooks of the same frame differ by
-up to a few millimetres on cloth parts. Fast differs from Classic by no more
-than that.) Six production characters and a
-camera played back in the Houdini viewport at 7.8 fps against 2.2. A
-240-frame USD export of one character took 9 s and 2 GB of memory against
-32 s and 10 GB.
-The topology, UVs and primvars are imported once, so they are written once
-instead of on every frame; the points, normals and extents are time samples
-as before. How it works:
+The node has one mode. It imports what the dive outputs once, at the shot's
+first frame: topology, UVs, primvars, GeomSubsets. On every later frame it
+copies only the points, normals and extents onto those prims, the way
+Houdini's own APEX bake writes them. Cameras and other prims without points
+are imported every frame, as before. The output is the same as a SOP Import
+of the dive on every frame, prim for prim and value for value. In hython,
+six production characters and a camera cook in about 200 ms a frame
+instead of 530 ms.
 
-- It reads the APEX scene from a second output in the dive, `output1`, wired
-  to the Scene Animate. The animation template adds it. Picking Fast on a
-  dive without one adds it next to the Scene Invoke that feeds `output0`,
-  also when SOPs sit between the two.
-- A character is baked when its `Base` shape is polygons whose `path`
-  attributes all sit under one asset prim (`/CHAR/<asset>/...`), as
-  `th::import_rigs` makes them. Any other character, an APEX camera say, goes
-  through a Scene Invoke as in Classic.
-- After an edit to the animation, the first frame takes longer than in
-  Classic (about 3.4 s against 1.5 s for those six characters): the rigs are
-  compiled again and the rest shapes re-imported. Later frames are fast.
+- **Packed Folders.** The node unpacks the Scene Invoke's packed folders
+  itself, and reads only the points from them on each frame. That is much
+  cheaper than the Scene Invoke unpacking every character on every frame. A
+  scene saved with its Scene Invoke on **Unpacked Geometry**, wired straight
+  into `output0`, is switched to Packed Folders when the scene is opened. You
+  can see that it happened: the Scene Invoke gets a comment saying so (shown
+  in the network), and the status bar and console say which node changed.
+  Save the scene to keep the change. If you add SOPs after the Scene Invoke
+  later, they get packed folders. Put two Unpack SOPs before them, or set
+  the Scene Invoke back to Unpacked Geometry.
+- **SOPs after the Scene Invoke** (TumbleRig's Camera Lattice, say) still
+  work. The node reads whatever reaches `output0`, so the lattice's points
+  are the ones exported. Such a dive stays on Unpacked Geometry and plays
+  back slower (about 490 ms a frame for the same shot, against 530 ms
+  before), and an edit there takes about 2 s instead of 1.3 s.
+- **After an edit** to the rigs or the animation, the first frame re-imports
+  the characters (about 1.4 s for that shot). If an edit only moves points,
+  as key edits do, the import is not rebuilt.
+- **A rig that changes its point count** on some frame is imported in full
+  on that frame, which is slower but correct.
 
-Use Classic when:
-
-- **SOPs after the dive's Scene Invoke matter**, TumbleRig's Camera Lattice
-  say. Fast reads the scene before the Scene Invoke, so it does not see them.
-  Picking Fast with such SOPs in the dive shows a warning that names them,
-  and so does every `th::export_layer` downstream when it exports (in the
-  farm's log too). Neither stops you.
-- **The rig changes its point count**, or two parts share points. Fast
-  refuses such a rig with an error that names the asset.
-
-Classic stays the default until Fast has been tried on real shots in the GUI.
+Up to 1.88, the node had a **Mode** parameter, with a *Fast (APEX bake)*
+option that Houdini's Bake APEX Scene ran. It was not faster in practice and
+left out SOPs after the Scene Invoke, so it has been removed. Scenes saved
+in Fast mode open in the one mode, and the dive's `output1` that Fast read
+is no longer used.
 
 Cameras pass through as cameras. A Camera SOP added to the scene with
 APEX Scene Add Camera (with its `path` set, e.g. `/cameras/render_camera`)
@@ -592,15 +591,22 @@ a SOP Create. The transform rewrite and the kinds-by-depth leave cameras
 alone. Up to 1.80.1 the camera came out at the origin, and at depth 1–3 as
 an Xform or Scope instead of a camera.
 
-Inside the dive, the SOP viewer ghosts the incoming stage **without the
-characters being animated**, so you don't see each one twice (the posed rig
+Inside the dive, the SOP viewer ghosts the incoming stage, as it stands on
+the shot's first frame, **without the characters being animated**, so you
+don't see each one twice (the posed rig
 and its USD model in rest pose). The ghost hides every asset whose rig a
 `th::import_rig` in the dive loads, including the ones `th::import_rigs`
 creates. All copies of that asset are hidden, and the node's output is
 unaffected. A bypassed rig, or one with no published version yet, leaves its
 asset in the ghost. Scenes saved before this change switch to the new ghost
-when they are opened.
+when they are opened. The ghost holds still: up to 1.88 it followed the
+incoming stage frame by frame, so with anything upstream animated (a keyed
+camera, say) it was rebuilt and re-synced in the viewport every frame,
+which cut dive playback to about a quarter. Placing a node in the dive no
+longer rebuilds the
+ghost (it used to, which re-synced the whole shot stage in the viewport): the
+ghost finds the rig nodes by type, and an import tells it about a new one.
 Source: [`otls/lop_th.animate.2.0`](../../otls/lop_th.animate.2.0/th_8_8Lop_1animate_8_82.0/DialogScript),
 [`lops/animate_ghost.py`](../../python/tumblepipe/pipe/houdini/lops/animate_ghost.py),
 [`lops/animate_xforms.py`](../../python/tumblepipe/pipe/houdini/lops/animate_xforms.py),
-[`lops/animate_bake.py`](../../python/tumblepipe/pipe/houdini/lops/animate_bake.py).
+[`lops/animate_points.py`](../../python/tumblepipe/pipe/houdini/lops/animate_points.py).

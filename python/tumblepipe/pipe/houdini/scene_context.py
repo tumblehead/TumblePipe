@@ -21,9 +21,26 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.paths import Context, get_workfile_context
 
 
+_contexts: dict[str, Context] = {}
+
+
 def scene_context() -> Context | None:
-    """The open workfile's context; None for a non-pipeline scene."""
-    return get_workfile_context(Path(hou.hipFile.path()))
+    """The open workfile's context; None for a non-pipeline scene.
+
+    Kept per hip path once found: a workfile's ``context.json`` is written
+    when the workfile is made and never changes (a new version is a new
+    path). Reading it on every call cost an ``exists`` and a JSON load on
+    the project drive; th::animate's placement asks once per character as
+    it cooks, about a second per edit in a shot of eight rigs. A path with
+    no context yet is asked again next time.
+    """
+    hip_path = hou.hipFile.path()
+    context = _contexts.get(hip_path)
+    if context is None:
+        context = get_workfile_context(Path(hip_path))
+        if context is not None:
+            _contexts[hip_path] = context
+    return context
 
 
 def entity_in_contexts(

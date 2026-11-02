@@ -26,7 +26,7 @@
 /// `tests/fixtures/templates/`, and the tests fail when the packaged
 /// templates change without a row here, because a project left on that
 /// version would otherwise read as customised to the next refresh.
-pub const STOCK: [(&str, u64); 84] = [
+pub const STOCK: [(&str, u64); 86] = [
     ("assets/blendshape", 0x3e996f0cd9278155), // 886fc6b725
     ("assets/blendshape", 0x479bbf9dd255f96a), // 072f370dc7
     ("assets/blendshape", 0x6b8a6905dffbc0c1), // f631e117d8
@@ -35,6 +35,7 @@ pub const STOCK: [(&str, u64); 84] = [
     ("assets/blendshape", 0xb60e6ede03b40ab8), // b9f3d2b74a
     ("assets/blendshape", 0xe76b5826a13378a4), // 9be7a5aafe
     ("assets/blendshape", 0xcd06531206b5db8d), // ad76a88205
+    ("assets/groom", 0xea5631f706384b7b), // 182b03a573
     ("assets/lookdev", 0x1b3f29bea006e0a5), // a52ecf9e17
     ("assets/lookdev", 0x5760ea8fa74b4ae6), // 0445abd52a
     ("assets/lookdev", 0x7d544393eea3ca05), // 89fb4b2835
@@ -75,6 +76,7 @@ pub const STOCK: [(&str, u64); 84] = [
     ("shots/animation", 0x4075a1bbe020e68c), // 80def61306
     ("shots/animation", 0x4f772d0cb6c4c329), // 46f42da508
     ("shots/animation", 0xc53eec4d2c731216), // 2bffa1bb37
+    ("shots/animation", 0x88c8069f084e2dda), // 7a4e585c7c
     ("shots/cfx", 0x093be277eb7c4136), // a85f94fadc
     ("shots/cfx", 0x522c75d5c51911e3), // cc26004b79
     ("shots/cfx", 0x7054507e41b63ef9), // 8ae1bb6533

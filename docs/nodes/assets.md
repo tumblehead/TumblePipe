@@ -11,7 +11,7 @@ these HDAs carries built-in help text, so this page is the reference.
 
 ## The asset chain
 
-A new project ships four asset departments
+A new project ships five asset departments
 (`scripts/project_template/_config/db/departments.json`, summarised in
 [Getting started → The default departments](../getting-started.md#the-default-departments)):
 
@@ -19,12 +19,14 @@ A new project ships four asset departments
 |---|---|---|
 | `model` | yes (independent, renderable) | `MODEL` (`th::create_asset_model`, one variant per channel with a starter box) → `EXPORT_MODEL` |
 | `blendshape` | **no** (not a render layer) | `IMPORT_MODEL` (`th::import_layer`, Department `model`) → `BLENDSHAPES` (a SOP Create at `<asset>/blshp/`; inside: LOP Import of the model at frame 1001 → Unpack → `sculpt` → `cache` → `name` → `merge`, boxed as *BLENDSHAPE 1* to copy per shape) → `BLSHP_SCOPE` (a Configure Primitive making `<asset>/blshp` the Scope the export check requires) → `EXPORT_BLENDSHAPES` |
+| `groom` | yes (renderable) | `IMPORT_MODEL` (`th::import_layer`, Department `model`) → `GROOM` (a SOP Create at `<asset>/groom/`; inside: LOP Import of the model at frame 1001 → Unpack (the skin) → `GUIDES` (Hair Generate, 500 guide curves) → `groom` (Guide Groom, guides + skin; holds the display flag) → `HAIR` (Hair Generate, 20000 hairs from the groomed guides) → `name` (`hair`), boxed as *GROOM 1* to copy per groom) → `GROOM_SCOPE` (a Configure Primitive making `<asset>/groom` the Scope the export check requires) → `EXPORT_GROOM`. The hair exports as `BasisCurves` at `<asset>/groom/hair` |
 | `lookdev` | yes (renderable over-layer) | `IMPORT_MODEL` (`th::import_layer`, Department `model`) → `LOOKDEV` (`th::create_asset_lookdev`, one variant per channel; inside: `material_library` with a red `default_mtl` → `material_assigner` → every variant's output) → `EXPORT_LOOKDEV` |
 | `rig` | **no** (not a render layer) | `rigging` (a SOP Create; inside: `import_model` (`th::import_model`), an unwired `import_blendshapes` (`th::import_model`, Department `blendshape`), `promote_name` (Attribute Promote: `name` primitive → point, original kept), `enumerate` (Enumerate, Group Type Points: integer point `index`; holds the display flag), and `export_rig` (`th::export_rig`) wired from `enumerate`) |
 
 Sources: [`templates/assets/model`](../../scripts/project_template/_config/templates/assets/model/template.py),
 [`lookdev`](../../scripts/project_template/_config/templates/assets/lookdev/template.py),
 [`blendshape`](../../scripts/project_template/_config/templates/assets/blendshape/template.py),
+[`groom`](../../scripts/project_template/_config/templates/assets/groom/template.py),
 [`rig`](../../scripts/project_template/_config/templates/assets/rig/template.py).
 
 Two things worth knowing before you start:
@@ -343,8 +345,12 @@ playbar start; in a Multi's workfile, the member's own first frame)
 dependent) becomes the rig parms `Main_t` / `Main_r` / `Main_s` of TumbleRig's
 top `Main` control. It reads the placement as it cooks, so a layout
 published later moves the character, and a workfile imported before the
-placement was read picks it up, without pressing **Import** again. The
-animated output is then world space, which is what `th::animate`'s
+placement was read picks it up, without pressing **Import** again. It
+recooks whenever the shot stage above `th::animate` changes (a camera
+moved, say), and looks up the shot's start once per cook: up to 1.88 it
+looked it up once per character, reading the workfile's `context.json` on
+the project drive each time, about 3.5 s per upstream edit in a shot of
+eight rigs. The animated output is then world space, which is what `th::animate`'s
 zero_transforms expects. A rig without a `Main` control warns and starts
 at the origin. A character a [`th::layout_keys`](#thlayout_keys-sop) row
 copies `Main` keys to is left unplaced: those keys place it. When it cannot

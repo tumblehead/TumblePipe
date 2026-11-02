@@ -264,100 +264,6 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/IN_stage_start.init"
-Content-Type: text/plain
-
-type = timeshift
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/IN_stage_start.def"
-Content-Type: text/plain
-
-comment "The shot stage at the start of its shot, frozen there.
-zero_transforms and import_rig place read it: reading IN_stage
-itself in a cook makes th::animate time dependent."
-position 2.6 8.3
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on displaycomment on debug off
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	IN_stage 1 1 "input1"
-}
-inputs
-{
-0 	IN_stage 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/IN_stage_start.chn"
-Content-Type: text/plain
-
-{
-    channel frame {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { options = {	 untie  iv ov is os ia oa }
-
-	 length = 0 expr = "__import__('tumblepipe.pipe.houdini.shot_start', fromlist=['start_frame']).start_frame(pwd())" language = python }
-    }
-    channel time {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = $T }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/IN_stage_start.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-inputtimegroup	[ 0	locks=0 ]	(	0	)
-cookinputattime	[ 0	locks=0 ]	(	"on"	)
-attribtimegroup	[ 0	locks=0 ]	(	0	)
-evalattribsattime	[ 0	locks=0 ]	(	"on"	)
-primpattern	[ 0	locks=0 ]	(	/**	)
-proppattern	[ 0	locks=0 ]	(	xformOp:*	)
-getattribdefault	[ 0	locks=0 ]	(	"off"	)
-setattribdefault	[ 0	locks=0 ]	(	"on"	)
-timegroup	[ 0	locks=0 ]	(	0	)
-method	[ 0	locks=0 ]	(	byframe	)
-frame	[ 0	locks=0 ]	(	[ frame	0 ] 	)
-integerframes	[ 0	locks=0 ]	(	"on"	)
-time	[ 0	locks=0 ]	(	[ time	0 ] 	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/IN_stage_start.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/zero_transforms.init"
 Content-Type: text/plain
 
@@ -935,155 +841,6 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/import.init"
-Content-Type: text/plain
-
-type = sopimport
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/import.def"
-Content-Type: text/plain
-
-comment ""
-position 0.74814 9.51455
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-0 "output1"
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@Abraham-3090
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/import.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-soppath	[ 0	locks=0 ]	(	"`ifs(nprims(\"../anim_dive/output0\") > 0, \"../anim_dive\", \"\")`"	)
-asreference	[ 0	locks=0 ]	(	"off"	)
-copycontents	[ 0	locks=0 ]	(	"on"	)
-ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
-adjustxformsforinput	[ 0	locks=0 ]	(	"on"	)
-bindmaterials	[ 0	locks=0 ]	(	nobind	)
-reftype	[ 0	locks=0 ]	(	payloadweak	)
-refprim	[ 0	locks=0 ]	(	automaticPrim	)
-refprimpath	[ 0	locks=0 ]	(	""	)
-primpath	[ 0	locks=0 ]	(	/$OS	)
-instanceable	[ 0	locks=0 ]	(	"off"	)
-parentprimkind	[ 0	locks=0 ]	(	group	)
-parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
-separator_config	[ 0	locks=0 ]	(	)
-enable_group	[ 0	locks=0 ]	(	"off"	)
-group	[ 0	locks=0 ]	(	""	)
-enable_grouptype	[ 0	locks=0 ]	(	"off"	)
-grouptype	[ 0	locks=0 ]	(	primitive	)
-enable_pathprefix	[ 0	locks=0 ]	(	"off"	)
-pathprefix	[ 0	locks=0 ]	(	/	)
-enable_savepath	[ 0	locks=0 ]	(	"off"	)
-savepath	[ 0	locks=0 ]	(	""	)
-separator_extraconfig	[ 0	locks=0 ]	(	)
-primitivedefinitiongroup	[ 0	locks=0 ]	(	1	)
-enable_packedusdhandling	[ 0	locks=0 ]	(	"off"	)
-packedusdhandling	[ 0	locks=0 ]	(	xformandattribs	)
-enable_otherprimhandling	[ 0	locks=0 ]	(	"off"	)
-otherprimhandling	[ 0	locks=0 ]	(	define	)
-enable_defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
-defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
-enable_packedhandling	[ 0	locks=0 ]	(	"on"	)
-packedhandling	[ 0	locks=0 ]	(	unpack	)
-enable_agenthandling	[ 0	locks=0 ]	(	"off"	)
-agenthandling	[ 0	locks=0 ]	(	instancedskelroots	)
-enable_nurbscurvehandling	[ 0	locks=0 ]	(	"off"	)
-nurbscurvehandling	[ 0	locks=0 ]	(	basiscurves	)
-enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
-nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
-enable_kindschema	[ 0	locks=0 ]	(	"off"	)
-kindschema	[ 0	locks=0 ]	(	component	)
-enable_pathattr	[ 0	locks=0 ]	(	"off"	)
-pathattr	[ 0	locks=0 ]	(	path,name	)
-enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
-prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
-enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
-heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
-enable_usexformcommonapi	[ 0	locks=0 ]	(	"off"	)
-usexformcommonapi	[ 0	locks=0 ]	(	"on"	)
-geometryhandlinggroup	[ 0	locks=0 ]	(	1	)
-enable_polygonsassubd	[ 0	locks=0 ]	(	"off"	)
-polygonsassubd	[ 0	locks=0 ]	(	"off"	)
-enable_subdgroup	[ 0	locks=0 ]	(	"off"	)
-subdgroup	[ 0	locks=0 ]	(	""	)
-enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
-reversepolygons	[ 0	locks=0 ]	(	"off"	)
-enable_setmissingwidths	[ 0	locks=0 ]	(	"on"	)
-setmissingwidths	[ 0	locks=0 ]	(	0.01	)
-importdatagroup	[ 0	locks=0 ]	(	1	)
-authortimesamples	[ 0	locks=0 ]	(	auto	)
-enable_setdefaultprim	[ 0	locks=0 ]	(	"off"	)
-setdefaultprim	[ 0	locks=0 ]	(	"on"	)
-enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
-topologyhandling	[ 0	locks=0 ]	(	animated	)
-enable_attribs	[ 0	locks=0 ]	(	"on"	)
-attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform"	)
-enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
-indexattribs	[ 0	locks=0 ]	(	""	)
-enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
-constantattribs	[ 0	locks=0 ]	(	""	)
-enable_scalarconstantattribs	[ 0	locks=0 ]	(	"off"	)
-scalarconstantattribs	[ 0	locks=0 ]	(	""	)
-enable_boolattribs	[ 0	locks=0 ]	(	"off"	)
-boolattribs	[ 0	locks=0 ]	(	""	)
-enable_uintattribs	[ 0	locks=0 ]	(	"off"	)
-uintattribs	[ 0	locks=0 ]	(	""	)
-enable_uint64attribs	[ 0	locks=0 ]	(	"off"	)
-uint64attribs	[ 0	locks=0 ]	(	""	)
-enable_assetpathattribs	[ 0	locks=0 ]	(	"off"	)
-assetpathattribs	[ 0	locks=0 ]	(	""	)
-enable_staticattribs	[ 0	locks=0 ]	(	"off"	)
-staticattribs	[ 0	locks=0 ]	(	""	)
-enable_partitionattribs	[ 0	locks=0 ]	(	"off"	)
-partitionattribs	[ 0	locks=0 ]	(	""	)
-enable_prefixpartitionsubsets	[ 0	locks=0 ]	(	"off"	)
-prefixpartitionsubsets	[ 0	locks=0 ]	(	"on"	)
-enable_subsetgroups	[ 0	locks=0 ]	(	"off"	)
-subsetgroups	[ 0	locks=0 ]	(	""	)
-enable_customattribs	[ 0	locks=0 ]	(	"off"	)
-customattribs	[ 0	locks=0 ]	(	""	)
-enable_captureweighthandling	[ 0	locks=0 ]	(	"off"	)
-captureweighthandling	[ 0	locks=0 ]	(	usdskel	)
-enable_translateuvtost	[ 0	locks=0 ]	(	"off"	)
-translateuvtost	[ 0	locks=0 ]	(	"on"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/import.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/anim_dive.init"
 Content-Type: text/plain
 
@@ -1259,11 +1016,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	mode_switch 2 1 "input1"
+0 	topology_switch 2 1 "input1"
 }
 inputs
 {
-0 	mode_switch 0 1
+0 	topology_switch 0 1
 }
 stat
 {
@@ -1559,7 +1316,7 @@ matchesdef = 1
 Content-Disposition: attachment; filename="hdaroot/ghost_stage.def"
 Content-Type: text/plain
 
-comment "anim_dive ghost: input stage minus the rigged characters"
+comment "anim_dive ghost: the shot stage at the start of its shot (IN_stage_start), minus the rigged characters. Not IN_stage: an animated shot stage rebuilt and re-synced the ghost every frame."
 position -4.48254 8.8685
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
@@ -1568,11 +1325,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	IN_stage 1 1 "input1"
+0 	IN_stage_start 1 1 "input1"
 }
 inputs
 {
-0 	IN_stage 0 1
+0 	IN_stage_start 0 1
 }
 stat
 {
@@ -1614,20 +1371,114 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops.init"
+Content-Disposition: attachment; filename="hdaroot/IN_stage_start.init"
+Content-Type: text/plain
+
+type = timeshift
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_stage_start.def"
+Content-Type: text/plain
+
+comment "The shot stage at the start of its shot, frozen there.
+zero_transforms and import_rig place read it: reading IN_stage
+itself in a cook makes th::animate time dependent."
+position 2.6 8.3
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on displaycomment on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	IN_stage 1 1 "input1"
+}
+inputs
+{
+0 	IN_stage 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author Tumblehead@TH2301
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_stage_start.chn"
+Content-Type: text/plain
+
+{
+    channel frame {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "__import__('tumblepipe.pipe.houdini.shot_start', fromlist=['start_frame']).start_frame(pwd())" language = python }
+    }
+    channel time {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $T }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_stage_start.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+inputtimegroup	[ 0	locks=0 ]	(	0	)
+cookinputattime	[ 0	locks=0 ]	(	"on"	)
+attribtimegroup	[ 0	locks=0 ]	(	0	)
+evalattribsattime	[ 0	locks=0 ]	(	"on"	)
+primpattern	[ 0	locks=0 ]	(	/**	)
+proppattern	[ 0	locks=0 ]	(	xformOp:*	)
+getattribdefault	[ 0	locks=0 ]	(	"off"	)
+setattribdefault	[ 0	locks=0 ]	(	"on"	)
+timegroup	[ 0	locks=0 ]	(	0	)
+method	[ 0	locks=0 ]	(	byframe	)
+frame	[ 0	locks=0 ]	(	[ frame	0 ] 	)
+integerframes	[ 0	locks=0 ]	(	"on"	)
+time	[ 0	locks=0 ]	(	[ time	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/IN_stage_start.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops.init"
 Content-Type: text/plain
 
 type = sopnet
 matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops.def"
+Content-Disposition: attachment; filename="hdaroot/points_sops.def"
 Content-Type: text/plain
 
 objflags objflags =  origin off
 pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
 comment ""
-position 8.74814 10.5145
+position 4.74814 10.5145
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
 outputsNamed3
@@ -1652,7 +1503,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops.parm"
+Content-Disposition: attachment; filename="hdaroot/points_sops.parm"
 Content-Type: text/plain
 
 {
@@ -1695,7 +1546,7 @@ showlopstage	[ 0	locks=0 ]	(	""	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops.userdata"
+Content-Disposition: attachment; filename="hdaroot/points_sops.userdata"
 Content-Type: text/plain
 
 {
@@ -1706,19 +1557,19 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/scene.init"
+Content-Disposition: attachment; filename="hdaroot/points_sops/scene.init"
 Content-Type: text/plain
 
 type = object_merge
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/scene.def"
+Content-Disposition: attachment; filename="hdaroot/points_sops/scene.def"
 Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 0 -5.55112e-17
+position 0 3.88578e-16
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -1744,7 +1595,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/scene.parm"
+Content-Disposition: attachment; filename="hdaroot/points_sops/scene.parm"
 Content-Type: text/plain
 
 {
@@ -1768,13 +1619,13 @@ pivot	[ 0	locks=0 ]	(	"centroid"	)
 viewportlod	[ 0	locks=0 ]	(	"full"	)
 addpath	[ 0	locks=0 ]	(	"on"	)
 enable1	[ 0	locks=0 ]	(	"on"	)
-objpath1	[ 0	locks=0 ]	(	../../anim_dive/output1	)
+objpath1	[ 0	locks=0 ]	(	../../anim_dive	)
 group1	[ 0	locks=0 ]	(	""	)
 expand1	[ 0	locks=0 ]	(	"off"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/scene.userdata"
+Content-Disposition: attachment; filename="hdaroot/points_sops/scene.userdata"
 Content-Type: text/plain
 
 {
@@ -1785,14 +1636,14 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/classify.init"
+Content-Disposition: attachment; filename="hdaroot/points_sops/at_start.init"
 Content-Type: text/plain
 
-type = python
+type = timeshift
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/classify.def"
+Content-Disposition: attachment; filename="hdaroot/points_sops/at_start.def"
 Content-Type: text/plain
 
 sopflags sopflags = 
@@ -1825,295 +1676,68 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/classify.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import animate_bake
-animate_bake.classify(hou.pwd())
-"	)
-maintainstate	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/classify.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/split_shapes.init"
-Content-Type: text/plain
-
-type = packedfoldersplit
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/split_shapes.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position -3.2476 4.3674
-connectornextid 3
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-1 "output1"
-2 "output2"
-}
-inputsNamed3
-{
-0 	classify 1 1 "input1"
-}
-inputs
-{
-0 	classify 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/split_shapes.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-pattern	[ 0	locks=0 ]	(	"`details(\"../classify\", \"th_bake_shapes\")`"	)
-unpack	[ 0	locks=0 ]	(	"off"	)
-extractonly	[ 0	locks=0 ]	(	"off"	)
-invertselection	[ 0	locks=0 ]	(	"off"	)
-addpathattrib	[ 0	locks=0 ]	(	"on"	)
-pathattrib	[ 0	locks=0 ]	(	__apexpath	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/split_shapes.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":""
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/SHAPES.init"
-Content-Type: text/plain
-
-type = null
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/SHAPES.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position -3.2476 3.2379
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	split_shapes 2 1 "input1"
-}
-inputs
-{
-0 	split_shapes 1 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.6 0.7 0.77 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/SHAPES.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-copyinput	[ 0	locks=0 ]	(	"on"	)
-cacheinput	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/SHAPES.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/SCENE_FILE.init"
-Content-Type: text/plain
-
-type = null
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/SCENE_FILE.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 0 -2.259
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-0 	classify 1 1 "input1"
-}
-inputs
-{
-0 	classify 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.6 0.7 0.77 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/SCENE_FILE.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-copyinput	[ 0	locks=0 ]	(	"on"	)
-cacheinput	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/SCENE_FILE.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/remainder.init"
-Content-Type: text/plain
-
-type = apex::sceneinvoke::2.0
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/remainder.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position -5.5068 0.3012
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	classify 1 1 "input1"
-}
-inputs
-{
-0 	classify 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/remainder.chn"
+Content-Disposition: attachment; filename="hdaroot/points_sops/at_start.chn"
 Content-Type: text/plain
 
 {
     channel frame {
       lefttype = extend
       righttype = extend
+      default = 1
       flags = 0
-      segment { length = 0 expr = $FF }
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../../IN_stage_start/frame\") }
+    }
+    channel time {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $T }
+    }
+    channel frange1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FSTART }
+    }
+    channel frange2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FEND }
+    }
+    channel trange1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $TSTART }
+    }
+    channel trange2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $TEND }
     }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/remainder.parm"
+Content-Disposition: attachment; filename="hdaroot/points_sops/at_start.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-outputmode	[ 0	locks=0 ]	(	"unpacked"	)
-addpathattrib	[ 0	locks=0 ]	(	"off"	)
-pathattrib	[ 0	locks=0 ]	(	path	)
-folder_animation	[ 0	locks=0 ]	(	1	)
-enableanimation	[ 0	locks=0 ]	(	"on"	)
-animationclip	[ 0	locks=0 ]	(	""	)
+method	[ 0	locks=0 ]	(	"byframe"	)
 frame	[ 0	locks=0 ]	(	[ frame	0 ] 	)
-folder_charactershapes	[ 0	locks=0 ]	(	1	)
-outputcharactershapes	[ 0	locks=0 ]	(	"on"	)
-characterpattern	[ 0	locks=0 ]	(	"`details(\"../classify\", \"th_bake_remainder\")`"	)
-shapepattern	[ 0	locks=0 ]	(	Base	)
-includeinvisiblechars	[ 0	locks=0 ]	(	"off"	)
-folder_extraoutputs	[ 0	locks=0 ]	(	0	)
-extraoutputs	[ 0	locks=0 ]	(	1	)
-enableoutput0	[ 0	locks=0 ]	(	"on"	)
-outputpath0	[ 0	locks=0 ]	(	""	)
-outputkey0	[ 0	locks=0 ]	(	""	)
+integerframe	[ 0	locks=0 ]	(	"on"	)
+time	[ 0	locks=0 ]	(	[ time	0 ] 	)
+rangeclamp	[ 0	locks=0 ]	(	"none"	)
+frange	[ 0	locks=0 ]	(	[ frange1	0 ] 	[ frange2	0 ] 	)
+trange	[ 0	locks=0 ]	(	[ trange1	0 ] 	[ trange2	0 ] 	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/remainder.userdata"
+Content-Disposition: attachment; filename="hdaroot/points_sops/at_start.userdata"
 Content-Type: text/plain
 
 {
@@ -2124,205 +1748,19 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/rest_attribs.init"
-Content-Type: text/plain
-
-type = blast
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/rest_attribs.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position -3.2476 -0.1506
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-0 "output1"
-}
-inputsNamed3
-{
-1 	REST_PARTS 1 1 "input1"
-}
-inputs
-{
-0 	REST_PARTS 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/rest_attribs.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-group	[ 0	locks=0 ]	(	""	)
-grouptype	[ 0	locks=0 ]	(	"guess"	)
-computenorms	[ 0	locks=0 ]	(	"off"	)
-negate	[ 0	locks=0 ]	(	"off"	)
-fillhole	[ 0	locks=0 ]	(	"off"	)
-removegrp	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/rest_attribs.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/remainder_attribs.init"
-Content-Type: text/plain
-
-type = merge
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/remainder_attribs.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position -4.3772 -1.1295
-connectornextid 3
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-2 "output1"
-}
-inputsNamed3
-{
-0 	remainder 1 1 "input1"
-1 	rest_attribs 0 1 "input2"
-}
-inputs
-{
-0 	remainder 0 1
-1 	rest_attribs 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/remainder_attribs.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/remainder_attribs.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REMAINDER.init"
-Content-Type: text/plain
-
-type = null
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REMAINDER.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position -4.3772 -2.259
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-0 	remainder_attribs 2 1 "input1"
-}
-inputs
-{
-0 	remainder_attribs 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.6 0.7 0.77 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REMAINDER.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-copyinput	[ 0	locks=0 ]	(	"on"	)
-cacheinput	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REMAINDER.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/unpack_shapes.init"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_folders.init"
 Content-Type: text/plain
 
 type = unpack
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/unpack_shapes.def"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_folders.def"
 Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position -3.2476 2.1084
+position 0 -2.259
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2331,11 +1769,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	SHAPES 1 1 "input1"
+0 	at_start 1 1 "input1"
 }
 inputs
 {
-0 	SHAPES 0 1
+0 	at_start 0 1
 }
 stat
 {
@@ -2350,7 +1788,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/unpack_shapes.parm"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_folders.parm"
 Content-Type: text/plain
 
 {
@@ -2359,7 +1797,7 @@ group	[ 0	locks=0 ]	(	""	)
 limit_iterations	[ 0	locks=0 ]	(	"on"	)
 iterations	[ 0	locks=0 ]	(	1	)
 detail_attributes	[ 0	locks=0 ]	(	"detail"	)
-transfer_attributes	[ 0	locks=0 ]	(	__apexpath	)
+transfer_attributes	[ 0	locks=0 ]	(	""	)
 transfer_groups	[ 0	locks=0 ]	(	""	)
 apply_style_sheets	[ 0	locks=0 ]	(	"off"	)
 scene_style_sheet	[ 0	locks=0 ]	(	""	)
@@ -2369,7 +1807,7 @@ convertpolysoup	[ 0	locks=0 ]	(	"off"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/unpack_shapes.userdata"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_folders.userdata"
 Content-Type: text/plain
 
 {
@@ -2380,19 +1818,19 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REST_PARTS.init"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_shapes.init"
 Content-Type: text/plain
 
-type = null
+type = unpack
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REST_PARTS.def"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_shapes.def"
 Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position -3.2476 0.9789
+position 0 -3.3885
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2401,72 +1839,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	unpack_shapes 1 1 "input1"
+0 	rest_folders 1 1 "input1"
 }
 inputs
 {
-0 	unpack_shapes 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.6 0.7 0.77 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REST_PARTS.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-copyinput	[ 0	locks=0 ]	(	"on"	)
-cacheinput	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REST_PARTS.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/proxy_path.init"
-Content-Type: text/plain
-
-type = attribwrangle
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/proxy_path.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 3.2476 -1.1295
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	REST_PARTS 1 1 "input1"
-}
-inputs
-{
-0 	REST_PARTS 0 1
+0 	rest_folders 0 1
 }
 stat
 {
@@ -2481,100 +1858,26 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/proxy_path.parm"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_shapes.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-folder0	[ 0	locks=0 ]	(	0	0	)
 group	[ 0	locks=0 ]	(	""	)
-grouptype	[ 0	locks=0 ]	(	"guess"	)
-class	[ 0	locks=0 ]	(	"primitive"	)
-vex_numcount	[ 0	locks=0 ]	(	10	)
-vex_threadjobsize	[ 0	locks=0 ]	(	1024	)
-snippet	[ 0	locks=0 ]	(	"// One proxy mesh per character, under its asset prim:
-// an APEX shape binds to exactly one USD mesh.
-string bits[] = split(s@path, \"/\");
-s@path = \"/\" + bits[0] + \"/\" + bits[1] + \"/__th_bake_proxy\";
-"	)
-exportlist	[ 0	locks=0 ]	(	*	)
-vex_strict	[ 0	locks=0 ]	(	"off"	)
-vex_strictvariables	[ 0	locks=0 ]	(	"on"	)
-autobind	[ 0	locks=0 ]	(	"on"	)
-bindings	[ 0	locks=0 ]	(	0	)
-groupautobind	[ 0	locks=0 ]	(	"on"	)
-groupbindings	[ 0	locks=0 ]	(	0	)
-vex_cwdpath	[ 0	locks=0 ]	(	.	)
-vex_outputmask	[ 0	locks=0 ]	(	*	)
-vex_updatenmls	[ 0	locks=0 ]	(	"off"	)
-vex_matchattrib	[ 0	locks=0 ]	(	id	)
-vex_inplace	[ 0	locks=0 ]	(	"off"	)
-vex_selectiongroup	[ 0	locks=0 ]	(	""	)
-vex_precision	[ 0	locks=0 ]	(	auto	)
+limit_iterations	[ 0	locks=0 ]	(	"on"	)
+iterations	[ 0	locks=0 ]	(	1	)
+detail_attributes	[ 0	locks=0 ]	(	"detail"	)
+transfer_attributes	[ 0	locks=0 ]	(	""	)
+transfer_groups	[ 0	locks=0 ]	(	""	)
+apply_style_sheets	[ 0	locks=0 ]	(	"off"	)
+scene_style_sheet	[ 0	locks=0 ]	(	""	)
+obj_style_sheet	[ 0	locks=0 ]	(	""	)
+dotransform	[ 0	locks=0 ]	(	"on"	)
+convertpolysoup	[ 0	locks=0 ]	(	"off"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/proxy_path.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":""
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/PROXY.init"
-Content-Type: text/plain
-
-type = null
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/PROXY.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 3.2476 -2.259
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-0 	proxy_path 1 1 "input1"
-}
-inputs
-{
-0 	proxy_path 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.6 0.7 0.77 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/PROXY.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-copyinput	[ 0	locks=0 ]	(	"on"	)
-cacheinput	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/PROXY.userdata"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_shapes.userdata"
 Content-Type: text/plain
 
 {
@@ -2585,19 +1888,19 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/point_parts.init"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_config.init"
 Content-Type: text/plain
 
 type = attribwrangle
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/point_parts.def"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_config.def"
 Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 6.4952 -1.1295
+position 0 -4.518
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2606,11 +1909,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	REST_PARTS 1 1 "input1"
+0 	rest_shapes 1 1 "input1"
 }
 inputs
 {
-0 	REST_PARTS 0 1
+0 	rest_shapes 0 1
 }
 stat
 {
@@ -2625,161 +1928,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/point_parts.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-folder0	[ 0	locks=0 ]	(	0	0	)
-group	[ 0	locks=0 ]	(	""	)
-grouptype	[ 0	locks=0 ]	(	"guess"	)
-class	[ 0	locks=0 ]	(	"point"	)
-vex_numcount	[ 0	locks=0 ]	(	10	)
-vex_threadjobsize	[ 0	locks=0 ]	(	1024	)
-snippet	[ 0	locks=0 ]	(	"// Each point's part and character, as the number of the first prim with
-// its path and __apexpath (animate_bake.point_map), and whether parts
-// share it, which Fast mode cannot bake.
-int prims[] = pointprims(0, @ptnum);
-i@__th_part = -1;
-i@__th_proxy = -1;
-i@__th_shared = 0;
-if (len(prims) > 0) {
-    string part = prim(0, \"path\", prims[0]);
-    string character = prim(0, \"__apexpath\", prims[0]);
-    i@__th_part = findattribval(0, \"prim\", \"path\", part);
-    i@__th_proxy = findattribval(0, \"prim\", \"__apexpath\", character);
-    foreach (int pr; prims) if (prim(0, \"path\", pr) != part) i@__th_shared = 1;
-}
-"	)
-exportlist	[ 0	locks=0 ]	(	*	)
-vex_strict	[ 0	locks=0 ]	(	"off"	)
-vex_strictvariables	[ 0	locks=0 ]	(	"on"	)
-autobind	[ 0	locks=0 ]	(	"on"	)
-bindings	[ 0	locks=0 ]	(	0	)
-groupautobind	[ 0	locks=0 ]	(	"on"	)
-groupbindings	[ 0	locks=0 ]	(	0	)
-vex_cwdpath	[ 0	locks=0 ]	(	.	)
-vex_outputmask	[ 0	locks=0 ]	(	*	)
-vex_updatenmls	[ 0	locks=0 ]	(	"off"	)
-vex_matchattrib	[ 0	locks=0 ]	(	id	)
-vex_inplace	[ 0	locks=0 ]	(	"off"	)
-vex_selectiongroup	[ 0	locks=0 ]	(	""	)
-vex_precision	[ 0	locks=0 ]	(	auto	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/point_parts.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":""
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/POINT_PARTS.init"
-Content-Type: text/plain
-
-type = null
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/POINT_PARTS.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 6.4952 -2.259
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-0 	point_parts 1 1 "input1"
-}
-inputs
-{
-0 	point_parts 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.6 0.7 0.77 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/POINT_PARTS.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-copyinput	[ 0	locks=0 ]	(	"on"	)
-cacheinput	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/POINT_PARTS.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/rest_config.init"
-Content-Type: text/plain
-
-type = attribwrangle
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/rest_config.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 9.7428 -1.1295
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	REST_PARTS 1 1 "input1"
-}
-inputs
-{
-0 	REST_PARTS 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/rest_config.parm"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_config.parm"
 Content-Type: text/plain
 
 {
@@ -2791,9 +1940,9 @@ class	[ 0	locks=0 ]	(	"detail"	)
 vex_numcount	[ 0	locks=0 ]	(	10	)
 vex_threadjobsize	[ 0	locks=0 ]	(	1024	)
 snippet	[ 0	locks=0 ]	(	"// The SOP Import reads usdconfig* detail attributes (which groups become
-// GeomSubsets, ...). Classic mode merges the rigs' output, where each
-// keeps the first character's value. Unpack promoted them to prims, as
-// they differ between characters: put them back the same way.
+// GeomSubsets, ...). A Scene Invoke that unpacks merges the rigs, where
+// each keeps the first character's value; Unpack promotes them to prims
+// when they differ. Put them back the way the Scene Invoke has them.
 string names[] = detailintrinsic(0, \"primitiveattributes\");
 foreach (string name; names) {
     if (!startswith(name, \"usdconfig\")) continue;
@@ -2823,7 +1972,7 @@ vex_precision	[ 0	locks=0 ]	(	auto	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/rest_config.userdata"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_config.userdata"
 Content-Type: text/plain
 
 {
@@ -2834,23 +1983,24 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REST_IMPORT.init"
+Content-Disposition: attachment; filename="hdaroot/points_sops/stamp.init"
 Content-Type: text/plain
 
-type = null
+type = attribwrangle
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REST_IMPORT.def"
+Content-Disposition: attachment; filename="hdaroot/points_sops/stamp.def"
 Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 9.7428 -2.259
-connectornextid 1
+position 0 -5.6475
+connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
 {
+1 "output1"
 }
 inputsNamed3
 {
@@ -2867,13 +2017,97 @@ stat
   author tumblehead@judas-3070
   access 0777
 }
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/stamp.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder0	[ 0	locks=0 ]	(	0	0	)
+group	[ 0	locks=0 ]	(	""	)
+grouptype	[ 0	locks=0 ]	(	"guess"	)
+class	[ 0	locks=0 ]	(	"point"	)
+vex_numcount	[ 0	locks=0 ]	(	10	)
+vex_threadjobsize	[ 0	locks=0 ]	(	1024	)
+snippet	[ 0	locks=0 ]	(	"// Each point's number in the dive's (unpacked) geometry: the static
+// import carries it to the stage, so animate_points.apply reads the
+// SOP Import's own point order back instead of guessing it.
+i@__th_pt = @ptnum;
+if (@ptnum == 0) setdetailattrib(0, \"__th_count\", @numpt);
+"	)
+exportlist	[ 0	locks=0 ]	(	*	)
+vex_strict	[ 0	locks=0 ]	(	"off"	)
+vex_strictvariables	[ 0	locks=0 ]	(	"on"	)
+autobind	[ 0	locks=0 ]	(	"on"	)
+bindings	[ 0	locks=0 ]	(	0	)
+groupautobind	[ 0	locks=0 ]	(	"on"	)
+groupbindings	[ 0	locks=0 ]	(	0	)
+vex_cwdpath	[ 0	locks=0 ]	(	.	)
+vex_outputmask	[ 0	locks=0 ]	(	*	)
+vex_updatenmls	[ 0	locks=0 ]	(	"off"	)
+vex_matchattrib	[ 0	locks=0 ]	(	id	)
+vex_inplace	[ 0	locks=0 ]	(	"off"	)
+vex_selectiongroup	[ 0	locks=0 ]	(	""	)
+vex_precision	[ 0	locks=0 ]	(	auto	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/stamp.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_build.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_build.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 0 -6.777
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	stamp 1 1 "input1"
+}
+inputs
+{
+0 	stamp 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
 color UT_Color RGB 0.6 0.7 0.77 
 delscript ""
 exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REST_IMPORT.parm"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_build.parm"
 Content-Type: text/plain
 
 {
@@ -2883,7 +2117,7 @@ cacheinput	[ 0	locks=0 ]	(	"off"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops/REST_IMPORT.userdata"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_build.userdata"
 Content-Type: text/plain
 
 {
@@ -2894,47 +2128,1085 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops.order"
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_gate.init"
 Content-Type: text/plain
 
-17
+type = python
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_gate.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 9.3192 -2.4096
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	at_start 1 1 "input1"
+}
+inputs
+{
+0 	at_start 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_gate.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import animate_points
+animate_points.rest_gate(hou.pwd())
+"	)
+maintainstate	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_gate.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/REST.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/REST.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 9.3192 -3.5391
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	rest_gate 1 1 "input1"
+}
+inputs
+{
+0 	rest_gate 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/REST.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/REST.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/CURRENT.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/CURRENT.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 3.2476 -6.777
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	current_config 1 1 "input1"
+}
+inputs
+{
+0 	current_config 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/CURRENT.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/CURRENT.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_folders.init"
+Content-Type: text/plain
+
+type = unpack
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_folders.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 3.2476 -3.3885
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	scene 0 1 "input1"
+}
+inputs
+{
+0 	scene 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_folders.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+limit_iterations	[ 0	locks=0 ]	(	"on"	)
+iterations	[ 0	locks=0 ]	(	1	)
+detail_attributes	[ 0	locks=0 ]	(	"detail"	)
+transfer_attributes	[ 0	locks=0 ]	(	""	)
+transfer_groups	[ 0	locks=0 ]	(	""	)
+apply_style_sheets	[ 0	locks=0 ]	(	"off"	)
+scene_style_sheet	[ 0	locks=0 ]	(	""	)
+obj_style_sheet	[ 0	locks=0 ]	(	""	)
+dotransform	[ 0	locks=0 ]	(	"on"	)
+convertpolysoup	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_folders.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_shapes.init"
+Content-Type: text/plain
+
+type = unpack
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_shapes.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 3.2476 -4.518
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	current_folders 1 1 "input1"
+}
+inputs
+{
+0 	current_folders 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_shapes.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+limit_iterations	[ 0	locks=0 ]	(	"on"	)
+iterations	[ 0	locks=0 ]	(	1	)
+detail_attributes	[ 0	locks=0 ]	(	"detail"	)
+transfer_attributes	[ 0	locks=0 ]	(	""	)
+transfer_groups	[ 0	locks=0 ]	(	""	)
+apply_style_sheets	[ 0	locks=0 ]	(	"off"	)
+scene_style_sheet	[ 0	locks=0 ]	(	""	)
+obj_style_sheet	[ 0	locks=0 ]	(	""	)
+dotransform	[ 0	locks=0 ]	(	"on"	)
+convertpolysoup	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_shapes.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_config.init"
+Content-Type: text/plain
+
+type = attribwrangle
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_config.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 3.2476 -5.6475
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	current_shapes 1 1 "input1"
+}
+inputs
+{
+0 	current_shapes 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_config.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder0	[ 0	locks=0 ]	(	0	0	)
+group	[ 0	locks=0 ]	(	""	)
+grouptype	[ 0	locks=0 ]	(	"guess"	)
+class	[ 0	locks=0 ]	(	"detail"	)
+vex_numcount	[ 0	locks=0 ]	(	10	)
+vex_threadjobsize	[ 0	locks=0 ]	(	1024	)
+snippet	[ 0	locks=0 ]	(	"// The SOP Import reads usdconfig* detail attributes (which groups become
+// GeomSubsets, ...). A Scene Invoke that unpacks merges the rigs, where
+// each keeps the first character's value; Unpack promotes them to prims
+// when they differ. Put them back the way the Scene Invoke has them.
+string names[] = detailintrinsic(0, \"primitiveattributes\");
+foreach (string name; names) {
+    if (!startswith(name, \"usdconfig\")) continue;
+    for (int pr = 0; pr < nprimitives(0); pr++) {
+        string value = prim(0, name, pr);
+        if (value == \"\") continue;
+        setdetailattrib(0, name, value);
+        break;
+    }
+    removeprimattrib(0, name);
+}
+"	)
+exportlist	[ 0	locks=0 ]	(	*	)
+vex_strict	[ 0	locks=0 ]	(	"off"	)
+vex_strictvariables	[ 0	locks=0 ]	(	"on"	)
+autobind	[ 0	locks=0 ]	(	"on"	)
+bindings	[ 0	locks=0 ]	(	0	)
+groupautobind	[ 0	locks=0 ]	(	"on"	)
+groupbindings	[ 0	locks=0 ]	(	0	)
+vex_cwdpath	[ 0	locks=0 ]	(	.	)
+vex_outputmask	[ 0	locks=0 ]	(	*	)
+vex_updatenmls	[ 0	locks=0 ]	(	"off"	)
+vex_matchattrib	[ 0	locks=0 ]	(	id	)
+vex_inplace	[ 0	locks=0 ]	(	"off"	)
+vex_selectiongroup	[ 0	locks=0 ]	(	""	)
+vex_precision	[ 0	locks=0 ]	(	auto	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_config.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/no_points_unpacked.init"
+Content-Type: text/plain
+
+type = blast
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/no_points_unpacked.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 6.4952 1.4307
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	scene 0 1 "input1"
+}
+inputs
+{
+0 	scene 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/no_points_unpacked.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	"@intrinsic:typename=Poly @intrinsic:typename=PolySoup @intrinsic:typename=Mesh @intrinsic:typename=NURBCurve @intrinsic:typename=BezierCurve @intrinsic:typename=Part"	)
+grouptype	[ 0	locks=0 ]	(	"prims"	)
+computenorms	[ 0	locks=0 ]	(	"off"	)
+negate	[ 0	locks=0 ]	(	"off"	)
+fillhole	[ 0	locks=0 ]	(	"off"	)
+removegrp	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/no_points_unpacked.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_shapes.init"
+Content-Type: text/plain
+
+type = python
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_shapes.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 6.4952 0.3012
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	no_points_unpacked 1 1 "input1"
+}
+inputs
+{
+0 	no_points_unpacked 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_shapes.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import animate_points
+animate_points.remainder_shapes(hou.pwd())
+"	)
+maintainstate	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_shapes.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_folders.init"
+Content-Type: text/plain
+
+type = unpack
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_folders.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 6.4952 -0.8283
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	remainder_shapes 1 1 "input1"
+}
+inputs
+{
+0 	remainder_shapes 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_folders.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+limit_iterations	[ 0	locks=0 ]	(	"on"	)
+iterations	[ 0	locks=0 ]	(	1	)
+detail_attributes	[ 0	locks=0 ]	(	"detail"	)
+transfer_attributes	[ 0	locks=0 ]	(	""	)
+transfer_groups	[ 0	locks=0 ]	(	""	)
+apply_style_sheets	[ 0	locks=0 ]	(	"off"	)
+scene_style_sheet	[ 0	locks=0 ]	(	""	)
+obj_style_sheet	[ 0	locks=0 ]	(	""	)
+dotransform	[ 0	locks=0 ]	(	"on"	)
+convertpolysoup	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_folders.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_shapes1.init"
+Content-Type: text/plain
+
+type = unpack
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_shapes1.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 6.4952 -1.9578
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	remainder_folders 1 1 "input1"
+}
+inputs
+{
+0 	remainder_folders 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_shapes1.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+limit_iterations	[ 0	locks=0 ]	(	"on"	)
+iterations	[ 0	locks=0 ]	(	1	)
+detail_attributes	[ 0	locks=0 ]	(	"detail"	)
+transfer_attributes	[ 0	locks=0 ]	(	""	)
+transfer_groups	[ 0	locks=0 ]	(	""	)
+apply_style_sheets	[ 0	locks=0 ]	(	"off"	)
+scene_style_sheet	[ 0	locks=0 ]	(	""	)
+obj_style_sheet	[ 0	locks=0 ]	(	""	)
+dotransform	[ 0	locks=0 ]	(	"on"	)
+convertpolysoup	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_shapes1.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_config.init"
+Content-Type: text/plain
+
+type = attribwrangle
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_config.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 6.4952 -3.0873
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	remainder_shapes1 1 1 "input1"
+}
+inputs
+{
+0 	remainder_shapes1 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_config.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+folder0	[ 0	locks=0 ]	(	0	0	)
+group	[ 0	locks=0 ]	(	""	)
+grouptype	[ 0	locks=0 ]	(	"guess"	)
+class	[ 0	locks=0 ]	(	"detail"	)
+vex_numcount	[ 0	locks=0 ]	(	10	)
+vex_threadjobsize	[ 0	locks=0 ]	(	1024	)
+snippet	[ 0	locks=0 ]	(	"// The SOP Import reads usdconfig* detail attributes (which groups become
+// GeomSubsets, ...). A Scene Invoke that unpacks merges the rigs, where
+// each keeps the first character's value; Unpack promotes them to prims
+// when they differ. Put them back the way the Scene Invoke has them.
+string names[] = detailintrinsic(0, \"primitiveattributes\");
+foreach (string name; names) {
+    if (!startswith(name, \"usdconfig\")) continue;
+    for (int pr = 0; pr < nprimitives(0); pr++) {
+        string value = prim(0, name, pr);
+        if (value == \"\") continue;
+        setdetailattrib(0, name, value);
+        break;
+    }
+    removeprimattrib(0, name);
+}
+"	)
+exportlist	[ 0	locks=0 ]	(	*	)
+vex_strict	[ 0	locks=0 ]	(	"off"	)
+vex_strictvariables	[ 0	locks=0 ]	(	"on"	)
+autobind	[ 0	locks=0 ]	(	"on"	)
+bindings	[ 0	locks=0 ]	(	0	)
+groupautobind	[ 0	locks=0 ]	(	"on"	)
+groupbindings	[ 0	locks=0 ]	(	0	)
+vex_cwdpath	[ 0	locks=0 ]	(	.	)
+vex_outputmask	[ 0	locks=0 ]	(	*	)
+vex_updatenmls	[ 0	locks=0 ]	(	"off"	)
+vex_matchattrib	[ 0	locks=0 ]	(	id	)
+vex_inplace	[ 0	locks=0 ]	(	"off"	)
+vex_selectiongroup	[ 0	locks=0 ]	(	""	)
+vex_precision	[ 0	locks=0 ]	(	auto	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_config.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/no_points.init"
+Content-Type: text/plain
+
+type = blast
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/no_points.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 6.4952 -4.2168
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	remainder_config 1 1 "input1"
+}
+inputs
+{
+0 	remainder_config 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/no_points.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	"@intrinsic:typename=Poly @intrinsic:typename=PolySoup @intrinsic:typename=Mesh @intrinsic:typename=NURBCurve @intrinsic:typename=BezierCurve @intrinsic:typename=Part"	)
+grouptype	[ 0	locks=0 ]	(	"prims"	)
+computenorms	[ 0	locks=0 ]	(	"off"	)
+negate	[ 0	locks=0 ]	(	"off"	)
+fillhole	[ 0	locks=0 ]	(	"off"	)
+removegrp	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/no_points.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_attribs.init"
+Content-Type: text/plain
+
+type = blast
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_attribs.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 9.3192 -4.6686
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	REST 1 1 "input1"
+}
+inputs
+{
+0 	REST 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_attribs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+group	[ 0	locks=0 ]	(	""	)
+grouptype	[ 0	locks=0 ]	(	"guess"	)
+computenorms	[ 0	locks=0 ]	(	"off"	)
+negate	[ 0	locks=0 ]	(	"off"	)
+fillhole	[ 0	locks=0 ]	(	"off"	)
+removegrp	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/rest_attribs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_attribs.init"
+Content-Type: text/plain
+
+type = merge
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_attribs.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 7.9072 -5.6475
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	no_points 1 1 "input1"
+1 	rest_attribs 1 1 "input2"
+}
+inputs
+{
+0 	no_points 0 1
+1 	rest_attribs 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_attribs.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/remainder_attribs.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/REMAINDER.init"
+Content-Type: text/plain
+
+type = null
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/REMAINDER.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 7.9072 -6.777
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	remainder_attribs 2 1 "input1"
+}
+inputs
+{
+0 	remainder_attribs 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.6 0.7 0.77 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/REMAINDER.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+copyinput	[ 0	locks=0 ]	(	"on"	)
+cacheinput	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/REMAINDER.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops.order"
+Content-Type: text/plain
+
+22
 scene
-classify
-split_shapes
-SHAPES
-SCENE_FILE
-remainder
+at_start
+rest_folders
+rest_shapes
+rest_config
+stamp
+rest_build
+rest_gate
+REST
+CURRENT
+current_folders
+current_shapes
+current_config
+no_points_unpacked
+remainder_shapes
+remainder_folders
+remainder_shapes1
+remainder_config
+no_points
 rest_attribs
 remainder_attribs
 REMAINDER
-unpack_shapes
-REST_PARTS
-proxy_path
-PROXY
-point_parts
-POINT_PARTS
-rest_config
-REST_IMPORT
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/apex_sops.net"
+Content-Disposition: attachment; filename="hdaroot/points_sops.net"
 Content-Type: text/plain
 
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_rest.init"
+Content-Disposition: attachment; filename="hdaroot/static_import.init"
 Content-Type: text/plain
 
 type = sopimport
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_rest.def"
+Content-Disposition: attachment; filename="hdaroot/static_import.def"
 Content-Type: text/plain
 
 comment ""
-position 3.74814 9.51455
+position 0.74814 9.51455
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -2960,12 +3232,12 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_rest.parm"
+Content-Disposition: attachment; filename="hdaroot/static_import.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-soppath	[ 0	locks=0 ]	(	"`ifs(nprims(\"../apex_sops/REST_IMPORT\") > 0, \"../apex_sops/REST_IMPORT\", \"\")`"	)
+soppath	[ 0	locks=0 ]	(	"`ifs(nprims(\"../points_sops/REST\") > 0, \"../points_sops/REST\", \"\")`"	)
 asreference	[ 0	locks=0 ]	(	"off"	)
 copycontents	[ 0	locks=0 ]	(	"on"	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
@@ -2979,8 +3251,8 @@ instanceable	[ 0	locks=0 ]	(	"off"	)
 parentprimkind	[ 0	locks=0 ]	(	group	)
 parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
 separator_config	[ 0	locks=0 ]	(	)
-enable_group	[ 0	locks=0 ]	(	"off"	)
-group	[ 0	locks=0 ]	(	""	)
+enable_group	[ 0	locks=0 ]	(	"on"	)
+group	[ 0	locks=0 ]	(	"@intrinsic:typename=Poly @intrinsic:typename=PolySoup @intrinsic:typename=Mesh @intrinsic:typename=NURBCurve @intrinsic:typename=BezierCurve @intrinsic:typename=Part"	)
 enable_grouptype	[ 0	locks=0 ]	(	"off"	)
 grouptype	[ 0	locks=0 ]	(	primitive	)
 enable_pathprefix	[ 0	locks=0 ]	(	"off"	)
@@ -3029,7 +3301,7 @@ setdefaultprim	[ 0	locks=0 ]	(	"on"	)
 enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
 topologyhandling	[ 0	locks=0 ]	(	static	)
 enable_attribs	[ 0	locks=0 ]	(	"on"	)
-attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform"	)
+attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform __th_pt"	)
 enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
 indexattribs	[ 0	locks=0 ]	(	""	)
 enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
@@ -3061,7 +3333,7 @@ translateuvtost	[ 0	locks=0 ]	(	"on"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_rest.userdata"
+Content-Disposition: attachment; filename="hdaroot/static_import.userdata"
 Content-Type: text/plain
 
 {
@@ -3072,167 +3344,18 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_proxy.init"
-Content-Type: text/plain
-
-type = sopimport
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_proxy.def"
-Content-Type: text/plain
-
-comment ""
-position 6.74814 9.51455
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-0 "output1"
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_proxy.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-soppath	[ 0	locks=0 ]	(	../apex_sops/PROXY	)
-asreference	[ 0	locks=0 ]	(	"off"	)
-copycontents	[ 0	locks=0 ]	(	"merge"	)
-ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
-adjustxformsforinput	[ 0	locks=0 ]	(	"on"	)
-bindmaterials	[ 0	locks=0 ]	(	nobind	)
-reftype	[ 0	locks=0 ]	(	payloadweak	)
-refprim	[ 0	locks=0 ]	(	automaticPrim	)
-refprimpath	[ 0	locks=0 ]	(	""	)
-primpath	[ 0	locks=0 ]	(	/$OS	)
-instanceable	[ 0	locks=0 ]	(	"off"	)
-parentprimkind	[ 0	locks=0 ]	(	group	)
-parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
-separator_config	[ 0	locks=0 ]	(	)
-enable_group	[ 0	locks=0 ]	(	"off"	)
-group	[ 0	locks=0 ]	(	""	)
-enable_grouptype	[ 0	locks=0 ]	(	"off"	)
-grouptype	[ 0	locks=0 ]	(	primitive	)
-enable_pathprefix	[ 0	locks=0 ]	(	"on"	)
-pathprefix	[ 0	locks=0 ]	(	/$OS	)
-enable_savepath	[ 0	locks=0 ]	(	"off"	)
-savepath	[ 0	locks=0 ]	(	""	)
-separator_extraconfig	[ 0	locks=0 ]	(	)
-primitivedefinitiongroup	[ 0	locks=0 ]	(	0	)
-enable_packedusdhandling	[ 0	locks=0 ]	(	"off"	)
-packedusdhandling	[ 0	locks=0 ]	(	xformandattribs	)
-enable_otherprimhandling	[ 0	locks=0 ]	(	"off"	)
-otherprimhandling	[ 0	locks=0 ]	(	define	)
-enable_defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
-defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
-enable_packedhandling	[ 0	locks=0 ]	(	"off"	)
-packedhandling	[ 0	locks=0 ]	(	nativeinstances	)
-enable_agenthandling	[ 0	locks=0 ]	(	"off"	)
-agenthandling	[ 0	locks=0 ]	(	instancedskelroots	)
-enable_nurbscurvehandling	[ 0	locks=0 ]	(	"off"	)
-nurbscurvehandling	[ 0	locks=0 ]	(	basiscurves	)
-enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
-nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
-enable_kindschema	[ 0	locks=0 ]	(	"off"	)
-kindschema	[ 0	locks=0 ]	(	component	)
-enable_pathattr	[ 0	locks=0 ]	(	"on"	)
-pathattr	[ 0	locks=0 ]	(	path	)
-enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
-prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
-enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
-heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
-enable_usexformcommonapi	[ 0	locks=0 ]	(	"off"	)
-usexformcommonapi	[ 0	locks=0 ]	(	"on"	)
-geometryhandlinggroup	[ 0	locks=0 ]	(	0	)
-enable_polygonsassubd	[ 0	locks=0 ]	(	"off"	)
-polygonsassubd	[ 0	locks=0 ]	(	"off"	)
-enable_subdgroup	[ 0	locks=0 ]	(	"off"	)
-subdgroup	[ 0	locks=0 ]	(	""	)
-enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
-reversepolygons	[ 0	locks=0 ]	(	"off"	)
-enable_setmissingwidths	[ 0	locks=0 ]	(	"on"	)
-setmissingwidths	[ 0	locks=0 ]	(	0.01	)
-importdatagroup	[ 0	locks=0 ]	(	0	)
-authortimesamples	[ 0	locks=0 ]	(	auto	)
-enable_setdefaultprim	[ 0	locks=0 ]	(	"off"	)
-setdefaultprim	[ 0	locks=0 ]	(	"on"	)
-enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
-topologyhandling	[ 0	locks=0 ]	(	static	)
-enable_attribs	[ 0	locks=0 ]	(	"off"	)
-attribs	[ 0	locks=0 ]	(	"* ^__* ^usd*"	)
-enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
-indexattribs	[ 0	locks=0 ]	(	type:string	)
-enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
-constantattribs	[ 0	locks=0 ]	(	""	)
-enable_scalarconstantattribs	[ 0	locks=0 ]	(	"off"	)
-scalarconstantattribs	[ 0	locks=0 ]	(	""	)
-enable_boolattribs	[ 0	locks=0 ]	(	"off"	)
-boolattribs	[ 0	locks=0 ]	(	""	)
-enable_uintattribs	[ 0	locks=0 ]	(	"off"	)
-uintattribs	[ 0	locks=0 ]	(	""	)
-enable_uint64attribs	[ 0	locks=0 ]	(	"off"	)
-uint64attribs	[ 0	locks=0 ]	(	""	)
-enable_assetpathattribs	[ 0	locks=0 ]	(	"off"	)
-assetpathattribs	[ 0	locks=0 ]	(	""	)
-enable_staticattribs	[ 0	locks=0 ]	(	"off"	)
-staticattribs	[ 0	locks=0 ]	(	""	)
-enable_partitionattribs	[ 0	locks=0 ]	(	"off"	)
-partitionattribs	[ 0	locks=0 ]	(	""	)
-enable_prefixpartitionsubsets	[ 0	locks=0 ]	(	"off"	)
-prefixpartitionsubsets	[ 0	locks=0 ]	(	"on"	)
-enable_subsetgroups	[ 0	locks=0 ]	(	"off"	)
-subsetgroups	[ 0	locks=0 ]	(	""	)
-enable_customattribs	[ 0	locks=0 ]	(	"off"	)
-customattribs	[ 0	locks=0 ]	(	""	)
-enable_captureweighthandling	[ 0	locks=0 ]	(	"off"	)
-captureweighthandling	[ 0	locks=0 ]	(	usdskel	)
-enable_translateuvtost	[ 0	locks=0 ]	(	"on"	)
-translateuvtost	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_proxy.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_configure.init"
+Content-Disposition: attachment; filename="hdaroot/apply.init"
 Content-Type: text/plain
 
 type = pythonscript
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_configure.def"
+Content-Disposition: attachment; filename="hdaroot/apply.def"
 Content-Type: text/plain
 
 comment ""
-position 6.74814 8.51455
+position 0.74814 8.51455
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -3241,11 +3364,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	fast_proxy 0 1 "input1"
+0 	static_import 0 1 "input1"
 }
 inputs
 {
-0 	fast_proxy 0 1
+0 	static_import 0 1
 }
 stat
 {
@@ -3260,19 +3383,19 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_configure.parm"
+Content-Disposition: attachment; filename="hdaroot/apply.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import animate_bake
-animate_bake.configure(hou.pwd())
+python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import animate_points
+animate_points.apply(hou.pwd())
 "	)
 maintainstate	[ 0	locks=0 ]	(	"off"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_configure.userdata"
+Content-Disposition: attachment; filename="hdaroot/apply.userdata"
 Content-Type: text/plain
 
 {
@@ -3283,204 +3406,18 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_bake.init"
-Content-Type: text/plain
-
-type = bakeapexscene
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_bake.def"
-Content-Type: text/plain
-
-comment ""
-position 6.74814 7.51455
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-}
-inputsNamed3
-{
-0 	fast_configure 1 1 "input1"
-}
-inputs
-{
-0 	fast_configure 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_bake.chn"
-Content-Type: text/plain
-
-{
-    channel sample_f1 {
-      lefttype = extend
-      righttype = extend
-      default = 1
-      flags = 0
-      segment { length = 0 value = 1 1 expr = @fstart }
-    }
-    channel sample_f2 {
-      lefttype = extend
-      righttype = extend
-      default = 240
-      flags = 0
-      segment { length = 0 value = 240 240 expr = @fend }
-    }
-    channel sample_f3 {
-      lefttype = extend
-      righttype = extend
-      default = 1
-      flags = 0
-      segment { length = 0 value = 1 1 expr = @finc }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_bake.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-sample_group	[ 0	locks=0 ]	(	0	)
-sample_behavior	[ 0	locks=0 ]	(	single	)
-sample_f	[ 0	locks=0 ]	(	[ sample_f1	1 ] 	[ sample_f2	240 ] 	[ sample_f3	1 ] 	)
-sample_subframeenable	[ 0	locks=0 ]	(	"off"	)
-sample_subframegroup	[ 0	locks=0 ]	(	0	)
-sample_shuttermode	[ 0	locks=0 ]	(	manual	)
-sample_shutterrange	[ 0	locks=0 ]	(	-0.25	0.25	)
-sample_cameraprim	[ 0	locks=0 ]	(	/cameras/camera1	)
-sample_count	[ 0	locks=0 ]	(	2	)
-sample_includeframe	[ 0	locks=0 ]	(	"on"	)
-primpattern	[ 0	locks=0 ]	(	%type:HoudiniApexScene	)
-usexformcommonapi	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_bake.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_apply.init"
-Content-Type: text/plain
-
-type = pythonscript
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_apply.def"
-Content-Type: text/plain
-
-comment ""
-position 3.74814 7.51455
-connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
-outputsNamed3
-{
-1 "output1"
-}
-inputsNamed3
-{
-0 	fast_rest 0 1 "input1"
-}
-inputs
-{
-0 	fast_rest 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author tumblehead@judas-3070
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_apply.spareparmdef"
-Content-Type: text/plain
-
-    parm {
-        name    "python"
-        baseparm
-        label   "Python Code"
-        export  none
-    }
-    parm {
-        name    "maintainstate"
-        baseparm
-        label   "Maintain State"
-        export  none
-    }
-    parm {
-        name    "spare_input0"
-        label   "Spare Input 0"
-        type    oppath
-        default { "" }
-        parmtag { "cook_dependent" "1" }
-        parmtag { "opfilter" "!!LOP!!" }
-        parmtag { "oprelative" "." }
-    }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_apply.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import animate_bake
-animate_bake.apply(hou.pwd())
-"	)
-maintainstate	[ 0	locks=0 ]	(	"off"	)
-spare_input0	[ 0	locks=0 ]	(	../fast_bake	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_apply.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_remainder.init"
+Content-Disposition: attachment; filename="hdaroot/remainder_import.init"
 Content-Type: text/plain
 
 type = sopimport
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_remainder.def"
+Content-Disposition: attachment; filename="hdaroot/remainder_import.def"
 Content-Type: text/plain
 
 comment ""
-position 3.74814 6.51455
+position 0.74814 7.51455
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -3489,11 +3426,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	fast_apply 1 1 "input1"
+0 	apply 1 1 "input1"
 }
 inputs
 {
-0 	fast_apply 0 1
+0 	apply 0 1
 }
 stat
 {
@@ -3508,12 +3445,12 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_remainder.parm"
+Content-Disposition: attachment; filename="hdaroot/remainder_import.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-soppath	[ 0	locks=0 ]	(	"`ifs(nprims(\"../apex_sops/REMAINDER\") > 0, \"../apex_sops/REMAINDER\", \"\")`"	)
+soppath	[ 0	locks=0 ]	(	"`ifs(nprims(\"../points_sops/REMAINDER\") > 0, \"../points_sops/REMAINDER\", \"\")`"	)
 asreference	[ 0	locks=0 ]	(	"off"	)
 copycontents	[ 0	locks=0 ]	(	"on"	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
@@ -3609,7 +3546,7 @@ translateuvtost	[ 0	locks=0 ]	(	"on"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/fast_remainder.userdata"
+Content-Disposition: attachment; filename="hdaroot/remainder_import.userdata"
 Content-Type: text/plain
 
 {
@@ -3620,18 +3557,167 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/mode_switch.init"
+Content-Disposition: attachment; filename="hdaroot/full_import.init"
+Content-Type: text/plain
+
+type = sopimport
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/full_import.def"
+Content-Type: text/plain
+
+comment ""
+position 3.74814 7.51455
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/full_import.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+soppath	[ 0	locks=0 ]	(	"`ifs(nprims(\"../points_sops/CURRENT\") > 0, \"../points_sops/CURRENT\", \"\")`"	)
+asreference	[ 0	locks=0 ]	(	"off"	)
+copycontents	[ 0	locks=0 ]	(	"on"	)
+ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
+adjustxformsforinput	[ 0	locks=0 ]	(	"on"	)
+bindmaterials	[ 0	locks=0 ]	(	nobind	)
+reftype	[ 0	locks=0 ]	(	payloadweak	)
+refprim	[ 0	locks=0 ]	(	automaticPrim	)
+refprimpath	[ 0	locks=0 ]	(	""	)
+primpath	[ 0	locks=0 ]	(	/$OS	)
+instanceable	[ 0	locks=0 ]	(	"off"	)
+parentprimkind	[ 0	locks=0 ]	(	group	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+separator_config	[ 0	locks=0 ]	(	)
+enable_group	[ 0	locks=0 ]	(	"off"	)
+group	[ 0	locks=0 ]	(	""	)
+enable_grouptype	[ 0	locks=0 ]	(	"off"	)
+grouptype	[ 0	locks=0 ]	(	primitive	)
+enable_pathprefix	[ 0	locks=0 ]	(	"off"	)
+pathprefix	[ 0	locks=0 ]	(	/	)
+enable_savepath	[ 0	locks=0 ]	(	"off"	)
+savepath	[ 0	locks=0 ]	(	""	)
+separator_extraconfig	[ 0	locks=0 ]	(	)
+primitivedefinitiongroup	[ 0	locks=0 ]	(	1	)
+enable_packedusdhandling	[ 0	locks=0 ]	(	"off"	)
+packedusdhandling	[ 0	locks=0 ]	(	xformandattribs	)
+enable_otherprimhandling	[ 0	locks=0 ]	(	"off"	)
+otherprimhandling	[ 0	locks=0 ]	(	define	)
+enable_defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
+defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
+enable_packedhandling	[ 0	locks=0 ]	(	"on"	)
+packedhandling	[ 0	locks=0 ]	(	unpack	)
+enable_agenthandling	[ 0	locks=0 ]	(	"off"	)
+agenthandling	[ 0	locks=0 ]	(	instancedskelroots	)
+enable_nurbscurvehandling	[ 0	locks=0 ]	(	"off"	)
+nurbscurvehandling	[ 0	locks=0 ]	(	basiscurves	)
+enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
+nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
+enable_kindschema	[ 0	locks=0 ]	(	"off"	)
+kindschema	[ 0	locks=0 ]	(	component	)
+enable_pathattr	[ 0	locks=0 ]	(	"off"	)
+pathattr	[ 0	locks=0 ]	(	path,name	)
+enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
+prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
+enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
+heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
+enable_usexformcommonapi	[ 0	locks=0 ]	(	"off"	)
+usexformcommonapi	[ 0	locks=0 ]	(	"on"	)
+geometryhandlinggroup	[ 0	locks=0 ]	(	1	)
+enable_polygonsassubd	[ 0	locks=0 ]	(	"off"	)
+polygonsassubd	[ 0	locks=0 ]	(	"off"	)
+enable_subdgroup	[ 0	locks=0 ]	(	"off"	)
+subdgroup	[ 0	locks=0 ]	(	""	)
+enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
+reversepolygons	[ 0	locks=0 ]	(	"off"	)
+enable_setmissingwidths	[ 0	locks=0 ]	(	"on"	)
+setmissingwidths	[ 0	locks=0 ]	(	0.01	)
+importdatagroup	[ 0	locks=0 ]	(	1	)
+authortimesamples	[ 0	locks=0 ]	(	auto	)
+enable_setdefaultprim	[ 0	locks=0 ]	(	"off"	)
+setdefaultprim	[ 0	locks=0 ]	(	"on"	)
+enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
+topologyhandling	[ 0	locks=0 ]	(	animated	)
+enable_attribs	[ 0	locks=0 ]	(	"on"	)
+attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform"	)
+enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
+indexattribs	[ 0	locks=0 ]	(	""	)
+enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
+constantattribs	[ 0	locks=0 ]	(	""	)
+enable_scalarconstantattribs	[ 0	locks=0 ]	(	"off"	)
+scalarconstantattribs	[ 0	locks=0 ]	(	""	)
+enable_boolattribs	[ 0	locks=0 ]	(	"off"	)
+boolattribs	[ 0	locks=0 ]	(	""	)
+enable_uintattribs	[ 0	locks=0 ]	(	"off"	)
+uintattribs	[ 0	locks=0 ]	(	""	)
+enable_uint64attribs	[ 0	locks=0 ]	(	"off"	)
+uint64attribs	[ 0	locks=0 ]	(	""	)
+enable_assetpathattribs	[ 0	locks=0 ]	(	"off"	)
+assetpathattribs	[ 0	locks=0 ]	(	""	)
+enable_staticattribs	[ 0	locks=0 ]	(	"off"	)
+staticattribs	[ 0	locks=0 ]	(	""	)
+enable_partitionattribs	[ 0	locks=0 ]	(	"off"	)
+partitionattribs	[ 0	locks=0 ]	(	""	)
+enable_prefixpartitionsubsets	[ 0	locks=0 ]	(	"off"	)
+prefixpartitionsubsets	[ 0	locks=0 ]	(	"on"	)
+enable_subsetgroups	[ 0	locks=0 ]	(	"off"	)
+subsetgroups	[ 0	locks=0 ]	(	""	)
+enable_customattribs	[ 0	locks=0 ]	(	"off"	)
+customattribs	[ 0	locks=0 ]	(	""	)
+enable_captureweighthandling	[ 0	locks=0 ]	(	"off"	)
+captureweighthandling	[ 0	locks=0 ]	(	usdskel	)
+enable_translateuvtost	[ 0	locks=0 ]	(	"off"	)
+translateuvtost	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/full_import.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/topology_switch.init"
 Content-Type: text/plain
 
 type = switch
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/mode_switch.def"
+Content-Disposition: attachment; filename="hdaroot/topology_switch.def"
 Content-Type: text/plain
 
 comment ""
-position 0.74814 8.76986
+position 0.74814 7.76987
 connectornextid 3
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -3640,13 +3726,13 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	import 0 1 "input1"
-1 	fast_remainder 1 1 "input2"
+0 	remainder_import 1 1 "input1"
+1 	full_import 0 1 "input2"
 }
 inputs
 {
-0 	import 0 1
-1 	fast_remainder 0 1
+0 	remainder_import 0 1
+1 	full_import 0 1
 }
 stat
 {
@@ -3661,7 +3747,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/mode_switch.editableinputdata"
+Content-Disposition: attachment; filename="hdaroot/topology_switch.editableinputdata"
 Content-Type: text/plain
 
 [
@@ -3672,7 +3758,7 @@ Content-Type: text/plain
 ]
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/mode_switch.chn"
+Content-Disposition: attachment; filename="hdaroot/topology_switch.chn"
 Content-Type: text/plain
 
 {
@@ -3682,12 +3768,13 @@ Content-Type: text/plain
       flags = 0
       segment { options = {	 untie  iv ov is os ia oa }
 
-	 length = 0 expr = ch(\"../mode\") }
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_points
+return animate_points.topology_changed(hou.pwd())" language = python }
     }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/mode_switch.parm"
+Content-Disposition: attachment; filename="hdaroot/topology_switch.parm"
 Content-Type: text/plain
 
 {
@@ -3704,7 +3791,7 @@ inputname	[ 0	locks=0 ]	(	"`opinput(\".\", @input)`"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/mode_switch.userdata"
+Content-Disposition: attachment; filename="hdaroot/topology_switch.userdata"
 Content-Type: text/plain
 
 {
@@ -3718,7 +3805,7 @@ Content-Type: text/plain
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-20
+17
 output
 merge
 IN_stage
@@ -3726,19 +3813,16 @@ zero_transforms
 category_kind
 item_kind
 content_kind
-import
 anim_dive
 no_default_values
 ghost_stage
-apex_sops
-fast_rest
-fast_proxy
-fast_configure
-fast_bake
-fast_apply
-fast_remainder
-mode_switch
 IN_stage_start
+points_sops
+static_import
+apply
+remainder_import
+full_import
+topology_switch
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

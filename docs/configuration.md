@@ -436,7 +436,7 @@ left exactly as it was, rather than stamped part-way at the last step that
 happened to succeed.
 
 A migration never replaces a file without preserving the original — the one
-exception is a template v12, v14, v15 or v16 recognises as a version the scaffold shipped, which
+exception is a template a stock refresh (v12, v14–v16, v18–v21) recognises as a version the scaffold shipped, which
 holds nothing of the project's. Which of the two it does depends on how
 load-bearing the file is:
 
@@ -684,6 +684,17 @@ load-bearing the file is:
   published and [`th::layout_keys`](nodes/assets.md#thlayout_keys-sop),
   which copies layout's keys per character into the Scene Animate once.
   Off, the template builds what it did before.
+
+- **A groom department (v21).** Adds `groom` to the project's asset
+  departments in `_config/db/departments.json` (publishable, renderable),
+  right before `lookdev`, so lookdev and rig sit downstream of it; a pool
+  with no `lookdev` takes it after the last of `model`/`blendshape`, one
+  with neither at the end. The original is kept as `departments.json.v21.bak`.
+  A project that already has a `groom` department keeps it untouched,
+  wherever it sits. Then v12's refresh again, which installs the stock
+  `assets/groom` template (see [Assets](nodes/assets.md#the-asset-chain)).
+  An entity with its own department list does not gain `groom`; tick it in
+  the browser where it is wanted.
 
 ### Migrating at launch
 

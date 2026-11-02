@@ -173,7 +173,10 @@ class PipelineCatalog(Catalog):
         self._resolver = AssetResolver(
             self.id, self._registry, self._clients, self._buckets.categories,
         )
-        self._dept_scope = DepartmentScope(self._resolver, self._activator)
+        self._dept_scope = DepartmentScope(
+            self._resolver, self._activator,
+            hide_unused=lambda: self._prefs.hide_unused_departments,
+        )
         self._refresh = BrowserRefresh(self)
         # Per-asset, per-department version overrides: the detail panel's
         # version combos write them; opens and "new from current" read them.
@@ -533,6 +536,17 @@ class PipelineCatalog(Catalog):
     # ── Menus ─────────────────────────────────────────────
     # Every entry is its own failure boundary (menus.reporting_menu).
 
+    def get_asset_folder(self, asset: Asset):
+        """The card menu's Open Folder (TumbleTrove >= 0.52.0): an asset's
+        or shot's entity folder (where its ``description.txt`` and
+        ``thumbnail.png`` live). Nodes and Multis have none; a recipe has
+        its own Open Recipe Folder entry already."""
+        if (recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id)
+                or asset.id.startswith("group:")):
+            return None
+        # A raise is logged by the browser, which then leaves the entry out.
+        return self._resolver.entity_dir(asset.id)
+
     def get_card_menu_items(self, asset: Asset, *, selected_assets=None):
         """Card right-click items. ``selected_assets`` is the browser's
         multi-selection when every selected card is ours: Submit Jobs…
@@ -730,12 +744,12 @@ class PipelineCatalog(Catalog):
                 tooltip="Submit render jobs for the current scene's entity",
             ),
             QuickAction(
-                id="entity_editor", label="Entity Editor", icon="list",
+                id="entity_editor", label="Entity Editor", icon="table-2",
                 tooltip="The project's assets and shots as spreadsheets: add, "
                         "edit and retire them",
             ),
             QuickAction(
-                id="farm", label="Farm Submit", icon="layout-grid",
+                id="farm", label="Farm Submit", icon="upload",
                 tooltip="Publish, playblast and render any shots on the farm",
             ),
             QuickAction(

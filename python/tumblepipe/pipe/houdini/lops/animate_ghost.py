@@ -29,10 +29,10 @@ def _watch(node) -> None:
 
     Houdini re-cooks a Python LOP when a parm it evaluated changes, but it
     does not see the switch inside a locked th::import_rig (what flips when
-    a rig is imported), nor import_rig nodes that th::import_rigs creates
-    after this cook. Both nodes' Import updates their own parms (the
+    a rig is imported). Both nodes' Import updates their own parms (the
     version label, the rows), so depending on all of them keeps the ghost
-    from going stale.
+    from going stale. Rig nodes created after this cook are not watched
+    yet; their Import bumps `ghost_refresh` (`refresh_ghost`) instead.
     """
     for parm in node.parms():
         try:
@@ -54,6 +54,30 @@ def _is_live(node, stop) -> bool:
     return bypass_parm is None or bypass_parm.eval() != 0
 
 
+def _sop_node_types():
+    import hou
+    return hou.sopNodeTypeCategory().nodeTypes().values()
+
+
+def _rig_nodes(dive_node):
+    """The th::import_rig(s) nodes anywhere under `dive_node`.
+
+    Found by node type, not by listing the dive's children: a Python LOP
+    that lists a network's children recooks whenever any node is created
+    in it, so placing an unconnected node in the dive rebuilt the ghost
+    (and the viewport re-synced the shot stage). A rig node created after
+    this cook is caught by its Import bumping `ghost_refresh` instead.
+    """
+    prefix = dive_node.path().rstrip('/') + '/'
+    for node_type in _sop_node_types():
+        name = node_type.name().lower().split('::')
+        if len(name) < 2 or name[0] != 'th': continue
+        if name[1] not in ('import_rig', 'import_rigs'): continue
+        for node in node_type.instances():
+            if node.path().startswith(prefix):
+                yield node
+
+
 def list_rigged_asset_uris(dive_node) -> set[Uri]:
     """The assets whose rigs a live th::import_rig under `dive_node` loads.
 
@@ -61,9 +85,8 @@ def list_rigged_asset_uris(dive_node) -> set[Uri]:
     in a shot workfile (import_rig only addresses assets), so it is skipped.
     """
     asset_uris = set()
-    for node in dive_node.allSubChildren():
-        if _th_sop_type(node) in ('import_rig', 'import_rigs'):
-            _watch(node)
+    for node in _rig_nodes(dive_node):
+        _watch(node)
         if not _is_import_rig(node): continue
         if not _is_live(node, dive_node): continue
         raw_uri = node.parm('entity').eval()
@@ -75,6 +98,10 @@ def list_rigged_asset_uris(dive_node) -> set[Uri]:
 def prune_rigged_assets(lop_node, dive_node):
     """Deactivate, in `lop_node`'s editable stage, every asset prim whose
     rig is imported in `dive_node`."""
+    parent = lop_node.parent() if hasattr(lop_node, 'parent') else None
+    refresh = parent.parm(GHOST_REFRESH) if parent is not None else None
+    if refresh is not None:
+        refresh.eval()  # so refresh_ghost re-cooks this
     asset_uris = list_rigged_asset_uris(dive_node)
     if len(asset_uris) == 0: return
     stage = lop_node.editableStage()
@@ -83,6 +110,26 @@ def prune_rigged_assets(lop_node, dive_node):
         asset_uri = Uri.parse(asset_info['metadata']['uri'])
         if asset_uri not in asset_uris: continue
         stage.GetPrimAtPath(asset_info['prim_path']).SetActive(False)
+
+
+GHOST_REFRESH = 'ghost_refresh'
+
+
+def refresh_ghost(node) -> bool:
+    """Re-cook the ghost of the th::animate holding `node` (a th::import_rig
+    or th::import_rigs that just imported): the ghost finds rig nodes by
+    type when it cooks, so one made since then is not watched yet. False
+    when `node` is not inside a th::animate."""
+    ancestor = node.parent()
+    while ancestor is not None:
+        name = ancestor.type().name().lower().split('::')
+        if len(name) >= 2 and name[0] == 'th' and name[1] == 'animate':
+            parm = ancestor.parm(GHOST_REFRESH)
+            if parm is None: return False
+            parm.set(parm.eval() + 1)
+            return True
+        ancestor = ancestor.parent()
+    return False
 
 
 def on_loaded(node):

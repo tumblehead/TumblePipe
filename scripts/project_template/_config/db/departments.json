@@ -20,6 +20,14 @@
                     },
                     "children": {}
                 },
+                "groom": {
+                    "properties": {
+                        "independent": false,
+                        "publishable": true,
+                        "renderable": true
+                    },
+                    "children": {}
+                },
                 "lookdev": {
                     "properties": {
                         "independent": false,

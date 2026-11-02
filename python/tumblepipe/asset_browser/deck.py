@@ -74,6 +74,8 @@ class DeckBuilder:
             # name → latest version (empty string when uncovered).
             depts_dict = asset.metadata.get("departments") or {}
             covered = list(depts_dict.keys())
+            if self._dept_scope.hides_unused():
+                covered = [n for n in covered if depts_dict.get(n)]
             ctx = (
                 asset.context
                 or self._group_context(asset.id)
@@ -156,6 +158,13 @@ class DeckBuilder:
         # which now resolves via ``latest_hip_file_path_with_context``
         # and lands on the group's hip automatically.
         dept_groups = self._containers.member_coverage(asset.id)
+
+        # Hide departments with no workfile: a department a Multi's
+        # workfile covers has work, though the member has none of its own.
+        if self._dept_scope.hides_unused():
+            all_depts = [
+                d for d in all_depts if depts.get(d) or d in dept_groups
+            ]
 
         def _icon_for(dept: str) -> str:
             if is_shot and dept in SHOT_DEPT_ICONS:

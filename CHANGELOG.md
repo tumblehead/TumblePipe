@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.88.1 — 2026-11-02
+
+### Fixes
+- fix(multis): a shot never joins two Multis that cover one department (`a6a60bca`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.88.0 (`f9f8be84`)
+
 ## v1.88.0 — 2026-11-02
 
 ### Features
