@@ -10,12 +10,6 @@ publish.workspace = true
 name = "th_player"
 path = "src/main.rs"
 
-[features]
-default = ["ocio"]
-# The display transform for EXRs. Builds OpenColorIO from source (CMake and
-# a C++ compiler), linked statically. Without it EXRs show as linear sRGB.
-ocio = ["dep:ocio-rs"]
-
 [dependencies]
 th_media.workspace = true
 primer.workspace = true
@@ -23,7 +17,8 @@ bytemuck.workspace = true
 half.workspace = true
 futures = "0.3"
 th_playlist.workspace = true
-ocio-rs = { workspace = true, optional = true }
+ocio-rs.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+exr.workspace = true

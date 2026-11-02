@@ -29,7 +29,7 @@ fn distance(a: FrameKey, b: FrameKey) -> usize {
 }
 
 fn frame(bytes: usize) -> Frame {
-    Frame { width: 1, height: 1, pixels: Arc::new(Pixels::Half { data: vec![f16::ZERO; bytes / 2], channels: 1 }) }
+    Frame { width: 1, height: 1, pixels: Arc::new(Pixels::Rgba16f(vec![f16::ZERO; bytes / 2])) }
 }
 
 fn key() -> impl Strategy<Value = FrameKey> {

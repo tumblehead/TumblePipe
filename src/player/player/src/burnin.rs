@@ -33,9 +33,10 @@ pub fn fitted(frame: (f32, f32), bounds: Size) -> Rectangle {
     Rectangle::new(Point::new((bounds.width - size.width) * 0.5, (bounds.height - size.height) * 0.5), size)
 }
 
-/// A rate as people say it: `24 fps`, `23.976 fps`.
+/// A rate as people say it: `24 fps`, `23.976 fps`. Rates are positive (the
+/// playlist and the media say so before anything plays).
 pub fn rate_label((num, den): (i32, i32)) -> String {
-    if den != 0 && num % den == 0 {
+    if num % den == 0 {
         return format!("{} fps", num / den);
     }
     let fps = format!("{:.3}", f64::from(num) / f64::from(den));
@@ -43,11 +44,11 @@ pub fn rate_label((num, den): (i32, i32)) -> String {
 }
 
 /// The frame burn-in for frame `index` of a take `frames` long: its place in
-/// the take, after the frame's own number when the media has numbers (an EXR
-/// sequence starting at `first_frame`): `1046 (46 / 68)`, `46 / 68`.
-pub fn frame_text(first_frame: Option<i64>, index: usize, frames: usize) -> String {
-    match first_frame {
-        Some(first) => format!("{} ({} / {frames})", first + index as i64, index + 1),
+/// the take, after the frame's own `number` when the media numbers its
+/// frames (an EXR sequence): `1046 (46 / 68)`, `46 / 68`.
+pub fn frame_text(number: Option<i64>, index: usize, frames: usize) -> String {
+    match number {
+        Some(number) => format!("{number} ({} / {frames})", index + 1),
         None => format!("{} / {frames}", index + 1),
     }
 }
@@ -72,7 +73,12 @@ impl<Message> Program<Message> for Burnin {
         );
         let top = Rectangle::new(inner.position(), Size::new(inner.width, line));
         let bottom = Rectangle::new(Point::new(inner.x, inner.y + inner.height - line), Size::new(inner.width, line));
-        let lines = [(&self.top_left, top, H::Left, V::Top), (&self.top_right, top, H::Right, V::Top), (&self.bottom_left, bottom, H::Left, V::Bottom), (&self.bottom_right, bottom, H::Right, V::Bottom)];
+        let lines = [
+            (&self.top_left, top, H::Left, V::Top),
+            (&self.top_right, top, H::Right, V::Top),
+            (&self.bottom_left, bottom, H::Left, V::Bottom),
+            (&self.bottom_right, bottom, H::Right, V::Bottom),
+        ];
         for (words, place, align, valign) in lines {
             for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
                 let outline = Rectangle::new(Point::new(place.x + dx, place.y + dy), place.size());
@@ -115,7 +121,7 @@ mod tests {
         fn frame_texts_agree_on_the_place(first in -100i64..100_000, frames in 1usize..10_000, at in 0f64..1.0) {
             let index = ((at * frames as f64) as usize).min(frames - 1);
             let place = format!("{} / {frames}", index + 1);
-            prop_assert_eq!(frame_text(Some(first), index, frames), format!("{} ({place})", first + index as i64));
+            prop_assert_eq!(frame_text(Some(first + index as i64), index, frames), format!("{} ({place})", first + index as i64));
             prop_assert_eq!(frame_text(None, index, frames), place);
         }
 

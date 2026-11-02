@@ -130,9 +130,11 @@ substitutes its own:
 > **Save new version** / **Discard changes** / **Cancel**
 
 **Save new version** writes the next version of the scene you are leaving
-(with a blank note; see below) and then opens the new one. **Cancel** leaves
-you where you are. With the **Autosave (version up) on scene change**
-setting on, the new version is written silently and no prompt appears.
+(asking for its note first; see below) and only then opens the new one.
+**Cancel**, cancelling the note, or a save that fails leaves you where you
+are, with your changes still open. With the **Autosave (version up) on
+scene change** setting on, the new version is written silently and no
+prompt appears.
 
 Two cases fall through to Houdini's native save prompt instead: an untitled
 or off-pipeline scene (there is no version to bump), and a scene whose dirty
@@ -175,9 +177,9 @@ note is stored as `note` in that version's `_context/vNNNN.json` and shows
 in the list view's **Note** column: on the department row for its own
 version, and on the entity row for the newest version across departments.
 
-Saves you did not ask for — the autosave-on-switch path, the save-before-
-switch prompt's **Save new version**, and the emergency save — never prompt
-and store a blank note.
+The switch prompt's **Save new version** asks too, and cancelling the note
+cancels the switch. Saves you did not ask for — the autosave-on-switch path
+and the emergency save — never prompt and store a blank note.
 
 ### User and Edited
 

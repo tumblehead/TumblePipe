@@ -166,6 +166,32 @@
             parmtag { "autoscope" "0000000000000000" }
             parmtag { "script_callback_language" "python" }
         }
+        parm {
+            name    "motion_blur"
+            label   "Motion Blur"
+            type    toggle
+            default { "0" }
+            help    "Blur what moves while the camera's shutter is open (its Shutter Open/Close)."
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "depth_of_field"
+            label   "Depth of Field"
+            type    toggle
+            default { "0" }
+            help    "Defocus by the camera's lens: its F-Stop and Focus Distance. An F-Stop of 0 is sharp throughout."
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "blur_samples"
+            label   "Blur Samples"
+            type    integer
+            default { "16" }
+            help    "Images averaged per frame for the blurs: more is smoother and slower."
+            disablewhen "{ motion_blur == 0 depth_of_field == 0 }"
+            range   { 2! 64 }
+            parmtag { "script_callback_language" "python" }
+        }
     }
 
     groupsimple {

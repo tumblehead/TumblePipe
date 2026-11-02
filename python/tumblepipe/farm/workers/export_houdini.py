@@ -9,7 +9,7 @@ import hou
 from tumblepipe.api import path_str
 from tumblepipe.util.io import load_json
 from tumblepipe.pipe.houdini.render_stage import get_render_settings_script as _get_render_settings_script
-from tumblepipe.config.timeline import BlockRange, require_fps
+from tumblepipe.config.timeline import BlockRange
 from tumblepipe.pipe.houdini import playbar, prim_queries
 from tumblepipe.pipe.usd.stitch import (
     stitch_usd_directories,
@@ -31,6 +31,7 @@ def _get_aov_names(render_settings_path: Path) -> set:
 def main(
     render_range: BlockRange,
     batch_size: int,
+    fps: int,
     render_settings_path: Path,
     input_path: Path,
     node_path: str,
@@ -101,7 +102,7 @@ def main(
 
     # Set FPS before the range so the range can't be shifted by a later
     # fps change (see playbar.set_fps; consistent with import_shot).
-    playbar.set_fps(require_fps())
+    playbar.set_fps(fps)
     playbar.set_block_range(render_range)
 
     # Export the USD stage
@@ -170,6 +171,7 @@ def from_config(config: dict) -> int:
     return main(
         BlockRange(config['first_frame'], config['last_frame']),
         config['batch_size'],
+        config['fps'],
         Path(config['render_settings_path']),
         Path(config['input_path']),
         config['node_path'],

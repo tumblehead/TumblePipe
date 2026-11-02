@@ -16,7 +16,7 @@ from pathlib import Path
 
 #: The layout the newest migration step writes; the scaffold's
 #: ``scripts/project_template/_config/version.json`` carries the same number.
-CONFIG_LAYOUT_VERSION = 17
+CONFIG_LAYOUT_VERSION = 20
 
 VERSION_FILE = 'version.json'
 
@@ -26,12 +26,26 @@ class ProjectLayoutError(RuntimeError):
 
 
 def project_layout_version(config_path: Path) -> int:
-    """The layout version ``config_path`` records; 0 when it records none
-    (a project no migration has run on)."""
+    """The layout version ``config_path`` records; 0 when it has no
+    ``version.json`` (a project no migration has run on). Raises
+    :class:`ProjectLayoutError` for one that does not hold a version number,
+    as the migrator (``current_version``) refuses it."""
     path = Path(config_path) / VERSION_FILE
-    if not path.is_file():
+    if not path.exists():
         return 0
-    return int(json.loads(path.read_text(encoding='utf-8'))['version'])
+    try:
+        version = json.loads(path.read_text(encoding='utf-8'))['version']
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise ProjectLayoutError(
+            f'{path} does not record a layout version ({exc}); restore it '
+            "from the project's backup."
+        ) from exc
+    if type(version) is not int or version < 0:
+        raise ProjectLayoutError(
+            f'{path} records {version!r}, which is not a layout version; '
+            "restore it from the project's backup."
+        )
+    return version
 
 
 def require_current_layout(config_path: Path) -> None:

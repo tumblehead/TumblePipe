@@ -94,6 +94,23 @@ pub enum Step {
     /// so scratch landed in a literal `C:\mnt\c\users\tumblehead\…` on every
     /// machine, whoever was logged in (see [`v17_plan`]).
     ScratchOffWslPaths,
+    /// v18 — v12 again, for the animation template: its `/obj/anim_camera`
+    /// (and a Multi's `anim_camera_<seq>_<shot>`) read the shot's Import Shot
+    /// LOP, so looking through it showed layout's camera without the
+    /// animator's keys on `camera_edit`. It now reads `camera_edit`.
+    AnimationCameraReadsItsEdit,
+    /// v19 — v12 again, for the layout template: with the project setting
+    /// Layout in Animate on, a new layout workfile animates the shot on the
+    /// stage (th::layout_rigs, an APEX Animate LOP) and its export reads a
+    /// publish branch (placement from the keys, the baked camera grafted to
+    /// `/cameras/render_camera`). Off, the template builds what it did.
+    LayoutInAnimate,
+    /// v20 — v12 again, for the animation template: with Layout in Animate
+    /// on, a new animation workfile's dive gets the camera rig rebuilt from
+    /// layout's settings and th::layout_keys (rows of layout's keys per
+    /// character, between the rigs and the Scene Animate), and copies those
+    /// keys into the Scene Animate once. Off, the template builds what it did.
+    AnimationCopiesLayoutKeys,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -138,7 +155,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 17] = [
+pub const STEPS: [Step; 20] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -156,6 +173,9 @@ pub const STEPS: [Step; 17] = [
     Step::LayoutCameraFollowsResolution,
     Step::AnimationRigsArePublished,
     Step::ScratchOffWslPaths,
+    Step::AnimationCameraReadsItsEdit,
+    Step::LayoutInAnimate,
+    Step::AnimationCopiesLayoutKeys,
 ];
 
 impl Step {
@@ -179,6 +199,9 @@ impl Step {
             Step::LayoutCameraFollowsResolution => 15,
             Step::AnimationRigsArePublished => 16,
             Step::ScratchOffWslPaths => 17,
+            Step::AnimationCameraReadsItsEdit => 18,
+            Step::LayoutInAnimate => 19,
+            Step::AnimationCopiesLayoutKeys => 20,
         }
     }
 
@@ -230,6 +253,15 @@ impl Step {
             Step::ScratchOffWslPaths => {
                 "repoint WSL-era /mnt/<drive> temp and home paths in _config/storage.json"
             }
+            Step::AnimationCameraReadsItsEdit => {
+                "refresh the stock _config/templates: the animation camera shows the animator's camera keys"
+            }
+            Step::LayoutInAnimate => {
+                "refresh the stock _config/templates: layout can animate the shot on the stage (Layout in Animate)"
+            }
+            Step::AnimationCopiesLayoutKeys => {
+                "refresh the stock _config/templates: animation copies layout's keys per character (Layout in Animate)"
+            }
         }
     }
 }
@@ -257,31 +289,43 @@ pub fn config_dir(project_path: &Path) -> PathBuf {
     }
 }
 
-/// The project's recorded layout version — 0 when unstamped or unreadable.
-pub fn current_version(project_path: &Path) -> u32 {
+/// The project's recorded layout version: 0 when it has no `version.json`
+/// (no migration has run on it). A `version.json` that cannot be read, or
+/// does not hold a `version` number, is an error: read as 0, it would send
+/// every migration step over a project that has already taken them.
+pub fn current_version(project_path: &Path) -> Result<u32, String> {
     let path = config_dir(project_path).join(VERSION_FILE);
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return 0;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(format!("could not read {}: {e}", path.display())),
     };
     serde_json::from_str::<Value>(&text)
         .ok()
         .and_then(|value| value.get("version").and_then(|n| n.as_u64()))
-        .unwrap_or(0) as u32
+        .and_then(|n| u32::try_from(n).ok())
+        .ok_or_else(|| {
+            format!(
+                "{} does not record a layout version (expected {{\"version\": <number>}}); \
+                 restore it from the project's backup before migrating",
+                path.display()
+            )
+        })
 }
 
 /// Steps newer than the project's current version, in order.
-pub fn pending(project_path: &Path) -> Vec<Step> {
+pub fn pending(project_path: &Path) -> Result<Vec<Step>, String> {
     pending_through(project_path, latest_version())
 }
 
 /// [`pending`], stopping at the step that reaches `last`.
-fn pending_through(project_path: &Path, last: u32) -> Vec<Step> {
-    let at = current_version(project_path);
-    STEPS
+fn pending_through(project_path: &Path, last: u32) -> Result<Vec<Step>, String> {
+    let at = current_version(project_path)?;
+    Ok(STEPS
         .iter()
         .copied()
         .filter(|s| s.version() > at && s.version() <= last)
-        .collect()
+        .collect())
 }
 
 /// Whether a step can run, decided before anything is written.
@@ -412,9 +456,14 @@ impl Step {
             Step::RefreshStockTemplates
             | Step::RefreshStockTemplatesAgain
             | Step::LayoutCameraFollowsResolution
-            | Step::AnimationRigsArePublished => {
-                let v9_pending =
-                    current_version(project_path) < Step::RefreshTemplatesAgain.version();
+            | Step::AnimationRigsArePublished
+            | Step::AnimationCameraReadsItsEdit
+            | Step::LayoutInAnimate
+            | Step::AnimationCopiesLayoutKeys => {
+                let v9_pending = match current_version(project_path) {
+                    Ok(at) => at < Step::RefreshTemplatesAgain.version(),
+                    Err(why) => return Readiness::Blocked(why),
+                };
                 match v12_plan(&cfg, template_dir, v9_pending) {
                     Ok(_) => Readiness::Ready,
                     Err(why) => Readiness::Blocked(why),
@@ -439,7 +488,10 @@ impl Step {
 }
 
 /// Readiness of every pending step, in order. Empty when nothing is pending.
-pub fn preflight(project_path: &Path, template_dir: &Path) -> Vec<(Step, Readiness)> {
+pub fn preflight(
+    project_path: &Path,
+    template_dir: &Path,
+) -> Result<Vec<(Step, Readiness)>, String> {
     preflight_through(project_path, template_dir, latest_version())
 }
 
@@ -447,19 +499,22 @@ fn preflight_through(
     project_path: &Path,
     template_dir: &Path,
     last: u32,
-) -> Vec<(Step, Readiness)> {
-    pending_through(project_path, last)
+) -> Result<Vec<(Step, Readiness)>, String> {
+    Ok(pending_through(project_path, last)?
         .into_iter()
         .map(|step| {
             let readiness = step.readiness(project_path, template_dir);
             (step, readiness)
         })
-        .collect()
+        .collect())
 }
 
 /// The first blocked step of a pending run, if any — what a caller shows the
 /// user instead of starting a migration that cannot finish.
-pub fn first_blocker(project_path: &Path, template_dir: &Path) -> Option<(Step, String)> {
+pub fn first_blocker(
+    project_path: &Path,
+    template_dir: &Path,
+) -> Result<Option<(Step, String)>, String> {
     first_blocker_through(project_path, template_dir, latest_version())
 }
 
@@ -467,13 +522,13 @@ fn first_blocker_through(
     project_path: &Path,
     template_dir: &Path,
     last: u32,
-) -> Option<(Step, String)> {
-    preflight_through(project_path, template_dir, last)
+) -> Result<Option<(Step, String)>, String> {
+    Ok(preflight_through(project_path, template_dir, last)?
         .into_iter()
         .find_map(|(step, readiness)| match readiness {
             Readiness::Blocked(why) => Some((step, why)),
             Readiness::Ready => None,
-        })
+        }))
 }
 
 /// The per-project `config_convention.py` after v1: a thin shim, so engine
@@ -915,6 +970,12 @@ impl Step {
             Step::LayoutCameraFollowsResolution => refresh_stock_templates(&cfg, template_dir),
             // Same plan again, for the animation template's rig rows.
             Step::AnimationRigsArePublished => refresh_stock_templates(&cfg, template_dir),
+            // Same plan again, for the animation camera reading camera_edit.
+            Step::AnimationCameraReadsItsEdit => refresh_stock_templates(&cfg, template_dir),
+            // Same plan again, for the layout template's Layout in Animate.
+            Step::LayoutInAnimate => refresh_stock_templates(&cfg, template_dir),
+            // Same plan again, for the animation template's layout keys.
+            Step::AnimationCopiesLayoutKeys => refresh_stock_templates(&cfg, template_dir),
             Step::ScratchOffWslPaths => {
                 // Own backup suffix: the `.v11.bak` v11 left is that step's
                 // original and stays.
@@ -1515,15 +1576,21 @@ impl Report {
 /// one fails leaves the project stamped at the last success, which is a
 /// part-migrated state nobody asked for. Checking every pending step first
 /// means a project that cannot be fully migrated is left exactly as it was.
-pub fn migrate(project_path: &Path, template_dir: &Path) -> Report {
+///
+/// An error, with nothing written, when the project's version cannot be read.
+pub fn migrate(project_path: &Path, template_dir: &Path) -> Result<Report, String> {
     migrate_through(project_path, template_dir, latest_version())
 }
 
 /// [`migrate`], stopping at the step that reaches `last`. The tests of a
 /// historical step use it to look at that step's output before a later step
 /// (v11 retires the convention modules v6-v8 edit) moves on from it.
-fn migrate_through(project_path: &Path, template_dir: &Path, last: u32) -> Report {
-    let from = current_version(project_path);
+fn migrate_through(
+    project_path: &Path,
+    template_dir: &Path,
+    last: u32,
+) -> Result<Report, String> {
+    let from = current_version(project_path)?;
     let mut report = Report {
         from,
         to: from,
@@ -1531,13 +1598,13 @@ fn migrate_through(project_path: &Path, template_dir: &Path, last: u32) -> Repor
         refused: None,
     };
 
-    if let Some((step, why)) = first_blocker_through(project_path, template_dir, last) {
+    if let Some((step, why)) = first_blocker_through(project_path, template_dir, last)? {
         report.refused = Some((step, why));
-        return report;
+        return Ok(report);
     }
 
     let cfg = config_dir(project_path);
-    for step in pending_through(project_path, last) {
+    for step in pending_through(project_path, last)? {
         let result = step
             .apply(project_path, template_dir)
             .and_then(|()| write_version(&cfg, step.version()));
@@ -1548,7 +1615,7 @@ fn migrate_through(project_path: &Path, template_dir: &Path, last: u32) -> Repor
         }
         report.to = step.version();
     }
-    report
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -1573,21 +1640,84 @@ mod tests {
     #[test]
     fn unstamped_reads_as_version_zero() {
         let dir = project(None);
-        assert_eq!(current_version(dir.path()), 0);
-        assert_eq!(pending(dir.path()).len(), STEPS.len());
+        assert_eq!(current_version(dir.path()).unwrap(), 0);
+        assert_eq!(pending(dir.path()).unwrap().len(), STEPS.len());
     }
 
     #[test]
     fn a_current_project_has_nothing_pending() {
         let dir = project(Some(latest_version()));
-        assert!(pending(dir.path()).is_empty());
+        assert!(pending(dir.path()).unwrap().is_empty());
     }
 
     #[test]
     fn config_dir_accepts_either_a_root_or_the_config_itself() {
         let dir = project(Some(3));
-        assert_eq!(current_version(dir.path()), 3);
-        assert_eq!(current_version(&dir.path().join("_config")), 3);
+        assert_eq!(current_version(dir.path()).unwrap(), 3);
+        assert_eq!(current_version(&dir.path().join("_config")).unwrap(), 3);
+    }
+
+    mod recorded_version {
+        use super::*;
+        use proptest::prelude::*;
+
+        /// What a `version.json` can hold, and the version it records.
+        fn contents() -> impl Strategy<Value = (String, Option<u32>)> {
+            prop_oneof![
+                any::<u32>().prop_map(|v| (format!("{{\n    \"version\": {v}\n}}\n"), Some(v))),
+                any::<u32>().prop_map(|v| (format!("{{\"version\": {v}, \"note\": \"x\"}}"), Some(v))),
+                // No integer version: empty, truncated, other keys, a
+                // negative, a string, a float, one too big for u32.
+                Just((String::new(), None)),
+                any::<u32>().prop_map(|v| (format!("{{\"version\": {v}"), None)),
+                Just(("{}".to_string(), None)),
+                any::<u32>().prop_map(|v| (format!("{{\"verison\": {v}}}"), None)),
+                (1..=i64::MAX).prop_map(|v| (format!("{{\"version\": -{v}}}"), None)),
+                any::<u32>().prop_map(|v| (format!("{{\"version\": \"{v}\"}}"), None)),
+                any::<u32>().prop_map(|v| (format!("{{\"version\": {v}.5}}"), None)),
+                (u64::from(u32::MAX) + 1..=u64::MAX)
+                    .prop_map(|v| (format!("{{\"version\": {v}}}"), None)),
+                "[^{]{0,40}".prop_map(|text| (text, None)),
+            ]
+        }
+
+        proptest! {
+            #[test]
+            fn the_version_read_is_the_one_recorded_or_an_error((text, recorded) in contents()) {
+                let dir = project(None);
+                std::fs::write(dir.path().join("_config").join(VERSION_FILE), &text).unwrap();
+                match recorded {
+                    Some(v) => prop_assert_eq!(current_version(dir.path()), Ok(v)),
+                    None => prop_assert!(current_version(dir.path()).is_err()),
+                }
+            }
+
+            #[test]
+            fn an_unreadable_version_migrates_nothing((text, recorded) in contents()) {
+                prop_assume!(recorded.is_none());
+                let dir = project(None);
+                let version = dir.path().join("_config").join(VERSION_FILE);
+                std::fs::write(&version, &text).unwrap();
+                let template = tempfile::tempdir().unwrap();
+                prop_assert!(pending(dir.path()).is_err());
+                prop_assert!(preflight(dir.path(), template.path()).is_err());
+                prop_assert!(migrate(dir.path(), template.path()).is_err());
+                prop_assert_eq!(std::fs::read_to_string(&version).unwrap(), text);
+                let mut files: Vec<_> = std::fs::read_dir(dir.path().join("_config"))
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect();
+                files.sort();
+                prop_assert_eq!(files, vec!["db", VERSION_FILE]);
+            }
+        }
+
+        #[test]
+        fn a_version_file_that_cannot_be_read_is_an_error() {
+            let dir = project(None);
+            std::fs::create_dir(dir.path().join("_config").join(VERSION_FILE)).unwrap();
+            assert!(current_version(dir.path()).is_err());
+        }
     }
 
     #[test]
@@ -1608,14 +1738,14 @@ mod tests {
         std::fs::create_dir_all(template.path().join("_config").join("templates")).unwrap();
         std::fs::create_dir_all(template.path().join("_config").join("ocio")).unwrap();
 
-        let blocker = first_blocker(dir.path(), template.path());
+        let blocker = first_blocker(dir.path(), template.path()).unwrap();
         let (step, why) = blocker.expect("a project with no schemas.json must be blocked");
         assert_eq!(step, Step::AddEntityDepartments);
         assert!(why.contains("schemas.json"), "unhelpful message: {why}");
 
         // And the steps before it are still individually ready — the run is
         // refused as a whole, rather than being allowed to get part-way.
-        let flight = preflight(dir.path(), template.path());
+        let flight = preflight(dir.path(), template.path()).unwrap();
         assert!(flight[0].1.is_ready());
         assert!(flight[1].1.is_ready());
     }
@@ -1630,7 +1760,7 @@ mod tests {
         )
         .unwrap();
 
-        let (step, why) = first_blocker(dir.path(), template.path()).expect("must be blocked");
+        let (step, why) = first_blocker(dir.path(), template.path()).unwrap().expect("must be blocked");
         assert_eq!(step, Step::ConventionToPackage);
         assert!(why.contains("customization"), "unhelpful message: {why}");
     }
@@ -1718,12 +1848,12 @@ mod tests {
     fn a_full_run_reaches_the_latest_version() {
         let dir = database_project();
         let template = scaffold();
-        let report = migrate(dir.path(), template.path());
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.from, 0);
         assert_eq!(report.to, latest_version());
-        assert_eq!(current_version(dir.path()), latest_version());
-        assert!(pending(dir.path()).is_empty());
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
+        assert!(pending(dir.path()).unwrap().is_empty());
     }
 
     /// The v5 relabel: the label and tooltip move, the property key does not
@@ -1732,7 +1862,7 @@ mod tests {
     fn relabelling_moves_the_label_but_never_the_key() {
         let dir = database_project();
         let template = scaffold();
-        migrate_through(dir.path(), template.path(), Step::RefreshStockTemplates.version());
+        migrate_through(dir.path(), template.path(), Step::RefreshStockTemplates.version()).unwrap();
 
         let config = load_json(&dir.path().join("_config").join("db").join("config.json")).unwrap();
         let column = &config["columns"][0];
@@ -1749,14 +1879,14 @@ mod tests {
         let convention = dir.path().join("_config").join("config_convention.py");
         let original = std::fs::read_to_string(&convention).unwrap();
 
-        migrate_through(dir.path(), template.path(), BEFORE_V11);
+        migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap();
         let backup = convention.with_file_name("config_convention.py.bak");
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
         let after_first = std::fs::read_to_string(&convention).unwrap();
 
         // Rewind the stamp so every step runs a second time against current files.
         write_version(&dir.path().join("_config"), 0).unwrap();
-        let second = migrate_through(dir.path(), template.path(), BEFORE_V11);
+        let second = migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap();
         assert!(second.is_ok(), "{second:?}");
         // The .bak still holds the true original, not the shim from run one.
         assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
@@ -1775,14 +1905,14 @@ mod tests {
         )
         .unwrap();
 
-        let report = migrate(dir.path(), template.path());
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(!report.is_ok());
         let (step, _) = report.refused.expect("the run must be refused up front");
         assert_eq!(step, Step::AddEntityDepartments);
         assert!(report.applied.is_empty(), "nothing may have been applied");
 
         // Untouched: no version stamp, no shim, no .bak, no templates dir.
-        assert_eq!(current_version(dir.path()), 0);
+        assert_eq!(current_version(dir.path()).unwrap(), 0);
         let cfg = dir.path().join("_config");
         assert!(!cfg.join(VERSION_FILE).exists());
         assert!(!cfg.join("config_convention.py.bak").exists());
@@ -1828,7 +1958,7 @@ mod tests {
             std::fs::write(db.join("schemas.json"), &schemas).unwrap();
             let template = scaffold();
 
-            let report = migrate(dir.path(), template.path());
+            let report = migrate(dir.path(), template.path()).unwrap();
             assert!(report.is_ok(), "{report:?}");
 
             for name in ["config.json", "schemas.json"] {
@@ -1875,7 +2005,7 @@ mod tests {
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
         std::fs::write(&dst, "# packaged\r\n").unwrap(); // same text, CRLF
 
-        migrate(dir.path(), template.path());
+        migrate(dir.path(), template.path()).unwrap();
         assert!(
             !dst.with_file_name("template.py.bak").exists(),
             "a CRLF copy of an identical template must not be rewritten"
@@ -1891,7 +2021,7 @@ mod tests {
         let path = dir.path().join("_config").join("storage_convention.py");
         std::fs::write(&path, CONVENTION_WITH_KITS).unwrap();
 
-        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), PACKAGED_CONVENTION);
         assert_eq!(
@@ -1928,7 +2058,7 @@ mod tests {
         );
         std::fs::write(&path, mine).unwrap();
 
-        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap();
         assert!(report.is_ok(), "a customized convention must not block: {report:?}");
 
         let after = std::fs::read_to_string(&path).unwrap();
@@ -1951,7 +2081,7 @@ mod tests {
         let path = dir.path().join("_config").join("storage_convention.py");
         std::fs::write(&path, PACKAGED_CONVENTION).unwrap();
 
-        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap().is_ok());
         assert!(
             !path.with_file_name("storage_convention.py.bak").exists(),
             "a convention with no kits entries must not be rewritten or backed up"
@@ -1966,7 +2096,7 @@ mod tests {
         let path = dir.path().join("_config").join("storage_convention.py");
         let _ = std::fs::remove_file(&path);
 
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
         assert!(!path.exists(), "v6 must not invent a convention file");
     }
 
@@ -1995,7 +2125,7 @@ mod tests {
         )
         .unwrap();
 
-        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap();
         assert!(report.is_ok(), "{report:?}");
 
         let naming = std::fs::read_to_string(cfg.join("naming_convention.py")).unwrap();
@@ -2025,7 +2155,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap().is_ok());
         assert!(
             !cfg.join("naming_convention.py.bak").exists(),
             "an already-correct convention must not be rewritten or backed up"
@@ -2041,7 +2171,7 @@ mod tests {
         let path = dir.path().join("_config").join("storage_convention.py");
         std::fs::write(&path, CONVENTION_WITH_PROJECT_TEMP).unwrap();
 
-        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap();
         assert!(report.is_ok(), "{report:?}");
 
         let after = std::fs::read_to_string(&path).unwrap();
@@ -2089,7 +2219,7 @@ mod tests {
         );
         std::fs::write(&path, mine).unwrap();
 
-        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap().is_ok());
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             mine,
@@ -2109,13 +2239,13 @@ mod tests {
         let path = dir.path().join("_config").join("storage_convention.py");
         std::fs::write(&path, CONVENTION_WITH_PROJECT_TEMP).unwrap();
 
-        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap().is_ok());
         let once = std::fs::read_to_string(&path).unwrap();
 
         // Wind the stamp back so the step runs a second time against its own
         // output — what a re-run after a part-migrated project looks like.
         write_version(&dir.path().join("_config"), 7).unwrap();
-        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap().is_ok());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), once);
     }
 
@@ -2137,7 +2267,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap().is_ok());
         let after = std::fs::read_to_string(&path).unwrap();
         assert!(
             after.starts_with("from tumblepipe.storage import default_temp_path\n"),
@@ -2163,7 +2293,7 @@ mod tests {
         std::fs::write(dst.with_file_name("template.py.bak"), "# v2 original\n").unwrap();
         write_version(&dir.path().join("_config"), 8).unwrap();
 
-        let report = migrate(dir.path(), template.path());
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, latest_version());
         assert_eq!(std::fs::read_to_string(&dst).unwrap(), "# packaged\r\n");
@@ -2185,7 +2315,7 @@ mod tests {
         std::fs::create_dir_all(&ocio).unwrap();
         std::fs::write(ocio.join("tumblehead.ocio"), "MINE\n").unwrap();
 
-        migrate(dir.path(), template.path());
+        migrate(dir.path(), template.path()).unwrap();
         assert_eq!(
             std::fs::read_to_string(ocio.join("tumblehead.ocio")).unwrap(),
             "MINE\n"
@@ -2205,7 +2335,7 @@ mod tests {
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
         std::fs::write(&dst, "# packaged\n").unwrap(); // byte-identical to the scaffold
 
-        migrate(dir.path(), template.path());
+        migrate(dir.path(), template.path()).unwrap();
         assert!(
             !dst.with_file_name("template.py.bak").exists(),
             "an identical template must not be rewritten or backed up"
@@ -2323,12 +2453,12 @@ mod tests {
         std::fs::write(usd.join("root_default_prims.usda"), &odd).unwrap();
         write_version(&dir.path().join("_config"), 9).unwrap();
 
-        let (step, why) = first_blocker(dir.path(), template.path()).expect("must be blocked");
+        let (step, why) = first_blocker(dir.path(), template.path()).unwrap().expect("must be blocked");
         assert_eq!(step, Step::BeautyCarriesAlpha);
         assert!(why.contains("root_default_prims.usda"), "{why}");
-        let report = migrate(dir.path(), template.path());
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(!report.is_ok());
-        assert_eq!(current_version(dir.path()), 9);
+        assert_eq!(current_version(dir.path()).unwrap(), 9);
         assert_eq!(std::fs::read_to_string(usd.join("root_default_prims.usda")).unwrap(), odd);
         assert!(!usd.join("root_default_prims.usda.v10.bak").exists());
     }
@@ -2391,7 +2521,7 @@ mod tests {
         .unwrap();
         write_version(&dir.path().join("_config"), 9).unwrap();
 
-        let report = migrate_through(dir.path(), template.path(), BEFORE_V11);
+        let report = migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, 10);
         assert_eq!(
@@ -2419,7 +2549,7 @@ mod tests {
         let dir = database_project();
         let template = scaffold();
         write_version(&dir.path().join("_config"), 9).unwrap();
-        let report = migrate(dir.path(), template.path());
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert!(!dir.path().join("_config").join("usd").exists());
     }
@@ -2465,7 +2595,7 @@ mod tests {
         std::fs::write(pycache.join("unrelated.cpython-311.pyc"), "x").unwrap();
         write_version(&cfg, 10).unwrap();
 
-        let report = migrate_through(dir.path(), template.path(), 11);
+        let report = migrate_through(dir.path(), template.path(), 11).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, 11);
         assert_eq!(
@@ -2503,8 +2633,8 @@ mod tests {
         .unwrap();
         write_version(&cfg, 5).unwrap();
 
-        assert_eq!(first_blocker(dir.path(), template.path()), None);
-        let report = migrate(dir.path(), template.path());
+        assert_eq!(first_blocker(dir.path(), template.path()).unwrap(), None);
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         // v8 moved temp to local scratch before v11 read it
         assert_eq!(
@@ -2544,7 +2674,7 @@ mod tests {
         write_version(&cfg, 10).unwrap();
 
         // v17 moves the WSL paths on; v11's own job is to carry them over.
-        assert!(migrate_through(dir.path(), template.path(), 11).is_ok());
+        assert!(migrate_through(dir.path(), template.path(), 11).unwrap().is_ok());
         let table = load_json(&cfg.join(conventions::STORAGE_FILE)).unwrap();
         assert_eq!(table["temp"], "/mnt/c/users/tumblehead/th_temp/{project_name}");
         assert_eq!(table["edit"], "/mnt/e/Sources/Buzz");
@@ -2593,9 +2723,9 @@ mod tests {
         let dir = project_at_v16(&original);
         let template = scaffold();
         let cfg = dir.path().join("_config");
-        let report = migrate(dir.path(), template.path());
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 17);
+        assert_eq!(current_version(dir.path()).unwrap(), 20);
 
         let path = cfg.join(conventions::STORAGE_FILE);
         let table = load_json(&path).unwrap();
@@ -2623,7 +2753,7 @@ mod tests {
         let dir = project_at_v16(SCAFFOLD_STORAGE);
         let template = scaffold();
         let cfg = dir.path().join("_config");
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
         assert_eq!(
             std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
             SCAFFOLD_STORAGE
@@ -2636,10 +2766,10 @@ mod tests {
         let dir = project_at_v16(WSL_STORAGE);
         let template = scaffold();
         let cfg = dir.path().join("_config");
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
         let once = std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap();
         write_version(&cfg, 16).unwrap();
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
         assert_eq!(std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(), once);
         assert_eq!(
             std::fs::read_to_string(cfg.join("storage.json.v17.bak")).unwrap(),
@@ -2670,7 +2800,7 @@ mod tests {
         std::fs::write(cfg.join("storage_convention.py"), &mine).unwrap();
         write_version(&cfg, 10).unwrap();
 
-        let report = migrate(dir.path(), template.path());
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         let table = load_json(&cfg.join(conventions::STORAGE_FILE)).unwrap();
         assert_eq!(table["temp"], conventions::LOCAL_SCRATCH);
@@ -2680,12 +2810,12 @@ mod tests {
     fn v17_blocks_on_an_unreadable_table_and_writes_nothing() {
         let dir = project_at_v16("{ not json");
         let template = scaffold();
-        let report = migrate(dir.path(), template.path());
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(
             matches!(report.refused, Some((Step::ScratchOffWslPaths, _))),
             "{report:?}"
         );
-        assert_eq!(current_version(dir.path()), 16);
+        assert_eq!(current_version(dir.path()).unwrap(), 16);
     }
 
     #[test]
@@ -2878,12 +3008,12 @@ mod tests {
             write_version(&cfg, 10).unwrap();
 
             let (step, why) =
-                first_blocker(dir.path(), template.path()).expect("must be blocked");
+                first_blocker(dir.path(), template.path()).unwrap().expect("must be blocked");
             assert_eq!(step, Step::ConventionsToData);
             assert!(why.contains(named), "{name}: {why}");
-            let report = migrate(dir.path(), template.path());
+            let report = migrate(dir.path(), template.path()).unwrap();
             assert!(!report.is_ok());
-            assert_eq!(current_version(dir.path()), 10);
+            assert_eq!(current_version(dir.path()).unwrap(), 10);
             assert_eq!(std::fs::read_to_string(cfg.join(name)).unwrap(), text);
             assert!(!cfg.join(conventions::STORAGE_FILE).exists());
             assert!(!cfg.join(format!("{name}.v11.bak")).exists());
@@ -2898,7 +3028,7 @@ mod tests {
         let template = scaffold();
         let cfg = dir.path().join("_config");
         write_version(&cfg, 10).unwrap();
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
         assert_eq!(
             std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
             SCAFFOLD_STORAGE
@@ -2907,7 +3037,7 @@ mod tests {
         let own = SCAFFOLD_STORAGE.replace("{project_path}/edit", "//cutroom/edit");
         std::fs::write(cfg.join(conventions::STORAGE_FILE), &own).unwrap();
         write_version(&cfg, 10).unwrap();
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
         assert_eq!(std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(), own);
         assert!(!cfg.join("storage.json.v11.bak").exists());
     }
@@ -2922,13 +3052,13 @@ mod tests {
         let original = include_str!("../tests/fixtures/storage_convention_v8.py");
         std::fs::write(cfg.join("storage_convention.py"), original).unwrap();
         write_version(&cfg, 10).unwrap();
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
         let once = std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap();
 
         std::fs::write(cfg.join("storage_convention.py"), original.replace("self.project_path / 'edit'", "self.project_path / 'cut'"))
             .unwrap();
         write_version(&cfg, 10).unwrap();
-        assert!(migrate(dir.path(), template.path()).is_ok());
+        assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
         assert_eq!(
             std::fs::read_to_string(cfg.join("storage_convention.py.v11.bak")).unwrap(),
             original
@@ -2951,7 +3081,7 @@ mod tests {
         std::fs::remove_file(template.path().join("_config").join(conventions::STORAGE_FILE))
             .unwrap();
         write_version(&dir.path().join("_config"), 10).unwrap();
-        let (step, why) = first_blocker(dir.path(), template.path()).expect("must be blocked");
+        let (step, why) = first_blocker(dir.path(), template.path()).unwrap().expect("must be blocked");
         assert_eq!(step, Step::ConventionsToData);
         assert!(why.contains("incomplete"), "{why}");
     }
@@ -3069,7 +3199,7 @@ mod tests {
         for (index, (relative, file, text)) in shipped_templates().into_iter().enumerate() {
             let text = if index % 2 == 0 { text } else { text.replace('\n', "\r\n") };
             let dir = project_at_v11(&[(&relative, &text)]);
-            let report = migrate(dir.path(), &template);
+            let report = migrate(dir.path(), &template).unwrap();
             assert!(report.is_ok(), "{}: {report:?}", file.display());
             assert_eq!(report.to, latest_version());
             let path = project_template(dir.path(), &relative);
@@ -3087,7 +3217,7 @@ mod tests {
     #[test]
     fn v12_fills_in_missing_templates() {
         let dir = project_at_v11(&[]);
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         for (relative, text) in packaged_templates() {
             let after = std::fs::read_to_string(project_template(dir.path(), &relative)).unwrap();
@@ -3114,7 +3244,7 @@ mod tests {
             ("shots/stunts", own_department),
             ("shots/animation", &old_animation),
         ]);
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, latest_version());
         let render = project_template(dir.path(), "shots/render");
@@ -3157,7 +3287,7 @@ mod tests {
             ("shots/stunts", own_department),
             ("shots/animation", &old_animation),
         ]);
-        let preflight = preflight(dir.path(), &packaged_scaffold());
+        let preflight = preflight(dir.path(), &packaged_scaffold()).unwrap();
         let [
             (Step::RefreshStockTemplates, Readiness::Blocked(why)),
             (Step::ChannelKeys, Readiness::Ready),
@@ -3165,6 +3295,9 @@ mod tests {
             (Step::LayoutCameraFollowsResolution, Readiness::Blocked(_)),
             (Step::AnimationRigsArePublished, Readiness::Blocked(_)),
             (Step::ScratchOffWslPaths, Readiness::Ready),
+            (Step::AnimationCameraReadsItsEdit, Readiness::Blocked(_)),
+            (Step::LayoutInAnimate, Readiness::Blocked(_)),
+            (Step::AnimationCopiesLayoutKeys, Readiness::Blocked(_)),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -3183,10 +3316,10 @@ mod tests {
         }
         assert!(!why.contains("animation"), "a stock template is not reported: {why}");
 
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(!report.is_ok());
         assert!(report.applied.is_empty());
-        assert_eq!(current_version(dir.path()), 11);
+        assert_eq!(current_version(dir.path()).unwrap(), 11);
         for (relative, text) in [
             ("shots/render", customised.as_str()),
             ("shots/stunts", own_department),
@@ -3204,9 +3337,9 @@ mod tests {
     #[test]
     fn v12_after_deleting_the_blocked_template() {
         let dir = project_at_v11(&[("shots/render", "node.set_shot_uri(uri)\n")]);
-        assert!(first_blocker(dir.path(), &packaged_scaffold()).is_some());
+        assert!(first_blocker(dir.path(), &packaged_scaffold()).unwrap().is_some());
         std::fs::remove_file(project_template(dir.path(), "shots/render")).unwrap();
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(
             std::fs::read_to_string(project_template(dir.path(), "shots/render")).unwrap(),
@@ -3247,7 +3380,7 @@ mod tests {
         let customised = "# ours\nfrom tumblepipe.pipe.houdini.lops import import_shot\n";
         let dir = project_at_v11(&[("shots/layout", &old_layout), ("shots/light", customised)]);
         let template = packaged_scaffold();
-        assert!(migrate(dir.path(), &template).is_ok());
+        assert!(migrate(dir.path(), &template).unwrap().is_ok());
         let snapshot = |dir: &Path| {
             let mut files = Vec::new();
             find_files(&dir.join("_config").join("templates"), None, &mut files);
@@ -3259,7 +3392,7 @@ mod tests {
         let first = snapshot(dir.path());
 
         write_version(&dir.path().join("_config"), 11).unwrap();
-        let second = migrate(dir.path(), &template);
+        let second = migrate(dir.path(), &template).unwrap();
         assert!(second.is_ok(), "{second:?}");
         assert_eq!(second.to, latest_version());
         assert_eq!(snapshot(dir.path()), first);
@@ -3275,9 +3408,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 17);
-        assert_eq!(current_version(&target), latest_version());
-        assert!(pending(&target).is_empty());
+        assert_eq!(latest_version(), 20);
+        assert_eq!(current_version(&target).unwrap(), latest_version());
+        assert!(pending(&target).unwrap().is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
             .unwrap()
             .is_empty());
@@ -3419,10 +3552,10 @@ mod tests {
     #[test]
     fn v13_moves_every_stored_channel_to_its_own_name() {
         let dir = project_at_v12_with_variants();
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 5);
-        assert_eq!(report.to, 17);
+        assert_eq!(report.applied.len(), 8);
+        assert_eq!(report.to, 20);
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -3477,9 +3610,9 @@ mod tests {
         )
         .unwrap();
         let template = scaffold();
-        let report = migrate(dir.path(), template.path());
+        let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 17);
+        assert_eq!(current_version(dir.path()).unwrap(), 20);
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -3490,14 +3623,14 @@ mod tests {
     #[test]
     fn v13_is_idempotent() {
         let dir = project_at_v12_with_variants();
-        assert!(migrate(dir.path(), &packaged_scaffold()).is_ok());
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
         let names = ["schemas.json", "entity.json", "scenes.json", "config.json"];
         let first: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
 
         write_version(&dir.path().join("_config"), 12).unwrap();
-        let second = migrate(dir.path(), &packaged_scaffold());
+        let second = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 17);
+        assert_eq!(second.to, 20);
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -3513,9 +3646,9 @@ mod tests {
         std::fs::write(db.join("entity.json"), entity).unwrap();
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
 
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.to, 17);
+        assert_eq!(report.to, 20);
         assert_eq!(db_text(dir.path(), "entity.json"), entity);
         let mut files = Vec::new();
         find_files(&db, None, &mut files);
@@ -3533,7 +3666,7 @@ mod tests {
             r#"{"properties": {"variants": ["bg"], "channels": ["bg"]}, "children": {}}"#,
         )
         .unwrap();
-        assert!(migrate(dir.path(), &packaged_scaffold()).is_ok());
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(
             entity["properties"],
@@ -3544,11 +3677,11 @@ mod tests {
         let db = dir.path().join("_config").join("db");
         let clash = r#"{"properties": {}, "children": {"park": {"properties": {"assets": [{"asset": "a", "variant": "bg", "channel": "fg"}]}, "children": {}}}}"#;
         std::fs::write(db.join("scenes.json"), clash).unwrap();
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         let (step, why) = report.refused.expect("a disagreeing record must refuse the run");
         assert_eq!(step, Step::ChannelKeys);
         assert!(why.contains("/park assets[0]"), "{why}");
-        assert_eq!(current_version(dir.path()), 12);
+        assert_eq!(current_version(dir.path()).unwrap(), 12);
         assert_eq!(db_text(dir.path(), "scenes.json"), clash);
     }
 
@@ -3574,9 +3707,9 @@ mod tests {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, text).unwrap();
         }
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 17);
+        assert_eq!(current_version(dir.path()).unwrap(), 20);
         let animation =
             std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
         assert_eq!(
@@ -3606,9 +3739,9 @@ mod tests {
         let path = project_template(dir.path(), "shots/layout");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &shipped_at_v14).unwrap();
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()), 17);
+        assert_eq!(current_version(dir.path()).unwrap(), 20);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             layout.replace("
@@ -3629,7 +3762,7 @@ mod tests {
         let path = project_template(dir.path(), "assets/blendshape");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &blendshape_at_v14).unwrap();
-        assert!(migrate(dir.path(), &packaged_scaffold()).is_ok());
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
         assert!(std::fs::read_to_string(&path).unwrap().contains("UsdGeomScope"));
     }
 
@@ -3648,15 +3781,86 @@ mod tests {
         let path = project_template(dir.path(), "shots/animation");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &shipped_at_v15).unwrap();
-        let report = migrate(dir.path(), &packaged_scaffold());
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 2);
-        assert_eq!(current_version(dir.path()), 17);
+        assert_eq!(report.applied.len(), 5);
+        assert_eq!(current_version(dir.path()).unwrap(), 20);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         // Only rigged assets get a row (since 80def61306: the animatable ones)
         assert!(animation.contains("import_rigs.discover_rig_imports("));
         assert!(animation.contains("_add_member_playblast(animate_node, member_uri)"));
+    }
+
+    /// v18 brings a project on the previous stock animation template
+    /// (80def61306, `anim_camera` reading the Import Shot LOP) up to the
+    /// packaged one, whose camera reads `camera_edit`.
+    #[test]
+    fn v18_refreshes_the_stock_animation_template() {
+        let shipped_at_v17 = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("80def61306.py"))
+            .unwrap()
+            .2;
+        assert!(shipped_at_v17.contains("set('/stage/import_shot')"));
+        let dir = project(Some(17));
+        let path = project_template(dir.path(), "shots/animation");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &shipped_at_v17).unwrap();
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.applied.len(), 3);
+        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        let animation = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(animation, packaged_text("shots/animation"));
+        assert!(animation.contains("anim_camera.parm('loppath').set(camera_edit_node.path())"));
+    }
+
+    /// v19 brings a project on the previous stock layout template
+    /// (1ac12ada67, no Layout in Animate branch) up to the packaged one.
+    #[test]
+    fn v19_refreshes_the_stock_layout_template() {
+        let shipped_at_v18 = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("1ac12ada67.py"))
+            .unwrap()
+            .2;
+        assert!(!shipped_at_v18.contains("layout_animate"));
+        let dir = project(Some(18));
+        let path = project_template(dir.path(), "shots/layout");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &shipped_at_v18).unwrap();
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.applied.len(), 2);
+        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        let layout = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(layout, packaged_text("shots/layout"));
+        assert!(layout.contains("layout_rigs.add_layout_animate(scene_node, camera_node, entity_uri)"));
+    }
+
+    /// v20 brings a project on the previous stock animation template
+    /// (46f42da508, no layout keys in the dive) up to the packaged one.
+    #[test]
+    fn v20_refreshes_the_stock_animation_template() {
+        let shipped_at_v19 = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("46f42da508.py"))
+            .unwrap()
+            .2;
+        assert!(!shipped_at_v19.contains("layout_keys_rows"));
+        let dir = project(Some(19));
+        let path = project_template(dir.path(), "shots/animation");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &shipped_at_v19).unwrap();
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.applied.len(), 1);
+        assert_eq!(current_version(dir.path()).unwrap(), 20);
+        let animation = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(animation, packaged_text("shots/animation"));
+        assert!(animation.contains("layout_keys_rows.add_to_dive("));
+        assert!(animation.contains("layout_keys_rows.copy_into_new_workfile("));
     }
 
     /// A CRLF database stays CRLF.
@@ -3666,7 +3870,7 @@ mod tests {
         let db = dir.path().join("_config").join("db");
         let crlf = db_text(dir.path(), "entity.json").replace('\n', "\r\n");
         std::fs::write(db.join("entity.json"), crlf).unwrap();
-        assert!(migrate(dir.path(), &packaged_scaffold()).is_ok());
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
         let after = db_text(dir.path(), "entity.json");
         assert!(after.contains("\"channels\"") && after.contains("\r\n"));
         assert!(!after.replace("\r\n", "").contains('\n'));

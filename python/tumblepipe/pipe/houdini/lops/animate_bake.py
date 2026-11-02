@@ -28,7 +28,8 @@ the prims and attributes Classic mode makes; only the points are now time
 samples over a static topology.
 
 Fast mode outputs each character's Base shape, like the animation template's
-Scene Invoke. SOPs placed after the dive's Scene Invoke are not seen by it.
+Scene Invoke. SOPs placed after the dive's Scene Invoke are not seen by it:
+`fast_mode_warning` names them, on switching to Fast and at export.
 """
 
 import hou
@@ -363,20 +364,74 @@ def _outputs(dive_node) -> dict:
     }
 
 
+def scene_invoke_chain(dive_node) -> tuple:
+    """The Scene Invoke that feeds anim_dive's `output0`, and the nodes
+    between them, nearest the Scene Invoke first.
+
+    Followed up `output0`'s first inputs, the way TumbleRig's Camera Lattice
+    sits there (its lattice comes in on a second input). (None, []) when that
+    finds no Scene Invoke.
+    """
+    main_output = _outputs(dive_node).get(0)
+    node = None if main_output is None else main_output.input(0)
+    between = []
+    while node is not None and not any(node is seen for seen in between):
+        if node.type().name().startswith('apex::sceneinvoke'):
+            return node, between[::-1]
+        between.append(node)
+        node = node.input(0)
+    return None, []
+
+
+def fast_mode_warning(animate_node) -> str | None:
+    """What Fast mode leaves out of this th::animate, or None.
+
+    Fast mode reads the APEX scene from before the dive's Scene Invoke, so
+    the SOPs after it (TumbleRig's Camera Lattice, say) do not reach its
+    output, and so not the export either.
+    """
+    if animate_node.evalParm('mode') != MODE_FAST:
+        return None
+    dive_node = animate_node.node('anim_dive')
+    if dive_node is None:
+        return None
+    _invoke_node, between = scene_invoke_chain(dive_node)
+    if not between:
+        return None
+    names = ', '.join(node.name() for node in between)
+    return (
+        f'{animate_node.path()} is in Fast mode, which leaves out the SOPs '
+        f'after the Scene Invoke in anim_dive ({names}): their effect, '
+        'a Camera Lattice bend say, is not in its output or the export. '
+        'Use Classic mode to keep it.'
+    )
+
+
+def fast_mode_warnings(lop_node) -> list[str]:
+    """`fast_mode_warning` for every th::animate upstream of `lop_node`."""
+    return [
+        warning
+        for node in lop_node.inputAncestors()
+        if node.type().name().split('::')[:2] == ['th', 'animate']
+        for warning in [fast_mode_warning(node)]
+        if warning is not None
+    ]
+
+
 def ensure_scene_output(animate_node) -> bool:
     """Wire anim_dive's second output to the APEX scene, unless it has one.
 
     The animation template wires `output1` when it builds the dive. A dive
     from before Fast mode gets it from the APEX Scene Invoke feeding
-    `output0`. False when there is no such Scene Invoke to read it from.
+    `output0`, through any SOPs after it. False when there is no such Scene
+    Invoke to read it from.
     """
     dive_node = animate_node.node('anim_dive')
     outputs = _outputs(dive_node)
     if SCENE_OUTPUT in outputs:
         return True
-    main_output = outputs.get(0)
-    invoke_node = None if main_output is None else main_output.input(0)
-    if invoke_node is None or not invoke_node.type().name().startswith('apex::sceneinvoke'):
+    invoke_node, _between = scene_invoke_chain(dive_node)
+    if invoke_node is None:
         return False
     connections = invoke_node.inputConnections()
     if len(connections) == 0:
@@ -393,6 +448,13 @@ def on_mode_changed(animate_node) -> None:
     if animate_node.evalParm('mode') != MODE_FAST:
         return
     if ensure_scene_output(animate_node):
+        warning = fast_mode_warning(animate_node)
+        if warning is not None and hou.isUIAvailable():
+            hou.ui.displayMessage(
+                warning,
+                severity=hou.severityType.Warning,
+                title='th::animate Fast mode',
+            )
         return
     raise hou.OperationFailed(
         'Fast mode reads the APEX scene from a second output in anim_dive, '

@@ -15,7 +15,7 @@ from tumblepipe.util.progress import report_progress
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.channels import CHANNEL_KEY, list_channels
 from tumblepipe.config.multi_timeline import shift_block_range
-from tumblepipe.config.timeline import get_fps
+from tumblepipe.config.timeline import require_fps
 from tumblepipe.pipe.houdini import prim_metadata, prim_queries
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
@@ -308,6 +308,7 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             f"Starting local export: uri={entity_uri}, dept={department_name}, "
             f"channel={channel_name}"
         )
+        self._warn_fast_mode(native)
 
         # The render step is deliberately dropped: a published stage cache
         # must carry every frame so downstream renders can sample any frame
@@ -345,7 +346,7 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             root, entity_uri, expected_asset_uris, set(assets_by_uri)
         )
 
-        self.parm('set_metadata_fps').set(get_fps())
+        self.parm('set_metadata_fps').set(require_fps(entity_uri))
 
         root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
         root_temp_path.mkdir(parents=True, exist_ok=True)
@@ -362,6 +363,9 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             if time_offset != 0:
                 report_progress(f"moving frames back by {time_offset}")
                 shift_directory(temp_path, -time_offset)
+            layout_keys = self._write_layout_keys(
+                temp_path, layer_file_name, time_offset
+            )
             layer_path = temp_path / layer_file_name
             if entity_uri.segments[0] == 'assets':
                 _retype_asset_structure(layer_path, entity_uri)
@@ -387,6 +391,7 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
                     aov_names=aov_names,
                     # Provenance only: the layer is on the shot's frames.
                     **({'time_offset': time_offset} if time_offset else {}),
+                    **({'layout_keys': layout_keys} if layout_keys else {}),
                 ),
                 inputs=list(map(json.loads, asset_inputs)),
                 producer=scene_producer(native.path())
@@ -404,6 +409,48 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             f"version={version_name}, output={version_path}"
         )
         return version_name
+
+    @staticmethod
+    def _warn_fast_mode(native):
+        """Say when a th::animate upstream is in Fast mode and so leaves out
+        SOPs after its Scene Invoke (a Camera Lattice, say). A warning, not
+        an error: the export goes on, as the artist may mean it."""
+        from tumblepipe.pipe.houdini.lops import animate_bake
+
+        warnings = animate_bake.fast_mode_warnings(native)
+        if not warnings:
+            return
+        message = '\n\n'.join(warnings)
+        logger.warning(message)
+        if hou.isUIAvailable():
+            hou.ui.displayMessage(
+                message,
+                severity=hou.severityType.Warning,
+                title='th::animate Fast mode',
+            )
+
+    def _write_layout_keys(self,temp_path, layer_file_name, time_offset):
+        """With Layout in Animate on and an APEX Animate LOP feeding this
+        node, write the layout keys (an Animation Catalog, one clip per
+        character and the camera) beside the layer; the context.json entry
+        for them, or None (setting off, no APEX Animate, no keys)."""
+        from tumblepipe.config import layout_animate
+        from tumblepipe.pipe.houdini import layout_keys
+
+        if not layout_animate.enabled():
+            return None
+        animate = layout_keys.find_animate_lop(self.native())
+        if animate is None:
+            return None
+        report_progress("writing the layout keys")
+        try:
+            return layout_keys.write_layout_keys(
+                animate, temp_path, layer_file_name, time_offset
+            )
+        except Exception as error:
+            raise ExportLayerError(
+                f"Could not write the layout keys of {animate.path()}: {error}"
+            ) from error
 
     def _input_stage(self, channel_name):
         """The stage fed into the node; a disconnected node skips, a

@@ -1,8 +1,9 @@
-//! A small, display-ready picture of a frame, for the player's timeline: the
-//! frame scaled to fit a box (aspect kept, never enlarged) as 8-bit code
-//! values, the way the video view shows it. A movie frame's Y'CbCr converts
-//! as `video.wgsl` converts it; an EXR frame's scene-linear RGB goes through
-//! the display transform the caller passes.
+//! A small picture of a frame, for the player's timeline: the frame scaled to
+//! fit a box (aspect kept, never enlarged) once, as a [`Proxy`], then shown
+//! as 8-bit code values the way the video view shows it. A movie frame's
+//! Y'CbCr converts as `video.wgsl` converts it; an EXR frame's proxy stays
+//! scene-linear and goes through the display transform each time it is
+//! shown, so a change of display recolours it without decoding again.
 
 use crate::frame::{Frame, Pixels, YuvMatrix};
 
@@ -31,13 +32,6 @@ pub fn fit(width: u32, height: u32, max_width: u32, max_height: u32) -> (u32, u3
     (size(width, max_width), size(height, max_height))
 }
 
-/// sRGB-encode a linear value: what the video view's sRGB surface does to a
-/// scene-linear frame shown without a display transform.
-pub fn srgb_encode(linear: f32) -> f32 {
-    let c = linear.clamp(0.0, 1.0);
-    if c <= 0.003_130_8 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
-}
-
 fn code(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
@@ -57,11 +51,34 @@ fn yuv_pixel(y: u8, cb: u8, cr: u8, matrix: YuvMatrix, full_range: bool) -> [f32
     rgb.map(|c| c.clamp(0.0, 1.0))
 }
 
-/// `frame` as a thumbnail fitting `max_width` x `max_height`. `display` maps
-/// an EXR frame's scene-linear RGB to display code values in 0..1 (a single
-/// channel shows as grey); a movie frame is display-referred already and
-/// does not go through it.
-pub fn thumbnail(frame: &Frame, max_width: u32, max_height: u32, display: impl Fn([f32; 3]) -> [f32; 3]) -> Thumbnail {
+/// A frame scaled down: each pixel the mean of its patch of the frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Proxy {
+    pub width: u32,
+    pub height: u32,
+    pub rgb: Vec<[f32; 3]>,
+    /// Scene-linear (an EXR's), shown through the display transform; else
+    /// display-referred already (a movie's R'G'B' in 0..1).
+    pub linear: bool,
+}
+
+impl Proxy {
+    /// The proxy as a thumbnail. `display` maps scene-linear RGB to display
+    /// code values in 0..1; a display-referred proxy does not go through it.
+    pub fn shown(&self, display: impl Fn([f32; 3]) -> [f32; 3]) -> Thumbnail {
+        let mut rgba = Vec::with_capacity(self.rgb.len() * 4);
+        for &rgb in &self.rgb {
+            let shown = if self.linear { display(rgb) } else { rgb };
+            rgba.extend(shown.map(code));
+            rgba.push(255);
+        }
+        Thumbnail { width: self.width, height: self.height, rgba }
+    }
+}
+
+/// `frame` scaled to fit `max_width` x `max_height`. Linear frames average
+/// before any display transform, as light does.
+pub fn proxy(frame: &Frame, max_width: u32, max_height: u32) -> Proxy {
     let (width, height) = fit(frame.width, frame.height, max_width, max_height);
     let (fw, fh) = (frame.width.max(1), frame.height.max(1));
     // The frame pixel under sample `s` of thumbnail pixel `at`, along one axis.
@@ -69,7 +86,7 @@ pub fn thumbnail(frame: &Frame, max_width: u32, max_height: u32, display: impl F
         let x = (f64::from(at) + (f64::from(s) + 0.5) / f64::from(SAMPLES)) * f64::from(side) / f64::from(out);
         (x as u32).min(side - 1) as usize
     };
-    let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+    let mut rgb = Vec::with_capacity(width as usize * height as usize);
     for ty in 0..height {
         for tx in 0..width {
             let mut sum = [0f32; 3];
@@ -82,13 +99,9 @@ pub fn thumbnail(frame: &Frame, max_width: u32, max_height: u32, display: impl F
                             let chroma = (y / 2) * fw.div_ceil(2) as usize + x / 2;
                             yuv_pixel(luma[y * fw as usize + x], u[chroma], v[chroma], *matrix, *full_range)
                         }
-                        Pixels::Half { data, channels } => {
-                            let at = (y * fw as usize + x) * channels;
-                            if *channels < 3 {
-                                [data[at].to_f32(); 3]
-                            } else {
-                                [data[at].to_f32(), data[at + 1].to_f32(), data[at + 2].to_f32()]
-                            }
+                        Pixels::Rgba16f(data) => {
+                            let at = (y * fw as usize + x) * 4;
+                            [data[at].to_f32(), data[at + 1].to_f32(), data[at + 2].to_f32()]
                         }
                     };
                     for c in 0..3 {
@@ -96,17 +109,10 @@ pub fn thumbnail(frame: &Frame, max_width: u32, max_height: u32, display: impl F
                     }
                 }
             }
-            let mean = sum.map(|c| c / (SAMPLES * SAMPLES) as f32);
-            // Linear frames average before the display transform, as light does.
-            let shown = match &*frame.pixels {
-                Pixels::Yuv420 { .. } => mean,
-                Pixels::Half { .. } => display(mean),
-            };
-            rgba.extend(shown.map(code));
-            rgba.push(255);
+            rgb.push(sum.map(|c| c / (SAMPLES * SAMPLES) as f32));
         }
     }
-    Thumbnail { width, height, rgba }
+    Proxy { width, height, rgb, linear: matches!(&*frame.pixels, Pixels::Rgba16f(_)) }
 }
 
 #[cfg(test)]
@@ -125,10 +131,10 @@ mod tests {
         Frame { width, height, pixels: Arc::new(pixels) }
     }
 
-    fn exr(width: u32, height: u32, value: [f32; 3], channels: usize) -> Frame {
-        let pixel: Vec<f16> = (0..channels).map(|c| f16::from_f32(value[c.min(2)])).collect();
-        let data = pixel.iter().copied().cycle().take(width as usize * height as usize * channels).collect();
-        Frame { width, height, pixels: Arc::new(Pixels::Half { data, channels }) }
+    fn exr(width: u32, height: u32, value: [f32; 3]) -> Frame {
+        let pixel = [value[0], value[1], value[2], 1.0].map(f16::from_f32);
+        let data = pixel.iter().copied().cycle().take(width as usize * height as usize * 4).collect();
+        Frame { width, height, pixels: Arc::new(Pixels::Rgba16f(data)) }
     }
 
     proptest! {
@@ -153,31 +159,21 @@ mod tests {
         #[test]
         fn a_flat_movie_frame_stays_flat(width in 1u32..300, height in 1u32..300, y in any::<u8>(), bt709 in any::<bool>()) {
             let matrix = if bt709 { YuvMatrix::Bt709 } else { YuvMatrix::Bt601 };
-            let thumb = thumbnail(&movie(width, height, y, 128, matrix), 64, 64, |_| [0.0; 3]);
+            let thumb = proxy(&movie(width, height, y, 128, matrix), 64, 64).shown(|_| [0.0; 3]);
             prop_assert_eq!((thumb.width, thumb.height), fit(width, height, 64, 64));
             prop_assert_eq!(thumb.rgba.len(), (thumb.width * thumb.height * 4) as usize);
             prop_assert!(thumb.rgba.chunks(4).all(|p| p == [y, y, y, 255]));
         }
 
         /// A flat EXR frame thumbnails to its value through the display
-        /// transform; a single channel shows as grey.
+        /// transform, whichever transform it is shown through.
         #[test]
-        fn a_flat_exr_frame_goes_through_the_display(width in 1u32..200, height in 1u32..200, value in prop::array::uniform3(0f32..4.0), grey in any::<bool>()) {
-            let channels = if grey { 1 } else { 3 };
-            let display = |rgb: [f32; 3]| rgb.map(|c| c * 0.25);
-            let thumb = thumbnail(&exr(width, height, value, channels), 48, 48, display);
-            let stored = value.map(|c| f16::from_f32(c).to_f32());
-            let shown = if grey { [stored[0]; 3] } else { stored };
-            let expected = display(shown).map(code);
+        fn a_flat_exr_frame_goes_through_the_display(width in 1u32..200, height in 1u32..200, value in prop::array::uniform3(0f32..4.0), gain in 0.1f32..1.0) {
+            let display = |rgb: [f32; 3]| rgb.map(|c| c * gain);
+            let small = proxy(&exr(width, height, value), 48, 48);
+            let thumb = small.shown(display);
+            let expected = display(value.map(|c| f16::from_f32(c).to_f32())).map(code);
             prop_assert!(thumb.rgba.chunks(4).all(|p| p[..3] == expected && p[3] == 255), "{:?} vs {expected:?}", &thumb.rgba[..4]);
         }
-    }
-
-    #[test]
-    fn srgb_encoding_matches_the_standard_curve() {
-        assert_eq!(srgb_encode(0.0), 0.0);
-        assert!((srgb_encode(1.0) - 1.0).abs() < 1e-6);
-        assert!((srgb_encode(0.18) - 0.4613).abs() < 1e-3);
-        assert_eq!(srgb_encode(2.0), srgb_encode(1.0));
     }
 }

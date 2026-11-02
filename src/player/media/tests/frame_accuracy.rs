@@ -8,8 +8,9 @@
 //! frames.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use th_media::{Frame, MovieSource, Pixels};
+use th_media::{Frame, MovieDecoder, MovieIndex, Pixels};
 
 fn fixture(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name).to_string_lossy().into_owned()
@@ -31,23 +32,24 @@ fn orders(count: usize) -> Vec<Vec<usize>> {
         jumpy.push(i);
         i = (i * 31 + 17) % count;
     }
-    vec![
-        (0..count).collect(),
-        (0..count).rev().collect(),
-        vec![40, 39, 38, 12, 13, 11, 47, 0, 47, 46, 3, 3, 4, 2, 25, 24, 26, 23],
-        jumpy,
-    ]
+    vec![(0..count).collect(), (0..count).rev().collect(), vec![40, 39, 38, 12, 13, 11, 47, 0, 47, 46, 3, 3, 4, 2, 25, 24, 26, 23], jumpy]
+}
+
+/// A decoder of the movie at `path`, on two threads.
+fn open(path: &str) -> MovieDecoder {
+    MovieDecoder::open(Arc::new(MovieIndex::read(path).unwrap()), 2).unwrap()
 }
 
 fn check(name: &str, expected_keyframes: usize) {
-    let mut source = MovieSource::open(&fixture(name)).unwrap();
-    assert_eq!(source.frame_count(), 48);
-    assert_eq!(source.keyframes().len(), expected_keyframes);
-    assert_eq!(source.rate(), (24, 1));
+    let mut source = open(&fixture(name));
+    let index = Arc::clone(source.index());
+    assert_eq!(index.frame_count(), 48);
+    assert_eq!(index.keyframes().len(), expected_keyframes);
+    assert_eq!(index.rate(), (24, 1));
     for order in orders(48) {
         for &want in &order {
             let mut passed = Vec::new();
-            let frame = source.decode(want, |at, f| passed.push((at, ramp_index(f)))).unwrap();
+            let frame = source.decode(want, |at, f| passed.push((at, ramp_index(f))), || true).unwrap();
             assert_eq!(ramp_index(&frame), want, "{name}: decode({want}) in {order:?}");
             // Every frame handed over on the way is the frame it claims to be,
             // so buffering them is safe.
@@ -70,24 +72,43 @@ fn short_gop_movie_is_frame_accurate() {
 
 #[test]
 fn out_of_range_is_an_error() {
-    let mut source = MovieSource::open(&fixture("grey_ramp_gop5.mp4")).unwrap();
-    assert!(source.decode(48, |_, _| {}).is_err());
+    let mut source = open(&fixture("grey_ramp_gop5.mp4"));
+    assert!(source.decode(48, |_, _| {}, || true).is_err());
 }
 
-/// Against a real playblast (set `TH_PLAYER_TEST_MOVIE`): random access gives
-/// byte-identical frames to a straight decode.
+/// A decode no longer wanted stops before its next frame, and the decoder
+/// decodes right after.
 #[test]
+fn a_decode_no_longer_wanted_stops() {
+    let mut source = open(&fixture("grey_ramp_single.mp4"));
+    let mut passed = 0;
+    let asked = std::cell::Cell::new(0);
+    let ten_frames = || {
+        asked.set(asked.get() + 1);
+        asked.get() <= 10
+    };
+    assert!(matches!(source.decode(40, |_, _| passed += 1, ten_frames), Err(th_media::Error::Cancelled { index: 40 })));
+    assert_eq!(passed, 10);
+    let frame = source.decode(40, |_, _| {}, || true).unwrap();
+    assert_eq!(ramp_index(&frame), 40);
+}
+
+/// Against a real playblast: random access gives byte-identical frames to a
+/// straight decode. Run by hand with `TH_PLAYER_TEST_MOVIE` set:
+/// `cargo test -p th_media -- --ignored`.
+#[test]
+#[ignore = "needs TH_PLAYER_TEST_MOVIE, a real playblast"]
 fn real_movie_random_access_matches_sequential() {
-    let Ok(path) = std::env::var("TH_PLAYER_TEST_MOVIE") else { return };
-    let mut source = MovieSource::open(&path).unwrap();
-    let count = source.frame_count();
+    let path = std::env::var("TH_PLAYER_TEST_MOVIE").expect("TH_PLAYER_TEST_MOVIE names a movie");
+    let mut source = open(&path);
+    let count = source.index().frame_count();
     let mut sequential = Vec::with_capacity(count);
     for i in 0..count {
-        sequential.push(source.decode(i, |_, _| {}).unwrap());
+        sequential.push(source.decode(i, |_, _| {}, || true).unwrap());
     }
     let mut i = count / 3;
     for _ in 0..60 {
-        let frame = source.decode(i, |_, _| {}).unwrap();
+        let frame = source.decode(i, |_, _| {}, || true).unwrap();
         let (Pixels::Yuv420 { y: a, u: au, v: av, .. }, Pixels::Yuv420 { y: b, u: bu, v: bv, .. }) =
             (&*frame.pixels, &*sequential[i].pixels)
         else {

@@ -1,9 +1,11 @@
 from tumblepipe.util.uri import Uri
+from tumblepipe.config import layout_animate
 from tumblepipe.config.groups import get_group
 from tumblepipe.pipe.houdini.render_camera import bind_aspect
 from tumblepipe.pipe.houdini.lops import (
     import_shot,
-    export_layer
+    export_layer,
+    layout_rigs
 )
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
@@ -23,6 +25,11 @@ def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     bind_aspect(camera_node, entity_uri)
     camera_node.setInput(0, prev_node)
     prev_node = camera_node
+
+    # Layout in Animate (a project setting): the shot animated on the stage,
+    # the export reading the publish branch and writing the layout keys
+    if layout_animate.enabled():
+        prev_node = layout_rigs.add_layout_animate(scene_node, camera_node, entity_uri)
 
     # Create the export node
     export_node = export_layer.create(scene_node, 'export_layout')
@@ -55,6 +62,12 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         bind_aspect(camera_node, member_uri)
         camera_node.setInput(0, prev_node)
         prev_node = camera_node
+
+        # Layout in Animate: one per member, as the rest of the column
+        if layout_animate.enabled():
+            prev_node = layout_rigs.add_layout_animate(
+                scene_node, camera_node, member_uri, suffix=f'_{member_name}'
+            )
 
         # Create the export node
         export_node = export_layer.create(scene_node, f'export_layout_{member_name}')

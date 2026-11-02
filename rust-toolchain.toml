@@ -1,0 +1,8 @@
+# The one Rust toolchain every crate in this repo builds with (src/resolver,
+# src/delegate, src/wizard, src/player), locally and on the CI workers. It
+# sits at the root because rustup reads it from cargo's working directory, and
+# the resolver and delegate builds run cargo from build-*/ here. The player
+# sets the floor: Primer requires 1.98.1.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]

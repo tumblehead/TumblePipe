@@ -43,6 +43,10 @@ class PipelinePrefs:
     # Where Farm Submit sends work: 'farm' (Deadline) or 'local' (this
     # machine, farm.local). Remembered from the last submission.
     farm_backend: str = "farm"
+    # The shot slate under a look-through camera's frame
+    # (pipe.houdini.ui.shot_slate), and its size: 'full', 'mini' or 'dot'.
+    shot_slate: bool = True
+    shot_slate_size: str = "full"
     prefs_version: int = _PREFS_VERSION
 
 
@@ -78,6 +82,13 @@ def load_prefs() -> PipelinePrefs:
             data.get("prompt_note_on_save", True)
         ),
         farm_backend="local" if data.get("farm_backend") == "local" else "farm",
+        # New keys with defaults, like prompt_note_on_save: no version bump.
+        shot_slate=bool(data.get("shot_slate", True)),
+        shot_slate_size=(
+            data.get("shot_slate_size")
+            if data.get("shot_slate_size") in ("full", "mini", "dot")
+            else "full"
+        ),
     )
 
 

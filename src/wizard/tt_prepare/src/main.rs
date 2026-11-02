@@ -91,15 +91,15 @@ fn run_cli(parsed: &Args) -> Result<(), String> {
         return Err(unconfigured_message(&project));
     }
 
-    let at = current_version(&project);
-    let steps = pending(&project);
+    let at = current_version(&project)?;
+    let steps = pending(&project)?;
     if steps.is_empty() {
         println!("{}: already at _config v{at}", project.display());
         return Ok(());
     }
 
     println!("{}: v{at} -> v{}", project.display(), latest_version());
-    for (step, readiness) in migration::preflight(&project, &template) {
+    for (step, readiness) in migration::preflight(&project, &template)? {
         match readiness {
             Readiness::Ready => println!("  v{}: {}", step.version(), step.description()),
             Readiness::Blocked(why) => {
@@ -114,7 +114,7 @@ fn run_cli(parsed: &Args) -> Result<(), String> {
     }
 
     let _lock = Lock::acquire(&project)?;
-    let report = migration::migrate(&project, &template);
+    let report = migration::migrate(&project, &template)?;
     if let Some((step, why)) = &report.refused {
         return Err(format!(
             "refused before writing anything - v{} cannot run: {why}",
@@ -151,13 +151,13 @@ fn run(parsed: &Args) -> Result<(), String> {
 
     // The common case, and the one that must stay cheap: read one small file,
     // compare an integer, and return before egui is ever touched.
-    let steps = pending(&project);
+    let steps = pending(&project)?;
     if steps.is_empty() {
         return Ok(());
     }
     let step_count = steps.len();
 
-    let at = current_version(&project);
+    let at = current_version(&project)?;
     eprintln!(
         "tt_prepare: {} is at _config v{at}, {} step(s) behind v{}",
         project.display(),
@@ -185,7 +185,7 @@ fn run(parsed: &Args) -> Result<(), String> {
     // step cannot run and backs up whatever it replaces. The window is for
     // the cases that need a person: a step that cannot run, or a migration
     // that stopped.
-    if let Some((step, why)) = migration::first_blocker(&plan.project, &plan.template) {
+    if let Some((step, why)) = migration::first_blocker(&plan.project, &plan.template)? {
         return show(plan, Problem::Blocked(step, why));
     }
     match migrate_now(&plan) {
@@ -396,27 +396,55 @@ struct Lock {
 }
 
 impl Lock {
+    /// Take the lock by creating its file, which fails when the file exists:
+    /// the filesystem decides which of two simultaneous launches gets it, so
+    /// both cannot. A lock older than `LOCK_STALE_AFTER` was left by a run
+    /// that crashed; it is removed and the create tried once more, which
+    /// again only one launch can win.
     fn acquire(project: &Path) -> Result<Lock, String> {
         let path = config_dir(project).join(".migration.lock");
-        if let Ok(metadata) = std::fs::metadata(&path) {
-            let age = metadata
-                .modified()
-                .ok()
-                .and_then(|m| SystemTime::now().duration_since(m).ok())
-                .unwrap_or(Duration::ZERO);
-            if age < LOCK_STALE_AFTER {
-                return Err(format!(
-                    "another migration is already running ({} exists). If nothing is running, \
-                     delete it and try again.",
-                    path.display()
-                ));
-            }
-            // Stale: a crashed run must not wedge the studio.
-            let _ = std::fs::remove_file(&path);
+        match Self::create(&path) {
+            Ok(()) => return Ok(Lock { path }),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(Self::cannot(&path, e)),
         }
-        std::fs::write(&path, "tt_prepare\n")
-            .map_err(|e| format!("could not take the migration lock at {}: {e}", path.display()))?;
-        Ok(Lock { path })
+        let age = std::fs::metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| SystemTime::now().duration_since(modified).ok());
+        // An age that cannot be read is not stale: a lock is only broken when
+        // it is known to be old.
+        if age.map_or(true, |age| age < LOCK_STALE_AFTER) {
+            return Err(Self::held(&path));
+        }
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(Self::cannot(&path, e)),
+        }
+        match Self::create(&path) {
+            Ok(()) => Ok(Lock { path }),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(Self::held(&path)),
+            Err(e) => Err(Self::cannot(&path, e)),
+        }
+    }
+
+    fn create(path: &Path) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(path)?;
+        file.write_all(b"tt_prepare\n")
+    }
+
+    fn held(path: &Path) -> String {
+        format!(
+            "another migration is already running ({} exists). If nothing is running, \
+             delete it and try again.",
+            path.display()
+        )
+    }
+
+    fn cannot(path: &Path, e: std::io::Error) -> String {
+        format!("could not take the migration lock at {}: {e}", path.display())
     }
 }
 
@@ -487,7 +515,7 @@ fn show(plan: Plan, problem: Problem) -> Result<(), String> {
 /// Run the migration under the lock and summarise what happened.
 fn migrate_now(plan: &Plan) -> Result<String, String> {
     let _lock = Lock::acquire(&plan.project)?;
-    let report: Report = migration::migrate(&plan.project, &plan.template);
+    let report: Report = migration::migrate(&plan.project, &plan.template)?;
 
     if let Some((step, why)) = &report.refused {
         return Err(format!(
@@ -695,5 +723,47 @@ mod tests {
         assert!(Lock::acquire(dir.path()).is_err(), "second must be refused");
         drop(first);
         Lock::acquire(dir.path()).expect("lock is released on drop");
+    }
+
+    #[test]
+    fn of_many_simultaneous_takers_exactly_one_gets_the_lock() {
+        // The race the lock exists for: launches that each check "no lock"
+        // and then all write one. Creating the file is the check.
+        for _ in 0..20 {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::create_dir_all(dir.path().join("_config")).unwrap();
+            let start = std::sync::Barrier::new(8);
+            let taken = std::thread::scope(|scope| {
+                let takers: Vec<_> = (0..8)
+                    .map(|_| {
+                        scope.spawn(|| {
+                            start.wait();
+                            Lock::acquire(dir.path())
+                        })
+                    })
+                    .collect();
+                let locks: Vec<_> = takers.into_iter().map(|t| t.join().unwrap()).collect();
+                locks.iter().filter(|lock| lock.is_ok()).count()
+            });
+            assert_eq!(taken, 1);
+        }
+    }
+
+    #[test]
+    fn a_stale_lock_is_broken_and_a_fresh_one_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("_config");
+        std::fs::create_dir_all(&cfg).unwrap();
+        let path = cfg.join(".migration.lock");
+
+        std::fs::write(&path, "crashed\n").unwrap();
+        assert!(Lock::acquire(dir.path()).is_err(), "a fresh lock holds");
+
+        let old = SystemTime::now() - LOCK_STALE_AFTER - Duration::from_secs(60);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(old).unwrap();
+        let lock = Lock::acquire(dir.path()).expect("a stale lock is broken");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "tt_prepare\n");
+        drop(lock);
+        assert!(!path.exists());
     }
 }

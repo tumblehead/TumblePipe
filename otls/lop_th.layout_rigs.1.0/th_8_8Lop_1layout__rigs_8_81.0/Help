@@ -1,0 +1,28 @@
+= TH Layout Rigs =
+
+"""What a shot's layout animates on the stage: a rig per character, a control per other asset, the camera rig."""
+
+With the project setting *Layout in Animate (Beta)* on, layout animates the
+shot in an APEX Animate LOP after this node.
+
+* *rig*: an asset with a rig published loads it under `/layout_rigs/<name>`
+  (its shape only), started at its layout placement; the asset's own prim is
+  hidden while layout works.
+* *control*: any other asset gets a placement control on its own prim. USD
+  keys already on it become the control's channels.
+* *off*: left as it is.
+
+Then the shot camera: the camera rig a package registered (TumbleRig's), else
+SideFX's camera rig on `/cameras/render_camera`.
+
+@parameters
+
+Discover:
+    Fill the rows from the input stage, keeping the mode and version of
+    prims already listed.
+
+Build:
+    Rebuild the network inside (dive) from the rows.
+
+Rows:
+    One per asset prim: its prim, asset, mode, rig channel and version.

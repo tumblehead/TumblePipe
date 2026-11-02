@@ -28,24 +28,42 @@ from tumblepipe.farm.worker import ensure_dir, error, headline
 # delegate, shipped under plugins/houdini<major>/ and registered here rather
 # than by the farm env (farm.env.get_base_env), which is built on the
 # submitting machine. It rasterises on the CPU with the viewport's look --
-# display colours and textures under a headlight -- and husk takes no licence
-# for it: Houdini's licence is only checked out for Karma. HideAndReek/010
-# (6.8M triangles) renders in ~0.2 s a frame at 1280x720, behind husk's own
-# ~3 s per-frame stage sync.
+# display colours and textures, shaded as the look's 'shading' says, with
+# ambient occlusion -- and husk takes no licence for it: Houdini's licence is
+# only checked out for Karma. HideAndReek/010 (6.8M triangles) renders in
+# ~0.34 s a frame at 1280x720 and eight samples a pixel; with husk updating
+# the stage and its 40 animated meshes, a frame takes 0.4-0.9 s.
 #
 # --purpose geometry,proxy draws what the viewport draws: proxies where an
 # asset has them, never its render-purpose meshes.
+#
+# --allowed-procedurals none: the delegate draws meshes only, so the curves
+# Houdini's procedurals make (hair grooms) never reach the picture, yet husk
+# runs every animated one before each frame and swaps its result into the
+# stage, which redirties every prim on it. On HideAndReek/010 (three felt
+# grooms) that was ~3 s a frame and every mesh rebuilt; without them a frame
+# rebuilds only its animated meshes and the picture is the same.
 VIEWPORT_DELEGATE = 'HdThPlayblastRendererPlugin'
 
 
 def viewport_args() -> list[str]:
     """husk's arguments for the viewport renderer."""
-    return ['-R', VIEWPORT_DELEGATE, '--purpose', 'geometry,proxy']
+    return ['-R', VIEWPORT_DELEGATE, '--purpose', 'geometry,proxy',
+            '--allowed-procedurals', 'none']
 
 
-def viewport_env(env: dict, pipeline_path: Path, houdini_major: int) -> dict:
+def viewport_env(env: dict, pipeline_path: Path, houdini_major: int,
+                 shading: str = 'lit', blur: tuple[bool, bool, int] = (False, False, 16),
+                 fps: int = 24) -> dict:
     """``env`` with the viewport delegate registered for USD, ahead of the
-    resolver."""
+    resolver, and told how to shade (``specs.playblast.PLAYBLAST_SHADINGS``)
+    and blur (``specs.playblast.look_blur``: motion blur, depth of field,
+    blur samples) at the shot's ``fps``. The delegate reads these TH_PLAYBLAST_*
+    variables only where the stage's render settings say nothing; the farm
+    playblast's settings prim (render_settings.
+    generate_playblast_settings_section) says nothing, so the dialog's look
+    decides."""
+    motion_blur, dof, blur_samples = blur
     resources = (
         pipeline_path / 'plugins' / f'houdini{houdini_major}'
         / 'hdThPlayblast' / 'resources'
@@ -57,6 +75,11 @@ def viewport_env(env: dict, pipeline_path: Path, houdini_major: int) -> dict:
             f'{path_str(resources)}{os.pathsep}{current}' if current
             else path_str(resources)
         ),
+        'TH_PLAYBLAST_SHADING': shading,
+        'TH_PLAYBLAST_MOTION_BLUR': '1' if motion_blur else '0',
+        'TH_PLAYBLAST_DOF': '1' if dof else '0',
+        'TH_PLAYBLAST_BLUR_SAMPLES': str(blur_samples),
+        'TH_PLAYBLAST_FPS': str(fps),
     }
 
 
@@ -109,6 +132,46 @@ def xpu_args(look: dict) -> list[str]:
         '--timelimit', str(XPU_FRAME_SECONDS),
         '--timelimit-image',
     ]
+
+
+# What a failed render's husk log usually says, and what each means.
+HUSK_LOG_HINTS = (
+    'Read the husk log above before blaming the worker: "All AOVs bypassed '
+    'or missing" means the stage asked for a render var the preview cannot '
+    'fill, which is a submission problem, not a machine one. "No licenses '
+    'could be found" is licensing, not the GPU. "Unable to load render '
+    'plugin: BRAY_HdKarmaXPU" or a CUDA/OptiX error means this worker has no '
+    'usable NVIDIA GPU for Karma XPU. '
+    f'"Unable to load render plugin: {VIEWPORT_DELEGATE}" means this '
+    'TumblePipe install has no plugins/houdini<major>/ delegate build for '
+    "the job's Houdini."
+)
+
+
+def render_problem(
+    husk_returncode: int, render_range: BlockRange, jpg_path: Path,
+) -> str | None:
+    """Why the husk render of ``render_range`` to ``jpg_path`` (with
+    ``HOUDINI_FRAME_TOKEN``) cannot become the playblast, or None when it
+    can: husk exited 0 and wrote every frame of the range.
+
+    A playblast missing frames is refused, not encoded: the encoder would
+    hold the frame before each hole, and a shot's playblast that freezes
+    where husk died reads as the animation, not as a failure.
+    """
+    missing = [
+        frame for frame in render_range
+        if not frame_file(jpg_path, frame, HOUDINI_FRAME_TOKEN).exists()
+    ]
+    if husk_returncode == 0 and not missing:
+        return None
+    rendered = len(render_range) - len(missing)
+    shown = ', '.join(map(str, missing[:10])) + (', ...' if len(missing) > 10 else '')
+    detail = f'; missing frames {shown}' if missing else ''
+    return (
+        f'Playblast failed: husk exited {husk_returncode} having rendered {rendered}/'
+        f'{len(render_range)} frames{detail}. {HUSK_LOG_HINTS}'
+    )
 
 
 def main(
@@ -174,14 +237,19 @@ def main(
         print(f'Renderer: {renderer}')
         if renderer == 'viewport':
             houdini_major = int(env[HOUDINI_VERSION_ENV].split('.')[0])
-            env = viewport_env(env, Path(api.PIPELINE_PATH), houdini_major)
+            shading = playblast_spec.look_shading(look)
+            blur = playblast_spec.look_blur(look)
+            print(f'Shading: {shading}')
+            print('Blur: motion {}, depth of field {}, {} samples'.format(*blur))
+            env = viewport_env(env, Path(api.PIPELINE_PATH), houdini_major, shading,
+                               blur, fps)
             renderer_args = viewport_args()
         else:
             renderer_args = ['--check-licenses', 'Karma Renderer', *xpu_args(look)]
-        # A failing husk is reported, then the frames it did write are encoded:
-        # a husk that dies halfway leaves enough frames behind for a
-        # plausible short mp4, and the frame check below catches one that
-        # wrote none.
+        # husk can exit 0 having written nothing ("All AOVs bypassed"), and
+        # non-zero having written part of the range: render_problem checks
+        # both.
+        husk_returncode = 0
         try:
             husk.run(
                 input_path,
@@ -200,32 +268,19 @@ def main(
                 env=env
             )
         except CommandFailed as failed:
-            print(f'husk exited {failed.returncode}')
+            husk_returncode = failed.returncode
+        problem = render_problem(husk_returncode, render_range, temp_jpg_path)
+        if problem is not None:
+            return error(problem)
+        print(f'Rendered {len(render_range)} frames')
 
-        # Check that the frames were generated
-        rendered = 0
-        for frame_index in render_range:
-            frame_path = frame_file(temp_jpg_path, frame_index, HOUDINI_FRAME_TOKEN)
-            if frame_path.exists():
-                rendered += 1
-        if rendered == 0:
-            return error(
-                'Playblast produced no frames. Read the husk log above before '
-                'blaming the worker: "All AOVs bypassed or missing" means the '
-                'stage asked for a render var the preview cannot fill, which '
-                'is a submission problem, not a machine one. "No licenses '
-                'could be found" is licensing, not the GPU. "Unable to load '
-                'render plugin: BRAY_HdKarmaXPU" or a CUDA/OptiX error means '
-                'this worker has no usable NVIDIA GPU for Karma XPU. '
-                f'"Unable to load render plugin: {VIEWPORT_DELEGATE}" means '
-                'this TumblePipe install has no plugins/houdini<major>/ '
-                'delegate build for the job\'s Houdini.'
-            )
-        print(f'Rendered {rendered}/{len(render_range)} frames')
-
-        # Encode the mp4 (fills any missing frames by repeat, like the local HDA)
+        # Encode the mp4. Every rendered frame is there; a stepped range's
+        # in-between frames hold the rendered frame before them.
         headline('Encoding mp4')
-        mp4.from_jpg(temp_jpg_path, render_range, fps, temp_mp4_path)
+        mp4.from_jpg(
+            temp_jpg_path, render_range, fps, temp_mp4_path,
+            repeat_missing_frames=False,
+        )
         if not temp_mp4_path.exists():
             return error(f'Failed to encode mp4: {temp_mp4_path}')
 

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 879d152713d5f0ad3f6f5067c41e8f996b7158d634c9ea800ba6ea216adfe3b3 # shrinks to boxes = [(([0.0, 0.0, 0.0], [0.05, 0.7434345, 0.05], 0.0, [0.0, 0.0, 0.0]), (1, [-0.4715672, 0.0, 0.0], 0.0))], samples = 1, blur_samples = 8, camera_move = None, lens = None, shading = Lit, ao = false, cached = false
+cc 44bb9ee86c6567ff9ca70a6eb4c12213b32b652e6426bb02057e3f26afcd3290 # shrinks to boxes = [(([-0.7973091, 0.0, 0.44114292], [0.7393695, 0.9686872, 1.1563319], -0.52925456, [0.0, 0.0, 0.0]), (0, [0.0, 0.0, 0.0], 0.0))], samples = 4, blur_samples = 8, camera_move = Some([0.33750757059968284, -0.043721358798566416, 0.024879033703448874]), lens = None, shading = Occlusion, ao = true, cached = false

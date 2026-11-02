@@ -175,24 +175,20 @@ def get_export_frame_range(uri: Uri) -> FrameRange | None:
     start = frame_range.start_frame
     return FrameRange(start, start, 0, 0)
 
-def get_fps(uri: Uri | None = None) -> int | None:
-    """Get FPS with optional entity override.
+def get_fps(uri: Uri) -> int | None:
+    """The fps of ``uri`` (an entity, which inherits the project's unless it
+    sets its own, or ``config:/project``); None when none is configured.
 
-    Args:
-        uri: Entity URI for entity-specific FPS, or None for project default
-
-    Returns:
-        FPS value or None if not configured
+    There is no default ``uri``: an export or a timeline that asked for "the
+    fps" got the project's, and a shot with its own fps went out at the
+    wrong rate.
     """
-    if uri is None:
-        uri = Uri.parse('config:/project')
-
     properties = api.config.get_properties(uri)
     if properties is None: return None
     if 'fps' not in properties: return None
     return int(properties['fps'])
 
-def require_fps(uri: Uri | None = None) -> int:
+def require_fps(uri: Uri) -> int:
     """:func:`get_fps`, raising when no fps is configured.
 
     For whatever cannot run without one -- an encode, a staged build, a
@@ -201,6 +197,5 @@ def require_fps(uri: Uri | None = None) -> int:
     """
     fps = get_fps(uri)
     if fps is None:
-        where = 'the project' if uri is None else f'{uri} or the project'
-        raise ValueError(f'No fps configured for {where}')
+        raise ValueError(f'No fps configured for {uri} or the project')
     return fps

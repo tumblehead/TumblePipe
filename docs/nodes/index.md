@@ -44,6 +44,7 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | `th::cache` | LOP | Versioned USD cache of the incoming stage, in the workfile's cache folder |
 | `th::create_asset` | LOP | Root of the asset-building chain: the asset prim and its category scope |
 | `th::create_model` | LOP | Standalone model builder (same geometry contract as `create_asset_model`) |
+| `th::layout_rigs` | LOP | A shot's assets in layout's APEX scene: a rig per character, a control per other asset, the camera rig |
 | `th::animate` | LOP | Dive-in SOP network imported as animated USD over the incoming stage |
 | `th::archive` | LOP | Flatten the whole stage to one `.usd` with every asset localized beside it |
 | `th::asset_thumbnail` | LOP | Render a 256×256 thumbnail of a prim with Karma XPU |

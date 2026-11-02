@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use exr::prelude::*;
 use proptest::prelude::*;
-use th_media::{ExrLayer, ExrSequence, ExrView, Pixels, sequence_frames, split_frame_name};
+use th_media::{ExrLayer, ExrSequence, ExrView, Pixels};
 
 /// Channel names a layer is drawn from: colour, vector and odd ones, in two
 /// cases.
@@ -80,14 +80,8 @@ fn image_spec() -> impl Strategy<Value = ImageSpec> {
         ),
         1..4,
     );
-    (
-        (-3i32..3, -3i32..3, 1usize..7, 1usize..7),
-        (-3i32..3, -3i32..3, 1usize..7, 1usize..7),
-        layers,
-        any::<bool>(),
-        any::<bool>(),
-    )
-        .prop_map(|(display, data, layers, multipart, with_unnamed)| {
+    ((-3i32..3, -3i32..3, 1usize..7, 1usize..7), (-3i32..3, -3i32..3, 1usize..7, 1usize..7), layers, any::<bool>(), any::<bool>()).prop_map(
+        |(display, data, layers, multipart, with_unnamed)| {
             // Unique layer names, unique channels per layer.
             let mut seen = HashSet::new();
             let mut layers: Vec<LayerSpec> = layers
@@ -100,13 +94,11 @@ fn image_spec() -> impl Strategy<Value = ImageSpec> {
                 .collect();
             // A single-part file may also hold an unnamed layer (bare R, G, B).
             if with_unnamed && !multipart {
-                layers.push(LayerSpec {
-                    name: String::new(),
-                    channels: vec![("R".into(), true), ("G".into(), false), ("B".into(), true)],
-                });
+                layers.push(LayerSpec { name: String::new(), channels: vec![("R".into(), true), ("G".into(), false), ("B".into(), true)] });
             }
             ImageSpec { display, data, layers, multipart }
-        })
+        },
+    )
 }
 
 /// The value written at data-window pixel `pixel` of channel `channel` of
@@ -137,12 +129,8 @@ fn write(spec: &ImageSpec, path: &std::path::Path) {
     let mut parts: Vec<Layer<AnyChannels<FlatSamples>>> = Vec::new();
     if spec.multipart {
         for (li, l) in spec.layers.iter().enumerate() {
-            let channels = l
-                .channels
-                .iter()
-                .enumerate()
-                .map(|(ci, (c, f))| AnyChannel::new(c.as_str(), samples(spec, li, ci, *f)))
-                .collect();
+            let channels =
+                l.channels.iter().enumerate().map(|(ci, (c, f))| AnyChannel::new(c.as_str(), samples(spec, li, ci, *f))).collect();
             parts.push(Layer::new((w, h), layer_at(Some(&l.name)), Encoding::FAST_LOSSLESS, AnyChannels::sort(channels)));
         }
     } else {
@@ -172,15 +160,15 @@ fn sorted(mut v: Vec<String>) -> Vec<String> {
 proptest! {
     #![proptest_config(ProptestConfig { cases: 96, ..ProptestConfig::default() })]
 
-    /// `layers()` lists what was written, and every view of every listed
+    /// The header lists what was written, and every view of every listed
     /// layer decodes to the written samples, placed by the data window
     /// inside the display window and zero elsewhere.
     #[test]
     fn every_listed_view_decodes_what_was_written(spec in image_spec(), tag in any::<u64>()) {
         let path = temp_path(tag);
         write(&spec, &path);
-        let sequence = ExrSequence::new(vec![path.clone()]);
-        let layers = sequence.layers().unwrap();
+        let sequence = ExrSequence::new(1, 1, vec![path.clone()]);
+        let layers = sequence.header().unwrap().layers;
 
         let listed: Vec<(String, Vec<String>)> =
             sorted_layers(layers.iter().map(|l| (l.name.clone(), sorted(l.channels.clone()))).collect());
@@ -198,10 +186,11 @@ proptest! {
                 let view = ExrView { layer: layer.name.clone(), channel: channel.clone() };
                 let frame = sequence.decode(0, &view).unwrap();
                 prop_assert_eq!((frame.width as usize, frame.height as usize), (dw, dh));
-                let Pixels::Half { data, channels } = &*frame.pixels else { panic!("an EXR frame is half floats") };
+                let Pixels::Rgba16f(data) = &*frame.pixels else { panic!("an EXR frame is RGBA halfs") };
                 let shown = layer.shown(channel.as_deref()).unwrap();
-                prop_assert_eq!(*channels, shown.len());
-                for (slot, &which) in shown.iter().enumerate() {
+                // The RGBA slots each shown channel fills: one channel is grey.
+                let slots: Vec<Vec<usize>> = if shown.len() == 1 { vec![vec![0, 1, 2]] } else { vec![vec![0], vec![1], vec![2]] };
+                for (targets, &which) in slots.iter().zip(&shown) {
                     let name = &layer.channels[which];
                     let ci = spec.layers[li].channels.iter().position(|c| &c.0 == name).unwrap();
                     for py in 0..dh {
@@ -213,8 +202,11 @@ proptest! {
                             } else {
                                 0.0
                             };
-                            let got = data[(py * dw + px) * channels + slot].to_f32();
-                            prop_assert_eq!(got, expected, "{:?} channel {} at display ({}, {})", view, name, px, py);
+                            let pixel = &data[(py * dw + px) * 4..][..4];
+                            for &slot in targets {
+                                prop_assert_eq!(pixel[slot].to_f32(), expected, "{:?} channel {} at display ({}, {})", view, name, px, py);
+                            }
+                            prop_assert_eq!(pixel[3].to_f32(), 1.0, "alpha at ({}, {})", px, py);
                         }
                     }
                 }
@@ -242,52 +234,13 @@ fn default_view_is_the_beauty() {
     assert_eq!(view(&[]), "");
 }
 
-/// A frame-file name around a frame number: a prefix that does not end in a
-/// digit (so the number's run starts where it should) and a suffix with no
-/// digits.
-fn name_parts() -> impl Strategy<Value = (String, String)> {
-    ("[a-zA-Z0-9_]{0,12}[._a-z]|", "[._]?(exr|EXR|tif)?")
-}
-
-proptest! {
-    #[test]
-    fn split_frame_name_finds_the_last_number((prefix, suffix) in name_parts(), number in 0i64..100_000, pad in 1usize..8) {
-        let name = format!("{prefix}{number:0pad$}{suffix}");
-        prop_assert_eq!(split_frame_name(&name), Some((prefix.as_str(), number, suffix.as_str())));
-    }
-
-    /// Scanning keeps every frame of the sequence in its numbered slot,
-    /// gaps as None, and ignores other sequences in the same folder.
-    #[test]
-    fn sequence_frames_slots_by_number(
-        (prefix, suffix) in name_parts(),
-        numbers in prop::collection::btree_set(0i64..300, 1..40),
-        pad in 1usize..6,
-        given in any::<prop::sample::Index>(),
-    ) {
-        let name = |n: i64| format!("{prefix}{n:0pad$}{suffix}");
-        let mut names: Vec<String> = numbers.iter().map(|&n| name(n)).collect();
-        // Another AOV's frames, and a stray file.
-        names.extend(numbers.iter().map(|&n| format!("other_{n:04}.exr")));
-        names.push("notes.txt".into());
-        let numbers: Vec<i64> = numbers.into_iter().collect();
-        let picked = name(numbers[given.index(numbers.len())]);
-        let (first, frames) = sequence_frames(&names, &picked);
-        prop_assert_eq!(first, numbers[0]);
-        prop_assert_eq!(frames.len() as i64, numbers.last().unwrap() - numbers[0] + 1);
-        for (slot, frame) in frames.iter().enumerate() {
-            let n = first + slot as i64;
-            let expected = numbers.contains(&n).then(|| name(n));
-            prop_assert_eq!(frame, &expected);
-        }
-    }
-}
-
+/// A frame missing on disk is a decode error of that frame, numbered as the
+/// sequence numbers it.
 #[test]
-fn a_gap_is_a_decode_error_not_a_shifted_frame() {
-    let sequence = ExrSequence::with_gaps(1001, vec![None]);
-    assert!(sequence.decode(0, &ExrView::default()).is_err());
-    assert_eq!(sequence.first_frame(), 1001);
+fn a_missing_frame_is_a_decode_error_not_a_shifted_frame() {
+    let sequence = ExrSequence::new(1001, 2, vec![temp_path(u64::MAX - 1)]);
+    assert!(matches!(sequence.decode(0, &ExrView::default()), Err(th_media::Error::Decode { index: 0, .. })));
+    assert_eq!(sequence.frame_number(0), 1001);
 }
 
 /// A decode stops once it is no longer wanted: at once when it never was,
@@ -299,7 +252,7 @@ fn a_decode_no_longer_wanted_stops() {
     let channels = SpecificChannels::rgba(|_: Vec2<usize>| (0.5_f32, 0.25_f32, 0.125_f32, 1.0_f32));
     let layer = Layer::new((1024, 1024), LayerAttributes::default(), Encoding::UNCOMPRESSED, channels);
     Image::from_layer(layer).write().to_file(&path).unwrap();
-    let sequence = ExrSequence::new(vec![path.clone()]);
+    let sequence = ExrSequence::new(1, 1, vec![path.clone()]);
     let view = ExrView::default();
 
     assert!(matches!(sequence.decode_while(0, &view, &|| false), Err(th_media::Error::Cancelled { index: 0 })));

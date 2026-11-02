@@ -12,6 +12,34 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.86.0 — 2026-10-30
+
+### Features
+- feat(wizard): migration v17 takes WSL-era paths out of machine-local storage (`3e2511ab`)
+- feat(farm): the Farm Manager shows what needs you first (`e9c312f5`)
+- feat(farm): open the Farm Manager from TumbleTrove ▸ TumblePipe (`66c3cecf`)
+- feat(delegate): opt-in wgpu GPU path for the playblast delegate (`027bd2f4`)
+- feat(playblast): farm playblasts render with our viewport delegate by default (`6de9c179`)
+- feat(delegate): usable playblast delegate — meshes, purposes, instancing, skinning, textures (`8735acba`)
+- feat(delegate): hdThPlayblast, a playblast render delegate husk can load (`4590a763`)
+
+### Fixes
+- fix(export): name the non-commercial licence when Houdini writes .usdnc (`08008751`)
+- fix(local-farm): read cp1252 env files where the locale is UTF-8 (`edd6b6ee`)
+- fix(delegate): draw implicit shapes, faceted like Storm (`bff00494`)
+
+### Documentation
+- docs(delegate): implicit shapes and faceted polygons in the playblast look (`ed798a52`)
+- docs: regenerate CHANGELOG.md for v1.85.1 (`5e6cf2a3`)
+
+### Tests
+- test(local_farm): the runner's end-to-end properties stop starving (`01201c09`)
+- test(delegate): properties for the rendering core + husk smoke render in CI (`deebd592`)
+
+### Other Changes
+- Merge remote-tracking branch 'origin/master' into merge/farm-manager (`ce985aac`)
+- Merge master (v1.85.1) into spike/hydra-delegate (`77a5ed22`)
+
 ## v1.85.1 — 2026-10-30
 
 ### Fixes

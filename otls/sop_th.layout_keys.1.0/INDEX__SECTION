@@ -1,0 +1,14 @@
+Operator:     th::layout_keys::1.0
+Label:        TH Layout Keys
+Path:         oplib:/th::Sop/layout_keys::1.0?th::Sop/layout_keys::1.0
+Icon:         SOP_subnet
+Table:        Sop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri Oct 30 20:27:33 2026
+

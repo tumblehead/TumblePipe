@@ -27,7 +27,7 @@ TumblePipe/
 ├── src/                         # Native (Rust/C++) sources — built, not shipped as source
 │   ├── resolver/                #   `entity://` USD resolver (Rust core + C++ ArResolver shim)
 │   ├── wizard/                  #   hook apps: core + tt_setup + tt_prepare (Rust/egui)
-│   ├── player/                  #   th_player sequence player: FFmpeg, EXR, OCIO, OTIO playlist (Rust/Primer)
+│   ├── player/                  #   th_player sequence player: FFmpeg, EXR, OCIO, JSON playlist on stdin (Rust/Primer)
 │   └── vram/                    #   VRAM Inspector: viewport hook DSO (C++) + size-model calibration (dev-only)
 ├── resources/                   # Icons, UI resources, templates
 ├── scripts/                     # TumbleTrove hooks, node event scripts, maintenance CLIs

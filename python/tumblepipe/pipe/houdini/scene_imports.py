@@ -65,6 +65,12 @@ REFRESH_SPECS = (
     ImportSpec("import_rig", "Sop",
                "tumblepipe.pipe.houdini.sops.import_rig:ImportRig",
                newest="latest"),
+    # Layout in Animate: each row loads an asset's published rig; Build
+    # (execute) loads the newest one again. The keys live in the APEX
+    # Animate LOP after it, so a rebuild keeps them.
+    ImportSpec("layout_rigs", "Lop",
+               "tumblepipe.pipe.houdini.lops.layout_rigs:LayoutRigs",
+               newest="latest", rows="rows"),
     # Run the outer HDA, not only its inner import_layer: its execute()
     # copies the version label and bypass state up from the inner node.
     ImportSpec("import_model", "Sop",
@@ -86,6 +92,10 @@ NOT_UPSTREAM_IMPORTS = frozenset({
     "lop_th.cache",
     "sop_th.cache",
     "lop_th.sop_modify",
+    # Each row's layout version is the animator's pin, never refreshed or
+    # forced to the newest on a farm publish: a copy of layout's keys
+    # changes only when the animator moves a row to a newer layout.
+    "sop_th.layout_keys",
 })
 
 

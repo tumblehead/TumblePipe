@@ -112,185 +112,72 @@ def _update():
         build_comp_node.update()
         print(f'Updated {build_comp_node.path()}')
 
+def _publish_entity(entity_uri: Uri, department_name: str):
+    """Publish one shot or asset's department from the loaded workfile: its
+    shared layers first, then its layer.
+
+    Every node runs here, headless (``force_local``): without it a node's
+    ``execute`` opens the export window, which hython has no UI for.
+    """
+
+    def _is_for_entity(node) -> bool:
+        return (
+            node.get_department_name() == department_name
+            and node.get_entity_uri() == entity_uri
+        )
+
+    split_nodes = filter(_is_for_entity, map(
+        layer_split.LayerSplit, ns.list_by_node_type('layer_split', 'Lop')
+    ))
+    for split_node in split_nodes:
+        split_node.execute(force_local=True)
+        print(f'Exported shared layer: {split_node.path()}')
+
+    export_nodes = list(filter(_is_for_entity, map(
+        export_layer.ExportLayer, ns.list_by_node_type('export_layer', 'Lop')
+    )))
+
+    # Zero matches is either a workfile with nothing for this entity
+    # (skipped) or a matcher/context failure (raised) — see _no_export_node.
+    if len(export_nodes) == 0:
+        raise _no_export_node(entity_uri, department_name, _get_workfile_group())
+
+    export_node = export_nodes[0]
+    export_node.execute(force_local=True)
+    print(f'Published {export_node.path()}')
+
 def _publish(entity_uri: Uri, department_name: str):
+    """Publish the department of a shot, an asset, or each member of a
+    Multi. Failures raise so main()'s per-department handler records them
+    and the task exits non-zero."""
 
-    def _publish_asset(
-        asset_uri: Uri,
-        department_name: str
-        ):
+    def _require_entity(uri: Uri) -> Uri:
+        kind = uri.segments[0] if uri.segments else None
+        if uri.purpose != 'entity' or kind not in ('shots', 'assets'):
+            raise RuntimeError(f'Not a shot or an asset: {uri}')
+        return uri
 
-        # Check if we're in a group workfile
-        group = _get_workfile_group()
+    if entity_uri.purpose != 'groups':
+        _publish_entity(_require_entity(entity_uri), department_name)
+        return
 
-        if group is not None:
-            # Group workfile: use membership-based matching
-            member_uris = set(group.members)
-
-            def _is_split_correct(node):
-                if node.get_department_name() != department_name: return False
-                entity_uri = node.get_entity_uri()
-                if entity_uri is None: return False
-                return entity_uri in member_uris and entity_uri == asset_uri
-
-            def _is_export_correct(node):
-                if node.get_department_name() != department_name: return False
-                entity_uri = node.get_entity_uri()
-                if entity_uri is None: return False
-                return entity_uri in member_uris and entity_uri == asset_uri
-        else:
-            # Single entity workfile: use exact matching (current behavior)
-            def _is_split_correct(node):
-                if node.get_department_name() != department_name: return False
-                if node.get_entity_uri() != asset_uri: return False
-                return True
-
-            def _is_export_correct(node):
-                if node.get_department_name() != department_name: return False
-                if node.get_entity_uri() != asset_uri: return False
-                return True
-
-        # Execute layer_split nodes first (shared content)
-        split_nodes = list(filter(
-            _is_split_correct,
-            map(
-                layer_split.LayerSplit,
-                ns.list_by_node_type('layer_split', 'Lop')
-            )
-        ))
-        for split_node in split_nodes:
-            split_node.execute()
-            print(f'Exported shared layer: {split_node.path()}')
-
-        # Find the export nodes
-        export_nodes = list(filter(
-            _is_export_correct,
-            map(
-                export_layer.ExportLayer,
-                ns.list_by_node_type('export_layer', 'Lop')
-            )
-        ))
-
-        # Execute the export node. Zero matches is either a workfile with
-        # nothing for this asset (skipped) or a matcher/context failure
-        # (raised) — see _no_export_node.
-        if len(export_nodes) == 0:
-            raise _no_export_node(asset_uri, department_name, group)
-
-        asset_export_node = export_nodes[0]
-        asset_export_node.execute(force_local=True)
-        print(f'Published {asset_export_node.path()}')
-
-    def _publish_shot(
-        shot_uri: Uri,
-        department_name: str
-        ):
-
-        # Check if we're in a group workfile
-        group = _get_workfile_group()
-
-        if group is not None:
-            # Group workfile: use membership-based matching
-            member_uris = set(group.members)
-
-            def _is_shot_split_correct(node):
-                if node.get_department_name() != department_name: return False
-                entity_uri = node.get_entity_uri()
-                if entity_uri is None: return False
-                return entity_uri in member_uris and entity_uri == shot_uri
-
-            def _is_shot_export_correct(node):
-                if node.get_department_name() != department_name: return False
-                entity_uri = node.get_entity_uri()
-                if entity_uri is None: return False
-                return entity_uri in member_uris and entity_uri == shot_uri
-        else:
-            # Single entity workfile: use exact matching (current behavior)
-            def _is_shot_split_correct(node):
-                if node.get_department_name() != department_name: return False
-                if node.get_entity_uri() != shot_uri: return False
-                return True
-
-            def _is_shot_export_correct(node):
-                if node.get_department_name() != department_name: return False
-                if node.get_entity_uri() != shot_uri: return False
-                return True
-
-        # Execute layer_split nodes first (shared content)
-        shot_split_nodes = list(filter(
-            _is_shot_split_correct,
-            map(
-                layer_split.LayerSplit,
-                ns.list_by_node_type('layer_split', 'Lop')
-            )
-        ))
-        for split_node in shot_split_nodes:
-            split_node.execute()
-            print(f'Exported shared layer: {split_node.path()}')
-
-        # Find the export nodes
-        shot_export_nodes = list(filter(
-            _is_shot_export_correct,
-            map(
-                export_layer.ExportLayer,
-                ns.list_by_node_type('export_layer', 'Lop')
-            )
-        ))
-
-        # Execute the export node. Zero matches is either a workfile with
-        # nothing for this shot (skipped) or a matcher/context failure
-        # (raised) — see _no_export_node.
-        if len(shot_export_nodes) == 0:
-            raise _no_export_node(shot_uri, department_name, group)
-
-        shot_export_node = shot_export_nodes[0]
-        shot_export_node.execute(force_local=True)
-        print(f'Published {shot_export_node.path()}')
-
-    # Get entity type from URI. Failures raise so main()'s per-department
-    # handler records them and the task exits non-zero.
-    if entity_uri.purpose == 'groups':
-        # Expand group to member shots/assets
-        group = get_group(entity_uri)
-        if group is None:
-            raise RuntimeError(f'Group not found: {entity_uri}')
-        # A member with nothing to publish is skipped, not fatal: it must not
-        # stop the members after it from publishing.
-        skipped = []
-        for member_uri in group.members:
-            try:
-                if member_uri.segments[0] == 'shots':
-                    _publish_shot(
-                        shot_uri = member_uri,
-                        department_name = department_name
-                    )
-                elif member_uri.segments[0] == 'assets':
-                    _publish_asset(
-                        asset_uri = member_uri,
-                        department_name = department_name
-                    )
-                else:
-                    raise RuntimeError(
-                        f'Group {entity_uri} member has unknown entity type: {member_uri}')
-            except NothingToPublish as e:
-                print(f'WARNING: {e}')
-                skipped.append(member_uri)
-        if skipped and len(skipped) == len(group.members):
-            raise NothingToPublish(
-                f'No member of {entity_uri} has anything to publish for '
-                f'{department_name}'
-            )
-    elif entity_uri.segments[0] == 'assets':
-        _publish_asset(
-            asset_uri = entity_uri,
-            department_name = department_name
+    group = get_group(entity_uri)
+    if group is None:
+        raise RuntimeError(f'Group not found: {entity_uri}')
+    # A member with nothing to publish is skipped, not fatal: it must not
+    # stop the members after it from publishing.
+    skipped = []
+    for member_uri in group.members:
+        try:
+            _publish_entity(_require_entity(member_uri), department_name)
+        except NothingToPublish as e:
+            print(f'WARNING: {e}')
+            skipped.append(member_uri)
+    if skipped and len(skipped) == len(group.members):
+        raise NothingToPublish(
+            f'No member of {entity_uri} has anything to publish for '
+            f'{department_name}'
         )
-    elif entity_uri.segments[0] == 'shots':
-        _publish_shot(
-            shot_uri = entity_uri,
-            department_name = department_name
-        )
-    else:
-        raise RuntimeError(f'Invalid entity type: {entity_uri.segments[0]}')
 
 def _load_workfile(bundled_path: Path) -> None:
     """Load the bundled workfile, raising if it is missing or fails to load."""

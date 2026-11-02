@@ -1070,8 +1070,8 @@ class FieldArrayItem(QStandardItem, QObject):
         del self._items[index]
 
         # Re-index the items
-        for index, item in enumerate(self._items):
-            item._index = index
+        for position, item in enumerate(self._items):
+            item._index = position
 
         # Emit the item removed signal
         if not notify:
@@ -1588,8 +1588,7 @@ class IndexArrayItem(QStandardItem, QObject):
 
         # Remove the item from the model
         index_item = self._items[index]
-        index_item.item_added.disconnect(self._on_item_added)
-        index_item.item_removed.disconnect(self._on_item_removed)
+        index_item.change.disconnect(self.change)
         self.removeRow(index)
         del self._items[index]
 
@@ -1653,8 +1652,8 @@ class IndexArrayItem(QStandardItem, QObject):
         del self._items[index]
 
         # Re-index the items
-        for index, item in enumerate(self._items):
-            item._index = index
+        for position, item in enumerate(self._items):
+            item._index = position
 
         # Emit the item removed signal
         if not notify:

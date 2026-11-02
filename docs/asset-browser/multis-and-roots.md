@@ -209,6 +209,8 @@ What to know:
 - Only `import_shot` and `export_layer` read the offset. Other nodes that
   work on one shot's frames (`import_layer`, playblasts, caches) still use
   the shot's own frames; set them by hand inside a shared-timeline Multi.
+- Looking through a camera, the [shot slate](settings.md#the-shot-slate)
+  says which shot the playhead is in and where, in that shot's own frames.
 
 ### Open Location and Delete
 

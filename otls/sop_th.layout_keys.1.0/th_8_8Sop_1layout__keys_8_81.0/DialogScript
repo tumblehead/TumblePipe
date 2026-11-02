@@ -1,0 +1,129 @@
+# Dialog script for th::layout_keys::1.0 automatically generated
+
+{
+    name	th::layout_keys::1.0
+    script	th::layout_keys::1.0
+    label	"TH Layout Keys"
+
+    help {
+    }
+
+    inputlabel	1	"Sub-Network Input #1"
+    inputlabel	2	"Sub-Network Input #2"
+    inputlabel	3	"Sub-Network Input #3"
+    inputlabel	4	"Sub-Network Input #4"
+
+    parm {
+        name    "discover"
+        label   "Discover"
+        type    button
+        default { "0" }
+        help    "Add a row per character the newest layout keys have."
+        parmtag { "script_callback" "from tumblepipe.pipe.houdini.sops import layout_keys_rows; layout_keys_rows.discover_rows(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "copyall"
+        label   "Copy All from Layout"
+        type    button
+        default { "0" }
+        help    "Copy every row that is on into the Scene Animate (replaces those keys)."
+        parmtag { "script_callback" "from tumblepipe.pipe.houdini.sops import layout_keys_rows; layout_keys_rows.copy_rows(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "channel"
+        label   "Channel"
+        type    string
+        default { "default" }
+        help    "The layout export channel."
+    }
+    multiparm {
+        name    "rows"
+        label    "Rows"
+        default 0
+
+        parm {
+            name    "on#"
+            label   "On"
+            type    toggle
+            default { "1" }
+            help    "Off: Copy All leaves this character alone."
+        }
+        parm {
+            name    "character#"
+            label   "Layout Character"
+            type    string
+            default { "" }
+            help    "The character's clip in layout's keys."
+        }
+        parm {
+            name    "target#"
+            label   "Character"
+            type    string
+            default { "" }
+            help    "The animation character the keys go onto."
+        }
+        parm {
+            name    "version#"
+            label   "Layout Version"
+            type    string
+            default { "latest" }
+            help    "latest, or a pinned layout export version."
+            menureplace {
+                [ "from tumblepipe.pipe.houdini.sops import layout_keys_rows" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
+                [ "node = layout_keys_rows.LayoutKeys(hou.pwd())" ]
+                [ "return menus.list_to_menu(node.list_version_names())" ]
+                language python
+            }
+        }
+        parm {
+            name    "controls#"
+            label   "Controls"
+            type    string
+            default { "*" }
+            help    "Which controls are copied: * all, Main the placement; space-separated globs, ^ excludes."
+        }
+        parm {
+            name    "userange#"
+            label   "Frame Range"
+            type    toggle
+            default { "0" }
+        }
+        parm {
+            name    "first#"
+            label   "First"
+            type    integer
+            default { "1001" }
+            disablewhen "{ userange# == 0 }"
+            range   { 0 10 }
+        }
+        parm {
+            name    "last#"
+            label   "Last"
+            type    integer
+            default { "1100" }
+            disablewhen "{ userange# == 0 }"
+            range   { 0 10 }
+        }
+        parm {
+            name    "offset#"
+            label   "Offset"
+            type    float
+            default { "0" }
+            help    "Move the keys by this many frames."
+            range   { 0 10 }
+        }
+        parm {
+            name    "replace#"
+            label   "Copy from Layout"
+            type    button
+            default { "0" }
+            help    "Copy this row's layout keys into the Scene Animate, replacing the character's keys (its Controls)."
+            parmtag { "script_callback" "from tumblepipe.pipe.houdini.sops import layout_keys_rows; layout_keys_rows.copy_one(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+}

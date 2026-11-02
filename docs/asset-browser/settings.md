@@ -17,8 +17,8 @@ by who a change reaches:
 | Section | Reaches | Holds |
 |---|---|---|
 | **Your projects** | you only | Which projects your browser lists and merges into one grid. |
-| **Behaviour** | you only | Three toggles. |
-| **Project defaults** | everyone on the selected project | Its [department pool](#the-department-pool-editor). Owners and admins only. |
+| **Behaviour** | you only | Four toggles. |
+| **Project defaults** | everyone on the selected project | Its [department pool](#the-department-pool-editor) and [Layout in Animate](#layout-in-animate-beta). Owners and admins only. |
 
 ### Your projects
 
@@ -49,10 +49,73 @@ Each checkbox is saved the moment you click it — no Apply needed.
 |---|---|---|---|
 | **Autosave (version up) on scene change** | off | `autosave_on_scene_change` | When opening another workfile from the browser while the current scene has unsaved changes: **on** saves a new version silently; **off** asks (**Save Scene**: *Save new version* / *Discard changes* / *Cancel*). Either way the current workfile is never overwritten in place. Off-pipeline hips fall back to Houdini's own prompt. |
 | **Auto-import latest on workfile open** | on | `auto_refresh_on_open` | Whenever this Houdini loads a scene, through the browser or any other way, re-execute its import nodes so `current` and `latest` pick up the newest publish. Runs in manual update mode and skips `create_model` / `build_comp`. See [Picking up new versions on open](../composition.md#picking-up-new-versions-on-open). |
-| **Ask for a version note on save** | on | `prompt_note_on_save` | The **Save** quick action asks for a note that shows in the browser's Note column; Cancel aborts the save without burning a version. Off saves with a blank note. Autosave-on-scene-change and the emergency save never prompt. |
+| **Ask for a version note on save** | on | `prompt_note_on_save` | The **Save** quick action, and **Save new version** when switching scenes, ask for a note that shows in the browser's Note column; Cancel aborts the save without burning a version (and, when switching, the switch). Off saves with a blank note. Autosave-on-scene-change and the emergency save never prompt. |
+| **Show the shot in the camera view** | on | `shot_slate` | The [shot slate](#the-shot-slate). Off hides it in every Scene Viewer at once. |
 
 A failed write shows `Failed to persist … preference — see Houdini console`
 but keeps the checkbox as clicked.
+
+### The shot slate
+
+Looking through a camera in a shot's or a Multi's workfile, a small
+see-through chip sits under the bottom-right corner of the camera's frame:
+
+```
+010/0020   43/96   animation v0003   multishot anim_010     [-] [x]
+```
+
+The shot, the playhead's place in it (frame 43 of 96), then the workfile's
+department and version and, in a Multi, the Multi's name. The place turns
+amber in the pre / post roll (`preroll 6`) and red outside the shot
+(`out of shot 1001-1096`). The chip is opaque only while the mouse is on it.
+
+It has three sizes, remembered across sessions (`shot_slate_size`):
+**full**, **mini** (the shot and its place) and a **dot**. **[-]** / **[+]**
+switch full and mini, as does a double-click; **[x]** tucks it into the dot,
+and a click on the dot brings it back. Hovering the chip names the shot's
+URI and how it was found.
+
+Which shot the camera is on, first match:
+
+1. a shot pinned on the camera node (user data `th_shot`);
+2. the camera's own `th::import_shot`: a LOP Import Camera's LOP path, or a
+   Camera Import up the camera node's inputs, followed up the LOP's inputs;
+3. in a Multi, a member named in the camera node's name (the template's
+   `anim_camera_<sequence>_<shot>`);
+4. the workfile's shot;
+5. on a [shared timeline](multis-and-roots.md#shared-timeline), the member
+   under the playhead, whose place is counted in its own frames.
+
+Nothing cooks for it, and outside a TumblePipe workfile it draws nothing.
+Other packages can hand it cameras it cannot see itself
+(`shot_slate.register_camera_source`): TumbleRig's camera rig does, in
+Animate.
+
+## Layout in Animate (Beta)
+
+Under **Project defaults**, below the department pool, **Layout in Animate
+(Beta)** switches the selected project's layout over to animating the shot on
+the USD stage in an APEX Animate LOP: a control per component, characters on
+their rigs and a camera rig, with a publish that carries a baked layer for
+every department and the keys animation copies per character. It is stored
+as `layout_in_animate` on `config:/project`
+([`config.layout_animate`](../../python/tumblepipe/config/layout_animate.py))
+and written as you click it; owners and admins only, like the pool. Off (the
+default, and every project that never set it), layout and animation work as
+they always have.
+
+With it on, a new layout workfile (the stock `shots/layout` template, v19)
+builds the network after the shot camera: [`th::layout_rigs`](../nodes/import-and-export.md#thlayout_rigs-lop),
+an APEX Animate LOP, and the publish branch the export reads. A new
+animation workfile (`shots/animation`, v20) gets the camera rig rebuilt
+with layout's settings and [`th::layout_keys`](../nodes/assets.md#thlayout_keys-sop),
+which copies layout's keys per character into the Scene Animate, once;
+the animator copies again per row when they want a newer layout. Which
+camera rig layout gets is a package's choice
+(`shot_rigs.register_camera_rig`,
+[`shot_rigs.py`](../../python/tumblepipe/pipe/houdini/shot_rigs.py)):
+TumbleRig registers its `th::apex_camera`; without one, SideFX's own camera
+rig. The APEX LOPs it builds on are Beta in Houdini 22.0.
 
 ## The department pool editor
 
@@ -146,7 +209,7 @@ which departments the Multi's workfile overrides for its members. See
 
 | File | Written by | Contents |
 |---|---|---|
-| `$HOUDINI_USER_PREF_DIR/asset_browser/pipeline_prefs.json` (or `~/.config/asset_browser/pipeline_prefs.json` when the variable is unset) | the Behaviour toggles | The three prefs above plus `prefs_version` (currently 2; a file older than that re-defaults `auto_refresh_on_open` to on once). |
+| `$HOUDINI_USER_PREF_DIR/asset_browser/pipeline_prefs.json` (or `~/.config/asset_browser/pipeline_prefs.json` when the variable is unset) | the Behaviour toggles and the shot slate | The four prefs above, `shot_slate_size`, `farm_backend` (Farm Submit's last **Run on**) and `prefs_version` (currently 2; a file older than that re-defaults `auto_refresh_on_open` to on once). |
 | `$HOUDINI_USER_PREF_DIR/asset_browser/projects.json` (same fallback) | Apply Project Changes | The registered projects: name, project path, config path. |
 | `<package root>/radial_menus/tumblepipe_recipes.json` and `tumblepipe_asset_favorites.json` | Houdini startup (`tumblepipe.startup.register_radial`, `$TH_PIPELINE_PATH` is the package root) | Generated radial rings (Alt+R recipes, Alt+F asset favourites) for the `tumbleradial` package; `tumblepipe_pipeline.json` there is static and shipped. Regenerated every launch; a ring with fewer than two entries is deleted rather than written. |
 | `$TH_PROJECT_PATH/export/other/logs/$TH_USER.log` | every session, on `import tumblepipe` | The pipeline log — rotating, 5 MB × 3 backups. Written into the **project** share, so it is only attached when `TH_PROJECT_PATH` exists; identity-less sessions share `pipeline.log`. This is the file the failure dialogs name. See [Where the logs are](../development.md#where-the-logs-are). |

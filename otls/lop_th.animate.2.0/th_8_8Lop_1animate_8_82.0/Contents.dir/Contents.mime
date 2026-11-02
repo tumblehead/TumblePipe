@@ -274,7 +274,7 @@ matchesdef = 1
 Content-Disposition: attachment; filename="hdaroot/IN_stage_start.def"
 Content-Type: text/plain
 
-comment "The shot stage at the playbar start, frozen there.
+comment "The shot stage at the start of its shot, frozen there.
 zero_transforms and import_rig place read it: reading IN_stage
 itself in a cook makes th::animate time dependent."
 position 2.6 8.3
@@ -315,7 +315,7 @@ Content-Type: text/plain
       flags = 0
       segment { options = {	 untie  iv ov is os ia oa }
 
-	 length = 0 expr = hou.playbar.playbackRange()[0] language = python }
+	 length = 0 expr = "__import__('tumblepipe.pipe.houdini.shot_start', fromlist=['start_frame']).start_frame(pwd())" language = python }
     }
     channel time {
       lefttype = extend
@@ -402,17 +402,18 @@ Content-Type: text/plain
 
 {
 version 0.8
-python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import animate_xforms
+python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini import shot_start
+from tumblepipe.pipe.houdini.lops import animate_xforms
 
 node = hou.pwd()
 # The posed geometry is world space: keep the layout placement on the
 # prims that hold more than it, cancel it under them. IN_stage_start is
-# the shot stage held at the playbar start: reading IN_stage here would
+# the shot stage held at the shot's start: reading IN_stage here would
 # make th::animate time dependent whenever the shot stage is.
 animate_xforms.zero_transforms(
     node.editableStage(),
     node.node('../IN_stage_start').stage(),
-    hou.playbar.playbackRange()[0],
+    shot_start.start_frame(node),
 )
 "	)
 maintainstate	[ 0	locks=0 ]	(	"off"	)

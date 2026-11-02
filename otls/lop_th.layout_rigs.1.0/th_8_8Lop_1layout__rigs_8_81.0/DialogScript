@@ -1,0 +1,88 @@
+# Dialog script for th::layout_rigs::1.0 automatically generated
+
+{
+    name	th::layout_rigs::1.0
+    script	th::layout_rigs::1.0
+    label	"TH Layout Rigs"
+
+    help {
+    }
+
+    inputlabel	1	"Input Stage"
+    inputlabel	2	"Input 2"
+    inputlabel	3	"Input 3"
+    inputlabel	4	"Input 4"
+
+    parm {
+        name    "discover"
+        label   "Discover"
+        type    button
+        default { "0" }
+        help    "Fill the rows from the input stage, keeping the choices of prims already listed."
+        parmtag { "script_callback" "from tumblepipe.pipe.houdini.lops import layout_rigs; layout_rigs.discover_rows(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "build"
+        label   "Build"
+        type    button
+        default { "0" }
+        help    "Rebuild the network inside from the rows."
+        parmtag { "script_callback" "from tumblepipe.pipe.houdini.lops import layout_rigs; layout_rigs.build_rigs(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    multiparm {
+        name    "rows"
+        label    "Rows"
+        default 0
+
+        parm {
+            name    "prim#"
+            label   "Prim"
+            type    string
+            default { "" }
+            help    "The asset prim on the stage."
+        }
+        parm {
+            name    "entity#"
+            label   "Asset"
+            type    string
+            default { "" }
+            help    "The asset entity URI."
+        }
+        parm {
+            name    "mode#"
+            label   "Mode"
+            type    string
+            default { "control" }
+            help    "Rig: its published rig, the prim hidden. Control: a placement control on the prim. Off: as it is."
+            menu {
+                "rig"       "Rig"
+                "control"   "Control"
+                "off"       "Off"
+            }
+        }
+        parm {
+            name    "channel#"
+            label   "Rig Channel"
+            type    string
+            default { "default" }
+        }
+        parm {
+            name    "version#"
+            label   "Rig Version"
+            type    string
+            default { "latest" }
+            menu {
+                [ "from tumblepipe.pipe.houdini.lops import layout_rigs" ]
+                [ "from tumblepipe.pipe.houdini import menus" ]
+                [ "" ]
+                [ "index = int(kwargs['parm'].name()[len('version'):])" ]
+                [ "node = layout_rigs.LayoutRigs(hou.pwd())" ]
+                [ "return menus.list_to_menu(node.list_version_names(index))" ]
+                language python
+            }
+        }
+    }
+
+}

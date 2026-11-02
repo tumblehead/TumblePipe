@@ -16,7 +16,7 @@ posed geometry still lands in world space. The cancel sits on the
 geometry itself: a prim above it can end up a Scope (an asset's ``geo``),
 which ignores a transform.
 
-The HDA hands it IN_stage_start, the shot stage held at the playbar start,
+The HDA hands it IN_stage_start, the shot stage held at its shot's start,
 not IN_stage: a Python LOP that reads a time-dependent stage turns time
 dependent, and 1.85.0 made th::animate recook every frame that way.
 """

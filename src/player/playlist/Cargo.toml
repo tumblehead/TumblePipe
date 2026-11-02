@@ -1,13 +1,13 @@
 [package]
 name = "th_playlist"
-description = "The sequence player's playlist: shots and their takes, read from OTIO"
+description = "The sequence player's playlist: shots and their takes, as TumblePipe writes them"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-otio.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

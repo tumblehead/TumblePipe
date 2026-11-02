@@ -18,9 +18,13 @@ config = {
     'res': ['int', 'int'],
     'look': {                      # see valid_look
         'renderer': 'viewport' | 'karma',   # optional, absent = 'karma'
+        'shading': 'lit' | 'clay' | 'albedo' | 'occlusion',  # viewport only; optional, absent = 'lit'
         'light': 'dome' | 'headlight' | 'scene',   # karma only
         'samples': 'int',          # karma only
-        'materials': 'bool'        # karma only: scene materials, not clay
+        'materials': 'bool',       # karma only: scene materials, not clay
+        'motion_blur': 'bool',     # viewport only; optional, absent = off
+        'dof': 'bool',             # viewport only; optional, absent = off
+        'blur_samples': 'int'      # viewport only; optional, absent = 16
     },
     'input_path': 'string',        # collapsed staged USD, relative to job data
     'output_paths': ['string']     # versioned playblast mp4 + rolling daily mp4
@@ -43,16 +47,37 @@ from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
 
 # What renders a playblast:
 #   viewport -- hdThPlayblast (src/delegate), our Hydra render delegate: the
-#               viewport's look of the scene's display colours and textures
-#               under a headlight, on the CPU, with no licence. The default.
+#               viewport's look of the scene's display colours and textures,
+#               shaded as the look's 'shading' says, on the CPU, with no
+#               licence. The default.
 #   karma    -- Karma XPU in a preview mode, lit and sampled by the look's
 #               other keys. Takes a Karma licence and an NVIDIA GPU.
 PLAYBLAST_RENDERERS = ('viewport', 'karma')
 
+# How the viewport renderer shades (hdThPlayblast's composite::Shading), every
+# one with ambient occlusion:
+#   lit       -- the surface colours under key, fill and rim lights fixed to
+#                the camera. The default.
+#   clay      -- the same lights on a uniform grey.
+#   albedo    -- the surface colours alone, unlit.
+#   occlusion -- white, darkened only by the ambient occlusion.
+PLAYBLAST_SHADINGS = ('lit', 'clay', 'albedo', 'occlusion')
+
 # The look a playblast gets when its submission names none: a collapse job
 # submitted before the look existed. The dialog's defaults
 # (farm.submit.settings) match it; tests/test_submit_settings.py pins that.
-DEFAULT_LOOK = {'renderer': 'viewport', 'light': 'dome', 'samples': 32, 'materials': False}
+DEFAULT_LOOK = {
+    'renderer': 'viewport', 'shading': 'lit',
+    'light': 'dome', 'samples': 32, 'materials': False,
+    'motion_blur': False, 'dof': False, 'blur_samples': 16,
+}
+
+# The viewport renderer's blurs (hdThPlayblast's blur module): motion blur
+# over the camera's shutter, depth of field from its lens, each averaged
+# over a look's blur_samples images (2 to 64, rounded up to a power of
+# two). A look submitted before the blurs existed has neither.
+BLUR_SAMPLES_RANGE = (2, 64)
+DEFAULT_BLUR_SAMPLES = 16
 
 
 def look_renderer(look: dict) -> str:
@@ -61,16 +86,39 @@ def look_renderer(look: dict) -> str:
     return look.get('renderer', 'karma')
 
 
+def look_shading(look: dict) -> str:
+    """The viewport shading of a valid look. A look submitted before the
+    shading existed is lit, which is what it was drawn as."""
+    return look.get('shading', 'lit')
+
+
+def look_blur(look: dict) -> tuple[bool, bool, int]:
+    """A valid look's viewport blurs: motion blur, depth of field, and blur
+    samples. A look submitted before the blurs existed is drawn sharp."""
+    return (
+        look.get('motion_blur', False),
+        look.get('dof', False),
+        look.get('blur_samples', DEFAULT_BLUR_SAMPLES),
+    )
+
+
 def valid_look(look) -> bool:
-    """A playblast look: its renderer, how it is lit, its samples, clay or
-    materials."""
+    """A playblast look: its renderer, the viewport's shading and blurs,
+    how Karma lights it, its samples, clay or materials."""
     if not isinstance(look, dict): return False
     if look_renderer(look) not in PLAYBLAST_RENDERERS: return False
+    if look_shading(look) not in PLAYBLAST_SHADINGS: return False
     if not check_str(look, 'light'): return False
     if look['light'] not in PLAYBLAST_LIGHTS: return False
     if not check_int(look, 'samples'): return False
     if look['samples'] < 1: return False
     if not check_bool(look, 'materials'): return False
+    for key in ('motion_blur', 'dof'):
+        if key in look and not check_bool(look, key): return False
+    if 'blur_samples' in look:
+        if not check_int(look, 'blur_samples'): return False
+        low, high = BLUR_SAMPLES_RANGE
+        if not low <= look['blur_samples'] <= high: return False
     return True
 
 

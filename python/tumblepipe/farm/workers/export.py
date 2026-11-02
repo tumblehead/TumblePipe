@@ -9,7 +9,7 @@ from tumblepipe.api import (
     path_str,
     api
 )
-from tumblepipe.config.timeline import BlockRange
+from tumblepipe.config.timeline import BlockRange, require_fps
 from tumblepipe.util.io import store_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Hython
@@ -61,6 +61,7 @@ def main(config: dict, _frame_span: BlockRange) -> int:
             first_frame = first_frame,
             last_frame = last_frame,
             batch_size = batch_size,
+            fps = require_fps(entity_uri),
             render_settings_path = path_str(render_settings_path),
             input_path = path_str(input_path),
             node_path = node_path,

@@ -43,30 +43,74 @@ fn main() {
     for lib in LIBS {
         println!("cargo:rustc-link-lib=dylib={lib}");
     }
-    // Where the shared libraries are, for the player's build script to ship them.
-    let runtime = if platform().starts_with("windows") { dir.join("bin") } else { dir.join("lib") };
-    println!("cargo:runtime_dir={}", runtime.display());
     regenerate(&dir);
 }
 
+/// The FFmpeg functions th_media calls.
+#[cfg(feature = "regenerate")]
+const FUNCTIONS: &[&str] = &[
+    "av_find_best_stream",
+    "av_frame_alloc",
+    "av_frame_free",
+    "av_frame_unref",
+    "av_packet_alloc",
+    "av_packet_free",
+    "av_packet_unref",
+    "av_read_frame",
+    "av_seek_frame",
+    "av_strerror",
+    "avcodec_alloc_context3",
+    "avcodec_flush_buffers",
+    "avcodec_free_context",
+    "avcodec_open2",
+    "avcodec_parameters_to_context",
+    "avcodec_receive_frame",
+    "avcodec_send_packet",
+    "avformat_close_input",
+    "avformat_find_stream_info",
+    "avformat_open_input",
+    "sws_freeContext",
+    "sws_getCachedContext",
+    "sws_scale",
+];
+
+/// The types th_media names; the enums' values come with them.
+#[cfg(feature = "regenerate")]
+const TYPES: &[&str] = &[
+    "AVCodec",
+    "AVCodecContext",
+    "AVFormatContext",
+    "AVFrame",
+    "AVPacket",
+    "AVStream",
+    "SwsContext",
+    "AVColorRange",
+    "AVColorSpace",
+    "AVMediaType",
+    "AVPixelFormat",
+    "SwsFlags",
+];
+
+/// The flag macros th_media passes (`SWS_BICUBIC` is a `SwsFlags` value).
+#[cfg(feature = "regenerate")]
+const CONSTANTS: &[&str] = &["AVSEEK_FLAG_BACKWARD", "AV_PKT_FLAG_KEY", "FF_THREAD_SLICE"];
+
 #[cfg(feature = "regenerate")]
 fn regenerate(dir: &Path) {
-    let out = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("src/bindings")
-        .join(format!("{}.rs", platform()));
-    bindgen::Builder::default()
+    let out = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/bindings").join(format!("{}.rs", platform()));
+    let mut builder = bindgen::Builder::default()
         .header_contents(
             "ffmpeg.h",
             "#include <libavformat/avformat.h>\n\
              #include <libavcodec/avcodec.h>\n\
-             #include <libavutil/imgutils.h>\n\
-             #include <libavutil/pixdesc.h>\n\
              #include <libswscale/swscale.h>\n",
         )
-        .clang_arg(format!("-I{}", dir.join("include").display()))
-        .allowlist_function("(av|avcodec|avformat|sws)_.*")
-        .allowlist_type("(AV|Sws).*")
-        .allowlist_var("(AV|AVSEEK|SWS|FF_THREAD)_.*")
+        .clang_arg(format!("-I{}", dir.join("include").display()));
+    // Exactly what th_media calls and reads; bindgen adds what they need.
+    for item in FUNCTIONS.iter().chain(TYPES).chain(CONSTANTS) {
+        builder = builder.allowlist_item(format!("^{item}$"));
+    }
+    builder
         // Plain integer constants: a Rust enum would be UB the day FFmpeg hands
         // back a value the bindings do not know.
         .default_enum_style(bindgen::EnumVariation::Consts)

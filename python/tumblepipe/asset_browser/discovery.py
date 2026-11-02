@@ -133,12 +133,14 @@ def entity_frame_range(catalog_id: str, asset_id: str, uri):
 
 
 def entity_fps(catalog_id: str, asset_id: str, uri):
-    """The entity's FPS, or the project's when the entity sets none."""
+    """The entity's FPS (its own, else the project's it inherits), or None
+    when neither is configured. A Multi's id resolves no entity ``uri``: its
+    scene plays at the project's FPS."""
     from tumblepipe.config.timeline import get_fps
-    fps = _lookup(catalog_id, "fps", asset_id, get_fps, uri)
-    if fps is not None:
-        return fps
-    return _lookup(catalog_id, "fps", asset_id, get_fps)
+    from tumblepipe.util.uri import Uri
+    if uri is None:
+        uri = Uri.parse("config:/project")
+    return _lookup(catalog_id, "fps", asset_id, get_fps, uri)
 
 
 def entity_animatable(catalog_id: str, asset_id: str, uri) -> bool:

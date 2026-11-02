@@ -1,0 +1,26 @@
+= TH Layout Keys =
+
+"""Copies layout's keys onto the animation's characters, one row per character."""
+
+In th::animate's dive, between the rigs and the Scene Animate. Each row
+names a character's keys in a layout export version; Copy from Layout copies
+them into the Scene Animate's own animation, where they are the animator's
+to edit, replace or clear. A new layout publish changes nothing until a row
+is copied again. A new animation workfile copies every row once.
+
+@parameters
+
+Discover:
+    Add a row per character the newest layout keys have.
+
+Copy All from Layout:
+    Copy every row that is on.
+
+Channel:
+    The layout export channel.
+
+Rows:
+    On, the layout character, the animation character, the layout version,
+    the controls, a frame range and an offset, and Copy from Layout. With
+    Controls * a copy replaces the character's keys; otherwise only those
+    controls' keys.

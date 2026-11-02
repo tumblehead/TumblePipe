@@ -1,0 +1,14 @@
+Operator:     th::layout_rigs::1.0
+Label:        TH Layout Rigs
+Path:         oplib:/th::Lop/layout_rigs::1.0?th::Lop/layout_rigs::1.0
+Icon:         LOP_subnet
+Table:        Lop
+License:      
+Extra:        
+User:         
+Inputs:       1 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Fri Oct 30 19:33:25 2026
+

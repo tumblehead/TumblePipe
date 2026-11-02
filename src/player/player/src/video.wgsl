@@ -10,7 +10,7 @@ struct Uniforms {
     // x: 1 = full range, 0 = video range; y: 1 = BT.709, 0 = BT.601;
     // z: 1 = there is a frame to show; w: 1 = scene-linear RGBA, 0 = Y'CbCr.
     params: vec4<f32>,
-    // x: exposure gain; y: 1 = apply the LUT; z, w: the shaper's log2 range.
+    // x: exposure gain; y, z: the shaper's log2 range.
     display: vec4<f32>,
 };
 
@@ -75,8 +75,8 @@ fn yuv(uv: vec2<f32>) -> vec3<f32> {
 
 // Must match `Lut::shape` and `Lut::sample` in colour.rs.
 fn display_transform(linear: vec3<f32>) -> vec3<f32> {
-    let lo = u.display.z;
-    let hi = u.display.w;
+    let lo = u.display.y;
+    let hi = u.display.z;
     let shaped = clamp((log2(max(linear, vec3<f32>(exp2(lo)))) - lo) / (hi - lo), vec3<f32>(0.0), vec3<f32>(1.0));
     let n = f32(textureDimensions(display_lut).x);
     let coord = shaped * (n - 1.0) / n + 0.5 / n;
@@ -92,10 +92,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         return vec4<f32>(srgb_to_linear(yuv(in.uv)), 1.0);
     }
     let linear = textureSample(linear_rgba, plane_sampler, in.uv).rgb * u.display.x;
-    if (u.display.y > 0.5) {
-        // The LUT gives display code values.
-        return vec4<f32>(srgb_to_linear(clamp(display_transform(linear), vec3<f32>(0.0), vec3<f32>(1.0))), 1.0);
-    }
-    // No display transform: linear values, encoded as sRGB by the surface.
-    return vec4<f32>(clamp(linear, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+    // The LUT gives display code values.
+    return vec4<f32>(srgb_to_linear(clamp(display_transform(linear), vec3<f32>(0.0), vec3<f32>(1.0))), 1.0);
 }

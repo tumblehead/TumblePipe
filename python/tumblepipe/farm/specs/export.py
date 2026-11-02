@@ -38,6 +38,7 @@ houdini_config = {
     'first_frame': 'int',
     'last_frame': 'int',
     'batch_size': 'int',        # 0 = no batching, >0 = export in chunks then stitch
+    'fps': 'int',               # the entity's
     'render_settings_path': 'path/to/render_settings.json',
     'input_path': 'path/to/input.hip',
     'node_path': '/stage/path/to/node',
@@ -86,6 +87,7 @@ is_valid_context = is_valid_config
 def is_valid_houdini_config(config) -> bool:
     if not valid_frame_range(config, step=False): return False
     if not check_int(config, 'batch_size'): return False
+    if not check_int(config, 'fps'): return False
     if not check_str(config, 'render_settings_path'): return False
     if not check_str(config, 'input_path'): return False
     if not check_str(config, 'node_path'): return False

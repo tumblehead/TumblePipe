@@ -515,9 +515,9 @@ them again.
 media back to back, frame-accurately: playblasts and other movies through
 FFmpeg, and EXR sequences shown through OCIO. Artists start it from a shot
 card's **Play** entry ([Playing shots](asset-browser/play-shots.md)).
-`tumblepipe.pipe.review_playlist` finds each shot's takes, writes them as an
-OTIO timeline, and starts `bin/<platform>/th_player` on it. The player is its
-own cargo workspace:
+`tumblepipe.pipe.review_playlist` finds each shot's takes and starts
+`bin/<platform>/th_player` (or `$TH_PLAYER`, a dev build) with them as a
+JSON playlist on its standard input. The player is its own cargo workspace:
 
 - `ffmpeg-sys`: FFmpeg bindings. They are generated once per platform and
   committed (`src/bindings/<platform>.rs`, one per platform), so builds
@@ -528,41 +528,52 @@ own cargo workspace:
   read whole, in 1 MB pieces, before it is decoded: the `exr` crate's own
   reads are 8 KB each, a round trip apiece on the file server (a 40 MB
   frame took 28 s from the NAS that way, 5 s read whole).
-  `Source::decode_while` stops between pieces once the frame is no longer
-  wanted. It links no GUI, so it is tested headless.
-- `playlist` (`th_playlist`): reads the OTIO playlist through otio-rs. The
-  takes of each shot are in the clip's `tumblepipe` metadata
-  (`{entity, take, fps, takes: [{label, department, version, kind, layer,
-  path}]}`). The timeline's metadata names the OCIO config. A clip without
-  that metadata plays its media reference. The takes come ordered by kind,
-  department (pipeline order), render layer and version. A department (and
-  a render's layer) is a *stream*. `Shot::version_step`,
-  `Shot::department_step` and `Shot::last_of_kind` move along that order;
-  the player's Up/Down keys are built on them.
-- `player`: the window, built on the in-house Primer UI crate. The `ocio`
-  feature (on by default) bakes the chosen display/view into a 3D LUT
-  through `ocio-rs`, which builds OpenColorIO from source. `track.rs` is
-  the track under the video (the clips, their thumbnails, the selection);
-  a right press on a clip names its shot to the take menu `main.rs` wraps
-  around it; `take_menu.rs` builds that menu's Source, Department
-  and Version submenus from the take shown.
-  `burnin.rs` writes the burn-ins over the picture, placed by the same fit
-  `video.wgsl` gives the frame.
-  `thumbnails.rs` makes each take's thumbnail on threads of its own, with a
-  fresh `Source`, so the engine's movie decoders keep their place; an EXR
-  take's waits until the frame on screen is in. `opener.rs` opens a take on
-  a thread of its own, so the window stays live while the file server
-  answers; until it has, the shot shows its old take and the keys step on
-  from the one opening. `Engine::replace_clip` swaps one shot's take in
-  place: that clip's frames go and every other clip's stay, and the EXR
-  reads still running for it stop. One engine worker decodes the movies and
-  six the EXR frames, so a movie never waits behind an EXR read; while the
-  playhead's EXR frame is read, no other EXR read starts. The controls are
-  built `.focusable(false)`, so the player's keys keep working after a click
-  on one.
+  `MovieDecoder::decode` and `ExrSequence::decode_while` stop once the frame
+  is no longer wanted. `Media` is an opened take: a movie's frame index, or
+  an EXR sequence with its first header read once and its colour space,
+  which it must name (`oiio:ColorSpace`). A movie must have a frame rate and
+  start on a keyframe. It links no GUI, so it is tested headless.
+- `playlist` (`th_playlist`): the playlist TumblePipe writes
+  (`pipe/review_playlist.py`) and the player reads on standard input, as
+  JSON through serde. It is strict: an unknown or missing field is an error,
+  and so is a playlist that cannot play (no shots, a shot without takes, a
+  rate or cut of 0, an empty frame range). The playlist names the OCIO
+  config; each shot its sequence, rate, cut `length` and takes; each take
+  its department, version and media: a movie's path, or an EXR sequence's
+  layer and frames (directory, prefix, suffix, padding, first, last, step).
+  The takes come ordered by kind, department (pipeline order), render layer
+  and version. A department (and a render's layer) is a *stream*.
+  `Shot::version_step`, `Shot::department_step` and `Shot::last_of_kind`
+  move along that order; the player's Up/Down keys are built on them.
+- `player`: the window, built on the in-house Primer UI crate. `main.rs`
+  reads the playlist and opens its OCIO config; when either fails, the
+  window says why and nothing plays. `app.rs` is the player. `session.rs`
+  keeps what each shot shows, is switching to, and every take asked for
+  (opening, open or failed), with no window in it, so its rules are tested
+  alone: a take opens once, off the UI thread (`Command::perform_blocking`),
+  and shows once it has if its shot still wants it; keys pressed meanwhile
+  step on from the take being opened. `engine.rs` decodes: every shot is a
+  clip from the start (its cut, until its take opens), and
+  `Engine::replace_clip` swaps one shot's take in place, its frames going
+  and every other clip's staying. Its workers take frame jobs around the
+  playhead and proxy (thumbnail) jobs, which go before the window but
+  never before the playhead's own frame; seven workers,
+  up to six EXR reads at once (while the playhead's EXR frame is read, no
+  other starts), movie decoders kept in a small pool per take. A decode no
+  longer wanted (the playhead moved off it, or its take changed) stops; a
+  decode that panics is the frame's error, not a hung frame. `colour.rs`
+  bakes the chosen display/view into a 3D LUT through `ocio-rs` (which
+  builds OpenColorIO from source); every render frame is drawn through it.
+  `track.rs` is the track under the video (the clips, their thumbnails,
+  the selection); a right press on a clip names its shot to the take menu;
+  `take_menu.rs` builds that menu's Source, Department and Version
+  submenus from the take shown. `burnin.rs` writes the burn-ins over the
+  picture, placed by the same fit `video.wgsl` gives the frame. The
+  controls are built `.focusable(false)`, so the player's keys keep working
+  after a click on one.
 
-Primer and otio-rs are git dependencies that cargo fetches from 3db Gitea
-over plain HTTP (`http://10.100.36.15:3000/...`). Both are readable without
+Primer is a git dependency that cargo fetches from 3db Gitea
+over plain HTTP (`http://10.100.36.15:3000/...`). It is readable without
 credentials, so the studio network is all a build needs; CI needs no key.
 
 **FFmpeg.** The player links its own FFmpeg, not Houdini's.
@@ -580,8 +591,8 @@ separate shared libraries beside `th_player`, never linked statically.
 - The Linux and macOS binaries carry an rpath of `$ORIGIN` or
   `@executable_path`, so they find the libraries beside them. macOS FFmpeg is
   built with `@rpath` install names for this.
-- A platform with no committed bindings regenerates them on its first build.
-  This needs libclang. Commit the file that build writes.
+- Each platform builds from its committed bindings. A new platform has none
+  and fails to compile until they are regenerated (below) and committed.
 - Primer is used without its default `os` feature (native menus and tray
   icons). On Linux that feature links GTK and libxdo, which every artist
   machine would then need.
@@ -602,57 +613,65 @@ From `src/player/`:
 ```bat
 set PATH=%CD%\..\..\build-ffmpeg-windows-x86_64\install\bin;%PATH%
 cargo test --workspace
-cargo run --release -p th_player -- shot010.mp4 shot020.mp4
-cargo run --release -p th_player -- --ocio P:/proj/_config/ocio/tumblehead.ocio playlist.otio
+cargo run --release -p th_player < playlist.json
 ```
 
 The tests:
 
 - `media/tests/frame_accuracy.rs` decodes fixture movies whose frames encode
-  their own number, in every order, and checks each frame. Set
-  `TH_PLAYER_TEST_MOVIE` to a real playblast to also check that random access
-  matches a straight decode byte for byte.
+  their own number, in every order, and checks each frame, and that a decode
+  no longer wanted stops. Set `TH_PLAYER_TEST_MOVIE` to a real playblast to
+  also check that random access matches a straight decode byte for byte.
 - `media/tests/exr_props.rs` writes random EXRs with the `exr` crate and reads
   them back. They cover layers, multipart files, data windows, f16 and f32,
-  the default view, channel picking, frame-name splitting, gaps, and a
-  decode that stops once it is no longer wanted.
+  the default view, channel picking, a missing frame (an error, never a
+  neighbour shown in its place), and a decode that stops once it is no
+  longer wanted. `media/tests/media_props.rs` checks that an opened take is
+  shared across threads, describes itself while a decode runs, and that an
+  EXR without a colour space does not open.
 - `media/tests/buffer_props.rs` covers the buffer. The tests in
-  `player/src/engine.rs` cover decode scheduling, including a simulated
-  interleaving showing that a layer/channel change, or a clip replaced by
-  another take, never leaves a stale frame, that a decode stopped for it is
-  no failure, that each worker takes only its own kind of frame, and that
-  no EXR read starts beside the playhead's. `colour.rs` covers the LUT
-  layout and shaper. `track.rs` covers seeking, thumbnail placement and how
-  a click changes the selection. `opener.rs` covers a take that does not
-  open and one asked for twice. A property there steps a shot through any
+  `player/src/engine.rs` cover decode scheduling: a state machine of
+  playhead moves, view changes, takes replaced and jobs finishing in any
+  order shows that the job limits hold, that no stale frame is ever stored,
+  and that a decode stopped for it is no failure; a decode that panics is
+  the frame's error; and real workers fill the window around the playhead
+  and stop when the engine drops. `session.rs` steps a shot through any
   interleaving of asked-for takes and opens finishing, in any order, some
-  failing. The shot only shows an open take, and a take that finishes after
-  the shot moved on never shows. Once every open is done, the shot shows the
-  take last asked for. In `thumbnails.rs`, a property shows that a thumbnail
-  forgotten while it is being made (a display change) is never kept, even
-  when it is asked for again. `media/src/thumbnail.rs` covers scaling and
-  the colour of thumbnails. `media/src/exr_sequence.rs` reads files on and
-  around the 1 MB piece boundaries whole, and stops a read where asked.
-  `burnin.rs` checks that its picture is placed as the video fits the
-  frame: inside its bounds, its shape kept, centred. `take_menu.rs` checks
-  that each submenu lists its choices once (every kind, every stream of the
-  shown kind going to its newest version, the shown stream's versions newest
-  first) and marks only what is shown.
-- `playlist/tests/` reads a hand-written OTIO fixture, and the properties in
-  `playlist/src/lib.rs` cover stepping through versions, departments and
-  kinds, and reading a shot's sequence from its entity.
+  failing: each take opens once, a take that finishes after the shot moved
+  on never shows, and once every open is done the shot shows the take last
+  asked for. `colour.rs` covers the LUT layout and shaper. `track.rs`
+  covers seeking, thumbnail placement and how a click changes the
+  selection. `media/src/thumbnail.rs` covers scaling and the colour of
+  thumbnails. `media/src/exr_sequence.rs` reads files on and around the
+  1 MB piece boundaries whole, and stops a read where asked. `burnin.rs`
+  checks that its picture is placed as the video fits the frame: inside its
+  bounds, its shape kept, centred. `take_menu.rs` checks that each submenu
+  lists its choices once (every kind, every stream of the shown kind going
+  to its newest version, the shown stream's versions newest first) and
+  marks only what is shown.
+- `playlist/src/lib.rs` reads a hand-written fixture
+  (`playlist/tests/fixtures/playlist.json`), refuses what cannot play,
+  round-trips any playlist, refuses any unknown or missing field, numbers
+  frame paths as Python does, and covers stepping through versions,
+  departments and kinds.
 - `tests/test_review_playlist.py` (minigun) checks take discovery against
-  playblasts and renders written to the harness project. It also has the
-  Python/Rust parity property: whatever `playlist_document` writes, the
-  Rust reader reads back the same shots, their sequences, takes (with
-  their kind, department, layer and version), chosen take and rate. It
-  builds `th_playlist`'s `playlist_lines` example (`tests/_cargo.py`), and
-  `.ci/test.sh` also runs `cargo test -p th_playlist`.
+  playblasts and renders written to the harness project, and that a render
+  take names its frames as renders write them. It also has the Python/Rust
+  parity property: whatever `playlist_document` writes, the Rust reader
+  reads back exactly that document. It builds `th_playlist`'s
+  `playlist_lines` example (`tests/_cargo.py`). `.ci/test.sh` runs the
+  whole workspace through `.ci/build_player.py --test` (`cargo fmt
+  --check`, `clippy -D warnings`, then `cargo test`), with the release
+  build's FFmpeg, toolchain and OpenColorIO. Formatting follows
+  `src/player/rustfmt.toml`, so run `cargo fmt` before committing.
 
 Commit any new seeds proptest writes under `proptest-regressions/`.
 
-**Regenerating the bindings** (after an FFmpeg bump, or for a new platform)
-needs libclang (`LIBCLANG_PATH`):
+**Regenerating the bindings** (after an FFmpeg bump, for a new platform, or
+when `th_media` starts using another FFmpeg item) needs libclang
+(`LIBCLANG_PATH`). The bindings hold only what `th_media` uses: the
+`FUNCTIONS`, `TYPES` and `CONSTANTS` lists in `ffmpeg-sys/build.rs`, plus
+whatever those need. Add a new item to its list first.
 
 ```bat
 cargo build -p th_ffmpeg_sys --features regenerate
@@ -1416,16 +1435,23 @@ scripts (`build-resolver` cmake-builds the tumbleResolver USD plugin into
 `resolver/houdini<major>/`; `build-delegate` builds hdThPlayblast, the
 farm playblast's Hydra render delegate (`src/delegate`: a Rust rasteriser
 behind a C++ Hydra shim, plus an opt-in wgpu path, the `gpu` cargo feature
-and CMake's `TH_DELEGATE_GPU`, on by default on Windows only; `cargo test
---features gpu` compares the two paths on the machine's GPU;
+and CMake's `TH_DELEGATE_GPU`, on by default on Windows only, which draws
+and runs the post pass on the card (`gpu.wgsl`, `post.wgsl`) and keeps
+unchanged meshes there between frames; `blur.rs` draws motion blur and
+depth of field as several layers averaged together, on either path (on
+the GPU the average is made on the card, `sum.wgsl`);
+`cargo test --features gpu` holds it to the CPU path's picture on the
+machine's GPU, which the build workers do not run;
 `.ci/smoke_delegate.py` renders a test stage through a finished build with
 husk), into `plugins/houdini<major>/`; `build-wizard` cargo-builds both hook apps
 (`tt_setup` and `tt_prepare`) into `bin/<platform>/`; `build-player` builds the
 sequence player and its FFmpeg into the same place ([Sequence
 player](#sequence-player)); `compile-hdas` collapses the
 expanded `otls/<name>/` sources into binary `.hda` files) and stages the
-tree per `[stage].include`/`exclude`. Requirements: cmake, a Rust
-toolchain, and at least one Houdini install. (The hook apps are
+tree per `[stage].include`/`exclude`. Requirements: cmake, rustup (every
+crate builds with the toolchain the root `rust-toolchain.toml` pins; CI
+installs it up front, locally `rustup toolchain install` it once), and at least one
+Houdini install. (The hook apps are
 Houdini-independent — `build-wizard` needs only cargo, no HFS; `build-player`
 also needs MSYS2 on Windows for FFmpeg's configure.)
 

@@ -212,18 +212,29 @@ FIELDS: tuple[Field, ...] = (
     # specs.playblast.DEFAULT_LOOK (tests/test_submit_settings.py pins it).
     Field('pb_renderer', 'playblast', 'Renderer', prop='playblast.renderer',
           default='viewport', kind='str'),
+    Field('pb_shading', 'playblast', 'Shading', prop='playblast.shading',
+          default='lit', kind='str'),
     Field('pb_light', 'playblast', 'Light', prop='playblast.light',
           default='dome', kind='str'),
     Field('pb_samples', 'playblast', 'Samples', prop='playblast.samples',
           default=32, kind='int'),
     Field('pb_materials', 'playblast', 'Materials',
           prop='playblast.materials', default=False, kind='bool'),
+    # The viewport renderer's blurs, from the shot camera's shutter and lens.
+    Field('pb_motion_blur', 'playblast', 'Motion blur',
+          prop='playblast.motion_blur', default=False, kind='bool'),
+    Field('pb_dof', 'playblast', 'Depth of field', prop='playblast.dof',
+          default=False, kind='bool'),
+    Field('pb_blur_samples', 'playblast', 'Blur samples',
+          prop='playblast.blur_samples', default=16, kind='int'),
 )
 
 #: The look fields and the ``pb_look`` keys they become.
 PLAYBLAST_LOOK_KEYS = {
-    'pb_renderer': 'renderer', 'pb_light': 'light', 'pb_samples': 'samples',
-    'pb_materials': 'materials',
+    'pb_renderer': 'renderer', 'pb_shading': 'shading', 'pb_light': 'light',
+    'pb_samples': 'samples', 'pb_materials': 'materials',
+    'pb_motion_blur': 'motion_blur', 'pb_dof': 'dof',
+    'pb_blur_samples': 'blur_samples',
 }
 
 FIELDS_BY_KEY: dict[str, Field] = {f.key: f for f in FIELDS}

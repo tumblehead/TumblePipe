@@ -219,6 +219,19 @@ class PipelineSettingsWidget(QWidget):
         self._note_checkbox.toggled.connect(self._on_prompt_note_toggled)
         outer.addWidget(self._note_checkbox)
 
+        self._slate_checkbox = QCheckBox("Show the shot in the camera view")
+        self._slate_checkbox.setToolTip(
+            "Looking through a camera in a shot's or a Multi's workfile, a "
+            "small chip under the frame says which shot it is and where the "
+            "playhead is in it (43/96); amber in the pre / post roll, red "
+            "outside the shot.\n"
+            "On the chip: [-] / [+] make it smaller or bigger, [x] tucks it "
+            "into a dot (click the dot to bring it back)."
+        )
+        self._slate_checkbox.setChecked(self._catalog._prefs.shot_slate)
+        self._slate_checkbox.toggled.connect(self._on_shot_slate_toggled)
+        outer.addWidget(self._slate_checkbox)
+
         # ── Project defaults: the selected project's shared configuration ──
         outer.addWidget(section_header(
             "Project defaults",
@@ -245,6 +258,21 @@ class PipelineSettingsWidget(QWidget):
             parent=self,
         )
         outer.addWidget(self._pool_editor)
+
+        self._layout_animate_checkbox = QCheckBox("Layout in Animate (Beta)")
+        self._layout_animate_checkbox.setToolTip(
+            "Layout animates the shot on the USD stage in an APEX Animate "
+            "LOP: a control per component, characters on their rigs and a "
+            "camera rig. Its publish carries a baked layer for every "
+            "department and its keys, which animation copies per character.\n"
+            "Off, layout and animation work as they always have. The APEX "
+            "LOPs this builds on are Beta in Houdini 22.0."
+        )
+        self._layout_animate_checkbox.toggled.connect(
+            self._on_layout_animate_toggled
+        )
+        outer.addWidget(self._layout_animate_checkbox)
+        self._defaults_project = None
 
         self._refresh_list()
 
@@ -280,6 +308,53 @@ class PipelineSettingsWidget(QWidget):
             save_prefs(self._catalog._prefs)
         except Exception as exc:
             report_failure("Saving the auto-import preference", exc)
+
+    def _on_shot_slate_toggled(self, checked: bool) -> None:
+        """The shot slate on / off: saved on every click like the toggles
+        here, and the running slate follows at once."""
+        from .prefs import save_prefs
+        self._catalog._prefs.shot_slate = bool(checked)
+        try:
+            save_prefs(self._catalog._prefs)
+        except Exception as exc:
+            report_failure("Saving the shot slate preference", exc)
+        try:
+            from tumblepipe.pipe.houdini.ui import shot_slate
+            shot_slate.set_enabled(bool(checked), save=False)
+        except Exception as exc:
+            report_failure("Switching the shot slate", exc)
+
+    def _on_layout_animate_toggled(self, checked: bool) -> None:
+        """Layout in Animate on / off for the selected project: written to
+        its config at once, like the toggles above, since it is one value.
+        The checkbox is only enabled for someone who may edit the project's
+        defaults (:meth:`_show_project_defaults`)."""
+        project = self._defaults_project
+        if project is None:
+            return
+        from tumblepipe.config import layout_animate
+        try:
+            self._catalog._activator.activate(project)
+            layout_animate.set_enabled(bool(checked))
+        except Exception as exc:
+            report_failure("Saving Layout in Animate", exc)
+
+    def _show_layout_animate(self, project, editable: bool) -> None:
+        """The Layout in Animate checkbox for ``project`` (None: off and
+        disabled). Call after something activated ``project``."""
+        self._defaults_project = project if editable else None
+        on = False
+        if project is not None:
+            from tumblepipe.config import layout_animate
+            try:
+                on = layout_animate.enabled()
+            except Exception as exc:
+                report_failure("Reading Layout in Animate", exc)
+        box = self._layout_animate_checkbox
+        box.blockSignals(True)
+        box.setChecked(on)
+        box.blockSignals(False)
+        box.setEnabled(project is not None and editable)
 
     def _on_prompt_note_toggled(self, checked: bool) -> None:
         """Persist the version-note prompt pref immediately on toggle.
@@ -335,6 +410,7 @@ class PipelineSettingsWidget(QWidget):
             self._defaults_title.setText("No project selected")
             self._pool_editor.set_project(
                 None, editable=False, note="Select a project above.")
+            self._show_layout_animate(None, False)
             return
         name = self._working[self._current_index].name
         self._defaults_title.setText(f"Department pool — {name}")
@@ -345,9 +421,12 @@ class PipelineSettingsWidget(QWidget):
                 note="Apply this project first: its department pool lives in "
                      "its config, which is read once the project is "
                      "registered.")
+            self._show_layout_animate(None, False)
             return
         allowed, reason = access.can_edit_project_defaults(project)
+        # set_project activates the project: the checkbox reads its config
         self._pool_editor.set_project(project, editable=allowed, note=reason)
+        self._show_layout_animate(project, allowed)
 
     def _on_row_changed(self, row: int) -> None:
         if row < 0 or row >= len(self._working):

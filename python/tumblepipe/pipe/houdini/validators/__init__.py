@@ -29,7 +29,7 @@ from .asset_structure import (
     validate_blendshape_structure,
     validate_lookdev_structure,
 )
-from .shot_structure import validate_shot_root_prims
+from .shot_structure import validate_layout_publish, validate_shot_root_prims
 
 # Global registry instance with all built-in validators
 _registry = StageValidatorRegistry()
@@ -46,6 +46,7 @@ _registry.register('model_structure', validate_model_structure)
 _registry.register('blendshape_structure', validate_blendshape_structure)
 _registry.register('lookdev_structure', validate_lookdev_structure)
 _registry.register('shot_root_prims', validate_shot_root_prims)
+_registry.register('layout_publish', validate_layout_publish)
 
 
 # Per-department default validator sets. Keyed by (entity_context, department).
@@ -55,7 +56,7 @@ _DEFAULT_VALIDATORS: dict[tuple[str, str], list[str]] = {
     ('assets', 'blendshape'): ['blendshape_structure'],
     ('assets', 'lookdev'): ['lookdev_structure', 'material_bindings'],
     ('assets', 'rig'): ['model_structure'],
-    ('shots', 'layout'): ['shot_root_prims'],
+    ('shots', 'layout'): ['shot_root_prims', 'layout_publish'],
     ('shots', 'environment'): ['shot_root_prims'],
     ('shots', 'animation'): ['shot_root_prims'],
     ('shots', 'crowd'): ['shot_root_prims'],
@@ -165,4 +166,5 @@ __all__ = [
     'validate_blendshape_structure',
     'validate_lookdev_structure',
     'validate_shot_root_prims',
+    'validate_layout_publish',
 ]

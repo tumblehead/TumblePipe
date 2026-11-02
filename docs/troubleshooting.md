@@ -823,10 +823,36 @@ submitted from. A TumblePipe built without it (a dev checkout that never ran
 `.ci/build_delegate.py`) or a Houdini major the package has no build for
 ends here. Resubmit with **Renderer** `karma` meanwhile.
 
+### Motion blur or depth of field is on, but the playblast is sharp
+
+The `viewport` renderer blurs only what the stage gives it. Run the
+playblast with `TH_PLAYBLAST_TIMING=1` and read the per-frame
+`hdThPlayblast:` line: it says how many meshes are `moving`, then `blur N
+samples, shutter open A..B` (or `shutter off`), the camera keys and the
+f-stop.
+
+- `shutter off 0..0`: the render camera's Shutter Open and Close are equal,
+  so there is no shutter to blur over. Set them on the camera, e.g.
+  −0.25 and 0.25.
+- `0 moving` and `0 camera keys`: nothing moves under the shutter on that
+  frame. Animation held over a few frames is the usual cause, and those
+  frames are correctly sharp.
+- `f-stop 0`: the camera is a pinhole, which is always sharp. Give it an
+  F-Stop and a Focus Distance. At a narrow aperture, depth of field is
+  subtle; HideAndReek/010's f/2.8 barely softens it.
+- `blur 0 samples`: the blurs did not reach the renderer. The node or the
+  dialog's **Blur** row has them off, or the job came from a pipeline older
+  than the setting.
+
+See [Motion blur and depth of field](compositing.md#motion-blur-and-depth-of-field).
+
 ### Playblast frames are black or missing on the farm
 
-The task fails with `Playblast produced no frames`. Read the husk log above
-it:
+The task fails with `Playblast failed: husk exited N having rendered X/Y
+frames; missing frames …`. A playblast needs every frame of its range: a
+husk that stops part way fails the job rather than publishing an mp4 that
+freezes where it stopped (older pipelines passed such a job). Read the husk log
+above it:
 
 - `No licenses could be found` — licensing, see above.
 - `Unable to load render plugin: BRAY_HdKarmaXPU`, or a CUDA/OptiX error —

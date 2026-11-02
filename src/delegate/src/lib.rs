@@ -8,9 +8,14 @@
 //! decides what a pixel looks like lives on this side of the C ABI.
 //!
 //! The look is Houdini's smooth-shaded viewport: a grey backdrop gradient,
-//! a headlight, display colours or the material's base colour/texture.
-//! Normals are the mesh's own, else per face for a polygonal mesh (the
-//! shim's `faceted`) and smoothed per point for the rest, as Storm does.
+//! display colours or the material's base colour/texture, lit by lights
+//! fixed to the camera, with three tiers of screen-space ambient occlusion.
+//! It is drawn the way a game engine draws: a rasteriser fills a render
+//! buffer (colour, normal, depth) and a post pass ([`composite`]) occludes,
+//! lights and filters it; [`composite::Shading`] picks lit, clay or flat
+//! colour. Normals are the mesh's own, else smoothed: per point for a subdivision
+//! surface, and with Houdini's 60 degree cusp for a polygonal mesh (the
+//! shim's `polygonal`), so curved surfaces are smooth and a box stays a box.
 //! It runs on the CPU, so a farm node needs no GPU, GL context or display;
 //! built with the `gpu` feature it can draw the same picture with wgpu
 //! instead, on request (`TH_PLAYBLAST_GPU=1`, see `ffi::render`).
@@ -18,10 +23,13 @@
 //! Every exported function runs under `catch_unwind` (`ffi_guard`): a panic
 //! becomes an error code the shim reports, never an unwind into C++.
 
+pub mod blur;
+pub mod composite;
 pub mod ffi;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod math;
+mod pool;
 pub mod raster;
 pub mod texture;
 

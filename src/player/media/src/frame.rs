@@ -1,5 +1,6 @@
 //! A decoded frame, in the form the player uploads it: movie frames stay
-//! planar Y'CbCr (the shader converts), EXR channels stay scene-linear halfs.
+//! planar Y'CbCr (the shader converts), EXR frames are scene-linear RGBA
+//! halfs.
 
 use std::sync::Arc;
 
@@ -24,9 +25,8 @@ pub enum Pixels {
         /// Full range (0-255) rather than video range (16-235).
         full_range: bool,
     },
-    /// Interleaved half floats, `channels` per pixel (1 = a single channel
-    /// shown as grey, 3 = RGB, 4 = RGBA), rows top to bottom.
-    Half { data: Vec<f16>, channels: usize },
+    /// Scene-linear RGBA half floats, interleaved, rows top to bottom.
+    Rgba16f(Vec<f16>),
 }
 
 /// One decoded frame. Cheap to clone: the pixels are shared.
@@ -42,7 +42,7 @@ impl Frame {
     pub fn byte_size(&self) -> usize {
         match &*self.pixels {
             Pixels::Yuv420 { y, u, v, .. } => y.len() + u.len() + v.len(),
-            Pixels::Half { data, .. } => data.len() * 2,
+            Pixels::Rgba16f(data) => data.len() * 2,
         }
     }
 }

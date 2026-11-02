@@ -92,6 +92,16 @@ def _register_tumbletrove() -> None:
     _guarded("package registration", register_package)
     _guarded("scene-load import refresh", load_hook.register)
     _guarded("workfile context provider", workfile_context.register)
+    _guarded("shot slate", _start_shot_slate)
+
+
+def _start_shot_slate() -> None:
+    """The shot slate under look-through cameras (graphical sessions only)."""
+    import hou
+
+    if hou.isUIAvailable():
+        from tumblepipe.pipe.houdini.ui import shot_slate
+        shot_slate.start()
 
 
 def hide_retired_node_types() -> None:

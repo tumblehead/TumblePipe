@@ -38,46 +38,23 @@ pub struct ExrView {
     pub channel: Option<String>,
 }
 
-/// The frames of a sequence by frame number, from `first`. A frame missing
-/// on disk is None: it keeps its place, so frame numbers stay where they
-/// are, and decoding it is an error.
+/// The frame files of a sequence, in playback order: index `i` is frame
+/// number `first + i * step`. A frame missing on disk is an error when it is
+/// decoded, never a shifted frame.
 #[derive(Debug, Clone)]
 pub struct ExrSequence {
     first: i64,
-    frames: Vec<Option<PathBuf>>,
+    step: i64,
+    frames: Vec<PathBuf>,
 }
 
-/// A frame file's name split around its frame number: the last run of
-/// digits in the name (`shot.v0030.1001.exr` is frame 1001 of
-/// `shot.v0030.` + `.exr`). None when the name has no digits.
-pub fn split_frame_name(name: &str) -> Option<(&str, i64, &str)> {
-    let end = name.rfind(|c: char| c.is_ascii_digit())? + 1;
-    let start = name[..end].rfind(|c: char| !c.is_ascii_digit()).map_or(0, |i| i + 1);
-    let number = name[start..end].parse().ok()?;
-    Some((&name[..start], number, &name[end..]))
-}
-
-/// The frames of `names` in the sequence `given` belongs to (same text
-/// around the frame number), by frame number: (first frame, one slot per
-/// frame from it to the last, None for a gap). Empty when `given` has no
-/// frame number.
-pub fn sequence_frames(names: &[String], given: &str) -> (i64, Vec<Option<String>>) {
-    let Some((prefix, _, suffix)) = split_frame_name(given) else { return (0, Vec::new()) };
-    let mut members: Vec<(i64, &String)> = names
-        .iter()
-        .filter_map(|n| match split_frame_name(n) {
-            Some((p, number, s)) if p == prefix && s == suffix => Some((number, n)),
-            _ => None,
-        })
-        .collect();
-    members.sort();
-    members.dedup_by_key(|(number, _)| *number);
-    let (Some(&(first, _)), Some(&(last, _))) = (members.first(), members.last()) else { return (0, Vec::new()) };
-    let mut frames = vec![None; (last - first + 1) as usize];
-    for (number, name) in members {
-        frames[(number - first) as usize] = Some(name.clone());
-    }
-    (first, frames)
+/// What a sequence's first frame says: its layers, in the order their first
+/// channel appears, and the colour space it is in (OIIO's `oiio:ColorSpace`,
+/// which our renders carry), if it says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExrHeader {
+    pub layers: Vec<ExrLayer>,
+    pub colour_space: Option<String>,
 }
 
 /// The layer and in-layer name of channel `full` of the part named `part`.
@@ -150,87 +127,28 @@ impl ExrLayer {
 }
 
 impl ExrSequence {
-    /// The sequence of `frames`, in playback order, numbered from 0.
-    pub fn new(frames: Vec<PathBuf>) -> Self {
-        Self { first: 0, frames: frames.into_iter().map(Some).collect() }
-    }
-
-    /// The sequence of frames numbered from `first`, None for a gap.
-    pub fn with_gaps(first: i64, frames: Vec<Option<PathBuf>>) -> Self {
-        Self { first, frames }
-    }
-
-    /// The sequence `frame` (any one frame file of it) belongs to: every
-    /// file beside it named the same around the frame number.
-    pub fn scan(frame: &Path) -> Result<Self> {
-        let open_error = |message: String| Error::Open { path: frame.display().to_string(), message };
-        let dir = frame.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
-        let given = frame.file_name().and_then(|n| n.to_str()).ok_or_else(|| open_error("not a file name".into()))?;
-        let names: Vec<String> = std::fs::read_dir(dir)
-            .map_err(|e| open_error(e.to_string()))?
-            .filter_map(|e| e.ok()?.file_name().into_string().ok())
-            .collect();
-        let (first, frames) = sequence_frames(&names, given);
-        if frames.is_empty() {
-            return Err(open_error("no frame number in the name, or no such frames".into()));
-        }
-        Ok(Self::with_gaps(first, frames.into_iter().map(|n| n.map(|n| dir.join(n))).collect()))
+    /// The sequence of `frames`, numbered from `first` by `step`.
+    pub fn new(first: i64, step: i64, frames: Vec<PathBuf>) -> Self {
+        Self { first, step, frames }
     }
 
     pub fn frame_count(&self) -> usize {
         self.frames.len()
     }
 
-    /// The frame number of index 0.
-    pub fn first_frame(&self) -> i64 {
-        self.first
+    /// The frame number of index `index`.
+    pub fn frame_number(&self, index: usize) -> i64 {
+        self.first + index as i64 * self.step
     }
 
-    pub fn frame_path(&self, index: usize) -> Option<&Path> {
-        self.frames.get(index)?.as_deref()
+    /// What it is read from, for messages: its first frame.
+    pub fn describe(&self) -> String {
+        self.frames.first().map_or_else(String::new, |p| p.display().to_string())
     }
 
-    fn first_present(&self) -> Result<&Path> {
-        self.frames.iter().flatten().next().map(PathBuf::as_path).ok_or_else(|| Error::Open {
-            path: String::new(),
-            message: "empty sequence".into(),
-        })
-    }
-
-    /// The sequence's frame rate from its first frame's `framesPerSecond`,
-    /// if it has one.
-    pub fn rate(&self) -> Result<Option<(i32, i32)>> {
-        let path = self.first_present()?;
-        let meta = exr::meta::MetaData::read_from_file(path, false)
-            .map_err(|e| Error::Open { path: path.display().to_string(), message: e.to_string() })?;
-        Ok(meta
-            .headers
-            .iter()
-            .find_map(|h| h.own_attributes.frames_per_second)
-            .filter(|&(num, den)| num > 0 && den > 0)
-            .and_then(|(num, den)| Some((num, i32::try_from(den).ok()?))))
-    }
-
-    /// The colour space its first frame says it is in (OIIO's
-    /// `oiio:ColorSpace`, which our renders carry), if it says.
-    pub fn colour_space(&self) -> Result<Option<String>> {
-        let path = self.first_present()?;
-        let meta = exr::meta::MetaData::read_from_file(path, false)
-            .map_err(|e| Error::Open { path: path.display().to_string(), message: e.to_string() })?;
-        let key = exr::meta::attribute::Text::from("oiio:ColorSpace");
-        Ok(meta.headers.iter().find_map(|h| {
-            let value = h.own_attributes.other.get(&key).or_else(|| h.shared_attributes.other.get(&key))?;
-            match value {
-                exr::meta::attribute::AttributeValue::Text(text) => Some(text.to_string()),
-                _ => None,
-            }
-        }))
-    }
-
-    /// The layers of the sequence, read from its first frame's header, in
-    /// the order their first channel appears.
-    pub fn layers(&self) -> Result<Vec<ExrLayer>> {
-        let path = self.first_present()?;
+    /// Its first frame's header.
+    pub fn header(&self) -> Result<ExrHeader> {
+        let path = self.frames.first().ok_or_else(|| Error::Open { path: String::new(), message: "no frames".into() })?;
         let meta = exr::meta::MetaData::read_from_file(path, false)
             .map_err(|e| Error::Open { path: path.display().to_string(), message: e.to_string() })?;
         let mut layers: Vec<ExrLayer> = Vec::new();
@@ -244,18 +162,22 @@ impl ExrSequence {
                 }
             }
         }
-        Ok(layers)
+        let key = exr::meta::attribute::Text::from("oiio:ColorSpace");
+        let colour_space = meta.headers.iter().find_map(|h| {
+            let value = h.own_attributes.other.get(&key).or_else(|| h.shared_attributes.other.get(&key))?;
+            match value {
+                exr::meta::attribute::AttributeValue::Text(text) => Some(text.to_string()),
+                _ => None,
+            }
+        });
+        Ok(ExrHeader { layers, colour_space })
     }
 
     /// The view a sequence opens on: its beauty (the unnamed layer, or one
     /// with colour channels) as colour, else its first layer.
     pub fn default_view(layers: &[ExrLayer]) -> ExrView {
         let colour = |l: &&ExrLayer| l.shown(None).is_some_and(|s| s.len() == 3);
-        let layer = layers
-            .iter()
-            .find(|l| l.name.is_empty() && colour(l))
-            .or_else(|| layers.iter().find(colour))
-            .or(layers.first());
+        let layer = layers.iter().find(|l| l.name.is_empty() && colour(l)).or_else(|| layers.iter().find(colour)).or(layers.first());
         ExrView { layer: layer.map(|l| l.name.clone()).unwrap_or_default(), channel: None }
     }
 
@@ -266,12 +188,11 @@ impl ExrSequence {
 
     /// [`decode`](Self::decode), stopping with [`Error::Cancelled`] once
     /// `wanted` says the frame is no longer wanted (it asks between the
-    /// pieces of the file as it reads them).
+    /// pieces of the file as it reads them). The frame is RGBA: a single
+    /// channel shows as grey, and alpha is opaque.
     pub fn decode_while(&self, index: usize, view: &ExrView, wanted: &dyn Fn() -> bool) -> Result<Frame> {
         let count = self.frames.len();
-        let path = self.frames.get(index).ok_or(Error::OutOfRange { index, count })?.as_ref().ok_or_else(|| {
-            Error::Decode { index, message: format!("frame {} is missing", self.first + index as i64) }
-        })?;
+        let path = self.frames.get(index).ok_or(Error::OutOfRange { index, count })?;
         let fail = |message: String| Error::Decode { index, message: format!("{}: {message}", path.display()) };
         let image = read_flat(path, wanted).map_err(fail)?.ok_or(Error::Cancelled { index })?;
         let display = image.attributes.display_window;
@@ -292,14 +213,18 @@ impl ExrSequence {
         if samples.is_empty() {
             return Err(fail(format!("no layer '{}'", view.layer)));
         }
-        let picked = layer.shown(view.channel.as_deref()).ok_or_else(|| {
-            fail(format!("layer '{}' has no channel '{}'", view.layer, view.channel.as_deref().unwrap_or_default()))
-        })?;
+        let picked = layer
+            .shown(view.channel.as_deref())
+            .ok_or_else(|| fail(format!("layer '{}' has no channel '{}'", view.layer, view.channel.as_deref().unwrap_or_default())))?;
 
         let (width, height) = (display.size.0, display.size.1);
-        let stride = picked.len();
-        let mut out = vec![f16::ZERO; width * height * stride];
-        for (slot, &which) in picked.iter().enumerate() {
+        let mut out = vec![f16::ZERO; width * height * 4];
+        for pixel in out.as_chunks_mut::<4>().0 {
+            pixel[3] = f16::ONE;
+        }
+        // The RGBA slots each shown channel fills: one channel is grey.
+        let slots: &[&[usize]] = if picked.len() == 1 { &[&[0, 1, 2]] } else { &[&[0], &[1], &[2]] };
+        for (&which, targets) in picked.iter().zip(slots) {
             let (data, values) = samples[which];
             // Where the data window sits in the display window.
             let origin = (
@@ -322,15 +247,14 @@ impl ExrSequence {
                     if x < 0 || x >= width as i64 {
                         continue;
                     }
-                    out[(y as usize * width + x as usize) * stride + slot] = sample(row * data_width + col);
+                    let value = sample(row * data_width + col);
+                    for &slot in *targets {
+                        out[(y as usize * width + x as usize) * 4 + slot] = value;
+                    }
                 }
             }
         }
-        Ok(Frame {
-            width: width as u32,
-            height: height as u32,
-            pixels: Arc::new(Pixels::Half { data: out, channels: stride }),
-        })
+        Ok(Frame { width: width as u32, height: height as u32, pixels: Arc::new(Pixels::Rgba16f(out)) })
     }
 }
 
@@ -345,10 +269,7 @@ mod tests {
     /// anywhere.
     fn sizes() -> impl Strategy<Value = usize> {
         let piece = PIECE as usize;
-        prop_oneof![
-            (0usize..4, -2isize..=2).prop_map(move |(k, d)| (k * piece).saturating_add_signed(d)),
-            0usize..3 * piece,
-        ]
+        prop_oneof![(0usize..4, -2isize..=2).prop_map(move |(k, d)| (k * piece).saturating_add_signed(d)), 0usize..3 * piece,]
     }
 
     proptest! {

@@ -57,7 +57,7 @@ fn scaffold() -> tempfile::TempDir {
 fn run_relabel(config_json: &str) -> String {
     let project = project_around(config_json);
     let template = scaffold();
-    let report = migrate(project.path(), template.path());
+    let report = migrate(project.path(), template.path()).unwrap();
     assert!(report.is_ok(), "migration failed: {report:?}");
     assert!(
         report.applied.iter().any(|(s, _)| *s == Step::RelabelVariantsAsChannels),

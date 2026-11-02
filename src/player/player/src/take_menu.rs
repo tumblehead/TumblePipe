@@ -5,7 +5,7 @@
 //! department shows the take its key would; the menu only lists what is
 //! there for the take shown.
 
-use th_playlist::{Kind, Take};
+use th_playlist::{Kind, Stream, Take};
 
 /// One of the take menu's submenus: its label, and its rows, each a take
 /// (by index) and the row's label.
@@ -29,58 +29,51 @@ pub fn submenus(takes: &[Take], shown: usize, of_kind: impl Fn(Kind) -> Option<u
 
     let mut kinds: Vec<Kind> = Vec::new();
     for take in takes {
-        if !kinds.contains(&take.kind) {
-            kinds.push(take.kind);
+        if !kinds.contains(&take.kind()) {
+            kinds.push(take.kind());
         }
     }
     let sources = kinds
         .into_iter()
         .filter_map(|kind| {
-            let target = if kind == current.kind { Some(shown) } else { of_kind(kind) }?;
-            Some((target, format!("{}{}", kind_word(kind), mark(kind == current.kind))))
+            let target = if kind == current.kind() { Some(shown) } else { of_kind(kind) }?;
+            Some((target, format!("{}{}", kind_word(kind), mark(kind == current.kind()))))
         })
         .collect();
 
     // The streams of the shown kind, in playlist order, each going to its
     // newest version (the Ctrl+Up/Down key's).
     let mut streams: Vec<Stream> = Vec::new();
-    for take in takes.iter().filter(|t| t.kind == current.kind) {
-        if !streams.contains(&stream(take)) {
-            streams.push(stream(take));
+    for take in takes.iter().filter(|t| t.kind() == current.kind()) {
+        if !streams.contains(&take.stream()) {
+            streams.push(take.stream());
         }
     }
     let departments = streams
         .iter()
         .map(|&s| {
-            let newest = (0..takes.len()).rev().find(|&t| stream(&takes[t]) == s).expect("a stream has a take");
+            let newest = (0..takes.len()).rev().find(|&t| takes[t].stream() == s).expect("a stream has a take");
             let layers = streams.iter().filter(|o| o.1 == s.1).count();
             let name = match s.2 {
-                Some(layer) if layers > 1 => format!("{} ({layer})", department_word(s.1)),
-                _ => department_word(s.1),
+                Some(layer) if layers > 1 => format!("{} ({layer})", s.1),
+                _ => s.1.to_owned(),
             };
-            (newest, format!("{name}{}", mark(s == stream(current))))
+            (newest, format!("{name}{}", mark(s == current.stream())))
         })
         .collect();
 
     // The versions of the shown stream, newest first.
     let versions = (0..takes.len())
         .rev()
-        .filter(|&t| stream(&takes[t]) == stream(current))
-        .map(|t| (t, format!("{}{}", version_word(&takes[t]), mark(t == shown))))
+        .filter(|&t| takes[t].stream() == current.stream())
+        .map(|t| (t, format!("{}{}", takes[t].version, mark(t == shown))))
         .collect();
 
     vec![
-        Submenu { label: format!("Source: {}", kind_word(current.kind)), rows: sources },
-        Submenu { label: format!("Department: {}", department_word(&current.department)), rows: departments },
-        Submenu { label: format!("Version: {}", version_word(current)), rows: versions },
+        Submenu { label: format!("Source: {}", kind_word(current.kind())), rows: sources },
+        Submenu { label: format!("Department: {}", current.department), rows: departments },
+        Submenu { label: format!("Version: {}", current.version), rows: versions },
     ]
-}
-
-/// The stream a take is a version of: its kind, department and layer.
-type Stream<'a> = (Kind, &'a str, Option<&'a str>);
-
-fn stream(take: &Take) -> Stream<'_> {
-    (take.kind, &take.department, take.layer.as_deref())
 }
 
 /// The word a menu uses for a take's kind.
@@ -91,35 +84,35 @@ pub fn kind_word(kind: Kind) -> &'static str {
     }
 }
 
-fn department_word(department: &str) -> String {
-    if department.is_empty() { "Other".to_string() } else { department.to_string() }
-}
-
-/// A take's version, or its label when the playlist gives none.
-fn version_word(take: &Take) -> &str {
-    if take.version.is_empty() { &take.label } else { &take.version }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    use th_playlist::{Frames, Media};
 
+    /// A take of `kind`; a render is always of a layer, `layer` or "default".
     fn take(kind: Kind, department: &str, layer: Option<&str>, version: &str) -> Take {
-        Take {
-            label: format!("{department} {version}"),
-            path: String::new(),
-            rate: None,
-            kind,
-            department: department.into(),
-            layer: layer.map(Into::into),
-            version: version.into(),
-        }
+        let media = match kind {
+            Kind::Movie => Media::Movie { path: String::new() },
+            Kind::Exr => {
+                let frames = Frames {
+                    directory: String::new(),
+                    prefix: String::new(),
+                    suffix: String::new(),
+                    padding: 4,
+                    first: 1,
+                    last: 1,
+                    step: 1,
+                };
+                Media::Exr { layer: layer.unwrap_or("default").into(), frames }
+            }
+        };
+        Take { label: format!("{department} {version}"), department: department.into(), version: version.into(), media }
     }
 
     /// The last take of a kind, as the player falls back to.
     fn last_of(takes: &[Take]) -> impl Fn(Kind) -> Option<usize> + '_ {
-        |kind| (0..takes.len()).rev().find(|&t| takes[t].kind == kind)
+        |kind| (0..takes.len()).rev().find(|&t| takes[t].kind() == kind)
     }
 
     #[test]
@@ -146,9 +139,9 @@ mod tests {
 
     fn arb_take() -> impl Strategy<Value = Take> {
         let kind = prop_oneof![Just(Kind::Movie), Just(Kind::Exr)];
-        let department = prop::sample::select(vec!["", "animation", "light", "comp"]);
+        let department = prop::sample::select(vec!["animation", "light", "comp"]);
         let layer = prop::option::of(prop::sample::select(vec!["default", "slapcomp"]));
-        let version = prop::sample::select(vec!["", "v0001", "v0002"]);
+        let version = prop::sample::select(vec!["v0001", "v0002"]);
         (kind, department, layer, version).prop_map(|(k, d, l, v)| take(k, d, l, v))
     }
 
@@ -170,25 +163,25 @@ mod tests {
             let groups: Vec<&Vec<(usize, String)>> = menu.iter().map(|s| &s.rows).collect();
             let targets = |rows: &Vec<(usize, String)>| rows.iter().map(|&(t, _)| t).collect::<Vec<_>>();
 
-            let kinds: Vec<Kind> = targets(groups[0]).iter().map(|&t| takes[t].kind).collect();
+            let kinds: Vec<Kind> = targets(groups[0]).iter().map(|&t| takes[t].kind()).collect();
             let mut unique = kinds.clone();
             unique.dedup();
             prop_assert_eq!(unique.len(), kinds.len());
-            prop_assert!(kinds.contains(&takes[shown].kind));
+            prop_assert!(kinds.contains(&takes[shown].kind()));
             prop_assert_eq!(marked(groups[0]), vec![shown]);
 
-            let streams: Vec<_> = targets(groups[1]).iter().map(|&t| stream(&takes[t])).collect();
-            let all: std::collections::HashSet<_> = takes.iter().filter(|t| t.kind == takes[shown].kind).map(stream).collect();
+            let streams: Vec<_> = targets(groups[1]).iter().map(|&t| takes[t].stream()).collect();
+            let all: std::collections::HashSet<_> = takes.iter().filter(|t| t.kind() == takes[shown].kind()).map(Take::stream).collect();
             prop_assert_eq!(streams.len(), all.len());
             for &t in &targets(groups[1]) {
-                prop_assert!(takes[t + 1..].iter().all(|o| stream(o) != stream(&takes[t])), "the newest version");
+                prop_assert!(takes[t + 1..].iter().all(|o| o.stream() != takes[t].stream()), "the newest version");
             }
             let marked_department = marked(groups[1]);
             prop_assert_eq!(marked_department.len(), 1);
-            prop_assert_eq!(stream(&takes[marked_department[0]]), stream(&takes[shown]));
+            prop_assert_eq!(takes[marked_department[0]].stream(), takes[shown].stream());
 
             let versions = targets(groups[2]);
-            let expected: Vec<usize> = (0..takes.len()).rev().filter(|&t| stream(&takes[t]) == stream(&takes[shown])).collect();
+            let expected: Vec<usize> = (0..takes.len()).rev().filter(|&t| takes[t].stream() == takes[shown].stream()).collect();
             prop_assert_eq!(versions, expected);
             prop_assert_eq!(marked(groups[2]), vec![shown]);
         }

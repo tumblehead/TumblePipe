@@ -158,6 +158,10 @@ class Playblast(FrameRangeNode, EntityNode):
         render_node.parm('loppath').set(cache_node.path())
         render_node.parm('cameraprim').set(camera_path)
 
+        # The blurs, as the node says: the flipbook's own, from the camera's
+        # shutter and lens.
+        flipbook_blur(context, render_node)
+
         # Work in a temporary directory
         root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
         root_temp_path.mkdir(parents=True, exist_ok=True)
@@ -238,6 +242,16 @@ class Playblast(FrameRangeNode, EntityNode):
         # Create and open the directory containing the playblast
         output_path.mkdir(parents=True, exist_ok=True)
         hou.ui.showInFileBrowser(f'{path_str(output_path)}')
+
+
+def flipbook_blur(node, render_node) -> None:
+    """Set the flipbook ROP's blurs from the node's Motion Blur, Depth of
+    Field and Blur Samples (the images it averages for motion blur). Off
+    unless the node turns them on."""
+    render_node.parm('motionblur').set(int(node.parm('motion_blur').eval()))
+    render_node.parm('motionblurframes').set(max(2, int(node.parm('blur_samples').eval())))
+    render_node.parm('dof').set(int(node.parm('depth_of_field').eval()))
+
 
 #: The playblast size when the shot configures no render resolution.
 DEFAULT_RES = (1280, 720)

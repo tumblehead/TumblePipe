@@ -337,7 +337,8 @@ preceded by a [`th::rename_packed`](#threname_packed-sop) rewriting
 `/<category>/<asset>/*` to `/<category>/<asset><n>/*`. Inside
 `th::animate`, the node's `place` Python SOP, after the dive, starts each
 character it added where layout placed it: the world transform of
-`/<category>/<asset><n>` on the shot stage at the playbar start
+`/<category>/<asset><n>` on the shot stage at the start of the shot (the
+playbar start; in a Multi's workfile, the member's own first frame)
 (`th::animate`'s `IN_stage_start`, which keeps the node from turning time
 dependent) becomes the rig parms `Main_t` / `Main_r` / `Main_s` of TumbleRig's
 top `Main` control. It reads the placement as it cooks, so a layout
@@ -345,7 +346,8 @@ published later moves the character, and a workfile imported before the
 placement was read picks it up, without pressing **Import** again. The
 animated output is then world space, which is what `th::animate`'s
 zero_transforms expects. A rig without a `Main` control warns and starts
-at the origin. When it cannot
+at the origin. A character a [`th::layout_keys`](#thlayout_keys-sop) row
+copies `Main` keys to is left unplaced: those keys place it. When it cannot
 import it bypasses itself and passes the input through, with the comment
 *Bypassed: No asset selected* / *No versions available* / *Rig file not
 found*; on success *Imported: <asset>* and the version.
@@ -397,6 +399,52 @@ Gotchas:
   press **Import**.
 - A row with an empty entity raises on Import, naming the row; it is never
   filled with the first asset.
+
+## `th::layout_keys` (SOP)
+
+Layout's keys for the animation, copied per character, with the project
+setting *Layout in Animate* on. The animation shot template places it in
+`th::animate`'s dive, between `th::import_rigs` (and the camera rig, rebuilt
+with the settings layout published) and the APEX Scene Animate. Layout
+publishes its keys beside its layer (see
+[`th::export_layer`](import-and-export.md#thexport_layer-lop)); this node
+copies them into the Scene Animate's own animation, the data the animator
+keys into. From then on they are the animator's keys: edit, replace or
+clear them. A newer layout publish changes nothing until a row is copied
+again; layout is not a layer the animation adds to.
+Source: [`otls/sop_th.layout_keys.1.0`](../../otls/sop_th.layout_keys.1.0/th_8_8Sop_1layout__keys_8_81.0/DialogScript),
+[`sops/layout_keys_rows.py`](../../python/tumblepipe/pipe/houdini/sops/layout_keys_rows.py).
+
+| Label | Default | What it does |
+|---|---|---|
+| Discover | | Adds a row per character the newest layout keys have, pinned to that version. Rows already there keep their choices. A character not in the incoming APEX scene (a prop layout animated with a control) comes in off |
+| Copy All from Layout | | Copies every row that is on, as one undo step. A new animation workfile runs it once |
+| Channel | `default` | The layout export channel |
+
+**Rows** is a multiparm; each row has:
+
+| Label | Default | What it does |
+|---|---|---|
+| On | on | Off: Copy All leaves the character alone |
+| Layout Character | | The character's clip in layout's keys |
+| Character | | The animation character the keys go onto (the layout name; `th::import_rig` names its copies the same) |
+| Layout Version | `latest` | `latest` (the newest layout version that wrote keys) or a pinned `v####` |
+| Controls | `*` | Which controls' channels are copied: space-separated globs on the control name (`Main_tx` is `Main`), `^` excludes. `Main` copies only the placement |
+| Frame Range, First, Last | off | Only layout's keys in that range |
+| Offset | `0` | Moves the keys by this many frames, after a cut change |
+| Copy from Layout | | Copies the row into the Scene Animate |
+
+With **Controls** `*` a copy replaces the character's whole entry in the
+Scene Animate. With a narrower pattern it replaces only those controls'
+channels and keeps the animator's keys on every other control, so `Main`
+takes a new layout placement without touching the performance. The node's
+comment lists what Copy All copied and from which version; each row's
+copied version is kept on the node (user data
+`tumblepipe_layout_keys_copied`).
+
+The node passes the APEX scene through unchanged. While a row that copies
+`Main` is on, `th::import_rig` does not place that character at layout's
+first frame: its `Main` keys place it.
 
 ## `th::export_rig` (SOP)
 

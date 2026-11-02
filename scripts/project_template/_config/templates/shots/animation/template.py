@@ -2,6 +2,7 @@ import loputils
 import hou
 
 from tumblepipe.util.uri import Uri
+from tumblepipe.config import layout_animate
 from tumblepipe.config.groups import get_group
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import (
@@ -10,6 +11,7 @@ from tumblepipe.pipe.houdini.lops import (
 )
 from tumblepipe.pipe.houdini.sops import (
     import_rigs,
+    layout_keys_rows,
     playblast
 )
 
@@ -25,7 +27,7 @@ def _scrape_rig_imports(import_native):
     rig_imports, _unrigged = import_rigs.discover_rig_imports(import_native.stage())
     return rig_imports
 
-def _build_animate_dive(animate_node, rig_imports: list):
+def _build_animate_dive(animate_node, rig_imports: list, entity_uri=None):
     """Populate the inner anim_dive of an animate HDA with rigs and apex nodes."""
     inner_animate_node = animate_node.native().node('anim_dive')
     output_animate_node = inner_animate_node.node('output0')
@@ -34,13 +36,23 @@ def _build_animate_dive(animate_node, rig_imports: list):
     rigs_node = import_rigs.create(inner_animate_node, 'import_rigs')
     rigs_node.set_rig_imports(rig_imports)
     rigs_node.execute()
+    scene_input = rigs_node.native()
+
+    # Layout in Animate (a project setting): the camera rig and a copy of
+    # layout's keys per character, which the animator edits or replaces
+    if layout_animate.enabled():
+        scene_input = layout_keys_rows.add_to_dive(
+            inner_animate_node, scene_input, entity_uri
+        )
 
     # Create the scene animate nodes
     scene_animate_node = inner_animate_node.createNode(
         'apex::sceneanimate',
         'scene_animate'
     )
-    scene_animate_node.setInput(0, rigs_node.native())
+    scene_animate_node.setInput(0, scene_input)
+    if layout_animate.enabled():
+        layout_keys_rows.copy_into_new_workfile(scene_input)
     invoke_scene_node = inner_animate_node.createNode(
         'apex::sceneinvoke',
         'scene_invoke'
@@ -84,11 +96,12 @@ def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     # Create the animate node and populate anim_dive
     animate_node = ns.create_node(scene_node, 'animate_shot', ns.Node, 'animate')
     animate_node.setInput(0, camera_edit_node)
-    _build_animate_dive(animate_node, rig_imports)
+    _build_animate_dive(animate_node, rig_imports, entity_uri)
 
-    # Create animation camera
+    # Create animation camera: it reads camera_edit, so looking through it
+    # shows the animator's camera keys, not only layout's camera
     anim_camera = hou.node('/obj').createNode('lopimportcam', 'anim_camera')
-    anim_camera.parm('loppath').set('/stage/import_shot')
+    anim_camera.parm('loppath').set(camera_edit_node.path())
     anim_camera.parm('primpath').set('/cameras/render_camera')
 
     # Create the export node
@@ -121,12 +134,12 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         # Create the animate node and populate anim_dive
         animate_node = ns.create_node(scene_node, f'animate_shot_{member_name}', ns.Node, 'animate')
         animate_node.setInput(0, camera_edit_node)
-        _build_animate_dive(animate_node, rig_imports)
+        _build_animate_dive(animate_node, rig_imports, member_uri)
         _add_member_playblast(animate_node, member_uri)
 
-        # Create animation camera
+        # Create animation camera: it reads the member's camera_edit
         anim_camera = hou.node('/obj').createNode('lopimportcam', f'anim_camera_{member_name}')
-        anim_camera.parm('loppath').set(f'/stage/import_shot_{member_name}')
+        anim_camera.parm('loppath').set(camera_edit_node.path())
         anim_camera.parm('primpath').set('/cameras/render_camera')
 
         # Create the export node

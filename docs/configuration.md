@@ -394,7 +394,9 @@ a fix here reaches live projects instead of only new ones.
 ### Layout versioning and migration
 
 The `_config/` layout is versioned in `_config/version.json` (a project with
-no such file predates the system and counts as version 0). When the layout
+no such file predates the system and counts as version 0; one whose file does
+not hold a `version` number is refused, by the migrator and the package alike,
+until it is restored from a backup). When the layout
 changes, an existing project is brought forward **in place** rather than being
 recreated:
 
@@ -660,6 +662,29 @@ load-bearing the file is:
   Proxies made under the old path are not moved; they are rebuilt where the
   new one points.
 
+- **The animation camera shows the animator's camera keys (v18).** v12's
+  refresh again, for the `shots/animation` template: its `/obj/anim_camera`
+  (in a Multi, `anim_camera_<seq>_<shot>`) read the shot's Import Shot LOP,
+  so looking through it showed layout's camera without the keys the
+  animator set on `camera_edit`. It now reads `camera_edit`. Workfiles made
+  before v18 keep their camera; point its **LOP Path** at `camera_edit` to
+  get the same.
+
+- **Layout in Animate in the layout template (v19).** v12's refresh again,
+  for the `shots/layout` template: with the project setting *Layout in
+  Animate* on, a new layout workfile animates the shot on the stage
+  (`th::layout_rigs`, an APEX Animate LOP) and its export reads a publish
+  branch (each asset placed from the keys, the baked camera grafted to
+  `/cameras/render_camera`) and writes the layout keys beside the layer.
+  Off, the template builds what it did before.
+
+- **Animation copies layout's keys (v20).** v12's refresh again, for the
+  `shots/animation` template: with *Layout in Animate* on, a new animation
+  workfile's dive gets the camera rig rebuilt from the settings layout
+  published and [`th::layout_keys`](nodes/assets.md#thlayout_keys-sop),
+  which copies layout's keys per character into the Scene Animate once.
+  Off, the template builds what it did before.
+
 ### Migrating at launch
 
 You do not have to remember to run the command above. The `tt_prepare` package
@@ -701,8 +726,10 @@ accepted from the manifest — a value that refers to another variable is
 refused rather than misread.
 
 Because `_config` lives on a shared drive and every artist's launch runs this,
-the migration itself is taken under a lock, so two people launching at once
-cannot both rewrite the same files.
+the migration itself is taken under a lock (`_config/.migration.lock`,
+created so that only one launch can win it, and broken after 15 minutes as
+left by a crashed run), so two people launching at once cannot both rewrite
+the same files.
 
 **Un-migrated projects degrade, they don't crash.** `list_departments`
 reads each department's `independent`/`publishable`/`renderable` via schema

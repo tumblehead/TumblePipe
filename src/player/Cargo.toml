@@ -21,6 +21,7 @@ publish = false
 th_ffmpeg_sys = { path = "ffmpeg-sys" }
 th_media = { path = "media" }
 th_playlist = { path = "playlist" }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # In-house UI framework (wgpu + winit). Pinned by revision: Primer is not
 # published to a registry. Without its default `os` feature (native menus
@@ -31,9 +32,6 @@ exr = "1.74"
 half = { version = "2", features = ["bytemuck"] }
 thiserror = "2"
 bytemuck = { version = "1", features = ["derive"] }
-# In-house OpenTimelineIO, the playlist format. Pinned by tag; not on a
-# registry either.
-otio = { git = "http://10.100.36.15:3000/tumblehead/otio-rs.git", tag = "v0.4.0" }
 # Real OpenColorIO, built from its vendored source (`bundled`).
 ocio-rs = { version = "=0.3.0", features = ["bundled"] }
 proptest = { version = "1", default-features = false, features = ["std"] }

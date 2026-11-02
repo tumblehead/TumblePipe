@@ -231,12 +231,8 @@ class PipelineMenus:
         return items
 
     def _play_shots(self, shots: list[Asset]) -> None:
-        from tumblepipe.pipe import review_playlist
-        uris = [uri for uri in (self._resolver.uri_for(a.id) for a in shots) if uri is not None]
-        if not uris:
-            raise ValueError("No shot to play: the selection resolves to no entity")
         name = shots[0].name if len(shots) == 1 else f"{len(shots)} shots"
-        review_playlist.play_shots(uris, name)
+        self._ops.play_shots([a.id for a in shots], name)
 
     def deck_item_items(self, asset: Asset, deck_item_key: str) -> list:
         """A department deck item's right-click items (see

@@ -11,14 +11,17 @@
 //! OCIO only runs when a LUT is baked, on the CPU; drawing is one texture
 //! lookup. Movies are display-referred already and never go through it.
 
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use half::f16;
+use ocio_rs::{Config, TransformDirection};
 
 /// The shaper's range, in stops: 2^-12 (~0.00024) to 2^8 (256).
 pub const SHAPER: (f32, f32) = (-12.0, 8.0);
 /// Lattice points per axis.
-pub const LUT_SIZE: usize = 65;
+const LUT_SIZE: usize = 65;
 
 /// A baked display LUT. `rgba` is `size`^3 texels, red varying fastest,
 /// then green, then blue: the layout of a 3D texture with width = red.
@@ -98,83 +101,68 @@ impl Lut {
     }
 }
 
-#[cfg(feature = "ocio")]
-pub use ocio::Colour;
+/// An OCIO config and the display LUTs baked from it so far.
+pub struct Colour {
+    config: Config,
+    /// The config's default display and its default view.
+    default: (String, String),
+    cache: HashMap<(String, String, String), Arc<Lut>>,
+}
 
-#[cfg(feature = "ocio")]
-mod ocio {
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    use ocio_rs::{Config, TransformDirection};
-
-    use super::{LUT_SIZE, Lut, SHAPER};
-
-    /// An OCIO config and the display LUTs baked from it so far.
-    pub struct Colour {
-        config: Config,
-        cache: HashMap<(String, String, String), Arc<Lut>>,
+impl Colour {
+    /// The config at `path`. A config without a default display and view
+    /// has nothing to show a render as, so it does not open.
+    pub fn open(path: &str) -> Result<Self, String> {
+        let config = Config::from_file(path).map_err(|e| format!("{path}: {e}"))?;
+        let display = config.default_display().filter(|d| !d.is_empty()).ok_or_else(|| format!("{path} has no default display"))?;
+        let view =
+            config.default_view(&display).filter(|v| !v.is_empty()).ok_or_else(|| format!("{path} has no view for display '{display}'"))?;
+        Ok(Self { config, default: (display, view), cache: HashMap::new() })
     }
 
-    impl Colour {
-        /// The config at `path`, or `$OCIO` when None.
-        pub fn open(path: Option<&str>) -> Result<Self, String> {
-            let path = match path {
-                Some(p) => p.to_owned(),
-                None => std::env::var("OCIO").map_err(|_| "no OCIO config given and $OCIO is not set".to_owned())?,
-            };
-            let config = Config::from_file(&path).map_err(|e| format!("{path}: {e}"))?;
-            Ok(Self { config, cache: HashMap::new() })
-        }
+    /// The displays that have a view: only those can show anything.
+    pub fn displays(&self) -> Vec<String> {
+        (0..self.config.num_displays()).filter_map(|i| self.config.display(i)).filter(|d| !self.views(d).is_empty()).collect()
+    }
 
-        pub fn displays(&self) -> Vec<String> {
-            (0..self.config.num_displays()).filter_map(|i| self.config.display(i)).collect()
-        }
+    pub fn views(&self, display: &str) -> Vec<String> {
+        (0..self.config.num_views(display)).filter_map(|i| self.config.view(display, i)).collect()
+    }
 
-        pub fn views(&self, display: &str) -> Vec<String> {
-            (0..self.config.num_views(display)).filter_map(|i| self.config.view(display, i)).collect()
-        }
+    /// The display and view a render shows as until another is chosen.
+    pub fn default(&self) -> (String, String) {
+        self.default.clone()
+    }
 
-        pub fn default_display(&self) -> Option<String> {
-            self.config.default_display()
-        }
+    /// True when `name` is a colour space (or role) of the config.
+    fn has_colour_space(&self, name: &str) -> bool {
+        (0..self.config.num_color_spaces()).filter_map(|i| self.config.color_space_name_by_index(i)).any(|n| n == name)
+            || self.config.has_role(name)
+    }
 
-        pub fn default_view(&self, display: &str) -> Option<String> {
-            self.config.default_view(display)
+    /// The LUT showing `input` through `display`/`view`. A colour space
+    /// the config does not have is an error: frames in it cannot be shown
+    /// right.
+    pub fn lut(&mut self, input: &str, display: &str, view: &str) -> Result<Arc<Lut>, String> {
+        if !self.has_colour_space(input) {
+            return Err(format!("the OCIO config has no colour space '{input}'"));
         }
-
-        /// The colour space scene-linear frames are in when they do not say.
-        pub fn scene_linear(&self) -> String {
-            self.config.role_color_space("scene_linear").unwrap_or_else(|| "scene_linear".to_owned())
+        let key = (input.to_owned(), display.to_owned(), view.to_owned());
+        if let Some(lut) = self.cache.get(&key) {
+            return Ok(Arc::clone(lut));
         }
-
-        /// True when `name` is a colour space (or role) of the config.
-        pub fn has_colour_space(&self, name: &str) -> bool {
-            (0..self.config.num_color_spaces())
-                .filter_map(|i| self.config.color_space_name_by_index(i))
-                .any(|n| n == name)
-                || self.config.has_role(name)
-        }
-
-        /// The LUT showing `input` through `display`/`view`.
-        pub fn lut(&mut self, input: &str, display: &str, view: &str) -> Result<Arc<Lut>, String> {
-            let key = (input.to_owned(), display.to_owned(), view.to_owned());
-            if let Some(lut) = self.cache.get(&key) {
-                return Ok(Arc::clone(lut));
-            }
-            let cpu = self
-                .config
-                .processor_display(input, display, view, TransformDirection::Forward)
-                .and_then(|p| p.default_cpu_processor())
-                .map_err(|e| format!("{input} -> {display} / {view}: {e}"))?;
-            let lut = Arc::new(Lut::bake(LUT_SIZE, SHAPER, |pixels| {
-                let n = (pixels.len() / 4) as i64;
-                // Stride is in floats per pixel.
-                cpu.apply_rgba_pixels(pixels, n, 4);
-            }));
-            self.cache.insert(key, Arc::clone(&lut));
-            Ok(lut)
-        }
+        let cpu = self
+            .config
+            .processor_display(input, display, view, TransformDirection::Forward)
+            .and_then(|p| p.default_cpu_processor())
+            .map_err(|e| format!("{input} -> {display} / {view}: {e}"))?;
+        let lut = Arc::new(Lut::bake(LUT_SIZE, SHAPER, |pixels| {
+            let n = (pixels.len() / 4) as i64;
+            // Stride is in floats per pixel.
+            cpu.apply_rgba_pixels(pixels, n, 4);
+        }));
+        self.cache.insert(key, Arc::clone(&lut));
+        Ok(lut)
     }
 }
 
@@ -206,7 +194,7 @@ mod tests {
         #[test]
         fn each_axis_is_its_own_channel(rgb in [linear(), linear(), linear()], keep in 0usize..3) {
             let lut = Lut::bake(SIZE, SHAPER, |pixels| {
-                for p in pixels.chunks_exact_mut(4) {
+                for p in pixels.as_chunks_mut::<4>().0 {
                     let v = Lut::shape(SHAPER, p[keep]);
                     p[0] = 0.0;
                     p[1] = 0.0;
@@ -215,11 +203,11 @@ mod tests {
                 }
             });
             let shown = lut.sample(rgb);
-            for c in 0..3 {
+            for (c, &value) in shown.iter().enumerate() {
                 let expected = if c == keep { Lut::shape(SHAPER, rgb[keep]) } else { 0.0 };
                 // Shaped coordinates are linear in the lattice, so
                 // interpolation is exact up to half precision.
-                prop_assert!((shown[c] - expected).abs() < 2e-3, "channel {} shows {} for {}", c, shown[c], expected);
+                prop_assert!((value - expected).abs() < 2e-3, "channel {} shows {} for {}", c, value, expected);
             }
         }
 
@@ -227,7 +215,7 @@ mod tests {
         #[test]
         fn lattice_points_sample_exactly(r in 0..SIZE, g in 0..SIZE, b in 0..SIZE) {
             let lut = Lut::bake(SIZE, SHAPER, |pixels| {
-                for p in pixels.chunks_exact_mut(4) {
+                for p in pixels.as_chunks_mut::<4>().0 {
                     // Any smooth display-like curve.
                     for c in &mut p[..3] {
                         *c = (*c / (*c + 1.0)).powf(1.0 / 2.2);

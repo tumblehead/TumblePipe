@@ -70,7 +70,7 @@ from tumblepipe.farm.submit import camera as render_camera
 from tumblepipe.farm.submit import settings as resolve
 from tumblepipe.pipe.houdini.ui.report import report_failure
 from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
-from tumblepipe.farm.specs.playblast import PLAYBLAST_RENDERERS
+from tumblepipe.farm.specs.playblast import PLAYBLAST_RENDERERS, PLAYBLAST_SHADINGS
 
 log = logging.getLogger(__name__)
 
@@ -1740,12 +1740,42 @@ class _ContextPane(QWidget):
         ))
         self._pb_renderer = self._combo('pb_renderer', PLAYBLAST_RENDERERS)
         self._pb_renderer.setToolTip(
-            "viewport: the viewport's look — display colours and textures "
-            "under a headlight. Fast, on the CPU, takes no licence.\n"
+            "viewport: the viewport's look — display colours and textures, "
+            "shaded as set below. Fast, on the CPU, takes no licence.\n"
             "karma: Karma XPU, lit and sampled as set below. Takes a Karma "
             "licence and an NVIDIA GPU."
         )
         form.addRow("Renderer:", self._row(self._pb_renderer, revert=('pb_renderer',)))
+        self._pb_shading = self._combo('pb_shading', PLAYBLAST_SHADINGS)
+        self._pb_shading.setToolTip(
+            "Viewport only. Every option has ambient occlusion.\n"
+            "lit: the scene's colours under lights that follow the camera.\n"
+            "clay: the same lights on plain grey.\n"
+            "albedo: the scene's colours, unlit.\n"
+            "occlusion: white, with only the ambient occlusion."
+        )
+        form.addRow("Shading:", self._row(self._pb_shading, revert=('pb_shading',)))
+        self._pb_motion_blur = self._check('pb_motion_blur', "Motion blur")
+        self._pb_motion_blur.setToolTip(
+            "Viewport only. Blur what moves while the shot camera's shutter "
+            "is open. Partially checked = each entity keeps its own "
+            "configured value."
+        )
+        self._pb_dof = self._check('pb_dof', "Depth of field")
+        self._pb_dof.setToolTip(
+            "Viewport only. Defocus by the shot camera's lens: its f-stop "
+            "and focus distance (an f-stop of 0 stays sharp). Partially "
+            "checked = each entity keeps its own configured value."
+        )
+        self._pb_blur_samples = self._spin('pb_blur_samples', 2, 64)
+        self._pb_blur_samples.setToolTip(
+            "Viewport only. Images averaged per frame for the blurs: more is "
+            "smoother and slower."
+        )
+        form.addRow("Blur:", self._row(
+            self._pb_motion_blur, self._pb_dof, self._pb_blur_samples,
+            revert=('pb_motion_blur', 'pb_dof', 'pb_blur_samples'),
+        ))
         self._pb_light = self._combo('pb_light', PLAYBLAST_LIGHTS)
         self._pb_light.setToolTip(
             "Karma only.\n"

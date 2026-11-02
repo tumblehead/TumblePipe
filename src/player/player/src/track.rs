@@ -11,8 +11,8 @@
 
 use std::collections::BTreeSet;
 
-use primer::ImageHandle;
 use primer::Horizontal as H;
+use primer::ImageHandle;
 use primer::Vertical as V;
 use primer::prelude::*;
 use primer::widget::custom::{Cursor, Event, Status, keyboard, mouse};
@@ -72,7 +72,13 @@ impl Pick {
 /// The shots selected after `how` a click on `shot`, and the shot a later
 /// Shift-click runs from. `playhead` is the playhead's shot: what a change
 /// applies to while nothing is selected, so a Ctrl-click then adds to it.
-pub fn pick(selection: &BTreeSet<usize>, anchor: Option<usize>, shot: usize, how: Pick, playhead: usize) -> (BTreeSet<usize>, Option<usize>) {
+pub fn pick(
+    selection: &BTreeSet<usize>,
+    anchor: Option<usize>,
+    shot: usize,
+    how: Pick,
+    playhead: usize,
+) -> (BTreeSet<usize>, Option<usize>) {
     match how {
         Pick::Only => (BTreeSet::new(), Some(shot)),
         Pick::Toggle => {

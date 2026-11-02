@@ -1,13 +1,12 @@
 //! The video view as a Primer shader. A movie frame is three single-channel
 //! textures (Y, U, V) the shader converts; an EXR frame is one half-float
 //! RGBA texture of scene-linear values, shown through the display transform
-//! (an OCIO view baked into a 3D LUT, see `colour.rs`) or, with none, as
-//! linear sRGB. Textures are re-uploaded only when the frame changes.
+//! (an OCIO view baked into a 3D LUT, see `colour.rs`). Textures are
+//! re-uploaded only when the frame changes.
 
 use std::sync::Arc;
 
 use bytemuck::{Pod, Zeroable};
-use half::f16;
 use primer::prelude::*;
 use primer::wgpu;
 use primer::{Rectangle, Viewport};
@@ -200,24 +199,28 @@ impl VideoPipeline {
         Textures { size: (width, height), kind, planes, bind_group }
     }
 
-    /// Upload `lut` (or drop to a 1x1 stand-in for none) when it changed;
-    /// the bind group samples the LUT texture, so it is rebuilt with it.
-    fn set_lut(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, lut: Option<&Lut>) {
-        let id = lut.map(|l| l.id);
-        if self.lut.1 == id {
+    /// Upload `lut` when it changed; the bind group samples the LUT texture,
+    /// so it is rebuilt with it. A movie frame keeps the last one.
+    fn set_lut(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, lut: &Lut) {
+        if self.lut.1 == Some(lut.id) {
             return;
         }
-        let n = lut.map_or(1, |l| l.size as u32);
+        let n = lut.size as u32;
         let texture = make_texture(device, "video.lut", (n, n, n), wgpu::TextureFormat::Rgba16Float, wgpu::TextureDimension::D3);
-        if let Some(lut) = lut {
+        {
             queue.write_texture(
-                wgpu::TexelCopyTextureInfo { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
                 bytemuck::cast_slice(&lut.rgba),
                 wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(n * 8), rows_per_image: Some(n) },
                 wgpu::Extent3d { width: n, height: n, depth_or_array_layers: n },
             );
         }
-        self.lut = (texture, id);
+        self.lut = (texture, Some(lut.id));
         if let Some(t) = &self.textures {
             let (kind, (w, h)) = (t.kind, t.size);
             self.textures = Some(self.make_textures(device, kind, w, h));
@@ -236,48 +239,35 @@ fn write_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[u8], widt
     );
 }
 
-/// Half floats with `channels` per pixel as RGBA: one channel is grey,
-/// three get an opaque alpha.
-pub fn to_rgba(data: &[f16], channels: usize) -> Vec<f16> {
-    match channels {
-        4 => data.to_vec(),
-        3 => data.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], f16::ONE]).collect(),
-        1 => data.iter().flat_map(|&v| [v, v, v, f16::ONE]).collect(),
-        n => data.chunks_exact(n.max(1)).flat_map(|p| [p[0], p[0], p[0], f16::ONE]).collect(),
-    }
-}
-
-/// How scene-linear frames are shown.
-#[derive(Clone, Default)]
-pub struct DisplaySettings {
-    /// Exposure in stops, applied before the display transform.
-    pub exposure: f32,
-    /// The display transform; None shows linear values as sRGB.
+/// A frame on screen.
+#[derive(Clone)]
+pub struct Picture {
+    /// New for every frame shown, so the renderer uploads it.
+    pub id: u64,
+    pub frame: Frame,
+    /// The display transform of a scene-linear frame; None for a movie's.
     pub lut: Option<Arc<Lut>>,
 }
 
-/// This frame's inputs: the frame to show and an id that changes with it.
+/// The video view's inputs.
 #[derive(Clone)]
 pub struct Video {
-    pub frame: Option<(u64, Frame)>,
-    pub display: DisplaySettings,
+    pub picture: Option<Picture>,
+    /// Exposure in stops, applied to scene-linear frames before the display
+    /// transform.
+    pub exposure: f32,
 }
 
 impl ShaderProgram for Video {
     type Pipeline = VideoPipeline;
 
-    fn prepare(
-        &self,
-        pipeline: &mut VideoPipeline,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        bounds: Rectangle,
-        viewport: Viewport,
-    ) {
-        pipeline.set_lut(device, queue, self.display.lut.as_deref());
+    fn prepare(&self, pipeline: &mut VideoPipeline, device: &wgpu::Device, queue: &wgpu::Queue, bounds: Rectangle, viewport: Viewport) {
         let mut frame_size = [1.0, 1.0];
-        match &self.frame {
-            Some((id, frame)) => {
+        match &self.picture {
+            Some(Picture { id, frame, lut }) => {
+                if let Some(lut) = lut {
+                    pipeline.set_lut(device, queue, lut);
+                }
                 frame_size = [frame.width as f32, frame.height as f32];
                 if pipeline.uploaded != Some(*id) {
                     let (w, h) = (frame.width, frame.height);
@@ -288,17 +278,13 @@ impl ShaderProgram for Video {
                             write_texture(queue, &textures.planes[0], y, w, h, 1);
                             write_texture(queue, &textures.planes[1], u, cw, ch, 1);
                             write_texture(queue, &textures.planes[2], v, cw, ch, 1);
-                            pipeline.params = [
-                                if *full_range { 1.0 } else { 0.0 },
-                                if *matrix == YuvMatrix::Bt709 { 1.0 } else { 0.0 },
-                                1.0,
-                                0.0,
-                            ];
+                            pipeline.params =
+                                [if *full_range { 1.0 } else { 0.0 }, if *matrix == YuvMatrix::Bt709 { 1.0 } else { 0.0 }, 1.0, 0.0];
                         }
-                        Pixels::Half { data, channels } => {
-                            let rgba = to_rgba(data, *channels);
+                        Pixels::Rgba16f(rgba) => {
+                            assert!(lut.is_some(), "a scene-linear frame is shown through its display transform");
                             let textures = pipeline.textures_for(device, Kind::Linear, w, h);
-                            write_texture(queue, &textures.planes[3], bytemuck::cast_slice(&rgba), w, h, 8);
+                            write_texture(queue, &textures.planes[3], bytemuck::cast_slice(rgba), w, h, 8);
                             pipeline.params = [0.0, 0.0, 1.0, 1.0];
                         }
                     }
@@ -308,18 +294,13 @@ impl ShaderProgram for Video {
             None => pipeline.params[2] = 0.0,
         }
         let resolution = viewport.physical_size();
-        let (lo, hi) = self.display.lut.as_ref().map_or((0.0, 1.0), |l| l.shaper);
+        let (lo, hi) = crate::colour::SHAPER;
         let uniforms = Uniforms {
             resolution: [resolution.width as f32, resolution.height as f32],
             frame_size,
             bounds: [bounds.x, bounds.y, bounds.width, bounds.height],
             params: pipeline.params,
-            display: [
-                self.display.exposure.exp2(),
-                if self.display.lut.is_some() { 1.0 } else { 0.0 },
-                lo,
-                hi,
-            ],
+            display: [self.exposure.exp2(), lo, hi, 0.0],
         };
         queue.write_buffer(&pipeline.uniforms, 0, bytemuck::bytes_of(&uniforms));
     }

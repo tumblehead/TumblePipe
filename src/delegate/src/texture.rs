@@ -14,6 +14,9 @@ pub struct Texture {
     pub height: usize,
     /// sRGB-encoded RGBA, row 0 = v of 1 (the top of the image).
     texels: Vec<[u8; 4]>,
+    /// Unique for the process: the GPU path keeps its copy of a texture
+    /// under this, where an address could be reused by the next texture.
+    id: u64,
 }
 
 fn linear_to_srgb(v: f32) -> f32 {
@@ -74,7 +77,14 @@ impl Texture {
                 texels.push([enc(0, true), enc(1, true), enc(2, true), enc(3, false)]);
             }
         }
-        Texture { width: w, height: h, texels }
+        static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let id = NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Texture { width: w, height: h, texels, id }
+    }
+
+    /// This texture's id, never shared with another texture of the process.
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     /// The sRGB-encoded RGBA texels, row 0 at the top.

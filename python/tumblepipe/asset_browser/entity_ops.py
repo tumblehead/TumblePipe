@@ -1145,6 +1145,38 @@ class EntityOps:
                 severity=hou.severityType.Message,
             )
 
+    def play_shots(self, asset_ids: list[str], name: str) -> None:
+        """Play the shots back to back in the sequence player
+        (``pipe.review_playlist``), naming those left out for having no
+        playblast or render. The shots are read from their own project."""
+        import hou
+        from tumblepipe.pipe import review_playlist
+
+        projects = [self._resolver.project_for(aid) for aid in asset_ids]
+        if any(p is None for p in projects):
+            raise ValueError("A shot to play belongs to no registered project")
+        if len({p.name for p in projects}) != 1:
+            raise ValueError("The shots to play are of more than one project")
+
+        def _work() -> list[str]:
+            # Both block: the project's Client builds, and finding the takes
+            # lists render folders on the file server.
+            uris = [self._resolver.uri_for_ready(aid) for aid in asset_ids]
+            malformed = [aid for aid, uri in zip(asset_ids, uris) if uri is None]
+            if malformed:
+                raise ValueError(f"Not a shot: {', '.join(malformed)}")
+            self._activator.activate(projects[0])
+            return review_playlist.play_shots(uris, name)
+
+        def _started(left_out: list[str]) -> None:
+            if left_out:
+                hou.ui.displayMessage(
+                    f"Left out, with no playblast or render: {', '.join(left_out)}",
+                    severity=hou.severityType.Message,
+                )
+
+        run_in_background("Play", _work, _started)
+
     def edit_departments(self, asset_id: str) -> None:
         """Choose which departments this shot or asset uses."""
         from .departments import EntityDepartmentsDialog

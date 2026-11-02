@@ -15,6 +15,10 @@
 //                 (purposes) and the camera, and calls the Rust core
 //                 (th_render) for colour and depth.
 //
+// Each mesh hands the core a key and a version (bumped by every rebuild),
+// and the delegate a ThCache, so the GPU path keeps unchanged meshes on the
+// card from frame to frame.
+//
 // Every pixel decision is the core's (src/raster.rs). Nothing here needs a
 // GPU, a GL context or a display.
 
@@ -54,6 +58,7 @@
 #include <pxr/imaging/hd/retainedDataSource.h>
 #include <pxr/imaging/hd/sceneDelegate.h>
 #include <pxr/imaging/hd/sceneIndexPluginRegistry.h>
+#include <pxr/imaging/hd/timeSampleArray.h>
 #include <pxr/imaging/hd/tokens.h>
 #include <pxr/imaging/hd/vtBufferSource.h>
 #include <pxr/imaging/hdsi/implicitSurfaceSceneIndex.h>
@@ -61,16 +66,20 @@
 #include <pxr/usd/sdf/assetPath.h>
 
 #include <algorithm>
+#include <cstring>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -79,10 +88,126 @@ PXR_NAMESPACE_OPEN_SCOPE
 namespace {
 
 TfToken const _tokDisplayColor("displayColor");
-TfToken const _tokNone("none");          // subdivision schemes drawn faceted
+TfToken const _tokNone("none");          // polygonal subdivision schemes
 TfToken const _tokBilinear("bilinear");
-TfToken const _tokSupersample("th:supersample");
-int const _defaultSupersample = 2;
+// Samples per pixel, 1, 2, 4, 8 or 16 (1 = no anti-aliasing); unset,
+// TH_PLAYBLAST_SAMPLES, else the default.
+TfToken const _tokSamples("th:samples");
+int const _defaultSamples = 8;
+// "lit", "clay", "albedo" or "occlusion"; unset, TH_PLAYBLAST_SHADING, else lit.
+TfToken const _tokShading("th:shading");
+// Screen-space ambient occlusion; unset, TH_PLAYBLAST_AO (0/false/off), else on.
+TfToken const _tokAo("th:ao");
+
+std::string _SettingString(VtValue const& value)
+{
+    if (value.IsHolding<TfToken>()) return value.UncheckedGet<TfToken>().GetString();
+    if (value.IsHolding<std::string>()) return value.UncheckedGet<std::string>();
+    return {};
+}
+
+std::string _EnvLower(char const* name)
+{
+    char const* value = std::getenv(name);
+    return value ? TfStringToLower(TfStringTrim(value)) : std::string();
+}
+
+// The core's shading number (ThFrame::shading): 0 lit, 1 clay, 2 albedo, 3 occlusion.
+uint32_t _ShadingNumber(std::string const& name)
+{
+    std::string const n = TfStringToLower(TfStringTrim(name));
+    if (n == "clay") return 1;
+    if (n == "albedo") return 2;
+    if (n == "occlusion") return 3;
+    return 0;
+}
+
+// Motion blur over the render camera's shutter; unset, TH_PLAYBLAST_MOTION_BLUR
+// (1/true/on), else off.
+TfToken const _tokMotionBlur("th:motionBlur");
+// Depth of field from the render camera's lens (an f-stop of 0 is none);
+// unset, TH_PLAYBLAST_DOF, else off.
+TfToken const _tokDepthOfField("th:depthOfField");
+// Layers spread over the shutter and the lens when either blur is on (the
+// core takes the largest power of two up to 64, at least th:samples); unset,
+// TH_PLAYBLAST_BLUR_SAMPLES, else the default.
+TfToken const _tokBlurSamples("th:blurSamples");
+int const _defaultBlurSamples = 16;
+// Frames per second, which turns a mesh's velocities (per second) into its
+// motion over a shutter given in frames; unset, TH_PLAYBLAST_FPS, else 24.
+TfToken const _tokFps("th:fps");
+// Motion is sampled this many frames either side of the frame, and the
+// camera's shutter is held to that window.
+float const _motionWindow = 1.0f;
+
+// An on/off setting: a bool or int render setting, else `env` set to 1,
+// true or on.
+bool _SettingOn(VtValue const& value, char const* env)
+{
+    if (value.IsHolding<bool>()) return value.UncheckedGet<bool>();
+    if (value.IsHolding<int>()) return value.UncheckedGet<int>() != 0;
+    std::string const s = _EnvLower(env);
+    return s == "1" || s == "true" || s == "on";
+}
+
+// A positive number: the render setting, else `env`, else `fallback`.
+double _SettingNumber(VtValue const& value, char const* env, double fallback)
+{
+    double v = 0.0;
+    if (value.IsHolding<int>()) v = value.UncheckedGet<int>();
+    else if (value.IsHolding<float>()) v = value.UncheckedGet<float>();
+    else if (value.IsHolding<double>()) v = value.UncheckedGet<double>();
+    else if (char const* e = std::getenv(env)) v = std::atof(e);
+    return v > 0.0 ? v : fallback;
+}
+
+// What the render delegate tells its prims as they sync: whether to sample
+// their motion (th:motionBlur).
+struct ThRenderParam final : public HdRenderParam
+{
+    std::atomic<bool> motion{false};
+};
+
+bool _SamplingMotion(HdRenderParam* param)
+{
+    auto* p = static_cast<ThRenderParam*>(param);
+    return p && p->motion.load(std::memory_order_relaxed);
+}
+
+// A transform's samples over the motion window.
+using _XformSamples = HdTimeSampleArray<GfMatrix4d, 4>;
+
+// The shutter a frame is drawn over, frame-relative, and the frame rate.
+struct _Shutter
+{
+    bool on = false;
+    float open = 0.0f;
+    float close = 0.0f;
+    float fps = 24.0f;
+
+    // The moment of key `k` of `keys`, evenly spread from open to close.
+    float At(size_t k, size_t keys) const
+    {
+        return keys < 2 ? open : open + (close - open) * static_cast<float>(k) / static_cast<float>(keys - 1);
+    }
+};
+
+// Keys (2 to 4) a transform sampled as `a` needs over the shutter: the two
+// ends, plus one for each sample strictly inside it.
+size_t _KeyCount(_XformSamples const& a, _Shutter const& s)
+{
+    size_t inside = 0;
+    for (size_t i = 0; i < a.count; ++i) {
+        if (a.times[i] > s.open && a.times[i] < s.close) ++inside;
+    }
+    return std::min<size_t>(4, 2 + inside);
+}
+
+// A sampled transform at `t`, or `still` when it has no samples.
+GfMatrix4d _XformAt(_XformSamples const& a, float t, GfMatrix4d const& still)
+{
+    return a.count > 0 ? a.Resample(t) : still;
+}
 
 // -----------------------------------------------------------------------------
 // Textures: decoded once per file through Hio, kept by the core.
@@ -301,10 +426,14 @@ class ThInstancer final : public HdInstancer
 public:
     ThInstancer(HdSceneDelegate* delegate, SdfPath const& id) : HdInstancer(delegate, id) {}
 
-    void Sync(HdSceneDelegate* delegate, HdRenderParam*, HdDirtyBits* dirtyBits) override
+    void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits) override
     {
         _UpdateInstancer(delegate, dirtyBits);
         SdfPath const& id = GetId();
+        if (_SamplingMotion(param) && HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
+            std::lock_guard<std::mutex> lock(_mutex);
+            delegate->SampleInstancerTransform(id, -_motionWindow, _motionWindow, &_xformSamples);
+        }
         if (HdChangeTracker::IsAnyPrimvarDirty(*dirtyBits, id)) {
             std::lock_guard<std::mutex> lock(_mutex);
             for (HdPrimvarDescriptor const& pv :
@@ -317,11 +446,32 @@ public:
         *dirtyBits &= ~HdChangeTracker::AllSceneDirtyBits;
     }
 
-    // Object-to-world of every instance of `prototypeId`, parents applied.
-    std::vector<GfMatrix4d> ComputeInstanceTransforms(SdfPath const& prototypeId)
+    // Keys (2 to 4) this instancer's transform, and its parents', need over
+    // the shutter.
+    size_t KeyCount(_Shutter const& s)
+    {
+        size_t keys = 2;
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            keys = _KeyCount(_xformSamples, s);
+        }
+        if (auto* parent = dynamic_cast<ThInstancer*>(GetDelegate()->GetRenderIndex().GetInstancer(GetParentId()))) {
+            keys = std::max(keys, parent->KeyCount(s));
+        }
+        return keys;
+    }
+
+    // Object-to-world of every instance of `prototypeId`, parents applied;
+    // with `time`, the instancers' transforms at that moment (frame-relative)
+    // of their motion samples. The instances' own placement is the frame's.
+    std::vector<GfMatrix4d> ComputeInstanceTransforms(SdfPath const& prototypeId, float const* time = nullptr)
     {
         HdSceneDelegate* delegate = GetDelegate();
-        GfMatrix4d const instancerXform = delegate->GetInstancerTransform(GetId());
+        GfMatrix4d instancerXform = delegate->GetInstancerTransform(GetId());
+        if (time) {
+            std::lock_guard<std::mutex> lock(_mutex);
+            instancerXform = _XformAt(_xformSamples, *time, instancerXform);
+        }
         VtIntArray const indices = delegate->GetInstanceIndices(GetId(), prototypeId);
 
         std::vector<GfMatrix4d> xforms(indices.size(), instancerXform);
@@ -379,7 +529,7 @@ public:
         if (!parent) {
             return xforms;
         }
-        std::vector<GfMatrix4d> const parents = parent->ComputeInstanceTransforms(GetId());
+        std::vector<GfMatrix4d> const parents = parent->ComputeInstanceTransforms(GetId(), time);
         std::vector<GfMatrix4d> out;
         out.reserve(xforms.size() * parents.size());
         for (GfMatrix4d const& p : parents) {
@@ -393,6 +543,7 @@ public:
 private:
     std::mutex _mutex;
     std::map<TfToken, VtValue> _primvars;
+    _XformSamples _xformSamples;
 };
 
 // -----------------------------------------------------------------------------
@@ -557,20 +708,42 @@ private:
 // Mesh
 // -----------------------------------------------------------------------------
 
+// TH_PLAYBLAST_TIMING: time spent in mesh Sync (Hydra syncs meshes on several
+// threads, so this is thread time, not wall time) and the meshes rebuilt,
+// since the last frame.
+static bool const g_timing = std::getenv("TH_PLAYBLAST_TIMING") != nullptr;
+static std::atomic<long long> g_syncNs{0};
+static std::atomic<int> g_rebuilds{0};
+static std::atomic<int> g_pointUpdates{0};
+// Mesh keys for the core (ThMeshView::key): never reused in the process.
+static std::atomic<uint64_t> g_nextMeshKey{1};
+struct _SyncTimer {
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    ~_SyncTimer()
+    {
+        if (!g_timing) return;
+        g_syncNs.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now() - start).count(),
+                           std::memory_order_relaxed);
+    }
+};
+
 class ThMesh final : public HdMesh
 {
 public:
-    explicit ThMesh(SdfPath const& id) : HdMesh(id) {}
+    explicit ThMesh(SdfPath const& id) : HdMesh(id), _key(g_nextMeshKey.fetch_add(1)) {}
 
     HdDirtyBits GetInitialDirtyBitsMask() const override
     {
         return HdChangeTracker::AllSceneDirtyBits;
     }
 
-    void Sync(HdSceneDelegate* delegate, HdRenderParam*, HdDirtyBits* dirtyBits,
+    void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits,
               TfToken const&) override
     {
+        _SyncTimer timer;
         SdfPath const& id = GetId();
+        bool const motion = _SamplingMotion(param);
         if (*dirtyBits & HdChangeTracker::DirtyMaterialId) {
             SetMaterialId(delegate->GetMaterialId(id));
         }
@@ -579,23 +752,43 @@ public:
         }
         if (HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
             _transform = delegate->GetTransform(id);
+            _xformSamples.count = 0;
+            if (motion) {
+                delegate->SampleTransform(id, -_motionWindow, _motionWindow, &_xformSamples);
+            }
         }
         _UpdateInstancer(delegate, dirtyBits);
         HdInstancer::_SyncInstancerAndParents(delegate->GetRenderIndex(), GetInstancerId());
 
-        if (HdChangeTracker::IsTopologyDirty(*dirtyBits, id)
-            || HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->points)
-            || HdChangeTracker::IsAnyPrimvarDirty(*dirtyBits, id)) {
-            _Rebuild(delegate);
+        bool const topologyDirty = HdChangeTracker::IsTopologyDirty(*dirtyBits, id);
+        bool const pointsDirty = HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->points);
+        if (topologyDirty || pointsDirty || HdChangeTracker::IsAnyPrimvarDirty(*dirtyBits, id)) {
+            // Only the points (an animated mesh's every frame): the
+            // triangles and every per-corner primvar stay as they are.
+            bool const othersDirty = (*dirtyBits & (HdChangeTracker::DirtyNormals | HdChangeTracker::DirtyWidths
+                                                    | HdChangeTracker::DirtyPrimvar)) != 0;
+            if (!topologyDirty && !othersDirty && pointsDirty && _UpdatePoints(delegate, motion)) {
+                g_pointUpdates.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                _Rebuild(delegate, motion);
+                g_rebuilds.fetch_add(1, std::memory_order_relaxed);
+            }
         }
         *dirtyBits &= ~HdChangeTracker::AllSceneDirtyBits;
     }
 
     // Fill `view` from this mesh; false when it has nothing to draw.
-    bool View(ThMeshView* view, std::vector<double>* transforms, ThMaterial const* material,
-              std::vector<GfMatrix4d> const& instances) const
+    // `instancesAt` gives its instances' transforms (none for a mesh not
+    // instanced) at a moment of the shutter, or the frame's for null. With
+    // the shutter open, the view also gets the mesh's points at its opening
+    // and closing, and its transforms at keys across it, when they move.
+    bool View(ThMeshView* view, std::vector<double>* transforms, std::vector<double>* keys,
+              ThMaterial const* material,
+              std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
+              size_t instancerKeys, _Shutter const& shutter) const
     {
         if (_points.empty() || _triangles.empty()) return false;
+        std::vector<GfMatrix4d> const instances = instancesAt(nullptr);
         transforms->clear();
         auto push = [&](GfMatrix4d const& m) {
             double const* d = m.GetArray();
@@ -616,7 +809,9 @@ public:
         view->triangles = _triangles.data();
         view->triangle_count = static_cast<uint32_t>(_triangles.size() / 3);
         view->corner_normals = _normals.empty() ? nullptr : _normals.data();
-        view->faceted = _faceted ? 1u : 0u;
+        view->polygonal = _polygonal ? 1u : 0u;
+        view->key = _key;
+        view->version = _version;
         view->base_color[0] = view->base_color[1] = view->base_color[2] = 0.5f;
 
         // The material's colour wins, as in the viewport with materials on;
@@ -640,6 +835,9 @@ public:
         }
         view->transforms = transforms->data();
         view->transform_count = static_cast<uint32_t>(transforms->size() / 16);
+        if (shutter.on) {
+            _Motion(view, keys, instancesAt, instancerKeys, shutter, instances.size());
+        }
         return true;
     }
 
@@ -654,9 +852,196 @@ protected:
     }
 
 private:
-    void _Rebuild(HdSceneDelegate* delegate)
+    // The shutter's motion of this mesh into `view`: its points at the
+    // opening and closing (from sampled points, else velocities), and its
+    // transforms at keys across it. Neither when it holds still.
+    void _Motion(ThMeshView* view, std::vector<double>* keys,
+                 std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
+                 size_t instancerKeys, _Shutter const& s, size_t instanceCount) const
+    {
+        size_t const n = _points.size() / 3;
+        bool const samples = _pointSamples.count >= 2;
+        if (samples || !_velocities.empty()) {
+            if (!(_motionFor == std::make_tuple(_version, s.open, s.close, s.fps))) {
+                _motionFor = std::make_tuple(_version, s.open, s.close, s.fps);
+                ++_motionVersion;
+                _open.assign(n * 3, 0.0f);
+                _close.assign(n * 3, 0.0f);
+                auto fill = [&](std::vector<float>& out, float t) {
+                    if (samples) {
+                        VtVec3fArray const p = _pointSamples.Resample(t);
+                        for (size_t i = 0; i < n && i < p.size(); ++i) {
+                            for (int c = 0; c < 3; ++c) out[i * 3 + c] = p[i][c];
+                        }
+                        return;
+                    }
+                    float const sec = t / s.fps;
+                    for (size_t i = 0; i < n; ++i) {
+                        for (int c = 0; c < 3; ++c) {
+                            float a = _accelerations.empty() ? 0.0f : _accelerations[i][c];
+                            out[i * 3 + c] = _points[i * 3 + c] + _velocities[i][c] * sec + 0.5f * a * sec * sec;
+                        }
+                    }
+                };
+                fill(_open, s.open);
+                fill(_close, s.close);
+            }
+            if (_open != _close) {
+                view->points = _open.data();
+                view->points_close = _close.data();
+                // The GPU path's cached corners are of `points`.
+                view->version = _version + (_motionVersion << 32);
+            }
+        }
+
+        bool const instanced = !GetInstancerId().IsEmpty();
+        if (_xformSamples.count < 2 && instancerKeys < 3 && !instanced) return;
+        size_t const count = std::max(_KeyCount(_xformSamples, s), instancerKeys);
+        keys->clear();
+        for (size_t k = 0; k < count; ++k) {
+            float const t = s.At(k, count);
+            GfMatrix4d const own = _XformAt(_xformSamples, t, _transform);
+            std::vector<GfMatrix4d> const at = instanced ? instancesAt(&t) : std::vector<GfMatrix4d>{GfMatrix4d(1.0)};
+            if (instanced && at.size() != instanceCount) {
+                keys->clear();  // instances came and went: drawn still
+                return;
+            }
+            for (GfMatrix4d const& inst : at) {
+                GfMatrix4d const m = instanced ? own * inst : own;
+                double const* d = m.GetArray();
+                keys->insert(keys->end(), d, d + 16);
+            }
+        }
+        size_t const per = keys->size() / count;
+        bool moves = false;
+        for (size_t k = 1; k < count && !moves; ++k) {
+            moves = !std::equal(keys->begin(), keys->begin() + per, keys->begin() + k * per);
+        }
+        if (moves) {
+            view->transform_keys = keys->data();
+            view->transform_key_count = static_cast<uint32_t>(count);
+        }
+    }
+
+    // The mesh's points over the motion window: sampled points (authored, or
+    // computed by skinning at each sample), else velocities (and
+    // accelerations).
+    struct _PointMotion
+    {
+        HdTimeSampleArray<VtVec3fArray, 4> samples;
+        VtVec3fArray velocities;
+        VtVec3fArray accelerations;
+    };
+
+    // The points: computed (skinning, deformers) or authored; `computed`
+    // gets the computation descriptors, for _ReadMotion.
+    VtVec3fArray _ReadPoints(HdSceneDelegate* delegate, HdExtComputationPrimvarDescriptorVector* computed) const
     {
         SdfPath const& id = GetId();
+        VtValue pointsValue;
+        for (auto const& desc :
+             delegate->GetExtComputationPrimvarDescriptors(id, HdInterpolationVertex)) {
+            if (desc.name == HdTokens->points) computed->push_back(desc);
+        }
+        if (!computed->empty()) {
+            auto const values = HdExtComputationUtils::GetComputedPrimvarValues(*computed, delegate);
+            auto it = values.find(HdTokens->points);
+            if (it != values.end()) pointsValue = it->second;
+        } else {
+            pointsValue = delegate->Get(id, HdTokens->points);
+        }
+        return _AsArray<GfVec3f>(pointsValue);
+    }
+
+    // The motion of `count` points over the window; none without `motion`.
+    _PointMotion _ReadMotion(HdSceneDelegate* delegate, HdExtComputationPrimvarDescriptorVector const& computed,
+                             size_t count, bool motion) const
+    {
+        SdfPath const& id = GetId();
+        _PointMotion out;
+        out.samples.count = 0;
+        if (!motion) return out;
+        HdTimeSampleArray<VtValue, 4> box;
+        box.count = 0;
+        if (!computed.empty()) {
+            HdExtComputationUtils::SampledValueStore<4> store;
+            HdExtComputationUtils::SampleComputedPrimvarValues<4>(
+                computed, delegate, -_motionWindow, _motionWindow, 4, &store);
+            auto it = store.find(HdTokens->points);
+            if (it != store.end()) box = it->second;
+        } else {
+            delegate->SamplePrimvar(id, HdTokens->points, -_motionWindow, _motionWindow, &box);
+        }
+        HdTimeSampleArray<VtVec3fArray, 4> sampled;
+        bool whole = box.count >= 2 && sampled.UnboxFrom(box);
+        for (size_t i = 0; whole && i < sampled.count; ++i) {
+            whole = sampled.values[i].size() == count;
+        }
+        if (whole) {
+            out.samples = sampled;
+        } else {
+            VtVec3fArray const v = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->velocities));
+            if (v.size() == count) {
+                out.velocities = v;
+                VtVec3fArray const a = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->accelerations));
+                if (a.size() == count) out.accelerations = a;
+            }
+        }
+        return out;
+    }
+
+    void _SetMotion(_PointMotion const& m)
+    {
+        _pointSamples = m.samples;
+        _velocities = m.velocities;
+        _accelerations = m.accelerations;
+    }
+
+    static bool _SameBits(VtVec3fArray const& a, VtVec3fArray const& b)
+    {
+        return a.size() == b.size()
+            && (a.empty() || std::memcmp(a.cdata(), b.cdata(), a.size() * sizeof(GfVec3f)) == 0);
+    }
+
+    // `m` is, bit for bit, the motion the mesh has.
+    bool _SameMotion(_PointMotion const& m) const
+    {
+        if (m.samples.count != _pointSamples.count) return false;
+        for (size_t i = 0; i < m.samples.count; ++i) {
+            if (std::memcmp(&m.samples.times[i], &_pointSamples.times[i], sizeof(float)) != 0
+                || !_SameBits(m.samples.values[i], _pointSamples.values[i])) {
+                return false;
+            }
+        }
+        return _SameBits(m.velocities, _velocities) && _SameBits(m.accelerations, _accelerations);
+    }
+
+    // Only the points are dirty: re-read them and their motion and keep
+    // the triangles and every per-corner primvar. Points identical to the
+    // mesh's, bit for bit (a held frame of an animated mesh), change
+    // nothing, not even the version, so the GPU path keeps its copy. False
+    // when the mesh needs a whole _Rebuild instead: never built, or a point
+    // count that no longer matches its triangles.
+    bool _UpdatePoints(HdSceneDelegate* delegate, bool motion)
+    {
+        if (_triangles.empty()) return false;
+        HdExtComputationPrimvarDescriptorVector computed;
+        VtVec3fArray const points = _ReadPoints(delegate, &computed);
+        if (points.empty() || points.size() * 3 != _points.size()) return false;
+        _PointMotion const m = _ReadMotion(delegate, computed, points.size(), motion);
+        static_assert(sizeof(GfVec3f) == 3 * sizeof(float), "GfVec3f is three packed floats");
+        bool const samePoints = std::memcmp(points.cdata(), _points.data(), _points.size() * sizeof(float)) == 0;
+        if (samePoints && _SameMotion(m)) return true;
+        ++_version;  // the GPU path's copy of the old points is stale
+        std::memcpy(_points.data(), points.cdata(), _points.size() * sizeof(float));
+        _SetMotion(m);
+        return true;
+    }
+
+    void _Rebuild(HdSceneDelegate* delegate, bool motion)
+    {
+        SdfPath const& id = GetId();
+        ++_version;  // the GPU path's copy of the old geometry is stale
         _points.clear();
         _triangles.clear();
         _normals.clear();
@@ -665,21 +1050,8 @@ private:
 
         HdMeshTopology const topology = GetMeshTopology(delegate);
 
-        // Points: computed (skinning, deformers) or authored.
-        VtValue pointsValue;
         HdExtComputationPrimvarDescriptorVector computed;
-        for (auto const& desc :
-             delegate->GetExtComputationPrimvarDescriptors(id, HdInterpolationVertex)) {
-            if (desc.name == HdTokens->points) computed.push_back(desc);
-        }
-        if (!computed.empty()) {
-            auto const values = HdExtComputationUtils::GetComputedPrimvarValues(computed, delegate);
-            auto it = values.find(HdTokens->points);
-            if (it != values.end()) pointsValue = it->second;
-        } else {
-            pointsValue = delegate->Get(id, HdTokens->points);
-        }
-        VtVec3fArray const points = _AsArray<GfVec3f>(pointsValue);
+        VtVec3fArray const points = _ReadPoints(delegate, &computed);
         if (points.empty()) return;
 
         HdMeshUtil const util(&topology, id);
@@ -692,6 +1064,8 @@ private:
         for (GfVec3f const& p : points) {
             _points.insert(_points.end(), {p[0], p[1], p[2]});
         }
+
+        _SetMotion(_ReadMotion(delegate, computed, points.size(), motion));
         _triangles.reserve(tris.size() * 3);
         for (GfVec3i const& t : tris) {
             for (int k = 0; k < 3; ++k) {
@@ -723,19 +1097,31 @@ private:
         }
 
         // A polygonal mesh (scheme none or bilinear, which is what implicit
-        // cubes become) is drawn faceted when it has no normals, as Storm
-        // draws it; the core decides what that means (ffi.rs).
+        // cubes become) with no normals gets Houdini's cusp normals rather
+        // than smoothing across every edge; the core computes them (ffi.rs).
         TfToken const scheme = topology.GetScheme();
-        _faceted = scheme == _tokNone || scheme == _tokBilinear;
+        _polygonal = scheme == _tokNone || scheme == _tokBilinear;
     }
 
     GfMatrix4d _transform{1.0};
+    _XformSamples _xformSamples;
+    HdTimeSampleArray<VtVec3fArray, 4> _pointSamples;
+    VtVec3fArray _velocities;
+    VtVec3fArray _accelerations;
+    // The points at the last drawn shutter's opening and closing, and what
+    // they were made for (version, open, close, fps).
+    mutable std::vector<float> _open;
+    mutable std::vector<float> _close;
+    mutable std::tuple<uint64_t, float, float, float> _motionFor{~uint64_t(0), 0.0f, 0.0f, 0.0f};
+    mutable uint64_t _motionVersion = 0;
     std::vector<float> _points;
     std::vector<uint32_t> _triangles;
     std::vector<float> _normals;
     std::vector<float> _colors;
     std::map<TfToken, std::vector<float>> _uvs;
-    bool _faceted = false;
+    bool _polygonal = false;
+    uint64_t const _key;
+    uint64_t _version = 0;
 };
 
 // -----------------------------------------------------------------------------
@@ -842,14 +1228,66 @@ private:
 };
 
 // -----------------------------------------------------------------------------
+// Camera: Hydra's, plus its transform sampled over the motion window.
+// -----------------------------------------------------------------------------
+
+class ThCamera final : public HdCamera
+{
+public:
+    explicit ThCamera(SdfPath const& id) : HdCamera(id) {}
+
+    void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits) override
+    {
+        bool const moved = *dirtyBits & HdCamera::DirtyTransform;
+        HdCamera::Sync(delegate, param, dirtyBits);
+        if (moved) {
+            _samples.count = 0;
+            if (_SamplingMotion(param) && !GetId().IsEmpty()) {
+                delegate->SampleTransform(GetId(), -_motionWindow, _motionWindow, &_samples);
+            }
+        }
+    }
+
+    // Camera-to-world at 2 to 4 keys evenly spread over the shutter, into
+    // `out` (16 doubles each); the count, or 0 when the camera holds still.
+    uint32_t Keys(_Shutter const& s, double* out) const
+    {
+        if (!s.on || _samples.count < 2) return 0;
+        size_t const count = _KeyCount(_samples, s);
+        bool moves = false;
+        GfMatrix4d const first = _samples.Resample(s.At(0, count));
+        for (size_t k = 0; k < count; ++k) {
+            GfMatrix4d const m = _samples.Resample(s.At(k, count));
+            moves = moves || m != first;
+            std::copy(m.GetArray(), m.GetArray() + 16, out + k * 16);
+        }
+        return moves ? static_cast<uint32_t>(count) : 0;
+    }
+
+private:
+    _XformSamples _samples;
+};
+
+// What a pass blurs (th:motionBlur, th:depthOfField, th:blurSamples, th:fps).
+struct _BlurSettings
+{
+    bool motion = false;
+    bool dof = false;
+    int samples = _defaultBlurSamples;
+    float fps = 24.0f;
+};
+
+// -----------------------------------------------------------------------------
 // Render pass
 // -----------------------------------------------------------------------------
 
 class ThRenderPass final : public HdRenderPass
 {
 public:
-    ThRenderPass(HdRenderIndex* index, HdRprimCollection const& collection, int supersample)
-        : HdRenderPass(index, collection), _supersample(supersample) {}
+    ThRenderPass(HdRenderIndex* index, HdRprimCollection const& collection, int samples,
+                 uint32_t shading, bool ao, _BlurSettings blur, ThCache const* cache)
+        : HdRenderPass(index, collection), _samples(samples), _shading(shading), _ao(ao),
+          _blur(blur), _cache(cache) {}
 
     bool IsConverged() const override { return true; }
 
@@ -883,13 +1321,39 @@ protected:
         frame.height = height;
         std::copy(worldToClip.GetArray(), worldToClip.GetArray() + 16, frame.world_to_clip);
         std::copy(viewToWorld.GetArray(), viewToWorld.GetArray() + 16, frame.view_to_world);
-        frame.supersample = static_cast<uint32_t>(std::max(1, _supersample));
+        frame.samples = static_cast<uint32_t>(std::max(1, _samples));
+        frame.shading = _shading;
+        frame.ao = _ao ? 1u : 0u;
+
+        // Motion blur over the render camera's shutter (held to the window
+        // the prims sampled their motion over), depth of field from its lens.
+        HdCamera const* camera = state->GetCamera();
+        _Shutter shutter;
+        shutter.fps = _blur.fps;
+        if (_blur.motion && camera) {
+            shutter.open = static_cast<float>(std::clamp(camera->GetShutterOpen(), -1.0 * _motionWindow, 1.0 * _motionWindow));
+            shutter.close = static_cast<float>(std::clamp(camera->GetShutterClose(), -1.0 * _motionWindow, 1.0 * _motionWindow));
+            shutter.on = shutter.close > shutter.open;
+        }
+        if (_blur.motion || _blur.dof) {
+            frame.blur_samples = static_cast<uint32_t>(std::max(1, _blur.samples));
+        }
+        frame.motion = shutter.on ? 1u : 0u;
+        if (auto const* thCamera = dynamic_cast<ThCamera const*>(camera)) {
+            frame.camera_keys = thCamera->Keys(shutter, frame.cameras);
+        }
+        if (_blur.dof && camera) {
+            frame.focal_length = camera->GetFocalLength();
+            frame.f_stop = camera->GetFStop();
+            frame.focus_distance = camera->GetFocusDistance();
+        }
 
         // The meshes this pass draws: visible, and of a render tag (purpose)
         // the pass asked for.
         HdRenderIndex& index = *GetRenderIndex();
         std::vector<ThMeshView> views;
         std::vector<std::vector<double>> transforms;
+        std::vector<std::vector<double>> keys;
         std::vector<ThMesh const*> meshes;
         for (SdfPath const& id : index.GetRprimIds()) {
             auto const* mesh = dynamic_cast<ThMesh const*>(index.GetRprim(id));
@@ -903,22 +1367,23 @@ protected:
         }
         views.reserve(meshes.size());
         transforms.resize(meshes.size());
+        keys.resize(meshes.size());
         for (size_t i = 0; i < meshes.size(); ++i) {
             ThMesh const* mesh = meshes[i];
-            std::vector<GfMatrix4d> instances;
-            if (!mesh->GetInstancerId().IsEmpty()) {
-                if (auto* instancer = dynamic_cast<ThInstancer*>(
-                        index.GetInstancer(mesh->GetInstancerId()))) {
-                    instances = instancer->ComputeInstanceTransforms(mesh->GetId());
-                }
-            }
+            ThInstancer* instancer = mesh->GetInstancerId().IsEmpty() ? nullptr
+                : dynamic_cast<ThInstancer*>(index.GetInstancer(mesh->GetInstancerId()));
+            auto instancesAt = [&](float const* time) {
+                return instancer ? instancer->ComputeInstanceTransforms(mesh->GetId(), time)
+                                 : std::vector<GfMatrix4d>{};
+            };
+            size_t const instancerKeys = instancer && shutter.on ? instancer->KeyCount(shutter) : 0;
             ThMaterial const* material = nullptr;
             if (!mesh->GetMaterialId().IsEmpty()) {
                 material = dynamic_cast<ThMaterial const*>(
                     index.GetSprim(HdPrimTypeTokens->material, mesh->GetMaterialId()));
             }
             ThMeshView view;
-            if (mesh->View(&view, &transforms[i], material, instances)) {
+            if (mesh->View(&view, &transforms[i], &keys[i], material, instancesAt, instancerKeys, shutter)) {
                 views.push_back(view);
             }
         }
@@ -929,7 +1394,7 @@ protected:
         std::vector<float> depth(texels);
         int32_t const status = th_render(&frame, views.data(),
                                          static_cast<uint32_t>(views.size()),
-                                         color.data(), depth.data());
+                                         color.data(), depth.data(), _cache);
         if (status != 0) {
             TF_WARN("hdThPlayblast: the core failed to render (error %d)", status);
             return;
@@ -949,17 +1414,34 @@ protected:
                 triangles += static_cast<size_t>(v.triangle_count) * v.transform_count;
                 instances += v.transform_count;
             }
+            static std::chrono::steady_clock::time_point previous;
+            long long const since =
+                previous.time_since_epoch().count() ? ms(previous, done) : 0;
+            previous = done;
+            size_t moving = 0;
+            for (ThMeshView const& v : views) {
+                moving += (v.points_close || v.transform_key_count) ? 1 : 0;
+            }
             std::fprintf(stderr,
-                         "hdThPlayblast: %zu meshes, %zu instances, %zu triangles; "
-                         "gather %lld ms, render %lld ms\n",
-                         views.size(), instances, triangles,
+                         "hdThPlayblast: %zu meshes (%zu moving), %zu instances, %zu triangles; "
+                         "blur %u samples, shutter %s %.3g..%.3g, %u camera keys, f-stop %.3g; "
+                         "gather %lld ms, render %lld ms; mesh sync %lld ms (thread time), "
+                         "%d rebuilt, %d with new points only; %lld ms since the last frame\n",
+                         views.size(), moving, instances, triangles,
+                         frame.blur_samples, shutter.on ? "open" : "off", shutter.open, shutter.close,
+                         frame.camera_keys, frame.f_stop,
                          static_cast<long long>(ms(started, gathered)),
-                         static_cast<long long>(ms(gathered, done)));
+                         static_cast<long long>(ms(gathered, done)),
+                         g_syncNs.exchange(0) / 1000000, g_rebuilds.exchange(0), g_pointUpdates.exchange(0), since);
         }
     }
 
 private:
-    int _supersample;
+    int _samples;
+    uint32_t _shading;
+    bool _ao;
+    _BlurSettings _blur;
+    ThCache const* _cache;  // the delegate's; outlives its passes
 };
 
 // -----------------------------------------------------------------------------
@@ -969,9 +1451,18 @@ private:
 class ThRenderDelegate final : public HdRenderDelegate
 {
 public:
-    ThRenderDelegate() : _registry(std::make_shared<HdResourceRegistry>()) {}
+    ThRenderDelegate() : _registry(std::make_shared<HdResourceRegistry>()) { _UpdateParam(); }
     explicit ThRenderDelegate(HdRenderSettingsMap const& settings)
-        : HdRenderDelegate(settings), _registry(std::make_shared<HdResourceRegistry>()) {}
+        : HdRenderDelegate(settings), _registry(std::make_shared<HdResourceRegistry>()) { _UpdateParam(); }
+
+    HdRenderParam* GetRenderParam() const override { return const_cast<ThRenderParam*>(&_param); }
+
+    void SetRenderSetting(TfToken const& key, VtValue const& value) override
+    {
+        HdRenderDelegate::SetRenderSetting(key, value);
+        _UpdateParam();
+    }
+    ~ThRenderDelegate() override { th_cache_free(_cache); }
 
     TfTokenVector const& GetSupportedRprimTypes() const override
     {
@@ -1020,8 +1511,33 @@ public:
     HdRenderPassSharedPtr CreateRenderPass(HdRenderIndex* index,
                                            HdRprimCollection const& collection) override
     {
-        int const supersample = GetRenderSetting<int>(_tokSupersample, _defaultSupersample);
-        return std::make_shared<ThRenderPass>(index, collection, supersample);
+        int samples = _defaultSamples;
+        VtValue const samplesSetting = GetRenderSetting(_tokSamples);
+        if (samplesSetting.IsHolding<int>()) {
+            samples = samplesSetting.UncheckedGet<int>();
+        } else if (char const* env = std::getenv("TH_PLAYBLAST_SAMPLES")) {
+            if (int const value = std::atoi(env); value > 0) samples = value;
+        }
+        std::string shading = _SettingString(GetRenderSetting(_tokShading));
+        if (shading.empty()) shading = _EnvLower("TH_PLAYBLAST_SHADING");
+        VtValue const aoSetting = GetRenderSetting(_tokAo);
+        bool ao = true;
+        if (aoSetting.IsHolding<bool>()) {
+            ao = aoSetting.UncheckedGet<bool>();
+        } else if (aoSetting.IsHolding<int>()) {
+            ao = aoSetting.UncheckedGet<int>() != 0;
+        } else {
+            std::string const env = _EnvLower("TH_PLAYBLAST_AO");
+            ao = !(env == "0" || env == "false" || env == "off");
+        }
+        _BlurSettings blur;
+        blur.motion = _SettingOn(GetRenderSetting(_tokMotionBlur), "TH_PLAYBLAST_MOTION_BLUR");
+        blur.dof = _SettingOn(GetRenderSetting(_tokDepthOfField), "TH_PLAYBLAST_DOF");
+        blur.samples = static_cast<int>(_SettingNumber(GetRenderSetting(_tokBlurSamples),
+                                                       "TH_PLAYBLAST_BLUR_SAMPLES", _defaultBlurSamples));
+        blur.fps = static_cast<float>(_SettingNumber(GetRenderSetting(_tokFps), "TH_PLAYBLAST_FPS", 24.0));
+        return std::make_shared<ThRenderPass>(index, collection, samples,
+                                              _ShadingNumber(shading), ao, blur, _cache);
     }
 
     HdInstancer* CreateInstancer(HdSceneDelegate* delegate, SdfPath const& id) override
@@ -1041,7 +1557,7 @@ public:
 
     HdSprim* CreateSprim(TfToken const& typeId, SdfPath const& id) override
     {
-        if (typeId == HdPrimTypeTokens->camera) return new HdCamera(id);
+        if (typeId == HdPrimTypeTokens->camera) return new ThCamera(id);
         if (typeId == HdPrimTypeTokens->material) return new ThMaterial(id, &_textures);
         if (typeId == HdPrimTypeTokens->extComputation) return new HdExtComputation(id);
         return nullptr;
@@ -1068,8 +1584,17 @@ public:
     void CommitResources(HdChangeTracker*) override {}
 
 private:
+    // Prims sample their motion while th:motionBlur is on.
+    void _UpdateParam()
+    {
+        _param.motion = _SettingOn(GetRenderSetting(_tokMotionBlur), "TH_PLAYBLAST_MOTION_BLUR");
+    }
+
     HdResourceRegistrySharedPtr _registry;
+    ThRenderParam _param;
     TextureCache _textures;
+    // Meshes and textures the GPU path keeps on the card between frames.
+    ThCache* _cache = th_cache_create();
 };
 
 }  // namespace

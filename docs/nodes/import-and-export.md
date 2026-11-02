@@ -309,6 +309,52 @@ Aborts you can hit, in the order they are checked:
 A **Farm** export bundles the latest workfile and submits a publish job; the
 metadata and path guards run on the farm, not before submission.
 
+**Layout keys.** With the project setting *Layout in Animate* on and an APEX
+Animate LOP up the node's inputs (the layout template's), the export also
+writes `<layer>.layout_keys.bgeo.sc` beside the layer: a Houdini Animation
+Catalog (the Animation Catalog pane opens it) with one clip per character
+and the camera, filed by asset category, keys on the shot's own frames
+(moved back on a Multi's shared timeline, as the layer's samples are).
+`context.json` lists them under `parameters.layout_keys`: each clip, its
+folder and key range, and the registered camera rig's settings. The keys
+are read from the APEX Animate LOP's scene, so the artist's keys and the
+channels Configure APEX Rig baked from USD keys both arrive. Local and farm
+exports write them alike (no UI is needed).
+Source: [`layout_keys.py`](../../python/tumblepipe/pipe/houdini/layout_keys.py).
+
+## `th::layout_rigs` (LOP)
+
+Puts a shot's assets into the APEX scene layout animates on the stage, with
+*Layout in Animate* on; the layout template places it after the shot camera,
+an APEX Animate LOP after it. A row per asset prim (**Discover** fills them
+from the input, keeping the mode and version of prims already listed;
+**Build** rebuilds the network inside):
+
+- **Rig**: an asset with a rig published loads it (newest, or a pinned
+  version) as a character under `/layout_rigs/<name>`, every shape but the
+  viz ones, started at its layout placement on the rig's `Main` control.
+  The asset's own prim is hidden while layout works, so one character is on
+  screen, posed by its rig.
+- **Control**: any other asset gets a placement control (Configure APEX
+  Rig, Prop) on its own prim. USD keys already on the prim, from a layout
+  done the old way, become the control's channels.
+- **Off**: left as it is.
+
+Then the shot camera: the camera rig a package registered
+(`shot_rigs.register_camera_rig`; TumbleRig's `th::apex_camera`) under
+`/layout_rigs/camera`, else SideFX's camera rig on `/cameras/render_camera`.
+A character's name is its prim name, as `th::import_rig` names the copy in
+animation, so layout's keys find their character there.
+
+The rigs never reach the published layer. The template's publish branch
+takes the shot as it arrives at the camera, places each asset from layout's
+keys (a Python LOP: `Main` on a rig, the asset's own control on a prop,
+every frame of the shot), and grafts the camera baked from the scene (Bake
+APEX Scene) to `/cameras/render_camera`. So departments after layout read
+plain USD: each character's move on its asset prim in its rest pose, the
+camera, the props. The poses travel only in the layout keys.
+Source: [`layout_rigs.py`](../../python/tumblepipe/pipe/houdini/lops/layout_rigs.py).
+
 ## `th::export_asset` (LOP)
 
 A self-contained, pipeline-agnostic asset writer (`_TumblePipe/utils`): saves
@@ -482,7 +528,9 @@ character. Up to 1.84.0 every prim was zeroed, which left those parts at
 the origin while the rigged body stood at its placement.
 
 The placement is read from `IN_stage_start`, a Time Shift that holds the
-incoming stage at the playbar start: layout's placement there is where each
+incoming stage at the start of the shot (the playbar start; in a Multi's
+workfile the member's own first frame, moved by its offset on a shared
+timeline): layout's placement there is where each
 rig starts, and the transforms come out static. Reading the incoming stage
 as it is would make `th::animate` time dependent whenever that stage is,
 recooking the node and every rig in its dive each frame, as 1.85.0 did.
@@ -515,7 +563,8 @@ as before. How it works:
 
 - It reads the APEX scene from a second output in the dive, `output1`, wired
   to the Scene Animate. The animation template adds it. Picking Fast on a
-  dive without one adds it next to the Scene Invoke that feeds `output0`.
+  dive without one adds it next to the Scene Invoke that feeds `output0`,
+  also when SOPs sit between the two.
 - A character is baked when its `Base` shape is polygons whose `path`
   attributes all sit under one asset prim (`/CHAR/<asset>/...`), as
   `th::import_rigs` makes them. Any other character, an APEX camera say, goes
@@ -526,8 +575,11 @@ as before. How it works:
 
 Use Classic when:
 
-- **SOPs after the dive's Scene Invoke matter.** Fast reads the scene before
-  the Scene Invoke, so it does not see them.
+- **SOPs after the dive's Scene Invoke matter**, TumbleRig's Camera Lattice
+  say. Fast reads the scene before the Scene Invoke, so it does not see them.
+  Picking Fast with such SOPs in the dive shows a warning that names them,
+  and so does every `th::export_layer` downstream when it exports (in the
+  farm's log too). Neither stops you.
 - **The rig changes its point count**, or two parts share points. Fast
   refuses such a rig with an error that names the asset.
 

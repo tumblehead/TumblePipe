@@ -32,6 +32,11 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+class NoSceneContext(Exception):
+    """The loaded scene has no pipeline context, so there is no version to
+    save it as."""
+
+
 class SceneManager:
     """Scene-state lifecycle for the Pipeline catalog."""
 
@@ -453,7 +458,8 @@ class SceneManager:
         self, refresh_cb=None, prompt_note: bool = False,
         report_failures: bool = True,
     ) -> None:
-        """Write the next workfile version of the loaded scene's context.
+        """Write the next workfile version of the loaded scene's context,
+        and report what went wrong.
 
         Runs synchronously on the calling thread. :meth:`save_current_scene`
         defers this to the main thread via ``run_on_main_thread``;
@@ -464,73 +470,14 @@ class SceneManager:
         opt-in, and the one caller that wants it says so.
         """
         try:
-            import hou
-            from tumblepipe.pipe.paths import get_workfile_context
-            from tumblepipe.pipe.houdini.workfile_save import commit_next_workfile
-
-            hip_path = Path(hou.hipFile.path())
-            prev_ctx = get_workfile_context(hip_path)
-            if prev_ctx is None:
-                # A dialog, not a status line: a Save that saved nothing must
-                # not look like a Save that worked.
-                self._warn(
-                    "Save: the current scene has no pipeline context, so "
-                    "there is no version to save it as. Open or create the "
-                    "scene through the pipeline first.",
-                    report_failures,
-                )
-                return
-
-            # Ask for the note before touching anything: cancelling here
-            # must leave the session exactly as it was, which it only does
-            # while no version has been reserved and no project activated.
-            note = ""
-            if prompt_note:
-                note = self._prompt_version_note(prev_ctx)
-                if note is None:
-                    log.info("Save cancelled at the version-note prompt")
-                    return
-
-            # Make sure the loaded scene's project is active before
-            # we resolve the next path / save / write context json.
-            scene_proj = self._resolver.project_for_path(hip_path)
-            if scene_proj is not None:
-                self._activator.activate(scene_proj)
-
-            # Reserve + save + record the next version as one atomic commit
-            # (pointer written last). Match Houdini's Ctrl+S extension
-            # (license-driven) via nc_type, else the file is rewritten to a
-            # path the pipeline didn't record.
-            next_path = commit_next_workfile(
-                prev_ctx.entity_uri, prev_ctx.department_name,
-                prev_context=prev_ctx, nc_type=session_nc_type(),
-                note=note,
-            )
-
-            log.info("Saved next version: %s", next_path)
-            hou.ui.setStatusMessage(
-                f"Saved {Path(next_path).name}",
-                severity=hou.severityType.Message,
-            )
-            # Drop scan caches so the next browse query re-scans.
-            self._invalidate_cache()
-            # Swap the saved entity's own card/list row in place — the
-            # refresh_cb → _on_quick_action_done path only refreshes the
-            # currently-displayed detail's card, which may be a
-            # different asset than the one just saved.
-            if scene_proj is not None:
-                self._refresh.card(
-                    self.id_from_scene_uri(
-                        prev_ctx.entity_uri, scene_proj.name,
-                        entities_only=False,
-                    ),
-                )
+            self._commit_scene_version(prompt_note)
+        except NoSceneContext as exc:
+            # A dialog, not a status line: a Save that saved nothing must
+            # not look like a Save that worked.
+            self._warn(f"Save: {exc}", report_failures)
         except Exception as exc:
-            # The artist believes a Save landed. Staying quiet here is the
-            # most expensive silence in this file: the scene-swap paths go on
-            # to load the next scene with suppress_save_prompt=True, so a
-            # swallowed failure discards the very work the save was meant to
-            # keep. report_failures is off only for the crash-time emergency
+            # The artist believes a Save landed: a failure must reach them.
+            # report_failures is off only for the crash-time emergency
             # save, whose event loop cannot pump a modal: it goes to the
             # status bar instead.
             if report_failures:
@@ -545,6 +492,71 @@ class SceneManager:
         finally:
             if callable(refresh_cb):
                 refresh_cb()
+
+    def _commit_scene_version(self, prompt_note: bool) -> Path | None:
+        """Write the next workfile version of the loaded scene's context, on
+        the calling thread, and return its path; ``None`` when the artist
+        cancelled the version note. Raises :class:`NoSceneContext` for a
+        scene outside the pipeline, and whatever else fails.
+        """
+        import hou
+        from tumblepipe.pipe.paths import get_workfile_context
+        from tumblepipe.pipe.houdini.workfile_save import commit_next_workfile
+
+        hip_path = Path(hou.hipFile.path())
+        prev_ctx = get_workfile_context(hip_path)
+        if prev_ctx is None:
+            raise NoSceneContext(
+                "the current scene has no pipeline context, so there is no "
+                "version to save it as. Open or create the scene through "
+                "the pipeline first."
+            )
+
+        # Ask for the note before touching anything: cancelling here
+        # must leave the session exactly as it was, which it only does
+        # while no version has been reserved and no project activated.
+        note = ""
+        if prompt_note:
+            note = self._prompt_version_note(prev_ctx)
+            if note is None:
+                log.info("Save cancelled at the version-note prompt")
+                return None
+
+        # Make sure the loaded scene's project is active before
+        # we resolve the next path / save / write context json.
+        scene_proj = self._resolver.project_for_path(hip_path)
+        if scene_proj is not None:
+            self._activator.activate(scene_proj)
+
+        # Reserve + save + record the next version as one atomic commit
+        # (pointer written last). Match Houdini's Ctrl+S extension
+        # (license-driven) via nc_type, else the file is rewritten to a
+        # path the pipeline didn't record.
+        next_path = Path(commit_next_workfile(
+            prev_ctx.entity_uri, prev_ctx.department_name,
+            prev_context=prev_ctx, nc_type=session_nc_type(),
+            note=note,
+        ))
+
+        log.info("Saved next version: %s", next_path)
+        hou.ui.setStatusMessage(
+            f"Saved {next_path.name}",
+            severity=hou.severityType.Message,
+        )
+        # Drop scan caches so the next browse query re-scans.
+        self._invalidate_cache()
+        # Swap the saved entity's own card/list row in place — the
+        # refresh_cb → _on_quick_action_done path only refreshes the
+        # currently-displayed detail's card, which may be a
+        # different asset than the one just saved.
+        if scene_proj is not None:
+            self._refresh.card(
+                self.id_from_scene_uri(
+                    prev_ctx.entity_uri, scene_proj.name,
+                    entities_only=False,
+                ),
+            )
+        return next_path
 
     def publish_current_scene(self, refresh_cb=None) -> None:
         """Open the export window (ProcessDialog) for the loaded scene.
@@ -714,7 +726,11 @@ class SceneManager:
                         native prompt handle it rather than risk writing to
                         an unknown location.
 
-        Anything else that fails raises, so the swap aborts instead of
+        The save runs here, before this returns: the caller loads the next
+        scene straight after, so a save queued for later would version up
+        the scene that replaced this one, and this one's changes would be
+        gone. Callers are already on Houdini's main thread (the swap itself
+        must be). Anything that fails raises, so the swap aborts instead of
         going ahead over unsaved work.
         """
         import hou
@@ -729,7 +745,7 @@ class SceneManager:
 
         # Opt-in: version up silently, no prompt.
         if self._prefs.autosave_on_scene_change:
-            self.save_current_scene(prompt_note=False)
+            self._commit_scene_version(prompt_note=False)
             return True
 
         # Otherwise ask — but "Save" always means a new version, never an
@@ -745,14 +761,10 @@ class SceneManager:
         )
 
         if choice == 0:
-            # No note prompt on this path, deliberately. We have already
-            # told the caller "handled" by the time the save actually
-            # runs (it is queued onto the main thread), so it will load
-            # the next scene with suppress_save_prompt=True — a note
-            # dialog the artist then cancelled would silently discard
-            # the very changes they just asked to keep. Notes are worth
-            # having; they are not worth a data-loss path.
-            self.save_current_scene(prompt_note=False)
+            # Cancelling the version note cancels the swap: the changes
+            # the artist asked to keep are still unsaved.
+            if self._commit_scene_version(prompt_note=True) is None:
+                return None
             return True
         if choice == 1:
             return True  # discard: suppress the native prompt too

@@ -4,4 +4,7 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
+cc e31b9307ec5b7b3cd46ff477a0bbf927e1ea468ca925815678a2165e39d1982f # shrinks to size = 0.3, yaw = 0.0, pitch = 0.0, supersample = 2
 cc 46d9ea5ff8caaa66e21b01a842542436a0a27f9e675193346b6463a588a7fe06 # shrinks to corners = [([0.0, 0.0, 0.0], 0.2), ([0.0, -0.618989234689713, 0.0], 0.2), ([1.4283536579610643, 0.0, 0.0], 0.2)], width = 14, height = 26, band_rows = 1
+cc cc16a043cedd6b2f4ff7353b24ce554106ae791fe7d230f2aa61a449bee31352 # shrinks to back = -2.58222, supersample = 2, col = 62
+cc 82db5889e3f912edc7a2ca473c5799db0cc774bb0c9cea0e2d1ce4a9f7f57e44 # shrinks to from = -2.334631524166952, length = 3.1284081341061287, y = 0.0, samples = 4

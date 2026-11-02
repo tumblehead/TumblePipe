@@ -1,5 +1,7 @@
-// The GPU path's shader: the same picture as src/raster.rs, which is the
-// reference. Keep the two in step.
+// The GPU path's shader: fills the same render buffer as src/raster.rs,
+// which is the reference (colour, camera-space normal and distance, depth);
+// post.wgsl makes the picture from it as src/composite.rs does. Keep the
+// two in step.
 
 struct Globals {
     // world_to_clip, one row per vec4 (USD row-vector layout).
@@ -8,12 +10,15 @@ struct Globals {
     clip2: vec4<f32>,
     clip3: vec4<f32>,
     eye: vec4<f32>,
-    // Towards the key light, world space.
-    key: vec4<f32>,
-    // ambient, specular, shininess, unused
-    light: vec4<f32>,
-    // Display-referred backdrop top, bottom; target height; unused.
-    backdrop: vec4<f32>,
+    // The camera's unit right, up and back axes, world space.
+    right: vec4<f32>,
+    up: vec4<f32>,
+    back: vec4<f32>,
+    // xy: this pass's shift of the picture, in clip units per unit w, so
+    // that its sample of every pixel lands on the pixel centre. z: a blurred
+    // layer's moment of the shutter (0 opening, 1 closing), which moving
+    // points (vs_moving) are drawn at.
+    jitter: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> g: Globals;
 
@@ -58,8 +63,21 @@ struct VsOut {
 
 @vertex
 fn vs(v: VsIn) -> VsOut {
-    let w = v.pos.x * v.m0 + v.pos.y * v.m1 + v.pos.z * v.m2 + v.m3;
-    var c = v.pos.x * v.c0 + v.pos.y * v.c1 + v.pos.z * v.c2 + v.c3;
+    return vertex(v, v.pos);
+}
+
+// A moving mesh's corner at the layer's moment, between its position at the
+// shutter's opening (pos) and closing, as blur::point_at moves it.
+@vertex
+fn vs_moving(v: VsIn, @location(15) closing: vec3<f32>) -> VsOut {
+    let s = g.jitter.z;
+    return vertex(v, v.pos + (closing - v.pos) * s);
+}
+
+fn vertex(v: VsIn, pos: vec3<f32>) -> VsOut {
+    let w = pos.x * v.m0 + pos.y * v.m1 + pos.z * v.m2 + v.m3;
+    var c = pos.x * v.c0 + pos.y * v.c1 + pos.z * v.c2 + v.c3;
+    c = vec4<f32>(c.x + g.jitter.x * c.w, c.y + g.jitter.y * c.w, c.z, c.w);
     // GL clip z in [-w, w] to wgpu's [0, w]: the same depth the CPU path
     // stores (z / w * 0.5 + 0.5), and the same near plane.
     c.z = (c.z + c.w) * 0.5;
@@ -100,43 +118,25 @@ fn albedo(in: VsOut) -> vec3<f32> {
     return in.color;
 }
 
+struct Buffer {
+    // rgb: the surface colour; a: the depth the depth test keeps, again,
+    // for the post pass to read (it cannot read the depth attachment).
+    @location(0) albedo: vec4<f32>,
+    @location(1) normal: vec4<f32>,
+};
+
+// composite::View::buffer_normal: the normal in camera space turned towards
+// the camera, and the distance in front of it.
 @fragment
-fn fs(in: VsOut) -> @location(0) vec4<f32> {
+fn fs(in: VsOut) -> Buffer {
+    let to_eye = g.eye.xyz - in.world;
     var n = safe_normalize(in.normal);
-    let v = safe_normalize(g.eye.xyz - in.world);
-    if (dot(n, v) < 0.0) {
+    if (dot(n, to_eye) < 0.0) {
         n = -n;
     }
-    let l = g.key.xyz;
-    let diffuse = max(dot(n, l), 0.0);
-    let h = safe_normalize(l + v);
-    let spec = g.light.y * pow(max(dot(n, h), 0.0), g.light.z);
-    let k = g.light.x + (1.0 - g.light.x) * diffuse;
-    return vec4<f32>(albedo(in) * k + vec3<f32>(spec), 1.0);
-}
-
-fn srgb_to_linear(v: f32) -> f32 {
-    if (v <= 0.04045) {
-        return v / 12.92;
-    }
-    return pow((v + 0.055) / 1.055, 2.4);
-}
-
-// The backdrop: one triangle over the whole target, drawn first.
-@vertex
-fn bg_vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
-    let x = f32((i << 1u) & 2u) * 2.0 - 1.0;
-    let y = f32(i & 2u) * 2.0 - 1.0;
-    return vec4<f32>(x, y, 1.0, 1.0);
-}
-
-@fragment
-fn bg_fs(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    let h = g.backdrop.z;
-    var t = 0.0;
-    if (h > 1.0) {
-        t = (p.y - 0.5) / (h - 1.0);
-    }
-    let v = srgb_to_linear(g.backdrop.x + (g.backdrop.y - g.backdrop.x) * t);
-    return vec4<f32>(v, v, v, 1.0);
+    let v = safe_normalize(vec3<f32>(dot(n, g.right.xyz), dot(n, g.up.xyz), dot(n, g.back.xyz)));
+    var out: Buffer;
+    out.albedo = vec4<f32>(albedo(in), in.clip.z);
+    out.normal = vec4<f32>(v, dot(to_eye, g.back.xyz));
+    return out;
 }

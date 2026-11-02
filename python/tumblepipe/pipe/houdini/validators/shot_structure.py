@@ -77,3 +77,42 @@ def validate_shot_root_prims(root) -> ValidationResult:
         )
 
     return result
+
+
+#: Where every department finds the shot camera (shot_rigs.CAMERA_PATH).
+SHOT_CAMERA_PATH = '/cameras/render_camera'
+
+
+def validate_layout_publish(root) -> ValidationResult:
+    """Validate a layout layer for the departments after it.
+
+    - No APEX scene may stay active in it: with Layout in Animate the
+      publish bakes the scene (Bake APEX Scene switches it off) and the
+      keys go beside the layer. An active one would animate rigs again in
+      every department that reads layout.
+    - The shot camera should be a Camera at ``/cameras/render_camera``
+      (a warning: a studio's own layout template may leave the camera to
+      another department).
+    """
+    result = ValidationResult()
+    stage = root.GetStage()
+    if stage is None:
+        result.add_warning("No stage available for validation")
+        return result
+    for prim in stage.Traverse():
+        if prim.GetTypeName() == 'HoudiniApexScene':
+            result.add_error(
+                "An APEX scene is still active in the layout layer",
+                str(prim.GetPath()),
+                "Publish through the layout template's publish branch (Bake APEX "
+                "Scene, then the export): the keys go beside the layer.",
+            )
+    camera = stage.GetPrimAtPath(SHOT_CAMERA_PATH)
+    if not camera or not camera.IsValid() or camera.GetTypeName() != 'Camera':
+        result.add_warning(
+            f"No shot camera at {SHOT_CAMERA_PATH}",
+            SHOT_CAMERA_PATH,
+            "The layout template's Camera LOP (or Layout in Animate's grafted "
+            "camera) puts it there.",
+        )
+    return result

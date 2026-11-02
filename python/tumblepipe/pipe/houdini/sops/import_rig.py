@@ -22,6 +22,19 @@ def latest_rig_version(asset_uri: Uri, channel_name: str) -> str | None:
     return None if version_path is None else version_path.name
 
 
+def rig_file_path(asset_uri: Uri, channel_name: str, version_name: str = 'latest'):
+    """The rig file of ``asset_uri``'s ``version_name`` rig export in
+    ``channel_name`` ('latest': the newest finished one); None when there
+    is no such version."""
+    if version_name == 'latest':
+        version_name = latest_rig_version(asset_uri, channel_name)
+        if version_name is None:
+            return None
+    export_uri = Uri.parse('export:/') / asset_uri.segments / channel_name / 'rig' / version_name
+    version_path = api.storage.resolve(export_uri)
+    return version_path / f"{entity_stem(asset_uri, 'rig', version_name)}.bgeo.sc"
+
+
 def instance_names(asset_uri: Uri, instances: int) -> list[str]:
     """The characters an import of ``instances`` copies adds, in order:
     the asset name for one, else ``<asset>0`` .. ``<asset><N-1>``, the
@@ -42,7 +55,7 @@ PLACEMENT_CONTROL = 'Main'
 
 def _shot_stage(native):
     """The stage fed into the th::animate this node sits in, held at the
-    playbar start (its IN_stage_start), None when it is not inside one.
+    start of its shot (its IN_stage_start), None when it is not inside one.
 
     Not IN_stage itself: ``place`` reads this as it cooks, and a node that
     reads a time-dependent stage turns time dependent, so every rig in the
@@ -61,8 +74,10 @@ def _shot_stage(native):
 
 def layout_placement(native, prim_path: str):
     """The world transform the shot stage gives ``prim_path`` at the start
-    of the playbar, as (translate, rotate, scale) for the placement control;
-    None outside th::animate, without that prim, or at the identity.
+    of the shot (``shot_start.start_frame``: the playbar start, or in a
+    Multi's workfile the member's own first frame), as (translate, rotate,
+    scale) for the placement control; None outside th::animate, without
+    that prim, or at the identity.
 
     Layout places a character on its USD prim, but the rig loads at the
     origin: every copy of a character started stacked there in APEX, and
@@ -79,7 +94,9 @@ def layout_placement(native, prim_path: str):
     prim = stage.GetPrimAtPath(prim_path)
     if not prim.IsValid() or not prim.IsA(UsdGeom.Xformable):
         return None
-    time = Usd.TimeCode(hou.playbar.playbackRange()[0])
+    from tumblepipe.pipe.houdini import shot_start
+
+    time = Usd.TimeCode(shot_start.start_frame(native))
     matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(time)
     matrix = hou.Matrix4([list(matrix.GetRow(row)) for row in range(4)])
     if matrix.isAlmostEqual(hou.hmath.identityTransform()):
@@ -159,7 +176,13 @@ def place_characters(sop_node):
     imported before 1.84, kept every copy stacked at the origin until
     Import was pressed again (Martin). In the HDA itself, this also reaches
     workfiles imported before it existed.
+
+    A character that a th::layout_keys row gives its ``Main`` keys to is
+    left alone: layout's keys hold its whole move, animated, not only where
+    it stood on the first frame.
     """
+    from tumblepipe.pipe.houdini.sops import layout_keys_rows
+
     import_node = sop_node.parent()
     asset_uri = _imported_asset_uri(import_node)
     geo = sop_node.geometry()
@@ -169,10 +192,11 @@ def place_characters(sop_node):
     names = set(instance_names(asset_uri, import_node.parm('instances').eval()))
     prim_parent_path = '/'.join(asset_uri.segments[1:-1])
 
+    keyed = layout_keys_rows.keyed_placement(sop_node)
     unplaced = []
     for prim in geo.prims():
         char_name = prim.attribValue('name').removesuffix('.char')
-        if char_name not in names:
+        if char_name not in names or char_name in keyed:
             continue
         placement = layout_placement(
             sop_node, f'/{prim_parent_path}/{char_name}'

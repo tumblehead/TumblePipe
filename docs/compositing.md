@@ -264,7 +264,9 @@ so their versions interleave:
 - **In-session** — the `th::playblast` LOP/SOP node renders through
   Houdini's own GL (the viewport flipbook / OpenGL ROP) right in the
   artist's session. It is *viewport-accurate*: what you see is what you
-  get. Use it when the look has to match the viewport.
+  get. Use it when the look has to match the viewport. Its **Motion Blur**,
+  **Depth of Field** and **Blur Samples** (off, off, 16) turn on the
+  flipbook's own blurs, from the camera's shutter and lens.
 - **On the farm** — tick a shot's **Playblast** cell in the
   [Farm Submit dialog](asset-browser/submit-jobs.md) (shots only; publish cells on
   the same row run first, and the playblast then shows what they publish)
@@ -295,23 +297,133 @@ The `viewport` renderer is TumblePipe's own Hydra render delegate,
 `hdThPlayblast`, shipped with the package. It draws what the viewport draws
 — proxy geometry where an asset has one, USD shapes (cubes, spheres,
 cylinders, cones, capsules) as meshes, the stage's display colours and
-textures (including the colours Karma materials take from them), lit by a
-light on the camera — on the worker's CPU. As in the viewport, a polygon
-mesh with no normals of its own is drawn faceted and a subdivision surface
-smooth. It needs no GPU and husk takes no licence for it, and
-HideAndReek/010's 6.8 million triangles draw in about 0.2 s a frame at
-1280 × 720. It ignores Light, Samples and Scene materials. It is close to
-the in-session node's look, not identical: no viewport lighting, shadows or
-ambient occlusion.
+textures (including the colours Karma materials take from them) — on the
+worker's CPU. A mesh exported without normals gets them computed as Houdini
+does: smooth, with hard edges kept only where faces meet at more than 60
+degrees (a box stays a box). It needs no GPU and husk takes no licence for
+it, and HideAndReek/010's 6.8 million triangles draw in about 0.34 s a frame
+at 1280 × 720 with eight samples a pixel, the post pass below included. It
+ignores Light, Samples and Scene materials.
+It draws meshes only, so hair and other curves are left out, and husk does
+not run the stage's Houdini procedurals (hair grooms) for it: they would
+make nothing it draws, and running them before every frame cost
+HideAndReek/010 about 3 s a frame.
 
-A worker can draw the same picture on its GPU instead (Vulkan or DX12, no
+It draws the way a game engine does: the geometry goes into a render
+buffer (colour, normal and depth per sample), and a post pass makes the
+picture from it, each pixel the average of its samples. A pixel has eight,
+placed so that no two share a row or a column (the positions graphics
+cards use for 8× multisampling): an edge close to upright or level, a shelf
+leg or a door frame, passes each sample at a different place, so as it
+crosses a pixel the pixel takes nine steps from background to edge where a
+2 × 2 grid gives three, and the edge no longer stair-steps or crawls. That
+pass adds screen-space ambient occlusion in three
+tiers: small (creases and contacts, 4 cm), medium (folds and limbs, 25 cm)
+and large (whole objects against walls and floors, 1.2 m), radii in scene
+units, assuming metres. The occlusion is worked out for every sample, not
+once per pixel, so it is anti-aliased with the rest of the picture: a chair
+leg's contact shadow does not spill onto the wall behind it, and creases
+and frame edges do not crawl as the camera moves. A tier fades in as it
+grows past a pixel on screen. Then it shades as the dialog's **Shading** says:
+
+| Shading | Look |
+|---|---|
+| `lit` (default) | the scene's colours under a key, fill and rim light and a sky/ground ambient, all fixed to the camera so no shot comes out dark |
+| `clay` | the same lights on plain grey |
+| `albedo` | the scene's colours, unlit |
+| `occlusion` | white, darkened only by the ambient occlusion |
+
+Every option has the occlusion. There are no shadows, and the scene's own
+lights are not used: it is close to the in-session node's look, not
+identical. Outside the farm (husk by hand), the stage's RenderSettings can
+set `th:shading` (`lit`, `clay`, `albedo`, `occlusion`), `th:ao` (bool) and
+`th:samples` (samples a pixel: 1, 2, 4, 8 or 16, 1 for no anti-aliasing);
+unset, the delegate reads `TH_PLAYBLAST_SHADING`, `TH_PLAYBLAST_AO`
+(`0`/`off` turns the occlusion off) and `TH_PLAYBLAST_SAMPLES`; the farm
+worker passes the dialog's shading that way and leaves the samples at the
+default, eight. On HideAndReek/010 one sample a pixel takes about 0.14 s a frame,
+four 0.27 s, eight 0.34 s and sixteen 0.56 s.
+
+A worker can make the same picture on its GPU instead (Vulkan or DX12, no
 display needed): set `TH_PLAYBLAST_GPU=1` in that worker's environment.
-Windows builds only for now. It is opt-in because it is not faster: on an
-RTX 3070, HideAndReek/010 takes about 0.6 s a frame on the GPU against
-0.2 s on the CPU, since every frame's geometry is sent to the card again.
+Windows builds only for now. The drawing and the post pass (occlusion,
+shading, the average of each pixel's samples) both run on the card, and
+only the finished image and its depth come back. The geometry stays on the
+card from frame to frame, so a frame sends only the meshes Hydra rebuilt:
+on HideAndReek/010, its 40 animated meshes, 81 MB of 864 MB. Measured side
+by side on an RTX 3070 (1280 × 720, eight samples), 010 renders in
+0.08–0.12 s a frame on the GPU against 0.28 s on the CPU, and husk's whole
+frame takes 0.15–0.7 s against 0.35–0.9 s. The first frame sends
+everything, about a quarter of a second more. The card keeps at most 3 GB
+of geometry; past that, the rest is sent every frame as before. The CPU
+path stays the reference: from the same render buffer the GPU's post pass
+makes the CPU's picture to within rounding, and the two rasterisers differ
+only on a few edge pixels (0.04% of 010's). It stays opt-in until it has run
+on the farm.
 A worker whose GPU fails falls back to the CPU and says so in the task
 log. `TH_PLAYBLAST_COMPARE=1` draws every mesh both ways and logs the ones
-that differ, a check for a new GPU or driver.
+that differ, a check for a new GPU or driver. `TH_PLAYBLAST_TIMING=1` logs
+where each frame's time goes: the drawing and post pass step by step (on
+the GPU: the meshes and megabytes sent and kept on the card, the drawing,
+the post pass and the read-back), then how long Hydra spent syncing meshes,
+how many it rebuilt, how many it updated by their points alone (a mesh
+whose points are all that changed keeps its triangles) and the time since
+the last frame. On HideAndReek/010
+that last figure is 0.4–0.9 s against the CPU render's 0.34 s; the rest is
+husk updating the stage.
+
+### Motion blur and depth of field
+
+The viewport renderer can blur, both off by default; the dialog's **Blur**
+row turns them on (Motion blur, Depth of field, Blur samples, 16 by
+default). Off, the picture is the one above, to the byte. **Motion blur**
+spreads what moves over the render camera's shutter (its Shutter Open and
+Close, e.g. −0.25..0.25 frames): deforming meshes by their points (or their
+velocities when they have no points over time), moving transforms and
+instancers by their transforms, and the camera's own motion. **Depth of
+field** defocuses by the camera's lens, its F-Stop and Focus Distance, as a
+thin lens does: an F-Stop of 0 is a pinhole and stays sharp. Focusing at
+infinity does *not* turn it off: everything nearer than infinity is then out
+of focus, as through a real lens.
+
+Both come from drawing the frame several times and averaging the pictures
+(an accumulation buffer): each of the blur samples is drawn at its own
+moment in the shutter and through its own point on the lens, in groups of as
+many as a pixel has samples, and each group goes through the post pass
+before the groups are averaged. The samples' moments and lens points are
+fixed, not random, so a still frame does not flicker and the CPU and the GPU
+draw the same picture. What does not move under the shutter is placed
+once for all of a frame's blur samples rather than once per sample (and,
+when the lens is a pinhole and the camera still, projected and sorted into
+screen bands once too); on the GPU the groups are averaged on the card and
+only the average comes back. The sample count is rounded up to a power of two, at
+least the samples a pixel and at most 64. A frame where nothing moves under
+the shutter and the lens is a pinhole is drawn once, as with the blurs off.
+
+Outside the farm, the stage's RenderSettings can set `th:motionBlur`,
+`th:depthOfField` (bools), `th:blurSamples` and `th:fps` (for velocities, in
+frames a second, default 24); unset, the delegate reads
+`TH_PLAYBLAST_MOTION_BLUR`, `TH_PLAYBLAST_DOF`, `TH_PLAYBLAST_BLUR_SAMPLES` and
+`TH_PLAYBLAST_FPS`, which is how the farm worker passes the dialog's look and
+the shot's fps. Points move in a straight line from shutter open to close,
+and transforms through up to four keys; an instancer's per-instance
+positions and the focal length are taken at the frame, and a moved surface
+keeps the normals it has at shutter open.
+
+Measured on HideAndReek/010 (1280 × 720, eight samples a pixel, 16 blur
+samples, RTX 3070), on frames where something moves:
+
+| | blurs off | motion blur | depth of field, or both |
+|---|---|---|---|
+| CPU render | 0.27–0.28 s: draw 0.13 s (transform 50 ms, bin 15 ms, fill 50 ms), post pass 0.12 s | 0.60 s: two groups, drawn in 0.29 s together (transform 76 ms, bin 71 ms, fill 0.14 s), each with its own 0.12 s post pass | 0.89–0.91 s: as motion blur, but every sample sees through its own point on the lens (transform 0.18 s, bin 0.23 s) |
+| GPU render | 0.08 s: upload 20 ms, draw 33 ms, post pass 3 ms, read-back 6 ms | 0.14 s: upload 30–35 ms (102 MB with the closing points), draw 63 ms, post pass 7–8 ms, read-back 10 ms | the same |
+
+husk's whole frame then takes 0.92 s on the CPU with motion blur (1.93 s
+before the shared placing), 1.2 s with both blurs, and 0.46 s on the GPU.
+At 64 blur samples the CPU takes 2.4 s a frame with motion blur (6.8 s
+before) and 3.6 s with both, the GPU 0.69 s (0.75 s before, when every
+group was read back). The occlusion in each group's post pass is now the
+largest part of a blurred CPU frame (0.84 s of 2.4 s at 64 samples).
 
 The `karma` renderer does not look like the viewport. Its frames are a clay
 preview, not a viewport capture and not a final render: by default scene

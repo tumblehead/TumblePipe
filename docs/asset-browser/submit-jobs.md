@@ -237,6 +237,8 @@ worker could take from the same pools.
 | **Up to** | `submission.render.department` | last renderable department (the whole shot) |
 | **Resolution** (W × H) | `playblast.res_x` / `playblast.res_y` | the shot's render resolution (`render.resolution`), else 1280 × 720 |
 | **Renderer** | `playblast.renderer` | `viewport` |
+| **Shading** | `playblast.shading` | `lit` |
+| **Blur**: Motion blur, Depth of field, blur samples | `playblast.motion_blur` / `playblast.dof` / `playblast.blur_samples` | off, off, 16 |
 | **Light** | `playblast.light` | `dome` |
 | Samples (beside Light) | `playblast.samples` | 32 |
 | **Scene materials** | `playblast.materials` | off (clay) |
@@ -250,10 +252,21 @@ shot's configured range (rolls included), at the shot's fps. What it produces
 is described in [Compositing → Playblast](../compositing.md#playblast).
 
 **Renderer** picks what draws the frames: `viewport` is the viewport's look
-(display colours and textures under a light on the camera) from
+(display colours and textures, shaded as **Shading** says) from
 TumblePipe's own render delegate, on the CPU and with no licence; `karma` is
 Karma XPU, lit and sampled by the fields below, which `viewport` ignores.
 See [Compositing → Playblast](../compositing.md#playblast).
+
+**Shading** is the `viewport` renderer's look, all with ambient occlusion:
+`lit` is the scene's colours under lights that follow the camera; `clay` is
+the same lights on plain grey; `albedo` is the scene's colours unlit;
+`occlusion` is white with only the ambient occlusion. Karma ignores it.
+
+**Blur** is the `viewport` renderer's motion blur (over the shot camera's
+shutter) and depth of field (from its f-stop and focus distance; an f-stop
+of 0 stays sharp), averaged over the blur samples (2–64). Both are off by
+default, and off the frames are exactly as without them. Karma ignores it.
+See [Compositing → Motion blur and depth of field](../compositing.md#motion-blur-and-depth-of-field).
 
 **Light** picks the Karma look: `dome` switches the scene's lights off and lights
 the stage with one white dome light (soft clay shading); `headlight` is a

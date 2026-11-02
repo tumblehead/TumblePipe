@@ -20,13 +20,17 @@ Departments come in pipeline order (layout before animation before light,
 
 A shot opens on its last playblast, which is the latest version of the most
 downstream department that has one. A shot with no playblasts opens on its
-latest render. A shot with neither is skipped. When none of the chosen shots
-has anything to play, the menu entry reports it.
+latest render. A shot with neither is left out, and Houdini names the shots
+left out. When none of the chosen shots has anything to play, the menu entry
+reports it. A shot whose frame range or frame rate is not set in the project
+cannot be placed on the track, and the menu entry reports that too.
 
 ## The track
 
 Under the video, the track shows the shots in the order they had in the
-selection, each as a clip as long as the shot. A clip shows the first frame
+selection. Each shot's clip is as long as its take; while the take opens, or
+when it cannot play, the clip is as long as the shot's cut and says so. A
+clip shows the first frame
 of the take it plays, the shot's name, the take, and whether that is a
 playblast or a render. The ruler along the top has a tick per frame (per 5,
 10, ... frames when the shot is long), and a green strip along its bottom
@@ -105,12 +109,17 @@ describe the frame shown, so while a new take loads they still name the old
 one. **Burn-ins** in the toolbar over the picture, or B, shows or hides
 them. They are only drawn in the player: nothing is written into the media.
 
-Anything that went wrong (a take that will not open, a frame that will not
-decode) shows on a line of its own under the track.
+What went wrong is said where it is: while the playhead is on a take that
+will not open, a frame that will not decode, or a render the chosen display
+and view cannot show, the reason is on a line of its own under the track,
+and in the picture when there is no frame to show. Playback does not stop
+for it: it plays on past the shot.
 
 Playblasts are shown as they are. EXR takes are scene-linear, so the player
-shows them through the project's OCIO config (`_config/ocio/tumblehead.ocio`).
-It reads the input colour space from the EXR (ACEScg for TumblePipe renders)
+shows them through the project's OCIO config (`$OCIO`, which the TumblePipe
+package sets; the player does not start without one). It reads the input
+colour space from the EXR (ACEScg for TumblePipe renders; a render that
+does not name one cannot play)
 and uses the config's default display and view (`sRGB - Display`,
 `ACES 1.0 - SDR Video`). For an EXR take you can also choose (layer and
 channel in the toolbar over the picture, display, view and exposure right
@@ -125,14 +134,15 @@ The window around the image is neutral grey, so it does not shift how the
 image's colours read.
 
 The player ships inside the TumblePipe package, as
-`bin/<platform>/th_player`. It can also be run by hand on an `.otio`
-playlist, or on movie files and EXR sequences (any frame of one, or its
-folder):
+`bin/<platform>/th_player`. TumblePipe hands it the playlist (the shots,
+their takes and the OCIO config, as JSON) on its standard input; it takes no
+arguments. To run it by hand, give it a playlist the same way:
 
 ```
-th_player [--ocio <config.ocio>] <playlist.otio>
-th_player shot010.mp4 shot020.mp4 P:/renders/030/beauty/
+th_player < playlist.json
 ```
+
+The playlist's schema is the `th_playlist` crate's (`src/player/playlist`).
 
 It is built for Windows, Linux and macOS. See
 [Contributing and development](../development.md#sequence-player) for how it
