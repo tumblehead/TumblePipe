@@ -40,6 +40,30 @@ def is_group_uri(uri: Uri) -> bool:
     if len(uri.segments) != 2: return False
     return True
 
+def overlap(
+    context: str,
+    members: list[Uri],
+    departments: list[str],
+    group_uri: Uri | None = None
+    ) -> str:
+    """Why ``members`` cannot be in a Multi covering ``departments``: one
+    of them is in another Multi of ``context`` that covers one of those
+    departments too, so which Multi's workfile it opens would be a guess
+    (``find_group`` takes the first). Empty when nothing clashes.
+    ``group_uri`` is the Multi itself, which is left out."""
+    for other in list_groups(context):
+        if other.uri == group_uri: continue
+        shared = [d for d in departments if d in other.departments]
+        if not shared: continue
+        for member in members:
+            if member not in other.members: continue
+            verb = 'is' if len(shared) == 1 else 'are'
+            return (
+                f"{member.segments[-1]}'s {', '.join(shared)} {verb} already "
+                f'covered by Multi {other.name}'
+            )
+    return ''
+
 def add_group(
     context: str,
     name: str,
@@ -53,6 +77,8 @@ def add_group(
     for member in members:
         if not root_uri.contains(member):
             raise ValueError('Invalid group member list')
+    clash = overlap(context, members, departments)
+    if clash: raise ValueError(clash)
     api.config.add_entity(group_uri, dict(
         members = list(map(str, members)),
         departments = departments
@@ -72,6 +98,8 @@ def add_member(group_uri: Uri, member_uri: Uri):
     members = properties.get('members', [])
     member_uri_raw = str(member_uri)
     if member_uri_raw in members: raise ValueError('Already a member of group')
+    clash = overlap(context, [member_uri], properties.get('departments', []), group_uri)
+    if clash: raise ValueError(clash)
     members.append(member_uri_raw)
     # Pin just this key onto the entity's OWN overrides. The resolved value
     # computed above is the right basis (a member layers on top of what is
@@ -113,6 +141,13 @@ def add_department(group_uri: Uri, department: str):
     if properties is None: raise ValueError('Group does not exist')
     departments = properties.get('departments', [])
     if department in departments: raise ValueError('Already a department of group')
+    clash = overlap(
+        group_uri.segments[0],
+        list(map(Uri.parse, properties.get('members', []))),
+        [department],
+        group_uri
+    )
+    if clash: raise ValueError(clash)
     departments.append(department)
     # Pin just this key onto the entity's OWN overrides. The resolved value
     # computed above is the right basis (a department layers on top of what is

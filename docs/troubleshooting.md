@@ -195,6 +195,21 @@ records the Multi again. On an older release, change `uri` in that
 folder's `context.json` to the Multi's `groups:/<context>/<name>`, keeping a
 copy of the file, then reopen the scene.
 
+### A shot opens another Multi's workfile
+
+A shot's covered department row (ⓜ) opens a different Multi's workfile
+from the one you expect. The shot is in two Multis that both cover that
+department, and the row opens whichever Multi comes first in the project's
+list. Up to TumblePipe 1.88.0 the browser let a shot into a second Multi
+like that (dropping it on the Multi, or ticking a department on it); later
+releases refuse it with *"SH010's light is already covered by Multi
+seqA"*, but Multis set up that way earlier stay as they are.
+
+Decide which Multi owns the department for that shot. Then either untick
+the department on the other Multi, or take the shot out of it (**Remove
+from Multi**). The [Entity Editor](asset-browser/entity-editor.md#multis)
+shows every Multi a shot is in, in its **Multis** column.
+
 ### A node's menu raises "Not an entity URI: groups:/..."
 
 Opening a Multi's workfile, or just clicking a parameter on

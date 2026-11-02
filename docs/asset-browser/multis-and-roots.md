@@ -32,7 +32,9 @@ Multis up: a **Multis** column on the Assets and Shots tabs for who belongs
 where, and a **Multis** tab with a tick box per covered department. It
 checks that no member's department is covered by two Multis and writes
 everything on Apply. The browser surfaces below edit the same data one
-Multi at a time, written at once.
+Multi at a time, written at once, and refuse the same overlap: a shot can
+be in several Multis, but only one of them may cover a given department
+for it, or which Multi's workfile the shot opens would be a guess.
 
 ### Where they are
 
@@ -93,7 +95,12 @@ Add shots or assets to a Multi by:
   Multi**.
 
 The status bar reports *Added 3*, or *Added 2 of 3 — 1 skipped (group
-accepts shots only)* when the wrong kind of entity was in the batch. Remove
+accepts shots only)* when the wrong kind of entity was in the batch. A
+member already in another Multi covering one of this Multi's departments
+is skipped too: *Skipped 1 (SH010's light is already covered by Multi
+seqA)*. Ticking a department a member already gets from another Multi
+(on the **Departments** tab, **Departments…** or **Edit Multi…**) is refused
+with the same message and changes nothing. Remove
 with **Remove selected from Multi** on the row, **Remove from Multi:
 *name*** on the member's card, or **Remove from *name*** on a ⓜ row.
 

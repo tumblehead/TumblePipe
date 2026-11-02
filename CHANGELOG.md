@@ -12,6 +12,31 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.88.0 — 2026-11-02
+
+### Features
+- feat(playblast): versioned playblasts are named after their shot (`36d41a4a`)
+- feat(playblast): the LOP th::playblast renders with our viewport renderer by default (`41eae0ca`)
+
+### Fixes
+- fix(submit): playblast Materials is a menu; rows the renderer ignores grey out (`ebd95852`)
+- fix(player): a shot opens on the playblast written last (`6117aae7`)
+- fix(animation): build without the package whose camera rig layout used (`db6bf284`)
+- fix(layout): SideFX's camera rig whenever a package's camera rig fails (`8fc94f7d`)
+- fix(layout): a registered camera rig publishes: lens back in millimetres, no GetAllDescendants (`3e3a0837`)
+- fix(animate): no empty /Geometry prim when a SOP Import has nothing to import (`29a045d9`)
+
+### Documentation
+- docs(troubleshooting): what to check when a rig still starts at the origin (`742f8229`)
+- docs(playblast): the LOP's Renderer menu, Viewport by default or Houdini GL (`a784ab25`)
+- docs: regenerate CHANGELOG.md for v1.87.0 (`aafaa1d1`)
+
+### Tests
+- test(catalog): a category and a sequence never share a name in the sidebar property (`12d93203`)
+
+### Chores
+- chore(hooks): remove the pre-push test hook (`c719746b`)
+
 ## v1.87.0 — 2026-11-02
 
 ### Features

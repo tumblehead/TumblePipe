@@ -951,7 +951,13 @@ class ContainerManager:
             raise ValueError(f"Multi {group_id} no longer exists")
         current = set(grp.departments)
         if enabled and dept not in current:
-            grp_mod.add_department(group_uri, dept)
+            try:
+                grp_mod.add_department(group_uri, dept)
+            except ValueError:
+                # Refused (a member's dept is another Multi's): the
+                # toggle the artist just ticked goes back with the panel.
+                self._refresh.detail()
+                raise
         elif (not enabled) and dept in current:
             grp_mod.remove_department(group_uri, dept)
         else:
@@ -986,6 +992,8 @@ class ContainerManager:
         added = 0
         skipped = 0
         skip_reasons: set[str] = set()
+        group = grp_mod.get_group(ref.uri)
+        ref_departments = group.departments if group is not None else []
         for aid in asset_ids:
             uri = self._resolver.uri_for(aid)
             if uri is None:
@@ -1002,6 +1010,15 @@ class ContainerManager:
             if ref.context == "assets" and not is_asset:
                 skipped += 1
                 skip_reasons.add("group accepts assets only")
+                continue
+            # A shot already in a Multi covering one of these
+            # departments: its workfile would be a guess.
+            clash = grp_mod.overlap(
+                ref.context, [uri], list(ref_departments), ref.uri,
+            )
+            if clash:
+                skipped += 1
+                skip_reasons.add(clash)
                 continue
             grp_mod.add_member(ref.uri, uri)
             added += 1
@@ -1419,6 +1436,13 @@ class ContainerManager:
         to_add = new_set - current
         to_remove = current - new_set
         try:
+            # Refuse the whole edit before writing any of it, rather
+            # than stop part way when one department is another Multi's.
+            clash = grp_mod.overlap(
+                ref.context, grp.members, sorted(to_add), ref.uri,
+            )
+            if clash:
+                raise ValueError(clash)
             for d in to_add:
                 grp_mod.add_department(ref.uri, d)
             for d in to_remove:
