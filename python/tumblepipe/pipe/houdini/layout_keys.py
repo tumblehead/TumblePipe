@@ -305,7 +305,16 @@ def write_layout_keys(animate_lop, target_dir: Path, layer_file_name: str,
             for character, entry in sorted(clips.items())
         },
     }
+    # only when the registered rig is the one on the stage (its settings
+    # hook finds it); SideFX's camera rig needs nothing published
     rig = shot_rigs.camera_rig()
     if rig is not None and rig.settings is not None:
-        info['camera_rig'] = {'name': rig.name, 'settings': rig.settings(animate_lop)}
+        try:
+            settings = rig.settings(animate_lop)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            settings = None
+        if settings is not None:
+            info['camera_rig'] = {'name': rig.name, 'settings': settings}
     return info

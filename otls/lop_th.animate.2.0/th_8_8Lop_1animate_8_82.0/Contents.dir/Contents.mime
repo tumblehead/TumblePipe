@@ -977,7 +977,7 @@ Content-Type: text/plain
 
 {
 version 0.8
-soppath	[ 0	locks=0 ]	(	../anim_dive	)
+soppath	[ 0	locks=0 ]	(	"`ifs(nprims(\"../anim_dive/output0\") > 0, \"../anim_dive\", \"\")`"	)
 asreference	[ 0	locks=0 ]	(	"off"	)
 copycontents	[ 0	locks=0 ]	(	"on"	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
@@ -2965,7 +2965,7 @@ Content-Type: text/plain
 
 {
 version 0.8
-soppath	[ 0	locks=0 ]	(	../apex_sops/REST_IMPORT	)
+soppath	[ 0	locks=0 ]	(	"`ifs(nprims(\"../apex_sops/REST_IMPORT\") > 0, \"../apex_sops/REST_IMPORT\", \"\")`"	)
 asreference	[ 0	locks=0 ]	(	"off"	)
 copycontents	[ 0	locks=0 ]	(	"on"	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
@@ -3513,7 +3513,7 @@ Content-Type: text/plain
 
 {
 version 0.8
-soppath	[ 0	locks=0 ]	(	../apex_sops/REMAINDER	)
+soppath	[ 0	locks=0 ]	(	"`ifs(nprims(\"../apex_sops/REMAINDER\") > 0, \"../apex_sops/REMAINDER\", \"\")`"	)
 asreference	[ 0	locks=0 ]	(	"off"	)
 copycontents	[ 0	locks=0 ]	(	"on"	)
 ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)

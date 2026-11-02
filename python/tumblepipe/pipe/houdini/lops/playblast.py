@@ -1,6 +1,8 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
+import subprocess
 import shutil
+import re
 import os
 
 import hou
@@ -11,6 +13,11 @@ from tumblepipe.config.department import list_departments
 from tumblepipe.config.groups import Group, get_group, is_group_uri
 from tumblepipe.config.timeline import get_fps
 from tumblepipe.apps import mp4
+from tumblepipe.apps.viewport_renderer import VIEWPORT_DELEGATE, viewport_args, viewport_env
+from tumblepipe.pipe.usd.render_settings import (
+    PLAYBLAST_SETTINGS_PRIM_PATH,
+    generate_playblast_wrapper,
+)
 from tumblepipe.pipe.houdini import prim_queries
 from tumblepipe.pipe.houdini import nodes as ns
 from tumblepipe.pipe.houdini import render_camera
@@ -154,13 +161,13 @@ class Playblast(FrameRangeNode, EntityNode):
         output_playblast_path = get_next_playblast_path(shot_uri, department_name)
         output_daily_path = get_daily_path(shot_uri, department_name)
 
-        # Set the camera path
-        render_node.parm('loppath').set(cache_node.path())
-        render_node.parm('cameraprim').set(camera_path)
-
-        # The blurs, as the node says: the flipbook's own, from the camera's
-        # shutter and lens.
-        flipbook_blur(context, render_node)
+        renderer = self.parm('renderer').evalAsString()
+        if renderer == 'gl':
+            # Houdini's flipbook: set its camera and its own blurs, from the
+            # camera's shutter and lens.
+            render_node.parm('loppath').set(cache_node.path())
+            render_node.parm('cameraprim').set(camera_path)
+            flipbook_blur(context, render_node)
 
         # Work in a temporary directory
         root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
@@ -188,11 +195,16 @@ class Playblast(FrameRangeNode, EntityNode):
 
             # Render the frames
             temp_jpg_path.parent.mkdir(exist_ok=True, parents=True)
-            render_node.parm('picture').set(path_str(temp_jpg_path))
-            for frame_index in log_progress(render_range):
-                render_node.parm('f1').set(frame_index)
-                render_node.parm('f2').set(frame_index)
-                render_node.parm('execute').pressButton()
+            if renderer == 'gl':
+                render_node.parm('picture').set(path_str(temp_jpg_path))
+                for frame_index in log_progress(render_range):
+                    render_node.parm('f1').set(frame_index)
+                    render_node.parm('f2').set(frame_index)
+                    render_node.parm('execute').pressButton()
+            else:
+                self._render_viewport(
+                    temp_cache_path, temp_jpg_path, camera_path, render_range, fps
+                )
 
             # Encode mp4
             mp4.from_jpg(
@@ -208,6 +220,64 @@ class Playblast(FrameRangeNode, EntityNode):
             shutil.copyfile(temp_playblast_path, output_playblast_path)
             shutil.copyfile(temp_playblast_path, output_daily_path)
     
+    def _render_viewport(self, cache_path, jpg_path, camera_path, render_range, fps):
+        """Render the exported cache with our viewport renderer: husk and
+        hdThPlayblast, as the farm playblast does, through a layer over the
+        cache that renders only a colour buffer through ``camera_path``
+        (generate_playblast_wrapper). Shows husk's progress; cancelling it
+        stops husk. Raises when a frame is missing."""
+        wrapper_path = cache_path.parent / 'playblast.usda'
+        wrapper_path.write_text(
+            generate_playblast_wrapper(f'./{cache_path.name}', camera_path, fps),
+            encoding='utf-8',
+        )
+        width, height = self.native().parmTuple('res').eval()
+        blur = (
+            bool(self.parm('motion_blur').eval()),
+            bool(self.parm('depth_of_field').eval()),
+            int(self.parm('blur_samples').eval()),
+        )
+        env = viewport_env(
+            dict(os.environ), Path(api.PIPELINE_PATH), hou.applicationVersion()[0],
+            self.parm('shading').evalAsString(), blur, fps,
+        )
+        husk = Path(hou.text.expandString('$HFS')) / 'bin' / (
+            'husk.exe' if os.name == 'nt' else 'husk'
+        )
+        command = [
+            path_str(husk), *viewport_args(),
+            '--settings', PLAYBLAST_SETTINGS_PRIM_PATH,
+            '--resolver-context', path_str(wrapper_path),
+            '--verbose', 'a1',
+            '--make-output-path',
+            '--no-mplay',
+            '--res', str(width), str(height),
+            '--frame', str(render_range.first_frame),
+            '--frame-count', str(len(render_range)),
+            '--frame-inc', str(render_range.step_size),
+            '--output', path_str(jpg_path),
+            path_str(wrapper_path),
+        ]
+        returncode, log = run_husk(command, env, len(render_range))
+        missing = [
+            frame for frame in render_range
+            if not Path(str(jpg_path).replace('$F4', f'{frame:04d}')).exists()
+        ]
+        if returncode == 0 and not missing:
+            return
+        hint = ''
+        if f'Unable to load render plugin: {VIEWPORT_DELEGATE}' in log:
+            hint = (
+                '\n\nThis TumblePipe install has no viewport renderer for this '
+                'Houdini: set Renderer to Houdini GL.'
+            )
+        tail = '\n'.join(log.splitlines()[-15:])
+        raise self._error(
+            f'husk exited {returncode} having rendered '
+            f'{len(render_range) - len(missing)}/{len(render_range)} frames.'
+            f'{hint}\n\n{tail}'
+        )
+
     def view_latest(self):
 
         # Parameters and paths
@@ -242,6 +312,37 @@ class Playblast(FrameRangeNode, EntityNode):
         # Create and open the directory containing the playblast
         output_path.mkdir(parents=True, exist_ok=True)
         hou.ui.showInFileBrowser(f'{path_str(output_path)}')
+
+
+#: husk's progress lines at --verbose 'a': "ALF_PROGRESS 42%".
+_PROGRESS = re.compile(r'ALF_PROGRESS\s+(\d+)%')
+
+
+def run_husk(command: list[str], env: dict, frames: int) -> tuple[int, str]:
+    """Run husk with a progress bar the artist can cancel (which stops
+    husk and raises hou.OperationInterrupted). Its exit code and log."""
+    lines = []
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    process = subprocess.Popen(
+        command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, errors='replace', creationflags=flags,
+    )
+    try:
+        with hou.InterruptableOperation(
+            'Playblast', long_operation_name=f'Rendering {frames} frames',
+            open_interrupt_dialog=True,
+        ) as operation:
+            for line in process.stdout:
+                lines.append(line.rstrip())
+                match = _PROGRESS.search(line)
+                if match:
+                    operation.updateLongProgress(int(match.group(1)) / 100.0)
+            process.wait()
+    except BaseException:
+        process.kill()
+        process.wait()
+        raise
+    return process.returncode, '\n'.join(lines)
 
 
 def flipbook_blur(node, render_node) -> None:

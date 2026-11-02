@@ -170,9 +170,11 @@ def _latest_version_dir(probe: RowProbe, directory: Path | None) -> Path | None:
 
 
 def _latest_mp4(probe: RowProbe, directory: Path | None) -> Path | None:
+    # '<entity>_<dept>_v0003.mp4', or bare 'v0003.mp4' up to 1.87: the
+    # version is what follows the last '_' (the whole stem when there is none).
     return _newest(
         (
-            (entry.name[:-4], Path(entry.path))
+            (entry.name[:-4].rpartition('_')[2], Path(entry.path))
             for entry in _entries(directory) if entry.name.endswith('.mp4')
         ),
         probe,

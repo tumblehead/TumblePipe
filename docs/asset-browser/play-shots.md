@@ -18,8 +18,10 @@ Every shot gets a list of **takes**:
 Departments come in pipeline order (layout before animation before light,
 ...) and a render's layers by name, with the slapcomp last.
 
-A shot opens on its last playblast, which is the latest version of the most
-downstream department that has one. A shot with no playblasts opens on its
+A shot opens on the playblast written last, whichever department it was cut
+at: a farm playblast cut at animation after one cut at render opens, not the
+older render one. (Two written at the same moment go to the more downstream
+department.) A shot with no playblasts opens on its
 latest render. A shot with neither is left out, and Houdini names the shots
 left out. When none of the chosen shots has anything to play, the menu entry
 reports it. A shot whose frame range or frame rate is not set in the project

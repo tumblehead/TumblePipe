@@ -185,7 +185,7 @@ Every field with a per-entity source is **tri-state**:
 | State | How it looks | What is sent |
 |---|---|---|
 | Unpinned, entities agree | Italic, dimmed value | Nothing — each entity uses its own configured value (the one shown). |
-| Unpinned, entities disagree | `⟨per entity⟩` (a spin box parks one step below its minimum, a checkbox shows partially checked, a combo shows the placeholder row, a line edit is empty) | Nothing — each entity keeps its own value. |
+| Unpinned, entities disagree | `⟨per entity⟩` (a spin box parks one step below its minimum, a checkbox shows partially checked, a combo — **Materials** included — shows the placeholder row, a line edit is empty) | Nothing — each entity keeps its own value. |
 | Pinned | Upright, normal colour | Your value, for every ticked entity. |
 
 "The entities" are the rows with at least one tick (every visible row while
@@ -240,10 +240,16 @@ worker could take from the same pools.
 | **Shading** | `playblast.shading` | `lit` |
 | **Blur**: Motion blur, Depth of field, blur samples | `playblast.motion_blur` / `playblast.dof` / `playblast.blur_samples` | off, off, 16 |
 | **Light** | `playblast.light` | `dome` |
-| Samples (beside Light) | `playblast.samples` | 32 |
-| **Scene materials** | `playblast.materials` | off (clay) |
+| **Samples** | `playblast.samples` | 32 |
+| **Materials**: Scene materials / Clay | `playblast.materials` | Clay |
 | **Pool** | `farm.default_pool` | `general` |
 | **Priority** | `farm.priority` | 50 |
+
+Shading and Blur apply to the viewport renderer, Light, Samples and
+Materials to Karma: the rows the chosen **Renderer** ignores are greyed out
+(all stay live while Renderer is left `⟨per entity⟩`). **Materials** is a
+three-row menu rather than a checkbox: a partially checked box read as
+checked, so two submissions that looked the same rendered differently.
 
 **Up to** playblasts every department up to and including this one, in
 pipeline order — the same cut the render uses. There is no frame or channel
@@ -475,7 +481,7 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | **publish** | Publish cells; Farm mode in the process dialog | `publish_<dept>` (`houdini`) per department, chained → `notify` (`general`). A renderable asset publish then queues a **build** | `export/<entity>/<channel>/<dept>/vNNNN/` |
 | **build** | after a farm publish; Build USD in Farm mode; before the previews of a row that also publishes | `build` / `build_<channel>` (`general`) | `_staged/<channel>/vNNNN/` |
 | **collapse** | Playblast or (non-Standalone) Render cells on a row that also publishes | `collapse` (`houdini`), after the row's builds; it then submits the playblast and render families above with the fresh snapshot | nothing of its own; the previews' batches |
-| **playblast** | Playblast cells | `playblast` (`playblast`) → `playblast_notify` (`general`) | `render:/playblast/<shot>/<dept>/vNNNN.mp4` + the daily |
+| **playblast** | Playblast cells | `playblast` (`playblast`) → `playblast_notify` (`general`) | `render:/playblast/<shot>/<dept>/<sequence>_<shot>_<dept>_vNNNN.mp4` + the daily |
 | **composite** | the `th::build_comp` node's **Submit** | see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s) | `render:/render/<shot>/composite/…` |
 | **export_render** | the `th::lookdev_studio` HDA | `export` (`houdini`) → `notify` | lookdev turntable renders |
 

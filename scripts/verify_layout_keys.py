@@ -39,7 +39,7 @@ sys.path.insert(0, str(ROOT / 'python'))
 for hda in ('lop_th.layout_rigs.1.0', 'sop_th.layout_keys.1.0'):
     hou.hda.installFile(str(ROOT / 'otls' / hda))
 
-from tumblepipe.pipe.houdini import layout_keys  # noqa: E402
+from tumblepipe.pipe.houdini import layout_keys, shot_rigs  # noqa: E402
 from tumblepipe.pipe.houdini.lops import layout_rigs  # noqa: E402
 from tumblepipe.pipe.houdini.sops import import_rig, layout_keys_rows  # noqa: E402
 
@@ -179,6 +179,30 @@ def main(tmp: Path):
                    stored.unpackFromFolder('/animation/default.clip/_hero.char_Base').prims())
     check('Copy from Layout (Main): layout keys again, other keys kept',
           back[0] == 0.0 and abs(back[1] - 2.0) < 0.05 and 'extra_tx' in names, f'{back} {names}')
+
+    # a layout published with a package's camera rig, opened in animation
+    # without that package (not loaded, or its hook fails): the workfile
+    # still builds, no camera rig, the hero's row as before
+    other = tmp / 'layout' / 'v0008'
+    other.mkdir(parents=True)
+    (other / version.joinpath(info['file']).name).write_bytes(version.joinpath(info['file']).read_bytes())
+    (other / 'context.json').write_text(json.dumps({'inputs': [], 'outputs': [{'parameters': {
+        'layout_keys': dict(info, camera_rig={'name': 'NotLoaded', 'settings': {'type': 'x'}})}}]}))
+    layout_keys_rows.LayoutKeys.resolved = lambda self, v: other
+
+    def broken(*args):
+        raise RuntimeError('camera rig package not loaded')
+    for name, register in (('not loaded', False), ('failing', True)):
+        if register:
+            shot_rigs.register_camera_rig('NotLoaded', animation=broken)
+        dive = hou.node('/obj').createNode('geo', f'anim_{name.replace(" ", "_")}')
+        start = dive.createNode('null', 'import_rigs')
+        out = layout_keys_rows.add_to_dive(dive, start)
+        children = sorted(c.name() for c in dive.children())
+        check(f'animation: camera rig package {name}, the workfile still builds',
+              out is not None and out.input(0) == start and children == ['import_rigs', 'layout_keys'],
+              children)
+    shot_rigs.unregister_camera_rig('NotLoaded')
 
 
 if __name__ == '__main__':

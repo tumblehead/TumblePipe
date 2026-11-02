@@ -285,6 +285,17 @@ control still win over the layout placement; a character moved by hand
 with another control (a COG or root) ends up offset from layout by that
 much, so zero that control.
 
+If a character still starts at the origin:
+
+- In layout, move the character's own prim (`/<category>/<asset><n>`, e.g.
+  `/CHAR/FF0`) or a group above it. The placement is that prim's world
+  transform, so a prim below it moving does not count (its `geo` is a Scope
+  and holds no transform anyway).
+- Look for the warning `... has no 'Main' control: the character starts at
+  the origin, not at its layout placement.` on the rig import. Placement is
+  set on TumbleRig's top `Main` control, and a rig built without one cannot
+  be placed.
+
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
 Each is a deliberate guard in `th::export_layer`, and the dialog names the

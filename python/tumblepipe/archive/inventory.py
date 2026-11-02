@@ -123,14 +123,28 @@ def is_noise(parts: tuple[str, ...]) -> bool:
     return _BAK.search(name) is not None
 
 
+def _file_version(name: str) -> str | None:
+    """The version a file's name ends in: ``v0003.mp4``, or a shot-named
+    playblast's ``010_sh020_animation_v0003.mp4``; None otherwise."""
+    stem = name.split('.', 1)[0]
+    if naming.is_valid_version_name(stem):
+        return stem
+    _, separator, version_name = stem.rpartition('_')
+    if separator and naming.is_valid_version_name(version_name):
+        return version_name
+    return None
+
+
 def _version_index(parts, *, stems: bool = False) -> int | None:
     """Index of the first part that is a version name (``v0003``).
 
-    With ``stems``, a file named ``v0003.mp4`` counts too.
+    With ``stems``, a file whose name ends in one counts too
+    (``_file_version``).
     """
     for index, part in enumerate(parts):
-        name = part.split('.', 1)[0] if stems else part
-        if naming.is_valid_version_name(name):
+        if naming.is_valid_version_name(part):
+            return index
+        if stems and index == len(parts) - 1 and _file_version(part) is not None:
             return index
     return None
 
@@ -204,7 +218,7 @@ class _Classifier:
 
     def _unit_item(self, root, parts, size, kind, index, complete) -> Item:
         unit = parts[:index + 1]
-        version_name = unit[-1].split('.', 1)[0]
+        version_name = unit[-1] if naming.is_valid_version_name(unit[-1]) else _file_version(unit[-1])
         return Item(
             root.purpose, _join(parts), size, kind,
             unit=_join(unit), series=_join(unit[:-1]),

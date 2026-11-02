@@ -256,17 +256,26 @@ top — so list `background` before `characters` before `feathers`.
 
 ## Playblast
 
-A **playblast** is a fast GL preview of a shot. There are two ways to make
+A **playblast** is a fast viewport-style preview of a shot. There are two ways to make
 one, and they write to the same place — the versioned
-`render:/playblast/<shot>/<dept>/v####.mp4` and the shot's rolling daily —
-so their versions interleave:
+`render:/playblast/<shot>/<dept>/<sequence>_<shot>_<dept>_v####.mp4` and the
+shot's rolling daily — so their versions interleave. The shot in the file
+name lets an editor that labels clips by file name (Resolve) tell the shots
+apart; playblasts made up to 1.87 are bare `v####.mp4` and are still read,
+each keeping the name it was written with:
 
-- **In-session** — the `th::playblast` LOP/SOP node renders through
-  Houdini's own GL (the viewport flipbook / OpenGL ROP) right in the
-  artist's session. It is *viewport-accurate*: what you see is what you
-  get. Use it when the look has to match the viewport. Its **Motion Blur**,
-  **Depth of Field** and **Blur Samples** (off, off, 16) turn on the
-  flipbook's own blurs, from the camera's shutter and lens.
+- **In-session** — the `th::playblast` node renders right in the artist's
+  session. The LOP's **Renderer** picks how: **Viewport (hdThPlayblast)**,
+  the default, is the farm playblast's own renderer (below), run with husk
+  on the node's cache, so an in-session playblast looks like a farm one;
+  its **Shading** is the farm dialog's (lit, clay, albedo, occlusion), and a
+  progress bar shows husk's frames (cancel stops it). **Houdini GL** is
+  Houdini's own flipbook (OpenGL ROP), *viewport-accurate*: what you see is
+  what you get, hair, curves and volumes included, with its own Shading
+  Mode and Lighting. **Motion Blur**, **Depth of Field** and **Blur
+  Samples** (off, off, 16) work with both, from the camera's shutter and
+  lens: the viewport renderer's blurs, or the flipbook's own. The SOP
+  `th::playblast` always renders through Houdini GL.
 - **On the farm** — tick a shot's **Playblast** cell in the
   [Farm Submit dialog](asset-browser/submit-jobs.md) (shots only; publish cells on
   the same row run first, and the playblast then shows what they publish)
@@ -284,7 +293,7 @@ so their versions interleave:
   **and** the daily, exactly like the render/composite MP4s above. The
   frame range (rolls included) and fps come from the shot config per
   shot. So do resolution (the shot's render resolution, 1280 × 720 when it
-  has none), the look (Renderer, Light, Samples, Scene materials) and pool/priority, unless you
+  has none), the look (Renderer, Light, Samples, Materials) and pool/priority, unless you
   change them in the dialog: those fields are tri-state, and an untouched
   one lets every checked shot use its own configured value rather than
   imposing one shot's on the batch. A field you do set renders upright
@@ -303,7 +312,7 @@ does: smooth, with hard edges kept only where faces meet at more than 60
 degrees (a box stays a box). It needs no GPU and husk takes no licence for
 it, and HideAndReek/010's 6.8 million triangles draw in about 0.34 s a frame
 at 1280 × 720 with eight samples a pixel, the post pass below included. It
-ignores Light, Samples and Scene materials.
+ignores Light, Samples and Materials.
 It draws meshes only, so hair and other curves are left out, and husk does
 not run the stage's Houdini procedurals (hair grooms) for it: they would
 make nothing it draws, and running them before every frame cost
@@ -430,7 +439,7 @@ preview, not a viewport capture and not a final render: by default scene
 materials are off and the scene's lights are replaced by one white dome
 light, and the stage's display colours still show. The dialog's **Light** setting can
 instead put a headlight with ambient occlusion on the camera (the look
-before 1.85) or keep the scene's own lights, and **Scene materials** turns
+before 1.85) or keep the scene's own lights, and **Materials** set to *Scene materials* turns
 the materials back on. The dome is authored into the collapsed stage
 (`/TumblePipePlayblastLights/dome`, every scene light deactivated beside
 it); husk's own `--headlight dome` cannot do it, since Karma's headlight

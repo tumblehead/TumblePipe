@@ -92,10 +92,38 @@
         label   "Settings"
 
         parm {
+            name    "renderer"
+            label   "Renderer"
+            type    string
+            default { "viewport" }
+            help    "Viewport: TumblePipe's own renderer (hdThPlayblast), the farm playblast's look, rendered with husk. Houdini GL: Houdini's own flipbook, exactly as the viewport draws (hair, curves and volumes too)."
+            menu {
+                "viewport"  "Viewport (hdThPlayblast)"
+                "gl"        "Houdini GL"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "shading"
+            label   "Shading"
+            type    string
+            default { "lit" }
+            help    "Lit: the viewport's lights on the scene's colours. Clay: the same lights on grey. Albedo: the colours alone, unlit. Occlusion: white, darkened only by the ambient occlusion."
+            hidewhen "{ renderer != viewport }"
+            menu {
+                "lit"       "Lit"
+                "clay"      "Clay"
+                "albedo"    "Albedo"
+                "occlusion" "Occlusion"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
             name    "shadingmode"
             label   "Shading Mode"
             type    ordinal
             default { "smooth" }
+            hidewhen "{ renderer != gl }"
             menu {
                 "wire"          "Wireframe"
                 "wireghost"     "Wireframe Ghost"
@@ -116,6 +144,7 @@
             label   "Lighting"
             type    ordinal
             default { "headlight" }
+            hidewhen "{ renderer != gl }"
             menu {
                 "off"           "Off"
                 "headlight"     "Headlight Only"

@@ -184,20 +184,13 @@ gate that silently passes when it cannot run is worse than no gate: it
 prints the same shape as a real run, so an unlinted commit looks identical
 to a linted one. `git commit --no-verify` bypasses it for a single commit.
 
-## The test gate
+## Running the tests before a push
 
-A **pre-push hook** (`.githooks/pre-push`) runs the minigun property suite
-plus the binary-HDA check, and blocks the push on failure. Push is the
-boundary because it is the last moment before work leaves the machine, and
-the suite is time-budgeted rather than growing linearly with the test count
-(about 35 seconds at `--time-budget 10 --jobs auto` on an 8-core machine,
-about a minute on one worker) — too slow per
-commit, cheap enough per push. It needs cargo as well as `uv` (see *Running
-the test harness*). `git push --no-verify` bypasses.
-
-Note it also fires on branch deletions and `--dry-run`, so
-`git push origin --delete <branch>` pays the full run. That is deliberate:
-every condition added here is another way for the gate to quietly not run.
+No hook runs the tests: a pre-push hook used to, and it was removed because
+it ran on every push, branch deletions included, and blocked pushes whenever
+the shell lacked the test environment. Run the preflight below (its `tests`
+stage is the minigun property suite, and `hdas` the binary-HDA check) before
+pushing work.
 
 ## Preflight
 
@@ -262,6 +255,13 @@ widget stacks involved are pure PySide6:
   cancel-leaves-steps-unrun warning, exported-version reporting, the
   skip-vs-fail split described below, and the footer states: a styled
   Execute, a green Done after a clean run, Close plus retry otherwise).
+- `verify_submit_playblast_section.py` — the Farm Submit dialog's
+  Playblast settings, offscreen: Materials is a `⟨per entity⟩` / Scene
+  materials / Clay menu (not a tri-state box that reads as checked) that
+  seeds, pins and unpins, and the rows the chosen Renderer ignores are
+  greyed out. Needs tumbletrove's Python (`TUMBLETROVE_PYTHON`, else the
+  newest `.tools/hpm-fetch` one):
+  `uv run --python 3.12 --with pyside6 python scripts/verify_submit_playblast_section.py`.
 
 - `verify_archive_app.py` — the archive window end to end, offscreen: read
   a small project, refuse a bad part size, write a split archive, check it,

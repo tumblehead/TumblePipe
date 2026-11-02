@@ -512,16 +512,18 @@ class _PinnedField:
     The unset representation is per widget type and deliberately native:
     a spin box parks on its ``minimum``, which is one step below the field's
     real lower bound and carries ``specialValueText``; a check box on
-    ``PartiallyChecked`` (tri-state); a combo on a placeholder row; a line
-    edit on empty-with-placeholder. Three of those are also a way *back* to
-    unpinned without the revert button — which stays for the spin boxes,
-    because spinning down past the field's minimum is not an affordance.
+    ``PartiallyChecked`` (tri-state); a combo on a placeholder row; a toggle
+    (a yes/no field shown as a three-row combo, where a partially checked
+    box would read as checked) on its placeholder row; a line edit on
+    empty-with-placeholder. Four of those are also a way *back* to unpinned
+    without the revert button — which stays for the spin boxes, because
+    spinning down past the field's minimum is not an affordance.
     """
 
     def __init__(self, key: str, widget: QWidget, kind: str) -> None:
         self.key = key
         self.widget = widget
-        self.kind = kind  # 'spin' | 'check' | 'combo' | 'line'
+        self.kind = kind  # 'spin' | 'check' | 'combo' | 'toggle' | 'line'
         self.pinned = False
 
     # ── state ──────────────────────────────────────
@@ -565,6 +567,10 @@ class _PinnedField:
             if w.currentIndex() <= 0:
                 return resolve.MIXED
             return w.currentText()
+        if self.kind == 'toggle':
+            # Rows: placeholder, yes, no.
+            index = w.currentIndex()
+            return resolve.MIXED if index <= 0 else index == 1
         text = w.text().strip()
         return text or resolve.MIXED
 
@@ -588,6 +594,8 @@ class _PinnedField:
                 # offer would otherwise silently select the placeholder's
                 # neighbour; park on the placeholder instead.
                 w.setCurrentIndex(index if index > 0 else 0)
+        elif self.kind == 'toggle':
+            w.setCurrentIndex(0 if value is None else (1 if value else 2))
         else:
             w.setText('' if value is None else str(value))
 
@@ -1243,9 +1251,25 @@ class _ContextPane(QWidget):
             box.setVisible(kind in active)
         self._no_settings.setVisible(not active)
 
+    def _scope_playblast_look(self) -> None:
+        """Grey out the settings the chosen renderer ignores. With the
+        renderer left per entity, any of them may apply, so all stay on."""
+        rows_by_renderer = getattr(self, '_pb_rows', None)
+        entry = self._fields.get('pb_renderer')
+        if not rows_by_renderer or entry is None:
+            return
+        renderer = entry.value()
+        for name, rows in rows_by_renderer.items():
+            enabled = renderer is resolve.MIXED or renderer == name
+            for label, row in rows:
+                row.setEnabled(enabled)
+                if label is not None:
+                    label.setEnabled(enabled)
+
     def _refresh(self) -> None:
         self._show_active_sections()
         self._reseed_form()
+        self._scope_playblast_look()
         self._update_camera()
         self._recompute_warnings()
         self._dialog._pane_changed(self)
@@ -1584,7 +1608,7 @@ class _ContextPane(QWidget):
         self._fields[key] = entry
         signal_name = {
             'spin': 'valueChanged', 'check': 'clicked',
-            'combo': 'activated', 'line': 'textEdited',
+            'combo': 'activated', 'toggle': 'activated', 'line': 'textEdited',
         }[kind]
         getattr(widget, signal_name).connect(lambda *_a: self._changed())
         if kind == 'spin':
@@ -1595,7 +1619,7 @@ class _ContextPane(QWidget):
             )
         elif kind == 'check':
             widget.clicked.connect(lambda *_a, e=entry: e.pin())
-        elif kind == 'combo':
+        elif kind in ('combo', 'toggle'):
             # activated fires only on user interaction, unlike
             # currentIndexChanged. Index 0 is the placeholder, so picking it
             # is an explicit "go back to per entity".
@@ -1655,6 +1679,19 @@ class _ContextPane(QWidget):
         box.addItem(PER_ENTITY_TEXT)
         box.addItems(list(names))
         self._register(key, box, 'combo')
+        return box
+
+    def _choice(self, key: str, yes: str, no: str) -> QComboBox:
+        """A yes/no field as ``⟨per entity⟩`` / ``yes`` / ``no``.
+
+        For a setting whose per-entity state must be unmistakable: a
+        partially checked box looks checked at a glance, and two submissions
+        that looked identical rendered differently (wifi_retina, Scene
+        materials).
+        """
+        box = QComboBox()
+        box.addItems([PER_ENTITY_TEXT, yes, no])
+        self._register(key, box, 'toggle')
         return box
 
     def _line(self, key: str, placeholder: str) -> QLineEdit:
@@ -1754,7 +1791,8 @@ class _ContextPane(QWidget):
             "albedo: the scene's colours, unlit.\n"
             "occlusion: white, with only the ambient occlusion."
         )
-        form.addRow("Shading:", self._row(self._pb_shading, revert=('pb_shading',)))
+        shading_row = self._row(self._pb_shading, revert=('pb_shading',))
+        form.addRow("Shading:", shading_row)
         self._pb_motion_blur = self._check('pb_motion_blur', "Motion blur")
         self._pb_motion_blur.setToolTip(
             "Viewport only. Blur what moves while the shot camera's shutter "
@@ -1772,10 +1810,11 @@ class _ContextPane(QWidget):
             "Viewport only. Images averaged per frame for the blurs: more is "
             "smoother and slower."
         )
-        form.addRow("Blur:", self._row(
+        blur_row = self._row(
             self._pb_motion_blur, self._pb_dof, self._pb_blur_samples,
             revert=('pb_motion_blur', 'pb_dof', 'pb_blur_samples'),
-        ))
+        )
+        form.addRow("Blur:", blur_row)
         self._pb_light = self._combo('pb_light', PLAYBLAST_LIGHTS)
         self._pb_light.setToolTip(
             "Karma only.\n"
@@ -1784,16 +1823,27 @@ class _ContextPane(QWidget):
             "occlusion.\nscene: the scene's own lights."
         )
         self._pb_samples = self._spin('pb_samples', 1, 4096)
-        self._pb_materials = self._check('pb_materials', "Scene materials")
+        self._pb_materials = self._choice('pb_materials', "Scene materials", "Clay")
         self._pb_materials.setToolTip(
-            "Shade with the scene's materials instead of clay. Partially "
-            "checked = each entity keeps its own configured value."
+            "Karma only. Scene materials: shade with the scene's materials. "
+            "Clay: plain grey. ⟨per entity⟩: each shot keeps its own "
+            "configured value."
         )
-        form.addRow("Light:", self._row(self._pb_light, revert=('pb_light',)))
-        form.addRow("Samples:", self._row(
-            self._pb_samples, self._pb_materials,
-            revert=('pb_samples', 'pb_materials'),
-        ))
+        light_row = self._row(self._pb_light, revert=('pb_light',))
+        samples_row = self._row(self._pb_samples, revert=('pb_samples',))
+        materials_row = self._row(self._pb_materials, revert=('pb_materials',))
+        form.addRow("Light:", light_row)
+        form.addRow("Samples:", samples_row)
+        form.addRow("Materials:", materials_row)
+        # Each renderer's own rows, label included: _scope_playblast_look
+        # greys out the other renderer's while one is set.
+        self._pb_rows = {
+            renderer: [(form.labelForField(row), row) for row in rows]
+            for renderer, rows in (
+                ('viewport', (shading_row, blur_row)),
+                ('karma', (light_row, samples_row, materials_row)),
+            )
+        }
         self._pb_pool = self._line('pb_pool', 'general')
         form.addRow("Pool:", self._pb_pool)
         self._pb_priority = self._spin('pb_priority', 0, 100)

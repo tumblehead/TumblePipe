@@ -355,17 +355,30 @@ def add_to_dive(dive, previous, shot_uri=None):
     the settings layout published (its character named as layout's,
     ``camera``), then th::layout_keys with its rows discovered. Returns
     th::layout_keys's node, to feed the Scene Animate; call
-    :func:`copy_into_new_workfile` once the Scene Animate is wired."""
+    :func:`copy_into_new_workfile` once the Scene Animate is wired.
+
+    Without that package (not loaded, or its hook fails) the workfile still
+    builds: no camera rig, the camera row comes in off, and the shot camera
+    is layout's published one, its move baked in."""
     from tumblepipe.pipe.houdini import shot_rigs
 
     node = create(dive, 'layout_keys')
     node.native().setInput(0, previous)
-    rig = shot_rigs.camera_rig()
     published = node.camera_rig_settings()
-    if rig is not None and rig.animation is not None and published is not None:
-        camera = rig.animation(previous, shot_uri, published.get('settings'))
+    rig = shot_rigs.camera_rig(published.get('name')) if published else None
+    if rig is not None and rig.animation is not None:
+        before = set(dive.children())
+        try:
+            camera = rig.animation(previous, shot_uri, published.get('settings'))
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            camera = None
         if camera is not None:
             node.native().setInput(0, camera)
+        else:
+            for child in set(dive.children()) - before:
+                child.destroy()
     node.discover()
     return node.native()
 

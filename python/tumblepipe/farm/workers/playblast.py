@@ -18,70 +18,12 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.apps.app import CommandFailed
 from tumblepipe.apps.houdini import HOUDINI_VERSION_ENV, Husk
 from tumblepipe.apps import mp4
+from tumblepipe.apps.viewport_renderer import VIEWPORT_DELEGATE, viewport_args, viewport_env
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import get_base_env, print_env, job_data_dir
 from tumblepipe.farm.frames import frame_file, HOUDINI_FRAME_TOKEN
 from tumblepipe.farm.specs import playblast as playblast_spec
 from tumblepipe.farm.worker import ensure_dir, error, headline
-
-# The viewport renderer: hdThPlayblast (src/delegate), our own Hydra render
-# delegate, shipped under plugins/houdini<major>/ and registered here rather
-# than by the farm env (farm.env.get_base_env), which is built on the
-# submitting machine. It rasterises on the CPU with the viewport's look --
-# display colours and textures, shaded as the look's 'shading' says, with
-# ambient occlusion -- and husk takes no licence for it: Houdini's licence is
-# only checked out for Karma. HideAndReek/010 (6.8M triangles) renders in
-# ~0.34 s a frame at 1280x720 and eight samples a pixel; with husk updating
-# the stage and its 40 animated meshes, a frame takes 0.4-0.9 s.
-#
-# --purpose geometry,proxy draws what the viewport draws: proxies where an
-# asset has them, never its render-purpose meshes.
-#
-# --allowed-procedurals none: the delegate draws meshes only, so the curves
-# Houdini's procedurals make (hair grooms) never reach the picture, yet husk
-# runs every animated one before each frame and swaps its result into the
-# stage, which redirties every prim on it. On HideAndReek/010 (three felt
-# grooms) that was ~3 s a frame and every mesh rebuilt; without them a frame
-# rebuilds only its animated meshes and the picture is the same.
-VIEWPORT_DELEGATE = 'HdThPlayblastRendererPlugin'
-
-
-def viewport_args() -> list[str]:
-    """husk's arguments for the viewport renderer."""
-    return ['-R', VIEWPORT_DELEGATE, '--purpose', 'geometry,proxy',
-            '--allowed-procedurals', 'none']
-
-
-def viewport_env(env: dict, pipeline_path: Path, houdini_major: int,
-                 shading: str = 'lit', blur: tuple[bool, bool, int] = (False, False, 16),
-                 fps: int = 24) -> dict:
-    """``env`` with the viewport delegate registered for USD, ahead of the
-    resolver, and told how to shade (``specs.playblast.PLAYBLAST_SHADINGS``)
-    and blur (``specs.playblast.look_blur``: motion blur, depth of field,
-    blur samples) at the shot's ``fps``. The delegate reads these TH_PLAYBLAST_*
-    variables only where the stage's render settings say nothing; the farm
-    playblast's settings prim (render_settings.
-    generate_playblast_settings_section) says nothing, so the dialog's look
-    decides."""
-    motion_blur, dof, blur_samples = blur
-    resources = (
-        pipeline_path / 'plugins' / f'houdini{houdini_major}'
-        / 'hdThPlayblast' / 'resources'
-    )
-    current = env.get('PXR_PLUGINPATH_NAME')
-    return {
-        **env,
-        'PXR_PLUGINPATH_NAME': (
-            f'{path_str(resources)}{os.pathsep}{current}' if current
-            else path_str(resources)
-        ),
-        'TH_PLAYBLAST_SHADING': shading,
-        'TH_PLAYBLAST_MOTION_BLUR': '1' if motion_blur else '0',
-        'TH_PLAYBLAST_DOF': '1' if dof else '0',
-        'TH_PLAYBLAST_BLUR_SAMPLES': str(blur_samples),
-        'TH_PLAYBLAST_FPS': str(fps),
-    }
-
 
 # Karma XPU as a playblast, by default a clay look instead of the scene's
 # shading. It draws through CUDA/OptiX, so it needs a GPU but no GL context
@@ -91,7 +33,8 @@ def viewport_env(env: dict, pipeline_path: Path, houdini_major: int,
 # and on real shots it never finished: HideAndReek/010 on maria-2060 and 030
 # on judas both sat on frame 1 for over ten minutes, then husk died with
 # 0xE06D7363. XPU rendered 030's first frame in 72 s, most of it scene load.
-# The viewport look belongs to the local playblast node, not the farm.
+# Houdini's own GL look stays with the in-session th::playblast (Renderer:
+# Houdini GL); the farm draws the viewport look with our delegate.
 #
 # --timelimit-image stops a runaway frame at XPU_FRAME_SECONDS and keeps the
 # partial image, so one heavy frame cannot hold the whole shot.

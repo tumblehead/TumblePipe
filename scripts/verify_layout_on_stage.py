@@ -12,7 +12,8 @@ checks:
    the camera SideFX's rig (no package registered one), the hero's own
    prim is hidden;
 2. the publish branch, written over frames 1-24: the lamp moves with its
-   layout keys, /cameras/render_camera is a Camera, no /layout_rigs and no
+   layout keys, /cameras/render_camera is a Camera with its lens in
+   millimetres, no /layout_rigs and no
    active APEX scene (layout_publish passes);
 3. the layout keys: an Animation Catalog with the lamp's clip, read back
    on the same frames.
@@ -34,7 +35,7 @@ hou.hda.installFile(str(ROOT / 'otls' / 'lop_th.layout_rigs.1.0'))
 
 from pxr import Usd, UsdGeom  # noqa: E402
 
-from tumblepipe.pipe.houdini import layout_keys  # noqa: E402
+from tumblepipe.pipe.houdini import layout_keys, shot_rigs  # noqa: E402
 from tumblepipe.pipe.houdini.lops import layout_rigs  # noqa: E402
 from tumblepipe.pipe.houdini.sops import import_rig  # noqa: E402
 from tumblepipe.pipe.houdini.validators import validate_layout_publish  # noqa: E402
@@ -55,6 +56,10 @@ def world_x(stage, path, frame):
 
 
 def main(tmp: Path):
+    # TumblePipe alone: no package's camera rig (TumbleRig registers one at
+    # startup when it is loaded)
+    for rig in shot_rigs.camera_rigs():
+        shot_rigs.unregister_camera_rig(rig.name)
     hou.playbar.setFrameRange(1, 24)
     hou.playbar.setPlaybackRange(1, 24)
 
@@ -113,6 +118,22 @@ def main(tmp: Path):
     check('build: no cook errors', not animate.errors() and not rigs.native().errors(),
           list(animate.errors()) + list(rigs.native().errors()))
 
+    # a registered rig that fails (its package half loaded) or adds nothing
+    # (its rig not installed): SideFX's camera rig all the same
+    def broken(*args):
+        raise RuntimeError('camera rig package not loaded')
+    for name, hook in (('raises', broken), ('adds nothing', lambda *args: None)):
+        shot_rigs.register_camera_rig('Broken', layout=hook, settings=broken)
+        rigs.build()
+        again = sorted(
+            str(p.GetPath()) for p in animate.stage().Traverse()
+            if 'HoudiniApexCharacterAPI' in [str(s) for s in p.GetAppliedSchemas()]
+        )
+        check(f"fallback: a camera rig hook that {name} gives SideFX's camera rig",
+              again == characters and not animate.errors(), again)
+    shot_rigs.unregister_camera_rig('Broken')
+    rigs.build()
+
     # layout's keys on the lamp (its control's tx: 0 -> 4 over 1..24)
     entry = hou.Geometry()
     name = entry.addAttrib(hou.attribType.Prim, 'name', '')
@@ -140,6 +161,9 @@ def main(tmp: Path):
     check('publish: the lamp moves with its layout keys', lamp_x == [0.0, 4.0], lamp_x)
     cam = published.GetPrimAtPath('/cameras/render_camera')
     check('publish: the shot camera is a Camera', bool(cam) and cam.GetTypeName() == 'Camera')
+    focal = UsdGeom.Camera(cam).GetFocalLengthAttr().Get(1) if cam else None
+    check('publish: the shot camera keeps its lens in millimetres',
+          focal is not None and abs(focal - camera.parm('focalLength').eval()) < 1e-3, focal)
     check('publish: no rigs in the layer', not published.GetPrimAtPath('/layout_rigs'))
     result = validate_layout_publish(published.GetPseudoRoot())
     check('publish: layout_publish passes', result.passed,
@@ -148,6 +172,8 @@ def main(tmp: Path):
     # 3. the layout keys beside the layer
     info = layout_keys.write_layout_keys(animate, tmp, 'layout.usd')
     check('keys: a clip for the lamp', info is not None and 'lamp' in info['characters'], info)
+    check('keys: no camera rig settings without a package rig', info is not None and 'camera_rig' not in info,
+          info and info.get('camera_rig'))
     back = layout_keys.read_catalog(tmp / info['file'])
     check('keys: read back on the same frames',
           layout_keys.key_range(back['lamp']) == (1.0, 24.0), layout_keys.key_range(back['lamp']))

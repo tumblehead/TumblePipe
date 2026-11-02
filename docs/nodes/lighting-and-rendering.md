@@ -405,11 +405,12 @@ Source: [`otls/lop_th.mesh_outline.1.0`](../../otls/lop_th.mesh_outline.1.0/th_8
 
 ## `th::playblast` (LOP)
 
-Flipbook the stage through the pipeline's playblast folders. Tab menu
+Playblast the stage through the pipeline's playblast folders. Tab menu
 `_TumblePipe/pipeline`; feed it the stage to preview. **Playblast** caches
-the stage to a temporary USD, renders one JPG per frame through Houdini's
-flipbook ROP with the chosen camera, encodes an MP4 and copies it to the
-next `render:/playblast/<shot>/<department>/v####.mp4` **and** the shot's
+the stage to a temporary USD, renders one JPG per frame with the chosen
+camera (through the farm's viewport renderer with husk, or Houdini's
+flipbook ROP: **Renderer**), encodes an MP4 and copies it to the
+next `render:/playblast/<shot>/<department>/<sequence>_<shot>_<department>_v####.mp4` **and** the shot's
 rolling daily. How this compares with a farm playblast is in
 [Compositing → Playblast](../compositing.md#playblast).
 Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_1playblast_8_81.0/DialogScript),
@@ -420,16 +421,21 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 | Entity | `from_context` | The shot — the shared Entity button (shots only, *Select Shot*), as on `th::import_shot`; the label beside it shows what `from_context` resolved to |
 | Department | `from_context` | `from_context` (the workfile's department) or one of the shot's **renderable** departments |
 | Camera | first camera | The cameras in the input stage: under `/cameras` or `/scene/cameras`, else anywhere on the stage. Left empty it is the first one, the camera the menu shows |
-| Shading Mode, Lighting | Smooth Shaded, Headlight Only | Viewport look of the flipbook |
+| Renderer | Viewport (hdThPlayblast) | **Viewport**: the farm playblast's renderer (hdThPlayblast) run with husk, the same look as a farm playblast, with a progress bar that stops husk when cancelled. **Houdini GL**: Houdini's flipbook, exactly as the viewport draws (hair, curves and volumes too). Existing nodes take the default, Viewport |
+| Shading | Lit | Viewport renderer only: Lit, Clay, Albedo or Occlusion, as in the farm dialog |
+| Shading Mode, Lighting | Smooth Shaded, Headlight Only | Houdini GL only: viewport look of the flipbook |
 | Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**) |
 | Resolution | the shot's render resolution | An expression: the shot's `render.resolution`, so the playblast has the render's frame; `1280 720` while no shot resolves. Type over it for your own size; Revert to Defaults brings the shot's back. A node made before 1.85 keeps the size it had |
-| Motion Blur, Depth of Field, Blur Samples | off, off, 16 | The flipbook's own blurs, from the camera's Shutter Open/Close and its F-Stop and Focus Distance; Blur Samples is how many images the motion blur averages |
+| Motion Blur, Depth of Field, Blur Samples | off, off, 16 | Blurs from the camera's Shutter Open/Close and its F-Stop and Focus Distance: the viewport renderer's, or the flipbook's own under Houdini GL; Blur Samples is how many images each frame averages |
 | Playblast | | Render, encode and publish |
 | View latest | | Open the newest MP4 for this shot and department (a message if there is none) |
 | Browse All | | Open the playblast folder |
 
 Gotchas:
 
+- The viewport renderer draws meshes (and USD shapes) only: hair, curves,
+  points and volumes are left out, as on the farm. Switch **Renderer** to
+  Houdini GL when the preview needs them.
 - The node only ever playblasts a **shot**: From context inside an asset
   workfile resolves nothing. The department must be renderable — a
   non-renderable workfile department resolves nothing too.

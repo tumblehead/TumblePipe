@@ -112,7 +112,7 @@ Each worker needs the same environment as an artist workstation:
   the `karma` renderer it renders with
   Karma XPU in a preview mode (by default scene materials off and the scene's
   lights replaced by one dome light at 32 samples; the Farm Submit dialog's
-  playblast **Light** / **Samples** / **Scene materials** change it, see
+  playblast **Light** / **Samples** / **Materials** change it, see
   [Compositing → Playblast](compositing.md#playblast)). It draws through CUDA/OptiX
   with no GL context or display, and uses the worker's GPU memory (3.5 GiB
   peak on a HideAndReek shot). Hydra Storm (GL) used to be an option and was

@@ -199,6 +199,30 @@ def generate_playblast_settings_section(camera_prim_path: str) -> str:
     ])
 
 
+def generate_playblast_wrapper(sublayer: str, camera_prim_path: str, fps: float) -> str:
+    """USDA text of a root layer over ``sublayer`` (an asset path, e.g.
+    ``./cache.usd``) that renders it through the playblast settings prim
+    (generate_playblast_settings_section) and ``camera_prim_path``: what the
+    in-session th::playblast hands husk for the viewport renderer.
+
+    Its cache carries the shot's own RenderSettings, whose Karma LPE vars
+    husk refuses with our delegate ("Missing driver:parameters:aov:husk:name
+    token"), and husk reads ``renderSettingsPrimPath`` off the root layer
+    only, so the playblast's own prim goes in a layer of its own on top. Its
+    time codes per second are the cache's (the shot's fps), so the sublayer's
+    frames are not rescaled.
+    """
+    return '\n'.join([
+        '#usda 1.0',
+        '(',
+        f'    subLayers = [@{sublayer}@]',
+        f'    renderSettingsPrimPath = "{PLAYBLAST_SETTINGS_PRIM_PATH}"',
+        f'    timeCodesPerSecond = {fps}',
+        f'    framesPerSecond = {fps}',
+        ')',
+    ]) + '\n' + generate_playblast_settings_section(camera_prim_path)
+
+
 # How a farm playblast is lit, the submit dialog's playblast Light:
 #   dome      -- the scene's lights switched off and one white dome light
 #                put in their place: soft clay shading, the occlusion coming

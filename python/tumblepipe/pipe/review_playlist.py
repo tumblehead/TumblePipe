@@ -177,12 +177,23 @@ def list_render_takes(entity_uri: Uri) -> list[Take]:
         ))
     return takes
 
+def _written_at(take: Take) -> float:
+    try:
+        return take.media.path.stat().st_mtime
+    except OSError:
+        return float('-inf')
+
 def default_take(takes: list[Take]) -> int:
-    """The take a shot opens on: the last playblast (the latest of the most
-    downstream department), else the last take (the latest render of the
-    most downstream department and layer)."""
+    """The take a shot opens on: the playblast written last, whichever
+    department it was cut at (a tie goes to the more downstream one), else
+    the last take (the latest render of the most downstream department and
+    layer).
+
+    Not the most downstream department's latest: a farm playblast cut at
+    animation after one cut at render would never open (wifi_retina)."""
     movies = [index for index, take in enumerate(takes) if take.kind == 'movie']
-    return movies[-1] if movies else max(len(takes) - 1, 0)
+    if not movies: return max(len(takes) - 1, 0)
+    return max(movies, key = lambda index: (_written_at(takes[index]), index))
 
 def sequence_of(entity_uri: Uri) -> str:
     """The sequence a shot is in: its path between ``shots`` and its name."""

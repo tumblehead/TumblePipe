@@ -1,4 +1,4 @@
-"""The playblast job: runs ``workers/playblast.py`` (husk, Karma XPU preview)."""
+"""The playblast job: runs ``workers/playblast.py`` (husk with our viewport delegate, or a Karma XPU preview)."""
 
 from pathlib import Path
 import json

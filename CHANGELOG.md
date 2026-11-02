@@ -12,6 +12,81 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.87.0 — 2026-11-02
+
+### Features
+- feat(playblast): Motion blur, Depth of field and Blur samples settings (`8cef783f`)
+- feat(delegate): motion blur and depth of field by accumulation (`6b5f5ad7`)
+- feat(delegate): post pass on the GPU, static meshes kept on the card (`eebbb168`)
+- feat(animation): th::layout_keys copies layout's keys into the Scene Animate (v20) (`5f3fee4f`)
+- feat(anim): th::layout_keys copies layout's keys onto the animation's characters (`c70819b5`)
+- feat(layout): Layout in Animate in the layout template, its publish branch, migration v19 (`071799fe`)
+- feat(layout): th::layout_rigs puts a shot's assets into the APEX scene (`a44f86b1`)
+- feat(layout): layout keys, written by th::export_layer as an Animation Catalog (`9fcf0bd2`)
+- feat(layout): camera rig registry and the Layout in Animate project setting (`0815bc65`)
+- feat(delegate): eight N-rooks samples a pixel in one pass, on kept threads (`1c46b0b8`)
+- feat(delegate): anti-aliased ambient occlusion, worked out per sample (`936d75a6`)
+- feat(delegate): render buffer + post pass with three-tier AO and lit/clay/albedo shading (`af75f93f`)
+- feat(ui): shot slate, the shot under a look-through camera (`74d51e1a`)
+
+### Fixes
+- fix(animate): warn when Fast mode leaves out SOPs after the Scene Invoke (`7cd76db1`)
+- fix(config-editor): editing a value in a nested array works again (`34033c3b`)
+- fix(wizard): an unreadable version.json stops the migration; the lock is atomic (`e62a3a00`)
+- fix(config): an export carries its entity's fps, not the project's (`f8cc5ea0`)
+- fix(farm): a playblast whose husk died part way fails the job (`a80fd51f`)
+- fix(farm): the publish worker exports shared layers headless (`baf7a5e8`)
+- fix(asset-browser): a scene swap saves the artist's scene, not the next one (`d6cfd72e`)
+- fix(templates): the animation camera shows the animator's camera keys (`17af394d`)
+- fix(anim): a Multi member reads its layout placement at its own first frame (`39f8e1c4`)
+- fix(player): the player no longer holds Houdini's output open (`ce03840f`)
+- fix(player): thumbnails never wait behind a window of renders; CI runs the whole player (`5af88691`)
+- fix(player): burn-ins never wait for a decode; a stale decode never stalls the window (`c3b7be38`)
+- fix(slate): read the workfile through scene_context, the one resolver (`5430ca64`)
+- fix(slate): follow frame range edits; read the shared timeline once per refresh (`bcc113aa`)
+- fix(delegate): smooth normals with Houdini's 60 degree cusp, not flat (`431608f2`)
+
+### Performance
+- perf(delegate): average a blurred frame's chunks on the GPU, one read-back (`ec50a94f`)
+- perf(delegate): update a mesh by its points alone when only they are dirty (`a53b2740`)
+- perf(delegate): bin still instances once per motion-blurred frame (`2327422f`)
+- perf(delegate): transform still instances once per blurred frame (`fa0ccfca`)
+- perf(playblast): the viewport renderer skips Houdini procedurals (`bf806cda`)
+
+### Refactors
+- refactor(player): bindings hold only the FFmpeg th_media uses (`a384120c`)
+- refactor(player): strict JSON playlist on stdin, a session model, one engine (`8cf5f6f8`)
+
+### Documentation
+- docs(tests): what test_animate_bake pins for post-Invoke SOPs (#18) (`d725a9fd`)
+- docs: sum.wgsl in the delegate build notes (`7a2bc4a8`)
+- docs: playblast timings after the perf pass; the tests it added (`94a9f2f0`)
+- docs: troubleshooting for a sharp blurred playblast; blur.rs in the build notes (`803749d9`)
+- docs(development): the delegate's GPU path runs the post pass and keeps meshes on the card (`3b205f17`)
+- docs: the scene-switch save, the farm playblast's frames, the migration lock (`35ad2d1b`)
+- docs(compositing): the 010 timing matches, and TH_PLAYBLAST_TIMING is described (`881b7699`)
+- docs(tests): the README names the viewport-procedurals property (`b323bda5`)
+- docs(settings): the shot slate, its toggle and prefs (`d8fbe64c`)
+- docs(delegate): post-pass timing, th:shading/th:ao settings; share the thread count (`932cc5b7`)
+- docs: regenerate CHANGELOG.md for v1.86.0 (`552687cd`)
+
+### Tests
+- test(resolver): keep the proptest regression seed (`67810ec4`)
+- test(delegate): post-pass, projection, cross-language and husk shading checks (`38a54962`)
+
+### Other Changes
+- Merge fix/animate-fast-post-invoke: warn when Fast mode skips post-Invoke SOPs (#18) (`7e59c152`)
+- Merge perf/playblast: faster blurred playblasts, byte-identical pictures (`a72e762f`)
+- Merge feat/playblast-blur: motion blur and depth of field in the playblast renderer (`18064963`)
+- Merge feat/layout-keys: Layout in Animate (PRs #15, #16, #17) (`6ac5fecd`)
+- Merge remote-tracking branch 'origin/master' (`5539d09b`)
+- Merge remote-tracking branch 'origin/master' into feat/playblast-ao-antialias (`4f8c00e6`)
+- Merge branch 'master' into feat/playblast-ao-antialias (`ced7c17b`)
+- th::layout_keys: Discover starts a row's frame range at the shot's range (`b364541c`)
+- style(player): a rustfmt config that fits the code; CI checks fmt and clippy (`66a10b36`)
+- Merge pull request 'feat(ui): shot slate, the shot under a look-through camera' (#14) from feat/shot-slate into master (`e1504fdc`)
+- Merge remote-tracking branch 'origin/master' into spike/hydra-delegate (`35883f38`)
+
 ## v1.86.0 — 2026-10-30
 
 ### Features

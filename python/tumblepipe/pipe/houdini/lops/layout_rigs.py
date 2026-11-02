@@ -177,10 +177,22 @@ def _hide(dive, previous, prims):
 
 def _add_camera(dive, previous, shot_uri):
     """The shot camera's rig: the registered package's, else SideFX's on
-    CAMERA_PATH. The new last LOP."""
+    CAMERA_PATH. A package hook that fails or adds nothing (its rig not
+    installed) falls back to SideFX's, so layout never depends on another
+    package. The new last LOP."""
     rig = shot_rigs.camera_rig()
     if rig is not None and rig.layout is not None:
-        return rig.layout(previous, shot_uri, CAMERA_RIG_PATH) or previous
+        before = set(dive.children())
+        try:
+            last = rig.layout(previous, shot_uri, CAMERA_RIG_PATH)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            last = None
+        if last is not None:
+            return last
+        for node in set(dive.children()) - before:
+            node.destroy()
     camera = dive.createNode('configureapexrig', 'camera_rig')
     camera.setInput(0, previous)
     camera.parm('rigtype').set('camera')
@@ -380,15 +392,59 @@ def baked_camera_path(bake_node) -> str:
     """The camera the publish grafts to CAMERA_PATH, on the baked stage: the
     camera rig's under CAMERA_RIG_PATH (a registered rig), else CAMERA_PATH
     itself (SideFX's rig on the shot camera)."""
-    from pxr import UsdGeom
+    from pxr import Usd, UsdGeom
 
     stage = bake_node.stage() if bake_node is not None else None
     root = stage.GetPrimAtPath(CAMERA_RIG_PATH) if stage is not None else None
     if root is not None and root.IsValid():
-        for prim in [root] + list(root.GetAllDescendants()):
+        # Usd.PrimRange: Houdini 22's USD has no Prim.GetAllDescendants
+        for prim in Usd.PrimRange(root):
             if prim.IsA(UsdGeom.Camera):
                 return str(prim.GetPath())
     return shot_rigs.CAMERA_PATH
+
+
+#: A camera's lens attributes in millimetres (Houdini's Camera LOP).
+LENS_ATTRS = ('focalLength', 'horizontalAperture', 'verticalAperture',
+              'horizontalApertureOffset', 'verticalApertureOffset')
+
+
+def publish_lens(node) -> bool:
+    """The publish branch's last Python LOP: a camera rig from SOPs reaches
+    the stage with its lens in tenths of a scene unit (Houdini's SOP to USD
+    camera conversion: 35 mm becomes focalLength 0.35), while every other
+    department reads CAMERA_PATH in millimetres as Houdini's Camera LOP
+    writes it. Scales focal length and apertures back by 100 when the
+    grafted camera's focal length is under 1 (no real lens is); the field of
+    view is the same either way, depth of field and the lens readouts are
+    not. Returns whether it scaled."""
+    from pxr import Usd, UsdGeom
+
+    stage = node.editableStage()
+    prim = stage.GetPrimAtPath(shot_rigs.CAMERA_PATH)
+    if not prim or not prim.IsA(UsdGeom.Camera):
+        return False
+    focal = prim.GetAttribute('focalLength')
+    times = focal.GetTimeSamples() if focal else []
+    first = focal.Get(times[0] if times else Usd.TimeCode.Default()) if focal else None
+    if first is None or first >= 1.0:
+        return False
+    for name in LENS_ATTRS:
+        attr = prim.GetAttribute(name)
+        if not attr or not attr.HasAuthoredValue():
+            continue
+        times = attr.GetTimeSamples()
+        for time in times or [Usd.TimeCode.Default()]:
+            value = attr.Get(time)
+            if value is not None:
+                attr.Set(value * 100.0, time)
+    return True
+
+
+_LENS_SNIPPET = '''from tumblepipe.pipe.houdini.lops import layout_rigs
+# Built by the layout template: the shot camera's lens in millimetres.
+layout_rigs.publish_lens(hou.pwd())
+'''
 
 
 def add_layout_animate(scene_node, camera_node, entity_uri, suffix: str = ''):
@@ -398,8 +454,9 @@ def add_layout_animate(scene_node, camera_node, entity_uri, suffix: str = ''):
     Layout: th::layout_rigs (discovered, built) -> APEX Animate, displayed.
     Publish: the shot as it arrives at ``camera_node`` -> each asset placed
     from the keys (a Python LOP) -> the camera baked from the scene grafted
-    to CAMERA_PATH. The export finds the APEX Animate up its inputs and
-    writes the keys beside the layer."""
+    to CAMERA_PATH -> its lens in millimetres (:func:`publish_lens`). The
+    export finds the APEX Animate up its inputs and writes the keys beside
+    the layer."""
     rigs = create(scene_node, f'layout_rigs{suffix}')
     rigs.native().setInput(0, camera_node)
     rigs.discover()
@@ -422,4 +479,7 @@ def add_layout_animate(scene_node, camera_node, entity_uri, suffix: str = ''):
     graft.parm('destasparent').set(0)
     graft.parm('srcprimpath1').setExpression(_CAMERA_SOURCE, hou.exprLanguage.Python)
     graft.parm('dstprimpath1').set(shot_rigs.CAMERA_PATH)
-    return graft
+    lens = scene_node.createNode('pythonscript', f'layout_camera_lens{suffix}')
+    lens.setInput(0, graft)
+    lens.parm('python').set(_LENS_SNIPPET)
+    return lens
