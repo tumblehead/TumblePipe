@@ -35,4 +35,24 @@
         parmtag { "script_action_icon" "BUTTONS_reselect" }
         parmtag { "sidefx::usdpathtype" "primlist" }
     }
+    parm {
+        name    "timesample"
+        label   "Time Sample"
+        type    ordinal
+        default { "static" }
+        menu {
+            "static"    "Static"
+            "animated"  "Animated"
+        }
+        parmtag { "autoscope" "0000000000000000" }
+    }
+    parm {
+        name    "staticimportframe"
+        label   "Static Frame"
+        type    float
+        default { [ "$FSTART" hscript-expr ] }
+        hidewhen "{ timesample != static }"
+        range   { 0 10 }
+        parmtag { "autoscope" "0000000000000000" }
+    }
 }

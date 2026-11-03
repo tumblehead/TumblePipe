@@ -184,18 +184,27 @@
             "children": {
                 "shots": {
                     "properties": {},
-                    "children": {}
+                    "children": {
+                        "group": {
+                            "properties": {
+                                "members": [],
+                                "departments": []
+                            },
+                            "children": {}
+                        }
+                    }
                 },
                 "assets": {
                     "properties": {},
-                    "children": {}
-                },
-                "group": {
-                    "properties": {
-                        "members": [],
-                        "departments": []
-                    },
-                    "children": {}
+                    "children": {
+                        "group": {
+                            "properties": {
+                                "members": [],
+                                "departments": []
+                            },
+                            "children": {}
+                        }
+                    }
                 }
             }
         },

@@ -382,3 +382,72 @@ mod tests {
         }
     }
 }
+
+unsafe fn int_slice<'a>(ptr: *const i32, count: u32) -> &'a [i32] {
+    if ptr.is_null() || count == 0 {
+        &[]
+    } else {
+        slice::from_raw_parts(ptr, count as usize)
+    }
+}
+
+/// Triangulate a polygon mesh ([`crate::triangulate`]): Hydra's fan for a
+/// convex face, ear clipping for a concave one, so a face with a notch or a
+/// window keeps it. Writes up to `capacity` triangles: three `corners` each
+/// (positions in `indices`, which is also where a face-varying primvar's
+/// values are) and one `faces` entry (the face, for a uniform primvar).
+/// `left_handed` nonzero reverses the winding. Returns the number of
+/// triangles, or `u32::MAX` when the topology does not add up, `capacity`
+/// is short, or an argument is null.
+///
+/// # Safety
+/// Every pointer must be valid for the count it is given with: `points`
+/// for `point_count` xyz triples, `corners` for `3 * capacity` and `faces`
+/// for `capacity` writes.
+#[no_mangle]
+pub unsafe extern "C" fn th_triangulate(
+    points: *const f32,
+    point_count: u32,
+    counts: *const i32,
+    count_n: u32,
+    indices: *const i32,
+    index_n: u32,
+    holes: *const i32,
+    hole_n: u32,
+    left_handed: u32,
+    corners: *mut u32,
+    faces: *mut u32,
+    capacity: u32,
+) -> u32 {
+    let mut written = u32::MAX;
+    ffi_guard(|| {
+        if corners.is_null() || faces.is_null() || (points.is_null() && point_count > 0) {
+            return TH_ERR_ARGS;
+        }
+        let pts: &[Vec3] = if point_count == 0 {
+            &[]
+        } else {
+            slice::from_raw_parts(points as *const Vec3, point_count as usize)
+        };
+        let Some((tris, fs)) = crate::triangulate::triangulate(
+            pts,
+            int_slice(counts, count_n),
+            int_slice(indices, index_n),
+            int_slice(holes, hole_n),
+            left_handed != 0,
+        ) else {
+            return TH_ERR_ARGS;
+        };
+        if tris.len() > capacity as usize {
+            return TH_ERR_ARGS;
+        }
+        let out_c = slice::from_raw_parts_mut(corners, tris.len() * 3);
+        for (dst, t) in out_c.chunks_exact_mut(3).zip(&tris) {
+            dst.copy_from_slice(t);
+        }
+        slice::from_raw_parts_mut(faces, fs.len()).copy_from_slice(&fs);
+        written = tris.len() as u32;
+        TH_OK
+    });
+    written
+}

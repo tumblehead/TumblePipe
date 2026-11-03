@@ -542,6 +542,9 @@ class EntityOps:
                 entity_uri,
                 {"frame_start": frame_start, "frame_end": frame_end},
             )
+            # A shot made in a sequence a Multi lists joins that Multi.
+            from tumblepipe.config.groups import place_new_members
+            place_new_members([entity_uri])
             self._index.invalidate(assets=False)
             return uris.asset_id_for(proj_name, entity_uri)
 
@@ -612,6 +615,7 @@ class EntityOps:
         import hou
         from PySide6.QtWidgets import QInputDialog
 
+        from tumblepipe.config.groups import place_new_members
         from tumblepipe.pipe import entity_files
         from tumblepipe.pipe.usd.instances import has_published_rig
 
@@ -693,6 +697,7 @@ class EntityOps:
                 stage_roots=on_project(stage_roots),
                 rigged=on_project(has_published_rig),
                 multi_rename_blocker=on_project(multi_rename_blocker),
+                place=on_project(place_new_members),
             ),
             parent=hou.qt.mainWindow(),
             kind=kind,

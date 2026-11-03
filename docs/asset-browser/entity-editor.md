@@ -14,7 +14,8 @@ one raw property at a time; this is the friendly way. Source:
 ## Opening it
 
 - The **Entity Editor** button on the toolbar, beside **Render**: opens
-  the open workfile's project on its shot or asset, selected (on Shots
+  the open workfile's project on its shot or asset, selected, or on the
+  **Multis** tab with its Multi selected in a Multi's workfile (on Shots
   with no workfile open).
 - **Entity Editor...** in the creation list of the **Assets** and **Shots**
   headers, a category or sequence row, the **+** card and the empty-space
@@ -164,7 +165,9 @@ Status.
 **On the Multis tab.** One row per Multi of the kind the dropdown shows
 (**Shots** or **Assets**), with **Multi** (its name: edit to rename),
 **Status**, **Members** (a count: double-click for a list of every row of
-the kind, ticked where it is a member) and a tick box for each department
+the kind, ticked where it is a member, with each sequence or category at the
+top to tick whole; see
+[A whole sequence](multis-and-roots.md#a-whole-sequence)) and a tick box for each department
 in the pool, in pipeline order. Ticking a box covers that department; with
 several cells of a column selected, one tick sets them all. **Add Multi…**
 asks for a name and the departments (all of the pool to start with) and can

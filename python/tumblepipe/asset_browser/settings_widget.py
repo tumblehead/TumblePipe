@@ -294,6 +294,29 @@ class PipelineSettingsWidget(QWidget):
 
         self._refresh_list()
 
+    def _save_pref(self, what: str, **changes) -> None:
+        """Save the named prefs and bring the catalog's copy up to date.
+
+        Only these keys are written, over a fresh read of the file, so a
+        toggle here cannot put back what Farm Submit or the shot slate saved
+        since this page loaded (:func:`prefs.update_prefs`). The catalog's
+        object is updated in place: the scene controller holds the same one.
+        On failure the in-memory value still changes, since that is what the
+        catalog reads; the report says it will not survive a restart.
+        """
+        from dataclasses import fields
+        from .prefs import update_prefs
+        current = self._catalog._prefs
+        for name, value in changes.items():
+            setattr(current, name, value)
+        try:
+            saved = update_prefs(**changes)
+        except Exception as exc:
+            report_failure(what, exc)
+            return
+        for f in fields(saved):
+            setattr(current, f.name, getattr(saved, f.name))
+
     def _on_autosave_toggled(self, checked: bool) -> None:
         """Persist the autosave-on-scene-change pref immediately on toggle.
 
@@ -302,15 +325,7 @@ class PipelineSettingsWidget(QWidget):
         click keeps the in-memory catalog state and the on-disk JSON in
         sync without needing the user to remember to apply.
         """
-        from .prefs import save_prefs
-        self._catalog._prefs.autosave_on_scene_change = bool(checked)
-        try:
-            save_prefs(self._catalog._prefs)
-        except Exception as exc:
-            # Don't roll back the checkbox — the in-memory pref is what
-            # the catalog reads at scene-swap time; the report says it
-            # will not survive a restart.
-            report_failure("Saving the autosave preference", exc)
+        self._save_pref("Saving the autosave preference", autosave_on_scene_change=bool(checked))
 
     def _on_auto_refresh_toggled(self, checked: bool) -> None:
         """Persist the auto-import-on-open pref immediately on toggle.
@@ -320,33 +335,18 @@ class PipelineSettingsWidget(QWidget):
         in-memory pref (read at workfile-open time) and the on-disk JSON
         stay in sync without the Apply button.
         """
-        from .prefs import save_prefs
-        self._catalog._prefs.auto_refresh_on_open = bool(checked)
-        try:
-            save_prefs(self._catalog._prefs)
-        except Exception as exc:
-            report_failure("Saving the auto-import preference", exc)
+        self._save_pref("Saving the auto-import preference", auto_refresh_on_open=bool(checked))
 
     def _on_hide_unused_toggled(self, checked: bool) -> None:
         """Hide or show departments with no workfile: saved on every click
         like the toggles here, and the cards rebuild at once."""
-        from .prefs import save_prefs
-        self._catalog._prefs.hide_unused_departments = bool(checked)
-        try:
-            save_prefs(self._catalog._prefs)
-        except Exception as exc:
-            report_failure("Saving the hide-departments preference", exc)
+        self._save_pref("Saving the hide-departments preference", hide_unused_departments=bool(checked))
         self._catalog._refresh.grid()
 
     def _on_shot_slate_toggled(self, checked: bool) -> None:
         """The shot slate on / off: saved on every click like the toggles
         here, and the running slate follows at once."""
-        from .prefs import save_prefs
-        self._catalog._prefs.shot_slate = bool(checked)
-        try:
-            save_prefs(self._catalog._prefs)
-        except Exception as exc:
-            report_failure("Saving the shot slate preference", exc)
+        self._save_pref("Saving the shot slate preference", shot_slate=bool(checked))
         try:
             from tumblepipe.pipe.houdini.ui import shot_slate
             shot_slate.set_enabled(bool(checked), save=False)
@@ -393,12 +393,7 @@ class PipelineSettingsWidget(QWidget):
         pref (read at save time) and the on-disk JSON stay in sync without
         the Apply button.
         """
-        from .prefs import save_prefs
-        self._catalog._prefs.prompt_note_on_save = bool(checked)
-        try:
-            save_prefs(self._catalog._prefs)
-        except Exception as exc:
-            report_failure("Saving the version-note preference", exc)
+        self._save_pref("Saving the version-note preference", prompt_note_on_save=bool(checked))
 
     # ── Helpers ───────────────────────────────────────
 

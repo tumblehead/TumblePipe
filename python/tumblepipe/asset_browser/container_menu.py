@@ -16,7 +16,7 @@ that can take minutes) are about Roots, so they are here now.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from tumbletrove.asset_browser.api.types import ContainerAction
 
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 KIND_LABELS = {"group": "Multi", "scene": "Root"}
 
 OPEN_LOCATION = "open_location"
+ADD_ENTITY = "add_entity"
 STAGE_AND_BUILD = "stage_and_build"
 EXPORT_ROOT = "export_root"
 REBUILD_SHOTS = "rebuild_shots"
@@ -59,18 +60,26 @@ class ContainerMenu:
     """The catalog's container-menu entries, over the ContainerManager
     that does the work."""
 
-    def __init__(self, manager: "ContainerManager") -> None:
+    def __init__(
+        self, manager: "ContainerManager",
+        open_entity_editor: Callable[[str], None],
+    ) -> None:
         self._containers = manager
+        # A Multi card's Open in Entity Editor (EntityOps), for Add Entity.
+        self._open_entity_editor = open_entity_editor
 
     def kind_label(self, kind: str) -> str:
         return KIND_LABELS[kind]
 
     def actions(self, collection_id: str, kind: str) -> list[ContainerAction]:
-        """Open Location on both kinds; the Root's export and rebuilds on a
-        Root. The export is an explicit action because
-        ``export_scene_version`` is too heavy to run on every membership
-        edit."""
+        """Open Location on both kinds; on a Multi, Add Entity (the Entity
+        Editor on that Multi, its members listed, to add more); the Root's
+        export and rebuilds on a Root. The export is an explicit action
+        because ``export_scene_version`` is too heavy to run on every
+        membership edit."""
         actions = [ContainerAction(OPEN_LOCATION, "Open Location")]
+        if kind == "group":
+            actions.append(ContainerAction(ADD_ENTITY, "Add Entity…"))
         if kind == "scene":
             actions += [
                 ContainerAction(STAGE_AND_BUILD, "Stage Root && Rebuild Shots…"),
@@ -93,6 +102,11 @@ class ContainerMenu:
         label = ref.path
         if action_id == OPEN_LOCATION:
             self._containers.open_container_location(collection_id)
+            return ""
+        if action_id == ADD_ENTITY:
+            if not isinstance(ref, containers.GroupContainer):
+                raise ValueError(f"Add Entity is a Multi's, not {collection_id!r}'s")
+            self._open_entity_editor(collection_id)
             return ""
         if action_id == EXPORT_ROOT:
             if self._containers.export_root_usd(collection_id):

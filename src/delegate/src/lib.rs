@@ -32,6 +32,7 @@ pub mod math;
 mod pool;
 pub mod raster;
 pub mod texture;
+pub mod triangulate;
 
 #[cfg(test)]
 mod props;

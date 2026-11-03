@@ -64,6 +64,18 @@ struct ThFrame {
 int32_t th_render(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_count,
                   float* color, float* depth, ThCache const* cache);
 
+// Triangles of a polygon mesh: Hydra's fan for a convex face, ear clipping
+// for a concave one (src/triangulate.rs). Per triangle, three `corners`
+// (positions in `indices`, where face-varying values are too) and its face.
+// Returns the triangle count, or UINT32_MAX for a topology that does not add
+// up, a short `capacity` (the sum of count - 2 over faces is enough) or a
+// null output.
+uint32_t th_triangulate(float const* points, uint32_t point_count,
+                        int32_t const* counts, uint32_t count_n,
+                        int32_t const* indices, uint32_t index_n,
+                        int32_t const* holes, uint32_t hole_n, uint32_t left_handed,
+                        uint32_t* corners, uint32_t* faces, uint32_t capacity);
+
 // One per render delegate; freed with it.
 ThCache* th_cache_create();
 void th_cache_free(ThCache* cache);

@@ -1,6 +1,9 @@
 """Prune a project's farm job folders once Deadline can no longer need them.
 
-    python -m tumblepipe.prune [project] [--apply] [--min-age-days 2]
+    python -m tumblepipe.prune [jobs] [project] [--apply] [--min-age-days 2]
+    python -m tumblepipe.prune exports [project] [--keep 3] [--context shots] [--apply]
+
+``exports`` prunes old export versions instead (``tumblepipe.prune_exports``).
 
 Every farm submission writes a folder under ``export/other/jobs/<uuid>/``: a
 copy of the workfile and the job's environment, manifest and arguments. The
@@ -242,6 +245,12 @@ def _export_path(project: Path) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ['exports']:
+        from tumblepipe import prune_exports
+        return prune_exports.main(argv[1:])
+    if argv[:1] == ['jobs']:
+        argv = argv[1:]
     parser = argparse.ArgumentParser(prog='python -m tumblepipe.prune', description=__doc__.split('\n\n')[0])
     parser.add_argument('project', nargs='?', help='project folder (default: $TH_PROJECT_PATH)')
     parser.add_argument('--apply', action='store_true',

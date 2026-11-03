@@ -1062,22 +1062,69 @@ class Sheet:
             if isinstance(member, int) and member in self._by_id
         ]
 
+    def group_member(self, group: str) -> str:
+        """The member a whole group (sequence or category) is listed as:
+        its URI string, as ``config.groups`` stores it."""
+        return str(self.kind.root / group)
+
+    def _member_group(self, member) -> str | None:
+        """The group ``member`` stands for, when it is a listed group of
+        the sheet (every row in it, and any made in it later, is in the
+        Multi); None for a row or a stray."""
+        if not isinstance(member, str):
+            return None
+        prefix = f'{self.kind.root}/'
+        if not member.startswith(prefix):
+            return None
+        name = member[len(prefix):]
+        return name if '/' not in name and name in self.groups() else None
+
+    def multi_groups(self, multi: Multi) -> list[str]:
+        """The groups ``multi`` lists whole, in its order."""
+        return [g for g in map(self._member_group, multi.members) if g is not None]
+
     def multi_strays(self, multi: Multi) -> list[str]:
         """Members the project no longer has: kept as stored."""
-        return [member for member in multi.members if isinstance(member, str)]
+        return [
+            member for member in multi.members
+            if isinstance(member, str) and self._member_group(member) is None
+        ]
+
+    def covers(self, multi: Multi, row: Row, base: bool = False) -> bool:
+        """Whether ``multi`` has ``row`` as a member: listed itself, or in
+        a group it lists. ``base``: as loaded, before the sheet's edits."""
+        if base:
+            if multi.is_new or row.origin is None:
+                return False
+            members = multi.base_members
+            group = row.origin.uri.segments[-2] if len(row.origin.uri.segments) > 1 else ''
+        else:
+            members, group = multi.members, row.group
+        return row.id in members or (bool(group) and self.group_member(group) in members)
+
+    def multi_covered_rows(self, multi: Multi) -> list[Row]:
+        """Every live row ``multi`` has as a member: the rows it lists, then
+        the rows of the groups it lists."""
+        groups = set(self.multi_groups(multi))
+        listed = self.multi_rows(multi)
+        seen = {row.id for row in listed}
+        return [row for row in listed if not row.retire] + [
+            row for row in self._rows
+            if not row.retire and row.group in groups and row.id not in seen
+        ]
 
     def row_multis(self, row: Row) -> list[Multi]:
-        """The Multis that will list ``row``; none for a row being retired
-        (retiring takes it out of every Multi)."""
+        """The Multis that will have ``row`` as a member; none for a row
+        being retired (retiring takes it out of every Multi)."""
         if row.retire:
             return []
-        return [m for m in self._multis if not m.retire and row.id in m.members]
+        return [m for m in self._multis if not m.retire and self.covers(m, row)]
 
     def membership_pending(self, row: Row) -> bool:
-        """Whether Apply changes which Multis list ``row``."""
+        """Whether Apply changes which Multis have ``row`` as a member."""
         for multi in self._multis:
-            now = row.id in multi.members and not multi.retire
-            before = not multi.is_new and row.id in multi.base_members
+            now = self.covers(multi, row) and not multi.retire
+            before = self.covers(multi, row, base=True)
             if now != before:
                 return True
         return False
@@ -1168,14 +1215,32 @@ class Sheet:
             multi.members[:] = [m for m in multi.members if m not in ids]
         return True
 
-    def set_multi_members(self, multi_id: int, row_ids: Iterable[int]) -> bool:
-        """The Multi lists exactly these rows (members the project no longer
-        has stay listed)."""
+    def set_multi_members(
+        self, multi_id: int, row_ids: Iterable[int],
+        groups: Iterable[str] | None = None,
+    ) -> bool:
+        """The Multi lists exactly these rows, and these groups whole when
+        ``groups`` is given (None keeps the groups it lists). Members the
+        project no longer has stay listed. A row in a listed group is not
+        listed again, but one listed before stays."""
         multi = self.multi(multi_id)
-        wanted = self._live_ids(row_ids)
+        known = set(self.groups())
+        listed_groups = (
+            self.multi_groups(multi) if groups is None
+            else [g for g in dict.fromkeys(groups) if g in known]
+        )
+        group_members = [self.group_member(g) for g in listed_groups]
+        wanted = [
+            row_id for row_id in self._live_ids(row_ids)
+            if row_id in multi.members or self._by_id[row_id].group not in listed_groups
+        ]
         members = [
-            m for m in multi.members if isinstance(m, str) or m in wanted
-        ] + [row_id for row_id in wanted if row_id not in multi.members]
+            m for m in multi.members
+            if (isinstance(m, str) and self._member_group(m) is None)
+            or m in wanted or m in group_members
+        ]
+        members += [g for g in group_members if g not in members]
+        members += [row_id for row_id in wanted if row_id not in members]
         if multi.retire or members == multi.members:
             return False
         self._changing()
@@ -1269,17 +1334,18 @@ class Sheet:
     def _overlap(self, multi: Multi) -> str:
         """A member whose department another Multi covers too: which Multi's
         workfile it opens would be a guess (``config.groups.find_group``
-        takes the first)."""
-        for member in multi.members:
-            if isinstance(member, int):
-                row = self._by_id.get(member)
-                if row is None or row.retire:
-                    continue
-                label = row.name
-            else:
-                label = member.rsplit('/', 1)[-1]
+        takes the first). A listed group is checked row by row."""
+        members: list = [row for row in self.multi_covered_rows(multi)]
+        members += self.multi_strays(multi)
+        for member in members:
+            label = member.name if isinstance(member, Row) else member.rsplit('/', 1)[-1]
             for other in self._multis:
-                if other is multi or other.retire or member not in other.members:
+                if other is multi or other.retire:
+                    continue
+                if isinstance(member, Row):
+                    if not self.covers(other, member):
+                        continue
+                elif member not in other.members:
                     continue
                 shared = [d for d in multi.departments if d in other.departments]
                 if shared:

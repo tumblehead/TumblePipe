@@ -181,7 +181,9 @@ class EntityEditorSource:
     (``pipe.root_staging.sync_roots`` on this project) and returns what it
     did, for the footer. ``rigged`` says whether an asset has a rig
     published (``pipe.usd.instances.has_published_rig`` on this project),
-    shown beside its Animatable box.
+    shown beside its Animatable box. ``place`` gives new members a place
+    on their Multis' shared timelines (``config.groups.place_new_members``
+    on this project), handed the Multis and shots an Apply wrote.
     """
     project: str
     config: object
@@ -192,6 +194,7 @@ class EntityEditorSource:
     stage_roots: Callable[[], str] = lambda: ''
     rigged: Callable[[Uri], bool] = lambda uri: False
     multi_rename_blocker: Callable[[Uri], str] = lambda uri: ''
+    place: Callable[[list[Uri]], None] = lambda uris: None
 
 
 def _hint(text: str = '') -> QLabel:
@@ -1867,8 +1870,9 @@ class _SheetPane(QWidget):
         live = [m for m in self.sheet.multis if not m.retire]
         add = menu.addMenu('Add to Multi')
         remove = menu.addMenu('Remove from Multi')
+        rows = {i: self.sheet.row(i) for i in ids}
         for multi in live:
-            if any(i not in multi.members for i in ids):
+            if any(not self.sheet.covers(multi, rows[i]) for i in ids):
                 action = add.addAction(multi.name)
                 action.triggered.connect(lambda _c=False, m=multi.id: self.set_membership(m, True))
             if any(i in multi.members for i in ids):
@@ -2068,6 +2072,17 @@ class _CheckList(QWidget):
                 return
         raise KeyError(data)
 
+    def items(self) -> list[QTableWidgetItem]:
+        return list(self._items)
+
+    def set_locked(self, item: QTableWidgetItem, locked: bool, state) -> None:
+        """Show ``item`` ticked as ``state`` and, when ``locked``, greyed
+        and not tickable (``checked`` leaves it out)."""
+        flags = Qt.ItemIsEnabled if locked else Qt.ItemIsEnabled | Qt.ItemIsUserCheckable
+        item.setFlags(flags)
+        item.setForeground(_INHERITED if locked else QBrush())
+        item.setCheckState(state)
+
 
 class NewMultiDialog(QDialog):
     """Name a Multi and tick the departments it covers (all of them to
@@ -2160,15 +2175,21 @@ class MultiMembershipDialog(QDialog):
         for multi in sheet.multis:
             if multi.retire:
                 continue
-            inside = sum(row.id in multi.members for row in rows)
+            inside = sum(sheet.covers(multi, row) for row in rows)
+            # A row in a sequence the Multi lists whole stays in while the
+            # sequence does: shown ticked, and not changed here.
+            whole = [row for row in rows if sheet.covers(multi, row) and row.id not in multi.members]
             state = (
                 Qt.Checked if inside == len(rows)
                 else Qt.Unchecked if inside == 0 else Qt.PartiallyChecked
             )
             self._before[multi.id] = state
+            detail = ', '.join(multi.departments) or 'no departments'
+            if whole:
+                detail += f'; whole {kind.group} {whole[0].group} listed'
             self.list.add(
-                _multi_label(multi), multi.id, state,
-                ', '.join(multi.departments) or 'no departments',
+                _multi_label(multi), multi.id, state, detail,
+                enabled=not whole,
                 tristate=state == Qt.PartiallyChecked,
             )
         layout.addWidget(self.list, 1)
@@ -2208,7 +2229,23 @@ class MultiMembersDialog(QDialog):
         self.setWindowTitle(f'Members of {_multi_label(multi)}')
         self.resize(scaled(460), scaled(560))
         layout = QVBoxLayout(self)
+        self._multi = multi
         self.list = _CheckList(f'Filter {kind.item}s', (kind.item.capitalize(), 'Also in'))
+        # Whole sequences (categories) first. Ticked, every shot in it, and
+        # any made in it later, is a member; its rows below show ticked and
+        # greyed (take the sequence out to change them one by one).
+        listed = set(sheet.multi_groups(multi))
+        groups = [
+            g for g in sheet.groups()
+            if g in listed or any(r.group == g and not r.retire for r in sheet.rows)
+        ]
+        for group in groups:
+            self.list.add(
+                f'{group}  (whole {kind.group})', ('group', group),
+                Qt.Checked if group in listed else Qt.Unchecked,
+                f'every {kind.item} in it, and new ones',
+            )
+        self._row_group: dict[int, str] = {}
         for row in sheet.rows:
             if row.retire:
                 continue
@@ -2218,6 +2255,13 @@ class MultiMembersDialog(QDialog):
                 Qt.Checked if row.id in multi.members else Qt.Unchecked,
                 ', '.join(others),
             )
+            self._row_group[row.id] = row.group
+        # What a row was before its sequence greyed it, to give back when
+        # the sequence is unticked again.
+        self._own: dict[int, object] = {}
+        self._following = False
+        self.list.table.itemChanged.connect(lambda _item: self._follow_groups())
+        self._follow_groups()
         for stray in sheet.multi_strays(multi):
             self.list.add(
                 stray.removeprefix(f'{kind.root}/'), stray, Qt.Checked,
@@ -2233,8 +2277,45 @@ class MultiMembersDialog(QDialog):
         buttons.addWidget(ok)
         layout.addLayout(buttons)
 
+    def _ticked_groups(self) -> set[str]:
+        return {
+            item.data(Qt.UserRole)[1] for item in self.list.items()
+            if isinstance(item.data(Qt.UserRole), tuple)
+            and item.checkState() == Qt.Checked
+        }
+
+    def _follow_groups(self) -> None:
+        """Grey (and tick) the rows of every ticked sequence; give the rest
+        back the tick they had."""
+        if self._following:
+            return
+        self._following = True
+        try:
+            groups = self._ticked_groups()
+            for item in self.list.items():
+                row_id = item.data(Qt.UserRole)
+                if not isinstance(row_id, int):
+                    continue
+                inside = self._row_group.get(row_id) in groups
+                if inside and row_id not in self._own:
+                    self._own[row_id] = item.checkState()
+                    self.list.set_locked(item, True, Qt.Checked)
+                elif not inside and row_id in self._own:
+                    self.list.set_locked(item, False, self._own.pop(row_id))
+        finally:
+            self._following = False
+
+    def groups(self) -> list[str]:
+        """The sequences (categories) ticked whole."""
+        return sorted(self._ticked_groups())
+
     def row_ids(self) -> list[int]:
-        return [data for data in self.list.checked() if isinstance(data, int)]
+        """The rows ticked one by one; a row a ticked sequence greys counts
+        as it was before (the sheet keeps it listed only if it was)."""
+        ticked = [data for data in self.list.checked() if isinstance(data, int)]
+        return ticked + [
+            row_id for row_id, state in self._own.items() if state == Qt.Checked
+        ]
 
 
 class _MultiModel(QAbstractTableModel):
@@ -2325,7 +2406,7 @@ class _MultiModel(QAbstractTableModel):
         return ', '.join(parts), _AMBER
 
     def _members_text(self, multi: es.Multi) -> str:
-        count = len(self.sheet.multi_rows(multi)) + len(self.sheet.multi_strays(multi))
+        count = len(self.sheet.multi_covered_rows(multi)) + len(self.sheet.multi_strays(multi))
         return _plural(count, self.sheet.kind.item)
 
     def data(self, index, role=Qt.DisplayRole):
@@ -2383,9 +2464,17 @@ class _MultiModel(QAbstractTableModel):
                 lines.append(f'Also covers {", ".join(extra)}, no longer a department; kept.')
             return '\n'.join(lines)
         if column == MEMBERS:
+            groups = sheet.multi_groups(multi)
             names = [f'{r.group}/{r.name}' for r in sheet.multi_rows(multi)]
             strays = sheet.multi_strays(multi)
-            lines = [_short(names, 30) or f'No {kind.item}s yet.']
+            lines = []
+            if groups:
+                lines.append(
+                    f'Whole {kind.group}: {_short(groups)}, every {kind.item} in '
+                    'it and any made in it later.'
+                )
+            if names or not groups:
+                lines.append(_short(names, 30) or f'No {kind.item}s yet.')
             if strays:
                 lines.append(
                     f'{_plural(len(strays), "member")} no longer in the project: '
@@ -2640,8 +2729,8 @@ class _MultiPane(QWidget):
         dialog = MultiMembersDialog(self, self.sheet, multi)
         if dialog.exec() != QDialog.Accepted:
             return
-        ids = dialog.row_ids()
-        self.edit(lambda: self.sheet.set_multi_members(multi.id, ids))
+        ids, groups = dialog.row_ids(), dialog.groups()
+        self.edit(lambda: self.sheet.set_multi_members(multi.id, ids, groups))
 
     def add_dialog(self) -> None:
         rows = [
@@ -3024,6 +3113,20 @@ class EntityEditorWindow(QDialog):
         except es.ApplyError as exc:
             error = exc
         else:
+            # Members the Apply added (a Multi's list, or a shot made in a
+            # listed sequence) get their place on a shared timeline, as a
+            # member added from the browser does.
+            try:
+                self.source.place([
+                    uri for _pane, change in changes
+                    for uri in (
+                        *(u for u, _ in change.create),
+                        *(u for u, _ in change.multis_create),
+                        *(u for u, _ in change.multis_update),
+                    )
+                ])
+            except Exception as exc:
+                staging_error = exc
             # A shot imports its Root's assets from files (the Root's
             # export, its root layer, its staged build), not from the
             # database: stage them now, or the layout workfile opened next

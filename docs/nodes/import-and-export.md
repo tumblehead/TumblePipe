@@ -353,6 +353,11 @@ every frame of the shot), and grafts the camera baked from the scene (Bake
 APEX Scene) to `/cameras/render_camera`. So departments after layout read
 plain USD: each character's move on its asset prim in its rest pose, the
 camera, the props. The poses travel only in the layout keys.
+
+**Build** wires the network to the dive's Output LOP with **Output Index** 0,
+whatever it is called, and makes a new `output0` when the dive has none, so
+renaming or deleting the output does not break it (before 1.89.1 Build failed
+on a dive whose `output0` was renamed).
 Source: [`layout_rigs.py`](../../python/tumblepipe/pipe/houdini/lops/layout_rigs.py).
 
 ## `th::export_asset` (LOP)
@@ -516,7 +521,10 @@ Source: [`otls/lop_th.shot_sequencer.1.0`](../../otls/lop_th.shot_sequencer.1.0/
 A dive-in SOP network (`anim_dive`) imported as animated USD over the
 incoming stage: topology animated, `P N visibility bounds Cd Alpha` and
 `transform` only, no material binding, and kinds set by depth (assembly /
-component / scope, as `set_kinds` does).
+component / scope, as `set_kinds` does). Cameras keep their type at every
+depth. At the item depth (`/<category>/<item>`) the kind is set but not the
+type, and BasisCurves are left alone: a skeleton the rig outputs as curves
+(for CFX) is exported as curves, not as an Xform.
 
 The posed geometry is world space (each rig starts at its layout
 placement, see [`th::import_rig`](assets.md#thimport_rig-sop)), so the

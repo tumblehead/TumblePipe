@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.89.1"
+version = "1.90.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -248,6 +248,15 @@ cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app restore"
 python = "3.11"
 label = "Restore Archive"
 description = "Check a TumblePipe archive and unpack it into a folder"
+
+# prune-exports: the Prune Old Exports window (tumblepipe.prune_app): lists
+# the export versions it would delete, then deletes them when confirmed. The
+# same library runs headless as `python -m tumblepipe.prune exports`.
+[scripts.prune-exports]
+cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app prune"
+python = "3.11"
+label = "Prune Old Exports"
+description = "Delete old export versions of shots and assets, keeping the newest few and anything a staged build or latest workfile still loads"
 
 [scripts.rebuild-caches]
 cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app rebuild"

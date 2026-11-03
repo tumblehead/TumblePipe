@@ -111,6 +111,27 @@ Renaming a member (in the browser or the Entity Editor) renames it in its
 Multis too, keeping its place on a shared timeline, and deleting or retiring
 it takes it out of them and off the timeline.
 
+#### A whole sequence
+
+A Multi can list a whole sequence (for an asset Multi, a whole category):
+in the Entity Editor, double-click the Multi's **Members** and tick
+***SQ010* (whole sequence)** at the top of the list. Every shot in the
+sequence is then a member, and so is any shot made in it later (with a
+shared timeline, a new shot is placed after the last one). The Multi stores
+the sequence, not its shots.
+
+- The overlap rule goes by the shots: a sequence is refused when one of its
+  shots is already in another Multi covering one of the same departments,
+  and a shot is refused from a Multi covering a department that a Multi
+  listing its sequence covers too.
+- A shot that is a member through its sequence cannot be removed on its
+  own: *SH010 comes from SQ010; remove SQ010 from the Multi instead*. Untick
+  the sequence, then tick the shots wanted one by one.
+- Deleting a shot takes it off the Multi's timeline and leaves the sequence
+  listed; deleting the sequence takes it out of the Multi.
+- An older TumblePipe reads a listed sequence as a member that does not
+  exist: update every machine on the project before using it.
+
 ### The Multi's workfiles
 
 The Multi's own rows work like a shot's, with the same right-click menu
@@ -219,10 +240,16 @@ What to know:
 - Looking through a camera, the [shot slate](settings.md#the-shot-slate)
   says which shot the playhead is in and where, in that shot's own frames.
 
-### Open Location and Delete
+### Open Location, Add Entity and Delete
 
 **Open Location** on the card or the sidebar row opens
 `<project>/groups/<context>/<name>` in Explorer, when the folder exists.
+
+**Add Entity…** on the card or the sidebar row opens the
+[Entity Editor](entity-editor.md#multis) on its Multis tab with this Multi
+selected: double-click its **Members** for every row of its kind, ticked
+where it is a member, and tick the ones to add. Handy for shots or assets
+not on screen to drag in.
 
 **Delete Multi** (card, row, or the detail panel's **Delete**) asks *Delete
 Multi 'name'? This cannot be undone from the browser.* and removes the Multi

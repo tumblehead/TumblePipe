@@ -26,13 +26,14 @@ package files, nor any Houdini install path. So this launcher:
 ``TH_USER`` comes from ``TT_USER_NAME``, which the Desktop does not yet pass
 to scripts; until it does, submissions made from here carry no user name.
 
-    python scripts/farm_launcher.py [--app farm|manager|archive|restore]
+    python scripts/farm_launcher.py [--app farm|manager|archive|restore|rebuild|prune]
                                     [--context shots|assets] [--dry-run]
 
 ``--app`` picks what runs: the Farm Submit grid (default), the Farm Manager
 (``tumblepipe.farm.manager``: local and farm jobs, their logs), the project
-archive window (``tumblepipe.archive.app``) on its Archive or Restore tab, or
-``rebuild``, which re-makes a restored project's left-out caches in hython.
+archive window (``tumblepipe.archive.app``) on its Archive or Restore tab,
+``rebuild``, which re-makes a restored project's left-out caches in hython,
+or ``prune``, the Prune Old Exports window (``tumblepipe.prune_app``).
 """
 
 from __future__ import annotations
@@ -60,6 +61,7 @@ APPS = {
     'archive': ('tumblepipe.archive.app',),
     'restore': ('tumblepipe.archive.app', '--restore'),
     'rebuild': ('tumblepipe.archive', 'rebuild'),
+    'prune': ('tumblepipe.prune_app',),
 }
 
 _VAR = re.compile(r'\$\{(\w+)\}|\$(\w+)')
@@ -127,11 +129,27 @@ def installed_houdinis() -> list[tuple[tuple[int, ...], Path]]:
     return [(v, p) for v, p in found if len(v) >= 2 and p.is_dir()]
 
 
+def hfs_version(hfs: Path) -> tuple[int, ...]:
+    """The Houdini version an ``$HFS`` names: its own folder on Windows and
+    Linux (``Houdini 22.0.457``, ``hfs22.0.457``); on macOS, where ``$HFS``
+    is ``Houdini22.0.457/Frameworks/Houdini.framework/Versions/22.0/Resources``,
+    the ``Houdini…`` folder above it. ``(0,)`` when none names one."""
+    version = parse_version(hfs.name)
+    if len(version) >= 2:
+        return version
+    for parent in hfs.parents:
+        if parent.name.lower().startswith(('houdini', 'hfs')):
+            version = parse_version(parent.name)
+            if len(version) >= 2:
+                return version
+    return (0,)
+
+
 def choose_houdini(requirements: list[str], env: dict) -> tuple[tuple[int, ...], Path]:
     """``$HFS`` when set, else the newest install meeting every requirement."""
     if env.get('HFS'):
         hfs = Path(env['HFS'])
-        return parse_version(hfs.name) or (0,), hfs
+        return hfs_version(hfs), hfs
     candidates = [
         (version, hfs) for version, hfs in installed_houdinis()
         if all(satisfies(version, r) for r in requirements if r)

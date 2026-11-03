@@ -2472,10 +2472,8 @@ class SubmitJobsDialog(QDialog):
     def remember_backend(self) -> None:
         """Open on the same choice next time; a prefs file we cannot write only loses that."""
         try:
-            from .prefs import load_prefs, save_prefs
-            prefs = load_prefs()
-            prefs.farm_backend = self.backend()
-            save_prefs(prefs)
+            from .prefs import update_prefs
+            update_prefs(farm_backend=self.backend())
         except Exception:
             log.warning("Could not remember the Farm Submit 'Run on' choice", exc_info=True)
 

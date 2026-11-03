@@ -158,7 +158,7 @@ class PipelineCatalog(Catalog):
                     self._registry.save()
 
         # Global catalog prefs (autosave-on-scene-change, …); mutators go
-        # through prefs.save_prefs so the JSON on disk stays in sync.
+        # through prefs.update_prefs so the JSON on disk stays in sync.
         from .prefs import load_prefs
         self._prefs = load_prefs()
 
@@ -207,7 +207,11 @@ class PipelineCatalog(Catalog):
             resolver=self._resolver, activator=self._activator,
             refresh=self._refresh, invalidate_cache=self.invalidate_cache,
         )
-        self._container_menu = ContainerMenu(self._containers)
+        # EntityOps is built below; its opener is looked up when picked.
+        self._container_menu = ContainerMenu(
+            self._containers,
+            open_entity_editor=lambda cid: self._ops.open_entity_editor_for(cid),
+        )
         # Recipes: node clusters saved under <project>/recipes/ (see
         # recipes.py). Nodes: every HDA this package ships, package-wide
         # (see nodes.py).
@@ -814,6 +818,13 @@ class PipelineCatalog(Catalog):
                     )
                     if len(segments) == 3 and segments[0] in ("assets", "shots"):
                         kind, group, name = segments
+                    elif (
+                        len(segments) == 2
+                        and context.entity_uri.purpose == "groups"
+                    ):
+                        # A Multi's workfile, groups:/<ctx>/<name>: its row
+                        # on the Multis tab.
+                        kind, (group, name) = "multis", segments
                 self._ops.open_entity_editor(project_name, kind, group, name)
             finally:
                 if callable(done_cb):

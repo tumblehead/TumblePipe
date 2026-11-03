@@ -9,6 +9,7 @@ use crate::composite::{self, Shading};
 use crate::blur::{self, Blur, Lens};
 use crate::raster::{self, Frame, Mesh};
 use crate::TH_OK;
+use crate::triangulate;
 use proptest::prelude::*;
 
 /// A camera at z = 5 looking down -z with a 90 degree field of view,
@@ -1134,5 +1135,203 @@ fn ties_between_still_and_moving_instances_keep_instance_order() {
         let first = meshes[0].base_color;
         let middle = unshared.color[12 * 32 + 16];
         assert!((middle[0] - first[0]).abs() < 1e-6 && (middle[2] - first[2]).abs() < 1e-6, "{middle:?}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Triangulation (triangulate.rs): concave faces, keyhole faces, the fan kept
+// ---------------------------------------------------------------------------
+
+/// A star-shaped polygon about the origin: `corners` corners at increasing
+/// angles (the first at angle 0), every angular gap under half a turn, and
+/// radii in `lo..hi`, so it is simple, holds the origin and is as concave
+/// as the radii make it; counter-clockwise. With 8 corners or more no gap
+/// is over 0.27 of a turn, so no edge passes nearer the origin than
+/// `0.67 * lo`.
+fn star(corners: std::ops::Range<usize>, lo: f64, hi: f64) -> impl Strategy<Value = Vec<[f64; 2]>> {
+    corners.prop_flat_map(move |n| {
+        (prop::collection::vec(1.0f64..2.5, n), prop::collection::vec(lo..hi, n)).prop_map(move |(gaps, radii)| {
+            let total: f64 = gaps.iter().sum();
+            let mut angle = 0.0f64;
+            let mut out = Vec::with_capacity(n);
+            for i in 0..n {
+                out.push([radii[i] * angle.cos(), radii[i] * angle.sin()]);
+                angle += gaps[i] / total * std::f64::consts::TAU;
+            }
+            out
+        })
+    })
+}
+
+fn signed_area(p: &[[f64; 2]]) -> f64 {
+    (0..p.len())
+        .map(|i| {
+            let (a, b) = (p[i], p[(i + 1) % p.len()]);
+            a[0] * b[1] - a[1] * b[0]
+        })
+        .sum::<f64>()
+        / 2.0
+}
+
+fn inside(p: [f64; 2], poly: &[[f64; 2]]) -> bool {
+    let mut odd = false;
+    for i in 0..poly.len() {
+        let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+        if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < a[0] + (p[1] - a[1]) / (b[1] - a[1]) * (b[0] - a[0]) {
+            odd = !odd;
+        }
+    }
+    odd
+}
+
+type Plane = ([f64; 3], [f64; 3], [f64; 3]);
+
+/// A plane in space to lay a 2D face in: an orthonormal pair and an origin.
+fn plane() -> impl Strategy<Value = Plane> {
+    let v = || [-1.0f64..1.0, -1.0f64..1.0, -1.0f64..1.0];
+    (v(), v(), [-5.0f64..5.0, -5.0f64..5.0, -5.0f64..5.0]).prop_filter_map("a plane needs two directions", |(a, b, o)| {
+        let norm = |v: [f64; 3]| {
+            let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            (l > 0.1).then(|| v.map(|c| c / l))
+        };
+        let u = norm(a)?;
+        let d = b[0] * u[0] + b[1] * u[1] + b[2] * u[2];
+        let v = norm([b[0] - d * u[0], b[1] - d * u[1], b[2] - d * u[2]])?;
+        Some((u, v, o))
+    })
+}
+
+fn lay(p: &[[f64; 2]], (u, v, o): Plane) -> Vec<Option<Vec3>> {
+    p.iter().map(|q| Some([0, 1, 2].map(|k| (o[k] + q[0] * u[k] + q[1] * v[k]) as f32))).collect()
+}
+
+/// What a face's triangles must do, checked in the face's own 2D
+/// coordinates (counter-clockwise): `n - 2` of them, none turned over,
+/// their areas summing to the face's, and every sample point of the face in
+/// one of them and no point outside it (a keyhole's opening included) in
+/// any.
+fn covers(tris: &[[usize; 3]], q: &[[f64; 2]], area: f64, is_in: impl Fn([f64; 2]) -> bool) -> Result<(), TestCaseError> {
+    prop_assert_eq!(tris.len(), q.len() - 2);
+    let scale = q.iter().map(|p| p[0].abs().max(p[1].abs())).fold(0.0, f64::max);
+    let eps = scale * scale * 1e-4;
+    let twice = |t: &[usize; 3]| {
+        (q[t[1]][0] - q[t[0]][0]) * (q[t[2]][1] - q[t[0]][1]) - (q[t[1]][1] - q[t[0]][1]) * (q[t[2]][0] - q[t[0]][0])
+    };
+    let mut sum = 0.0;
+    for t in tris {
+        prop_assert!(twice(t) >= -eps, "a triangle is turned over: {:?} {}", t, twice(t));
+        sum += twice(t) / 2.0;
+    }
+    prop_assert!((sum - area).abs() <= eps * q.len() as f64 + area.abs() * 1e-4, "areas {} vs {}", sum, area);
+    let in_tri = |p: [f64; 2], t: &[usize; 3]| {
+        let c = |a: [f64; 2], b: [f64; 2]| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+        let (a, b, d) = (c(q[t[0]], q[t[1]]), c(q[t[1]], q[t[2]]), c(q[t[2]], q[t[0]]));
+        (a > 0.0 && b > 0.0 && d > 0.0) || (a < 0.0 && b < 0.0 && d < 0.0)
+    };
+    for i in 0..24 {
+        for j in 0..24 {
+            let p = [(i as f64 + 0.37) / 12.0 * scale - scale, (j as f64 + 0.61) / 12.0 * scale - scale];
+            let hits = tris.iter().filter(|t| in_tri(p, t)).count();
+            if is_in(p) {
+                prop_assert!(hits >= 1, "{:?} inside the face is in no triangle", p);
+            } else {
+                prop_assert_eq!(hits, 0, "{:?} outside the face is in a triangle", p);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reversed(p: &[[f64; 2]]) -> Vec<[f64; 2]> {
+    p.iter().rev().copied().collect()
+}
+
+proptest! {
+    /// A concave (star-shaped) face, laid in any plane and wound either
+    /// way, is cut into triangles that tile it exactly.
+    #[test]
+    fn a_concave_face_is_tiled(poly in star(4..40, 0.3, 2.0), at in plane(), backwards in any::<bool>()) {
+        let q = if backwards { reversed(&poly) } else { poly };
+        let tris = triangulate::polygon(&lay(&q, at));
+        // Check in the counter-clockwise order: reversing the corners maps
+        // corner i to n-1-i and turns each triangle's winding over.
+        let n = q.len();
+        let (q, tris): (Vec<[f64; 2]>, Vec<[usize; 3]>) = if backwards {
+            (reversed(&q), tris.iter().map(|t| [n - 1 - t[0], n - 1 - t[2], n - 1 - t[1]]).collect())
+        } else {
+            (q, tris)
+        };
+        let area = signed_area(&q);
+        covers(&tris, &q, area, |p| inside(p, &q))?;
+    }
+
+    /// A wall with a window: an outer loop bridged at angle 0 to an inner
+    /// one walked the other way, each bridge end visited twice. The opening
+    /// stays open.
+    #[test]
+    fn a_keyhole_face_keeps_its_opening(outer in star(8..40, 1.5, 2.0), inner in star(4..40, 0.3, 0.9), at in plane()) {
+        let mut q = outer.clone();
+        q.push(outer[0]);
+        q.push(inner[0]);
+        q.extend(inner[1..].iter().rev());
+        q.push(inner[0]);
+        let tris = triangulate::polygon(&lay(&q, at));
+        let area = signed_area(&outer) - signed_area(&inner);
+        covers(&tris, &q, area, |p| inside(p, &outer) && !inside(p, &inner))?;
+    }
+
+    /// A convex face (and a triangle) is fanned from corner 0, exactly as
+    /// Hydra fans it, so a convex mesh draws as it did.
+    #[test]
+    fn a_convex_face_keeps_the_fan(n in 3usize..40, r in 0.1f64..3.0, at in plane()) {
+        let q: Vec<[f64; 2]> = (0..n)
+            .map(|i| {
+                let a = i as f64 / n as f64 * std::f64::consts::TAU;
+                [r * a.cos(), r * a.sin()]
+            })
+            .collect();
+        let fan: Vec<[usize; 3]> = (1..n - 1).map(|i| [0, i, i + 1]).collect();
+        prop_assert_eq!(triangulate::polygon(&lay(&q, at)), fan);
+    }
+
+    /// Any topology, broken ones included (indices past the points, NaN
+    /// points, holes out of range): no panic, `n - 2` triangles per face
+    /// that is not a hole, each from its own face's corners, faces in order;
+    /// counts that run past the indices refuse.
+    #[test]
+    fn any_topology_triangulates_face_by_face(
+        points in prop::collection::vec(prop_oneof![point(), Just([f32::NAN, 0.0, 0.0])], 0..12),
+        counts in prop::collection::vec(0i32..9, 0..8),
+        holes in prop::collection::vec(-1i32..9, 0..3),
+        flip in any::<bool>(),
+        seed in any::<u64>(),
+    ) {
+        let total: usize = counts.iter().map(|&c| c as usize).sum();
+        let mut x = seed;
+        let indices: Vec<i32> = (0..total)
+            .map(|_| {
+                x = x.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((x >> 33) % 16) as i32 - 1
+            })
+            .collect();
+        let (corners, faces) = triangulate::triangulate(&points, &counts, &indices, &holes, flip).unwrap();
+        let mut expected = Vec::new();
+        let mut start = 0usize;
+        for (f, &n) in counts.iter().enumerate() {
+            if n >= 3 && !holes.contains(&(f as i32)) {
+                expected.extend(std::iter::repeat(f as u32).take(n as usize - 2));
+            }
+            let range = start as u32..(start + n as usize) as u32;
+            for (t, c) in corners.iter().enumerate() {
+                if faces[t] == f as u32 {
+                    prop_assert!(c.iter().all(|i| range.contains(i)), "{:?} not in face {}", c, f);
+                }
+            }
+            start += n as usize;
+        }
+        prop_assert_eq!(faces, expected);
+        if total > 0 {
+            prop_assert!(triangulate::triangulate(&points, &counts, &indices[..total - 1], &holes, flip).is_none());
+        }
     }
 }

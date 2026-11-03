@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from pathlib import Path
 
 
@@ -106,3 +106,22 @@ def save_prefs(prefs: PipelinePrefs) -> None:
     # been built from (or mutated alongside) an older on-disk file.
     payload["prefs_version"] = _PREFS_VERSION
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def update_prefs(**changes) -> PipelinePrefs:
+    """Change only the named prefs, reading the rest fresh from disk.
+
+    Every writer goes through this, never ``save_prefs`` on a copy it has
+    held for a while: several places write the one file (the Settings
+    page, Farm Submit's "Run on", the shot slate's size menu), and saving
+    a long-held whole dataclass put back the values another of them had
+    changed since. Returns the prefs as now saved.
+    """
+    unknown = set(changes) - {f.name for f in fields(PipelinePrefs)}
+    if unknown:
+        raise TypeError(f"Unknown prefs: {', '.join(sorted(unknown))}")
+    prefs = load_prefs()
+    for name, value in changes.items():
+        setattr(prefs, name, value)
+    save_prefs(prefs)
+    return prefs

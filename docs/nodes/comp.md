@@ -203,6 +203,11 @@ Bring LOP geometry into a COP network. Tab menu `_TumblePipe/lookdev`. No
 inputs; output **geometry** (Geometry). **LOP Path** and **Primitives** pick
 the prims, which are imported, unpacked to polygons and handed to COPs — the
 usual first node before a rasterize.
+
+| Label | Default | What it does |
+|---|---|---|
+| Time Sample | Static | **Static** imports one frame, so the COP network is not time dependent; **Animated** imports the current frame and recooks the network every frame |
+| Static Frame | `$FSTART` | The frame Static imports (hidden when Animated) |
 Source: [`otls/cop_th.lop_import.1.0`](../../otls/cop_th.lop_import.1.0/th_8_8Cop_1lop__import_8_81.0/DialogScript).
 
 ## The COP network context menu

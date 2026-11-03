@@ -323,12 +323,15 @@ def load_archive_config(config_path: Path) -> dict:
     }
 
 
-def scan(roots: ProjectRoots) -> Inventory:
-    """Classify every file under ``roots``."""
+def scan(roots: ProjectRoots, purposes: tuple[str, ...] | None = None) -> Inventory:
+    """Classify every file under ``roots`` (only the roots of ``purposes``,
+    when given; the others are still not walked into)."""
     inventory = Inventory(roots, archive_config=load_archive_config(roots.config_path))
     classifier = _Classifier(inventory)
     all_paths = {root.path for root in roots.roots}
     for root in roots.roots:
+        if purposes is not None and root.purpose not in purposes:
+            continue
         if not root.path.is_dir():
             continue
         skip = {path for path in all_paths if path != root.path}

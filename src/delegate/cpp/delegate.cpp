@@ -45,7 +45,6 @@
 #include <pxr/imaging/hd/instancer.h>
 #include <pxr/imaging/hd/material.h>
 #include <pxr/imaging/hd/mesh.h>
-#include <pxr/imaging/hd/meshUtil.h>
 #include <pxr/imaging/hd/renderBuffer.h>
 #include <pxr/imaging/hd/renderDelegate.h>
 #include <pxr/imaging/hd/renderIndex.h>
@@ -60,7 +59,6 @@
 #include <pxr/imaging/hd/sceneIndexPluginRegistry.h>
 #include <pxr/imaging/hd/timeSampleArray.h>
 #include <pxr/imaging/hd/tokens.h>
-#include <pxr/imaging/hd/vtBufferSource.h>
 #include <pxr/imaging/hdsi/implicitSurfaceSceneIndex.h>
 #include <pxr/imaging/hio/image.h>
 #include <pxr/usd/sdf/assetPath.h>
@@ -353,11 +351,13 @@ VtArray<T> _AsArray(VtValue const& value)
 }
 
 // One value per triangle corner (3 per triangle) of primvar `name`, or empty
-// when it does not have that type or is short of values.
+// when it does not have that type or is short of values. `corners` and
+// `faces` are th_triangulate's: per triangle, three positions in the face
+// vertex indices `fvi` (where a face-varying value is too) and its face.
 template <typename T>
 std::vector<T> _CornerValues(HdSceneDelegate* delegate, SdfPath const& id, TfToken const& name,
-                             HdInterpolation interp, HdMeshUtil const& util,
-                             VtVec3iArray const& tris, VtIntArray const& params)
+                             HdInterpolation interp, std::vector<uint32_t> const& corners,
+                             std::vector<uint32_t> const& faces, VtIntArray const& fvi)
 {
     VtIntArray indices;
     VtArray<T> values = _AsArray<T>(delegate->GetIndexedPrimvar(id, name, &indices));
@@ -372,7 +372,7 @@ std::vector<T> _CornerValues(HdSceneDelegate* delegate, SdfPath const& id, TfTok
         }
         values = flat;
     }
-    size_t const n = tris.size();
+    size_t const n = faces.size();
     std::vector<T> out(n * 3);
     switch (interp) {
     case HdInterpolationConstant:
@@ -380,38 +380,25 @@ std::vector<T> _CornerValues(HdSceneDelegate* delegate, SdfPath const& id, TfTok
         return out;
     case HdInterpolationUniform:
         for (size_t t = 0; t < n; ++t) {
-            int const face = HdMeshUtil::DecodeFaceIndexFromCoarseFaceParam(params[t]);
-            if (face < 0 || static_cast<size_t>(face) >= values.size()) return {};
-            out[t * 3] = out[t * 3 + 1] = out[t * 3 + 2] = values[face];
+            if (faces[t] >= values.size()) return {};
+            out[t * 3] = out[t * 3 + 1] = out[t * 3 + 2] = values[faces[t]];
         }
         return out;
     case HdInterpolationVertex:
     case HdInterpolationVarying:
-        for (size_t t = 0; t < n; ++t) {
-            for (int k = 0; k < 3; ++k) {
-                int const v = tris[t][k];
-                if (v < 0 || static_cast<size_t>(v) >= values.size()) return {};
-                out[t * 3 + k] = values[v];
-            }
+        for (size_t c = 0; c < n * 3; ++c) {
+            int const v = fvi[corners[c]];
+            if (v < 0 || static_cast<size_t>(v) >= values.size()) return {};
+            out[c] = values[v];
         }
         return out;
-    case HdInterpolationFaceVarying: {
-        VtValue triangulated;
-        HdVtBufferSource source(name, VtValue(values));
-        HdMeshComputationResult const result = util.ComputeTriangulatedFaceVaryingPrimvar(
-            source.GetData(), source.GetNumElements(), source.GetTupleType().type,
-            &triangulated);
-        if (result == HdMeshComputationResult::Error) {
-            return {};
+    case HdInterpolationFaceVarying:
+        // One value per face vertex, holes included: read at the corner.
+        for (size_t c = 0; c < n * 3; ++c) {
+            if (corners[c] >= values.size()) return {};
+            out[c] = values[corners[c]];
         }
-        // Unchanged: every face was already a triangle, the input is the
-        // triangulated primvar.
-        VtArray<T> tv = result == HdMeshComputationResult::Unchanged
-            ? values : _AsArray<T>(triangulated);
-        if (tv.size() != n * 3) return {};
-        std::copy(tv.begin(), tv.end(), out.begin());
         return out;
-    }
     default:
         return {};
     }
@@ -1054,11 +1041,31 @@ private:
         VtVec3fArray const points = _ReadPoints(delegate, &computed);
         if (points.empty()) return;
 
-        HdMeshUtil const util(&topology, id);
-        VtVec3iArray tris;
-        VtIntArray params;
-        util.ComputeTriangleIndices(&tris, &params);
-        if (tris.empty()) return;
+        // Not HdMeshUtil::ComputeTriangleIndices: it fans every face, which
+        // fills a concave face's notch and a keyhole face's opening (a wall's
+        // window). th_triangulate keeps the fan for a convex face and
+        // ear-clips a concave one, wound as HdMeshUtil winds it.
+        VtIntArray const& counts = topology.GetFaceVertexCounts();
+        VtIntArray const& fvi = topology.GetFaceVertexIndices();
+        VtIntArray const& holes = topology.GetHoleIndices();
+        size_t capacity = 0;
+        for (int const c : counts) {
+            if (c > 2) capacity += static_cast<size_t>(c - 2);
+        }
+        if (capacity == 0 || capacity > UINT32_MAX / 3) return;
+        std::vector<uint32_t> corners(capacity * 3);
+        std::vector<uint32_t> faces(capacity);
+        static_assert(sizeof(GfVec3f) == 3 * sizeof(float), "GfVec3f is three packed floats");
+        uint32_t const count = th_triangulate(
+            reinterpret_cast<float const*>(points.cdata()), static_cast<uint32_t>(points.size()),
+            counts.cdata(), static_cast<uint32_t>(counts.size()),
+            fvi.cdata(), static_cast<uint32_t>(fvi.size()),
+            holes.cdata(), static_cast<uint32_t>(holes.size()),
+            topology.GetOrientation() != HdTokens->rightHanded ? 1u : 0u,
+            corners.data(), faces.data(), static_cast<uint32_t>(capacity));
+        if (count == UINT32_MAX || count == 0) return;
+        corners.resize(static_cast<size_t>(count) * 3);
+        faces.resize(count);
 
         _points.reserve(points.size() * 3);
         for (GfVec3f const& p : points) {
@@ -1066,11 +1073,9 @@ private:
         }
 
         _SetMotion(_ReadMotion(delegate, computed, points.size(), motion));
-        _triangles.reserve(tris.size() * 3);
-        for (GfVec3i const& t : tris) {
-            for (int k = 0; k < 3; ++k) {
-                _triangles.push_back(static_cast<uint32_t>(std::max(0, t[k])));
-            }
+        _triangles.reserve(corners.size());
+        for (uint32_t const c : corners) {
+            _triangles.push_back(static_cast<uint32_t>(std::max(0, fvi[c])));
         }
 
         for (HdInterpolation interp :
@@ -1078,16 +1083,16 @@ private:
               HdInterpolationVertex, HdInterpolationFaceVarying}) {
             for (HdPrimvarDescriptor const& pv : delegate->GetPrimvarDescriptors(id, interp)) {
                 if (pv.name == _tokDisplayColor) {
-                    auto c = _CornerValues<GfVec3f>(delegate, id, pv.name, interp, util, tris, params);
+                    auto c = _CornerValues<GfVec3f>(delegate, id, pv.name, interp, corners, faces, fvi);
                     _colors.clear();
                     for (GfVec3f const& v : c) _colors.insert(_colors.end(), {v[0], v[1], v[2]});
                 } else if (pv.name == HdTokens->normals) {
-                    auto n = _CornerValues<GfVec3f>(delegate, id, pv.name, interp, util, tris, params);
+                    auto n = _CornerValues<GfVec3f>(delegate, id, pv.name, interp, corners, faces, fvi);
                     _normals.clear();
                     for (GfVec3f const& v : n) _normals.insert(_normals.end(), {v[0], v[1], v[2]});
                 } else if (pv.role == HdPrimvarRoleTokens->textureCoordinate
                            || pv.name == TfToken("st") || pv.name == TfToken("uv")) {
-                    auto uv = _CornerValues<GfVec2f>(delegate, id, pv.name, interp, util, tris, params);
+                    auto uv = _CornerValues<GfVec2f>(delegate, id, pv.name, interp, corners, faces, fvi);
                     if (!uv.empty()) {
                         std::vector<float>& out = _uvs[pv.name];
                         for (GfVec2f const& v : uv) out.insert(out.end(), {v[0], v[1]});

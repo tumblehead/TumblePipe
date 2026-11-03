@@ -115,6 +115,11 @@ pub enum Step {
     /// (see [`v21_plan`]), and v12 again, which installs its stock template.
     /// A project that already has a `groom` keeps it as it is.
     AddGroomDepartment,
+    /// v22 — put the group schema where the resolver finds it: under
+    /// `schemas:/groups/shots` and `schemas:/groups/assets` instead of beside
+    /// them (see [`v22_plan`]). As a sibling, `groups:/shots/<name>` resolved
+    /// to no schema at all, so no group default ever applied.
+    GroupSchemaUnderRoots,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -159,7 +164,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 21] = [
+pub const STEPS: [Step; 22] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -181,6 +186,7 @@ pub const STEPS: [Step; 21] = [
     Step::LayoutInAnimate,
     Step::AnimationCopiesLayoutKeys,
     Step::AddGroomDepartment,
+    Step::GroupSchemaUnderRoots,
 ];
 
 impl Step {
@@ -208,6 +214,7 @@ impl Step {
             Step::LayoutInAnimate => 19,
             Step::AnimationCopiesLayoutKeys => 20,
             Step::AddGroomDepartment => 21,
+            Step::GroupSchemaUnderRoots => 22,
         }
     }
 
@@ -270,6 +277,9 @@ impl Step {
             }
             Step::AddGroomDepartment => {
                 "add the groom asset department (before lookdev) and its template"
+            }
+            Step::GroupSchemaUnderRoots => {
+                "move the group schema under schemas:/groups/shots and /assets, so group defaults apply"
             }
         }
     }
@@ -507,6 +517,11 @@ impl Step {
                     Err(why) => Readiness::Blocked(why),
                 }
             }
+            // Blocked when the schema tree is unreadable or misshapen.
+            Step::GroupSchemaUnderRoots => match v22_plan(&cfg) {
+                Ok(_) => Readiness::Ready,
+                Err(why) => Readiness::Blocked(why),
+            },
         }
     }
 }
@@ -1013,6 +1028,13 @@ impl Step {
                 }
                 Ok(())
             }
+            Step::GroupSchemaUnderRoots => {
+                if let Some(data) = v22_plan(&cfg)? {
+                    let path = cfg.join("db").join("schemas.json");
+                    write_preserving_as(&path, &crate::to_json_string(&data), "v22.bak")?;
+                }
+                Ok(())
+            }
             Step::ScratchOffWslPaths => {
                 // Own backup suffix: the `.v11.bak` v11 left is that step's
                 // original and stays.
@@ -1187,6 +1209,72 @@ fn v21_plan(cfg: &Path) -> Result<Option<Value>, String> {
         rebuilt.insert(GROOM.to_string(), groom);
     }
     *pool = rebuilt;
+    Ok(Some(data))
+}
+
+/// The group schema's node name, and the group roots v22 puts it under.
+const GROUP_SCHEMA: &str = "group";
+const GROUP_ROOTS: [&str; 2] = ["shots", "assets"];
+
+/// v22's schema tree for a project: `Ok(Some(schemas))` with the group
+/// schema moved under each group root, `Ok(None)` when there is nothing to do
+/// (no `schemas.json`, no `groups`, or no `group` beside the roots).
+///
+/// `get_entity_schema_uri` walks the schema tree in step with the entity's
+/// segments, taking a literal child or else the ONLY child. The scaffold
+/// always had `schemas:/groups/{shots, assets, group}`: `group` beside the
+/// roots, and the roots with no children, so `groups:/shots/<name>` matched
+/// nothing past `shots`. The `group` node (with whatever properties the
+/// project gave it) is copied under every root whose children are empty, and
+/// the sibling dropped. A root that already has a child keeps its own: adding
+/// a second would make the walk ambiguous, which also resolves to nothing. A
+/// root the project lacks is not created.
+fn v22_plan(cfg: &Path) -> Result<Option<Value>, String> {
+    let path = cfg.join("db").join("schemas.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let mut data = load_json(&path)?;
+    let Some(groups) = data
+        .get_mut("children")
+        .and_then(|c| c.get_mut("groups"))
+        .and_then(|g| g.get_mut("children"))
+    else {
+        return Ok(None);
+    };
+    let Value::Object(roots) = groups else {
+        return Err(format!(
+            "{}: the groups schemas are not a JSON object",
+            path.display()
+        ));
+    };
+    let Some(group) = roots.get(GROUP_SCHEMA).cloned() else {
+        return Ok(None);
+    };
+    for root in GROUP_ROOTS {
+        let Some(node) = roots.get_mut(root) else {
+            continue;
+        };
+        let Value::Object(node) = node else {
+            return Err(format!(
+                "{}: the groups/{root} schema is not a JSON object",
+                path.display()
+            ));
+        };
+        let children = node
+            .entry("children")
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        let Value::Object(children) = children else {
+            return Err(format!(
+                "{}: the groups/{root} schema's children are not a JSON object",
+                path.display()
+            ));
+        };
+        if children.is_empty() {
+            children.insert(GROUP_SCHEMA.to_string(), group.clone());
+        }
+    }
+    roots.shift_remove(GROUP_SCHEMA);
     Ok(Some(data))
 }
 
@@ -2828,7 +2916,7 @@ mod tests {
         let cfg = dir.path().join("_config");
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
 
         let path = cfg.join(conventions::STORAGE_FILE);
         let table = load_json(&path).unwrap();
@@ -3402,6 +3490,7 @@ mod tests {
             (Step::LayoutInAnimate, Readiness::Blocked(_)),
             (Step::AnimationCopiesLayoutKeys, Readiness::Blocked(_)),
             (Step::AddGroomDepartment, Readiness::Blocked(_)),
+            (Step::GroupSchemaUnderRoots, Readiness::Ready),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -3512,7 +3601,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 21);
+        assert_eq!(latest_version(), 22);
         assert_eq!(current_version(&target).unwrap(), latest_version());
         assert!(pending(&target).unwrap().is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -3658,8 +3747,8 @@ mod tests {
         let dir = project_at_v12_with_variants();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 9);
-        assert_eq!(report.to, 21);
+        assert_eq!(report.applied.len(), 10);
+        assert_eq!(report.to, 22);
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -3716,7 +3805,7 @@ mod tests {
         let template = scaffold();
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -3734,7 +3823,7 @@ mod tests {
         write_version(&dir.path().join("_config"), 12).unwrap();
         let second = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 21);
+        assert_eq!(second.to, 22);
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -3752,7 +3841,7 @@ mod tests {
 
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.to, 21);
+        assert_eq!(report.to, 22);
         assert_eq!(db_text(dir.path(), "entity.json"), entity);
         let mut files = Vec::new();
         find_files(&db, None, &mut files);
@@ -3813,7 +3902,7 @@ mod tests {
         }
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
         let animation =
             std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
         assert_eq!(
@@ -3845,7 +3934,7 @@ mod tests {
         std::fs::write(&path, &shipped_at_v14).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             layout.replace("
@@ -3887,8 +3976,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v15).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 6);
-        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(report.applied.len(), 7);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         // Only rigged assets get a row (since 80def61306: the animatable ones)
@@ -3913,8 +4002,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v17).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 4);
-        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(report.applied.len(), 5);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("anim_camera.parm('loppath').set(camera_edit_node.path())"));
@@ -3936,8 +4025,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v18).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 3);
-        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(report.applied.len(), 4);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(layout, packaged_text("shots/layout"));
         assert!(layout.contains("layout_rigs.add_layout_animate(scene_node, camera_node, entity_uri)"));
@@ -3959,8 +4048,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v19).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 2);
-        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(report.applied.len(), 3);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("layout_keys_rows.add_to_dive("));
@@ -4035,8 +4124,8 @@ mod tests {
         std::fs::write(&path, &original).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied, vec![(Step::AddGroomDepartment, Ok(()))]);
-        assert_eq!(current_version(dir.path()).unwrap(), 21);
+        assert_eq!(report.applied, vec![(Step::AddGroomDepartment, Ok(())), (Step::GroupSchemaUnderRoots, Ok(()))]);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
         assert_eq!(
             asset_departments(dir.path()),
             ["model", "blendshape", "groom", "lookdev", "rig"]
@@ -4109,5 +4198,113 @@ mod tests {
         let readiness = Step::AddGroomDepartment.readiness(dir.path(), &packaged_scaffold());
         assert!(matches!(readiness, Readiness::Blocked(_)), "{readiness:?}");
         assert!(!project_template(dir.path(), "assets/groom").exists());
+    }
+
+    fn schemas_in(dir: &Path) -> PathBuf {
+        dir.join("_config").join("db").join("schemas.json")
+    }
+
+    /// A v21 schema tree as every project had it: the group schema beside
+    /// the roots.
+    fn schemas_at_v21(group_props: Value) -> Value {
+        serde_json::json!({
+            "properties": {},
+            "children": {
+                "entity": {"properties": {}, "children": {}},
+                "groups": {"properties": {}, "children": {
+                    "shots": {"properties": {}, "children": {}},
+                    "assets": {"properties": {}, "children": {}},
+                    "group": {"properties": group_props, "children": {}}
+                }}
+            }
+        })
+    }
+
+    fn group_roots(dir: &Path) -> Value {
+        load_json(&schemas_in(dir)).unwrap()["children"]["groups"]["children"].clone()
+    }
+
+    /// v22 moves the group schema, customised properties included, under
+    /// both roots and drops the sibling; it keeps the file's line endings
+    /// and its original as `.v22.bak`. The result matches the scaffold's
+    /// groups tree for a stock project.
+    #[test]
+    fn v22_moves_the_group_schema_under_each_root() {
+        let dir = project(Some(21));
+        let path = schemas_in(dir.path());
+        let custom = serde_json::json!({"members": [], "departments": ["animation"], "shared_timeline": true});
+        let original = crate::to_json_string(&schemas_at_v21(custom.clone())).replace('\n', "\r\n");
+        std::fs::write(&path, &original).unwrap();
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.applied, vec![(Step::GroupSchemaUnderRoots, Ok(()))]);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        let roots = group_roots(dir.path());
+        assert_eq!(roots.as_object().unwrap().keys().collect::<Vec<_>>(), ["shots", "assets"]);
+        for root in GROUP_ROOTS {
+            assert_eq!(roots[root]["children"]["group"]["properties"], custom, "{root}");
+        }
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(!after.replace("\r\n", "").contains('\n'), "CRLF kept");
+        assert_eq!(
+            std::fs::read_to_string(path.with_file_name("schemas.json.v22.bak")).unwrap(),
+            original
+        );
+
+        let dir = project(Some(21));
+        let stock = serde_json::json!({"members": [], "departments": []});
+        std::fs::write(schemas_in(dir.path()), crate::to_json_string(&schemas_at_v21(stock))).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        let scaffold = load_json(&packaged_scaffold().join("_config").join("db").join("schemas.json")).unwrap();
+        assert_eq!(group_roots(dir.path()), scaffold["children"]["groups"]["children"]);
+    }
+
+    /// A root that already has a child keeps it (a second child would make
+    /// the walk ambiguous); a missing root is not created.
+    #[test]
+    fn v22_keeps_an_existing_root_child_and_creates_no_root() {
+        let dir = project(Some(21));
+        let mut schemas = schemas_at_v21(serde_json::json!({"members": []}));
+        let groups = schemas["children"]["groups"]["children"].as_object_mut().unwrap();
+        groups["shots"]["children"] = serde_json::json!({"multi": {"properties": {"x": 1}, "children": {}}});
+        groups.shift_remove("assets");
+        std::fs::write(schemas_in(dir.path()), crate::to_json_string(&schemas)).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        let roots = group_roots(dir.path());
+        assert_eq!(roots.as_object().unwrap().keys().collect::<Vec<_>>(), ["shots"]);
+        assert_eq!(roots["shots"]["children"].as_object().unwrap().keys().collect::<Vec<_>>(), ["multi"]);
+    }
+
+    /// Nothing to do writes nothing (no file, no groups, already moved), and
+    /// a second run changes nothing.
+    #[test]
+    fn v22_with_nothing_to_do_writes_nothing_and_is_idempotent() {
+        let dir = project(Some(21));
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        assert!(!schemas_in(dir.path()).exists());
+
+        let dir = project(Some(21));
+        std::fs::write(schemas_in(dir.path()), crate::to_json_string(&schemas_at_v21(serde_json::json!({})))).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        let first = std::fs::read_to_string(schemas_in(dir.path())).unwrap();
+        std::fs::remove_file(schemas_in(dir.path()).with_file_name("schemas.json.v22.bak")).unwrap();
+        write_version(&dir.path().join("_config"), 21).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        assert_eq!(std::fs::read_to_string(schemas_in(dir.path())).unwrap(), first);
+        assert!(!schemas_in(dir.path()).with_file_name("schemas.json.v22.bak").exists());
+    }
+
+    /// A groups tree v22 cannot read blocks the step before anything is
+    /// written.
+    #[test]
+    fn v22_blocks_on_a_misshapen_groups_tree() {
+        let dir = project(Some(21));
+        let mut schemas = schemas_at_v21(serde_json::json!({}));
+        schemas["children"]["groups"]["children"]["shots"] = serde_json::json!([1]);
+        let text = crate::to_json_string(&schemas);
+        std::fs::write(schemas_in(dir.path()), &text).unwrap();
+        let readiness = Step::GroupSchemaUnderRoots.readiness(dir.path(), &packaged_scaffold());
+        assert!(matches!(readiness, Readiness::Blocked(_)), "{readiness:?}");
+        assert_eq!(std::fs::read_to_string(schemas_in(dir.path())).unwrap(), text);
     }
 }

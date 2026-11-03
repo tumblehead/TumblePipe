@@ -302,7 +302,9 @@ workfile is the Multi's hip.
 
 In the configuration a Multi is a **group**: `groups:/shots/<name>` or
 `groups:/assets/<name>` in `db/groups.json`, carrying a `members` list of
-entity URIs and a `departments` list. A Multi is locked to one context —
+entity URIs and a `departments` list; a key a group does not store reads
+from its context's group schema (`schemas:/groups/shots/group`,
+`schemas:/groups/assets/group`). A Multi is locked to one context —
 shots and assets never mix — and its workfiles live under
 `<project>/groups/<context>/<name>/<department>/`.
 
@@ -350,7 +352,7 @@ breadcrumb shows the Multi), and a member's own rows carry a **ⓜ** badge
 on every department the Multi covers (the tooltip names the Multi), and
 open the Multi's hip from there too. Drag cards onto the Multi's sidebar leaf or use
 **Add selected to Multi** to add members. The leaf's right-click menu is the
-card's (**Open Multi**, **Open Location**, **Edit Multi…**, **Delete Multi**)
+card's (**Open Multi**, **Open Location**, **Add Entity…**, **Edit Multi…**, **Delete Multi**)
 plus **Add selected to Multi** and **Remove selected from Multi** (see
 [Multis and Roots](asset-browser/multis-and-roots.md)).
 
@@ -695,6 +697,16 @@ load-bearing the file is:
   `assets/groom` template (see [Assets](nodes/assets.md#the-asset-chain)).
   An entity with its own department list does not gain `groom`; tick it in
   the browser where it is wanted.
+
+- **Group defaults apply (v22).** Moves the group schema in
+  `_config/db/schemas.json` from beside the group roots
+  (`schemas:/groups/group`) to under each of them
+  (`schemas:/groups/shots/group`, `schemas:/groups/assets/group`), keeping
+  whatever properties the project gave it. A schema is found by an entity's
+  position, so as a sibling it was never reached: no group default
+  (`members`, `departments`, or one you added) ever applied to a Multi. A
+  root that already has a child schema keeps its own. Only the schema file
+  changes, no Multi; the original is kept as `schemas.json.v22.bak`.
 
 ### Migrating at launch
 

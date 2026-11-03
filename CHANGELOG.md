@@ -12,6 +12,18 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.89.1 — 2026-11-03
+
+### Fixes
+- fix(layout_rigs): Build finds the dive's output whatever it is called (`85eb3605`)
+- fix(farm): find Houdini's bundled Python on macOS (`1bacdbd4`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.89.0 (`c40eca5c`)
+
+### Other Changes
+- Merge PR #19: fix(farm): find Houdini's bundled Python on macOS (`5c572f9e`)
+
 ## v1.89.0 — 2026-11-02
 
 ### Features

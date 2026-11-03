@@ -176,6 +176,19 @@ Content-Type: text/plain
       flags = 0
       segment { length = 0 expr = chs(\"../../primpattern\") }
     }
+    channel timesample {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = ch(\"../../timesample\") }
+    }
+    channel staticimportframe {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 expr = ch(\"../../staticimportframe\") }
+    }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -190,9 +203,9 @@ excludeinactiveprims	[ 0	locks=0 ]	(	"on"	)
 purpose	[ 0	locks=0 ]	(	proxy	)
 importtraversal	[ 0	locks=0 ]	(	none	)
 striplayers	[ 0	locks=0 ]	(	"off"	)
-timesample	[ 0	locks=0 ]	(	"animated"	)
+timesample	[ 0	locks=0 ]	(	[ timesample	0 ] 	)
 importframe	[ 0	locks=0 ]	(	[ importframe	0 ] 	)
-staticimportframe	[ 0	locks=0 ]	(	1	)
+staticimportframe	[ 0	locks=0 ]	(	[ staticimportframe	1 ] 	)
 sepparm	[ 0	locks=0 ]	(	)
 addpathattrib	[ 0	locks=0 ]	(	"on"	)
 pathattrib	[ 0	locks=0 ]	(	path	)

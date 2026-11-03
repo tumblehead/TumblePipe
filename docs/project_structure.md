@@ -96,7 +96,10 @@ with `from tumblepipe import ...`. Subpackages:
   writes to the project it archives.
 - `prune.py` — deletes farm job folders (`export/other/jobs/<id>/`) once
   Deadline has no job that could run from them again; lists by default,
-  `--apply` deletes.
+  `--apply` deletes. `prune.py exports` hands over to `prune_exports.py`:
+  old export versions, keeping the newest N finished and anything a current
+  staged build or latest `.hip` pins; `prune_app.py` is its window (Desktop
+  **Prune Old Exports**).
 - `vram/` — the VRAM Inspector ([user guide](vram-inspector.md)): reads the
   viewport hook's measurements (every memory client, and each viewer prim's
   exact bytes), scans the viewed stage, textures and cooked COP layers, and
@@ -160,7 +163,7 @@ Qt and the pipeline clients onto the launch path.
   `Catalog` declares, since a default means "not offered" and the feature
   would silently vanish (`tests/test_catalog_multis.py` pins this).
 - `container_menu.py` — the Multi / Root menu entries beyond tumbletrove's
-  own (Open Location, the Root's export and rebuilds) and their
+  own (Open Location, a Multi's Add Entity, the Root's export and rebuilds) and their
   confirmations.
 - `projects.py` — the registry of projects the catalog spans (moved here
   from the TumbleTrove SDK, which no longer knows about TumblePipe).

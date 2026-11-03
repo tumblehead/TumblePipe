@@ -148,11 +148,8 @@ def _load_prefs():
 
 def _save(**kw):
     try:
-        from tumblepipe.asset_browser.prefs import load_prefs, save_prefs
-        p = load_prefs()
-        for k, v in kw.items():
-            setattr(p, k, v)
-        save_prefs(p)
+        from tumblepipe.asset_browser.prefs import update_prefs
+        update_prefs(**kw)
     except Exception as e:
         _log(f'save prefs: {e!r}')
 

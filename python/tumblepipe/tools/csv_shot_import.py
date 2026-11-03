@@ -104,7 +104,10 @@ def sync_from_csv(csv_path: Path, dry_run: bool = False) -> dict:
             print(f"  [ERROR] {uri}: {planned.reason}")
 
     if not dry_run:
-        shot_batch.create(api.config, plan)
+        created = shot_batch.create(api.config, plan)
+        # A shot made in a sequence a Multi lists joins that Multi.
+        from tumblepipe.config.groups import place_new_members
+        place_new_members(created)
 
     return {
         'shots_added': len(plan.new),

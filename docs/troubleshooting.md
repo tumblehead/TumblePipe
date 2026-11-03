@@ -707,6 +707,16 @@ version range. Install one, or set `HFS` to the Houdini to use.
 Desktop's Scripts panel, which is what provides the project's package files.
 See [From TumbleTrove Desktop](asset-browser/submit-jobs.md#from-tumbletrove-desktop).
 
+### Submitting on macOS fails: "Cannot find Houdini's bundled Python"
+
+Up to 1.89.0, every submit from the Render Manager on a Mac failed with
+`RuntimeError: Cannot find Houdini's bundled Python to run the submission
+with (HFS='…/Frameworks/Houdini.framework/Versions/22.0/Resources', …)`.
+On macOS the bundled Python sits in `Python.framework` beside
+`Houdini.framework`, four folders above `$HFS`, and TumblePipe looked in the
+wrong one. Fixed in 1.89.1: relaunch the project from TumbleTrove Desktop to
+get it.
+
 ### Farm job failed: `No valid Houdini version was found`
 
 The worker has no Houdini of the **major** the job was submitted from (the

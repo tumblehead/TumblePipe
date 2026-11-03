@@ -46,10 +46,8 @@ def saved_backend() -> str:
 def remember_backend(backend: str) -> None:
     """Offer ``backend`` first next time; a prefs file we cannot write only loses that."""
     try:
-        from tumblepipe.asset_browser.prefs import load_prefs, save_prefs
-        prefs = load_prefs()
-        prefs.farm_backend = farm_backend.normalize(backend)
-        save_prefs(prefs)
+        from tumblepipe.asset_browser.prefs import update_prefs
+        update_prefs(farm_backend=farm_backend.normalize(backend))
     except Exception:
         log.warning("Could not remember the 'Run on' choice", exc_info=True)
 

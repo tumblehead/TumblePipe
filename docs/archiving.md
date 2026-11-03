@@ -203,9 +203,45 @@ Without `--apply` it only lists what it would delete. With it, it deletes
 those folders and writes their names to
 `export/other/logs/prune-<date>.log`.
 
+## Pruning old export versions
+
+Every export writes a new version folder, and nothing removes the old ones:
+on HideAndReek, 2,000 export versions held 157 GB. **Prune Old Exports** in
+TumbleTrove Desktop's Scripts panel lists what can go and deletes it when
+you confirm; from a shell:
+
+```
+python -m tumblepipe.prune exports [project] [--keep 3] [--context shots] [--apply]
+```
+
+It keeps, for every export (an entity's department in one channel, a shot's
+root layer), the newest `--keep` finished versions, and also every version
+that:
+
+| Kept because | |
+|---|---|
+| it is **unfinished** (no `context.json`) | it may still be being written; it does not count towards `--keep` either |
+| a **current staged build** uses it | the newest staged build of every shot, asset and Root pins exact versions of its layers and of the staged assets it brings in, and those pins are followed too |
+| a **latest workfile** pins it | the newest `.hip` in every department folder is read for the versions its nodes are set to (`th::import_layer` always loads the exact version it was set to; the other import nodes can be set to one) |
+
+Only plain `.hip` workfiles can be read: `.hiplc` and `.hipnc` are encoded.
+The listing says how many latest workfiles it could not read; versions they
+pin are not protected. An older workfile's pins are not read either: open it
+on latest, or re-export what it needs.
+
+`--context` narrows it to shots, assets or a path under them
+(`shots/sq010`). Staged builds themselves (a few KB each) and
+`export/other` are never touched. Renders, playblasts and dailies are not
+exports and are not touched.
+
+Without `--apply` (or until you confirm in the window) nothing is deleted.
+Each version deleted is written to `export/other/logs/prune-<date>.log`.
+
 ## From a shell
 
 ```
+python -m tumblepipe.prune [jobs]    [project] [--apply] [--min-age-days 2]
+python -m tumblepipe.prune exports   [project] [--keep 3] [--context shots] [--apply]
 python -m tumblepipe.archive plan    [project] [--profile proof|latest|full]
                                      [--with-caches] [--with-renders] [--list FILE]
 python -m tumblepipe.archive create  [project] --out ARCHIVE.zip [same options] [--part-size 50G]
