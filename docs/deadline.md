@@ -224,7 +224,10 @@ on Deadline, and runs in the background as a render node would run it.
 - **hpm:** the runner keeps its own `hpm` (artist machines have none on
   `PATH`). It downloads `$HPM_VERSION` (else the plugin's pinned default)
   from the hpm releases, as the plugin does on a render node.
-  `$TH_LOCAL_FARM_HPM` names an executable outright.
+  `$TH_LOCAL_FARM_HPM` names an executable outright. Houdini's Python on
+  macOS has no CA certificates of its own, so when Python finds none (and
+  `SSL_CERT_FILE` is not set) the download checks GitHub's certificate
+  against the system's bundle (`/etc/ssl/cert.pem`), else certifi's.
 - **Chained work stays local:** every local job's env file carries
   `TH_FARM_BACKEND=local`. A collapse that submits its playblast, or a stage
   that submits its render, queues them here too.

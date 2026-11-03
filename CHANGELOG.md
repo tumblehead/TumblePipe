@@ -12,6 +12,26 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.90.0 — 2026-11-03
+
+### Features
+- feat(prune): delete old export versions, keeping the newest few (`56630509`)
+- feat(multis): a Multi can list a whole sequence (`39923c41`)
+- feat(animate): th::animate exports a BasisCurves skeleton as curves (`617557f8`)
+- feat(browser): Add Entity… on a Multi's right-click menu (`b35f5c01`)
+
+### Fixes
+- fix(playblast): concave faces keep their notch and a wall its window (`65d47af5`)
+- fix(config): group schema defaults apply (config migration v22) (`023a10a4`)
+- fix(browser): a Settings toggle no longer reverts Run on or the slate size (`50c75723`)
+- fix(browser): the Entity Editor button in a Multi's workfile opens its Multi (`66962649`)
+- fix(farm): the launcher reads the Houdini version from a macOS HFS (`5521ff32`)
+- fix(cop lop_import): import one frame by default, not every frame (`0d599f75`)
+
+### Documentation
+- docs: the macOS submit error and th::layout_rigs Build's output lookup (`75eae6d5`)
+- docs: regenerate CHANGELOG.md for v1.89.1 (`0f364864`)
+
 ## v1.89.1 — 2026-11-03
 
 ### Fixes
