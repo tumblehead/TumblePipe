@@ -11,6 +11,7 @@ details and the sidebar's counts.
 from __future__ import annotations
 
 import dataclasses
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -153,6 +154,15 @@ def entity_animatable(catalog_id: str, asset_id: str, uri) -> bool:
     return _lookup(catalog_id, "animatable", asset_id, is_animatable, uri)
 
 
+@dataclasses.dataclass
+class _Pass:
+    """One discovery pass in flight: what its waiters get when ``done``."""
+    epoch: int
+    done: threading.Event = dataclasses.field(default_factory=threading.Event)
+    items: list = dataclasses.field(default_factory=list)
+    errors: list = dataclasses.field(default_factory=list)
+
+
 class EntityIndex:
     """Asset and shot cards, details, and the discovery cache."""
 
@@ -180,6 +190,20 @@ class EntityIndex:
         # hit no errors completes.
         self._assets: list[Asset] | None = None
         self._shots: list[Asset] | None = None
+        # Single flight: the pass running now, which every caller of
+        # items() waits on instead of starting its own. A grid query, a
+        # search, a refresh and a save each asked for one, and on an SMB
+        # share fifteen ran at once, each stalling the others.
+        # ``_epoch`` bumps on invalidate(): a pass begun before it is not
+        # cached, and callers after it start a fresh one.
+        self._lock = threading.Lock()
+        self._pass: _Pass | None = None
+        self._epoch = 0
+        # Cards rebuilt off the GUI thread for card() to hand out once
+        # (see rebuild_card), and the lock that runs those rebuilds one at
+        # a time. Taken before ``_lock``, never inside it.
+        self._fresh: dict[str, Asset] = {}
+        self._rebuild_lock = threading.Lock()
         #: Tag filter of the most recent grid query. A single-card refresh
         #: has no tags of its own, so it replays these to keep the
         #: contextual category prefix (see :meth:`apply_category_prefix`).
@@ -187,10 +211,14 @@ class EntityIndex:
 
     def invalidate(self, *, assets: bool = True, shots: bool = True) -> None:
         """Drop the cached cards; the next query rediscovers."""
-        if assets:
-            self._assets = None
-        if shots:
-            self._shots = None
+        with self._lock:
+            if assets:
+                self._assets = None
+            if shots:
+                self._shots = None
+            self._epoch += 1
+            self._pass = None
+            self._fresh.clear()
 
     # ── Discovery ────────────────────────────────────────
 
@@ -212,18 +240,77 @@ class EntityIndex:
         discovery, so the next browse would show the partial result with
         the errors gone) or found nothing while no Client was ready yet (a
         transient "nothing loaded" must not stick).
+
+        Single flight: while a pass runs, other callers wait for it and
+        get its cards and errors rather than starting another.
         """
-        cached = self.cached()
-        if cached is not None:
-            return cached
-        before = len(errors)
-        assets, shots = self._discover(errors)
-        has_projects = any(True for _ in self._registry.all())
-        if not assets and not shots and has_projects and not self._clients.ready:
-            return []
-        if len(errors) == before:
-            self._assets, self._shots = assets, shots
-        return assets + shots
+        with self._lock:
+            cached = self.cached()
+            if cached is not None:
+                return cached
+            flight = self._pass
+            owner = flight is None
+            if owner:
+                flight = self._pass = _Pass(self._epoch)
+        if not owner:
+            flight.done.wait()
+            errors.extend(flight.errors)
+            return list(flight.items)
+        try:
+            assets, shots = self._discover(flight.errors)
+            has_projects = any(True for _ in self._registry.all())
+            if not assets and not shots and has_projects and not self._clients.ready:
+                flight.items = []
+            else:
+                flight.items = assets + shots
+                with self._lock:
+                    if not flight.errors and self._epoch == flight.epoch:
+                        self._assets, self._shots = assets, shots
+        finally:
+            with self._lock:
+                if self._pass is flight:
+                    self._pass = None
+            flight.done.set()
+        errors.extend(flight.errors)
+        return list(flight.items)
+
+    def rebuild_card(self, asset_id: str) -> Asset | None:
+        """Rebuild one card and put it in the cache in place of the old one,
+        without a discovery pass. For a save off the GUI thread: the next
+        :meth:`card` call (the browser's in-place refresh, on the GUI
+        thread) hands it out instead of scanning again. None for an id
+        naming none.
+
+        Rebuilds run one at a time, build and store together: two quick
+        saves of one entity start two rebuilds, and the one that finished
+        last would otherwise cache whichever card it built, older or not.
+        Serialised, the last rebuild to run reads the newest files."""
+        with self._rebuild_lock:
+            return self._rebuild_card(asset_id)
+
+    def _rebuild_card(self, asset_id: str) -> Asset | None:
+        proj = self._resolver.project_for(asset_id)
+        if proj is None:
+            return None
+        self._activator.activate(proj)
+        uri = self._resolver.uri_for_ready(asset_id)
+        card = self.build_card(proj, uri)
+        with self._lock:
+            for name in ("_assets", "_shots"):
+                cards = getattr(self, name)
+                if cards is None:
+                    continue
+                if any(c.id == asset_id for c in cards):
+                    setattr(self, name, [
+                        card if c.id == asset_id else c for c in cards
+                    ])
+            # A pass running now may have scanned this card before the
+            # save: let it finish for its waiters, but not be cached.
+            if self._pass is not None:
+                self._epoch += 1
+                self._pass = None
+            self._fresh[asset_id] = card
+        return card
 
     def _discover(self, errors: list) -> tuple[list[Asset], list[Asset]]:
         """One pass over each project's entity list: ``(assets, shots)``."""
@@ -328,7 +415,13 @@ class EntityIndex:
 
     def card(self, asset_id: str) -> Asset | None:
         """A fresh card for one asset or shot (a save, a create), with the
-        grid's current category prefix; None for an id naming none."""
+        grid's current category prefix; None for an id naming none.
+        A card :meth:`rebuild_card` just built is handed out once instead
+        of scanned again."""
+        with self._lock:
+            fresh = self._fresh.pop(asset_id, None)
+        if fresh is not None:
+            return self.apply_category_prefix([fresh], self.last_query_tags)[0]
         proj = self._resolver.project_for(asset_id)
         if proj is None:
             return None

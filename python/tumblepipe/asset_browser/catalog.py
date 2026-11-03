@@ -22,6 +22,8 @@ Recipe (``recipe:``), node (``node:``) and container (``group:`` /
 from __future__ import annotations
 
 import dataclasses
+import logging
+import threading
 from pathlib import Path
 
 from tumbletrove.asset_browser.api.catalog import Catalog
@@ -71,6 +73,8 @@ from .sidebar import Sidebar
 from .thumbnails import ThumbnailManager
 from .types import DeptVersionStore, projects_json_path
 from .workfiles import WorkfileManager
+
+log = logging.getLogger(__name__)
 
 
 class PipelineCatalog(Catalog):
@@ -187,6 +191,7 @@ class PipelineCatalog(Catalog):
             resolver=self._resolver, activator=self._activator,
             refresh=self._refresh, invalidate_cache=self.invalidate_cache,
             prefs=self._prefs, dept_versions=self._dept_versions,
+            rebuild_card=self.rebuild_card_async,
         )
         self._workfiles = WorkfileManager(
             resolver=self._resolver, registry=self._registry,
@@ -1172,6 +1177,33 @@ class PipelineCatalog(Catalog):
         self._recipes.invalidate()
         self._nodes.invalidate()
         self._containers.invalidate_membership_cache()
+
+    def rebuild_card_async(self, asset_id: str) -> None:
+        """Rebuild one entity's card on a worker thread, into the discovery
+        cache, then repaint it in place.
+
+        For a workfile save, which changes that card only: the other
+        caches (recipes, nodes, Multi membership) are left alone, and no
+        discovery pass is started. The repaint's ``get_asset`` runs on the
+        GUI thread and is handed the rebuilt card instead of scanning the
+        department folders there. A rebuild that fails drops the caches
+        and re-queries the grid, as a save did before.
+        """
+        def work() -> None:
+            try:
+                card = self._index.rebuild_card(asset_id)
+            except Exception:
+                log.exception("Rebuilding the card of %s failed", asset_id)
+                card = None
+            if card is None:
+                self.invalidate_cache()
+                self._refresh.grid()
+                return
+            self._refresh.card(asset_id)
+
+        threading.Thread(
+            target=work, name="pipeline-card-rebuild", daemon=True,
+        ).start()
 
     def _reset_project_clients(self) -> None:
         """Drop per-project API client state (Shift+Click full reset).

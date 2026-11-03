@@ -3,7 +3,7 @@ import os
 import threading
 
 from tumblepipe.config.layout import require_current_layout
-from tumblepipe.config.store import JsonConfigStore
+from tumblepipe.config.store import shared_store
 from tumblepipe.storage import Storage
 
 def path_str(path: Path):
@@ -42,7 +42,10 @@ class Client:
 
         require_current_layout(self.CONFIG_PATH)
         self.storage = Storage(self.PROJECT_PATH, self.PIPELINE_PATH, self.CONFIG_PATH)
-        self.config = JsonConfigStore(self.CONFIG_PATH)
+        # Shared with every other Client of this config folder (the
+        # browser's per-project Clients and the active project's): see
+        # config.store.shared_store.
+        self.config = shared_store(self.CONFIG_PATH)
 
 def _env(key):
     assert key in os.environ, f'{key} environment variable not set'

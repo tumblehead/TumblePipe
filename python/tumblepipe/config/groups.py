@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
@@ -265,18 +265,47 @@ def _group(group_uri: Uri, properties: dict) -> Group:
         },
     )
 
-def get_group(group_uri: Uri) -> Group | None:
-    properties = api.config.get_properties(group_uri)
-    if properties is None: return None
-    return _group(group_uri, properties)
+# The db files a Group is built from: the Multi itself, and the entity tree
+# (and the schemas that place it) its sequence members resolve through.
+_GROUP_PURPOSES = ('groups', 'entity', 'schemas')
 
-def list_groups(context: str) -> list[Group]:
+def _copy(group: Group) -> Group:
+    """A Group whose lists the caller may change without touching the memo."""
+    return replace(
+        group,
+        members = list(group.members),
+        departments = list(group.departments),
+        timeline_starts = dict(group.timeline_starts),
+        stored_members = list(group.stored_members),
+    )
+
+def get_group(group_uri: Uri) -> Group | None:
+    # One coherent scope: resolving the members reads the entity tree once
+    # per member, and each read outside a scope stats the db files again.
+    with api.config.coherent():
+        properties = api.config.get_properties(group_uri)
+        if properties is None: return None
+        return _group(group_uri, properties)
+
+def _list_groups(context: str) -> list[Group]:
     context_uri = GROUPS_URI / context
     entities = api.config.list_entities(context_uri)
     return [
         _group(entity.uri, entity.properties)
         for entity in entities
     ]
+
+def list_groups(context: str) -> list[Group]:
+    """Every Multi of ``context``. Memoized until the groups, entity or
+    schemas file changes: the browser asks once per card per department
+    (``find_group`` behind every workspace), and resolving every Multi's
+    members again each time was the bulk of a browser load on an SMB
+    share."""
+    groups = api.config.memoized(
+        f'groups.list_groups:{context}', _GROUP_PURPOSES,
+        lambda: _list_groups(context),
+    )
+    return [_copy(group) for group in groups]
 
 def set_timeline(
     group_uri: Uri,

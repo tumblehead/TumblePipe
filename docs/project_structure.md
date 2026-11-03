@@ -175,7 +175,9 @@ Qt and the pipeline clients onto the launch path.
 - `discovery.py` — `ProjectBuckets` (a project's categories and
   sequences) and `EntityIndex` (asset / shot cards and details, the
   discovery pass and its cache, the department workfile scan, the
-  sidebar's per-bucket counts).
+  sidebar's per-bucket counts). One pass runs at a time: queries that
+  arrive meanwhile wait for it. A save rebuilds only its own card
+  (`rebuild_card`, on a worker thread).
 - `sidebar.py` — the collections tree.
 - `dept_scope.py` — a context's department pool, and the departments one
   entity shows (its assignment plus any with work).

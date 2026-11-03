@@ -50,14 +50,23 @@ class SceneManager:
         invalidate_cache: Callable[[], None],
         prefs: "PipelinePrefs",
         dept_versions: "DeptVersionStore",
+        rebuild_card: Callable[[str], None] | None = None,
     ) -> None:
         self._catalog_id = catalog_id
         self._resolver = resolver
         self._activator = activator
         self._refresh = refresh
         self._invalidate_cache = invalidate_cache
+        # Rebuilds one saved entity's card in the background and repaints
+        # it (Catalog.rebuild_card_async). Without one, a save drops the
+        # caches and repaints the card the old way.
+        self._rebuild_card = rebuild_card or self._rebuild_card_inline
         self._prefs = prefs
         self._dept_versions = dept_versions
+
+    def _rebuild_card_inline(self, asset_id: str) -> None:
+        self._invalidate_cache()
+        self._refresh.card(asset_id)
 
     def apply_scene_timeline(
         self, asset_id: str, *, force_frame_range: bool = False,
@@ -543,19 +552,26 @@ class SceneManager:
             f"Saved {next_path.name}",
             severity=hou.severityType.Message,
         )
-        # Drop scan caches so the next browse query re-scans.
-        self._invalidate_cache()
         # Swap the saved entity's own card/list row in place — the
         # refresh_cb → _on_quick_action_done path only refreshes the
         # currently-displayed detail's card, which may be a
         # different asset than the one just saved.
-        if scene_proj is not None:
-            self._refresh.card(
-                self.id_from_scene_uri(
-                    prev_ctx.entity_uri, scene_proj.name,
-                    entities_only=False,
-                ),
-            )
+        saved_id = None if scene_proj is None else self.id_from_scene_uri(
+            prev_ctx.entity_uri, scene_proj.name, entities_only=False,
+        )
+        if saved_id is not None and prev_ctx.entity_uri.purpose == "entity":
+            # One entity's card changed: rebuild just it, off this (the
+            # main) thread, into the discovery cache. Wiping the cache
+            # instead started a whole discovery pass per save, and the
+            # card rebuilt here, on the GUI thread, scanned the share.
+            self._rebuild_card(saved_id)
+        else:
+            # A Multi's workfile shows on every member's card; a hip path
+            # no project matched (another spelling of one can miss) names
+            # no card at all. Either way, drop everything.
+            self._invalidate_cache()
+            if saved_id is not None:
+                self._refresh.card(saved_id)
         return next_path
 
     def publish_current_scene(self, refresh_cb=None) -> None:

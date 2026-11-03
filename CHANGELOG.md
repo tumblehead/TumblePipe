@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.90.1 — 2026-11-03
+
+### Fixes
+- fix(farm): the local runner downloads hpm on macOS (`35f1a2fa`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.90.0 (`bb22e47d`)
+
 ## v1.90.0 — 2026-11-03
 
 ### Features

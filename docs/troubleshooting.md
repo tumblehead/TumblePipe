@@ -40,6 +40,19 @@ Later releases read a missing list as empty. On an older release, open
 `"members": []`) to each group's `properties` that lacks it, and restart
 Houdini — a running session reads the configuration once.
 
+### The Asset Browser takes minutes to load on a network share, and saves are slow
+
+Through 1.90.1, on a project whose `_config` sits on an SMB share, the
+browser could take minutes to show its cards and stay sluggish after they
+appeared. Every card asked each department which Multi covers it, and each
+answer re-checked the config files on the share. Every query that arrived
+during a load (a click, a search, a save) also started a load of its own,
+and each save started another full load. Later releases check the config
+files once per load, run one load at a time, and update only the saved
+card after a save. On an older release, avoid clicking or searching while
+the browser is loading. Once the cards are up, it stays fast until the
+next save or refresh.
+
 ### A window appears before Houdini at launch
 
 Both come from the `tt_prepare` hook, which runs on every launch:

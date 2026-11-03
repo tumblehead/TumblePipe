@@ -154,6 +154,15 @@ imports it.
   properties (use it whenever only `.uri` is consumed — HDA menus
   especially), and `with config.coherent():` batches a loop of reads into a
   single coherency check.
+
+  A process holds **one store per config folder**
+  (`config.store.shared_store`): the Asset Browser's per-project clients
+  and `api.config` read through the same one, so a `coherent()` block
+  opened by either covers the other's reads beneath it. A derived result
+  too costly to rebuild per call can ride the same memo with
+  `config.memoized(key, purposes, compute)`, which recomputes once any of
+  `purposes`' files changes; `config.groups.list_groups` does, since the
+  browser asks it once per card per department.
 - `storage.json` — where each storage purpose lives on disk (below).
 - `version.json` — the layout version (see *Layout versioning and migration*).
 

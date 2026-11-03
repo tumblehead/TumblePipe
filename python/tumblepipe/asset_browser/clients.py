@@ -4,10 +4,11 @@ Owns the slot dict, the construction lock, and the FAILED/READY state
 transitions. Catalog-side code goes through this rather than touching
 ``ClientSlot`` directly.
 
-Construction is serialised because tumblepipe's ``Client`` reads
-``TH_*`` env vars while building its ``JsonConfigStore`` — two
-concurrent builds race on the env and cross-wire each other's
-config. The lock is catalog-scoped (one per :class:`ClientPool`).
+Construction is serialised by a catalog-scoped lock (one per
+:class:`ClientPool`), so each project's Client is built once. A Client's
+config store is the process's one store for that config folder
+(``tumblepipe.config.store.shared_store``), the same one ``api.config``
+reads through when the project is active.
 """
 
 from __future__ import annotations

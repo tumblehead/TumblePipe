@@ -335,6 +335,29 @@ class JsonConfigStore:
         """
         return self._coherent()
 
+    def memoized(self, key: str, purposes: tuple[str, ...], compute):
+        """``compute()``, memoized per store generation.
+
+        For a result derived from public reads (``config.groups.list_groups``)
+        that is too costly to recompute per call. ``purposes`` are the files
+        it reads: they are stamped first, so a write to any of them (from
+        any process) bumps the generation and the memo misses. The
+        generation is taken before computing, so a reload during
+        ``compute`` leaves the entry stale rather than wrongly fresh. The
+        result is shared between callers: they must not mutate it.
+        """
+        with self._coherent():
+            for purpose in purposes:
+                self._load(purpose)
+            generation = self._generation
+            memo_key = ('memoized', key)
+            hit = self._memo.get(memo_key)
+            if hit is not None and hit[0] == generation:
+                return hit[1]
+            result = compute()
+            self._memo[memo_key] = (generation, result)
+            return result
+
     def root(self, purpose: str) -> dict | None:
         """The coherent top-level tree for ``purpose`` (live object, None if absent).
 
@@ -717,3 +740,33 @@ class JsonConfigStore:
         if schema_uri.purpose != 'schemas':
             return []
         return self.list_schemas(schema_uri)
+
+
+# One store per config folder, shared by every Client of it. The browser
+# builds a Client per project and ``tumblepipe.api`` builds the active
+# project's own; with a store each, a coherent-read scope opened on the
+# browser's store did not cover the ``api.config`` reads under it (group
+# membership, workspaces), so each of those re-stamped the db files, and on
+# an SMB share that was the minutes-long browser load. One store also means
+# one parsed copy of each db file and one memo.
+_shared_stores: dict[str, JsonConfigStore] = {}
+_shared_stores_lock = threading.Lock()
+
+
+def _store_key(config_path: Path) -> str:
+    # No resolve(): on a mapped drive it can trade the letter for a UNC
+    # path (and stat the share). Two spellings of one folder only cost a
+    # second store, as before.
+    import os
+    return os.path.normcase(os.path.abspath(str(config_path)))
+
+
+def shared_store(config_path: Path) -> JsonConfigStore:
+    """The process's :class:`JsonConfigStore` for ``config_path``."""
+    key = _store_key(config_path)
+    with _shared_stores_lock:
+        store = _shared_stores.get(key)
+        if store is None:
+            store = JsonConfigStore(Path(config_path))
+            _shared_stores[key] = store
+        return store
