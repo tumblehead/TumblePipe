@@ -18,6 +18,7 @@ typically set in a launcher script that then starts Houdini.
 | `TH_EXPORT_PATH`   | Path where the pipeline writes exports.          | no       |
 | `TH_USER`          | The pipeline user identity (see below).          | no       |
 | `TH_TEMP`          | Root for machine-local scratch (see below).      | no       |
+| `TH_EVENTS_DIR`    | Folder of the same-machine change journal (see below). | no |
 
 `TH_CONFIG_PATH` defaults to `$TH_PROJECT_PATH/_config` and `TH_EXPORT_PATH`
 defaults to `$TH_PROJECT_PATH/export` when unset.
@@ -154,6 +155,44 @@ imports it.
   properties (use it whenever only `.uri` is consumed — HDA menus
   especially), and `with config.coherent():` batches a loop of reads into a
   single coherency check.
+
+  Each check is a `stat()` of the file, about 6 ms on an SMB share. A
+  graphical Houdini therefore sets a **stamp window**
+  (`config.store.set_stamp_ttl`, one second, `startup.GUI_STAMP_TTL`): a
+  read within a second of a file's last check trusts the cached copy.
+  Parameter expressions that read the config on every cook and frame
+  change cost one `stat()` a second instead of one per evaluation. The
+  window is off (0) in hython, on the farm and in the tests. Three things
+  hold inside it:
+
+  - The session's own writes are seen at once.
+  - Every write (add, set, rename, reorder, remove, and `snapshot()` for an
+    edit) reads the disk first, so it never writes back a copy up to a
+    second old over another process's write.
+  - `config.expire_stamps()` makes the next read check again. The Asset
+    Browser calls it before each discovery pass, and when the change
+    journal names a config write from another session.
+
+  **The change journal** (`tumblepipe.util.events`) carries one session's
+  writes to the other Houdini sessions on the same machine. Every workfile
+  commit, finished export (`export_layer`, `export_rig`) and config write
+  appends a JSON line to `changes.jsonl` on local disk, per user:
+  `%LOCALAPPDATA%\tumblepipe\events` on Windows,
+  `~/Library/Application Support/tumblepipe/events` on macOS,
+  `$XDG_STATE_HOME/tumblepipe/events` (else `~/.local/state/...`) on
+  Linux, or `$TH_EVENTS_DIR`. Each open Asset Browser reads the new lines
+  twice a second (`asset_browser/change_feed.py`), a local `stat()`, and
+  rebuilds the cards they name; see [the Asset Browser](asset-browser/index.md#cards).
+  It is a hint: writing to it never fails a write, and a reader that may
+  have missed lines (the file was restarted past 256 KB, or deleted) asks
+  for a full refresh. Writes from other machines are not in it.
+
+  A scene refresh (`refresh_scene_imports`) re-executes every import node
+  inside one `coherent()` block and one `pipe.paths.cached_version_listings()`
+  block, which lists each version folder once for the whole batch: a
+  26-node Multi on an SMB share made 7,080 `stat()` calls (42 s) without
+  them. Code that exports inside such a block does not see its own new
+  version in a listing; `get_next_version_path` always reads the disk.
 
   A process holds **one store per config folder**
   (`config.store.shared_store`): the Asset Browser's per-project clients
@@ -723,7 +762,9 @@ You do not have to remember to run the command above. The `tt_prepare` package
 hook runs on **every project launch**: it reads `_config/version.json`, and
 when the project is already current it does nothing visible at all. When the
 project is behind, it migrates it, backing up anything it replaces alongside
-as `.bak` first, and the launch carries on.
+as `.bak` first, and the launch carries on. The same hook also creates the
+project's `otls/` folder if it is missing, the folder for
+[project HDAs](project-hdas.md).
 
 There is no "not now": the package reads exactly one config layout and
 refuses any other (see the "is on layout vN" entry in

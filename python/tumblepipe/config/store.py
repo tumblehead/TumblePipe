@@ -26,6 +26,7 @@ was a multi-second stall per parameter-pane redraw (the v1.16.5 regression).
 
 import copy
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,7 @@ from tumblepipe import naming
 from tumblepipe.config.schema import Schema, schema_from_properties
 from tumblepipe.util.data import deep_merge as _deep_merge
 from tumblepipe.util.io import load_json, store_json
+from tumblepipe.util import events
 from tumblepipe.util.uri import Uri
 
 
@@ -215,7 +217,9 @@ class JsonConfigStore:
     The in-memory copy of each purpose is kept coherent with disk: every
     public read re-stamps the file (at most once per coherent-read scope)
     and reloads if it changed, so a write from any other process is picked
-    up on the next read with no manual refresh.
+    up on the next read with no manual refresh. With a stamp window set
+    (``set_stamp_ttl``, GUI Houdini only), another process's write is picked
+    up within the window instead; writes always check the disk.
     """
 
     def __init__(self, config_path: Path):
@@ -236,6 +240,9 @@ class JsonConfigStore:
         # stack, each purpose is stamped at most once. Thread-local so a
         # GUI-thread read and a worker-thread read cannot share a scope.
         self._scope = threading.local()
+        # purpose -> clock time its stamp was last checked against disk
+        # (absent files included), for the stamp window (set_stamp_ttl).
+        self._checked_at: dict[str, float] = {}
 
     # ------------------------------------------------------------------ #
     # Coherent-cache core
@@ -291,16 +298,28 @@ class JsonConfigStore:
             if scope.depth == 0:
                 scope.synced.clear()
 
-    def _load(self, purpose: str) -> dict | None:
+    def _load(self, purpose: str, fresh: bool = False) -> dict | None:
         """Return the coherent in-memory tree for ``purpose`` (None if no file).
 
         Reloads from disk when the file's stamp differs from the one the
         cached copy was loaded with — i.e. whenever anyone wrote it. Inside
         an active coherent-read scope the stamp check runs once per purpose;
-        subsequent loads trust it.
+        subsequent loads trust it. Outside one, a check within the stamp
+        window (``set_stamp_ttl``) is trusted too, unless ``fresh``: a
+        read-modify-write passes it, so it never writes back a copy up to a
+        window old over another process's write.
         """
         scope = self._scope_state()
         if scope.depth > 0 and purpose in scope.synced:
+            return self._cache.get(purpose)
+        # Taken before the stat: a write landing during it is then at most
+        # one window late, never more.
+        now = _clock()
+        checked = self._checked_at.get(purpose)
+        if (not fresh and _stamp_ttl > 0 and checked is not None
+                and 0 <= now - checked < _stamp_ttl):
+            if scope.depth > 0:
+                scope.synced.add(purpose)
             return self._cache.get(purpose)
         stamp = self._stamp(purpose)
         if stamp is None:
@@ -312,6 +331,7 @@ class JsonConfigStore:
             self._cache[purpose] = load_json(self.db_file(purpose))
             self._stamps[purpose] = stamp
             self._bump_generation()
+        self._checked_at[purpose] = now
         if scope.depth > 0:
             scope.synced.add(purpose)
         return self._cache.get(purpose)
@@ -368,7 +388,7 @@ class JsonConfigStore:
 
     def snapshot(self, purpose: str) -> dict | None:
         """An owned deep copy of ``purpose``'s tree, safe to mutate freely."""
-        data = self._load(purpose)
+        data = self._load(purpose, fresh=True)
         return copy.deepcopy(data) if data is not None else None
 
     def write_root(self, purpose: str, data: dict) -> None:
@@ -377,10 +397,23 @@ class JsonConfigStore:
         The stamp is taken *after* writing so this process does not mistake its
         own write for an external change and pointlessly reload it.
         """
+        now = _clock()
         store_json(self.db_file(purpose), data)
         self._cache[purpose] = data
         self._stamps[purpose] = self._stamp(purpose)
+        self._checked_at[purpose] = now
         self._bump_generation()
+        # This machine's other sessions hear of it: an open Asset Browser
+        # there refreshes and expires its stamps, so its reads see the write
+        # at once rather than a stamp window later (change_feed).
+        events.announce(self.config_path, events.CONFIG, '', purpose)
+
+    def expire_stamps(self) -> None:
+        """Make the next read of every purpose check its file on disk,
+        whatever the stamp window. For an explicit refresh (the Browser's
+        discovery pass): one stat per file, and a reparse only of the files
+        that changed, where ``refresh_cache`` reparses them all."""
+        self._checked_at.clear()
 
     def refresh_cache(self, purpose: str | None = None) -> None:
         """Force the next read to reload from disk.
@@ -392,9 +425,11 @@ class JsonConfigStore:
         if purpose is not None:
             self._cache.pop(purpose, None)
             self._stamps.pop(purpose, None)
+            self._checked_at.pop(purpose, None)
         else:
             self._cache.clear()
             self._stamps.clear()
+            self._checked_at.clear()
         self._memo.clear()
         self._bump_generation()
 
@@ -402,7 +437,7 @@ class JsonConfigStore:
     # Entity CRUD
     # ------------------------------------------------------------------ #
     def add_entity(self, uri: Uri, properties: dict):
-        data = self._load(uri.purpose)
+        data = self._load(uri.purpose, fresh=True)
         if data is None:
             data = {'properties': {}, 'children': {}}
         if _contains(data, uri.segments):
@@ -424,7 +459,7 @@ class JsonConfigStore:
         self.write_root(uri.purpose, data)
 
     def remove_entity(self, uri: Uri):
-        data = self._load(uri.purpose)
+        data = self._load(uri.purpose, fresh=True)
         if data is None or not _contains(data, uri.segments):
             raise ValueError('Entity does not exist')
         _remove(data, uri.segments)
@@ -439,7 +474,7 @@ class JsonConfigStore:
         """
         if not uri.segments:
             raise ValueError('A purpose root cannot be renamed')
-        data = self._load(uri.purpose)
+        data = self._load(uri.purpose, fresh=True)
         if data is None or not _contains(data, uri.segments):
             raise ValueError('Entity does not exist')
         new_path = [*uri.segments[:-1], new_name]
@@ -474,7 +509,7 @@ class JsonConfigStore:
         rewriting the tree by hand. ``names`` must be a permutation of the
         node's existing children.
         """
-        data = self._load(uri.purpose)
+        data = self._load(uri.purpose, fresh=True)
         if data is None:
             raise ValueError('Entity does not exist')
         node = data
@@ -612,7 +647,7 @@ class JsonConfigStore:
         changed.
         """
         with self._coherent():
-            data = self._load(uri.purpose)
+            data = self._load(uri.purpose, fresh=True)
             if data is None:
                 data = dict(children=dict())
             # deepcopy so the caller cannot mutate the cached tree through
@@ -740,6 +775,33 @@ class JsonConfigStore:
         if schema_uri.purpose != 'schemas':
             return []
         return self.list_schemas(schema_uri)
+
+
+# The stamp window. 0 (the default): every read outside a coherent() scope
+# stats its db file, so another process's write shows on the very next read.
+# Above 0: a read within that many seconds of the file's last check trusts
+# the cached copy. For a GUI Houdini session, where parameter expressions
+# (shot_start.start_frame, import_rig.place_characters, groups.get_group)
+# read the config on every cook and frame change outside any scope, and each
+# read was a stat() of ~6 ms on an SMB share. This process's own writes are
+# still seen at once (write_root re-stamps); only other processes' writes
+# can be up to one window late.
+_stamp_ttl: float = 0.0
+_clock = time.monotonic
+
+
+def set_stamp_ttl(seconds: float) -> None:
+    """Set the stamp window, in seconds, for every store in this process
+    (0 turns it off). See ``_stamp_ttl``."""
+    global _stamp_ttl
+    if seconds < 0:
+        raise ValueError(f"stamp window must be >= 0, got {seconds}")
+    _stamp_ttl = float(seconds)
+
+
+def stamp_ttl() -> float:
+    """The current stamp window in seconds (0: off)."""
+    return _stamp_ttl
 
 
 # One store per config folder, shared by every Client of it. The browser

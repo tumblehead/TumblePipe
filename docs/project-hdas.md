@@ -71,9 +71,10 @@ The package's manifest prepends `$TH_PROJECT_PATH/otls` to
 `HOUDINI_OTLSCAN_PATH`. Houdini's package loader keeps the default scan path
 after it, so the pipeline's own HDAs and Houdini's still load. Because it is
 part of the package environment, farm tasks get it too: a scene that uses a
-project HDA renders and publishes on the farm without extra setup. The folder
-is created by the first **Create Project HDA...**; a project without one
-loads nothing extra.
+project HDA renders and publishes on the farm without extra setup. Launching
+the project from TumbleTrove Desktop creates the folder if it is missing (the
+`tt_prepare` launch hook), so the scan path always names a real folder; an
+empty one loads nothing extra.
 
 `otls/` is one of the pipeline folders the [project archive](archiving.md)
 packs with the project.

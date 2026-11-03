@@ -40,7 +40,10 @@ from tumblepipe.pipe.paths import (
     latest_hip_file_path
 )
 from tumblepipe.pipe.usd.sublayer_refs import add_sublayer
-from tumblepipe.pipe.context import save_layer_context, sourced_from_root
+from tumblepipe.pipe.context import (
+    announce_change, save_layer_context, sourced_from_root,
+)
+from tumblepipe.util import events
 from tumblepipe.util.io import copy_version_contents
 from tumblepipe.pipe.provenance import scene_producer
 from tumblepipe.pipe.build import sourced_from_shot, arrived_from_downstream
@@ -396,6 +399,7 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
                 producer=scene_producer(native.path())
             )
             _copy_to_version(temp_path, version_path)
+        announce_change(events.EXPORT, entity_uri, department_name)
 
         ns.set_node_comment(
             native,

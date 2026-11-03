@@ -1,5 +1,8 @@
 //! `tt_prepare` — bring a project's `_config` forward at launch time.
 //!
+//! It also creates `<project>/otls` when missing (see `ensure_project_otls`),
+//! the project-HDA folder on `HOUDINI_OTLSCAN_PATH`.
+//!
 //! ## Why this hook
 //!
 //! Migrations reach other studios through nothing at all today. `migrate-config`
@@ -149,6 +152,8 @@ fn run(parsed: &Args) -> Result<(), String> {
         return show_unconfigured(project);
     }
 
+    ensure_project_otls(&project);
+
     // The common case, and the one that must stay cheap: read one small file,
     // compare an integer, and return before egui is ever touched.
     let steps = pending(&project)?;
@@ -194,6 +199,23 @@ fn run(parsed: &Args) -> Result<(), String> {
             Ok(())
         }
         Err(why) => show(plan, Problem::Failed(why)),
+    }
+}
+
+/// `<project>/otls` is on `HOUDINI_OTLSCAN_PATH` (hpm.toml [runtime]) for
+/// project HDAs. Create Project HDA makes it on first use, but until then the
+/// scan path names a folder that is not there, which reads as a broken setup
+/// to anyone inspecting the environment. Making it here covers new and
+/// existing projects alike. A failure (read-only share, say) is only logged:
+/// Houdini skips a missing scan folder, so it never blocks a launch.
+fn ensure_project_otls(project: &Path) {
+    let otls = project.join("otls");
+    if otls.is_dir() {
+        return;
+    }
+    match std::fs::create_dir_all(&otls) {
+        Ok(()) => eprintln!("tt_prepare: created {}", otls.display()),
+        Err(e) => eprintln!("tt_prepare: could not create {}: {e}", otls.display()),
     }
 }
 
@@ -588,6 +610,17 @@ impl eframe::App for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_project_otls_folder_is_made_and_an_existing_one_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        ensure_project_otls(dir.path());
+        let otls = dir.path().join("otls");
+        assert!(otls.is_dir());
+        std::fs::write(otls.join("keep.hda"), b"x").unwrap();
+        ensure_project_otls(dir.path());
+        assert!(otls.join("keep.hda").is_file());
+    }
 
     #[test]
     fn a_missing_project_path_is_an_error_not_a_panic() {

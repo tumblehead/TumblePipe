@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.90.2"
+version = "1.91.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -43,6 +43,7 @@ TT_DOWNLOADS_PATH = { method = "set", value = "$TH_PROJECT_PATH/library" }
 # Project HDAs: TumblePipe ▸ Create Project HDA... saves to <project>/otls/
 # (tumblepipe.pipe.houdini.project_hda). Houdini's package loader keeps the
 # default scan path behind a prepend, so the package's own otls/ still loads.
+# tt_prepare creates the folder at launch, so the path never names a missing one.
 HOUDINI_OTLSCAN_PATH = { method = "prepend", value = "$TH_PROJECT_PATH/otls" }
 # The color config belongs to the project (scaffolded from
 # scripts/project_template/_config/ocio/), not to the package.

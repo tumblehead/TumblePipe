@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 #: The desktop layout the package ships (desktop/TumblePipe.desk).
 DESKTOP_NAME = "TumblePipe"
 
+#: Seconds a GUI session trusts a config file's last check (config.store's
+#: stamp window).
+GUI_STAMP_TTL = 1.0
+
 #: Node types kept installed so old scenes still load, but hidden from the
 #: TAB menu (and so from the catalog's Nodes section) so nobody builds new
 #: work on them. th::create_model is the variant-less predecessor of
@@ -66,6 +70,13 @@ def bootstrap() -> None:
     _guarded("radial registration",
              lambda: register_radial(Path(os.environ["TH_PIPELINE_PATH"])))
     if hou.isUIAvailable():
+        # Parameter expressions read the config on every cook and frame
+        # change, outside any coherent() scope: each read was a stat() of
+        # the db file, ~6 ms on an SMB share. Trust a check for a second;
+        # another session's write then shows within one. hython and farm
+        # jobs keep reading the disk every time.
+        from tumblepipe.config.store import set_stamp_ttl
+        set_stamp_ttl(GUI_STAMP_TTL)
         import hdefereval
         hdefereval.executeDeferred(_register_tumbletrove)
     else:

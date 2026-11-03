@@ -176,12 +176,20 @@ def refresh_scene_imports() -> tuple[int, int]:
     in a GUI session so the re-imports don't each cook the graph.
     """
     from tumblepipe import resolver
+    from tumblepipe.api import api
+    from tumblepipe.pipe.paths import cached_version_listings
 
     executed = 0
     failed = 0
     # Each LOP import requests a resolver refresh over every loaded layer;
-    # defer them so the batch costs one refresh at the end.
-    with resolver.deferred_refresh():
+    # defer them so the batch costs one refresh at the end. The coherent
+    # config scope stamps each config file once for the batch instead of
+    # once per read, and the listing cache reads each version folder once:
+    # a 26-node Multi on an SMB share made 7,080 stat() calls (42 s)
+    # without them.
+    with (resolver.deferred_refresh(),
+          api.config.coherent(),
+          cached_version_listings()):
         try:
             nodes = find_import_nodes()
         except Exception:

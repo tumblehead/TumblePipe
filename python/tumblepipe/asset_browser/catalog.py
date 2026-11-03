@@ -1178,6 +1178,30 @@ class PipelineCatalog(Catalog):
         self._nodes.invalidate()
         self._containers.invalidate_membership_cache()
 
+    def follow_local_changes(self) -> None:
+        """Show what this machine's other Houdini sessions write — a
+        workfile version, an export, a config edit — without a Refresh:
+        follow the same-machine change journal (``change_feed``) on a timer.
+        GUI sessions only, on the GUI thread; once per catalog."""
+        if getattr(self, "_change_feed", None) is not None:
+            return
+        from tumblepipe.config.store import shared_store
+        from .change_feed import ChangeFeed
+
+        def refresh_all() -> None:
+            self.invalidate_cache()
+            self._refresh.grid()
+            self._refresh.sidebar()
+
+        self._change_feed = ChangeFeed(
+            projects=self._registry.all,
+            rebuild_card=self.rebuild_card_async,
+            refresh_all=refresh_all,
+            refresh_detail=self._refresh.detail,
+            expire=lambda config_path: shared_store(Path(config_path)).expire_stamps(),
+        )
+        self._change_feed.start()
+
     def rebuild_card_async(self, asset_id: str) -> None:
         """Rebuild one entity's card on a worker thread, into the discovery
         cache, then repaint it in place.

@@ -53,6 +53,29 @@ card after a save. On an older release, avoid clicking or searching while
 the browser is loading. Once the cards are up, it stays fast until the
 next save or refresh.
 
+### Opening a Multi takes most of a minute on a network share
+
+Through 1.90.2, opening a workfile re-ran every import node (see
+[A new publish does not show in my scene](#a-new-publish-does-not-show-in-my-scene)),
+and on an SMB share that step alone could take 40 s: a 26-node Multi made
+about 7,000 file checks, each config read re-checking its file and each node
+re-listing the same rig versions. Later releases check each config file and
+list each version folder once per refresh, and a graphical Houdini trusts a
+config file's last check for a second, which also speeds up cooks and frame
+changes. In the log, `Import refresh: re-executed N import node(s), M failed`
+marks the end of that step.
+
+### My other Houdini's Asset Browser doesn't show what I just saved or published
+
+Through 1.90.2, a browser rebuilt a card only for what its own session did,
+so a workfile saved or an export published in one Houdini did not show in
+another until **Refresh**. Later releases pass saves, exports and config
+edits between the Houdini sessions on one machine (the change journal, see
+[Cards](asset-browser/index.md#cards)), and the other browser updates within
+about a second. Its browser panel has to have been opened once in that
+session. Work from **other machines** (another artist, a farm job) still
+needs **Refresh**.
+
 ### A window appears before Houdini at launch
 
 Both come from the `tt_prepare` hook, which runs on every launch:

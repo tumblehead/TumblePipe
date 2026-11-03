@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.90.2 — 2026-11-03
+
+### Fixes
+- fix(asset-browser): one discovery pass at a time; a save rebuilds only its card (`45af478b`)
+- fix(config): one config store per folder, and list_groups memoized (`67c077d1`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.90.1 (`0b6bffc0`)
+
 ## v1.90.1 — 2026-11-03
 
 ### Fixes

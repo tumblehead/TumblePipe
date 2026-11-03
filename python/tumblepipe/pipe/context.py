@@ -1,10 +1,11 @@
 import datetime as dt
 import logging
 from pathlib import Path
-from tumblepipe.api import get_user_name
+from tumblepipe.api import api, get_user_name
 from tumblepipe import naming
 from tumblepipe.config.channels import read_published_channel
 from tumblepipe.config.department import list_departments
+from tumblepipe.util import events
 from tumblepipe.util.io import load_json, store_json
 from tumblepipe.util.houdini import hou
 from tumblepipe.pipe.paths import (
@@ -335,6 +336,20 @@ def save_entity_context(target_path: Path, context: Context):
     )
 
     store_json(entity_context_path, context_data)
+    # Written last of a workfile commit, by every path that makes one.
+    announce_change(events.WORKFILE, context.entity_uri, context.department_name)
+
+
+def announce_change(kind: str, uri, detail: str = '') -> None:
+    """Tell this machine's other sessions that ``uri`` of the active
+    project changed (``util.events``), so their Asset Browsers rebuild its
+    card. Never raises."""
+    try:
+        config_path = api.config.config_path
+    except Exception as exc:  # noqa: BLE001 - a hint must never break a write
+        logger.warning("Could not announce a %s change of %s: %s", kind, uri, exc)
+        return
+    events.announce(config_path, kind, uri, detail)
 
 
 def save_export_context(

@@ -8,7 +8,8 @@ from tumblepipe.api import (
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.paths.naming import entity_stem
-from tumblepipe.pipe.context import save_layer_context
+from tumblepipe.pipe.context import announce_change, save_layer_context
+from tumblepipe.util import events
 from tumblepipe.pipe.provenance import scene_producer
 from tumblepipe.pipe.paths import (
     get_next_version_path,
@@ -107,6 +108,7 @@ class ExportRig(EntityNode):
             user_name=get_user_name(),
             producer=scene_producer(context.path())
         )
+        announce_change(events.EXPORT, entity_uri, 'rig')
 
         return version_name
 

@@ -179,6 +179,19 @@ member count instead.
 orange dot when its asset list has changed since its last export; see
 [Multis and Roots](multis-and-roots.md#the-drift-dot).
 
+**Other Houdini sessions on this machine.** A card follows what your other
+open sessions do, without a Refresh. Save a workfile version or finish an
+export in one Houdini, switch to another, and its browser has rebuilt that
+card within about a second. A config edit made in another session (an
+entity created, renamed or deleted, a Multi changed) refreshes the whole
+browser the same way. Each session writes a line to a small journal on
+local disk (`%LOCALAPPDATA%\tumblepipe\events\changes.jsonl` on Windows,
+`~/Library/Application Support/tumblepipe/events/` on macOS,
+`~/.local/state/tumblepipe/events/` on Linux,
+[`util/events.py`](../../python/tumblepipe/util/events.py)), and every open
+browser reads it twice a second. Changes made on *other machines* (another
+artist, a farm export) are not in it: press **Refresh** to see those.
+
 ## Department rows and the deck
 
 Behind each asset or shot card is a **deck** with one item per department

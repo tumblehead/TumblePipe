@@ -109,6 +109,12 @@ Runs on **every** `launch_project`. It reads `_config/version.json`, and when
 the project is already current it prints an empty payload and exits without
 ever creating a window — the common case costs one small file read.
 
+Before that check it also makes sure `<project>/otls/` exists. That folder is
+on `HOUDINI_OTLSCAN_PATH` for project HDAs ([docs/project-hdas.md](../../docs/project-hdas.md)),
+and without this it only appeared with the first **Create Project HDA...**, so
+a fresh project's scan path named a missing folder. A failure to create it is
+logged and ignored; Houdini skips a missing scan folder anyway.
+
 When the project *is* behind it shows the pending steps, asks, and migrates
 only if the user agrees. It exists because nothing else brought migrations to
 anyone: `migrate-config` is a Scripts-panel button somebody has to notice, and

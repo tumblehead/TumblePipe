@@ -323,6 +323,9 @@ class EntityIndex:
                 continue
             # The workspace scans resolve through the active project.
             self._activator.activate(proj)
+            # A discovery pass is a refresh: see a write from another
+            # process at once, not up to a stamp window later.
+            client.config.expire_stamps()
             # coherent(): one config coherency check for the whole project
             # pass — the per-card department lists and frame ranges would
             # otherwise each re-stamp the db files.

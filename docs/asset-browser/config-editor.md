@@ -145,7 +145,9 @@ Nothing reaches disk until **Save Changes**. **Discard Changes** (confirmed:
 ## Saving, and schema migration
 
 **Save Changes** writes the whole purpose file back through the config
-store, so other sessions pick it up on their next read. If the file changed
+store. Other Houdini sessions on this machine pick it up within about a
+second (the [change journal](../configuration.md)); sessions on other
+machines on their next read, or a second later in a graphical Houdini. If the file changed
 on disk since the editor loaded it and the change conflicts with yours, a
 **Merge Conflict** dialog asks: *Save* keeps your version (discarding the
 external edit), *Discard* reloads from disk and drops yours. Any other

@@ -130,4 +130,22 @@ def create_catalog():
             "TH_PROJECT_PATH not set",
         )
         return None
-    return PipelineCatalog(registry)
+    catalog = PipelineCatalog(registry)
+    _follow_local_changes(catalog)
+    return catalog
+
+
+def _follow_local_changes(catalog: PipelineCatalog) -> None:
+    """Follow this machine's change journal when there is a GUI to show it
+    in (the factory runs on the GUI thread when the panel opens). A failure
+    only means the browser waits for a Refresh, as before."""
+    try:
+        from PySide6.QtWidgets import QApplication
+    except ImportError:
+        return  # no Qt here (the tests' headless stub): no GUI to follow for
+    try:
+        if QApplication.instance() is None:
+            return
+        catalog.follow_local_changes()
+    except Exception:
+        log.exception("Following other sessions' changes could not start")
