@@ -155,11 +155,19 @@ def houdini_python(hfs: Path) -> Path:
     if not libs:
         raise SystemExit(f'No python3.*libs under {hfs / "houdini"}; is {hfs} a Houdini install?')
     minor = libs[-1].name[len('python3.'):-len('libs')]
-    for candidate in (
+    candidates = [
         hfs / f'python3{minor}' / 'python.exe',
         hfs / 'python' / 'bin' / f'python3.{minor}',
         hfs / 'python' / 'bin' / 'python3',
-    ):
+    ]
+    # macOS: HFS is <app>/Frameworks/Houdini.framework/Versions/<v>/Resources
+    # and Python.framework sits beside Houdini.framework.
+    if len(hfs.parents) > 3:
+        candidates.append(
+            hfs.parents[3] / 'Python.framework' / 'Versions' / f'3.{minor}'
+            / 'bin' / f'python3.{minor}'
+        )
+    for candidate in candidates:
         if candidate.is_file():
             return candidate
     raise SystemExit(f"Houdini's Python 3.{minor} was not found under {hfs}")

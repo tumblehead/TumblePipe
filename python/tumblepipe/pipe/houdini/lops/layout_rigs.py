@@ -200,13 +200,25 @@ def _add_camera(dive, previous, shot_uri):
     return camera
 
 
+def dive_output(dive):
+    """The dive's Output LOP with Output Index 0, whatever the artist named
+    it (the one Houdini reads the subnet's result from); a new ``output0``
+    when the dive has none."""
+    for child in dive.children():
+        if child.type().name() != 'output': continue
+        index = child.parm('outputidx')
+        if index is None or index.eval() == 0:
+            return child
+    return dive.createNode('output', 'output0')
+
+
 def build(dive, rows: list[dict], *, stage=None, shot_uri=None,
           start_frame=None, frame_range=None):
     """Rebuild ``dive`` (the node's editable LOP subnet) for ``rows``:
     controls, rigs, the hide, the camera, wired from the subnet's input to
-    its ``output0``. ``stage`` (the node's input) and ``start_frame`` place
-    each rig at its layout placement."""
-    output = dive.node('output0')
+    its output (:func:`dive_output`). ``stage`` (the node's input) and
+    ``start_frame`` place each rig at its layout placement."""
+    output = dive_output(dive)
     ns.clear_network(dive, output)
     previous = dive.indirectInputs()[0]
     sops = None

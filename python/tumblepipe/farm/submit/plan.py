@@ -161,9 +161,15 @@ def houdini_python(hfs: Path, version: tuple[int, int]) -> Path | None:
         hfs / f'python{major}{minor}' / 'python.exe',                  # Windows
         hfs / 'python' / 'bin' / f'python{major}.{minor}',            # Linux
         hfs / 'python' / 'bin' / 'python3',
-        hfs.parent / 'Frameworks' / 'Python.framework' / 'Versions'  # macOS
-        / f'{major}.{minor}' / 'bin' / f'python{major}.{minor}',
     ]
+    # macOS: $HFS is <app>/Frameworks/Houdini.framework/Versions/<v>/Resources
+    # and Python.framework sits beside Houdini.framework.
+    if len(hfs.parents) > 3:
+        frameworks = hfs.parents[3]
+        candidates.append(
+            frameworks / 'Python.framework' / 'Versions' / f'{major}.{minor}'
+            / 'bin' / f'python{major}.{minor}'
+        )
     for candidate in candidates:
         if candidate.is_file():
             return candidate

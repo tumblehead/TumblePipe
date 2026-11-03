@@ -12,6 +12,35 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.89.0 — 2026-11-02
+
+### Features
+- feat(browser): a setting to hide departments with no workfile (`d328572c`)
+- feat(departments): a groom department for assets (`7ae24740`)
+- feat(asset-browser): Open Folder for assets and shots; clearer quick-action icons (`42932337`)
+- feat(templates): animation's Scene Invoke outputs Packed Folders (`9f856fda`)
+- feat(animate): one mode, the rigs imported once and only their points per frame (`391b3d6d`)
+
+### Fixes
+- fix(animate): the dive's ghost reads the shot stage at its start (`095c1b84`)
+- fix(build): keep the delegate's and resolver's cargo output across builds (`5f1dc454`)
+- fix(animate): placing a node in the dive no longer rebuilds the ghost (`6b97b7ec`)
+- fix(io): a database write waits out a session reading the file (`63d98db1`)
+
+### Performance
+- perf(import_rig): look up the shot start once per placement cook (`f7ee0f8c`)
+
+### Documentation
+- docs: Entity Editor Apply no longer stops on a database another session is reading (`1eb1dded`)
+- docs: regenerate CHANGELOG.md for v1.88.1 (`991a1a21`)
+
+### Chores
+- chore: drop the pre-commit hook; lint runs in preflight (`4720fe40`)
+
+### Other Changes
+- Merge remote-tracking branch 'origin/master' (`30c48979`)
+- Merge feat/asset-folder-menu: Open Folder for assets and shots, clearer quick-action icons (`765f701f`)
+
 ## v1.88.1 — 2026-11-02
 
 ### Fixes
