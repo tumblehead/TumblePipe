@@ -4,7 +4,8 @@
 // operation per channel, the CPU's, so the result is the CPU's bit for bit.
 
 struct Params {
-    // x: pixels; y: one over the chunk count, as f32 bits.
+    // x: pixels; y: one over the chunk count, as f32 bits; z: 1 = average
+    // alpha too (a transparent background), 0 = alpha 1.
     plane: vec4<u32>,
 }
 
@@ -25,7 +26,8 @@ fn add(@builtin(global_invocation_id) id: vec3<u32>) {
     dst_depth[i] = min(dst_depth[i], src_depth[i]);
 }
 
-// dst = the average: the sum times one over the count, alpha 1.
+// dst = the average: the sum times one over the count; alpha averaged too
+// for a transparent background, else 1.
 @compute @workgroup_size(64)
 fn scale(@builtin(global_invocation_id) id: vec3<u32>) {
     let i = id.x + id.y * 65535u * 64u;
@@ -34,5 +36,9 @@ fn scale(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     let inv = bitcast<f32>(p.plane.y);
     let s = dst_color[i];
-    dst_color[i] = vec4<f32>(s.x * inv, s.y * inv, s.z * inv, 1.0);
+    var a = 1.0;
+    if (p.plane.z != 0u) {
+        a = s.w * inv;
+    }
+    dst_color[i] = vec4<f32>(s.x * inv, s.y * inv, s.z * inv, a);
 }

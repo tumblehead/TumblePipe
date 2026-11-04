@@ -18,6 +18,34 @@ Every shot gets a list of **takes**:
 Departments come in pipeline order (layout before animation before light,
 ...) and a render's layers by name, with the slapcomp last.
 
+### Render layers stacked
+
+A shot's render layers are its channels (`default` first, then the others).
+Where they were made apart, a department also gets **layers** takes
+(`animation v0015 layers`), right after its other takes of that kind:
+
+- a playblast version made with th::playblast's **Render Layers** has a
+  movie per layer (that layer's prims on a transparent background); its
+  layers take stacks the ones it has;
+- a render version with two or more channel layers whose frames are all
+  there stacks them (the slapcomp is not one of them: it comps them
+  already). Layers whose frame range differs from the bottom one's are left
+  out.
+
+The layers are stacked in channel order, the first at the bottom, each laid
+"over" the ones below: playblast layers over black as they are, render
+layers in scene linear and then through the display transform like any
+render. A shot never opens on a layers take while it has another take.
+
+When the shot under the playhead shows a layers take, a row per layer
+stands over the track, the top layer on top as in an editor. Each row has
+the layer's key, its name, and a filled box when it shows (an empty one and
+**(hidden)** when it does not). Click a row, or press its digit (**1** is
+the bottom layer, up to **9**), to show or hide that layer. The toolbar
+over the picture says which layers show. The player remembers what you hid
+on each layers take until it closes. The rows go away on any other take.
+Hiding or showing a layer decodes that shot's frames again.
+
 A shot opens on the playblast written last, whichever department it was cut
 at: a farm playblast cut at animation after one cut at render opens, not the
 older render one. (Two written at the same moment go to the more downstream
@@ -74,6 +102,7 @@ The player is driven from the keyboard:
 | Ctrl+A | select every shot |
 | Escape | clear the selection |
 | B | show / hide the burn-ins |
+| 1 to 9 | show / hide layer 1 to 9 of a layers take (1 is the bottom) |
 
 On macOS, use Cmd for Ctrl. Up and Down stay within what the shot shows. For
 a playblast they step through that department's playblasts. For a render
@@ -86,7 +115,8 @@ that kind yet, they go to the latest of the most downstream department.
 Right-click a shot's clip to change its take. The menu has three submenus,
 each showing what is there for the take on screen: **Source** (playblast or
 render), **Department** (the departments of that source; a department
-rendering several layers lists each, as `light (slapcomp)`) and **Version**
+rendering several layers lists each, as `light (slapcomp)`, and its layers
+takes as `light (layers)`) and **Version**
 (that department's versions, newest first). The current choice is marked
 **(shown)**. Choosing a source or department goes where its key would: the
 source to the take you last showed of it, else its newest; a department to

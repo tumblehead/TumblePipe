@@ -1,5 +1,6 @@
 //! The video view as a Primer shader. A movie frame is three single-channel
-//! textures (Y, U, V) the shader converts; an EXR frame is one half-float
+//! textures (Y, U, V) the shader converts, or (with alpha, or a stack of
+//! layer movies) one RGBA8 texture of code values; an EXR frame is one half-float
 //! RGBA texture of scene-linear values, shown through the display transform
 //! (an OCIO view baked into a 3D LUT, see `colour.rs`). Textures are
 //! re-uploaded only when the frame changes.
@@ -30,6 +31,9 @@ struct Uniforms {
 enum Kind {
     Yuv,
     Linear,
+    /// Display-referred RGBA code values (a movie with alpha, a stack of
+    /// layer movies), in the same slot as the scene-linear texture.
+    Display,
 }
 
 struct Textures {
@@ -180,6 +184,10 @@ impl VideoPipeline {
                 vec![r8("video.y", width, height), r8("video.u", cw, ch), r8("video.v", cw, ch), rgba(1, 1)]
             }
             Kind::Linear => vec![r8("video.y", 1, 1), r8("video.u", 1, 1), r8("video.v", 1, 1), rgba(width, height)],
+            Kind::Display => {
+                let rgba8 = make_texture(device, "video.rgba8", (width, height, 1), wgpu::TextureFormat::Rgba8Unorm, d2);
+                vec![r8("video.y", 1, 1), r8("video.u", 1, 1), r8("video.v", 1, 1), rgba8]
+            }
         };
         let views: Vec<wgpu::TextureView> = planes.iter().map(|t| t.create_view(&Default::default())).collect();
         let lut_view = self.lut.0.create_view(&Default::default());
@@ -280,6 +288,11 @@ impl ShaderProgram for Video {
                             write_texture(queue, &textures.planes[2], v, cw, ch, 1);
                             pipeline.params =
                                 [if *full_range { 1.0 } else { 0.0 }, if *matrix == YuvMatrix::Bt709 { 1.0 } else { 0.0 }, 1.0, 0.0];
+                        }
+                        Pixels::Rgba8(rgba) => {
+                            let textures = pipeline.textures_for(device, Kind::Display, w, h);
+                            write_texture(queue, &textures.planes[3], rgba, w, h, 4);
+                            pipeline.params = [0.0, 0.0, 1.0, 2.0];
                         }
                         Pixels::Rgba16f(rgba) => {
                             assert!(lut.is_some(), "a scene-linear frame is shown through its display transform");

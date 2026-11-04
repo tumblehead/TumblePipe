@@ -33,7 +33,7 @@ Content-Type: text/plain
 comment ""
 position 0 0
 connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on debug off
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on debug off
 outputsNamed3
 {
 }
@@ -1557,21 +1557,21 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/points_sops/scene.init"
+Content-Disposition: attachment; filename="hdaroot/points_sops/dive.init"
 Content-Type: text/plain
 
 type = object_merge
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/points_sops/scene.def"
+Content-Disposition: attachment; filename="hdaroot/points_sops/dive.def"
 Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 0 3.88578e-16
+position -1.6944 1.4307
 connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
 {
 0 "output1"
@@ -1595,7 +1595,7 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/points_sops/scene.parm"
+Content-Disposition: attachment; filename="hdaroot/points_sops/dive.parm"
 Content-Type: text/plain
 
 {
@@ -1625,7 +1625,7 @@ expand1	[ 0	locks=0 ]	(	"off"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/points_sops/scene.userdata"
+Content-Disposition: attachment; filename="hdaroot/points_sops/dive.userdata"
 Content-Type: text/plain
 
 {
@@ -1657,7 +1657,7 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	scene 0 1 "input1"
+0 	scene 2 1 "input1"
 }
 inputs
 {
@@ -2140,7 +2140,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 9.3192 -2.4096
+position 12.1432 -2.4096
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2203,7 +2203,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 9.3192 -3.5391
+position 12.1432 -3.5391
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2264,7 +2264,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 3.2476 -6.777
+position 6.0716 -6.777
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2324,7 +2324,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 3.2476 -3.3885
+position 6.0716 -3.3885
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2333,7 +2333,7 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	scene 0 1 "input1"
+0 	scene 2 1 "input1"
 }
 inputs
 {
@@ -2394,7 +2394,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 3.2476 -4.518
+position 6.0716 -4.518
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2464,7 +2464,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 3.2476 -5.6475
+position 6.0716 -5.6475
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2559,7 +2559,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 6.4952 1.4307
+position 9.3192 1.4307
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2568,7 +2568,7 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	scene 0 1 "input1"
+0 	scene 2 1 "input1"
 }
 inputs
 {
@@ -2624,7 +2624,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 6.4952 0.3012
+position 9.3192 0.3012
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2687,7 +2687,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 6.4952 -0.8283
+position 9.3192 -0.8283
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2757,7 +2757,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 6.4952 -1.9578
+position 9.3192 -1.9578
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2827,7 +2827,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 6.4952 -3.0873
+position 9.3192 -3.0873
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2922,7 +2922,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 6.4952 -4.2168
+position 9.3192 -4.2168
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -2987,7 +2987,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 9.3192 -4.6686
+position 12.1432 -4.6686
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -3052,7 +3052,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 7.9072 -5.6475
+position 10.7312 -5.6475
 connectornextid 3
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -3113,7 +3113,7 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 7.9072 -6.777
+position 10.7312 -6.777
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
@@ -3161,11 +3161,1071 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/invoke.init"
+Content-Type: text/plain
+
+type = apex::sceneinvoke::2.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/invoke.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment "th::animate's own Scene Invoke, used when anim_dive outputs the APEX scene (its Scene Animate). Characters and skeletons come from the node's Characters list."
+position 0.5648 2.4096
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	dive 0 1 "input1"
+}
+inputs
+{
+0 	dive 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/invoke.chn"
+Content-Type: text/plain
+
+{
+    channel frame {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FF }
+    }
+    channel characterpattern {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"*\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.invoke_characters(hou.pwd())" language = python }
+    }
+    channel shapepattern {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"*\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../shapes\") }
+    }
+    channel enableoutput0 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 0)" language = python }
+    }
+    channel outputpath0 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 0)" language = python }
+    }
+    channel enableoutput1 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 1)" language = python }
+    }
+    channel outputpath1 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 1)" language = python }
+    }
+    channel enableoutput2 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 2)" language = python }
+    }
+    channel outputpath2 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 2)" language = python }
+    }
+    channel enableoutput3 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 3)" language = python }
+    }
+    channel outputpath3 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 3)" language = python }
+    }
+    channel enableoutput4 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 4)" language = python }
+    }
+    channel outputpath4 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 4)" language = python }
+    }
+    channel enableoutput5 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 5)" language = python }
+    }
+    channel outputpath5 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 5)" language = python }
+    }
+    channel enableoutput6 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 6)" language = python }
+    }
+    channel outputpath6 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 6)" language = python }
+    }
+    channel enableoutput7 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 7)" language = python }
+    }
+    channel outputpath7 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 7)" language = python }
+    }
+    channel enableoutput8 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 8)" language = python }
+    }
+    channel outputpath8 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 8)" language = python }
+    }
+    channel enableoutput9 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 9)" language = python }
+    }
+    channel outputpath9 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 9)" language = python }
+    }
+    channel enableoutput10 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 10)" language = python }
+    }
+    channel outputpath10 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 10)" language = python }
+    }
+    channel enableoutput11 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 11)" language = python }
+    }
+    channel outputpath11 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 11)" language = python }
+    }
+    channel enableoutput12 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 12)" language = python }
+    }
+    channel outputpath12 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 12)" language = python }
+    }
+    channel enableoutput13 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 13)" language = python }
+    }
+    channel outputpath13 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 13)" language = python }
+    }
+    channel enableoutput14 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 14)" language = python }
+    }
+    channel outputpath14 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 14)" language = python }
+    }
+    channel enableoutput15 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 15)" language = python }
+    }
+    channel outputpath15 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 15)" language = python }
+    }
+    channel enableoutput16 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 16)" language = python }
+    }
+    channel outputpath16 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 16)" language = python }
+    }
+    channel enableoutput17 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 17)" language = python }
+    }
+    channel outputpath17 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 17)" language = python }
+    }
+    channel enableoutput18 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 18)" language = python }
+    }
+    channel outputpath18 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 18)" language = python }
+    }
+    channel enableoutput19 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 19)" language = python }
+    }
+    channel outputpath19 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 19)" language = python }
+    }
+    channel enableoutput20 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 20)" language = python }
+    }
+    channel outputpath20 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 20)" language = python }
+    }
+    channel enableoutput21 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 21)" language = python }
+    }
+    channel outputpath21 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 21)" language = python }
+    }
+    channel enableoutput22 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 22)" language = python }
+    }
+    channel outputpath22 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 22)" language = python }
+    }
+    channel enableoutput23 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 23)" language = python }
+    }
+    channel outputpath23 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 23)" language = python }
+    }
+    channel enableoutput24 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 24)" language = python }
+    }
+    channel outputpath24 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 24)" language = python }
+    }
+    channel enableoutput25 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 25)" language = python }
+    }
+    channel outputpath25 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 25)" language = python }
+    }
+    channel enableoutput26 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 26)" language = python }
+    }
+    channel outputpath26 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 26)" language = python }
+    }
+    channel enableoutput27 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 27)" language = python }
+    }
+    channel outputpath27 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 27)" language = python }
+    }
+    channel enableoutput28 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 28)" language = python }
+    }
+    channel outputpath28 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 28)" language = python }
+    }
+    channel enableoutput29 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 29)" language = python }
+    }
+    channel outputpath29 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 29)" language = python }
+    }
+    channel enableoutput30 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 30)" language = python }
+    }
+    channel outputpath30 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 30)" language = python }
+    }
+    channel enableoutput31 {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_enabled(hou.pwd(), 31)" language = python }
+    }
+    channel outputpath31 {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.skeleton_path(hou.pwd(), 31)" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/invoke.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputmode	[ 0	locks=0 ]	(	"packedfolders"	)
+addpathattrib	[ 0	locks=0 ]	(	"off"	)
+pathattrib	[ 0	locks=0 ]	(	path	)
+folder_animation	[ 0	locks=0 ]	(	1	)
+enableanimation	[ 0	locks=0 ]	(	"on"	)
+animationclip	[ 0	locks=0 ]	(	""	)
+frame	[ 0	locks=0 ]	(	[ frame	0 ] 	)
+folder_charactershapes	[ 0	locks=0 ]	(	1	)
+outputcharactershapes	[ 0	locks=0 ]	(	"on"	)
+characterpattern	[ 0	locks=0 ]	(	[ characterpattern	* ] 	)
+shapepattern	[ 0	locks=0 ]	(	[ shapepattern	* ] 	)
+includeinvisiblechars	[ 0	locks=0 ]	(	"off"	)
+folder_extraoutputs	[ 0	locks=0 ]	(	0	)
+extraoutputs	[ 0	locks=0 ]	(	32	)
+enableoutput0	[ 0	locks=0 ]	(	[ enableoutput0	1 ] 	)
+outputpath0	[ 0	locks=0 ]	(	[ outputpath0	"" ] 	)
+outputkey0	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput1	[ 0	locks=0 ]	(	[ enableoutput1	1 ] 	)
+outputpath1	[ 0	locks=0 ]	(	[ outputpath1	"" ] 	)
+outputkey1	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput2	[ 0	locks=0 ]	(	[ enableoutput2	1 ] 	)
+outputpath2	[ 0	locks=0 ]	(	[ outputpath2	"" ] 	)
+outputkey2	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput3	[ 0	locks=0 ]	(	[ enableoutput3	1 ] 	)
+outputpath3	[ 0	locks=0 ]	(	[ outputpath3	"" ] 	)
+outputkey3	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput4	[ 0	locks=0 ]	(	[ enableoutput4	1 ] 	)
+outputpath4	[ 0	locks=0 ]	(	[ outputpath4	"" ] 	)
+outputkey4	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput5	[ 0	locks=0 ]	(	[ enableoutput5	1 ] 	)
+outputpath5	[ 0	locks=0 ]	(	[ outputpath5	"" ] 	)
+outputkey5	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput6	[ 0	locks=0 ]	(	[ enableoutput6	1 ] 	)
+outputpath6	[ 0	locks=0 ]	(	[ outputpath6	"" ] 	)
+outputkey6	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput7	[ 0	locks=0 ]	(	[ enableoutput7	1 ] 	)
+outputpath7	[ 0	locks=0 ]	(	[ outputpath7	"" ] 	)
+outputkey7	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput8	[ 0	locks=0 ]	(	[ enableoutput8	1 ] 	)
+outputpath8	[ 0	locks=0 ]	(	[ outputpath8	"" ] 	)
+outputkey8	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput9	[ 0	locks=0 ]	(	[ enableoutput9	1 ] 	)
+outputpath9	[ 0	locks=0 ]	(	[ outputpath9	"" ] 	)
+outputkey9	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput10	[ 0	locks=0 ]	(	[ enableoutput10	1 ] 	)
+outputpath10	[ 0	locks=0 ]	(	[ outputpath10	"" ] 	)
+outputkey10	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput11	[ 0	locks=0 ]	(	[ enableoutput11	1 ] 	)
+outputpath11	[ 0	locks=0 ]	(	[ outputpath11	"" ] 	)
+outputkey11	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput12	[ 0	locks=0 ]	(	[ enableoutput12	1 ] 	)
+outputpath12	[ 0	locks=0 ]	(	[ outputpath12	"" ] 	)
+outputkey12	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput13	[ 0	locks=0 ]	(	[ enableoutput13	1 ] 	)
+outputpath13	[ 0	locks=0 ]	(	[ outputpath13	"" ] 	)
+outputkey13	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput14	[ 0	locks=0 ]	(	[ enableoutput14	1 ] 	)
+outputpath14	[ 0	locks=0 ]	(	[ outputpath14	"" ] 	)
+outputkey14	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput15	[ 0	locks=0 ]	(	[ enableoutput15	1 ] 	)
+outputpath15	[ 0	locks=0 ]	(	[ outputpath15	"" ] 	)
+outputkey15	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput16	[ 0	locks=0 ]	(	[ enableoutput16	1 ] 	)
+outputpath16	[ 0	locks=0 ]	(	[ outputpath16	"" ] 	)
+outputkey16	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput17	[ 0	locks=0 ]	(	[ enableoutput17	1 ] 	)
+outputpath17	[ 0	locks=0 ]	(	[ outputpath17	"" ] 	)
+outputkey17	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput18	[ 0	locks=0 ]	(	[ enableoutput18	1 ] 	)
+outputpath18	[ 0	locks=0 ]	(	[ outputpath18	"" ] 	)
+outputkey18	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput19	[ 0	locks=0 ]	(	[ enableoutput19	1 ] 	)
+outputpath19	[ 0	locks=0 ]	(	[ outputpath19	"" ] 	)
+outputkey19	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput20	[ 0	locks=0 ]	(	[ enableoutput20	1 ] 	)
+outputpath20	[ 0	locks=0 ]	(	[ outputpath20	"" ] 	)
+outputkey20	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput21	[ 0	locks=0 ]	(	[ enableoutput21	1 ] 	)
+outputpath21	[ 0	locks=0 ]	(	[ outputpath21	"" ] 	)
+outputkey21	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput22	[ 0	locks=0 ]	(	[ enableoutput22	1 ] 	)
+outputpath22	[ 0	locks=0 ]	(	[ outputpath22	"" ] 	)
+outputkey22	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput23	[ 0	locks=0 ]	(	[ enableoutput23	1 ] 	)
+outputpath23	[ 0	locks=0 ]	(	[ outputpath23	"" ] 	)
+outputkey23	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput24	[ 0	locks=0 ]	(	[ enableoutput24	1 ] 	)
+outputpath24	[ 0	locks=0 ]	(	[ outputpath24	"" ] 	)
+outputkey24	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput25	[ 0	locks=0 ]	(	[ enableoutput25	1 ] 	)
+outputpath25	[ 0	locks=0 ]	(	[ outputpath25	"" ] 	)
+outputkey25	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput26	[ 0	locks=0 ]	(	[ enableoutput26	1 ] 	)
+outputpath26	[ 0	locks=0 ]	(	[ outputpath26	"" ] 	)
+outputkey26	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput27	[ 0	locks=0 ]	(	[ enableoutput27	1 ] 	)
+outputpath27	[ 0	locks=0 ]	(	[ outputpath27	"" ] 	)
+outputkey27	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput28	[ 0	locks=0 ]	(	[ enableoutput28	1 ] 	)
+outputpath28	[ 0	locks=0 ]	(	[ outputpath28	"" ] 	)
+outputkey28	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput29	[ 0	locks=0 ]	(	[ enableoutput29	1 ] 	)
+outputpath29	[ 0	locks=0 ]	(	[ outputpath29	"" ] 	)
+outputkey29	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput30	[ 0	locks=0 ]	(	[ enableoutput30	1 ] 	)
+outputpath30	[ 0	locks=0 ]	(	[ outputpath30	"" ] 	)
+outputkey30	[ 0	locks=0 ]	(	Base.skel	)
+enableoutput31	[ 0	locks=0 ]	(	[ enableoutput31	1 ] 	)
+outputpath31	[ 0	locks=0 ]	(	[ outputpath31	"" ] 	)
+outputkey31	[ 0	locks=0 ]	(	Base.skel	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/invoke.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/skeleton_paths.init"
+Content-Type: text/plain
+
+type = python
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/skeleton_paths.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 2.824 1.9578
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	invoke 1 1 "input1"
+}
+inputs
+{
+0 	invoke 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/skeleton_paths.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import animate_invoke
+animate_invoke.skeleton_paths(hou.pwd())
+"	)
+maintainstate	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/skeleton_paths.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/skeletons.init"
+Content-Type: text/plain
+
+type = switch
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/skeletons.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 1.6944 0.9789
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	invoke 1 1 "input1"
+1 	skeleton_paths 1 1 "input2"
+}
+inputs
+{
+0 	invoke 0 1
+1 	skeleton_paths 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 1 0.7 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/skeletons.chn"
+Content-Type: text/plain
+
+{
+    channel input {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return int(animate_invoke.skeleton_count(hou.pwd()) > 0)" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/skeletons.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+input	[ 0	locks=0 ]	(	[ input	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/skeletons.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/scene.init"
+Content-Type: text/plain
+
+type = switch
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/scene.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment "1: anim_dive outputs the APEX scene, invoked here. 0: anim_dive has its own Scene Invoke."
+position 0 3.88578e-16
+connectornextid 3
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+2 "output1"
+}
+inputsNamed3
+{
+0 	dive 0 1 "input1"
+1 	skeletons 2 1 "input2"
+}
+inputs
+{
+0 	dive 0 1
+1 	skeletons 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 1 0.7 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/scene.chn"
+Content-Type: text/plain
+
+{
+    channel input {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return animate_invoke.dive_is_scene(hou.pwd())" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/scene.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+input	[ 0	locks=0 ]	(	[ input	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/scene.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/points_sops.order"
 Content-Type: text/plain
 
-22
-scene
+26
+dive
 at_start
 rest_folders
 rest_shapes
@@ -3187,6 +4247,10 @@ no_points
 rest_attribs
 remainder_attribs
 REMAINDER
+invoke
+skeleton_paths
+skeletons
+scene
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/points_sops.net"

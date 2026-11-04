@@ -37,8 +37,13 @@ fn code(value: f32) -> u8 {
 }
 
 /// One movie pixel as R'G'B' in 0..1. Must match `yuv` in `video.wgsl`.
-fn yuv_pixel(y: u8, cb: u8, cr: u8, matrix: YuvMatrix, full_range: bool) -> [f32; 3] {
-    let (y, cb, cr) = (f32::from(y), f32::from(cb), f32::from(cr));
+pub(crate) fn yuv_pixel(y: u8, cb: u8, cr: u8, matrix: YuvMatrix, full_range: bool) -> [f32; 3] {
+    yuv_pixel_f32(f32::from(y), f32::from(cb), f32::from(cr), matrix, full_range)
+}
+
+/// [`yuv_pixel`] of samples on the 8-bit scale, fractions kept (a deeper
+/// sample divided down to it).
+pub(crate) fn yuv_pixel_f32(y: f32, cb: f32, cr: f32, matrix: YuvMatrix, full_range: bool) -> [f32; 3] {
     let (luma, cb, cr) = if full_range {
         (y / 255.0, (cb - 128.0) / 255.0, (cr - 128.0) / 255.0)
     } else {
@@ -98,6 +103,12 @@ pub fn proxy(frame: &Frame, max_width: u32, max_height: u32) -> Proxy {
                         Pixels::Yuv420 { y: luma, u, v, matrix, full_range } => {
                             let chroma = (y / 2) * fw.div_ceil(2) as usize + x / 2;
                             yuv_pixel(luma[y * fw as usize + x], u[chroma], v[chroma], *matrix, *full_range)
+                        }
+                        // Straight alpha, shown over black.
+                        Pixels::Rgba8(data) => {
+                            let at = (y * fw as usize + x) * 4;
+                            let a = f32::from(data[at + 3]) / 255.0;
+                            [0, 1, 2].map(|c| f32::from(data[at + c]) / 255.0 * a)
                         }
                         Pixels::Rgba16f(data) => {
                             let at = (y * fw as usize + x) * 4;

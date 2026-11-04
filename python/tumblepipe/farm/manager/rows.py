@@ -46,6 +46,22 @@ class JobRow:
     folder: str = ''        # local: the batch folder
     job_index: int | None = None
     job_dir: str = ''       # local: the shared job folder (export:/other/jobs/<uuid>)
+    # The job's properties, for the details pane ('' / 0 / None: not known;
+    # a local batch queued before they were recorded has few of them).
+    frames: str = ''        # the frame list as Deadline writes it: 1001-1100, 1-99x2
+    chunk: int = 0          # frames per task
+    priority: int | None = None
+    pool: str = ''
+    group: str = ''
+    machine: str = ''       # the machine it was submitted from
+    kind: str = ''          # the farm worker it runs: render, playblast, publish...
+    data_dir: str = ''      # the job's data folder, its context path relative to it
+    arguments: str = ''
+    department: str = ''
+    started: str = ''       # ISO local time the first task started
+    finished: str = ''      # ISO local time it completed
+    deps: tuple[str, ...] = ()  # the ids of the jobs it waits on
+    timeout: int = 0        # seconds a task may take, 0 for no limit
 
 
 @dataclass(frozen=True)
@@ -60,6 +76,7 @@ class TaskRow:
     errors: int = 0
     error: str = ''
     log_path: str = ''      # local: the task's log file
+    pid: int = 0            # local, while it renders: the task's process
     extra: dict = field(default_factory=dict, compare=False, hash=False)
 
 
@@ -82,6 +99,31 @@ def progress_of(statuses: list[str], progresses: list[int]) -> float:
 
 # ── local ─────────────────────────────────────────────────
 
+def worker_kind(script: str) -> str:
+    """The farm worker a job runs, from its script: ``.../workers/render.py`` is ``render``."""
+    if not script:
+        return ''
+    return Path(str(script).replace('\\', '/')).stem
+
+
+def _local_frames(job: dict) -> str:
+    if job.get('frames'):
+        return str(job['frames'])
+    spans = job.get('tasks') or []
+    if not spans:
+        return ''
+    return frames_text(spans[0][0], spans[-1][1])
+
+
+def _local_chunk(job: dict) -> int:
+    if job.get('chunk_size'):
+        return int(job['chunk_size'])
+    spans = job.get('tasks') or []
+    # A batch from before chunk_size was recorded: its first task's span,
+    # which is the chunk unless a step skipped frames inside it.
+    return spans[0][1] - spans[0][0] + 1 if spans else 0
+
+
 def local_job_rows(folder: Path, batch: dict, state: dict) -> list[JobRow]:
     statuses = queue.job_statuses(batch, state)
     rows = []
@@ -89,6 +131,8 @@ def local_job_rows(folder: Path, batch: dict, state: dict) -> list[JobRow]:
         index = job['index']
         tasks = state['jobs'][str(index)]['tasks']
         task_states = [t['status'] for t in tasks]
+        starts = [t['started'] for t in tasks if t.get('started')]
+        ends = [t['finished'] for t in tasks if t.get('finished')]
         rows.append(JobRow(
             source=LOCAL,
             id=f"local:{batch['id']}/{index}",
@@ -106,6 +150,19 @@ def local_job_rows(folder: Path, batch: dict, state: dict) -> list[JobRow]:
             folder=str(folder),
             job_index=index,
             job_dir=batch.get('job_dir', ''),
+            frames=_local_frames(job),
+            chunk=_local_chunk(job),
+            priority=job.get('priority'),
+            pool=job.get('pool') or '',
+            group=job.get('group') or '',
+            machine=batch.get('machine', ''),
+            kind=worker_kind(job.get('script', '')),
+            data_dir=job.get('data_dir') or '',
+            arguments=job.get('arguments') or '',
+            started=min(starts) if starts else '',
+            finished=max(ends) if ends and statuses[index] == queue.COMPLETED else '',
+            deps=tuple(f"local:{batch['id']}/{dep}" for dep in job.get('deps', ())),
+            timeout=int(job.get('timeout') or 0),
         ))
     return rows
 
@@ -139,6 +196,7 @@ def local_task_rows(folder: Path, job_index: int) -> list[TaskRow]:
             errors=1 if task['status'] == queue.FAILED else 0,
             error=task.get('error') or '',
             log_path=str(queue.log_path(folder, job_index, index)),
+            pid=int(task.get('pid') or 0) if task['status'] == queue.RENDERING else 0,
         ))
     return rows
 
@@ -195,6 +253,7 @@ def farm_job_row(doc: dict) -> JobRow:
         str(Path(d) / f) for d, f in zip(doc.get('OutDir') or [], doc.get('OutFile') or [])
     )
     batch = props.get('Batch') or ''
+    plugin_info = props.get('PlugInfo') if isinstance(props.get('PlugInfo'), dict) else {}
     return JobRow(
         source=FARM,
         id=doc.get('_id', ''),
@@ -209,7 +268,30 @@ def farm_job_row(doc: dict) -> JobRow:
         submitted=deadline_time(doc.get('Date')),
         progress=100.0 if status == queue.COMPLETED else (round(done * 100 / total, 1) if total else 0.0),
         outputs=outputs,
+        frames=str(props.get('Frames') or ''),
+        chunk=_int(props.get('Chunk')),
+        priority=_int(props.get('Pri')) if props.get('Pri') is not None else None,
+        pool=str(props.get('Pool') or ''),
+        group=str(props.get('Grp') or ''),
+        machine=str(doc.get('Mach') or ''),
+        kind=worker_kind(plugin_info.get('ScriptFile', '')),
+        data_dir=str(plugin_info.get('StartupDirectory') or ''),
+        arguments=str(plugin_info.get('Arguments') or ''),
+        department=str(props.get('Dept') or ''),
+        started=deadline_time(doc.get('DateStart')),
+        finished=deadline_time(doc.get('DateComp')) if status == queue.COMPLETED else '',
+        deps=tuple(
+            str(dep.get('JobID') if isinstance(dep, dict) else dep)
+            for dep in props.get('Dep') or () if dep
+        ),
     )
+
+
+def _int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def farm_task_row(doc: dict) -> TaskRow:
@@ -297,3 +379,310 @@ def when_text(iso: str, today: dt.date | None = None) -> str:
     if moment.year == today.year:
         return f"{moment.strftime('%b')} {moment.day} {clock}"
     return moment.date().isoformat()
+
+
+# ── times ─────────────────────────────────────────────────
+
+def parse_time(iso: str) -> dt.datetime | None:
+    try:
+        return dt.datetime.fromisoformat(iso) if iso else None
+    except (TypeError, ValueError):
+        return None
+
+
+def seconds_between(started: str, finished: str = '', now: dt.datetime | None = None) -> float | None:
+    """Seconds from ``started`` to ``finished`` (to ``now`` without one); None without a start."""
+    start = parse_time(started)
+    if start is None:
+        return None
+    end = parse_time(finished) if finished else (now or dt.datetime.now())
+    if end is None:
+        return None
+    return max(0.0, (end - start).total_seconds())
+
+
+def task_seconds(task: TaskRow, now: dt.datetime | None = None) -> float | None:
+    """How long the task rendered, or has been rendering; None when it has not run.
+
+    A queued task keeps no times (a retry clears them), so only a rendering
+    task (up to ``now``) and one that ran to an end have a duration.
+    """
+    if not task.started:
+        return None
+    if task.status == queue.RENDERING:
+        return seconds_between(task.started, '', now)
+    if task.finished:
+        return seconds_between(task.started, task.finished)
+    return None
+
+
+def duration_text(seconds: float | None) -> str:
+    """``0:03:05`` as Deadline's Monitor shows a render time; ``2d 01:00:00`` past a day."""
+    if seconds is None or seconds < 0:
+        return ''
+    whole = int(seconds)
+    days, rest = divmod(whole, 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, secs = divmod(rest, 60)
+    if days:
+        return f'{days}d {hours:02d}:{minutes:02d}:{secs:02d}'
+    return f'{hours}:{minutes:02d}:{secs:02d}'
+
+
+_FRAME_ITEM = re.compile(r'^(-?\d+)(?:-(-?\d+)(?:x(\d+))?)?$')
+
+
+def frame_count(text: str) -> int:
+    """How many frames a Deadline frame list names (``1001-1010``, ``1-99x2``, ``1,5,9``); 0 when unreadable."""
+    total = 0
+    for item in re.split(r'[,\s]+', str(text or '').strip()):
+        if not item:
+            continue
+        match = _FRAME_ITEM.match(item)
+        if match is None:
+            return 0
+        first = int(match.group(1))
+        last = int(match.group(2)) if match.group(2) is not None else first
+        step = int(match.group(3) or 1)
+        if step < 1:
+            return 0
+        total += abs(last - first) // step + 1
+    return total
+
+
+@dataclass(frozen=True)
+class JobTimes:
+    started: str = ''                   # the first task's start
+    finished: str = ''                  # the last task's end, once nothing is left to run
+    elapsed: float | None = None        # wall clock from the first start
+    render_total: float | None = None   # every task's render time added up
+    task_average: float | None = None   # per completed task
+    frame_average: float | None = None  # per completed frame
+    remaining: float | None = None      # render time the tasks left need, at the average
+    completed: int = 0
+
+
+_LEFT = (queue.QUEUED, queue.PENDING, queue.SUSPENDED)
+
+
+def job_times(tasks: list[TaskRow], now: dt.datetime | None = None) -> JobTimes:
+    """What the Monitor's job panel says about time, from the job's tasks."""
+    now = now or dt.datetime.now()
+    starts = [t.started for t in tasks if parse_time(t.started)]
+    if not starts:
+        return JobTimes()
+    started = min(starts, key=parse_time)
+    durations = {t.index: task_seconds(t, now) for t in tasks}
+    rendering = [t for t in tasks if t.status == queue.RENDERING]
+    done = [t for t in tasks if t.status == queue.COMPLETED and durations[t.index] is not None]
+    ends = [t.finished for t in tasks if parse_time(t.finished)]
+    left = [t for t in tasks if t.status in _LEFT]
+    last_end = max(ends, key=parse_time) if ends else ''
+    finished = last_end if last_end and not rendering and not left else ''
+    elapsed = seconds_between(started, '' if rendering or not last_end else last_end, now)
+    known = [d for d in durations.values() if d is not None]
+    task_average = frame_average = remaining = None
+    if done:
+        spent = sum(durations[t.index] for t in done)
+        task_average = spent / len(done)
+        frames = sum(frame_count(t.frames) for t in done)
+        frame_average = spent / frames if frames else None
+        if left or rendering:
+            remaining = task_average * len(left) + sum(
+                max(0.0, task_average - (durations[t.index] or 0.0)) for t in rendering
+            )
+    return JobTimes(
+        started=started, finished=finished, elapsed=elapsed,
+        render_total=sum(known) if known else None,
+        task_average=task_average, frame_average=frame_average,
+        remaining=remaining, completed=len(done),
+    )
+
+
+# ── job details ───────────────────────────────────────────
+
+@dataclass(frozen=True)
+class Detail:
+    key: str
+    value: str
+    tip: str = ''
+    path: str = ''          # an output: what Open folder opens
+
+
+XPU_TIP = (
+    'Karma XPU renders on the GPU (NVIDIA, OptiX) and the CPU at the same '
+    'time. The CPU also loads the scene, builds geometry and writes the '
+    'images, so high CPU use during a GPU render is normal. Farm and local '
+    'renders always use XPU.'
+)
+_HYTHON = {'publish', 'export', 'stage', 'collapse', 'build'}
+_PYTHON = {'notify', 'sync', 'slapcomp'}
+
+
+def renderer_details(kind: str, context: dict | None) -> list[Detail]:
+    """What renders the job and on which devices, from its worker and context."""
+    context = context if isinstance(context, dict) else {}
+    if kind == 'render':
+        result = [
+            Detail('Renderer', 'Karma (husk)'),
+            Detail('Engine', 'XPU: GPU and CPU together', XPU_TIP),
+        ]
+        tiles = context.get('tile_count')
+        if isinstance(tiles, int) and tiles > 1:
+            result.append(Detail('Tiles per frame', str(tiles)))
+        return result + _resolution(context)
+    if kind == 'playblast':
+        look = context.get('look') if isinstance(context.get('look'), dict) else {}
+        if look.get('renderer', 'karma') == 'viewport':
+            result = [
+                Detail('Renderer', 'TumblePipe viewport renderer (hdThPlayblast)'),
+                Detail('Engine', 'CPU only, no licence'),
+            ]
+            if look.get('shading'):
+                result.append(Detail('Shading', str(look['shading'])))
+        else:
+            result = [
+                Detail('Renderer', 'Karma preview (husk)'),
+                Detail('Engine', 'XPU: GPU and CPU together', XPU_TIP),
+            ]
+            if look.get('samples'):
+                result.append(Detail('Samples', str(look['samples'])))
+        return result + _resolution(context)
+    if kind == 'denoise':
+        cpu = bool(context.get('force_cpu'))
+        return [
+            Detail('Renderer', 'Intel Open Image Denoise (idenoise)'),
+            Detail('Engine', 'CPU' if cpu else 'GPU when it has one, else CPU'),
+        ]
+    if kind == 'composite':
+        return [Detail('Renderer', 'Houdini COPs (hython)'), Detail('Engine', 'CPU')]
+    if kind in _HYTHON:
+        return [Detail('Runs', 'Houdini (hython), no rendering')]
+    if kind == 'mp4':
+        return [Detail('Runs', 'ffmpeg, encoding a video')]
+    if kind in _PYTHON:
+        return [Detail('Runs', 'Python, no rendering')]
+    return []
+
+
+def _resolution(context: dict) -> list[Detail]:
+    res = context.get('res')
+    if isinstance(res, (list, tuple)) and len(res) == 2 and all(isinstance(v, int) for v in res):
+        return [Detail('Resolution', f'{res[0]} × {res[1]}')]
+    return []
+
+
+def read_job_context(data_dir: str, arguments: str) -> dict:
+    """The job's ``context.json`` (its first argument, relative to its data dir); {} when unreadable.
+
+    Reads the job folder, which is on the project share: call it off the GUI thread.
+    """
+    import json
+    tokens = (arguments or '').split()
+    if not tokens or not tokens[0].endswith('.json'):
+        return {}
+    first = tokens[0]
+    if re.match(r'^[A-Za-z]:[\\/]', first) or first.startswith(('/', '\\')):
+        path = Path(first)
+    elif data_dir:
+        path = Path(data_dir) / first
+    else:
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _entity(row: JobRow, context: dict) -> tuple[str, str]:
+    """``(entity, department)``: the context's, else the entity in the batch's name."""
+    entity = context.get('entity') if isinstance(context.get('entity'), dict) else {}
+    uri = str(entity.get('uri') or '')
+    if uri:
+        short = _ENTITY.sub(r'\1', uri)
+    else:
+        match = _ENTITY.search(row.batch)
+        short = match.group(1) if match else ''
+    return short, str(entity.get('department') or row.department or '')
+
+
+def _count(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def job_details(
+    row: JobRow, tasks: list[TaskRow], context: dict | None = None,
+    names: dict[str, str] | None = None, now: dt.datetime | None = None,
+    ) -> list[tuple[str, list[Detail]]]:
+    """The details pane of ``row``: ``(section, details)``, details with nothing to say left out.
+
+    ``tasks`` are the job's (for times; [] when not loaded), ``context`` its
+    context.json, ``names`` job names by id (for its dependencies).
+    """
+    context = context if isinstance(context, dict) else {}
+    names = names or {}
+    entity, department = _entity(row, context)
+    job = [
+        Detail('Name', row.name),
+        Detail('Kind', row.kind),
+        Detail('Entity', entity),
+        Detail('Department', department),
+        Detail('Status', row.status),
+        Detail('Runs on', 'This machine' if row.source == LOCAL else 'The Deadline farm'),
+        Detail('Submitted by', row.user + (f' on {row.machine}' if row.machine and row.user else '')),
+        Detail('Submitted', when_text(row.submitted), row.submitted),
+        Detail('Batch', row.batch),
+        Detail('Job ID', row.id),
+    ]
+    scheduling = [
+        Detail('Priority', '' if row.priority is None else str(row.priority)),
+        Detail('Pool', row.pool),
+        Detail('Group', row.group),
+        Detail('Depends on', ', '.join(names.get(dep, dep) for dep in row.deps)),
+        Detail('Task timeout', duration_text(row.timeout) if row.timeout else ''),
+    ]
+    counts = {status: sum(1 for t in tasks if t.status == status) for status in
+              (queue.COMPLETED, queue.RENDERING, queue.FAILED)}
+    states = ', '.join(f'{n} {status}' for status, n in counts.items() if n)
+    count = frame_count(row.frames)
+    frames = [
+        Detail('Frames', row.frames),
+        Detail('Frame count', str(count) if count else ''),
+        Detail('Frames per task', str(row.chunk) if row.chunk else ''),
+        Detail('Tasks', f'{row.total}' + (f' ({states})' if states else '')),
+    ]
+    times = job_times(tasks, now)
+    started = times.started or row.started
+    finished = times.finished or row.finished
+    elapsed = times.elapsed
+    if elapsed is None and started:
+        elapsed = seconds_between(started, finished, now)
+    time = [
+        Detail('Started', when_text(started), started),
+        Detail('Finished', when_text(finished), finished),
+        Detail('Elapsed', duration_text(elapsed), 'Wall-clock time since the first task started'),
+        Detail('Total render time', duration_text(times.render_total),
+               "Every task's render time added up"),
+        Detail('Average per task', duration_text(times.task_average),
+               f'Over {_count(times.completed, "completed task")}'),
+        Detail('Average per frame', duration_text(times.frame_average)),
+        Detail('Render time left', duration_text(times.remaining),
+               'Estimated: the tasks left, at the average task time'),
+    ]
+    output = [
+        Detail('Output' if len(row.outputs) == 1 else f'Output {i + 1}', path, path, path)
+        for i, path in enumerate(row.outputs)
+    ]
+    # What it renders with and how long it takes first: what a glance at a
+    # render is for. The window puts this machine's load after Renderer.
+    sections = [
+        ('Job', job), ('Renderer', renderer_details(row.kind, context)), ('Time', time),
+        ('Frames', frames), ('Scheduling', scheduling), ('Output', output),
+    ]
+    result = []
+    for title, details in sections:
+        kept = [d for d in details if d.value]
+        if kept:
+            result.append((title, kept))
+    return result

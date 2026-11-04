@@ -256,3 +256,83 @@ def validate_lookdev_structure(root, context: dict | None = None) -> ValidationR
         ValidationResult with any structure errors
     """
     return _validate_asset_base(root, context, 'mtl')
+
+
+def validate_rig_structure(root, context: dict | None = None) -> ValidationResult:
+    """Validate a LOP rig: the rig department publishing a layer.
+
+    A rig workfile publishes its SOP rig through th::export_rig (not
+    validated here) or a LOP rig through th::export_layer: APEX characters
+    on the stage (SOP Import APEX Scene, APEX SOP Rig Builder, Configure
+    APEX Rig). The layer must carry:
+
+    - the asset prim (e.g. /CHAR/Ryan), as every asset department does;
+    - at least one APEX character (HoudiniApexCharacterAPI) at or below it,
+      which is what an APEX Animate LOP picks up in the shot.
+
+    A character elsewhere on the stage does not compose with the asset (a
+    SOP Import APEX Scene keeps its default ``/$OS`` prefix), so it is an
+    error too. No 'geo' Scope is required: the character's shapes go where
+    the rigger put them.
+    """
+    from tumblepipe.pipe.usd.apex_files import character_prim_paths
+
+    result = ValidationResult()
+    entity_uri_str = context.get('entity_uri') if context else None
+    if not entity_uri_str:
+        result.add_warning(
+            "No entity URI provided - cannot validate the rig structure",
+            suggestion=(
+                "Set the export_layer's 'Entity' parameter to a specific URI "
+                "(or 'from_context' inside a saved workfile)."
+            ),
+        )
+        return result
+    asset_prim_path = uri_to_prim_path(Uri.parse(entity_uri_str))
+    stage = root.GetStage()
+    if stage is None:
+        result.add_warning("No stage available for validation")
+        return result
+
+    characters = character_prim_paths(stage)
+    inside = [
+        path for path in characters
+        if path == asset_prim_path or path.startswith(asset_prim_path + '/')
+    ]
+    outside = [path for path in characters if path not in inside]
+    for path in outside:
+        result.add_error(
+            f"APEX character outside the asset prim {asset_prim_path}: it "
+            "would not compose with the asset in a shot",
+            path,
+            suggestion=(
+                f"Put the character at or below {asset_prim_path}: set the "
+                "SOP Import APEX Scene's Import Path Prefix (or the APEX "
+                "LOP's Character Primitive) to it."
+            ),
+        )
+
+    asset_prim = stage.GetPrimAtPath(asset_prim_path)
+    if not asset_prim.IsValid():
+        result.add_error(
+            f"Asset prim not found at path: {asset_prim_path}",
+            asset_prim_path,
+            suggestion=(
+                "Author the rig under the asset prim, or check the "
+                "export_layer's Entity URI matches the stage."
+            ),
+        )
+        return result
+    if not inside:
+        result.add_error(
+            f"No APEX character at or below {asset_prim_path}: nothing for "
+            "an APEX Animate LOP to animate",
+            asset_prim_path,
+            suggestion=(
+                "Build the character on the stage (SOP Import APEX Scene in "
+                "Character mode, APEX SOP Rig Builder or Configure APEX Rig) "
+                "before the export_layer. A SOP rig publishes through "
+                "th::export_rig instead."
+            ),
+        )
+    return result

@@ -31,7 +31,8 @@ struct Globals {
     ambient: vec4<f32>,
     // CLAY_ALBEDO, 1 / layers
     clay: vec4<f32>,
-    // BACKDROP_TOP, BACKDROP_BOTTOM (display-referred)
+    // BACKDROP_TOP, BACKDROP_BOTTOM (display-referred), 1 = transparent
+    // background (no backdrop, alpha = coverage; composite.rs's Frame::alpha)
     backdrop: vec4<f32>,
     // composite::rotation_pattern, row by row, 4 a vec4
     pattern: array<vec4<u32>, 4>,
@@ -308,7 +309,9 @@ fn light(shading: u32, surface: vec3<f32>, n: vec3<f32>, v: vec3<f32>) -> vec3<f
 }
 
 // composite::resolve: this layer's sample of each pixel, lit and occluded
-// (or the backdrop), added to the pixel's sum; the nearest depth kept.
+// (or the backdrop), added to the pixel's sum; the nearest depth kept. The
+// sum's w counts the samples that hit a surface (the coverage, for a
+// transparent background); a transparent background adds 0 for the others.
 @compute @workgroup_size(8, 8)
 fn accumulate(@builtin(global_invocation_id) id: vec3<u32>) {
     if (!inside(id)) {
@@ -321,7 +324,9 @@ fn accumulate(@builtin(global_invocation_id) id: vec3<u32>) {
     let a = textureLoad(albedo_tex, texel(id.xy), l, 0);
     let z = a.w;
     var c: vec3<f32>;
+    var covered = 0.0;
     if (z < 1.0) {
+        covered = 1.0;
         let nd = textureLoad(normal_tex, texel(id.xy), l, 0);
         let sx = f32(id.x) + 0.5 + layer.offset.x;
         let sy = f32(id.y) + 0.5 + layer.offset.y;
@@ -336,25 +341,33 @@ fn accumulate(@builtin(global_invocation_id) id: vec3<u32>) {
         if (h > 1u) {
             t = f32(id.y) / f32(h - 1u);
         }
-        let b = srgb_to_linear(g.backdrop.x + (g.backdrop.y - g.backdrop.x) * t);
+        var b = 0.0;
+        if (g.backdrop.z == 0.0) {
+            b = srgb_to_linear(g.backdrop.x + (g.backdrop.y - g.backdrop.x) * t);
+        }
         c = vec3<f32>(b, b, b);
     }
     if (layer.index.x == 0u) {
-        color[at] = vec4<f32>(c, 0.0);
+        color[at] = vec4<f32>(c, covered);
         depth[at] = min(1.0, z);
     } else {
-        color[at] = vec4<f32>(color[at].xyz + c, 0.0);
+        color[at] = color[at] + vec4<f32>(c, covered);
         depth[at] = min(depth[at], z);
     }
 }
 
-// Each pixel the average of its samples.
+// Each pixel the average of its samples; alpha the coverage for a
+// transparent background, else 1.
 @compute @workgroup_size(8, 8)
 fn finish(@builtin(global_invocation_id) id: vec3<u32>) {
     if (!inside(id)) {
         return;
     }
     let at = id.y * g.size.x + id.x;
-    let s = color[at].xyz;
-    color[at] = vec4<f32>(s.x * g.clay.w, s.y * g.clay.w, s.z * g.clay.w, 1.0);
+    let s = color[at];
+    var a = 1.0;
+    if (g.backdrop.z != 0.0) {
+        a = s.w * g.clay.w;
+    }
+    color[at] = vec4<f32>(s.x * g.clay.w, s.y * g.clay.w, s.z * g.clay.w, a);
 }

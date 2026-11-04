@@ -691,6 +691,12 @@ class PipelineCatalog(Catalog):
             return GhostData(nodes=[GhostNode("th::import_shot::1.0", 0.0, 0.0)])
         return GhostData(nodes=[GhostNode("th::import_asset::1.0", 0.0, 0.0)])
 
+    def texture_destinations(self) -> list:
+        """Offer the open asset workfile's ``textures`` folder for any
+        catalog's dropped texture set (see :mod:`.textures`)."""
+        from . import textures
+        return textures.texture_destinations()
+
     def on_drop(self, detail, drop) -> bool:
         if recipes.is_recipe_id(detail.id):
             return self._recipes.on_drop(detail, drop)

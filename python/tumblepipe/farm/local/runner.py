@@ -189,7 +189,7 @@ class Runner:
             for job in state['jobs'].values():
                 for task in job['tasks']:
                     if task['status'] == queue.RENDERING:
-                        task.update(status=queue.QUEUED, progress=0, error='requeued: the runner stopped while it rendered')
+                        task.update(status=queue.QUEUED, progress=0, pid=None, error='requeued: the runner stopped while it rendered')
                         changed = True
             if changed:
                 queue.write_state(folder, state)
@@ -302,7 +302,7 @@ class Runner:
                     task.update(status=queue.COMPLETED, progress=100)
                 else:
                     task.update(status=queue.FAILED, error=error)
-            task.update(finished=queue.now(), exit_code=code)
+            task.update(finished=queue.now(), exit_code=code, pid=None)
             write(f" {task['status']} at {task['finished']} ".center(100, '='))
         queue.write_state(folder, state)
         self._log(f"{folder.name}: {job['name']} task {task_index} {task['status']}" + (f': {error}' if error else ''))
@@ -312,6 +312,9 @@ class Runner:
         folder, _batch, state, job_index, task_index = current
         task = state['jobs'][str(job_index)]['tasks'][task_index]
         process = local_task.Process(command, env, cwd, write)
+        # The Farm Manager shows the CPU and memory of this process's tree.
+        task['pid'] = process.pid
+        queue.write_state(folder, state)
         started = time.monotonic()
         reported = None
         while True:

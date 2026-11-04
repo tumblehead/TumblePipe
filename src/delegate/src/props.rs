@@ -31,7 +31,8 @@ fn camera() -> (Mat4, Mat4) {
 
 fn frame(width: usize, height: usize, samples: usize) -> Frame {
     let (world_to_clip, view_to_world) = camera();
-    Frame { width, height, world_to_clip, view_to_world, samples, shading: Shading::Lit, ao: true, blur: Blur::OFF }
+    Frame { width, height, world_to_clip, view_to_world, samples, shading: Shading::Lit, ao: true, blur: Blur::OFF,
+            alpha: false }
 }
 
 /// A sample count the rasteriser has a pattern for.
@@ -274,7 +275,7 @@ proptest! {
         let (world_to_clip, view_to_world) = camera();
         let frame = ThFrame { width: 24, height: 16, world_to_clip, view_to_world, samples: 1, shading: 0, ao: 1,
                              blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-                             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0 };
+                             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0 };
         let view = |polygonal: u32, normals: *const f32| ThMeshView {
             points: points.as_ptr() as *const f32,
             point_count: points.len() as u32,
@@ -978,7 +979,7 @@ fn the_abi_carries_motion_and_the_lens() {
         let frame = ThFrame {
             width: 32, height: 24, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
             blur_samples, motion, camera_keys: 0, cameras: [0.0; 64],
-            focal_length: 0.5, f_stop, focus_distance: 20.0,
+            focal_length: 0.5, f_stop, focus_distance: 20.0, alpha: 0,
         };
         let view = ThMeshView {
             points: points.as_ptr() as *const f32, point_count: 4,
@@ -1334,4 +1335,157 @@ proptest! {
             prop_assert!(triangulate::triangulate(&points, &counts, &indices[..total - 1], &holes, flip).is_none());
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Transparent background (raster::Frame::alpha, TH_PLAYBLAST_ALPHA)
+// ---------------------------------------------------------------------------
+
+/// The backdrop of row `y` of `h`, linear, as the post pass draws it.
+fn backdrop_at(y: usize, h: usize) -> f32 {
+    raster::srgb_to_linear(
+        composite::BACKDROP_TOP + (composite::BACKDROP_BOTTOM - composite::BACKDROP_TOP) * y as f32 / (h - 1) as f32)
+}
+
+/// Each quad's corners and its one transform.
+fn quad_geometry(quads: &[(f32, f32, f32, [f64; 3])]) -> Vec<(Vec<Vec3>, [Mat4; 1])> {
+    quads.iter()
+        .map(|&(s, yaw, pitch, at)| (turned_quad(s, yaw, pitch), [translation(at[0], at[1], at[2])]))
+        .collect()
+}
+
+fn shading_mode() -> impl Strategy<Value = Shading> {
+    prop::sample::select(vec![Shading::Lit, Shading::Clay, Shading::Albedo, Shading::Occlusion])
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 32, ..ProptestConfig::default() })]
+
+    /// Off is the opaque picture, on its premultiplied cut-out: with the
+    /// option off every pixel has alpha 1; on, the same scene (any shading,
+    /// occlusion, samples, motion blur or not) gives the off picture once
+    /// put over the backdrop, `on + (1 - alpha) * backdrop`, with the same
+    /// depth. So alpha is the share of the samples (over the shutter too)
+    /// that hit a surface, and nothing of the surfaces' shading changed.
+    #[test]
+    fn the_transparent_picture_over_the_backdrop_is_the_opaque_one(
+        quads in quads(), samples in sample_count(), shading in shading_mode(),
+        ao: bool, motion: bool, shift in [-1.0f32..1.0, -1.0f32..1.0, -1.0f32..1.0],
+    ) {
+        let geometry = quad_geometry(&quads);
+        let closing: Vec<Vec<Vec3>> = geometry.iter().map(|(p, _)| p.iter().map(|&q| math::add(q, shift)).collect()).collect();
+        let meshes: Vec<Mesh> = geometry.iter().zip(&closing)
+            .map(|((p, t), c)| Mesh { points_close: motion.then_some(&c[..]), ..plain(p, &QUAD, t) })
+            .collect();
+        let (w, h) = (32usize, 24usize);
+        let mut f = Frame { shading, ao, ..frame(w, h, samples) };
+        if motion {
+            f = blurred(f, 16, true, None);
+        }
+        let off = raster::render(&f, &meshes);
+        let on = raster::render(&Frame { alpha: true, ..f }, &meshes);
+        prop_assert!(off.color.iter().all(|p| p[3] == 1.0), "alpha off is opaque");
+        prop_assert!(off.depth == on.depth);
+        for y in 0..h {
+            let g = backdrop_at(y, h);
+            for x in 0..w {
+                let (o, t) = (off.color[y * w + x], on.color[y * w + x]);
+                prop_assert!((0.0..=1.0).contains(&t[3]), "alpha {} at ({}, {})", t[3], x, y);
+                for c in 0..3 {
+                    let over = t[c] + (1.0 - t[3]) * g;
+                    prop_assert!((over - o[c]).abs() < 1e-5, "({}, {}) channel {}: {:?} over {} is not {:?}",
+                                 x, y, c, t, g, o);
+                }
+            }
+        }
+    }
+
+    /// Transparent white, unlit: every pixel's colour is its alpha (colour
+    /// premultiplied by coverage) and a pixel nothing reached is 0, 0, 0, 0,
+    /// with motion blur and depth of field as without. (A fully covered
+    /// pixel is opaque: alpha_falls_monotonically_across_an_edge.)
+    #[test]
+    fn transparent_white_is_its_own_alpha(
+        quads in quads(), samples in sample_count(), motion: bool, dof: bool,
+        shift in [-1.0f32..1.0, -1.0f32..1.0, -1.0f32..1.0],
+    ) {
+        let geometry = quad_geometry(&quads);
+        let closing: Vec<Vec<Vec3>> = geometry.iter().map(|(p, _)| p.iter().map(|&q| math::add(q, shift)).collect()).collect();
+        let meshes: Vec<Mesh> = geometry.iter().zip(&closing)
+            .map(|((p, t), c)| Mesh { points_close: motion.then_some(&c[..]), ..white(p, t) })
+            .collect();
+        let (w, h) = (32usize, 24usize);
+        let mut f = Frame { alpha: true, ..flat_frame(w, h, samples) };
+        if motion || dof {
+            f = blurred(f, 16, motion, if dof { Lens::of_camera(0.5, 0.05, 3.0) } else { None });
+        }
+        let image = raster::render(&f, &meshes);
+        for (p, &d) in image.color.iter().zip(&image.depth) {
+            prop_assert!((0.0..=1.0).contains(&p[3]));
+            for c in 0..3 {
+                prop_assert!((p[c] - p[3]).abs() < 1e-6, "colour {:?} is not premultiplied white", p);
+            }
+            if d >= 1.0 {
+                prop_assert!(*p == [0.0; 4], "a pixel nothing reached is {:?}", p);
+            }
+        }
+    }
+
+    /// Alpha follows coverage: across a straight edge it falls from 1 to 0
+    /// without ever rising, in whole steps of the samples, and the colour
+    /// (white, unlit) is the alpha at each.
+    #[test]
+    fn alpha_falls_monotonically_across_an_edge(
+        samples in sample_count(),
+        start in 0.0f32..1.0,
+        lean in prop::sample::select(vec![-1.0f32, 1.0]),
+    ) {
+        // A white half-plane x < 12 + start + lean * y / 64 on a 32 x 64
+        // transparent frame.
+        let (w, h) = (32usize, 64usize);
+        let edge = |y: f32| 12.0 + start + lean * y / 64.0;
+        let at = |sx: f32, sy: f32| [(2.0 * sx / w as f32 - 1.0) * 5.0, (1.0 - 2.0 * sy / h as f32) * 5.0, 0.0];
+        let points = vec![at(-8.0, -8.0), at(edge(-8.0), -8.0), at(edge(h as f32 + 8.0), h as f32 + 8.0),
+                          at(-8.0, h as f32 + 8.0)];
+        let one = [math::IDENTITY];
+        let f = Frame { alpha: true, ..flat_frame(w, h, samples) };
+        let image = raster::render(&f, &[white(&points, &one)]);
+        let n = composite::sample_offsets(samples).len() as f32;
+        for y in 0..h {
+            let row = &image.color[y * w..(y + 1) * w];
+            prop_assert_eq!(row[0][3], 1.0, "row {} starts covered", y);
+            prop_assert_eq!(row[w - 1], [0.0; 4], "row {} ends empty", y);
+            for x in 0..w - 1 {
+                prop_assert!(row[x + 1][3] <= row[x][3], "row {}: alpha rises from {} to {} at {}",
+                             y, row[x][3], row[x + 1][3], x + 1);
+            }
+            for p in row {
+                let k = p[3] * n;
+                prop_assert!((k - k.round()).abs() < 1e-4, "alpha {} is not a whole number of {} samples", p[3], n);
+                prop_assert!((p[0] - p[3]).abs() < 1e-6);
+            }
+        }
+    }
+}
+
+/// Through the C ABI: `alpha` nonzero is the transparent background (an
+/// empty scene is 0, 0, 0, 0), 0 the opaque backdrop.
+#[test]
+fn the_abi_alpha_switch_reaches_the_post_pass() {
+    let (world_to_clip, view_to_world) = camera();
+    let mut frame = ThFrame { width: 8, height: 6, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
+                              blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
+                              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 1 };
+    let mut color = vec![0.5f32; 8 * 6 * 4];
+    let status = unsafe {
+        th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null())
+    };
+    assert_eq!(status, TH_OK);
+    assert!(color.iter().all(|&v| v == 0.0), "transparent and empty");
+    frame.alpha = 0;
+    let status = unsafe {
+        th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null())
+    };
+    assert_eq!(status, TH_OK);
+    assert!(color.chunks(4).all(|p| p[3] == 1.0 && p[0] > 0.1), "the backdrop, opaque");
 }

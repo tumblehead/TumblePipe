@@ -76,6 +76,17 @@ pub fn submenus(takes: &[Take], shown: usize, of_kind: impl Fn(Kind) -> Option<u
     ]
 }
 
+/// What a take is, as its clip says: a playblast or a render, or a stack of
+/// their layers.
+pub fn take_word(take: &Take) -> &'static str {
+    match (take.kind(), take.is_stack()) {
+        (Kind::Movie, false) => "Playblast",
+        (Kind::Exr, false) => "Render",
+        (Kind::Movie, true) => "Playblast layers",
+        (Kind::Exr, true) => "Render layers",
+    }
+}
+
 /// The word a menu uses for a take's kind.
 pub fn kind_word(kind: Kind) -> &'static str {
     match kind {

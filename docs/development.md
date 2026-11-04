@@ -511,7 +511,15 @@ JSON playlist on its standard input. The player is its own cargo workspace:
   is no longer wanted. `Media` is an opened take: a movie's frame index, or
   an EXR sequence with its first header read once and its colour space,
   which it must name (`oiio:ColorSpace`). A movie must have a frame rate and
-  start on a keyframe. It links no GUI, so it is tested headless.
+  start on a keyframe. A movie frame stays Y'CbCr 4:2:0, except one with
+  alpha or in RGB (`is_rgba_format`), which decodes to `Pixels::Rgba8`:
+  display code values, straight alpha (planar Y'CbCrA such as ProRes 4444 is
+  converted by its own matrix, not swscale's BT.601). `Media::Stack` is a
+  shot's render layers opened together (all movies, or all EXRs of one
+  colour space), and `composite` lays them "over" each other: movie layers
+  straight-alpha over opaque black in display space, EXR layers
+  premultiplied in scene linear (`ExrSequence::decode_with_alpha_while`
+  reads a layer's own `A`). It links no GUI, so it is tested headless.
 - `playlist` (`th_playlist`): the playlist TumblePipe writes
   (`pipe/review_playlist.py`) and the player reads on standard input, as
   JSON through serde. It is strict: an unknown or missing field is an error,
@@ -521,7 +529,11 @@ JSON playlist on its standard input. The player is its own cargo workspace:
   its department, version and media: a movie's path, or an EXR sequence's
   layer and frames (directory, prefix, suffix, padding, first, last, step).
   The takes come ordered by kind, department (pipeline order), render layer
-  and version. A department (and a render's layer) is a *stream*.
+  and version. A department (and a render's layer) is a *stream*. A `stack`
+  take's media is `{"kind": "stack", "layers": [{"name", "media"}, ...]}`,
+  bottom first, all movies or all EXRs of one frame range, never nested;
+  its stream is `(kind, department, Some("layers"))`, written right after
+  the department's plain takes of that kind.
   `Shot::version_step`, `Shot::department_step` and `Shot::last_of_kind`
   move along that order; the player's Up/Down keys are built on them.
 - `player`: the window, built on the in-house Primer UI crate. `main.rs`
@@ -540,11 +552,17 @@ JSON playlist on its standard input. The player is its own cargo workspace:
   up to six EXR reads at once (while the playhead's EXR frame is read, no
   other starts), movie decoders kept in a small pool per take. A decode no
   longer wanted (the playhead moved off it, or its take changed) stops; a
-  decode that panics is the frame's error, not a hung frame. `colour.rs`
+  decode that panics is the frame's error, not a hung frame. A stack clip's
+  job decodes each layer not hidden (`Content::hidden`, a bit per layer)
+  and composites them on the worker; a stack of EXRs counts as EXR reads,
+  of movies as one movie decode. Hiding a layer drops the clip's frames,
+  like a new view. `colour.rs`
   bakes the chosen display/view into a 3D LUT through `ocio-rs` (which
   builds OpenColorIO from source); every render frame is drawn through it.
   `track.rs` is the track under the video (the clips, their thumbnails,
-  the selection); a right press on a clip names its shot to the take menu;
+  the selection) and, over it, `LayerRows`, the rows of a stack take's
+  layers that show or hide each (digits 1-9 too); a right press on a clip
+  names its shot to the take menu;
   `take_menu.rs` builds that menu's Source, Department and Version
   submenus from the take shown. `burnin.rs` writes the burn-ins over the
   picture, placed by the same fit `video.wgsl` gives the frame. The
@@ -605,7 +623,12 @@ The tests:
   them back. They cover layers, multipart files, data windows, f16 and f32,
   the default view, channel picking, a missing frame (an error, never a
   neighbour shown in its place), and a decode that stops once it is no
-  longer wanted. `media/tests/media_props.rs` checks that an opened take is
+  longer wanted. `media/tests/stack_media.rs` decodes ProRes 4444 and QuickTime Animation (a layered playblast) movies
+  with alpha to straight RGBA, reads an EXR layer's alpha only when asked,
+  and refuses stacks that cannot composite; `media/src/composite.rs` checks
+  that premultiplied over is associative, that a transparent top vanishes
+  and an opaque one hides what is below, and that movie layers match a float
+  reference within one code value. `media/tests/media_props.rs` checks that an opened take is
   shared across threads, describes itself while a decode runs, and that an
   EXR without a colour space does not open.
 - `media/tests/buffer_props.rs` covers the buffer. The tests in
@@ -614,7 +637,9 @@ The tests:
   order shows that the job limits hold, that no stale frame is ever stored,
   and that a decode stopped for it is no failure; a decode that panics is
   the frame's error; and real workers fill the window around the playhead
-  and stop when the engine drops. `session.rs` steps a shot through any
+  and stop when the engine drops; a stack's frame is exactly its shown
+  layers that have the frame, composited in order, hidden ones never
+  decoded. `session.rs` steps a shot through any
   interleaving of asked-for takes and opens finishing, in any order, some
   failing: each take opens once, a take that finishes after the shot moved
   on never shows, and once every open is done the shot shows the take last
@@ -632,9 +657,11 @@ The tests:
   (`playlist/tests/fixtures/playlist.json`), refuses what cannot play,
   round-trips any playlist, refuses any unknown or missing field, numbers
   frame paths as Python does, and covers stepping through versions,
-  departments and kinds.
+  departments and kinds, stacks among them (refused when empty, nested,
+  mixed, of different frames, or naming a layer twice).
 - `tests/test_review_playlist.py` (minigun) checks take discovery against
-  playblasts and renders written to the harness project, and that a render
+  playblasts and renders written to the harness project (stack takes from
+  layer movies and channel render layers among them), and that a render
   take names its frames as renders write them. It also has the Python/Rust
   parity property: whatever `playlist_document` writes, the Rust reader
   reads back exactly that document. It builds `th_playlist`'s
@@ -1453,6 +1480,64 @@ HPM_HOUDINI_MAJORS=22 hpm build --platform windows-x86_64
 from TumbleTrove Desktop (≥ 0.38, which sets the variable from the Houdini
 versions it discovers) do the same thing. Release CI always builds the
 full matrix — see `.woodpecker/build-*.yml`.
+
+### hdThPlayblast: transparent background
+
+The delegate normally writes opaque frames: every pixel over the grey
+backdrop gradient, alpha 1. `TH_PLAYBLAST_ALPHA` (`1`/`true`/`on`; unset,
+`0`, `false` or `off` is off, the default), or the render setting
+`th:alpha` (a bool or int on the render settings, which wins over the
+variable, as `th:samples`, `th:shading` and the blur settings do), leaves
+the background transparent. `viewport_env(..., alpha=True)`
+(`apps/viewport_renderer.py`) sets the variable for husk.
+
+What the delegate hands husk, in the colour AOV (linear, float RGBA):
+
+- **Premultiplied by coverage.** A sample that hit nothing adds colour 0
+  and alpha 0, one that hit a surface its shaded colour and alpha 1, and
+  the pixel is their average: alpha is the pixel's coverage, through the
+  same anti-aliasing samples and the same motion blur / depth of field
+  layers as the colour. A pixel half covered by unlit white is
+  `0.5, 0.5, 0.5, 0.5`; background is `0, 0, 0, 0`. Shading and ambient
+  occlusion of the surfaces are unchanged, so an opaque pixel is the opaque
+  render's pixel exactly.
+- Off, the output is bit for bit what it was before the option existed
+  (measured through husk: PNG and EXR pixels identical to HEAD's build, on
+  the CPU and the GPU path).
+- Both paths do it: `composite.rs` / `blur::average` on the CPU,
+  `post.wgsl` (`accumulate` counts coverage into the sum's w, `finish`
+  divides it) and `sum.wgsl` (`scale` averages alpha across blur chunks) on
+  the GPU. The two agree on coverage the way they agree on depth: exactly
+  from the same render buffer, and to within one sample at an edge the
+  rasterisers decide differently.
+
+What husk writes (Houdini 22.0.368, its default `--ocio 1`), measured:
+
+- **EXR:** the AOV as it is: linear, **premultiplied** (associated) RGBA,
+  A = coverage. Composite with `out = rgb + (1 - a) * background`, in linear.
+- **PNG (8-bit RGBA, `sRGB` chunk):** husk converts the premultiplied
+  linear colour to sRGB first, and OIIO's PNG writer then un-premultiplies
+  the *encoded* values, as PNG's straight alpha requires, and clamps:
+  `png.rgb = min(1, srgb(rgb_premult) / a)`, `png.a = a` (linear coverage),
+  background `0, 0, 0, 0`. So it is **straight alpha in display space**:
+  the usual display-space "over", `out = png.rgb * png.a + bg * (1 - png.a)`
+  (all in sRGB-encoded values), gives `srgb(rgb_premult) + bg * (1 - a)`,
+  which is the premultiplied composite done in display space, wherever
+  `srgb(rgb_premult) <= a`. Where it is not -- bright anti-aliased edges and
+  motion-blur trails: on a lit grey sphere 360 of 578 edge pixels -- the
+  division passed 1 and was clamped, so such an edge composites with colour
+  `a` (`png.rgb` = 1) instead of `srgb(rgb_premult)`: a little darker than
+  the EXR's edge. Opaque pixels (`a = 1`) are the opaque render's exactly.
+  husk `--ocio 0` does not change this. (Do not read these PNGs through
+  OIIO's default reader to check them: it multiplies alpha back in linear;
+  open with `oiio:UnassociatedAlpha=1` to see the stored bytes.)
+
+husk and `PXR_PLUGINPATH_NAME`: husk processes the Houdini packages
+itself, so an installed tumblepipe package's `hdThPlayblast` registration
+comes ahead of the one `viewport_env` prepends. To render a local build of
+the delegate through husk while a tumblepipe package is installed, run husk
+with `HOUDINI_PACKAGE_SKIP=1` (or a dev-override launch, whose package is
+the working tree).
 
 ## The package manifest
 

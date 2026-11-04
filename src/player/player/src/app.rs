@@ -26,7 +26,7 @@ use crate::burnin::{self, Burnin};
 use crate::colour::{Colour, Lut};
 use crate::engine::{Clip, Content, Engine, Timeline};
 use crate::session::{Ask, Session, TakeKey, TakeState};
-use crate::take_menu::{self, kind_word};
+use crate::take_menu;
 use crate::track::{self, Pick, Segment, Track};
 use crate::video::{Picture, Video};
 
@@ -70,6 +70,9 @@ pub enum Message {
     Exposure(f32),
     /// Show or hide the burn-ins.
     Burnins(bool),
+    /// Show or hide a layer (bottom first) of the stack the playhead's shot
+    /// shows.
+    ToggleLayer(usize),
 }
 
 /// An open take.
@@ -77,6 +80,9 @@ pub struct Opened {
     media: Arc<Media>,
     /// The EXR view shown (meaningless for a movie).
     view: ExrView,
+    /// A stack's hidden layers (see `engine::is_hidden`), kept for the
+    /// session: back on the take, the same layers show.
+    hidden: u64,
     /// The display transform of a render's frames; None for a playblast.
     /// An error when the display and view chosen cannot show its colour
     /// space.
@@ -105,6 +111,7 @@ struct Shown {
     /// stays up until the new one's frame lands.
     take: TakeKey,
     view: ExrView,
+    hidden: u64,
     picture: Picture,
 }
 
@@ -155,12 +162,24 @@ fn waker(slot: &Arc<Mutex<Option<Sender<Message>>>>) -> impl Fn() + Send + 'stat
 /// The media of `take` of `shot`, opened: a movie's index, or an EXR
 /// sequence's first header. Runs off the UI thread; on a file server it
 /// takes seconds.
-fn open_media(take: &th_playlist::Take, rate: (i32, i32)) -> Result<Arc<Media>, String> {
-    let media = match &take.media {
+fn open_media(media: &th_playlist::Media, rate: (i32, i32)) -> Result<Arc<Media>, String> {
+    let media = match media {
         th_playlist::Media::Movie { path } => Media::movie(path),
         th_playlist::Media::Exr { frames, .. } => {
             let paths = (0..frames.count()).map(|index| frames.path(index)).collect();
             Media::exr(ExrSequence::new(frames.first, frames.step, paths), rate)
+        }
+        // Every layer at once: each is a round trip or more to the file server.
+        th_playlist::Media::Stack { layers } => {
+            let opened: Vec<Result<Arc<Media>, String>> = std::thread::scope(|scope| {
+                let opening: Vec<_> = layers.iter().map(|layer| scope.spawn(move || open_media(&layer.media, rate))).collect();
+                opening.into_iter().map(|t| t.join().unwrap_or_else(|_| Err("opening the layer panicked".into()))).collect()
+            });
+            let mut stack = Vec::with_capacity(layers.len());
+            for (layer, media) in layers.iter().zip(opened) {
+                stack.push((layer.name.clone(), media.map_err(|e| format!("layer {}: {e}", layer.name))?));
+            }
+            Media::stack(stack)
         }
     };
     media.map(Arc::new).map_err(|e| e.to_string())
@@ -201,7 +220,7 @@ impl Player {
     fn open(&self, key: TakeKey) -> Command<Message> {
         let shot = self.session.shot(key.shot);
         let (take, rate) = (shot.takes[key.take].clone(), shot.rate());
-        Command::perform_blocking(move || open_media(&take, rate), move |result| Message::Opened(key, result))
+        Command::perform_blocking(move || open_media(&take.media, rate), move |result| Message::Opened(key, result))
     }
 
     fn playhead(&self) -> FrameKey {
@@ -256,7 +275,9 @@ impl Player {
     /// chosen now.
     fn shown_is_current(&self) -> bool {
         self.shown.as_ref().is_some_and(|s| {
-            s.key == self.playhead() && s.take == self.current() && self.session.open(s.take).is_some_and(|o| o.view == s.view)
+            s.key == self.playhead()
+                && s.take == self.current()
+                && self.session.open(s.take).is_some_and(|o| o.view == s.view && o.hidden == s.hidden)
         })
     }
 
@@ -279,7 +300,7 @@ impl Player {
         if let Some(frame) = self.engine.frame(key) {
             self.frames_shown += 1;
             let picture = Picture { id: self.frames_shown, frame, lut };
-            self.shown = Some(Shown { key, take, view: opened.view.clone(), picture });
+            self.shown = Some(Shown { key, take, view: opened.view.clone(), hidden: opened.hidden, picture });
         }
     }
 
@@ -313,6 +334,7 @@ impl Player {
                 let content = Content {
                     media: Some(Arc::clone(&opened.media)),
                     view: opened.view.clone(),
+                    hidden: opened.hidden,
                     wants_proxy: !self.proxies.contains_key(&key),
                 };
                 (shape, content)
@@ -332,7 +354,7 @@ impl Player {
     fn opened(&mut self, key: TakeKey, result: Result<Arc<Media>, String>) {
         let result = result.map(|media| {
             let lut = self.display.lut(&media);
-            Opened { view: media.default_view(), media, lut }
+            Opened { view: media.default_view(), hidden: 0, media, lut }
         });
         if self.session.opened(key, result) {
             self.show_take(key.shot);
@@ -353,6 +375,68 @@ impl Player {
         }
         // Keep the old frame up until the new view's lands.
         self.refresh_shown();
+    }
+
+    /// Show or hide `layer` (bottom first) of the stack the playhead's shot
+    /// shows; nothing for a take that is no stack, or a layer it has not.
+    /// The frame up stays until the new picture lands.
+    fn toggle_layer(&mut self, layer: usize) {
+        let (take, shot) = (self.current(), self.playhead().clip);
+        if let Some(opened) = self.session.open_mut(take)
+            && layer < opened.media.stack_layers().len().min(64)
+        {
+            opened.hidden ^= 1 << layer;
+            self.engine.set_hidden(shot, opened.hidden);
+        }
+        self.refresh_shown();
+    }
+
+    /// The layers of the stack the playhead's shot shows, bottom first, and
+    /// whether each shows. Empty for a take that is no stack (or not open).
+    fn stack_layers(&self) -> Vec<track::LayerRow> {
+        self.session.open(self.current()).map_or_else(Vec::new, |o| {
+            o.media
+                .stack_layers()
+                .into_iter()
+                .enumerate()
+                .map(|(i, name)| track::LayerRow { name: name.to_owned(), shown: !crate::engine::is_hidden(o.hidden, i) })
+                .collect()
+        })
+    }
+
+    /// The rows over the track naming the stack's layers; None for a take
+    /// that is no stack.
+    fn layer_rows(&self) -> Option<Element<Message>> {
+        let layers = self.stack_layers();
+        if layers.is_empty() {
+            return None;
+        }
+        let shot = self.playhead().clip;
+        let rows = track::LayerRows {
+            layers,
+            start: self.timeline.clip_start(shot),
+            len: self.timeline.clips[shot].frames,
+            total: self.timeline.len(),
+            on_toggle: Message::ToggleLayer,
+        };
+        let height = rows.height();
+        Some(interactive_canvas(Id::new("layer rows"), rows).width(Length::Fill).height(Length::fixed(height)).into())
+    }
+
+    /// What the toolbar says of a stack: which of its layers show, and the
+    /// keys that toggle them.
+    fn layers_status(&self) -> Option<String> {
+        let layers = self.stack_layers();
+        if layers.is_empty() {
+            return None;
+        }
+        let shown: Vec<&str> = layers.iter().filter(|l| l.shown).map(|l| l.name.as_str()).collect();
+        let keys = match layers.len().min(9) {
+            1 => "1".to_owned(),
+            n => format!("1-{n}"),
+        };
+        let list = if shown.is_empty() { "none".to_owned() } else { shown.join(", ") };
+        Some(format!("Layers {} of {} shown: {list}   ({keys} toggles)", shown.len(), layers.len()))
     }
 
     /// The display or view changed: every render's display transform, and
@@ -427,7 +511,7 @@ impl Player {
                     _ if self.session.is_switching(shot) => "Opening",
                     Some(TakeState::Opening) => "Opening",
                     Some(TakeState::Failed(_)) => "Cannot play",
-                    _ => kind_word(take.kind()),
+                    _ => take_menu::take_word(take),
                 };
                 Segment {
                     start: self.timeline.clip_start(shot),
@@ -475,6 +559,11 @@ impl Player {
     /// row under the picture.
     fn toolbar(&self) -> Element<Message> {
         let mut tools = row().spacing(8.0).align_y(Vertical::Center);
+        if let Some(status) = self.layers_status() {
+            tools = tools
+                .push(text(status).font_size(13.0).color(Color::from_rgb8(214, 214, 214)))
+                .push(space(Length::fixed(12.0), Length::Shrink));
+        }
         if let Some(layers) = self.layer_controls() {
             tools = tools.push(layers).push(space(Length::fixed(12.0), Length::Shrink));
         }
@@ -556,7 +645,10 @@ impl Player {
     /// How a render is shown: the display and view, and the exposure. On a
     /// row of its own right under the video.
     fn display_controls(&self) -> Option<Element<Message>> {
-        let off = self.render_controls_off()?;
+        // On for whatever goes through the display transform: a render, and a
+        // stack of render layers, which has no layers of its own to pick.
+        self.render_controls_off()?;
+        let off = self.session.open(self.current()).is_none_or(|o| o.media.colour_space().is_none());
         let label = |words: String| {
             text(words).font_size(13.0).color(if off { Color::from_rgb8(120, 120, 120) } else { Color::from_rgb8(214, 214, 214) })
         };
@@ -723,6 +815,7 @@ impl Application for Player {
                 }
             }
             Message::Exposure(stops) => self.display.exposure = stops,
+            Message::ToggleLayer(layer) => self.toggle_layer(layer),
         }
         Command::none()
     }
@@ -747,6 +840,9 @@ impl Application for Player {
             Key::Named(Named::Home) => Some(Message::Seek(0)),
             Key::Named(Named::End) => Some(Message::Seek(usize::MAX)),
             Key::Named(Named::Space) => Some(Message::TogglePlay),
+            Key::Character(digit @ '1'..='9') if !modifiers.command() && !modifiers.alt => {
+                Some(Message::ToggleLayer(digit as usize - '1' as usize))
+            }
             _ => None,
         }
     }
@@ -785,6 +881,9 @@ impl Application for Player {
         let mut page = column().push(self.toolbar()).push(layers);
         if let Some(display) = self.display_controls() {
             page = page.push(display);
+        }
+        if let Some(rows) = self.layer_rows() {
+            page = page.push(rows);
         }
         page = page.push(self.track_with_menu());
         if let Some(problem) = self.problem() {

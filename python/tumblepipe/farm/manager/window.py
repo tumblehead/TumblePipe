@@ -2,14 +2,19 @@
 
 Lists this machine's local farm (``farm.local``) and the Deadline farm side
 by side, a batch per row with its jobs under it. Selecting a job shows its
-tasks; selecting a task shows its log — the local task's log file, followed
-while it renders, or the task's Deadline reports.
+details (what it renders with, its frames and scheduling, its times, its
+outputs) and its tasks, each with its render time; selecting a task shows
+its log — the local task's log file, followed while it renders, or the
+task's Deadline reports. While this machine renders, the footer and the
+details show its CPU, memory and GPU (``machine``).
 
 Threads: the local queue is small files on this machine and is read on the
 GUI thread once a second. Everything Deadline (``deadline_jobs``: a
-``deadlinecommand`` per call, a second or more each) runs on a worker
-thread; its results are picked up by a timer on the GUI thread, so no Qt
-object is ever touched off it (*Qt and threads* in docs/development.md).
+``deadlinecommand`` per call, a second or more each), a job's context.json
+(on the project share) and the machine's load (``nvidia-smi``, a process
+walk) run on worker threads; their results are picked up by a timer on the
+GUI thread, so no Qt object is ever touched off it (*Qt and threads* in
+docs/development.md).
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QStyle,
+    QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QStyle,
     QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -33,7 +38,7 @@ from tumbletrove.asset_browser.core.theme import (
 )
 
 from tumblepipe.farm.local import queue, runner
-from tumblepipe.farm.manager import rows
+from tumblepipe.farm.manager import machine, rows
 from tumblepipe.util import desktop
 
 log = logging.getLogger(__name__)
@@ -41,6 +46,8 @@ log = logging.getLogger(__name__)
 LOCAL_INTERVAL_MS = 1000
 FARM_INTERVAL_MS = 8000
 FUTURES_INTERVAL_MS = 150
+# The machine's load is sampled only while the local runner works.
+MACHINE_INTERVAL_MS = 2000
 
 # Finished work recedes so failed and live work stand out: a list is mostly
 # completed jobs, and a wall of bright green bars hid the one red row.
@@ -65,12 +72,17 @@ PANE_HEADER_HEIGHT = 30
 NAME, WHERE_COL, STATUS, PROGRESS, TASKS, ERRORS, USER, SUBMITTED = range(8)
 JOB_HEADERS = ['Job', 'Where', 'Status', 'Progress', 'Tasks', 'Errors', 'User', 'Submitted']
 # Task tree columns.
-T_TASK, T_FRAMES, T_STATUS, T_PROGRESS, T_WORKER, T_STARTED, T_FINISHED, T_ERROR = range(8)
-TASK_HEADERS = ['Task', 'Frames', 'Status', 'Progress', 'Worker', 'Started', 'Finished', 'Error']
+(T_TASK, T_FRAMES, T_STATUS, T_PROGRESS, T_WORKER, T_STARTED, T_FINISHED, T_TIME,
+ T_ERROR) = range(9)
+TASK_HEADERS = ['Task', 'Frames', 'Status', 'Progress', 'Worker', 'Started', 'Finished',
+                'Render time', 'Error']
+# Details columns.
+D_KEY, D_VALUE = range(2)
 
 KEY_ROLE = Qt.UserRole
 PROGRESS_ROLE = Qt.UserRole + 1
 FINISHED_ROLE = Qt.UserRole + 2
+PATH_ROLE = Qt.UserRole + 3
 
 # Labels of the actions, by command; which are offered depends on the source.
 ACTION_LABELS = {
@@ -127,6 +139,15 @@ QScrollBar::handle:vertical {{ min-height: 30px; }}
 QScrollBar::handle:horizontal {{ min-width: 30px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; border: none; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
+QMenu {{
+    background-color: {BG_DARK};
+    border: 1px solid {BORDER};
+    padding: 4px 0;
+}}
+QMenu::item {{ padding: 5px 22px 5px 14px; }}
+QMenu::item:selected {{ background-color: #2f3f55; }}
+QMenu::item:disabled {{ color: #5a5a5a; }}
+QMenu::separator {{ height: 1px; background: {BORDER}; margin: 4px 8px; }}
 """
 
 # Cancel, Remove and Delete stop or throw away work: red under the pointer,
@@ -138,6 +159,9 @@ _PANE_LABEL_STYLE = f'color: {TEXT_SECONDARY};'
 # What an empty pane asks for.
 _NO_JOB = 'Select a job to see its tasks'
 _NO_TASK = 'Select a task to see its log'
+_NO_DETAILS = 'Select a job to see its details'
+# Where the details pane puts the machine's load: after what renders the job.
+_MACHINE_SECTION = 'This machine'
 
 
 def _when(iso: str) -> str:
@@ -228,6 +252,15 @@ class ManagerWindow(QWidget):
         self._log_key: tuple | None = None
         self._log_offset = 0
         self._reports: list = []
+        # Job context.json files by job id ({} when unreadable), and those being read.
+        self._contexts: dict[str, dict] = {}
+        self._contexts_loading: set[str] = set()
+        self._detail_layout: list | None = None
+        self._detail_items: list[tuple[QTreeWidgetItem, rows.Detail]] = []
+        self._sampler = machine.Sampler()
+        self._machine_stats: machine.MachineStats | None = None
+        self._machine_loading = False
+        self._runner_working = False
 
         self._user, self._project = _identity()
 
@@ -238,13 +271,21 @@ class ManagerWindow(QWidget):
 
         splitter = QSplitter(Qt.Vertical)
         splitter.setChildrenCollapsible(False)
-        top = QWidget()
-        top_layout = QVBoxLayout(top)
+        # Jobs on the left, the selected job's details beside them, as the
+        # Deadline Monitor's job panel sits beside its job list.
+        top = QSplitter(Qt.Horizontal)
+        top.setChildrenCollapsible(False)
+        jobs_panel = QWidget()
+        top_layout = QVBoxLayout(jobs_panel)
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.setSpacing(6)
         self._jobs = self._build_jobs_tree()
         top_layout.addWidget(self._jobs, 1)
         top_layout.addLayout(self._build_actions())
+        top.addWidget(jobs_panel)
+        top.addWidget(self._build_details())
+        top.setStretchFactor(0, 1)
+        top.setSizes([1000, 380])
         splitter.addWidget(top)
 
         bottom = QSplitter(Qt.Horizontal)
@@ -273,9 +314,11 @@ class ManagerWindow(QWidget):
         self._local_timer = QTimer(self, interval=LOCAL_INTERVAL_MS, timeout=self._refresh_local)
         self._farm_timer = QTimer(self, interval=FARM_INTERVAL_MS, timeout=self._refresh_farm)
         self._futures_timer = QTimer(self, interval=FUTURES_INTERVAL_MS, timeout=self._poll_futures)
+        self._machine_timer = QTimer(self, interval=MACHINE_INTERVAL_MS, timeout=self._refresh_machine)
         self._local_timer.start()
         self._farm_timer.start()
         self._futures_timer.start()
+        self._machine_timer.start()
         self._refresh_local()
         self._refresh_farm()
         self._update_actions()
@@ -341,6 +384,27 @@ class ManagerWindow(QWidget):
             tree.setColumnWidth(column, width)
         header.setStretchLastSection(False)
         tree.itemSelectionChanged.connect(self._on_job_selection)
+        tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        tree.customContextMenuRequested.connect(self._on_job_menu)
+        return tree
+
+    def _build_details(self) -> QTreeWidget:
+        """The selected job's properties, in sections, as the Monitor's job panel lists them."""
+        tree = QTreeWidget()
+        tree.setColumnCount(2)
+        tree.setHeaderLabels(['Job details', ''])
+        tree.setRootIsDecorated(False)
+        tree.setItemsExpandable(False)
+        tree.setUniformRowHeights(True)
+        tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        tree.setColumnWidth(D_KEY, 128)
+        tree.header().setStretchLastSection(True)
+        tree.setMinimumWidth(260)
+        tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        tree.customContextMenuRequested.connect(self._on_details_menu)
+        tree.itemDoubleClicked.connect(self._on_detail_double_clicked)
+        self._details = tree
+        self._show_details_placeholder()
         return tree
 
     def _build_actions(self) -> QHBoxLayout:
@@ -398,10 +462,12 @@ class ManagerWindow(QWidget):
         # Fixed columns narrow enough that the Error column, the one worth
         # reading, keeps the spare width instead of scrolling off the side.
         for column, width in ((T_TASK, 44), (T_FRAMES, 84), (T_STATUS, 80), (T_PROGRESS, 90),
-                              (T_WORKER, 90), (T_STARTED, 104), (T_FINISHED, 104)):
+                              (T_WORKER, 90), (T_STARTED, 96), (T_FINISHED, 96), (T_TIME, 90)):
             tree.setColumnWidth(column, width)
         header.setStretchLastSection(True)
         tree.itemSelectionChanged.connect(self._on_task_selection)
+        tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        tree.customContextMenuRequested.connect(self._on_task_menu)
         layout.addWidget(tree, 1)
         self._task_tree = tree
         return panel
@@ -457,8 +523,29 @@ class ManagerWindow(QWidget):
         job = self._current_job
         if job is not None and job.source == rows.LOCAL:
             self._load_local_tasks(job)
+        elif job is not None and self._tasks:
+            # A farm job's tasks are read every few seconds; the render
+            # time of the rendering ones still ticks every second.
+            self._show_tasks(self._tasks)
         self._follow_local_log()
         self._update_status()
+        self._update_details()
+
+    def _refresh_machine(self) -> None:
+        """Sample the machine's load on a worker thread, while the local runner works."""
+        if self._machine_loading:
+            return
+        if not self._runner_working:
+            if self._machine_stats is not None:
+                self._machine_stats = None
+                self._update_status()
+                self._update_details()
+            return
+        job, task = self._current_job, None
+        if job is not None and job.source == rows.LOCAL:
+            task = next((t for t in self._tasks if t.status == queue.RENDERING and t.pid), None)
+        self._machine_loading = True
+        self._submit(('machine',), self._sampler.sample, task.pid if task else 0)
 
     def _refresh_farm(self) -> None:
         if self._farm_loading or not self._farm_available:
@@ -506,9 +593,29 @@ class ManagerWindow(QWidget):
         elif kind == 'farm_control':
             self._say(f'{ACTION_LABELS[key[1]]} sent to the farm for {_jobs(key[2])}')
             self._refresh_farm()
+        elif kind == 'job_context':
+            self._contexts_loading.discard(key[1])
+            self._contexts[key[1]] = result
+            job = self._current_job
+            if job is not None and job.id == key[1]:
+                self._update_details()
+        elif kind == 'machine':
+            self._machine_loading = False
+            self._machine_stats = result if self._runner_working else None
+            self._update_status()
+            self._update_details()
 
     def _on_future_failed(self, key: tuple, error: Exception) -> None:
         kind = key[0]
+        if kind == 'job_context':
+            self._contexts_loading.discard(key[1])
+            self._contexts[key[1]] = {}
+            return
+        if kind == 'machine':
+            self._machine_loading = False
+            self._machine_stats = None
+            log.debug('Farm Manager: sampling this machine failed', exc_info=error)
+            return
         from tumblepipe.apps.deadline import DeadlineNotInstalled
         if kind == 'farm_jobs':
             self._farm_loading = False
@@ -529,10 +636,14 @@ class ManagerWindow(QWidget):
     def _update_status(self) -> None:
         parts = []
         working = runner.is_running(self._root)
+        if working and not self._runner_working:
+            self._runner_working = True
+            self._refresh_machine()
+        self._runner_working = working
         local_count = len(self._local_rows)
-        parts.append(
-            f"This machine: {'rendering' if working else 'idle'} · {local_count} job{'' if local_count == 1 else 's'}"
-        )
+        here = f"This machine: {'rendering' if working else 'idle'} · {local_count} job{'' if local_count == 1 else 's'}"
+        load = machine.summary_text(self._machine_stats) if working else ''
+        parts.append(f'{here} · {load}' if load else here)
         if self._local_problems:
             parts.append(f'{len(self._local_problems)} unreadable batch(es): {self._local_problems[0]}')
         if not self._farm_available:
@@ -706,7 +817,20 @@ class ManagerWindow(QWidget):
                     self._load_local_tasks(job)
                 else:
                     self._submit(('farm_tasks', job.id), _fetch_farm_tasks, job.id)
+                self._load_context(job)
+            self._refresh_machine()
+        self._update_details()
         self._update_actions()
+
+    def _load_context(self, job: rows.JobRow) -> None:
+        """Read the job's context.json (what it renders, and how) off the GUI thread, once."""
+        if job.id in self._contexts or job.id in self._contexts_loading:
+            return
+        if not job.arguments:
+            self._contexts[job.id] = {}
+            return
+        self._contexts_loading.add(job.id)
+        self._submit(('job_context', job.id), rows.read_job_context, job.data_dir, job.arguments)
 
     # ── tasks ─────────────────────────────────────────────
 
@@ -719,6 +843,8 @@ class ManagerWindow(QWidget):
         self._show_tasks(tasks)
 
     def _show_tasks(self, tasks: list[rows.TaskRow]) -> None:
+        from datetime import datetime
+        now = datetime.now()
         self._tasks = tasks
         tree = self._task_tree
         wanted = {task.index for task in tasks}
@@ -746,6 +872,14 @@ class ManagerWindow(QWidget):
             item.setText(T_WORKER, task.worker)
             item.setText(T_STARTED, _when(task.started))
             item.setText(T_FINISHED, _when(task.finished))
+            # The render time: how long it took, or, while it renders, how
+            # long it has been at it (in the rendering blue).
+            seconds = rows.task_seconds(task, now)
+            took = rows.duration_text(seconds)
+            rendering = task.status == queue.RENDERING
+            item.setText(T_TIME, took)
+            item.setForeground(T_TIME, QColor(STATUS_COLOURS[queue.RENDERING]) if rendering else text)
+            item.setToolTip(T_TIME, (f'Rendering for {took}' if rendering else f'Rendered in {took}') if took else '')
             error = task.error or (f'{task.errors} error report(s)' if task.errors else '')
             item.setText(T_ERROR, error.splitlines()[0] if error else '')
             item.setToolTip(T_ERROR, error)
@@ -759,6 +893,7 @@ class ManagerWindow(QWidget):
             pick = pick or next((t for t in reversed(tasks) if t.started), None)
             if pick is not None:
                 self._task_items[pick.index].setSelected(True)
+        self._update_details()
 
     def _selected_task(self) -> rows.TaskRow | None:
         items = self._task_tree.selectedItems()
@@ -868,6 +1003,166 @@ class ManagerWindow(QWidget):
         self._set_log_text('Reading the report…', follow=False)
         self._submit(('farm_report_text', path), _read_report, path)
 
+    # ── details ───────────────────────────────────────────
+
+    def _show_details_placeholder(self) -> None:
+        self._details.clear()
+        self._detail_items = []
+        self._detail_layout = None
+        item = QTreeWidgetItem(self._details, [_NO_DETAILS])
+        item.setFirstColumnSpanned(True)
+        item.setForeground(D_KEY, QColor(TEXT_DIM))
+        item.setFlags(Qt.NoItemFlags)
+
+    def _detail_sections(self) -> list[tuple[str, list[rows.Detail]]]:
+        job = self._current_job
+        names = {row.id: row.name for row in self._rows_by_id.values()}
+        sections = rows.job_details(job, self._tasks, self._contexts.get(job.id), names)
+        stats = self._machine_stats
+        if job.source == rows.LOCAL and job.status == queue.RENDERING and stats is not None:
+            load = [rows.Detail(key, value, tip) for key, value, tip in machine.stat_rows(stats)]
+            if load:
+                titles = [title for title, _details in sections]
+                after = next((titles.index(t) + 1 for t in ('Renderer', 'Frames', 'Job') if t in titles), 0)
+                sections.insert(after, (_MACHINE_SECTION, load))
+        return sections
+
+    def _update_details(self) -> None:
+        """Fill the details pane; in place while its rows stay the same, so it does not flicker."""
+        if self._current_job is None:
+            if self._detail_layout is not None:
+                self._show_details_placeholder()
+            return
+        sections = self._detail_sections()
+        layout = [(title, [d.key for d in details]) for title, details in sections]
+        tree = self._details
+        if layout == self._detail_layout:
+            flat = [d for _title, details in sections for d in details]
+            for (item, _old), detail in zip(self._detail_items, flat):
+                self._fill_detail(item, detail)
+            self._detail_items = [(item, d) for (item, _old), d in zip(self._detail_items, flat)]
+            return
+        scroll = tree.verticalScrollBar().value()
+        tree.setUpdatesEnabled(False)
+        try:
+            tree.clear()
+            self._detail_items = []
+            for title, details in sections:
+                head = QTreeWidgetItem(tree, [title])
+                head.setFirstColumnSpanned(True)
+                font = head.font(D_KEY)
+                font.setBold(True)
+                head.setFont(D_KEY, font)
+                head.setForeground(D_KEY, QColor(TEXT_SECONDARY))
+                head.setFlags(Qt.ItemIsEnabled)
+                for detail in details:
+                    item = QTreeWidgetItem(tree)
+                    item.setForeground(D_KEY, QColor(TEXT_SECONDARY))
+                    self._fill_detail(item, detail)
+                    self._detail_items.append((item, detail))
+            self._detail_layout = layout
+        finally:
+            tree.setUpdatesEnabled(True)
+        tree.verticalScrollBar().setValue(scroll)
+
+    def _fill_detail(self, item: QTreeWidgetItem, detail: rows.Detail) -> None:
+        item.setText(D_KEY, detail.key)
+        item.setText(D_VALUE, detail.value)
+        tip = detail.tip or detail.value
+        item.setToolTip(D_VALUE, tip)
+        item.setToolTip(D_KEY, tip)
+        item.setData(D_VALUE, PATH_ROLE, detail.path)
+        colour = TEXT_PRIMARY
+        if detail.key == 'Status':
+            colour = STATUS_COLOURS.get(detail.value, TEXT_PRIMARY)
+        elif detail.path:
+            colour = ACCENT
+        item.setForeground(D_VALUE, QColor(colour))
+
+    def _selected_detail(self) -> rows.Detail | None:
+        items = self._details.selectedItems()
+        if not items:
+            return None
+        return next((d for item, d in self._detail_items if item is items[0]), None)
+
+    def _on_detail_double_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        path = item.data(D_VALUE, PATH_ROLE)
+        if path:
+            _open_folder_of(path)
+
+    def _on_details_menu(self, position) -> None:
+        detail = self._selected_detail()
+        item = self._details.itemAt(position)
+        if item is not None:
+            detail = next((d for i, d in self._detail_items if i is item), detail)
+        menu = QMenu(self)
+        if detail is not None and detail.path:
+            menu.addAction('Open folder', lambda: _open_folder_of(detail.path))
+        copy = menu.addAction('Copy value', lambda: _copy(detail.tip if detail.path else detail.value))
+        copy.setEnabled(detail is not None)
+        menu.addAction('Copy all details', self._copy_details).setEnabled(bool(self._detail_items))
+        menu.exec(self._details.viewport().mapToGlobal(position))
+
+    def _copy_details(self) -> None:
+        if self._current_job is None:
+            return
+        lines = []
+        for title, details in self._detail_sections():
+            lines.append(f'{title}:')
+            lines.extend(f'  {d.key}: {d.path or d.value}' for d in details)
+        _copy('\n'.join(lines))
+
+    # ── context menus ─────────────────────────────────────
+
+    def _add_job_actions(self, menu: QMenu, suffix: str = '') -> None:
+        """The action buttons, enabled as they are."""
+        groups = (('suspend', 'resume'), ('retry', 'requeue'), ('cancel', 'remove', 'delete'))
+        for position, group in enumerate(groups):
+            if position:
+                menu.addSeparator()
+            for command in group:
+                button = self._action_buttons[command]
+                action = menu.addAction(
+                    ACTION_LABELS[command] + suffix,
+                    lambda c=command: self._run_action(c),
+                )
+                action.setEnabled(button.isEnabled())
+                action.setToolTip(button.toolTip())
+
+    def _on_job_menu(self, position) -> None:
+        selected = self._selected_rows()
+        if not selected:
+            return
+        menu = QMenu(self)
+        self._add_job_actions(menu)
+        menu.addSeparator()
+        menu.addAction('Open job folder', self._on_open_job_dir).setEnabled(self._open_job_dir.isEnabled())
+        menu.addAction('Open output folder', self._on_open_output).setEnabled(self._open_output.isEnabled())
+        menu.addSeparator()
+        menu.addAction('Copy job ID' if len(selected) == 1 else 'Copy job IDs',
+                       lambda: _copy('\n'.join(row.id for row in selected)))
+        menu.addAction('Copy name' if len(selected) == 1 else 'Copy names',
+                       lambda: _copy('\n'.join(row.name for row in selected)))
+        menu.exec(self._jobs.viewport().mapToGlobal(position))
+
+    def _on_task_menu(self, position) -> None:
+        task = self._selected_task()
+        if task is None or self._current_job is None:
+            return
+        menu = QMenu(self)
+        menu.addAction('Open log folder', self._on_open_log).setEnabled(self._open_log.isEnabled())
+        menu.addAction('Copy log', lambda: _copy(self._log.toPlainText())).setEnabled(
+            bool(self._log.toPlainText())
+        )
+        menu.addAction('Copy frames', lambda: _copy(task.frames))
+        if task.error:
+            menu.addAction('Copy error', lambda: _copy(task.error))
+        menu.addSeparator()
+        # Suspend, retry and cancel work on the whole job, on Deadline's
+        # job menu as here.
+        self._add_job_actions(menu, ' job')
+        menu.exec(self._task_tree.viewport().mapToGlobal(position))
+
     # ── actions ───────────────────────────────────────────
 
     def _update_actions(self) -> None:
@@ -937,8 +1232,7 @@ class ManagerWindow(QWidget):
     def _on_open_output(self) -> None:
         for row in self._selected_rows():
             if row.outputs:
-                path = Path(row.outputs[0])
-                desktop.open_in_file_browser(path if path.is_dir() else path.parent)
+                _open_folder_of(row.outputs[0])
                 return
 
     def _on_open_log(self) -> None:
@@ -952,7 +1246,7 @@ class ManagerWindow(QWidget):
         self._source.setCurrentIndex(max(0, self._source.findData(source)))
 
     def closeEvent(self, event) -> None:
-        for timer in (self._local_timer, self._farm_timer, self._futures_timer):
+        for timer in (self._local_timer, self._farm_timer, self._futures_timer, self._machine_timer):
             timer.stop()
         self._executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)
@@ -983,6 +1277,16 @@ def _read_report(path: str) -> str:
 def _farm_control(command: str, ids: list[str]) -> str:
     from tumblepipe.farm.manager import deadline_jobs
     return deadline_jobs.control(command, ids)
+
+
+def _open_folder_of(path: str) -> None:
+    """Open the folder an output is written to (an image sequence's ``####`` pattern included)."""
+    target = Path(path)
+    desktop.open_in_file_browser(target if target.is_dir() else target.parent)
+
+
+def _copy(text: str) -> None:
+    QApplication.clipboard().setText(text or '')
 
 
 def _identity() -> tuple[str, str]:

@@ -199,11 +199,15 @@ def generate_playblast_settings_section(camera_prim_path: str) -> str:
     ])
 
 
-def generate_playblast_wrapper(sublayer: str, camera_prim_path: str, fps: float) -> str:
+def generate_playblast_wrapper(
+    sublayer: str, camera_prim_path: str, fps: float, overrides: tuple[str, ...] = ()
+    ) -> str:
     """USDA text of a root layer over ``sublayer`` (an asset path, e.g.
     ``./cache.usd``) that renders it through the playblast settings prim
     (generate_playblast_settings_section) and ``camera_prim_path``: what the
     in-session th::playblast hands husk for the viewport renderer.
+    ``overrides`` are asset paths of layers stronger than ``sublayer``, the
+    first strongest: a render layer's visibility overrides (usd.layer_split).
 
     Its cache carries the shot's own RenderSettings, whose Karma LPE vars
     husk refuses with our delegate ("Missing driver:parameters:aov:husk:name
@@ -215,7 +219,7 @@ def generate_playblast_wrapper(sublayer: str, camera_prim_path: str, fps: float)
     return '\n'.join([
         '#usda 1.0',
         '(',
-        f'    subLayers = [@{sublayer}@]',
+        '    subLayers = [' + ', '.join(f'@{path}@' for path in (*overrides, sublayer)) + ']',
         f'    renderSettingsPrimPath = "{PLAYBLAST_SETTINGS_PRIM_PATH}"',
         f'    timeCodesPerSecond = {fps}',
         f'    framesPerSecond = {fps}',

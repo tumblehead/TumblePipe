@@ -1,6 +1,6 @@
-//! A decoded frame, in the form the player uploads it: movie frames stay
-//! planar Y'CbCr (the shader converts), EXR frames are scene-linear RGBA
-//! halfs.
+//! A decoded frame, in the form the player uploads it: Y'CbCr movie frames
+//! stay planar (the shader converts), movie frames with alpha (or in RGB)
+//! are 8-bit RGBA code values, EXR frames are scene-linear RGBA halfs.
 
 use std::sync::Arc;
 
@@ -25,6 +25,11 @@ pub enum Pixels {
         /// Full range (0-255) rather than video range (16-235).
         full_range: bool,
     },
+    /// Display-referred R'G'B'A code values (sRGB, like a playblast's
+    /// Y'CbCr once converted), straight (not premultiplied) alpha,
+    /// interleaved, rows top to bottom: a movie with alpha or in RGB (PNG
+    /// frames in a QuickTime movie).
+    Rgba8(Vec<u8>),
     /// Scene-linear RGBA half floats, interleaved, rows top to bottom.
     Rgba16f(Vec<f16>),
 }
@@ -42,6 +47,7 @@ impl Frame {
     pub fn byte_size(&self) -> usize {
         match &*self.pixels {
             Pixels::Yuv420 { y, u, v, .. } => y.len() + u.len() + v.len(),
+            Pixels::Rgba8(data) => data.len(),
             Pixels::Rgba16f(data) => data.len() * 2,
         }
     }

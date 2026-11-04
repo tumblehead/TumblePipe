@@ -43,7 +43,7 @@
         name    "matpathprefix"
         label   "Material Path"
         type    string
-        default { "`lopinputprims('.', 0)`/mtl/" }
+        default { "`lopinputprim('.', 0)`/mtl/" }
         parmtag { "autoscope" "0000000000000000" }
         parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, False)" }
         parmtag { "script_action_help" "Select a primitive in the Scene Viewer or Scene Graph Tree pane.\nCtrl-click to select using the primitive picker dialog.\nAlt-click to toggle movement of the display flag." }

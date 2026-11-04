@@ -37,6 +37,8 @@ from tumblepipe.pipe.paths.render import (
 )
 from tumblepipe.pipe.paths.review import (
     get_layer_playblast_path,
+    get_layer_playblast_movie_path,
+    list_layer_playblast_movies,
     get_playblast_path,
     get_next_playblast_path,
     get_latest_playblast_path,
@@ -114,6 +116,8 @@ __all__ = [
     'comp_input_problems',
     # review
     'get_layer_playblast_path',
+    'get_layer_playblast_movie_path',
+    'list_layer_playblast_movies',
     'get_playblast_path',
     'get_next_playblast_path',
     'get_latest_playblast_path',

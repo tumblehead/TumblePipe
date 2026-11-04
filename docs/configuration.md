@@ -264,6 +264,15 @@ Python module. A shot's render layers are its **channels**, stored in the
 (Projects from before v13 stored it as `variants`; v13 renamed the key.
 There is no separate `render_layers` property; that name is retired.) How a render workfile produces each layer is in
 [Render layers (channels)](nodes/lighting-and-rendering.md#render-layers-channels).
+An optional `channel_prims` property maps a channel to the prims that make
+up its layer in a *playblast*, e.g. `{"characters": "/CHAR/*"}` (a Houdini
+prim pattern). It is inherited like any property and merged key by key: a
+pattern set on the project (or a sequence) holds for every shot under it,
+a shot sets or replaces patterns channel by channel, and a pattern of `""`
+drops that channel's layer on the shot. No migration adds it; add it with
+the Config Editor's **Add Field** (then change the field's type to
+object). `th::playblast`'s **Render Layers** reads it
+([Layered playblasts](nodes/lighting-and-rendering.md#layered-playblasts)).
 
 ### Departments
 

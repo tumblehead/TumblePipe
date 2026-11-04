@@ -222,7 +222,21 @@ def create_node(scene, name, node_cls, type_name, context = 'Lop', **create_kwar
     assert node_type is not None, f'Could not find {type_name} node type'
     native = scene.node(name)
     if native is not None: return node_cls(native)
-    return node_cls(scene.createNode(node_type.name(), name, **create_kwargs))
+    global _from_code
+    outer, _from_code = _from_code, True
+    try:
+        return node_cls(scene.createNode(node_type.name(), name, **create_kwargs))
+    finally:
+        _from_code = outer
+
+# True while create_node creates a node: an OnCreated script that sets up
+# contents an artist would want (th::animate's dive) skips that for code,
+# such as a workfile template, which builds them itself.
+_from_code = False
+
+def creating_from_code() -> bool:
+    """True inside the OnCreated of a node `create_node` is creating."""
+    return _from_code
 
 def set_node_style(raw_node, shape = SHAPE_NODE_DEFAULT, color = COLOR_NODE_DEFAULT):
     """Apply the standard th:: node styling: node color + node shape."""

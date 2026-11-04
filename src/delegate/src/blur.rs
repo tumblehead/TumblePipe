@@ -397,8 +397,10 @@ impl Plan {
 }
 
 /// The chunks' pictures averaged, pairwise so that equal pictures average
-/// to themselves exactly; depth is the nearest of them.
-pub fn average(mut images: Vec<Image>) -> Image {
+/// to themselves exactly; depth is the nearest of them. With `alpha` (a
+/// transparent background) alpha is averaged as the colour is, so it is the
+/// coverage over the shutter and the lens; without, it is 1.
+pub fn average(mut images: Vec<Image>, alpha: bool) -> Image {
     assert!(!images.is_empty(), "a frame has at least one chunk");
     let count = images.len();
     while images.len() > 1 {
@@ -422,7 +424,7 @@ pub fn average(mut images: Vec<Image>) -> Image {
     let mut out = images.pop().expect("one left");
     let inv = 1.0 / count as f32;
     for p in &mut out.color {
-        *p = [p[0] * inv, p[1] * inv, p[2] * inv, 1.0];
+        *p = [p[0] * inv, p[1] * inv, p[2] * inv, if alpha { p[3] * inv } else { 1.0 }];
     }
     out
 }

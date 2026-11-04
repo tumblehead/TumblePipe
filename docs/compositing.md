@@ -275,7 +275,12 @@ each keeping the name it was written with:
   Mode and Lighting. **Motion Blur**, **Depth of Field** and **Blur
   Samples** (off, off, 16) work with both, from the camera's shutter and
   lens: the viewport renderer's blurs, or the flipbook's own. The SOP
-  `th::playblast` always renders through Houdini GL.
+  `th::playblast` always renders through Houdini GL. With the viewport
+  renderer, **Render Layers** also writes a movie per render layer (the
+  shot's channels, prims picked by its `channel_prims`), which the sequence
+  player stacks: see
+  [Layered playblasts](nodes/lighting-and-rendering.md#layered-playblasts).
+  The farm playblast makes no layers.
 - **On the farm** — tick a shot's **Playblast** cell in the
   [Farm Submit dialog](asset-browser/submit-jobs.md) (shots only; publish cells on
   the same row run first, and the playblast then shows what they publish)

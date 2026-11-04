@@ -23,4 +23,61 @@
         help    "Bumped by th::import_rig(s) after an import, so the dive's ghost sees rigs it was not watching yet."
         range   { 0 10 }
     }
+    groupsimple {
+        name    "characters_folder"
+        label   "Characters"
+
+        parm {
+            name    "shapes"
+            label   "Shapes"
+            type    string
+            default { "Base" }
+            help    "The character shapes to output (the Scene Invoke Shapes pattern). Used when anim_dive ends in its Scene Animate; a dive with its own Scene Invoke is used as it is."
+        }
+        parm {
+            name    "discover_characters"
+            label   "Discover"
+            type    button
+            default { "0" }
+            help    "Add a row for each character in anim_dive's scene that is not listed yet."
+            parmtag { "script_callback" "from tumblepipe.pipe.houdini.lops import animate_invoke; animate_invoke.discover(kwargs['node'])" }
+            parmtag { "script_callback_language" "python" }
+        }
+        multiparm {
+            name    "characters"
+            label    "Characters"
+            default 0
+
+            parm {
+                name    "character#"
+                label   "Character"
+                type    string
+                joinnext
+                default { "" }
+                help    "A character of anim_dive's scene (its name in the scene)."
+                menureplace {
+                    [ "from tumblepipe.pipe.houdini.lops import animate_invoke" ]
+                    [ "return animate_invoke.character_menu(kwargs['node'])" ]
+                    language python
+                }
+            }
+            parm {
+                name    "geometry#"
+                label   "Geometry"
+                type    toggle
+                joinnext
+                default { "1" }
+                help    "Output the character's shapes (those matching Shapes)."
+            }
+            parm {
+                name    "skeleton#"
+                label   "Skeleton"
+                type    toggle
+                default { "0" }
+                help    "Output the character's posed skeleton (its rig's Base.skel), as curves under /<category>/<character>/skel, for CFX."
+            }
+        }
+
+    }
+
 }

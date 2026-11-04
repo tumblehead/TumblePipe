@@ -45,7 +45,8 @@ def _build_animate_dive(animate_node, rig_imports: list, entity_uri=None):
             inner_animate_node, scene_input, entity_uri
         )
 
-    # Create the scene animate nodes
+    # The dive ends in the Scene Animate: th::animate invokes the scene
+    # itself, per its Characters list (geometry and skeleton per character)
     scene_animate_node = inner_animate_node.createNode(
         'apex::sceneanimate',
         'scene_animate'
@@ -53,17 +54,7 @@ def _build_animate_dive(animate_node, rig_imports: list, entity_uri=None):
     scene_animate_node.setInput(0, scene_input)
     if layout_animate.enabled():
         layout_keys_rows.copy_into_new_workfile(scene_input)
-    invoke_scene_node = inner_animate_node.createNode(
-        'apex::sceneinvoke',
-        'scene_invoke'
-    )
-    # Packed folders: th::animate unpacks the rigs itself, cheaper than the
-    # Scene Invoke unpacking them every frame. SOPs placed after this node
-    # get packed geometry, so unpack (twice) before them.
-    invoke_scene_node.parm('outputmode').set('packedfolders')
-    invoke_scene_node.parm('shapepattern').set('Base')
-    invoke_scene_node.setInput(0, scene_animate_node)
-    output_animate_node.setInput(0, invoke_scene_node)
+    output_animate_node.setInput(0, scene_animate_node)
 
     inner_animate_node.layoutChildren()
 
@@ -74,7 +65,8 @@ def _add_member_playblast(animate_node, member_uri: Uri):
     playblast_node = playblast.create(inner_animate_node, 'playblast')
     playblast_node.set_entity_uri(member_uri)
     playblast_node.parm('camera').set('render_camera')
-    playblast_node.native().setInput(0, inner_animate_node.node('scene_invoke'))
+    # th::playblast invokes an APEX scene it is given
+    playblast_node.native().setInput(0, inner_animate_node.node('scene_animate'))
     inner_animate_node.layoutChildren()
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):

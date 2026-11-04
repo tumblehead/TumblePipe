@@ -10,7 +10,10 @@ SideFX's APEX bake copies a GU_Detail's P/N into USD arrays
 geometry to USD every frame, and unpacking it first, is what made the
 node slow; the result is the same, value for value.
 
-The dive's Scene Invoke outputs packed folders, so its shapes reach here
+What is read is `points_sops/scene`: the dive's output, invoked first by
+the HDA when the dive outputs the APEX scene itself (`animate_invoke`).
+
+The Scene Invoke outputs packed folders, so its shapes reach here
 without the unpack: `read_points` reads each packed shape's points where
 they are. A dive whose Scene Invoke still outputs unpacked geometry
 straight into the dive's output is switched to packed folders when the
@@ -39,6 +42,7 @@ STAMP_PRIMVAR = f'primvars:{STAMP}'
 POINTS_SOPS = 'points_sops'
 REST = 'REST'
 CURRENT = 'CURRENT'
+SCENE = 'scene'
 DIVE = 'anim_dive'
 
 # SOP primitive types a SOP Import turns into a UsdGeomPointBased prim;
@@ -296,9 +300,18 @@ def _dive_output(lop_node):
     return None if dive is None else dive_output(dive)
 
 
+def _scene(lop_node):
+    """`points_sops/scene`: the dive's output, invoked by th::animate when
+    the dive outputs the APEX scene itself (`animate_invoke`)."""
+    sops = _sops(lop_node)
+    return None if sops is None else sops.node(SCENE)
+
+
 def apply(lop_node) -> None:
     """The `apply` Python LOP: this frame's points onto the static import."""
-    output = _dive_output(lop_node)
+    if _dive_output(lop_node) is None:
+        return
+    output = _scene(lop_node)
     if output is None:
         return
     static_node = lop_node.inputs()[0]
@@ -340,8 +353,8 @@ def rest_point_count(sops) -> int | None:
 def topology_changed(lop_node) -> int:
     """The `topology_switch` expression: 1 when this frame's point count is
     not the first frame's (the full, per-frame import then runs)."""
-    output = _dive_output(lop_node)
     sops = _sops(lop_node)
+    output = _scene(lop_node) if _dive_output(lop_node) is not None else None
     if output is None or sops is None:
         return 0
     # The first frame before this one: the dive's SOPs keep one frame's
@@ -388,12 +401,43 @@ def imported_patterns(geo, attribs_pattern: str) -> list[str]:
     return patterns
 
 
+# Geometry with at most this many prims is compared by its attributes'
+# values, not their data ids: th::animate rebuilds such small leaves itself
+# every cook (a skeleton, `animate_invoke.skeleton_paths`), which gives them
+# new data ids though nothing changed.
+SMALL_PRIMS = 2000
+
+def _enum_name(value) -> str:
+    name = getattr(value, 'name', None)
+    return name() if callable(name) else str(value)
+
+
+def attrib_value_key(geo, attrib):
+    """A hashable stand-in for `attrib`'s values on `geo`."""
+    kind = _enum_name(attrib.type())
+    if kind == 'Global':
+        return repr(geo.attribValue(attrib.name()))
+    prefix = {'Point': 'point', 'Prim': 'prim', 'Vertex': 'vertex'}[kind]
+    data = _enum_name(attrib.dataType())
+    if data == 'Float':
+        return hash(getattr(geo, f'{prefix}FloatAttribValuesAsString')(attrib.name()))
+    if data == 'Int':
+        return hash(getattr(geo, f'{prefix}IntAttribValuesAsString')(attrib.name()))
+    if data == 'String':
+        return hash(tuple(getattr(geo, f'{prefix}StringAttribValues')(attrib.name())))
+    return str(attrib.dataId())
+
+
 def _geometry_signature(geo, attribs_pattern: str) -> tuple:
     from fnmatch import fnmatchcase
     counts = tuple(geo.intrinsicValue(name) for name in ('pointcount', 'primitivecount', 'vertexcount'))
     patterns = imported_patterns(geo, attribs_pattern)
+    by_value = counts[1] <= SMALL_PRIMS
     ids = tuple(sorted(
-        (attrib.type().name(), attrib.name(), str(attrib.dataId()))
+        (
+            attrib.type().name(), attrib.name(),
+            str(attrib_value_key(geo, attrib) if by_value else attrib.dataId()),
+        )
         for attrib in _all_attribs(geo)
         if attrib.name() not in _MOVING
         and any(fnmatchcase(attrib.name(), pattern) for pattern in patterns)

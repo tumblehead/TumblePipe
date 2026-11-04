@@ -30,6 +30,81 @@ fn ff_error(code: i32) -> String {
     unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned()
 }
 
+/// Whether frames of pixel format `format` decode to RGBA rather than
+/// Y'CbCr: every format with alpha, and the RGB ones (a PNG movie's rgb24,
+/// rgb48, palette and grey-with-alpha frames, QuickTime Animation's argb, ProRes
+/// 4444's Y'CbCrA among them). The bindings have
+/// no pixel format descriptors, so this is a list.
+pub fn is_rgba_format(format: i32) -> bool {
+    [
+        ff::AV_PIX_FMT_RGBA,
+        ff::AV_PIX_FMT_BGRA,
+        ff::AV_PIX_FMT_ARGB,
+        ff::AV_PIX_FMT_ABGR,
+        ff::AV_PIX_FMT_RGB24,
+        ff::AV_PIX_FMT_BGR24,
+        ff::AV_PIX_FMT_RGB0,
+        ff::AV_PIX_FMT_BGR0,
+        ff::AV_PIX_FMT_RGB48BE,
+        ff::AV_PIX_FMT_RGB48LE,
+        ff::AV_PIX_FMT_BGR48BE,
+        ff::AV_PIX_FMT_BGR48LE,
+        ff::AV_PIX_FMT_RGBA64BE,
+        ff::AV_PIX_FMT_RGBA64LE,
+        ff::AV_PIX_FMT_BGRA64BE,
+        ff::AV_PIX_FMT_BGRA64LE,
+        ff::AV_PIX_FMT_GBRP,
+        ff::AV_PIX_FMT_GBRAP,
+        ff::AV_PIX_FMT_GBRP16BE,
+        ff::AV_PIX_FMT_GBRP16LE,
+        ff::AV_PIX_FMT_GBRAP16BE,
+        ff::AV_PIX_FMT_GBRAP16LE,
+        ff::AV_PIX_FMT_PAL8,
+        ff::AV_PIX_FMT_YA8,
+        ff::AV_PIX_FMT_YA16BE,
+        ff::AV_PIX_FMT_YA16LE,
+        ff::AV_PIX_FMT_RGB555BE,
+        ff::AV_PIX_FMT_RGB555LE,
+        ff::AV_PIX_FMT_RGB565BE,
+        ff::AV_PIX_FMT_RGB565LE,
+    ]
+    .contains(&format)
+        || yuva_layout(format).is_some()
+}
+
+/// A planar Y'CbCrA format converted to RGBA here, not by swscale: its bits
+/// per sample (little-endian past 8) and its chroma planes' shifts across
+/// and down.
+fn yuva_layout(format: i32) -> Option<(u32, usize, usize)> {
+    Some(match format {
+        ff::AV_PIX_FMT_YUVA420P => (8, 1, 1),
+        ff::AV_PIX_FMT_YUVA422P => (8, 1, 0),
+        ff::AV_PIX_FMT_YUVA444P => (8, 0, 0),
+        ff::AV_PIX_FMT_YUVA420P10LE => (10, 1, 1),
+        ff::AV_PIX_FMT_YUVA422P10LE => (10, 1, 0),
+        ff::AV_PIX_FMT_YUVA444P10LE => (10, 0, 0),
+        ff::AV_PIX_FMT_YUVA422P12LE => (12, 1, 0),
+        ff::AV_PIX_FMT_YUVA444P12LE => (12, 0, 0),
+        ff::AV_PIX_FMT_YUVA420P16LE => (16, 1, 1),
+        ff::AV_PIX_FMT_YUVA422P16LE => (16, 1, 0),
+        ff::AV_PIX_FMT_YUVA444P16LE => (16, 0, 0),
+        _ => return None,
+    })
+}
+
+/// The Y'CbCr matrix and range a decoded frame says it is in.
+fn matrix_of(decoded: &ff::AVFrame) -> (YuvMatrix, bool) {
+    let full_range = decoded.color_range == ff::AVCOL_RANGE_JPEG || decoded.format == ff::AV_PIX_FMT_YUVJ420P;
+    let matrix = match decoded.colorspace {
+        ff::AVCOL_SPC_BT470BG | ff::AVCOL_SPC_SMPTE170M => YuvMatrix::Bt601,
+        ff::AVCOL_SPC_BT709 => YuvMatrix::Bt709,
+        // Unspecified: HD and up is BT.709 by convention, SD BT.601.
+        _ if decoded.height >= 720 => YuvMatrix::Bt709,
+        _ => YuvMatrix::Bt601,
+    };
+    (matrix, full_range)
+}
+
 /// An open movie file and its video stream.
 struct Input {
     format: *mut ff::AVFormatContext,
@@ -288,22 +363,104 @@ impl MovieDecoder {
         }
     }
 
+    /// The decoder's current frame: 8-bit RGBA when it has alpha or is RGB
+    /// (see [`is_rgba_format`]), else tightly packed 8-bit 4:2:0.
+    unsafe fn convert(&mut self) -> std::result::Result<Frame, String> {
+        if is_rgba_format(unsafe { (*self.decoded).format }) { unsafe { self.convert_rgba() } } else { unsafe { self.convert_yuv() } }
+    }
+
+    /// The decoder's current frame as 8-bit RGBA, straight alpha (opaque
+    /// when the frame has none), its code values as they are: swscale never
+    /// premultiplies. RGBA itself is copied row by row.
+    #[allow(clippy::unnecessary_cast)]
+    unsafe fn convert_rgba(&mut self) -> std::result::Result<Frame, String> {
+        let decoded = unsafe { &*self.decoded };
+        let (width, height) = (decoded.width as usize, decoded.height as usize);
+        let mut rgba = vec![0u8; width * height * 4];
+        if let Some((bits, sx, sy)) = yuva_layout(decoded.format) {
+            // Converted here as `convert_yuv` and the shader do, by the
+            // movie's own matrix and range: swscale's would be BT.601.
+            let (matrix, full_range) = matrix_of(decoded);
+            let scale = f32::from(1u16 << (bits - 8));
+            let alpha_max = ((1u32 << bits) - 1) as f32;
+            let sample = |plane: usize, row: usize, col: usize| -> f32 {
+                let stride = decoded.linesize[plane] as usize;
+                unsafe {
+                    let line = decoded.data[plane].add(row * stride);
+                    if bits == 8 {
+                        f32::from(*line.add(col))
+                    } else {
+                        let at = line.add(col * 2);
+                        f32::from(u16::from_le_bytes([*at, *at.add(1)]))
+                    }
+                }
+            };
+            for row in 0..height {
+                for col in 0..width {
+                    let (crow, ccol) = (row >> sy, col >> sx);
+                    let rgb = crate::thumbnail::yuv_pixel_f32(
+                        sample(0, row, col) / scale,
+                        sample(1, crow, ccol) / scale,
+                        sample(2, crow, ccol) / scale,
+                        matrix,
+                        full_range,
+                    );
+                    let out = &mut rgba[(row * width + col) * 4..][..4];
+                    for c in 0..3 {
+                        out[c] = (rgb[c] * 255.0).round() as u8;
+                    }
+                    out[3] = (sample(3, row, col) / alpha_max * 255.0).round() as u8;
+                }
+            }
+        } else if decoded.format == ff::AV_PIX_FMT_RGBA {
+            let stride = decoded.linesize[0] as usize;
+            for row in 0..height {
+                let src = unsafe { std::slice::from_raw_parts(decoded.data[0].add(row * stride), width * 4) };
+                rgba[row * width * 4..(row + 1) * width * 4].copy_from_slice(src);
+            }
+        } else {
+            unsafe {
+                self.sws = ff::sws_getCachedContext(
+                    self.sws,
+                    decoded.width,
+                    decoded.height,
+                    decoded.format,
+                    decoded.width,
+                    decoded.height,
+                    ff::AV_PIX_FMT_RGBA,
+                    ff::SWS_BICUBIC as i32,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null(),
+                );
+                if self.sws.is_null() {
+                    return Err(format!("cannot convert pixel format {} to RGBA", decoded.format));
+                }
+                let mut planes = [rgba.as_mut_ptr(), ptr::null_mut(), ptr::null_mut(), ptr::null_mut()];
+                let strides = [(width * 4) as i32, 0, 0, 0];
+                ff::sws_scale(
+                    self.sws,
+                    decoded.data.as_ptr() as *const *const u8,
+                    decoded.linesize.as_ptr(),
+                    0,
+                    decoded.height,
+                    planes.as_mut_ptr(),
+                    strides.as_ptr(),
+                );
+            }
+        }
+        Ok(Frame { width: width as u32, height: height as u32, pixels: Arc::new(Pixels::Rgba8(rgba)) })
+    }
+
     /// The decoder's current frame as tightly packed 8-bit 4:2:0. Anything
     /// else (4:2:2 ProRes, 10-bit) is converted through swscale.
     // SWS_BICUBIC is a C enum constant, i32 in the Windows bindings and u32
     // elsewhere: its cast is a no-op only here.
     #[allow(clippy::unnecessary_cast)]
-    unsafe fn convert(&mut self) -> std::result::Result<Frame, String> {
+    unsafe fn convert_yuv(&mut self) -> std::result::Result<Frame, String> {
         let decoded = unsafe { &*self.decoded };
         let (width, height) = (decoded.width as usize, decoded.height as usize);
-        let full_range = decoded.color_range == ff::AVCOL_RANGE_JPEG || decoded.format == ff::AV_PIX_FMT_YUVJ420P;
-        let matrix = match decoded.colorspace {
-            ff::AVCOL_SPC_BT470BG | ff::AVCOL_SPC_SMPTE170M => YuvMatrix::Bt601,
-            ff::AVCOL_SPC_BT709 => YuvMatrix::Bt709,
-            // Unspecified: HD and up is BT.709 by convention, SD BT.601.
-            _ if height >= 720 => YuvMatrix::Bt709,
-            _ => YuvMatrix::Bt601,
-        };
+        let (matrix, full_range) = matrix_of(decoded);
         let (cw, ch) = (width.div_ceil(2), height.div_ceil(2));
         let mut y = vec![0u8; width * height];
         let mut u = vec![0u8; cw * ch];

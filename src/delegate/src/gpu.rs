@@ -320,7 +320,7 @@ pub(crate) fn render_with_stats(frame: &Frame, meshes: &[Mesh], cache: Option<&C
             total.add(&stats);
         }
         total.chunks = plan.chunks.len();
-        let image = gpu.sum_finish(sum, plan.chunks.len(), &mut total)?;
+        let image = gpu.sum_finish(sum, plan.chunks.len(), frame.alpha, &mut total)?;
         Ok((image, total))
     })
 }
@@ -1324,7 +1324,7 @@ impl Gpu {
             lights,
             ambient: [composite::SKY, composite::GROUND, composite::SPECULAR, composite::SHININESS as f32],
             clay: [clay[0], clay[1], clay[2], 1.0 / layers as f32],
-            backdrop: [composite::BACKDROP_TOP, composite::BACKDROP_BOTTOM, 0.0, 0.0],
+            backdrop: [composite::BACKDROP_TOP, composite::BACKDROP_BOTTOM, frame.alpha as u32 as f32, 0.0],
             pattern: cells,
         };
         self.queue.write_buffer(&targets.globals, 0, bytes(&[globals]));
@@ -1455,14 +1455,16 @@ impl Gpu {
     /// The average of the `count` chunks on `sum`, read back: what is left
     /// merged from the last slot down (a chunk count's bits, the larger
     /// sum on the left, as [`blur::average`]'s odd one out is), times one
-    /// over the count.
-    fn sum_finish(&mut self, mut sum: Vec<usize>, count: usize, stats: &mut Stats) -> Result<Image, String> {
+    /// over the count; alpha too with `alpha` (a transparent background),
+    /// else 1.
+    fn sum_finish(&mut self, mut sum: Vec<usize>, count: usize, alpha: bool, stats: &mut Stats)
+                  -> Result<Image, String> {
         assert_eq!(sum.iter().sum::<usize>(), count, "every chunk on the sum");
         let started = Instant::now();
         let targets = self.targets.as_ref().ok_or("no targets")?;
         let plane = targets.size.0 * targets.size.1;
         let inv = 1.0 / count as f32;
-        self.queue.write_buffer(&targets.sum_params, 0, bytes(&[[plane as u32, inv.to_bits(), 0, 0]]));
+        self.queue.write_buffer(&targets.sum_params, 0, bytes(&[[plane as u32, inv.to_bits(), alpha as u32, 0]]));
         let mut encoder = self.device.create_command_encoder(&Default::default());
         while sum.len() >= 2 {
             self.sum_add(&mut encoder, sum.len() - 2, sum.len() - 1);
@@ -1514,7 +1516,7 @@ mod tests {
     fn frame(w: usize, h: usize, samples: usize) -> Frame {
         let (world_to_clip, view_to_world) = camera();
         Frame { width: w, height: h, world_to_clip, view_to_world, samples,
-                shading: composite::Shading::Lit, ao: true, blur: crate::blur::Blur::OFF }
+                shading: composite::Shading::Lit, ao: true, blur: crate::blur::Blur::OFF, alpha: false }
     }
 
     fn encode(v: f32) -> i32 {
@@ -1523,13 +1525,34 @@ mod tests {
         (s * 255.0 + 0.5) as i32
     }
 
-    /// The fraction of pixels more than [`STEPS`] off in 8-bit sRGB, and the
-    /// fraction whose depth disagrees.
+    fn linear8(v: f32) -> i32 {
+        (v.clamp(0.0, 1.0) * 255.0 + 0.5) as i32
+    }
+
+    /// The fraction of pixels more than [`STEPS`] off in 8-bit sRGB (alpha,
+    /// which a file keeps linear, in linear 8-bit), and the fraction whose
+    /// depth disagrees.
     fn differences(cpu: &Image, gpu: &Image) -> (f32, f32) {
+        differences_within(cpu, gpu, 0.0)
+    }
+
+    /// [`differences`] for transparent pictures (`one_sample` > 0): a
+    /// pixel's alpha is its coverage, so a sample on an edge that the two
+    /// rasterisers decide differently (what the depth tolerance allows for)
+    /// moves it by one sample's share, `one_sample`, where over the backdrop
+    /// it moves the colour by only the surface's contrast with it. Alpha
+    /// may differ by that much, and the colours are compared put over a mid
+    /// grey, as the opaque pictures are over the backdrop.
+    fn differences_within(cpu: &Image, gpu: &Image, one_sample: f32) -> (f32, f32) {
         assert_eq!(cpu.color.len(), gpu.color.len());
         let n = cpu.color.len() as f32;
+        let over = |p: &[f32; 4], c: usize| if one_sample > 0.0 { p[c] + (1.0 - p[3]) * 0.5 } else { p[c] };
+        let alpha_off = |a: f32, b: f32| {
+            (linear8(a) - linear8(b)).abs() > STEPS && (a - b).abs() > one_sample + 1e-6
+        };
         let color = cpu.color.iter().zip(&gpu.color)
-            .filter(|(a, b)| (0..4).any(|c| (encode(a[c]) - encode(b[c])).abs() > STEPS))
+            .filter(|(a, b)| (0..3).any(|c| (encode(over(a, c)) - encode(over(b, c))).abs() > STEPS)
+                             || alpha_off(a[3], b[3]))
             .count() as f32 / n;
         let depth = cpu.depth.iter().zip(&gpu.depth)
             .filter(|(a, b)| (**a < 1.0) != (**b < 1.0) || (**a - **b).abs() > 1e-3)
@@ -1559,8 +1582,8 @@ mod tests {
     }
 
     /// `images` (colour and depth, `pixels` each) averaged on the card
-    /// through the sum a blurred frame uses.
-    fn average_on_card(pixels: usize, images: &[(Vec<[f32; 4]>, Vec<f32>)]) -> Image {
+    /// through the sum a blurred frame uses; alpha too with `alpha`.
+    fn average_on_card(pixels: usize, images: &[(Vec<[f32; 4]>, Vec<f32>)], alpha: bool) -> Image {
         gpu().expect("a GPU").scoped(&frame(pixels, 1, 1), |gpu| {
             gpu.targets(pixels, 1, 1);
             let mut sum = Vec::new();
@@ -1570,7 +1593,7 @@ mod tests {
                 gpu.queue.write_buffer(&targets.depth, 0, bytes(depth));
                 gpu.sum_push(&mut sum);
             }
-            gpu.sum_finish(sum, images.len(), &mut Stats::default())
+            gpu.sum_finish(sum, images.len(), alpha, &mut Stats::default())
         }).unwrap_or_else(|e| panic!("GPU average failed: {e}"))
     }
 
@@ -1594,11 +1617,13 @@ mod tests {
         #![proptest_config(ProptestConfig::with_cases(64))]
 
         /// A blurred frame's chunk pictures averaged on the card are
-        /// blur::average's picture, bit for bit.
+        /// blur::average's picture, bit for bit, alpha included, with a
+        /// transparent background or without.
         #[test]
-        fn chunks_averaged_on_the_card_are_the_cpus_average_bit_for_bit((pixels, images) in chunk_pictures()) {
-            let got = average_on_card(pixels, &images);
-            let want = blur::average(images.into_iter().map(|(color, depth)| Image { color, depth }).collect());
+        fn chunks_averaged_on_the_card_are_the_cpus_average_bit_for_bit((pixels, images) in chunk_pictures(),
+                                                                         alpha: bool) {
+            let got = average_on_card(pixels, &images, alpha);
+            let want = blur::average(images.into_iter().map(|(color, depth)| Image { color, depth }).collect(), alpha);
             let bits = |i: &Image| (i.color.iter().flatten().map(|v| v.to_bits()).collect::<Vec<_>>(),
                                     i.depth.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
             prop_assert_eq!(bits(&got), bits(&want));
@@ -1714,7 +1739,8 @@ mod tests {
 
         /// The GPU post pass makes the CPU's picture from the same render
         /// buffer, for any scene, sample count, shading and occlusion
-        /// setting: the occlusion, its blur, the lights, the backdrop and the
+        /// setting, over the backdrop or transparent: the occlusion, its
+        /// blur, the lights, the backdrop, the coverage (alpha) and the
         /// average of the samples all agree, and so does depth.
         #[test]
         fn the_gpu_post_pass_makes_the_cpus_picture(
@@ -1722,6 +1748,7 @@ mod tests {
             samples in prop::sample::select(vec![1usize, 2, 4, 8, 16]),
             shading in shading(),
             ao: bool,
+            alpha: bool,
             (w, h) in (8usize..90, 8usize..70),
         ) {
             let built: Vec<_> = boxes.iter().map(|(c, s, yaw, _)| boxed(*c, *s, *yaw)).collect();
@@ -1732,10 +1759,12 @@ mod tests {
                 .map(|((p, t), (_, _, _, color))| Mesh { base_color: *color, ..mesh(p, t, &one) })
                 .collect();
             meshes.push(mesh(&floor, &floor_tris, &one));
-            let f = Frame { shading, ao, ..frame(w, h, samples) };
+            let f = Frame { shading, ao, alpha, ..frame(w, h, samples) };
             let buffer = raster::render_buffer(&f, &meshes);
             let cpu = composite::resolve(&f, &buffer);
             let gpu = resolve(&f, &buffer).map_err(|e| TestCaseError::fail(format!("GPU post pass failed: {e}")))?;
+            // Coverage is counted, not computed: the same on both, exactly.
+            prop_assert!(cpu.color.iter().zip(&gpu.color).all(|(a, b)| a[3] == b[3]), "alpha differs");
             let (color, depth) = differences(&cpu, &gpu);
             prop_assert!(depth == 0.0, "depth differs on {} of the pixels", depth);
             // Small frames: a single pixel is already a large fraction.
@@ -1952,7 +1981,7 @@ mod tests {
             blur_samples in prop::sample::select(vec![8usize, 16, 32]),
             camera_move in prop::option::of([-0.6f64..0.6, -0.3f64..0.3, -0.3f64..0.3]),
             lens in prop::option::of((0.05f32..0.4, 1.4f32..4.0, 2.0f32..9.0)),
-            shading in shading(), ao: bool, cached: bool,
+            shading in shading(), ao: bool, cached: bool, alpha: bool,
         ) {
             let (w, h) = (64usize, 40usize);
             let made: Vec<_> = boxes.iter().map(|((centre, size, yaw, color), (how, shift, turn))| {
@@ -1974,7 +2003,7 @@ mod tests {
                     _ => base,
                 }
             }).collect();
-            let mut f = Frame { shading, ao, ..frame(w, h, samples) };
+            let mut f = Frame { shading, ao, alpha, ..frame(w, h, samples) };
             f.blur = crate::blur::Blur {
                 samples: blur_samples,
                 motion: true,
@@ -1989,7 +2018,11 @@ mod tests {
             let cpu = raster::render(&f, &meshes);
             let cache = Cache::default();
             let gpu = render(&f, &meshes, cached.then_some(&cache)).unwrap_or_else(|e| panic!("GPU render failed: {e}"));
-            let (color, depth) = differences(&cpu, &gpu);
+            let (color, depth) = if alpha {
+                differences_within(&cpu, &gpu, 1.0 / crate::blur::layers(&f, &meshes) as f32)
+            } else {
+                differences(&cpu, &gpu)
+            };
             prop_assert!(color <= DIFFERING && depth <= DIFFERING, "color {color}, depth {depth}");
             if cached {
                 // Drawn again from the card: the same picture.

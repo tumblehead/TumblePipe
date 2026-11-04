@@ -12,6 +12,23 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.91.0 — 2026-11-03
+
+### Features
+- feat(asset-browser): follow this machine's other Houdini sessions (`78c8d5e4`)
+
+### Fixes
+- fix(tt_prepare): create <project>/otls at launch so the HDA scan path is real (`3efff636`)
+
+### Performance
+- perf(config): GUI sessions trust a config stamp for one second (`ec9c0339`)
+- perf(scene-imports): one stat per config file and version folder per refresh (`c9b3d620`)
+
+### Documentation
+- docs: the config stamp window and the batched import refresh (`d8aac2b6`)
+- docs: tt_prepare also creates <project>/otls (`f70474d4`)
+- docs: regenerate CHANGELOG.md for v1.90.2 (`2076bfe9`)
+
 ## v1.90.2 — 2026-11-03
 
 ### Fixes

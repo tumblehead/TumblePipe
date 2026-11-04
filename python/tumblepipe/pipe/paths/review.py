@@ -175,6 +175,50 @@ def get_latest_playblast_path(
     )
 
 ###############################################################################
+# Layered playblasts
+###############################################################################
+# A playblast made per render layer (th::playblast's Render Layers) writes,
+# beside the whole picture's mp4, one movie per layer that has prims: only
+# that layer's prims, on a transparent background, so the player can stack
+# the layers in channel order. H.264 has no alpha, so these are QuickTime
+# Animation (qtrle) movies (apps.mp4.from_png_alpha), the same version
+# number as the whole picture's.
+LAYER_MOVIE_EXTENSION = 'mov'
+
+
+def get_layer_playblast_movie_path(
+    entity_uri: Uri,
+    department_name: str,
+    render_layer_name: str,
+    version_name: str,
+    purpose: str = 'render'
+    ) -> Path:
+    """Where a playblast version's movie of one render layer goes:
+    ``{purpose}:/playblast/{entity}/{dept}/{layer}/<stem>_{layer}_{version}.mov``."""
+    directory = _playblast_dir(entity_uri, department_name, render_layer_name, purpose)
+    stem = _playblast_stem(entity_uri, department_name, render_layer_name)
+    return directory / f'{stem}_{version_name}.{LAYER_MOVIE_EXTENSION}'
+
+
+def list_layer_playblast_movies(
+    entity_uri: Uri,
+    department_name: str,
+    version_name: str,
+    render_layer_names: list[str],
+    purpose: str = 'render'
+    ) -> dict[str, Path]:
+    """The layer movies a playblast version has, by layer, in the order of
+    ``render_layer_names`` (the shot's channels, bottom to top)."""
+    found = {}
+    for layer_name in render_layer_names:
+        path = get_layer_playblast_movie_path(
+            entity_uri, department_name, layer_name, version_name, purpose
+        )
+        if path.is_file():
+            found[layer_name] = path
+    return found
+
+###############################################################################
 # Dailies
 ###############################################################################
 def _daily_dir(

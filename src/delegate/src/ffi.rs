@@ -101,6 +101,10 @@ pub struct ThFrame {
     pub focal_length: f32,
     pub f_stop: f32,
     pub focus_distance: f32,
+    /// Nonzero: a transparent background (`raster::Frame::alpha`), colour
+    /// premultiplied by coverage and alpha the coverage; 0, the backdrop
+    /// and alpha 1.
+    pub alpha: u32,
 }
 
 /// Whether this process asked for the GPU path: `TH_PLAYBLAST_GPU` set to
@@ -316,6 +320,7 @@ pub unsafe extern "C" fn th_render(
                 shading: Shading::from_abi(f.shading),
                 ao: f.ao != 0,
                 blur: blur_of(f),
+                alpha: f.alpha != 0,
             },
             &list,
             cache.as_ref(),
@@ -340,7 +345,7 @@ mod tests {
             world_to_clip: crate::math::IDENTITY, view_to_world: crate::math::IDENTITY,
             samples: 1, shading: 0, ao: 1,
             blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0,
+            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0,
         };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         let mut depth = vec![0.0f32; 8 * 4];
@@ -359,7 +364,7 @@ mod tests {
             world_to_clip: crate::math::IDENTITY, view_to_world: crate::math::IDENTITY,
             samples: 1, shading: 0, ao: 1,
             blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0,
+            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0,
         };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         unsafe {

@@ -47,7 +47,25 @@ def job_entry(job_path: Path, job_index: int, job, deps, plugin_info: dict) -> d
         'timeout': (job.max_frame_time or 0) * 60,
         'outputs': [path_str(p) for p in job.output_paths],
         'priority': job.priority,
+        # What the Farm Manager's job details show, as Deadline's job
+        # properties would (a batch written before these has none of them).
+        'pool': job.pool or '',
+        'group': job.group or '',
+        'chunk_size': int(job.chunk_size),
+        'frames': frames_text(frames, job.step_size),
     }
+
+
+def frames_text(frames: list[int], step: int | None = None) -> str:
+    """``frames`` as Deadline writes a frame list: ``1001-1100``, ``1-99x2``, else ``1,5,9``."""
+    if not frames:
+        return ''
+    if len(frames) == 1:
+        return str(frames[0])
+    for by in dict.fromkeys((int(step or 1), 1)):
+        if by >= 1 and frames == list(range(frames[0], frames[-1] + 1, by)):
+            return f'{frames[0]}-{frames[-1]}' + (f'x{by}' if by > 1 else '')
+    return ','.join(map(str, frames))
 
 
 class LocalFarm:

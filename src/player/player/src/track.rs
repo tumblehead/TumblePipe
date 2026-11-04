@@ -8,6 +8,11 @@
 //! selection, so a change applies to the playhead's shot again; Ctrl-click
 //! (Cmd on macOS) adds a shot or takes it out, and Shift-click selects the run
 //! of shots from the last one clicked.
+//!
+//! When the playhead's shot shows a stack take (its render layers on top of
+//! each other), `LayerRows` stands over the track: one row per layer, the top
+//! layer on top, each a bar over the shot's clip with its key, name and
+//! whether it shows; a click on a row shows or hides that layer.
 
 use std::collections::BTreeSet;
 
@@ -308,10 +313,137 @@ impl<Message> Program<Message> for Track<Message> {
     }
 }
 
+/// One layer row's height.
+pub const LAYER_ROW: f32 = 20.0;
+/// The room a layer row's label keeps in view, however short its shot.
+const LAYER_LABEL: f32 = 220.0;
+
+/// One layer of the stack the playhead's shot shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayerRow {
+    pub name: String,
+    pub shown: bool,
+}
+
+/// The layers of the stack the playhead's shot shows, as rows over the
+/// track, the top layer on top as in an editor. Each row's bar spans the
+/// shot's clip, so it lines up with the track below; a click on a row shows
+/// or hides its layer.
+#[derive(Debug, Clone)]
+pub struct LayerRows<Message> {
+    /// Bottom layer first, as the stack composites them.
+    pub layers: Vec<LayerRow>,
+    /// The shot's clip: its first timeline frame and how many it has.
+    pub start: usize,
+    pub len: usize,
+    pub total: usize,
+    /// A click on a row: the layer, bottom first.
+    pub on_toggle: fn(usize) -> Message,
+}
+
+impl<Message> LayerRows<Message> {
+    /// How tall the rows stand.
+    pub fn height(&self) -> f32 {
+        self.layers.len() as f32 * LAYER_ROW
+    }
+}
+
+/// The layer (bottom first) whose row is at local y `y`, of `layers` rows
+/// drawn top layer first. None off the rows.
+pub fn layer_at(y: f32, layers: usize) -> Option<usize> {
+    if y.is_nan() || y < 0.0 {
+        return None;
+    }
+    let row = (y / LAYER_ROW) as usize;
+    (row < layers).then(|| layers - 1 - row)
+}
+
+/// The key that shows or hides layer `layer` (bottom first): 1 to 9.
+pub fn layer_key(layer: usize) -> Option<char> {
+    (layer < 9).then(|| char::from(b'1' + layer as u8))
+}
+
+impl<Message> Program<Message> for LayerRows<Message> {
+    type State = ();
+
+    fn draw(&self, _state: &(), frame: &mut Frame, bounds: Rectangle, _cursor: Cursor) {
+        let (w, h) = (bounds.width, bounds.height);
+        let total = self.total.max(1) as f32;
+        let (x0, x1) = (self.start as f32 / total * w, (self.start + self.len) as f32 / total * w);
+        frame.fill_rectangle(Point::new(0.0, 0.0), Size::new(w, h), grey(26));
+        let count = self.layers.len();
+        for row in 0..count {
+            let layer = count - 1 - row;
+            let LayerRow { name, shown } = &self.layers[layer];
+            let y = row as f32 * LAYER_ROW;
+            frame.fill_rectangle(
+                Point::new(x0, y + 1.0),
+                Size::new((x1 - x0 - 1.0).max(1.0), LAYER_ROW - 2.0),
+                grey(if *shown { 58 } else { 36 }),
+            );
+            // The label stays in view near the shot, even a short one.
+            let left = (x0 + INSET).min(w - LAYER_LABEL).max(0.0);
+            let mark = Rectangle { x: left, y: y + (LAYER_ROW - 10.0) / 2.0, width: 10.0, height: 10.0 };
+            if *shown {
+                frame.fill_rectangle(Point::new(mark.x, mark.y), Size::new(mark.width, mark.height), grey(205));
+            } else {
+                let edge = grey(120);
+                frame.fill_rectangle(Point::new(mark.x, mark.y), Size::new(mark.width, 1.0), edge);
+                frame.fill_rectangle(Point::new(mark.x, mark.y + mark.height - 1.0), Size::new(mark.width, 1.0), edge);
+                frame.fill_rectangle(Point::new(mark.x, mark.y), Size::new(1.0, mark.height), edge);
+                frame.fill_rectangle(Point::new(mark.x + mark.width - 1.0, mark.y), Size::new(1.0, mark.height), edge);
+            }
+            let key = layer_key(layer).map_or(String::new(), |k| format!("{k}  "));
+            let words = if *shown { format!("{key}{name}") } else { format!("{key}{name} (hidden)") };
+            let room = Rectangle { x: mark.x + mark.width + INSET, y, width: LAYER_LABEL - mark.width - INSET, height: LAYER_ROW };
+            frame.fill_text_in(words, room, H::Left, V::Center, 11.0, grey(if *shown { 220 } else { 130 }));
+        }
+    }
+
+    fn update(&self, _state: &mut (), event: &Event, bounds: Rectangle, cursor: Cursor) -> (Status, Option<Message>) {
+        match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => match cursor.position_relative_to(bounds) {
+                Some(local) => (Status::Captured, layer_at(local.y, self.layers.len()).map(self.on_toggle)),
+                None => (Status::Ignored, None),
+            },
+            _ => (Status::Ignored, None),
+        }
+    }
+
+    fn mouse_interaction(&self, _state: &(), bounds: Rectangle, cursor: Cursor) -> mouse::Interaction {
+        if cursor.position_relative_to(bounds).is_some() { mouse::Interaction::Pointer } else { mouse::Interaction::Idle }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    proptest! {
+        /// Every row toggles exactly its own layer, the top layer drawn on
+        /// top; off the rows, none.
+        #[test]
+        fn a_click_on_a_row_names_its_layer(layers in 1usize..12, y in -40f32..400.0) {
+            match layer_at(y, layers) {
+                Some(layer) => {
+                    prop_assert!(layer < layers);
+                    let row = layers - 1 - layer;
+                    prop_assert!(y >= row as f32 * LAYER_ROW && y < (row + 1) as f32 * LAYER_ROW);
+                }
+                None => prop_assert!(y < 0.0 || y >= layers as f32 * LAYER_ROW),
+            }
+            prop_assert_eq!(layer_at(0.0, layers), Some(layers - 1), "the top row is the top layer");
+            prop_assert_eq!(layer_at(layers as f32 * LAYER_ROW - 0.5, layers), Some(0), "the bottom row the bottom layer");
+        }
+    }
+
+    #[test]
+    fn digits_name_the_first_nine_layers_bottom_first() {
+        assert_eq!(layer_key(0), Some('1'));
+        assert_eq!(layer_key(8), Some('9'));
+        assert_eq!(layer_key(9), None);
+    }
 
     proptest! {
         #[test]

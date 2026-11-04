@@ -18,6 +18,21 @@
 //!
 //! The lights are fixed to the camera, so a shot is never dark and every
 //! shot is lit the same way.
+//!
+//! Transparent background ([`Frame::alpha`], `TH_PLAYBLAST_ALPHA`): the
+//! backdrop is left out. A sample that hit nothing adds colour 0 and
+//! coverage 0, one that hit a surface its lit colour and coverage 1, and the
+//! pixel is the average of both, so its colour is premultiplied by its
+//! alpha (an edge pixel half covered by white is 0.5, 0.5, 0.5, 0.5) and
+//! alpha goes through the same samples, motion blur and depth of field as
+//! the colour. The surfaces' own shading and occlusion are unchanged.
+//! Without it every pixel is opaque (alpha 1) over the backdrop gradient,
+//! bit for bit as before the option existed. What the delegate hands husk
+//! is this premultiplied linear RGBA. husk writes it to an EXR unchanged
+//! (premultiplied, linear); to a PNG it converts the premultiplied colour
+//! to sRGB and OIIO then divides by alpha, clamped: `min(1, srgb(c) / a)`
+//! with `a` linear, straight alpha in display space (docs/development.md,
+//! "hdThPlayblast: transparent background").
 
 use crate::math::{self, Mat4, Vec3};
 use crate::pool;
@@ -482,12 +497,15 @@ pub fn resolve(frame: &Frame, samples: &Samples) -> Image {
     let mut color = vec![[0.0f32; 4]; plane];
     let inv = 1.0 / n as f32;
     par_rows(&mut color, w, |y, row| {
-        let g = backdrop(y, h);
+        // Transparent: nothing behind the surfaces, and alpha the coverage.
+        let g = if frame.alpha { 0.0 } else { backdrop(y, h) };
         for (x, out) in row.iter_mut().enumerate() {
             let mut sum = [0.0f32; 3];
+            let mut covered = 0usize;
             for k in 0..n {
                 let at = k * plane + y * w + x;
                 let c = if samples.depth[at] < 1.0 {
+                    covered += 1;
                     let nd = samples.normal[at];
                     let n = [nd[0], nd[1], nd[2]];
                     let (sx, sy) = at_screen(k, x, y);
@@ -500,7 +518,8 @@ pub fn resolve(frame: &Frame, samples: &Samples) -> Image {
                 };
                 sum = math::add(sum, c);
             }
-            *out = [sum[0] * inv, sum[1] * inv, sum[2] * inv, 1.0];
+            let a = if frame.alpha { covered as f32 * inv } else { 1.0 };
+            *out = [sum[0] * inv, sum[1] * inv, sum[2] * inv, a];
         }
     });
     let mut depth = vec![1.0f32; plane];

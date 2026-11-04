@@ -20,6 +20,10 @@ pub enum Media {
         colour_space: String,
         rate: (i32, i32),
     },
+    /// A shot's render layers, bottom first, each named and opened: all
+    /// movies or all EXR sequences (of one colour space), composited into
+    /// one picture (see [`crate::composite`]).
+    Stack(Vec<(String, Arc<Media>)>),
 }
 
 impl Media {
@@ -39,10 +43,38 @@ impl Media {
         Ok(Self::Exr { sequence, header, colour_space, rate })
     }
 
+    /// `layers`, bottom first, as one stack. Refused: no layers, a stack
+    /// among them, movies mixed with EXRs, EXRs of different colour spaces.
+    pub fn stack(layers: Vec<(String, Arc<Media>)>) -> Result<Self> {
+        let fail = |message: String| Error::Open { path: layers.iter().map(|l| l.0.as_str()).collect::<Vec<_>>().join(", "), message };
+        let Some((first_name, first)) = layers.first() else {
+            return Err(fail("a stack of no layers".into()));
+        };
+        for (name, layer) in &layers {
+            if matches!(**layer, Self::Stack(_)) {
+                return Err(fail(format!("layer {name} is a stack")));
+            }
+            if layer.is_exr() != first.is_exr() {
+                return Err(fail(format!("layer {name} is not of the kind of {first_name}")));
+            }
+            if layer.colour_space() != first.colour_space() {
+                return Err(fail(format!(
+                    "layer {name} is in {}, {first_name} in {}",
+                    layer.colour_space().unwrap_or_default(),
+                    first.colour_space().unwrap_or_default()
+                )));
+            }
+        }
+        Ok(Self::Stack(layers))
+    }
+
+    /// Its frames: a stack's longest layer's (a shorter layer is left out of
+    /// the frames past its end).
     pub fn frame_count(&self) -> usize {
         match self {
             Self::Movie(index) => index.frame_count(),
             Self::Exr { sequence, .. } => sequence.frame_count(),
+            Self::Stack(layers) => layers.iter().map(|l| l.1.frame_count()).max().unwrap_or(0),
         }
     }
 
@@ -50,37 +82,59 @@ impl Media {
         match self {
             Self::Movie(index) => index.rate(),
             Self::Exr { rate, .. } => *rate,
+            Self::Stack(layers) => layers[0].1.rate(),
         }
     }
 
     /// The frame number of index `index`: an EXR sequence's own; None for a
-    /// movie, whose frames carry no numbers.
+    /// movie, whose frames carry no numbers. A stack's is its bottom layer's.
     pub fn frame_number(&self, index: usize) -> Option<i64> {
         match self {
             Self::Movie(_) => None,
             Self::Exr { sequence, .. } => Some(sequence.frame_number(index)),
+            Self::Stack(layers) => layers[0].1.frame_number(index),
         }
     }
 
-    /// The EXR layers to pick a view from; empty for a movie.
+    /// The EXR layers to pick a view from; empty for a movie, and for a
+    /// stack, each of whose layers shows its own default view.
     pub fn layers(&self) -> &[ExrLayer] {
         match self {
-            Self::Movie(_) => &[],
+            Self::Movie(_) | Self::Stack(_) => &[],
             Self::Exr { header, .. } => &header.layers,
         }
     }
 
-    /// The view the media opens on (meaningless for a movie).
+    /// The view the media opens on (meaningless for a movie or a stack).
     pub fn default_view(&self) -> ExrView {
         ExrSequence::default_view(self.layers())
     }
 
     /// The colour space of scene-linear frames (shown through the display
-    /// transform); None for a movie, which is display-referred.
+    /// transform); None for a movie, which is display-referred. A stack's is
+    /// its layers'.
     pub fn colour_space(&self) -> Option<&str> {
         match self {
             Self::Movie(_) => None,
             Self::Exr { colour_space, .. } => Some(colour_space),
+            Self::Stack(layers) => layers[0].1.colour_space(),
+        }
+    }
+
+    /// Whether its frames are EXR reads: an EXR sequence, or a stack of them.
+    pub fn is_exr(&self) -> bool {
+        match self {
+            Self::Movie(_) => false,
+            Self::Exr { .. } => true,
+            Self::Stack(layers) => layers.first().is_some_and(|l| l.1.is_exr()),
+        }
+    }
+
+    /// A stack's layer names, bottom first; empty for anything else.
+    pub fn stack_layers(&self) -> Vec<&str> {
+        match self {
+            Self::Stack(layers) => layers.iter().map(|l| l.0.as_str()).collect(),
+            _ => Vec::new(),
         }
     }
 }

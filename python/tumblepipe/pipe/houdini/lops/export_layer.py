@@ -187,6 +187,41 @@ def _retype_asset_structure(layer_path: Path, entity_uri):
     logger.info("Retyped in the published layer:\n" + "\n".join(changes))
 
 
+def _embed_apex_files(layer_path: Path):
+    """Copy the APEX characters' scene files (rig, skeleton, animation) into
+    the version, or raise. The USD ROP saves them to each APEX LOP's save
+    path, ``$HIP/usd`` by default: the work area, which the next export
+    overwrites (``apex_files``). This is what lets a rig workfile publish a
+    LOP rig, and an APEX Animate shot its animation, as a layer."""
+    from tumblepipe.pipe.usd.apex_files import APEX_DIR, embed_apex_files
+
+    report_progress("copying APEX scene files")
+    result = embed_apex_files(layer_path)
+    problems = []
+    if result.unsaved:
+        problems.append(
+            "APEX scene geometry the export did not write (still op: "
+            "paths):\n  - " + "\n  - ".join(result.unsaved)
+            + "\nTurn on the APEX LOP's Set Scene/Rig/Animation Save Path, "
+            "or turn it off so the export writes the files beside the layer."
+        )
+    if result.missing:
+        problems.append(
+            "APEX scene files the layer points at that do not exist:\n  - "
+            + "\n  - ".join(result.missing)
+        )
+    if problems:
+        raise ExportLayerError(
+            "Export aborted: the APEX characters would publish without "
+            "their rigs.\n" + "\n".join(problems)
+        )
+    if result.rewritten:
+        logger.info(
+            "Copied %d APEX scene file(s) into %s/",
+            len(set(result.rewritten.values())), APEX_DIR,
+        )
+
+
 def _copy_to_version(temp_path: Path, version_path: Path):
     """Copy the exported folder's contents into the version folder.
 
@@ -369,6 +404,7 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
                 temp_path, layer_file_name, time_offset
             )
             layer_path = temp_path / layer_file_name
+            _embed_apex_files(layer_path)
             if entity_uri.segments[0] == 'assets':
                 _retype_asset_structure(layer_path, entity_uri)
             make_portable(layer_path)

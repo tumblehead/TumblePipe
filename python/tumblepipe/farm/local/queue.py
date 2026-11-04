@@ -215,7 +215,7 @@ def initial_state(batch: dict) -> dict:
 def new_task_state() -> dict:
     return {
         'status': QUEUED, 'progress': 0, 'started': None, 'finished': None,
-        'exit_code': None, 'error': None, 'attempts': 0,
+        'exit_code': None, 'error': None, 'attempts': 0, 'pid': None,
     }
 
 
@@ -324,7 +324,7 @@ def apply_command(batch: dict, state: dict, command: str, job: int | None) -> li
                 stopped.append((index, task_index))
             task['status'] = target
             if target == QUEUED:
-                task.update(progress=0, started=None, finished=None, exit_code=None, error=None)
+                task.update(progress=0, started=None, finished=None, exit_code=None, error=None, pid=None)
     return stopped
 
 

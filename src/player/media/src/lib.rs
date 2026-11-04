@@ -9,11 +9,13 @@
 //!   FFmpeg. The index maps a frame index to an exact timestamp and to the
 //!   keyframe it must be decoded from; a decoder holds one reader's state.
 //! - [`ExrSequence`]: one EXR per frame; any layer and channel of it.
+//! - [`composite`]: render layers stacked into one picture ("over").
 //! - [`proxy`]: a small picture of a frame, for the timeline.
 //! - [`FrameBuffer`]: the decoded frames kept in memory under a byte budget,
 //!   which is what makes stepping instant once a frame has been seen.
 
 mod buffer;
+pub mod composite;
 mod exr_sequence;
 mod frame;
 mod media;
@@ -24,7 +26,7 @@ pub use buffer::{FrameBuffer, FrameKey};
 pub use exr_sequence::{ExrHeader, ExrLayer, ExrSequence, ExrView};
 pub use frame::{Frame, Pixels, YuvMatrix};
 pub use media::Media;
-pub use movie::{MovieDecoder, MovieIndex};
+pub use movie::{MovieDecoder, MovieIndex, is_rgba_format};
 pub use thumbnail::{Proxy, Thumbnail, fit, proxy};
 
 /// Why media could not open or decode.

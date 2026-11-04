@@ -80,7 +80,7 @@ def _get_downstream_departments(
 
 
 def _is_rig_context(context: Context, entity_type: str | None) -> bool:
-    """Does this workfile publish export_rig SOPs rather than export_layer LOPs?
+    """Does this workfile publish export_rig SOPs (as well as export_layer LOPs)?
 
     The rig department of an asset *or of an asset Multi*. The Multi half
     was missing: a character team merged their rigs into one Multi rig
@@ -187,11 +187,15 @@ def describe_missing_tasks(context: Context) -> str:
         entity_type, context.department_name, entity_uri=context.entity_uri,
     )
 
-    # Mirror the collector that actually ran: only a rig context collects
-    # export_rig SOPs, every other context collects export_layer LOPs.
-    kind = _RIG_EXPORTS if _is_rig_context(context, entity_type) else _LAYER_EXPORTS
-    nodes = _list_nodes(kind)
-    node_kind = f'th::{kind[1]}'
+    # Mirror the collectors that actually ran: a rig context collects its
+    # export_rig SOPs and its export_layer LOPs (a LOP rig), every other
+    # context its export_layer LOPs.
+    if _is_rig_context(context, entity_type):
+        nodes = _list_nodes(_RIG_EXPORTS) + _list_nodes(_LAYER_EXPORTS)
+        node_kind = 'th::export_rig or th::export_layer'
+    else:
+        nodes = _list_nodes(_LAYER_EXPORTS)
+        node_kind = 'th::export_layer'
 
     owner = (
         f'Multi {context.entity_uri}' if entity_type == 'group'
@@ -280,9 +284,12 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
     """Collect all publish tasks for the current context.
 
     The workfile publishes its own entity — or, in a Multi's workfile, every
-    member — in its own department and every one downstream of it. A rig
-    context publishes its export_rig SOPs; every other context its
-    export_layer LOPs (and the layer_split LOPs upstream of them).
+    member — in its own department and every one downstream of it. Every
+    context publishes its export_layer LOPs (and the layer_split LOPs
+    upstream of them); a rig context its export_rig SOPs first. A rig
+    workfile's export_layer publishes a LOP rig: APEX characters authored
+    on the stage, for an APEX Animate LOP. It used to be skipped, so a LOP
+    rig could not be published at all ("no export tasks").
     """
     if context is None:
         return []
@@ -290,12 +297,14 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
     owned = _owned_entity_uris(context, entity_type)
     if not owned:
         return []
-    if _is_rig_context(context, entity_type):
-        return _collect_rig_publish_tasks(owned)
     departments = [context.department_name] + _get_downstream_departments(
         entity_type, context.department_name, entity_uri=context.entity_uri,
     )
-    return _collect_layer_publish_tasks(owned, departments)
+    rig_tasks = (
+        _collect_rig_publish_tasks(owned)
+        if _is_rig_context(context, entity_type) else []
+    )
+    return rig_tasks + _collect_layer_publish_tasks(owned, departments)
 
 
 def _publishes(node, owned: set[Uri], departments: list[str]) -> bool:

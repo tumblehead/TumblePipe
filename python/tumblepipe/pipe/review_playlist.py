@@ -13,6 +13,18 @@ steps through a department's versions and between departments in that
 order. A shot opens on the latest playblast of the most downstream
 department that has one, else on its last render.
 
+A shot's render layers are its channels (``config.channels.list_channels``:
+'default' first, then the others, bottom to top). Where they were made
+apart, a department also gets *stack* takes, the layers on top of each
+other, each labelled ``"<dept> <version> layers"``, right after its plain
+takes of that kind: a playblast version with layer movies
+(``paths.review.list_layer_playblast_movies``) stacks the ones it has; a
+render version with at least two channel layers that play (not the
+slapcomp, which comps them already) stacks those that share the bottom
+one's frame range. The player shows a stack's layers as rows over its
+track and can hide each. A shot never opens on a stack while it has a plain
+take: every stack is of a version that has one.
+
 Nothing here writes to the project. ``play_shots`` hands the playlist to
 the player and starts it, which is how Magnus's ask (pick shots, play them
 back to back, Resolve untouched) is met; the player's output goes to
@@ -30,11 +42,13 @@ import tempfile
 
 from tumblepipe import naming
 from tumblepipe.util.uri import Uri
+from tumblepipe.config.channels import list_channels
 from tumblepipe.config.department import list_departments
 from tumblepipe.config.timeline import BlockRange, get_frame_range, require_fps
 
 from tumblepipe.pipe.paths.review import (
     get_playblast_path,
+    list_layer_playblast_movies,
     list_playblast_versions,
 )
 from tumblepipe.pipe.paths.render import AOV, Layer, get_render_context
@@ -77,15 +91,32 @@ class Exr:
     frames: Frames
 
 @dataclass(frozen=True)
+class Stack:
+    """Render layers on top of each other, bottom first, by name: all
+    movies (a layered playblast) or all renders of one frame range."""
+    layers: tuple[tuple[str, Movie | Exr], ...]
+
+# What a stack take's label ends in.
+STACK_LABEL = 'layers'
+
+def _kind_of(media: Movie | Exr | Stack) -> str:
+    if isinstance(media, Stack): return _kind_of(media.layers[0][1])
+    return 'movie' if isinstance(media, Movie) else 'exr'
+
+@dataclass(frozen=True)
 class Take:
     label: str
     department: str
     version: str
-    media: Movie | Exr
+    media: Movie | Exr | Stack
 
     @property
     def kind(self) -> str:
-        return 'movie' if isinstance(self.media, Movie) else 'exr'
+        return _kind_of(self.media)
+
+    @property
+    def is_stack(self) -> bool:
+        return isinstance(self.media, Stack)
 
 @dataclass(frozen=True)
 class Shot:
@@ -103,16 +134,29 @@ class Shot:
 ###############################################################################
 def list_playblast_takes(entity_uri: Uri) -> list[Take]:
     """Every playblast of the shot: departments in pipeline order, versions
-    ascending."""
+    ascending, each department's layered versions (as stacks of their layer
+    movies, in channel order) after its plain ones."""
+    channels = list_channels(entity_uri)
     takes = []
     for department in list_departments('shots'):
-        for version_name in list_playblast_versions(entity_uri, department.name):
+        versions = list_playblast_versions(entity_uri, department.name)
+        stacks = []
+        for version_name in versions:
             takes.append(Take(
                 label = f'{department.name} {version_name}',
                 department = department.name,
                 version = version_name,
                 media = Movie(get_playblast_path(entity_uri, department.name, version_name))
             ))
+            movies = list_layer_playblast_movies(entity_uri, department.name, version_name, channels)
+            if not movies: continue
+            stacks.append(Take(
+                label = f'{department.name} {version_name} {STACK_LABEL}',
+                department = department.name,
+                version = version_name,
+                media = Stack(tuple((layer_name, Movie(path)) for layer_name, path in movies.items()))
+            ))
+        takes += stacks
     return takes
 
 def _shown_frames(layer: Layer) -> tuple[AOV, str | None]:
@@ -150,10 +194,48 @@ def _frames(aov: AOV, frame_range: BlockRange) -> Frames:
         step = frame_range.step_size
     )
 
+def _render_stacks(department_takes: list[Take], channels: list[str]) -> list[Take]:
+    """A department's render stacks, versions oldest first: for each
+    version, its takes of the shot's channels (not the slapcomp), in channel
+    order, that share the bottom one's frame range, when there are two."""
+    by_version: dict[str, dict[str, Exr]] = {}
+    for take in department_takes:
+        by_version.setdefault(take.version, {})[take.media.layer] = take.media
+    stacks = []
+    for version_name in sorted(by_version, key = naming.get_version_code):
+        found = by_version[version_name]
+        layers = [(name, found[name]) for name in channels if name != SLAPCOMP and name in found]
+        if not layers: continue
+        bottom = layers[0][1].frames
+        span = (bottom.first, bottom.last, bottom.step)
+        layers = [
+            (name, exr) for name, exr in layers
+            if (exr.frames.first, exr.frames.last, exr.frames.step) == span
+        ]
+        if len(layers) < 2: continue
+        department_name = department_takes[0].department
+        stacks.append(Take(
+            label = f'{department_name} {version_name} {STACK_LABEL}',
+            department = department_name,
+            version = version_name,
+            media = Stack(tuple(layers))
+        ))
+    return stacks
+
 def list_render_takes(entity_uri: Uri) -> list[Take]:
     """Every render of the shot that can play (see ``_playable_range``):
     render departments in pipeline order, then layers (the slapcomp last),
-    then versions oldest first."""
+    then versions oldest first; each department's stacks (see
+    ``_render_stacks``) after its plain takes."""
+    takes = _plain_render_takes(entity_uri)
+    channels = list_channels(entity_uri)
+    ordered = []
+    for department_name in dict.fromkeys(take.department for take in takes):
+        department_takes = [take for take in takes if take.department == department_name]
+        ordered += department_takes + _render_stacks(department_takes, channels)
+    return ordered
+
+def _plain_render_takes(entity_uri: Uri) -> list[Take]:
     context = get_render_context(entity_uri)
     versions = [
         (department_name, layer_name, layers[version_name])
@@ -186,14 +268,18 @@ def _written_at(take: Take) -> float:
 def default_take(takes: list[Take]) -> int:
     """The take a shot opens on: the playblast written last, whichever
     department it was cut at (a tie goes to the more downstream one), else
-    the last take (the latest render of the most downstream department and
-    layer).
+    the last plain take (the latest render of the most downstream department
+    and layer), else (only stacks) the last take.
 
     Not the most downstream department's latest: a farm playblast cut at
-    animation after one cut at render would never open (wifi_retina)."""
-    movies = [index for index, take in enumerate(takes) if take.kind == 'movie']
-    if not movies: return max(len(takes) - 1, 0)
-    return max(movies, key = lambda index: (_written_at(takes[index]), index))
+    animation after one cut at render would never open (wifi_retina). Never
+    a stack while there is a plain take: a stack is a closer look at a
+    version, not what a shot is."""
+    plain = [index for index, take in enumerate(takes) if not take.is_stack]
+    movies = [index for index in plain if takes[index].kind == 'movie']
+    if movies: return max(movies, key = lambda index: (_written_at(takes[index]), index))
+    if plain: return plain[-1]
+    return max(len(takes) - 1, 0)
 
 def sequence_of(entity_uri: Uri) -> str:
     """The sequence a shot is in: its path between ``shots`` and its name."""
@@ -221,7 +307,12 @@ def get_shot(entity_uri: Uri) -> Shot:
 def _path_text(path: Path) -> str:
     return str(path).replace('\\', '/')
 
-def _media(media: Movie | Exr) -> dict:
+def _media(media: Movie | Exr | Stack) -> dict:
+    if isinstance(media, Stack):
+        return {
+            'kind': 'stack',
+            'layers': [{'name': name, 'media': _media(layer)} for name, layer in media.layers]
+        }
     if isinstance(media, Movie):
         return {'kind': 'movie', 'path': _path_text(media.path)}
     frames = media.frames

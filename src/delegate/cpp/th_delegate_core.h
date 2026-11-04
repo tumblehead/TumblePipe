@@ -57,6 +57,9 @@ struct ThFrame {
     float focal_length;         // HdCamera's, scene units
     float f_stop;               // 0 = pinhole, no depth of field
     float focus_distance;       // scene units
+    uint32_t alpha;             // nonzero: transparent background, colour
+                                // premultiplied by coverage, alpha = coverage;
+                                // 0: the grey backdrop and alpha 1
 };
 
 // 0 = ok, 1 = bad arguments, 2 = the core panicked. `cache` may be null; one

@@ -127,6 +127,12 @@ def _add_rig(dive, sops, previous, row, placement):
     uri = Uri.parse(row['entity'])
     path = import_rig.rig_file_path(uri, row['channel'], row['version'])
     if path is None or not path.exists():
+        version = path.parent.name if path is not None else None
+        if version is not None and import_rig.is_lop_rig(uri, row['channel'], version):
+            raise hou.NodeError(
+                f"{row['prim']}: "
+                + import_rig.lop_rig_message(uri, row['channel'], version)
+            )
         raise hou.NodeError(f"{row['prim']}: no rig published for {uri} in '{row['channel']}'")
     load = sops.createNode('file', f'rig_{name}')
     load.parm('file').set(str(path).replace('\\', '/'))

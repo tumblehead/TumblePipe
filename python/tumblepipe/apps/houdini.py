@@ -4,6 +4,8 @@ from the install of the Houdini major a farm job was made in."""
 from typing import Optional
 from pathlib import Path
 import os
+import re
+import sys
 
 from tumblepipe.api import path_str
 from tumblepipe.apps import app
@@ -64,75 +66,115 @@ def resolve_houdini_version(explicit: Optional[str] = None) -> str:
         f"no Houdini version: pass one, or run inside Houdini/hython "
         f"({RUNNING_HOUDINI_VERSION_ENV}) or a farm job ({HOUDINI_VERSION_ENV})")
 
-def _is_valid_version(version: str) -> bool:
-    if len(version) != 8: return False
-    parts = version.split('.')
-    if len(parts) != 3: return False
-    if not parts[0].isdigit(): return False
-    if not parts[1].isdigit(): return False
-    if not parts[2].isdigit(): return False
-    return True
+_VERSION_RE = re.compile(r'(\d+\.\d+\.\d+)$')
 
-def _scan_path_for_versions(root_path) -> dict[str, dict[str, Path]]:
-    sidefx_path = root_path / 'Program Files' / 'Side Effects Software'
-    try:
-        if not sidefx_path.exists(): return dict()
-    except OSError:
-        # Unreadable drive/mount — treat as "no Houdini here"; anything
-        # else raising is a real bug and must surface.
-        return dict()
-    result = dict()
-    for houdini_version in sidefx_path.iterdir():
-        if not houdini_version.is_dir(): continue
-        if not houdini_version.name.startswith('Houdini'): continue
-        name = houdini_version.name
-        if ' ' in name: name = name.replace(' ', '')
-        if len(name) != 15: continue
-        version = name[7:]
-        if not _is_valid_version(version): continue
-        bin_path = houdini_version / 'bin'
-        hython_path = bin_path / 'hython.exe'
-        husk_path = bin_path / 'husk.exe'
-        iconvert_path = bin_path / 'iconvert.exe'
-        itilestitch_path = bin_path / 'itilestitch.exe'
-        if not hython_path.exists(): continue
-        if not husk_path.exists(): continue
-        if not iconvert_path.exists(): continue
-        usdstitch_path = bin_path / 'usdstitch.cmd'
+def _version_of(name: str) -> str | None:
+    """The ``major.minor.build`` an install folder is named for, or None.
+
+    ``Houdini 22.0.457`` (Windows), ``Houdini22.0.457`` (macOS),
+    ``hfs22.0.457`` (Linux). A folder named for ``major.minor`` only (Linux's
+    ``/opt/hfs22.0`` link) is skipped: the full-version folder beside it is
+    the same install.
+    """
+    match = _VERSION_RE.search(name.replace(' ', ''))
+    return match.group(1) if match else None
+
+def _tools_in(bin_path: Path, exe: str, script: str) -> dict[str, Path] | None:
+    """The tools of the install whose ``bin`` is ``bin_path``, or None if it
+    lacks the ones every job needs."""
+    hython_path = bin_path / f'hython{exe}'
+    husk_path = bin_path / f'husk{exe}'
+    iconvert_path = bin_path / f'iconvert{exe}'
+    if not hython_path.exists(): return None
+    if not husk_path.exists(): return None
+    if not iconvert_path.exists(): return None
+    return dict(
+        hython = hython_path,
+        husk = husk_path,
+        iconvert = iconvert_path,
+        itilestitch = bin_path / f'itilestitch{exe}',
+        usdstitch = bin_path / f'usdstitch{script}',
         # Houdini bundles OpenImageIO's oiiotool and ffmpeg as hoiiotool/hffmpeg,
         # so the farm needs no separate image/video tool installs.
-        hoiiotool_path = bin_path / 'hoiiotool.exe'
-        hffmpeg_path = bin_path / 'hffmpeg.exe'
+        hoiiotool = bin_path / f'hoiiotool{exe}',
+        hffmpeg = bin_path / f'hffmpeg{exe}',
         # Houdini's CLI front-end onto the OIDN/OptiX denoisers it bundles.
         # Unlike hython it checks out no license token, which is the whole
         # reason the denoise task drives it instead.
-        idenoise_path = bin_path / 'idenoise.exe'
-        result[version] = dict(
-            hython = hython_path,
-            husk = husk_path,
-            iconvert = iconvert_path,
-            itilestitch = itilestitch_path,
-            usdstitch = usdstitch_path,
-            hoiiotool = hoiiotool_path,
-            hffmpeg = hffmpeg_path,
-            idenoise = idenoise_path
-        )
+        idenoise = bin_path / f'idenoise{exe}',
+    )
+
+def _list_dir(path: Path) -> list[Path]:
+    """``path``'s entries; none if it is missing or unreadable (an unreadable
+    drive or mount is "no Houdini here")."""
+    try:
+        if not path.is_dir(): return []
+        return list(path.iterdir())
+    except OSError:
+        return []
+
+def _scan_path_for_versions(root_path) -> dict[str, dict[str, Path]]:
+    """The Windows installs under ``<root>/Program Files/Side Effects Software``."""
+    result = dict()
+    for install in _list_dir(root_path / 'Program Files' / 'Side Effects Software'):
+        if not install.name.startswith('Houdini'): continue
+        version = _version_of(install.name)
+        if version is None: continue
+        tools = _tools_in(install / 'bin', '.exe', '.cmd')
+        if tools is not None: result[version] = tools
+    return result
+
+def _scan_macos_versions(root_path: Path) -> dict[str, dict[str, Path]]:
+    """The macOS installs under ``root_path`` (``/Applications/Houdini``).
+
+    ``$HFS`` of each is
+    ``Houdini<v>/Frameworks/Houdini.framework/Versions/<major.minor>/Resources``,
+    whose ``bin`` holds the tools.
+    """
+    result = dict()
+    for install in _list_dir(root_path):
+        if not install.name.startswith('Houdini'): continue
+        version = _version_of(install.name)
+        if version is None: continue
+        versions_dir = install / 'Frameworks' / 'Houdini.framework' / 'Versions'
+        for framework_version in sorted(_list_dir(versions_dir)):
+            tools = _tools_in(framework_version / 'Resources' / 'bin', '', '')
+            if tools is not None:
+                result[version] = tools
+                break
+    return result
+
+def _scan_linux_versions(root_path: Path) -> dict[str, dict[str, Path]]:
+    """The Linux installs under ``root_path`` (``/opt``): ``hfs<v>/bin``."""
+    result = dict()
+    for install in _list_dir(root_path):
+        if not install.name.startswith('hfs'): continue
+        version = _version_of(install.name)
+        if version is None: continue
+        tools = _tools_in(install / 'bin', '', '')
+        if tools is not None: result[version] = tools
     return result
 
 HOUDINI_VERSIONS = None
 def _scan_drives_for_versions() -> dict[str, dict[str, Path]]:
-    """Every Houdini install under ``<drive>:/Program Files/Side Effects Software``.
+    """Every Houdini install in SideFX's default place for this platform.
 
-    Windows only: the app wrappers drive the ``.exe`` tools of a Windows
-    install, the only platform the farm runs them on.
+    Windows: ``<drive>:/Program Files/Side Effects Software/Houdini <v>``.
+    macOS: ``/Applications/Houdini/Houdini<v>``. Linux: ``/opt/hfs<v>``.
+    The render farm is Windows; the local farm runs on all three.
     """
     global HOUDINI_VERSIONS
     if HOUDINI_VERSIONS is not None: return HOUDINI_VERSIONS
     _versions = dict()
-    for drive in 'CDEFGH':
-        drive_path = Path(f'{drive}:/')
-        if not drive_path.exists(): continue
-        _versions |= _scan_path_for_versions(drive_path)
+    if sys.platform == 'win32':
+        for drive in 'CDEFGH':
+            drive_path = Path(f'{drive}:/')
+            if not drive_path.exists(): continue
+            _versions |= _scan_path_for_versions(drive_path)
+    elif sys.platform == 'darwin':
+        _versions = _scan_macos_versions(Path('/Applications/Houdini'))
+    else:
+        _versions = _scan_linux_versions(Path('/opt'))
     HOUDINI_VERSIONS = _versions
     return _versions
 

@@ -427,6 +427,7 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 | Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**) |
 | Resolution | the shot's render resolution | An expression: the shot's `render.resolution`, so the playblast has the render's frame; `1280 720` while no shot resolves. Type over it for your own size; Revert to Defaults brings the shot's back. A node made before 1.85 keeps the size it had |
 | Motion Blur, Depth of Field, Blur Samples | off, off, 16 | Blurs from the camera's Shutter Open/Close and its F-Stop and Focus Distance: the viewport renderer's, or the flipbook's own under Houdini GL; Blur Samples is how many images each frame averages |
+| Render Layers | off | Viewport renderer only: also write one movie per render layer, see [Layered playblasts](#layered-playblasts) |
 | Playblast | | Render, encode and publish |
 | View latest | | Open the newest MP4 for this shot and department (a message if there is none) |
 | Browse All | | Open the playblast folder |
@@ -436,6 +437,12 @@ Gotchas:
 - The viewport renderer draws meshes (and USD shapes) only: hair, curves,
   points and volumes are left out, as on the farm. Switch **Renderer** to
   Houdini GL when the preview needs them.
+- The viewport renderer always draws over its grey backdrop unless
+  `TH_PLAYBLAST_ALPHA=1` (or the render setting `th:alpha`) asks for a
+  transparent background: alpha is then each pixel's coverage. What the
+  frames hold then (premultiplied in EXR, straight in display space in PNG)
+  is in [Development → hdThPlayblast: transparent
+  background](../development.md#hdthplayblast-transparent-background).
 - The node only ever playblasts a **shot**: From context inside an asset
   workfile resolves nothing. The department must be renderable — a
   non-renderable workfile department resolves nothing too.
@@ -464,6 +471,44 @@ Gotchas:
   camera on the stage* although the menu showed a camera picked; empty now
   means that first camera.
 
+### Layered playblasts
+
+With **Render Layers** on, a playblast also renders the shot once per render
+layer (the shot's [channels](#render-layers-channels)) and writes each as a
+movie of that layer's prims alone on a transparent background:
+`render:/playblast/<shot>/<department>/<layer>/<sequence>_<shot>_<department>_<layer>_v####.mov`,
+the same version number as the whole picture's MP4. They are QuickTime
+Animation movies, lossless with alpha (H.264 has no alpha). The
+[sequence player](../asset-browser/play-shots.md) shows such a version as a
+*layers* take: the layers stacked in channel order, each one a row on the
+timeline that can be hidden.
+
+Which prims a layer holds comes from the shot's `channel_prims` config
+property, a channel → prim pattern map set in the Config Editor (Add Field,
+type object) on the shot or, for every shot under it, on the project or a
+sequence. It merges channel by channel down the tree: a shot can replace one
+channel's pattern, or drop it with `""`, and keep the rest:
+
+```json
+"channel_prims": {"characters": "/CHAR/*", "fx": "/FX/*"}
+```
+
+- A channel with a pattern is a layer of the prims it matches (on the cached
+  stage, at the first frame).
+- `default` without a pattern is everything the other layers leave, so
+  naming only `characters` splits the shot into background and characters.
+- Any other channel without a pattern makes no layer. A layer with nothing
+  to draw makes no movie: a pattern matching nothing (or only a camera or
+  empty groups), or a `default` whose every prim the other layers claim.
+- Render Layers on with no patterns at all refuses, naming the property.
+
+The layers are not held out of one another: the set's layer is the whole set,
+also behind the characters, and the player stacks the layers "over" one
+another. The camera always stays visible. Hiding works by making the other
+prims invisible, so an instance is kept or hidden whole. Houdini GL cannot
+render a transparent background, so Render Layers needs the Viewport
+renderer. The farm playblast does not make layers.
+
 ## `th::playblast` (SOP)
 
 The same publish path from a SOP context, rendered through an OpenGL ROP.
@@ -483,6 +528,11 @@ The frame range is always the shot's configured range plus roll; there is no
 override. The camera and geometry are read from a LOP node named `IN_stage`
 that the HDA addresses relative to itself, so the node depends on where it is
 placed.
+
+Its input can be geometry or an APEX scene. A scene (a Scene Animate's
+output, as in a `th::animate` dive, which has no Scene Invoke since 1.92) is
+invoked inside the node first, outputting each character's `Base` shapes, so
+the playblast shows the posed characters and not the rigs.
 
 ## Recipes (`th::th_configure_*`)
 

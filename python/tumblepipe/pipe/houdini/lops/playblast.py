@@ -32,7 +32,10 @@ from tumblepipe.pipe.paths import (
     get_next_playblast_path,
     get_latest_playblast_path,
     get_daily_path,
+    get_layer_playblast_movie_path,
+    playblast_version_of,
 )
+from tumblepipe.config.channels import CHANNEL_PRIMS_PROPERTY, list_channel_layers
 
 def resolve_camera_path(camera_name: str, camera_paths: list[str]) -> str | None:
     """The stage camera a playblast's Camera parm names, or None.
@@ -162,6 +165,7 @@ class Playblast(FrameRangeNode, EntityNode):
         output_daily_path = get_daily_path(shot_uri, department_name)
 
         renderer = self.parm('renderer').evalAsString()
+        layers = self._render_layers(shot_uri, renderer)
         if renderer == 'gl':
             # Houdini's flipbook: set its camera and its own blurs, from the
             # camera's shutter and lens.
@@ -214,21 +218,109 @@ class Playblast(FrameRangeNode, EntityNode):
                 temp_playblast_path
             )
 
+            # One movie per render layer, rendered and encoded before
+            # anything is copied, so a failed layer leaves no half version.
+            version_name = playblast_version_of(output_playblast_path)
+            layer_movies = []
+            for layer_name, hide_name in self._write_hide_layers(
+                temp_cache_path, camera_path, layers
+            ):
+                layer_png_path = temp_dir_path / layer_name / 'playblast.$F4.png'
+                layer_png_path.parent.mkdir(parents=True, exist_ok=True)
+                self._render_viewport(
+                    temp_cache_path, layer_png_path, camera_path, render_range, fps,
+                    overrides=(f'./{hide_name}',), alpha=True,
+                    wrapper_name=f'playblast_{layer_name}.usda',
+                )
+                temp_mov_path = temp_dir_path / f'{layer_name}.mov'
+                mp4.from_png_alpha(layer_png_path, render_range, fps, temp_mov_path)
+                layer_movies.append((
+                    temp_mov_path,
+                    get_layer_playblast_movie_path(
+                        shot_uri, department_name, layer_name, version_name
+                    ),
+                ))
+
             # Copy to network
             output_playblast_path.parent.mkdir(exist_ok=True, parents=True)
             output_daily_path.parent.mkdir(exist_ok=True, parents=True)
+            for temp_mov_path, output_mov_path in layer_movies:
+                output_mov_path.parent.mkdir(exist_ok=True, parents=True)
+                shutil.copyfile(temp_mov_path, output_mov_path)
             shutil.copyfile(temp_playblast_path, output_playblast_path)
             shutil.copyfile(temp_playblast_path, output_daily_path)
-    
-    def _render_viewport(self, cache_path, jpg_path, camera_path, render_range, fps):
+
+    def _render_layers(self, shot_uri, renderer) -> list[tuple[str, str | None]]:
+        """The render layers to playblast, bottom to top; [] when Render
+        Layers is off. Raises when it is on but cannot be done."""
+        parm = self.native().parm('render_layers')
+        if parm is None or not parm.eval():
+            return []
+        if renderer != 'viewport':
+            raise self._error(
+                'Render Layers needs the Viewport renderer: Houdini GL cannot '
+                'render a transparent background.'
+            )
+        layers = list_channel_layers(shot_uri)
+        if not layers:
+            raise self._error(
+                f'Render Layers is on, but {shot_uri} names no prims for any of '
+                f'its channels. Add a "{CHANNEL_PRIMS_PROPERTY}" field to the '
+                f'shot (or the project) in the Config Editor, mapping a channel '
+                f'to a prim pattern, e.g. {{"characters": "/CHAR/*"}}.'
+            )
+        return layers
+
+    def _write_hide_layers(self, cache_path, camera_path, layers):
+        """Write, beside the cache, each render layer's visibility overrides
+        (usd.layer_split). Yields (layer name, override file name) for the
+        layers that keep something that draws; a layer with nothing to draw
+        (a pattern matching nothing, or only a camera; a remainder the other
+        layers claimed whole) makes no movie."""
+        if not layers:
+            return
+        from pxr import Sdf, Usd
+        from tumblepipe.pipe.usd import layer_split
+        stage = Usd.Stage.Open(path_str(cache_path))
+        matched = {
+            name: {
+                Sdf.Path(path) for path in
+                hou.LopSelectionRule(pattern).expandedPaths(stage = stage)
+            }
+            for name, pattern in layers if pattern is not None
+        }
+        camera = {Sdf.Path(camera_path)}
+        for name, pattern in layers:
+            if pattern is None:
+                claimed = set().union(*matched.values()) if matched else set()
+                keep = layer_split.remainder_keep(stage, claimed)
+            else:
+                keep = matched[name]
+            if not layer_split.holds_geometry(stage, keep):
+                continue
+            hide_name = f'hide_{name}.usda'
+            layer_split.write_hide_layer(
+                layer_split.prims_to_hide(stage, keep | camera),
+                cache_path.parent / hide_name,
+            )
+            yield name, hide_name
+
+    def _render_viewport(
+        self, cache_path, image_path, camera_path, render_range, fps,
+        overrides=(), alpha=False, wrapper_name='playblast.usda',
+        ):
         """Render the exported cache with our viewport renderer: husk and
         hdThPlayblast, as the farm playblast does, through a layer over the
         cache that renders only a colour buffer through ``camera_path``
-        (generate_playblast_wrapper). Shows husk's progress; cancelling it
-        stops husk. Raises when a frame is missing."""
-        wrapper_path = cache_path.parent / 'playblast.usda'
+        (generate_playblast_wrapper). ``overrides`` are layers over the
+        cache (a render layer's hidden prims); ``alpha`` renders a
+        transparent background. Shows husk's progress; cancelling it stops
+        husk. Raises when a frame is missing."""
+        wrapper_path = cache_path.parent / wrapper_name
         wrapper_path.write_text(
-            generate_playblast_wrapper(f'./{cache_path.name}', camera_path, fps),
+            generate_playblast_wrapper(
+                f'./{cache_path.name}', camera_path, fps, tuple(overrides)
+            ),
             encoding='utf-8',
         )
         width, height = self.native().parmTuple('res').eval()
@@ -239,7 +331,7 @@ class Playblast(FrameRangeNode, EntityNode):
         )
         env = viewport_env(
             dict(os.environ), Path(api.PIPELINE_PATH), hou.applicationVersion()[0],
-            self.parm('shading').evalAsString(), blur, fps,
+            self.parm('shading').evalAsString(), blur, fps, alpha=alpha,
         )
         husk = Path(hou.text.expandString('$HFS')) / 'bin' / (
             'husk.exe' if os.name == 'nt' else 'husk'
@@ -255,13 +347,13 @@ class Playblast(FrameRangeNode, EntityNode):
             '--frame', str(render_range.first_frame),
             '--frame-count', str(len(render_range)),
             '--frame-inc', str(render_range.step_size),
-            '--output', path_str(jpg_path),
+            '--output', path_str(image_path),
             path_str(wrapper_path),
         ]
         returncode, log = run_husk(command, env, len(render_range))
         missing = [
             frame for frame in render_range
-            if not Path(str(jpg_path).replace('$F4', f'{frame:04d}')).exists()
+            if not Path(str(image_path).replace('$F4', f'{frame:04d}')).exists()
         ]
         if returncode == 0 and not missing:
             return

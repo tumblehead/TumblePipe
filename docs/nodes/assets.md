@@ -82,7 +82,9 @@ by `th::import_model` with Department `blendshape`.
    with `name` copied onto points and an `index` point attribute), and press **Export**
    on `export_rig`. The animation shot template's `th::animate` then lists
    the rig in its `th::import_rigs` —
-   [`th::animate`](import-and-export.md#thanimate-lop).
+   [`th::animate`](import-and-export.md#thanimate-lop). A rig built on the
+   stage for the APEX Animate LOP publishes through `th::export_layer`
+   instead — [LOP rigs](#lop-rigs-apex-characters-on-the-stage).
 
 ## `th::create_asset` (LOP)
 
@@ -476,6 +478,36 @@ The department is always `rig` (there is no Department parm). A rig export
 is a `.bgeo.sc`, never a USD layer, so it does not compose into the staged
 asset — `th::import_rig` and `th::import_rigs` are its readers.
 
+### LOP rigs (APEX characters on the stage)
+
+A rig can also be built **on the stage** for Houdini's APEX Animate LOP
+(SOP Import APEX Scene in Character mode, APEX SOP Rig Builder, Configure
+APEX Rig) and published as a USD layer: end the rig workfile's stage in a
+[`th::export_layer`](import-and-export.md#thexport_layer-lop) with
+Department `rig`. **Publish** (and the node's **Export**) collects it in a
+rig workfile alongside any `th::export_rig` (before, a rig workfile only
+collected `th::export_rig` and said there were no export tasks).
+
+- Put each character at or below the asset prim (`/CHAR/Ryan`): set the
+  SOP Import APEX Scene's **Import Path Prefix** to it. Its default `/$OS`
+  is refused by the `rig_structure` validator, since no shot composes it.
+- The characters' rig, skeleton and shape libraries are Houdini geometry
+  the prims point at (`houdini:apex:character:files`). The export copies
+  them into `apex/` in the version folder, whatever the APEX LOPs' save
+  paths say (their default `$HIP/usd` is the work area), so the version
+  stands on its own:
+  `export/<asset>/<channel>/rig/v####/<entity>_<channel>_rig_v####.usd`
+  plus `apex/*.bgeo.sc` and `context.json`.
+- `rig` is not a render department, so the layer does not compose into the
+  staged asset. To animate it, bring it in with
+  [`th::import_layer`](import-and-export.md#thimport_layer-lop) (Entity the
+  asset, Department `rig`) and put an APEX Animate LOP after it; it finds
+  the characters by their `HoudiniApexCharacterAPI` schema.
+- Publish a rig one way per channel. When the newest rig version is a LOP
+  rig, `th::import_rig`, `th::import_rigs`, `th::animate` and
+  `th::layout_rigs` (which load SOP rigs) treat the asset as having no rig,
+  and a row pinned to such a version says to use `th::import_layer`.
+
 ## `th::asset_thumbnail` (LOP)
 
 Render a 256×256 thumbnail of the asset with Karma XPU.
@@ -533,6 +565,35 @@ Gotchas:
   on the stage as it is, and prints a warning to the console naming it.
 - With no stage (nothing wired in, or an input that fails to cook) the
   Material menu is empty and both buttons stop with an error saying so.
+
+## `th::material` (LOP)
+
+One MaterialX material and its binding in one node: a Material Library
+holding a `material` subnet (a standard surface with displacement and
+geometry colour), then an Assign Material onto the prims the node
+receives. `_TumblePipe/lookdev`. Dive in to edit the shader.
+Source: [`otls/lop_th.material.1.0`](../../otls/lop_th.material.1.0/th_8_8Lop_1material_8_81.0/DialogScript).
+
+| Label | Default | What it does |
+|---|---|---|
+| Material | `$OS` (the node's name) | The material prim's name |
+| Assignment | `` `lopinputprims('.', 0)` `` | Prims to bind: by default every prim the input modified |
+| Material Path | `` `lopinputprim('.', 0)`/mtl/ `` | Where the material is written: by default `mtl/` under the *first* prim the input modified |
+| Purpose | *(empty)* | Binding purpose, as Assign Material's |
+
+Wire a SOP Import (or any node that authored the geometry) in front and the
+defaults bind its prims to a material under `<geo>/mtl/`.
+
+**Stacking.** A th::material reports only the prims it assigned to as
+modified, not the material it made, so a chain of them each reads the
+geometry: three in a row on `/asset/geo/body` write
+`/asset/geo/body/mtl/<name>` three times, and the last binding wins. Before
+this, the second node's defaults picked up the first one's material prim,
+bound a material onto it, and wrote to a path that was no prim.
+
+Gotcha: after a node that modified several prims (a merge), every one of
+them is bound, to one material under the first one's `mtl/`. Set Material
+Path to keep it elsewhere.
 
 ## `th::rename_packed` (SOP)
 

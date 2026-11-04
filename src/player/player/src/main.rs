@@ -12,7 +12,8 @@
 //! Up/Down show the next newer/older version, Ctrl+Up/Down (Cmd on macOS) the
 //! department upstream/downstream, Shift+Up/Down the playblast/the render;
 //! Ctrl+A selects every shot and Escape clears the selection; B shows or
-//! hides the burn-ins (see `burnin`). The controls never take the keyboard
+//! hides the burn-ins (see `burnin`); 1-9 show or hide layer N (bottom = 1)
+//! of a stack take (see `track::LayerRows`). The controls never take the keyboard
 //! from these. Playback shows every frame: when the next one is not decoded
 //! yet it waits rather than skips.
 

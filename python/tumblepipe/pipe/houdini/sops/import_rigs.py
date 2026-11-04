@@ -15,8 +15,15 @@ from tumblepipe.pipe.usd.instances import copies_are_animated
 def has_rig_export(asset_uri: Uri, channel_name: str = 'default') -> bool:
     """Whether ``asset_uri`` has published a rig in ``channel_name``. A shot
     imports props and sets that never get one, so the animation template
-    adds a row only for an asset that has."""
-    return import_rig.latest_rig_version(asset_uri, channel_name) is not None
+    adds a row only for an asset that has.
+
+    A SOP rig: when the newest rig is a LOP rig (``import_rig.is_lop_rig``)
+    the SOP rig nodes cannot load it, so the asset counts as having none
+    here and is brought in with th::import_layer instead."""
+    version_name = import_rig.latest_rig_version(asset_uri, channel_name)
+    if version_name is None:
+        return False
+    return not import_rig.is_lop_rig(asset_uri, channel_name, version_name)
 
 
 def rig_channel(asset_uri: Uri, preferred: str) -> str | None:

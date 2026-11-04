@@ -40,8 +40,9 @@ const EXR_READS: usize = 6;
 const WORKERS: usize = EXR_READS + 1;
 /// Proxies made at once.
 const PROXY_JOBS: usize = 2;
-/// Movie decoders kept open, most recently used first.
-const DECODERS: usize = 8;
+/// Movie decoders kept open, most recently used first: enough for a few
+/// stacks of layer movies, each layer its own decoder.
+const DECODERS: usize = 16;
 /// Slice threads a movie decoder runs on, at most: FFmpeg warns past 16,
 /// and a review movie's slices give no more than that.
 const MOVIE_THREADS: usize = 16;
@@ -75,6 +76,9 @@ pub struct Content {
     pub media: Option<Arc<Media>>,
     /// The EXR view shown (meaningless for a movie).
     pub view: ExrView,
+    /// A stack's hidden layers: bit `i` hides layer `i`, bottom first
+    /// (meaningless for anything else).
+    pub hidden: u64,
     /// Make a proxy of its first frame (the UI has none of this media yet).
     pub wants_proxy: bool,
 }
@@ -82,12 +86,19 @@ pub struct Content {
 impl Content {
     /// A clip with nothing to decode.
     pub fn none() -> Self {
-        Self { media: None, view: ExrView::default(), wants_proxy: false }
+        Self { media: None, view: ExrView::default(), hidden: 0, wants_proxy: false }
     }
 
+    /// Whether its frames are EXR reads (an EXR sequence, or a stack of
+    /// them), which run side by side.
     fn is_exr(&self) -> bool {
-        matches!(self.media.as_deref(), Some(Media::Exr { .. }))
+        self.media.as_deref().is_some_and(Media::is_exr)
     }
+}
+
+/// Whether layer `layer` of a stack is hidden by `hidden`.
+pub fn is_hidden(hidden: u64, layer: usize) -> bool {
+    layer < 64 && hidden & (1 << layer) != 0
 }
 
 /// The clips laid end to end: a timeline position is a frame of one clip.
@@ -166,6 +177,7 @@ struct Claim {
     job: Job,
     media: Arc<Media>,
     view: ExrView,
+    hidden: u64,
     /// The clip's generation: results of an older one are dropped.
     generation: u64,
     /// The window it was claimed in: only a frame of the current window says
@@ -260,6 +272,12 @@ impl Engine {
     /// Show `view` of `clip` from now on.
     pub fn set_view(&self, clip: usize, view: ExrView) {
         change_view(&mut self.state(), clip, view);
+        self.shared.wake.notify_all();
+    }
+
+    /// Hide the layers of `clip`'s stack that `hidden` says from now on.
+    pub fn set_hidden(&self, clip: usize, hidden: u64) {
+        change_hidden(&mut self.state(), clip, hidden);
         self.shared.wake.notify_all();
     }
 
@@ -438,6 +456,16 @@ fn change_view(state: &mut State, clip: usize, view: ExrView) {
     forget_clip(state, clip);
 }
 
+/// Other hidden layers: the clip's frames composite the old ones, so they
+/// go, as for a new view.
+fn change_hidden(state: &mut State, clip: usize, hidden: u64) {
+    if state.contents[clip].hidden == hidden {
+        return;
+    }
+    state.contents[clip].hidden = hidden;
+    forget_clip(state, clip);
+}
+
 /// New content for `clip`, `shape` long: what applies to a new view applies
 /// to every frame of it, and a playhead past its end moves to its last frame.
 fn replace_clip(state: &mut State, clip: usize, shape: Clip, content: Content) -> Arc<Timeline> {
@@ -460,6 +488,7 @@ fn claim(state: &mut State, job: Job) -> Claim {
         job,
         media: Arc::clone(content.media.as_ref().expect("a job's clip has media")),
         view: content.view.clone(),
+        hidden: content.hidden,
         generation: state.generations[job.clip()],
         window: state.window,
     }
@@ -544,30 +573,82 @@ fn decode(
 ) -> Result<Frame, Error> {
     caught(
         || match &*claim.media {
-            Media::Exr { sequence, .. } => {
-                let frame = sequence.decode_while(index, &claim.view, &wanted)?;
+            Media::Stack(layers) => {
+                // Each layer's frame alone (not those passed on the way: a
+                // layer movie's frames are all keyframes), then the picture.
+                let frame = decode_stack(layers, claim.hidden, index, claim.media.is_exr(), |layer| {
+                    decode_media(shared, layer, &layer.default_view(), true, index, |_, _| {}, &wanted)
+                })?;
                 keep(index, &frame);
                 Ok(frame)
             }
-            Media::Movie(movie) => {
-                let held = {
-                    let mut decoders = shared.decoders.lock().unwrap();
-                    decoders.iter().position(|d| Arc::ptr_eq(d.index(), movie)).map(|at| decoders.remove(at))
-                };
-                let threads = thread::available_parallelism().map_or(MOVIE_THREADS, |n| n.get().min(MOVIE_THREADS));
-                let mut decoder = match held {
-                    Some(decoder) => decoder,
-                    None => MovieDecoder::open(Arc::clone(movie), threads)?,
-                };
-                let frame = decoder.decode(index, keep, wanted);
-                let mut decoders = shared.decoders.lock().unwrap();
-                decoders.insert(0, decoder);
-                decoders.truncate(DECODERS);
-                frame
-            }
+            media => decode_media(shared, media, &claim.view, false, index, keep, &wanted),
         },
         index,
     )
+}
+
+/// Frame `index` of a stack of `layers` (EXR layers when `exr`): every
+/// layer not hidden that has that frame, each from `layer_frame`, composited
+/// bottom first. With every layer hidden it is black, as big as the bottom
+/// layer's frame.
+fn decode_stack(
+    layers: &[(String, Arc<Media>)],
+    hidden: u64,
+    index: usize,
+    exr: bool,
+    mut layer_frame: impl FnMut(&Media) -> Result<Frame, Error>,
+) -> Result<Frame, Error> {
+    let mut frames = Vec::new();
+    for (at, (_, layer)) in layers.iter().enumerate() {
+        if !is_hidden(hidden, at) && index < layer.frame_count() {
+            frames.push(layer_frame(layer)?);
+        }
+    }
+    let Some(first) = frames.first() else {
+        let size = layers.iter().find(|l| index < l.1.frame_count()).map(|l| layer_frame(&l.1)).transpose()?;
+        let (width, height) = size.map_or((1, 1), |f| (f.width, f.height));
+        return Ok(th_media::composite::black(width, height, exr));
+    };
+    th_media::composite::composite(first.width, first.height, &frames).map_err(|message| Error::Decode { index, message })
+}
+
+/// Frame `index` of a movie or an EXR sequence (`view` of it, with its own
+/// alpha when `alpha`), handing every frame decoded on the way to `keep`.
+fn decode_media(
+    shared: &Shared,
+    media: &Media,
+    view: &ExrView,
+    alpha: bool,
+    index: usize,
+    mut keep: impl FnMut(usize, &Frame),
+    wanted: &dyn Fn() -> bool,
+) -> Result<Frame, Error> {
+    match media {
+        Media::Exr { sequence, .. } => {
+            let frame =
+                if alpha { sequence.decode_with_alpha_while(index, view, wanted)? } else { sequence.decode_while(index, view, wanted)? };
+            keep(index, &frame);
+            Ok(frame)
+        }
+        Media::Movie(movie) => {
+            let held = {
+                let mut decoders = shared.decoders.lock().unwrap();
+                decoders.iter().position(|d| Arc::ptr_eq(d.index(), movie)).map(|at| decoders.remove(at))
+            };
+            let threads = thread::available_parallelism().map_or(MOVIE_THREADS, |n| n.get().min(MOVIE_THREADS));
+            let mut decoder = match held {
+                Some(decoder) => decoder,
+                None => MovieDecoder::open(Arc::clone(movie), threads)?,
+            };
+            let frame = decoder.decode(index, keep, wanted);
+            let mut decoders = shared.decoders.lock().unwrap();
+            decoders.insert(0, decoder);
+            decoders.truncate(DECODERS);
+            frame
+        }
+        Media::Stack(_) => Err(Error::Decode { index, message: "a stack in a stack".into() }),
+    }
 }
 
 fn work(shared: &Shared) {
@@ -675,6 +756,7 @@ mod tests {
             .map(|c| Content {
                 media: (!closed.get(c).copied().unwrap_or(false)).then(|| media(exr.get(c).copied().unwrap_or(false))),
                 view: ExrView::default(),
+                hidden: 0,
                 wants_proxy: false,
             })
             .collect();
@@ -886,6 +968,53 @@ mod tests {
         }
     }
 
+    /// A render layer `frames` long standing in a stack; its files are never
+    /// read.
+    fn layer_of(frames: usize) -> Arc<Media> {
+        let sequence = ExrSequence::new(1, 1, vec![std::path::PathBuf::new(); frames]);
+        let header = th_media::ExrHeader { layers: Vec::new(), colour_space: Some("ACEScg".into()) };
+        Arc::new(Media::Exr { sequence, header, colour_space: "ACEScg".into(), rate: (24, 1) })
+    }
+
+    proptest! {
+        /// A stack's frame is exactly its shown layers that have the frame,
+        /// each decoded once and laid over the ones below in order; a hidden
+        /// layer, or one that ended, is never decoded; with nothing shown it
+        /// is black.
+        #[test]
+        fn a_stack_composites_its_shown_layers_in_order(
+            layers in prop::collection::vec((1usize..6, 0f32..=1.0, 0f32..=1.0), 1..6),
+            hidden in any::<u64>(),
+            index in 0usize..6,
+        ) {
+            let stack: Vec<(String, Arc<Media>)> = layers.iter().enumerate().map(|(i, l)| (format!("l{i}"), layer_of(l.0))).collect();
+            // Layer i's pixel: premultiplied grey `value` at alpha `alpha`.
+            let pixel = |i: usize| [layers[i].1 * layers[i].2, layers[i].1 * layers[i].2, layers[i].1 * layers[i].2, layers[i].2];
+            let mut decoded = Vec::new();
+            let frame = decode_stack(&stack, hidden, index, true, |media| {
+                let i = stack.iter().position(|l| std::ptr::eq(&*l.1, media)).unwrap();
+                decoded.push(i);
+                Ok(Frame { width: 2, height: 1, pixels: Arc::new(Pixels::Rgba16f(pixel(i).repeat(2).into_iter().map(f16::from_f32).collect())) })
+            }).unwrap();
+            let shown: Vec<usize> = (0..layers.len()).filter(|&i| !is_hidden(hidden, i) && index < layers[i].0).collect();
+            let has_frame = layers.iter().any(|l| index < l.0);
+            if shown.is_empty() {
+                // Only a size is asked of the bottom layer that has the frame.
+                prop_assert!(decoded.len() <= 1);
+                prop_assert_eq!(decoded.is_empty(), !has_frame);
+            } else {
+                prop_assert_eq!(&decoded, &shown, "decoded layers");
+            }
+            let Pixels::Rgba16f(data) = &*frame.pixels else { panic!("a render stack is RGBA halfs") };
+            let expected = shown.iter().fold([0f32; 4], |below, &i| {
+                th_media::composite::over_premultiplied(pixel(i).map(|c| f16::from_f32(c).to_f32()), below)
+            });
+            for (got, want) in data[..4].iter().zip(expected) {
+                prop_assert!((got.to_f32() - want).abs() <= 2e-3, "{:?} vs {expected:?}", &data[..4]);
+            }
+        }
+    }
+
     /// The panic of a decode is its error, naming the panic.
     #[test]
     fn a_panicking_decode_is_an_error() {
@@ -908,6 +1037,7 @@ mod tests {
         Cancel(prop::sample::Index),
         Seek(prop::sample::Index),
         View(usize),
+        Hide(usize, u8),
         Replace(usize, usize, bool, bool),
         Proxy(usize),
     }
@@ -920,6 +1050,7 @@ mod tests {
             1 => any::<prop::sample::Index>().prop_map(Op::Cancel),
             1 => any::<prop::sample::Index>().prop_map(Op::Seek),
             1 => (0usize..6).prop_map(Op::View),
+            1 => (0usize..6, any::<u8>()).prop_map(|(c, h)| Op::Hide(c, h)),
             1 => (0usize..6, 0usize..200, any::<bool>(), any::<bool>()).prop_map(|(c, f, open, exr)| Op::Replace(c, f, open, exr)),
             1 => (0usize..6).prop_map(Op::Proxy),
         ];
@@ -927,9 +1058,9 @@ mod tests {
     }
 
     proptest! {
-        /// However jobs, seeks, view changes and replaced clips interleave:
-        /// the buffer only ever holds frames of each clip's current view and
-        /// content; no job runs twice, nor on a clip with nothing to decode;
+        /// However jobs, seeks, view changes, hidden stack layers and
+        /// replaced clips interleave: the buffer only ever holds frames of
+        /// each clip's current view, hidden layers and content; no job runs twice, nor on a clip with nothing to decode;
         /// a movie has one job at a time; EXR reads stay within their limit
         /// and none starts beside the playhead's own; a proxy never starts
         /// while the playhead's frame waits, and stays within its limit; a
@@ -947,9 +1078,11 @@ mod tests {
             let mut state = state_of(&frames, &exr, &[], usize::MAX / FRAME_BYTES / 2, here.index(len));
             // Each clip's view, as a number (its layer name).
             let mut views = vec![0u32; frames.len()];
+            // Each clip's hidden layers.
+            let mut hidden = vec![0u64; frames.len()];
             // Running jobs: their claim and the frames left to decode.
             let mut running: Vec<(Claim, Vec<FrameKey>)> = Vec::new();
-            let tag = |claim: &Claim| tagged(claim.view.layer.parse().unwrap_or(0));
+            let tag = |claim: &Claim| tagged(claim.view.layer.parse::<u32>().unwrap_or(0) * 256 + claim.hidden as u32);
             for op in ops {
                 match op {
                     Op::Start => {
@@ -1023,13 +1156,25 @@ mod tests {
                         views[clip] += 1;
                         change_view(&mut state, clip, ExrView { layer: views[clip].to_string(), channel: None });
                     }
+                    Op::Hide(clip, mask) if clip < frames.len() => {
+                        let others: HashSet<FrameKey> = state.buffer.keys().filter(|k| k.clip != clip).collect();
+                        let changed = hidden[clip] != u64::from(mask);
+                        hidden[clip] = u64::from(mask);
+                        change_hidden(&mut state, clip, hidden[clip]);
+                        if changed {
+                            let kept: HashSet<FrameKey> = state.buffer.keys().collect();
+                            prop_assert_eq!(kept, others, "hiding layers of clip {} kept its frames or touched another's", clip);
+                        }
+                    }
                     Op::Replace(clip, n, open, is_exr) if clip < frames.len() => {
+                        hidden[clip] = 0;
                         let others: HashSet<FrameKey> = state.buffer.keys().filter(|k| k.clip != clip).collect();
                         // New content decodes as a new view would: tag it so.
                         views[clip] += 1;
                         let content = Content {
                             media: open.then(|| media(is_exr)),
                             view: ExrView { layer: views[clip].to_string(), channel: None },
+                            hidden: 0,
                             wants_proxy: open,
                         };
                         replace_clip(&mut state, clip, Clip { frames: n, rate: (24, 1) }, content);
@@ -1047,7 +1192,7 @@ mod tests {
                 prop_assert!(running.iter().filter(|r| matches!(r.0.job, Job::Proxy(_))).count() <= PROXY_JOBS);
                 for key in state.buffer.keys() {
                     let shown = state.buffer.get(key).unwrap().width;
-                    prop_assert_eq!(shown, views[key.clip], "{:?} holds a frame of an old view", key);
+                    prop_assert_eq!(shown, views[key.clip] * 256 + hidden[key.clip] as u32, "{:?} holds a frame of an old view", key);
                 }
             }
         }
@@ -1072,7 +1217,7 @@ mod tests {
         let sequence = Arc::new(Media::exr(ExrSequence::new(1001, 1, vec![exr_path.clone(); 3]), (24, 1)).unwrap());
         let open = |media: &Arc<Media>| {
             let shape = Clip { frames: media.frame_count(), rate: media.rate() };
-            (shape, Content { media: Some(Arc::clone(media)), view: media.default_view(), wants_proxy: true })
+            (shape, Content { media: Some(Arc::clone(media)), view: media.default_view(), hidden: 0, wants_proxy: true })
         };
         let closed = (Clip { frames: 10, rate: (24, 1) }, Content::none());
         let engine = Engine::start(vec![open(&movie), closed, open(&sequence)], 1 << 30);

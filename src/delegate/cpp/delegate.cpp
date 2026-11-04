@@ -134,6 +134,10 @@ int const _defaultBlurSamples = 16;
 // Frames per second, which turns a mesh's velocities (per second) into its
 // motion over a shutter given in frames; unset, TH_PLAYBLAST_FPS, else 24.
 TfToken const _tokFps("th:fps");
+// A transparent background: no backdrop, the colour AOV premultiplied by
+// coverage and its alpha the coverage (src/composite.rs); unset,
+// TH_PLAYBLAST_ALPHA (1/true/on), else off (opaque over the grey backdrop).
+TfToken const _tokAlpha("th:alpha");
 // Motion is sampled this many frames either side of the frame, and the
 // camera's shutter is held to that window.
 float const _motionWindow = 1.0f;
@@ -1290,9 +1294,9 @@ class ThRenderPass final : public HdRenderPass
 {
 public:
     ThRenderPass(HdRenderIndex* index, HdRprimCollection const& collection, int samples,
-                 uint32_t shading, bool ao, _BlurSettings blur, ThCache const* cache)
+                 uint32_t shading, bool ao, bool alpha, _BlurSettings blur, ThCache const* cache)
         : HdRenderPass(index, collection), _samples(samples), _shading(shading), _ao(ao),
-          _blur(blur), _cache(cache) {}
+          _alpha(alpha), _blur(blur), _cache(cache) {}
 
     bool IsConverged() const override { return true; }
 
@@ -1329,6 +1333,7 @@ protected:
         frame.samples = static_cast<uint32_t>(std::max(1, _samples));
         frame.shading = _shading;
         frame.ao = _ao ? 1u : 0u;
+        frame.alpha = _alpha ? 1u : 0u;
 
         // Motion blur over the render camera's shutter (held to the window
         // the prims sampled their motion over), depth of field from its lens.
@@ -1445,6 +1450,7 @@ private:
     int _samples;
     uint32_t _shading;
     bool _ao;
+    bool _alpha;
     _BlurSettings _blur;
     ThCache const* _cache;  // the delegate's; outlives its passes
 };
@@ -1541,8 +1547,9 @@ public:
         blur.samples = static_cast<int>(_SettingNumber(GetRenderSetting(_tokBlurSamples),
                                                        "TH_PLAYBLAST_BLUR_SAMPLES", _defaultBlurSamples));
         blur.fps = static_cast<float>(_SettingNumber(GetRenderSetting(_tokFps), "TH_PLAYBLAST_FPS", 24.0));
+        bool const alpha = _SettingOn(GetRenderSetting(_tokAlpha), "TH_PLAYBLAST_ALPHA");
         return std::make_shared<ThRenderPass>(index, collection, samples,
-                                              _ShadingNumber(shading), ao, blur, _cache);
+                                              _ShadingNumber(shading), ao, alpha, blur, _cache);
     }
 
     HdInstancer* CreateInstancer(HdSceneDelegate* delegate, SdfPath const& id) override

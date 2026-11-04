@@ -203,6 +203,60 @@ def remove_channel(entity_uri: Uri, channel_name: str) -> None:
     api.config.set_own_properties(entity_uri, own)
 
 
+#: Entity property mapping a channel to the prims that make up its render
+#: layer in a playblast: ``{"characters": "/CHAR/*", "default": "/SET/* /PROP/*"}``.
+#: A Houdini prim pattern (``/CHAR/*``, ``/CHAR/Ryan /PROP/ball``, ``%type:Mesh``).
+#: Inherited like every entity property and deep-merged, so a project-level
+#: value is every shot's default and a shot overrides it channel by channel
+#: (``""`` drops a channel's layer: blank patterns are ignored). Set it in the Config Editor
+#: (Add Field on the entity's properties); nothing writes it for you.
+CHANNEL_PRIMS_PROPERTY = 'channel_prims'
+
+
+def read_channel_prims(properties) -> dict[str, str]:
+    """The channel → prim pattern map stored in *properties*; ``{}`` when
+    the key is absent. Blank patterns and non-string values are dropped."""
+    if properties is None:
+        return {}
+    raw = properties.get(CHANNEL_PRIMS_PROPERTY) or {}
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(name): pattern.strip()
+        for name, pattern in raw.items()
+        if isinstance(pattern, str) and pattern.strip()
+    }
+
+
+def channel_layers(channels: list[str], prims: dict[str, str]) -> list[tuple[str, str | None]]:
+    """The render layers a layered playblast makes, bottom to top.
+
+    ``channels`` is the shot's channel list (:func:`list_channels`, default
+    first), ``prims`` its :func:`read_channel_prims`. A channel with a
+    pattern is a layer of the prims it matches. ``default`` without a
+    pattern is the remainder: every prim no other layer claims, so naming
+    just ``characters: /CHAR/*`` splits a shot into background and
+    characters. Any other channel without a pattern makes no layer. The
+    remainder layer's pattern is ``None``. No layers at all when no channel
+    has a pattern: there is nothing to split.
+    """
+    if not any(name in prims for name in channels):
+        return []
+    layers = []
+    for name in channels:
+        if name in prims:
+            layers.append((name, prims[name]))
+        elif name == DEFAULT_CHANNEL:
+            layers.append((name, None))
+    return layers
+
+
+def list_channel_layers(entity_uri: Uri) -> list[tuple[str, str | None]]:
+    """:func:`channel_layers` for an entity, read from its config."""
+    properties = api.config.get_properties(entity_uri)
+    return channel_layers(list_channels(entity_uri), read_channel_prims(properties))
+
+
 def has_channel(entity_uri: Uri, channel_name: str) -> bool:
     """Check if an entity has a specific channel.
 

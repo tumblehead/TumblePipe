@@ -7,6 +7,7 @@ from tumblepipe.pipe.houdini.entity_node import FROM_CONTEXT, EntityNode
 from tumblepipe.pipe.houdini.sops import rename_packed
 from tumblepipe.pipe.paths import (
     get_latest_version_path,
+    get_layer_file_name,
     get_rig_export_path,
     list_version_paths,
 )
@@ -33,6 +34,30 @@ def rig_file_path(asset_uri: Uri, channel_name: str, version_name: str = 'latest
     export_uri = Uri.parse('export:/') / asset_uri.segments / channel_name / 'rig' / version_name
     version_path = api.storage.resolve(export_uri)
     return version_path / f"{entity_stem(asset_uri, 'rig', version_name)}.bgeo.sc"
+
+
+def is_lop_rig(asset_uri: Uri, channel_name: str, version_name: str) -> bool:
+    """Whether rig ``version_name`` is a LOP rig: a layer th::export_layer
+    published (APEX characters on the stage, for an APEX Animate LOP), with
+    no SOP rig file. The SOP rig nodes cannot load one; th::import_layer
+    (Department: rig) brings it onto the stage."""
+    export_uri = Uri.parse('export:/') / asset_uri.segments / channel_name / 'rig' / version_name
+    version_path = api.storage.resolve(export_uri)
+    rig_file = version_path / f"{entity_stem(asset_uri, 'rig', version_name)}.bgeo.sc"
+    layer_file = version_path / get_layer_file_name(
+        asset_uri, channel_name, 'rig', version_name
+    )
+    return layer_file.exists() and not rig_file.exists()
+
+
+def lop_rig_message(asset_uri: Uri, channel_name: str, version_name: str) -> str:
+    """Why a SOP rig node cannot load rig ``version_name``, a LOP rig."""
+    return (
+        f'rig {version_name} of {asset_uri} is a LOP rig (a USD layer, no '
+        f'SOP rig file). Bring it onto the stage with th::import_layer '
+        f'(Department: rig, Version: {version_name}) and animate it in an '
+        f'APEX Animate LOP, or pick a SOP rig version here.'
+    )
 
 
 def instance_names(asset_uri: Uri, instances: int) -> list[str]:
@@ -329,6 +354,10 @@ class ImportRig(EntityNode):
         version_path = api.storage.resolve(export_uri)
         file_path = version_path / f"{entity_stem(asset_uri, 'rig', version_name)}.bgeo.sc"
         if not file_path.exists():
+            if is_lop_rig(asset_uri, channel_name, version_name):
+                raise self._error(
+                    lop_rig_message(asset_uri, channel_name, version_name)
+                )
             raise self._error(
                 f'rig {version_name} of {asset_uri} has no rig file: '
                 f'{file_path}'

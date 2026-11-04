@@ -191,6 +191,19 @@ impl ExrSequence {
     /// pieces of the file as it reads them). The frame is RGBA: a single
     /// channel shows as grey, and alpha is opaque.
     pub fn decode_while(&self, index: usize, view: &ExrView, wanted: &dyn Fn() -> bool) -> Result<Frame> {
+        self.decode_rgba(index, view, wanted, false)
+    }
+
+    /// [`decode_while`](Self::decode_while) with the layer's own alpha: a
+    /// colour view of a layer with an `A` channel (any case) carries it, as
+    /// written (premultiplied, for a render), and display pixels outside the
+    /// data window are transparent; without one, or for a single channel,
+    /// alpha is opaque. What a stack of render layers is composited from.
+    pub fn decode_with_alpha_while(&self, index: usize, view: &ExrView, wanted: &dyn Fn() -> bool) -> Result<Frame> {
+        self.decode_rgba(index, view, wanted, true)
+    }
+
+    fn decode_rgba(&self, index: usize, view: &ExrView, wanted: &dyn Fn() -> bool, alpha: bool) -> Result<Frame> {
         let count = self.frames.len();
         let path = self.frames.get(index).ok_or(Error::OutOfRange { index, count })?;
         let fail = |message: String| Error::Decode { index, message: format!("{}: {message}", path.display()) };
@@ -219,12 +232,18 @@ impl ExrSequence {
 
         let (width, height) = (display.size.0, display.size.1);
         let mut out = vec![f16::ZERO; width * height * 4];
-        for pixel in out.as_chunks_mut::<4>().0 {
-            pixel[3] = f16::ONE;
-        }
         // The RGBA slots each shown channel fills: one channel is grey.
         let slots: &[&[usize]] = if picked.len() == 1 { &[&[0, 1, 2]] } else { &[&[0], &[1], &[2]] };
-        for (&which, targets) in picked.iter().zip(slots) {
+        let mut fills: Vec<(usize, &[usize])> = picked.iter().copied().zip(slots.iter().copied()).collect();
+        match layer.channels.iter().position(|c| c.eq_ignore_ascii_case("a")).filter(|_| alpha && picked.len() == 3) {
+            Some(a) => fills.push((a, &[3])),
+            None => {
+                for pixel in out.as_chunks_mut::<4>().0 {
+                    pixel[3] = f16::ONE;
+                }
+            }
+        }
+        for (which, targets) in fills {
             let (data, values) = samples[which];
             // Where the data window sits in the display window.
             let origin = (
@@ -248,7 +267,7 @@ impl ExrSequence {
                         continue;
                     }
                     let value = sample(row * data_width + col);
-                    for &slot in *targets {
+                    for &slot in targets {
                         out[(y as usize * width + x as usize) * 4 + slot] = value;
                     }
                 }

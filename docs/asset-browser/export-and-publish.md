@@ -252,7 +252,8 @@ A department with no entry runs nothing.
 
 | Context / department | Validators |
 |---|---|
-| assets / model, rig | `model_structure`, plus `rest_geometry` for model |
+| assets / model | `model_structure`, `rest_geometry` |
+| assets / rig | `rig_structure` (a LOP rig only: `th::export_rig` is not validated) |
 | assets / blendshape | `blendshape_structure` |
 | assets / groom | `groom_structure` |
 | assets / lookdev | `lookdev_structure`, `material_bindings` |
@@ -273,6 +274,7 @@ Passed With Warnings**, or the issue list with a **Close** button.
 | Validator | Error messages (what fixes them) |
 |---|---|
 | `model_structure`, `blendshape_structure`, `groom_structure`, `lookdev_structure` | `Asset prim not found at path: <path>` (author the asset prim — `create_asset_model` does); `Asset prim must be of type 'Xform', found '<type>'`; `Missing required '<geo|blshp|groom|mtl>' child prim` (create the Scope under the asset); `'<name>' prim must be of type 'Scope', found '<type>'`. A wrong type with no transform on it only warns (`... it will be published as a Scope` / `as an Xform`) and the export retypes it in the published layer: an asset prim with no type or a Scope becomes an Xform; a geo/blshp/groom/mtl with no type or an Xform (what SOP Import makes) becomes a Scope. A transform on it, or any other type, stays an error. Warns `No entity URI provided` when the export node's Entity is unresolved. |
+| `rig_structure` | `Asset prim not found at path: <path>`; `No APEX character at or below <asset>: nothing for an APEX Animate LOP to animate` (build the character on the stage — SOP Import APEX Scene in Character mode, APEX SOP Rig Builder, Configure APEX Rig — before the `export_layer`; a SOP rig publishes through `th::export_rig`); `APEX character outside the asset prim <asset>` (set the SOP Import APEX Scene's Import Path Prefix to the asset prim or below it: its default `/$OS` puts the character where no shot composes it). No `geo` Scope is required. Warns `No entity URI provided`. |
 | `rest_geometry` | Warnings only: `Mesh missing rest positions (primvars:rest or primvars:Pref)`, `Mesh missing normals (primvars:normals or normals)`. |
 | `material_bindings` | Warning only: `Mesh has no material binding`. |
 | `shot_root_prims` | `Disallowed root prim '<name>'. Only asset categories, collections, lights, cameras, Render, and scene are allowed.` — reparent the content under an allowed root. Houdini's own `/HoudiniLayerInfo` is ignored. A `/_METADATA` (from an upstream layer published before metadata moved to customData) is disallowed like any other root: re-export that upstream department. |

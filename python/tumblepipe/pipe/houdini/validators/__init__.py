@@ -29,6 +29,7 @@ from .asset_structure import (
     validate_blendshape_structure,
     validate_groom_structure,
     validate_lookdev_structure,
+    validate_rig_structure,
 )
 from .shot_structure import validate_layout_publish, validate_shot_root_prims
 
@@ -47,6 +48,7 @@ _registry.register('model_structure', validate_model_structure)
 _registry.register('blendshape_structure', validate_blendshape_structure)
 _registry.register('groom_structure', validate_groom_structure)
 _registry.register('lookdev_structure', validate_lookdev_structure)
+_registry.register('rig_structure', validate_rig_structure)
 _registry.register('shot_root_prims', validate_shot_root_prims)
 _registry.register('layout_publish', validate_layout_publish)
 
@@ -58,7 +60,8 @@ _DEFAULT_VALIDATORS: dict[tuple[str, str], list[str]] = {
     ('assets', 'blendshape'): ['blendshape_structure'],
     ('assets', 'groom'): ['groom_structure'],
     ('assets', 'lookdev'): ['lookdev_structure', 'material_bindings'],
-    ('assets', 'rig'): ['model_structure'],
+    # Only a LOP rig is validated: th::export_rig publishes without it
+    ('assets', 'rig'): ['rig_structure'],
     ('shots', 'layout'): ['shot_root_prims', 'layout_publish'],
     ('shots', 'environment'): ['shot_root_prims'],
     ('shots', 'animation'): ['shot_root_prims'],

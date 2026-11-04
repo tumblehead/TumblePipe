@@ -221,6 +221,15 @@
             range   { 2! 64 }
             parmtag { "script_callback_language" "python" }
         }
+        parm {
+            name    "render_layers"
+            label   "Render Layers"
+            type    toggle
+            default { "0" }
+            help    "Also write one movie per render layer (the shot's channels): only that layer's prims, on a transparent background, beside the whole picture's movie and with its version. The shot's channel_prims config names each layer's prims (e.g. characters: /CHAR/*); default without a pattern takes every prim the other layers leave. The sequence player stacks the layers in channel order and can hide each one. Viewport renderer only."
+            disablewhen "{ renderer != viewport }"
+            parmtag { "script_callback_language" "python" }
+        }
     }
 
     groupsimple {

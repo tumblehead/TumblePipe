@@ -74,6 +74,10 @@ pub struct Frame {
     /// Motion blur and depth of field ([`crate::blur`]); [`Blur::OFF`] for
     /// neither.
     pub blur: Blur,
+    /// A transparent background ([`crate::composite`]): no backdrop, colour
+    /// premultiplied by coverage, alpha the coverage. Off: the backdrop
+    /// gradient behind everything and alpha 1.
+    pub alpha: bool,
 }
 
 pub struct Image {
@@ -745,7 +749,7 @@ pub(crate) fn render_blurred_with(frame: &Frame, meshes: &[Mesh], share: bool, b
             composite::resolve(frame, &samples)
         })
         .collect();
-    blur::average(images)
+    blur::average(images, frame.alpha)
 }
 
 fn smooth_all(meshes: &[Mesh]) -> Vec<Option<Vec<Vec3>>> {
@@ -1011,7 +1015,7 @@ mod tests {
     fn frame(size: usize) -> Frame {
         let (world_to_clip, view_to_world) = camera();
         Frame { width: size, height: size, world_to_clip, view_to_world, samples: 1,
-                shading: Shading::Lit, ao: true, blur: Blur::OFF }
+                shading: Shading::Lit, ao: true, blur: Blur::OFF, alpha: false }
     }
 
     #[test]

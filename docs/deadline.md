@@ -228,6 +228,15 @@ on Deadline, and runs in the background as a render node would run it.
   macOS has no CA certificates of its own, so when Python finds none (and
   `SSL_CERT_FILE` is not set) the download checks GitHub's certificate
   against the system's bundle (`/etc/ssl/cert.pem`), else certifi's.
+- **Houdini:** a task runs the `hython`/`husk` of an install of the job's
+  Houdini major (the same build or newer, else the newest of that major),
+  found in SideFX's default place for the platform:
+  `<drive>:\Program Files\Side Effects Software\Houdini <version>` (Windows,
+  drives C–H), `/Applications/Houdini/Houdini<version>` (macOS) or
+  `/opt/hfs<version>` (Linux). An install anywhere else is not found, and the
+  task fails with *no installed Houdini 22.x for 22.0.457 (found: …)* naming
+  what it did find. (Up to 1.91.0 only the Windows place was searched, so
+  every local task on macOS or Linux failed this way.)
 - **Chained work stays local:** every local job's env file carries
   `TH_FARM_BACKEND=local`. A collapse that submits its playblast, or a stage
   that submits its render, queues them here too.
@@ -277,18 +286,58 @@ Desktop (`python -m tumblepipe.farm.manager`).
 
 - **Filters:** *Show* (all, this machine, the farm), *Only mine*, *Only
   <project>*, *Hide finished*, and a name filter.
-- **Tasks and logs:** selecting a job lists its tasks. Selecting a task shows
-  its log. A local task's log is followed while it renders. A farm task's
-  Deadline reports are listed newest first, error reports with their message.
+- **Job details:** the pane beside the list shows the selected job's
+  properties, the way the Deadline Monitor's job panel does:
+  - *Job*: name, kind (the farm worker: render, playblast, publish...),
+    entity and department, status, where it runs, who submitted it from
+    which machine and when, the batch, the job ID.
+  - *Renderer*: what renders it and on which devices. Renders and Karma
+    playblasts say **Karma (husk), XPU: GPU and CPU together**. Farm and
+    local renders always use Karma XPU, and XPU uses the CPU as well as the
+    GPU: the CPU loads the scene, builds geometry and writes the images. So
+    a busy CPU during a GPU render is expected. Viewport-look playblasts
+    say *CPU only, no licence*. Tiles per frame, shading and resolution are
+    shown where the job has them.
+  - *Time*: started, finished, elapsed wall-clock time, total render time
+    (every task added up), average per task and per frame, and an estimate
+    of the render time left.
+  - *Frames*: the frame list, frame count, frames per task and the task
+    counts. *Scheduling*: priority, pool, group, the jobs it waits on, the
+    task timeout.
+  - *Output*: each output path. Double-click one, or right-click ▸ *Open
+    folder*, to open the folder it is written to. Right-click ▸ *Copy all
+    details* copies the pane as text.
+
+  Local batches queued before this version have no pool, group or chunk
+  size recorded, so those rows are left out.
+- **This machine's load:** while the local farm renders, the footer shows
+  the machine's CPU, RAM, GPU and VRAM use. For a rendering local job, the
+  details also have a *This machine* section with the task's own processes
+  (hpm, hython, husk) and their CPU share and memory. The GPU line needs
+  `nvidia-smi` (NVIDIA drivers); without it the GPU line is left out. The
+  load is sampled every two seconds on a worker thread, and only while the
+  local runner is working.
+- **Tasks and logs:** selecting a job lists its tasks, each with its
+  *Render time*. A finished task shows how long it took. A rendering task
+  shows how long it has been rendering, in blue, counting up. Selecting a
+  task shows its log. A local task's log is followed while it renders. A
+  farm task's Deadline reports are listed newest first, error reports with
+  their message.
 - **Actions:** on this machine *Suspend*, *Resume*, *Retry failed*, *Cancel*
   and *Remove*. On the farm *Suspend*, *Resume*, *Retry failed*, *Requeue* and
   *Delete* (asks first). A selected batch row stands for all of its jobs.
   The footer answers each action on its right, and keeps the answer until
   the next one.
+- **Right-click menus:** on a job, the same actions plus *Open job folder*,
+  *Open output folder*, *Copy job ID* and *Copy name*. On a task, *Open log
+  folder*, *Copy log*, *Copy frames*, *Copy error*, and the job actions (they
+  act on the whole job, as on Deadline).
 
 The farm is read with `deadlinecommand -Json` (`GetJobs`, `GetJobTasks`, the
-report listings) on a worker thread every few seconds. Without a Deadline
-Client the window shows this machine's jobs alone.
+report listings) on a worker thread every few seconds. A job's
+`context.json`, which the Renderer section reads, is on the project share and
+is read on a worker thread too, once per job. Without a Deadline Client the
+window shows this machine's jobs alone.
 
 ## Further reading
 

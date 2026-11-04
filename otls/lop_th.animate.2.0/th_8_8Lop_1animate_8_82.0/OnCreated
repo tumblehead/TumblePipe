@@ -1,3 +1,9 @@
 import tumblepipe.pipe.houdini.nodes as ns
+from tumblepipe.pipe.houdini.lops import animate_invoke
 
 ns.on_created(kwargs['node'], ns.SHAPE_NODE_DIVE)
+# Placed by hand: start the dive with th::import_rigs -> Scene Animate.
+# Templates (nodes.create_node) build their own; a pasted or loaded
+# node keeps the dive it had.
+if not ns.creating_from_code() and not hou.hipFile.isLoadingHipFile():
+    animate_invoke.build_default_dive(kwargs['node'])

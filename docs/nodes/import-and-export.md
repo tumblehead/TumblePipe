@@ -240,6 +240,10 @@ Gotchas:
   upstream department you meant. The input passes through untouched.
 - Importing a foreign asset's layer tags its root prim like `import_asset`
   would; importing your own entity's or a shot's layer does not.
+- A [LOP rig](assets.md#lop-rigs-apex-characters-on-the-stage) comes in
+  this way: Entity the asset, Department `rig`, then an APEX Animate LOP.
+  A rig version that is a SOP rig (`.bgeo.sc`) has no layer and imports
+  *NOTHING IMPORTED*.
 
 ## `th::export_layer` (LOP)
 
@@ -305,6 +309,21 @@ Aborts you can hit, in the order they are checked:
   [Layer save paths](../composition.md#layer-save-paths-and-export-portability).
 - *composes geometry from path(s) that do not exist* — a dangling payload
   or reference; same section.
+- *the APEX characters would publish without their rigs* — an APEX
+  character's or scene's file (`houdini:apex:character:files`,
+  `sceneFiles`) is still an `op:` path the ROP did not write, or names a
+  file that does not exist.
+
+**APEX characters.** The USD ROP saves an APEX LOP's rig, skeleton and
+animation geometry to the LOP's save path (`$HIP/usd/$OS.bgeo.sc` by
+default: the work area, which the next export overwrites) and points the
+layer at it. The export copies every such file outside the export folder
+into `apex/` beside the layer and points the layer there, so a
+[LOP rig](assets.md#lop-rigs-apex-characters-on-the-stage) (or an APEX
+Animate shot) is published with its rigs. A save path that is off already
+writes them into a `<layer>.geometry/` folder beside the layer, which is
+left as it is.
+Source: [`usd/apex_files.py`](../../python/tumblepipe/pipe/usd/apex_files.py).
 
 A **Farm** export bundles the latest workfile and submits a publish job; the
 metadata and path guards run on the farm, not before submission.
@@ -542,13 +561,40 @@ timeline): layout's placement there is where each
 rig starts, and the transforms come out static. Reading the incoming stage
 as it is would make `th::animate` time dependent whenever that stage is,
 recooking the node and every rig in its dive each frame, as 1.85.0 did.
-`_TumblePipe/pipeline`. The animation shot template places one as
-`animate_shot` with `th::import_rigs` and the APEX scene-animate nodes
-inside its dive target; see [Building assets → `th::import_rigs`](assets.md#thimport_rigs-sop).
-Its APEX Scene Invoke is set to **Packed Folders** output and **Shapes**
-`Base`. A `th::animate` placed from the Tab menu has an empty dive (just
-`output0`), so build `th::import_rigs` → APEX Scene Animate → APEX Scene
-Invoke (with those settings) → `output0` inside it yourself.
+`_TumblePipe/pipeline`. The dive holds `th::import_rigs` → APEX Scene
+Animate → `output0`, both when the animation shot template places the node
+(as `animate_shot`) and when you place one from the Tab menu; see
+[Building assets → `th::import_rigs`](assets.md#thimport_rigs-sop). There is
+no Scene Invoke in the dive: `th::animate` invokes the scene itself (see
+**Characters** below). Up to 1.91 a node from the Tab menu had an empty
+dive, and the template ended the dive in a Scene Invoke (Packed Folders,
+Shapes `Base`). Scenes saved like that keep working as they are.
+
+### Characters
+
+When the dive ends in its Scene Animate (it outputs the APEX scene), the
+node invokes it, and the **Characters** folder decides what comes out:
+
+- **Shapes**: which character shapes to output (the Scene Invoke's Shapes
+  pattern), `Base` by default.
+- **Characters** list, a row per character (**Discover** adds a row for
+  each character in the dive's scene): **Geometry** outputs its shapes,
+  **Skeleton** its posed skeleton, for CFX. A character with no row outputs
+  its geometry and no skeleton.
+
+A skeleton is the rig's `Base.skel` output, one polyline per bone, and goes
+to `/<category>/<character>/skel/Base` (beside the character's `geo`) as one
+BasisCurves prim. It carries only its points: the joints' other attributes
+would reach USD frozen at the first frame, since the node copies only
+points after it. Turning a skeleton on or off re-imports the characters once.
+
+A dive with its own Scene Invoke (every dive from before 1.92, perhaps with
+SOPs after it) is used as it is, and the Characters folder does nothing.
+To switch an old dive over, wire its Scene Animate into `output0` and delete
+the Scene Invoke. Keep it if SOPs after it change the geometry (a Camera
+Lattice, say). `th::playblast` (SOP) invokes an APEX scene wired into it the
+same way (Shapes `Base`), so a playblast in the dive can read the Scene
+Animate.
 
 The node reads the dive's output the way Houdini does for a SOP network:
 the Output SOP whose **Output Index** is 0, whatever it is called, or the
@@ -617,4 +663,5 @@ ghost finds the rig nodes by type, and an import tells it about a new one.
 Source: [`otls/lop_th.animate.2.0`](../../otls/lop_th.animate.2.0/th_8_8Lop_1animate_8_82.0/DialogScript),
 [`lops/animate_ghost.py`](../../python/tumblepipe/pipe/houdini/lops/animate_ghost.py),
 [`lops/animate_xforms.py`](../../python/tumblepipe/pipe/houdini/lops/animate_xforms.py),
-[`lops/animate_points.py`](../../python/tumblepipe/pipe/houdini/lops/animate_points.py).
+[`lops/animate_points.py`](../../python/tumblepipe/pipe/houdini/lops/animate_points.py),
+[`lops/animate_invoke.py`](../../python/tumblepipe/pipe/houdini/lops/animate_invoke.py).

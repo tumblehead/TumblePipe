@@ -14,6 +14,10 @@
 //!    "takes": [
 //!     {"label": "animation v0015", "department": "animation", "version": "v0015",
 //!      "media": {"kind": "movie", "path": "P:/.../v0015.mp4"}},
+//!     {"label": "animation v0015 layers", "department": "animation", "version": "v0015",
+//!      "media": {"kind": "stack", "layers": [
+//!       {"name": "default", "media": {"kind": "movie", "path": "P:/.../default/..._v0015.mov"}},
+//!       {"name": "fx", "media": {"kind": "movie", "path": "P:/.../fx/..._v0015.mov"}}]}},
 //!     {"label": "denoise v0030 default beauty", "department": "denoise", "version": "v0030",
 //!      "media": {"kind": "exr", "layer": "default",
 //!                "frames": {"directory": "P:/.../beauty", "prefix": "beauty.", "suffix": ".exr",
@@ -25,6 +29,14 @@
 //! versions oldest first. A department (and, for a render, its layer) is a
 //! *stream*; its takes are that stream's versions. See [`Shot::version_step`],
 //! [`Shot::department_step`] and [`Shot::last_of_kind`].
+//!
+//! A `stack` take is a shot's render layers (its channels) on top of each
+//! other, bottom first: a layered playblast's movies (straight alpha, shown
+//! as they are) or a render version's layers (premultiplied EXRs, shown
+//! through OCIO). Its layers are all movies or all EXRs, never stacks, and
+//! the EXRs of one stack share their frame range. A department's stacks are
+//! a stream of their own, `(kind, department, Some("layers"))`, written
+//! right after its plain takes of that kind.
 
 use std::path::PathBuf;
 
@@ -87,7 +99,24 @@ pub enum Media {
         layer: String,
         frames: Frames,
     },
+    /// Render layers stacked, bottom first: all movies or all EXRs.
+    Stack {
+        layers: Vec<StackLayer>,
+    },
 }
+
+/// One layer of a stack: its name (the shot's channel) and its media, a
+/// movie or an EXR sequence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StackLayer {
+    pub name: String,
+    pub media: Media,
+}
+
+/// The layer a stack take's stream names: a department's stacks are one
+/// stream, apart from its plain takes.
+pub const STACK_STREAM: &str = "layers";
 
 /// An EXR sequence's frame files: frame `n` is
 /// `directory/prefix + n (zero-padded to padding digits) + suffix`, for `n`
@@ -124,19 +153,67 @@ impl Frames {
 pub type Stream<'a> = (Kind, &'a str, Option<&'a str>);
 
 impl Media {
+    /// Its kind; a stack's is its layers' (a movie for a stack with none,
+    /// which a checked playlist never has).
     pub fn kind(&self) -> Kind {
         match self {
             Self::Movie { .. } => Kind::Movie,
             Self::Exr { .. } => Kind::Exr,
+            Self::Stack { layers } => layers.first().map_or(Kind::Movie, |l| l.media.kind()),
         }
     }
 
-    /// What it is read from, for messages: the movie, or the sequence's
-    /// first frame.
+    /// The layers of a stack; None for anything else.
+    pub fn stack(&self) -> Option<&[StackLayer]> {
+        match self {
+            Self::Stack { layers } => Some(layers),
+            _ => None,
+        }
+    }
+
+    /// What it is read from, for messages: the movie, the sequence's first
+    /// frame, or each of a stack's.
     pub fn describe(&self) -> String {
         match self {
             Self::Movie { path } => path.clone(),
             Self::Exr { frames, .. } => frames.path(0).display().to_string(),
+            Self::Stack { layers } => layers.iter().map(|l| l.media.describe()).collect::<Vec<_>>().join(", "),
+        }
+    }
+
+    /// What makes it unplayable, if anything: an empty frame range; a stack
+    /// that is empty, holds a stack, mixes movies and EXRs, names a layer
+    /// twice or not at all, or whose EXRs do not share their frame range.
+    fn problem(&self) -> Option<String> {
+        match self {
+            Self::Movie { .. } => None,
+            Self::Exr { frames, .. } => (frames.step <= 0 || frames.last < frames.first)
+                .then(|| format!("frames {} to {} by {}", frames.first, frames.last, frames.step)),
+            Self::Stack { layers } => {
+                let Some(first) = layers.first().map(|l| &l.media) else {
+                    return Some("a stack of no layers".into());
+                };
+                for (i, layer) in layers.iter().enumerate() {
+                    if layer.name.is_empty() || layers[..i].iter().any(|l| l.name == layer.name) {
+                        return Some(format!("stack layer {i} is named '{}', empty or twice", layer.name));
+                    }
+                    if layer.media.stack().is_some() {
+                        return Some(format!("stack layer {} is a stack", layer.name));
+                    }
+                    if layer.media.kind() != first.kind() {
+                        return Some(format!("stack layer {} is not of the kind of {}", layer.name, layers[0].name));
+                    }
+                    if let Some(problem) = layer.media.problem() {
+                        return Some(format!("stack layer {}: {problem}", layer.name));
+                    }
+                    if let (Self::Exr { frames: a, .. }, Self::Exr { frames: b, .. }) = (first, &layer.media)
+                        && (a.first, a.last, a.step) != (b.first, b.last, b.step)
+                    {
+                        return Some(format!("stack layer {} has other frames than {}", layer.name, layers[0].name));
+                    }
+                }
+                None
+            }
         }
     }
 }
@@ -146,12 +223,18 @@ impl Take {
         self.media.kind()
     }
 
-    /// A render's layer; None for a playblast.
+    /// A render's layer, [`STACK_STREAM`] for a stack; None for a playblast.
     pub fn layer(&self) -> Option<&str> {
         match &self.media {
             Media::Movie { .. } => None,
             Media::Exr { layer, .. } => Some(layer),
+            Media::Stack { .. } => Some(STACK_STREAM),
         }
+    }
+
+    /// Whether it is a stack of layers.
+    pub fn is_stack(&self) -> bool {
+        self.media.stack().is_some()
     }
 
     /// The stream it is a version of: its kind, department and layer.
@@ -240,10 +323,8 @@ impl Playlist {
                 if take.department.is_empty() || take.version.is_empty() {
                     return fail(format!("{}: no department or version", take.label));
                 }
-                if let Media::Exr { frames, .. } = &take.media
-                    && (frames.step <= 0 || frames.last < frames.first)
-                {
-                    return fail(format!("{}: frames {} to {} by {}", take.label, frames.first, frames.last, frames.step));
+                if let Some(problem) = take.media.problem() {
+                    return fail(format!("{}: {problem}", take.label));
                 }
             }
         }
@@ -283,6 +364,66 @@ mod tests {
         );
         assert_eq!(s010.takes[2].layer(), Some("default"));
         assert_eq!(s010.takes[1].layer(), None);
+
+        let s020 = &playlist.shots[1];
+        let movies = s020.takes[1].media.stack().expect("take 1 is a stack");
+        assert_eq!(movies.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(), ["default", "fx"]);
+        assert_eq!(s020.takes[1].stream(), (Kind::Movie, "animation", Some(STACK_STREAM)));
+        assert_eq!(s020.takes[2].stream(), (Kind::Exr, "light", Some(STACK_STREAM)));
+        assert!(s020.takes[2].is_stack() && !s020.takes[0].is_stack());
+    }
+
+    /// A stack that cannot play: empty, nested, mixed, EXRs of different
+    /// frames, a layer named twice or not at all.
+    #[test]
+    fn what_cannot_stack_is_an_error() {
+        let with_layers = |layers: Value| {
+            let mut doc = fixture();
+            doc["shots"][1]["takes"][2]["media"]["layers"] = layers;
+            Playlist::parse(&doc.to_string())
+        };
+        let doc = fixture();
+        let exr = doc["shots"][1]["takes"][2]["media"]["layers"][0].clone();
+        let movie = doc["shots"][1]["takes"][1]["media"]["layers"][0].clone();
+        let named = |layer: &Value, name: &str| {
+            let mut layer = layer.clone();
+            layer["name"] = json!(name);
+            layer
+        };
+        assert!(with_layers(json!([exr.clone()])).is_ok(), "one layer stacks");
+        assert!(with_layers(json!([])).is_err(), "no layers");
+        assert!(with_layers(json!([exr.clone(), named(&movie, "fx")])).is_err(), "mixed kinds");
+        assert!(with_layers(json!([exr.clone(), named(&exr, "default")])).is_err(), "a layer named twice");
+        assert!(with_layers(json!([exr.clone(), named(&exr, "")])).is_err(), "a layer named nothing");
+        let mut shorter = named(&exr, "fx");
+        shorter["media"]["frames"]["last"] = json!(1040);
+        assert!(with_layers(json!([exr.clone(), shorter])).is_err(), "other frames");
+        let mut empty = named(&exr, "fx");
+        empty["media"]["frames"]["step"] = json!(0);
+        assert!(with_layers(json!([exr.clone(), empty])).is_err(), "a layer without frames");
+        let nested = json!({"name": "fx", "media": {"kind": "stack", "layers": [exr.clone()]}});
+        assert!(with_layers(json!([exr.clone(), nested])).is_err(), "a stack in a stack");
+    }
+
+    /// A department's stacks are a stream of their own, right after its
+    /// plain takes: Up/Down stay in it, Ctrl+Up/Down walk into and out of it.
+    #[test]
+    fn stacks_are_a_stream_after_their_departments_plain_takes() {
+        let playlist = Playlist::parse(&fixture().to_string()).unwrap();
+        let mut shot = playlist.shots[1].clone();
+        // animation v0002, animation v0002 layers, then a newer pair.
+        let (plain, stack) = (shot.takes[0].clone(), shot.takes[1].clone());
+        shot.takes.truncate(2);
+        let newer = |mut t: Take| {
+            t.version = "v0003".into();
+            t
+        };
+        shot.takes = vec![plain.clone(), newer(plain), stack.clone(), newer(stack)];
+        assert_eq!(shot.version_step(2, 1), 3, "a newer stack");
+        assert_eq!(shot.version_step(3, 5), 3, "the newest stack");
+        assert_eq!(shot.version_step(0, 1), 1, "plain takes step over the stacks");
+        assert_eq!(shot.department_step(0, 1), 3, "into the newest stack");
+        assert_eq!(shot.department_step(2, -1), 1, "back to the newest plain take");
     }
 
     /// Every way the fixture can be put wrong, each its own error.
@@ -312,22 +453,34 @@ mod tests {
         assert!(broken(&["shots", "0", "takes", "0", "department"], json!("")).is_err(), "no department");
     }
 
-    /// A take of a few kinds, departments, layers and versions.
+    /// A take of a few kinds, departments, layers and versions, stacks of
+    /// one to three layers among them.
     fn takes() -> impl Strategy<Value = Take> {
-        (any::<bool>(), 0..3usize, 0..2usize, 1..20u32, "[a-z ]{0,8}").prop_map(|(exr, dept, layer, code, label)| {
-            let media = if exr {
-                let frames = Frames {
-                    directory: "P:/r".into(),
-                    prefix: "beauty.".into(),
-                    suffix: ".exr".into(),
-                    padding: 4,
-                    first: 1001,
-                    last: 1001 + code as i64,
-                    step: 1,
-                };
-                Media::Exr { layer: ["default", "slapcomp"][layer].to_owned(), frames }
-            } else {
-                Media::Movie { path: format!("P:/p/v{code:04}.mp4") }
+        (any::<bool>(), 0..3usize, 0..2usize, 1..20u32, "[a-z ]{0,8}", 0..4usize).prop_map(|(exr, dept, layer, code, label, stacked)| {
+            let frames = Frames {
+                directory: "P:/r".into(),
+                prefix: "beauty.".into(),
+                suffix: ".exr".into(),
+                padding: 4,
+                first: 1001,
+                last: 1001 + code as i64,
+                step: 1,
+            };
+            let one = |layer: &str| {
+                if exr {
+                    Media::Exr { layer: layer.to_owned(), frames: frames.clone() }
+                } else {
+                    Media::Movie { path: format!("P:/p/{layer}/v{code:04}.mp4") }
+                }
+            };
+            let media = match stacked {
+                0 => one(["default", "slapcomp"][layer]),
+                n => Media::Stack {
+                    layers: ["default", "fx", "bg"][..n]
+                        .iter()
+                        .map(|&name| StackLayer { name: name.to_owned(), media: one(name) })
+                        .collect(),
+                },
             };
             Take { label, department: ["layout", "animation", "light"][dept].to_owned(), version: format!("v{code:04}"), media }
         })

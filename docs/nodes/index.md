@@ -76,6 +76,7 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 |---|---|---|
 | `th::create_asset_lookdev` | LOP | Lookdev department body: materials under `<asset>/mtl`, one USD variant per look |
 | `th::material_assigner` | LOP | Assign stage materials to prim patterns, seeded from the stage's materials |
+| `th::material` | LOP | One MaterialX material bound to the input's prims, written under `<geo>/mtl/`; stacks |
 | `th::cop_material_library` | LOP | Material library built from `cop_material` nodes |
 | `th::lookdev_studio` | LOP | Turntable stage for look development |
 | `th::mesh_outline` | LOP | Paint an outline stroke around prims |

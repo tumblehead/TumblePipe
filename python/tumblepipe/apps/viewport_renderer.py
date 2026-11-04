@@ -37,11 +37,17 @@ def viewport_args() -> list[str]:
 
 def viewport_env(env: dict, pipeline_path: Path, houdini_major: int,
                  shading: str = 'lit', blur: tuple[bool, bool, int] = (False, False, 16),
-                 fps: int = 24) -> dict:
+                 fps: int = 24, alpha: bool = False) -> dict:
     """``env`` with the viewport delegate registered for USD, ahead of the
     resolver, and told how to shade (``specs.playblast.PLAYBLAST_SHADINGS``)
     and blur (``specs.playblast.look_blur``: motion blur, depth of field,
-    blur samples) at the shot's ``fps``. The delegate reads these TH_PLAYBLAST_*
+    blur samples) at the shot's ``fps``, and whether to leave the background
+    transparent (``alpha``): no grey backdrop, the colour premultiplied by
+    coverage and alpha the coverage. husk writes that to an EXR as it is,
+    premultiplied linear; to a PNG as straight alpha in display space (the
+    sRGB-encoded colour divided by alpha, clamped to 1), for an "over" in
+    display space (docs/development.md, "hdThPlayblast: transparent
+    background"). The delegate reads these TH_PLAYBLAST_*
     variables only where the stage's render settings say nothing; the farm
     playblast's settings prim (render_settings.
     generate_playblast_settings_section) says nothing, so the dialog's look
@@ -63,4 +69,5 @@ def viewport_env(env: dict, pipeline_path: Path, houdini_major: int,
         'TH_PLAYBLAST_DOF': '1' if dof else '0',
         'TH_PLAYBLAST_BLUR_SAMPLES': str(blur_samples),
         'TH_PLAYBLAST_FPS': str(fps),
+        'TH_PLAYBLAST_ALPHA': '1' if alpha else '0',
     }

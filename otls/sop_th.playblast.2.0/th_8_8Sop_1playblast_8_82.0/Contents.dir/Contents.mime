@@ -20,9 +20,9 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position -0.723132 0.0819948
+position 0 0
 connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault off exposed on
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on
 outputsNamed3
 {
 }
@@ -2059,11 +2059,12 @@ Content-Type: text/plain
 
 sopflags sopflags = 
 comment ""
-position 2.03327 4.35312
-connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+position -1.1296 1.4307
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
 {
+0 "output1"
 }
 inputsNamed3
 {
@@ -2123,6 +2124,181 @@ Content-Type: text/plain
 		"value":"___EXTERNAL___"
 	}
 }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/invoke.init"
+Content-Type: text/plain
+
+type = apex::sceneinvoke::2.0
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/invoke.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 1.1296 0.9789
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	from_scene 0 1 "input1"
+}
+inputs
+{
+0 	from_scene 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/invoke.chn"
+Content-Type: text/plain
+
+{
+    channel frame {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FF }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/invoke.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+outputmode	[ 0	locks=0 ]	(	"packedfolders"	)
+addpathattrib	[ 0	locks=0 ]	(	"off"	)
+pathattrib	[ 0	locks=0 ]	(	path	)
+folder_animation	[ 0	locks=0 ]	(	1	)
+enableanimation	[ 0	locks=0 ]	(	"on"	)
+animationclip	[ 0	locks=0 ]	(	""	)
+frame	[ 0	locks=0 ]	(	[ frame	0 ] 	)
+folder_charactershapes	[ 0	locks=0 ]	(	1	)
+outputcharactershapes	[ 0	locks=0 ]	(	"on"	)
+characterpattern	[ 0	locks=0 ]	(	*	)
+shapepattern	[ 0	locks=0 ]	(	Base	)
+includeinvisiblechars	[ 0	locks=0 ]	(	"off"	)
+folder_extraoutputs	[ 0	locks=0 ]	(	0	)
+extraoutputs	[ 0	locks=0 ]	(	1	)
+enableoutput0	[ 0	locks=0 ]	(	"on"	)
+outputpath0	[ 0	locks=0 ]	(	""	)
+outputkey0	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/invoke.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/scene.init"
+Content-Type: text/plain
+
+type = switch
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/scene.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment "1: the input is an APEX scene (a Scene Animate), invoked here; 0: geometry, as it is."
+position 0 5.55112e-17
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+}
+inputsNamed3
+{
+0 	from_scene 0 1 "input1"
+1 	invoke 1 1 "input2"
+}
+inputs
+{
+0 	from_scene 0 1
+1 	invoke 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 1 0.7 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/scene.chn"
+Content-Type: text/plain
+
+{
+    channel input {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_invoke
+return int(animate_invoke.is_scene(hou.pwd().node('../from_scene').geometry()))" language = python }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/scene.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+input	[ 0	locks=0 ]	(	[ input	0 ] 	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene/scene.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/objects/from_scene.order"
+Content-Type: text/plain
+
+3
+from_scene
+invoke
+scene
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/objects/from_scene.net"

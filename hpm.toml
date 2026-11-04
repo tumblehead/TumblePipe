@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.91.0"
+version = "1.92.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -74,7 +74,7 @@ HOUDINI_DSO_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/dso/$HOUDINI
 # are TumbleTrove's SDK; the network menus are Radial's. TumblePipe calls both
 # directly, so it requires the versions whose API it is written against.
 [dependencies]
-"tumbletrove/tumbletrove" = ">=0.48"
+"tumbletrove/tumbletrove" = ">=0.53"
 "tumbletrove/radial" = ">=0.8"
 
 [python_dependencies]
