@@ -35,6 +35,7 @@ from tumblepipe.farm.pipelines import build as build_pipeline
 from tumblepipe.farm.pipelines import render as render_pipeline
 from tumblepipe.farm.pipelines import playblast as playblast_pipeline
 from tumblepipe.farm.pipelines import preview
+from tumblepipe.pipe import render_layers
 from tumblepipe.farm.pipelines import publish as publish_pipeline
 from tumblepipe.farm.pipelines._batch import batch_title
 
@@ -425,7 +426,11 @@ def submit_entity_batch(config: dict) -> list[str]:
         )
         preview_deps = [last_publish_job_name] if last_publish_job_name else []
         if preview_after_publish:
-            build_channels = list(channels) if do_render else []
+            # A pass-only render layer renders the default stage
+            # (pipe.render_layers), so it is the default channel that builds.
+            build_channels = (
+                render_layers.stage_channels(entity_uri, channels) if do_render else []
+            )
             if do_playblast and DEFAULT_CHANNEL not in build_channels:
                 build_channels.append(DEFAULT_CHANNEL)
             build_names = []

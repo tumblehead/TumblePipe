@@ -37,6 +37,9 @@ from tumblepipe.config.department import list_departments, department_names_up_t
 from tumblepipe.config.timeline import get_fps, get_frame_range
 from tumblepipe.farm.specs.playblast import DEFAULT_LOOK
 from tumblepipe.pipe.paths import latest_export_path, get_latest_staged_file_path
+from tumblepipe.config.channels import list_channel_layers
+from tumblepipe.pipe import render_layers
+from tumblepipe.pipe.render_layers import RenderPassError
 from tumblepipe.pipe.usd.collapse import (
     LayerCollectionError,
     collapse_latest_references,
@@ -84,7 +87,9 @@ def aov_names(entity_uri: Uri, channels: list[str]) -> list[str]:
     """
     aov_set = set()
     departments = [d.name for d in list_departments(entity_context(entity_uri))]
-    for channel in channels:
+    # A pass-only render layer renders the default stage, so its AOVs are
+    # the default exports'.
+    for channel in render_layers.stage_channels(entity_uri, channels):
         for department in departments:
             export_path = latest_export_path(entity_uri, channel, department)
             if export_path is None:
@@ -144,15 +149,20 @@ def collapse_render_inputs(
     baked onto the stage's own render-settings prim.
     """
     cut, pool = department_cut(entity_context(entity_uri), department)
+    # Render layers: every collapsed stage carries a RenderPass per layer,
+    # and a pass-only layer (never exported) renders the default stage.
+    layers = list_channel_layers(entity_uri)
+    layer_names = [name for name, _ in layers]
     input_paths = {}
     for channel_name in channels:
-        staged_path = get_latest_staged_file_path(entity_uri, channel_name)
+        source_channel = render_layers.stage_channel(entity_uri, channel_name, layer_names)
+        staged_path = get_latest_staged_file_path(entity_uri, source_channel)
         if staged_path is None or not staged_path.exists():
             raise PreviewError(
                 f"No staged file found for {entity_uri} channel "
-                f"'{channel_name}'. Expected staged files at: "
+                f"'{source_channel}'. Expected staged files at: "
                 f"export:/{'/'.join(entity_uri.segments)}/_staged/"
-                f"{channel_name}/. Publish the entity first to create "
+                f"{source_channel}/. Publish the entity first to create "
                 "staged files."
             )
         # Drop the department layers past the cut. The staged build composes
@@ -163,7 +173,12 @@ def collapse_render_inputs(
         try:
             content = collapse_latest_references(
                 staged_path, overrides, excluded_refs=excluded,
+                render_layers=layers,
             )
+        except RenderPassError as error:
+            raise PreviewError(
+                f"Cannot make the render layers of {entity_uri}: {error}"
+            ) from error
         except LayerCollectionError as error:
             # A layer the build records but that is missing from disk: a
             # render around it would have that department silently absent.

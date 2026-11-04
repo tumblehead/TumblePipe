@@ -281,12 +281,12 @@ class Playblast(FrameRangeNode, EntityNode):
             return
         from pxr import Sdf, Usd
         from tumblepipe.pipe.usd import layer_split
+        from tumblepipe.pipe.usd.render_passes import expand_pattern
         stage = Usd.Stage.Open(path_str(cache_path))
+        # The same match the farm render's passes make (render_passes), so a
+        # layered playblast and the render agree on what each layer holds.
         matched = {
-            name: {
-                Sdf.Path(path) for path in
-                hou.LopSelectionRule(pattern).expandedPaths(stage = stage)
-            }
+            name: expand_pattern(stage, pattern)
             for name, pattern in layers if pattern is not None
         }
         camera = {Sdf.Path(camera_path)}

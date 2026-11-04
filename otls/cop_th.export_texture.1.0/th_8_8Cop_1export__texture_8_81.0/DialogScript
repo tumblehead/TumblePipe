@@ -1,0 +1,110 @@
+# Dialog script for th::export_texture::1.0 automatically generated
+
+{
+    name	th::export_texture::1.0
+    script	th::export_texture::1.0
+    label	"th export texture"
+
+    input	input1	basecolor
+    input	input2	roughness
+    input	input3	metalness
+    input	input4	normal
+    input	input5	height
+    input	input6	ao
+    input	input7	opacity
+    output	output1	basecolor
+    signature	default	Default	{ RGB Mono Mono RGB Mono Mono Mono }	{ RGB }
+
+    help {
+    }
+
+    parm {
+        name    "owner"
+        label   "Owner"
+        type    string
+        default { "asset" }
+        help    "Publish into an asset's texture sets, or the project library."
+        menu {
+            "asset"     "Asset"
+            "library"   "Project library"
+        }
+    }
+    parm {
+        name    "entity"
+        label   "Entity"
+        type    string
+        invisible
+        default { "from_context" }
+        parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.export_texture as th_node; th_node.on_entity_changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "select"
+        label   "Entity"
+        type    button
+        joinnext
+        default { "0" }
+        help    "Pick the asset to publish into."
+        hidewhen "{ owner == library }"
+        parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.export_texture as th_node; th_node.select(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "entity_label"
+        label   "entity_label"
+        type    label
+        nolabel
+        default { "from_context: none" }
+        hidewhen "{ owner == library }"
+    }
+    parm {
+        name    "set"
+        label   "Texture Set"
+        type    string
+        default { "" }
+        help    "The set to publish a new version of (letters and digits)."
+    }
+    parm {
+        name    "format"
+        label   "Format"
+        type    string
+        default { "exr" }
+        help    "File format every map is written in."
+        menu {
+            "exr"   "OpenEXR"
+            "png"   "PNG"
+            "tif"   "TIFF"
+            "jpg"   "JPEG"
+        }
+    }
+    parm {
+        name    "status"
+        label   "Status"
+        type    string
+        default { [ "hou.phm().status(hou.pwd())" python ] }
+        disablewhen "{ 1 == 1 }"
+    }
+    parm {
+        name    "publish"
+        label   "Publish"
+        type    button
+        default { "0" }
+        help    "Write the connected inputs and publish them as the next version."
+        parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.export_texture as th_node; th_node.publish(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "staging"
+        label   "staging"
+        type    string
+        invisible
+        default { "" }
+    }
+    parm {
+        name    "diffuse_space"
+        label   "diffuse_space"
+        type    string
+        invisible
+        default { "" }
+    }
+}

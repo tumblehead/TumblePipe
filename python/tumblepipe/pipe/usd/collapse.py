@@ -345,7 +345,8 @@ def collapse_latest_references(
     render_overrides: dict | None = None,
     excluded_refs: set[str] | None = None,
     playblast: bool = False,
-    playblast_light: str = 'dome'
+    playblast_light: str = 'dome',
+    render_layers: list[tuple[str, str | None]] | None = None,
 ) -> str:
     """
     Create a fully baked USDA with all sublayers resolved to filesystem paths.
@@ -374,6 +375,13 @@ def collapse_latest_references(
         playblast_light: How the playblast is lit (``PLAYBLAST_LIGHTS``);
                    ``'dome'`` switches the scene's lights off and adds a
                    dome light (apply_playblast_dome). Ignored for a render.
+        render_layers: The entity's render layers (``channel_layers``),
+                   bottom to top. Each becomes a RenderPass at
+                   ``/Render/Passes/<channel>`` that holds out the layers
+                   above and hides the layers below from camera
+                   (``render_passes``); husk renders one with ``--pass``.
+                   Expanded on the collapsed stage itself, so instance
+                   copies match a layer's pattern too.
 
     Returns:
         USDA file content as string with all leaf layers as absolute paths,
@@ -473,6 +481,12 @@ def collapse_latest_references(
     if render_overrides:
         usda_content = usda_content + '\n' + generate_render_overrides_section(
             render_overrides, settings_prim_path
+        )
+
+    if render_layers and not playblast:
+        from tumblepipe.pipe.usd.render_passes import apply_render_layers_to_usda
+        usda_content = apply_render_layers_to_usda(
+            usda_content, render_layers, settings_prim_path
         )
 
     return usda_content

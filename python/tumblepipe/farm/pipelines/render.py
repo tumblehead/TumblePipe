@@ -19,6 +19,7 @@ from tumblepipe.farm.jobs import denoise as denoise_job
 from tumblepipe.farm.jobs import render as render_job
 from tumblepipe.farm.pipelines import post_render
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
+from tumblepipe.pipe import render_layers
 from tumblepipe.pipe.paths import (
     get_aov_frame_path,
     get_frame_path,
@@ -102,7 +103,10 @@ def _render_job(
     receipt_path = _receipt_path(shot, render_department, channel, version_name)
     version_name = receipt_path.parent.name
     partial = task_key == 'partial_render'
-    job = render_job.build(dict(
+    # A render layer renders its own RenderPass, which the collapse authored
+    # from the same channel_prims (pipe.render_layers).
+    render_pass = render_layers.render_pass(shot.entity_uri, channel)
+    job_config = dict(
         title = f"{'partial' if partial else 'full'} render {channel} {version_name}",
         priority = config['tasks'][task_key]['priority'],
         pool_name = shot.pool_name,
@@ -120,7 +124,10 @@ def _render_job(
                 shot, render_department, channel, version_name, aov_names
             ).items()
         }
-    ), paths, shot.staging_path)
+    )
+    if render_pass is not None:
+        job_config['render_pass'] = render_pass
+    job = render_job.build(job_config, paths, shot.staging_path)
     post_render.write_framestack_context(
         shot, receipt_path, render_department, channel, version_name
     )

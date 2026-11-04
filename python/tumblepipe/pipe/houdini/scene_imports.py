@@ -96,6 +96,9 @@ NOT_UPSTREAM_IMPORTS = frozenset({
     # forced to the newest on a farm publish: a copy of layout's keys
     # changes only when the animator moves a row to a newer layout.
     "sop_th.layout_keys",
+    # A texture import pins its set version; the node shows an update note
+    # and the artist moves it with Update, never a scene refresh.
+    "lop_th.import_texture",
 })
 
 

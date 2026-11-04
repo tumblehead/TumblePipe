@@ -47,6 +47,7 @@ from tumblepipe.config.department import (
 )
 from tumblepipe.config.channels import DEFAULT_CHANNEL
 from tumblepipe.pipe.paths import latest_export_path
+from tumblepipe.pipe import render_layers
 from tumblepipe.pipe.houdini import prim_queries
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import (
@@ -160,7 +161,9 @@ def build_render_stage_graph(
     shot_node.set_entity_uri(shot_uri)
     shot_node.set_department_name(import_shot.NO_DEPARTMENT)
     shot_node.set_exclude_downstream_of(render_department_name)
-    shot_node.set_channel_name(channel_name)
+    # A pass-only render layer renders the default staged build; its
+    # RenderPass picks the layer out (pipe.render_layers).
+    shot_node.set_channel_name(render_layers.stage_channel(shot_uri, channel_name))
     shot_node.set_version_name('current')
     shot_node.execute()
     prev_node = shot_node.native()

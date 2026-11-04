@@ -189,8 +189,9 @@ would soften their edges.
 
 A render layer is a **channel** of the shot, not a node: add the channel to
 the shot (the entity's `channels` property, via `config/channels.py` or the
-Asset Browser), then in the render workfile branch the shot's chain once per
-channel and end each branch in its own
+Asset Browser). Then either name its prims in `channel_prims` and let the
+farm render it as a render pass (below), or in the render workfile branch
+the shot's chain once per channel and end each branch in its own
 [`th::export_layer`](import-and-export.md#thexport_layer-lop) with **Channel**
 set to that channel. Downstream, `th::import_layer` / `th::import_shot` with the
 same Channel load it, and the farm renders one job per checked channel. What a
@@ -203,8 +204,53 @@ and the last on top. Add `background` before `characters`
 before an overlay such as `feathers` (see
 [the slapcomp](../compositing.md#farm-submission-and-mp4s)).
 
-What makes the layers differ is ordinary Solaris, placed in the branch before
-its export — typically a **Render Geometry Settings** LOP per layer:
+### Render layers from `channel_prims` (render passes)
+
+The quickest way to split a shot needs no branch and no extra exports:
+add the channel, then name its prims in the shot's `channel_prims` property
+(see [Configuration](../configuration.md), the same map the
+[layered playblasts](#layered-playblasts) read):
+
+```json
+"channels": ["default", "characters"],
+"channel_prims": {"characters": "/CHAR/*"}
+```
+
+Every farm render of the shot then carries one USD **render pass** per layer
+(`/Render/Passes/<channel>`, what Houdini's Render Pass LOP authors), and each
+channel's render job renders its own pass with `husk --pass`. Each pass:
+
+- **holds out the layers above it** (the pass's `matte` collection): they cut
+  a transparent hole in the layer and still cast their shadows onto it, so
+  the background comes out with the characters' shadows and holes for them;
+- **hides the layers below it from camera** (`cameraVisibility`): unseen, but
+  still shadowing and reflecting into the layer;
+- keeps its own prims visible and never held out, even where patterns
+  overlap.
+
+`default` without a pattern takes every prim no other layer names. If
+`default` has a pattern too, prims no layer names are hidden from camera
+in every layer (as in a layered playblast), still casting shadows. The
+slapcomp stacks the layers "over" in channel order and gives back the full
+frame. Comp with the beauty's alpha: Karma's holdouts leave utility AOVs
+(`normal`, depth, positions) untouched, so those still show a held-out
+prim (see [Alpha lives in the beauty](../compositing.md#alpha-lives-in-the-beauty)).
+
+A channel no department ever exported is a **pass-only** layer: it renders
+the `default` channel's stage and its pass picks the layer out. A channel
+that *was* exported (a branch, as below) keeps rendering its own stage, with
+its pass on top. Outside Houdini (the submit runner, plain-Python farm
+tasks) a pattern is matched as a path glob (`/CHAR/*`, `/SET/**`, `^`
+to exclude); Houdini-only syntax such as `%type:Mesh` is refused there, so
+keep `channel_prims` to paths and globs.
+
+### Render layers from branches
+
+When a layer needs different *content*, not just different visibility (its
+own lights, a different look), branch the render workfile per channel as
+above. What makes the layers differ is ordinary Solaris, placed in the
+branch before its export. Holdouts can come from `channel_prims` (above), or
+by hand with a **Render Geometry Settings** LOP per layer:
 
 - **background**: the characters (`/CHAR/*`) *Invisible to primary rays*, so
   they still shadow and reflect into the set;

@@ -16,14 +16,16 @@ config = {
     'output_paths': {
         'beauty': 'path/to/beauty.####.exr',
         'depth': 'path/to/depth.####.exr'
-    }
+    },
+    'render_pass': '/Render/Passes/characters'  # optional: husk --pass
 }
 
 context = {     # what the worker reads; Deadline appends the frame span
     'tile_count': 4,
     'receipt_path': ...,
     'input_path': ...,
-    'output_paths': {...}
+    'output_paths': {...},
+    'render_pass': ...      # optional
 }
 """
 
@@ -48,6 +50,7 @@ def is_valid_context(config) -> bool:
     # An empty map validated, and the worker then rendered, wrote receipts
     # holding {} and exited 0 having published no image at all.
     if len(config['output_paths']) == 0: return False
+    if 'render_pass' in config and not check_str(config, 'render_pass'): return False
     return True
 
 

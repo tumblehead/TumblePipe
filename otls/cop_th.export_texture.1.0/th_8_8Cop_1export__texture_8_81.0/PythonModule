@@ -1,0 +1,3 @@
+# The Status parm's expression reaches the HDA module; every callback
+# calls tumblepipe.pipe.houdini.cops.export_texture directly.
+from tumblepipe.pipe.houdini.cops.export_texture import status  # noqa: F401

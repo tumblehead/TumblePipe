@@ -27,6 +27,7 @@ the other installed packages' documentation. The same pages are online at
   - [Playing shots](asset-browser/play-shots.md) — the selected shots' playblasts and renders back to back in the sequence player
   - [Multis and Roots](asset-browser/multis-and-roots.md) — shared multi-shot workfiles and config-driven scenes
   - [Recipes](asset-browser/recipes.md) — node clusters saved into the project and dropped back into any scene
+  - [Texture sets](asset-browser/textures.md) — versioned textures published from Copernicus or the library, with their colour spaces, dropped into materials
   - [Pipeline settings and files](asset-browser/settings.md) — every option, and every file TumblePipe writes
   - [The Entity Editor](asset-browser/entity-editor.md) — every asset and shot as spreadsheets: add shots, assets, sequences and categories, retime, choose a shot's assets, set up Multis, rename, retire
   - [The config database editor](asset-browser/config-editor.md) — editing entities, schemas and departments

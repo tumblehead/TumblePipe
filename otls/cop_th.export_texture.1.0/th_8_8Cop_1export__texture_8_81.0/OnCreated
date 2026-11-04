@@ -1,0 +1,3 @@
+import tumblepipe.pipe.houdini.cops.export_texture as th_node
+
+th_node.on_created(kwargs['node'])

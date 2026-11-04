@@ -265,8 +265,10 @@ Python module. A shot's render layers are its **channels**, stored in the
 There is no separate `render_layers` property; that name is retired.) How a render workfile produces each layer is in
 [Render layers (channels)](nodes/lighting-and-rendering.md#render-layers-channels).
 An optional `channel_prims` property maps a channel to the prims that make
-up its layer in a *playblast*, e.g. `{"characters": "/CHAR/*"}` (a Houdini
-prim pattern). It is inherited like any property and merged key by key: a
+up its render layer, e.g. `{"characters": "/CHAR/*"}` (a prim path or glob).
+Farm renders turn each layer into a USD render pass with holdouts
+([Render layers from `channel_prims`](nodes/lighting-and-rendering.md#render-layers-from-channel_prims-render-passes)),
+and layered playblasts split by it. It is inherited like any property and merged key by key: a
 pattern set on the project (or a sequence) holds for every shot under it,
 a shot sets or replaces patterns channel by channel, and a pattern of `""`
 drops that channel's layer on the shot. No migration adds it; add it with

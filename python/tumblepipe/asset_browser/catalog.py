@@ -52,6 +52,7 @@ from tumblepipe.pipe.houdini.ui.report import (
 from . import containers as containers
 from . import nodes as nodes
 from . import recipes as recipes
+from . import texture_sets as texture_sets
 from .clients import ClientPool
 from .container_menu import ContainerMenu
 from .containers import ContainerManager
@@ -130,7 +131,7 @@ class PipelineCatalog(Catalog):
         — favourites are stored under this one catalog id across every
         project, so without this a star set in one project would surface
         in another. Pure string split (no client build)."""
-        ref = recipes.parse_id(asset_id)
+        ref = recipes.parse_id(asset_id) or texture_sets.parse_id(asset_id)
         if ref is not None:
             return ref.project
         if nodes.is_node_id(asset_id):
@@ -224,6 +225,11 @@ class PipelineCatalog(Catalog):
             self.id, registry=self._registry, refresh=self._refresh,
         )
         self._nodes = PipelineNodes(self.id) if nodes is None else nodes
+        # Published texture sets under each project's export folder
+        # (see texture_sets.py).
+        self._textures = texture_sets.TextureSetManager(
+            self.id, export_roots=self._texture_export_roots,
+        )
         self._thumbnails = ThumbnailManager(
             entity_dir=self._resolver.entity_dir, refresh=self._refresh,
         )
@@ -314,7 +320,7 @@ class PipelineCatalog(Catalog):
         node_contexts = {f.context for f in self._nodes.families()}
         return {
             "source": ["pipeline"],
-            "type": ["asset", "shot", "recipe", "node"],
+            "type": ["asset", "shot", "recipe", "node", "texture"],
             "category": list(cats),
             "sequence": seqs,
             "context": sorted(set(self._recipes.contexts()) | node_contexts),
@@ -365,8 +371,10 @@ class PipelineCatalog(Catalog):
         # and the All view list them beside the entities; the
         # ``type:recipe`` / ``context:`` atoms narrow to them like any
         # other row. What their scan could not read is shown beside them.
-        all_items = self._index.items(errors) + self._recipes.cards()
+        all_items = (self._index.items(errors) + self._recipes.cards()
+                     + self._textures.cards())
         errors.extend(self._recipes.errors)
+        errors.extend(self._textures.errors)
 
         # Handle group/scene tags (special filtering). Filter failures
         # are surfaced via AssetPage.errors rather than silently
@@ -445,6 +453,8 @@ class PipelineCatalog(Catalog):
             return self._containers.card(asset_id)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.get_asset(asset_id)
+        if texture_sets.is_texture_id(asset_id):
+            return self._textures.get_asset(asset_id)
         if nodes.is_node_id(asset_id):
             return self._nodes.get_asset(asset_id)
         return self._index.card(asset_id)
@@ -456,6 +466,8 @@ class PipelineCatalog(Catalog):
             return self._containers.detail(asset_id)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.get_detail(asset_id)
+        if texture_sets.is_texture_id(asset_id):
+            return self._textures.get_detail(asset_id)
         if nodes.is_node_id(asset_id):
             return self._nodes.get_detail(asset_id, version)
         return self._index.detail(asset_id, self._ops.read_description(asset_id))
@@ -468,7 +480,7 @@ class PipelineCatalog(Catalog):
         # Departments tab where the user can toggle which depts the
         # group covers; scenes don't (no editable depts field).
         kind = detail.kind
-        if kind in ("recipe", nodes.KIND):
+        if kind in ("recipe", nodes.KIND, "texture"):
             # The framework's own tags / description sections say it all
             # — a recipe or node has no departments, todos or entity URI.
             return None
@@ -531,12 +543,15 @@ class PipelineCatalog(Catalog):
     def get_thumbnail(self, asset: Asset):
         if recipes.is_recipe_id(asset.id):
             return self._recipes.get_thumbnail(asset)
+        if texture_sets.is_texture_id(asset.id):
+            return self._textures.get_thumbnail(asset)
         if nodes.is_node_id(asset.id):
             return self._nodes.get_thumbnail(asset)
         return self._thumbnails.get_thumbnail(asset)
 
     def get_asset_hover_widget(self, asset):
-        if recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id):
+        if (recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id)
+                or texture_sets.is_texture_id(asset.id)):
             # The framework's generic hover: a recipe's or node's facts are
             # the card's own tags and metadata.
             return None
@@ -550,7 +565,12 @@ class PipelineCatalog(Catalog):
         or shot's entity folder (where its ``description.txt`` and
         ``thumbnail.png`` live). Nodes and Multis have none; a recipe has
         its own Open Recipe Folder entry already."""
+        entry = (self._textures.find(asset.id)
+                 if texture_sets.is_texture_id(asset.id) else None)
+        if entry is not None:
+            return entry.set_dir
         if (recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id)
+                or texture_sets.is_texture_id(asset.id)
                 or asset.id.startswith("group:")):
             return None
         # A raise is logged by the browser, which then leaves the entry out.
@@ -564,6 +584,8 @@ class PipelineCatalog(Catalog):
             items = self._recipes.card_menu_items(asset)
         elif nodes.is_node_id(asset.id):
             items = self._nodes.card_menu_items(asset)
+        elif texture_sets.is_texture_id(asset.id):
+            items = []
         else:
             items = self._menus.card_items(asset, selected_assets=selected_assets)
         return reporting_menu(items)
@@ -614,7 +636,8 @@ class PipelineCatalog(Catalog):
     # ── Deck items (departments) ──────────────────────────
 
     def get_deck_items(self, asset: Asset) -> list[DeckItem]:
-        if recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id):
+        if (recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id)
+                or texture_sets.is_texture_id(asset.id)):
             return []
         return self._deck.items(asset)
 
@@ -687,9 +710,24 @@ class PipelineCatalog(Catalog):
             return self._recipes.get_ghost_data(asset.id)
         if nodes.is_node_id(asset.id):
             return self._nodes.get_ghost_data(asset.id)
+        if texture_sets.is_texture_id(asset.id):
+            return GhostData(nodes=[GhostNode("th::import_texture::1.0", 0.0, 0.0)])
         if "type:shot" in asset.tags:
             return GhostData(nodes=[GhostNode("th::import_shot::1.0", 0.0, 0.0)])
         return GhostData(nodes=[GhostNode("th::import_asset::1.0", 0.0, 0.0)])
+
+    def _texture_export_roots(self) -> dict:
+        """Each ready project's export folder, for the texture set
+        scan (worker thread; a project not ready yet is skipped)."""
+        from tumblepipe.util.uri import Uri
+        roots = {}
+        for name, client in self._clients.ready.items():
+            try:
+                roots[name] = Path(client.storage.resolve(Uri.parse("export:/")))
+            except Exception:  # noqa: BLE001 - one project must not hide the rest
+                log.exception("no export folder for %s", name)
+                roots[name] = None
+        return roots
 
     def texture_destinations(self) -> list:
         """Offer the open asset workfile's ``textures`` folder for any
@@ -702,6 +740,8 @@ class PipelineCatalog(Catalog):
             return self._recipes.on_drop(detail, drop)
         if nodes.is_node_id(detail.id):
             return self._nodes.on_drop(detail, drop)
+        if texture_sets.is_texture_id(detail.id):
+            return self._textures.on_drop(detail, drop)
         return self._drops.on_drop(detail, drop)
 
     def on_deck_drop(self, asset, deck_keys, drop) -> bool:
@@ -711,7 +751,8 @@ class PipelineCatalog(Catalog):
         # A selection holding a recipe falls back to one on_drop per
         # card: the router bundles assets into an import_assets node
         # and would silently leave the recipe behind.
-        if any(recipes.is_recipe_id(a.id) for a in assets):
+        if any(recipes.is_recipe_id(a.id) or texture_sets.is_texture_id(a.id)
+               for a in assets):
             return False
         # Node cards create one node each. Mixed with entities the nodes
         # decline, and each card falls back to its own on_drop, for the
@@ -925,7 +966,7 @@ class PipelineCatalog(Catalog):
             return self._containers.edit_fields(asset_id)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.get_edit_fields(asset_id)
-        if nodes.is_node_id(asset_id):
+        if nodes.is_node_id(asset_id) or texture_sets.is_texture_id(asset_id):
             return []
         return self._ops.edit_fields(asset_id)
 
@@ -934,7 +975,7 @@ class PipelineCatalog(Catalog):
             return self._containers.edit(asset_id, fields)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.edit(asset_id, fields)
-        if nodes.is_node_id(asset_id):
+        if nodes.is_node_id(asset_id) or texture_sets.is_texture_id(asset_id):
             return False
         return self._ops.edit(asset_id, fields)
 
@@ -943,6 +984,7 @@ class PipelineCatalog(Catalog):
         a container card, whose menu has its own Delete."""
         return not (
             nodes.is_node_id(asset.id)
+            or texture_sets.is_texture_id(asset.id)
             or containers.parse(asset.id) is not None
         )
 
@@ -951,7 +993,7 @@ class PipelineCatalog(Catalog):
             return self._containers.delete(asset_id)
         if recipes.is_recipe_id(asset_id):
             return self._recipes.delete(asset_id)
-        if nodes.is_node_id(asset_id):
+        if nodes.is_node_id(asset_id) or texture_sets.is_texture_id(asset_id):
             return False
         return self._ops.delete(asset_id)
 
@@ -1003,7 +1045,8 @@ class PipelineCatalog(Catalog):
     def get_asset_membership(
         self, asset_id: str,
     ) -> list[tuple[str, str, str]]:
-        if recipes.is_recipe_id(asset_id) or nodes.is_node_id(asset_id):
+        if (recipes.is_recipe_id(asset_id) or nodes.is_node_id(asset_id)
+                or texture_sets.is_texture_id(asset_id)):
             return []
         return self._containers.get_asset_membership(asset_id)
 
@@ -1016,6 +1059,8 @@ class PipelineCatalog(Catalog):
             return self._recipes.get_actions(detail)
         if nodes.is_node_id(detail.id):
             return self._nodes.get_actions(detail)
+        if texture_sets.is_texture_id(detail.id):
+            return []
 
         # A Multi / Root has no export folder and no entity row in the
         # database editor, so those two actions could only fail on it —
@@ -1076,6 +1121,8 @@ class PipelineCatalog(Catalog):
             return
         if detail and nodes.is_node_id(detail.id):
             self._nodes.execute_action(action_id, detail)
+            return
+        if detail and texture_sets.is_texture_id(detail.id):
             return
 
         if action_id == "open_export":
@@ -1181,6 +1228,7 @@ class PipelineCatalog(Catalog):
         """
         self._index.invalidate()
         self._recipes.invalidate()
+        self._textures.invalidate()
         self._nodes.invalidate()
         self._containers.invalidate_membership_cache()
 

@@ -595,6 +595,51 @@ Gotcha: after a node that modified several prims (a merge), every one of
 them is bound, to one material under the first one's `mtl/`. Set Material
 Path to keep it elsewhere.
 
+## `th::import_texture` (LOP)
+
+References a published [texture set](../asset-browser/textures.md)
+version's MaterialX material onto the stage. `_TumblePipe/lookdev`. Dropping
+a texture set card into LOPs makes one. Bind it with
+[`th::material_assigner`](#thmaterial_assigner-lop) or an Assign Material.
+Source: [`otls/lop_th.import_texture.1.0`](../../otls/lop_th.import_texture.1.0/th_8_8Lop_1import__texture_8_81.0/DialogScript),
+[`import_texture.py`](../../python/tumblepipe/pipe/houdini/lops/import_texture.py).
+
+| Label | Default | What it does |
+|---|---|---|
+| Owner | Asset | Whose sets to list: an asset's, or the project library's |
+| Entity | `from_context` | The asset, when Owner is Asset |
+| Texture Set | *(empty)* | The set to read, from the published sets |
+| Version | the newest, when the set is picked | The pinned version. A newer publish changes nothing until **Update** |
+| Status | | The pinned version, and whether a newer one is published |
+| Material Path | `` `lopinputprim(".", 0)`/mtl/`chs("set")` `` | Where the material is referenced: `mtl/<set>` under the input's first prim, as `th::material` puts materials |
+
+The reference reads the version's layer as `$TH_EXPORT_PATH/...`, so the scene
+follows the project.
+
+## `th::export_texture` (COP)
+
+Publishes Copernicus layers as the next version of a
+[texture set](../asset-browser/textures.md): the images, a MaterialX material
+reading them, and `context.json`. `_TumblePipe/lookdev`. It has one input per
+map: **basecolor**, **roughness**, **metalness**, **normal**, **height**, **ao**
+and **opacity**. Only connected inputs are written. The base colour passes
+through, so the node can sit inline.
+Source: [`otls/cop_th.export_texture.1.0`](../../otls/cop_th.export_texture.1.0/th_8_8Cop_1export__texture_8_81.0/DialogScript),
+[`export_texture.py`](../../python/tumblepipe/pipe/houdini/cops/export_texture.py).
+
+| Label | Default | What it does |
+|---|---|---|
+| Owner | Asset | Publish into an asset's sets, or the project library |
+| Entity | `from_context` | The asset, when Owner is Asset |
+| Texture Set | *(empty)* | The set's name: letters and digits. A name that differs from an existing set only by case is refused |
+| Format | OpenEXR | The file format every map is written in (EXR, PNG, TIFF, JPEG) |
+| Status | | The newest published version and which inputs are connected |
+| Publish | | Write the connected inputs and publish them |
+
+The base colour is converted into the colour space it is tagged with (`sRGB -
+Texture`, or `ACEScg` for EXR). Every other map is written raw. Publishing runs
+in the session; there is no farm job for it yet.
+
 ## `th::rename_packed` (SOP)
 
 String-replace the path attributes inside an APEX character's packed

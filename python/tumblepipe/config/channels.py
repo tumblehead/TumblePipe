@@ -204,8 +204,12 @@ def remove_channel(entity_uri: Uri, channel_name: str) -> None:
 
 
 #: Entity property mapping a channel to the prims that make up its render
-#: layer in a playblast: ``{"characters": "/CHAR/*", "default": "/SET/* /PROP/*"}``.
-#: A Houdini prim pattern (``/CHAR/*``, ``/CHAR/Ryan /PROP/ball``, ``%type:Mesh``).
+#: layer: ``{"characters": "/CHAR/*", "default": "/SET/* /PROP/*"}``. Farm
+#: renders make a RenderPass of each layer (``pipe.usd.render_passes``) and
+#: layered playblasts split by it. Prim paths and globs (``/CHAR/*``,
+#: ``/CHAR/Ryan /PROP/ball``, ``/SET/**``, ``^`` to exclude): Houdini-only
+#: syntax such as ``%type:Mesh`` cannot be matched outside Houdini, where a
+#: render's collapse may run.
 #: Inherited like every entity property and deep-merged, so a project-level
 #: value is every shot's default and a shot overrides it channel by channel
 #: (``""`` drops a channel's layer: blank patterns are ignored). Set it in the Config Editor

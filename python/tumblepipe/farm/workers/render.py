@@ -33,7 +33,8 @@ def main(
     render_range: BlockRange,
     input_path: Path,
     receipt_path: Path,
-    output_paths: dict[str, Path]
+    output_paths: dict[str, Path],
+    render_pass: str | None = None
     ) -> int:
 
     # Check that OCIO has been set
@@ -89,11 +90,18 @@ def main(
             '--make-output-path',
             '--no-mplay',
             '--check-licenses', 'Karma Renderer',
+            # TumbleRig's Apex Procedural is a custom script: the default
+            # 'basic' refuses it, then still writes the frame and exits 0.
+            '--allowed-procedurals', 'all',
             '--threads', '-1',
             '--engine', 'xpu',
             '--frame', str(render_range.first_frame),
             '--frame-count', str(len(render_range))
         ]
+        # A render layer: the stage's RenderPass for it holds out the layers
+        # above and hides the layers below (pipe.usd.render_passes).
+        if render_pass is not None:
+            base_args += ['--pass', render_pass]
 
         # Render tiles
         if tile_count == 1:
@@ -263,7 +271,8 @@ def from_config(config: dict, render_range: BlockRange) -> int:
         {
             aov_name: Path(aov_path)
             for aov_name, aov_path in config['output_paths'].items()
-        }
+        },
+        config.get('render_pass')
     )
 
 if __name__ == '__main__':

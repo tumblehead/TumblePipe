@@ -188,7 +188,8 @@ def main(
                                blur, fps)
             renderer_args = viewport_args()
         else:
-            renderer_args = ['--check-licenses', 'Karma Renderer', *xpu_args(look)]
+            renderer_args = ['--check-licenses', 'Karma Renderer',
+                             '--allowed-procedurals', 'all', *xpu_args(look)]
         # husk can exit 0 having written nothing ("All AOVs bypassed"), and
         # non-zero having written part of the range: render_problem checks
         # both.

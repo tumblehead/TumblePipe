@@ -1,0 +1,15 @@
+{
+	"values":["22.0.429"
+	],
+	"indexes":{
+		"hdaroot/inputs.userdata":0,
+		"hdaroot/write_displacement.userdata":0,
+		"hdaroot/write_rough.userdata":0,
+		"hdaroot/write_metallic.userdata":0,
+		"hdaroot/write_opacity.userdata":0,
+		"hdaroot/write_ao.userdata":0,
+		"hdaroot/write_diffuse.userdata":0,
+		"hdaroot/outputs.userdata":0,
+		"hdaroot/write_normal.userdata":0
+	}
+}

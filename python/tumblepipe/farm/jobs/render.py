@@ -12,12 +12,15 @@ def build(config, paths, staging_path):
     assert render_spec.is_valid_config(config), (
         f'Invalid config: {json.dumps(config, indent=4)}'
     )
-    job = farm_job('render', dict(
+    context = dict(
         tile_count = config['tile_count'],
         receipt_path = config['receipt_path'],
         input_path = config['input_path'],
         output_paths = config['output_paths']
-    ), staging_path,
+    )
+    if 'render_pass' in config:
+        context['render_pass'] = config['render_pass']
+    job = farm_job('render', context, staging_path,
         name = config['title'],
         pool = config['pool_name'],
         group = 'karma',

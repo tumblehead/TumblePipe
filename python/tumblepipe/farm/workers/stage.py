@@ -56,7 +56,9 @@ def main(config: dict, _frame_span: BlockRange) -> int:
 
         # Create one output stage per channel. A single stage composing
         # every channel would render the last channel's opinions for all
-        # of them (husk has no channel selection).
+        # of them: a channel is different content, which husk cannot
+        # select. (What a render pass selects, visibility and holdouts,
+        # each stage carries for every render layer: stage_houdini.)
         export_path = temp_path / 'export'
         relative_export_path = export_path.relative_to(temp_path)
         stage_paths = {

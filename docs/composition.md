@@ -152,6 +152,11 @@ channel-exporting department plus root, and the farm rendered an empty
 (black) scene that the live session, which composes the full node
 graph rather than the staged file, never showed.
 
+A channel that only splits the picture (a render layer named in
+`channel_prims`, never exported) builds no staged stage of its own: its
+render reads the `default` build, and a render pass picks the layer out
+(`pipe.render_layers.stage_channel`).
+
 ### Which version is the latest
 
 A version folder is finished once its `context.json` is in, and every
@@ -708,6 +713,10 @@ bypassed: an import only clears a bypass it set on itself, which it marks with
 a *Bypassed: …* comment (`nodes.clear_auto_bypass`). Up to TumblePipe 1.71.1
 every reopen un-bypassed it, and its assets went out with the next export.
 
+`th::import_texture` is never refreshed: it keeps the texture set version
+it is pinned to, and its Status says when a newer one is published; its
+**Update** button moves it ([Texture sets](asset-browser/textures.md)).
+
 `tests/test_scene_imports.py` fails when a shipped HDA with a `version`
 parm has no refresh decision, and `scripts/verify_import_refresh.py`
 (hython) checks the whole path against real nodes.
@@ -820,6 +829,16 @@ so the render needs no resolver at all. The instance defs described under
 *Nested assets* are re-synthesized into this file's **root** layer, with
 each order read off the staged stage composed at submission time.
 
+For a shot with render layers (`channel_prims`), the root layer also gets
+one `RenderPass` per layer at `/Render/Passes/<channel>`
+(`pipe.usd.render_passes`), and each channel's render job runs
+`husk --pass` on its own. The passes are authored by composing the
+collapsed text with USD rather than appending to it (the overrides section
+already declares `over "Render"`), and the layers' patterns are matched on
+the collapsed stage, instance copies included. A pass-only layer, a
+channel no department exported, collapses the `default` staged build
+([Render layers from `channel_prims`](nodes/lighting-and-rendering.md#render-layers-from-channel_prims-render-passes)).
+
 Three things to know about it:
 
 - The flat stack preserves the nested staged files' relative strength, so
@@ -883,6 +902,10 @@ composes, weakest to strongest:
    `render_settings.json` — applied to the prim found as described under
    *Where the render settings live* below, not to a fixed path — then
    pruning of AOVs not selected for the render.
+
+A pass-only render layer imports the `default` staged build in step 1.
+After the export, the stage worker authors the render layers' passes into
+each exported stage's root layer, as the direct render does.
 
 Each channel gets its **own** graph and export — channels are
 alternative opinions on the same prims, so a single stage composing

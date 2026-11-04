@@ -12,6 +12,29 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.92.0 — 2026-11-04
+
+### Features
+- feat(playblast): Render Layers writes a movie per render layer (`d566b1ff`)
+- feat(player): stack a shot's render layers on the timeline (`391ea648`)
+- feat(delegate): transparent background for hdThPlayblast (TH_PLAYBLAST_ALPHA) (`8dc1ca74`)
+- feat(asset_browser): offer the open asset's textures folder as a drop destination (`0205c16f`)
+- feat(rig): publish a LOP rig (APEX characters on the stage) as the asset's rig (`54cfeab2`)
+- feat(farm): Farm Manager job details, task render times, this machine's load (`ba51d547`)
+- feat(animate): th::animate invokes the scene itself, per character (`ca40a15d`)
+
+### Fixes
+- fix(playblast): a render layer with nothing to draw makes no movie (`14bf6d2a`)
+- fix(material): th::material stacks; paths built from the first input prim (`cd2c5c5a`)
+- fix(farm): find Houdini installs on macOS and Linux for local jobs (`b9e7ab60`)
+
+### Documentation
+- docs(playblast): channel_prims merges per channel; point compositing at layered playblasts (`016fe88d`)
+- docs: regenerate CHANGELOG.md for v1.91.0 (`7a13280f`)
+
+### Tests
+- test(animation): a Multi member's playblast reads the dive's Scene Animate (`fb05e9e3`)
+
 ## v1.91.0 — 2026-11-03
 
 ### Features
