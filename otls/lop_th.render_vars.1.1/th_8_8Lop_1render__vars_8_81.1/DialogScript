@@ -18,63 +18,205 @@
         name    "beauty"
         label   "beauty"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         help    "The beauty, written RGBA: its alpha is the render's own coverage and honours holdouts (a separate alpha AOV from ray:hit would not)."
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "beauty_compression"
+        label   "beauty"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ beauty == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "beauty_mse"
-        label   "variance"
+        label   "beauty variance"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "beauty_mse_compression"
+        label   "beauty variance"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ beauty_mse == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "sample_count"
         label   "samples"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
     }
     parm {
-        name    "alpha"
-        label   "alpha (retired)"
-        type    toggle
-        invisible
-        default { "0" }
-        help    "Retired: the beauty is RGBA and carries the alpha (the separate alpha AOV ignored holdouts). Kept hidden so scenes and render templates that still set it load cleanly; it does nothing."
+        name    "samples_compression"
+        label   "samples"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ sample_count == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "albedo"
         label   "albedo"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "albedo_compression"
+        label   "albedo"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ albedo == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "albedo_mse"
-        label   "variance"
+        label   "albedo variance"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "albedo_mse_compression"
+        label   "albedo variance"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ albedo_mse == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "normal"
         label   "normal"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "normal_compression"
+        label   "normal"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ normal == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "normal_mse"
-        label   "variance"
+        label   "normal variance"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "normal_mse_compression"
+        label   "normal variance"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ normal_mse == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "sepparm"
@@ -86,54 +228,208 @@
         name    "uv"
         label   "uv"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "autoscope" "0000000000000000" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "uv_compression"
+        label   "uv"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ uv == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "position"
         label   "position"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "autoscope" "0000000000000000" }
         parmtag { "script_callback_language" "python" }
     }
     parm {
-        name    "diffuse"
-        label   "diffuse"
-        type    toggle
-        default { "0" }
-        parmtag { "script_callback_language" "python" }
-    }
-    parm {
-        name    "specular"
-        label   "specular"
-        type    toggle
-        default { "0" }
-        parmtag { "script_callback_language" "python" }
+        name    "position_compression"
+        label   "position"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ position == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "depth"
         label   "depth"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
     }
     parm {
-        name    "volume"
-        label   "volume"
+        name    "depth_compression"
+        label   "depth"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ depth == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
+        name    "diffuse"
+        label   "diffuse"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
-        parmtag { "autoscope" "0000000000000000" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "diffuse_compression"
+        label   "diffuse"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ diffuse == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
+        name    "specular"
+        label   "specular"
+        type    toggle
+        nolabel
+        joinnext
+        default { "0" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "specular_compression"
+        label   "specular"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ specular == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "emission"
         label   "emission"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "autoscope" "0000000000000000" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "emission_compression"
+        label   "emission"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ emission == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
+        name    "volume"
+        label   "volume"
+        type    toggle
+        nolabel
+        joinnext
+        default { "0" }
+        parmtag { "autoscope" "0000000000000000" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "volume_compression"
+        label   "volume"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ volume == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "sepparm2"
@@ -145,643 +441,381 @@
         name    "diffuse_direct"
         label   "diffuse direct"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "diffuse_direct_compression"
+        label   "diffuse direct"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ diffuse_direct == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "diffuse_indirect"
-        label   "indirect"
+        label   "diffuse indirect"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "diffuse_indirect_compression"
+        label   "diffuse indirect"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ diffuse_indirect == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "specular_direct"
         label   "specular direct"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "specular_direct_compression"
+        label   "specular direct"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ specular_direct == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "specular_indirect"
-        label   "indirect"
+        label   "specular indirect"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "specular_indirect_compression"
+        label   "specular indirect"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ specular_indirect == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "transmission"
         label   "transmission"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "transmission_compression"
+        label   "transmission"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ transmission == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "sss"
         label   "sss"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "sss_compression"
+        label   "sss"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ sss == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "coat"
         label   "coat"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "coat_compression"
+        label   "coat"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ coat == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
     }
     parm {
         name    "unshadowed"
         label   "unshadowed"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         help    "The beauty as if nothing cast shadows (Karma's Beauty Unshadowed). Not a beauty_ light group: slapcomp sums those."
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "unshadowed_compression"
+        label   "unshadowed"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ unshadowed == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "shadow"
         label   "shadow"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         help    "The light shadows take away (Karma's Shadow): unshadowed - shadow = beauty."
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "shadow_compression"
+        label   "shadow"
+        type    ordinal
+        default { "1" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ shadow == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "ao"
         label   "ao"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         help    "Ambient occlusion."
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "ao_compression"
+        label   "ao"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ ao == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "motionvectors"
         label   "motion vectors"
         type    toggle
+        nolabel
         joinnext
         default { "0" }
         help    "Screen-space motion vectors, for 2D motion blur."
         parmtag { "script_callback_language" "python" }
     }
     parm {
+        name    "motionvectors_compression"
+        label   "motion vectors"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ motionvectors == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
+    parm {
         name    "velocity"
         label   "velocity"
         type    toggle
+        nolabel
+        joinnext
         default { "0" }
         help    "World-space velocity."
         parmtag { "script_callback_language" "python" }
     }
-    groupcollapsible {
-        name    "compression_folder"
-        label   "Compression"
-        grouptag { "group_type" "collapsible" }
-
-        parm {
-            name    "alpha_compression"
-            label   "alpha (retired)"
-            type    ordinal
-            invisible
-            default { "6" }
-            help    "Retired: the beauty is RGBA and carries the alpha (the separate alpha AOV ignored holdouts). Kept hidden so scenes and render templates that still set it load cleanly; it does nothing."
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "albedo_compression"
-            label   "albedo"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ albedo == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "diffuse_compression"
-            label   "diffuse"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ diffuse == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "normal_compression"
-            label   "normal"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ normal == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "specular_compression"
-            label   "specular"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ specular == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "depth_compression"
-            label   "depth"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ depth == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "emission_compression"
-            label   "emission"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ emission == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "volume_compression"
-            label   "volume"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ volume == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "position_compression"
-            label   "position"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ position == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "uv_compression"
-            label   "uv"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ uv == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "beauty_compression"
-            label   "beauty"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ beauty == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "albedo_mse_compression"
-            label   "albedo_mse"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ albedo_mse == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "normal_mse_compression"
-            label   "normal_mse"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ normal_mse == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "samples_compression"
-            label   "samples"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ sample_count == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "beauty_mse_compression"
-            label   "beauty_mse"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ beauty_mse == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "diffuse_direct_compression"
-            label   "diffuse_direct"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ diffuse_direct == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "diffuse_indirect_compression"
-            label   "diffuse_indirect"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ diffuse_indirect == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "specular_direct_compression"
-            label   "specular_direct"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ specular_direct == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "specular_indirect_compression"
-            label   "specular_indirect"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ specular_indirect == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "transmission_compression"
-            label   "transmission"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ transmission == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "sss_compression"
-            label   "sss"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ sss == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "coat_compression"
-            label   "coat"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ coat == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "unshadowed_compression"
-            label   "unshadowed"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ unshadowed == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "shadow_compression"
-            label   "shadow"
-            type    ordinal
-            default { "1" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ shadow == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "ao_compression"
-            label   "ao"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ ao == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "motionvectors_compression"
-            label   "motionvectors"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ motionvectors == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
-        }
-        parm {
-            name    "velocity_compression"
-            label   "velocity"
-            type    ordinal
-            default { "6" }
-            help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
-            disablewhen "{ velocity == 0 }"
-            menu {
-                "none"  "No compression"
-                "dwab"  "DWA-B (lossy)"
-                "dwaa"  "DWA-A (lossy)"
-                "piz"   "PIZ (lossless)"
-                "rle"   "RLE (lossless)"
-                "zips"  "ZIP, single scanline (lossless)"
-                "zip"   "ZIP (lossless)"
-                "pix"   "PXR24 (lossy for 32-bit)"
-                "b44"   "B44 (lossy)"
-                "b44a"  "B44A (lossy)"
-            }
+    parm {
+        name    "velocity_compression"
+        label   "velocity"
+        type    ordinal
+        default { "6" }
+        help    "EXR compression this AOV is written with. Data passes (mattes, depth, normals, position...) default to lossless ZIP, colour passes to DWAB."
+        disablewhen "{ velocity == 0 }"
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
         }
     }
-
+    parm {
+        name    "alpha"
+        label   "alpha (retired)"
+        type    toggle
+        invisible
+        default { "0" }
+        help    "Retired: the beauty is RGBA and carries the alpha (the separate alpha AOV ignored holdouts). Kept hidden so scenes and render templates that still set it load cleanly; it does nothing."
+    }
+    parm {
+        name    "alpha_compression"
+        label   "alpha (retired)"
+        type    ordinal
+        invisible
+        default { "6" }
+        help    "Retired: the beauty is RGBA and carries the alpha (the separate alpha AOV ignored holdouts). Kept hidden so scenes and render templates that still set it load cleanly; it does nothing."
+        menu {
+            "none"  "No compression"
+            "dwab"  "DWA-B (lossy)"
+            "dwaa"  "DWA-A (lossy)"
+            "piz"   "PIZ (lossless)"
+            "rle"   "RLE (lossless)"
+            "zips"  "ZIP, single scanline (lossless)"
+            "zip"   "ZIP (lossless)"
+            "pix"   "PXR24 (lossy for 32-bit)"
+            "b44"   "B44 (lossy)"
+            "b44a"  "B44A (lossy)"
+        }
+    }
 }

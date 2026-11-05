@@ -12,6 +12,21 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.94.0 — 2026-11-05
+
+### Breaking Changes
+- fix(render)!: choose AOVs in one place, refuse what the farm can't read (`7a9c8acd`)
+
+### Fixes
+- fix(render): render each AOV once, under the name the farm reads (`e43a802b`)
+- fix(animate): leave rig helper shapes out instead of at /Geometry (`498f18cf`)
+- fix(entity-editor): assign a Multi on a sequence's own row (`d7f3af1b`)
+
+### Documentation
+- docs(troubleshooting): Houdini crash on the camera menu's Select Camera (`bcae49b0`)
+- docs(textures): a library drop asks every time (TT 0.55.0) (`78721d36`)
+- docs: regenerate CHANGELOG.md for v1.93.0 (`99b0a8a2`)
+
 ## v1.93.0 — 2026-11-04
 
 ### Features

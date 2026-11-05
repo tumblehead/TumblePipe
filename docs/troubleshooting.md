@@ -1105,13 +1105,13 @@ beside the pipeline's:
   and `uv`.
 
 After 1.93 these Karma toggles are switched off when the scene loads, the
-matching toggle on `th::render_settings`' **AOVs** tab ticked instead, and a
+matching toggle on `th::render_settings`' **AOVs** section ticked instead, and a
 comment on the node says which; republish the render department and
 resubmit. Ticking one again makes `th::render_settings` error. A stage that
 still has such vars (published before, or authored by another node) is
 refused at submit with `the render vars would render planes the farm cannot
 read`, naming each var; the farm never renames them. Choose AOVs on the
-**AOVs** tab of [`th::render_settings`](nodes/lighting-and-rendering.md#thrender_settings-lop):
+**AOVs** section of [`th::render_settings`](nodes/lighting-and-rendering.md#thrender_settings-lop):
 a project made from the template already renders `beauty`, `albedo` and
 `normal` (its `root_default_prims.usda`). `ocio plugin: unable to find color space ''` in the same log is
 Karma's **OCIO** image filter switched on with no output colour space. Karma

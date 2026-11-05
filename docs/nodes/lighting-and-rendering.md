@@ -18,7 +18,7 @@ Karma render settings for the shot, with named presets, and the place its
 AOVs are chosen. Tab menu `_TumblePipe/pipeline`; drop it in the shot's
 `/stage` after the lights. Inside it is a Karma Render Properties node driven
 by the parms below, and an embedded `th::render_vars` driven by the **AOVs**
-tab: the same toggles and Compression menus as
+section: the same toggles and Compression menus as
 [`th::render_vars`](#thrender_vars-lop), each var named as the pipeline
 reads it. Its beauty renders whether ticked or not when nothing upstream has
 authored a `beauty` RenderVar, so a shot always renders at least the RGBA
@@ -49,7 +49,7 @@ Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.
 | Diffuse / Reflection / Refraction / Volume / SSS Limit | `2 / 4 / 4 / 0 / 1` | Karma ray limits |
 | Enable Depth of Field, Enable Motion Blur | on, on | |
 | Dicing Camera | off | Dice displacement from a copy of the camera at **Source Frame** (`1001`), optionally with **Add Focal Length**; **Quality Scale** `0.5` |
-| AOVs tab | all off | The [`th::render_vars`](#thrender_vars-lop) toggles and Compression menus. The beauty renders unticked when nothing upstream has one |
+| AOVs | all off | The [`th::render_vars`](#thrender_vars-lop) toggles and Compression menus. The beauty renders unticked when nothing upstream has one |
 
 Gotchas:
 
@@ -61,9 +61,9 @@ Gotchas:
   `/scene/Render/…`); the submit dialog's overrides find it by asking the
   stage — see
   [Where the render settings live](../composition.md#where-the-render-settings-live).
-- A preset is a snapshot of the whole node, the AOVs tab included. Loading
-  one overwrites the camera path too. A preset saved before the node had an
-  AOVs tab holds no AOV toggles, so loading it leaves the tab as it is.
+- A preset is a snapshot of the whole node, the AOVs section included. Loading
+  one overwrites the camera path too. A preset saved before the node had its
+  AOVs (1.93 and older) holds no AOV toggles, so loading it leaves them as they are.
 
 ## `th::render_vars` (LOP)
 
@@ -71,7 +71,7 @@ Tick the AOVs a render should write. Tab menu `_TumblePipe/rendering`; put
 it after `render_settings`. Every toggle is a RenderVar prim under
 `/Render/Products/Vars`, and **every toggle is off by default** — a fresh
 node adds nothing until you tick something. `th::render_settings` carries the
-same toggles on its **AOVs** tab, which is the usual place to tick them; this
+same toggles in its **AOVs** section, which is the usual place to tick them; this
 node is for AOVs added further down the graph.
 Source: [`otls/lop_th.render_vars.1.1`](../../otls/lop_th.render_vars.1.1/th_8_8Lop_1render__vars_8_81.1/DialogScript),
 [`pipe/houdini/aov.py`](../../python/tumblepipe/pipe/houdini/aov.py).
@@ -79,16 +79,16 @@ Source: [`otls/lop_th.render_vars.1.1`](../../otls/lop_th.render_vars.1.1/th_8_8
 | Toggle | AOV | What it contains |
 |---|---|---|
 | beauty | `beauty` | Full beauty (`C.*[LO]`), **RGBA** (`color4f`): its A is the alpha every comp uses |
-| variance (after beauty) | `beauty_mse` | Beauty variance, for the denoiser |
+| beauty variance | `beauty_mse` | Beauty variance, for the denoiser |
 | samples | `samples` | Pixel sample count |
-| albedo, variance | `albedo`, `albedo_mse` | Base colour and its variance |
-| normal, variance | `normal`, `normal_mse` | Hit normal and its variance |
+| albedo, albedo variance | `albedo`, `albedo_mse` | Base colour and its variance |
+| normal, normal variance | `normal`, `normal_mse` | Hit normal and its variance |
 | uv | `uv` | `st` |
 | position | `position` | Hit position |
 | diffuse / specular / volume / emission | `diffuse`, `specular`, `volume`, `emission` | LPE splits (`C<RD>.*L`, `C<RG>.*L`, `CV.*L`, `C.*O`) |
 | depth | `depth` | Hit depth (`ray:hitPz`) |
-| diffuse direct, indirect | `diffuse_direct`, `diffuse_indirect` | `C<RD>L`, `C<RD>.+L` |
-| specular direct, indirect | `specular_direct`, `specular_indirect` | `C<RG>L`, `C<RG>.+L` |
+| diffuse direct, diffuse indirect | `diffuse_direct`, `diffuse_indirect` | `C<RD>L`, `C<RD>.+L` |
+| specular direct, specular indirect | `specular_direct`, `specular_indirect` | `C<RG>L`, `C<RG>.+L` |
 | transmission / sss / coat | `transmission`, `sss`, `coat` | `C<TG>.*L`, `C<TD>.*L`, the BSDF labelled `coat` |
 | unshadowed, shadow | `unshadowed`, `shadow` | The beauty with nothing casting shadows, and the light shadows take away (`unshadowed − shadow = beauty`). Not `beauty_*`: slapcomp sums those as light groups |
 | ao | `ao` | Ambient occlusion |
@@ -126,8 +126,10 @@ in the scene, and the publish's `render_var_names` and `render_var_twins`
 checks report it. Up to 1.93 such a render failed on the farm with
 `Missing required AOVs in rendered output: ['beauty']`.
 
-**Compression** (a collapsible folder) holds one menu per AOV: the EXR
-compression that AOV is written with, greyed out while its toggle is off.
+Each AOV is one row: its toggle, its name, and its **Compression** menu, the
+EXR compression that AOV is written with, greyed out while the toggle is off
+(on `th::render_settings` the beauty's menu stays live, since the beauty
+renders unticked too).
 Data AOVs (`normal`, `depth`, `position`, `uv`, `samples`, `ao`,
 `motionvectors`, `velocity`, the `*_mse` variances other than `beauty_mse`)
 default to lossless **ZIP**, colour

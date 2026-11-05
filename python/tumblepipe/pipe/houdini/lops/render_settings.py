@@ -202,14 +202,14 @@ def check_render_vars(lop) -> None:
     if on:
         labels = ', '.join(
             f"{karma.parm(name).parmTemplate().label()}"
-            + (f" (tick '{KARMA_AOV_TOGGLES[name]}' under AOVs)"
+            + (f" (tick '{KARMA_AOV_TOGGLES[name]}' in the AOVs section)"
                if KARMA_AOV_TOGGLES[name] else '')
             for name in on
         )
         raise hou.NodeError(
             f"Karma's own AOV toggles are on inside this node: {labels}. "
             "They name planes Karma's way (Beauty as C) and the farm refuses "
-            "them: switch them off and use the AOVs tab."
+            "them: switch them off and use the AOVs section."
         )
     stage = lop.inputs()[0].stage() if lop.inputs() and lop.inputs()[0] else None
     if stage is None:
