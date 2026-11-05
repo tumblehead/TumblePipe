@@ -1084,11 +1084,21 @@ class Sheet:
         return [g for g in map(self._member_group, multi.members) if g is not None]
 
     def multi_strays(self, multi: Multi) -> list[str]:
-        """Members the project no longer has: kept as stored."""
+        """Members the project no longer has: kept as stored. A group the
+        sheet listed whole and that then went away (a new sequence removed
+        before Apply) is not one: it is dropped, and back if the group is."""
         return [
             member for member in multi.members
             if isinstance(member, str) and self._member_group(member) is None
+            and member in multi.base_members
         ]
+
+    def _live_member(self, multi: Multi, member) -> bool:
+        """Whether Apply writes ``member`` of ``multi``: a row the sheet
+        has, a group it has, or a stray the Multi already stored."""
+        if isinstance(member, int):
+            return True
+        return self._member_group(member) is not None or member in multi.base_members
 
     def covers(self, multi: Multi, row: Row, base: bool = False) -> bool:
         """Whether ``multi`` has ``row`` as a member: listed itself, or in
@@ -1206,6 +1216,34 @@ class Sheet:
         ]
         if member:
             ids = [row_id for row_id in ids if row_id not in multi.members]
+        if not ids:
+            return False
+        self._changing()
+        if member:
+            multi.members.extend(ids)
+        else:
+            multi.members[:] = [m for m in multi.members if m not in ids]
+        return True
+
+    def group_multis(self, group: str) -> list[Multi]:
+        """The Multis that list ``group`` whole (not retired)."""
+        member = self.group_member(group)
+        return [m for m in self._multis if not m.retire and member in m.members]
+
+    def set_group_membership(
+        self, groups: Iterable[str], multi_id: int, member: bool,
+    ) -> bool:
+        """List these groups whole in the Multi, or take them out. Rows of
+        a group listed one by one stay listed."""
+        multi = self.multi(multi_id)
+        if multi.retire:
+            return False
+        known = set(self.groups())
+        wanted = [self.group_member(g) for g in dict.fromkeys(groups) if g in known]
+        if member:
+            ids = [g for g in wanted if g not in multi.members]
+        else:
+            ids = [g for g in wanted if g in multi.members]
         if not ids:
             return False
         self._changing()
@@ -1785,7 +1823,7 @@ class Sheet:
             return [
                 uris[m] if isinstance(m, int) else m
                 for m in multi.members
-                if not isinstance(m, int) or m in uris
+                if ((m in uris) if isinstance(m, int) else self._live_member(multi, m))
             ]
 
         retire, rename, create, update = [], [], [], []

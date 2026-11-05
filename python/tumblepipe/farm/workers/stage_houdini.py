@@ -17,6 +17,7 @@ from tumblepipe.pipe.usd.render_settings import (
     RenderSettingsError,
     find_render_settings_prim_path,
 )
+from tumblepipe.pipe.usd.render_vars import RenderVarsError
 from tumblepipe.farm import worker
 from tumblepipe.farm.specs import stage as stage_spec
 from tumblepipe.farm.worker import error, headline
@@ -32,6 +33,13 @@ def _author_render_passes(stage_path: Path, layers) -> None:
     stage = Usd.Stage.Open(path_str(stage_path), Usd.Stage.LoadAll)
     apply_render_layers(stage, layers, find_render_settings_prim_path(stage))
     stage.GetRootLayer().Save()
+
+def _check_render_vars(stage_path: Path) -> None:
+    """Refuse planes the render worker cannot split (``pipe.usd.render_vars``)."""
+    from pxr import Usd
+    from tumblepipe.pipe.usd.render_vars import check_render_vars
+    stage = Usd.Stage.Open(path_str(stage_path), Usd.Stage.LoadNone)
+    check_render_vars(stage, find_render_settings_prim_path(stage))
 
 def main(
     shot_uri: Uri,
@@ -82,6 +90,15 @@ def main(
         # Verify the USD file was created
         if not output_path.exists():
             return error(f'Failed to export USD stage: {output_path}')
+
+        # The planes husk writes must be the ones the render worker splits:
+        # refused, never renamed.
+        try:
+            _check_render_vars(output_path)
+        except RenderSettingsError as failure:
+            return error(f'Cannot read the render settings of {shot_uri}: {failure}')
+        except RenderVarsError as failure:
+            return error(f'Cannot render {shot_uri} channel {channel_name}: {failure}')
 
         # Render layers: a RenderPass per layer, for husk --pass.
         if layers:

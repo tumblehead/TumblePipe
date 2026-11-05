@@ -114,7 +114,9 @@ it takes it out of them and off the timeline.
 #### A whole sequence
 
 A Multi can list a whole sequence (for an asset Multi, a whole category):
-in the Entity Editor, double-click the Multi's **Members** and tick
+in the Entity Editor, double-click the **Multis** cell on the sequence's
+own row on the Shots tab (or right-click it → **Add to Multi ▸**), or
+double-click the Multi's **Members** on the Multis tab and tick
 ***SQ010* (whole sequence)** at the top of the list. Every shot in the
 sequence is then a member, and so is any shot made in it later (with a
 shared timeline, a new shot is placed after the last one). The Multi stores

@@ -858,7 +858,7 @@ Content-Disposition: attachment; filename="hdaroot/output.def"
 Content-Type: text/plain
 
 comment ""
-position -2.09167 -20.7656
+position -2.09167 -21.7656
 connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
@@ -866,11 +866,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	update_renderproducts 1 1 "input1"
+0 	check_render_vars 1 1 "input1"
 }
 inputs
 {
-0 	update_renderproducts 0 1
+0 	check_render_vars 0 1
 }
 stat
 {
@@ -983,6 +983,7 @@ promotecollections	[ 0	locks=0 ]	(	""	)
 promotesourcecollections	[ 0	locks=0 ]	(	"on"	)
 separator	[ 0	locks=0 ]	(	)
 xformcumulative	[ 0	locks=0 ]	(	"on"	)
+usexformcommonapi	[ 0	locks=0 ]	(	"off"	)
 xOrd	[ 0	locks=0 ]	(	"srt"	)
 rOrd	[ 0	locks=0 ]	(	"xyz"	)
 t	[ 0	locks=0 ]	(	0	0	0	)
@@ -1861,6 +1862,54 @@ Content-Type: text/plain
         }
     }
 
+    parm {
+        name    "exposure_fstop_control"
+        baseparm
+        label   "Exposure F-Stop"
+        export  none
+    }
+    parm {
+        name    "xn__exposurefStop_bxa"
+        baseparm
+        label   "Exposure F-Stop"
+        export  none
+    }
+    parm {
+        name    "exposure_iso_control"
+        baseparm
+        label   "Exposure ISO"
+        export  none
+    }
+    parm {
+        name    "xn__exposureiso_1ta"
+        baseparm
+        label   "Exposure ISO"
+        export  none
+    }
+    parm {
+        name    "exposure_responsivity_control"
+        baseparm
+        label   "Exposure Responsivity"
+        export  none
+    }
+    parm {
+        name    "xn__exposureresponsivity_p8a"
+        baseparm
+        label   "Exposure Responsivity"
+        export  none
+    }
+    parm {
+        name    "exposure_time_control"
+        baseparm
+        label   "Exposure Time"
+        export  none
+    }
+    parm {
+        name    "xn__exposuretime_ova"
+        baseparm
+        label   "Exposure Time"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/dicing_focal_length.chn"
@@ -2100,7 +2149,7 @@ primkind	[ 0	locks=0 ]	(	""	)
 specifier	[ 0	locks=0 ]	(	def	)
 classancestor	[ 0	locks=0 ]	(	""	)
 parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
-folder1	[ 0	locks=0 ]	(	0	0	0	)
+folder1	[ 0	locks=0 ]	(	0	0	0	0	)
 xn__xformOptransform_control_6fb	[ 0	locks=0 ]	(	none	)
 xn__xformOptransform_51a	[ 0	locks=0 ]	(	append	)
 xOrd	[ 0	locks=0 ]	(	"srt"	)
@@ -2148,7 +2197,6 @@ horizontalApertureOffsetConverted	[ 0	locks=0 ]	(	[ horizontalApertureOffsetConv
 verticalApertureOffset_control	[ 0	locks=0 ]	(	none	)
 verticalApertureOffset	[ 0	locks=0 ]	(	0	)
 verticalApertureOffsetConverted	[ 0	locks=0 ]	(	[ verticalApertureOffsetConverted	0 ] 	)
-viewport_folder	[ 0	locks=0 ]	(	0	)
 xn__houdiniguidescale_control_thb	[ 0	locks=0 ]	(	none	)
 xn__houdiniguidescale_s3a	[ 0	locks=0 ]	(	[ xn__houdiniguidescale_s3a	0 ] 	)
 xn__houdiniinviewermenu_control_2kb	[ 0	locks=0 ]	(	none	)
@@ -2167,6 +2215,14 @@ fStop_control	[ 0	locks=0 ]	(	none	)
 fStop	[ 0	locks=0 ]	(	0	)
 exposure_control	[ 0	locks=0 ]	(	none	)
 exposure	[ 0	locks=0 ]	(	0	)
+exposure_fstop_control	[ 0	locks=0 ]	(	none	)
+xn__exposurefStop_bxa	[ 0	locks=0 ]	(	1	)
+exposure_iso_control	[ 0	locks=0 ]	(	none	)
+xn__exposureiso_1ta	[ 0	locks=0 ]	(	100	)
+exposure_responsivity_control	[ 0	locks=0 ]	(	none	)
+xn__exposureresponsivity_p8a	[ 0	locks=0 ]	(	1	)
+exposure_time_control	[ 0	locks=0 ]	(	none	)
+xn__exposuretime_ova	[ 0	locks=0 ]	(	1	)
 sample_group3	[ 0	locks=0 ]	(	0	)
 sample_subframegroup3	[ 0	locks=0 ]	(	0	)
 folder2	[ 0	locks=0 ]	(	0	0	0	0	)
@@ -3215,6 +3271,54 @@ Content-Type: text/plain
         }
     }
 
+    parm {
+        name    "exposure_fstop_control"
+        baseparm
+        label   "Exposure F-Stop"
+        export  none
+    }
+    parm {
+        name    "xn__exposurefStop_bxa"
+        baseparm
+        label   "Exposure F-Stop"
+        export  none
+    }
+    parm {
+        name    "exposure_iso_control"
+        baseparm
+        label   "Exposure ISO"
+        export  none
+    }
+    parm {
+        name    "xn__exposureiso_1ta"
+        baseparm
+        label   "Exposure ISO"
+        export  none
+    }
+    parm {
+        name    "exposure_responsivity_control"
+        baseparm
+        label   "Exposure Responsivity"
+        export  none
+    }
+    parm {
+        name    "xn__exposureresponsivity_p8a"
+        baseparm
+        label   "Exposure Responsivity"
+        export  none
+    }
+    parm {
+        name    "exposure_time_control"
+        baseparm
+        label   "Exposure Time"
+        export  none
+    }
+    parm {
+        name    "xn__exposuretime_ova"
+        baseparm
+        label   "Exposure Time"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/init_screen_window.chn"
@@ -3475,7 +3579,7 @@ primkind	[ 0	locks=0 ]	(	""	)
 specifier	[ 0	locks=0 ]	(	def	)
 classancestor	[ 0	locks=0 ]	(	""	)
 parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
-folder1	[ 0	locks=0 ]	(	0	0	0	)
+folder1	[ 0	locks=0 ]	(	0	0	0	0	)
 xn__xformOptransform_control_6fb	[ 0	locks=0 ]	(	none	)
 xn__xformOptransform_51a	[ 0	locks=0 ]	(	append	)
 xOrd	[ 0	locks=0 ]	(	"srt"	)
@@ -3523,7 +3627,6 @@ horizontalApertureOffsetConverted	[ 0	locks=0 ]	(	[ horizontalApertureOffsetConv
 verticalApertureOffset_control	[ 0	locks=0 ]	(	none	)
 verticalApertureOffset	[ 0	locks=0 ]	(	0	)
 verticalApertureOffsetConverted	[ 0	locks=0 ]	(	[ verticalApertureOffsetConverted	0 ] 	)
-viewport_folder	[ 0	locks=0 ]	(	0	)
 xn__houdiniguidescale_control_thb	[ 0	locks=0 ]	(	none	)
 xn__houdiniguidescale_s3a	[ 0	locks=0 ]	(	[ xn__houdiniguidescale_s3a	0 ] 	)
 xn__houdiniinviewermenu_control_2kb	[ 0	locks=0 ]	(	none	)
@@ -3542,6 +3645,14 @@ fStop_control	[ 0	locks=0 ]	(	none	)
 fStop	[ 0	locks=0 ]	(	0	)
 exposure_control	[ 0	locks=0 ]	(	none	)
 exposure	[ 0	locks=0 ]	(	0	)
+exposure_fstop_control	[ 0	locks=0 ]	(	none	)
+xn__exposurefStop_bxa	[ 0	locks=0 ]	(	1	)
+exposure_iso_control	[ 0	locks=0 ]	(	none	)
+xn__exposureiso_1ta	[ 0	locks=0 ]	(	100	)
+exposure_responsivity_control	[ 0	locks=0 ]	(	none	)
+xn__exposureresponsivity_p8a	[ 0	locks=0 ]	(	1	)
+exposure_time_control	[ 0	locks=0 ]	(	none	)
+xn__exposuretime_ova	[ 0	locks=0 ]	(	1	)
 sample_group3	[ 0	locks=0 ]	(	0	)
 sample_subframegroup3	[ 0	locks=0 ]	(	0	)
 folder2	[ 0	locks=0 ]	(	3	3	3	3	)
@@ -4334,6 +4445,54 @@ Content-Type: text/plain
         }
     }
 
+    parm {
+        name    "exposure_fstop_control"
+        baseparm
+        label   "Exposure F-Stop"
+        export  none
+    }
+    parm {
+        name    "xn__exposurefStop_bxa"
+        baseparm
+        label   "Exposure F-Stop"
+        export  none
+    }
+    parm {
+        name    "exposure_iso_control"
+        baseparm
+        label   "Exposure ISO"
+        export  none
+    }
+    parm {
+        name    "xn__exposureiso_1ta"
+        baseparm
+        label   "Exposure ISO"
+        export  none
+    }
+    parm {
+        name    "exposure_responsivity_control"
+        baseparm
+        label   "Exposure Responsivity"
+        export  none
+    }
+    parm {
+        name    "xn__exposureresponsivity_p8a"
+        baseparm
+        label   "Exposure Responsivity"
+        export  none
+    }
+    parm {
+        name    "exposure_time_control"
+        baseparm
+        label   "Exposure Time"
+        export  none
+    }
+    parm {
+        name    "xn__exposuretime_ova"
+        baseparm
+        label   "Exposure Time"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/invert_aspect_ratio.chn"
@@ -4620,7 +4779,7 @@ primkind	[ 0	locks=0 ]	(	""	)
 specifier	[ 0	locks=0 ]	(	def	)
 classancestor	[ 0	locks=0 ]	(	""	)
 parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
-folder1	[ 0	locks=0 ]	(	0	0	0	)
+folder1	[ 0	locks=0 ]	(	0	0	0	0	)
 xn__xformOptransform_control_6fb	[ 0	locks=0 ]	(	none	)
 xn__xformOptransform_51a	[ 0	locks=0 ]	(	append	)
 xOrd	[ 0	locks=0 ]	(	"srt"	)
@@ -4668,7 +4827,6 @@ horizontalApertureOffsetConverted	[ 0	locks=0 ]	(	[ horizontalApertureOffsetConv
 verticalApertureOffset_control	[ 0	locks=0 ]	(	none	)
 verticalApertureOffset	[ 0	locks=0 ]	(	0	)
 verticalApertureOffsetConverted	[ 0	locks=0 ]	(	[ verticalApertureOffsetConverted	0 ] 	)
-viewport_folder	[ 0	locks=0 ]	(	0	)
 xn__houdiniguidescale_control_thb	[ 0	locks=0 ]	(	none	)
 xn__houdiniguidescale_s3a	[ 0	locks=0 ]	(	[ xn__houdiniguidescale_s3a	0 ] 	)
 xn__houdiniinviewermenu_control_2kb	[ 0	locks=0 ]	(	none	)
@@ -4687,6 +4845,14 @@ fStop_control	[ 0	locks=0 ]	(	none	)
 fStop	[ 0	locks=0 ]	(	0	)
 exposure_control	[ 0	locks=0 ]	(	none	)
 exposure	[ 0	locks=0 ]	(	0	)
+exposure_fstop_control	[ 0	locks=0 ]	(	none	)
+xn__exposurefStop_bxa	[ 0	locks=0 ]	(	1	)
+exposure_iso_control	[ 0	locks=0 ]	(	none	)
+xn__exposureiso_1ta	[ 0	locks=0 ]	(	100	)
+exposure_responsivity_control	[ 0	locks=0 ]	(	none	)
+xn__exposureresponsivity_p8a	[ 0	locks=0 ]	(	1	)
+exposure_time_control	[ 0	locks=0 ]	(	none	)
+xn__exposuretime_ova	[ 0	locks=0 ]	(	1	)
 sample_group3	[ 0	locks=0 ]	(	0	)
 sample_subframegroup3	[ 0	locks=0 ]	(	0	)
 folder2	[ 0	locks=0 ]	(	3	3	3	3	)
@@ -5479,6 +5645,54 @@ Content-Type: text/plain
         }
     }
 
+    parm {
+        name    "exposure_fstop_control"
+        baseparm
+        label   "Exposure F-Stop"
+        export  none
+    }
+    parm {
+        name    "xn__exposurefStop_bxa"
+        baseparm
+        label   "Exposure F-Stop"
+        export  none
+    }
+    parm {
+        name    "exposure_iso_control"
+        baseparm
+        label   "Exposure ISO"
+        export  none
+    }
+    parm {
+        name    "xn__exposureiso_1ta"
+        baseparm
+        label   "Exposure ISO"
+        export  none
+    }
+    parm {
+        name    "exposure_responsivity_control"
+        baseparm
+        label   "Exposure Responsivity"
+        export  none
+    }
+    parm {
+        name    "xn__exposureresponsivity_p8a"
+        baseparm
+        label   "Exposure Responsivity"
+        export  none
+    }
+    parm {
+        name    "exposure_time_control"
+        baseparm
+        label   "Exposure Time"
+        export  none
+    }
+    parm {
+        name    "xn__exposuretime_ova"
+        baseparm
+        label   "Exposure Time"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/overscan.chn"
@@ -5779,7 +5993,7 @@ primkind	[ 0	locks=0 ]	(	""	)
 specifier	[ 0	locks=0 ]	(	def	)
 classancestor	[ 0	locks=0 ]	(	""	)
 parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
-folder1	[ 0	locks=0 ]	(	0	0	0	)
+folder1	[ 0	locks=0 ]	(	0	0	0	0	)
 xn__xformOptransform_control_6fb	[ 0	locks=0 ]	(	none	)
 xn__xformOptransform_51a	[ 0	locks=0 ]	(	append	)
 xOrd	[ 0	locks=0 ]	(	"srt"	)
@@ -5827,7 +6041,6 @@ horizontalApertureOffsetConverted	[ 0	locks=0 ]	(	[ horizontalApertureOffsetConv
 verticalApertureOffset_control	[ 0	locks=0 ]	(	none	)
 verticalApertureOffset	[ 0	locks=0 ]	(	0	)
 verticalApertureOffsetConverted	[ 0	locks=0 ]	(	[ verticalApertureOffsetConverted	0 ] 	)
-viewport_folder	[ 0	locks=0 ]	(	0	)
 xn__houdiniguidescale_control_thb	[ 0	locks=0 ]	(	none	)
 xn__houdiniguidescale_s3a	[ 0	locks=0 ]	(	[ xn__houdiniguidescale_s3a	0 ] 	)
 xn__houdiniinviewermenu_control_2kb	[ 0	locks=0 ]	(	none	)
@@ -5846,6 +6059,14 @@ fStop_control	[ 0	locks=0 ]	(	none	)
 fStop	[ 0	locks=0 ]	(	0	)
 exposure_control	[ 0	locks=0 ]	(	none	)
 exposure	[ 0	locks=0 ]	(	0	)
+exposure_fstop_control	[ 0	locks=0 ]	(	none	)
+xn__exposurefStop_bxa	[ 0	locks=0 ]	(	1	)
+exposure_iso_control	[ 0	locks=0 ]	(	none	)
+xn__exposureiso_1ta	[ 0	locks=0 ]	(	100	)
+exposure_responsivity_control	[ 0	locks=0 ]	(	none	)
+xn__exposureresponsivity_p8a	[ 0	locks=0 ]	(	1	)
+exposure_time_control	[ 0	locks=0 ]	(	none	)
+xn__exposuretime_ova	[ 0	locks=0 ]	(	1	)
 sample_group3	[ 0	locks=0 ]	(	0	)
 sample_subframegroup3	[ 0	locks=0 ]	(	0	)
 folder2	[ 0	locks=0 ]	(	3	3	3	3	)
@@ -6100,6 +6321,18 @@ Content-Type: text/plain
         default { "" }
         parmtag { "script_callback_language" "python" }
     }
+    parm {
+        name    "allowedprimtypes"
+        baseparm
+        label   "Allowed Primitive Types"
+        export  none
+    }
+    parm {
+        name    "handledisallowedtypes"
+        baseparm
+        label   "Handle Mismatched Types"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/update_renderproducts.chn"
@@ -6159,6 +6392,8 @@ sample_count	[ 0	locks=0 ]	(	2	)
 sample_includeframe	[ 0	locks=0 ]	(	"on"	)
 editinterface	[ 0	locks=0 ]	(	0	)
 primpattern	[ 0	locks=0 ]	(	/Render/Products/renderproduct	)
+allowedprimtypes	[ 0	locks=0 ]	(	""	)
+handledisallowedtypes	[ 0	locks=0 ]	(	"ignore"	)
 primpath	[ 0	locks=0 ]	(	/$OS	)
 createprims	[ 0	locks=0 ]	(	"forceedit"	)
 initforedit	[ 0	locks=0 ]	(	0	)
@@ -6423,30 +6658,623 @@ Content-Type: text/plain
         }
     }
 
+    parm {
+        name    "alpha"
+        baseparm
+        label   "alpha (retired)"
+        invisible
+        export  none
+    }
+    parm {
+        name    "sepparm2"
+        baseparm
+        label   "sepparm2"
+        export  none
+    }
+    parm {
+        name    "diffuse_direct"
+        baseparm
+        label   "diffuse direct"
+        export  none
+    }
+    parm {
+        name    "diffuse_indirect"
+        baseparm
+        label   "indirect"
+        export  none
+    }
+    parm {
+        name    "specular_direct"
+        baseparm
+        label   "specular direct"
+        export  none
+    }
+    parm {
+        name    "specular_indirect"
+        baseparm
+        label   "indirect"
+        export  none
+    }
+    parm {
+        name    "transmission"
+        baseparm
+        label   "transmission"
+        export  none
+    }
+    parm {
+        name    "sss"
+        baseparm
+        label   "sss"
+        export  none
+    }
+    parm {
+        name    "coat"
+        baseparm
+        label   "coat"
+        export  none
+    }
+    parm {
+        name    "unshadowed"
+        baseparm
+        label   "unshadowed"
+        export  none
+    }
+    parm {
+        name    "shadow"
+        baseparm
+        label   "shadow"
+        export  none
+    }
+    parm {
+        name    "ao"
+        baseparm
+        label   "ao"
+        export  none
+    }
+    parm {
+        name    "motionvectors"
+        baseparm
+        label   "motion vectors"
+        export  none
+    }
+    parm {
+        name    "velocity"
+        baseparm
+        label   "velocity"
+        export  none
+    }
+    parm {
+        name    "alpha_compression"
+        baseparm
+        label   "alpha (retired)"
+        invisible
+        export  none
+    }
+    parm {
+        name    "diffuse_direct_compression"
+        baseparm
+        label   "diffuse_direct"
+        export  none
+    }
+    parm {
+        name    "diffuse_indirect_compression"
+        baseparm
+        label   "diffuse_indirect"
+        export  none
+    }
+    parm {
+        name    "specular_direct_compression"
+        baseparm
+        label   "specular_direct"
+        export  none
+    }
+    parm {
+        name    "specular_indirect_compression"
+        baseparm
+        label   "specular_indirect"
+        export  none
+    }
+    parm {
+        name    "transmission_compression"
+        baseparm
+        label   "transmission"
+        export  none
+    }
+    parm {
+        name    "sss_compression"
+        baseparm
+        label   "sss"
+        export  none
+    }
+    parm {
+        name    "coat_compression"
+        baseparm
+        label   "coat"
+        export  none
+    }
+    parm {
+        name    "unshadowed_compression"
+        baseparm
+        label   "unshadowed"
+        export  none
+    }
+    parm {
+        name    "shadow_compression"
+        baseparm
+        label   "shadow"
+        export  none
+    }
+    parm {
+        name    "ao_compression"
+        baseparm
+        label   "ao"
+        export  none
+    }
+    parm {
+        name    "motionvectors_compression"
+        baseparm
+        label   "motionvectors"
+        export  none
+    }
+    parm {
+        name    "velocity_compression"
+        baseparm
+        label   "velocity"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/render_vars.chn"
 Content-Type: text/plain
 
 {
-    channel lop_activation {
+    channel beauty {
       lefttype = extend
       righttype = extend
       default = 1
       flags = 0
       segment { options = {	 untie  iv ov is os ia oa }
 
-	 length = 0 expr = "import hou
-
-def _already_has_render_vars(root):
-    vars_prim = root.GetPrimAtPath('/Render/Products/Vars/beauty')
-    return not (vars_prim.IsValid() and vars_prim.IsActive())
-
-node = hou.pwd()
+	 length = 0 expr = "node = hou.pwd()
+if node.parent().evalParm('beauty'):
+    return 1
 stage = node.node('../IN_stage').stage()
-root = stage.GetPseudoRoot()
+prim = stage.GetPrimAtPath('/Render/Products/Vars/beauty')
+return 0 if (prim.IsValid() and prim.IsActive()) else 1" language = python }
+    }
+    channel beauty_mse {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
 
-return _already_has_render_vars(root)" language = python }
+	 length = 0 expr = ch(\"../beauty_mse\") }
+    }
+    channel sample_count {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../sample_count\") }
+    }
+    channel albedo {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../albedo\") }
+    }
+    channel albedo_mse {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../albedo_mse\") }
+    }
+    channel normal {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../normal\") }
+    }
+    channel normal_mse {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../normal_mse\") }
+    }
+    channel uv {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../uv\") }
+    }
+    channel position {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../position\") }
+    }
+    channel diffuse {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../diffuse\") }
+    }
+    channel specular {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../specular\") }
+    }
+    channel depth {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../depth\") }
+    }
+    channel volume {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../volume\") }
+    }
+    channel emission {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../emission\") }
+    }
+    channel diffuse_direct {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../diffuse_direct\") }
+    }
+    channel diffuse_indirect {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../diffuse_indirect\") }
+    }
+    channel specular_direct {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../specular_direct\") }
+    }
+    channel specular_indirect {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../specular_indirect\") }
+    }
+    channel transmission {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../transmission\") }
+    }
+    channel sss {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../sss\") }
+    }
+    channel coat {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../coat\") }
+    }
+    channel unshadowed {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../unshadowed\") }
+    }
+    channel shadow {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../shadow\") }
+    }
+    channel ao {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../ao\") }
+    }
+    channel motionvectors {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../motionvectors\") }
+    }
+    channel velocity {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../velocity\") }
+    }
+    channel albedo_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../albedo_compression\") }
+    }
+    channel diffuse_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../diffuse_compression\") }
+    }
+    channel normal_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../normal_compression\") }
+    }
+    channel specular_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../specular_compression\") }
+    }
+    channel depth_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../depth_compression\") }
+    }
+    channel emission_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../emission_compression\") }
+    }
+    channel volume_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../volume_compression\") }
+    }
+    channel position_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../position_compression\") }
+    }
+    channel uv_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../uv_compression\") }
+    }
+    channel beauty_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../beauty_compression\") }
+    }
+    channel albedo_mse_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../albedo_mse_compression\") }
+    }
+    channel normal_mse_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../normal_mse_compression\") }
+    }
+    channel samples_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../samples_compression\") }
+    }
+    channel beauty_mse_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../beauty_mse_compression\") }
+    }
+    channel diffuse_direct_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../diffuse_direct_compression\") }
+    }
+    channel diffuse_indirect_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../diffuse_indirect_compression\") }
+    }
+    channel specular_direct_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../specular_direct_compression\") }
+    }
+    channel specular_indirect_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../specular_indirect_compression\") }
+    }
+    channel transmission_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../transmission_compression\") }
+    }
+    channel sss_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../sss_compression\") }
+    }
+    channel coat_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../coat_compression\") }
+    }
+    channel unshadowed_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../unshadowed_compression\") }
+    }
+    channel shadow_compression {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../shadow_compression\") }
+    }
+    channel ao_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../ao_compression\") }
+    }
+    channel motionvectors_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../motionvectors_compression\") }
+    }
+    channel velocity_compression {
+      lefttype = extend
+      righttype = extend
+      default = 6
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../velocity_compression\") }
     }
   }
 
@@ -6456,37 +7284,64 @@ Content-Type: text/plain
 
 {
 version 0.8
-beauty	[ 0	locks=0 ]	(	"on"	)
-beauty_mse	[ 0	locks=0 ]	(	"off"	)
-sample_count	[ 0	locks=0 ]	(	"off"	)
-albedo	[ 0	locks=0 ]	(	"off"	)
-albedo_mse	[ 0	locks=0 ]	(	"off"	)
-normal	[ 0	locks=0 ]	(	"off"	)
-normal_mse	[ 0	locks=0 ]	(	"off"	)
+beauty	[ 0	locks=0 ]	(	[ beauty	0 ] 	)
+beauty_mse	[ 0	locks=0 ]	(	[ beauty_mse	0 ] 	)
+sample_count	[ 0	locks=0 ]	(	[ sample_count	0 ] 	)
+alpha	[ 0	locks=0 ]	(	"off"	)
+albedo	[ 0	locks=0 ]	(	[ albedo	0 ] 	)
+albedo_mse	[ 0	locks=0 ]	(	[ albedo_mse	0 ] 	)
+normal	[ 0	locks=0 ]	(	[ normal	0 ] 	)
+normal_mse	[ 0	locks=0 ]	(	[ normal_mse	0 ] 	)
 sepparm	[ 0	locks=0 ]	(	)
-uv	[ 0	locks=0 ]	(	"off"	)
-position	[ 0	locks=0 ]	(	"off"	)
-diffuse	[ 0	locks=0 ]	(	"off"	)
-specular	[ 0	locks=0 ]	(	"off"	)
-depth	[ 0	locks=0 ]	(	"off"	)
-volume	[ 0	locks=0 ]	(	"off"	)
-emission	[ 0	locks=0 ]	(	"off"	)
+uv	[ 0	locks=0 ]	(	[ uv	0 ] 	)
+position	[ 0	locks=0 ]	(	[ position	0 ] 	)
+diffuse	[ 0	locks=0 ]	(	[ diffuse	0 ] 	)
+specular	[ 0	locks=0 ]	(	[ specular	0 ] 	)
+depth	[ 0	locks=0 ]	(	[ depth	0 ] 	)
+volume	[ 0	locks=0 ]	(	[ volume	0 ] 	)
+emission	[ 0	locks=0 ]	(	[ emission	0 ] 	)
+sepparm2	[ 0	locks=0 ]	(	)
+diffuse_direct	[ 0	locks=0 ]	(	[ diffuse_direct	0 ] 	)
+diffuse_indirect	[ 0	locks=0 ]	(	[ diffuse_indirect	0 ] 	)
+specular_direct	[ 0	locks=0 ]	(	[ specular_direct	0 ] 	)
+specular_indirect	[ 0	locks=0 ]	(	[ specular_indirect	0 ] 	)
+transmission	[ 0	locks=0 ]	(	[ transmission	0 ] 	)
+sss	[ 0	locks=0 ]	(	[ sss	0 ] 	)
+coat	[ 0	locks=0 ]	(	[ coat	0 ] 	)
+unshadowed	[ 0	locks=0 ]	(	[ unshadowed	0 ] 	)
+shadow	[ 0	locks=0 ]	(	[ shadow	0 ] 	)
+ao	[ 0	locks=0 ]	(	[ ao	0 ] 	)
+motionvectors	[ 0	locks=0 ]	(	[ motionvectors	0 ] 	)
+velocity	[ 0	locks=0 ]	(	[ velocity	0 ] 	)
 compression_folder	[ 0	locks=0 ]	(	0	)
-albedo_compression	[ 0	locks=0 ]	(	"dwab"	)
-diffuse_compression	[ 0	locks=0 ]	(	"dwab"	)
-normal_compression	[ 0	locks=0 ]	(	"zip"	)
-specular_compression	[ 0	locks=0 ]	(	"dwab"	)
-depth_compression	[ 0	locks=0 ]	(	"zip"	)
-emission_compression	[ 0	locks=0 ]	(	"dwab"	)
-volume_compression	[ 0	locks=0 ]	(	"dwab"	)
-position_compression	[ 0	locks=0 ]	(	"zip"	)
-uv_compression	[ 0	locks=0 ]	(	"zip"	)
-beauty_compression	[ 0	locks=0 ]	(	"dwab"	)
-albedo_mse_compression	[ 0	locks=0 ]	(	"zip"	)
-normal_mse_compression	[ 0	locks=0 ]	(	"zip"	)
-samples_compression	[ 0	locks=0 ]	(	"zip"	)
-beauty_mse_compression	[ 0	locks=0 ]	(	"dwab"	)
-lop_activation	[ 0	locks=0 ]	(	[ lop_activation	1 ] 	)
+alpha_compression	[ 0	locks=0 ]	(	"zip"	)
+albedo_compression	[ 0	locks=0 ]	(	[ albedo_compression	1 ] 	)
+diffuse_compression	[ 0	locks=0 ]	(	[ diffuse_compression	1 ] 	)
+normal_compression	[ 0	locks=0 ]	(	[ normal_compression	6 ] 	)
+specular_compression	[ 0	locks=0 ]	(	[ specular_compression	1 ] 	)
+depth_compression	[ 0	locks=0 ]	(	[ depth_compression	6 ] 	)
+emission_compression	[ 0	locks=0 ]	(	[ emission_compression	1 ] 	)
+volume_compression	[ 0	locks=0 ]	(	[ volume_compression	1 ] 	)
+position_compression	[ 0	locks=0 ]	(	[ position_compression	6 ] 	)
+uv_compression	[ 0	locks=0 ]	(	[ uv_compression	6 ] 	)
+beauty_compression	[ 0	locks=0 ]	(	[ beauty_compression	1 ] 	)
+albedo_mse_compression	[ 0	locks=0 ]	(	[ albedo_mse_compression	6 ] 	)
+normal_mse_compression	[ 0	locks=0 ]	(	[ normal_mse_compression	6 ] 	)
+samples_compression	[ 0	locks=0 ]	(	[ samples_compression	6 ] 	)
+beauty_mse_compression	[ 0	locks=0 ]	(	[ beauty_mse_compression	1 ] 	)
+diffuse_direct_compression	[ 0	locks=0 ]	(	[ diffuse_direct_compression	1 ] 	)
+diffuse_indirect_compression	[ 0	locks=0 ]	(	[ diffuse_indirect_compression	1 ] 	)
+specular_direct_compression	[ 0	locks=0 ]	(	[ specular_direct_compression	1 ] 	)
+specular_indirect_compression	[ 0	locks=0 ]	(	[ specular_indirect_compression	1 ] 	)
+transmission_compression	[ 0	locks=0 ]	(	[ transmission_compression	1 ] 	)
+sss_compression	[ 0	locks=0 ]	(	[ sss_compression	1 ] 	)
+coat_compression	[ 0	locks=0 ]	(	[ coat_compression	1 ] 	)
+unshadowed_compression	[ 0	locks=0 ]	(	[ unshadowed_compression	1 ] 	)
+shadow_compression	[ 0	locks=0 ]	(	[ shadow_compression	1 ] 	)
+ao_compression	[ 0	locks=0 ]	(	[ ao_compression	6 ] 	)
+motionvectors_compression	[ 0	locks=0 ]	(	[ motionvectors_compression	6 ] 	)
+velocity_compression	[ 0	locks=0 ]	(	[ velocity_compression	6 ] 	)
+lop_activation	[ 0	locks=0 ]	(	"on"	)
 compression_folder2	[ 0	locks=0 ]	(	0	)
 }
 
@@ -6564,6 +7419,68 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/check_render_vars.init"
+Content-Type: text/plain
+
+type = pythonscript
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/check_render_vars.def"
+Content-Type: text/plain
+
+comment "Errors while Karma's own AOV toggles are on, or a render var names its plane other than the farm reads (render_settings.check_render_vars)."
+position -2.09167 -20.7656
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on displaycomment on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	update_renderproducts 1 1 "input1"
+}
+inputs
+{
+0 	update_renderproducts 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/check_render_vars.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import render_settings
+render_settings.check_render_vars(hou.pwd())
+"	)
+maintainstate	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/check_render_vars.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/__dot1.networkdotinit"
 Content-Type: text/plain
 
@@ -6609,7 +7526,7 @@ Content-Type: text/plain
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-14
+15
 settings
 output
 dicing_create
@@ -6624,6 +7541,7 @@ overscan
 update_renderproducts
 render_vars
 IN_stage
+check_render_vars
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

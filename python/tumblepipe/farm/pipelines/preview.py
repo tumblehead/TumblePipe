@@ -46,6 +46,7 @@ from tumblepipe.pipe.usd.collapse import (
     excluded_staged_refs,
 )
 from tumblepipe.pipe.usd.render_settings import RenderSettingsError
+from tumblepipe.pipe.usd.render_vars import RenderVarsError
 
 # Relative names the snapshots are bundled under. The render and playblast
 # tasks resolve these against their job data dir (job_data_dir()).
@@ -178,6 +179,12 @@ def collapse_render_inputs(
         except RenderPassError as error:
             raise PreviewError(
                 f"Cannot make the render layers of {entity_uri}: {error}"
+            ) from error
+        except RenderVarsError as error:
+            # Refused rather than renamed: the farm renders what the render
+            # department published (pipe.usd.render_vars).
+            raise PreviewError(
+                f"Cannot render {entity_uri} channel '{channel_name}': {error}"
             ) from error
         except LayerCollectionError as error:
             # A layer the build records but that is missing from disk: a

@@ -10,8 +10,9 @@ SideFX's APEX bake copies a GU_Detail's P/N into USD arrays
 geometry to USD every frame, and unpacking it first, is what made the
 node slow; the result is the same, value for value.
 
-What is read is `points_sops/scene`: the dive's output, invoked first by
-the HDA when the dive outputs the APEX scene itself (`animate_invoke`).
+What is read is `points_sops/placed`: the dive's output (`points_sops/scene`,
+invoked first by the HDA when the dive outputs the APEX scene itself:
+`animate_invoke`) less the shapes with nowhere to go (see the end).
 
 The Scene Invoke outputs packed folders, so its shapes reach here
 without the unpack: `read_points` reads each packed shape's points where
@@ -29,6 +30,17 @@ primvar is removed. Prims with no points (cameras, lights, packed prims)
 are imported every frame, by `remainder_import`. If a frame's point count
 is not the first frame's, the rigs changed topology, and `full_import`
 imports that frame the slow way instead.
+
+Only shapes with somewhere to go reach the imports (`points_sops/placed`,
+`placed_shapes`). A Scene Invoke whose Shapes pattern is wider than
+`Base` (Houdini's own default is `*`) also outputs a rig's helper shapes,
+a TumbleRig rig's joint and spline viz, face board and skeleton display.
+They carry no `path`, so a SOP Import would put them under a root-level
+`/Geometry`, outside every character, and the animation layer would
+publish them. In a character that has geometry with paths, its path-less
+shapes made of points (meshes, curves) are left out, with a warning on the
+node and one status-bar message. A character with no path anywhere (a rig
+not built for the pipeline) is kept as it is and named in the warning.
 """
 
 import time
@@ -67,6 +79,11 @@ def non_point_prim_count(geo) -> int:
 
 
 _mapping_cache = {}
+
+#: `points_sops/placed`: what the imports read instead of `scene`.
+PLACED = 'placed'
+# What was last announced per node, so a cook every frame announces once.
+_announced: dict = {}
 
 
 class TopologyChanged(Exception):
@@ -276,7 +293,7 @@ def _output_type():
 
 def dive_output(dive_node):
     """The SOP whose geometry is the dive's output, as Houdini picks it
-    for a reference to the network (the HDA's `points_sops/scene` Object
+    for a reference to the network (the HDA's `points_sops/dive` Object
     Merges `../../anim_dive`): the Output SOP with Output Index 0, whatever
     it is called, else the display node.
 
@@ -300,18 +317,20 @@ def _dive_output(lop_node):
     return None if dive is None else dive_output(dive)
 
 
-def _scene(lop_node):
-    """`points_sops/scene`: the dive's output, invoked by th::animate when
-    the dive outputs the APEX scene itself (`animate_invoke`)."""
+def _placed(lop_node):
+    """`points_sops/placed`: `points_sops/scene` (the dive's output,
+    invoked by th::animate when the dive outputs the APEX scene itself:
+    `animate_invoke`) with only the shapes that have somewhere to go
+    (`placed_shapes`); what every import reads."""
     sops = _sops(lop_node)
-    return None if sops is None else sops.node(SCENE)
+    return None if sops is None else (sops.node(PLACED) or sops.node(SCENE))
 
 
 def apply(lop_node) -> None:
     """The `apply` Python LOP: this frame's points onto the static import."""
     if _dive_output(lop_node) is None:
         return
-    output = _scene(lop_node)
+    output = _placed(lop_node)
     if output is None:
         return
     static_node = lop_node.inputs()[0]
@@ -354,7 +373,7 @@ def topology_changed(lop_node) -> int:
     """The `topology_switch` expression: 1 when this frame's point count is
     not the first frame's (the full, per-frame import then runs)."""
     sops = _sops(lop_node)
-    output = _scene(lop_node) if _dive_output(lop_node) is not None else None
+    output = _placed(lop_node) if _dive_output(lop_node) is not None else None
     if output is None or sops is None:
         return 0
     # The first frame before this one: the dive's SOPs keep one frame's
@@ -519,6 +538,112 @@ def remainder_shapes(sop_node) -> None:
             folder.setEmbeddedGeometry(inner)
     if doomed:
         geo.deletePrims(doomed)
+
+
+# --- shapes with somewhere to go -------------------------------------------
+
+
+def shapes_to_leave_out(shapes) -> list[int]:
+    """Which of one character's shapes the imports leave out.
+
+    `shapes` is `(name, has_path, points_only)` per shape: whether any of
+    its prims has a `path`, and whether all of them are made of points
+    (meshes, curves; not cameras or other packed prims). Left out are the
+    path-less, points-only shapes of a character that has a shape with a
+    path: helper geometry (viz, face boards) a SOP Import would put at
+    `/Geometry`. A character with no path anywhere keeps everything.
+    """
+    if not any(has_path for _, has_path, _ in shapes):
+        return []
+    return [i for i, (_, has_path, points_only) in enumerate(shapes)
+            if not has_path and points_only]
+
+
+def unplaced_message(left_out: dict, pathless: list) -> str:
+    """The warning for `placed_shapes`: `left_out` is character -> the
+    shapes left out, `pathless` the characters with no path at all."""
+    parts = []
+    if left_out:
+        named = '; '.join(f'{character}: {", ".join(shapes)}'
+                          for character, shapes in sorted(left_out.items()))
+        parts.append(
+            f'th::animate left out rig shapes with no path ({named}): they '
+            'would land at /Geometry, outside the characters. The Scene '
+            "Invoke's Shapes pattern picks them; set it to Base to output "
+            'only the characters\' geometry.')
+    if pathless:
+        parts.append(
+            'th::animate: no shape of ' + ', '.join(sorted(pathless))
+            + ' has a path attribute, so its geometry lands at /Geometry, '
+            'not under /CHAR. Is it a rig built for the pipeline?')
+    return '\n'.join(parts)
+
+
+def _has_path(geo) -> bool:
+    attrib = geo.findPrimAttrib('path')
+    if attrib is None:
+        return False
+    try:
+        return any(attrib.strings())
+    except hou.OperationFailed:
+        return False
+
+
+def placed_shapes(sop_node) -> None:
+    """The `placed` Python SOP after `scene`: the dive's packed folders
+    without the shapes `shapes_to_leave_out` names, a warning on this node
+    naming them, and one status-bar message per change. Geometry that is
+    not packed folders passes through as it is."""
+    geo = sop_node.geometry()
+    if not _has_packed(geo):
+        return
+    left_out, pathless = {}, []
+    for folder in geo.prims():
+        if folder.type() != hou.primType.PackedGeometry:
+            continue
+        inner = folder.getEmbeddedGeometry()
+        if inner is None:
+            continue
+        shapes, entries = [], []
+        for shape in inner.prims():
+            shape_geo = (shape.getEmbeddedGeometry()
+                         if shape.type() == hou.primType.PackedGeometry else None)
+            if shape_geo is None:
+                continue
+            shapes.append((_name(shape), _has_path(shape_geo),
+                           non_point_prim_count(shape_geo) == 0))
+            entries.append(shape.number())
+        character = _name(folder) or f'folder {folder.number()}'
+        if shapes and not any(has_path for _, has_path, _ in shapes):
+            if any(points_only for _, _, points_only in shapes):
+                pathless.append(character)
+            continue
+        drop = shapes_to_leave_out(shapes)
+        if not drop:
+            continue
+        inner = inner.freeze()
+        doomed = [inner.prim(entries[i]) for i in drop]
+        # Two folders can share a name: the warning names what both lost.
+        left_out.setdefault(character, []).extend(
+            shapes[i][0] or f'shape {entries[i]}' for i in drop)
+        inner.deletePrims(doomed)
+        folder.setEmbeddedGeometry(inner)
+    message = unplaced_message(left_out, pathless)
+    if message:
+        add_warning = getattr(sop_node, 'addWarning', None)
+        if add_warning is not None:
+            add_warning(message)
+    animate_node = sop_node.parent().parent() if sop_node.parent() else None
+    key = animate_node.path() if animate_node is not None else sop_node.path()
+    if _announced.get(key) != message:
+        _announced[key] = message
+        if message:
+            announce(message)
+
+
+def _name(prim) -> str:
+    attrib = prim.geometry().findPrimAttrib('name')
+    return prim.attribValue('name') if attrib is not None else ''
 
 
 # --- the dive's Scene Invoke ------------------------------------------------

@@ -397,6 +397,8 @@ def collapse_latest_references(
         RenderSettingsError: If the stage's RenderSettings prim (or, for a
                              playblast, the camera it names) cannot be
                              identified
+        RenderVarsError: If a render var writes a plane the farm cannot read
+                         (pipe.usd.render_vars.check_render_vars)
     """
     if not staged_file_path.exists():
         raise ValueError(f"Staged file does not exist: {staged_file_path}")
@@ -482,6 +484,12 @@ def collapse_latest_references(
         usda_content = usda_content + '\n' + generate_render_overrides_section(
             render_overrides, settings_prim_path
         )
+
+    # The planes husk writes must carry the names the farm splits by: refused
+    # here, never renamed (pipe.usd.render_vars).
+    if not playblast:
+        from tumblepipe.pipe.usd.render_vars import check_render_vars_in_usda
+        check_render_vars_in_usda(usda_content, settings_prim_path)
 
     if render_layers and not playblast:
         from tumblepipe.pipe.usd.render_passes import apply_render_layers_to_usda

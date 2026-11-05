@@ -596,6 +596,18 @@ Lattice, say). `th::playblast` (SOP) invokes an APEX scene wired into it the
 same way (Shapes `Base`), so a playblast in the dive can read the Scene
 Animate.
 
+Keep Shapes at `Base`, in the folder or in an old dive's own Scene Invoke.
+A wider pattern (`*`, Houdini's default, or `* Base`) also outputs the rig's
+helper shapes: joint and spline viz, the face board, the skeleton display.
+They have no `path`, so they would land at a root-level `/Geometry`, outside
+every character, and be published with the animation. `th::animate` leaves
+out a character's path-less shapes when the character has geometry with
+paths, and says so in a warning on the node and on the status bar. A
+character with no path at all (a rig not built for the pipeline) is kept,
+lands at `/Geometry`, and is named in the warning. A skeleton turned on in
+the Characters list is not a helper shape: it has its path (`skel/Base`)
+and stays. Up to 1.93 the helper shapes went through.
+
 The node reads the dive's output the way Houdini does for a SOP network:
 the Output SOP whose **Output Index** is 0, whatever it is called, or the
 display node when there is none. You can rename `output0`, or wire a

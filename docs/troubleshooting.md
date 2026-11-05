@@ -367,6 +367,19 @@ shot stage as it stands on the shot's first frame, so it holds still.
 Existing scenes pick both up when opened. On 1.88, hiding the ghost in the
 dive's viewer restores playback speed.
 
+### Joint meshes, spline curves or a face board at `/Geometry` after `th::animate`
+
+The stage after `th::animate` has a root-level `/Geometry` beside `/CHAR`,
+holding the rig's joint and spline viz, face board or skeleton display. The
+Scene Invoke's **Shapes** pattern picks every shape the rig has: `*`,
+Houdini's default, or `* Base`. Only `Base` carries the paths that put the
+geometry under `/CHAR/<character>/geo`; the helper shapes have none. Set
+Shapes to `Base`: on an old dive's own Scene Invoke (a dive from before
+1.92), or in `th::animate`'s Characters folder. After 1.93 `th::animate`
+leaves those shapes out and warns about it. A character whose shapes all
+lack a path is a rig not built for the pipeline: it lands at `/Geometry`
+whatever the pattern.
+
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
 Each is a deliberate guard in `th::export_layer`, and the dialog names the
@@ -674,6 +687,19 @@ one. Separately, a workfile created from a department template had its
 Later releases run Import after the callback returns and import a new
 workfile's shot when it is created. On an older release, reopen the workfile
 (opening a scene re-imports it) instead of pressing Import.
+
+### Houdini crashes on the viewport's camera menu → Select Camera
+
+This is a crash in Houdini itself (seen in 22.0.368, with no packages
+loaded). **Select Camera** crashes when the camera the viewer was looking
+through has since been deleted. The menu then reads *No cam* but still
+offers Select Camera. Torn-off and docked viewers are both affected. In a
+shot, **Build** on `th::layout_rigs` recreates the camera rig's node, so a
+viewer that was already looking through the shot camera can be left in
+that state.
+
+Pick the camera again from the camera menu's list first, then use Select
+Camera. The crash has been passed on to SideFX.
 
 ### A new Multi workfile is empty, or opening one reports "frame range lookup failed"
 
@@ -1062,6 +1088,35 @@ light carries. Two causes:
   is built for a tag nothing carries.`
 - **Mesh lights** (a `Mesh` with `MeshLightAPI`) were dropped by a type-name
   filter before **1.37.2**, so their tags never produced a var. Update.
+
+### Render failed: `Missing required AOVs in rendered output: ['beauty']`, "Multiple output image planes named albedo"
+
+The render log lists `Found AOV names in EXR: ['c', 'albedo', …]`: the beauty
+was written as a plane named `C`, and two render vars made a plane named
+`albedo`. The farm keeps a plane only under its render var's own name, so the
+beauty counted as missing. The AOV toggles of the Karma Render Properties
+node inside `th::render_settings` make this. They author Karma's own vars
+beside the pipeline's:
+
+- **Beauty** (off in `th::render_settings`, on in a stock Karma node) adds
+  `Beauty`, written as a plane named `C`, beside the pipeline's `beauty`.
+- **Albedo** adds `Albedo` beside the project's own `albedo`.
+- **Depth** and **UV** add `Depth` and `UV` beside `th::render_vars`' `depth`
+  and `uv`.
+
+After 1.93 these Karma toggles are switched off when the scene loads, the
+matching toggle on `th::render_settings`' **AOVs** tab ticked instead, and a
+comment on the node says which; republish the render department and
+resubmit. Ticking one again makes `th::render_settings` error. A stage that
+still has such vars (published before, or authored by another node) is
+refused at submit with `the render vars would render planes the farm cannot
+read`, naming each var; the farm never renames them. Choose AOVs on the
+**AOVs** tab of [`th::render_settings`](nodes/lighting-and-rendering.md#thrender_settings-lop):
+a project made from the template already renders `beauty`, `albedo` and
+`normal` (its `root_default_prims.usda`). `ocio plugin: unable to find color space ''` in the same log is
+Karma's **OCIO** image filter switched on with no output colour space. Karma
+skips the filter and the frame is unchanged; turn it off, since farm renders
+stay scene-linear for the comp.
 
 ## Where to look
 

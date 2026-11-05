@@ -12,6 +12,21 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.93.0 — 2026-11-04
+
+### Features
+- feat(textures): versioned texture sets, published from COPs or the library (`9bc336e8`)
+- feat(render): render layers as USD render passes from channel_prims (`0e0898f6`)
+- feat(farm): let husk run custom USD procedurals in renders and Karma playblasts (`4d8104f1`)
+
+### Documentation
+- docs(render): render layers from channel_prims as render passes (`51ff4192`)
+- docs: regenerate CHANGELOG.md for v1.92.0 (`62af8e69`)
+
+### Other Changes
+- Merge remote-tracking branch 'origin/master' (`1cad84f0`)
+- Merge origin/master into feat/husk-allow-procedurals (`137d3e21`)
+
 ## v1.92.0 — 2026-11-04
 
 ### Features

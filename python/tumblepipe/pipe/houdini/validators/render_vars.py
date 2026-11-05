@@ -1,5 +1,6 @@
 """RenderVar validation - ensures prim names match aov:name attributes."""
 
+from tumblepipe.pipe.usd.render_vars import FIX, twin_problems
 from tumblepipe.pipe.houdini import prim_queries
 from .base import ValidationResult
 
@@ -176,4 +177,19 @@ def validate_ordered_vars(root) -> ValidationResult:
                 ),
             )
 
+    return result
+
+
+def validate_render_var_twins(root) -> ValidationResult:
+    """Two RenderVars that make one AOV (the same name, any case) are an
+    error: husk writes two planes of that name and keeps one, and the farm
+    refuses the render (pipe.usd.render_vars). Karma's own Albedo toggle
+    beside the project's ``albedo`` is the usual pair."""
+    result = ValidationResult()
+    stage = root.GetStage()
+    if stage is None:
+        result.add_warning("No stage available for validation")
+        return result
+    for problem in twin_problems(sorted(_get_render_var_paths(stage))):
+        result.add_error(problem, suggestion=FIX)
     return result

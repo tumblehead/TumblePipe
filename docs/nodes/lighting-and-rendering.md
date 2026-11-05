@@ -14,15 +14,26 @@ None of these HDAs carries built-in help text, so this page is the reference.
 
 ## `th::render_settings` (LOP)
 
-Karma render settings for the shot, with named presets. Tab menu
-`_TumblePipe/pipeline`; drop it in the shot's `/stage` after the lights.
-Inside it is a Karma Render Properties node driven by the parms below, plus
-an embedded `th::render_vars` that has **only `beauty` ticked** and is not
-on the interface. It only switches on when nothing upstream has authored a
-`beauty` RenderVar, so a shot always renders at least the RGBA beauty —
-every other AOV comes from a separate
-[`th::render_vars`](#thrender_vars-lop), [`th::lpe_tags`](#thlpe_tags-lop)
-or [`th::mattes`](#thmattes-lop) downstream.
+Karma render settings for the shot, with named presets, and the place its
+AOVs are chosen. Tab menu `_TumblePipe/pipeline`; drop it in the shot's
+`/stage` after the lights. Inside it is a Karma Render Properties node driven
+by the parms below, and an embedded `th::render_vars` driven by the **AOVs**
+tab: the same toggles and Compression menus as
+[`th::render_vars`](#thrender_vars-lop), each var named as the pipeline
+reads it. Its beauty renders whether ticked or not when nothing upstream has
+authored a `beauty` RenderVar, so a shot always renders at least the RGBA
+beauty. Light groups and mattes come from [`th::lpe_tags`](#thlpe_tags-lop)
+and [`th::mattes`](#thmattes-lop) downstream.
+
+The Karma Render Properties node inside keeps **its own AOV toggles off**.
+They author Karma's names (its **Beauty** writes a var `Beauty` as a plane
+named `C`, its **Albedo** an `Albedo` beside the project's `albedo`), which the
+farm cannot read. While one is on the node errors, naming the toggle and the
+AOVs-tab toggle to use instead. A scene saved with one on has it switched
+off when it loads, the matching AOVs-tab toggle ticked, and a comment on the
+node saying which (`render_settings.lock_karma_aovs`). The check also errors
+on any render var on the stage whose plane name is not its prim name, and on
+two vars of one AOV name (`check_render_vars` inside the node).
 Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.0/th_8_8Lop_1render__settings_8_81.0/DialogScript),
 [`lops/render_settings.py`](../../python/tumblepipe/pipe/houdini/lops/render_settings.py).
 
@@ -38,6 +49,7 @@ Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.
 | Diffuse / Reflection / Refraction / Volume / SSS Limit | `2 / 4 / 4 / 0 / 1` | Karma ray limits |
 | Enable Depth of Field, Enable Motion Blur | on, on | |
 | Dicing Camera | off | Dice displacement from a copy of the camera at **Source Frame** (`1001`), optionally with **Add Focal Length**; **Quality Scale** `0.5` |
+| AOVs tab | all off | The [`th::render_vars`](#thrender_vars-lop) toggles and Compression menus. The beauty renders unticked when nothing upstream has one |
 
 Gotchas:
 
@@ -49,15 +61,18 @@ Gotchas:
   `/scene/Render/…`); the submit dialog's overrides find it by asking the
   stage — see
   [Where the render settings live](../composition.md#where-the-render-settings-live).
-- A preset is a snapshot of the whole node. Loading one overwrites the
-  camera path too.
+- A preset is a snapshot of the whole node, the AOVs tab included. Loading
+  one overwrites the camera path too. A preset saved before the node had an
+  AOVs tab holds no AOV toggles, so loading it leaves the tab as it is.
 
 ## `th::render_vars` (LOP)
 
 Tick the AOVs a render should write. Tab menu `_TumblePipe/rendering`; put
 it after `render_settings`. Every toggle is a RenderVar prim under
 `/Render/Products/Vars`, and **every toggle is off by default** — a fresh
-node adds nothing until you tick something.
+node adds nothing until you tick something. `th::render_settings` carries the
+same toggles on its **AOVs** tab, which is the usual place to tick them; this
+node is for AOVs added further down the graph.
 Source: [`otls/lop_th.render_vars.1.1`](../../otls/lop_th.render_vars.1.1/th_8_8Lop_1render__vars_8_81.1/DialogScript),
 [`pipe/houdini/aov.py`](../../python/tumblepipe/pipe/houdini/aov.py).
 
@@ -72,6 +87,15 @@ Source: [`otls/lop_th.render_vars.1.1`](../../otls/lop_th.render_vars.1.1/th_8_8
 | position | `position` | Hit position |
 | diffuse / specular / volume / emission | `diffuse`, `specular`, `volume`, `emission` | LPE splits (`C<RD>.*L`, `C<RG>.*L`, `CV.*L`, `C.*O`) |
 | depth | `depth` | Hit depth (`ray:hitPz`) |
+| diffuse direct, indirect | `diffuse_direct`, `diffuse_indirect` | `C<RD>L`, `C<RD>.+L` |
+| specular direct, indirect | `specular_direct`, `specular_indirect` | `C<RG>L`, `C<RG>.+L` |
+| transmission / sss / coat | `transmission`, `sss`, `coat` | `C<TG>.*L`, `C<TD>.*L`, the BSDF labelled `coat` |
+| unshadowed, shadow | `unshadowed`, `shadow` | The beauty with nothing casting shadows, and the light shadows take away (`unshadowed − shadow = beauty`). Not `beauty_*`: slapcomp sums those as light groups |
+| ao | `ao` | Ambient occlusion |
+| motion vectors / velocity | `motionvectors`, `velocity` | Screen-space motion (`ray:motionvector`) and world-space velocity (`ray:velocity`) |
+
+These are Karma's own AOVs (the sources its Render Properties toggles use)
+under TumblePipe names: lowercase, the var and its plane named alike.
 
 There is no alpha toggle: the alpha is the beauty's A. The separate `alpha`
 AOV this node used to write came from `ray:hit`, which Karma's holdouts do not
@@ -90,10 +114,23 @@ Every consumer sorts AOVs the same way (`aov.py`): `beauty` first, then the
 everything else — that is the order `build_comp` and the turntable read them
 in.
 
+An AOV's name is its RenderVar's prim name, lowercased: that is what the
+publish lists and what the farm splits the EXR by, so the plane Karma writes
+(`driver:parameters:aov:name`) must be that name too. The farm never renames
+or drops a var. A render whose product lists a var with any other plane name
+(Karma's own **Beauty** toggle writes `Beauty` as plane `C`), or two vars of
+one AOV name (Karma's **Albedo** beside the project's `albedo`), is refused
+at submit, or by the farm's stage task, with every such var named and the fix
+(`pipe/usd/render_vars.py`). `th::render_settings` errors on the same thing
+in the scene, and the publish's `render_var_names` and `render_var_twins`
+checks report it. Up to 1.93 such a render failed on the farm with
+`Missing required AOVs in rendered output: ['beauty']`.
+
 **Compression** (a collapsible folder) holds one menu per AOV: the EXR
 compression that AOV is written with, greyed out while its toggle is off.
-Data AOVs (`normal`, `depth`, `position`, `uv`, `samples`, the
-`*_mse` variances other than `beauty_mse`) default to lossless **ZIP**, colour
+Data AOVs (`normal`, `depth`, `position`, `uv`, `samples`, `ao`,
+`motionvectors`, `velocity`, the `*_mse` variances other than `beauty_mse`)
+default to lossless **ZIP**, colour
 AOVs to **DWAB**. The farm writes exactly what is set here; see
 [Compositing → Compression](../compositing.md#compression).
 

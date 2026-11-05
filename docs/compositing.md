@@ -45,11 +45,12 @@ oiiotool publish step, splice `ACESCG_ATTRIB_ARGS` into its final write.
 
 Each AOV's EXR compression is set **on the node that adds it**, in the render
 department: every AOV of [`th::render_vars`](nodes/lighting-and-rendering.md#thrender_vars-lop)
-and every [`th::mattes`](nodes/lighting-and-rendering.md#thmattes-lop) row
+(and of `th::render_settings`' **AOVs** tab, the same menus) and every [`th::mattes`](nodes/lighting-and-rendering.md#thmattes-lop) row
 has a **Compression** menu. They default to lossless **ZIP** for data
 and lossy **DWAB** for colour. Colour is `beauty`, its `beauty_<tag>` light
 groups and their variance, `albedo` and the LPE splits (`diffuse`, `specular`,
-`volume`, `emission`); everything else is data — the `objid_*` / `holdout_*`
+`volume`, `emission`, their direct/indirect splits, `transmission`, `sss`,
+`coat`, `unshadowed`, `shadow`); everything else is data — the `objid_*` / `holdout_*`
 mattes, `depth`, `normal`, `position`, `uv`, `samples`, the other
 variances. DWA's quantisation is invisible in a picture but shows up in a
 comp that reads the numbers: soft matte edges, banded depth. The rule the

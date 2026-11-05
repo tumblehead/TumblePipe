@@ -20,7 +20,11 @@ from .base import (
     ValidationResult,
     StageValidatorRegistry,
 )
-from .render_vars import validate_render_var_names, validate_ordered_vars
+from .render_vars import (
+    validate_render_var_names,
+    validate_render_var_twins,
+    validate_ordered_vars,
+)
 from .render_settings import validate_render_settings, validate_render_products
 from .camera import validate_cameras
 from .geometry import validate_rest_geometry, validate_material_bindings
@@ -39,6 +43,7 @@ _registry = StageValidatorRegistry()
 # Register built-in validators
 _registry.register('render_var_names', validate_render_var_names)
 _registry.register('ordered_vars', validate_ordered_vars)
+_registry.register('render_var_twins', validate_render_var_twins)
 _registry.register('render_settings', validate_render_settings)
 _registry.register('render_products', validate_render_products)
 _registry.register('cameras', validate_cameras)
@@ -75,6 +80,7 @@ _DEFAULT_VALIDATORS: dict[tuple[str, str], list[str]] = {
         'render_settings',
         'render_products',
         'render_var_names',
+        'render_var_twins',
         'ordered_vars',
     ],
     ('shots', 'composite'): [],
@@ -163,6 +169,7 @@ __all__ = [
     'validate_stage_for_department',
     'validate_render_var_names',
     'validate_ordered_vars',
+    'validate_render_var_twins',
     'validate_render_settings',
     'validate_render_products',
     'validate_cameras',

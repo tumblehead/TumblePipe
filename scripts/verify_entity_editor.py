@@ -352,6 +352,28 @@ check('each sequence has its own row above its shots',
       keys[0] == SQ010 and all(shots.sheet.row(k).group == 'sq010' for k in keys[1:4])
       and keys[4] == SQ020 and all(shots.sheet.row(k).group == 'sq020' for k in keys[5:7]),
       keys)
+# Magnus 2026-11-04: a Multi assigned on a sequence's own row. Its Multis
+# cell opens the dialog and lists the sequence whole; Remove from Multi on
+# the row takes it out again.
+crowd = next(m for m in shots.sheet.multis if m.name == 'Crowd')
+column = shots.columns.index(es.MULTIS)
+seq_multis = shots.index_of(SQ020, es.MULTIS)
+check('a sequence row\'s Multis cell is editable',
+      bool(seq_multis.flags() & Qt.ItemIsEditable), seq_multis.flags())
+ee.MultiMembershipDialog.exec = _join
+shots.select_cells([(SQ020, column)], current=(SQ020, column))
+shots.edit_multis(seq_multis)
+check('the sequence row lists the sequence whole in the Multi',
+      'entity:/shots/sq020' in crowd.members, crowd.members)
+check('the sequence row shows the Multi', shots.index_of(SQ020, es.MULTIS).data() == 'Crowd',
+      shots.index_of(SQ020, es.MULTIS).data())
+_row, seq_shot = cell(shots, 'sq020', 'SH020', es.MULTIS)
+check('its shots are members through it', seq_shot.data() == 'Crowd', seq_shot.data())
+shots.set_membership(crowd.id, False)
+check('Remove from Multi on the sequence row takes it out',
+      'entity:/shots/sq020' not in crowd.members and shots.index_of(SQ020, es.MULTIS).data() == '',
+      crowd.members)
+
 seq_root = shots.index_of(SQ010, es.ROOT)
 check('the sequence row shows its own Root, bold',
       seq_root.data() == 'forest' and seq_root.data(Qt.FontRole).bold(), seq_root.data())

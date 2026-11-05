@@ -160,7 +160,9 @@ the selected rows are in is partly ticked and left alone unless clicked.
 **New Multi…** in that dialog makes one holding the rows. The right-click
 menu also has **Add to Multi ▸**, **Remove from Multi ▸** and **New Multi
 from Selected…**. A row whose Multis changed says *Multis changed* in its
-Status.
+Status. On a sequence's (or category's) own row the same cell and menus
+list the sequence whole: every shot in it, and any made later, is a member
+(see [A whole sequence](multis-and-roots.md#a-whole-sequence)).
 
 **On the Multis tab.** One row per Multi of the kind the dropdown shows
 (**Shots** or **Assets**), with **Multi** (its name: edit to rename),

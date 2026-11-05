@@ -258,7 +258,7 @@ A department with no entry runs nothing.
 | assets / groom | `groom_structure` |
 | assets / lookdev | `lookdev_structure`, `material_bindings` |
 | shots / layout, environment, animation, crowd, cfx, effects, light | `shot_root_prims` |
-| shots / render | `shot_root_prims`, `cameras`, `render_settings`, `render_products`, `render_var_names`, `ordered_vars` |
+| shots / render | `shot_root_prims`, `cameras`, `render_settings`, `render_products`, `render_var_names`, `render_var_twins`, `ordered_vars` |
 | shots / composite | none |
 
 **Errors** stop the export unless you continue; **warnings** never block
@@ -282,6 +282,7 @@ Passed With Warnings**, or the issue list with a **Close** button.
 | `render_settings` | `the stage carries no UsdRender.Settings prim …` (or several — exactly one is required); `RenderSettings missing 'camera' relationship`, `… has no target`, `RenderSettings camera target does not exist: <path>`. Warnings when `products` is missing or empty. |
 | `render_products` | `No RenderProduct prims found on the stage`; `RenderProduct renders through no camera, and the RenderSettings names none to inherit` / `RenderProduct camera target does not exist: <path>`. Warnings for a missing or empty `productName`. |
 | `render_var_names` | `Prim name '<prim>' does not match aov:name '<aov>'` — rename one to match. Warnings for a missing or empty `driver:parameters:aov:name`. |
+| `render_var_twins` | `<var> and <var> are both the AOV '<name>'`: two RenderVars whose names differ only in case (Karma's own **Albedo** toggle beside the project's `albedo`). Switch Karma's toggle off and use the **AOVs** tab of [`th::render_settings`](../nodes/lighting-and-rendering.md#thrender_settings-lop); the farm refuses such a render too. |
 | `ordered_vars` | `orderedVars references non-existent RenderVar: <path>`; `RenderVar not in orderedVars: <path>`. Warnings when `orderedVars` is missing or empty. |
 
 A validator name in a project's `validators.py` that is not registered is

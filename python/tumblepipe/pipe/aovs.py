@@ -23,6 +23,15 @@ COLOR_AOV_NAMES = frozenset({
     'specular',
     'volume',
     'emission',
+    'diffuse_direct',
+    'diffuse_indirect',
+    'specular_direct',
+    'specular_indirect',
+    'transmission',
+    'sss',
+    'coat',
+    'unshadowed',
+    'shadow',
 })
 COLOR_AOV_PREFIXES = ('beauty_',)
 
@@ -54,6 +63,13 @@ def is_matte_aov(aov_name: str) -> bool:
 def is_ramp_aov(aov_name: str) -> bool:
     """True for a ``ramp_*`` distance ramp."""
     return aov_name.lower().startswith(RAMP_AOV_PREFIX)
+
+
+def pipeline_aov_name(render_var_name: str) -> str:
+    """The name the pipeline knows a render var's AOV by: its prim name,
+    lowercased. The export's ``aov_names``, the farm's output paths and its
+    EXR split all use it, so the render's plane must carry it too."""
+    return render_var_name.lower()
 
 
 def is_edit_aov(aov_name: str) -> bool:

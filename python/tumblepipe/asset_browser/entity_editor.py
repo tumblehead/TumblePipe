@@ -390,8 +390,9 @@ class _SheetModel(QAbstractTableModel):
 
     def editable(self, row: es.Row | GroupKey, column: str) -> bool:
         if isinstance(row, GroupKey):
-            # A group's values; its name and entities are edited elsewhere.
-            return column in self._pane.values_columns
+            # A group's values, and the Multis listing it whole; its name
+            # and entities are edited elsewhere.
+            return column in self._pane.values_columns or column == es.MULTIS
         if row.retire or column == STATUS:
             return False
         if column == es.GROUP:
@@ -457,7 +458,7 @@ class _SheetModel(QAbstractTableModel):
             if column == es.NAME:
                 return '' if role != Qt.DisplayRole else _plural(len(self._members(group)), kind.item)
             if column == es.MULTIS:
-                return ''
+                return cell_text([m.name for m in sheet.group_multis(group)], column)
             if column == es.ASSETS:
                 return assets_label(sheet.root_assets(sheet.group_value(group, es.ROOT)))
             value = sheet.group_value(group, column)
@@ -507,7 +508,12 @@ class _SheetModel(QAbstractTableModel):
         if column == es.NAME:
             return f'The {kind.item}s in {what}.'
         if column == es.MULTIS:
-            return f'A Multi lists {kind.item}s, not {_plurals(kind.group)}.'
+            names = [m.name for m in sheet.group_multis(group)]
+            listed = (
+                f'Listed whole in {", ".join(names)}: every {kind.item} in it, '
+                'and any made in it later, is a member. ' if names else ''
+            )
+            return f'{listed}Click to choose the Multis that list {what} whole.'
         if column == es.ASSETS:
             root = sheet.group_value(group, es.ROOT)
             if not isinstance(root, str):
@@ -1560,7 +1566,7 @@ class _SheetPane(QWidget):
         """One cell, as typed or pasted: '' or Inherit in a value column
         puts it back to inheriting. A group's row sets the group's value."""
         if isinstance(row_id, GroupKey):
-            if not self.model.editable(row_id, column):
+            if not self.model.editable(row_id, column) or column in _DIALOG_COLUMNS:
                 return
             group = row_id.name
             try:
@@ -1831,61 +1837,102 @@ class _SheetPane(QWidget):
             ids = selected
         return [i for i in ids if not self.sheet.row(i).retire]
 
+    def _target_groups(self, index) -> list[str]:
+        """The groups an action on ``index`` is about when it is a group's
+        own row: the selected groups when it is among them, else its own.
+        Empty on an entity row."""
+        if not index.isValid():
+            return []
+        key = self._row_id(index)
+        if not isinstance(key, GroupKey):
+            return []
+        selected = self.selected_groups()
+        return selected if key.name in selected else [key.name]
+
     def edit_multis(self, index) -> None:
-        """The Multis cell: which Multis the rows belong to, ticked."""
-        ids = self._target_rows(index)
-        if not ids:
+        """The Multis cell: which Multis the rows belong to, ticked. On a
+        group's own row: which Multis list the group whole."""
+        groups = self._target_groups(index)
+        ids = [] if groups else self._target_rows(index)
+        if not ids and not groups:
             return
-        dialog = MultiMembershipDialog(self, ids)
+        dialog = MultiMembershipDialog(self, ids, groups)
         if dialog.exec() != QDialog.Accepted:
             return
 
         def change():
             for multi_id, member in dialog.changes.items():
-                self.sheet.set_membership(ids, multi_id, member)
+                self._set_membership(ids, groups, multi_id, member)
             if dialog.new_multi is not None:
                 name, departments = dialog.new_multi
-                self.sheet.add_multi(name, ids, departments)
+                multi_id = self.sheet.add_multi(name, ids, departments)
+                self.sheet.set_group_membership(groups, multi_id, True)
         self.edit(change)
 
+    def _set_membership(self, ids, groups, multi_id: int, member: bool) -> None:
+        if groups:
+            self.sheet.set_group_membership(groups, multi_id, member)
+        else:
+            self.sheet.set_membership(ids, multi_id, member)
+
     def set_membership(self, multi_id: int, member: bool) -> None:
-        ids = self._target_rows(self.table.currentIndex())
-        self.edit(lambda: self.sheet.set_membership(ids, multi_id, member))
+        current = self.table.currentIndex()
+        groups = self._target_groups(current)
+        ids = [] if groups else self._target_rows(current)
+        self.edit(lambda: self._set_membership(ids, groups, multi_id, member))
 
     def new_multi_from_selected(self) -> None:
-        ids = self._target_rows(self.table.currentIndex())
-        if not ids:
+        current = self.table.currentIndex()
+        groups = self._target_groups(current)
+        ids = [] if groups else self._target_rows(current)
+        if not ids and not groups:
             return
+        what = (
+            _plural(len(groups), self.kind.group) + ' (whole)' if groups
+            else _plural(len(ids), self.kind.item)
+        )
         dialog = NewMultiDialog(
             self.sheet, parent=self,
-            note=f'Starts with the {_plural(len(ids), self.kind.item)} selected. '
-                 'Created on Apply.',
+            note=f'Starts with the {what} selected. Created on Apply.',
         )
         if dialog.exec() != QDialog.Accepted or dialog.problem():
             return
-        self.edit(lambda: self.sheet.add_multi(dialog.name(), ids, dialog.chosen()))
+
+        def change():
+            multi_id = self.sheet.add_multi(dialog.name(), ids, dialog.chosen())
+            self.sheet.set_group_membership(groups, multi_id, True)
+        self.edit(change)
 
     def _multi_menus(self, menu: QMenu) -> None:
-        ids = self._target_rows(self.table.currentIndex())
+        current = self.table.currentIndex()
+        groups = self._target_groups(current)
+        ids = [] if groups else self._target_rows(current)
         live = [m for m in self.sheet.multis if not m.retire]
         add = menu.addMenu('Add to Multi')
         remove = menu.addMenu('Remove from Multi')
         rows = {i: self.sheet.row(i) for i in ids}
+        listed = {g: self.sheet.group_member(g) for g in groups}
         for multi in live:
-            if any(not self.sheet.covers(multi, rows[i]) for i in ids):
+            if groups:
+                can_add = any(m not in multi.members for m in listed.values())
+                can_remove = any(m in multi.members for m in listed.values())
+            else:
+                can_add = any(not self.sheet.covers(multi, rows[i]) for i in ids)
+                can_remove = any(i in multi.members for i in ids)
+            if can_add:
                 action = add.addAction(multi.name)
                 action.triggered.connect(lambda _c=False, m=multi.id: self.set_membership(m, True))
-            if any(i in multi.members for i in ids):
+            if can_remove:
                 action = remove.addAction(multi.name)
                 action.triggered.connect(lambda _c=False, m=multi.id: self.set_membership(m, False))
-        add.setEnabled(bool(ids) and not add.isEmpty())
-        remove.setEnabled(bool(ids) and not remove.isEmpty())
+        targets = bool(ids) or bool(groups)
+        add.setEnabled(targets and not add.isEmpty())
+        remove.setEnabled(targets and not remove.isEmpty())
         action = menu.addAction('New Multi from Selected…')
-        action.setEnabled(bool(ids))
+        action.setEnabled(targets)
         action.triggered.connect(self.new_multi_from_selected)
-        current = self.table.currentIndex()
         action = menu.addAction('Edit Multis…')
-        action.setEnabled(bool(ids))
+        action.setEnabled(targets)
         action.triggered.connect(lambda: self.edit_multis(current))
 
     def _context_menu(self, pos) -> None:
@@ -2151,23 +2198,40 @@ class MultiMembershipDialog(QDialog):
     ``changes`` is ``{multi id: member}`` after OK; ``new_multi`` is
     ``(name, departments)`` when **New Multi…** was used."""
 
-    def __init__(self, pane: '_SheetPane', row_ids: list[int]) -> None:
+    def __init__(
+        self, pane: '_SheetPane', row_ids: list[int], groups: list[str] = (),
+    ) -> None:
         super().__init__(pane)
         sheet = self._sheet = pane.sheet
         kind = sheet.kind
         rows = [sheet.row(i) for i in row_ids]
+        groups = list(groups)
         self._row_ids = row_ids
         self.changes: dict[int, bool] = {}
         self.new_multi: tuple[str, list[str]] | None = None
-        who = rows[0].name if len(rows) == 1 else _plural(len(rows), kind.item)
+        count = len(groups) or len(rows)
+        if groups:
+            who = (
+                f'{kind.group} {groups[0]}' if len(groups) == 1
+                else _plural(len(groups), kind.group)
+            )
+            text = (
+                f'Tick the Multis that list {who} whole: every {kind.item} in '
+                f'{"it" if len(groups) == 1 else "them"}, and any made later, is '
+                'a member. For the departments a Multi covers, its members\' '
+                'workfile is the Multi\'s.'
+            )
+        else:
+            who = rows[0].name if len(rows) == 1 else _plural(len(rows), kind.item)
+            text = (
+                f'Tick the Multis {who} {"belongs" if len(rows) == 1 else "belong"} '
+                f'to. For the departments a Multi covers, its members\' workfile '
+                'is the Multi\'s.'
+            )
         self.setWindowTitle(f'Multis of {who}')
         self.resize(scaled(480), scaled(460))
         layout = QVBoxLayout(self)
-        intro = QLabel(
-            f'Tick the Multis {who} {"belongs" if len(rows) == 1 else "belong"} '
-            f'to. For the departments a Multi covers, its members\' workfile '
-            'is the Multi\'s.'
-        )
+        intro = QLabel(text)
         intro.setWordWrap(True)
         layout.addWidget(intro)
         self.list = _CheckList('Filter Multis', ('Multi', 'Covers'))
@@ -2175,12 +2239,19 @@ class MultiMembershipDialog(QDialog):
         for multi in sheet.multis:
             if multi.retire:
                 continue
-            inside = sum(sheet.covers(multi, row) for row in rows)
-            # A row in a sequence the Multi lists whole stays in while the
-            # sequence does: shown ticked, and not changed here.
-            whole = [row for row in rows if sheet.covers(multi, row) and row.id not in multi.members]
+            if groups:
+                inside = sum(sheet.group_member(g) in multi.members for g in groups)
+                whole = []
+            else:
+                inside = sum(sheet.covers(multi, row) for row in rows)
+                # A row in a sequence the Multi lists whole stays in while
+                # the sequence does: shown ticked, and not changed here.
+                whole = [
+                    row for row in rows
+                    if sheet.covers(multi, row) and row.id not in multi.members
+                ]
             state = (
-                Qt.Checked if inside == len(rows)
+                Qt.Checked if inside == count
                 else Qt.Unchecked if inside == 0 else Qt.PartiallyChecked
             )
             self._before[multi.id] = state

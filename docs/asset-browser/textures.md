@@ -50,14 +50,14 @@ map is written raw, so a roughness of 0.25 stays 0.25 in the file.
 - **From Copernicus:** wire layers into a [`th::export_texture`](../nodes/assets.md#thexport_texture-cop)
   node (one input per role), set **Texture Set**, and press **Publish**. Every
   connected input is written and published as the next version.
-- **From the library:** in an asset's workfile, **Shift**-drag a Poly Haven or
+- **From the library:** in an asset's workfile, drop a Poly Haven or
   ambientCG texture set and pick **Asset (*name*): publish**. The set is
   published as a version of one of the asset's sets, named after the library
   set (`wood_floor_deck` becomes `woodFloorDeck`). The nodes the drop builds
   read that version. Dropping the same files again reuses the version and
-  publishes nothing new. Once picked, Asset is the default for plain drops,
-  as every destination choice is. This needs TT Asset Browser 0.54.0 or
-  newer.
+  publishes nothing new. The next drop asks again, with Asset selected.
+  Asking on every drop needs TT Asset Browser 0.55.0 or newer (0.54.0
+  asks only on a Shift-drop).
 
 ## Finding and dropping them
 
@@ -67,7 +67,7 @@ JPEG or TIFF. Cards show up in the **All** view and in search. A card's
 metadata names its owner, its newest version and its maps.
 
 Dropping a card reads that version where it is. It is never copied, and the
-Shift-drop destination question is not asked:
+destination question is not asked:
 
 | Drop into | You get |
 |---|---|

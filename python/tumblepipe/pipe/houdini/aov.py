@@ -16,7 +16,7 @@ def sort_aovs(aovs: Sequence[str]) -> list[str]:
         3. 'objid_*' and 'holdout_*' (mattes)
         4. All other AOVs
     """
-    beauty = None
+    beauty = []
     lpes = []
     mattes = []
     other = []
@@ -24,7 +24,7 @@ def sort_aovs(aovs: Sequence[str]) -> list[str]:
     for aov in aovs:
         _aov = aov.lower()
         if _aov == 'beauty':
-            beauty = aov
+            beauty.append(aov)
         elif _aov.startswith('beauty_'):
             lpes.append(aov)
         elif _aov.startswith('objid_') or _aov.startswith('holdout_'):
@@ -32,7 +32,7 @@ def sort_aovs(aovs: Sequence[str]) -> list[str]:
         else:
             other.append(aov)
 
-    result = [] if beauty is None else [beauty]
+    result = list(beauty)
     result.extend(lpes)
     result.extend(mattes)
     result.extend(other)
@@ -55,10 +55,15 @@ def get_ordered_render_vars(stage) -> str:
     if not vars_prim.IsValid():
         return ''
 
+    var_prims = [
+        aov_prim for aov_prim in vars_prim.GetChildren()
+        if aov_prim.GetTypeName() == 'RenderVar'
+    ]
+    # Every var, twins included: one the artist ticked is never left out in
+    # silence. The publish validators and the farm refuse twins instead.
     aovs = {
         aov_prim.GetName(): str(aov_prim.GetPath())
-        for aov_prim in vars_prim.GetChildren()
-        if aov_prim.GetTypeName() == 'RenderVar'
+        for aov_prim in var_prims
     }
 
     order = sort_aovs(aovs.keys())
