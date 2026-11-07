@@ -1,6 +1,7 @@
 //! The editor window (`designs/edit-entity.md` §5): an edit's tracks under
 //! the video, bins of the project's shots and media library beside it, and
-//! Save, Save As and Publish over it.
+//! its actions (save, publish, the cut's edits) in the menu bar over it
+//! (`editor/menu_bar.rs`).
 //!
 //! The document is `editing::Document`: every change is a `th_edit` op,
 //! undone and redone through its history. Each distinct source the edit
@@ -1000,39 +1001,15 @@ impl Editor {
         menu.into()
     }
 
-    /// The edit's name, then its actions in two groups set apart by space
-    /// (the file: open, save, publish; the cut: undo, redo, split, marker),
-    /// then the view's switches, and the timecode: the one large thing,
-    /// in the accent, because it is where the playhead is now.
+    /// The edit's name, then, at the right, the view's switches and the
+    /// timecode: the one large thing, in the accent, because it is where the
+    /// playhead is now. The actions are the menu bar's (native on Windows and
+    /// macOS, drawn in the window on Linux) and their keys.
     fn toolbar(&self) -> Element<Message> {
-        let button_of = |id: &'static str, label: &str, tip: Option<&'static str>, message: Message, enabled: bool| -> Element<Message> {
-            let words = text(label.to_owned()).font_size(13.0).color(if enabled { look::text() } else { look::disabled() });
-            let b = look::button(Id::new(id), words).padding(Padding::from([4.0, 10.0]));
-            let b = if enabled { b.on_press(move || message.clone()) } else { b };
-            match tip {
-                Some(tip) => tooltip(Id::new(format!("{id} tip")), b, tip).into(),
-                None => b.into(),
-            }
-        };
-        let group = || row().spacing(4.0).align_y(Vertical::Center);
-        let writable = !self.doc.read_only();
-        let named = !matches!(self.doc.origin, Origin::Untitled);
-        let file = group()
-            .push(button_of("open", "Open…", Some("Ctrl+O"), Message::Open(OpenDialog::Open), true))
-            .push(button_of("save", "Save", Some("Ctrl+S"), Message::Open(OpenDialog::Save), writable))
-            .push(button_of("save as", "Save As…", None, Message::Open(OpenDialog::SaveAs), true))
-            .push(button_of("publish", "Publish…", None, Message::Open(OpenDialog::Publish), writable && named));
-        let cut = group()
-            .push(button_of("undo", "Undo", Some("Ctrl+Z"), Message::Undo, writable))
-            .push(button_of("redo", "Redo", Some("Ctrl+Shift+Z"), Message::Redo, writable))
-            .push(button_of("split", "Split", Some("S"), Message::Split, writable))
-            .push(button_of("marker", "Marker", Some("M"), Message::Marker, writable));
         let mut tools = row()
             .spacing(24.0)
             .align_y(Vertical::Center)
             .push(text(self.doc.title()).font_size(15.0).color(look::text()))
-            .push(file)
-            .push(cut)
             .push(space(Length::Fill, Length::Shrink));
         if let Origin::Working { name, .. } = &self.doc.origin {
             let is_master = self.bins.master.as_deref() == Some(name.as_str());

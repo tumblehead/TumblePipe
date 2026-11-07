@@ -78,10 +78,12 @@ Right-click a recipe card for:
 | **Set Icon…** | Picks a Houdini or Lucide icon to show instead of the thumbnail. |
 | **Share to Library: *name*** | On a project's recipe: copies it into that [library](libraries.md), one entry per writable library. Replacing a recipe of the same context and name there asks first. |
 | **Copy to Project: *name*** | On a library's recipe: copies it into that project, one entry per registered project. |
-| **Open Recipe Folder** | Opens the recipe's directory in the file manager. |
 | **Delete Recipe** | Removes the directory from the project (or the library, for every project using it), after a **Delete Recipe** confirmation. |
 
-The detail panel offers **Open Recipe Folder**, **Edit…** (description and
+TumbleTrove's own **Open Folder**, higher up the same menu, opens the
+recipe's directory.
+
+The detail panel offers **Open Folder**, **Edit…** (description and
 tags; name and context are shown read-only) and **Delete**. A read-only
 library's recipes have no **Edit Description…**, **Set Icon…**, **Edit…** or
 **Delete**. Its tabs are

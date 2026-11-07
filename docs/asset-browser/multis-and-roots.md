@@ -362,9 +362,9 @@ What to know:
 - Looking through a camera, the [shot slate](settings.md#the-shot-slate)
   says which shot the playhead is in and where, in that shot's own frames.
 
-### Open Location, Add Entity and Delete
+### Open Folder, Add Entity and Delete
 
-**Open Location** on the card or the sidebar row opens
+**Open Folder** on the card or the sidebar row opens
 `<project>/groups/<context>/<name>` in Explorer, when the folder exists.
 
 **Add Entity…** on the card or the sidebar row opens the
@@ -456,7 +456,7 @@ Right-click a Root card, its list row, or its sidebar row:
 | Action | What it does |
 |---|---|
 | **Open Root** | Drills into the Root's members, like a double-click. |
-| **Open Location** | Opens `<project>/export/scenes/<path>/_staged` in Explorer, or its parent. A Root that has never been exported has no folder, and nothing opens. |
+| **Open Folder** | Opens `<project>/export/scenes/<path>/_staged` in Explorer, or its parent. A Root that has never been exported has no folder, and nothing opens. |
 | **Stage Root & Rebuild Shots…** | **Export Root USD** followed by **Rebuild Assigned Shots…**, behind one confirmation (**Stage Root & Rebuild N shots**, button **Stage & Build**) that lists the shots. Status: *Staged Root 'forest'; rebuilt 3/3 shots*, with *— 1 failed (see Python Shell)* when a rebuild failed. |
 | **Export Root USD** | Writes the next `<project>/export/scenes/<path>/_staged/vNNNN/<name>_vNNNN.usda`, a layer that sublayers each member asset's staged file (strongest first) and then the parent Roots' layers, plus a `context.json` recording the asset list. Status: *Exported Root USD: forest*. |
 | **Rebuild Assigned Shots…** | For every shot whose Root is this one: regenerates the shot's root layer at `<project>/export/shots/<seq>/<shot>/root/vNNNN/<shot>_root_vNNNN.usda` (the Root's layer plus the root defaults), then builds the shot's staged USD locally over its full frame range. Confirmation **Rebuild N shots** (button **Rebuild N**) lists the shots and warns that each is a local Houdini build. Status: *Rebuilt 3/3 shots*. With no assigned shots: *No shots assigned to forest*. |

@@ -163,7 +163,7 @@ Qt and the pipeline clients onto the launch path.
   `Catalog` declares, since a default means "not offered" and the feature
   would silently vanish (`tests/test_catalog_multis.py` pins this).
 - `container_menu.py` — the Multi / Root menu entries beyond tumbletrove's
-  own (Open Location, a Multi's Add Entity, the Root's export and rebuilds) and their
+  own (Open Folder, a Multi's Add Entity, the Root's export and rebuilds) and their
   confirmations.
 - `projects.py` — the registry of projects the catalog spans (moved here
   from the TumbleTrove SDK, which no longer knows about TumblePipe).
@@ -195,7 +195,7 @@ Qt and the pipeline clients onto the launch path.
   `ContainerManager` that owns all container behaviour: collection
   discovery, cards and details, member/dept coverage, the collection
   lifecycle (delete, edit, add / remove members), and the Root
-  context-menu actions (open location, rebuild assigned shots, export
+  context-menu actions (open folder, rebuild assigned shots, export
   USD).
 - `uris.py` — typed factories for tumblepipe URIs, and `asset_id_for`
   (entity URI → browser id).

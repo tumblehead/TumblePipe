@@ -30,7 +30,7 @@ serde_json = "1"
 # and tray icons): on Linux that feature links GTK and libxdo, which artists'
 # machines would then need installed. player/Cargo.toml turns it on for
 # Windows and macOS, where the editor has a native menu bar.
-primer = { git = "http://10.100.36.15:3000/soren-n/primer.git", rev = "add436fb65ddbda5774de445da8eb6e87fac2207", default-features = false }
+primer = { git = "http://10.100.36.15:3000/soren-n/primer.git", rev = "d6e2f090b8c8821169af0f5643a4f9b7d3c2e474", default-features = false }
 exr = "1.74"
 half = { version = "2", features = ["bytemuck"] }
 thiserror = "2"

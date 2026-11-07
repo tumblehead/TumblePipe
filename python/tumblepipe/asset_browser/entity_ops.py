@@ -1287,24 +1287,6 @@ class EntityOps:
             _work, lambda _: None,
         )
 
-    def open_edit_location(self, asset_id: str) -> None:
-        """Show the edit's working folder (its saved versions) in the file
-        browser."""
-        from tumblepipe.pipe import edits as pipe_edits
-        from tumblepipe.util import desktop
-
-        ref, _proj = self._edit_project(asset_id)
-
-        def _work() -> None:
-            folder = pipe_edits.working_dir(ref.name, self._clients.get(ref.project))
-            if not folder.is_dir():
-                raise FileNotFoundError(
-                    f"Edit {ref.name} has not been saved yet: there is no {folder}"
-                )
-            desktop.open_in_file_browser(folder)
-
-        run_in_background("Open Location", _work, lambda _: None)
-
     def set_master_edit(self, asset_id: str, master: bool) -> None:
         """Make the edit the project's master edit (``master``), or leave
         the project without one; the cards follow."""

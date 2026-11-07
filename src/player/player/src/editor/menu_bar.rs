@@ -7,9 +7,11 @@
 //!
 //! On Windows and macOS the menu is the window's menu bar or the global one; on
 //! Linux the player is built without Primer's `os` feature (it would need
-//! GTK), so there the declaration does nothing and the toolbar carries the
-//! actions alone. Every item is greyed while a dialog is open, as the keys
-//! are then, and the ones that change the cut while the edit is read-only.
+//! GTK), and Primer draws the same declaration inside the window instead, as
+//! a bar above the editor: the `&` in a label is its access letter there too,
+//! and the shortcuts are hints, the keys being [`key_message`]'s either way.
+//! Every item is greyed while a dialog is open, as the keys are then, and
+//! the ones that change the cut while the edit is read-only.
 
 use primer::keyboard::{Key, Modifiers, Named};
 use primer::menu::{Accelerator, Menu, MenuItem};
@@ -368,16 +370,20 @@ mod tests {
         }
 
         /// Each menu keeps an access letter of its own on its rows: no two rows
-        /// of one menu are reached by the same `&` letter.
+        /// of one menu are reached by the same `&` letter. And each `&` marks
+        /// one: a label has at most one, followed by a letter or digit (not
+        /// `&&`, which the in-window bar on Linux would show as a literal `&`).
         #[test]
         fn a_menus_access_letters_are_distinct(state in state()) {
             for heading in headings(&state) {
                 let mut seen = Vec::new();
                 for entry in heading.entries {
-                    if let Entry::Item { label, .. } = entry
-                        && let Some(at) = label.find('&')
-                    {
-                        let c = label[at + 1..].chars().next().unwrap().to_ascii_lowercase();
+                    let Entry::Item { label, .. } = entry else { continue };
+                    prop_assert!(label.matches('&').count() <= 1, "{}: more than one `&`", label);
+                    if let Some(at) = label.find('&') {
+                        let next = label[at + 1..].chars().next();
+                        prop_assert!(next.is_some_and(char::is_alphanumeric), "{}: `&` marks no letter", label);
+                        let c = next.unwrap().to_ascii_lowercase();
                         prop_assert!(!seen.contains(&c), "{}: '{}' is used twice", heading.label, c);
                         seen.push(c);
                     }

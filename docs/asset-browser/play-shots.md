@@ -67,20 +67,19 @@ menu.
 ## The window
 
 Over the picture is the toolbar: the edit's name and version (with `*`
-while it has unsaved changes); the file's actions, **Open…**, **Save**,
-**Save As…** and **Publish…**; the cut's, **Undo**, **Redo**, **Split** and
-**Marker** (hover one for its shortcut); **Master edit** (see below),
-**Burn-ins**, and the timecode. Under the picture are the display, view and
-exposure.
+while it has unsaved changes), **Master edit** (see below), **Burn-ins**, and
+the timecode. Under the picture are the display, view and exposure.
 
-On Windows and macOS the window also has a menu bar (on macOS, the menu
-bar at the top of the screen): **File** (open, save, publish, the master
-edit, new shot, import media), **Edit** (undo, redo, split, lift, ripple
-delete, marker, selection, and putting the bin's pick in the cut),
-**Playback** (play, step, jump by a second or to an edit point, the start
-and end) and **View** (burn-ins). Each item shows its shortcut, and is
-greyed while it does not apply: while a dialog is open, or the cut's
-actions on a published edit. The single-letter keys (**S** split, **M**
+The actions are in the menu bar: on Windows the window's, on macOS the one
+at the top of the screen, and on Linux a bar drawn at the top of the window
+(press a title, or Alt with its underlined letter, or F10). **File** (open,
+save, publish, the master edit, new shot, import media), **Edit** (undo,
+redo, split, lift, ripple delete, marker, selection, and putting the bin's
+pick in the cut), **Playback** (play, step, jump by a second or to an edit
+point, the start and end) and **View** (burn-ins). Each item shows its
+shortcut, and is greyed while it does not apply: while a dialog is open, or
+the cut's actions on a published edit. With a menu open, an item's
+underlined letter chooses it. The single-letter keys (**S** split, **M**
 marker, **B** burn-ins) act only with neither Ctrl (Cmd on macOS) nor Alt
 held.
 
@@ -189,7 +188,7 @@ per edit, with its latest published version and newest working version, and
 whether it is the master edit. Right-click a card: **Open in Editor** opens
 its newest working version (an edit never saved opens empty), **Play
 Published** its latest published version, read-only (there only once it has
-one), **Open Location** its working folder, and **Set as Master Edit** makes
+one), **Open Folder** its working folder, and **Set as Master Edit** makes
 it the master edit (the master edit's card is ticked **Master Edit** and
 offers **Clear Master Edit** instead). Edits are made in the editor, not in
 the browser.

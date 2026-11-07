@@ -236,9 +236,9 @@ Three per-entity files live beside the entity's folders, not in `export/`:
 
 | File | Written by |
 |---|---|
-| `<project>/assets/<category>/<asset>/thumbnail.png` (or `shots/<sequence>/<shot>/`) | **Select thumbnail…** (any image, converted to PNG) and **Capture thumbnail** (the active scene viewer) on a card's right-click menu |
+| `<project>/assets/<category>/<asset>/thumbnail.png` (or `shots/<sequence>/<shot>/`) | **Select Thumbnail…** (any image, converted to PNG) and **Capture Thumbnail** (the active scene viewer) on a card's right-click menu |
 | `<project>/assets/<category>/<asset>/network_thumbnail.png` (same for shots) | Dropping the card into a network: a copy of `thumbnail.png` at most 256 px across, which the network editor shows above the node. Safe to delete; the next drop writes it again |
-| `<project>/assets/<category>/<asset>/description.txt` (same for shots) | **Edit description…** on a card's right-click menu |
+| `<project>/assets/<category>/<asset>/description.txt` (same for shots) | **Edit Description…** on a card's right-click menu |
 | `<project>/recipes/<context>/<slug>/` (`entry.json`, `recipe.cpio`, `thumbnail.png`) | **New Recipe...**, or dragging nodes onto the grid; see [Recipes](recipes.md) |
 
 Every `th::cache` version also gets a `context.json` when it finishes (who

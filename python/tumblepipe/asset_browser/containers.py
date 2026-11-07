@@ -20,7 +20,7 @@ Container behaviour lives here too, on :class:`ContainerManager`:
 collection discovery, container card/detail synthesis, membership and
 per-context department coverage, the collection lifecycle the host
 routes through the catalog (delete, edit, add / remove members), and
-the Root context-menu actions (open location, rebuild assigned shots,
+the Root context-menu actions (open folder, rebuild assigned shots,
 export USD). The catalog keeps the host-facing names as one-line
 delegations.
 """
@@ -155,7 +155,7 @@ class ContainerManager:
     typed boundary used to dispatch back into the catalog for: collection
     discovery and asset/detail synthesis, membership and per-context
     department coverage, member add/remove, and the Root context-menu
-    actions (open location, rebuild assigned shots, export USD).
+    actions (open folder, rebuild assigned shots, export USD).
 
     Its dependencies are handed in: the project registry, client pool,
     resolver and activator, the browser refresh, and the catalog's whole

@@ -681,7 +681,7 @@ The tests:
   holds every colour the window draws with (untinted greys, amber only for
   the present moment, a muted hue per department for clips); draw with its
   tokens, not colour literals, and its tests keep text readable on them.
-  `editor/menu_bar.rs` declares the native menu bar (`Application::menu`)
+  `editor/menu_bar.rs` declares the menu bar (`Application::menu`)
   and the window's key map (`on_key`), both read from one small `State` so
   its property tests hold them to each other: a shown shortcut is the key
   that sends the item's message, nothing acts or is enabled under a dialog,
@@ -689,7 +689,9 @@ The tests:
   letter acts only through a chord the menu shows. Add a key there, with
   its menu item, not in `editor.rs`; Primer's
   `os` feature is on for Windows and macOS only (player/Cargo.toml), as on
-  Linux it would link GTK, so there the declaration does nothing. On macOS
+  Linux it would link GTK, so there Primer draws the declaration inside the
+  window instead (its `&` access letters, its shortcuts as hints); the keys
+  are `on_key`'s on every platform, so the toolbar carries no actions. On macOS
   only Command chords are given to the menu as shortcuts, since the menu
   takes a key before the window sees it. Each distinct
   source of the edit is resolved off the UI thread to the take its rule

@@ -59,10 +59,6 @@ pub fn on() -> Color {
     grey(100)
 }
 
-/// A control that cannot be used now.
-pub fn disabled() -> Color {
-    grey(96)
-}
 /// Ticks on the ruler.
 pub fn tick() -> Color {
     grey(92)

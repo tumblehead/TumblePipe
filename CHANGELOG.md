@@ -12,6 +12,84 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.95.0 — 2026-11-07
+
+### Features
+- feat(editor): a native menu bar on Windows and macOS (`2a8411fe`)
+- feat(multis): keep a Multi's workfile and the Multi in step (`17f3452e`)
+- feat(multis): set a Multi up in one place, the Entity Editor (`fec25591`)
+- feat(farm): the Farm Manager cleans up finished jobs, and shows when work runs (`f6a3d8d3`)
+- feat(farm-submit): retake of the Farm Submit window from artists' feedback (`01543e15`)
+- feat(multis): the Entity Editor's sheet keeps a Multi's Timeline (`4323cb6e`)
+- feat(editor): a design pass over the editor's window (`17696ac6`)
+- feat(editor): a new edit starts as every shot of the project (`cf9526d9`)
+- feat(edits): a publish links its movies under names of their own (`6f9f364e`)
+- feat(browser): libraries shared between projects (`12e6cfd9`)
+- feat(edits): Render Edit on the farm (`b11783e5`)
+- feat(edits): the pipeline around edits: master publish, Edits section, Desktop entry, MCP-ready th_pipe (`5bb02e80`)
+- feat(player): the editor window, saving, publishing and the media library (`0f50f096`)
+- feat(player): the engine plays clips on tracks, with in points, dissolves and sound (`2aa0f4de`)
+- feat(edit): th_edit, the edit model (`3373eee3`)
+- feat(config): migration v23, the edits context (`625d3ece`)
+- feat(pipe): th_pipe, TumblePipe's pipeline in Rust (`82282199`)
+- feat(playblast): movies record the shot frame they start on (`772b3dbc`)
+
+### Fixes
+- fix(archive): the cache rebuild opens its workfile with forward slashes (`dc1250fe`)
+- fix(editor): Ctrl or Alt with a letter is not the bare-letter shortcut (`cbe65ade`)
+- fix(entity-sheet): a Multi is pending only for what Apply writes (`497865cb`)
+- fix(farm): collapse jobs no longer fail with No module named 'pxr' (`3b887dcb`)
+- fix(delegate): an Intel GPU on Windows draws through DirectX 12 (`d8367b6d`)
+- fix(browser): texture set cards show their thumbnail (`d95765dd`)
+- fix(browser): a library's Texture Sets row is counted on first paint (`58e06942`)
+- fix(browser): a failed recipe copy keeps the recipe it replaces (`0d078ee2`)
+- fix(scripts): the start-frame backfill counts a failed rewrite as failed (`01b5aff6`)
+- fix(houdini): repair the scene reload line in the forward-slash change (`af7bb6ea`)
+- fix(houdini): open and save workfiles with forward slashes so a crash can write its recovery file (`cb256b43`)
+
+### Performance
+- perf(config): memoize entity URI listings per store generation (`eb473e5a`)
+- perf(import_assets): read the rows once per execute (`2164a4af`)
+
+### Refactors
+- refactor(browser): library kinds route recipe and texture ids (`3bc76603`)
+
+### Documentation
+- docs(multis): set a Multi up in the Entity Editor, and Sync with Multi (`0b945c07`)
+- docs(farm): the submission plan's progress is followed by the Farm Submit card (`2d3ab045`)
+- docs(compositing): which GPU backend the playblast delegate draws through (`e3e1b5b2`)
+- docs(development): the publish's movie links (`692e786a`)
+- docs: a published edit's media links in the archive; Linux sound in the plan (`697c755e`)
+- docs(browser): libraries in the recipe menu, settings, files and structure pages (`dca574a5`)
+- docs(design): phase 0 settled: the editor's start-frame fallback stays, no HideAndReek backfill (`d8b1bcad`)
+- docs(design): libraries, rig pickers, and poses and clips in the asset browser (`d1b97e1e`)
+- docs(design): the implementation plan for edits, and design corrections (`a8253993`)
+- docs(design): edits as pipeline entities, and th_player as their editor (`44690211`)
+- docs: regenerate CHANGELOG.md for v1.94.1 (`5ec7df42`)
+
+### Tests
+- test(farm-submit): pin what the review and the progress card decide (`4db06e67`)
+- test: the start-frames test finds CI's Windows Houdini (`589756d0`)
+- test: two checks that only held on Windows (`7a145b0e`)
+- test(edits): properties for the publish's movie links and the backfill summary (`d944cc41`)
+- test(nightly): the agent-driven nightly's contract, charters and benchmark (`a425bc8f`)
+- test(browser): headless verify of the Projects page's Libraries list (`00b2f402`)
+
+### Other Changes
+- Merge remote-tracking branch 'origin/fix/hip-forward-slashes' (`ac069b5a`)
+- Merge branch 'feat/farm-submit-retake' (`0617f32c`)
+- Merge branch 'feat/multi-setup-sync' into feat/farm-submit-retake (`d9cbdab9`)
+- Merge branch 'feat/farm-manager-cleanup' into feat/farm-submit-retake (`e8d18f24`)
+- Merge remote-tracking branch 'origin/master' (`29f4c92f`)
+- Merge remote-tracking branch 'origin/master' (`2e518494`)
+- Merge remote-tracking branch 'origin/master' (`ede11455`)
+- Merge remote-tracking branch 'origin/master' (`e4b918f7`)
+- Merge feat/editor-design: a design pass over the editor's window (`c6106465`)
+- Merge remote-tracking branch 'origin/master' (`0c4f2d34`)
+- Merge feat/edit-all-shots: a new edit starts as every shot of the project (`3600d032`)
+- Merge feat/edits: edits as pipeline entities, th_player as their editor (`9f2a6c17`)
+- Merge perf/import-assets-rows: libraries shared between projects (`1f452ee1`)
+
 ## v1.94.1 — 2026-11-05
 
 ### Fixes

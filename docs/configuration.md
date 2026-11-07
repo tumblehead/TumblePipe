@@ -421,7 +421,7 @@ breadcrumb shows the Multi), and a member's own rows carry a **ⓜ** badge
 on every department the Multi covers (the tooltip names the Multi), and
 open the Multi's hip from there too. Drag cards onto the Multi's sidebar leaf or use
 **Add selected to Multi** to add members. The leaf's right-click menu is the
-card's (**Open Multi**, **Open Location**, **Add Entity…**, **Edit Multi…**, **Delete Multi**)
+card's (**Open Multi**, **Open Folder**, **Add Entity…**, **Edit Multi…**, **Delete Multi**)
 plus **Add selected to Multi** and **Remove selected from Multi** (see
 [Multis and Roots](asset-browser/multis-and-roots.md)).
 

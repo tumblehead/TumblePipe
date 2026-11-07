@@ -160,9 +160,9 @@ drawn with a highlight border.
 Without one the card shows the placeholder icon. Two right-click items write
 it:
 
-- **Select thumbnail…** opens a **Select Thumbnail** file dialog
+- **Select Thumbnail…** opens a **Select Thumbnail** file dialog
   (`png jpg jpeg tif tiff bmp exr`) and saves the picked image as PNG.
-- **Capture thumbnail** flipbooks the current frame of the active Scene
+- **Capture Thumbnail** flipbooks the current frame of the active Scene
   Viewer at 512×512 into the sidecar. With no Scene Viewer open the status
   bar says *Capture: no active Scene Viewer.*
 
@@ -284,8 +284,9 @@ For a pipeline card the panel shows
 - **Tasks**: the todo list with an **Add task…** field and a clear menu
   (**Clear completed** / **Clear all**).
 - A bottom action bar: **Import to Scene** (assets only; creates a
-  `th::import_asset` in `/stage`), **Open Export Folder**, **Open in
-  Database Editor…**, **Edit…** and **Delete**.
+  `th::import_asset` in `/stage`), **Open Folder** (the entity's folder, as
+  on the card), **Open Export Folder**, **Open in Entity Editor…**, **Open
+  in Database Editor…**, **Edit…** and **Delete**.
 
 A Multi card gets **Info** and **Departments** (its coverage rows), a Root
 card **Info** alone, and both an action bar of **Edit…** and **Delete**.
@@ -318,32 +319,41 @@ Publish and Render.
 
 ## Right-click on a card
 
-Besides TumbleTrove's own entries (favourites, collections, **Add to
-Multi ▸**, **Add to Root ▸**, **Delete asset…** / **Delete shot…**, and —
-TumbleTrove 0.52+ — **Open Folder**, which opens an asset's or shot's entity
-folder, where its `description.txt` and `thumbnail.png` live), the
-catalog contributes
-([`get_card_menu_items`](../../python/tumblepipe/asset_browser/catalog.py)):
+An asset's or shot's card (and its row in the list view) opens the same menu
+whatever you clicked, in the same order. TumbleTrove's own entries come
+first: favourites, collections, **Add to Multi ▸**, **Add to Root ▸**, then
+**Open Folder**, which opens the entity's folder (where its
+`description.txt` and `thumbnail.png` live). The catalog's entries follow
+([`get_card_menu_items`](../../python/tumblepipe/asset_browser/catalog.py)),
+in sections with a line between each (TumbleTrove 0.57+; older builds show
+them as one list), and TumbleTrove ends with **Refresh Thumbnail** and
+**Delete asset…** / **Delete shot…**:
 
-| Item | What it does |
-|---|---|
-| **Submit Jobs…** / **Submit Jobs for N selected…** | Opens the [Farm Submit](submit-jobs.md) dialog with this entity's **Render** cell ticked, or every selected card's of the same kind (shots with shots, assets with assets). |
-| **Generate Master…** | Merges each department's latest workfile into `<entity folder>/master/<name>_master.hip`, one network box per department, after a **Generate Master Scene** confirmation. Opens that scene. |
-| **Duplicate…** (assets) | Asks for a name (default `<name>Copy`, letters and digits only) and creates that asset in the same category with the source's own properties. In a background hython it then copies each department's latest finished workfile to the new asset as its `v0001`, with the new asset's `context.json`. Nodes pinned to the source entity switch to `from_context`, and the source's prim path typed into string parms (`/CHAR/Pengo/mtl/`) becomes the copy's (`/CHAR/PengoCopy/mtl/`). A department whose workfile belongs to a Multi is not copied. Nothing is published: publish the copy from its own workfiles. Your open scene is not touched. Use this instead of copying an asset's folder by hand, which leaves the copy pointing at the original. |
-| **Edit description…** | Edits the `description.txt` sidecar in the entity's folder (dialog **Edit Description**). Shown on the Info tab. |
-| **Tasks…** | Opens TumbleTrove's **Tasks — *name*** dialog for the entity's todo list. |
-| **Select thumbnail…** / **Capture thumbnail** | See [Cards](#cards). |
-| **Departments…** | Which departments this entity uses (**Departments — *name***, tick boxes, **Use all (inherit)**, **Apply**); see [Configuration → Per-entity assignment](../configuration.md#per-entity-assignment). On a Multi it opens the [Entity Editor](entity-editor.md#multis)'s Multis tab on it instead. |
-| **Open in Database Editor…** | Opens the **Database Editor** window on this entity. |
-| **Open in Entity Editor…** | Assets, shots and Multis. Opens the [Entity Editor](entity-editor.md) on the entity's tab and category or sequence (a Multi: on the Multis tab), with it selected. |
-| **Clear Root** | Shots only, and only when a Root is set directly on the shot (not inherited from the sequence). Clears it. |
-| **Remove from Multi: *name*** / **Remove from Root: *name*** | One entry per container the entity belongs to. |
+| Section | Item | What it does |
+|---|---|---|
+| Play | **Play** / **Play N Shots** (shots) | Plays the shot, or the selected shots back to back, in the [sequence player](play-shots.md). |
+| Farm | **Submit Jobs…** / **Submit Jobs for N selected…** | Opens the [Farm Submit](submit-jobs.md) dialog with this entity's **Render** cell ticked, or every selected card's of the same kind (shots with shots, assets with assets). |
+| | **Generate Master…** | Merges each department's latest workfile into `<entity folder>/master/<name>_master.hip`, one network box per department, after a **Generate Master Scene** confirmation. Opens that scene. |
+| | **Duplicate…** (assets) | Asks for a name (default `<name>Copy`, letters and digits only) and creates that asset in the same category with the source's own properties. In a background hython it then copies each department's latest finished workfile to the new asset as its `v0001`, with the new asset's `context.json`. Nodes pinned to the source entity switch to `from_context`, and the source's prim path typed into string parms (`/CHAR/Pengo/mtl/`) becomes the copy's (`/CHAR/PengoCopy/mtl/`). A department whose workfile belongs to a Multi is not copied. Nothing is published: publish the copy from its own workfiles. Your open scene is not touched. Use this instead of copying an asset's folder by hand, which leaves the copy pointing at the original. |
+| Editors | **Open in Entity Editor…** | Opens the [Entity Editor](entity-editor.md) on the entity's tab and category or sequence, with it selected. The toolbar's **Entity Editor** button opens it on the open scene's entity. |
+| | **Open in Database Editor…** | Opens the **Database Editor** window on this entity. |
+| The entity | **Edit Description…** | Edits the `description.txt` sidecar in the entity's folder (dialog **Edit Description**). Shown on the Info tab. |
+| | **Tasks…** | Opens TumbleTrove's **Tasks — *name*** dialog for the entity's todo list. |
+| | **Departments…** | Which departments this entity uses (**Departments — *name***, tick boxes, **Use all (inherit)**, **Apply**); see [Configuration → Per-entity assignment](../configuration.md#per-entity-assignment). |
+| | **Select Thumbnail…** / **Capture Thumbnail** | See [Cards](#cards). |
+| Leaving | **Clear Root** | Shots only, and only when a Root is set directly on the shot (not inherited from the sequence). Clears it. |
+| | **Remove from Multi: *name*** / **Remove from Root: *name*** | One entry per container the entity belongs to. |
 
-A recipe card has its own menu — **Edit Description…**, **Set Icon…**,
-**Share to Library** / **Copy to Project**, **Open Recipe Folder**, **Delete
-Recipe** — see [Recipes](recipes.md#card-menu-and-detail-actions). A texture
-set card offers **Share to Library** / **Copy to Project** — see
-[Libraries](libraries.md#sharing-and-copying).
+A section with nothing in it is left out. A Multi's or Root's card has the
+container menu instead (**Open Multi**, **Open Folder**, …; see
+[Multis and Roots](multis-and-roots.md#open-folder-add-entity-and-delete)).
+A recipe card has its own entries — **Edit Description…**, **Set Icon…**,
+**Share to Library** / **Copy to Project**, **Delete Recipe** — see
+[Recipes](recipes.md#card-menu-and-detail-actions), and TumbleTrove's
+**Open Folder** opens the recipe's folder. A texture set card offers
+**Share to Library** / **Copy to Project** — see
+[Libraries](libraries.md#sharing-and-copying). An edit's card: see
+[Play shots](play-shots.md).
 
 ## Creating entities
 

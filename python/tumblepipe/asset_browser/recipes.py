@@ -834,7 +834,7 @@ class RecipeManager(LibraryKind):
     def get_actions(self, detail) -> list[AssetAction]:
         actions = [
             AssetAction(
-                id="open_recipe_folder", label="Open Recipe Folder",
+                id="open_recipe_folder", label="Open Folder",
                 icon="folder-open",
             ),
         ]
@@ -918,6 +918,11 @@ class RecipeManager(LibraryKind):
 
     # ── Card menu ────────────────────────────────────────
 
+    def asset_folder(self, asset: Asset) -> Path | None:
+        """The browser's Open Folder: the recipe's own folder."""
+        entry = self.find(asset.id)
+        return None if entry is None else entry.entry_dir
+
     def card_menu_items(
         self, asset: Asset,
     ) -> list[tuple[str, Callable[[], None]]]:
@@ -957,9 +962,6 @@ class RecipeManager(LibraryKind):
                 f"Set icon: {icon_id} on {entry.name}",
                 severity=hou.severityType.Message,
             )
-
-        def _open_directory():
-            desktop.open_in_file_browser(entry.entry_dir)
 
         def _delete():
             import hou
@@ -1013,7 +1015,6 @@ class RecipeManager(LibraryKind):
                 ("Set Icon…", _set_icon),
             ]
         items += copies
-        items.append(("Open Recipe Folder", _open_directory))
         if self._writable(entry.ref.project):
             items.append(("Delete Recipe", _delete))
         return items

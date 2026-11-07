@@ -59,6 +59,7 @@ class DetailSectionBuilder:
         refresh: "BrowserRefresh",
         edit_departments: Callable[[str], None],
         export_path: Callable[[str], Path | None],
+        department_items: Callable[..., list] = lambda *a: [],
     ) -> None:
         self._catalog_id = catalog_id
         self._registry = registry
@@ -73,6 +74,9 @@ class DetailSectionBuilder:
         self._refresh = refresh
         self._edit_departments = edit_departments
         self._export_path = export_path
+        # The deck's department menu (PipelineMenus.department_items), for
+        # the rows' right-click: (asset_id, dept, refresh_cb) -> items.
+        self._department_items = department_items
 
     @staticmethod
     def mix_hex(base_hex: str, accent_hex: str, ratio: float) -> str:
@@ -1067,11 +1071,11 @@ class DetailSectionBuilder:
     ) -> None:
         """Right-click menu for a dept row in the details panel.
 
-        Same items and ordering as the deck popup's
-        (:meth:`PipelineCatalog.get_deck_item_menu_items`): a row with
-        no workfile leads with **New from Template**, a row with
-        versions leads with **Open**. A Multi's row has no **View
-        Latest Export**: the deck's per-member submenu has it.
+        The deck item's menu (``PipelineMenus.department_items``), so the
+        two are one menu; when the row's version combo shows an older
+        version than the latest, **Open <that version>** leads it.
+        *available* and *is_active* are the row's, kept for callers; the
+        menu reads both afresh.
 
         ``pos`` is the click position in ``source_widget`` coordinates;
         the menu pops at the cursor (mapped to global). Falls back to
@@ -1080,64 +1084,20 @@ class DetailSectionBuilder:
         from PySide6.QtWidgets import QMenu
         from tumbletrove.asset_browser.core.theme import MENU_STYLE
 
+        from .menus import fill_menu, reporting_menu, with_shown_version
+
+        ver = combo.currentData() if (available and combo is not None) else None
+        items = with_shown_version(
+            list(self._department_items(asset_id, dept, refresh_cb)), ver,
+            lambda: self._workfiles.open_version_now(
+                asset_id, dept, ver, refresh_cb,
+            ),
+        )
+        if not items:
+            return
         menu = QMenu(source_widget)
         menu.setStyleSheet(MENU_STYLE)
-
-        def _add_new_items() -> None:
-            new_tmpl_act = menu.addAction("New from Template")
-            new_tmpl_act.triggered.connect(
-                lambda _checked=False:
-                    self._workfiles.new_from_template(asset_id, dept, refresh_cb)
-            )
-            new_cur_act = menu.addAction("New from Current")
-            new_cur_act.triggered.connect(
-                lambda _checked=False:
-                    self._workfiles.new_from_current(asset_id, dept, refresh_cb)
-            )
-
-        if available and combo is not None:
-            ver = combo.currentData()
-            open_act = menu.addAction(f"Open {ver}" if ver else "Open")
-            open_act.triggered.connect(
-                lambda _checked=False:
-                    self._workfiles.open_version_now(asset_id, dept, ver, refresh_cb)
-            )
-
-        if not available:
-            _add_new_items()
-            menu.addSeparator()
-
-        loc_act = menu.addAction("Open Folder")
-        loc_act.triggered.connect(
-            lambda _checked=False: self._workfiles.open_dept_work_dir(asset_id, dept)
-        )
-
-        # A Multi's exports are written per member: the deck's menu lists
-        # them; the panel has no single export to show.
-        if not asset_id.startswith("group:"):
-            export_act = menu.addAction("View Latest Export")
-            export_act.triggered.connect(
-                lambda _checked=False:
-                    self._workfiles.open_latest_export(asset_id, dept)
-            )
-
-        if available:
-            new_inst_act = menu.addAction("Open in New Houdini")
-            new_inst_act.triggered.connect(
-                lambda _checked=False:
-                    self._workfiles.open_in_new_instance(asset_id, dept)
-            )
-
-        if is_active:
-            menu.addSeparator()
-            reload_act = menu.addAction("Reload Scene")
-            reload_act.triggered.connect(
-                lambda _checked=False: self._scene.reload_current_scene(refresh_cb)
-            )
-
-        if available:
-            menu.addSeparator()
-            _add_new_items()
+        fill_menu(menu, reporting_menu(items))
 
         if pos is not None:
             global_pos = source_widget.mapToGlobal(pos)

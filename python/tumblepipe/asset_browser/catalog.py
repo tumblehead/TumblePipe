@@ -277,13 +277,14 @@ class PipelineCatalog(Catalog):
             dept_versions=self._dept_versions, refresh=self._refresh,
             edit_departments=self._ops.edit_departments,
             export_path=self._index.export_path,
+            department_items=lambda aid, dn, rd: self._menus.department_items(
+                aid, dn, rd),
         )
         self._menus = PipelineMenus(
             resolver=self._resolver, index=self._index, ops=self._ops,
             workfiles=self._workfiles, scene=self._scene,
             containers=self._containers, thumbnails=self._thumbnails,
             refresh=self._refresh,
-            edit_group_departments=self._edit_group_departments,
         )
         self._deck = DeckBuilder(
             containers=self._containers, scene=self._scene,
@@ -597,8 +598,9 @@ class PipelineCatalog(Catalog):
     def get_asset_folder(self, asset: Asset):
         """The card menu's Open Folder (TumbleTrove >= 0.52.0): an asset's
         or shot's entity folder (where its ``description.txt`` and
-        ``thumbnail.png`` live). Nodes and Multis have none; a recipe has
-        its own Open Recipe Folder entry already."""
+        ``thumbnail.png`` live); a recipe's, texture set's or edit's own
+        folder (its library kind's ``asset_folder``). Nodes and Multis have
+        none (a Multi's container menu has its own Open Folder)."""
         kind = self._kinds.for_id(asset.id)
         if kind is not None:
             return kind.asset_folder(asset)
@@ -1162,11 +1164,21 @@ class PipelineCatalog(Catalog):
             ))
 
         actions.append(AssetAction(
+            id="open_folder",
+            label="Open Folder",
+            icon="folder",
+        ))
+        actions.append(AssetAction(
             id="open_export",
             label="Open Export Folder",
             icon="folder-open",
         ))
 
+        actions.append(AssetAction(
+            id="open_entity_editor",
+            label="Open in Entity Editor…",
+            icon="table-2",
+        ))
         actions.append(AssetAction(
             id="open_db_editor",
             label="Open in Database Editor…",
@@ -1213,6 +1225,22 @@ class PipelineCatalog(Catalog):
                 return
             from tumblepipe.util import desktop
             desktop.open_in_file_browser(path)
+
+        elif action_id == "open_folder" and detail:
+            # The card menu's Open Folder: the entity's folder, or its
+            # nearest existing parent.
+            from tumblepipe.util import desktop
+            folder = Path(self._resolver.entity_dir(detail.id))
+            while not folder.exists() and folder.parent != folder:
+                folder = folder.parent
+            desktop.open_in_file_browser(folder)
+
+        elif action_id == "open_entity_editor" and detail:
+            # A window: built on the GUI thread, never on this worker.
+            run_on_main_thread(reporting(
+                "Opening the Entity Editor",
+                lambda aid=detail.id: self._ops.open_entity_editor_for(aid),
+            ))
 
         elif action_id == "open_db_editor" and detail:
             self._ops.open_database_editor(detail.id)

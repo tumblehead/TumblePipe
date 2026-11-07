@@ -10,7 +10,7 @@ menu is :meth:`PipelineMenus.edit_items`.
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from tumbletrove.asset_browser.api.types import Asset, MenuItem
 
@@ -68,6 +68,80 @@ _MISSING_DEPT_TOOLTIP = (
 )
 
 
+#: A menu separator, as the browser's menu hooks spell it.
+SEPARATOR = ("__separator__", None)
+
+
+def sections(*groups: list) -> list:
+    """The non-empty *groups*, in order, one separator between each two.
+
+    The browser renders ``("__separator__", None)`` as a line in every
+    catalog menu from TumbleTrove 0.57; no group means no stray line at
+    either end or two in a row.
+    """
+    out: list = []
+    for group in groups:
+        if not group:
+            continue
+        if out:
+            out.append(SEPARATOR)
+        out.extend(group)
+    return out
+
+
+def with_shown_version(items: list, version, open_version) -> list:
+    """A department's menu (*items*) as the detail panel's row shows it:
+    led by **Open <version>** and a separator when the row's version
+    dropdown shows *version* and the menu does not already lead with
+    opening it (**Open Latest (<version>)**). ``open_version()`` opens it.
+    Otherwise *items* unchanged."""
+    if not version:
+        return list(items)
+    latest = f"Open Latest ({version})"
+    if any(label == latest for label, _action in items):
+        return list(items)
+    return [(f"Open {version}", open_version), SEPARATOR, *items]
+
+
+def fill_menu(menu, items: list) -> None:
+    """Add catalog menu *items* to the QMenu *menu*, the way the browser
+    renders a catalog menu: separators, nested lists as submenus (disabled
+    when empty), :class:`MenuItem` icons and tooltips, and a non-callable
+    action as an inert entry. For the menus TumblePipe shows itself (the
+    detail panel's department rows), so they match the deck's."""
+    from PySide6.QtWidgets import QMenu
+    from tumbletrove.asset_browser.api.types import menu_entry
+    from tumbletrove.asset_browser.core.theme import MENU_STYLE
+
+    for item in items:
+        label, action, icon, tooltip = menu_entry(item)
+        if label == SEPARATOR[0]:
+            menu.addSeparator()
+            continue
+        if isinstance(action, (list, tuple)):
+            sub = QMenu(label, menu)
+            sub.setStyleSheet(MENU_STYLE)
+            fill_menu(sub, list(action))
+            sub.setEnabled(bool(action))
+            act = menu.addMenu(sub)
+        else:
+            act = menu.addAction(label)
+            if callable(action):
+                act.triggered.connect(lambda _checked=False, f=action: f())
+        if icon:
+            try:
+                from tumbletrove.common.icons import load_qicon
+                qicon = load_qicon(icon, size=16)
+            except Exception:
+                qicon = None
+            if qicon is not None:
+                act.setIcon(qicon)
+        if tooltip:
+            act.setToolTip(tooltip)
+    if any(menu_entry(i)[3] for i in items):
+        menu.setToolTipsVisible(True)
+
+
 def reporting_menu(items: list) -> list:
     """``items`` (pairs, :class:`MenuItem` s, nested submenus) with every
     callable action made its own failure boundary (:func:`reporting`)
@@ -106,7 +180,6 @@ class PipelineMenus:
         containers: "ContainerManager",
         thumbnails: "ThumbnailManager",
         refresh: "BrowserRefresh",
-        edit_group_departments: Callable[[str], None],
     ) -> None:
         self._resolver = resolver
         self._index = index
@@ -116,7 +189,6 @@ class PipelineMenus:
         self._containers = containers
         self._thumbnails = thumbnails
         self._refresh = refresh
-        self._edit_group_departments = edit_group_departments
 
     def card_items(self, asset: Asset, *, selected_assets=None) -> list:
         """An asset, shot or container card's right-click items."""
@@ -142,7 +214,26 @@ class PipelineMenus:
             else f"Submit Jobs for {len(submit_targets)} selected…"
         )
 
-        items = [
+        tags = asset.tags or ()
+        is_shot = "type:shot" in tags
+        is_asset = "type:asset" in tags
+
+        # The same sections in the same order on every asset and shot
+        # card, so an entry is where the artist last saw it whatever they
+        # clicked: playing, farm work, the editors, the entity's own
+        # details, then leaving a Multi or Root. A section a card has
+        # nothing for is left out with its separator. (A Multi's card is
+        # a container card: the browser gives it the container menu.)
+        play: list = []
+        if is_shot:
+            # The selected shots' playblasts and renders, back to back in
+            # the sequence player.
+            shots = [a for a in submit_targets if "type:shot" in (a.tags or ())] or [asset]
+            play.append((
+                "Play" if len(shots) <= 1 else f"Play {len(shots)} Shots",
+                lambda targets=shots: self._play_shots(targets),
+            ))
+        work: list = [
             (
                 submit_label,
                 lambda targets=submit_targets:
@@ -152,8 +243,25 @@ class PipelineMenus:
                 "Generate Master…",
                 lambda aid=asset_id: self._ops.generate_master_scene(aid),
             ),
+        ]
+        if is_asset:
+            work.append((
+                "Duplicate…",
+                lambda aid=asset_id: self._ops.duplicate_asset(aid),
+            ))
+        editors: list = [
             (
-                "Edit description…",
+                "Open in Entity Editor…",
+                lambda aid=asset_id: self._ops.open_entity_editor_for(aid),
+            ),
+            (
+                "Open in Database Editor…",
+                lambda aid=asset_id: self._ops.open_database_editor(aid),
+            ),
+        ]
+        details: list = [
+            (
+                "Edit Description…",
                 lambda aid=asset_id: self._ops.edit_description(aid),
             ),
             (
@@ -161,82 +269,44 @@ class PipelineMenus:
                 lambda a=asset: self._ops.manage_todos(a),
             ),
             (
-                "Select thumbnail…",
+                "Departments…",
+                lambda aid=asset_id: self._ops.edit_departments(aid),
+            ),
+            (
+                "Select Thumbnail…",
                 lambda aid=asset_id: self._thumbnails.select(aid),
             ),
             (
-                "Capture thumbnail",
+                "Capture Thumbnail",
                 lambda aid=asset_id: self._thumbnails.capture(aid),
             ),
-            (
-                "Departments…",
-                # A Multi's departments are a coverage decision, not an
-                # assignment, and EntityDepartmentsDialog rejects it
-                # outright (uri_for has no answer for a container id).
-                # Route it to the Entity Editor's Multis tab instead.
-                (
-                    lambda aid=asset_id: self._edit_group_departments(aid)
-                ) if "type:group" in (asset.tags or ()) else (
-                    lambda aid=asset_id: self._ops.edit_departments(aid)
-                ),
-            ),
-            (
-                "Open in Database Editor…",
-                lambda aid=asset_id: self._ops.open_database_editor(aid),
-            ),
         ]
-        if "type:shot" in asset.tags or "type:asset" in asset.tags                 or "type:group" in (asset.tags or ()):
-            items.append((
-                "Open in Entity Editor…",
-                lambda aid=asset_id: self._ops.open_entity_editor_for(aid),
-            ))
-        if "type:shot" in asset.tags and "type:group" not in (asset.tags or ()):
-            # The selected shots' playblasts and renders, back to back in
-            # the sequence player.
-            shots = [a for a in submit_targets if "type:shot" in (a.tags or ())] or [asset]
-            items.insert(1, (
-                "Play" if len(shots) <= 1 else f"Play {len(shots)} Shots",
-                lambda targets=shots: self._play_shots(targets),
-            ))
-        if "type:asset" in asset.tags and "type:group" not in (asset.tags or ()):
-            items.insert(2, (
-                "Duplicate…",
-                lambda aid=asset_id: self._ops.duplicate_asset(aid),
-            ))
-        # For shots, offer a "Clear scene" item when one is set directly
-        # on the shot (not inherited from sequence).
-        if "type:shot" in asset.tags and self._ops.shot_has_direct_scene_ref(asset_id):
-            items.append(
-                (
-                    "Clear Root",
-                    lambda aid=asset_id: self._ops.clear_shot_scene_ref(aid),
-                )
-            )
 
+        membership: list = []
+        # A Root set directly on the shot (not inherited from its
+        # sequence) can be cleared here.
+        if is_shot and self._ops.shot_has_direct_scene_ref(asset_id):
+            membership.append((
+                "Clear Root",
+                lambda aid=asset_id: self._ops.clear_shot_scene_ref(aid),
+            ))
         # "Remove from <Multi/Root>" — one entry per container this
         # asset belongs to. For Multis this is full member-list
         # removal (a Multi's coverage is whole-asset, not per-dept).
         # For Roots this removes the asset from the Root's asset list
         # (shots use ``Clear Root`` above, which clears their
-        # ``scene_ref`` instead).
+        # ``scene_ref`` instead; Roots don't list shots, so the scene
+        # branch only fires for asset cards).
         for cid, label, kind in self._containers.get_asset_membership(asset_id):
-            if kind == "group":
-                items.append((
-                    f"Remove from Multi: {label}",
-                    lambda aid=asset_id, c=cid:
-                        self._containers.remove_member(aid, c),
-                ))
-            elif kind == "scene":
-                # Roots don't store shot membership in their
-                # ``assets`` list (shots point at a Root via
-                # ``scene_ref``), so this branch only fires for
-                # asset cards. The unified removal path covers it.
-                items.append((
-                    f"Remove from Root: {label}",
-                    lambda aid=asset_id, c=cid:
-                        self._containers.remove_member(aid, c),
-                ))
-        return items
+            prefix = {"group": "Multi", "scene": "Root"}.get(kind)
+            if prefix is None:
+                continue
+            membership.append((
+                f"Remove from {prefix}: {label}",
+                lambda aid=asset_id, c=cid:
+                    self._containers.remove_member(aid, c),
+            ))
+        return sections(play, work, editors, details, membership)
 
     def _play_shots(self, shots: list[Asset]) -> None:
         self._ops.play_shots([a.id for a in shots])
@@ -263,10 +333,6 @@ class PipelineMenus:
                 lambda: self._ops.open_edit(asset_id, published=True),
                 tooltip=f"Open the latest published version ({meta['published']}), read-only",
             ))
-        items.append((
-            "Open Location",
-            lambda: self._ops.open_edit_location(asset_id),
-        ))
         if meta.get("master"):
             # A label with no action, ticked: picking it does nothing.
             items.append(MenuItem(
@@ -289,8 +355,17 @@ class PipelineMenus:
     def deck_item_items(self, asset: Asset, deck_item_key: str) -> list:
         """A department deck item's right-click items (see
         :meth:`PipelineCatalog.get_deck_item_menu_items`)."""
-        dept = deck_item_key
-        asset_id = asset.id
+        return self.department_items(asset.id, deck_item_key)
+
+    def department_items(
+        self, asset_id: str, dept: str, refresh_cb=None,
+    ) -> list:
+        """The right-click items of *asset_id*'s department *dept*: the
+        deck item's, the list view's department row's and the detail
+        panel's department row's, so all three are one menu.
+        *refresh_cb* is what the panel refreshes after an open or a new
+        version (the detail panel's own; the browser's otherwise)."""
+        refresh = refresh_cb or self._refresh.detail
 
         # A Multi's department is one workfile shared by its members: the
         # same menu as a shot's, with its exports (written per member)
@@ -315,14 +390,14 @@ class PipelineMenus:
             "New from Template",
             lambda aid=asset_id, dn=dept:
                 self._workfiles.new_from_template(
-                    aid, dn, self._refresh.detail,
+                    aid, dn, refresh,
                 ),
         )
         new_cur = (
             "New from Current",
             lambda aid=asset_id, dn=dept:
                 self._workfiles.new_from_current(
-                    aid, dn, self._refresh.detail,
+                    aid, dn, refresh,
                 ),
         )
         open_dir = (
@@ -345,7 +420,7 @@ class PipelineMenus:
             def open_item(label: str, version: str):
                 fn = (
                     lambda aid=asset_id, dn=dept, v=version:
-                        self._workfiles.open_version_now(aid, dn, v, None)
+                        self._workfiles.open_version_now(aid, dn, v, refresh_cb)
                 )
                 if version not in notes:
                     return (label, fn)
@@ -397,7 +472,7 @@ class PipelineMenus:
             if is_active:
                 items.append((
                     "Reload Scene",
-                    lambda: self._scene.reload_current_scene(None),
+                    lambda: self._scene.reload_current_scene(refresh_cb),
                 ))
                 if is_group:
                     # The open Multi workfile against its Multi: exports

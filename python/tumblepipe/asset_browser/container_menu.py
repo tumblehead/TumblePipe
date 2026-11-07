@@ -72,12 +72,12 @@ class ContainerMenu:
         return KIND_LABELS[kind]
 
     def actions(self, collection_id: str, kind: str) -> list[ContainerAction]:
-        """Open Location on both kinds; on a Multi, Add Entity (the Entity
+        """Open Folder on both kinds; on a Multi, Add Entity (the Entity
         Editor on that Multi, its members listed, to add more); the Root's
         export and rebuilds on a Root. The export is an explicit action
         because ``export_scene_version`` is too heavy to run on every
         membership edit."""
-        actions = [ContainerAction(OPEN_LOCATION, "Open Location")]
+        actions = [ContainerAction(OPEN_LOCATION, "Open Folder")]
         if kind == "group":
             actions.append(ContainerAction(ADD_ENTITY, "Add Entity…"))
         if kind == "scene":

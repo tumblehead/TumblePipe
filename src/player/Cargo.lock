@@ -3215,8 +3215,8 @@ dependencies = [
 
 [[package]]
 name = "primer"
-version = "0.11.0"
-source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=add436fb65ddbda5774de445da8eb6e87fac2207#add436fb65ddbda5774de445da8eb6e87fac2207"
+version = "0.11.1"
+source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=d6e2f090b8c8821169af0f5643a4f9b7d3c2e474#d6e2f090b8c8821169af0f5643a4f9b7d3c2e474"
 dependencies = [
  "primer-core",
  "primer-renderer",
@@ -3226,8 +3226,8 @@ dependencies = [
 
 [[package]]
 name = "primer-core"
-version = "0.11.0"
-source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=add436fb65ddbda5774de445da8eb6e87fac2207#add436fb65ddbda5774de445da8eb6e87fac2207"
+version = "0.11.1"
+source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=d6e2f090b8c8821169af0f5643a4f9b7d3c2e474#d6e2f090b8c8821169af0f5643a4f9b7d3c2e474"
 dependencies = [
  "bytemuck",
  "profiling",
@@ -3235,8 +3235,8 @@ dependencies = [
 
 [[package]]
 name = "primer-renderer"
-version = "0.11.0"
-source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=add436fb65ddbda5774de445da8eb6e87fac2207#add436fb65ddbda5774de445da8eb6e87fac2207"
+version = "0.11.1"
+source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=d6e2f090b8c8821169af0f5643a4f9b7d3c2e474#d6e2f090b8c8821169af0f5643a4f9b7d3c2e474"
 dependencies = [
  "bytemuck",
  "glyphon",
@@ -3249,8 +3249,8 @@ dependencies = [
 
 [[package]]
 name = "primer-runtime"
-version = "0.11.0"
-source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=add436fb65ddbda5774de445da8eb6e87fac2207#add436fb65ddbda5774de445da8eb6e87fac2207"
+version = "0.11.1"
+source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=d6e2f090b8c8821169af0f5643a4f9b7d3c2e474#d6e2f090b8c8821169af0f5643a4f9b7d3c2e474"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3271,8 +3271,8 @@ dependencies = [
 
 [[package]]
 name = "primer-widgets"
-version = "0.11.0"
-source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=add436fb65ddbda5774de445da8eb6e87fac2207#add436fb65ddbda5774de445da8eb6e87fac2207"
+version = "0.11.1"
+source = "git+http://10.100.36.15:3000/soren-n/primer.git?rev=d6e2f090b8c8821169af0f5643a4f9b7d3c2e474#d6e2f090b8c8821169af0f5643a4f9b7d3c2e474"
 dependencies = [
  "primer-core",
  "primer-renderer",

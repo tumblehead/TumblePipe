@@ -195,7 +195,7 @@ class EditManager(LibraryKind):
     catalog's per-project clients: a library kind (``library_kinds.py``),
     though owned by a project, not a library. Its card menu and Open in
     Editor are the catalog's (``menus.edit_items``, ``EntityOps.open_edit``),
-    passed in; it has no folder entry (its menu has Open Location), no drop,
+    passed in; its Open Folder is the working folder (``asset_folder``), no drop,
     no edit fields and no delete (the editor manages edits)."""
 
     kind = KIND
@@ -289,6 +289,15 @@ class EditManager(LibraryKind):
     def get_thumbnail(self, asset: Asset):
         from tumbletrove.asset_browser.core.thumbnail import IconThumbnail
         return IconThumbnail(ICON, 128)
+
+    def asset_folder(self, asset: Asset) -> Optional[Path]:
+        """The browser's Open Folder: the edit's working folder, where its
+        saved versions are. Path arithmetic only (the menu is opening on
+        the GUI thread); one never saved opens its nearest parent."""
+        ref = parse_id(asset.id)
+        if ref is None or not self._clients.is_ready(ref.project):
+            return None
+        return pipe_edits.working_dir(ref.name, self._clients.get(ref.project))
 
     def card_menu_items(self, asset: Asset) -> list:
         return [] if self._menu_items is None else self._menu_items(asset)
