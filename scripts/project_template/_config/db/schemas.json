@@ -81,6 +81,18 @@
                             }
                         }
                     }
+                },
+                "edits": {
+                    "properties": {},
+                    "children": {
+                        "edit": {
+                            "properties": {
+                                "start_timecode": "01:00:00:00",
+                                "audio_rate": 48000
+                            },
+                            "children": {}
+                        }
+                    }
                 }
             }
         },
@@ -152,6 +164,19 @@
                     }
                 },
                 "shots": {
+                    "properties": {},
+                    "children": {
+                        "department": {
+                            "properties": {
+                                "independent": false,
+                                "publishable": true,
+                                "renderable": false
+                            },
+                            "children": {}
+                        }
+                    }
+                },
+                "edits": {
                     "properties": {},
                     "children": {
                         "department": {

@@ -123,6 +123,19 @@
                 }
             }
         },
+        "edits": {
+            "properties": {},
+            "children": {
+                "edit": {
+                    "properties": {
+                        "independent": true,
+                        "publishable": true,
+                        "renderable": false
+                    },
+                    "children": {}
+                }
+            }
+        },
         "render": {
             "properties": {},
             "children": {

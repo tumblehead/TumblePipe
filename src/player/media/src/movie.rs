@@ -24,7 +24,7 @@ use th_ffmpeg_sys as ff;
 use crate::frame::{Frame, Pixels, YuvMatrix};
 use crate::{Error, Result};
 
-fn ff_error(code: i32) -> String {
+pub(crate) fn ff_error(code: i32) -> String {
     let mut buf = [0 as std::ffi::c_char; 256];
     unsafe { ff::av_strerror(code, buf.as_mut_ptr(), buf.len()) };
     unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned()
@@ -105,16 +105,22 @@ fn matrix_of(decoded: &ff::AVFrame) -> (YuvMatrix, bool) {
     (matrix, full_range)
 }
 
-/// An open movie file and its video stream.
-struct Input {
-    format: *mut ff::AVFormatContext,
-    stream_index: i32,
+/// An open media file and one of its streams (video, unless asked for
+/// another).
+pub(crate) struct Input {
+    pub(crate) format: *mut ff::AVFormatContext,
+    pub(crate) stream_index: i32,
     /// The stream's decoder.
-    decoder: *const ff::AVCodec,
+    pub(crate) decoder: *const ff::AVCodec,
 }
 
 impl Input {
     fn open(path: &str) -> std::result::Result<Self, String> {
+        Self::open_stream(path, ff::AVMEDIA_TYPE_VIDEO)
+    }
+
+    /// `path`'s best stream of `kind` (an `AVMediaType`).
+    pub(crate) fn open_stream(path: &str, kind: ff::AVMediaType) -> std::result::Result<Self, String> {
         let c_path = CString::new(path).map_err(|_| "the path contains a NUL".to_owned())?;
         let mut input = Input { format: ptr::null_mut(), stream_index: -1, decoder: ptr::null() };
         unsafe {
@@ -126,18 +132,38 @@ impl Input {
             if code < 0 {
                 return Err(ff_error(code));
             }
-            let index = ff::av_find_best_stream(input.format, ff::AVMEDIA_TYPE_VIDEO, -1, -1, &mut input.decoder, 0);
+            let index = ff::av_find_best_stream(input.format, kind, -1, -1, &mut input.decoder, 0);
             if index < 0 || input.decoder.is_null() {
-                return Err(format!("no decodable video stream ({})", ff_error(index)));
+                let what = if kind == ff::AVMEDIA_TYPE_AUDIO { "audio" } else { "video" };
+                return Err(format!("no decodable {what} stream ({})", ff_error(index)));
             }
             input.stream_index = index;
         }
         Ok(input)
     }
 
-    fn stream(&self) -> *mut ff::AVStream {
+    pub(crate) fn stream(&self) -> *mut ff::AVStream {
         unsafe { *(*self.format).streams.add(self.stream_index as usize) }
     }
+
+    /// The file's metadata value for `key` (exact case), if it has one.
+    fn tag(&self, key: &str) -> Option<String> {
+        let key = CString::new(key).ok()?;
+        unsafe {
+            let entry = ff::av_dict_get((*self.format).metadata, key.as_ptr(), ptr::null(), ff::AV_DICT_MATCH_CASE);
+            (!entry.is_null()).then(|| CStr::from_ptr((*entry).value).to_string_lossy().into_owned())
+        }
+    }
+}
+
+/// The metadata key TumblePipe records a playblast's first frame under
+/// (`tumblepipe.apps.mp4.START_FRAME_KEY`).
+pub const START_FRAME_KEY: &str = "start_frame";
+
+/// A `start_frame` tag's value as a frame number; anything but an integer is
+/// an error, never a guess.
+pub fn parse_start_frame(value: &str) -> std::result::Result<i64, String> {
+    value.trim().parse::<i64>().map_err(|_| format!("its {START_FRAME_KEY} tag is '{value}', not a frame number"))
 }
 
 impl Drop for Input {
@@ -155,6 +181,9 @@ pub struct MovieIndex {
     /// Indices (into `pts`) of the keyframes, ascending; the first is 0.
     keyframes: Vec<usize>,
     rate: (i32, i32),
+    /// The shot frame its first picture is, when the movie records one
+    /// (TumblePipe playblasts do).
+    start_frame: Option<i64>,
 }
 
 impl MovieIndex {
@@ -164,6 +193,7 @@ impl MovieIndex {
     pub fn read(path: &str) -> Result<Self> {
         let fail = |message: String| Error::Open { path: path.to_owned(), message };
         let input = Input::open(path).map_err(fail)?;
+        let start_frame = input.tag(START_FRAME_KEY).map(|v| parse_start_frame(&v)).transpose().map_err(fail)?;
         let rate = unsafe { (*input.stream()).avg_frame_rate };
         if rate.num <= 0 || rate.den <= 0 {
             return Err(fail(format!("no frame rate ({}/{})", rate.num, rate.den)));
@@ -196,7 +226,13 @@ impl MovieIndex {
         if keyframes.first() != Some(&0) {
             return Err(fail("the video does not start on a keyframe".into()));
         }
-        Ok(Self { path: path.to_owned(), pts: entries.iter().map(|&(pts, _)| pts).collect(), keyframes, rate: (rate.num, rate.den) })
+        Ok(Self {
+            path: path.to_owned(),
+            pts: entries.iter().map(|&(pts, _)| pts).collect(),
+            keyframes,
+            rate: (rate.num, rate.den),
+            start_frame,
+        })
     }
 
     pub fn path(&self) -> &str {
@@ -210,6 +246,12 @@ impl MovieIndex {
     /// Frames per second as a ratio (`(24, 1)`, `(24000, 1001)`).
     pub fn rate(&self) -> (i32, i32) {
         self.rate
+    }
+
+    /// The shot frame its first picture is, when the movie records one
+    /// (the `start_frame` tag TumblePipe playblasts carry).
+    pub fn start_frame(&self) -> Option<i64> {
+        self.start_frame
     }
 
     /// Indices of the keyframes, ascending.

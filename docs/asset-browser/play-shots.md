@@ -1,32 +1,58 @@
-# Playing shots
+# The editor
+
+TumblePipe's editor cuts and plays *edits*: the shots, media and slugs of a
+film on tracks, saved as versions and published like any other export. It
+opens in its own window, outside Houdini, and plays every frame as made: a
+playblast as it is, a render through the project's OCIO config.
 
 Right-click a shot card and choose **Play**, or select several shots and
-choose **Play N Shots**, to watch them back to back in the TumblePipe
-sequence player. It opens in its own window, outside Houdini. Nothing in
-the project changes, and Resolve is not involved.
+choose **Play N Shots**, to open them back to back in the editor as an
+untitled edit. Nothing in the project changes until you save it, and
+Resolve is not involved.
 
-## What it plays
+An edit with nothing in it yet starts as the whole film: the editor
+opened on no shots, and an edit that has never been saved, open with every
+shot of the project end to end, in sequence and shot order, each its play
+range and best available take. Cut it down from there; the Shots bin still
+holds every shot to put back. Once saved, an edit opens as it was saved,
+however many shots the project has since gained.
 
-Every shot gets a list of **takes**:
+## What a shot clip plays
+
+A shot has **takes**:
 
 - each of its **playblasts**, every department and every version;
 - each of its **renders**, every render department, layer and version whose
   frames are all there, as an EXR sequence: its `beauty` AOV, or its first
   AOV when it has no beauty. A render still running, or one that stopped
-  short, is left out.
+  short, is not a take yet.
 
-Departments come in pipeline order (layout before animation before light,
-...) and a render's layers by name, with the slapcomp last.
+A shot clip keeps a *rule*, not a file: which take it shows is worked out
+each time the edit opens, so a new playblast or render shows up in the cut
+by itself. A new clip's rule is **Best available**: a render when the shot
+has one, else a playblast; the most downstream department; for a render the
+`slapcomp` layer, else `default`; the newest version.
+
+Right-click a shot clip to change its rule. **Best available** goes back to
+the default. The **Source** (playblast or render), **Department** and
+**Version** submenus list what the shot has for the take on screen; the one
+shown is marked. Choosing a version of the shown department pins that
+version; choosing a source or department follows its newest.
+
+A shot with no take its rule picks (a planned shot, or one with nothing
+made yet) plays as an empty clip saying so; it still has its length in the
+cut. While a take opens, which can take a few seconds on the file server,
+its clip says **Opening…**.
 
 ### Render layers stacked
 
 A shot's render layers are its channels (`default` first, then the others).
-Where they were made apart, a department also gets **layers** takes
-(`animation v0015 layers`), right after its other takes of that kind:
+Where they were made apart, a department also has **layers** takes
+(`animation v0015 layers`):
 
 - a playblast version made with th::playblast's **Render Layers** has a
   movie per layer (that layer's prims on a transparent background); its
-  layers take stacks the ones it has;
+  layers take stacks them;
 - a render version with two or more channel layers whose frames are all
   there stacks them (the slapcomp is not one of them: it comps them
   already). Layers whose frame range differs from the bottom one's are left
@@ -35,147 +61,207 @@ Where they were made apart, a department also gets **layers** takes
 The layers are stacked in channel order, the first at the bottom, each laid
 "over" the ones below: playblast layers over black as they are, render
 layers in scene linear and then through the display transform like any
-render. A shot never opens on a layers take while it has another take.
+render. Best available never picks a layers take; choose it from the clip's
+menu.
 
-When the shot under the playhead shows a layers take, a row per layer
-stands over the track, the top layer on top as in an editor. Each row has
-the layer's key, its name, and a filled box when it shows (an empty one and
-**(hidden)** when it does not). Click a row, or press its digit (**1** is
-the bottom layer, up to **9**), to show or hide that layer. The toolbar
-over the picture says which layers show. The player remembers what you hid
-on each layers take until it closes. The rows go away on any other take.
-Hiding or showing a layer decodes that shot's frames again.
+## The window
 
-A shot opens on the playblast written last, whichever department it was cut
-at: a farm playblast cut at animation after one cut at render opens, not the
-older render one. (Two written at the same moment go to the more downstream
-department.) A shot with no playblasts opens on its
-latest render. A shot with neither is left out, and Houdini names the shots
-left out. When none of the chosen shots has anything to play, the menu entry
-reports it. A shot whose frame range or frame rate is not set in the project
-cannot be placed on the track, and the menu entry reports that too.
+Over the picture is the toolbar: the edit's name and version (with `*`
+while it has unsaved changes); the file's actions, **Open…**, **Save**,
+**Save As…** and **Publish…**; the cut's, **Undo**, **Redo**, **Split** and
+**Marker** (hover one for its shortcut); **Master edit** (see below),
+**Burn-ins**, and the timecode. Under the picture are the display, view and
+exposure.
 
-## The track
+On Windows and macOS the window also has a menu bar (on macOS, the menu
+bar at the top of the screen): **File** (open, save, publish, the master
+edit, new shot, import media), **Edit** (undo, redo, split, lift, ripple
+delete, marker, selection, and putting the bin's pick in the cut),
+**Playback** (play, step, jump by a second or to an edit point, the start
+and end) and **View** (burn-ins). Each item shows its shortcut, and is
+greyed while it does not apply: while a dialog is open, or the cut's
+actions on a published edit. The single-letter keys (**S** split, **M**
+marker, **B** burn-ins) act only with neither Ctrl (Cmd on macOS) nor Alt
+held.
 
-Under the video, the track shows the shots in the order they had in the
-selection. Each shot's clip is as long as its take; while the take opens, or
-when it cannot play, the clip is as long as the shot's cut and says so. A
-clip shows the first frame
-of the take it plays, the shot's name, the take, and whether that is a
-playblast or a render. The ruler along the top has a tick per frame (per 5,
-10, ... frames when the shot is long), and a green strip along its bottom
-marks the frames already decoded.
+Beside the picture are the bins. **Shots** lists the project's shots,
+each sequence's under its name;
+**Media** its media library (movies, stills and sound copied into the
+project as versioned items: **Import…** copies a file in). Select an item
+and press **Insert** (the cut opens at the playhead and everything after it
+moves on, on every track) or **Overlay** (it goes over what is there).
+Double-clicking an item inserts it. A movie brings its sound onto an audio
+track.
 
-Click or drag on the ruler to seek. Clicking a clip seeks too. Right-click a
-clip to choose its take (see below).
+Under the picture are the tracks: a ruler, then the video tracks (the top
+track on top), then the audio tracks. Each clip shows its first frame, its
+name and its take, its fades as ramps, and an outline when selected. A
+shot's clip is coloured by the department its take comes from (every
+animation take the same muted blue, say), so the cut shows at a glance how
+far each shot has got; a clip with nothing to play is hatched, and says
+why. The ruler marks the markers, the playhead, and in a lighter strip the
+frames already decoded. Amber means *now*: the playhead, the timecode, a
+clip being dragged.
 
-Up and Down change the shot under the playhead. To change several shots at
-once, select them: Ctrl-click a clip (Cmd-click on macOS) to add it or take
-it out, Shift-click to select the run of shots from the last one clicked,
-Ctrl+A for all of them. The shots a change applies to are outlined. A plain
-click on a clip, or Escape, clears the selection.
+- Click or drag on the ruler, or on empty track, to seek.
+- Click a clip to select it; Shift or Ctrl-click adds it or takes it out.
+- Drag a clip to move it, onto another track of its kind too. With Alt held
+  it slips: the clip stays and the frames in it move.
+- Drag a clip's edge to trim it; what follows moves with it. With Alt held
+  the cut rolls: the clip and its neighbour change together and the length
+  holds.
+- Drag along a clip's top band to fade it in (left half) or out (right
+  half). Where a clip on a higher track fades over one below, the two
+  dissolve.
 
-Changing a shot's take changes only that shot. The others keep the frames
-already decoded, and the playhead stays on its frame.
-
-A take the player has not shown yet has to be opened first, which can take a
-few seconds on the file server. The player keeps working meanwhile: the
-shot's clip names the new take and says **Opening**, and the shot plays its
-old take until the new one is open. Press Up or Down again while it opens
-and it steps on from the new take. A take shown before opens at once.
-
-## In the player
-
-The player is driven from the keyboard:
+Every change is one step of undo, however many clips it moves.
 
 | Key | Does |
 | --- | --- |
 | Space | play / pause |
 | Left / Right | step one frame back / forward |
-| Alt+Left / Alt+Right | jump one second back / forward (the shot's frame rate, rounded) |
-| Ctrl+Left / Ctrl+Right | jump to the previous / next shot |
+| Alt+Left / Alt+Right | jump one second back / forward |
+| Ctrl+Left / Ctrl+Right | jump to the previous / next cut |
 | Home / End | the first / last frame |
-| Up / Down | a newer / older version of the same department |
-| Ctrl+Up / Ctrl+Down | the department upstream / downstream, its latest version |
-| Shift+Up | the playblast |
-| Shift+Down | the render |
-| Ctrl+A | select every shot |
+| S | split the selected clips at the playhead (none selected: the top video clip there) |
+| M | a marker at the playhead |
+| Delete | lift the selected clips, leaving a gap |
+| Shift+Delete | ripple delete: what follows closes the gap |
+| Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) | undo / redo |
+| Ctrl+O | open an edit |
+| Ctrl+S / Ctrl+Shift+S | save / save as |
+| Ctrl+A | select every clip |
 | Escape | clear the selection |
 | B | show / hide the burn-ins |
-| 1 to 9 | show / hide layer 1 to 9 of a layers take (1 is the bottom) |
 
-On macOS, use Cmd for Ctrl. Up and Down stay within what the shot shows. For
-a playblast they step through that department's playblasts. For a render
-they step through the versions of that department and layer. Ctrl+Up and
-Ctrl+Down move between the departments (and render layers) of the same
-kind. Shift+Up and Shift+Down switch between the playblast and the render,
-going back to the one the shot showed last. When it has not shown one of
-that kind yet, they go to the latest of the most downstream department.
-
-Right-click a shot's clip to change its take. The menu has three submenus,
-each showing what is there for the take on screen: **Source** (playblast or
-render), **Department** (the departments of that source; a department
-rendering several layers lists each, as `light (slapcomp)`, and its layers
-takes as `light (layers)`) and **Version**
-(that department's versions, newest first). The current choice is marked
-**(shown)**. Choosing a source or department goes where its key would: the
-source to the take you last showed of it, else its newest; a department to
-its newest version. Hover a row to open its submenu, or use the arrow keys:
-Right opens a submenu, Left closes it, Enter picks. That changes only the
-shot clicked, selected or not. Clicking a menu or a control
-never takes the keys: Space and the arrows keep working as above.
+On macOS, use Cmd for Ctrl.
 
 Playback shows every frame: when the next frame is not decoded yet, the
-player waits for it instead of skipping it, so what you see is always
-frame-accurate. After a take change, the old take's frame stays up until the
-new one's is decoded. A render's frames are large, so each can take seconds
-to come from the file server. The player reads the frame under the playhead
-first, on its own, and the frames after it once that one is in.
+editor waits for it instead of skipping it. While there is sound, playback
+keeps to it. A render's frames are large, so each can take seconds to come
+from the file server; the frame under the playhead is read first.
 
-Burn-ins over the picture name what is on screen: the sequence and shot top
-left (`HideAndReek / 010`), the take top right (`animation v0015`), the frame
-rate bottom left (`24 fps`) and the frame bottom right. A playblast's frames
-carry no numbers, so that is the frame's place in the take (`46 / 68`); an
-EXR take's frame shows its own number first (`1046 (46 / 68)`). They
-describe the frame shown, so while a new take loads they still name the old
-one. **Burn-ins** in the toolbar over the picture, or B, shows or hides
-them. They are only drawn in the player: nothing is written into the media.
+Burn-ins over the picture name what is on screen: the shot top left, its
+take top right, the edit's timecode bottom left and the frame bottom right:
+the shot frame and its place in the take (`1046 (46 / 68)`). A playblast
+records which shot frame it starts on; one made before TumblePipe recorded
+that shows only its place (`46 / 68`) until
+`scripts/fix_playblast_start_frames.py` gives it its start frame (see
+[Older playblasts](#older-playblasts)). They are only drawn in the editor:
+nothing is written into the media.
 
-What went wrong is said where it is: while the playhead is on a take that
-will not open, a frame that will not decode, or a render the chosen display
-and view cannot show, the reason is on a line of its own under the track,
-and in the picture when there is no frame to show. Playback does not stop
-for it: it plays on past the shot.
-
-Playblasts are shown as they are. EXR takes are scene-linear, so the player
+Playblasts are shown as they are. EXR takes are scene-linear, so the editor
 shows them through the project's OCIO config (`$OCIO`, which the TumblePipe
-package sets; the player does not start without one). It reads the input
+package sets; the editor does not start without one). It reads the input
 colour space from the EXR (ACEScg for TumblePipe renders; a render that
-does not name one cannot play)
-and uses the config's default display and view (`sRGB - Display`,
-`ACES 1.0 - SDR Video`). For an EXR take you can also choose (layer and
-channel in the toolbar over the picture, display, view and exposure right
-under it):
+does not name one cannot play) and starts on the config's default display
+and view. The window around the image is neutral grey, so it does not shift
+how the image's colours read.
 
-- **Layer** and channel: any layer of the file, and the whole layer
-  (**Colour**) or one of its channels on its own (shown as grey);
-- display and view: any of the config's;
-- **Exposure**: in stops, before the display transform.
+## Saving and publishing
 
-The window around the image is neutral grey, so it does not shift how the
-image's colours read.
+An edit is an entity of the project, `entity:/edits/<name>`. **Open…** lists
+the project's edits, each with its newest working version and newest
+published one; the edit chosen opens in a window of its own (an untitled
+window it was chosen from closes when it holds nothing of yours: empty, or
+the project's shots unchanged since it opened). **Edits** in TumbleTrove
+Desktop's Scripts panel starts the editor on the project. **Save** writes
+its next working version (`v0001`, `v0002`, ...) with a note; **Save As**
+names a new edit. While an edit is open it is autosaved every minute;
+when the editor finds an autosave newer than the working version it opens,
+it offers it back. Closing with unsaved changes asks first.
 
-The player ships inside the TumblePipe package, as
-`bin/<platform>/th_player`. TumblePipe hands it the playlist (the shots,
-their takes and the OCIO config, as JSON) on its standard input; it takes no
-arguments. To run it by hand, give it a playlist the same way:
+**Publish** freezes the edit: every shot clip's rule is written down as the
+exact take it plays, so a published version always plays the same frames.
+A publish also writes the edit as OpenTimelineIO (`.otio`, which Resolve
+imports: dissolves become transitions, other fades markers). Its movies
+are linked into the version's `media/` folder under names of their own,
+such as `S_010_animation_playblast_v0003.mp4` (hard links, copies where a
+link cannot be made), and the `.otio` refers to those. Resolve takes movies
+with the same file name and start timecode for one, and every playblast is
+`vNNNN.mp4`. A movie places by its timecode, so a playblast made before
+playblasts recorded their start frame does not link in Resolve until it is
+playblasted again or `scripts/fix_playblast_start_frames.py` has written
+it. A published version opens read-only; **Save As** makes a new edit from it.
+
+In the Asset Browser, a project with edits has an **Edits** section: a card
+per edit, with its latest published version and newest working version, and
+whether it is the master edit. Right-click a card: **Open in Editor** opens
+its newest working version (an edit never saved opens empty), **Play
+Published** its latest published version, read-only (there only once it has
+one), **Open Location** its working folder, and **Set as Master Edit** makes
+it the master edit (the master edit's card is ticked **Master Edit** and
+offers **Clear Master Edit** instead). Edits are made in the editor, not in
+the browser.
+
+A published version can be rendered into a movie on the farm: the **Edits**
+tab of [Farm Submit](submit-jobs.md#the-edits-tab) offers each edit's
+published versions, the latest first, with **Render Edit**. A worker plays
+the version through the editor without a window, as you see it (fades,
+dissolves and the project's OCIO view included) and with its sound mixed,
+and encodes `render:/edits/<name>/<name>_edit_vNNNN.mp4`: H.264 with AAC
+sound and a timecode track from the edit's start timecode, ready for
+Resolve or for sending out. The same render runs by hand with
+`th_player --project <root> --ocio <config> --render entity:/edits/<name>@vNNNN --out <dir>`,
+which writes the frames as PNGs, the sound as a WAV and `render.json`.
+
+### The master edit
+
+One edit can be the project's **master edit** (the toolbar's checkbox): the
+cut the shots' frame ranges follow. Publishing it lists the shot changes its
+cut makes, each with a tick box:
+
+- a planned shot (**New shot…** in the Shots bin puts one in the cut, with
+  its sequence, name and length) is created with the range it has;
+- a shot whose clip is longer or shorter than its range gets the new range;
+- a shot the master edit used to have and no longer does is retired. These
+  are not ticked: tick them to retire the shots.
+
+A change is flagged when the shot's take does not cover the new range (a
+playblast made before the range grew). The ticked changes are written after
+the publish, and the shots bin follows them.
+
+## Running it by hand
+
+The editor ships inside the TumblePipe package, as
+`bin/<platform>/th_player`:
 
 ```
-th_player < playlist.json
+th_player [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] | --shots <shot uri>...]
 ```
 
-The playlist's schema is the `th_playlist` crate's (`src/player/playlist`).
+`--edit` opens the edit's newest working version, or with `@vNNNN` that
+published version (an edit never saved, every shot of the project);
+`--shots` the shots end to end as an untitled edit; neither, every shot of
+the project as an untitled edit. The project is `--project`, else
+`$TH_PROJECT_PATH`; the OCIO config `--ocio`, else `$OCIO`. When either is
+missing, or the edit does not open, the window says why.
 
 It is built for Windows, Linux and macOS. See
 [Contributing and development](../development.md#sequence-player) for how it
 is built.
+
+## Older playblasts
+
+A playblast records the shot frame its first picture is: a `start_frame` tag
+and a timecode track that starts on that frame (frame 1001 at 24 fps is
+`00:00:41:17`), which Resolve reads as the clip's source timecode. Playblasts
+made before that record nothing. `scripts/fix_playblast_start_frames.py`
+gives them it, once:
+
+```text
+python scripts/fix_playblast_start_frames.py P:/HideAndReek --houdini 22.0.429
+python scripts/fix_playblast_start_frames.py P:/HideAndReek --houdini 22.0.429 --apply
+```
+
+Run it with Houdini's own Python (`python313/python.exe` in the Houdini
+folder; no licence is taken). Without `--apply` it only lists. For every movie
+in the shots' playblast folders (`--shot SEQUENCE/SHOT` for some) it says
+one of:
+
+| Says | Means |
+|---|---|
+| (nothing) | the movie records its start frame already |
+| `would fix` / `fixed` | its frame count is its shot's full range (the frames plus roll, which a playblast covers), so it starts at that range's first frame. The movie is copied with the start frame added (no re-encode), the copy is checked, then it replaces the movie |
+| `cannot place` | anything else, with the reason: usually the shot's range changed since the playblast was made. Make a new playblast of it |
+| `FAILED` | the movie could not be replaced, often because another program (Resolve) has it open. It is left as it was; run again later |

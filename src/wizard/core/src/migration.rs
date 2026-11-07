@@ -120,6 +120,11 @@ pub enum Step {
     /// them (see [`v22_plan`]). As a sibling, `groups:/shots/<name>` resolved
     /// to no schema at all, so no group default ever applied.
     GroupSchemaUnderRoots,
+    /// v23 — the `edits` context: edits (cuts of the film, made in the
+    /// sequence editor) become pipeline entities, `entity:/edits/<name>`,
+    /// with their own storage purpose, department pool and schema (see
+    /// [`v23_plan`]).
+    EditsContext,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -164,7 +169,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 22] = [
+pub const STEPS: [Step; 23] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -187,6 +192,7 @@ pub const STEPS: [Step; 22] = [
     Step::AnimationCopiesLayoutKeys,
     Step::AddGroomDepartment,
     Step::GroupSchemaUnderRoots,
+    Step::EditsContext,
 ];
 
 impl Step {
@@ -215,6 +221,7 @@ impl Step {
             Step::AnimationCopiesLayoutKeys => 20,
             Step::AddGroomDepartment => 21,
             Step::GroupSchemaUnderRoots => 22,
+            Step::EditsContext => 23,
         }
     }
 
@@ -280,6 +287,9 @@ impl Step {
             }
             Step::GroupSchemaUnderRoots => {
                 "move the group schema under schemas:/groups/shots and /assets, so group defaults apply"
+            }
+            Step::EditsContext => {
+                "add the edits context: the edits storage purpose, the edit department and the edit schema"
             }
         }
     }
@@ -519,6 +529,12 @@ impl Step {
             }
             // Blocked when the schema tree is unreadable or misshapen.
             Step::GroupSchemaUnderRoots => match v22_plan(&cfg) {
+                Ok(_) => Readiness::Ready,
+                Err(why) => Readiness::Blocked(why),
+            },
+            // Blocked when a file it adds to is unreadable or misshapen, or
+            // the packaged scaffold has no `edits` path.
+            Step::EditsContext => match v23_plan(&cfg, template_dir) {
                 Ok(_) => Readiness::Ready,
                 Err(why) => Readiness::Blocked(why),
             },
@@ -1035,6 +1051,14 @@ impl Step {
                 }
                 Ok(())
             }
+            Step::EditsContext => {
+                // Every file is planned before any is written, so a refusal
+                // leaves the project as it was.
+                for (path, data) in v23_plan(&cfg, template_dir)? {
+                    write_preserving_as(&path, &crate::to_json_string(&data), "v23.bak")?;
+                }
+                Ok(())
+            }
             Step::ScratchOffWslPaths => {
                 // Own backup suffix: the `.v11.bak` v11 left is that step's
                 // original and stays.
@@ -1278,6 +1302,177 @@ fn v22_plan(cfg: &Path) -> Result<Option<Value>, String> {
     Ok(Some(data))
 }
 
+/// The entity root, department context and storage purpose v23 adds, and
+/// the one department it puts in the context.
+const EDITS: &str = conventions::EDITS;
+const EDIT_DEPARTMENT: &str = "edit";
+
+/// v23's work for a project: each config file it adds to, with its new
+/// contents. Empty when there is nothing to do. A file that already has its
+/// `edits` part (whatever its shape) is left as it is, so a project that
+/// made its own is not overwritten.
+///
+/// - `storage.json` gains `edits` (the packaged scaffold's path, after
+///   `edit`). A project still to run v11 has no table yet: v11 writes one
+///   earlier in the same run, from the scaffold, `edits` included.
+/// - `db/departments.json` gains the `edits` context with one department,
+///   `edit`: independent and publishable (a publish is a cut other work
+///   reads), not renderable (an edit's movie is the Render Edit farm job,
+///   not a shot render).
+/// - `db/schemas.json` gains `schemas:/entity/edits/edit` (the timecode the
+///   cut starts at and its audio rate; fps and resolution come from the
+///   entity root, as a shot's do) and `schemas:/departments/edits/department`.
+/// - `db/entity.json` gains the empty `entity:/edits` root.
+///
+/// The master edit is `master_edit` on `config:/project`; unset means no
+/// master, so it needs nothing here (as `layout_in_animate`).
+fn v23_plan(cfg: &Path, template_dir: &Path) -> Result<Vec<(PathBuf, Value)>, String> {
+    let mut out = Vec::new();
+
+    let storage = cfg.join(conventions::STORAGE_FILE);
+    if storage.exists() {
+        let Value::Object(table) = load_json(&storage)? else {
+            return Err(format!("{} is not a JSON object", storage.display()));
+        };
+        if !table.contains_key(EDITS) {
+            let scaffold = scaffold_storage_table(template_dir)?;
+            let template = scaffold.get(EDITS).cloned().ok_or_else(|| {
+                format!("the packaged {} has no `{EDITS}`", conventions::STORAGE_FILE)
+            })?;
+            out.push((
+                storage,
+                Value::Object(insert_after(table, "edit", EDITS, template)),
+            ));
+        }
+    }
+
+    let db = cfg.join("db");
+    let department = |independent: bool| {
+        serde_json::json!({
+            "properties": {
+                "independent": independent,
+                "publishable": true,
+                "renderable": false
+            },
+            "children": {}
+        })
+    };
+    let context = |child: &str, node: Value| {
+        let mut children = serde_json::Map::new();
+        children.insert(child.to_string(), node);
+        serde_json::json!({ "properties": {}, "children": children })
+    };
+
+    let path = db.join("departments.json");
+    if path.exists() {
+        let mut data = load_json(&path)?;
+        let pool = context(EDIT_DEPARTMENT, department(true));
+        if add_edits_child(&path, &mut data, &[], "shots", pool)? {
+            out.push((path, data));
+        }
+    }
+
+    let path = db.join("schemas.json");
+    if path.exists() {
+        let mut data = load_json(&path)?;
+        let edit = serde_json::json!({
+            "properties": {
+                "start_timecode": "01:00:00:00",
+                "audio_rate": 48000
+            },
+            "children": {}
+        });
+        let entity = add_edits_child(&path, &mut data, &["entity"], "assets", context("edit", edit))?;
+        let departments = add_edits_child(
+            &path,
+            &mut data,
+            &["departments"],
+            "shots",
+            context("department", department(false)),
+        )?;
+        if entity || departments {
+            out.push((path, data));
+        }
+    }
+
+    let path = db.join("entity.json");
+    if path.exists() {
+        let mut data = load_json(&path)?;
+        let root = serde_json::json!({ "properties": {}, "children": {} });
+        if add_edits_child(&path, &mut data, &[], "assets", root)? {
+            out.push((path, data));
+        }
+    }
+    Ok(out)
+}
+
+/// `map` with `key: value` placed right after `after` (at the end when
+/// `after` is not there).
+fn insert_after(
+    map: serde_json::Map<String, Value>,
+    after: &str,
+    key: &str,
+    value: Value,
+) -> serde_json::Map<String, Value> {
+    let mut out = serde_json::Map::new();
+    let mut pending = Some(value);
+    for (name, item) in map {
+        let here = name == after;
+        out.insert(name, item);
+        if here {
+            if let Some(value) = pending.take() {
+                out.insert(key.to_string(), value);
+            }
+        }
+    }
+    if let Some(value) = pending {
+        out.insert(key.to_string(), value);
+    }
+    out
+}
+
+/// Add an `edits` child, `node`, to the database node at `segments` (right
+/// after `after`): true when it was added, false when that node is missing
+/// or already has an `edits`. An error when the node or its children are
+/// not JSON objects.
+fn add_edits_child(
+    path: &Path,
+    data: &mut Value,
+    segments: &[&str],
+    after: &str,
+    node: Value,
+) -> Result<bool, String> {
+    let mut at = data;
+    for segment in segments {
+        let Some(next) = at.get_mut("children").and_then(|c| c.get_mut(*segment)) else {
+            return Ok(false);
+        };
+        at = next;
+    }
+    let where_ = if segments.is_empty() {
+        "the root".to_string()
+    } else {
+        format!("`{}`", segments.join("/"))
+    };
+    let Value::Object(object) = at else {
+        return Err(format!("{}: {where_} is not a JSON object", path.display()));
+    };
+    let children = object
+        .entry("children")
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    let Value::Object(children) = children else {
+        return Err(format!(
+            "{}: the children of {where_} are not a JSON object",
+            path.display()
+        ));
+    };
+    if children.contains_key(EDITS) {
+        return Ok(false);
+    }
+    *children = insert_after(std::mem::take(children), after, EDITS, node);
+    Ok(true)
+}
+
 /// v10's edits to a project, as `(file, new LF text)`: empty when there is
 /// nothing to do, an error naming the file and the reason when either file
 /// has a shape the edit refuses (see [`beauty_alpha`]).
@@ -1384,7 +1579,7 @@ fn v11_plan(
             let Value::Object(table) = load_json(&storage_json)? else {
                 return Err(format!("{} is not a JSON object", storage_json.display()));
             };
-            conventions::validate_table(&table)
+            conventions::validate_table_before_v23(&table)
                 .map_err(|why| format!("{} is invalid: {why}", storage_json.display()))?;
             Ok(None)
         }
@@ -2916,7 +3111,7 @@ mod tests {
         let cfg = dir.path().join("_config");
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
 
         let path = cfg.join(conventions::STORAGE_FILE);
         let table = load_json(&path).unwrap();
@@ -3256,7 +3451,7 @@ mod tests {
         );
         assert!(!cfg.join("storage_convention.py").exists());
         let twice = std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap();
-        assert_eq!(twice, once.replace("{project_path}/edit", "{project_path}/cut"));
+        assert_eq!(twice, once.replace("\"{project_path}/edit\"", "\"{project_path}/cut\""));
         assert_eq!(
             std::fs::read_to_string(cfg.join("storage.json.v11.bak")).unwrap(),
             once
@@ -3491,6 +3686,7 @@ mod tests {
             (Step::AnimationCopiesLayoutKeys, Readiness::Blocked(_)),
             (Step::AddGroomDepartment, Readiness::Blocked(_)),
             (Step::GroupSchemaUnderRoots, Readiness::Ready),
+            (Step::EditsContext, Readiness::Ready),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -3601,7 +3797,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 22);
+        assert_eq!(latest_version(), 23);
         assert_eq!(current_version(&target).unwrap(), latest_version());
         assert!(pending(&target).unwrap().is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -3747,8 +3943,8 @@ mod tests {
         let dir = project_at_v12_with_variants();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 10);
-        assert_eq!(report.to, 22);
+        assert_eq!(report.applied.len(), 11);
+        assert_eq!(report.to, 23);
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -3805,7 +4001,7 @@ mod tests {
         let template = scaffold();
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -3823,7 +4019,7 @@ mod tests {
         write_version(&dir.path().join("_config"), 12).unwrap();
         let second = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 22);
+        assert_eq!(second.to, 23);
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -3839,7 +4035,8 @@ mod tests {
         std::fs::write(db.join("entity.json"), entity).unwrap();
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
 
-        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        let last = Step::GroupSchemaUnderRoots.version();
+        let report = migrate_through(dir.path(), &packaged_scaffold(), last).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, 22);
         assert_eq!(db_text(dir.path(), "entity.json"), entity);
@@ -3902,7 +4099,7 @@ mod tests {
         }
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
         let animation =
             std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
         assert_eq!(
@@ -3934,7 +4131,7 @@ mod tests {
         std::fs::write(&path, &shipped_at_v14).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             layout.replace("
@@ -3976,8 +4173,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v15).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 7);
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(report.applied.len(), 8);
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         // Only rigged assets get a row (since 80def61306: the animatable ones)
@@ -4002,8 +4199,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v17).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 5);
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(report.applied.len(), 6);
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("anim_camera.parm('loppath').set(camera_edit_node.path())"));
@@ -4025,8 +4222,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v18).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 4);
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(report.applied.len(), 5);
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(layout, packaged_text("shots/layout"));
         assert!(layout.contains("layout_rigs.add_layout_animate(scene_node, camera_node, entity_uri)"));
@@ -4048,8 +4245,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v19).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 3);
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(report.applied.len(), 4);
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("layout_keys_rows.add_to_dive("));
@@ -4124,8 +4321,15 @@ mod tests {
         std::fs::write(&path, &original).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied, vec![(Step::AddGroomDepartment, Ok(())), (Step::GroupSchemaUnderRoots, Ok(()))]);
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(
+            report.applied,
+            vec![
+                (Step::AddGroomDepartment, Ok(())),
+                (Step::GroupSchemaUnderRoots, Ok(())),
+                (Step::EditsContext, Ok(()))
+            ]
+        );
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
         assert_eq!(
             asset_departments(dir.path()),
             ["model", "blendshape", "groom", "lookdev", "rig"]
@@ -4173,7 +4377,8 @@ mod tests {
         write_pool(dir.path(), &["model", "lookdev", "groom"]);
         let path = dir.path().join("_config").join("db").join("departments.json");
         let before = std::fs::read_to_string(&path).unwrap();
-        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        let last = Step::GroupSchemaUnderRoots.version();
+        assert!(migrate_through(dir.path(), &packaged_scaffold(), last).unwrap().is_ok());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
         assert!(!path.with_file_name("departments.json.v21.bak").exists());
 
@@ -4237,8 +4442,11 @@ mod tests {
         std::fs::write(&path, &original).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied, vec![(Step::GroupSchemaUnderRoots, Ok(()))]);
-        assert_eq!(current_version(dir.path()).unwrap(), 22);
+        assert_eq!(
+            report.applied,
+            vec![(Step::GroupSchemaUnderRoots, Ok(())), (Step::EditsContext, Ok(()))]
+        );
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
         let roots = group_roots(dir.path());
         assert_eq!(roots.as_object().unwrap().keys().collect::<Vec<_>>(), ["shots", "assets"]);
         for root in GROUP_ROOTS {
@@ -4306,5 +4514,155 @@ mod tests {
         let readiness = Step::GroupSchemaUnderRoots.readiness(dir.path(), &packaged_scaffold());
         assert!(matches!(readiness, Readiness::Blocked(_)), "{readiness:?}");
         assert_eq!(std::fs::read_to_string(schemas_in(dir.path())).unwrap(), text);
+    }
+
+    fn db_in(dir: &Path, name: &str) -> PathBuf {
+        dir.join("_config").join("db").join(name)
+    }
+
+    fn keys(value: &Value) -> Vec<String> {
+        value.as_object().unwrap().keys().cloned().collect()
+    }
+
+    /// A v22 project as the scaffold made it, before edits: the packaged
+    /// files with their `edits` parts taken out.
+    fn project_at_v22() -> tempfile::TempDir {
+        let dir = project(Some(22));
+        let packaged = packaged_scaffold().join("_config");
+        let mut storage = load_json(&packaged.join(conventions::STORAGE_FILE)).unwrap();
+        storage.as_object_mut().unwrap().shift_remove(EDITS);
+        std::fs::write(
+            dir.path().join("_config").join(conventions::STORAGE_FILE),
+            crate::to_json_string(&storage).replace('\n', "\r\n"),
+        )
+        .unwrap();
+        let drop = |value: &mut Value, at: &[&str]| {
+            let mut node = value;
+            for segment in at {
+                node = &mut node["children"][*segment];
+            }
+            node["children"].as_object_mut().unwrap().shift_remove(EDITS);
+        };
+        for (name, at) in [
+            ("departments.json", &[][..]),
+            ("schemas.json", &["entity"][..]),
+            ("schemas.json", &["departments"][..]),
+            ("entity.json", &[][..]),
+        ] {
+            let path = db_in(dir.path(), name);
+            let mut data = match load_json(&path) {
+                Ok(data) => data,
+                Err(_) => load_json(&packaged.join("db").join(name)).unwrap(),
+            };
+            drop(&mut data, at);
+            std::fs::write(&path, crate::to_json_string(&data)).unwrap();
+        }
+        dir
+    }
+
+    /// v23 brings a stock v22 project to the scaffold's edits: the storage
+    /// purpose (after `edit`, CRLF kept), the department context, both
+    /// schemas and the entity root, each file backed up as `.v23.bak`.
+    #[test]
+    fn v23_adds_the_edits_context_as_the_scaffold_has_it() {
+        let dir = project_at_v22();
+        let originals: Vec<(PathBuf, String)> = [
+            dir.path().join("_config").join(conventions::STORAGE_FILE),
+            db_in(dir.path(), "departments.json"),
+            db_in(dir.path(), "schemas.json"),
+            db_in(dir.path(), "entity.json"),
+        ]
+        .into_iter()
+        .map(|p| {
+            let text = std::fs::read_to_string(&p).unwrap();
+            (p, text)
+        })
+        .collect();
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.applied, vec![(Step::EditsContext, Ok(()))]);
+        assert_eq!(current_version(dir.path()).unwrap(), 23);
+
+        let packaged = packaged_scaffold().join("_config");
+        let storage = load_json(&dir.path().join("_config").join(conventions::STORAGE_FILE)).unwrap();
+        assert_eq!(storage, load_json(&packaged.join(conventions::STORAGE_FILE)).unwrap());
+        assert_eq!(keys(&storage), conventions::PURPOSES.to_vec(), "purposes keep their order");
+        conventions::validate_table(storage.as_object().unwrap()).unwrap();
+        for name in ["departments.json", "schemas.json", "entity.json"] {
+            assert_eq!(
+                load_json(&db_in(dir.path(), name)).unwrap(),
+                load_json(&packaged.join("db").join(name)).unwrap(),
+                "{name} matches the scaffold"
+            );
+        }
+        for (path, original) in &originals {
+            let backup = path.with_file_name(format!(
+                "{}.v23.bak",
+                path.file_name().unwrap().to_str().unwrap()
+            ));
+            assert_eq!(&std::fs::read_to_string(backup).unwrap(), original);
+        }
+        let storage_text =
+            std::fs::read_to_string(dir.path().join("_config").join(conventions::STORAGE_FILE))
+                .unwrap();
+        assert!(!storage_text.replace("\r\n", "").contains('\n'), "CRLF kept");
+    }
+
+    /// A project that already has an `edits` part keeps it as it is, a
+    /// project without a database gets nothing, and a second run writes
+    /// nothing.
+    #[test]
+    fn v23_keeps_what_a_project_has_and_is_idempotent() {
+        let dir = project_at_v22();
+        let path = db_in(dir.path(), "departments.json");
+        let mut pool = load_json(&path).unwrap();
+        pool["children"][EDITS] = serde_json::json!({"properties": {}, "children": {"cut": {"properties": {}, "children": {}}}});
+        let own = crate::to_json_string(&pool);
+        std::fs::write(&path, &own).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), own);
+        assert!(!path.with_file_name("departments.json.v23.bak").exists());
+
+        let names = ["departments.json", "schemas.json", "entity.json"];
+        let first: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
+        write_version(&dir.path().join("_config"), 22).unwrap();
+        assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
+        let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
+        assert_eq!(first, again);
+
+        let bare = project(Some(22));
+        assert!(migrate(bare.path(), &packaged_scaffold()).unwrap().is_ok());
+        assert!(!db_in(bare.path(), "entity.json").exists());
+        assert!(!bare.path().join("_config").join(conventions::STORAGE_FILE).exists());
+    }
+
+    /// A tree v23 cannot add to blocks the step before anything is written.
+    #[test]
+    fn v23_blocks_on_a_misshapen_tree() {
+        let dir = project_at_v22();
+        let path = db_in(dir.path(), "entity.json");
+        std::fs::write(&path, "{\n    \"children\": [1]\n}\n").unwrap();
+        let storage = dir.path().join("_config").join(conventions::STORAGE_FILE);
+        let before = std::fs::read_to_string(&storage).unwrap();
+        let readiness = Step::EditsContext.readiness(dir.path(), &packaged_scaffold());
+        assert!(matches!(readiness, Readiness::Blocked(_)), "{readiness:?}");
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        assert!(!report.is_ok(), "{report:?}");
+        assert_eq!(std::fs::read_to_string(&storage).unwrap(), before);
+        assert_eq!(current_version(dir.path()).unwrap(), 22);
+    }
+
+    /// A table kept from before v23 (no `edits`) is valid for v11 to keep;
+    /// a current one must have it.
+    #[test]
+    fn a_table_before_v23_may_lack_edits() {
+        let mut table = load_json(&packaged_scaffold().join("_config").join(conventions::STORAGE_FILE))
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .clone();
+        table.shift_remove(EDITS);
+        assert!(conventions::validate_table_before_v23(&table).is_ok());
+        assert!(conventions::validate_table(&table).is_err());
     }
 }

@@ -29,6 +29,7 @@ by who a change reaches:
 | **Name** | The project's registry name (placeholder `e.g. RND or growth`). |
 | **Project Path** + **Browse…** | The project root (placeholder `P:/RND`). Browsing (**Select Project Folder**) fills a blank Name from the folder name and a blank Config Path from `<project>/_config` when it exists. |
 | **Config Path** | Optional — where `_config` lives if not inside the project. |
+| **Libraries** + **Add…** / **Remove** | The selected project's [library](libraries.md) folders. Its `TH_LIBRARY_PATH` folders (launched project only) come first, greyed out and marked `(TH_LIBRARY_PATH)`. **Add…** (**Select Library Folder**) on a folder without a `library.json` asks for a name (**New Library**) and writes one. Editable for the launched project too. |
 | **Apply Project Changes** | Validates (every entry needs a Name and a Project Path, names must be unique — `Fix these issues before applying: …`), writes the registry, drops the browser's discovery cache, and reports `Saved N project(s). The asset browser grid will repopulate on the next browse.` |
 
 Edits to the list only take effect on **Apply Project Changes**. The list
@@ -211,7 +212,8 @@ which departments the Multi's workfile overrides for its members. See
 | File | Written by | Contents |
 |---|---|---|
 | `$HOUDINI_USER_PREF_DIR/asset_browser/pipeline_prefs.json` (or `~/.config/asset_browser/pipeline_prefs.json` when the variable is unset) | the Behaviour toggles and the shot slate | The four prefs above, `shot_slate_size`, `farm_backend` (Farm Submit's last **Run on**) and `prefs_version` (currently 2; a file older than that re-defaults `auto_refresh_on_open` to on once). |
-| `$HOUDINI_USER_PREF_DIR/asset_browser/projects.json` (same fallback) | Apply Project Changes | The registered projects: name, project path, config path. |
+| `$HOUDINI_USER_PREF_DIR/asset_browser/projects.json` (same fallback) | Apply Project Changes | The registered projects: name, project path, config path, and `library_paths` (the libraries added on this page; never the `TH_LIBRARY_PATH` ones). |
+| `<library>/library.json` | **Add…** under Libraries, for a folder that had none | The library's `name` and `read_only` flag. See [Libraries](libraries.md#a-librarys-folder). |
 | `<package root>/radial_menus/tumblepipe_recipes.json` and `tumblepipe_asset_favorites.json` | Houdini startup (`tumblepipe.startup.register_radial`, `$TH_PIPELINE_PATH` is the package root) | Generated radial rings (Alt+R recipes, Alt+F asset favourites) for the `tumbleradial` package; `tumblepipe_pipeline.json` there is static and shipped. Regenerated every launch; a ring with fewer than two entries is deleted rather than written. |
 | `$TH_PROJECT_PATH/export/other/logs/$TH_USER.log` | every session, on `import tumblepipe` | The pipeline log — rotating, 5 MB × 3 backups. Written into the **project** share, so it is only attached when `TH_PROJECT_PATH` exists; identity-less sessions share `pipeline.log`. This is the file the failure dialogs name. See [Where the logs are](../development.md#where-the-logs-are). |
 | `$TH_PROJECT_PATH/export/other/jobs/` | farm submissions | The job manifests handed to Deadline, with a copy of the workfile. Never archived; `python -m tumblepipe.prune` deletes the folders Deadline is done with ([Pruning farm job folders](../archiving.md#pruning-farm-job-folders)). |

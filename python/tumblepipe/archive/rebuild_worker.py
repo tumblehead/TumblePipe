@@ -23,7 +23,9 @@ def main(request_path: str, response_path: str) -> int:
     request = json.loads(Path(request_path).read_text(encoding='utf-8'))
     results = []
     try:
-        hou.hipFile.load(request['hip'], suppress_save_prompt=True, ignore_load_warnings=True)
+        # Forward slashes: Houdini names its crash file after the scene, and
+        # a backslash path makes a name it cannot write.
+        hou.hipFile.load(Path(request['hip']).as_posix(), suppress_save_prompt=True, ignore_load_warnings=True)
     except Exception as error:
         results = [
             dict(node=c['node'], version=c['version'], ok=False, error=f'cannot open the workfile: {error}')

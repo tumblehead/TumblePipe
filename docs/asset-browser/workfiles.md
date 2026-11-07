@@ -195,7 +195,11 @@ author of the department's latest export.
 
 **New from Template** on a department row creates the department's first
 workfile, or a fresh one after existing versions (`v(N+1)`), from the
-department template:
+department template. The new workfile replaces the open scene, so its
+unsaved changes come first, through the same prompt as opening a workfile
+([Switching scenes with unsaved changes](#switching-scenes-with-unsaved-changes));
+**Cancel** makes nothing. Up to TumblePipe 1.94.1 the open scene was
+cleared without asking. Then:
 
 1. The next version number is reserved and an empty scene is saved there.
    Clearing the scene would leave the network editors on `/obj`, so every

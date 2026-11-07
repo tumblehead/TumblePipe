@@ -8,7 +8,9 @@ imports for shots, and the Multis each belongs to. The sheet edits them
 the way a spreadsheet does: select cells and type to set them all, copy and
 paste blocks, fill down, shift frame ranges, add rows from a name pattern or
 a pasted list, add empty sequences and categories, rename, retire, undo. A third tab, **Multis**, sets Multis
-up: their members, and a tick box per department they cover.
+up: their members, a tick box per department they cover, a shots Multi's
+Timeline, and below the table the selected Multi's workfile per covered
+department, to open or to make from the department template.
 
 Each sequence or category has a row of its own above its entities, which
 are nested under it: its values are what they inherit unless they set their
@@ -39,14 +41,17 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QPen, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QComboBox, QDialog, QFormLayout,
-    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu,
-    QMessageBox, QPushButton, QSpinBox, QStackedWidget, QStyle,
+    QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
+    QMenu, QMessageBox, QPushButton, QSpinBox, QStackedWidget, QStyle,
     QStyledItemDelegate, QStyleOptionViewItem, QTabBar, QTableView,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from tumblepipe.config import entity_sheet as es
 from tumblepipe.config import shot_batch
+from tumblepipe.config.multi_timeline import (
+    TIMELINE_CHOICES, timeline_choice, timeline_settings,
+)
 from tumblepipe.util.uri import Uri
 from tumbletrove.asset_browser.core.theme import (
     ACCENT, ACCENT_HOVER, BG_DARK, BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE,
@@ -184,6 +189,14 @@ class EntityEditorSource:
     shown beside its Animatable box. ``place`` gives new members a place
     on their Multis' shared timelines (``config.groups.place_new_members``
     on this project), handed the Multis and shots an Apply wrote.
+
+    A Multi's workfiles, for the Multis tab: ``multi_workfiles`` gives the
+    latest workfile version of each department a Multi has one for
+    (``{department: 'v0003'}``); ``open_multi_workfile`` opens it, and
+    ``new_multi_workfile`` makes the department's next one from its
+    template, then calls ``done`` (made or not). Both replace the open
+    scene, asking to save it first, as the browser's Open and New from
+    Template do.
     """
     project: str
     config: object
@@ -195,6 +208,11 @@ class EntityEditorSource:
     rigged: Callable[[Uri], bool] = lambda uri: False
     multi_rename_blocker: Callable[[Uri], str] = lambda uri: ''
     place: Callable[[list[Uri]], None] = lambda uris: None
+    multi_workfiles: Callable[[Uri], dict] = lambda uri: {}
+    open_multi_workfile: Callable[[Uri, str], None] = lambda uri, department: None
+    new_multi_workfile: Callable[[Uri, str, Callable[[], None]], None] = (
+        lambda uri, department, done: done()
+    )
 
 
 def _hint(text: str = '') -> QLabel:
@@ -2000,6 +2018,8 @@ class _SheetPane(QWidget):
 #: The Multis tab's own columns; the departments of the pool follow them.
 MULTI_NAME = 'multi'
 MEMBERS = 'members'
+TIMELINE = 'timeline'
+_MULTI_TEXT_COLUMNS = (MULTI_NAME, STATUS, MEMBERS, TIMELINE)
 
 class NewGroupDialog(QDialog):
     """A name for a new, empty sequence or category, checked as typed."""
@@ -2042,9 +2062,17 @@ class NewGroupDialog(QDialog):
         self._create.setEnabled(not problem)
 
 
+_TIMELINE_TIP = (
+    'Per shot: every member keeps its own frames. Shared: the members sit '
+    'end to end on one timeline, so one graph can run through all of them; '
+    'with bookmarks, the playbar gets one per shot. A member is placed '
+    'after the last one when it joins, and keeps its place.'
+)
+
 _LATE_MEMBER_NOTE = (
-    'A member added to a Multi whose workfile already exists is not in that '
-    'workfile until a new version is made from the template.'
+    'A member added to a Multi whose workfile already exists has no graph in '
+    'it yet: the next save of that workfile, or Sync with Multi, offers to '
+    'add one.'
 )
 
 
@@ -2147,6 +2175,14 @@ class NewMultiDialog(QDialog):
         self._name.setPlaceholderText('e.g. Lighting')
         self._name.textChanged.connect(self._update)
         layout.addRow('Name', self._name)
+        # Only shots have frames to lay end to end.
+        self._timeline = None
+        if kind is es.SHOTS_KIND:
+            self._timeline = QComboBox()
+            self._timeline.setStyleSheet(COMBO_STYLE)
+            self._timeline.addItems(list(TIMELINE_CHOICES))
+            self._timeline.setToolTip(_TIMELINE_TIP)
+            layout.addRow('Timeline', self._timeline)
         self.departments = _CheckList('Filter departments', ('Covers',))
         for department in sheet.base.pool:
             self.departments.add(department, department, Qt.Checked)
@@ -2179,6 +2215,12 @@ class NewMultiDialog(QDialog):
 
     def chosen(self) -> list[str]:
         return self.departments.checked()
+
+    def timeline(self) -> tuple[bool, bool]:
+        """``(shared timeline, bookmarks)`` as chosen."""
+        if self._timeline is None:
+            return False, False
+        return timeline_settings(self._timeline.currentText())
 
     def with_selection(self) -> bool:
         return self.start_with is None or self.start_with.isChecked()
@@ -2405,7 +2447,11 @@ class _MultiModel(QAbstractTableModel):
 
     def _wanted(self) -> tuple[list[int], list[str]]:
         sheet = self.sheet
-        return [m.id for m in sheet.multis], [MULTI_NAME, STATUS, MEMBERS, *sheet.base.pool]
+        # Only shots have frames to lay end to end.
+        timeline = [TIMELINE] if sheet.kind is es.SHOTS_KIND else []
+        return [m.id for m in sheet.multis], [
+            MULTI_NAME, STATUS, MEMBERS, *timeline, *sheet.base.pool,
+        ]
 
     def refresh(self) -> bool:
         """Show the sheet's Multis; True when rows or columns changed."""
@@ -2444,7 +2490,10 @@ class _MultiModel(QAbstractTableModel):
     def headerData(self, section, orientation, role=Qt.DisplayRole):
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
             column = self.columns[section]
-            return {MULTI_NAME: 'Multi', STATUS: 'Status', MEMBERS: 'Members'}.get(column, column)
+            return {
+                MULTI_NAME: 'Multi', STATUS: 'Status', MEMBERS: 'Members',
+                TIMELINE: 'Timeline',
+            }.get(column, column)
         return None
 
     def flags(self, index):
@@ -2455,7 +2504,7 @@ class _MultiModel(QAbstractTableModel):
         column = self.columns[index.column()]
         if multi.retire or column == STATUS:
             return flags
-        if column in (MULTI_NAME, MEMBERS):
+        if column in (MULTI_NAME, MEMBERS, TIMELINE):
             return flags | Qt.ItemIsEditable
         return flags | Qt.ItemIsUserCheckable
 
@@ -2474,6 +2523,8 @@ class _MultiModel(QAbstractTableModel):
             parts.append('Members changed')
         if multi.departments_changed:
             parts.append('Departments changed')
+        if multi.timeline_changed:
+            parts.append('Timeline changed')
         return ', '.join(parts), _AMBER
 
     def _members_text(self, multi: es.Multi) -> str:
@@ -2485,7 +2536,7 @@ class _MultiModel(QAbstractTableModel):
         if multi is None:
             return None
         column = self.columns[index.column()]
-        covers = column not in (MULTI_NAME, STATUS, MEMBERS)
+        covers = column not in _MULTI_TEXT_COLUMNS
         if role in (Qt.DisplayRole, Qt.EditRole):
             if column == MULTI_NAME:
                 return multi.name
@@ -2493,6 +2544,8 @@ class _MultiModel(QAbstractTableModel):
                 return self.status(multi)[0]
             if column == MEMBERS:
                 return self._members_text(multi)
+            if column == TIMELINE:
+                return timeline_choice(*multi.timeline)
             return None
         if role == Qt.CheckStateRole and covers:
             return Qt.Checked if column in multi.departments else Qt.Unchecked
@@ -2508,6 +2561,8 @@ class _MultiModel(QAbstractTableModel):
             if column == MULTI_NAME:
                 return _NEW if multi.is_new else (_PENDING if multi.renamed else None)
             if column == MEMBERS and not multi.is_new and multi.members_changed:
+                return _PENDING
+            if column == TIMELINE and multi.timeline_changed:
                 return _PENDING
             if covers and not multi.is_new and (
                 (column in multi.departments) != (column in multi.origin.departments)
@@ -2553,6 +2608,8 @@ class _MultiModel(QAbstractTableModel):
                 )
             lines.append('Double-click to choose them.')
             return '\n'.join(lines)
+        if column == TIMELINE:
+            return f'{_TIMELINE_TIP}\nDouble-click to choose; the selected Multis follow.'
         if column in multi.departments:
             return (
                 f'{multi.name} covers {column}: every member\'s {column} '
@@ -2585,7 +2642,8 @@ class _MultiFilter(QSortFilterProxyModel):
 
 
 class _MultiDelegate(_Delegate):
-    """The name as a line edit (a rename), Members as a dialog."""
+    """The name as a line edit (a rename), Members as a dialog, Timeline
+    as a choice."""
 
     def createEditor(self, parent, option, index):
         column = self._pane.columns[index.column()]
@@ -2594,13 +2652,166 @@ class _MultiDelegate(_Delegate):
             return None
         if column == MULTI_NAME:
             return QLineEdit(parent)
+        if column == TIMELINE:
+            editor = QComboBox(parent)
+            editor.addItems(list(TIMELINE_CHOICES))
+            return editor
         return None
 
     def setEditorData(self, editor, index) -> None:
+        if isinstance(editor, QComboBox):
+            editor.setCurrentText(index.data(Qt.EditRole) or TIMELINE_CHOICES[0])
+            return
         editor.setText(index.data(Qt.EditRole) or '')
 
     def setModelData(self, editor, model, index) -> None:
+        if isinstance(editor, QComboBox):
+            self._pane.set_timeline(index, editor.currentText())
+            return
         self._pane.rename(index, editor.text())
+
+
+class _MultiWorkfiles(QWidget):
+    """Below the Multis table: the selected Multi's workfile in each
+    department it covers. One that has one shows its latest version and
+    opens; one that has none can be made from the department template.
+    Either replaces the open scene, so one at a time, and only for a Multi
+    as stored (a new or changed one is applied first)."""
+
+    def __init__(self, pane: '_MultiPane') -> None:
+        super().__init__(pane)
+        self._pane = pane
+        self._busy = ''        # the department being made, '' when idle
+        self._cache: dict[str, dict] = {}
+        self._cache_sheet = None
+        self.buttons: dict[str, QPushButton] = {}
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, scaled(4), 0, 0)
+        layout.setSpacing(scaled(4))
+        self.title = QLabel('Workfiles')
+        self.title.setFont(_BOLD)
+        layout.addWidget(self.title)
+        host = QWidget()
+        self._grid = QGridLayout(host)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setHorizontalSpacing(scaled(12))
+        self._grid.setVerticalSpacing(scaled(2))
+        layout.addWidget(host)
+        self.note = _hint()
+        layout.addWidget(self.note)
+
+    @property
+    def source(self) -> EntityEditorSource:
+        return self._pane.window_.source
+
+    def _versions(self, multi: es.Multi) -> dict:
+        """``{department: latest version}``, read once per Multi until the
+        sheet is replaced (an Apply, a reload) or a workfile is made."""
+        sheet = self._pane.sheet
+        if sheet is not self._cache_sheet:
+            self._cache, self._cache_sheet = {}, sheet
+        key = str(multi.origin.uri)
+        if key not in self._cache:
+            try:
+                self._cache[key] = dict(self.source.multi_workfiles(multi.origin.uri) or {})
+            except Exception as exc:
+                self._cache[key] = {}
+                self._pane.say(f'Could not read the workfiles of {multi.name}: {exc}', warn=True)
+        return self._cache[key]
+
+    def _clear(self) -> None:
+        while self._grid.count():
+            item = self._grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                # Hidden now: deleteLater waits for the event loop, and
+                # until then the old row would show under the new one.
+                widget.hide()
+                widget.deleteLater()
+        self.buttons = {}
+
+    def fill(self) -> None:
+        """Show the current Multi's workfiles."""
+        self._clear()
+        multi = self._pane.current_multi()
+        if multi is None:
+            self.title.setText('Workfiles')
+            self.note.setText('Select a Multi to see its workfile in each department it covers.')
+            return
+        self.title.setText(f'Workfiles of {multi.name}')
+        sheet = self._pane.sheet
+        departments = [d for d in sheet.base.pool if d in multi.departments]
+        departments += [d for d in multi.departments if d not in departments]
+        if multi.is_new:
+            why = 'Apply first: a new Multi has no workfiles yet.'
+        elif multi.retire:
+            why = 'Retiring on Apply; its workfiles stay on disk.'
+        elif multi.touched:
+            why = 'Apply first: the workfiles follow the Multi as stored.'
+        else:
+            why = ''
+        if not departments:
+            self.note.setText(why or 'It covers no department, so it has no workfiles.')
+            return
+        versions = {} if multi.is_new else self._versions(multi)
+        ready = not why and not self._busy
+        for row, department in enumerate(departments):
+            version = versions.get(department)
+            name = QLabel(department)
+            state = QLabel(version or 'none')
+            state.setStyleSheet('' if version else _HINT_STYLE)
+            self._grid.addWidget(name, row, 0)
+            self._grid.addWidget(state, row, 1)
+            if version:
+                button = _button(
+                    'Open', lambda d=department: self._open(multi, d),
+                    tip=f"Open {multi.name}'s latest {department} workfile, "
+                        f'{version}. It replaces the open scene.',
+                )
+                button.setObjectName(f'workfile_open_{department}')
+            else:
+                button = _button(
+                    'Making…' if self._busy == department else 'New from Template',
+                    lambda d=department: self._new(multi, d),
+                    tip=f"Make {multi.name}'s first {department} workfile from "
+                        'the department template, with a graph per member. '
+                        'It replaces the open scene.',
+                )
+                button.setObjectName(f'workfile_new_{department}')
+            button.setEnabled(ready)
+            self.buttons[button.objectName()] = button
+            self._grid.addWidget(button, row, 2)
+        self._grid.setColumnStretch(3, 1)
+        self.note.setText(why or (
+            'Opening or making a workfile replaces the open scene; you are '
+            'asked to save it first. One at a time.'
+        ))
+
+    def _open(self, multi: es.Multi, department: str) -> None:
+        if self._busy:
+            return
+        self.source.open_multi_workfile(multi.origin.uri, department)
+
+    def _new(self, multi: es.Multi, department: str) -> None:
+        if self._busy:
+            return
+        self._busy = department
+        uri = multi.origin.uri
+        self.fill()
+
+        def done() -> None:
+            self._busy = ''
+            self._cache.pop(str(uri), None)
+            try:
+                self.fill()
+            except RuntimeError:
+                pass    # the window closed meanwhile
+
+        try:
+            self.source.new_multi_workfile(uri, department, done)
+        except Exception as exc:
+            done()
+            self._pane.say(f'Could not make the {department} workfile: {exc}', warn=True)
 
 
 class _MultiPane(QWidget):
@@ -2648,7 +2859,8 @@ class _MultiPane(QWidget):
         outer.addWidget(_hint(
             'A Multi is one workfile for several shots or assets. Tick the '
             'departments it covers: for those, every member\'s workfile is '
-            'the Multi\'s. Double-click Members to choose them.'
+            'the Multi\'s. Double-click Members to choose them, and a shots '
+            'Multi\'s Timeline to lay them end to end.'
         ))
 
         self.model = _MultiModel(self)
@@ -2667,6 +2879,8 @@ class _MultiPane(QWidget):
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(self._context_menu)
         outer.addWidget(table, 1)
+        self.workfiles = _MultiWorkfiles(self)
+        outer.addWidget(self.workfiles)
 
         actions = QHBoxLayout()
         actions.addWidget(_button(
@@ -2693,10 +2907,21 @@ class _MultiPane(QWidget):
         actions.addWidget(self.redo_button)
         outer.addLayout(actions)
         table.selectionModel().selectionChanged.connect(lambda *_a: self.update_buttons())
+        table.selectionModel().selectionChanged.connect(lambda *_a: self.workfiles.fill())
         table.selectionModel().currentRowChanged.connect(
             lambda *_a: table.viewport().update()
         )
         self.refresh()
+
+    def current_multi(self) -> es.Multi | None:
+        """The Multi the workfiles below the table are for: the current
+        cell's, else the first selected."""
+        index = self.table.currentIndex()
+        ids = self.selected_ids()
+        multi_id = self._multi_id(index) if index.isValid() else (ids[0] if ids else None)
+        if multi_id is None or not self._exists(multi_id):
+            return None
+        return self.sheet.multi(multi_id)
 
     def set_context(self, key: str) -> None:
         if key == self.key:
@@ -2717,11 +2942,12 @@ class _MultiPane(QWidget):
             header = self.table.horizontalHeader()
             for i, column in enumerate(self.model.columns):
                 self.table.setColumnWidth(i, scaled(
-                    {MULTI_NAME: 130, STATUS: 170, MEMBERS: 90}.get(column, 84)
+                    {MULTI_NAME: 130, STATUS: 170, MEMBERS: 90, TIMELINE: 150}.get(column, 84)
                 ))
             header.setStretchLastSection(False)
             self.select_cells(selection)
         self.update_buttons()
+        self.workfiles.fill()
 
     def _multi_id(self, index) -> int:
         return self.model.id_at(self.proxy.mapToSource(index).row())
@@ -2791,6 +3017,17 @@ class _MultiPane(QWidget):
         multi_id = self._multi_id(index)
         self.edit(lambda: self.sheet.rename_multi(multi_id, text))
 
+    def set_timeline(self, index, choice: str) -> None:
+        """A Timeline chosen: every selected cell of the column follows."""
+        if choice not in TIMELINE_CHOICES:
+            return
+        targets = [self._multi_id(index)]
+        selected = [i for i in self._selected() if i.column() == index.column()]
+        if any(i.row() == index.row() for i in selected):
+            targets = [self._multi_id(i) for i in selected]
+        shared, bookmarks = timeline_settings(choice)
+        self.edit(lambda: self.sheet.set_multi_timeline(targets, shared, bookmarks))
+
     def edit_members(self, index) -> None:
         if not index.isValid():
             return
@@ -2803,11 +3040,14 @@ class _MultiPane(QWidget):
         ids, groups = dialog.row_ids(), dialog.groups()
         self.edit(lambda: self.sheet.set_multi_members(multi.id, ids, groups))
 
-    def add_dialog(self) -> None:
+    def add_dialog(self, from_selection: bool = True) -> None:
+        """Add Multi…: a new pending Multi. ``from_selection``: offer to
+        start it with the rows selected on the kind's tab (the browser's
+        New Multi… starts it empty)."""
         rows = [
             row_id for row_id in self.entity_pane.selected_row_ids()
             if not self.sheet.row(row_id).retire
-        ]
+        ] if from_selection else []
         kind = self.sheet.kind
         start = f'Start with the {_plural(len(rows), kind.item)} selected on the {kind.key.capitalize()} tab' if rows else ''
         dialog = NewMultiDialog(self.sheet, start_with=start, parent=self)
@@ -2815,9 +3055,9 @@ class _MultiPane(QWidget):
             return
         members = rows if dialog.with_selection() else []
         created = []
-        self.edit(lambda: created.append(
-            self.sheet.add_multi(dialog.name(), members, dialog.chosen())
-        ))
+        self.edit(lambda: created.append(self.sheet.add_multi(
+            dialog.name(), members, dialog.chosen(), dialog.timeline(),
+        )))
         if created:
             self.select_cells([(created[0], 0)], (created[0], 0))
 
@@ -2842,7 +3082,9 @@ class _MultiPane(QWidget):
         ids = self.selected_ids()
         current = self.table.currentIndex()
         entries = [
-            ('Add Multi…', self.add_dialog, True),
+            # triggered sends its ``checked`` flag, which add_dialog would
+            # take as from_selection.
+            ('Add Multi…', lambda: self.add_dialog(), True),
             ('Members…', lambda: self.edit_members(current), current.isValid()),
             None,
             (self.retire_button.text(), self._toggle_retire, bool(ids)),
@@ -3078,6 +3320,12 @@ class EntityEditorWindow(QDialog):
             self.multis_pane.focus(group, name)
         else:
             self.panes[kind].focus(group, name)
+
+    def new_multi(self, context: str = 'shots') -> None:
+        """The browser's New Multi…: the Multis tab of ``context``, asking
+        for a new Multi there. It is pending like any other edit."""
+        self.focus('multis', context)
+        self.multis_pane.add_dialog(from_selection=False)
 
     def _discard_all(self) -> None:
         if not self.dirty:

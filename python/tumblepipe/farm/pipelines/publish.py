@@ -151,4 +151,4 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
     """Submit the publish of ``config`` as one batch."""
     return submit_batch(batch_title(
         'publish', config['entity']['uri'], get_user_name()
-    ) + _downstream_suffix(config), build, config, paths)
+    ) + _downstream_suffix(config), build, config, paths, entity=config['entity']['uri'])

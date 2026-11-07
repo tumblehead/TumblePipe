@@ -79,7 +79,7 @@ def _find_case_collision(data: dict, path: list[str]) -> tuple[str, str] | None:
 
 
 # The entity kinds whose names follow naming.is_valid_entity_name.
-_NAMED_KINDS = ('assets', 'shots')
+_NAMED_KINDS = ('assets', 'shots', 'edits')
 
 
 def _new_name_problem(purpose: str, data: dict, path: list[str]) -> str:
@@ -658,9 +658,10 @@ class JsonConfigStore:
 
     def list_entity_uris(self, filter: Uri | None = None, closure: bool = False) -> list[Uri]:
         """The URIs ``list_entities`` would return, without resolving
-        properties — a pure in-memory tree walk after one coherency check.
-        Most listing callers only consume ``.uri``; this spares them the
-        per-entity property resolution entirely.
+        properties — an in-memory tree walk after one coherency check,
+        memoized until the next write or reload. Most listing callers only
+        consume ``.uri``; this spares them the per-entity property
+        resolution entirely. The returned list is the caller's own.
         """
         with self._coherent():
             return self._list_uris(filter, closure)
@@ -680,11 +681,23 @@ class JsonConfigStore:
         root = self._load(purpose)
         if root is None:
             return []
+        # Memoized per generation: an import_assets node with N rows asks
+        # for the whole asset list about 8 times per row, and each walk
+        # rebuilds every Uri in the tree. Uri is frozen, so sharing the
+        # elements is safe; the caller gets its own list.
+        generation = self._generation
+        key = ('uris', f'{filter}|{closure}')
+        hit = self._memo.get(key)
+        if hit is not None and hit[0] == generation:
+            return list(hit[1])
         data = root.get('children', {})
         root_path = Uri.parse(f'{purpose}:/')
         if not closure:
-            return _list_uri_shallow(data, root_path, filter_path)
-        return _list_uri_deep(data, root_path, filter_path)
+            result = _list_uri_shallow(data, root_path, filter_path)
+        else:
+            result = _list_uri_deep(data, root_path, filter_path)
+        self._memo[key] = (generation, tuple(result))
+        return list(result)
 
     # ------------------------------------------------------------------ #
     # Schemas

@@ -119,7 +119,7 @@ def duplicate_workfile(
     )
 
     hou.hipFile.load(
-        str(source_hip), suppress_save_prompt=True, ignore_load_warnings=True,
+        source_hip.as_posix(), suppress_save_prompt=True, ignore_load_warnings=True,
     )
     prev_ctx = get_workfile_context(source_hip)
     next_path = reserve_next_hip_file_path(
@@ -145,7 +145,7 @@ def duplicate_workfile(
         rewritten = rewrite_prim_paths(
             prim_path_for(source_uri), prim_path_for(target_uri),
         )
-    hou.hipFile.save(str(next_path))
+    hou.hipFile.save(next_path.as_posix())
     return {
         'department': department_name,
         'workfile': str(next_path),

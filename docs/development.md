@@ -490,13 +490,16 @@ them again.
 
 ## Sequence player
 
-`src/player/` is a stand-alone Rust app (no Houdini) that plays shots' review
-media back to back, frame-accurately: playblasts and other movies through
-FFmpeg, and EXR sequences shown through OCIO. Artists start it from a shot
-card's **Play** entry ([Playing shots](asset-browser/play-shots.md)).
-`tumblepipe.pipe.review_playlist` finds each shot's takes and starts
-`bin/<platform>/th_player` (or `$TH_PLAYER`, a dev build) with them as a
-JSON playlist on its standard input. The player is its own cargo workspace:
+`src/player/` is a stand-alone Rust app (no Houdini): TumblePipe's editor.
+It edits *edits*, versioned and published pipeline entities
+(`designs/edit-entity.md`), and plays them frame-accurately: playblasts and
+other movies through FFmpeg, and EXR sequences shown through OCIO. Artists
+start it from a shot card's **Play** entry ([Playing shots](asset-browser/play-shots.md)):
+`tumblepipe.pipe.review_playlist.play_shots` starts
+`bin/<platform>/th_player` (or `$TH_PLAYER`, a dev build) with
+`--project <root> --ocio <config> --shots <uri>...`, and the editor finds
+each shot's takes itself (`th_pipe::discovery`). It is its own cargo
+workspace:
 
 - `ffmpeg-sys`: FFmpeg bindings. They are generated once per platform and
   committed (`src/bindings/<platform>.rs`, one per platform), so builds
@@ -519,34 +522,38 @@ JSON playlist on its standard input. The player is its own cargo workspace:
   colour space), and `composite` lays them "over" each other: movie layers
   straight-alpha over opaque black in display space, EXR layers
   premultiplied in scene linear (`ExrSequence::decode_with_alpha_while`
-  reads a layer's own `A`). It links no GUI, so it is tested headless.
-- `playlist` (`th_playlist`): the playlist TumblePipe writes
-  (`pipe/review_playlist.py`) and the player reads on standard input, as
-  JSON through serde. It is strict: an unknown or missing field is an error,
-  and so is a playlist that cannot play (no shots, a shot without takes, a
-  rate or cut of 0, an empty frame range). The playlist names the OCIO
-  config; each shot its sequence, rate, cut `length` and takes; each take
-  its department, version and media: a movie's path, or an EXR sequence's
-  layer and frames (directory, prefix, suffix, padding, first, last, step).
-  The takes come ordered by kind, department (pipeline order), render layer
-  and version. A department (and a render's layer) is a *stream*. A `stack`
-  take's media is `{"kind": "stack", "layers": [{"name", "media"}, ...]}`,
-  bottom first, all movies or all EXRs of one frame range, never nested;
-  its stream is `(kind, department, Some("layers"))`, written right after
-  the department's plain takes of that kind.
-  `Shot::version_step`, `Shot::department_step` and `Shot::last_of_kind`
-  move along that order; the player's Up/Down keys are built on them.
-- `player`: the window, built on the in-house Primer UI crate. `main.rs`
-  reads the playlist and opens its OCIO config; when either fails, the
-  window says why and nothing plays. `app.rs` is the player. `session.rs`
-  keeps what each shot shows, is switching to, and every take asked for
-  (opening, open or failed), with no window in it, so its rules are tested
-  alone: a take opens once, off the UI thread (`Command::perform_blocking`),
-  and shows once it has if its shot still wants it; keys pressed meanwhile
-  step on from the take being opened. `engine.rs` decodes: every shot is a
-  clip from the start (its cut, until its take opens), and
-  `Engine::replace_clip` swaps one shot's take in place, its frames going
-  and every other clip's staying. Its workers take frame jobs around the
+  reads a layer's own `A`). `composite::dissolve` blends frames of any
+  size and kind through an edit's fades, in display code values. `sound`
+  decodes a file's audio whole to stereo f32 (WAV read in Rust, the vendored
+  FFmpeg having no WAV demuxer; a movie's track through FFmpeg, formats
+  converted in Rust, no swresample) and `mix`es voices with in points, gain
+  and fades, resampling linearly. It links no GUI, so it is tested
+  headless.
+- `playlist` (`th_playlist`): a shot's takes and their media, as
+  discovery finds them and a published edit freezes them, as JSON through
+  serde. It is strict: an unknown or missing field is an error. A take
+  names its department, version and media: a movie's path, or an EXR
+  sequence's layer and frames (directory, prefix, suffix, padding, first,
+  last, step). A shot's takes come ordered by kind, department (pipeline
+  order), render layer and version. A department (and a render's layer) is
+  a *stream*. A `stack` take's media is
+  `{"kind": "stack", "layers": [{"name", "media"}, ...]}`, bottom first,
+  all movies or all EXRs of one frame range, never nested
+  (`Media::problem`); its stream is `(kind, department, Some("layers"))`,
+  right after the department's plain takes of that kind.
+- `player`: the editor's window, built on the in-house Primer UI crate.
+  `main.rs` reads the arguments and opens the OCIO config; when it fails,
+  or the edit does not open, the window says why. `display.rs` is the
+  display and view the picture shows through, and opens a take's media off
+  the UI thread. `engine.rs` decodes *sources* (a
+  take's media each) placed as *clips* on a `Timeline` of tracks (position,
+  in point, fades); frames are keyed by source and media index, so clips of
+  one take share them and moving clips decodes nothing again. Where clips
+  overlap, the top-most with media shows and the ones below show through its
+  fades (`Timeline::layers`); every layer of the window is decoded and the
+  playhead's are never evicted. `Engine::replace_source` swaps one
+  source's content in place (a take opened, another view, other hidden
+  layers), its frames going and every other source's staying. Its workers take frame jobs around the
   playhead and proxy (thumbnail) jobs, which go before the window but
   never before the playhead's own frame; seven workers,
   up to six EXR reads at once (while the playhead's EXR frame is read, no
@@ -555,16 +562,19 @@ JSON playlist on its standard input. The player is its own cargo workspace:
   decode that panics is the frame's error, not a hung frame. A stack clip's
   job decodes each layer not hidden (`Content::hidden`, a bit per layer)
   and composites them on the worker; a stack of EXRs counts as EXR reads,
-  of movies as one movie decode. Hiding a layer drops the clip's frames,
-  like a new view. `colour.rs`
-  bakes the chosen display/view into a 3D LUT through `ocio-rs` (which
+  of movies as one movie decode. `audio.rs` plays sound through `cpal` (the `sound`
+  feature, default on; on Linux it builds against `libasound2-dev` and
+  links `libasound.so.2`): a movie take's sound under its clip, and while there
+  is any, playback keeps to the samples played, else to the wall clock.
+  `colour.rs` bakes the chosen display/view into a 3D LUT through `ocio-rs` (which
   builds OpenColorIO from source); every render frame is drawn through it.
-  `track.rs` is the track under the video (the clips, their thumbnails,
-  the selection) and, over it, `LayerRows`, the rows of a stack take's
-  layers that show or hide each (digits 1-9 too); a right press on a clip
-  names its shot to the take menu;
-  `take_menu.rs` builds that menu's Source, Department and Version
-  submenus from the take shown. `burnin.rs` writes the burn-ins over the
+  `take_menu.rs` builds a shot clip's Source, Department and Version
+  submenus from the take shown. `render.rs` is Render Edit's renderer
+  (`--render <edit>@vNNNN --out <dir>`, no window): each frame's layers
+  (`th_edit::picture`) decoded and blended through `composite::dissolve`
+  on the CPU, a render through the config's default display and view, as
+  `edit.NNNN.png`, the mix as `edit.wav` and `render.json`; the farm worker
+  encodes the movie with Houdini's hffmpeg. `burnin.rs` writes the burn-ins over the
   picture, placed by the same fit `video.wgsl` gives the frame. The
   controls are built `.focusable(false)`, so the player's keys keep working
   after a click on one.
@@ -594,7 +604,7 @@ separate shared libraries beside `th_player`, never linked statically.
   icons). On Linux that feature links GTK and libxdo, which every artist
   machine would then need.
 - All three platforms have been built from a clean clone on the build
-  workers, and the media and playlist tests pass on each.
+  workers, and the media tests pass on each.
 
 **Building and testing on Windows.** Run cargo from a Visual Studio developer
 environment (`vcvars64.bat`), because Git Bash's `link` is coreutils, not the
@@ -610,7 +620,8 @@ From `src/player/`:
 ```bat
 set PATH=%CD%\..\..\build-ffmpeg-windows-x86_64\install\bin;%PATH%
 cargo test --workspace
-cargo run --release -p th_player < playlist.json
+cargo run --release -p th_player -- --project P:/show --ocio %OCIO%
+cargo run --release -p th_player -- --project P:/show --ocio %OCIO% --shots entity:/shots/A/010 entity:/shots/A/020
 ```
 
 The tests:
@@ -633,39 +644,112 @@ The tests:
   EXR without a colour space does not open.
 - `media/tests/buffer_props.rs` covers the buffer. The tests in
   `player/src/engine.rs` cover decode scheduling: a state machine of
-  playhead moves, view changes, takes replaced and jobs finishing in any
+  playhead moves, view and hidden-layer changes, takes replaced and jobs finishing in any
   order shows that the job limits hold, that no stale frame is ever stored,
   and that a decode stopped for it is no failure; a decode that panics is
   the frame's error; and real workers fill the window around the playhead
   and stop when the engine drops; a stack's frame is exactly its shown
   layers that have the frame, composited in order, hidden ones never
-  decoded. `session.rs` steps a shot through any
-  interleaving of asked-for takes and opens finishing, in any order, some
-  failing: each take opens once, a take that finishes after the shot moved
-  on never shows, and once every open is done the shot shows the take last
-  asked for. `colour.rs` covers the LUT layout and shaper. `track.rs`
-  covers seeking, thumbnail placement and how a click changes the
-  selection. `media/src/thumbnail.rs` covers scaling and the colour of
+  decoded. `colour.rs` covers the LUT layout and shaper.
+  `media/src/thumbnail.rs` covers scaling and the colour of
   thumbnails. `media/src/exr_sequence.rs` reads files on and around the
   1 MB piece boundaries whole, and stops a read where asked. `burnin.rs`
   checks that its picture is placed as the video fits the frame: inside its
   bounds, its shape kept, centred. `take_menu.rs` checks that each submenu
   lists its choices once (every kind, every stream of the shown kind going
   to its newest version, the shown stream's versions newest first) and
-  marks only what is shown.
-- `playlist/src/lib.rs` reads a hand-written fixture
-  (`playlist/tests/fixtures/playlist.json`), refuses what cannot play,
-  round-trips any playlist, refuses any unknown or missing field, numbers
-  frame paths as Python does, and covers stepping through versions,
-  departments and kinds, stacks among them (refused when empty, nested,
-  mixed, of different frames, or naming a layer twice).
+  marks only what is shown. `editing.rs` checks timecodes, edit points,
+  inserting and overlaying a bin item (a movie with its sound), moving a
+  selection and back, that a published document refuses changes and that
+  undoing to what was opened is clean, and (a proptest) that every clip
+  plays its own source's frames; `render.rs` that a frame written reads
+  back as RGB and the mix's WAV reads back through `th_media`; `tracks.rs` checks row order, which
+  part of a clip a point grabs, the selection's runs and the ruler's ticks.
+- `player`'s editor: `main.rs` opens it (`th_player [--project <root>]
+  [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] | --shots
+  <uri>...]`; `--project` defaults to `$TH_PROJECT_PATH`, `--ocio` to
+  `$OCIO`; neither `--edit` nor `--shots`, an untitled edit of every shot,
+  `editing::project_fill`, as is an edit never saved).
+  `editor.rs` is the
+  window: the tracks, a Shots bin and the media library, Save (the next
+  working version, with a note), Save As, Publish, Import and autosave,
+  with an autosave newer than the working version offered back on open; a
+  published version opens read-only. `editing.rs` is its document (every
+  change a `th_edit` op through its history, one user action one step) and
+  the pure helpers; `tracks.rs` draws the rows and turns drags into ops
+  (move, trim, Alt for slip and roll, the top band for fades). `look.rs`
+  holds every colour the window draws with (untinted greys, amber only for
+  the present moment, a muted hue per department for clips); draw with its
+  tokens, not colour literals, and its tests keep text readable on them.
+  `editor/menu_bar.rs` declares the native menu bar (`Application::menu`)
+  and the window's key map (`on_key`), both read from one small `State` so
+  its property tests hold them to each other: a shown shortcut is the key
+  that sends the item's message, nothing acts or is enabled under a dialog,
+  what writes is greyed on a read-only edit, and with Command or Alt held a
+  letter acts only through a chord the menu shows. Add a key there, with
+  its menu item, not in `editor.rs`; Primer's
+  `os` feature is on for Windows and macOS only (player/Cargo.toml), as on
+  Linux it would link GTK, so there the declaration does nothing. On macOS
+  only Command chords are given to the menu as shortcuts, since the menu
+  takes a key before the window sees it. Each distinct
+  source of the edit is resolved off the UI thread to the take its rule
+  picks today and played by the engine as one source.
+- `edit` (`th_edit`): the sequence editor's document, pure (no window, no
+  decoding, no files). `document` is the edit as JSON (a working edit's
+  take rules float; a frozen one, as a publish holds it, cannot hold a
+  floating rule); `ops` are the editor's operations, each applied to a copy
+  and refused, never clamped, when the result breaks the document's
+  invariants or shows source frames its source has not (`Sources`); ripples
+  move every track and the markers; `history` is undo/redo (a run of ops as
+  one step, all or none); `picture` is
+  what is on screen and in the mix at a frame (top-most playable clip,
+  blended through its fades); `takes` picks a take for a rule; `freeze`
+  resolves rules (`Resolver`); `otio` writes OpenTimelineIO (plain
+  dissolves as transitions, other fades as markers) and names each movie
+  for the publish to link (`movie_links`, `relink`: Resolve takes
+  same-named movies for one). Its properties: every movie gets one name no
+  other has in any case, plain characters with its extension, the same
+  each time; relinking changes nothing but movie references. The laws of
+  `designs/edit-entity.md` §2.4 are its proptests. `th_pipe::edits`
+  answers `Sources` and `Resolver` for a project.
+- `pipe` (`th_pipe`): TumblePipe's pipeline in Rust, which the editor and
+  tumblepipe-mcp share (the MCP takes it as a git dependency pinned by
+  revision). It ports, with the Python as the specification: URIs
+  (`util/uri.py`), storage (`storage.py`), the config database
+  (`config/store.py`: schema defaults by position, deep merge root to leaf,
+  verbatim own-property writes, the name and case rules), departments and
+  channels, frame ranges, version folders, review media discovery
+  (`review_playlist.py`, `paths/review.py`, `paths/render.py`, as
+  `th_playlist::Shot`), and creating shots and retiring entities
+  (`shot_batch.create`, `entity_files.delete_entity`,
+  `groups.drop_member_everywhere`). Its JSON writes are Python's
+  `json.dump(indent=4)` byte for byte (`ensure_ascii`, `\r\n` on Windows),
+  and a rename over a file another process holds open retries for 5 s as
+  `util.io.replace_file` does. `edit_files` is an edit's files (working
+  versions with their sidecar, autosave, publishing with the movies
+  linked into `media/` and `context.json` last: properties on real files
+  check that the OTIO opens each clip's own movie and nothing else is in
+  `media/`, and that a publish that cannot link a movie is not finished) and `media` the media library (`export:/media/<item>/vNNNN/`).
+  `db`, `uri` and `project` came from
+  tumblepipe-mcp (mtime-guarded writes, the layout range). A `Project`
+  holds a snapshot of the config: make a new one (`refresh`) to see later
+  writes.
+- `playlist/src/lib.rs` round-trips any take, refuses any unknown or
+  missing field, numbers frame paths as Python does, and refuses stacks
+  that cannot play (empty, nested, mixed, of different frames, or naming a
+  layer twice).
 - `tests/test_review_playlist.py` (minigun) checks take discovery against
   playblasts and renders written to the harness project (stack takes from
-  layer movies and channel render layers among them), and that a render
-  take names its frames as renders write them. It also has the Python/Rust
-  parity property: whatever `playlist_document` writes, the Rust reader
-  reads back exactly that document. It builds `th_playlist`'s
-  `playlist_lines` example (`tests/_cargo.py`). `.ci/test.sh` runs the
+  layer movies and channel render layers among them), that a render take
+  names its frames as renders write them, and that Play asks the editor for
+  the shots in order. `test_pipe_parity` holds the Rust discovery to it.
+- `tests/test_pipe_parity.py` (minigun) drives `th_pipe`'s `pipe_lines`
+  example and the Python over the same projects: storage tables, random
+  entity and schema trees (properties, schema, kind, listing order), the
+  department pools, a shot's takes (playblasts of both namings, layer
+  movies, render versions complete or not, channels), retiring a shot or
+  its sequence (files, archive and Multis after), and creating a shot
+  (refusals, and the database bytes written). `.ci/test.sh` runs the
   whole workspace through `.ci/build_player.py --test` (`cargo fmt
   --check`, `clippy -D warnings`, then `cargo test`), with the release
   build's FFmpeg, toolchain and OpenColorIO. Formatting follows
@@ -1415,7 +1499,12 @@ the animation must be authored as time samples upstream.
   `submit(config, paths)`, both on `pipelines/_batch.py`'s `submit_batch`.
   `post_render` is the review
   chain the render and composite pipelines end in; `batch_submit` is the Farm
-  Submit dialog's per-entity submission.
+  Submit dialog's per-entity submission. Every batch is made by
+  `_batch.new_batch(title, entity)`, which stamps each of its jobs with the
+  project and the entity URI (`farm.stamp`: Deadline extra info, or the local
+  job's `extra_info`). The Farm Manager and the clean-ups
+  (`manager/cleanup.py`) read the stamp, so a new pipeline must pass its
+  entity too; `tests/test_farm_stamp.py` checks that every pipeline does.
 - **`submit/`** is the Qt-free half of the Farm Submit dialog: `settings`
   (what each entity's settings resolve to), `grid` and `status` (its cells and
   their states), `camera` (the render camera probe) and `plan` (the

@@ -27,7 +27,7 @@ TumblePipe/
 ├── src/                         # Native (Rust/C++) sources — built, not shipped as source
 │   ├── resolver/                #   `entity://` USD resolver (Rust core + C++ ArResolver shim)
 │   ├── wizard/                  #   hook apps: core + tt_setup + tt_prepare (Rust/egui)
-│   ├── player/                  #   th_player sequence player: FFmpeg, EXR, OCIO, JSON playlist on stdin (Rust/Primer)
+│   ├── player/                  #   th_player, the editor of edits: FFmpeg, EXR, OCIO, sound; th_pipe, th_edit (Rust/Primer)
 │   └── vram/                    #   VRAM Inspector: viewport hook DSO (C++) + size-model calibration (dev-only)
 ├── resources/                   # Icons, UI resources, templates
 ├── scripts/                     # TumbleTrove hooks, node event scripts, maintenance CLIs
@@ -214,16 +214,29 @@ Qt and the pipeline clients onto the launch path.
   without selecting the Multi first.
 - `departments.py` — the entity Departments… dialog (per-entity pool
   scoping) and the project's department pool editor.
-- `recipes.py` / `nodes.py` — the Recipes and Nodes card kinds.
+- `recipes.py` / `texture_sets.py` / `nodes.py` — the Recipes, Texture
+  Sets and Nodes card kinds.
+- `library_kinds.py` — `LibraryKind`, the interface recipes and texture sets
+  implement, and `LibraryKinds`, which routes a card id to its kind by
+  prefix for every catalog hook.
+- `libraries.py` — libraries: which folders each project lists
+  (`TH_LIBRARY_PATH`, the Projects page), `library.json`, and the cached
+  index the kinds and the sidebar read.
 - `submit_jobs_dialog.py` — the Farm Submit dialog (the grid of publish /
   playblast / render steps per entity). Its Qt-free halves live in
-  `tumblepipe/farm/`: `submit_settings.py` (the per-entity settings resolver
-  behind its form), `submit_grid.py` (cell states, tri-state ticks, stale
-  warnings and what each row submits), `submit_status.py` (each cell's
-  status: folder resolution on the main thread, listing and stats on a
-  worker thread) and `submit_camera.py` (the render camera a row would use).
-- `farm_submission_window.py` — the non-modal window that follows a
-  submission running in its own process.
+  `tumblepipe/farm/submit/`: `settings.py` (the per-entity settings resolver
+  behind its form), `grid.py` (cell states, tri-state ticks, stale
+  warnings, collapsed columns and what each row submits), `status.py` (each
+  cell's status: folder resolution on the main thread, listing and stats on
+  a worker thread), `camera.py` (the render camera a row would use),
+  `remembered.py` (what the window keeps between openings), `review.py`
+  (the review's order and what blocks a submit), `plan.py` (the submission
+  plan and the runner process) and `progress.py` (what a running
+  submission's events mean: what was sent, what a retry sends).
+- `farm_submit_ui.py` — the Farm Submit dialog's building blocks: its
+  folder tabs, collapsible settings sections, the overlay card, the review
+  before submitting and the progress of a submission running in its own
+  process.
 - `thumbnails.py` — sidecar thumbnail read / write / refresh.
 - `widgets.py` — detail-panel custom QLabel / QComboBox.
 - `types.py` — value-types and module-level constants.
@@ -266,4 +279,5 @@ where TumblePipe's rig menu would tie with TumbleRig's. See
 Asset-browser recipes (saved node clusters) are project content, not
 package content: they live under `<project>/recipes/<context>/<slug>/`
 and are read and written by `python/tumblepipe/asset_browser/recipes.py`.
-See [Recipes](asset-browser/recipes.md).
+See [Recipes](asset-browser/recipes.md). A [library](asset-browser/libraries.md)
+holds them the same way, under `<library>/recipes/`.

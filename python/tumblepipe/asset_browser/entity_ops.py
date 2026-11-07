@@ -27,8 +27,10 @@ from tumblepipe.pipe.houdini.ui.report import (
 
 from tumblepipe.config import shot_batch
 
+from . import edits as edits
 from . import nodes as nodes
 from . import recipes as recipes
+from .libraries import TAG_KEY as LIBRARY_TAG_KEY
 from . import uris as uris
 from .scene import open_submit_jobs_dialog
 
@@ -49,11 +51,14 @@ if TYPE_CHECKING:
     from .refresh import BrowserRefresh
     from .resolver import AssetResolver
     from .scene import SceneManager
+    from .containers import ContainerManager
+    from .workfiles import WorkfileManager
 
 
 def creation_scope(tags) -> str:
     """What a browser scope creates: ``assets``, ``shots``, ``group``,
-    ``scene``, ``recipes``, ``nodes`` (which creates nothing), or ``""``
+    ``scene``, ``recipes``, ``nodes`` or ``edits`` (which create nothing:
+    nodes ship with the package, edits are made in the editor), or ``""``
     when it is not narrowed to one.
 
     *tags* are the browser's filter atoms: the active view's merged tags,
@@ -71,8 +76,13 @@ def creation_scope(tags) -> str:
         return "scene"
     if recipes.TYPE_TAG in tags:
         return "recipes"
+    if any(t.startswith(f"{LIBRARY_TAG_KEY}:") for t in tags):
+        # Recipes are the one kind created straight into a library.
+        return "recipes"
     if nodes.TYPE_TAG in tags:
         return "nodes"
+    if edits.TYPE_TAG in tags:
+        return "edits"
     assets = "type:asset" in tags
     shots = "type:shot" in tags
     for tag in tags:
@@ -118,8 +128,13 @@ class EntityOps:
         recipes: "RecipeManager",
         refresh: "BrowserRefresh",
         invalidate_cache: Callable[[], None],
+        workfiles: "WorkfileManager | None" = None,
+        containers: "ContainerManager | None" = None,
     ) -> None:
         self._catalog_id = catalog_id
+        # A Multi's workfiles, for the Entity Editor's Multis tab.
+        self._workfiles = workfiles
+        self._containers = containers
         self._registry = registry
         self._clients = clients
         self._resolver = resolver
@@ -166,8 +181,9 @@ class EntityOps:
             return [root]
         if scope == "recipes":
             return [recipe]
-        if scope == "nodes":
-            return []       # nodes ship with the package; nothing to create
+        if scope in ("nodes", "edits"):
+            # Nodes ship with the package; an edit is made in the editor.
+            return []
         if scope == "assets":
             return [asset, editor, category, multi, root]
         if scope == "shots":
@@ -204,7 +220,11 @@ class EntityOps:
         default_proj = self._resolve_project_from_tags(tags)
 
         if option_id == recipes.CREATE_OPTION:
-            return self._recipes.creation_fields(default_proj, projects)
+            default_library = next(
+                (t.partition(":")[2] for t in tags
+                 if t.startswith(f"{LIBRARY_TAG_KEY}:")), "")
+            return self._recipes.creation_fields(
+                default_proj, projects, default_library)
 
         if option_id == ENTITY_EDITOR:
             # The browser asks for an option's fields only once the artist
@@ -342,10 +362,12 @@ class EntityOps:
             return fields
 
         if option_id == "new_group":
-            # A Multis section under Assets or Shots binds the context,
-            # so the field is locked there. Anywhere else narrowed to one
-            # context only preselects it. It used to default to "shots"
-            # everywhere, so "New Multi" under Assets made a shot Multi.
+            # A Multi is set up in the Entity Editor: New Multi... opens it
+            # on its Multis tab and asks for a new pending Multi there, in
+            # the context the artist is in. A Multis section under Assets
+            # or Shots binds the context; anywhere else narrowed to one
+            # context picks it. It used to default to "shots" everywhere,
+            # so "New Multi" under Assets made a shot Multi.
             bound_ctx = next(
                 (t.partition(":")[2] for t in tags
                  if t.startswith("multi_context:")),
@@ -357,24 +379,8 @@ class EntityOps:
             default_ctx = bound_ctx or (
                 scope if scope in ("shots", "assets") else "shots"
             )
-            fields = [
-                CreationField("name", "Name", required=True),
-                CreationField(
-                    "context", "Context",
-                    field_type="dropdown",
-                    choices=("shots", "assets"),
-                    default=default_ctx,
-                    readonly=bool(bound_ctx),
-                ),
-            ]
-            if len(projects) > 1:
-                fields.append(CreationField(
-                    "project", "Project",
-                    field_type="dropdown",
-                    choices=tuple(projects),
-                    default=default_proj,
-                ))
-            return fields
+            self.open_new_multi(default_proj, default_ctx)
+            return []
 
         if option_id == "new_scene":
             fields = [
@@ -395,6 +401,12 @@ class EntityOps:
         """Create what the creation dialog describes; the new card's id or
         None. A failure raises: the browser reports it (TumbleTrove >= 0.48)."""
         import hou
+
+        # A recipe saved into a library: no project to activate.
+        if option_id == recipes.CREATE_OPTION:
+            target = self._recipes.create_target(str(fields.get("project", "")))
+            if target is not None:
+                return self._recipes.create(target, fields)
 
         # Resolve project
         projects = list(self._registry.all())
@@ -562,8 +574,8 @@ class EntityOps:
             # department rows and what redirects a member's rows to
             # the Multi's workfile; a Multi that covers nothing has
             # no rows, opens nothing, and reads as a folder of shots.
-            # Trim it afterwards through Edit Multi… when a Multi is
-            # meant for fewer departments.
+            # The Entity Editor's New Multi does the same. (The browser's
+            # New Multi... opens the editor; this stays for scripts.)
             from tumblepipe.config.department import list_departments
             pool = [
                 d.name for d in list_departments(
@@ -606,7 +618,8 @@ class EntityOps:
         (``"assets"``, ``"shots"`` or ``"multis"``, where *group* is the
         Multi's context), showing *group* with *name*
         selected. The project is asked for when several are registered and
-        the scope names none.
+        the scope names none. The window, or None when no project was
+        chosen.
 
         The editor is not modal: a modal ``exec()`` here would run inside
         the browser's own callback and stall every other one until it
@@ -627,11 +640,11 @@ class EntityOps:
                 hou.qt.mainWindow(), "Entity Editor", "Project:", names, 0, False,
             )
             if not ok:
-                return
+                return None
         proj = self._registry.get(project_name)
         if proj is None:
             hou.ui.displayMessage(f"Unknown project: {project_name}")
-            return
+            return None
         window = self._entity_editors.get(project_name)
         if window is not None:
             try:
@@ -639,7 +652,7 @@ class EntityOps:
                 window.show()
                 window.raise_()
                 window.activateWindow()
-                return
+                return window
             except RuntimeError:
                 pass    # closed: its Qt object is gone
         self._activator.activate(proj)
@@ -687,6 +700,47 @@ class EntityOps:
                 log.warning("Staging Roots: %s: %s", uri, why)
             return result.summary()
 
+        def place(written) -> None:
+            place_new_members(written)
+            # A Multi whose workfile is open, its Timeline just applied:
+            # lay the session out now, not on the next open.
+            try:
+                from tumblepipe.pipe.houdini import multi_timeline as session
+            except ImportError:
+                return
+            for uri in written:
+                if uri.purpose == "groups":
+                    session.apply_if_open(uri)
+
+        def multi_id(uri) -> str:
+            return f"group:{project_name}:{'/'.join(uri.segments)}"
+
+        def multi_workfiles(uri) -> dict:
+            if self._containers is None:
+                return {}
+            from .types import latest_version
+            return {
+                department: latest_version(versions)
+                for department, versions in
+                self._containers.group_department_versions(multi_id(uri)).items()
+                if versions
+            }
+
+        def open_multi_workfile(uri, department) -> None:
+            if self._workfiles is not None:
+                self._workfiles.open_group_workfile(multi_id(uri), department)
+
+        def new_multi_workfile(uri, department, done) -> None:
+            if self._workfiles is None:
+                done()
+                return
+
+            def made() -> None:
+                done()
+                self._refresh.detail()
+
+            self._workfiles.new_group_from_template(multi_id(uri), department, made)
+
         window = EntityEditorWindow(
             EntityEditorSource(
                 project=project_name, config=client.config,
@@ -697,7 +751,10 @@ class EntityOps:
                 stage_roots=on_project(stage_roots),
                 rigged=on_project(has_published_rig),
                 multi_rename_blocker=on_project(multi_rename_blocker),
-                place=on_project(place_new_members),
+                place=on_project(place),
+                multi_workfiles=on_project(multi_workfiles),
+                open_multi_workfile=open_multi_workfile,
+                new_multi_workfile=new_multi_workfile,
             ),
             parent=hou.qt.mainWindow(),
             kind=kind,
@@ -705,6 +762,21 @@ class EntityOps:
         self._entity_editors[project_name] = window
         window.focus(kind, group, name)
         window.show()
+        return window
+
+    def open_new_multi(self, project_name: str, context: str) -> None:
+        """The browser's **New Multi...**: the project's Entity Editor on
+        its Multis tab of ``context``, asking for a new Multi there.
+
+        Asked once the browser's callback has returned: the name dialog
+        is modal, and a modal ``exec()`` inside the callback would stall
+        the browser until it closed.
+        """
+        from PySide6.QtCore import QTimer
+
+        window = self.open_entity_editor(project_name, "multis", context)
+        if window is not None:
+            QTimer.singleShot(0, lambda: window.new_multi(context))
 
     def open_entity_editor_for(self, asset_id: str) -> None:
         """An asset, shot or Multi card's **Open in Entity Editor…**: its
@@ -722,7 +794,9 @@ class EntityOps:
         if parts is None or uri is None:
             return
         project_name, group, name = parts
-        kind = "shots" if str(uri).startswith("entity:/shots/") else "assets"
+        kind = uri.segments[0] if uri.segments else None
+        if kind not in ("assets", "shots"):
+            return  # the Entity Editor has no tab for it (an edit)
         self.open_entity_editor(project_name, kind, group, name)
 
     def _frame_seed(self, props: dict, key: str, asset_id: str) -> int:
@@ -1150,11 +1224,9 @@ class EntityOps:
                 severity=hou.severityType.Message,
             )
 
-    def play_shots(self, asset_ids: list[str], name: str) -> None:
-        """Play the shots back to back in the sequence player
-        (``pipe.review_playlist``), naming those left out for having no
-        playblast or render. The shots are read from their own project."""
-        import hou
+    def play_shots(self, asset_ids: list[str]) -> None:
+        """Open the shots back to back in the editor, as an untitled edit
+        (``pipe.review_playlist.play_shots``), in their own project."""
         from tumblepipe.pipe import review_playlist
 
         projects = [self._resolver.project_for(aid) for aid in asset_ids]
@@ -1163,24 +1235,97 @@ class EntityOps:
         if len({p.name for p in projects}) != 1:
             raise ValueError("The shots to play are of more than one project")
 
-        def _work() -> list[str]:
-            # Both block: the project's Client builds, and finding the takes
-            # lists render folders on the file server.
+        def _work() -> None:
+            # It blocks: the project's Client builds.
             uris = [self._resolver.uri_for_ready(aid) for aid in asset_ids]
             malformed = [aid for aid, uri in zip(asset_ids, uris) if uri is None]
             if malformed:
                 raise ValueError(f"Not a shot: {', '.join(malformed)}")
             self._activator.activate(projects[0])
-            return review_playlist.play_shots(uris, name)
+            review_playlist.play_shots(uris)
 
-        def _started(left_out: list[str]) -> None:
-            if left_out:
-                hou.ui.displayMessage(
-                    f"Left out, with no playblast or render: {', '.join(left_out)}",
-                    severity=hou.severityType.Message,
+        run_in_background("Play", _work, lambda _: None)
+
+    # ── Edits (see edits.py) ─────────────────────────────
+
+    def _edit_project(self, asset_id: str):
+        """The edit an edit card's id names, and its registered project."""
+        ref = edits.parse_id(asset_id)
+        if ref is None:
+            raise ValueError(f"Not an edit: {asset_id}")
+        proj = self._registry.get(ref.project)
+        if proj is None:
+            raise ValueError(f"Edit {ref.name} belongs to no registered project")
+        return ref, proj
+
+    def open_edit(self, asset_id: str, *, published: bool = False) -> None:
+        """Open the edit in the editor (``pipe.review_playlist.open_edit``),
+        in its own project: its newest working version (one never saved
+        opens empty, ready for its first Save), or with ``published`` its
+        latest published version, read-only."""
+        from tumblepipe.pipe import edits as pipe_edits
+        from tumblepipe.pipe import review_playlist
+
+        ref, proj = self._edit_project(asset_id)
+
+        def _work() -> None:
+            # It blocks: the project's Client builds, and the published
+            # versions are listed on the file server.
+            version = None
+            if published:
+                versions = pipe_edits.published_versions(
+                    ref.name, self._clients.get(ref.project),
                 )
+                if not versions:
+                    raise ValueError(f"Edit {ref.name} has no published version")
+                version = versions[-1]
+            self._activator.activate(proj)
+            review_playlist.open_edit(ref.uri, version)
 
-        run_in_background("Play", _work, _started)
+        run_in_background(
+            "Play Published" if published else "Open in Editor",
+            _work, lambda _: None,
+        )
+
+    def open_edit_location(self, asset_id: str) -> None:
+        """Show the edit's working folder (its saved versions) in the file
+        browser."""
+        from tumblepipe.pipe import edits as pipe_edits
+        from tumblepipe.util import desktop
+
+        ref, _proj = self._edit_project(asset_id)
+
+        def _work() -> None:
+            folder = pipe_edits.working_dir(ref.name, self._clients.get(ref.project))
+            if not folder.is_dir():
+                raise FileNotFoundError(
+                    f"Edit {ref.name} has not been saved yet: there is no {folder}"
+                )
+            desktop.open_in_file_browser(folder)
+
+        run_in_background("Open Location", _work, lambda _: None)
+
+    def set_master_edit(self, asset_id: str, master: bool) -> None:
+        """Make the edit the project's master edit (``master``), or leave
+        the project without one; the cards follow."""
+        from tumblepipe.pipe import edits as pipe_edits
+
+        ref, _proj = self._edit_project(asset_id)
+
+        def _work() -> None:
+            pipe_edits.set_master_edit(
+                ref.name if master else None, self._clients.get(ref.project),
+            )
+
+        def _done(_result) -> None:
+            self._invalidate_cache()
+            self._refresh.grid()
+            self._refresh.detail()
+
+        run_in_background(
+            "Set as Master Edit" if master else "Clear Master Edit",
+            _work, _done,
+        )
 
     def edit_departments(self, asset_id: str) -> None:
         """Choose which departments this shot or asset uses."""

@@ -1,10 +1,9 @@
-"""Shots' review media as a playlist for the sequence player.
+"""Shots' review media (their *takes*), and starting the editor on shots
+or an edit.
 
-The player (``src/player/``, shipped as ``bin/<platform>/th_player``) reads a
-TumblePipe playlist on its standard input: the OCIO config its renders show
-through, and the shots in order, each with its sequence, rate, cut length
-and every take it can switch to; ``src/player/playlist`` (``th_playlist``)
-is the reader and the schema, and refuses anything it does not know. A
+The editor (``src/player/``, shipped as ``bin/<platform>/th_player``) finds
+a shot's takes itself, in Rust (``th_pipe::discovery``); this module is the
+specification it ports, which ``tests/test_pipe_parity.py`` holds it to. A
 shot's takes are its playblasts and its renders, each by department in
 pipeline order and version oldest first: every playblast, and every render
 version whose frames are all there, as an EXR sequence (its beauty AOV,
@@ -25,16 +24,15 @@ one's frame range. The player shows a stack's layers as rows over its
 track and can hide each. A shot never opens on a stack while it has a plain
 take: every stack is of a version that has one.
 
-Nothing here writes to the project. ``play_shots`` hands the playlist to
-the player and starts it, which is how Magnus's ask (pick shots, play them
-back to back, Resolve untouched) is met; the player's output goes to
-``PLAYER_LOG``.
+Nothing here writes to the project. ``play_shots`` starts the editor on
+shots, end to end in an untitled edit (Magnus's ask: pick shots, play them
+back to back, Resolve untouched), and ``open_edit`` on an edit; the
+editor's output goes to ``PLAYER_LOG``.
 """
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-import json
 import os
 import subprocess
 import sys
@@ -301,71 +299,11 @@ def get_shot(entity_uri: Uri) -> Shot:
         take = default_take(takes)
     )
 
-###############################################################################
-# The playlist
-###############################################################################
-def _path_text(path: Path) -> str:
-    return str(path).replace('\\', '/')
-
-def _media(media: Movie | Exr | Stack) -> dict:
-    if isinstance(media, Stack):
-        return {
-            'kind': 'stack',
-            'layers': [{'name': name, 'media': _media(layer)} for name, layer in media.layers]
-        }
-    if isinstance(media, Movie):
-        return {'kind': 'movie', 'path': _path_text(media.path)}
-    frames = media.frames
-    return {
-        'kind': 'exr',
-        'layer': media.layer,
-        'frames': {
-            'directory': _path_text(frames.directory),
-            'prefix': frames.prefix,
-            'suffix': frames.suffix,
-            'padding': frames.padding,
-            'first': frames.first,
-            'last': frames.last,
-            'step': frames.step
-        }
-    }
-
-def _shot(shot: Shot) -> dict:
-    if not shot.takes:
-        raise ValueError(f'Shot {shot.name} has nothing to play')
-    return {
-        'name': shot.name,
-        'sequence': shot.sequence,
-        'fps': shot.fps,
-        'length': shot.length,
-        'take': shot.take,
-        'takes': [
-            {
-                'label': take.label,
-                'department': take.department,
-                'version': take.version,
-                'media': _media(take.media)
-            }
-            for take in shot.takes
-        ]
-    }
-
-def playlist_document(shots: list[Shot], name: str, ocio: str) -> dict:
-    """The playlist of ``shots``, in order, shown through the OCIO config
-    ``ocio``. Every shot must have a take."""
-    if not shots:
-        raise ValueError('A playlist needs a shot')
-    return {
-        'name': name,
-        'ocio': ocio.replace('\\', '/'),
-        'shots': [_shot(shot) for shot in shots]
-    }
-
 def project_ocio() -> str:
     """The project's OCIO config: ``$OCIO``, as the package sets it."""
     ocio = os.environ.get('OCIO', '').strip()
     if not ocio:
-        raise ValueError('$OCIO is not set: the player shows renders through the project\'s OCIO config')
+        raise ValueError('$OCIO is not set: the editor shows renders through the project\'s OCIO config')
     if not Path(ocio).is_file():
         raise FileNotFoundError(f'The OCIO config $OCIO names is not there: {ocio}')
     return ocio
@@ -377,10 +315,10 @@ def _platform() -> str:
     if sys.platform == 'win32': return 'windows-x86_64'
     if sys.platform == 'darwin': return 'macos-aarch64'
     if sys.platform == 'linux': return 'linux-x86_64'
-    raise OSError(f'The sequence player is not built for {sys.platform}')
+    raise OSError(f'The editor is not built for {sys.platform}')
 
 def find_player() -> Path:
-    """The player: ``$TH_PLAYER`` when set (a dev build), else the package's
+    """The editor: ``$TH_PLAYER`` when set (a dev build), else the package's
     ``bin/<platform>/th_player``. Raises when it is not there."""
     exe = 'th_player.exe' if sys.platform == 'win32' else 'th_player'
     override = os.environ.get('TH_PLAYER', '').strip()
@@ -395,34 +333,74 @@ def find_player() -> Path:
         raise FileNotFoundError(f'The sequence player is not installed: no {player}')
     return player
 
-#: What the last player started printed (each start replaces it).
+#: What the last editor started printed (each start replaces it).
 PLAYER_LOG = Path(tempfile.gettempdir()) / 'th_player.log'
 
-def play_shots(entity_uris: list[Uri], name: str) -> list[str]:
-    """Start the player on the shots that have something to play, in order;
-    the names of those that have not, which are left out. Raises when there
-    is no player, no OCIO config, or nothing to play."""
+def editor_arguments(player: Path, project: str, ocio: str, entity_uris: list[Uri]) -> list[str]:
+    """The command line that opens ``entity_uris`` in the editor, in order,
+    as an untitled edit of the project at ``project``."""
+    if not entity_uris:
+        raise ValueError('Nothing to play: no shot')
+    return [str(player), '--project', project, '--ocio', ocio, '--shots', *map(str, entity_uris)]
+
+def edit_arguments(player: Path, project: str, ocio: str, edit_uri: Uri, version: str | None = None) -> list[str]:
+    """The command line that opens the edit ``edit_uri`` of the project at
+    ``project`` in the editor: its newest working version, or with
+    ``version`` that published version, read-only."""
+    if edit_uri.purpose != 'entity' or len(edit_uri.segments) != 2 or edit_uri.segments[0] != 'edits':
+        raise ValueError(f'{edit_uri} is not an edit')
+    if version is not None and not naming.is_valid_version_name(version):
+        raise ValueError(f'{version!r} is not a version')
+    target = str(edit_uri) if version is None else f'{edit_uri}@{version}'
+    return [str(player), '--project', project, '--ocio', ocio, '--edit', target]
+
+def render_arguments(player: Path, project: str, ocio: str, edit_uri: Uri, version: str, out_dir: Path) -> list[str]:
+    """The command line that renders published version ``version`` of the
+    edit ``edit_uri`` headless into ``out_dir``: ``edit.NNNN.png`` from 0,
+    ``edit.wav`` when it has sound, and ``render.json`` describing them
+    (Render Edit, ``farm/workers/edit_render.py``)."""
+    if edit_uri.purpose != 'entity' or len(edit_uri.segments) != 2 or edit_uri.segments[0] != 'edits':
+        raise ValueError(f'{edit_uri} is not an edit')
+    if not naming.is_valid_version_name(version):
+        raise ValueError(f'{version!r} is not a version')
+    return [
+        str(player), '--project', project, '--ocio', ocio,
+        '--render', f'{edit_uri}@{version}', '--out', str(out_dir),
+    ]
+
+def _current_project() -> str:
+    project = os.environ.get('TH_PROJECT_PATH', '').strip()
+    if not project:
+        raise ValueError('$TH_PROJECT_PATH is not set: which project to open is unknown')
+    return project
+
+def play_shots(entity_uris: list[Uri]) -> None:
+    """Start the editor on ``entity_uris``, end to end in an untitled edit of
+    the current project (``$TH_PROJECT_PATH``). The editor finds each shot's
+    takes; one with nothing made yet shows as an empty clip saying so.
+    Raises when there is no player, no OCIO config, no project or no shot."""
     player = find_player()
-    ocio = project_ocio()
-    shots = [get_shot(uri) for uri in entity_uris]
-    playable = [shot for shot in shots if shot.takes]
-    left_out = [shot.name for shot in shots if not shot.takes]
-    if not playable:
-        raise ValueError(f'Nothing to play: {", ".join(left_out)} have no playblast or render')
-    document = json.dumps(playlist_document(playable, name, ocio))
-    # The player outlives Houdini, so it must not hold Houdini's output: when
+    _start(player, editor_arguments(player, _current_project(), project_ocio(), entity_uris))
+
+def open_edit(edit_uri: Uri, version: str | None = None) -> None:
+    """Start the editor on the edit ``edit_uri`` of the current project
+    (``$TH_PROJECT_PATH``): its newest working version (an edit never saved
+    opens empty), or with ``version`` that published version, read-only.
+    Raises when there is no player, no OCIO config or no project."""
+    player = find_player()
+    _start(player, edit_arguments(player, _current_project(), project_ocio(), edit_uri, version))
+
+def _start(player: Path, arguments: list[str]) -> None:
+    """Start the editor with ``arguments``, its output to ``PLAYER_LOG``."""
+    # The editor outlives Houdini, so it must not hold Houdini's output: when
     # that is a pipe (TumbleTrove Desktop reads it), whoever reads it would
-    # wait on the player too. Its own log keeps what it prints, a panic
+    # wait on the editor too. Its own log keeps what it prints, a panic
     # included; errors it shows in its window.
     with PLAYER_LOG.open('wb') as log:
-        process = subprocess.Popen(
-            [str(player)],
-            stdin = subprocess.PIPE,
+        subprocess.Popen(
+            arguments,
+            stdin = subprocess.DEVNULL,
             stdout = log,
             stderr = log,
             cwd = str(player.parent)
         )
-    # The player reads the playlist to its end before it opens a window.
-    with process.stdin as stdin:
-        stdin.write(document.encode('utf-8'))
-    return left_out

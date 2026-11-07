@@ -24,7 +24,10 @@ dead weight. A version folder is pruned only when all of these hold:
 
 Staged builds themselves (``_staged``) are pointer scenes, a few KB each,
 and are never pruned; nor is anything under ``export/other`` (farm job
-folders: ``python -m tumblepipe.prune``).
+folders: ``python -m tumblepipe.prune``). Only shots' and assets' exports
+are: published edits (``export/edits``) and the media library
+(``export/media``) are never pruned, so the media versions a published edit
+plays always stay.
 
 Pruning deletes, so it lists by default and deletes only with ``--apply``,
 recording each folder removed in ``export/other/logs/prune-<date>.log``.

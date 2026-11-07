@@ -55,7 +55,7 @@ def save_hip_file(next_path: Path, context: Context | None = None) -> Path:
     """
     next_path = Path(next_path)
     context_options.apply(context)
-    hou.hipFile.save(str(next_path))
+    hou.hipFile.save(next_path.as_posix())
     saved = Path(hou.hipFile.path())
     if saved.stem != next_path.stem:
         raise RuntimeError(

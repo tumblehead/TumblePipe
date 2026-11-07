@@ -1,3 +1,6 @@
+from collections import Counter
+from contextlib import contextmanager
+
 import hou
 
 
@@ -279,28 +282,53 @@ class ImportAssets(EntityNode):
             department for department in pool if department.name in assigned
         ]
 
-    def list_entity_uris(self, index) -> list[Uri]:
-        all_asset_uris = api.config.list_entity_uris(
+    @contextmanager
+    def _rows_read_once(self):
+        """Read the project's assets and the rows' assets once for the
+        length of the block, instead of once per row read.
+
+        ``execute`` reads every row's asset about five times (asset,
+        channel, version, labels), and each read used to list the project's
+        assets and parse every other row: O(rows^2) per read. A 300-row
+        refresh took 28 s locally (the nightly's workfile_imports
+        benchmark). Nothing in the block may change a row's entity parm.
+        """
+        self._rows_snapshot = self._read_rows()
+        try:
+            yield
+        finally:
+            self._rows_snapshot = None
+
+    def _read_rows(self) -> tuple[list[Uri], set[Uri], dict[int, Uri], Counter]:
+        """(the project's assets in order, the same as a set, each row's
+        asset by index, how many rows import each asset of the project)."""
+        snapshot = getattr(self, '_rows_snapshot', None)
+        if snapshot is not None:
+            return snapshot
+        asset_list = api.config.list_entity_uris(
             filter = Uri.parse('entity:/assets'),
             closure = True
         )
-
-        # Filter out already-selected assets
+        asset_set = set(asset_list)
+        row_uris = {}
         count = self.parm('asset_imports').eval()
-        other_asset_uris = set()
-        for other_index in range(1, count + 1):
-            if other_index == index: continue
-            other_asset_uri_raw = self.parm(f'entity{other_index}').eval()
-            if len(other_asset_uri_raw) == 0: continue
-            other_asset_uri = Uri.parse(other_asset_uri_raw)
-            if other_asset_uri in all_asset_uris:
-                other_asset_uris.add(other_asset_uri)
+        for index in range(1, count + 1):
+            raw = self.parm(f'entity{index}').eval()
+            if len(raw) == 0: continue
+            row_uris[index] = Uri.parse(raw)
+        imported = Counter(uri for uri in row_uris.values() if uri in asset_set)
+        return asset_list, asset_set, row_uris, imported
 
-        return [
-            asset_uri
-            for asset_uri in all_asset_uris
-            if asset_uri not in other_asset_uris
-        ]
+    def list_entity_uris(self, index) -> list[Uri]:
+        """The project's assets a row may pick: all but those another row
+        already imports."""
+        asset_list, _asset_set, row_uris, imported = self._read_rows()
+        own = row_uris.get(index)
+        taken = {
+            uri for uri, rows in imported.items()
+            if rows - (1 if uri == own else 0) > 0
+        }
+        return [asset_uri for asset_uri in asset_list if asset_uri not in taken]
 
     def get_entity_uri(self, index) -> Uri | None:
         """The row's asset; None for a row with no asset picked yet.
@@ -310,20 +338,20 @@ class ImportAssets(EntityNode):
         An asset that is not in the project, or that another row already
         imports, raises EntityNodeError.
         """
-        asset_uri_raw = self.parm(f'entity{index}').eval()
-        if len(asset_uri_raw) == 0: return None
-        asset_uri = Uri.parse(asset_uri_raw)
-        if asset_uri in self.list_entity_uris(index):
-            return asset_uri
-        if asset_uri in self.list_asset_uris():
+        _asset_list, asset_set, row_uris, imported = self._read_rows()
+        asset_uri = row_uris.get(index)
+        if asset_uri is None: return None
+        if asset_uri not in asset_set:
+            raise self._error(
+                f'row {index}: {asset_uri} is not an asset in the project. '
+                "Pick one with the row's Entity button."
+            )
+        if imported[asset_uri] > 1:
             raise self._error(
                 f'row {index}: {asset_uri} is already imported by another '
                 'row. Remove one of the rows, or raise its Instances.'
             )
-        raise self._error(
-            f'row {index}: {asset_uri} is not an asset in the project. '
-            "Pick one with the row's Entity button."
-        )
+        return asset_uri
 
     def require_entity_uri(self, index) -> Uri:
         """The row's asset, for the import, which cannot skip a row."""
@@ -511,7 +539,7 @@ class ImportAssets(EntityNode):
         # refresh (it dirties every composed stage in the session); defer
         # them so a multi-asset rebuild costs one refresh at the end.
         from tumblepipe import resolver
-        with resolver.deferred_refresh():
+        with resolver.deferred_refresh(), self._rows_read_once():
             return self._execute()
 
     def _execute(self):

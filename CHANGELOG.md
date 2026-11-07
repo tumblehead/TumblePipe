@@ -12,6 +12,17 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.94.1 — 2026-11-05
+
+### Fixes
+- fix(render): one row per AOV, its compression menu beside it (`f37ca400`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.94.0 (`f15772d4`)
+
+### Tests
+- test(render): pin the AOV rows and render_settings' parity with render_vars (`6e2452ed`)
+
 ## v1.94.0 — 2026-11-05
 
 ### Breaking Changes

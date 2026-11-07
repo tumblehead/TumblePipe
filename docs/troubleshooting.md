@@ -200,7 +200,8 @@ Two related traps:
 
 - **A Multi with no department rows.** Before 1.46.0 **New Multi…** created
   a Multi covering no departments, so it had no rows to open or create from.
-  Add its departments through **Edit Multi…**; see
+  Tick its departments on the Entity Editor's Multis tab (**Edit Multi…**
+  opens it there); see
   [Multis and Roots](asset-browser/multis-and-roots.md#coverage-which-departments-the-multi-owns).
 - **A Multi workfile that only exports its own department.** Up to 1.47.1 a
   Multi workfile never listed downstream departments; later releases do.
@@ -732,7 +733,7 @@ versions are still on disk, in `<project>/groups/<context>/<name>/<department>/`
 
 ### An entity failed in the Farm submission window
 
-The window shows the error under the entity's row; it is the same message the
+The Farm Submit dialog's progress shows the error in the entity's row; it is the same message the
 submission raised, before anything for that entity reached Deadline (the
 entities before and after it are unaffected). Most are about the entity, not
 the submission — `No frame range for …`, `No staged file found for … Publish
@@ -1138,7 +1139,7 @@ stay scene-linear for the comp.
   [Where the logs are](development.md#where-the-logs-are).
 - **Farm submissions.** Each one keeps its `plan.json`, `progress.jsonl` and
   `runner.log` in its own folder under `temp:/farm_submissions/` on the
-  machine that submitted it; the Farm submission window's **Open log folder**
+  machine that submitted it; the Farm Submit progress's **Open log folder**
   opens it.
 - **Versions.** **TumbleTrove ▸ About TumbleTrove...** in Houdini's menu bar
   lists every registered package with its version, plus the Houdini and

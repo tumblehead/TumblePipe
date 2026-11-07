@@ -26,13 +26,14 @@ def is_terminal_entity(config, uri: Uri) -> bool:
 
 
 def get_entity_type(entity_uri: Uri) -> str | None:
-    """Get entity type from URI ('asset' or 'shot').
+    """Get entity type from URI ('asset', 'shot' or 'edit').
 
     Args:
         entity_uri: The entity URI
 
     Returns:
-        'asset' for asset entities, 'shot' for shot entities, None otherwise
+        'asset' for asset entities, 'shot' for shot entities, 'edit' for
+        edits (``entity:/edits/<name>``), None otherwise
     """
     if entity_uri.purpose != 'entity':
         return None
@@ -44,4 +45,6 @@ def get_entity_type(entity_uri: Uri) -> str | None:
         return 'asset'
     if context == 'shots':
         return 'shot'
+    if context == 'edits':
+        return 'edit'
     return None

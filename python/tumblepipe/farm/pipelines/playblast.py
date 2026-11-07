@@ -124,5 +124,5 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
     entity = config['entity']
     return submit_batch(
         batch_title('playblast', entity['uri'], entity['department']),
-        build, config, paths
+        build, config, paths, entity=entity['uri'],
     )

@@ -437,6 +437,60 @@ def matching_version(set_dir: Path, maps: dict[str, str]) -> Optional[Path]:
     return version_path
 
 
+def copy_version(src_version: Path, dst_set_dir: Path, *, copied_from: str,
+                 user: str = '', timestamp: Optional[str] = None) -> Path:
+    """Copy the finished version *src_version* into *dst_set_dir* as its
+    next version; returns the version folder the destination now uses.
+
+    How a set moves between a project and a library (sharing it, or using a
+    library set in a project). The version is self-contained (its material
+    layer reads its images by relative path), so the files copy as they
+    are; its ``context.json`` is rewritten with the new version name, who
+    copied it and ``copied_from`` (*copied_from* names the source, e.g.
+    ``library:Studio/bark/v0003``). When a finished version of the
+    destination was already copied from that same source, that one is
+    returned and nothing is copied: using a library set twice pins one copy.
+    """
+    src_version = Path(src_version)
+    data = read_version(src_version)
+    if data is None:
+        raise TextureError(f'{src_version} is not a finished texture version')
+    set_name = str(data.get('set') or Path(src_version).parent.name)
+    dst_set_dir = Path(dst_set_dir)
+    check_set_name(dst_set_dir.name)
+    for name in reversed(finished_versions(dst_set_dir)):
+        existing = read_version(dst_set_dir / name)
+        if existing is not None and existing.get('copied_from') == copied_from:
+            return dst_set_dir / name
+    if set_name != dst_set_dir.name:
+        raise TextureError(
+            f'{src_version} is set {set_name!r}, not {dst_set_dir.name!r}')
+    check_spelling(dst_set_dir.parent, dst_set_dir.name)
+    version_path = get_next_version_path(dst_set_dir)
+    record = dict(data)
+    record.update(
+        version=version_path.name,
+        # A copy is a library set (the project's or a shared library's),
+        # whoever owned the original.
+        uri=None,
+        copied_from=copied_from,
+        timestamp=timestamp or dt.datetime.now().isoformat(),
+        user=user or data.get('user', ''),
+    )
+    with tempfile.TemporaryDirectory(prefix='th-texture-') as staging:
+        staged = Path(staging)
+        for item in sorted(src_version.iterdir()):
+            if item.name == VERSION_MARKER:
+                continue
+            if item.is_dir():
+                shutil.copytree(item, staged / item.name)
+            else:
+                shutil.copy2(item, staged / item.name)
+        store_json(staged / VERSION_MARKER, record)
+        copy_version_contents(staged, version_path, copy=shutil.copy2)
+    return version_path
+
+
 def read_version(version_path: Path) -> Optional[dict]:
     """A finished texture version's ``context.json``, or None when the
     folder is unfinished, holds something else, or its record cannot be

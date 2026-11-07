@@ -614,7 +614,9 @@ Source: [`otls/lop_th.import_texture.1.0`](../../otls/lop_th.import_texture.1.0/
 | Material Path | `` `lopinputprim(".", 0)`/mtl/`chs("set")` `` | Where the material is referenced: `mtl/<set>` under the input's first prim, as `th::material` puts materials |
 
 The reference reads the version's layer as `$TH_EXPORT_PATH/...`, so the scene
-follows the project.
+follows the project. A shared [library](../asset-browser/libraries.md)'s set
+dropped from the browser is copied into the project library first, and the
+node is pinned to that copy (Owner: project library).
 
 ## `th::export_texture` (COP)
 

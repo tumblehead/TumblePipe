@@ -248,9 +248,21 @@ def workfile_for_version(dept_dir: Path, version: str) -> Path | None:
 # ── Department iconography ───────────────────────────────────────
 
 
+#: Icons this package ships (``asset_browser/icons``), for names TumbleTrove's
+#: bundled Lucide set lacks: a name it does not have draws a blank icon.
+PACKAGE_ICONS = Path(__file__).parent / "icons"
+
+
+def package_icon(name: str) -> str:
+    """The absolute path of this package's ``<name>.svg``, which TumbleTrove's
+    icon loader takes in place of a bundled icon name."""
+    return str(PACKAGE_ICONS / f"{name}.svg")
+
+
 # Lucide icon names per department — used by Shot/Asset department
 # deck items. Add new depts here and they pick up consistent
-# iconography.
+# iconography; a name TumbleTrove does not bundle goes through
+# package_icon.
 DEPT_ICONS = {
     "model": "shapes",          # 3D shapes
     "lookdev": "palette",        # color palette for shading
@@ -263,7 +275,7 @@ DEPT_ICONS = {
     "composite": "layers",      # compositing layers
     "effects": "zap",           # VFX
     "blendshape": "blend",      # blending shapes
-    "groom": "brush",           # combed hair
+    "groom": package_icon("brush"),  # combed hair
     "environment": "mountain",  # environment/landscape
     "crowd": "users",           # crowd of people
 }

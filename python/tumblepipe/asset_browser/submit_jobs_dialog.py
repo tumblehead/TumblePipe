@@ -18,10 +18,22 @@ exception: they override the scene's render settings, so unpinned they show
 ``tumblepipe.farm.submit.camera``. Resolution order and the rules live in
 ``submit_settings``. The grid chooses the *steps*; the form never did.
 
-Submit writes a plan and hands it to a separate process
-(``tumblepipe.farm.submit.plan``) running Houdini's bundled Python, then
-closes: Houdini is free in seconds however large the submission, and a
-non-modal status window (``farm_submission_window``) follows the progress.
+Submit first shows a review over the window (``farm_submit_ui.ReviewSheet``:
+a row per entity, its steps, what to check), then writes a plan and hands it
+to a separate process (``tumblepipe.farm.submit.plan``) running Houdini's
+bundled Python: Houdini is free in seconds however large the submission. The
+progress follows on the same overlay (``farm_submit_ui.SubmissionView``);
+the window stays open, so **Back to grid** submits more, and closing it does
+not stop the submission.
+
+Each step kind has a colour (``farm_submit_ui.KIND_COLOURS``) worn by its
+columns' header strip, its ticked cells and its settings section's edge.
+Columns with nothing to do on any row (a department nobody has a workfile
+in) collapse to a sliver by themselves; any column collapses from its
+header or the **Columns** menu. Settings sections collapse from their
+headline. The pinned settings, the Render batch choices, collapsed columns
+and sections, and the window's size are remembered per project and tab
+(``tumblepipe.farm.submit.remembered``).
 
 The grid always lists every entity of the context. Opened from the Render
 quick action or a card's **Submit Jobs…**, it has those entities' Render
@@ -37,6 +49,11 @@ grid and settings form (``_ContextPane``), built the first time it is shown
 and kept, ticks and pins included, while the dialog is open. Only the opened
 tab is seeded with ticks and the workfile's department (``grid.tab_seed``);
 Submit sends the tab in front and nothing from the other.
+
+The **Edits** tab (``_EditsPane``) has no departments: it lists the
+project's edits, each with its finished published versions, and one step,
+**Render Edit**, which renders the chosen version into a movie on the farm
+(``farm/pipelines/edit_render.py``).
 """
 
 from __future__ import annotations
@@ -46,17 +63,16 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Sequence
 
-from PySide6.QtCore import QEvent, QRect, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QPointF, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import (
-    QColor, QFont, QFontMetrics, QPainter, QPen, QStandardItem, QStandardItemModel,
+    QColor, QFont, QFontMetrics, QPainter, QPen, QStandardItem,
+    QStandardItemModel,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QComboBox,
-    QDialog, QFormLayout, QGridLayout,
-    QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
-    QPushButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget,
-    QStyledItemDelegate, QTabBar, QToolTip,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton,
+    QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QStyledItemDelegate,
+    QToolButton, QToolTip, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from tumbletrove.asset_browser.core.theme import (
@@ -65,12 +81,20 @@ from tumbletrove.asset_browser.core.theme import (
 )
 
 from tumblepipe.farm.submit import grid as grid
+from tumblepipe.farm.submit import remembered
+from tumblepipe.farm.submit import review as submit_review
 from tumblepipe.farm.submit import status as farm_status
 from tumblepipe.farm.submit import camera as render_camera
 from tumblepipe.farm.submit import settings as resolve
 from tumblepipe.pipe.houdini.ui.report import report_failure
 from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
 from tumblepipe.farm.specs.playblast import PLAYBLAST_RENDERERS, PLAYBLAST_SHADINGS
+
+from .farm_submit_ui import (
+    EDIT_KIND, KIND_COLOURS, KIND_FILLS, FolderTabBar, NoticeCard, Overlay,
+    ReviewSheet, Section, SubmissionView,
+)
+from tumblepipe.farm.submit.review import ReviewRow
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +129,34 @@ ZEBRA_COLOUR = "#1f1f1f"
 BAND_COLOUR = "#262626"
 WARNING_COLOUR = STALE_COLOUR
 ERROR_COLOUR = "#e05a4f"
+
+# A collapsed column's width: room for its kind's strip, a ticked cell's
+# colour and a stale dot, nothing else.
+COLLAPSED_WIDTH = 16
+# The header's kind strip, along its top edge.
+KIND_STRIP = 3
+
+# What each step column is, for its header's tooltip (the old legend's job).
+_COLUMN_TIPS = {
+    grid.PUBLISH: "Publish the {label} department from its latest workfile.",
+    grid.PLAYBLAST: "A playblast on the farm, of every department up to the Playblast cut.",
+    grid.RENDER: "A render on the farm, of every department up to the Render cut.",
+}
+_STATE_LINES = {
+    grid.PUBLISH: (
+        (grid.CURRENT, "exported since the workfile was last saved"),
+        (grid.STALE, "workfile saved after its last export"),
+        (grid.NEVER, "never exported"),
+        (grid.UNCLAIMED, "(dim) only a Multi's workfile, which never exported it"),
+        (grid.NONE, "no workfile: nothing to publish"),
+    ),
+    'preview': (
+        (grid.CURRENT, "newer than every publish it shows"),
+        (grid.STALE, "older than a publish it shows"),
+        (grid.NEVER, "never made"),
+        (grid.NONE, "no frame range: nothing to make"),
+    ),
+}
 
 GLYPHS = {
     grid.NONE: "·", grid.NEVER: "○", grid.UNCLAIMED: "○", grid.STALE: "●",
@@ -153,7 +205,7 @@ _PROBE_CHUNK = 12
 
 # Always-visible scrollbars. TumbleTrove's shared SCROLLBAR_STYLE draws the
 # handle transparent, which hides that the grid and the settings panel
-# scroll at all. Shared with the submission window.
+# scroll at all.
 VISIBLE_SCROLLBARS = """
 QScrollBar:vertical {
     background: #1f1f1f; width: 10px; margin: 0; border: none;
@@ -180,21 +232,6 @@ QLabel {{
     font-size: {FONT_BODY}px;
     background: transparent;
 }}
-QGroupBox {{
-    color: {TEXT_PRIMARY};
-    font-family: "{FONT_FAMILY}";
-    font-size: {FONT_BODY}px;
-    border: 1px solid {BORDER};
-    border-radius: 6px;
-    margin-top: 10px;
-    padding-top: 8px;
-}}
-QGroupBox::title {{
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    padding: 0 6px;
-    color: {TEXT_SECONDARY};
-}}
 QLineEdit, QSpinBox, QComboBox {{
     background-color: {BG_DARK};
     color: {TEXT_PRIMARY};
@@ -205,9 +242,43 @@ QLineEdit, QSpinBox, QComboBox {{
     font-size: {FONT_BODY}px;
     min-height: 20px;
 }}
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus {{
+QFrame#farmSection QLineEdit, QFrame#farmSection QSpinBox, QFrame#farmSection QComboBox {{
+    background-color: #1c1c1c;
+    border-color: #3a3a3a;
+}}
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus,
+QFrame#farmSection QLineEdit:focus, QFrame#farmSection QSpinBox:focus,
+QFrame#farmSection QComboBox:focus {{
     border-color: {ACCENT};
 }}
+/* A field left to each entity shows their value in grey; one the artist
+   set for the whole submission is white, with an accent edge. */
+*[pinned="false"] {{ color: {TEXT_SECONDARY}; }}
+*[pinned="true"] {{ color: {TEXT_PRIMARY}; }}
+QLineEdit[pinned="true"], QSpinBox[pinned="true"], QComboBox[pinned="true"] {{
+    border-left: 2px solid {ACCENT};
+}}
+QFrame#farmSection QLabel {{ background: transparent; }}
+QToolButton {{
+    background-color: {BG_DARK};
+    color: {TEXT_PRIMARY};
+    border: 1px solid {BORDER};
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-family: "{FONT_FAMILY}";
+    font-size: {FONT_BODY}px;
+}}
+QToolButton:hover {{ border-color: {ACCENT}; }}
+QToolButton::menu-indicator {{ image: none; width: 0; }}
+QMenu {{
+    background-color: {BG_DARK};
+    color: {TEXT_PRIMARY};
+    border: 1px solid {BORDER};
+    padding: 4px 0;
+}}
+QMenu::item {{ padding: 5px 22px 5px 24px; }}
+QMenu::item:selected {{ background-color: #2f3f55; }}
+QMenu::separator {{ height: 1px; background: {BORDER}; margin: 4px 8px; }}
 QComboBox::drop-down {{ border: none; width: 16px; }}
 QComboBox QAbstractItemView {{
     background-color: {BG_DARK};
@@ -248,24 +319,6 @@ QTreeWidget {{
     outline: none;
 }}
 QScrollArea {{ border: none; background: transparent; }}
-QTabBar::tab {{
-    background-color: {BG_DARK};
-    color: {TEXT_SECONDARY};
-    border: 1px solid {BORDER};
-    border-bottom: none;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
-    padding: 5px 18px;
-    margin-right: 2px;
-    font-family: "{FONT_FAMILY}";
-    font-size: {FONT_BODY}px;
-}}
-QTabBar::tab:selected {{
-    background-color: {BG_DARKEST};
-    color: {TEXT_PRIMARY};
-    border-color: {ACCENT};
-}}
-QTabBar::tab:hover {{ color: {TEXT_PRIMARY}; }}
 """ + VISIBLE_SCROLLBARS
 
 
@@ -349,13 +402,17 @@ def _group_members(group_uri) -> list[object]:
     return list(group.members) if group is not None else []
 
 
-def _box(painter: QPainter, rect: QRect, state: str) -> None:
-    """Draw a tri-state checkbox (``on`` / ``mixed`` / ``off``) in ``rect``."""
+def _box(painter: QPainter, rect: QRect, state: str, kind: str | None = None) -> None:
+    """Draw a tri-state checkbox (``on`` / ``mixed`` / ``off``) in ``rect``,
+    filled in ``kind``'s colour when it ticks one kind's cells, else the accent."""
     painter.save()
     painter.setRenderHint(QPainter.Antialiasing, True)
     if state == 'off':
         painter.setPen(QPen(QColor("#6a6a70"), 1))
         painter.setBrush(QColor(BG_DARKEST))
+    elif kind is not None:
+        painter.setPen(QPen(QColor(KIND_COLOURS[kind]), 1))
+        painter.setBrush(QColor(KIND_FILLS[kind]))
     else:
         painter.setPen(QPen(QColor(TICK_OUTLINE), 1))
         painter.setBrush(QColor(ACCENT))
@@ -600,12 +657,17 @@ class _PinnedField:
             w.setText('' if value is None else str(value))
 
     def _restyle(self) -> None:
-        """Dim while unpinned — 'this follows the entity, not you'."""
-        font = self.widget.font()
-        font.setItalic(not self.pinned)
-        self.widget.setFont(font)
-        colour = TEXT_PRIMARY if self.pinned else TEXT_SECONDARY
-        self.widget.setStyleSheet(f"color: {colour};")
+        """Grey while unpinned ('this follows the entity, not you'), white
+        with an accent edge once pinned (the dialog's ``pinned`` rules).
+
+        Not italic: italic grey read as a disabled field, and artists took
+        the Playblast settings for locked (2026-11).
+        """
+        self.widget.setProperty("pinned", self.pinned)
+        style = self.widget.style()
+        style.unpolish(self.widget)
+        style.polish(self.widget)
+        self.widget.update()
 
 
 # ── Grid painting ─────────────────────────────────────────
@@ -637,29 +699,61 @@ class _GridDelegate(QStyledItemDelegate):
             painter.fillRect(rect, QColor(ZEBRA_COLOUR))
         dialog._paint_cell(painter, rect, item, column, is_group)
         # Grid rules: a right rule per column, a bottom rule per row, and a
-        # heavier one ahead of the preview columns.
+        # heavier one where one step kind gives way to the next.
         painter.setPen(QPen(QColor(RULE_COLOUR), 1))
         painter.drawLine(rect.topRight(), rect.bottomRight())
         painter.drawLine(rect.bottomLeft(), rect.bottomRight())
-        if column == dialog._first_preview_column:
+        if column in dialog._kind_starts:
             painter.setPen(QPen(QColor("#5a5a5a"), 2))
             painter.drawLine(rect.topLeft(), rect.bottomLeft())
         painter.restore()
 
 
 class _CheckHeader(QHeaderView):
-    """Column headers with a tri-state checkbox under each step's label."""
+    """Column headers: the step's kind strip, its label, a tri-state checkbox,
+    and — under the pointer — a chevron that collapses the column."""
+
+    HEIGHT = 56
 
     def __init__(self, dialog: "_ContextPane") -> None:
         super().__init__(Qt.Horizontal, dialog)
         self._dialog = dialog
+        self.hovered = -1
         # Clickable is set by _build_grid: QTreeView.setHeader() resets it.
         self.setHighlightSections(False)
         self.setDefaultAlignment(Qt.AlignCenter)
+        self.setMouseTracking(True)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
 
     def sizeHint(self):
         size = super().sizeHint()
-        return QSize(size.width(), 50)
+        return QSize(size.width(), self.HEIGHT)
+
+    def mouseMoveEvent(self, event) -> None:
+        logical = self.logicalIndexAt(event.position().toPoint())
+        if logical != self.hovered:
+            self.hovered = logical
+            self.viewport().update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self.hovered = -1
+        self.viewport().update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        # The collapse chevron is handled on press and the event goes no
+        # further, so the header never registers a click there and the
+        # column's checkbox is left alone.
+        if event.button() == Qt.LeftButton:
+            pos = event.position().toPoint()
+            logical = self.logicalIndexAt(pos)
+            rect = QRect(self.sectionViewportPosition(logical), 0,
+                         self.sectionSize(logical), self.height())
+            if self._dialog._chevron_hit(logical, rect, pos):
+                self._dialog._set_collapsed(logical, True)
+                return
+        super().mousePressEvent(event)
 
     def paintSection(self, painter: QPainter, rect: QRect, logical: int) -> None:
         painter.save()
@@ -668,190 +762,11 @@ class _CheckHeader(QHeaderView):
         painter.drawLine(rect.topRight(), rect.bottomRight())
         painter.setPen(QPen(QColor("#4a4a4a"), 1))
         painter.drawLine(rect.bottomLeft(), rect.bottomRight())
-        if logical == self._dialog._first_preview_column:
+        if logical in self._dialog._kind_starts:
             painter.setPen(QPen(QColor("#5a5a5a"), 2))
             painter.drawLine(rect.topLeft(), rect.bottomLeft())
-        self._dialog._paint_header(painter, rect, logical)
+        self._dialog._paint_header(painter, rect, logical, hovered=logical == self.hovered)
         painter.restore()
-
-
-# ── Confirmation ──────────────────────────────────────────
-
-# Rows shown per warning list before "… and N more".
-_CONFIRM_LIST_LIMIT = 8
-
-_KIND_LABELS = {
-    grid.PUBLISH: "Publish", grid.PLAYBLAST: "Playblast", grid.RENDER: "Render",
-}
-
-
-class _ConfirmSubmit(QDialog):
-    """"Submit to the farm?" — what is about to be sent, and what to check first.
-
-    Replaced a QMessageBox whose question icon, one-line summary and
-    Cancel-as-default read badly: the dialog stylesheet paints the *default*
-    button in the accent colour, so Cancel looked like the action. Here
-    **Submit** is the one filled button. A preview that would show stale,
-    unticked departments gets its own section and a **Tick those
-    publishes** button that adds them and returns to the grid. Rows with a
-    blocking error (``resolve.entity_errors``) get a red section, and Submit
-    is disabled until they are fixed.
-
-    ``exec()`` returns :attr:`SUBMIT`, :attr:`TICK_STALE`, or 0 for Back.
-    """
-
-    SUBMIT = 1
-    TICK_STALE = 2
-
-    def __init__(
-        self,
-        parent: QWidget,
-        kinds: dict[str, int],
-        departments: dict[str, int],
-        rows: int,
-        noun: tuple[str, str],
-        *,
-        stale: dict[str, list[str]],
-        other: dict[str, list[str]],
-        blocked: dict[str, list[str]] | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Farm Submit")
-        self.setStyleSheet(_DIALOG_STYLE)
-        self.setMinimumWidth(460)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(20, 18, 20, 16)
-        root.setSpacing(14)
-
-        heading = QLabel("Submit to the farm?")
-        heading.setStyleSheet(f"font-size: {FONT_BODY + 4}px; font-weight: bold;")
-        root.addWidget(heading)
-
-        counts = QGridLayout()
-        counts.setHorizontalSpacing(14)
-        counts.setVerticalSpacing(6)
-        for row, (kind, count) in enumerate(kinds.items()):
-            name = QLabel(_KIND_LABELS[kind])
-            name.setStyleSheet(f"color: {TEXT_SECONDARY};")
-            number = QLabel(str(count))
-            number.setStyleSheet("font-weight: bold;")
-            number.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            detail = QLabel(
-                " · ".join(f"{d} {n}" for d, n in departments.items())
-                if kind == grid.PUBLISH else ""
-            )
-            detail.setStyleSheet(f"color: {TEXT_SECONDARY};")
-            detail.setWordWrap(True)
-            counts.addWidget(name, row, 0)
-            counts.addWidget(number, row, 1)
-            counts.addWidget(detail, row, 2)
-        counts.setColumnStretch(2, 1)
-        root.addLayout(counts)
-
-        across = QLabel(f"across {rows} {noun[rows != 1]}")
-        across.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        root.addWidget(across)
-
-        if blocked:
-            count = len(blocked)
-            root.addWidget(self._panel(
-                ERROR_COLOUR,
-                f"✕  {count} {noun[count != 1]} can't be submitted",
-                "Fix these, or untick them, before submitting:",
-                {name: "; ".join(errors) for name, errors in blocked.items()},
-            ))
-        if stale:
-            count = len(stale)
-            root.addWidget(self._panel(
-                STALE_COLOUR,
-                f"⚠  {count} {noun[count != 1]} will preview work that isn't published",
-                "The playblast or render composes departments that are stale "
-                "and not ticked, so it shows their last publish:",
-                {name: ", ".join(missing) for name, missing in stale.items()},
-            ))
-        if other:
-            count = sum(len(w) for w in other.values())
-            # "other" only beside the stale section it is other than.
-            root.addWidget(self._panel(
-                TEXT_SECONDARY,
-                f"{count}{' other' if stale else ''} warning{'s' if count != 1 else ''}",
-                "",
-                {name: "; ".join(warnings) for name, warnings in other.items()},
-            ))
-
-        buttons = QHBoxLayout()
-        buttons.setSpacing(8)
-        if stale:
-            tick = QPushButton("Tick those publishes")
-            tick.setToolTip(
-                "Tick the stale departments listed above and go back to the "
-                "grid, so the previews show fresh publishes"
-            )
-            tick.setAutoDefault(False)
-            tick.clicked.connect(lambda: self.done(self.TICK_STALE))
-            buttons.addWidget(tick)
-        buttons.addStretch(1)
-        back = QPushButton("Back")
-        # Not auto-default: the stylesheet fills the default button, and a
-        # focused auto-default button would take that from Submit.
-        back.setAutoDefault(False)
-        back.clicked.connect(self.reject)
-        buttons.addWidget(back)
-        steps = sum(kinds.values())
-        submit = QPushButton(f"Submit {steps} step{'s' if steps != 1 else ''}")
-        submit.setDefault(True)
-        submit.clicked.connect(lambda: self.done(self.SUBMIT))
-        if blocked:
-            # Not default either: the stylesheet fills the default button,
-            # and a filled Submit reads as clickable.
-            submit.setDefault(False)
-            submit.setEnabled(False)
-            submit.setToolTip("Some rows can't be submitted — see above")
-            back.setDefault(True)
-        buttons.addWidget(submit)
-        root.addLayout(buttons)
-        self._submit = submit
-
-    def _panel(self, colour: str, title: str, text: str, items: dict[str, str]) -> QWidget:
-        """A tinted box: a title, an optional sentence, then ``name  detail`` rows."""
-        panel = QWidget()
-        panel.setObjectName("confirmPanel")
-        panel.setAttribute(Qt.WA_StyledBackground, True)
-        panel.setStyleSheet(
-            f"QWidget#confirmPanel {{ background-color: {BG_DARK};"
-            f" border: 1px solid {BORDER}; border-left: 3px solid {colour};"
-            f" border-radius: 4px; }}"
-        )
-        layout = QVBoxLayout(panel)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(6)
-        heading = QLabel(title)
-        heading.setStyleSheet(f"color: {colour}; font-weight: bold;")
-        layout.addWidget(heading)
-        if text:
-            sentence = QLabel(text)
-            sentence.setWordWrap(True)
-            sentence.setStyleSheet(f"color: {TEXT_SECONDARY};")
-            layout.addWidget(sentence)
-        rows = QGridLayout()
-        rows.setHorizontalSpacing(14)
-        rows.setVerticalSpacing(3)
-        shown = list(items.items())[:_CONFIRM_LIST_LIMIT]
-        for row, (name, detail) in enumerate(shown):
-            label = QLabel(name)
-            label.setStyleSheet("font-weight: bold;")
-            value = QLabel(detail)
-            value.setWordWrap(True)
-            rows.addWidget(label, row, 0, Qt.AlignTop)
-            rows.addWidget(value, row, 1)
-        rows.setColumnStretch(1, 1)
-        layout.addLayout(rows)
-        if len(items) > _CONFIRM_LIST_LIMIT:
-            more = QLabel(f"… and {len(items) - _CONFIRM_LIST_LIMIT} more")
-            more.setStyleSheet(f"color: {TEXT_SECONDARY};")
-            layout.addWidget(more)
-        return panel
 
 
 # ── Context pane ──────────────────────────────────────────
@@ -917,11 +832,30 @@ class _ContextPane(QWidget):
         )
         self._fallbacks['pb_department'] = self._fallbacks['render_department']
         self._columns = grid.columns_for(context, self._publish_departments)
-        self._first_preview_column = next(
-            (i + 1 for i, c in enumerate(self._columns) if c.kind != grid.PUBLISH),
-            -1,
-        )
+        # Logical header indices where one step kind gives way to the next:
+        # a heavier rule is drawn ahead of each.
+        self._kind_starts = {
+            i + 1 for i, c in enumerate(self._columns)
+            if i > 0 and self._columns[i - 1].kind != c.kind
+        }
         self._warnings_column = len(self._columns) + 1
+
+        # Collapsed columns (by key): the artist's, and those collapsed by
+        # themselves for having nothing to do (``_auto_collapsed``, expanded
+        # again once they do). A column the artist expanded never collapses
+        # by itself again while the window is open.
+        self._remembered = dialog.remembered_tab(context)
+        self._collapsed: set[str] = remembered.restore_collapsed(
+            self._remembered, [c.key for c in self._columns],
+        )
+        self._auto_collapsed: set[str] = set()
+        self._user_expanded: set[str] = set()
+        self._widths: dict[str, int] = {}
+        # Each ↺ button and the keys it reverts: shown only while one is pinned.
+        self._reverts: list[tuple[QPushButton, tuple[str, ...]]] = []
+        # Pins the open workfile made (``_apply_open_department``), not the
+        # artist's: never remembered.
+        self._context_pins: dict[str, str] = {}
 
         # Grid state: ticks and per-cell states, keyed (uri, column key).
         self._ticks: set = set()
@@ -964,6 +898,9 @@ class _ContextPane(QWidget):
         body.addWidget(self._build_grid(), 1)
         body.addWidget(self._build_forms())
 
+        # The last opening's pins first, then the open workfile's department:
+        # what the artist is looking at now wins over what they set last time.
+        self._restore_remembered()
         self._apply_open_department()
         # Seed the tick state from the entities the dialog was opened for;
         # the open workfile's department narrows their publish cells to its.
@@ -992,6 +929,66 @@ class _ContextPane(QWidget):
         self._camera_poll.stop()
         self._refresh_timer.stop()
         self._executor.shutdown(wait=False, cancel_futures=True)
+
+    # ── Remembered settings ───────────────────────────────
+
+    def remembered_record(self) -> dict:
+        """What this tab keeps for the next opening (``farm.submit.remembered``).
+
+        A pin the open workfile made (its department as the cut) is the
+        workfile's, not the artist's: it is not carried to an opening from
+        another workfile, or from none, unless the artist changed it.
+        """
+        pinned = remembered.artist_pins(
+            {key: entry.value() for key, entry in self._fields.items() if entry.pinned},
+            self._context_pins,
+        )
+        return remembered.capture(
+            pinned, self._batch_choices(), sorted(self._collapsed - self._auto_collapsed),
+        )
+
+    def _batch_choices(self) -> dict[str, bool]:
+        return {
+            'render_preview': self._rnd_preview.isChecked(),
+            'render_full': self._rnd_full.isChecked(),
+            'standalone': self._rnd_standalone.isChecked(),
+            'copy_to_edit': self._rnd_copy_edit.isChecked(),
+        }
+
+    def _accepts(self, key: str, value: Any) -> bool:
+        """Whether field ``key`` can show ``value`` as a pinned choice."""
+        entry = self._fields.get(key)
+        if entry is None:
+            return False
+        widget = entry.widget
+        if entry.kind == 'spin':
+            return (
+                isinstance(value, int) and not isinstance(value, bool)
+                and widget.minimum() < value <= widget.maximum()
+            )
+        if entry.kind in ('check', 'toggle'):
+            return isinstance(value, bool)
+        if entry.kind == 'combo':
+            return isinstance(value, str) and widget.findText(value) > 0
+        return isinstance(value, str) and bool(value.strip())
+
+    def _restore_remembered(self) -> None:
+        """Pin what was pinned last time, and set the batch choices back."""
+        record = self._remembered
+        self._seeding = True
+        try:
+            for key, value in remembered.restore_pinned(record, self._accepts).items():
+                entry = self._fields[key]
+                entry._write(value)
+                entry.pin()
+        finally:
+            self._seeding = False
+        boxes = {
+            'render_preview': self._rnd_preview, 'render_full': self._rnd_full,
+            'standalone': self._rnd_standalone, 'copy_to_edit': self._rnd_copy_edit,
+        }
+        for key, checked in remembered.restore_batch(record).items():
+            boxes[key].setChecked(checked)
 
     # ── Toolbar ───────────────────────────────────────────
 
@@ -1026,21 +1023,18 @@ class _ContextPane(QWidget):
         clear_btn.clicked.connect(self._clear_ticks)
         row.addWidget(clear_btn)
 
+        # Which columns show. Empty ones collapse by themselves; any one
+        # collapses from here, its header's ‹ or its header's right-click.
+        self._columns_button = QToolButton()
+        self._columns_button.setText("Columns ▾")
+        self._columns_button.setToolTip("Show, collapse or auto-collapse the step columns")
+        self._columns_button.setPopupMode(QToolButton.InstantPopup)
+        self._columns_menu = QMenu(self._columns_button)
+        self._columns_menu.aboutToShow.connect(self._fill_columns_menu)
+        self._columns_button.setMenu(self._columns_menu)
+        row.addWidget(self._columns_button)
+
         row.addStretch(1)
-        legend = QLabel(
-            f"<span style='color:{CURRENT_COLOUR}'>✓</span> current &nbsp; "
-            f"<span style='color:{STALE_COLOUR}'>●</span> stale &nbsp; "
-            f"<span style='color:{NEVER_COLOUR}'>○</span> never &nbsp; "
-            f"<span style='color:{DIM_COLOUR}'>○</span> Multi's, never "
-            f"exported &nbsp; "
-            f"<span style='color:{DIM_COLOUR}'>·</span> nothing to do"
-        )
-        legend.setToolTip(
-            "Dim ○: the only workfile is a Multi's, and it has never exported "
-            "this entity. Select stale skips it; tick it to publish from the Multi."
-        )
-        legend.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        row.addWidget(legend)
         self._status_label = QLabel("")
         self._status_label.setStyleSheet(f"color: {TEXT_SECONDARY};")
         row.addWidget(self._status_label)
@@ -1079,21 +1073,28 @@ class _ContextPane(QWidget):
         # sectionClicked and a click on them does nothing.
         header.setSectionsClickable(True)
         header.setStretchLastSection(True)
-        header.setMinimumSectionSize(40)
+        header.setMinimumSectionSize(COLLAPSED_WIDTH)
         header.resizeSection(0, 170)
         # Wide enough for the header label ('environment', 'animation'),
-        # which _paint_header draws at 12px; never narrower than a cell needs.
+        # which _paint_header draws at 12px, and the collapse chevron beside
+        # it on hover; never narrower than a cell needs.
         label_font = QFont(FONT_FAMILY)
         label_font.setPixelSize(12)
         label_font.setBold(True)
         metrics = QFontMetrics(label_font)
         for index, column in enumerate(self._columns, start=1):
-            floor = 56 if column.kind == grid.PUBLISH else 82
-            header.resizeSection(
-                index, max(floor, metrics.horizontalAdvance(column.label) + 16),
+            floor = 60 if column.kind == grid.PUBLISH else 86
+            self._widths[column.key] = max(
+                floor, metrics.horizontalAdvance(column.label) + 30,
             )
             header.setSectionResizeMode(index, QHeaderView.Fixed)
+            header.resizeSection(
+                index,
+                COLLAPSED_WIDTH if column.key in self._collapsed else self._widths[column.key],
+            )
         header.sectionClicked.connect(self._on_header_clicked)
+        header.customContextMenuRequested.connect(self._header_menu)
+        header.viewport().installEventFilter(self)
 
         for uri in self._uris:
             group = self._group_key(uri)
@@ -1139,13 +1140,20 @@ class _ContextPane(QWidget):
                 self._on_grid_click(event.position().toPoint())
                 return False
             if event.type() == QEvent.ToolTip:
-                text = self._tooltip_at(event.pos())
-                if text:
-                    QToolTip.showText(event.globalPos(), text, self._tree)
-                else:
-                    QToolTip.hideText()
+                self._show_tip(event, self._tooltip_at(event.pos()), self._tree)
                 return True
+        if obj is self._tree.header().viewport() and event.type() == QEvent.ToolTip:
+            logical = self._tree.header().logicalIndexAt(event.pos())
+            self._show_tip(event, self._header_tooltip(logical), self._tree.header())
+            return True
         return super().eventFilter(obj, event)
+
+    @staticmethod
+    def _show_tip(event, text: str, widget: QWidget) -> None:
+        if text:
+            QToolTip.showText(event.globalPos(), text, widget)
+        else:
+            QToolTip.hideText()
 
     def _tooltip_at(self, pos) -> str:
         index = self._tree.indexAt(pos)
@@ -1161,8 +1169,44 @@ class _ContextPane(QWidget):
         step = self._columns[column - 1]
         state = self._states.get((uri, step.key), grid.PENDING)
         table = TIPS[grid.PUBLISH if step.kind == grid.PUBLISH else 'preview']
-        ticked = " — will be submitted" if (uri, step.key) in self._ticks else ""
-        return f"{item.text(0)} · {step.label}: {table[state]}{ticked}"
+        ticked = " (will be submitted)" if (uri, step.key) in self._ticks else ""
+        text = f"{item.text(0)}, {step.label}: {GLYPHS[state]} {table[state]}{ticked}"
+        if step.key in self._collapsed:
+            text += "\nThe column is collapsed: click its header to show it."
+        return text
+
+    def _header_tooltip(self, logical: int) -> str:
+        """What a column is and what its cells' marks mean: the old legend's job."""
+        if logical == 0:
+            return (
+                f"Tick or untick every visible {self._noun[0]}'s steps. "
+                "Each row's and sequence's box does the same for its own."
+            )
+        if not 1 <= logical <= len(self._columns):
+            return ""
+        column = self._columns[logical - 1]
+        colour = KIND_COLOURS[column.kind]
+        lines = [
+            f"<b style='color:{colour}'>{column.label}</b>",
+            _COLUMN_TIPS[column.kind].format(label=column.label),
+            "",
+        ]
+        table = _STATE_LINES[grid.PUBLISH if column.kind == grid.PUBLISH else 'preview']
+        for state, meaning in table:
+            lines.append(
+                f"<span style='color:{GLYPH_COLOURS[state]}'>{GLYPHS[state]}</span>"
+                f"&nbsp;&nbsp;{meaning}"
+            )
+        lines.append("")
+        if column.key in self._collapsed:
+            why = " (nothing to do on any row)" if column.key in self._auto_collapsed else ""
+            lines.append(f"<i>Collapsed{why}. Click to show it.</i>")
+        else:
+            lines.append(
+                "<i>Click to tick every visible row. ‹ collapses the column; "
+                "right-click for more.</i>"
+            )
+        return "<br>".join(lines)
 
     def _on_grid_click(self, pos) -> None:
         index = self._tree.indexAt(pos)
@@ -1183,6 +1227,8 @@ class _ContextPane(QWidget):
             keys = self._row_keys(uri) if uri else self._group_keys(group)
         else:
             step = self._columns[column - 1]
+            if step.key in self._collapsed:
+                return  # a sliver is not a target; its header shows it again
             if uri:
                 keys = [(uri, step.key)] if self._tickable(uri, step.key) else []
             else:
@@ -1193,24 +1239,140 @@ class _ContextPane(QWidget):
         if logical == 0:
             self._toggle(self._visible_keys())
         elif 1 <= logical <= len(self._columns):
-            self._toggle(self._visible_keys(self._columns[logical - 1].key))
+            column = self._columns[logical - 1]
+            if column.key in self._collapsed:
+                self._set_collapsed(logical, False)
+            else:
+                self._toggle(self._visible_keys(column.key))
+
+    # ── Collapsed columns ─────────────────────────────────
+
+    def _chevron_rect(self, rect: QRect) -> QRect:
+        """The collapse chevron's spot in a header section: bottom right,
+        level with the checkbox and clear of the label."""
+        return QRect(rect.right() - 16, rect.bottom() - BOX - 10, 14, BOX + 4)
+
+    def _chevron_hit(self, logical: int, rect: QRect, pos) -> bool:
+        if not 1 <= logical <= len(self._columns):
+            return False
+        if self._columns[logical - 1].key in self._collapsed:
+            return False
+        return self._chevron_rect(rect).contains(pos)
+
+    def _set_collapsed(self, logical: int, collapsed: bool, *, auto: bool = False) -> None:
+        """Collapse column ``logical`` to a sliver, or show it again.
+
+        Collapsing is a view, like the row filter: the column's ticks stay
+        (a ticked sliver shows its kind's colour), but bulk ticks — the All
+        box, a row's or sequence's box, Select stale — no longer reach it.
+        """
+        key = self._columns[logical - 1].key
+        if collapsed:
+            self._collapsed.add(key)
+            if auto:
+                self._auto_collapsed.add(key)
+        else:
+            self._collapsed.discard(key)
+            self._auto_collapsed.discard(key)
+            if not auto:
+                self._user_expanded.add(key)
+        if not auto and collapsed:
+            # Collapsed on purpose: no longer the auto rule's to reopen.
+            self._auto_collapsed.discard(key)
+        self._tree.header().resizeSection(
+            logical, COLLAPSED_WIDTH if collapsed else self._widths[key],
+        )
+        self._changed()
+
+    def _auto_collapse(self) -> None:
+        """Collapse the columns with nothing to do on any row; reopen those
+        that have work again. Never a column with a tick, or one the artist
+        opened."""
+        if not self._dialog.ui['collapse_empty']:
+            return
+        empty = grid.empty_columns(self._uris, self._columns, self._states)
+        ticked = {key for _uri, key in self._ticks}
+        for logical, column in enumerate(self._columns, start=1):
+            key = column.key
+            if key in empty and key not in self._collapsed:
+                if key not in ticked and key not in self._user_expanded:
+                    self._set_collapsed(logical, True, auto=True)
+            elif key not in empty and key in self._auto_collapsed:
+                self._set_collapsed(logical, False, auto=True)
+
+    def _set_collapse_empty(self, enabled: bool) -> None:
+        self._dialog.ui['collapse_empty'] = enabled
+        if enabled:
+            self._user_expanded.clear()
+            self._auto_collapse()
+        else:
+            for logical, column in enumerate(self._columns, start=1):
+                if column.key in self._auto_collapsed:
+                    self._set_collapsed(logical, False, auto=True)
+
+    def _show_all_columns(self) -> None:
+        for logical, column in enumerate(self._columns, start=1):
+            if column.key in self._collapsed:
+                self._set_collapsed(logical, False)
+
+    def _fill_columns_menu(self, menu: QMenu | None = None) -> None:
+        menu = menu or self._columns_menu
+        menu.clear()
+        previous = None
+        for logical, column in enumerate(self._columns, start=1):
+            if previous is not None and column.kind != previous:
+                menu.addSeparator()
+            previous = column.kind
+            action = menu.addAction(column.label)
+            action.setCheckable(True)
+            action.setChecked(column.key not in self._collapsed)
+            action.toggled.connect(
+                lambda shown, n=logical: self._set_collapsed(n, not shown)
+            )
+        menu.addSeparator()
+        auto = menu.addAction("Collapse empty columns by themselves")
+        auto.setCheckable(True)
+        auto.setChecked(self._dialog.ui['collapse_empty'])
+        auto.setToolTip("A column with nothing to do on any row collapses once the status is read")
+        auto.toggled.connect(self._set_collapse_empty)
+        show_all = menu.addAction("Show every column")
+        show_all.setEnabled(bool(self._collapsed))
+        show_all.triggered.connect(self._show_all_columns)
+
+    def _header_menu(self, pos) -> None:
+        header = self._tree.header()
+        logical = header.logicalIndexAt(pos)
+        menu = QMenu(self)
+        if 1 <= logical <= len(self._columns):
+            column = self._columns[logical - 1]
+            collapsed = column.key in self._collapsed
+            action = menu.addAction(f"{'Show' if collapsed else 'Collapse'} {column.label}")
+            action.triggered.connect(
+                lambda _c=False, n=logical, c=collapsed: self._set_collapsed(n, not c)
+            )
+            menu.addSeparator()
+        sub = menu.addMenu("Columns")
+        self._fill_columns_menu(sub)
+        menu.exec(header.mapToGlobal(pos))
 
     # ── Keys ──────────────────────────────────────────────
 
     def _tickable(self, uri: str, column_key: str) -> bool:
         return self._states.get((uri, column_key), grid.PENDING) in grid.TICKABLE
 
+    def _shown_columns(self) -> list[str]:
+        """Keys of the columns not collapsed: what bulk ticks reach."""
+        return [c.key for c in self._columns if c.key not in self._collapsed]
+
     def _row_keys(self, uri: str) -> list:
-        return [
-            (uri, c.key) for c in self._columns if self._tickable(uri, c.key)
-        ]
+        return [(uri, key) for key in self._shown_columns() if self._tickable(uri, key)]
 
     def _group_keys(self, group: str, column_key: str | None = None) -> list:
         keys = []
+        columns = [column_key] if column_key else self._shown_columns()
         for uri in self._group_uris.get(group, []):
             if uri in self._hidden:
                 continue
-            columns = [column_key] if column_key else [c.key for c in self._columns]
             keys.extend((uri, key) for key in columns if self._tickable(uri, key))
         return keys
 
@@ -1229,7 +1391,7 @@ class _ContextPane(QWidget):
     def _select_stale(self) -> None:
         visible = {
             key: state for key, state in self._states.items()
-            if key[0] not in self._hidden
+            if key[0] not in self._hidden and key[1] not in self._collapsed
         }
         self._ticks |= set(grid.stale_keys(visible))
         self._changed()
@@ -1245,31 +1407,54 @@ class _ContextPane(QWidget):
         self._refresh_timer.start()
 
     def _show_active_sections(self) -> None:
-        """Show the settings sections of the step kinds that have a tick."""
+        """Show the settings sections of the step kinds that have a tick,
+        each headed by what it will submit."""
         active = grid.ticked_kinds(self._columns, self._ticks)
-        for kind, box in self._sections.items():
-            box.setVisible(kind in active)
+        for kind, section in self._sections.items():
+            section.setVisible(kind in active)
+            section.set_summary(grid.kind_summary(
+                kind, self._uris, self._columns, self._ticks, self._noun,
+            ))
         self._no_settings.setVisible(not active)
 
     def _scope_playblast_look(self) -> None:
-        """Grey out the settings the chosen renderer ignores. With the
-        renderer left per entity, any of them may apply, so all stay on."""
+        """Show only the settings the chosen renderer reads.
+
+        They used to be greyed out instead, which artists took for locked
+        fields, and Shading (viewport) beside Materials (Karma) — both
+        offering clay — read as one setting twice (2026-11). With the
+        renderer left per entity, either may apply: both sets show, each
+        label naming its renderer.
+        """
         rows_by_renderer = getattr(self, '_pb_rows', None)
         entry = self._fields.get('pb_renderer')
         if not rows_by_renderer or entry is None:
             return
         renderer = entry.value()
+        mixed = renderer is resolve.MIXED
+        form = self._pb_form
         for name, rows in rows_by_renderer.items():
-            enabled = renderer is resolve.MIXED or renderer == name
-            for label, row in rows:
-                row.setEnabled(enabled)
+            shown = mixed or renderer == name
+            for label, row, text in rows:
+                # The whole row, spacing included (hiding the widgets alone
+                # leaves a gap per row).
+                form.setRowVisible(row, shown)
                 if label is not None:
-                    label.setEnabled(enabled)
+                    label.setText(f"{text} ({'Karma' if name == 'karma' else name}):" if mixed else f"{text}:")
+        form.setRowVisible(self._pb_hint, mixed)
+
+    def _show_reverts(self) -> None:
+        """A ↺ shows only beside a field the artist pinned: nothing to revert otherwise."""
+        for button, keys in self._reverts:
+            button.setVisible(any(
+                self._fields[key].pinned for key in keys if key in self._fields
+            ))
 
     def _refresh(self) -> None:
         self._show_active_sections()
         self._reseed_form()
         self._scope_playblast_look()
+        self._show_reverts()
         self._update_camera()
         self._recompute_warnings()
         self._dialog._pane_changed(self)
@@ -1277,7 +1462,9 @@ class _ContextPane(QWidget):
 
     # ── Painting ──────────────────────────────────────────
 
-    def _paint_header(self, painter: QPainter, rect: QRect, logical: int) -> None:
+    def _paint_header(
+        self, painter: QPainter, rect: QRect, logical: int, *, hovered: bool = False,
+    ) -> None:
         painter.setPen(QColor(TEXT_SECONDARY))
         font = QFont(FONT_FAMILY)
         font.setPixelSize(12)
@@ -1295,15 +1482,29 @@ class _ContextPane(QWidget):
             painter.drawText(rect.adjusted(10, 0, 0, 0), Qt.AlignVCenter | Qt.AlignLeft, "Warnings")
             return
         column = self._columns[logical - 1]
+        colour = QColor(KIND_COLOURS[column.kind])
+        # The kind's strip: what ties the column to its settings section.
+        painter.fillRect(QRect(rect.left(), rect.top(), rect.width(), KIND_STRIP), colour)
+        if column.key in self._collapsed:
+            painter.setPen(colour if hovered else QColor(TEXT_SECONDARY))
+            painter.setFont(font)
+            painter.drawText(rect.adjusted(0, KIND_STRIP, 0, 0), Qt.AlignCenter, "›")
+            return
         if column.kind != grid.PUBLISH:
             font.setBold(True)
             painter.setPen(QColor(TEXT_PRIMARY))
         painter.setFont(font)
         painter.drawText(
-            QRect(rect.left(), rect.top() + 6, rect.width(), 18), Qt.AlignCenter, column.label,
+            QRect(rect.left(), rect.top() + KIND_STRIP + 6, rect.width(), 18),
+            Qt.AlignCenter, column.label,
         )
         box = QRect(rect.center().x() - BOX // 2, rect.bottom() - BOX - 8, BOX, BOX)
-        _box(painter, box, grid.tri_state(self._visible_keys(column.key), self._ticks))
+        _box(painter, box, grid.tri_state(self._visible_keys(column.key), self._ticks), column.kind)
+        if hovered:
+            chevron = self._chevron_rect(rect)
+            painter.fillRect(chevron, QColor(BG_DARKEST))
+            painter.setPen(QColor(TEXT_PRIMARY))
+            painter.drawText(chevron, Qt.AlignCenter, "‹")
 
     def _paint_cell(self, painter, rect, item, column: int, is_group: bool) -> None:
         font = QFont(FONT_FAMILY)
@@ -1338,10 +1539,12 @@ class _ContextPane(QWidget):
                 )
             else:
                 step = self._columns[column - 1]
+                if step.key in self._collapsed:
+                    return
                 keys = self._group_keys(group, step.key)
                 if keys:
                     box = QRect(rect.center().x() - BOX // 2, rect.center().y() - BOX // 2, BOX, BOX)
-                    _box(painter, box, grid.tri_state(keys, self._ticks))
+                    _box(painter, box, grid.tri_state(keys, self._ticks), step.kind)
                 stale = sum(
                     1 for uri in self._group_uris[group]
                     if uri not in self._hidden
@@ -1383,9 +1586,19 @@ class _ContextPane(QWidget):
         state = self._states.get(key, grid.PENDING)
         ticked = key in self._ticks
         if ticked:
-            painter.fillRect(rect.adjusted(1, 1, -1, -1), QColor(ACCENT))
-            painter.setPen(QPen(QColor(TICK_OUTLINE), 1))
+            # The kind's own colour, so a ticked cell says which settings
+            # section speaks for it.
+            painter.fillRect(rect.adjusted(1, 1, -1, -1), QColor(KIND_FILLS[step.kind]))
+            painter.setPen(QPen(QColor(KIND_COLOURS[step.kind]), 1))
             painter.drawRect(rect.adjusted(1, 1, -2, -2))
+        if step.key in self._collapsed:
+            # A sliver: its tick's colour, and a dot where there is work.
+            if state in grid.NEEDS_WORK:
+                painter.setRenderHint(QPainter.Antialiasing, True)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor("#ffffff" if ticked else GLYPH_COLOURS[state]))
+                painter.drawEllipse(QPointF(rect.center()) + QPointF(0.5, 0.5), 2.5, 2.5)
+            return
         painter.setFont(font)
         painter.setPen(QColor("#ffffff" if ticked else GLYPH_COLOURS[state]))
         painter.drawText(rect, Qt.AlignCenter, GLYPHS[state])
@@ -1507,6 +1720,8 @@ class _ContextPane(QWidget):
         if not self._probe_queue and not self._pending:
             self._poll.stop()
             self._status_label.setText("")
+            # Every cell's state is known: the empty columns can tell.
+            self._auto_collapse()
         else:
             done = len(self._uris) - len(self._probe_queue) - len(self._pending)
             self._status_label.setText(f"Reading status… {done}/{len(self._uris)}")
@@ -1558,32 +1773,49 @@ class _ContextPane(QWidget):
         layout.setSpacing(10)
         # One section per step kind, shown only while a cell of that kind is
         # ticked (``_show_active_sections``): settings for a step that will
-        # not run only read as if it will.
-        self._sections: dict[str, QGroupBox] = {}
+        # not run only read as if it will. Each sits on a lighter frame,
+        # edged in its kind's colour, and collapses from its headline.
+        self._sections: dict[str, Section] = {}
         self._sections[grid.PUBLISH] = self._build_publish_section()
         if self._context == "shots":
             self._sections[grid.PLAYBLAST] = self._build_playblast_section()
         else:
             self._pb_dept = None
         self._sections[grid.RENDER] = self._build_render_section()
-        self._no_settings = QLabel("Tick a cell to see its settings.")
+        self._no_settings = QLabel(
+            "Tick a cell to see its settings.\n\nHover a column's header for "
+            "what it does and what its marks mean."
+        )
         self._no_settings.setStyleSheet(f"color: {TEXT_SECONDARY};")
         self._no_settings.setAlignment(Qt.AlignCenter)
+        self._no_settings.setWordWrap(True)
         layout.addWidget(self._no_settings)
-        for box in self._sections.values():
-            layout.addWidget(box)
+        for section in self._sections.values():
+            layout.addWidget(section)
         layout.addStretch(1)
 
         scroll = QScrollArea()
         scroll.setWidget(column)
-        scroll.viewport().setStyleSheet(f"background-color: {BG_DARKEST};")
+        # By name: a stylesheet with no selector reaches every widget under
+        # the viewport, and painted each form row's holder dark on the
+        # lighter sections.
+        scroll.viewport().setObjectName("farmFormsViewport")
+        scroll.viewport().setStyleSheet(
+            f"QWidget#farmFormsViewport {{ background-color: {BG_DARKEST}; }}"
+        )
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         # The widest rows are two spin boxes sized for ⟨per entity⟩ plus a
         # label and a ↺ (about 450px); narrower clips the ↺ buttons.
-        # Measured with every section showing, so the panel keeps one width
-        # as sections come and go.
-        scroll.setFixedWidth(max(480, column.minimumSizeHint().width() + 24))
+        # Measured with every section showing and open, so the panel keeps
+        # one width as sections come, go and collapse.
+        scroll.setFixedWidth(max(500, column.minimumSizeHint().width() + 24))
+        collapsed = set(self._dialog.ui['collapsed_sections'])
+        for kind, section in self._sections.items():
+            section.set_expanded(kind not in collapsed)
+            section.toggled.connect(
+                lambda expanded, k=kind: self._dialog.section_toggled(k, expanded)
+            )
         # Scrolling the panel with the wheel must not edit what passes under
         # the pointer: a spin box or combo takes the wheel even unfocused,
         # and every settings edit pins that field for the whole submission,
@@ -1643,6 +1875,9 @@ class _ContextPane(QWidget):
         typed below its real lower bound.
         """
         box = QSpinBox()
+        # No arrows: the stylesheet left them as two dots that read as a
+        # glitch. Typing, the arrow keys and the wheel (once focused) step it.
+        box.setButtonSymbols(QAbstractSpinBox.NoButtons)
         box.setRange(low - 1, high)
         if override:
             box.setSpecialValueText(FROM_SCENE_TEXT)
@@ -1707,6 +1942,13 @@ class _ContextPane(QWidget):
         button.setStyleSheet("padding: 2px;")
         button.setToolTip("Use each entity's own configured value")
         button.clicked.connect(lambda: self._unpin(keys))
+        # Hidden until a field it reverts is pinned (_show_reverts); keeps
+        # its room meanwhile, so the row does not shift when it appears.
+        policy = button.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        button.setSizePolicy(policy)
+        button.hide()
+        self._reverts.append((button, tuple(keys)))
         return button
 
     def _unpin(self, keys: Sequence[str]) -> None:
@@ -1737,29 +1979,28 @@ class _ContextPane(QWidget):
         wrap.setLayout(layout)
         return wrap
 
-    def _section(self, title: str) -> tuple[QGroupBox, QFormLayout]:
-        box = QGroupBox(title)
-        form = QFormLayout(box)
-        form.setContentsMargins(10, 14, 10, 10)
-        form.setSpacing(6)
-        return box, form
+    def _section(self, kind: str, title: str):
+        """A settings section for step ``kind``, and its form layout."""
+        section = Section(title, KIND_COLOURS[kind])
+        return section, section.form()
 
-    def _build_publish_section(self) -> QGroupBox:
-        box, form = self._section("Publish")
+    def _build_publish_section(self) -> Section:
+        box, form = self._section(grid.PUBLISH, "Publish")
         self._pub_pool = self._line('pub_pool', 'general')
         form.addRow("Pool:", self._pub_pool)
         self._pub_priority = self._spin('pub_priority', 0, 100)
         form.addRow("Priority:", self._row(self._pub_priority, revert=('pub_priority',)))
         return box
 
-    def _build_playblast_section(self) -> QGroupBox:
-        """A Karma XPU preview on the farm — shots only.
+    def _build_playblast_section(self) -> Section:
+        """A preview on the farm, viewport or Karma XPU — shots only.
 
         The input is the shot's staged 'default' stage cut at this
         department, and the frame range is the shot's own, so there is no
-        frame or channel field here.
+        frame or channel field here. Only the chosen renderer's settings
+        show (``_scope_playblast_look``).
         """
-        box, form = self._section("Playblast")
+        box, form = self._section(grid.PLAYBLAST, "Playblast")
         self._pb_dept = self._combo('pb_department', self._renderable_departments)
         self._pb_dept.setToolTip(
             "Playblasts every department up to and including this one, in "
@@ -1835,23 +2076,36 @@ class _ContextPane(QWidget):
         form.addRow("Light:", light_row)
         form.addRow("Samples:", samples_row)
         form.addRow("Materials:", materials_row)
-        # Each renderer's own rows, label included: _scope_playblast_look
-        # greys out the other renderer's while one is set.
+        # Each renderer's own rows, label and its text included:
+        # _scope_playblast_look shows only the chosen renderer's.
         self._pb_rows = {
-            renderer: [(form.labelForField(row), row) for row in rows]
+            renderer: [
+                (form.labelForField(row), row, text) for row, text in rows
+            ]
             for renderer, rows in (
-                ('viewport', (shading_row, blur_row)),
-                ('karma', (light_row, samples_row, materials_row)),
+                ('viewport', ((shading_row, "Shading"), (blur_row, "Blur"))),
+                ('karma', (
+                    (light_row, "Light"), (samples_row, "Samples"),
+                    (materials_row, "Materials"),
+                )),
             )
         }
+        self._pb_hint = QLabel(
+            "The renderer differs between shots: each uses the settings "
+            "named for its renderer. Set a renderer to see only its settings."
+        )
+        self._pb_hint.setWordWrap(True)
+        self._pb_hint.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        form.insertRow(form.getWidgetPosition(shading_row)[0], self._pb_hint)
+        self._pb_form = form
         self._pb_pool = self._line('pb_pool', 'general')
         form.addRow("Pool:", self._pb_pool)
         self._pb_priority = self._spin('pb_priority', 0, 100)
         form.addRow("Priority:", self._row(self._pb_priority, revert=('pb_priority',)))
         return box
 
-    def _build_render_section(self) -> QGroupBox:
-        box, form = self._section("Render")
+    def _build_render_section(self) -> Section:
+        box, form = self._section(grid.RENDER, "Render")
         self._rnd_dept = self._combo('render_department', self._renderable_departments)
         self._rnd_dept.setToolTip(
             "Renders every department up to and including this one, in "
@@ -2082,6 +2336,7 @@ class _ContextPane(QWidget):
             if index > 0:
                 entry.widget.setCurrentIndex(index)
                 entry.pin()
+                self._context_pins[key] = name
 
     def _batch(self) -> list[str]:
         """Rows the form speaks for: every ticked row, else every visible row."""
@@ -2218,69 +2473,53 @@ class _ContextPane(QWidget):
     # ── Submit ────────────────────────────────────────────
 
     def submit(self) -> None:
-        """Submit this tab's ticked cells; closes the dialog once sent."""
+        """Review this tab's ticked cells over the window, then submit them.
+
+        A single row with nothing to check goes straight out; anything more
+        shows the review first (``farm_submit_ui.ReviewSheet``). Either way
+        the progress follows on the same overlay, and the window stays.
+        """
         rows = self._resolved_rows()
         if not rows:
-            QMessageBox.warning(
-                self, "Farm Submit", "Tick at least one cell before submitting.",
-            )
+            self._dialog.notice("Nothing ticked", "Tick at least one cell before submitting.")
             return
-        if any(s.get('render') for _u, s, _w, _e in rows) and self._render_mode() is None:
-            QMessageBox.warning(
-                self, "Farm Submit",
+        renders = any(s.get('render') for _u, s, _w, _e in rows)
+        if renders and self._render_mode() is None:
+            self._dialog.notice(
+                "No render range",
                 "Tick Preview, Full range or both in the Render settings "
                 "before submitting.",
             )
             return
-        if any(s.get('render') for _u, s, _w, _e in rows) and not self._rnd_channels.checked_items():
-            QMessageBox.warning(
-                self, "Farm Submit",
+        if renders and not self._rnd_channels.checked_items():
+            self._dialog.notice(
+                "No channel to render",
                 "Check at least one channel in the Render settings before "
                 "submitting.",
             )
             return
         # Every job family ends in a Deadline submission, unless it runs on
-        # this machine; say so before the artist confirms anything, not as
+        # this machine; say so before the artist reviews anything, not as
         # a per-row failure afterwards.
         from tumblepipe.farm.backend import setup_problem
-        backend = self._dialog.backend()
-        problem = setup_problem(backend)
+        problem = setup_problem(self._dialog.backend())
         if problem is not None:
-            QMessageBox.warning(self, "Farm Submit", problem)
+            self._dialog.notice("Can't submit yet", problem)
             return
 
+        steps = {uri: grid.row_steps(uri, self._columns, self._ticks) for uri, *_rest in rows}
         stale = {uri: self._stale_upstream(uri, s) for uri, s, _w, _e in rows}
-        stale = {uri: missing for uri, missing in stale.items() if missing}
-        # _resolved_rows puts the stale-upstream warning first, when it has one.
-        other = {
-            uri: warnings[1:] if uri in stale else warnings
-            for uri, _s, warnings, _e in rows
-        }
-        other = {uri: w for uri, w in other.items() if w}
-        blocked = {uri: errors for uri, _s, _w, errors in rows if errors}
-        if len(rows) > 1 or stale or other or blocked:
-            kinds, departments, row_count = grid.breakdown(
-                self._uris, self._columns, self._ticks,
+        review = [
+            ReviewRow(
+                name=self._uri_objects[uri].segments[-1],
+                steps=steps[uri],
+                errors=list(errors),
+                stale=stale[uri],
+                # _resolved_rows puts the stale-upstream warning first, when it has one.
+                warnings=list(warnings[1:] if stale[uri] else warnings),
             )
-            confirm = _ConfirmSubmit(
-                self, kinds, departments, row_count, self._noun,
-                stale={self._uri_objects[u].segments[-1]: m for u, m in stale.items()},
-                other={self._uri_objects[u].segments[-1]: w for u, w in other.items()},
-                blocked={self._uri_objects[u].segments[-1]: e for u, e in blocked.items()},
-            )
-            choice = confirm.exec()
-            if choice == _ConfirmSubmit.TICK_STALE:
-                # Tick what the previews would otherwise show stale, and go
-                # back to the grid so the artist sees what was added.
-                self._ticks |= {
-                    (uri, grid.publish_key(department))
-                    for uri, missing in stale.items() for department in missing
-                }
-                self._changed()
-                return
-            if choice != _ConfirmSubmit.SUBMIT:
-                return
-
+            for uri, _s, warnings, errors in rows
+        ]
         configs = [
             {
                 'entity': {
@@ -2292,32 +2531,205 @@ class _ContextPane(QWidget):
             }
             for uri, settings, _w, _e in rows
         ]
-        try:
-            window = start_submission(
-                configs, parent=self._dialog.parentWidget(), backend=backend,
-            )
-        except Exception as error:
-            report_failure("Starting the farm submission", error)
+        if submit_review.skips_review(review):
+            self._dialog.start(configs, steps, self)
             return
-        self._dialog.remember_backend()
-        window.show()
-        self._dialog.accept()
+        sheet = ReviewSheet(review, self._noun, self._dialog.where_text())
+        sheet.back_requested.connect(self._dialog.close_overlay)
+        sheet.tick_stale_requested.connect(lambda: self._tick_stale(stale))
+        sheet.submit_requested.connect(lambda: self._dialog.start(configs, steps, self))
+        self._dialog.show_overlay(sheet)
+
+    def _tick_stale(self, stale: dict[str, list[str]]) -> None:
+        """Tick what the previews would otherwise show stale, and go back to
+        the grid so the artist sees what was added."""
+        self._ticks |= grid.stale_ticks(stale)
+        self._dialog.close_overlay()
+        self._changed()
+
+    def after_submission(self, sent: set[str]) -> None:
+        """Back from a submission: untick the rows that went out, read the
+        status again (their cells are pending now, not stale)."""
+        self._ticks = grid.untick_sent(self._ticks, sent)
+        self._start_scan()
+        self._changed()
+
+
+# ── Edits tab ─────────────────────────────────────────────
+
+class _EditsPane(QWidget):
+    """The Edits tab: one row per edit, and its one step, Render Edit.
+
+    A row offers the edit's finished published versions, the latest first
+    selected (``grid.default_edit_version``); an edit never published has
+    nothing to render and cannot be ticked. Ticked rows render on the farm
+    into ``render:/edits/<name>/<name>_edit_vNNNN.mp4``
+    (``farm/pipelines/edit_render.py``), with the Pool and Priority beside
+    the list.
+
+    Args:
+        dialog: The owning dialog; the footer and accept/close are its.
+        entity_uris: Edits to start with ticked.
+    """
+
+    _NAME, _VERSION, _RENDER = range(3)
+
+    def __init__(self, dialog: "SubmitJobsDialog", entity_uris: Sequence) -> None:
+        super().__init__(dialog)
+        self._dialog = dialog
+        from tumblepipe.pipe import edits as pipe_edits
+        from tumblepipe.config import farm as farm_config
+
+        opened = {str(uri) for uri in entity_uris}
+        self._names: dict[str, str] = {}
+        self._versions: dict[str, QComboBox] = {}
+        self._items: dict[str, QTreeWidgetItem] = {}
+
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(12)
+
+        self._tree = QTreeWidget()
+        self._tree.setColumnCount(3)
+        self._tree.setHeaderLabels(["Edit", "Version", "Render Edit"])
+        self._tree.setRootIsDecorated(False)
+        self._tree.setSelectionMode(QAbstractItemView.NoSelection)
+        self._tree.header().setSectionResizeMode(self._NAME, QHeaderView.Stretch)
+        self._tree.header().setStretchLastSection(False)
+        root.addWidget(self._tree, 1)
+
+        for name in pipe_edits.list_edits():
+            uri = str(pipe_edits.edit_uri(name))
+            published = pipe_edits.published_versions(name)
+            item = QTreeWidgetItem([name, "", ""])
+            self._tree.addTopLevelItem(item)
+            self._names[uri] = name
+            self._items[uri] = item
+            latest = grid.default_edit_version(published)
+            if latest is None:
+                item.setText(self._VERSION, "not published")
+                item.setForeground(self._VERSION, QColor(DIM_COLOUR))
+                item.setFlags(item.flags() & ~Qt.ItemIsUserCheckable)
+                item.setToolTip(
+                    self._RENDER,
+                    "Nothing to render: publish this edit from the editor first.",
+                )
+                continue
+            combo = QComboBox()
+            for version in reversed(published):
+                combo.addItem(version)
+            combo.setCurrentText(latest)
+            combo.setToolTip("The published version to render.")
+            self._tree.setItemWidget(item, self._VERSION, combo)
+            self._versions[uri] = combo
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(
+                self._RENDER, Qt.Checked if uri in opened else Qt.Unchecked,
+            )
+            item.setToolTip(
+                self._RENDER,
+                f"Render this version into render:/edits/{name}/"
+                f"{name}_edit_vNNNN.mp4 on the farm.",
+            )
+        if not self._items:
+            empty = QTreeWidgetItem(["This project has no edits.", "", ""])
+            empty.setFlags(Qt.NoItemFlags)
+            self._tree.addTopLevelItem(empty)
+        self._tree.resizeColumnToContents(self._VERSION)
+        self._tree.resizeColumnToContents(self._RENDER)
+        self._tree.itemChanged.connect(lambda *_a: self._dialog._pane_changed(self))
+
+        box = Section("Render Edit", KIND_COLOURS[EDIT_KIND])
+        form = box.form()
+        self._pool = QLineEdit(farm_config.get_default_pool() or 'general')
+        form.addRow("Pool:", self._pool)
+        self._priority = QSpinBox()
+        self._priority.setRange(0, 100)
+        self._priority.setValue(farm_config.get_default_priority())
+        self._priority.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        form.addRow("Priority:", self._priority)
+        note = QLabel(
+            "Renders the published version with the editor, sound included, "
+            "into one movie: one task, on the CPU."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        form.addRow(note)
+        side = QVBoxLayout()
+        side.addWidget(box)
+        side.addStretch(1)
+        holder = QWidget()
+        holder.setLayout(side)
+        holder.setFixedWidth(320)
+        root.addWidget(holder)
+
+    @property
+    def context(self) -> str:
+        return grid.EDITS
+
+    def _ticked(self) -> dict[str, str]:
+        """``{edit URI: version}`` of the ticked rows."""
+        return {
+            uri: self._versions[uri].currentText()
+            for uri, item in self._items.items()
+            if uri in self._versions and item.checkState(self._RENDER) == Qt.Checked
+        }
+
+    def summary_text(self) -> str:
+        return grid.edit_summary(len(self._ticked()))
+
+    def ticked_row_count(self) -> int:
+        return len(self._ticked())
+
+    def shutdown(self) -> None:
+        """Nothing runs in the background here."""
+
+    def submit(self) -> None:
+        """Submit a Render Edit per ticked edit; the progress shows over the window."""
+        ticked = self._ticked()
+        if not ticked:
+            self._dialog.notice("Nothing ticked", "Tick at least one edit before submitting.")
+            return
+        pool = self._pool.text().strip()
+        if not pool:
+            self._dialog.notice("No pool", "Name the pool to render in.")
+            return
+        from tumblepipe.farm.backend import setup_problem
+        problem = setup_problem(self._dialog.backend())
+        if problem is not None:
+            self._dialog.notice("Can't submit yet", problem)
+            return
+        configs = grid.edit_rows(ticked, self._names, pool, self._priority.value())
+        steps = {uri: [(EDIT_KIND, "Render Edit")] for uri in ticked}
+        self._dialog.start(configs, steps, self)
+
+    def after_submission(self, sent: set[str]) -> None:
+        """Back from a submission: untick the edits that went out."""
+        for uri in sent:
+            item = self._items.get(uri)
+            if item is not None and uri in self._versions:
+                item.setCheckState(self._RENDER, Qt.Unchecked)
 
 
 # ── Dialog ────────────────────────────────────────────────
 
 class SubmitJobsDialog(QDialog):
-    """The Farm Submit grid, one tab per context (Assets, Shots).
+    """The Farm Submit grid, one tab per context (Assets, Shots, Edits).
+
+    The review before submitting, the submission's progress and any reason
+    Submit cannot go ahead show on an overlay over this window
+    (``farm_submit_ui.Overlay``), never in windows of their own, and the
+    window stays open after a submission: **Back to grid** submits more.
 
     Args:
         entity_uris: Entities to start with ticked (``tick_kinds`` on each).
             May be empty — the Farm Submit quick action opens with nothing ticked.
             A Multi (``groups:`` URI) stands for its members.
         entity_names: Display names parallel to ``entity_uris``.
-        context: ``'shots'`` or ``'assets'`` — the tab the dialog opens on,
-            and the only one ``entity_uris``, ``department`` and
-            ``tick_kinds`` seed. The other tab lists every entity of its
-            context with nothing ticked.
+        context: ``'shots'``, ``'assets'`` or ``'edits'`` — the tab the
+            dialog opens on, and the only one ``entity_uris``, ``department``
+            and ``tick_kinds`` seed. The other tabs list every entity of
+            their context with nothing ticked.
         parent: Parent widget. Pass ``hou.qt.mainWindow()`` from Houdini.
         department: Department the dialog was opened *from* — the loaded
             workfile's. Pins the Render (and Playblast) cut, so submitting
@@ -2340,7 +2752,7 @@ class SubmitJobsDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         if context not in grid.CONTEXTS:
-            raise ValueError(f"context must be 'shots' or 'assets', got {context!r}")
+            raise ValueError(f"context must be one of {grid.CONTEXTS}, got {context!r}")
         # A Multi is never submitted itself: its member entities are.
         if any(resolve.is_group_target(uri) for uri in entity_uris):
             entity_uris = resolve.expand_targets(entity_uris, _group_members)
@@ -2354,23 +2766,28 @@ class SubmitJobsDialog(QDialog):
         # kept until the dialog closes, so switching back finds its ticks.
         self._panes: dict[str, _ContextPane] = {}
 
+        # What the last opening left (``farm.submit.remembered``): per tab,
+        # and for the window as a whole (``ui``, which the panes read).
+        self._stored = _load_remembered()
+        self.ui = remembered.ui_settings(self._stored.get('ui'))
+        self._project = _project_key()
+
         # Parented to Houdini's main window, a closed dialog would otherwise
         # live on hidden, rows and all, until Houdini exits: one per open.
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowTitle("Farm Submit")
         self.setMinimumSize(1100, 640)
-        # Opens wide enough for every column and the settings beside them;
-        # the grid scrolls sideways below that.
-        self.resize(1560, 820)
+        # Opens wide enough for every column and the settings beside them,
+        # or at the size it was left; the grid scrolls sideways below that.
+        size = self.ui['size'] or [1600, 860]
+        self.resize(*size)
         self.setStyleSheet(_DIALOG_STYLE)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(12, 10, 12, 12)
+        root.setSpacing(12)
 
-        self._tabs = QTabBar()
-        self._tabs.setDrawBase(False)
-        self._tabs.setExpanding(False)
+        self._tabs = FolderTabBar()
         for name in grid.CONTEXTS:
             index = self._tabs.addTab(grid.tab_label(name, 0))
             self._tabs.setTabData(index, name)
@@ -2384,9 +2801,21 @@ class SubmitJobsDialog(QDialog):
         root.addWidget(self._stack, 1)
 
         footer = QHBoxLayout()
+        footer.setSpacing(8)
         self._summary = QLabel()
         self._summary.setStyleSheet(f"color: {TEXT_PRIMARY};")
         footer.addWidget(self._summary, 1)
+        self._cleanup = QCheckBox("Clean up old jobs")
+        self._cleanup.setChecked(self.ui['cleanup'])
+        self._cleanup.setToolTip(
+            "Before submitting an entity, remove its finished and failed jobs "
+            "(everyone's, every step) from the farm, so the Farm Manager shows "
+            "only what is current. Queued, running and suspended jobs are "
+            "never touched."
+        )
+        self._cleanup.toggled.connect(lambda on: self.ui.__setitem__('cleanup', on))
+        footer.addWidget(self._cleanup)
+        footer.addSpacing(12)
         run_on = QLabel("Run on")
         run_on.setStyleSheet(f"color: {TEXT_SECONDARY};")
         footer.addWidget(run_on)
@@ -2403,13 +2832,18 @@ class SubmitJobsDialog(QDialog):
         footer.addWidget(self._backend)
         footer.addSpacing(12)
         close_btn = QPushButton("Close")
+        close_btn.setAutoDefault(False)
         close_btn.clicked.connect(self.reject)
-        self._submit_btn = QPushButton("Submit")
+        self._submit_btn = QPushButton("Submit…")
         self._submit_btn.setDefault(True)
+        self._submit_btn.setToolTip("Review what will be sent, then send it")
         self._submit_btn.clicked.connect(self._on_submit)
         footer.addWidget(close_btn)
         footer.addWidget(self._submit_btn)
         root.addLayout(footer)
+
+        self._overlay = Overlay(self)
+        self._overlay.escape.connect(self._on_overlay_escape)
 
         # The opened context's pane is built here, so a failure to build it
         # still reaches the caller as an exception, as it always has.
@@ -2429,9 +2863,12 @@ class SubmitJobsDialog(QDialog):
             uris, department, kinds = grid.tab_seed(
                 context, opened_context, uris, department, kinds,
             )
-            pane = _ContextPane(
-                self, uris, context, department=department, tick_kinds=kinds,
-            )
+            if context == grid.EDITS:
+                pane = _EditsPane(self, uris)
+            else:
+                pane = _ContextPane(
+                    self, uris, context, department=department, tick_kinds=kinds,
+                )
             self._panes[context] = pane
             self._stack.addWidget(pane)
         return pane
@@ -2448,7 +2885,7 @@ class SubmitJobsDialog(QDialog):
         except Exception as error:
             # Back to the tab still on screen, so the bar and grid agree.
             shown = self._stack.currentWidget()
-            if isinstance(shown, _ContextPane):
+            if isinstance(shown, (_ContextPane, _EditsPane)):
                 self._tabs.blockSignals(True)
                 self._tabs.setCurrentIndex(grid.CONTEXTS.index(shown.context))
                 self._tabs.blockSignals(False)
@@ -2463,11 +2900,79 @@ class SubmitJobsDialog(QDialog):
         if self._stack.currentWidget() is pane:
             self._summary.setText(pane.summary_text())
 
+    # ── Remembered ────────────────────────────────────────
+
+    def remembered_tab(self, context: str) -> dict:
+        """The record the last opening left for ``context`` in this project."""
+        tabs = self._stored.get('tabs')
+        record = tabs.get(remembered.scope(self._project, context)) if isinstance(tabs, dict) else None
+        return record if isinstance(record, dict) else {}
+
+    def section_toggled(self, kind: str, expanded: bool) -> None:
+        collapsed = [k for k in self.ui['collapsed_sections'] if k != kind]
+        if not expanded:
+            collapsed.append(kind)
+        self.ui['collapsed_sections'] = collapsed
+
+    def _save_remembered(self) -> None:
+        """Keep this opening's choices for the next; a prefs file we cannot
+        write only loses them."""
+        tabs = dict(self._stored.get('tabs') or {})
+        for context, pane in self._panes.items():
+            if isinstance(pane, _ContextPane):
+                tabs[remembered.scope(self._project, context)] = pane.remembered_record()
+        ui = dict(self.ui)
+        ui['size'] = [self.width(), self.height()]
+        try:
+            from .prefs import update_prefs
+            update_prefs(farm_submit={'tabs': tabs, 'ui': ui})
+        except Exception:
+            log.warning("Could not remember the Farm Submit settings", exc_info=True)
+
+    # ── Overlay ───────────────────────────────────────────
+
+    def show_overlay(self, widget: QWidget, max_width: int = 860) -> None:
+        self._overlay.show_content(widget, max_width=max_width)
+
+    def close_overlay(self) -> None:
+        self._overlay.close_content()
+
+    def notice(self, title: str, text: str) -> None:
+        """Why Submit cannot go ahead, over the window."""
+        card = NoticeCard(title, text)
+        card.dismissed.connect(self.close_overlay)
+        self.show_overlay(card, max_width=520)
+        card.ok_button.setFocus()
+
+    def _on_overlay_escape(self) -> None:
+        content = self._overlay.content()
+        if isinstance(content, SubmissionView):
+            if content.is_finished:
+                content.back_requested.emit()
+            return  # still sending: Cancel or Close window say what they do
+        self.close_overlay()
+
+    def keyPressEvent(self, event) -> None:
+        if not self._overlay.isHidden():
+            # The overlay answers its own keys; nothing reaches the grid
+            # or the window's default button under it.
+            if event.key() == Qt.Key_Escape:
+                self._on_overlay_escape()
+            return
+        super().keyPressEvent(event)
+
     # ── Submit ────────────────────────────────────────────
 
     def backend(self) -> str:
         """Where Submit sends the work: ``farm`` or ``local`` (``farm.backend``)."""
         return self._backend.currentData()
+
+    def where_text(self) -> str:
+        """Where the review says the steps go."""
+        where = "on the render farm" if self.backend() == "farm" else "on this machine"
+        if self._cleanup.isChecked():
+            where += ", after cleaning up their old finished and failed jobs"
+        return where
 
     def remember_backend(self) -> None:
         """Open on the same choice next time; a prefs file we cannot write only loses that."""
@@ -2478,14 +2983,73 @@ class SubmitJobsDialog(QDialog):
             log.warning("Could not remember the Farm Submit 'Run on' choice", exc_info=True)
 
     def _on_submit(self) -> None:
+        # isHidden, not isVisible: the overlay counts while it is up even
+        # when the window itself is not shown (a test, a minimised window).
+        if not self._overlay.isHidden():
+            return
         pane = self._stack.currentWidget()
-        if isinstance(pane, _ContextPane):
+        if isinstance(pane, (_ContextPane, _EditsPane)):
             pane.submit()
 
+    def start(
+        self,
+        configs: list[dict],
+        steps: dict[str, list[tuple[str, str]]],
+        pane: _ContextPane | _EditsPane,
+    ) -> None:
+        """Send ``configs`` and follow them on the overlay.
+
+        ``steps`` (``{uri: [(kind, label)]}``) labels each row with what it
+        submits. Retry submits the failed rows the same way.
+        """
+        try:
+            plan_path, process = start_submission(
+                configs, backend=self.backend(), cleanup=self._cleanup.isChecked(),
+            )
+        except Exception as error:
+            self.close_overlay()
+            report_failure("Starting the farm submission", error)
+            return
+        self.remember_backend()
+        view = SubmissionView(plan_path, process, configs, steps)
+        view.back_requested.connect(lambda: self._back_to_grid(pane, view))
+        view.close_requested.connect(self.accept)
+        view.retry_requested.connect(lambda retry: self.start(retry, steps, pane))
+        self.show_overlay(view, max_width=900)
+
+    def _back_to_grid(self, pane, view: SubmissionView) -> None:
+        sent = view.sent_uris()
+        self.close_overlay()
+        pane.after_submission(sent)
+
     def done(self, result: int) -> None:
+        content = self._overlay.content()
+        if isinstance(content, SubmissionView):
+            content.stop()  # the submission itself runs on in its process
+        self._save_remembered()
         for pane in self._panes.values():
             pane.shutdown()
         super().done(result)
+
+
+def _project_key() -> str:
+    """The project the remembered settings belong to: its root path."""
+    try:
+        from tumblepipe.api import default_client
+        return str(default_client().PROJECT_PATH)
+    except Exception:
+        log.debug("No project path for the Farm Submit settings", exc_info=True)
+        return ""
+
+
+def _load_remembered() -> dict:
+    try:
+        from .prefs import load_prefs
+        stored = load_prefs().farm_submit
+    except Exception:
+        log.warning("Could not read the Farm Submit settings", exc_info=True)
+        return {}
+    return stored if isinstance(stored, dict) else {}
 
 
 def _saved_backend() -> str:
@@ -2498,14 +3062,30 @@ def _saved_backend() -> str:
         return "farm"
 
 
-def start_submission(
-    configs: list[dict], parent: QWidget | None = None, backend: str = "farm",
-    ):
-    """Write ``configs`` as a plan, launch the runner, return its status window.
+def _houdini_version() -> str | None:
+    """The Houdini the farm jobs should run: this session's, else the
+    environment's (the Farm Submit app outside Houdini), else none — the
+    runner then picks the farm's default."""
+    import sys
+    hou = sys.modules.get('hou')
+    if hou is not None:
+        return hou.applicationVersionString()
+    from tumblepipe.apps.houdini import HoudiniVersionError, resolve_houdini_version
+    try:
+        return resolve_houdini_version()
+    except HoudiniVersionError:
+        return None
 
-    Shared by the dialog and the status window's **Retry failed** /
-    **Submit the rest**. ``backend`` is where the batches go: the Deadline
-    farm or this machine (``farm.backend``).
+
+def start_submission(
+    configs: list[dict], backend: str = "farm", cleanup: bool = False,
+    ) -> tuple[Path, Any]:
+    """Write ``configs`` as a plan and launch its runner; return
+    ``(plan_path, process)`` for a ``farm_submit_ui.SubmissionView`` to follow.
+
+    ``backend`` is where the batches go: the Deadline farm or this machine
+    (``farm.backend``). ``cleanup`` has the runner remove each entity's
+    finished and failed jobs before submitting it.
     """
     import datetime as dt
     import os
@@ -2515,30 +3095,14 @@ def start_submission(
     from tumblepipe.util.uri import Uri
     from tumblepipe.farm.submit import plan as submit_plan
 
-    from .farm_submission_window import FarmSubmissionWindow
-
-    import hou
-    houdini_version = hou.applicationVersionString()
-
     stamp = dt.datetime.now().strftime('%Y%m%d_%H%M%S')
     directory = Path(api.storage.resolve(
         Uri.parse('temp:/farm_submissions')
     )) / f'{stamp}_{uuid.uuid4().hex[:6]}'
     plan = submit_plan.make_plan(
-        configs, env=dict(os.environ), houdini_version=houdini_version, backend=backend,
+        configs, env=dict(os.environ), houdini_version=_houdini_version(),
+        backend=backend, cleanup=cleanup,
     )
     plan_path = submit_plan.write_plan(directory, plan)
     process = submit_plan.launch(plan_path)
-    window = FarmSubmissionWindow(plan_path, process, configs, parent=parent)
-    # A window with no parent (the Farm Submit app outside Houdini) would be
-    # collected the moment the caller returns; hold it until it closes.
-    _OPEN_WINDOWS.append(window)
-    window.destroyed.connect(lambda *_a, w=window: _forget_window(w))
-    return window
-
-
-_OPEN_WINDOWS: list = []
-
-
-def _forget_window(window) -> None:
-    _OPEN_WINDOWS.remove(window)
+    return plan_path, process

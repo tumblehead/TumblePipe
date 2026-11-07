@@ -361,7 +361,11 @@ four 0.27 s, eight 0.34 s and sixteen 0.56 s.
 
 A worker can make the same picture on its GPU instead (Vulkan or DX12, no
 display needed): set `TH_PLAYBLAST_GPU=1` in that worker's environment.
-Windows builds only for now. The drawing and the post pass (occlusion,
+Windows builds only for now. An Intel GPU draws through DX12: the Intel
+Vulkan driver on the CI worker (UHD Graphics 630) left a trace of the
+frame before in each motion-blurred frame of a sequence. Every other GPU
+draws through Vulkan where it has it. The log's `hdThPlayblast: GPU` line
+names the card and the backend it got. The drawing and the post pass (occlusion,
 shading, the average of each pixel's samples) both run on the card, and
 only the finished image and its depth come back. The geometry stays on the
 card from frame to frame, so a frame sends only the meshes Hydra rebuilt:

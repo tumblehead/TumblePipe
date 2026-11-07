@@ -176,9 +176,12 @@ def status(raw_node) -> str:
         return f'Error: {exc}'
 
 
-def place(parent, set_name: str, owner_uri=None, name: str | None = None):
+def place(parent, set_name: str, owner_uri=None, name: str | None = None,
+          version: str | None = None):
     """A new ``th::import_texture`` in *parent* reading *set_name*'s newest
-    version (the asset browser's drop). *owner_uri* None is the library."""
+    version, or *version* when given (the asset browser's drop; a shared
+    library's set is copied in and pinned to that copy). *owner_uri* None
+    is the library."""
     raw = parent.createNode(
         ns.find_node_type(TYPE_NAME, 'Lop').name(),
         name or f'import_{set_name}')
@@ -189,6 +192,10 @@ def place(parent, set_name: str, owner_uri=None, name: str | None = None):
         raw.parm('entity').set(str(owner_uri))
     raw.parm('set').set(set_name)
     node._update_labels()
-    node.update()
+    if version:
+        raw.parm('version').set(version)
+        node.sync_layer()
+    else:
+        node.update()
     return raw
 

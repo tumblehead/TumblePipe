@@ -40,13 +40,24 @@ Checks:
     the entity is unclaimed: tickable, but Select stale leaves it alone.
 15. A closed dialog is deleted, not kept hidden under its parent (Houdini's
     main window) until Houdini exits.
-16. The submit confirmation: Submit is its one default button; a preview over
-    stale, unticked departments lists them, and "Tick those publishes" ticks
-    exactly those and returns to the grid without submitting; Back submits
-    nothing.
+16. The review before submitting shows over the window: Submit is its one
+    default button; a preview over stale, unticked departments lists them,
+    and "Tick stale publishes" ticks exactly those and returns to the grid
+    without submitting; Back submits nothing; Enter on the window under it
+    does not submit again.
 17. Opened from an asset, the dialog sits on the Assets tab; the Shots tab
     lists every shot with nothing ticked and no cut pinned, the Assets tab
     keeps its ticks while hidden, and Submit sends only the tab in front.
+18. Columns collapse: one with nothing to do on any row collapses by itself
+    once the status is read (never a ticked one); a collapsed column is out
+    of reach of All, its rows' boxes and Select stale, keeps its ticks, and
+    its header click opens it again.
+19. What the window remembers: a pinned setting, the Render batch choices
+    and a collapsed column come back on the next opening; the frame range
+    does not, nor does a value the form no longer offers.
+
+The prefs file is a throwaway one (``HOUDINI_USER_PREF_DIR`` points at a
+temporary folder), so a run never changes what an artist's window remembers.
 """
 
 from __future__ import annotations
@@ -62,6 +73,9 @@ REPO = Path(__file__).resolve().parents[1]
 
 def main() -> int:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    # The window reads and writes what it remembers in the prefs file:
+    # never the artist's own here.
+    os.environ["HOUDINI_USER_PREF_DIR"] = tempfile.mkdtemp(prefix="farm_verify_prefs_")
     python_dir = str(REPO / "python")
     if python_dir not in sys.path:
         sys.path.insert(0, python_dir)
@@ -337,7 +351,11 @@ def main() -> int:
           not left, f"{len(left)} left")
     main_window.deleteLater()
 
-    # ── 16: the submit confirmation ───────────────────────
+    # ── 16: the review before submitting ──────────────────
+    import tumblepipe.apps.deadline as deadline_mod
+    from tumblepipe.asset_browser.farm_submit_ui import ReviewSheet
+    real_problem = deadline_mod.deadline_setup_problem
+    deadline_mod.deadline_setup_problem = lambda environ=None: None
     confirm_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
     confirm_dlg = confirm_win._panes["shots"]
     wait_for_scan(confirm_dlg)
@@ -351,45 +369,42 @@ def main() -> int:
     if preview_shot is None:
         print("SKIP: 16. no shot with a playblast over stale publishes")
     else:
-        seen: dict = {}
         submitted: list = []
-        real_exec, real_start = mod._ConfirmSubmit.exec, mod.start_submission
-
-        def fake_exec(choice):
-            def run(confirm):
-                buttons = confirm.findChildren(mod.QPushButton)
-                seen["default"] = [b.text() for b in buttons if b.isDefault()]
-                return choice
-            return run
-
-        def no_submission(*args, **kwargs):
-            submitted.append(args)
-            raise RuntimeError("verify: the submission must not start")
-
-        mod.start_submission = no_submission
+        real_start = mod.SubmitJobsDialog.start
+        mod.SubmitJobsDialog.start = lambda self, configs, steps, pane: submitted.append(configs)
         try:
             confirm_dlg._ticks = {(preview_shot, grid.PLAYBLAST)}
             confirm_dlg._refresh()
             settings = confirm_dlg._resolved_rows()[0][1]
             missing = confirm_dlg._stale_upstream(preview_shot, settings)
-            mod._ConfirmSubmit.exec = fake_exec(0)
-            confirm_dlg.submit()
-            back_ok = not submitted and confirm_dlg._ticks == {(preview_shot, grid.PLAYBLAST)}
-            mod._ConfirmSubmit.exec = fake_exec(mod._ConfirmSubmit.TICK_STALE)
-            confirm_dlg.submit()
+            confirm_win._on_submit()
+            sheet = confirm_win._overlay.content()
+            on_overlay = isinstance(sheet, ReviewSheet) and confirm_win._overlay.isVisibleTo(confirm_win)
+            default = [b.text() for b in sheet.findChildren(mod.QPushButton) if b.isDefault()] if on_overlay else []
+            # Enter on the window under the card must not start a second review.
+            confirm_win._on_submit()
+            again = confirm_win._overlay.content() is sheet
+            sheet.back_requested.emit()
+            back_ok = (
+                not submitted and confirm_dlg._ticks == {(preview_shot, grid.PLAYBLAST)}
+                and confirm_win._overlay.content() is None
+            )
+            confirm_win._on_submit()
+            confirm_win._overlay.content().tick_stale_requested.emit()
             added = confirm_dlg._ticks - {(preview_shot, grid.PLAYBLAST)}
         finally:
-            mod._ConfirmSubmit.exec, mod.start_submission = real_exec, real_start
-        check("16. Submit is the confirmation's one default button",
-              len(seen.get("default", [])) == 1
-              and seen["default"][0].startswith("Submit"),
-              f"{seen.get('default')}")
-        check("16. Back submits nothing and changes no tick", back_ok)
-        check("16. Tick those publishes ticks exactly the stale departments, submits nothing",
-              missing and not submitted
+            mod.SubmitJobsDialog.start = real_start
+        check("16. the review shows over the window, Submit its one default button",
+              on_overlay and len(default) == 1 and default[0].startswith("Submit"),
+              f"{type(sheet).__name__}: {default}")
+        check("16. Submit on the window under the review does nothing", again)
+        check("16. Back submits nothing, changes no tick and closes the card", back_ok)
+        check("16. Tick stale publishes ticks exactly the stale departments, submits nothing",
+              missing and not submitted and confirm_win._overlay.content() is None
               and added == {(preview_shot, grid.publish_key(d)) for d in missing},
               f"{preview_shot.split('/')[-1]}: {missing}")
     confirm_win.reject()
+    deadline_mod.deadline_setup_problem = real_problem
 
     # ── 17: Assets and Shots tabs ─────────────────────────
     assets = sorted(
@@ -430,39 +445,111 @@ def main() -> int:
             (u for u in shots_pane._uris if shots_pane._tickable(u, grid.RENDER)), None,
         )
         sent: list = []
-
-        class _Window:
-            def show(self):
-                pass
-
-        def capture(configs, parent=None):
-            sent.extend(configs)
-            return _Window()
-
-        import tumblepipe.apps.deadline as deadline_mod
-        real_start, real_exec = mod.start_submission, mod._ConfirmSubmit.exec
-        real_problem = deadline_mod.deadline_setup_problem
-        real_warning = mod.QMessageBox.warning
         refused: list = []
-        mod.start_submission = capture
-        mod._ConfirmSubmit.exec = lambda self: mod._ConfirmSubmit.SUBMIT
+        import tumblepipe.apps.deadline as deadline_mod
+        real_start = mod.SubmitJobsDialog.start
+        real_problem = deadline_mod.deadline_setup_problem
+        real_notice = mod.SubmitJobsDialog.notice
+        mod.SubmitJobsDialog.start = lambda self, configs, steps, pane: sent.extend(configs)
+        mod.SubmitJobsDialog.notice = lambda self, title, text: refused.append(text)
         deadline_mod.deadline_setup_problem = lambda environ=None: None
-        # A refusal would open a modal box nobody can close here.
-        mod.QMessageBox.warning = staticmethod(lambda *a, **k: refused.append(a[2]))
         try:
             shots_pane._ticks = {(target_shot, grid.RENDER)}
             shots_pane._refresh()
             shots_pane._rnd_channels.set_checked(shots_pane._rnd_channels.options())
             tabs_win._on_submit()
+            review = tabs_win._overlay.content()
+            if review is not None and hasattr(review, "submit_requested"):
+                review.submit_requested.emit()
         finally:
-            mod.start_submission, mod._ConfirmSubmit.exec = real_start, real_exec
+            mod.SubmitJobsDialog.start = real_start
+            mod.SubmitJobsDialog.notice = real_notice
             deadline_mod.deadline_setup_problem = real_problem
-            mod.QMessageBox.warning = real_warning
         check("17. Submit on the Shots tab sends only its shots, as shots",
               [c["entity"]["uri"] for c in sent] == [target_shot]
               and all(c["entity"]["context"] == "shots" for c in sent),
               f"{[(c['entity']['name'], c['entity']['context']) for c in sent]} {refused}")
         tabs_win.reject()
+
+    # ── 18: collapsing columns ────────────────────────────
+    col_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    col = col_win._panes["shots"]
+    wait_for_scan(col)
+    empty = grid.empty_columns(col._uris, col._columns, col._states)
+    check("18. empty columns collapse by themselves once the status is read",
+          col._collapsed == empty and col._auto_collapsed == empty,
+          f"empty {sorted(empty)}, collapsed {sorted(col._collapsed)}")
+    target = next(
+        (i for i, c in enumerate(col._columns, start=1)
+         if c.key not in col._collapsed
+         and any(col._tickable(u, c.key) for u in col._uris)),
+        None,
+    )
+    if target is None:
+        print("SKIP: 18. no column with a tickable cell")
+    else:
+        key = col._columns[target - 1].key
+        first = next(u for u in col._uris if col._tickable(u, key))
+        col._ticks = {(first, key)}
+        col._set_collapsed(target, True)
+        header = col._tree.header()
+        check("18. a collapsed column is a sliver and keeps its ticks",
+              header.sectionSize(target) == mod.COLLAPSED_WIDTH and (first, key) in col._ticks)
+        col._on_header_clicked(0)  # All: ticks every shown column, never the collapsed one
+        reached = {k for _u, k in col._ticks} - {key}
+        col._select_stale()
+        check("18. All and Select stale leave a collapsed column alone",
+              all(k != key for _u, k in col._ticks - {(first, key)})
+              and all(k not in col._collapsed for k in reached),
+              f"{sorted(reached)}")
+        col._clear_ticks()
+        col._on_header_clicked(target)
+        check("18. clicking a collapsed column's header opens it, ticking nothing",
+              key not in col._collapsed and header.sectionSize(target) > mod.COLLAPSED_WIDTH
+              and not col._ticks)
+        col._set_collapsed(target, True)
+        col._ticks = {(first, key)}
+        col._auto_collapse()
+        check("18. a column the artist collapsed stays collapsed through the auto rule",
+              key in col._collapsed and key not in col._auto_collapsed)
+    col_win.reject()
+
+    # ── 19: what the window remembers ─────────────────────
+    from tumblepipe.asset_browser import prefs as prefs_mod
+    mem_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    mem = mem_win._panes["shots"]
+    priority = mem._fields["render_priority"]
+    priority.widget.setValue(37)
+    priority.pin()
+    frames = mem._fields["first_frame"]
+    frames.widget.setValue(1234)
+    frames.pin()
+    mem._rnd_preview.setChecked(True)
+    mem._rnd_standalone.setChecked(True)
+    column = mem._columns[0]
+    mem._set_collapsed(1, True)
+    mem_win.resize(1234, 777)
+    mem_win.reject()
+    stored = prefs_mod.load_prefs().farm_submit
+    # A department the project no longer has is dropped, not guessed at.
+    record = stored["tabs"][mod.remembered.scope(mod._project_key(), "shots")]
+    record["pinned"]["render_department"] = "no_such_department"
+    prefs_mod.update_prefs(farm_submit=stored)
+    again_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    again = again_win._panes["shots"]
+    check("19. a pinned setting comes back pinned",
+          again._fields["render_priority"].pinned and again._fields["render_priority"].value() == 37)
+    check("19. the frame range is not remembered",
+          not again._fields["first_frame"].pinned)
+    check("19. a value the form no longer offers is dropped",
+          not again._fields["render_department"].pinned)
+    check("19. the batch choices come back",
+          again._rnd_preview.isChecked() and again._rnd_standalone.isChecked())
+    check("19. a collapsed column comes back collapsed, and the size",
+          column.key in again._collapsed
+          and stored["ui"]["size"] == [1234, 777],
+          f"{sorted(again._collapsed)} {stored['ui'].get('size')}")
+    again_win.reject()
 
     # ── 9: a real snapshot in this interpreter ────────────
     staged = next(
@@ -491,7 +578,10 @@ def main() -> int:
     group_uri = "groups:/shots/verify_farm_grid"
     plan = submit_plan.make_plan(
         [{"entity": {"uri": group_uri, "name": "verify", "context": "shots"},
-          "settings": {"render": True, "first_frame": 1001, "last_frame": 1001}}],
+          # Every key an on section needs (batch_submit raises on a gap,
+          # before it gets to refusing the Multi).
+          "settings": {"publish": True, "pub_pool": "general", "pub_priority": 50,
+                       "render": False, "playblast": False}}],
         env=dict(os.environ), houdini_version=os.environ.get("TH_HOUDINI_VERSION"),
     )
     folder = Path(api.storage.resolve(Uri.parse("temp:/farm_submissions")))

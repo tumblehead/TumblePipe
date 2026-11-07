@@ -47,4 +47,4 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
         config['entity']['uri'],
         settings['channel_name'],
         settings['user_name']
-    ), build, config, paths)
+    ), build, config, paths, entity=config['entity']['uri'])

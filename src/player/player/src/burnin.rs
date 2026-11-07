@@ -33,16 +33,6 @@ pub fn fitted(frame: (f32, f32), bounds: Size) -> Rectangle {
     Rectangle::new(Point::new((bounds.width - size.width) * 0.5, (bounds.height - size.height) * 0.5), size)
 }
 
-/// A rate as people say it: `24 fps`, `23.976 fps`. Rates are positive (the
-/// playlist and the media say so before anything plays).
-pub fn rate_label((num, den): (i32, i32)) -> String {
-    if num % den == 0 {
-        return format!("{} fps", num / den);
-    }
-    let fps = format!("{:.3}", f64::from(num) / f64::from(den));
-    format!("{} fps", fps.trim_end_matches('0').trim_end_matches('.'))
-}
-
 /// The frame burn-in for frame `index` of a take `frames` long: its place in
 /// the take, after the frame's own `number` when the media numbers its
 /// frames (an EXR sequence): `1046 (46 / 68)`, `46 / 68`.
@@ -93,14 +83,6 @@ impl<Message> Program<Message> for Burnin {
 mod tests {
     use super::*;
     use proptest::prelude::*;
-
-    #[test]
-    fn rates_read_as_people_say_them() {
-        assert_eq!(rate_label((24, 1)), "24 fps");
-        assert_eq!(rate_label((48, 2)), "24 fps");
-        assert_eq!(rate_label((24000, 1001)), "23.976 fps");
-        assert_eq!(rate_label((25, 2)), "12.5 fps");
-    }
 
     proptest! {
         /// The fitted picture stays inside the bounds, keeps the frame's

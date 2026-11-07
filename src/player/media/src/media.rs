@@ -86,11 +86,12 @@ impl Media {
         }
     }
 
-    /// The frame number of index `index`: an EXR sequence's own; None for a
-    /// movie, whose frames carry no numbers. A stack's is its bottom layer's.
+    /// The frame number of index `index`: an EXR sequence's own; a movie's
+    /// counted from the start frame it records, None when it records none. A
+    /// stack's is its bottom layer's.
     pub fn frame_number(&self, index: usize) -> Option<i64> {
         match self {
-            Self::Movie(_) => None,
+            Self::Movie(movie) => movie.start_frame().map(|start| start + index as i64),
             Self::Exr { sequence, .. } => Some(sequence.frame_number(index)),
             Self::Stack(layers) => layers[0].1.frame_number(index),
         }

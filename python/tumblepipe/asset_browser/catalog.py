@@ -12,11 +12,13 @@ host hook to it. The work lives in the companion modules:
 - ``containers`` — Multis and Roots; ``container_menu`` — their menu;
 - ``workfiles`` / ``scene`` — workfile open / create, the loaded scene;
 - ``detail`` — the detail panel's sections;
-- ``recipes`` / ``nodes`` — the two non-entity card kinds, routed by id;
+- ``recipes`` / ``texture_sets`` / ``edits`` (library kinds, see
+  ``library_kinds``) and ``nodes`` — the non-entity card kinds, routed by id;
 - ``refresh`` — asking the open browsers to repaint.
 
-Recipe (``recipe:``), node (``node:``) and container (``group:`` /
-``scene:``) ids are routed before anything entity-shaped sees them.
+Recipe (``recipe:``), texture set (``texture:``), edit (``edit:``), node
+(``node:``) and container (``group:`` / ``scene:``) ids are routed before
+anything entity-shaped sees them.
 """
 
 from __future__ import annotations
@@ -50,6 +52,7 @@ from tumblepipe.pipe.houdini.ui.report import (
 )
 
 from . import containers as containers
+from . import edits as edits
 from . import nodes as nodes
 from . import recipes as recipes
 from . import texture_sets as texture_sets
@@ -64,6 +67,8 @@ from .drops import DropRouter
 from .entity_ops import EntityOps
 from .hover import AssetHover
 from .houdini import ProjectActivator
+from .libraries import LibraryIndex, is_library_owner
+from .library_kinds import LibraryKinds
 from .menus import PipelineMenus, reporting_menu
 from .nodes import PipelineNodes
 from .recipes import RecipeManager
@@ -72,7 +77,7 @@ from .resolver import AssetResolver
 from .scene import SceneManager
 from .sidebar import Sidebar
 from .thumbnails import ThumbnailManager
-from .types import DeptVersionStore, projects_json_path
+from .types import DeptVersionStore, package_icon, projects_json_path
 from .workfiles import WorkfileManager
 
 log = logging.getLogger(__name__)
@@ -131,11 +136,13 @@ class PipelineCatalog(Catalog):
         — favourites are stored under this one catalog id across every
         project, so without this a star set in one project would surface
         in another. Pure string split (no client build)."""
-        ref = recipes.parse_id(asset_id) or texture_sets.parse_id(asset_id)
-        if ref is not None:
-            return ref.project
-        if nodes.is_node_id(asset_id):
-            # A package node belongs to every project. The browser keeps a
+        kind = self._kinds.for_id(asset_id)
+        owner = kind.project_of(asset_id) if kind is not None else None
+        if owner is not None and not is_library_owner(owner):
+            return owner
+        if owner is not None or nodes.is_node_id(asset_id):
+            # A package node belongs to every project, and a library card
+            # to every project listing its library. The browser keeps a
             # favourite only when this equals the scoped (launch) project,
             # so answer with that one; None would hide the star everywhere.
             return self._activator.launch_project_name or None
@@ -221,15 +228,33 @@ class PipelineCatalog(Catalog):
         # Recipes: node clusters saved under <project>/recipes/ (see
         # recipes.py). Nodes: every HDA this package ships, package-wide
         # (see nodes.py).
+        # Libraries: folders outside every project that the registered
+        # projects list (TH_LIBRARY_PATH, the Projects page). Recipes and
+        # texture sets are read from them too (see libraries.py).
+        self._libraries = LibraryIndex(self._registry)
         self._recipes = RecipeManager(
             self.id, registry=self._registry, refresh=self._refresh,
+            libraries=self._libraries,
         )
         self._nodes = PipelineNodes(self.id) if nodes is None else nodes
         # Published texture sets under each project's export folder
         # (see texture_sets.py).
         self._textures = texture_sets.TextureSetManager(
             self.id, export_roots=self._texture_export_roots,
+            libraries=self._libraries, refresh=self._refresh,
+            session_project=self._session_project_name,
         )
+        # The card kinds that are files rather than entities, routed by id
+        # prefix (see library_kinds.py).
+        # Each project's edits, made in the editor (see edits.py). Its menu
+        # and Open in Editor are the catalog's, built below.
+        self._edits = edits.EditManager(
+            self.id, clients=self._clients,
+            menu_items=lambda asset: self._menus.edit_items(asset),
+            open_edit=lambda asset_id, published: self._ops.open_edit(
+                asset_id, published=published),
+        )
+        self._kinds = LibraryKinds([self._recipes, self._textures, self._edits])
         self._thumbnails = ThumbnailManager(
             entity_dir=self._resolver.entity_dir, refresh=self._refresh,
         )
@@ -241,6 +266,7 @@ class PipelineCatalog(Catalog):
             dept_scope=self._dept_scope, scene=self._scene,
             recipes=self._recipes, refresh=self._refresh,
             invalidate_cache=self.invalidate_cache,
+            workfiles=self._workfiles, containers=self._containers,
         )
         self._detail = DetailSectionBuilder(
             self.id,
@@ -269,7 +295,8 @@ class PipelineCatalog(Catalog):
         self._sidebar = Sidebar(
             registry=self._registry, buckets=self._buckets, index=self._index,
             containers=self._containers, recipes=self._recipes,
-            nodes=self._nodes,
+            nodes=self._nodes, libraries=self._libraries,
+            textures=self._textures, edits=self._edits,
         )
         # Drops onto Houdini network panes.
         self._drops = DropRouter(
@@ -280,6 +307,13 @@ class PipelineCatalog(Catalog):
             get_detail=self.get_detail,
             get_registry=self._registry,
         )
+        # Sync with Multi adds members from this session, which the change
+        # feed does not report: it tells the browser itself.
+        try:
+            from tumblepipe.pipe.houdini import multi_sync
+            multi_sync.add_listener(self._on_multi_synced)
+        except ImportError:
+            pass    # no Houdini
 
     # ── Warm-up hooks ─────────────────────────────────────
 
@@ -302,10 +336,10 @@ class PipelineCatalog(Catalog):
         via :class:`AssetPage.errors` on the next browse.
         """
         self._clients.ensure_all()
-        # Recipes scan the project share too; doing it here means the
-        # sidebar's Recipes section has its counts on first paint rather
-        # than after the first grid query.
-        self._recipes.scan_all()
+        # Library kinds that scan the project share now (recipes) give the
+        # sidebar its counts on first paint rather than after the first
+        # grid query.
+        self._kinds.warm_up()
 
     # ── Tags ──────────────────────────────────────────────
 
@@ -320,10 +354,10 @@ class PipelineCatalog(Catalog):
         node_contexts = {f.context for f in self._nodes.families()}
         return {
             "source": ["pipeline"],
-            "type": ["asset", "shot", "recipe", "node", "texture"],
+            "type": ["asset", "shot", "recipe", "node", "texture", "edit"],
             "category": list(cats),
             "sequence": seqs,
-            "context": sorted(set(self._recipes.contexts()) | node_contexts),
+            "context": sorted(set(self._kinds.contexts()) | node_contexts),
             "project": [p.name for p in self._registry.all()],
             **self._nodes.available_tags(),
         }
@@ -367,14 +401,14 @@ class PipelineCatalog(Catalog):
         # page so the browser can show it. Block until every registered
         # project's init has finished (success or fail) first.
         errors: list[CatalogError] = list(self._clients.ensure_all())
-        # Recipes ride along so the project root, the launch-project scope
-        # and the All view list them beside the entities; the
-        # ``type:recipe`` / ``context:`` atoms narrow to them like any
-        # other row. What their scan could not read is shown beside them.
-        all_items = (self._index.items(errors) + self._recipes.cards()
-                     + self._textures.cards())
-        errors.extend(self._recipes.errors)
-        errors.extend(self._textures.errors)
+        # Library cards (recipes, texture sets) ride along so the project
+        # root, the launch-project scope and the All view list them beside
+        # the entities; the ``type:recipe`` / ``context:`` atoms narrow to
+        # them like any other row. What their scans could not read is shown
+        # beside them.
+        all_items = self._index.items(errors) + self._kinds.cards()
+        errors.extend(self._kinds.errors)
+        errors.extend(self._library_errors())
 
         # Handle group/scene tags (special filtering). Filter failures
         # are surfaced via AssetPage.errors rather than silently
@@ -410,7 +444,7 @@ class PipelineCatalog(Catalog):
         # than the network editor shows now"; the cards are cached, the
         # editor moves, and the browser re-queries on a context switch
         # precisely so this can be re-read.
-        all_items = self._recipes.restamp_disabled(all_items)
+        all_items = self._kinds.restamp(all_items)
 
         # Search
         if query:
@@ -451,10 +485,9 @@ class PipelineCatalog(Catalog):
         """A fresh card for one id (a save, a create, an edit), or None."""
         if containers.parse(asset_id) is not None:
             return self._containers.card(asset_id)
-        if recipes.is_recipe_id(asset_id):
-            return self._recipes.get_asset(asset_id)
-        if texture_sets.is_texture_id(asset_id):
-            return self._textures.get_asset(asset_id)
+        kind = self._kinds.for_id(asset_id)
+        if kind is not None:
+            return kind.get_asset(asset_id)
         if nodes.is_node_id(asset_id):
             return self._nodes.get_asset(asset_id)
         return self._index.card(asset_id)
@@ -464,10 +497,9 @@ class PipelineCatalog(Catalog):
     def get_detail(self, asset_id: str, version: str | None = None) -> AssetDetail:
         if containers.parse(asset_id) is not None:
             return self._containers.detail(asset_id)
-        if recipes.is_recipe_id(asset_id):
-            return self._recipes.get_detail(asset_id)
-        if texture_sets.is_texture_id(asset_id):
-            return self._textures.get_detail(asset_id)
+        kind = self._kinds.for_id(asset_id)
+        if kind is not None:
+            return kind.get_detail(asset_id)
         if nodes.is_node_id(asset_id):
             return self._nodes.get_detail(asset_id, version)
         return self._index.detail(asset_id, self._ops.read_description(asset_id))
@@ -480,9 +512,9 @@ class PipelineCatalog(Catalog):
         # Departments tab where the user can toggle which depts the
         # group covers; scenes don't (no editable depts field).
         kind = detail.kind
-        if kind in ("recipe", nodes.KIND, "texture"):
+        if kind == nodes.KIND or kind in self._kinds.kind_names:
             # The framework's own tags / description sections say it all
-            # — a recipe or node has no departments, todos or entity URI.
+            # — a library card or node has no departments, todos or URI.
             return None
         if kind == "group":
             return [
@@ -541,19 +573,21 @@ class PipelineCatalog(Catalog):
         return sections
 
     def get_thumbnail(self, asset: Asset):
-        if recipes.is_recipe_id(asset.id):
-            return self._recipes.get_thumbnail(asset)
-        if texture_sets.is_texture_id(asset.id):
-            return self._textures.get_thumbnail(asset)
+        kind = self._kinds.for_id(asset.id)
+        if kind is not None:
+            return kind.get_thumbnail(asset)
         if nodes.is_node_id(asset.id):
             return self._nodes.get_thumbnail(asset)
         return self._thumbnails.get_thumbnail(asset)
 
+    def _not_an_entity(self, asset_id: str) -> bool:
+        """A library card or a node card: no entity behind it."""
+        return self._kinds.owns(asset_id) or nodes.is_node_id(asset_id)
+
     def get_asset_hover_widget(self, asset):
-        if (recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id)
-                or texture_sets.is_texture_id(asset.id)):
-            # The framework's generic hover: a recipe's or node's facts are
-            # the card's own tags and metadata.
+        if self._not_an_entity(asset.id):
+            # The framework's generic hover: a library card's or node's
+            # facts are the card's own tags and metadata.
             return None
         return self._hover.widget(asset)
 
@@ -565,13 +599,10 @@ class PipelineCatalog(Catalog):
         or shot's entity folder (where its ``description.txt`` and
         ``thumbnail.png`` live). Nodes and Multis have none; a recipe has
         its own Open Recipe Folder entry already."""
-        entry = (self._textures.find(asset.id)
-                 if texture_sets.is_texture_id(asset.id) else None)
-        if entry is not None:
-            return entry.set_dir
-        if (recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id)
-                or texture_sets.is_texture_id(asset.id)
-                or asset.id.startswith("group:")):
+        kind = self._kinds.for_id(asset.id)
+        if kind is not None:
+            return kind.asset_folder(asset)
+        if nodes.is_node_id(asset.id) or asset.id.startswith("group:"):
             return None
         # A raise is logged by the browser, which then leaves the entry out.
         return self._resolver.entity_dir(asset.id)
@@ -580,12 +611,11 @@ class PipelineCatalog(Catalog):
         """Card right-click items. ``selected_assets`` is the browser's
         multi-selection when every selected card is ours: Submit Jobs…
         then covers the selection's cards of the clicked card's context."""
-        if recipes.is_recipe_id(asset.id):
-            items = self._recipes.card_menu_items(asset)
+        kind = self._kinds.for_id(asset.id)
+        if kind is not None:
+            items = kind.card_menu_items(asset)
         elif nodes.is_node_id(asset.id):
             items = self._nodes.card_menu_items(asset)
-        elif texture_sets.is_texture_id(asset.id):
-            items = []
         else:
             items = self._menus.card_items(asset, selected_assets=selected_assets)
         return reporting_menu(items)
@@ -594,50 +624,39 @@ class PipelineCatalog(Catalog):
         return reporting_menu(self._menus.deck_item_items(asset, deck_item_key))
 
     def _edit_group_departments(self, asset_id: str) -> None:
-        """Choose which departments a Multi covers, from its card menu.
-
-        Hosts the same section the detail panel's Departments tab shows
-        for a Multi (a coverage toggle per row, written through on click),
-        in a dialog: the card menu reaches it without selecting the Multi.
-        """
-        import hou
+        """A Multi card's **Departments…**: the Entity Editor's Multis
+        tab, on that Multi, where its coverage, members, Timeline and
+        workfiles are set up together."""
         from tumbletrove.common.gui import is_main_thread
         if not is_main_thread():
-            # Qt objects are thread-affine and a modal built off the GUI
+            # Qt objects are thread-affine and a window built off the GUI
             # thread corrupts memory rather than raising — see *Qt and
             # threads* in docs/development.md.
             run_on_main_thread(
                 reporting(
-                    f"Editing the departments for {asset_id}",
+                    f"Opening the Entity Editor for {asset_id}",
                     lambda: self._edit_group_departments(asset_id),
                 ),
             )
             return
-        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout
-        from tumbletrove.asset_browser.api.catalog import DetailContext
-        from tumbletrove.asset_browser.core.theme import scaled
+        self._ops.open_entity_editor_for(asset_id)
 
-        detail = self.get_detail(asset_id)
-        dlg = QDialog(hou.qt.mainWindow())
-        dlg.setWindowTitle(f"Departments — {detail.name}")
-        layout = QVBoxLayout(dlg)
-        layout.setSpacing(scaled(6))
-        layout.addWidget(self._detail.build_combined_departments_section(
-            DetailContext(detail=detail, parent=dlg),
-        ))
-        buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=dlg)
-        buttons.rejected.connect(dlg.reject)
-        buttons.accepted.connect(dlg.accept)
-        layout.addWidget(buttons)
-        dlg.resize(scaled(420), scaled(360))
-        dlg.exec()
-        # Each toggle refreshes the card and the detail panel as it writes.
+    def _on_multi_synced(self, group_uri) -> None:
+        """Sync with Multi added members to a Multi: its card, its
+        members' rows and the sidebar change."""
+        self.invalidate_cache()
+        self._containers.invalidate_membership_cache()
+        self._refresh.sidebar()
+        self._refresh.grid()
+        self._refresh.detail()
+
+    def _is_multi(self, collection_id: str) -> bool:
+        return isinstance(containers.parse(collection_id), containers.GroupContainer)
 
     # ── Deck items (departments) ──────────────────────────
 
     def get_deck_items(self, asset: Asset) -> list[DeckItem]:
-        if (recipes.is_recipe_id(asset.id) or nodes.is_node_id(asset.id)
-                or texture_sets.is_texture_id(asset.id)):
+        if self._not_an_entity(asset.id):
             return []
         return self._deck.items(asset)
 
@@ -690,8 +709,11 @@ class PipelineCatalog(Catalog):
 
         self._registry.save()
 
-        # Drop the discovery cache so the next browse re-aggregates.
+        # Drop the discovery cache so the next browse re-aggregates, and
+        # re-read the libraries the projects now list.
         self._index.invalidate()
+        self._libraries.invalidate()
+        self._kinds.invalidate()
 
         # Build any newly-added (or path-changed) Clients eagerly on
         # the calling thread (Apply runs from the GUI-thread settings
@@ -706,15 +728,30 @@ class PipelineCatalog(Catalog):
 
     def get_ghost_data(self, asset):
         from tumbletrove.asset_browser.core.ghost_overlay import GhostData, GhostNode
-        if recipes.is_recipe_id(asset.id):
-            return self._recipes.get_ghost_data(asset.id)
+        kind = self._kinds.for_id(asset.id)
+        if kind is not None:
+            return kind.ghost_data(asset)
         if nodes.is_node_id(asset.id):
             return self._nodes.get_ghost_data(asset.id)
-        if texture_sets.is_texture_id(asset.id):
-            return GhostData(nodes=[GhostNode("th::import_texture::1.0", 0.0, 0.0)])
         if "type:shot" in asset.tags:
             return GhostData(nodes=[GhostNode("th::import_shot::1.0", 0.0, 0.0)])
         return GhostData(nodes=[GhostNode("th::import_asset::1.0", 0.0, 0.0)])
+
+    def _library_errors(self) -> list[CatalogError]:
+        """A listed library that could not be read, as a page error."""
+        from tumbletrove.asset_browser.api.errors import AssetDiscoveryError
+        return [
+            AssetDiscoveryError(self.id, str(err), cause=err)
+            for err in self._libraries.current().errors
+        ]
+
+    def _session_project_name(self) -> str | None:
+        """The registered project the open scene is in, or None."""
+        import hou
+        if hou.hipFile.isNewFile():
+            return None
+        proj = self._resolver.project_for_path(Path(hou.hipFile.path()))
+        return None if proj is None else proj.name
 
     def _texture_export_roots(self) -> dict:
         """Each ready project's export folder, for the texture set
@@ -736,23 +773,21 @@ class PipelineCatalog(Catalog):
         return textures.texture_destinations()
 
     def on_drop(self, detail, drop) -> bool:
-        if recipes.is_recipe_id(detail.id):
-            return self._recipes.on_drop(detail, drop)
+        kind = self._kinds.for_id(detail.id)
+        if kind is not None:
+            return kind.on_drop(detail, drop)
         if nodes.is_node_id(detail.id):
             return self._nodes.on_drop(detail, drop)
-        if texture_sets.is_texture_id(detail.id):
-            return self._textures.on_drop(detail, drop)
         return self._drops.on_drop(detail, drop)
 
     def on_deck_drop(self, asset, deck_keys, drop) -> bool:
         return self._drops.on_deck_drop(asset, deck_keys, drop)
 
     def on_multi_drop(self, assets, drop) -> bool:
-        # A selection holding a recipe falls back to one on_drop per
-        # card: the router bundles assets into an import_assets node
-        # and would silently leave the recipe behind.
-        if any(recipes.is_recipe_id(a.id) or texture_sets.is_texture_id(a.id)
-               for a in assets):
+        # A selection holding a library card (a recipe, a texture set)
+        # falls back to one on_drop per card: the router bundles assets
+        # into an import_assets node and would silently leave it behind.
+        if any(self._kinds.owns(a.id) for a in assets):
             return False
         # Node cards create one node each. Mixed with entities the nodes
         # decline, and each card falls back to its own on_drop, for the
@@ -809,7 +844,9 @@ class PipelineCatalog(Catalog):
                 tooltip="Publish, playblast and render any shots on the farm",
             ),
             QuickAction(
-                id="farm_manager", label="Farm Manager", icon="server",
+                # Not in TumbleTrove's bundled icon set (a missing name draws
+                # a blank button), so shipped here and named by its path.
+                id="farm_manager", label="Farm Manager", icon=package_icon("server"),
                 tooltip="Follow farm and local render jobs: progress, logs and errors",
             ),
             QuickAction(
@@ -900,6 +937,32 @@ class PipelineCatalog(Catalog):
             )
         return []
 
+    def get_quick_action_busy(self, action_id: str) -> bool:
+        """Whether the quick action's button shows its busy outline.
+
+        The Farm Manager's does while this user has farm or local jobs
+        queued or rendering in this project. The browser asks every second
+        on the GUI thread, so this only reads what a daemon thread counted
+        (``farm.manager.activity``); the thread starts on the first ask, so
+        a TumbleTrove that never asks never starts it, and it stops reading
+        while nobody asks (a closed or hidden browser).
+        """
+        if action_id != "farm_manager":
+            return False
+        activity = getattr(self, "_farm_activity", None)
+        if activity is None:
+            from tumblepipe.farm.manager.activity import FarmActivity
+            activity = self._farm_activity = FarmActivity()
+            activity.start()
+        activity.touch()
+        return activity.busy
+
+    def cleanup(self) -> None:
+        """Browser shutdown: stop counting farm jobs."""
+        activity = getattr(self, "_farm_activity", None)
+        if activity is not None:
+            activity.stop()
+
     def _emergency_save(self) -> None:
         # Intentionally NOT wrapped in run_catalog_op / gui_dispatch: deferring
         # would re-queue onto the same dead event loop the normal Save uses,
@@ -962,38 +1025,49 @@ class PipelineCatalog(Catalog):
     # id, which no entity resolver can split. Route it to the container.
 
     def get_edit_fields(self, asset_id: str) -> list[CreationField]:
+        if self._is_multi(asset_id):
+            # A Multi is set up in the Entity Editor: Edit… opens it on the
+            # Multi, and no form.
+            self._ops.open_entity_editor_for(asset_id)
+            return []
         if containers.parse(asset_id) is not None:
             return self._containers.edit_fields(asset_id)
-        if recipes.is_recipe_id(asset_id):
-            return self._recipes.get_edit_fields(asset_id)
-        if nodes.is_node_id(asset_id) or texture_sets.is_texture_id(asset_id):
+        kind = self._kinds.for_id(asset_id)
+        if kind is not None:
+            return kind.get_edit_fields(asset_id)
+        if nodes.is_node_id(asset_id):
             return []
         return self._ops.edit_fields(asset_id)
 
     def edit_entity(self, asset_id, fields):
         if containers.parse(asset_id) is not None:
             return self._containers.edit(asset_id, fields)
-        if recipes.is_recipe_id(asset_id):
-            return self._recipes.edit(asset_id, fields)
-        if nodes.is_node_id(asset_id) or texture_sets.is_texture_id(asset_id):
+        kind = self._kinds.for_id(asset_id)
+        if kind is not None:
+            return kind.edit(asset_id, fields)
+        if nodes.is_node_id(asset_id):
             return False
         return self._ops.edit(asset_id, fields)
 
     def can_delete_entity(self, asset: Asset) -> bool:
-        """Entities and recipes; not a node card (nothing to delete) nor
-        a container card, whose menu has its own Delete."""
+        """Entities and the library kinds that delete (recipes); not a
+        node card (nothing to delete) nor a container card, whose menu
+        has its own Delete."""
+        kind = self._kinds.for_id(asset.id)
+        if kind is not None:
+            return kind.can_delete(asset)
         return not (
             nodes.is_node_id(asset.id)
-            or texture_sets.is_texture_id(asset.id)
             or containers.parse(asset.id) is not None
         )
 
     def delete_entity(self, asset_id):
         if containers.parse(asset_id) is not None:
             return self._containers.delete(asset_id)
-        if recipes.is_recipe_id(asset_id):
-            return self._recipes.delete(asset_id)
-        if nodes.is_node_id(asset_id) or texture_sets.is_texture_id(asset_id):
+        kind = self._kinds.for_id(asset_id)
+        if kind is not None:
+            return kind.delete(asset_id)
+        if nodes.is_node_id(asset_id):
             return False
         return self._ops.delete(asset_id)
 
@@ -1027,6 +1101,10 @@ class PipelineCatalog(Catalog):
         return self._containers.delete(collection_id)
 
     def get_collection_edit_fields(self, collection_id: str) -> list[CreationField]:
+        if self._is_multi(collection_id):
+            # Edit Multi… in the sidebar: the Entity Editor, as above.
+            self._ops.open_entity_editor_for(collection_id)
+            return []
         return self._containers.edit_fields(collection_id)
 
     def edit_collection(self, collection_id: str, fields: dict) -> bool:
@@ -1045,8 +1123,7 @@ class PipelineCatalog(Catalog):
     def get_asset_membership(
         self, asset_id: str,
     ) -> list[tuple[str, str, str]]:
-        if (recipes.is_recipe_id(asset_id) or nodes.is_node_id(asset_id)
-                or texture_sets.is_texture_id(asset_id)):
+        if self._not_an_entity(asset_id):
             return []
         return self._containers.get_asset_membership(asset_id)
 
@@ -1055,12 +1132,11 @@ class PipelineCatalog(Catalog):
     def get_actions(self, detail: AssetDetail) -> list[AssetAction]:
         actions = []
 
-        if recipes.is_recipe_id(detail.id):
-            return self._recipes.get_actions(detail)
+        kind = self._kinds.for_id(detail.id)
+        if kind is not None:
+            return kind.get_actions(detail)
         if nodes.is_node_id(detail.id):
             return self._nodes.get_actions(detail)
-        if texture_sets.is_texture_id(detail.id):
-            return []
 
         # A Multi / Root has no export folder and no entity row in the
         # database editor, so those two actions could only fail on it —
@@ -1116,13 +1192,12 @@ class PipelineCatalog(Catalog):
     ) -> None:
         """Run a detail-panel or deck-item action, on the browser's worker.
         A failure raises into the browser, which reports it."""
-        if detail and recipes.is_recipe_id(detail.id):
-            self._recipes.execute_action(action_id, detail)
+        kind = self._kinds.for_id(detail.id) if detail else None
+        if kind is not None:
+            kind.execute_action(action_id, detail)
             return
         if detail and nodes.is_node_id(detail.id):
             self._nodes.execute_action(action_id, detail)
-            return
-        if detail and texture_sets.is_texture_id(detail.id):
             return
 
         if action_id == "open_export":
@@ -1227,8 +1302,8 @@ class PipelineCatalog(Catalog):
         ``scripts/migrate_config.py`` on it.
         """
         self._index.invalidate()
-        self._recipes.invalidate()
-        self._textures.invalidate()
+        self._libraries.invalidate()
+        self._kinds.invalidate()
         self._nodes.invalidate()
         self._containers.invalidate_membership_cache()
 

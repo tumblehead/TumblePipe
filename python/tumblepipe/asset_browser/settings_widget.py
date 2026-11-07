@@ -35,6 +35,9 @@ from tumbletrove.settings.widgets import section_header
 from tumblepipe.pipe.houdini.ui.report import report_failure
 
 from . import access
+from .libraries import (
+    ENV_VAR, LIBRARY_FILE, LibraryError, read_library, write_library_file,
+)
 from .departments import GHOST_STYLE, LIST_STYLE, DepartmentPoolEditor
 
 
@@ -61,6 +64,7 @@ class PipelineSettingsWidget(QWidget):
                 project_path=p.project_path,
                 pipeline_path="",
                 config_path=p.config_path,
+                library_paths=list(p.library_paths),
             )
             for p in catalog._registry.all()
         ]
@@ -143,6 +147,42 @@ class PipelineSettingsWidget(QWidget):
         form.addRow("Config Path", self._config_edit)
 
         outer.addWidget(self._form_holder)
+
+        # ── Libraries of the selected project ──
+        # Editable for the launched project too: Desktop sets its paths,
+        # not these. Its TH_LIBRARY_PATH rows are shown locked.
+        lib_row = QHBoxLayout()
+        lib_row.setContentsMargins(0, 0, 0, 0)
+        lib_row.setSpacing(scaled(6))
+        self._lib_list = QListWidget(self)
+        self._lib_list.setStyleSheet(LIST_STYLE)
+        self._lib_list.setMinimumHeight(scaled(60))
+        self._lib_list.currentRowChanged.connect(self._update_library_buttons)
+        lib_row.addWidget(self._lib_list, stretch=1)
+        lib_btns = QVBoxLayout()
+        lib_btns.setContentsMargins(0, 0, 0, 0)
+        lib_btns.setSpacing(scaled(4))
+        self._lib_add_btn = QPushButton("Add…")
+        self._lib_add_btn.setStyleSheet(GHOST_STYLE)
+        self._lib_add_btn.clicked.connect(self._on_add_library)
+        lib_btns.addWidget(self._lib_add_btn)
+        self._lib_remove_btn = QPushButton("Remove")
+        self._lib_remove_btn.setStyleSheet(GHOST_STYLE)
+        self._lib_remove_btn.clicked.connect(self._on_remove_library)
+        lib_btns.addWidget(self._lib_remove_btn)
+        lib_btns.addStretch()
+        lib_row.addLayout(lib_btns)
+        lib_holder = QWidget(self)
+        lib_form = QFormLayout(lib_holder)
+        lib_form.setContentsMargins(0, 0, 0, scaled(4))
+        lib_form.addRow("Libraries", lib_row)
+        outer.addWidget(lib_holder)
+        outer.addWidget(_small_label(
+            "Folders outside the project whose recipes and texture sets "
+            "this project uses. Projects listing the same folder share it. "
+            f"Rows marked {ENV_VAR} come from the project's launch "
+            "environment (TumbleTrove Desktop) and are changed there.",
+            TEXT_DIM))
 
         # Why the launched project's fields are locked.
         self._lock_note = _small_label("", ACCENT)
@@ -460,6 +500,7 @@ class PipelineSettingsWidget(QWidget):
             self._config_edit.setText("")
             self._update_form_enabled()
             self._show_project_defaults()
+            self._refresh_libraries()
             return
         if (self._current_index is not None and row != self._current_index
                 and self._pool_editor.dirty()
@@ -475,6 +516,85 @@ class PipelineSettingsWidget(QWidget):
         self._config_edit.setText(proj.config_path)
         self._update_form_enabled()
         self._show_project_defaults()
+        self._refresh_libraries()
+
+    # ── Libraries ─────────────────────────────────────
+
+    def _refresh_libraries(self) -> None:
+        """List the selected project's libraries: its launch environment's
+        first (locked), then the ones added here."""
+        from PySide6.QtCore import Qt
+        self._lib_list.clear()
+        if self._current_index is None:
+            self._update_library_buttons()
+            return
+        proj = self._working[self._current_index]
+        for path in self._catalog._libraries.env_paths(proj.name):
+            item = QListWidgetItem(f"{path}    ({ENV_VAR})", self._lib_list)
+            item.setFlags(item.flags() & ~Qt.ItemIsSelectable & ~Qt.ItemIsEnabled)
+            item.setData(Qt.UserRole, None)
+        for path in proj.library_paths:
+            item = QListWidgetItem(path, self._lib_list)
+            item.setData(Qt.UserRole, path)
+        self._update_library_buttons()
+
+    def _update_library_buttons(self, *_args) -> None:
+        from PySide6.QtCore import Qt
+        has_project = self._current_index is not None
+        item = self._lib_list.currentItem()
+        self._lib_add_btn.setEnabled(has_project)
+        self._lib_remove_btn.setEnabled(
+            has_project and item is not None
+            and item.data(Qt.UserRole) is not None)
+
+    def _on_add_library(self) -> None:
+        """Browse to a folder and list it; a folder that is not a library
+        yet is named first (its ``library.json``)."""
+        from PySide6.QtWidgets import QInputDialog
+        if self._current_index is None:
+            return
+        path = QFileDialog.getExistingDirectory(
+            self, "Select Library Folder", str(Path.home()))
+        if not path:
+            return
+        path = path.replace("\\", "/")
+        if not (Path(path) / LIBRARY_FILE).exists():
+            try:
+                suggested = read_library(path).name
+            except LibraryError:
+                suggested = Path(path).name
+            name, ok = QInputDialog.getText(
+                self, "New Library",
+                f"{path} is not a library yet. Name it (letters, digits, "
+                "- or _); every project listing it shows it under this name:",
+                text=suggested)
+            if not ok:
+                return
+            try:
+                write_library_file(path, name.strip())
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, "New Library", str(exc))
+                return
+        try:
+            read_library(path)
+        except LibraryError as exc:
+            QMessageBox.warning(self, "Libraries", str(exc))
+            return
+        proj = self._working[self._current_index]
+        if path not in proj.library_paths:
+            proj.library_paths.append(path)
+        self._refresh_libraries()
+
+    def _on_remove_library(self) -> None:
+        from PySide6.QtCore import Qt
+        item = self._lib_list.currentItem()
+        if self._current_index is None or item is None:
+            return
+        path = item.data(Qt.UserRole)
+        proj = self._working[self._current_index]
+        if path in proj.library_paths:
+            proj.library_paths.remove(path)
+        self._refresh_libraries()
 
     def _confirm_drop_pool_changes(self) -> bool:
         """Ask before unapplied department changes are dropped."""
@@ -494,6 +614,7 @@ class PipelineSettingsWidget(QWidget):
             project_path=self._project_edit.text().strip(),
             pipeline_path="",
             config_path=self._config_edit.text().strip(),
+            library_paths=list(proj.library_paths),
         )
         self._working[self._current_index] = proj_new
         self._refresh_list()

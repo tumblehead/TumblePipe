@@ -76,5 +76,6 @@ def build(
 def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
     """Submit the build of ``config`` as a batch of its own."""
     return submit_batch(
-        batch_title('build', config['entity_uri']), build, config, paths
+        batch_title('build', config['entity_uri']), build, config, paths,
+        entity=config['entity_uri'],
     )

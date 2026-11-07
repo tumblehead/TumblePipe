@@ -52,6 +52,7 @@ titled **Projects**
 |---|---|
 | **Add** / **Remove** | Add or drop a project from the list. |
 | **Name**, **Project Path** (with **Browse…**), **Config Path** | The selected project's identity; Config Path is optional. Locked for the project TumbleTrove Desktop launched. |
+| **Libraries** (**Add…** / **Remove**) | The selected project's library folders, after its `TH_LIBRARY_PATH` ones (greyed out). See [Libraries](libraries.md). |
 | **Project defaults ▸ Department pool** | The selected project's department pool, shared by everyone on it; owners and admins edit, everyone else reads. See [The department pool editor](settings.md#the-department-pool-editor). |
 | **Autosave (version up) on scene change** | Off by default. See [Workfiles → Switching scenes with unsaved changes](workfiles.md#switching-scenes-with-unsaved-changes). |
 | **Auto-import latest on workfile open** | On by default. See [Composition → Picking up new versions on open](../composition.md#picking-up-new-versions-on-open). |
@@ -90,6 +91,7 @@ Beside the projects, once for the whole catalog:
 
 | Section | Rows underneath | Notes |
 |---|---|---|
+| ***Library name*** | **Recipes** (a row per context) and **Texture Sets**, per library the projects list | See [Libraries](libraries.md). |
 | **Nodes** | one row per TAB submenu that ships a node: **Pipeline**, **Model**, **Lookdev**, **Lighting**, **Rendering**, **Comp**, **Utils**, **Debug** | See [Finding and creating nodes](#finding-and-creating-nodes). |
 
 ### Finding and creating nodes
@@ -225,6 +227,7 @@ version from the department template instead. Right-click one for:
 | **View Latest Export** | **Open Folder** |
 | **Open in New Houdini** | |
 | **Reload Scene** (only on the open department) | |
+| **Sync with Multi** (only on a Multi's open department) | |
 | **Remove from *Multi*** (only on a ⓜ item) | |
 | **New from Template** | |
 | **New from Current** | |
@@ -234,7 +237,9 @@ version on an empty item, opening the latest on one that has versions. What
 each does is on the [Workfiles](workfiles.md) page. A Multi's own deck items
 offer the same menu, except that **View Latest Export ▸** lists the Multi's
 members, each opening that member's export (see
-[Multis and Roots](multis-and-roots.md#the-multis-workfiles)).
+[Multis and Roots](multis-and-roots.md#the-multis-workfiles)), and the open
+one adds **Sync with Multi** (see
+[Keeping the workfile and the Multi in step](multis-and-roots.md#keeping-the-workfile-and-the-multi-in-step)).
 
 ### List view columns
 
@@ -328,14 +333,17 @@ catalog contributes
 | **Edit description…** | Edits the `description.txt` sidecar in the entity's folder (dialog **Edit Description**). Shown on the Info tab. |
 | **Tasks…** | Opens TumbleTrove's **Tasks — *name*** dialog for the entity's todo list. |
 | **Select thumbnail…** / **Capture thumbnail** | See [Cards](#cards). |
-| **Departments…** | Which departments this entity uses (**Departments — *name***, tick boxes, **Use all (inherit)**, **Apply**); see [Configuration → Per-entity assignment](../configuration.md#per-entity-assignment). On a Multi it opens the coverage editor instead. |
+| **Departments…** | Which departments this entity uses (**Departments — *name***, tick boxes, **Use all (inherit)**, **Apply**); see [Configuration → Per-entity assignment](../configuration.md#per-entity-assignment). On a Multi it opens the [Entity Editor](entity-editor.md#multis)'s Multis tab on it instead. |
 | **Open in Database Editor…** | Opens the **Database Editor** window on this entity. |
 | **Open in Entity Editor…** | Assets, shots and Multis. Opens the [Entity Editor](entity-editor.md) on the entity's tab and category or sequence (a Multi: on the Multis tab), with it selected. |
 | **Clear Root** | Shots only, and only when a Root is set directly on the shot (not inherited from the sequence). Clears it. |
 | **Remove from Multi: *name*** / **Remove from Root: *name*** | One entry per container the entity belongs to. |
 
-A recipe card has its own menu — **Edit Description…**, **Set Icon…**, **Open
-Recipe Folder**, **Delete Recipe** — see [Recipes](recipes.md#card-menu-and-detail-actions).
+A recipe card has its own menu — **Edit Description…**, **Set Icon…**,
+**Share to Library** / **Copy to Project**, **Open Recipe Folder**, **Delete
+Recipe** — see [Recipes](recipes.md#card-menu-and-detail-actions). A texture
+set card offers **Share to Library** / **Copy to Project** — see
+[Libraries](libraries.md#sharing-and-copying).
 
 ## Creating entities
 
@@ -363,7 +371,7 @@ registered.
 | **New category** | **Category** (free text) | Creates an empty category. Refuses a name already used by a sequence. |
 | **Entity Editor** | a window, not a form | Every asset and shot of the project as spreadsheets: add shots, assets, sequences and categories, retime, choose a shot's assets, set up Multis, rename, retire. See [The Entity Editor](entity-editor.md). |
 | **New sequence** | **Sequence** (free text) | Creates an empty sequence. Refuses a name already used by a category. |
-| **New Multi** | **Name**; **Context** (`shots` or `assets`, default `shots`) | See [Multis and Roots](multis-and-roots.md#creating-a-multi). |
+| **New Multi** | a window, not a form | The [Entity Editor](entity-editor.md#multis)'s Multis tab, asking for a **Name**, a shots Multi's **Timeline** and the departments, in the context it was chosen from (`shots` elsewhere). See [Multis and Roots](multis-and-roots.md#creating-a-multi). |
 | **New Root** | **Name** | See [Multis and Roots](multis-and-roots.md#creating-a-root). |
 | **New Recipe** | **Name**; **Description**; **Tags** | Saves the nodes selected in the network editor. See [Recipes](recipes.md#saving-a-recipe). |
 

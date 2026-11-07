@@ -19,6 +19,7 @@ typically set in a launcher script that then starts Houdini.
 | `TH_USER`          | The pipeline user identity (see below).          | no       |
 | `TH_TEMP`          | Root for machine-local scratch (see below).      | no       |
 | `TH_EVENTS_DIR`    | Folder of the same-machine change journal (see below). | no |
+| `TH_LIBRARY_PATH`  | The launch project's [libraries](asset-browser/libraries.md), a path list (`;` on Windows, `:` elsewhere). | no |
 
 `TH_CONFIG_PATH` defaults to `$TH_PROJECT_PATH/_config` and `TH_EXPORT_PATH`
 defaults to `$TH_PROJECT_PATH/export` when unset.
@@ -150,7 +151,8 @@ imports it.
   Reads are **coherent and cheap**: each public read validates the backing
   `db/*.json` stamp at most once (so an out-of-process write is visible on
   the very next read, with no manual refresh), and resolved
-  properties/schemas are memoized until any db file changes. Two API notes
+  properties/schemas and entity URI listings are memoized until any db
+  file changes. Two API notes
   for callers: `list_entity_uris()` lists URIs without resolving per-entity
   properties (use it whenever only `.uri` is consumed — HDA menus
   especially), and `with config.coherent():` batches a loop of reads into a
@@ -226,7 +228,8 @@ spell versions that way, so `tumblepipe.naming` is a plain module.
     "temp": "{local_temp}/th_temp/{project_name}",
     "proxy": "{project_parent}/{project_name}_proxy",
     "preset": "{config_path}/presets",
-    "edit": "{project_path}/edit"
+    "edit": "{project_path}/edit",
+    "edits": "{project_path}/edits"
 }
 ```
 
@@ -234,9 +237,13 @@ That is the scaffold's table. A URI resolves by joining its segments under its
 purpose's path: `export:/assets/CHAR/Hero/default/model` is
 `<project>/export/assets/CHAR/Hero/default/model`. Edit the file to move a
 purpose; a show whose edit sources sit on another drive sets `"edit":
-"E:/Sources/Show"`. The table must list exactly these eleven purposes — a
-missing or unknown one stops the project from opening, with the file named —
-and a template may use only these placeholders:
+"E:/Sources/Show"`. `edit` is that folder of edit sources (the farm's AOV
+copies for Resolve); `edits` holds the working versions of the project's
+edits, the cuts made in the sequence editor (`entity:/edits/<name>`; a
+published edit is an export, under `export:`). The table must list exactly
+these twelve purposes — a missing or unknown one stops the project from
+opening, with the file named — and a template may use only these
+placeholders:
 
 | Placeholder | Value |
 |---|---|
@@ -321,10 +328,10 @@ A shot or asset may be scoped to a subset of its context's pool through its
 advertising eight departments it will never have. Set it from the entity's
 **Departments…** dialog on the card's right-click menu.
 
-A Multi's **Departments…** opens a different editor, because its departments
-are a *coverage* decision — which departments this Multi's workfile overrides
-for its members — rather than an assignment. Both live on the same menu item;
-it forks on what you right-clicked.
+A Multi's **Departments…** opens the Entity Editor's Multis tab instead,
+because its departments are a *coverage* decision — which departments this
+Multi's workfile overrides for its members — rather than an assignment. Both
+live on the same menu item; it forks on what you right-clicked.
 
 An empty list — the default — means **inherit the whole enabled pool**, so an
 entity that was never scoped behaves as it always did, and picks up departments
@@ -388,17 +395,20 @@ What coverage means, mechanically:
   ([Multis and Roots → Shared timeline](asset-browser/multis-and-roots.md#shared-timeline)).
 
 The [Entity Editor](asset-browser/entity-editor.md#multis) sets Multis up
-in one place: members, coverage as tick boxes, and a check that no
-member's department is covered twice. In the asset browser, Multis sit in a **Multis** subheader at the top of
+in one place: members, coverage as tick boxes, a shots Multi's Timeline,
+each covered department's workfile, and a check that no member's
+department is covered twice. In the asset browser, Multis sit in a **Multis** subheader at the top of
 the Assets and Shots sections of each project (a side with no Multi has
-no subheader). **New Multi…** creates one
-(name + context), and a new Multi **covers its context's whole department
-pool** from the start — coverage is what gives the Multi its department
-rows and what points a member's rows at the Multi's workfile, so a Multi
-that covered nothing had no rows, opened nothing, and read as a folder of
-shots. Trim the coverage through **Edit Multi…** (or the card's
-**Departments…**, the coverage editor described under *Per-entity
-assignment*) when a Multi is meant for fewer departments.
+no subheader). **New Multi…** opens the editor to make one (name, Timeline,
+departments, in the context it was chosen from), and a new Multi **covers
+its context's whole department pool** unless unticked — coverage is what
+gives the Multi its department rows and what points a member's rows at the
+Multi's workfile, so a Multi that covered nothing had no rows, opened
+nothing, and read as a folder of shots. **Edit Multi…** and the card's
+**Departments…** open the editor on the Multi to change it. A Multi's
+workfile and the Multi are kept in step on every save of the workfile
+(**Sync with Multi**; see
+[Multis and Roots](asset-browser/multis-and-roots.md#keeping-the-workfile-and-the-multi-in-step)).
 
 The Multi is an entity, not a folder: its sidebar leaf lands on the Multi's
 own card, in list view, with one row per covered department, exactly as a
@@ -766,6 +776,21 @@ load-bearing the file is:
   (`members`, `departments`, or one you added) ever applied to a Multi. A
   root that already has a child schema keeps its own. Only the schema file
   changes, no Multi; the original is kept as `schemas.json.v22.bak`.
+
+- **The edits context (v23).** Edits, the cuts of the film made in the
+  sequence editor, become pipeline entities, `entity:/edits/<name>`. The
+  step adds, to each file that lacks it: the `edits` storage purpose to
+  `storage.json` (`{project_path}/edits`, after `edit`); the `edits`
+  department context with one department, `edit` (independent,
+  publishable, not renderable: an edit's movie is the Render Edit farm
+  job), to `departments.json`; the edit schema
+  `schemas:/entity/edits/edit` (`start_timecode` `01:00:00:00`,
+  `audio_rate` 48000; fps and resolution come from the entity root, as a
+  shot's do) and `schemas:/departments/edits/department` to
+  `schemas.json`; and the empty `entity:/edits` root to `entity.json`.
+  Each original is kept as `<file>.v23.bak`. A file that already has an
+  `edits` part keeps it untouched. The master edit is `master_edit` on
+  `config:/project`; unset means no master, so it needs no step.
 
 ### Migrating at launch
 

@@ -559,18 +559,39 @@ fn rows(m: &Mat4) -> [[f32; 4]; 4] {
     [row(0), row(1), row(2), row(3)]
 }
 
+/// PCI vendor id of Intel.
+const INTEL: u32 = 0x8086;
+
+/// The high-performance adapter among `backends`, if any.
+fn adapter_of(backends: wgpu::Backends) -> Option<wgpu::Adapter> {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends, ..Default::default() });
+    pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+}
+
+/// Whether to draw on `info`'s adapter through DirectX 12 instead: an Intel
+/// GPU on Windows. Its Vulkan driver (UHD Graphics 630, driver
+/// 31.0.101.2140, the CI worker's) draws a motion-blurred mesh in a husk
+/// sequence with a layer of the frame before still in it (the smoke test's
+/// "frame 2 of the sequence differs from the frame drawn alone"), and keeping
+/// the old buffers alive moves the garbage rather than ending it; the same
+/// GPU through DirectX 12 draws every frame as drawn alone, as NVIDIA does
+/// through Vulkan.
+fn wants_dx12(info: &wgpu::AdapterInfo) -> bool {
+    cfg!(windows) && info.vendor == INTEL && info.backend == wgpu::Backend::Vulkan
+}
+
 impl Gpu {
     fn new() -> Result<Gpu, String> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
-        });
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        }))
-        .ok_or("no GPU adapter")?;
+        let mut adapter = adapter_of(wgpu::Backends::PRIMARY).ok_or("no GPU adapter")?;
+        if wants_dx12(&adapter.get_info()) {
+            if let Some(dx12) = adapter_of(wgpu::Backends::DX12).filter(|a| a.get_info().vendor == INTEL) {
+                adapter = dx12;
+            }
+        }
         let info = adapter.get_info();
         if info.device_type == wgpu::DeviceType::Cpu {
             return Err(format!("only a software adapter ({})", info.name));

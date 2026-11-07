@@ -42,7 +42,7 @@ STORAGE_FILE = 'storage.json'
 #: ``conventions::PURPOSES``.
 PURPOSES = (
     'assets', 'shots', 'groups', 'export', 'cache', 'render', 'turntable',
-    'temp', 'proxy', 'preset', 'edit',
+    'temp', 'proxy', 'preset', 'edit', 'edits',
 )
 
 #: The placeholders a path template may use. Mirrored by the wizard's

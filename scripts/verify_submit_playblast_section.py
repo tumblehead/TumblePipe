@@ -10,9 +10,10 @@ a bare pane (only what the section builder touches) and pins:
   2. Seeding shows a value without pinning it, and reads it back: per entity
      on the placeholder row, yes on row 1, no on row 2.
   3. Picking a row pins it; picking the placeholder goes back to per entity.
-  4. The rows the chosen Renderer ignores are greyed out, label included:
-     Light / Samples / Materials under viewport, Shading / Blur under karma;
-     with Renderer per entity every row stays live.
+  4. Only the chosen Renderer's rows show, label included: Shading / Blur
+     under viewport, Light / Samples / Materials under karma. With Renderer
+     per entity every row shows, each label naming its renderer, under a
+     line saying why (greyed-out rows read as locked, 2026-11).
 
 Run (no Houdini, no project):
     QT_QPA_PLATFORM=offscreen TUMBLETROVE_PYTHON=<tumbletrove>/python \\
@@ -78,6 +79,7 @@ def build_pane():
     pane._changed = lambda: None
     pane._on_cut_changed = lambda: None
     pane._seed_values = lambda: {}
+    pane._reverts = []
     return pane, pane._build_playblast_section()
 
 
@@ -113,25 +115,32 @@ def main() -> int:
     check("picking ⟨per entity⟩ goes back to per entity",
           not materials.pinned and materials.value() is resolve.MIXED)
 
-    # 4. Greying
+    # 4. Only the chosen renderer's rows
     renderer = pane._fields['pb_renderer']
+    form = pane._pb_form
 
-    def live(name):
-        return {
-            (label is None or label.isEnabled(), row.isEnabled())
-            for label, row in pane._pb_rows[name]
-        }
+    def shown_rows(name):
+        return {form.isRowVisible(row) for _label, row, _text in pane._pb_rows[name]}
+
+    def labels(name):
+        return [label.text() for label, _row, _text in pane._pb_rows[name]]
 
     for chosen, viewport_on, karma_on in (
         ('viewport', True, False), ('karma', False, True), (resolve.MIXED, True, True),
     ):
         renderer.seed(chosen)
         pane._scope_playblast_look()
-        shown = 'per entity' if chosen is resolve.MIXED else chosen
-        check(f"Renderer {shown}: viewport rows {'live' if viewport_on else 'greyed'}, "
-              f"karma rows {'live' if karma_on else 'greyed'}",
-              live('viewport') == {(viewport_on, viewport_on)} and live('karma') == {(karma_on, karma_on)},
-              f"viewport={live('viewport')} karma={live('karma')}")
+        name = 'per entity' if chosen is resolve.MIXED else chosen
+        check(f"Renderer {name}: viewport rows {'shown' if viewport_on else 'hidden'}, "
+              f"karma rows {'shown' if karma_on else 'hidden'}",
+              shown_rows('viewport') == {viewport_on} and shown_rows('karma') == {karma_on},
+              f"viewport={shown_rows('viewport')} karma={shown_rows('karma')}")
+        mixed = chosen is resolve.MIXED
+        check(f"Renderer {name}: labels {'name their renderer' if mixed else 'are plain'}, "
+              f"the why-line {'shows' if mixed else 'is hidden'}",
+              form.isRowVisible(pane._pb_hint) == mixed
+              and all(('(' in text) == mixed for text in labels('viewport') + labels('karma')),
+              f"{labels('viewport') + labels('karma')}")
 
     shot = os.environ.get('PLAYBLAST_SECTION_SCREENSHOT')
     if shot:
@@ -141,7 +150,7 @@ def main() -> int:
             pane._scope_playblast_look()
             box.grab().save(shot.replace('.png', f'_{chosen}.png'))
 
-    total = 1 + 3 + 3 + 3
+    total = 1 + 3 + 3 + 6
     print(f"\n{total - len(FAILED)}/{total} checks passed")
     return 1 if FAILED else 0
 

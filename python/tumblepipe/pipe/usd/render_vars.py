@@ -13,11 +13,22 @@ The farm never repairs either: what renders is what the render department
 published. ``render_var_problems`` lists what is wrong, and
 ``check_render_vars`` refuses with the fix spelled out, at submit (collapse)
 and in the farm's stage task.
+
+``pxr`` is imported inside the functions that read a stage, never at module
+scope: ``farm.pipelines.preview`` imports :class:`RenderVarsError` from here,
+and the plain-Python half of the collapse worker imports ``preview`` in the
+farm's package env, which has no USD (v1.94.0 failed every collapse job with
+``No module named 'pxr'``).
 """
 
-from pxr import Sdf, Usd, UsdRender
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from tumblepipe.pipe.aovs import pipeline_aov_name
+
+if TYPE_CHECKING:
+    from pxr import Sdf, Usd
 
 AOV_NAME_ATTR = 'driver:parameters:aov:name'
 
@@ -34,6 +45,7 @@ class RenderVarsError(ValueError):
 
 
 def _products(stage: Usd.Stage, settings_prim_path: str) -> list[Sdf.Path]:
+    from pxr import UsdRender
     settings = UsdRender.Settings(stage.GetPrimAtPath(settings_prim_path))
     if settings:
         targets = settings.GetProductsRel().GetForwardedTargets()
@@ -70,6 +82,7 @@ def twin_problems(var_paths) -> list[str]:
 
 def render_var_problems(stage: Usd.Stage, settings_prim_path: str) -> list[str]:
     """What the products the settings render would get wrong, one line each."""
+    from pxr import UsdRender
     problems = []
     for product_path in _products(stage, settings_prim_path):
         product = UsdRender.Product(stage.GetPrimAtPath(product_path))
@@ -101,6 +114,7 @@ def check_render_vars(stage: Usd.Stage, settings_prim_path: str) -> None:
 
 def check_render_vars_in_usda(usda_content: str, settings_prim_path: str) -> None:
     """``check_render_vars`` on a root layer's text."""
+    from pxr import Sdf, Usd
     layer = Sdf.Layer.CreateAnonymous('.usda')
     if not layer.ImportFromString(usda_content):
         raise ValueError('the collapsed stage does not parse as USDA')

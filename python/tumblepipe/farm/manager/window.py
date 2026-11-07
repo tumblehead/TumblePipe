@@ -38,7 +38,7 @@ from tumbletrove.asset_browser.core.theme import (
 )
 
 from tumblepipe.farm.local import queue, runner
-from tumblepipe.farm.manager import machine, rows
+from tumblepipe.farm.manager import cleanup, machine, rows
 from tumblepipe.util import desktop
 
 log = logging.getLogger(__name__)
@@ -90,6 +90,25 @@ ACTION_LABELS = {
     'requeue': 'Requeue', 'cancel': 'Cancel', 'remove': 'Remove', 'delete': 'Delete',
 }
 
+# The Clean up menu (``cleanup``): what each item is called, what it says
+# under the pointer, and the word its confirmation uses.
+CLEANUP_ITEMS = (
+    (cleanup.COMPLETED, 'Remove completed',
+     'The listed batches whose every job completed'),
+    (cleanup.FAILED, 'Remove failed',
+     'The listed batches that ended with a failed job (on this machine, a cancelled one too)'),
+    (cleanup.FINISHED, 'Remove completed and failed',
+     'The listed batches whose every job has ended'),
+    (cleanup.SUPERSEDED, 'Remove superseded',
+     'Older finished runs of the same work on the same entity: the newest of each stays'),
+)
+CLEANUP_WORDS = {
+    cleanup.COMPLETED: 'completed', cleanup.FAILED: 'failed',
+    cleanup.FINISHED: 'finished', cleanup.SUPERSEDED: 'superseded',
+}
+# Batch names a confirmation lists per side before "… and N more".
+_CONFIRM_NAMES = 12
+
 _STYLE = f"""
 QWidget {{
     background-color: {BG_DARKEST};
@@ -121,6 +140,7 @@ QPushButton {{
 }}
 QPushButton:hover {{ border-color: {ACCENT}; }}
 QPushButton:disabled {{ color: #5a5a5a; border-color: #2e2e2e; }}
+QPushButton::menu-indicator {{ image: none; width: 0; }}
 QLineEdit, QComboBox {{
     background-color: {BG_DARK};
     border: 1px solid {BORDER};
@@ -175,6 +195,21 @@ def _is_finished(status: str) -> bool:
 
 def _jobs(count: int) -> str:
     return f"{count} job{'' if count == 1 else 's'}"
+
+
+def _batches(count: int) -> str:
+    return f"{count} batch{'' if count == 1 else 'es'}"
+
+
+def _removal_lines(removals: list[cleanup.Removal]) -> list[str]:
+    """A confirmation's list of batches: name and submit time, the first few."""
+    lines = []
+    for removal in removals[:_CONFIRM_NAMES]:
+        when = _when(min(job.submitted for job in removal.jobs))
+        lines.append(f'  {removal.title} · {when}' if when else f'  {removal.title}')
+    if len(removals) > _CONFIRM_NAMES:
+        lines.append(f'  … and {len(removals) - _CONFIRM_NAMES} more')
+    return lines
 
 
 class ProgressDelegate(QStyledItemDelegate):
@@ -366,7 +401,30 @@ class ManagerWindow(QWidget):
         refresh = QPushButton('Refresh')
         refresh.clicked.connect(self._refresh_all)
         bar.addWidget(refresh)
+        bar.addWidget(self._build_cleanup())
         return bar
+
+    def _build_cleanup(self) -> QPushButton:
+        """The Clean up menu, beside the filters it acts through: each item
+        removes finished batches of those the list shows (``cleanup``)."""
+        button = QPushButton('Clean up ▾')
+        button.setToolTip(
+            'Remove finished batches of those listed: the filters above choose which. '
+            'A batch goes only when every job of it has ended.'
+        )
+        menu = QMenu(button)
+        menu.setToolTipsVisible(True)
+        self._cleanup_actions = {}
+        for kind, label, tip in CLEANUP_ITEMS:
+            if kind == cleanup.SUPERSEDED:
+                menu.addSeparator()
+            action = menu.addAction(label, lambda k=kind: self._clean_up(k))
+            action.setToolTip(tip)
+            self._cleanup_actions[kind] = action
+        menu.aboutToShow.connect(self._update_cleanup_menu)
+        button.setMenu(menu)
+        self._cleanup_button = button
+        return button
 
     def _build_jobs_tree(self) -> QTreeWidget:
         tree = QTreeWidget()
@@ -593,6 +651,17 @@ class ManagerWindow(QWidget):
         elif kind == 'farm_control':
             self._say(f'{ACTION_LABELS[key[1]]} sent to the farm for {_jobs(key[2])}')
             self._refresh_farm()
+        elif kind == 'farm_cleanup':
+            cleaned, skipped = result
+            text = f'Clean-up: {_batches(cleaned.batches)} ({_jobs(cleaned.jobs)}) deleted from the farm'
+            if skipped:
+                text += f'; {skipped} left, no longer finished'
+            if cleaned.error:
+                self._say(f'{text}; the rest failed', error=True)
+                QMessageBox.warning(self, 'Farm Manager', f'Clean-up stopped short:\n\n{cleaned.error}')
+            else:
+                self._say(text)
+            self._refresh_farm()
         elif kind == 'job_context':
             self._contexts_loading.discard(key[1])
             self._contexts[key[1]] = result
@@ -629,6 +698,9 @@ class ManagerWindow(QWidget):
         elif kind == 'farm_control':
             self._say(f'{ACTION_LABELS[key[1]]} failed on the farm', error=True)
             QMessageBox.warning(self, 'Farm Manager', f'{ACTION_LABELS[key[1]]} failed:\n\n{error}')
+        elif kind == 'farm_cleanup':
+            self._say('Clean-up failed on the farm', error=True)
+            QMessageBox.warning(self, 'Farm Manager', f'Clean-up failed:\n\n{error}')
         elif kind in ('farm_tasks', 'farm_reports', 'farm_report_text'):
             self._set_log_text(f'Could not read from Deadline: {error}', follow=False)
         log.warning('Farm Manager: %s failed', kind, exc_info=error)
@@ -658,13 +730,16 @@ class ManagerWindow(QWidget):
 
     # ── the job tree ──────────────────────────────────────
 
-    def _visible_rows(self) -> list[rows.JobRow]:
+    def _visible_rows(self, hide_finished: bool | None = None) -> list[rows.JobRow]:
+        """The rows the filters let through; ``hide_finished`` overrides its checkbox."""
         source = self._source.currentData()
+        if hide_finished is None:
+            hide_finished = self._hide_finished.isChecked()
         filters = dict(
             source=source,
             user=self._user if self._mine.isChecked() else None,
             project=self._project if self._this_project.isChecked() else None,
-            hide_finished=self._hide_finished.isChecked(),
+            hide_finished=hide_finished,
             text=self._search.text().strip(),
         )
         candidates = self._local_rows + self._farm_rows
@@ -1217,6 +1292,75 @@ class ManagerWindow(QWidget):
         runner.ensure_running(self._root)
         self._say(f'{ACTION_LABELS[command]} requested on this machine for {_jobs(len(selected))}')
 
+    # ── clean-ups ─────────────────────────────────────────
+
+    def _cleanup_candidates(self, kind: str) -> list[cleanup.Removal]:
+        """The batches the clean-up ``kind`` removes now: of those the filters
+        let through (source, Only mine, Only this project, the search),
+        finished ones included while *Hide finished* hides them, each judged
+        whole against every job read."""
+        return cleanup.removable(
+            self._local_rows + self._farm_rows, self._visible_rows(hide_finished=False), kind,
+        )
+
+    def _update_cleanup_menu(self) -> None:
+        """Count each clean-up's batches as the menu opens; one with none is greyed."""
+        for kind, label, _tip in CLEANUP_ITEMS:
+            count = len(self._cleanup_candidates(kind))
+            action = self._cleanup_actions[kind]
+            action.setText(f'{label} ({_batches(count)})' if count else label)
+            action.setEnabled(bool(count))
+
+    def _clean_up(self, kind: str) -> None:
+        """Remove the batches of a clean-up, once confirmed.
+
+        What is removed is what was confirmed and still qualifies on a
+        fresh read (``cleanup.recheck``): a batch retried while the
+        question was open is left alone.
+        """
+        chosen = self._cleanup_candidates(kind)
+        if not chosen:
+            self._say(f'Nothing {CLEANUP_WORDS[kind]} to clean up')
+            return
+        if not self._confirm_cleanup(kind, chosen):
+            return
+        local = [removal for removal in chosen if removal.source == rows.LOCAL]
+        farm = [removal for removal in chosen if removal.source == rows.FARM]
+        if local:
+            try:
+                again = cleanup.recheck(rows.local_rows(self._root)[0], local, kind)
+                count = cleanup.remove_local(again, self._root, start=runner.ensure_running)
+            except Exception as error:
+                self._say('Clean-up failed on this machine', error=True)
+                QMessageBox.warning(self, 'Farm Manager', f'Clean-up failed:\n\n{error}')
+            else:
+                text = f"Clean-up: {_batches(count)} taken off this machine's list"
+                if len(local) > count:
+                    text += f'; {len(local) - count} left, no longer finished'
+                self._say(text)
+                self._refresh_local()
+        if farm:
+            self._submit(('farm_cleanup', kind), _farm_cleanup, farm, kind)
+
+    def _confirm_cleanup(self, kind: str, chosen: list[cleanup.Removal]) -> bool:
+        """Ask before a clean-up, naming its batches, the farm's and this machine's apart."""
+        farm = [removal for removal in chosen if removal.source == rows.FARM]
+        local = [removal for removal in chosen if removal.source == rows.LOCAL]
+        count = len(chosen)
+        jobs = sum(len(removal.jobs) for removal in chosen)
+        lines = [
+            f"Remove {count} {CLEANUP_WORDS[kind]} batch{'' if count == 1 else 'es'} "
+            f'({_jobs(jobs)})?'
+        ]
+        if farm:
+            lines += ['', 'Deleted from the Deadline farm:', *_removal_lines(farm)]
+        if local:
+            lines += ['', "Taken off this machine's list:", *_removal_lines(local)]
+        if kind == cleanup.SUPERSEDED:
+            lines += ['', 'The newest run of each stays.']
+        lines += ['', 'Their outputs stay.']
+        return QMessageBox.question(self, 'Farm Manager', '\n'.join(lines)) == QMessageBox.Yes
+
     def _say(self, text: str, error: bool = False) -> None:
         """Answer an action in the footer, with the time it was answered."""
         from datetime import datetime
@@ -1277,6 +1421,14 @@ def _read_report(path: str) -> str:
 def _farm_control(command: str, ids: list[str]) -> str:
     from tumblepipe.farm.manager import deadline_jobs
     return deadline_jobs.control(command, ids)
+
+
+def _farm_cleanup(chosen: list[cleanup.Removal], kind: str) -> tuple[cleanup.Cleaned, int]:
+    """Delete the confirmed farm batches that still qualify on a fresh read:
+    ``(what was deleted, how many confirmed batches were left)``."""
+    from tumblepipe.farm.manager import deadline_jobs
+    again = cleanup.recheck(deadline_jobs.fetch_jobs(), chosen, kind)
+    return cleanup.delete_farm(again, deadline_jobs.control), len(chosen) - len(again)
 
 
 def _open_folder_of(path: str) -> None:

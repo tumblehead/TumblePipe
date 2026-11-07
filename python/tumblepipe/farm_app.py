@@ -44,8 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as error:
         QMessageBox.critical(None, 'Farm Submit', f'Could not open the Farm Submit grid:\n\n{error}')
         return 1
-    # Accepting (Submit) closes the dialog and shows the status window; the
-    # app then lives until that window closes too.
+    # The submission's progress shows in the dialog itself; the app lives
+    # until the dialog closes (the submission runs on in its own process).
     dialog.show()
     return app.exec()
 

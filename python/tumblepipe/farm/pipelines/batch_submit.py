@@ -25,7 +25,6 @@ from tumblepipe.config.channels import (
     read_channel_names,
 )
 from tumblepipe.config.department import list_departments, department_names_up_to
-from tumblepipe.apps.deadline import Batch
 from tumblepipe.farm.backend import get_farm
 from tumblepipe.config.timeline import FrameRange
 from tumblepipe.farm.jobs import stage as stage_job
@@ -34,10 +33,11 @@ from tumblepipe.farm.jobs import publish as publish_job
 from tumblepipe.farm.pipelines import build as build_pipeline
 from tumblepipe.farm.pipelines import render as render_pipeline
 from tumblepipe.farm.pipelines import playblast as playblast_pipeline
+from tumblepipe.farm.pipelines import edit_render as edit_render_pipeline
 from tumblepipe.farm.pipelines import preview
 from tumblepipe.pipe import render_layers
 from tumblepipe.farm.pipelines import publish as publish_pipeline
-from tumblepipe.farm.pipelines._batch import batch_title
+from tumblepipe.farm.pipelines._batch import batch_title, new_batch
 
 # Mapping from submit-dialog settings keys to Karma/USD render setting
 # attribute paths, used to build overrides for render_settings.json. A key
@@ -191,6 +191,10 @@ def submit_entity_batch(config: dict) -> list[str]:
                                      pb_res, pb_look
                                      (specs.playblast.valid_look)
 
+            An Edits tab row (context ``edits``) is a Render Edit instead:
+            its settings are version, pool_name and priority
+            (``pipelines.edit_render.config_from_row``).
+
     Returns:
         List of submitted job IDs
 
@@ -207,6 +211,11 @@ def submit_entity_batch(config: dict) -> list[str]:
     entity_uri = Uri.parse(config['entity']['uri'])
     entity_context = config['entity']['context']
     settings = config['settings']
+
+    # An edit has no departments, publishes or previews: its one job is
+    # Render Edit.
+    if entity_context == 'edits':
+        return edit_render_pipeline.submit(edit_render_pipeline.config_from_row(config))
 
     do_publish = settings['publish']
     do_render = settings['render']
@@ -351,7 +360,9 @@ def submit_entity_batch(config: dict) -> list[str]:
         )
         if wanted
     ]
-    batch = Batch(batch_title(*kinds, entity_uri, user_name))
+    # Stamped with the project and entity (farm.stamp), so the Farm Manager
+    # and the next submit's clean-up know whose jobs these are.
+    batch = new_batch(batch_title(*kinds, entity_uri, user_name), entity_uri)
 
     # Track job indices for dependencies
     jobs = {}  # name -> Job

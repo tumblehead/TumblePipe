@@ -24,3 +24,27 @@ pub const AVERROR_EAGAIN: i32 = averror(if cfg!(target_os = "macos") { 35 } else
 
 /// `AV_NOPTS_VALUE`: "no timestamp" (a cast expression bindgen cannot see).
 pub const AV_NOPTS_VALUE: i64 = i64::MIN;
+
+/// One key and value of an [`AVDictionary`] (libavutil/dict.h). Written by
+/// hand, not generated: its layout has been these two pointers since FFmpeg
+/// 0.x, and binding it here keeps the per-platform bindings untouched.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct AVDictionaryEntry {
+    pub key: *mut ::std::os::raw::c_char,
+    pub value: *mut ::std::os::raw::c_char,
+}
+
+/// `av_dict_get` matches keys case-insensitively unless this is set.
+pub const AV_DICT_MATCH_CASE: i32 = 1;
+
+unsafe extern "C" {
+    /// The entry of `m` named `key` after `prev` (null: the first), or null
+    /// (libavutil/dict.h). Declared by hand with [`AVDictionaryEntry`].
+    pub fn av_dict_get(
+        m: *const AVDictionary,
+        key: *const ::std::os::raw::c_char,
+        prev: *const AVDictionaryEntry,
+        flags: ::std::os::raw::c_int,
+    ) -> *mut AVDictionaryEntry;
+}

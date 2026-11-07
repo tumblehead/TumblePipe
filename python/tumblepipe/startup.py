@@ -671,6 +671,7 @@ def register_package():
         menu=[
             package.item("Farm Manager", _open_farm_manager),
             package.item("VRAM Inspector", _open_vram_inspector),
+            package.item("Sync with Multi", _sync_with_multi),
         ],
         catalogs=[package.catalog("pipeline", _make_pipeline_catalog)],
     )
@@ -688,6 +689,13 @@ def _open_vram_inspector() -> None:
     """Open the VRAM Inspector (imported on click: it pulls in Qt and pxr)."""
     from tumblepipe.vram import ui
     ui.show()
+
+
+def _sync_with_multi() -> None:
+    """Compare the open Multi workfile with its Multi and offer to bring
+    them in step (``pipe.houdini.multi_sync``)."""
+    from tumblepipe.pipe.houdini import multi_sync
+    multi_sync.sync_with_multi()
 
 
 def _package_root() -> Path:

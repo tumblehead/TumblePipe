@@ -23,6 +23,12 @@ Recipe ids are ``recipe:<project>:<context>/<slug>``, the same
 the catalog can route them before any of its entity resolvers see them
 (``PROJECT/second/third`` parsing would read one as a shot).
 
+A library (``libraries.py``) holds recipes the same way under
+``<library>/recipes/``; its recipes' owner segment is ``@<library>``
+(``recipe:@Studio:sop/scatter``), they are tagged ``library:<name>``
+instead of ``project:<name>``, and Share to Library / Copy to Project
+(:meth:`RecipeManager.copy_entry`) move them between the two.
+
 Threading, as for the rest of the catalog: :meth:`RecipeManager.scan_all`
 walks the project share and runs on the worker (``warm_up_worker_thread``
 / ``get_assets``) or synchronously after a local write; sidebar counts
@@ -55,8 +61,12 @@ from tumbletrove.asset_browser.api.types import (
     CreationField,
 )
 
+from .libraries import is_library_owner, library_name, owner_tag
+from .library_kinds import LibraryKind
+
 if TYPE_CHECKING:
     from .projects import PipelineProjectRegistry
+    from .libraries import LibraryIndex
     from .refresh import BrowserRefresh
 
 log = logging.getLogger(__name__)
@@ -64,10 +74,13 @@ log = logging.getLogger(__name__)
 #: Directory under the project root that holds every recipe.
 RECIPES_DIR = "recipes"
 ID_PREFIX = "recipe:"
+#: How the creation form's Project dropdown names a library.
+LIBRARY_CHOICE_PREFIX = "Library: "
 TYPE_TAG = "type:recipe"
 CREATE_OPTION = "new_recipe"
 
 _ENTRY_FILE = "entry.json"
+_COPY_SUFFIXES = (".copying", ".replaced")  # copy_entry staging folders
 _CPIO_FILE = "recipe.cpio"
 _THUMB_FILE = "thumbnail.png"
 _KIND = "recipe"
@@ -226,7 +239,9 @@ def scan_project(project: str, project_path: str | os.PathLike) -> list[RecipeEn
         if not ctx_dir.is_dir():
             continue
         for slug_dir in sorted(ctx_dir.iterdir()):
-            if not slug_dir.is_dir():
+            # A copy being made, or the recipe it replaces (copy_entry),
+            # is not a recipe, even with its entry.json written.
+            if not slug_dir.is_dir() or slug_dir.name.endswith(_COPY_SUFFIXES):
                 continue
             meta = read_entry(slug_dir)
             if meta is None:
@@ -276,7 +291,7 @@ def card_fields(entry: RecipeEntry, active_ctx: str, catalog_id: str) -> dict:
     tags = {
         f"source:{catalog_id}",
         TYPE_TAG,
-        f"project:{ref.project}",
+        owner_tag(ref.project),
         f"context:{ref.context}",
         f"kind:{_KIND}",
     }
@@ -530,11 +545,37 @@ def materialize(entry: RecipeEntry, drop) -> bool:
 # ── Manager ──────────────────────────────────────────────────
 
 
-class RecipeManager:
+class RecipeManager(LibraryKind):
     """Recipe scanning, cards and mutations for :class:`PipelineCatalog`.
 
     Handed the project registry and the browser refresh, not the catalog.
     """
+
+    kind = _KIND
+    id_prefix = ID_PREFIX
+    type_tag = TYPE_TAG
+
+    def owns(self, asset_id: str) -> bool:
+        return is_recipe_id(asset_id)
+
+    def project_of(self, asset_id: str) -> str | None:
+        ref = parse_id(asset_id)
+        return None if ref is None else ref.project
+
+    def warm_up(self) -> None:
+        # The sidebar's Recipes rows have their counts on first paint
+        # rather than after the first grid query.
+        self.scan_all()
+
+    def restamp(self, items: list[Asset]) -> list[Asset]:
+        return self.restamp_disabled(items)
+
+    def ghost_data(self, asset: Asset):
+        return self.get_ghost_data(asset.id)
+
+    def can_delete(self, asset: Asset) -> bool:
+        ref = parse_id(asset.id)
+        return ref is not None and self._writable(ref.project)
 
     def __init__(
         self,
@@ -542,10 +583,12 @@ class RecipeManager:
         *,
         registry: "PipelineProjectRegistry",
         refresh: "BrowserRefresh",
+        libraries: "LibraryIndex | None" = None,
     ) -> None:
         self._catalog_id = catalog_id
         self._registry = registry
         self._refresh = refresh
+        self._libraries = libraries
         # project name → entries. None until the first scan, so the
         # sidebar can tell "not scanned yet" from "no recipes".
         self._cache: dict[str, list[RecipeEntry]] | None = None
@@ -585,6 +628,17 @@ class RecipeManager:
                     cause=exc,
                 ))
                 cache[proj.name] = []
+        for lib in self._library_list(fresh=True):
+            try:
+                cache[lib.owner] = scan_project(lib.owner, lib.path)
+            except Exception as exc:
+                log.exception("recipe scan failed for library %s", lib.name)
+                errors.append(AssetDiscoveryError(
+                    self._catalog_id,
+                    f"recipes of library {lib.name} could not be read: {exc}",
+                    cause=exc,
+                ))
+                cache[lib.owner] = []
         self._cache = cache
         self._errors = errors
         self._stale = False
@@ -597,6 +651,84 @@ class RecipeManager:
     def errors(self) -> list[CatalogError]:
         """What the last scan could not read, for the page's errors."""
         return list(self._errors)
+
+    # ── Libraries ────────────────────────────────────────
+
+    def _library_list(self, fresh: bool = False) -> list:
+        if self._libraries is None:
+            return []
+        resolved = self._libraries.current() if fresh else self._libraries.cached()
+        return list(resolved.libraries)
+
+    def _library(self, owner: str):
+        if not is_library_owner(owner):
+            return None
+        return next((lib for lib in self._library_list()
+                     if lib.owner == owner), None)
+
+    def _writable(self, owner: str) -> bool:
+        """A project's recipes are writable; a library's unless its
+        ``library.json`` says read-only (or it is no longer listed)."""
+        if not is_library_owner(owner):
+            return True
+        lib = self._library(owner)
+        return lib is not None and not lib.read_only
+
+    def _owner_root(self, owner: str) -> Path | None:
+        """The folder holding *owner*'s ``recipes/``."""
+        if is_library_owner(owner):
+            lib = self._library(owner)
+            return None if lib is None else lib.path
+        proj = self._registry.get(owner)
+        return None if proj is None else Path(proj.project_path)
+
+    def share_targets(self, entry: RecipeEntry) -> list[tuple[str, str]]:
+        """``(owner, label)`` an entry can be copied to: every writable
+        library for a project's recipe, every registered project for a
+        library's."""
+        if is_library_owner(entry.ref.project):
+            return [(p.name, p.name) for p in self._registry.all()]
+        return [(lib.owner, lib.name) for lib in self._library_list()
+                if not lib.read_only]
+
+    def copy_entry(self, entry: RecipeEntry, owner: str) -> RecipeRef:
+        """Copy *entry*'s folder to *owner* (a project or ``@library``),
+        replacing a recipe of the same context and slug there; the copy's
+        ref. Raises ValueError for an unknown or read-only owner."""
+        root = self._owner_root(owner)
+        if root is None:
+            raise ValueError(f"{owner} is not a registered project or library")
+        if not self._writable(owner):
+            raise ValueError(f"library {library_name(owner)} is read-only")
+        dest = recipes_root(root) / entry.ref.context / entry.ref.slug
+        if dest.resolve() == entry.entry_dir.resolve():
+            raise ValueError(f"{entry.name} is already there")
+        meta = read_entry(entry.entry_dir) or dict(entry.meta)
+        meta["copied_from"] = entry.asset_id
+        staging = dest.with_name(dest.name + _COPY_SUFFIXES[0])
+        if staging.exists():
+            shutil.rmtree(staging)
+        shutil.copytree(entry.entry_dir, staging, ignore=shutil.ignore_patterns(_ENTRY_FILE))
+        # Last: entry.json is what makes the folder a recipe.
+        write_entry(staging, meta)
+        # The recipe being replaced moves aside until the copy is in its
+        # place, so a rename that fails (a file held open on the share)
+        # leaves it as it was rather than gone.
+        aside = dest.with_name(dest.name + _COPY_SUFFIXES[1])
+        if aside.exists():
+            shutil.rmtree(aside)
+        if dest.exists():
+            dest.rename(aside)
+        try:
+            staging.rename(dest)
+        except OSError:
+            if aside.exists() and not dest.exists():
+                aside.rename(dest)
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+        shutil.rmtree(aside, ignore_errors=True)
+        self.scan_all()
+        return RecipeRef(owner, entry.ref.context, entry.ref.slug)
 
     def _all_counts(self) -> dict[str, dict[str, int]]:
         return {p: self.context_counts(p) for p in (self._cache or {})}
@@ -700,16 +832,22 @@ class RecipeManager:
     # ── Actions / edit / delete ───────────────────────────
 
     def get_actions(self, detail) -> list[AssetAction]:
-        return [
+        actions = [
             AssetAction(
                 id="open_recipe_folder", label="Open Recipe Folder",
                 icon="folder-open",
             ),
-            AssetAction(id="edit_entity", label="Edit…", icon="settings"),
-            AssetAction(
-                id="delete_entity", label="Delete", icon="x", destructive=True,
-            ),
         ]
+        ref = parse_id(detail.id)
+        if ref is not None and self._writable(ref.project):
+            actions += [
+                AssetAction(id="edit_entity", label="Edit…", icon="settings"),
+                AssetAction(
+                    id="delete_entity", label="Delete", icon="x",
+                    destructive=True,
+                ),
+            ]
+        return actions
 
     def execute_action(self, action_id: str, detail) -> bool:
         """Run a recipe action; True when *action_id* was one of ours."""
@@ -746,7 +884,7 @@ class RecipeManager:
 
     def edit(self, asset_id: str, fields: dict) -> bool:
         entry = self.find(asset_id)
-        if entry is None:
+        if entry is None or not self._writable(entry.ref.project):
             return False
         updates: dict[str, Any] = {}
         if "description" in fields:
@@ -768,7 +906,7 @@ class RecipeManager:
 
     def delete(self, asset_id: str) -> bool:
         entry = self.find(asset_id)
-        if entry is None:
+        if entry is None or not self._writable(entry.ref.project):
             return False
         shutil.rmtree(entry.entry_dir)
         if self._cache is not None:
@@ -827,25 +965,83 @@ class RecipeManager:
             import hou
             choice = hou.ui.displayMessage(
                 f"Delete recipe \"{entry.name}\"?\n"
-                "This removes it from the project for everyone and cannot "
-                "be undone.",
+                + ("This removes it from the library for every project "
+                   "using it and cannot be undone."
+                   if is_library_owner(entry.ref.project) else
+                   "This removes it from the project for everyone and "
+                   "cannot be undone."),
                 buttons=("Delete", "Cancel"),
                 title="Delete Recipe",
             )
             if choice == 0 and self.delete(asset_id):
                 self._refresh.grid()
 
-        return [
-            ("Edit Description…", _edit_description),
-            ("Set Icon…", _set_icon),
-            ("Open Recipe Folder", _open_directory),
-            ("Delete Recipe", _delete),
+        def _copy_to(owner: str, label: str):
+            def _run():
+                import hou
+                dest_root = self._owner_root(owner)
+                dest = (None if dest_root is None else
+                        recipes_root(dest_root) / entry.ref.context / entry.ref.slug)
+                if dest is not None and dest.exists():
+                    choice = hou.ui.displayMessage(
+                        f"{label} already has a recipe \"{entry.ref.slug}\" in "
+                        f"{context_label(entry.ref.context)}.\nReplace it?",
+                        buttons=("Replace", "Cancel"),
+                        title="Recipe Exists",
+                    )
+                    if choice != 0:
+                        return
+                ref = self.copy_entry(entry, owner)
+                self._refresh.grid()
+                hou.ui.setStatusMessage(
+                    f"Copied recipe {entry.name} to {label}",
+                    severity=hou.severityType.Message,
+                )
+                return ref
+            return _run
+
+        in_library = is_library_owner(entry.ref.project)
+        verb = "Copy to Project" if in_library else "Share to Library"
+        copies = [
+            (f"{verb}: {label}", _copy_to(owner, label))
+            for owner, label in self.share_targets(entry)
         ]
+        items = []
+        if self._writable(entry.ref.project):
+            items += [
+                ("Edit Description…", _edit_description),
+                ("Set Icon…", _set_icon),
+            ]
+        items += copies
+        items.append(("Open Recipe Folder", _open_directory))
+        if self._writable(entry.ref.project):
+            items.append(("Delete Recipe", _delete))
+        return items
 
     # ── Creation ─────────────────────────────────────────
 
+    def library_choice(self, name: str) -> str:
+        """The creation form's Project dropdown entry for a library."""
+        return f"{LIBRARY_CHOICE_PREFIX}{name}"
+
+    def create_target(self, choice: str):
+        """A library the creation form's Project dropdown named, as the
+        ``name`` / ``project_path`` pair :meth:`create` writes to; None
+        when *choice* names no writable library (a project, or nothing)."""
+        if not choice.startswith(LIBRARY_CHOICE_PREFIX):
+            return None
+        name = choice[len(LIBRARY_CHOICE_PREFIX):]
+        lib = next((lib for lib in self._library_list()
+                    if lib.name == name and not lib.read_only), None)
+        if lib is None:
+            return None
+        from types import SimpleNamespace
+        return SimpleNamespace(name=lib.owner, project_path=str(lib.path),
+                               label=f"library {lib.name}")
+
     def creation_fields(
         self, default_project: str, projects: list[str],
+        default_library: str = "",
     ) -> list[CreationField]:
         fields = [
             CreationField("name", "Name", required=True),
@@ -858,12 +1054,21 @@ class RecipeManager:
                 default="",
             ),
         ]
-        if len(projects) > 1:
+        # Writable libraries are offered beside the projects: a recipe
+        # saved there is on every project that lists the library.
+        choices = list(projects) + [
+            self.library_choice(lib.name) for lib in self._library_list()
+            if not lib.read_only
+        ]
+        if len(choices) > 1:
+            default = default_project
+            if default_library and self.library_choice(default_library) in choices:
+                default = self.library_choice(default_library)
             fields.append(CreationField(
-                "project", "Project",
+                "project", "Save to" if len(choices) > len(projects) else "Project",
                 field_type="dropdown",
-                choices=tuple(projects),
-                default=default_project,
+                choices=tuple(choices),
+                default=default,
             ))
         return fields
 
@@ -913,7 +1118,8 @@ class RecipeManager:
         if entry_dir.exists():
             choice = hou.ui.displayMessage(
                 f"A recipe named \"{slug}\" already exists in "
-                f"{context_label(context)} for {project.name}.\nOverwrite?",
+                f"{context_label(context)} for "
+                f"{getattr(project, 'label', project.name)}.\nOverwrite?",
                 buttons=("Overwrite", "Cancel"),
                 title="Recipe Exists",
             )

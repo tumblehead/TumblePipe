@@ -339,17 +339,97 @@ def summary(
     return f"{' · '.join(parts)} — {rows} {noun[rows != 1]}"
 
 
+def empty_columns(
+    uris: Sequence[str],
+    columns: Sequence[Column],
+    states: Mapping[CellKey, str],
+) -> set[str]:
+    """Keys of the columns with nothing to do on any row: every cell ``NONE``.
+
+    A department no entity has a workfile in is one of these; the dialog
+    collapses them so the departments in use fit on screen. A column with
+    a cell still ``PENDING`` is not empty yet, and with no rows nothing is.
+    """
+    if not uris:
+        return set()
+    return {
+        column.key for column in columns
+        if all(states.get((uri, column.key)) == NONE for uri in uris)
+    }
+
+
+def untick_sent(ticks: set, sent: set[str]) -> set:
+    """``ticks`` without the cells of the rows that went out: back from a
+    submission, what is left ticked is what was not sent."""
+    return {key for key in ticks if key[0] not in sent}
+
+
+def stale_ticks(stale: Mapping[str, Sequence[str]]) -> set:
+    """The publish cells "Tick stale publishes" adds: each row's stale,
+    unticked departments its previews compose, and nothing else."""
+    return {
+        (uri, publish_key(department))
+        for uri, departments in stale.items() for department in departments
+    }
+
+
+def row_steps(uri: str, columns: Sequence[Column], ticks: set) -> list[tuple[str, str]]:
+    """``(kind, label)`` of each ticked step on ``uri``, in column order:
+    a publish by its department, a preview by its name."""
+    return [
+        (column.kind, column.label)
+        for column in columns if (uri, column.key) in ticks
+    ]
+
+
+def kind_summary(
+    kind: str,
+    uris: Sequence[str],
+    columns: Sequence[Column],
+    ticks: set,
+    noun: tuple[str, str] = ('entity', 'entities'),
+) -> str:
+    """A settings section's headline summary: who its settings apply to.
+
+    ``2 shots`` for a preview; ``3 publishes, 2 shots`` for publish, where a
+    row can tick several departments. Empty when nothing of ``kind`` is
+    ticked.
+    """
+    keys = [column.key for column in columns if column.kind == kind]
+    cells = sum(1 for uri in uris for key in keys if (uri, key) in ticks)
+    rows = sum(1 for uri in uris if any((uri, key) in ticks for key in keys))
+    if not rows:
+        return ''
+    who = f"{rows} {noun[rows != 1]}"
+    if kind == PUBLISH and cells != rows:
+        return f"{cells} publishes, {who}"
+    return who
+
+
 # ── context tabs ──────────────────────────────────────────
 
 # The dialog's tabs, in the order they are shown. One grid per context: the
 # department columns (and Playblast) differ between them, so they never share
-# a grid, and Submit sends only the tab in front.
-CONTEXTS = ('assets', 'shots')
+# a grid, and Submit sends only the tab in front. Edits have no departments:
+# their tab lists the edits with one step, Render Edit (see the end of this
+# module).
+CONTEXTS = ('assets', 'shots', 'edits')
+EDITS = 'edits'
 
 
 def context_noun(context: str) -> tuple[str, str]:
-    """``('shot', 'shots')`` or ``('asset', 'assets')`` for counts and headers."""
-    return ('shot', 'shots') if context == 'shots' else ('asset', 'assets')
+    """``('shot', 'shots')``, ``('asset', 'assets')`` or ``('edit', 'edits')``
+    for counts and headers.
+
+    Only the :data:`CONTEXTS` have a tab; any other is a ValueError rather
+    than being counted as assets."""
+    if context == 'shots':
+        return ('shot', 'shots')
+    if context == 'assets':
+        return ('asset', 'assets')
+    if context == EDITS:
+        return ('edit', 'edits')
+    raise ValueError(f'{context!r} is not a farm submission context')
 
 
 def tab_seed(
@@ -385,3 +465,47 @@ def tab_label(context: str, rows: int) -> str:
     """
     name = context.capitalize()
     return f"{name} ({rows})" if rows else name
+
+
+# ── the Edits tab ─────────────────────────────────────────
+
+# An edit's one step: render a finished published version into a movie on
+# the farm (farm/pipelines/edit_render.py). A working version is never
+# offered: it can change under the job.
+
+def default_edit_version(published: Sequence[str]) -> str | None:
+    """The version an edit's row offers first: its latest finished published
+    version (``published`` oldest first), None when it has none, so its row
+    cannot be ticked."""
+    return published[-1] if published else None
+
+
+def edit_rows(
+    ticked: Mapping[str, str],
+    names: Mapping[str, str],
+    pool_name: str,
+    priority: int,
+) -> list[dict]:
+    """The plan rows of the Edits tab: one per ticked edit (``ticked`` maps
+    its URI to the chosen version), in URI order, as
+    ``batch_submit.submit_entity_batch`` takes them."""
+    return [
+        {
+            'entity': {'uri': uri, 'name': names[uri], 'context': EDITS},
+            'settings': {
+                'version': ticked[uri],
+                'pool_name': pool_name,
+                'priority': priority,
+            },
+        }
+        for uri in sorted(ticked)
+    ]
+
+
+def edit_summary(ticked: int) -> str:
+    """``2 edit renders — 2 edits``, or ``Nothing ticked``."""
+    if not ticked:
+        return 'Nothing ticked'
+    renders = 'edit render' if ticked == 1 else 'edit renders'
+    edits = 'edit' if ticked == 1 else 'edits'
+    return f"{ticked} {renders} — {ticked} {edits}"

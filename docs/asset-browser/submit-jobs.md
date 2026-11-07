@@ -43,7 +43,27 @@ When the dialog is opened from a workfile, that workfile's department pins
 the **Up to** department of Playblast and Render (when it is renderable), so
 submitting from a lighting workfile previews up to lighting.
 
-The dialog is non-modal: Houdini stays usable while it is open.
+The dialog is non-modal: Houdini stays usable while it is open. What you
+ask of it before submitting (the review), why it cannot submit yet, and the
+submission's progress all show on a card over the dialog itself rather than
+in windows of their own, and the dialog stays open after a submission, so
+you can go **Back to grid** and submit more.
+
+### What it remembers
+
+Closing the dialog keeps, per project and tab, for the next time it opens:
+
+- the settings you **pinned** (set for the whole submission), except
+  **Frames**, which belong to the shots they were typed for;
+- the Render section's **Range**, **Standalone** and **Copy to edit** choices;
+- the columns you collapsed.
+
+And for the dialog as a whole: which settings sections are collapsed, whether
+empty columns collapse by themselves, **Clean up old jobs**, **Run on** and its
+size. A remembered value the project no longer offers (a department since
+removed, say) is dropped, not guessed at. The workfile you open it from still
+wins: its department pins **Up to** over a remembered one, and that pin is
+the workfile's, so it is not remembered for the next opening.
 
 ### Assets and Shots tabs
 
@@ -58,9 +78,28 @@ which is shots only) differ between them.
 - Each tab keeps its ticks, filter and settings while the dialog is open, so
   you can switch away and back. A tab holding ticks shows how many entities
   it has ticked, as in **Assets (2)**.
-- **Submit** sends the tab in front only, and closes the dialog. Ticks on
-  the other tab are not submitted: to send both, submit one tab, then open
-  the dialog again for the other.
+- **Submit** sends the tab in front only. Ticks on the other tab are not
+  submitted: to send both, submit one tab, go **Back to grid**, switch tabs
+  and submit the other.
+
+### The Edits tab
+
+The **Edits** tab lists the project's [edits](play-shots.md#saving-and-publishing),
+one row each, with one step: **Render Edit**. An edit has no departments,
+so this tab has no grid columns or status. Each row offers the edit's
+finished published versions, the latest first; an edit never published
+reads *not published* and cannot be ticked. A working version is never
+offered, because it can change while the job runs. **Pool** and
+**Priority** beside the list apply to every ticked edit.
+
+Each ticked edit is one job, `render edit <name> <version>`, in the
+`encode` group. A worker renders that version with the editor, headless and
+on the CPU, sound included, and Houdini's `hffmpeg` encodes it as H.264 with
+AAC sound and a timecode track starting at the edit's start timecode
+(`01:00:00:00` unless the edit says otherwise). The movie is written to
+`render:/edits/<name>/<name>_edit_vNNNN.mp4`; rendering the same version
+again replaces it. No Discord notify follows. **Run on: This machine**
+runs the same job here.
 
 A Multi is never a farm target itself: it has no staged stage, frame range or
 channels of its own. Opened from a Multi, the dialog ticks the Multi's
@@ -75,8 +114,36 @@ category). Columns are the pipeline steps:
 
 - one **publish** column per publishable department, in pipeline (pool)
   order;
-- **Playblast** (shots only) and **Render**, after a heavier rule;
+- **Playblast** (shots only) and **Render**;
 - **Warnings**.
+
+Each kind of step has a colour: blue for publishes, violet for Playblast,
+pink for Render. It runs along the top of the kind's column headers, fills
+its ticked cells, and edges the kind's settings section beside the grid, so
+a section can be traced to the cells it speaks for. A heavier rule separates the kinds.
+
+Hover a column's header for what the column does and what each mark in it
+means (this replaced the legend above the grid); hover a cell for its own
+state.
+
+### Collapsing columns
+
+A column can collapse to a thin sliver, to keep the grid to the columns you
+are working with:
+
+- **By itself**: once the status is read, a column with nothing to do on any
+  row (a department no entity has a workfile in) collapses, unless a cell in
+  it is ticked. It opens again by itself when a later **Refresh** finds work
+  in it. **Columns ▸ Collapse empty columns by themselves** turns this off.
+- **By hand**: hover a header and click the **‹** beside its checkbox,
+  right-click a header, or untick the column in the **Columns** menu.
+
+Click a collapsed column's header (its **›**) to open it again; **Columns ▸
+Show every column** opens them all. Collapsing only changes the view: a
+collapsed column's ticks stay and are submitted (its sliver shows them in the
+kind's colour, and a dot where a cell is stale or never done), but **All**,
+the row and sequence checkboxes and **Select stale** no longer reach it, and
+a click on the sliver does nothing.
 
 ### What a cell shows
 
@@ -88,7 +155,7 @@ category). Columns are the pipeline steps:
 | `●` amber | the workfile was saved after its latest export | older than the newest publish it composes |
 | `✓` green | exported since the last workfile save | newer than every publish it composes |
 | `…` | status not read yet | status not read yet |
-| jade fill | **will be submitted** | **will be submitted** |
+| filled in the kind's colour | **will be submitted** | **will be submitted** |
 
 A preview "composes" the departments of its **Up to** cut: a playblast up to
 animation is stale when layout or animation was published after it, not when
@@ -120,7 +187,8 @@ checks everything again when it runs.
   cells in its corner. Its ▶ / ▼ collapses and expands the sequence; a
   collapsed sequence's ticks still submit.
 - **Select stale** ticks every visible cell that is stale or never done
-  (not the dim `○` of a Multi that never exported that entity).
+  (not the dim `○` of a Multi that never exported that entity, and not in a
+  collapsed column).
   **Clear** unticks everything.
 - **Filter** narrows the rows by name, and the Multi menu beside it narrows
   them to one Multi's members. Filtering never unticks anything, but every
@@ -157,26 +225,33 @@ The Warnings column says, per row, what the submission would run into:
 
 ### Before it submits
 
-Submitting more than one entity, or anything with a warning, first asks
-**Submit to the farm?** It lists what will be sent — one line per step kind,
-with the publishes broken down by department — and how many entities that
-covers. Previews that would show stale, unticked departments get their own
-amber section naming them per entity, and a **Tick those publishes** button
-that ticks exactly those departments and takes you back to the grid to check
-before submitting. Any other warnings, including the channels each entity
-will skip, are listed below that. **Submit N steps** sends it (Enter does the
-same); **Back** returns to the grid with nothing changed. Entities with a
-blocking problem get a red section at the top, and **Submit** stays disabled
-until you go **Back** and fix or untick them.
+**Submit…** first shows **Review submission** over the dialog: one row per
+entity, its steps as chips in their kinds' colours, and what to check first
+(`Ready` in green when nothing). The line under the title says how many steps
+for how many entities, where they go and whether old jobs are cleaned up
+first. Entities with a blocking problem come first, in red, under a banner
+saying they can't be submitted, and **Submit** stays disabled until you go
+**Back** and fix or untick them. Previews that would show stale, unticked
+departments come next, in amber, under a banner with **Tick stale publishes**,
+which ticks exactly those departments and takes you back to the grid. Other
+warnings, including the channels each entity will skip, follow. **Submit N
+steps** sends it (Enter does the same); **Back** (or Esc) returns to the grid
+with nothing changed.
+
+A single entity with nothing to check skips the review and is sent at once.
 
 ## The settings
 
 The right-hand column holds the settings for the ticked cells, in three
-groups: **Publish**, **Playblast** (shots only) and **Render**. A group shows
-only while at least one cell of its kind is ticked — tick a Render cell and
-the Render settings appear; with nothing ticked the column says *Tick a cell
-to see its settings.* A pinned field in a hidden group keeps its value, but
-only matters once a cell of that kind is ticked again.
+sections: **Publish**, **Playblast** (shots only) and **Render**. A section
+shows only while at least one cell of its kind is ticked — tick a Render cell
+and the Render settings appear; with nothing ticked the column says *Tick a
+cell to see its settings.* A pinned field in a hidden section keeps its
+value, but only matters once a cell of that kind is ticked again.
+
+Each section sits on a lighter frame edged in its kind's colour. Its headline
+says what it covers (`3 shots`, or `5 publishes, 3 shots`) and collapses it
+when clicked; a collapsed section still applies its settings.
 
 ### Fields follow each entity unless you pin them
 
@@ -184,15 +259,16 @@ Every field with a per-entity source is **tri-state**:
 
 | State | How it looks | What is sent |
 |---|---|---|
-| Unpinned, entities agree | Italic, dimmed value | Nothing — each entity uses its own configured value (the one shown). |
+| Unpinned, entities agree | Grey value | Nothing — each entity uses its own configured value (the one shown). |
 | Unpinned, entities disagree | `⟨per entity⟩` (a spin box parks one step below its minimum, a checkbox shows partially checked, a combo — **Materials** included — shows the placeholder row, a line edit is empty) | Nothing — each entity keeps its own value. |
-| Pinned | Upright, normal colour | Your value, for every ticked entity. |
+| Pinned | White, with a jade edge on its left, and the row's **↺** | Your value, for every ticked entity. |
 
 "The entities" are the rows with at least one tick (every visible row while
 nothing is ticked). Editing a field pins it. The mouse wheel only changes a
 field you have clicked into; over any other field it scrolls the settings,
 so scrolling past a number cannot pin it by accident. To unpin, click the
-row's **↺** ("Use each entity's own configured value"), pick the
+row's **↺** ("Use each entity's own configured value"; it shows only while a
+field in its row is pinned), pick the
 `⟨per entity⟩` row of a combo, or click a checkbox round to partially
 checked. Ticking more rows
 re-derives only unpinned fields; pinned ones survive. A field that is a
@@ -246,10 +322,15 @@ worker could take from the same pools.
 | **Priority** | `farm.priority` | 50 |
 
 Shading and Blur apply to the viewport renderer, Light, Samples and
-Materials to Karma: the rows the chosen **Renderer** ignores are greyed out
-(all stay live while Renderer is left `⟨per entity⟩`). **Materials** is a
-three-row menu rather than a checkbox: a partially checked box read as
-checked, so two submissions that looked the same rendered differently.
+Materials to Karma, and only the chosen **Renderer**'s rows show. While
+Renderer is left `⟨per entity⟩` (the shots disagree), both sets show, each
+label naming its renderer (`Shading (viewport)`, `Materials (Karma)`), under
+a line saying so: Shading's `clay` and Materials' `Clay` are the two
+renderers' own settings, not one setting twice. Up to TumblePipe 1.94 the
+other renderer's rows were greyed out instead, which read as locked.
+**Materials** is a three-row menu rather than a checkbox: a partially checked
+box read as checked, so two submissions that looked the same rendered
+differently.
 
 **Up to** playblasts every department up to and including this one, in
 pipeline order — the same cut the render uses. There is no frame or channel
@@ -286,7 +367,7 @@ pixel samples: more is cleaner and slower.
 |---|---|---|---|
 | **Up to** | `submission.render.department` | last renderable department (the whole shot) | Renders every department up to and including this one; departments after it are left out. Also names the render output. |
 | **Camera** | — | read-only | The camera the render looks through: the `camera` of the RenderSettings prim in the latest published layer of the strongest department in the **Up to** cut that sets one, else the project's `root_default_prims.usda`. Read from the first checked channel; the tooltip names the department per entity, and `⟨per entity⟩` means the ticked entities disagree. A preview — the farm still asks the composed stage. |
-| **Channels** | — | the entities' own channel lists | A checkable menu (`(none — check at least one)` when empty) with **All**. Lists the *union* of the rendering entities' channels, `default` first; opens with the *intersection* checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the confirm dialog list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
+| **Channels** | — | the entities' own channel lists | A checkable menu (`(none — check at least one)` when empty) with **All**. Lists the *union* of the rendering entities' channels, `default` first; opens with the *intersection* checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the review list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
 | **Range** | — | Full range ticked | Two checkboxes. **Full range** renders everything and chains slapcomp + MP4; **Preview (first / middle / last)** renders three check frames and posts them to Discord. Tick both to get the preview first, with the full range queued behind it. One of the two must be ticked. |
 | **Frames** (first → last) | `frame_start` / `frame_end` | *required* — omitted, and the entity fails with "no frame range configured" | |
 | **Pre / Post roll** | `roll_start` / `roll_end` | 0 / 0 | **Extends** the rendered range: `first - pre … last + post`. |
@@ -333,36 +414,84 @@ checks behind the dialog make sure a channel never quietly renders the
 
 ## Submit
 
-Submit refuses with a message when nothing is ticked ("Tick at least one cell
-before submitting.") or a Render cell is ticked with no channel checked. With
-more than one entity, or any warning, it asks first — the summary line
-(`12 publishes · 8 playblasts · 2 renders — 9 shots`) and the warned
-entities — and will not submit while any entity is blocked (a Render cell on
-an entity that defines none of the checked channels).
+Submit refuses, on a card over the dialog, when nothing is ticked ("Tick at
+least one cell before submitting."), when a Render cell is ticked with no
+channel checked or neither **Preview** nor **Full range**, or when the farm
+is not set up on this machine. Otherwise it shows the
+[review](#before-it-submits), and will not submit while any entity is blocked
+(a Render cell on an entity that defines none of the checked channels).
 
 It then does the cheap part in Houdini — each ticked row's settings resolved
 into a **plan** — and hands the rest to a separate process running Houdini's
-bundled Python (not hython: it takes no licence). The dialog closes straight
-away. Bundling workfiles, snapshotting staged stages and talking to Deadline
-all happen in that process, so Houdini is not locked for the length of the
-submission, however many shots it covers. The process keeps going if Houdini
-is closed or crashes afterwards.
+bundled Python (not hython: it takes no licence). Bundling workfiles,
+snapshotting staged stages and talking to Deadline all happen in that
+process, so Houdini is not locked for the length of the submission, however
+many shots it covers. The process keeps going if the dialog or Houdini is
+closed, or Houdini crashes, afterwards.
 
-A small non-modal **Farm submission** window follows it: one row per entity
-(`queued`, `submitting…`, `submitted · N jobs`, `failed` with the error
-underneath, or `cancelled`), a progress bar below the rows carrying the
-summary (`Submitting… 3 of 20`, then `Submitted 20 of 20`, with `· N failed`
-or `· N cancelled` when any were; green once done cleanly, amber if anything
-failed, grey if cancelled), **Open log folder**, **Cancel** and **Hide**.
-Once the submission is over, **Hide** becomes **Close** — green after a clean
-run.
+### Clean up old jobs
+
+With **Clean up old jobs** ticked (beside **Run on**; on by default, and
+remembered), the process first removes each submitted entity's **finished
+and failed** jobs, everyone's and of every step, from where the new ones go
+(the farm, or this machine), so the [Farm Manager](../deadline.md) shows
+only what is current for it. Queued, rendering and suspended jobs are never
+touched, nor are other entities'. The progress says how many were cleaned up
+per entity, and says so in amber when a clean-up failed or stopped short, so
+you know the old jobs are still there. Untick it to keep the old jobs.
+
+### Following it
+
+The progress shows on the same card: one row per entity with its steps
+(`queued`, `submitting…`, `submitted, N jobs`, with `; N old jobs cleaned up`
+when any were and `; old jobs not cleaned up: <why>` when the clean-up
+failed, `failed: <error>`, or `cancelled, not sent`), and a bar below
+the rows carrying the summary (`Submitting… 3 of 20`, then `20 of 20 sent`,
+with `, N failed` or `, N cancelled` when any were; green once done cleanly,
+red if anything failed, grey if cancelled). **Open log folder**, **Farm
+Manager**, **Cancel** and **Close window** sit below it.
+
+Once it is over, **Back to grid** (or Esc) returns to the grid with the sent
+entities unticked and their status read again, to submit more; **Close**
+closes the dialog (green after a clean run).
 
 **Cancel** stops the submission between entities: the entity being submitted
 when you click it finishes (so no entity is left with only some of its jobs on
 the farm), and every entity after it is marked `cancelled` and never reaches
-Deadline. Jobs already submitted stay on the farm; remove them in Deadline
-Monitor if you no longer want them. Closing or hiding the window does not stop
-the submission — only **Cancel** does.
+Deadline. Jobs already submitted stay on the farm; remove them in the Farm
+Manager if you no longer want them. Closing the dialog does not stop the
+submission — only **Cancel** does.
+
+### Clearing an entity's old jobs first
+
+A submission can clear each entity's old finished jobs from the farm before
+it submits that entity, so the Farm Manager and Deadline Monitor do not fill
+up with runs nobody needs any more. The plan records the choice as
+`cleanup` (`true` or `false`). A plan without it, such as one written before
+the option existed, clears nothing.
+
+When it is on, the process does this for each entity just before submitting
+it, on the side the submission goes to (the Deadline farm, or this machine's
+local farm):
+
+- It takes the entity's batches in this project, whoever submitted them and
+  whatever their steps were (publish, playblast, render...).
+- It removes only a batch whose every job has **completed or failed**. One
+  job that is queued, rendering, pending or suspended keeps the whole batch.
+  So does a job that an unfinished job is waiting on.
+- On the farm the batches are deleted from Deadline. On this machine they
+  are taken off the local farm's list. Rendered outputs stay either way.
+
+Which project and entity a job is for comes from the stamp every job carries
+(see [The Farm Manager](../deadline.md#the-farm-manager)). For a job
+submitted before the stamp, the batch name says it.
+
+A clean-up that fails never fails or holds up the submission. The entity is
+submitted anyway, its row says why the old jobs stayed, and the failure is
+written to `runner.log`. Each entity's
+clean-up adds one line to `progress.jsonl`, after its `running` line:
+`{"event": "cleanup", "uri": ..., "removed": <jobs>, "batches": <batches>,
+"error": null or "<why not all were removed>"}`.
 
 When a finished submission has failures, **Retry failed** appears beside them:
 it submits just the failed entities again, as a new submission. After a
@@ -371,7 +500,7 @@ cancelled entities.
 
 Each submission keeps its files in its own folder under
 `temp:/farm_submissions/` (machine-local): `plan.json` (the settings sent for
-every entity), `progress.jsonl` (what the window reads), `runner.log` (the
+every entity), `progress.jsonl` (what the progress reads), `runner.log` (the
 process's output — the first place to look when an entity fails) and, once
 **Cancel** was clicked, an empty `cancel` file the process checks for before
 each entity.
@@ -425,7 +554,7 @@ flagged it. A **Standalone** render builds its stage on the farm anyway; after
 a publish it now also waits for the rebuilt staged file.
 
 **Previews with nothing published** — snapshotted at submit time, as before,
-so a broken stage fails in the submission window rather than on the farm:
+so a broken stage fails in the submission's progress rather than on the farm:
 
 - *Render*, direct (Standalone off): each checked channel's latest staged
   file is collapsed into `collapsed_stage_<channel>.usda` with the cut
@@ -484,6 +613,7 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | **playblast** | Playblast cells | `playblast` (`playblast`) → `playblast_notify` (`general`) | `render:/playblast/<shot>/<dept>/<sequence>_<shot>_<dept>_vNNNN.mp4` + the daily |
 | **composite** | the `th::build_comp` node's **Submit** | see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s) | `render:/render/<shot>/composite/…` |
 | **export_render** | the `th::lookdev_studio` HDA | `export` (`houdini`) → `notify` | lookdev turntable renders |
+| **edit_render** | the Edits tab's **Render Edit** | `edit_render` (`encode`), one task, no notify | `render:/edits/<name>/<name>_edit_vNNNN.mp4` |
 
 Job priorities come from the settings, inside the
 [Farm priorities](#farm-priorities) bands; every notify job runs at 100,

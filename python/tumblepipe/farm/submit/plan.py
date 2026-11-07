@@ -4,7 +4,7 @@ The Farm Submit dialog does only the cheap part of a submission in Houdini: it
 resolves each entity's settings and writes them to a **plan** file. Launching
 the plan hands the expensive part — bundling workfiles, snapshotting staged
 stages, talking to Deadline — to a separate Python process, and the dialog
-closes. A small status window reads the **progress** file the process writes.
+stays. Its progress card (asset_browser.farm_submit_ui.SubmissionView) reads the **progress** file the process writes.
 
 Why a process and not a thread: ``submit_entity_batch`` runs on the
 process-global ``tumblepipe.api`` client and config cache, and Qt objects
@@ -18,16 +18,18 @@ it carries ``pxr`` for the snapshots and takes **no licence**.
 Files, both in one per-submission folder under ``temp:/farm_submissions/``::
 
     plan.json       {'version', 'created', 'env', 'houdini_version', 'backend',
-                     'rows': [...]}
+                     'cleanup', 'rows': [...]}
     progress.jsonl  one JSON event per line:
                     {'event': 'start', 'total': N}
                     {'event': 'row', 'uri': ..., 'status': 'running'}
+                    {'event': 'cleanup', 'uri': ..., 'removed': N, 'batches': N,
+                     'error': None or '...'}
                     {'event': 'row', 'uri': ..., 'status': 'done', 'jobs': N}
                     {'event': 'row', 'uri': ..., 'status': 'failed', 'error': '...'}
                     {'event': 'row', 'uri': ..., 'status': 'cancelled'}
                     {'event': 'end', 'done': N, 'failed': N, 'cancelled': N}
     runner.log      the process's stdout and stderr
-    cancel          written by the status window to stop the run; the runner
+    cancel          written by the progress card's Cancel to stop the run; the runner
                     checks for it between entities, so the entity being
                     submitted finishes and none is left half-submitted
 
@@ -35,6 +37,16 @@ Each plan row is exactly the config ``batch_submit.submit_entity_batch``
 takes: ``{'entity': {'uri', 'name', 'context'}, 'settings': {...}}``.
 ``backend`` is where the batches go (``farm.backend``): the Deadline farm, or
 this machine's local farm. A plan without one is a farm plan.
+
+``cleanup`` true clears each entity's old finished jobs before submitting
+it (``farm.manager.cleanup.EntityCleanup``): every batch of that entity in
+the plan's project, whoever submitted it and whatever its steps, on the
+backend the plan submits to, once every job of the batch completed or
+failed. A ``cleanup`` event follows the entity's ``running`` one, saying how
+many jobs (``removed``) in how many batches were taken off, and ``error``
+why not all were. A clean-up that fails never fails or holds up the
+submission: the entity is submitted all the same. A plan without the key
+cleans nothing up.
 """
 
 from __future__ import annotations
@@ -66,13 +78,17 @@ PROJECT_ENV_KEYS = (
 
 def make_plan(
     rows: list[dict], *, env: dict, houdini_version: str | None, backend: str = 'farm',
+    cleanup: bool = False,
     ) -> dict:
+    """The plan of a submission. ``cleanup`` clears each entity's old
+    finished jobs before it is submitted (see the module's docstring)."""
     return {
         'version': PLAN_VERSION,
         'created': dt.datetime.now().isoformat(timespec='seconds'),
         'env': {key: env[key] for key in PROJECT_ENV_KEYS if env.get(key)},
         'houdini_version': houdini_version,
         'backend': backend,
+        'cleanup': bool(cleanup),
         'rows': list(rows),
     }
 
@@ -81,6 +97,11 @@ def plan_backend(plan: dict) -> str:
     """Where the plan's batches go; ``farm`` for a plan made before there was a choice."""
     from tumblepipe.farm.backend import FARM, LOCAL
     return LOCAL if plan.get('backend') == LOCAL else FARM
+
+
+def plan_cleanup(plan: dict) -> bool:
+    """Whether the plan clears old jobs first; a plan made before there was a choice does not."""
+    return plan.get('cleanup') is True
 
 
 def write_plan(directory: Path, plan: dict) -> Path:
@@ -139,14 +160,22 @@ def request_cancel(plan_path: Path) -> None:
 
 
 def fold_events(events: list[dict], state: dict | None = None) -> dict:
-    """Fold events into ``{'total', 'finished', 'rows': {uri: event}}``."""
-    state = state if state is not None else {'total': None, 'finished': False, 'rows': {}}
+    """Fold events into ``{'total', 'finished', 'rows': {uri: event}, 'cleanup': {uri: event}}``.
+
+    ``cleanup`` holds each entity's clean-up event apart from its row
+    event, so the row's own status is never replaced by it.
+    """
+    state = state if state is not None else {
+        'total': None, 'finished': False, 'rows': {}, 'cleanup': {},
+    }
     for event in events:
         kind = event.get('event')
         if kind == 'start':
             state['total'] = event.get('total')
         elif kind == 'row' and 'uri' in event:
             state['rows'][event['uri']] = event
+        elif kind == 'cleanup' and 'uri' in event:
+            state.setdefault('cleanup', {})[event['uri']] = event
         elif kind == 'end':
             state['finished'] = True
     return state
@@ -269,7 +298,7 @@ def run(plan_path: Path) -> int:
     try:
         from tumblepipe.farm.pipelines.batch_submit import submit_entity_batch
     except Exception as error:
-        # Reported, not swallowed: every row fails in the status window, the
+        # Reported, not swallowed: every row fails in the progress card, the
         # traceback goes to runner.log, and the runner exits non-zero.
         traceback.print_exc()
         for row in rows:
@@ -277,11 +306,66 @@ def run(plan_path: Path) -> int:
                  status='failed', error=f'Could not load the submitter: {error}')
         emit(progress_path, event='end', done=0, failed=len(rows), cancelled=0)
         return 1
-    return run_rows(rows, progress_path, plan_path.parent / CANCEL_NAME, submit_entity_batch)
+    return run_rows(
+        rows, progress_path, plan_path.parent / CANCEL_NAME, submit_entity_batch,
+        cleanup=_entity_cleanup(plan),
+    )
 
 
-def run_rows(rows: list[dict], progress_path: Path, cancel_path: Path, submit) -> int:
-    """Submit ``rows`` one by one with ``submit``, stopping once ``cancel_path`` exists."""
+def _entity_cleanup(plan: dict):
+    """The plan's clean-up (``cleanup.EntityCleanup``), or None when it asks for none.
+
+    Built after the plan's environment is applied, so it reads the plan's
+    project. One that cannot be built is reported on every entity by
+    :func:`clean_up`, and the submission goes on.
+    """
+    if not plan_cleanup(plan):
+        return None
+    try:
+        from tumblepipe.api import get_project_name
+        from tumblepipe.farm.manager.cleanup import EntityCleanup
+        return EntityCleanup(plan_backend(plan), get_project_name())
+    except Exception as error:
+        traceback.print_exc()
+        message = f'Could not set up the clean-up: {error}'
+
+        def _failed(_uri: str):
+            raise RuntimeError(message)
+        return _failed
+
+
+def clean_up(cleanup, uri: str, progress_path: Path) -> None:
+    """Clear ``uri``'s old finished jobs with ``cleanup`` and emit what it did.
+
+    Never raises: a clean-up that fails is printed to runner.log and
+    reported in its event, and the entity is submitted all the same.
+    """
+    try:
+        result = cleanup(uri)
+        removed, batches = int(result.jobs), int(result.batches)
+        error = str(result.error) if result.error else None
+    except Exception as exception:
+        print(f'{uri}: cleaning up old jobs failed: {exception}', flush=True)
+        traceback.print_exc()
+        removed, batches = 0, 0
+        error = str(exception) or type(exception).__name__
+    else:
+        if error:
+            print(f'{uri}: cleaning up old jobs stopped short: {error}', flush=True)
+        elif removed:
+            print(f'{uri}: removed {removed} old job(s) in {batches} batch(es)', flush=True)
+    try:
+        emit(progress_path, event='cleanup', uri=uri, removed=removed, batches=batches, error=error)
+    except OSError:
+        traceback.print_exc()
+
+
+def run_rows(rows: list[dict], progress_path: Path, cancel_path: Path, submit, cleanup=None) -> int:
+    """Submit ``rows`` one by one with ``submit``, stopping once ``cancel_path`` exists.
+
+    ``cleanup`` (``cleanup.EntityCleanup``, or None for none) is called with
+    each entity's URI just before it is submitted; see :func:`clean_up`.
+    """
     done = failed = cancelled = 0
     for index, row in enumerate(rows):
         if cancel_path.exists():
@@ -291,11 +375,13 @@ def run_rows(rows: list[dict], progress_path: Path, cancel_path: Path, submit) -
             break
         uri = row['entity']['uri']
         emit(progress_path, event='row', uri=uri, status='running')
+        if cleanup is not None:
+            clean_up(cleanup, uri, progress_path)
         try:
             job_ids = submit(row)
         except Exception as error:
             # One entity failing must not stop the others: it is reported in
-            # the status window, its traceback goes to runner.log, and the
+            # the progress card, its traceback goes to runner.log, and the
             # runner exits non-zero.
             failed += 1
             print(f'{uri}: {error}', flush=True)

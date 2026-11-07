@@ -28,7 +28,9 @@ def asset_id_for(project: str, uri: Uri) -> str:
     member, a Root's asset entry, a loaded workfile's entity. Anything else
     (a bucket-only entity, a Multi, a scene) has no card, and asking for its
     id is a bug: it raises ValueError rather than minting an id that names
-    nothing.
+    nothing. An edit (``entity:/edits/<name>``, two segments) has a card of
+    its own kind, whose id is ``edits.EditRef.asset_id``
+    (``edit:PROJECT:<name>``); it raises here too.
     """
     segments = uri.segments
     if (

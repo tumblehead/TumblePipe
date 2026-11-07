@@ -13,6 +13,8 @@
 //! - [`proxy`]: a small picture of a frame, for the timeline.
 //! - [`FrameBuffer`]: the decoded frames kept in memory under a byte budget,
 //!   which is what makes stepping instant once a frame has been seen.
+//! - [`sound`]: a file's audio decoded whole, and the mix of an edit's audio
+//!   clips.
 
 mod buffer;
 pub mod composite;
@@ -20,13 +22,14 @@ mod exr_sequence;
 mod frame;
 mod media;
 mod movie;
+pub mod sound;
 mod thumbnail;
 
 pub use buffer::{FrameBuffer, FrameKey};
 pub use exr_sequence::{ExrHeader, ExrLayer, ExrSequence, ExrView};
 pub use frame::{Frame, Pixels, YuvMatrix};
 pub use media::Media;
-pub use movie::{MovieDecoder, MovieIndex, is_rgba_format};
+pub use movie::{MovieDecoder, MovieIndex, START_FRAME_KEY, is_rgba_format, parse_start_frame};
 pub use thumbnail::{Proxy, Thumbnail, fit, proxy};
 
 /// Why media could not open or decode.

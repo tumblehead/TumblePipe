@@ -1,6 +1,6 @@
 [package]
 name = "th_playlist"
-description = "The sequence player's playlist: shots and their takes, as TumblePipe writes them"
+description = "A shot's takes and their media, as TumblePipe finds them and edits freeze them"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

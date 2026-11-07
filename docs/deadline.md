@@ -103,6 +103,18 @@ Each worker needs the same environment as an artist workstation:
   CUDA device quantizes what it writes to a couple of hundred values per stop,
   which bands as soon as a grade pushes the image; the CPU keeps full float
   precision at a few seconds a frame.
+
+  **Render Edit** (`edit_render`, in the `encode` group) takes no licence
+  either. It renders a published edit with the editor TumblePipe ships,
+  `bin/<platform>/th_player`, run headless as `th_player --render`: on the
+  CPU, with no window, display or GPU. The editor's own FFmpeg libraries are
+  beside it in the package. Houdini's `hffmpeg` then encodes the frames and
+  the mixed sound into `render:/edits/<name>/<name>_edit_vNNNN.mp4`, so the
+  worker still needs a Houdini install for that. The job is one task: the
+  whole edit is rendered and then encoded, so a long edit holds one worker
+  for a while (the task may run four hours). On Linux the player links ALSA
+  (`libasound.so.2`, package `libasound2t64` on Ubuntu 24.04) even headless,
+  so a Linux worker needs it installed; every desktop install has it.
 - **Drive mappings** — workers must map the project drives to the same letters
   the workstations use, so jobs that reference `P:\...` resolve identically.
   Without matching drive letters, the job will fail to read project files.
@@ -281,7 +293,7 @@ out. A batch is listed under its project, kind and entity (hover it for the
 full Deadline batch name). To open it, use
 **TumbleTrove ▸ TumblePipe ▸ Farm Manager** in Houdini's menu bar, the
 browser's **Farm Manager** quick action, the **Farm Manager** button of a
-submission's status window, or the **Farm Manager** script in TumbleTrove
+submission's progress in the Farm Submit dialog, or the **Farm Manager** script in TumbleTrove
 Desktop (`python -m tumblepipe.farm.manager`).
 
 - **Filters:** *Show* (all, this machine, the farm), *Only mine*, *Only
@@ -296,8 +308,9 @@ Desktop (`python -m tumblepipe.farm.manager`).
     local renders always use Karma XPU, and XPU uses the CPU as well as the
     GPU: the CPU loads the scene, builds geometry and writes the images. So
     a busy CPU during a GPU render is expected. Viewport-look playblasts
-    say *CPU only, no licence*. Tiles per frame, shading and resolution are
-    shown where the job has them.
+    say *CPU only, no licence*, and so do Render Edit jobs (kind
+    `edit_render`), which name the edit and version they render. Tiles per
+    frame, shading and resolution are shown where the job has them.
   - *Time*: started, finished, elapsed wall-clock time, total render time
     (every task added up), average per task and per frame, and an estimate
     of the render time left.
@@ -328,6 +341,26 @@ Desktop (`python -m tumblepipe.farm.manager`).
   *Delete* (asks first). A selected batch row stands for all of its jobs.
   The footer answers each action on its right, and keeps the answer until
   the next one.
+- **Clean up:** the **Clean up ▾** button beside *Refresh* removes finished
+  batches. It works on the batches the filters show (*Show*, *Only mine*,
+  *Only <project>* and the name filter). Finished batches count even while
+  *Hide finished* hides them.
+  - *Remove completed*: batches whose every job completed.
+  - *Remove failed*: finished batches with a failed job (on this machine, a
+    cancelled one counts too).
+  - *Remove completed and failed*: both.
+  - *Remove superseded*: older runs of the same work. For each set of
+    batches with the same steps on the same entity in the same project (on
+    the farm, or on this machine), the newest stays, finished or not. The
+    older finished ones go.
+
+  The menu shows how many batches each item would remove. A batch is
+  removed whole, and only when every job of it has finished: one queued,
+  rendering, pending or suspended job keeps the whole batch, and so does a
+  job that an unfinished job is waiting on. It asks first, listing the
+  batches. Farm batches are deleted from Deadline; local ones are taken off
+  this machine's list. Outputs stay. The farm is read again just before the
+  delete, and a batch retried in the meantime is left alone.
 - **Right-click menus:** on a job, the same actions plus *Open job folder*,
   *Open output folder*, *Copy job ID* and *Copy name*. On a task, *Open log
   folder*, *Copy log*, *Copy frames*, *Copy error*, and the job actions (they
@@ -338,6 +371,24 @@ report listings) on a worker thread every few seconds. A job's
 `context.json`, which the Renderer section reads, is on the project share and
 is read on a worker thread too, once per job. Without a Deadline Client the
 window shows this machine's jobs alone.
+
+Every job TumblePipe submits carries a stamp saying which project and entity
+it is for. On Deadline the stamp is the job's extra info `TumblePipeProject`
+and `TumblePipeEntity` (Deadline Monitor can show them as columns). On this
+machine it is the `extra_info` of the job in the batch's `batch.json`. The
+*Only <project>* filter and the clean-ups read it. Jobs submitted before the
+stamp have none: for those the project is the first word of the batch name,
+and the entity is the entity URI the batch name contains. Failing that, the
+clean-ups read the job's `context.json`, but only for finished jobs of this
+project.
+
+While you have jobs queued or rendering in this project, on this machine or
+on the farm, the asset browser's **Farm Manager** quick action shows a ring
+turning around its button. A background thread keeps the count: it reads
+the local queue every two seconds and the farm every 20 seconds (the farm
+only when this machine has a Deadline Client), and it stops reading while
+the browser is hidden or closed. The ring needs a TumbleTrove with the
+`get_quick_action_busy` hook; an older one shows the button without it.
 
 ## Further reading
 

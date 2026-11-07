@@ -36,6 +36,29 @@ from tumblepipe.config import groups as groups_mod
 from tumblepipe.config.timeline import BlockRange, FrameRange, get_frame_range
 from tumblepipe.util.uri import Uri
 
+#: A shots Multi's **Timeline** as the Entity Editor offers it, and the
+#: (shared timeline, bookmarks) settings each choice stands for. Bookmarks
+#: come only with a shared timeline: on separate timelines every shot's
+#: bookmark would cover the same frames.
+_TIMELINE_SETTINGS = {
+    'Per shot': (False, False),
+    'Shared': (True, False),
+    'Shared, with bookmarks': (True, True),
+}
+TIMELINE_CHOICES = tuple(_TIMELINE_SETTINGS)
+
+
+def timeline_choice(shared: bool, bookmarks: bool) -> str:
+    """The Timeline choice for a Multi's settings."""
+    if not shared:
+        return 'Per shot'
+    return 'Shared, with bookmarks' if bookmarks else 'Shared'
+
+
+def timeline_settings(choice: str) -> tuple[bool, bool]:
+    """``(shared timeline, bookmarks)`` for a Timeline choice."""
+    return _TIMELINE_SETTINGS[choice]
+
 
 @dataclass(frozen=True)
 class Slot:

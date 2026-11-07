@@ -22,22 +22,33 @@ def batch_title(*parts) -> str:
     return ' '.join([get_project_name(), *map(str, parts), timestamp])
 
 
+def new_batch(title: str, entity=None):
+    """An empty batch named ``title``, every job of it stamped with this
+    project and ``entity`` (a URI; ``farm.stamp``), which is how the Farm
+    Manager and the clean-ups tell whose jobs they are."""
+    # Imported here: the pipeline modules are imported by the workers that
+    # chain them, which need not reach Deadline to do so.
+    from tumblepipe.apps.deadline import Batch
+    from tumblepipe.farm import stamp
+    return Batch(title, extra_info=stamp.stamp(get_project_name(), entity))
+
+
 def submit_batch(
     title: str,
     build: Callable,
     config: dict,
-    paths: dict[Path, Path] | None = None
+    paths: dict[Path, Path] | None = None,
+    *,
+    entity=None,
     ) -> list[str]:
     """Build a pipeline's jobs in a temp dir and submit them as one batch.
 
     ``build`` is the pipeline's ``build(config, paths, temp_path, jobs,
-    deps)``. Returns the submitted job ids, Deadline's or the local farm's
-    (none when the pipeline found nothing to do); a farm that cannot be
-    reached raises.
+    deps)``. ``entity`` is the URI of the entity the batch is for, stamped
+    on its jobs with the project (:func:`new_batch`). Returns the submitted
+    job ids, Deadline's or the local farm's (none when the pipeline found
+    nothing to do); a farm that cannot be reached raises.
     """
-    # Imported here: the pipeline modules are imported by the workers that
-    # chain them, which need not reach Deadline to do so.
-    from tumblepipe.apps.deadline import Batch
     from tumblepipe.farm.backend import get_farm
 
     # Deadline, or this machine's local farm (farm.backend).
@@ -55,6 +66,6 @@ def submit_batch(
             logging.info(f'{title}: nothing to submit')
             return []
 
-        batch = Batch(title)
+        batch = new_batch(title, entity)
         batch.add_jobs_with_deps(jobs, deps)
         return farm.submit(batch, api.storage.resolve(Uri.parse('export:/other/jobs')))

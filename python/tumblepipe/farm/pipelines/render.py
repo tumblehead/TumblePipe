@@ -289,4 +289,4 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
         config['entity']['uri'],
         f"[{', '.join(channel_names)}]",
         settings['user_name']
-    ), build, config, paths)
+    ), build, config, paths, entity=config['entity']['uri'])

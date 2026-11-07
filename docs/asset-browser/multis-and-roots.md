@@ -27,14 +27,22 @@ behaviour.
 
 ## Multis
 
-The [Entity Editor](entity-editor.md#multis) is the easiest place to set
-Multis up: a **Multis** column on the Assets and Shots tabs for who belongs
-where, and a **Multis** tab with a tick box per covered department. It
-checks that no member's department is covered by two Multis and writes
-everything on Apply. The browser surfaces below edit the same data one
-Multi at a time, written at once, and refuse the same overlap: a shot can
-be in several Multis, but only one of them may cover a given department
-for it, or which Multi's workfile the shot opens would be a guess.
+A Multi is set up in one place, the [Entity Editor](entity-editor.md#multis)'s
+**Multis** tab: its name, its members, the departments it covers, a shots
+Multi's **Timeline**, and its workfile in each covered department. The
+browser's **New Multi…**, **Edit Multi…** and **Departments…** open it
+there, on the Multi. Adding and removing members also works from the
+browser (dragging cards, **Add to Multi ▸**, **Remove from Multi**), written
+at once.
+
+Both check the same overlap rule: a shot can be in several Multis, but only
+one of them may cover a given department for it, or which Multi's workfile
+the shot opens would be a guess.
+
+A Multi's workfile and the Multi can still drift apart: an artist adds an
+export for one more shot to the workfile, or a shot joins the Multi after
+its workfile was made. **Sync with Multi** brings them back in step; see
+[Keeping the workfile and the Multi in step](#keeping-the-workfile-and-the-multi-in-step).
 
 ### Where they are
 
@@ -48,24 +56,35 @@ shots only, an assets Multi assets only.
 ### Creating a Multi
 
 **New Multi…** (the right-click menu of the Assets or Shots header or of a
-Multis subheader, or the **+** card)
-asks for a **Name** and a **Context** (`shots` or `assets`). From a Multis
-subheader the context is that subheader's and is fixed, shown in the title
-as **New Multi in assets**. Under Assets or Shots it starts on that context;
-elsewhere it starts on `shots`. Status: *Created Multi: seqA (shots, covers 9 departments)*. A new
-Multi **covers every department in its context's pool** and starts with no
-members. If it is meant for fewer departments, trim the coverage next.
+Multis subheader, or the **+** card) opens the Entity Editor on its
+**Multis** tab and asks for the new Multi there (**New Multi of shots** or
+**New Multi of assets**):
+
+- **Name**: letters and digits, not taken by another Multi of that context.
+- **Timeline** (shots only): **Per shot**, **Shared** or **Shared, with
+  bookmarks**; see [Shared timeline](#shared-timeline).
+- The departments it covers, every one of the context's pool ticked to
+  start with.
+
+The context is the one you were in: a Multis subheader's, the Assets or
+Shots side's, a category's or a sequence's; elsewhere `shots`. The new
+Multi starts with no members and is pending, like every edit in the
+editor: tick its members (double-click **Members**) and press **Apply**.
+Its workfiles come after that, from the same tab
+([The Multi's workfiles](#the-multis-workfiles)).
+
+The editor's own **Add Multi…** does the same, and can start the Multi with
+the rows selected on the Shots or Assets tab.
 
 ### Coverage: which departments the Multi owns
 
 A Multi's department list is its *coverage*: for those departments, every
-member's workfile *is* the Multi's workfile. Three surfaces edit it, all
-writing the same list:
-
-| Where | Label | Dialog |
-|---|---|---|
-| Multi card or sidebar row right-click, or the detail panel's **Edit…** | **Edit Multi…** | **Edit *name***, a **Departments** multi-select and, on a shots Multi, the **Timeline** ([Shared timeline](#shared-timeline)); **OK** applies. |
-| Multi card right-click | **Departments…** | **Departments — *name***: one row per department in the pool with a checkbox; each toggle writes immediately, **Close** dismisses. |
+member's workfile *is* the Multi's workfile. Set it on the Entity Editor's
+Multis tab, a tick box per department; **Edit Multi…** (the Multi card or
+sidebar row right-click, or the detail panel's **Edit…**) and the card's
+**Departments…** open the editor there, on the Multi, with no form of their
+own. The coverage tick box on each of the Multi's rows in the detail panel's
+**Departments** tab still writes the same list at once.
 
 What coverage does to a member, as soon as it is written:
 
@@ -86,7 +105,9 @@ Departments the Multi does not cover keep the member's own workfiles.
 
 ### Members
 
-Add shots or assets to a Multi by:
+In the Entity Editor, double-click the Multi's **Members** on the Multis tab,
+or the **Multis** cell of the shots on the Shots tab. In the browser, add
+shots or assets to a Multi by:
 
 - dragging cards onto the Multi's row in the sidebar (the drag label reads
   **Add to *name***);
@@ -98,9 +119,9 @@ The status bar reports *Added 3*, or *Added 2 of 3 — 1 skipped (group
 accepts shots only)* when the wrong kind of entity was in the batch. A
 member already in another Multi covering one of this Multi's departments
 is skipped too: *Skipped 1 (SH010's light is already covered by Multi
-seqA)*. Ticking a department a member already gets from another Multi
-(on the **Departments** tab, **Departments…** or **Edit Multi…**) is refused
-with the same message and changes nothing. Remove
+seqA)*. In the Entity Editor the same overlap is a problem on the Multi's
+row that keeps **Apply** from writing anything until it is resolved; the
+detail panel's coverage tick box refuses it with the message above. Remove
 with **Remove selected from Multi** on the row, **Remove from Multi:
 *name*** on the member's card, or **Remove from *name*** on a ⓜ row.
 
@@ -136,7 +157,22 @@ the sequence, not its shots.
 
 ### The Multi's workfiles
 
-The Multi's own rows work like a shot's, with the same right-click menu
+In the Entity Editor, select a Multi on the **Multis** tab: under the table,
+**Workfiles of *name*** has a row per department it covers, with the latest
+version (or *none*) and a button:
+
+- **Open** opens that version.
+- **New from Template** makes the first version from the department
+  template, a graph per member, as the browser's **New from Template** does.
+
+Either replaces the open scene, so the scene's unsaved changes come first,
+as when a workfile is opened from the browser: save a new version of it,
+discard them, or cancel. One at a time: while a workfile is being made, the
+buttons wait (*Making…*). A Multi that is new, or has edits not applied,
+has no buttons to press yet (*Apply first: …*): its workfiles follow the
+Multi as stored.
+
+In the browser, the Multi's own rows work like a shot's, with the same right-click menu
 ([Asset Browser → Deck items](index.md)). A row with a workfile opens it
 (**Open Latest**, or an older one from **Open Version ▸**), **Open Folder**
 opens `<project>/groups/<context>/<name>/<department>/`, and a row without
@@ -167,7 +203,9 @@ Nodes added to a Multi workfile by hand need their **Entity** set to the
 member they work on: `from_context` resolves to nothing there, because the
 workfile belongs to the Multi rather than to one member (see
 [Entity and Department default to `from_context`](../nodes/index.md#entity-and-department-default-to-from_context)).
-The per-member graphs the template lays out are already pinned that way.
+The per-member graphs the template lays out are already pinned that way. An
+export pinned to a shot that is not a member makes the workfile and the
+Multi disagree; the next save offers to add the shot (below).
 
 Once a Multi workfile is open, **Save** versions the Multi's workfile, and
 the Multi's own card marks that department as the open one — in its deck
@@ -181,6 +219,85 @@ cells ticked, never the Multi.
 the Multi's newest workfile in a second Houdini (see
 [Workfiles](workfiles.md#open-in-new-houdini)).
 
+### Keeping the workfile and the Multi in step
+
+A Multi's workfile and the Multi agree when every `th::export_layer` in the
+workfile is pinned to a member, and every member has one. They drift apart
+two ways, and each has a fix:
+
+| What happened | What is offered |
+|---|---|
+| An export pinned to a shot that is not a member (someone added import and export nodes for SH050 by hand) | Add the shot to the Multi |
+| A member with no export here (it joined after the workfile was made) | Add its graph to the workfile |
+
+The check runs:
+
+- **After every save of a Multi's workfile**, the browser's **Save** and
+  Houdini's own (File > Save, Ctrl+S) alike, once the save is done. The save
+  always goes through; the question comes after it, and only when something
+  differs. An autosave asks nothing.
+- **On demand**: **Sync with Multi**, on the Multi's department row in the
+  browser (the row whose workfile is open) and in **TumbleTrove ▸
+  TumblePipe**. It also says when the two agree: *This light workfile and
+  seqA agree: every export is for a member, and every member has one.*
+
+Only the workfile's own department is compared. A department that publishes
+nothing (`composite`) has no exports, so it never differs. An export reading
+its entity from the context, as a shot's own workfile has them, is left out.
+
+**Adding shots.** For exports pinned to shots that are not members:
+
+> This light workfile exports SH050 and SH060 for seqA, but they are not in
+> seqA.
+>
+> Add SH050 and SH060 to seqA?
+>
+> Joining a Multi makes its workfile theirs: once in seqA, SH050 and SH060
+> are worked on in seqA's workfiles for every department it covers (layout,
+> animation, light), not in their own.
+
+**Add to seqA** adds them as the browser and the Entity Editor do, so the
+overlap rule holds and a shared timeline places them. A shot that cannot
+join is listed with the reason (not a shot of the project, or another
+Multi covers one of the same departments for it) and is not added; when
+none can join, the message only says why. The browser shows the new members
+at once.
+
+**Adding graphs.** For members with no export:
+
+> SH070 is in seqA, but this light workfile has no export for it.
+>
+> Add its graph? Each is a copy of SH010's graph, placed to the right and
+> pinned to the new member.
+
+**Add graph** (**Add graphs** for several) copies a member's *column*: the
+nodes on the paths from its imports to its export, plus any node named with
+its suffix (`key_light_SQ010_SH010`). Nodes several members share, like a
+merge of every export, are not copied; the copy is wired into them as the
+original is. The copy goes one column stride (the template's spacing)
+right of the last member's column, and further right until no other node
+is in its way; nothing else moves. Each copied node
+is renamed with the new member's suffix (`key_light_SQ010_SH070`), every
+parm pinned to the old member is pinned to the new one (an expression
+naming it too, as a camera's aspect does), and references to copied nodes
+(`../import_shot_SQ010_SH010`) point at the copies. The new import nodes
+then run, as a new workfile's do. With no member's column to copy, the
+graph is built from the department template's Multi branch for that one
+member, pinned and named the same way, and moved to a free spot.
+
+What a copy does not change:
+
+- Keyframed parms and paths outside `/stage` are copied as they are.
+- Everything in the column comes along, so an animation column copied from
+  SH010 brings SH010's rigs; check them before publishing.
+- Nodes outside `/stage` (an `/obj` camera) are not copied.
+- Only `th::export_layer` counts as an export; `th::layer_split` and
+  `th::export_rig` do not.
+
+Each question has **Not now** and **Don't ask again for this workfile**:
+the second silences the after-save check for that Multi's department for
+the rest of the Houdini session. **Sync with Multi** still asks.
+
 ### Shared timeline
 
 By default a shots Multi keeps every member on its own frames: the
@@ -188,7 +305,10 @@ template's graph per member runs over that shot's range, so ten shots that
 all start at 1001 overlap in the Multi's hip. That is right for ten
 separate graphs, and wrong for **one graph that flows through all of
 them**: a simulation that carries on from shot to shot, a crowd that keeps
-walking across a cut. For that, set **Edit Multi…** › **Timeline**:
+walking across a cut. For that, set the Multi's **Timeline** on the Entity
+Editor's Multis tab (or when making it with **New Multi…**); a double-click
+on the cell offers the three, and every selected Multi follows. It is
+written on **Apply**:
 
 | Timeline | What the Multi's workfile gets |
 |---|---|

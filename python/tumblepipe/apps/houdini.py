@@ -98,6 +98,7 @@ def _tools_in(bin_path: Path, exe: str, script: str) -> dict[str, Path] | None:
         # so the farm needs no separate image/video tool installs.
         hoiiotool = bin_path / f'hoiiotool{exe}',
         hffmpeg = bin_path / f'hffmpeg{exe}',
+        hffprobe = bin_path / f'hffprobe{exe}',
         # Houdini's CLI front-end onto the OIDN/OptiX denoisers it bundles.
         # Unlike hython it checks out no license token, which is the whole
         # reason the denoise task drives it instead.
@@ -341,3 +342,17 @@ class FFmpeg(_Tool):
     """
 
     TOOL = 'hffmpeg'
+
+
+class FFProbe(_Tool):
+    """Houdini's bundled ``hffprobe``."""
+
+    TOOL = 'hffprobe'
+
+    def call(self,
+        args: list[str],
+        cwd: Optional[Path] = None,
+        env: Optional[dict[str, str]] = None
+        ) -> str:
+        """Run without echoing and return the output (a query's answer)."""
+        return app.run([path_str(self._path), *args], cwd, env, echo=False)

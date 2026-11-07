@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, field, fields
 from pathlib import Path
 
 
@@ -50,6 +50,11 @@ class PipelinePrefs:
     # Cards and hovers leave out the departments an entity has no workfile
     # in (the detail panel still lists them all, to start one from).
     hide_unused_departments: bool = False
+    # What the Farm Submit window remembers between openings: per project
+    # and tab, the pinned settings, batch choices and collapsed columns;
+    # window-wide, collapsed sections, column and clean-up choices, size.
+    # Shaped and checked by tumblepipe.farm.submit.remembered.
+    farm_submit: dict = field(default_factory=dict)
     prefs_version: int = _PREFS_VERSION
 
 
@@ -94,6 +99,9 @@ def load_prefs() -> PipelinePrefs:
         ),
         hide_unused_departments=bool(
             data.get("hide_unused_departments", False)
+        ),
+        farm_submit=(
+            data["farm_submit"] if isinstance(data.get("farm_submit"), dict) else {}
         ),
     )
 

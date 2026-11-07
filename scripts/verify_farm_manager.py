@@ -12,6 +12,12 @@ real farm (read only: no farm command is sent). Checks:
      the runner applies (the runner start is stubbed out)
   4. the filters: "Show: Render farm" hides the local rows
   5. with Deadline: farm jobs arrive off the GUI thread and list as Farm rows
+  6. Clean up, against a fake farm (Deadline's job list and delete are
+     replaced, and any real deadlinecommand call fails the check): the menu
+     counts each kind's batches, a live batch is never offered, a "No" does
+     nothing, a "Yes" removes local batches with a request and deletes farm
+     ones in one call, and a farm batch requeued while the question was
+     open is left alone
 
 Run (no Houdini licence: Houdini's bundled Python, not hython; see
 ``headless-qt-verify`` in the repo notes):
@@ -83,6 +89,165 @@ def pump(app: QApplication, seconds: float) -> None:
     while time.monotonic() < end:
         app.processEvents()
         time.sleep(0.02)
+
+
+def farm_doc(job_id: str, batch: str, stat: int, submitted: str, entity: str, project: str, **chunks) -> dict:
+    """A Deadline ``-Json GetJobs`` job document, stamped with ``project`` and ``entity``."""
+    from tumblepipe.farm import stamp
+    return {
+        '_id': job_id, 'Stat': stat, 'Date': submitted, 'Errs': 0,
+        'CompletedChunks': chunks.pop('CompletedChunks', 1 if stat == 3 else 0), **chunks,
+        'Props': {
+            'Name': job_id, 'Batch': batch, 'User': 'tester', 'Tasks': 1,
+            'ExDic': stamp.stamp(project, entity),
+        },
+    }
+
+
+def verify_cleanup(app: QApplication, win, root: Path, project: str, done: Path, live: Path) -> None:
+    from PySide6.QtWidgets import QMessageBox
+    from tumblepipe.farm.manager import deadline_jobs, rows
+    from tumblepipe.farm.manager import window as manager_window
+
+    sh010, sh020 = 'entity:/shots/sq010/sh010', 'entity:/shots/sq010/sh020'
+    older = f'{project} render {sh010} tester 2026/11/01 10:00:00'
+    newer = f'{project} render {sh010} tester 2026/11/02 10:00:00'
+    failed = f'{project} playblast {sh020} tester 2026/11/02 11:00:00'
+    rendering = f'{project} publish {sh020} tester 2026/11/02 12:00:00'
+    requeued = f'{project} render {sh020} tester 2026/11/02 13:00:00'
+    docs = [
+        farm_doc('a1', older, 3, '2026-11-01T10:00:00.000+01:00', sh010, project),
+        farm_doc('a2', older, 3, '2026-11-01T10:00:00.000+01:00', sh010, project),
+        farm_doc('b1', newer, 3, '2026-11-02T10:00:00.000+01:00', sh010, project),
+        farm_doc('c1', failed, 4, '2026-11-02T11:00:00.000+01:00', sh020, project, FailedChunks=1),
+        farm_doc('c2', failed, 3, '2026-11-02T11:00:00.000+01:00', sh020, project),
+        farm_doc('d1', rendering, 4, '2026-11-02T12:00:00.000+01:00', sh020, project, RenderingChunks=1),
+        farm_doc('d2', rendering, 3, '2026-11-02T12:00:00.000+01:00', sh020, project),
+        farm_doc('e1', requeued, 3, '2026-11-02T13:00:00.000+01:00', sh020, project),
+    ]
+    deleted: list[list[str]] = []
+    live_calls: list = []
+    requeue = {'now': False}
+
+    def fetch_jobs():
+        out = []
+        for doc in docs:
+            if any(doc['_id'] in ids for ids in deleted):
+                continue
+            if requeue['now'] and doc['_id'] == 'e1':
+                doc = dict(doc, Stat=1, QueuedChunks=1, CompletedChunks=0)
+            out.append(rows.farm_job_row(doc))
+        return out
+
+    def control(command, ids):
+        deleted.append(list(ids)) if command == 'delete' else live_calls.append((command, ids))
+        return ''
+
+    def no_real_deadline(*args, **kwargs):
+        live_calls.append(args)
+        raise AssertionError('the clean-up check reached for the real deadlinecommand')
+
+    # Let a real (read-only) farm read still under way from step 5 land
+    # first, and select nothing, so no farm job's tasks are read from here on.
+    win._jobs.clearSelection()
+    deadline = time.monotonic() + 60
+    while win._futures and time.monotonic() < deadline:
+        pump(app, 0.1)
+    saved = (deadline_jobs.fetch_jobs, deadline_jobs.fetch_tasks, deadline_jobs.control,
+             deadline_jobs._command, QMessageBox.question)
+    deadline_jobs.fetch_jobs, deadline_jobs.control = fetch_jobs, control
+    deadline_jobs.fetch_tasks = lambda job_id: []
+    deadline_jobs._command = no_real_deadline
+    asked: list[str] = []
+    answer = {'value': QMessageBox.No}
+
+    def question(parent, title, text, *args, **kwargs):
+        asked.append(text)
+        requeue['now'] = requeue.get('on_ask', False)
+        return answer['value']
+
+    QMessageBox.question = staticmethod(question)
+    try:
+        win._mine.setChecked(True)
+        win._this_project.setChecked(True)
+        win._hide_finished.setChecked(True)
+        win._farm_available, win._farm_error, win._farm_loading = True, None, False
+        win._farm_rows = []
+        win._refresh_farm()
+        deadline = time.monotonic() + 10
+        while not win._farm_rows and time.monotonic() < deadline:
+            pump(app, 0.1)
+        check('the fake farm lists', len(win._farm_rows) == len(docs), str(len(win._farm_rows)))
+        completed = make_batch(root, f'{project} render sh030 tester', [[queue.COMPLETED]], [[]])
+        win._refresh_local()
+
+        win._update_cleanup_menu()
+        counts = {kind: len(win._cleanup_candidates(kind)) for kind, _l, _t in manager_window.CLEANUP_ITEMS}
+        # Local: done (a failed job), completed, live (rendering). Farm: older
+        # and newer (completed, same work), failed, rendering (a job still
+        # rendering), requeued (completed, for now).
+        check('Remove completed counts the completed batches (Hide finished does not hide them from it)',
+              counts['completed'] == 4, str(counts))
+        check('Remove failed counts the failed ones, never the batch still rendering',
+              counts['failed'] == 2, str(counts))
+        check('Remove completed and failed counts both', counts['finished'] == 6, str(counts))
+        check('Remove superseded counts only the older run of the same work', counts['superseded'] == 1, str(counts))
+        action = win._cleanup_actions['completed']
+        check('the menu item says how many batches', action.text() == 'Remove completed (4 batches)', action.text())
+        offered = {r.key for kind in counts for r in win._cleanup_candidates(kind)}
+        check('a batch with a job not ended is never offered',
+              f'local:{live.name}' not in offered and f'farm:{rendering}' not in offered, str(offered))
+
+        win._search.setText('nothing matches this')
+        pump(app, 0.1)
+        win._update_cleanup_menu()
+        check('the search filter narrows it (an item with nothing is greyed)',
+              not win._cleanup_actions['completed'].isEnabled())
+        win._search.setText('')
+        pump(app, 0.1)
+
+        win._clean_up('finished')
+        check('it asks first, naming the batches on both sides',
+              len(asked) == 1 and 'Deleted from the Deadline farm:' in asked[-1]
+              and "Taken off this machine's list:" in asked[-1] and 'SQ010/SH010' in asked[-1].upper(),
+              asked[-1] if asked else '')
+        check('a "No" removes nothing',
+              not deleted and not any(d['command'] == 'remove'
+                                      for f in (done, completed, live) for _p, d in queue.pending_requests(f)))
+
+        answer['value'] = QMessageBox.Yes
+        win._clean_up('superseded')
+        deadline = time.monotonic() + 10
+        while not deleted and time.monotonic() < deadline:
+            pump(app, 0.1)
+        check('Remove superseded deletes the older run only, whole',
+              deleted == [['a1', 'a2']], str(deleted))
+        # The window reads the farm again once the delete is answered.
+        deadline = time.monotonic() + 10
+        while any(r.id == 'a1' for r in win._farm_rows) and time.monotonic() < deadline:
+            pump(app, 0.1)
+
+        requeue['on_ask'] = True  # e1 is requeued while the next question is open
+        before = len(deleted)
+        win._clean_up('finished')
+        deadline = time.monotonic() + 10
+        while len(deleted) == before and time.monotonic() < deadline:
+            pump(app, 0.1)
+        pump(app, 0.3)
+        farm_ids = sorted(i for ids in deleted[before:] for i in ids)
+        check('the rest is deleted in one call, the requeued batch left alone',
+              len(deleted) == before + 1 and farm_ids == ['b1', 'c1', 'c2'], str(deleted))
+        removed = {f.name for f in (done, completed, live)
+                   if any(d['command'] == 'remove' for _p, d in queue.pending_requests(f))}
+        check('local finished batches get a remove request, the live one none',
+              removed == {done.name, completed.name}, str(removed))
+        message = win._message.text()
+        check('the footer says what went and what was left',
+              'deleted from the farm' in message and '1 left' in message, message)
+        check('nothing reached the real Deadline', not live_calls, str(live_calls))
+    finally:
+        (deadline_jobs.fetch_jobs, deadline_jobs.fetch_tasks, deadline_jobs.control,
+         deadline_jobs._command, QMessageBox.question) = saved
 
 
 def main() -> int:
@@ -183,6 +348,9 @@ def main() -> int:
                     pump(app, 0.2)
                 text = win._log.toPlainText()
                 check('its task reports load', bool(text) and not text.startswith('Could not'), text[:200])
+
+    print('6. clean up (a fake farm: nothing reaches Deadline)')
+    verify_cleanup(app, win, root, project, done, live)
 
     if len(sys.argv) > 1:
         win.resize(1500, 900)

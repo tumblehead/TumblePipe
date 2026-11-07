@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
 from tumbletrove.common.persistence import read_json, write_json
@@ -35,6 +35,19 @@ class ProjectConfig:
     project_path: str   # → TH_PROJECT_PATH
     pipeline_path: str  # → TH_PIPELINE_PATH
     config_path: str    # → TH_CONFIG_PATH
+    #: Libraries the artist added for this project on the Projects page
+    #: (see libraries.py). The launch environment's TH_LIBRARY_PATH comes
+    #: before them and is never stored here.
+    library_paths: list[str] = field(default_factory=list)
+
+
+def _library_paths(raw) -> list[str]:
+    """``library_paths`` as stored; anything but a list of strings reads as
+    none (a browser older than libraries never writes the key, and one that
+    does keeps reading files without it)."""
+    if not isinstance(raw, list):
+        return []
+    return [str(p).strip() for p in raw if isinstance(p, str) and p.strip()]
 
 
 class PipelineProjectRegistry:
@@ -67,6 +80,7 @@ class PipelineProjectRegistry:
                     project_path=str(entry["project_path"]),
                     pipeline_path=str(entry.get("pipeline_path", "")),
                     config_path=str(entry.get("config_path", "")),
+                    library_paths=_library_paths(entry.get("library_paths")),
                 )
                 self._projects[proj.name] = proj
             except (KeyError, TypeError, ValueError):
@@ -258,6 +272,7 @@ class PipelineProjectRegistry:
             project_path=new_project_path,
             pipeline_path=new_pipeline_path,
             config_path=new_config_path,
+            library_paths=list(existing.library_paths),
         )
         self.save()
         return True

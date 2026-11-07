@@ -17,7 +17,9 @@ Editor's look), typing into a selection, Animatable ticks and the
 Paste as New, a Root's assets edited for every shot using it, a shot given
 its own Root, the Root dialog's shared-Root warning, the Multis tab
 (coverage ticks across a selection, the Multis cell's dialog, overlapping
-coverage refused), New Sequence…, problems blocking Apply, Apply of every tab through the
+coverage refused, a shots Multi's Timeline, the selected Multi's workfiles
+opened or made one at a time, the browser's New Multi…), New Sequence…,
+problems blocking Apply, Apply of every tab through the
 real ``pipe.entity_files``, and the database afterwards. Prints OK/FAIL per check; exits 1 on any FAIL.
 """
 
@@ -31,11 +33,12 @@ import _harness  # noqa: E402,F401  (temp project, python/ on sys.path)
 from _harness import reset_project  # noqa: E402
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QPushButton  # noqa: E402
+from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QMessageBox, QPushButton  # noqa: E402
 
 from tumblepipe.api import default_client  # noqa: E402
 from tumblepipe.config import entity_sheet as es  # noqa: E402
 from tumblepipe.config.department import list_departments  # noqa: E402
+from tumblepipe.config.multi_timeline import TIMELINE_CHOICES  # noqa: E402
 from tumblepipe.pipe import entity_files  # noqa: E402
 from tumblepipe.util.uri import Uri  # noqa: E402
 
@@ -87,6 +90,27 @@ config.add_entity(MULTIS / 'Crowd', {
     'members': ['entity:/shots/sq010/SH010'], 'departments': POOL[:2],
 })
 
+# A Multi's workfiles, as the browser would answer: Crowd has a first
+# department workfile, not a second; making one waits for ``done``.
+versions = {'Crowd': {POOL[0]: 'v0003'}}
+workfile_calls = []
+making = []
+
+
+def _multi_workfiles(uri):
+    workfile_calls.append(('read', uri.segments[-1]))
+    return dict(versions.get(uri.segments[-1], {}))
+
+
+def _open_multi_workfile(uri, department):
+    workfile_calls.append(('open', uri.segments[-1], department))
+
+
+def _new_multi_workfile(uri, department, done):
+    workfile_calls.append(('new', uri.segments[-1], department))
+    making.append((uri.segments[-1], department, done))
+
+
 applied = []
 source = ee.EntityEditorSource(
     project='verify', config=config,
@@ -94,6 +118,9 @@ source = ee.EntityEditorSource(
     rename_blocker=lambda uri: '',
     on_applied=lambda: applied.append(True),
     rigged=lambda uri: uri == ASSETS / 'VEH' / 'car',
+    multi_workfiles=_multi_workfiles,
+    open_multi_workfile=_open_multi_workfile,
+    new_multi_workfile=_new_multi_workfile,
 )
 window = ee.EntityEditorWindow(source, kind='shots')
 window.show()
@@ -264,9 +291,46 @@ app.processEvents()
 multis = window.multis_pane
 multis.set_context('shots')
 crowd = next(m for m in shots.sheet.multis if m.name == 'Crowd')
-check('the Multis tab has a box per department',
-      list(multis.columns[3:]) == list(shots.sheet.base.pool) and multis.columns[3:3 + 2] == POOL[:2],
+first_box = multis.columns.index(POOL[0])
+check('the Multis tab has a box per department, after the Timeline',
+      list(multis.columns[first_box:]) == list(shots.sheet.base.pool)
+      and multis.columns[first_box - 1] == ee.TIMELINE,
       multis.columns)
+
+# The selected Multi's workfiles, below the table: Crowd as stored.
+panel = multis.workfiles
+multis.select_cells([(crowd.id, 0)], (crowd.id, 0))
+app.processEvents()
+OPEN_0, NEW_1 = f'workfile_open_{POOL[0]}', f'workfile_new_{POOL[1]}'
+check('the workfiles are the selected Multi\'s', panel.title.text() == 'Workfiles of Crowd',
+      panel.title.text())
+check('one row per covered department: Open for one with a workfile, New from Template for one without',
+      sorted(panel.buttons) == sorted([OPEN_0, NEW_1])
+      and panel.buttons[NEW_1].text() == 'New from Template', sorted(panel.buttons))
+check('both can be pressed', all(b.isEnabled() for b in panel.buttons.values()))
+check('it says the open scene is replaced, after asking to save it',
+      'asked to save it first' in panel.note.text(), panel.note.text())
+panel.buttons[OPEN_0].click()
+check('Open opens that workfile', workfile_calls[-1] == ('open', 'Crowd', POOL[0]), workfile_calls)
+panel.buttons[NEW_1].click()
+app.processEvents()
+check('New from Template makes that department\'s workfile',
+      workfile_calls[-1] == ('new', 'Crowd', POOL[1]), workfile_calls)
+check('one at a time: while it is made, nothing else can be pressed',
+      panel.buttons[NEW_1].text() == 'Making…'
+      and not any(b.isEnabled() for b in panel.buttons.values()))
+panel._open(crowd, POOL[0])
+check('and nothing opens meanwhile', workfile_calls[-1][0] == 'new', workfile_calls)
+reads = workfile_calls.count(('read', 'Crowd'))
+versions['Crowd'][POOL[1]] = 'v0001'
+_name, _dept, done = making.pop()
+done()
+app.processEvents()
+check('once made, it shows and opens like the other',
+      sorted(panel.buttons) == sorted([OPEN_0, f'workfile_open_{POOL[1]}'])
+      and all(b.isEnabled() for b in panel.buttons.values()), sorted(panel.buttons))
+check('the versions are read again only after one is made',
+      workfile_calls.count(('read', 'Crowd')) == reads + 1, workfile_calls)
 
 # The Multis cell's dialog: SH020 and SH030 join Crowd.
 ids = [r.id for r in shots.sheet.rows if r.group == 'sq010' and r.name in ('SH020', 'SH030')]
@@ -296,6 +360,11 @@ if len(POOL) > 2:
 check('ticking sets the coverage',
       set(crowd.departments) == {POOL[0], *POOL[2:3]}, crowd.departments)
 check('the Multis tab shows it is changed', window._tabs.tabText(window._tab_index('multis')) == 'Multis *')
+multis.select_cells([(crowd.id, 0)], (crowd.id, 0))
+app.processEvents()
+check('a changed Multi\'s workfiles wait for Apply',
+      panel.note.text().startswith('Apply first') and bool(panel.buttons)
+      and not any(b.isEnabled() for b in panel.buttons.values()), panel.note.text())
 
 # Overlap is refused: a new Multi covering POOL[0] over SH010 too.
 shots.edit(lambda: shots.sheet.add_multi('Hero', [shots.sheet.rows[0].id], POOL[:1]))
@@ -305,6 +374,71 @@ check('Apply is disabled while a Multi overlaps', not window._apply_button.isEna
 shots.edit(lambda: shots.sheet.set_multi_departments(hero.id, POOL[3:4]))
 check('the overlap clears', not shots.sheet.multi_problems(), shots.sheet.multi_problems())
 check('Apply is enabled again', window._apply_button.isEnabled())
+multis.select_cells([(hero.id, 0)], (hero.id, 0))
+app.processEvents()
+check('a new Multi has no workfiles until Apply: its departments show none, and nothing can be pressed',
+      sorted(panel.buttons) == [f'workfile_new_{d}' for d in POOL[3:4]]
+      and not any(b.isEnabled() for b in panel.buttons.values())
+      and 'new Multi has no workfiles' in panel.note.text(), (sorted(panel.buttons), panel.note.text()))
+
+# A shots Multi's Timeline: a choice in its own column; the selected Multis follow.
+column_t = multis.columns.index(ee.TIMELINE)
+crowd_t = multis._index_of(crowd.id, column_t)
+check('the Timeline cell shows Per shot, and can be changed',
+      crowd_t.data() == 'Per shot' and bool(crowd_t.flags() & Qt.ItemIsEditable), crowd_t.data())
+delegate = multis.table.itemDelegate()
+editor = delegate.createEditor(multis.table.viewport(), None, crowd_t)
+check('its editor offers the three Timelines', isinstance(editor, QComboBox) and [
+    editor.itemText(i) for i in range(editor.count())] == list(TIMELINE_CHOICES))
+delegate.setEditorData(editor, crowd_t)
+check('starting at the Multi\'s', editor.currentText() == 'Per shot', editor.currentText())
+multis.select_cells([(crowd.id, column_t), (hero.id, column_t)], (crowd.id, column_t))
+editor.setCurrentText('Shared, with bookmarks')
+delegate.setModelData(editor, multis.proxy, crowd_t)
+check('choosing it sets every selected Multi\'s',
+      crowd.timeline == (True, True) and hero.timeline == (True, True), (crowd.timeline, hero.timeline))
+crowd_t = multis._index_of(crowd.id, column_t)
+crowd_status = multis._index_of(crowd.id, multis.columns.index(ee.STATUS)).data()
+check('the cell shows it, pending, and the status says so',
+      crowd_t.data() == 'Shared, with bookmarks' and crowd_t.data(Qt.BackgroundRole) == ee._PENDING
+      and 'Timeline changed' in (crowd_status or ''), (crowd_t.data(), crowd_status))
+multis.select_cells([(hero.id, column_t)], (hero.id, column_t))
+editor.setCurrentText('Per shot')
+delegate.setModelData(editor, multis.proxy, multis._index_of(hero.id, column_t))
+check('and back for one', hero.timeline == (False, False) and crowd.timeline == (True, True))
+multis.set_context('assets')
+check('an assets Multi has no Timeline', ee.TIMELINE not in multis.columns, multis.columns)
+multis.set_context('shots')
+
+# The browser's New Multi…: this tab, of its context, asking for a Multi
+# that starts empty, whatever is selected on the Shots tab.
+asked = []
+
+
+def _new_chase(dialog):
+    asked.append((dialog._sheet.kind.key, dialog.start_with is None, dialog._timeline is not None))
+    dialog._name.setText('Chase' if dialog._timeline is not None else 'Props')
+    if dialog._timeline is not None:
+        dialog._timeline.setCurrentText('Shared')
+    return QDialog.Accepted
+
+
+shots.select_cells([(shots.sheet.rows[0].id, 0)])
+ee.NewMultiDialog.exec = _new_chase
+window.new_multi('shots')
+window.new_multi('assets')
+check('New Multi… asks on the Multis tab, of each context, with a Timeline for shots only',
+      asked == [('shots', True, True), ('assets', True, False)], asked)
+check('it shows the Multis tab, on the context asked for',
+      window._tabs.tabData(window._tabs.currentIndex()) == 'multis' and multis.key == 'assets')
+chase = next((m for m in shots.sheet.multis if m.name == 'Chase'), None)
+props = next((m for m in assets.sheet.multis if m.name == 'Props'), None)
+check('each is a new pending Multi, empty, covering every department, with its Timeline',
+      chase is not None and props is not None and chase.is_new and not chase.members
+      and chase.timeline == (True, False) and list(chase.departments) == list(shots.sheet.base.pool)
+      and not props.members and props.timeline == (False, False),
+      (chase, props))
+multis.set_context('shots')
 if len(sys.argv) > 1:
     window.show_kind('multis')
     multis.select_cells([(crowd.id, column)])
@@ -468,8 +602,17 @@ check('Multi members written', stored['members'] == [
 check('Multi coverage written', stored['departments'] == [POOL[0], *POOL[2:3]], stored)
 check('the new sequence is created, empty', config.get_own_properties(SHOTS / 'sq090') == {},
       config.get_own_properties(SHOTS / 'sq090'))
+check('Multi Timeline written',
+      stored.get('shared_timeline') is True and stored.get('timeline_bookmarks') is True, stored)
 hero = config.get_own_properties(MULTIS / 'Hero')
 check('new Multi created', hero == {'members': ['entity:/shots/sq010/SH010'], 'departments': POOL[3:4]}, hero)
+chase = config.get_own_properties(MULTIS / 'Chase')
+check('New Multi… created, empty, with its Timeline', chase == {
+    'members': [], 'departments': POOL, 'shared_timeline': True, 'timeline_bookmarks': False,
+}, chase)
+props = config.get_own_properties(es.GROUPS_URI / 'assets' / 'Props')
+check('and the assets one', props is not None and props.get('members') == []
+      and 'shared_timeline' not in props, props)
 check('the sequence\'s Root written on the sequence',
       config.get_own_properties(SHOTS / 'sq020') == {'scene': 'scenes:/town'},
       config.get_own_properties(SHOTS / 'sq020'))

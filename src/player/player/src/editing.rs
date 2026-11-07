@@ -1,0 +1,652 @@
+//! The editor's document, without a window: the working edit and its undo
+//! history, where it lives (untitled, a working version, a published
+//! version read-only), and what of it the engine plays.
+//!
+//! Edit frames are timeline positions one for one, at the edit's rate. A
+//! clip shows source frames `source_in ..` in its source's own numbers (a
+//! shot's are its frame numbers, 1001-based); the engine wants media
+//! indices, so each clip's source is bound ([`Bound`]) to the engine source
+//! playing it and the frame number of that media's index 0. Part of a clip
+//! before its media's first frame shows nothing (what is below shows).
+
+use std::collections::BTreeSet;
+use std::path::Path;
+
+use th_edit::document::{
+    AudioClip, ClipRef, Frame, Rule, Source, Track, TrackKind, TrackRef, VersionRule, VideoClip, WorkingEdit, timecode_frames,
+};
+use th_edit::history::History;
+use th_edit::ops::{NewClip, Op, Refused, Sources};
+use th_media::Media;
+use th_media::sound::Sound;
+use th_pipe::Project;
+use th_pipe::media::{ItemVersion, Measure};
+
+use crate::engine::Clip;
+
+/// Where the document lives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Origin {
+    /// Not saved yet: Save asks for a name and makes the edit.
+    Untitled,
+    /// Working version `version` (None: the edit exists, no version saved).
+    Working { name: String, version: Option<String> },
+    /// Published version `version`: read-only; Save As starts a working
+    /// version from it.
+    Published { name: String, version: String },
+}
+
+/// The working edit being edited.
+#[derive(Debug)]
+pub struct Document {
+    pub edit: WorkingEdit,
+    history: History<Source>,
+    pub origin: Origin,
+    /// The edit as it was opened or last saved: it is dirty when it differs.
+    saved: WorkingEdit,
+    /// Opened as the project's shots because there was nothing to open
+    /// (see [`project_fill`]), not from a saved version or asked-for shots.
+    pub filled: bool,
+}
+
+impl Document {
+    pub fn new(edit: WorkingEdit, origin: Origin) -> Self {
+        Self { saved: edit.clone(), edit, history: History::new(), origin, filled: false }
+    }
+
+    /// A document of [`project_fill`]: unchanged until the user changes it.
+    pub fn filled(edit: WorkingEdit, origin: Origin) -> Self {
+        Self { filled: true, ..Self::new(edit, origin) }
+    }
+
+    /// Changed from what was opened or last saved (undoing back to it is
+    /// not a change).
+    pub fn dirty(&self) -> bool {
+        self.edit != self.saved
+    }
+
+    /// Nothing here to keep when another edit opens: untitled, unchanged,
+    /// and empty or the project's shots it opened as.
+    pub fn replaceable(&self) -> bool {
+        matches!(self.origin, Origin::Untitled) && !self.dirty() && (self.filled || self.edit.length() == 0)
+    }
+
+    /// The edit as it is now is what is saved.
+    pub fn mark_saved(&mut self) {
+        self.saved = self.edit.clone();
+    }
+
+    pub fn read_only(&self) -> bool {
+        matches!(self.origin, Origin::Published { .. })
+    }
+
+    /// Apply `ops` as one undo step, all or none (refused on a published
+    /// version, and as `th_edit` refuses).
+    pub fn apply(&mut self, ops: &[Op<Source>], sources: &impl Sources<Source>) -> Result<(), Refused> {
+        if self.read_only() {
+            return Err(Refused("a published version is read-only: Save As to change it".into()));
+        }
+        if ops.is_empty() {
+            return Ok(());
+        }
+        self.history.apply_all(&mut self.edit, ops, sources)
+    }
+
+    pub fn undo(&mut self) -> bool {
+        self.history.undo(&mut self.edit)
+    }
+
+    pub fn redo(&mut self) -> bool {
+        self.history.redo(&mut self.edit)
+    }
+
+    /// What the title bar says: the name and version, and whether it changed.
+    pub fn title(&self) -> String {
+        let mark = if self.dirty() { " *" } else { "" };
+        match &self.origin {
+            Origin::Untitled => format!("Untitled edit{mark}"),
+            Origin::Working { name, version: Some(v) } => format!("{name} {v}{mark}"),
+            Origin::Working { name, version: None } => format!("{name}{mark}"),
+            Origin::Published { name, version } => format!("{name} {version} (published, read-only)"),
+        }
+    }
+}
+
+/// An untitled edit of `shots` (each its URI and the frames it plays) laid
+/// end to end on V1, each its best available take, at `fps` and
+/// `resolution`: what "Play N Shots" opens.
+pub fn of_shots(shots: &[(String, Frame, Frame)], fps: u32, resolution: [u32; 2]) -> WorkingEdit {
+    let mut edit = WorkingEdit::new(fps, resolution, "01:00:00:00");
+    let mut at = 0;
+    let clips = shots
+        .iter()
+        .filter(|(_, first, last)| last >= first)
+        .map(|(shot, first, last)| {
+            let duration = last - first + 1;
+            let clip = VideoClip {
+                at,
+                duration,
+                source_in: *first,
+                source: Source::Shot { shot: shot.clone(), take: Rule::best() },
+                fade_in: 0,
+                fade_out: 0,
+            };
+            at += duration;
+            clip
+        })
+        .collect();
+    edit.video.push(Track { name: "V1".into(), clips });
+    edit.audio.push(Track { name: "A1".into(), clips: Vec::new() });
+    edit
+}
+
+/// What an edit with nothing in it yet opens with: every shot of the
+/// project (`shots`, as [`project_shots`] lists them, in sequence then shot
+/// order) end to end, each its play range and best available take. Artists
+/// start a cut from the whole film, not from an empty timeline.
+pub fn project_fill(shots: &[BinShot], fps: u32, resolution: [u32; 2]) -> WorkingEdit {
+    let ranges: Vec<_> = shots.iter().map(|s| (s.uri.clone(), s.first, s.last)).collect();
+    of_shots(&ranges, fps, resolution)
+}
+
+/// A clip's source as the engine plays it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bound {
+    /// The engine source.
+    pub source: usize,
+    /// The frame number of its media's index 0.
+    pub first: Frame,
+}
+
+/// The engine clips of `edit`'s video tracks: every clip whose source is
+/// bound, from its in point (as a media index), on its track, with its
+/// fades; the frames before its media's first are left out.
+pub fn engine_clips(edit: &WorkingEdit, bound: impl Fn(&Source) -> Option<Bound>) -> Vec<Clip> {
+    let rate = (edit.fps as i32, 1);
+    let mut out = Vec::new();
+    for (track, t) in edit.video.iter().enumerate() {
+        for c in &t.clips {
+            let Some(b) = bound(&c.source) else { continue };
+            // Frames of the clip before its media starts.
+            let skip = (b.first - c.source_in).max(0);
+            if skip >= c.duration {
+                continue;
+            }
+            out.push(Clip {
+                source: b.source,
+                track,
+                at: (c.at + skip) as usize,
+                frames: (c.duration - skip) as usize,
+                first: (c.source_in + skip - b.first) as usize,
+                fade_in: (c.fade_in - skip).max(0) as usize,
+                fade_out: c.fade_out.min(c.duration - skip) as usize,
+                rate,
+            });
+        }
+    }
+    out
+}
+
+/// Edit frame `frame` as a timecode, from the edit's start timecode.
+pub fn timecode(frame: Frame, edit: &WorkingEdit) -> String {
+    let fps = Frame::from(edit.fps.max(1));
+    let total = timecode_frames(&edit.start_timecode, edit.fps).unwrap_or(0) + frame.max(0);
+    let (seconds, frames) = (total / fps, total % fps);
+    format!("{:02}:{:02}:{:02}:{:02}", seconds / 3600, seconds / 60 % 60, seconds % 60, frames)
+}
+
+/// Where clips start and end, in order, from frame 0: where Ctrl+Left and
+/// Ctrl+Right go.
+pub fn edit_points(edit: &WorkingEdit) -> Vec<Frame> {
+    let mut points: BTreeSet<Frame> = BTreeSet::from([0]);
+    for track in edit.tracks() {
+        for (at, end) in edit.spans(track) {
+            points.extend([at, end]);
+        }
+    }
+    points.into_iter().collect()
+}
+
+/// A shot of the project, for the shot bin: its play range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinShot {
+    pub uri: String,
+    pub sequence: String,
+    pub name: String,
+    pub first: Frame,
+    pub last: Frame,
+}
+
+impl BinShot {
+    /// It as a clip at `at`: its play range, its best available take.
+    pub fn clip(&self, at: Frame) -> VideoClip<Source> {
+        VideoClip {
+            at,
+            duration: self.last - self.first + 1,
+            source_in: self.first,
+            source: Source::Shot { shot: self.uri.clone(), take: Rule::best() },
+            fade_in: 0,
+            fade_out: 0,
+        }
+    }
+}
+
+/// The project's shots with a frame range, by sequence and name.
+pub fn project_shots(project: &Project) -> Result<Vec<BinShot>, String> {
+    let shots = th_pipe::Uri::parse("entity:/shots").map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for uri in project.config.list_entity_uris(&shots, true).map_err(|e| e.to_string())? {
+        if !project.config.is_terminal_entity(&uri).map_err(|e| e.to_string())? {
+            continue;
+        }
+        let Some(range) = th_pipe::timeline::get_frame_range(&project.config, &uri)? else { continue };
+        let play = range.play_range();
+        out.push(BinShot {
+            uri: uri.to_string(),
+            sequence: th_pipe::discovery::sequence_of(&uri),
+            name: uri.last().unwrap_or_default().to_owned(),
+            first: play.first_frame,
+            last: play.last_frame,
+        });
+    }
+    out.sort_by(|a, b| (&a.sequence, &a.name).cmp(&(&b.sequence, &b.name)));
+    Ok(out)
+}
+
+/// A media library item's newest version, for the media bin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinItem {
+    pub item: String,
+    pub version: String,
+    /// A movie's frames (played at the edit's rate).
+    pub frames: Option<Frame>,
+    /// Its sound's length in edit frames, when it has sound.
+    pub sound: Option<Frame>,
+}
+
+impl BinItem {
+    pub fn of(item: &str, version: &ItemVersion, fps: u32) -> Self {
+        let m = &version.measure;
+        BinItem {
+            item: item.to_owned(),
+            version: version.version.clone(),
+            frames: m.frames.map(|(n, _)| n as Frame),
+            sound: m.sound.then(|| (m.seconds * f64::from(fps)).floor() as Frame),
+        }
+    }
+
+    pub fn describe(&self) -> String {
+        let what = match (self.frames, self.sound) {
+            (Some(n), Some(_)) => format!("{n} frames, sound"),
+            (Some(n), None) => format!("{n} frames"),
+            (None, Some(n)) => format!("sound, {n} frames long"),
+            (None, None) => "nothing to play".into(),
+        };
+        format!("{} · {what}", self.version)
+    }
+
+    /// It as clips at `at`: its picture on a video track, its sound on an
+    /// audio track, as long as each has (the picture's length for both when
+    /// it has a picture), newest version always.
+    pub fn clips(&self, at: Frame) -> (Option<VideoClip<Source>>, Option<AudioClip<Source>>) {
+        let source = Source::Media { item: self.item.clone(), version: VersionRule::Latest };
+        let video = self.frames.filter(|&n| n > 0).map(|duration| VideoClip {
+            at,
+            duration,
+            source_in: 0,
+            source: source.clone(),
+            fade_in: 0,
+            fade_out: 0,
+        });
+        let audio = self.sound.map(|n| self.frames.unwrap_or(n)).filter(|&n| n > 0).map(|duration| AudioClip {
+            at,
+            duration,
+            source_in: 0,
+            source: source.clone(),
+            gain_db: 0.0,
+            fade_in: 0,
+            fade_out: 0,
+        });
+        (video, audio)
+    }
+}
+
+/// Whether `at .. end` is free on track `track` of `edit`.
+fn free(edit: &WorkingEdit, track: TrackRef, at: Frame, end: Frame) -> bool {
+    edit.spans(track).iter().all(|&(a, e)| e <= at || a >= end)
+}
+
+/// The ops that put `video` and `audio` (the same media at the same frame)
+/// into `edit`: inserted on video track `track` (everything from there on
+/// moves later, on every track), or laid over what is there (on the lowest
+/// track from `track` up with room, a new one on top when none has). A
+/// missing track is added first.
+pub fn put(
+    edit: &WorkingEdit,
+    video: Option<VideoClip<Source>>,
+    audio: Option<AudioClip<Source>>,
+    track: usize,
+    overlay: bool,
+) -> Vec<Op<Source>> {
+    let mut ops = Vec::new();
+    let add = |ops: &mut Vec<Op<Source>>, kind: TrackKind, count: usize| {
+        let name = match kind {
+            TrackKind::Video => format!("V{}", count + 1),
+            TrackKind::Audio => format!("A{}", count + 1),
+        };
+        ops.push(Op::AddTrack { kind, name });
+    };
+    // Where each goes: (track index, whether that track is new).
+    let room = |kind: TrackKind, from: usize, at: Frame, end: Frame| -> (usize, bool) {
+        let count = edit.track_count(kind);
+        let from = from.min(count);
+        match (from..count).find(|&i| free(edit, TrackRef { kind, index: i }, at, end)) {
+            Some(i) => (i, false),
+            None => (count, true),
+        }
+    };
+    if !overlay {
+        match (video, audio) {
+            (Some(v), audio) => {
+                let track = if edit.video.is_empty() {
+                    add(&mut ops, TrackKind::Video, 0);
+                    0
+                } else {
+                    track.min(edit.video.len() - 1)
+                };
+                ops.push(Op::Insert { track: TrackRef::video(track), clip: NewClip::Video(v) });
+                if let Some(a) = audio {
+                    // The insert opened room on every track: its sound goes on
+                    // the first audio track (free after the insert).
+                    if edit.audio.is_empty() {
+                        add(&mut ops, TrackKind::Audio, 0);
+                    }
+                    ops.push(Op::Place { track: TrackRef::audio(0), clip: NewClip::Audio(a) });
+                }
+            }
+            (None, Some(a)) => {
+                if edit.audio.is_empty() {
+                    add(&mut ops, TrackKind::Audio, 0);
+                }
+                ops.push(Op::Insert { track: TrackRef::audio(0), clip: NewClip::Audio(a) });
+            }
+            (None, None) => {}
+        }
+        return ops;
+    }
+    if let Some(v) = video {
+        let (index, new) = room(TrackKind::Video, track, v.at, v.at + v.duration);
+        if new {
+            add(&mut ops, TrackKind::Video, index);
+        }
+        ops.push(Op::Place { track: TrackRef::video(index), clip: NewClip::Video(v) });
+    }
+    if let Some(a) = audio {
+        let (index, new) = room(TrackKind::Audio, 0, a.at, a.at + a.duration);
+        if new {
+            add(&mut ops, TrackKind::Audio, index);
+        }
+        ops.push(Op::Place { track: TrackRef::audio(index), clip: NewClip::Audio(a) });
+    }
+    ops
+}
+
+/// Ops moving every clip of `selection` `delta` frames on its own track:
+/// the latest first when moving later, the earliest first when earlier, so
+/// none lands on another still to move.
+pub fn move_all(edit: &WorkingEdit, selection: &BTreeSet<ClipRef>, delta: Frame) -> Vec<Op<Source>> {
+    let mut clips: Vec<(ClipRef, Frame)> = selection.iter().filter_map(|&c| Some((c, edit.spans(c.track).get(c.index)?.0))).collect();
+    clips.sort_by_key(|&(c, at)| (c.track.kind == TrackKind::Audio, c.track.index, at));
+    if delta > 0 {
+        clips.reverse();
+    }
+    clips.into_iter().map(|(clip, at)| Op::Move { clip, to: clip.track, at: (at + delta).max(0) }).collect()
+}
+
+/// `clips`, the latest-starting first: ripple deletes in this order leave
+/// the earlier ones where they were.
+pub fn latest_spans_first(edit: &WorkingEdit, mut clips: Vec<ClipRef>) -> Vec<ClipRef> {
+    clips.sort_by_key(|&c| {
+        std::cmp::Reverse((edit.spans(c.track).get(c.index).map_or(0, |s| s.0), c.track.kind == TrackKind::Audio, c.track.index, c.index))
+    });
+    clips
+}
+
+/// What a file to import is: a movie's frames and rate, its length, its
+/// sound. Decodes its sound whole, so it runs off the UI thread.
+pub fn measure(file: &Path) -> Result<Measure, String> {
+    let path = file.to_string_lossy().replace('\\', "/");
+    if !file.is_file() {
+        return Err(format!("{path}: not a file"));
+    }
+    let sound = Sound::read(&path).map_err(|e| e.to_string())?;
+    let movie = Media::movie(&path).ok().filter(|m| m.frame_count() > 0);
+    let frames = movie.as_ref().map(|m| (m.frame_count() as u64, m.rate()));
+    let seconds = match (&frames, &sound) {
+        (Some((n, (num, den))), _) => *n as f64 * f64::from(*den) / f64::from(*num),
+        (None, Some(s)) => s.seconds(),
+        (None, None) => return Err(format!("{path}: no picture or sound the player can read")),
+    };
+    Ok(Measure { frames, seconds, sound: sound.is_some() })
+}
+
+/// An item name from a file's name: its stem's letters and digits.
+pub fn item_name_of(path: &str) -> String {
+    let path = path.trim().trim_matches('"');
+    let stem = Path::new(path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    stem.chars().filter(char::is_ascii_alphanumeric).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use th_edit::ops::Available;
+
+    struct Anything;
+    impl Sources<Source> for Anything {
+        fn available(&self, _: &Source) -> Available {
+            Available::Any
+        }
+    }
+
+    fn shot(n: &str) -> Source {
+        Source::Shot { shot: format!("entity:/shots/S/{n}"), take: Rule::best() }
+    }
+
+    #[test]
+    fn shots_lay_end_to_end_on_their_own_frames() {
+        let edit = of_shots(&[("entity:/shots/S/010".into(), 1001, 1040), ("entity:/shots/S/020".into(), 1001, 1010)], 24, [1920, 1080]);
+        assert_eq!(edit.problem(), None);
+        let clips = &edit.video[0].clips;
+        assert_eq!((clips[0].at, clips[0].duration, clips[0].source_in), (0, 40, 1001));
+        assert_eq!((clips[1].at, clips[1].duration), (40, 10));
+        assert_eq!(edit.length(), 50);
+    }
+
+    #[test]
+    fn timecodes_count_from_the_start() {
+        let edit = WorkingEdit::new(24, [16, 9], "01:00:00:00");
+        assert_eq!(timecode(0, &edit), "01:00:00:00");
+        assert_eq!(timecode(24 * 61 + 5, &edit), "01:01:01:05");
+    }
+
+    #[test]
+    fn edit_points_are_every_clip_end() {
+        let edit = of_shots(&[("entity:/shots/S/010".into(), 1001, 1040), ("entity:/shots/S/020".into(), 1001, 1010)], 24, [1920, 1080]);
+        assert_eq!(edit_points(&edit), [0, 40, 50]);
+    }
+
+    #[test]
+    fn items_are_named_from_their_files() {
+        assert_eq!(item_name_of("\"C:/refs/cut_v3 final.mov\""), "cutv3final");
+        assert_eq!(item_name_of("music.wav"), "music");
+    }
+
+    fn apply_all(edit: &WorkingEdit, ops: &[Op<Source>]) -> WorkingEdit {
+        let mut edit = edit.clone();
+        for op in ops {
+            edit = th_edit::ops::apply(&edit, op, &Anything).unwrap_or_else(|e| panic!("{op:?}: {e}"));
+        }
+        edit
+    }
+
+    #[test]
+    fn insert_ripples_and_overlay_finds_room_above() {
+        let edit = of_shots(&[("entity:/shots/S/010".into(), 1001, 1040)], 24, [1920, 1080]);
+        let bin = BinShot { uri: "entity:/shots/S/020".into(), sequence: "S".into(), name: "020".into(), first: 1001, last: 1010 };
+        let inserted = apply_all(&edit, &put(&edit, Some(bin.clip(20)), None, 0, false));
+        let v1: Vec<(Frame, Frame)> = inserted.video[0].clips.iter().map(|c| (c.at, c.duration)).collect();
+        assert_eq!(v1, [(0, 20), (20, 10), (30, 20)]);
+        let laid = apply_all(&edit, &put(&edit, Some(bin.clip(20)), None, 0, true));
+        assert_eq!(laid.video.len(), 2, "no room on V1: a V2 on top");
+        assert_eq!((laid.video[1].clips[0].at, laid.video[0].clips[0].duration), (20, 40));
+        // Over the end of V1 there is room on V1 itself.
+        let after = apply_all(&edit, &put(&edit, Some(bin.clip(40)), None, 0, true));
+        assert_eq!((after.video.len(), after.video[0].clips.len()), (1, 2));
+    }
+
+    #[test]
+    fn a_movie_with_sound_goes_in_on_both_kinds_of_track() {
+        let edit = WorkingEdit::new(24, [16, 9], "01:00:00:00");
+        let item = BinItem { item: "animatic".into(), version: "v0001".into(), frames: Some(48), sound: Some(50) };
+        let (video, audio) = item.clips(0);
+        let edit = apply_all(&edit, &put(&edit, video, audio, 0, false));
+        assert_eq!((edit.video[0].clips[0].duration, edit.audio[0].clips[0].duration), (48, 48));
+        let music = BinItem { item: "music".into(), version: "v0002".into(), frames: None, sound: Some(100) };
+        let (video, audio) = music.clips(10);
+        assert!(video.is_none());
+        let edit = apply_all(&edit, &put(&edit, video, audio, 0, true));
+        assert_eq!(edit.audio.len(), 2);
+        assert_eq!(edit.audio[1].clips[0].duration, 100);
+    }
+
+    #[test]
+    fn moving_several_keeps_their_spacing() {
+        let edit = of_shots(&[("entity:/shots/S/010".into(), 1001, 1010), ("entity:/shots/S/020".into(), 1001, 1010)], 24, [1920, 1080]);
+        let both = BTreeSet::from([ClipRef { track: TrackRef::video(0), index: 0 }, ClipRef { track: TrackRef::video(0), index: 1 }]);
+        let later = apply_all(&edit, &move_all(&edit, &both, 5));
+        assert_eq!(later.video[0].clips.iter().map(|c| c.at).collect::<Vec<_>>(), [5, 15]);
+        let back = apply_all(&later, &move_all(&later, &both, -5));
+        assert_eq!(back, edit);
+    }
+
+    #[test]
+    fn a_published_document_refuses_changes() {
+        let edit = of_shots(&[("entity:/shots/S/010".into(), 1001, 1040)], 24, [1920, 1080]);
+        let mut doc = Document::new(edit.clone(), Origin::Published { name: "Main".into(), version: "v0002".into() });
+        let split = Op::Split { clip: th_edit::document::ClipRef { track: TrackRef::video(0), index: 0 }, at: 10 };
+        assert!(doc.apply(std::slice::from_ref(&split), &Anything).is_err());
+        assert!(!doc.dirty());
+        let mut doc = Document::new(edit, Origin::Untitled);
+        doc.apply(std::slice::from_ref(&split), &Anything).unwrap();
+        assert!(doc.dirty());
+        assert_eq!(doc.title(), "Untitled edit *");
+        assert_eq!(doc.edit.video[0].clips.len(), 2);
+        assert!(doc.undo());
+        assert_eq!(doc.edit.video[0].clips.len(), 1);
+        assert!(!doc.dirty(), "undone back to what was opened is no change");
+        assert!(doc.redo());
+        doc.mark_saved();
+        assert_eq!(doc.title(), "Untitled edit");
+    }
+
+    #[test]
+    fn only_an_untouched_untitled_edit_gives_way_to_another() {
+        let shots = [BinShot { uri: "entity:/shots/S/010".into(), sequence: "S".into(), name: "010".into(), first: 1001, last: 1040 }];
+        let fill = project_fill(&shots, 24, [1920, 1080]);
+        assert!(Document::filled(fill.clone(), Origin::Untitled).replaceable(), "the project's shots as opened");
+        assert!(Document::new(of_shots(&[], 24, [1920, 1080]), Origin::Untitled).replaceable(), "an empty edit");
+        assert!(!Document::new(fill.clone(), Origin::Untitled).replaceable(), "shots the user asked for");
+        assert!(!Document::filled(fill.clone(), Origin::Working { name: "Main".into(), version: None }).replaceable(), "a named edit");
+        let mut doc = Document::filled(fill, Origin::Untitled);
+        let split = Op::Split { clip: th_edit::document::ClipRef { track: TrackRef::video(0), index: 0 }, at: 10 };
+        doc.apply(std::slice::from_ref(&split), &Anything).unwrap();
+        assert!(!doc.replaceable(), "changed since it opened");
+        assert!(doc.undo());
+        assert!(doc.replaceable(), "undone back to how it opened");
+    }
+
+    proptest! {
+        /// A new edit holds every shot with a play range, once, in the
+        /// order listed, end to end from frame 0 with no gaps, each playing
+        /// exactly its play range in its best take; sound starts empty.
+        #[test]
+        fn a_new_edit_is_every_shot_end_to_end(
+            ranges in prop::collection::vec((990i64..1100, -3i64..120), 0..12),
+        ) {
+            let shots: Vec<BinShot> = ranges
+                .iter()
+                .enumerate()
+                .map(|(i, (first, length))| BinShot {
+                    uri: format!("entity:/shots/S/{:03}", (i + 1) * 10),
+                    sequence: "S".into(),
+                    name: format!("{:03}", (i + 1) * 10),
+                    first: *first,
+                    last: first + length - 1,
+                })
+                .collect();
+            let edit = project_fill(&shots, 24, [1920, 1080]);
+            let playable: Vec<&BinShot> = shots.iter().filter(|s| s.last >= s.first).collect();
+            prop_assert_eq!(edit.video.len(), 1);
+            prop_assert_eq!(edit.audio.len(), 1);
+            prop_assert!(edit.audio[0].clips.is_empty());
+            let clips = &edit.video[0].clips;
+            prop_assert_eq!(clips.len(), playable.len());
+            let mut at = 0;
+            for (clip, shot) in clips.iter().zip(&playable) {
+                prop_assert_eq!(clip.at, at);
+                prop_assert_eq!(clip.source_in, shot.first);
+                prop_assert_eq!(clip.duration, shot.last - shot.first + 1);
+                prop_assert_eq!(&clip.source, &Source::Shot { shot: shot.uri.clone(), take: Rule::best() });
+                at += clip.duration;
+            }
+            prop_assert_eq!(edit.length(), at);
+        }
+
+        /// Every bound clip plays, at each edit frame it covers, the media
+        /// index of its source frame there; frames before the media's first
+        /// are left out; unbound clips play nothing.
+        #[test]
+        fn clips_play_their_source_frames(
+            clips in prop::collection::vec((0i64..30, 1i64..60, 990i64..1010, 0usize..3, 0i64..5, 0i64..5), 1..6),
+            firsts in prop::collection::vec(990i64..1010, 3),
+            unbound in 0usize..4,
+        ) {
+            let mut edit = WorkingEdit::new(24, [16, 9], "01:00:00:00");
+            let names = ["010", "020", "030"];
+            let mut at = 0;
+            let mut track = Vec::new();
+            for (gap, duration, source_in, s, fade_in, fade_out) in clips {
+                at += gap;
+                let fade_in = fade_in.min(duration);
+                let fade_out = fade_out.min(duration - fade_in);
+                track.push(VideoClip { at, duration, source_in, source: shot(names[s]), fade_in, fade_out });
+                at += duration;
+            }
+            edit.video.push(Track { name: "V1".into(), clips: track.clone() });
+            let bind = |source: &Source| {
+                let Source::Shot { shot, .. } = source else { return None };
+                let s = names.iter().position(|n| shot.ends_with(n))?;
+                (s != unbound).then_some(Bound { source: s, first: firsts[s] })
+            };
+            let engine = engine_clips(&edit, bind);
+            for c in &track {
+                let b = bind(&c.source);
+                for f in c.at..c.at + c.duration {
+                    let source_frame = c.source_in + f - c.at;
+                    let playing: Vec<&Clip> = engine.iter().filter(|e| e.covers(f as usize)).collect();
+                    match b {
+                        Some(b) if source_frame >= b.first => {
+                            prop_assert_eq!(playing.len(), 1);
+                            let key = playing[0].key(f as usize);
+                            prop_assert_eq!(key.source, b.source);
+                            prop_assert_eq!(key.index as i64, source_frame - b.first);
+                        }
+                        _ => prop_assert!(playing.is_empty(), "frame {} plays though its source does not", f),
+                    }
+                }
+            }
+        }
+    }
+}

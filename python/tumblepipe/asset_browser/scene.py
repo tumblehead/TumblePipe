@@ -226,7 +226,7 @@ class SceneManager:
                 # a live full-graph cook - same guard as the three open
                 # paths in WorkfileManager.
                 with playbar.update_mode(hou.updateMode.Manual):
-                    hou.hipFile.load(hip, suppress_save_prompt=decision)
+                    hou.hipFile.load(Path(hip).as_posix(), suppress_save_prompt=decision)
                     log.info("Reloaded scene: %s", hip)
                     # Reconcile the timeline exactly like the open paths -
                     # same unforced apply_scene_timeline call, so reload and

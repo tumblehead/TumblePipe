@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc db1fb0f06f6a329d022b2056bf96500ad12c04487dc64d7972da5a493cd416cc # shrinks to state = State { free: false, writable: false, named: false, master: None, picked: false, playing: false, burnins: false, last: 0 }, c = 'b', upper = false, modifiers = Modifiers { shift: false, control: true, alt: false, logo: false }

@@ -477,7 +477,7 @@ class WorkfileManager:
                 with playbar.update_mode(hou.updateMode.Manual):
                     try:
                         hou.hipFile.load(
-                            str(path), suppress_save_prompt=decision,
+                            path.as_posix(), suppress_save_prompt=decision,
                         )
                     except hou.LoadWarning as warning:
                         # The scene IS open, with warnings (a missing HDA,
@@ -551,14 +551,18 @@ class WorkfileManager:
         """Save the next ``dept/vNNNN`` workfile of ``entity_uri`` from the
         department template, on the main thread.
 
-        Activate the target project's env, clear the scene, save an empty
+        The open scene's unsaved changes are dealt with first, as opening a
+        workfile does (:meth:`SceneManager.prepare_scene_swap`: save a new
+        version, discard, or cancel, which makes nothing). Then activate
+        the target project's env, clear the scene, save an empty
         hip at the next versioned path, then run the matching
         ``config:/templates/{context}/{dept}/template.py`` to populate
         ``/stage`` and stamp the config timeline before saving again. Works
         for both empty depts (next = v0001) and populated depts
         (next = v(N+1)). A department with no template saves an empty
         scene and says so; a template that raises is reported, as is
-        everything else that fails here.
+        everything else that fails here. ``refresh_cb`` is called once it
+        is over, made or not.
         """
 
         def _do_create() -> None:
@@ -573,6 +577,11 @@ class WorkfileManager:
                 )
                 from tumblepipe.pipe.paths import reserve_next_hip_file_path
 
+                # The new workfile replaces the open scene: its unsaved
+                # changes first, before a version is reserved.
+                decision = self._scene.prepare_scene_swap()
+                if decision is None:
+                    return  # cancelled: nothing made
                 # Re-activate inside the deferred tick so no background
                 # thread can clobber the global client between activate
                 # and the path resolution that depends on it.
@@ -585,7 +594,7 @@ class WorkfileManager:
                 ))
 
                 next_path.parent.mkdir(parents=True, exist_ok=True)
-                hou.hipFile.clear(suppress_save_prompt=True)
+                hou.hipFile.clear(suppress_save_prompt=decision)
                 _show_stage_in_network_editors()
                 # Houdini may rewrite the extension (Education/Apprentice
                 # save .hip as .hipnc); record the path it actually wrote.
@@ -631,7 +640,7 @@ class WorkfileManager:
                 self._scene.apply_scene_timeline(
                     asset_id, force_frame_range=True,
                 )
-                hou.hipFile.save(str(next_path))
+                hou.hipFile.save(next_path.as_posix())
 
                 log.info(
                     "Created %s (template_applied=%s)",
@@ -650,12 +659,13 @@ class WorkfileManager:
                 # re-renders the currently-displayed detail, which may be a
                 # different asset.
                 self._refresh.card(asset_id)
-                if callable(refresh_cb):
-                    refresh_cb()
             except Exception as exc:
                 report_failure(
                     f"Creating a workfile for {asset_id}/{dept}", exc,
                 )
+            finally:
+                if callable(refresh_cb):
+                    refresh_cb()
 
         run_on_main_thread(_do_create)
 
@@ -803,7 +813,7 @@ class WorkfileManager:
                     )
                     with playbar.update_mode(hou.updateMode.Manual):
                         retargeted = retarget_scene(prev_ctx, new_ctx)
-                    hou.hipFile.save(str(next_path))
+                    hou.hipFile.save(next_path.as_posix())
 
                 log.info(
                     "New from Current: saved %s (retargeted %d node(s))",
@@ -957,22 +967,30 @@ class WorkfileManager:
     ) -> None:
         """Save the next ``dept/vNNNN`` workfile for a group from the
         department template, via the group's ``groups:/ctx/name`` URI (see
-        :meth:`_create_from_template`)."""
-        if not asset_id.startswith("group:"):
-            return
-        proj = self._group_project(asset_id)
-        if proj is None:
-            return
-        proj_name, path = self._split_group_id(asset_id)
-        self._activator.activate(proj)
-        client = self._clients.get(proj_name)
-        group_uri = uris.group(path)
-        self._create_from_template(
-            asset_id=asset_id, entity_uri=group_uri,
-            # A group's context is its path's first segment; groups share
-            # the per-context dept template with shots/assets.
-            context=group_uri.segments[0], dept=dept, proj=proj,
-            client=client,
-            module_name=entity_stem(group_uri, dept, "template", "group"),
-            refresh_cb=refresh_cb,
-        )
+        :meth:`_create_from_template`). ``refresh_cb`` is called once it is
+        over, made or not, even when it never got as far as the template
+        (the Entity Editor's Multis tab waits for it)."""
+        handed_on = False
+        try:
+            if not asset_id.startswith("group:"):
+                return
+            proj = self._group_project(asset_id)
+            if proj is None:
+                return
+            proj_name, path = self._split_group_id(asset_id)
+            self._activator.activate(proj)
+            client = self._clients.get(proj_name)
+            group_uri = uris.group(path)
+            self._create_from_template(
+                asset_id=asset_id, entity_uri=group_uri,
+                # A group's context is its path's first segment; groups share
+                # the per-context dept template with shots/assets.
+                context=group_uri.segments[0], dept=dept, proj=proj,
+                client=client,
+                module_name=entity_stem(group_uri, dept, "template", "group"),
+                refresh_cb=refresh_cb,
+            )
+            handed_on = True    # _create_from_template calls it from here
+        finally:
+            if not handed_on and callable(refresh_cb):
+                refresh_cb()

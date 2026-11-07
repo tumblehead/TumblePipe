@@ -275,11 +275,15 @@ class Record:
 @dataclass(frozen=True)
 class MultiRecord:
     """A Multi as stored (``groups:/<kind>/<name>``): its members' URI
-    strings and the departments it covers, in stored order."""
+    strings and the departments it covers, in stored order, and its
+    Timeline (``config.multi_timeline``: whether the members sit end to end
+    on one timeline, with a playbar bookmark each)."""
     name: str
     uri: Uri
     members: tuple[str, ...]
     departments: tuple[str, ...]
+    shared_timeline: bool = False
+    timeline_bookmarks: bool = False
 
 
 @dataclass(frozen=True)
@@ -364,9 +368,11 @@ def _load_multis(config, kind: Kind) -> tuple[MultiRecord, ...]:
         # Resolved, as config.groups reads them; the schema gives neither
         # key a default, so a Multi may lack one (config.groups).
         props = config.get_properties(uri) or {}
+        shared = bool(props.get('shared_timeline', False))
         found.append(MultiRecord(
             uri.segments[1], uri,
             tuple(props.get('members', [])), tuple(props.get('departments', [])),
+            shared, shared and bool(props.get('timeline_bookmarks', False)),
         ))
     return tuple(found)
 
@@ -473,7 +479,9 @@ class Multi:
     the sheet stays itself: its URI is only worked out on Apply. A stored
     member the sheet has no row for (an entity no longer in the project) is
     kept as its URI string. ``base_members`` is what ``members`` was when
-    loaded, to tell a changed list. Read-only outside :class:`Sheet`.
+    loaded, to tell a changed list. ``shared_timeline`` and
+    ``timeline_bookmarks`` are its Timeline (a shots Multi's; bookmarks only
+    with a shared timeline). Read-only outside :class:`Sheet`.
     """
     id: int
     origin: MultiRecord | None
@@ -482,6 +490,8 @@ class Multi:
     departments: tuple[str, ...]
     base_members: tuple = ()
     retire: bool = False
+    shared_timeline: bool = False
+    timeline_bookmarks: bool = False
 
     @property
     def is_new(self) -> bool:
@@ -500,10 +510,22 @@ class Multi:
         return self.origin is not None and set(self.departments) != set(self.origin.departments)
 
     @property
+    def timeline(self) -> tuple[bool, bool]:
+        """``(shared timeline, bookmarks)``."""
+        return self.shared_timeline, self.timeline_bookmarks
+
+    @property
+    def timeline_changed(self) -> bool:
+        return self.origin is not None and self.timeline != (
+            self.origin.shared_timeline, self.origin.timeline_bookmarks,
+        )
+
+    @property
     def touched(self) -> bool:
         return (
             self.is_new or self.renamed or self.retire
             or self.members_changed or self.departments_changed
+            or self.timeline_changed
         )
 
 
@@ -584,6 +606,8 @@ class Sheet:
             members = [by_uri.get(member, member) for member in record.members]
             self._multis.append(Multi(
                 i, record, record.name, members, record.departments, tuple(members),
+                shared_timeline=record.shared_timeline,
+                timeline_bookmarks=record.timeline_bookmarks,
             ))
         self._next_multi_id = len(self._multis)
         self._undo: list[tuple] = []
@@ -683,9 +707,18 @@ class Sheet:
         return (
             any(row.touched for row in self._rows)
             or bool(self._root_edits) or bool(self._used_new_roots())
-            or any(multi.touched for multi in self._multis)
+            or any(self._multi_pending(multi) for multi in self._multis)
             or bool(self._new_groups) or bool(self._live_group_edits())
         )
+
+    def _multi_pending(self, multi: Multi) -> bool:
+        """Whether Apply writes anything for ``multi``: like
+        :attr:`Multi.touched`, but a member Apply leaves out (a group the
+        sheet listed whole and then removed) is no change."""
+        if multi.is_new or multi.renamed or multi.retire or multi.departments_changed:
+            return True
+        live = {m for m in multi.members if self._live_member(multi, m)}
+        return live != set(multi.base_members)
 
     def summary(self) -> Summary:
         known = set(self.base.groups)
@@ -708,7 +741,8 @@ class Sheet:
             roots_new=len(self._used_new_roots()),
             multis_new=sum(m.is_new for m in self._multis),
             multis_changed=sum(
-                1 for m in self._multis if not m.is_new and not m.retire and m.touched
+                1 for m in self._multis
+                if not m.is_new and not m.retire and self._multi_pending(m)
             ),
             multis_retired=sum(m.retire for m in self._multis),
             groups_changed=len(self._live_group_edits()),
@@ -1024,13 +1058,19 @@ class Sheet:
 
     def remove_group(self, name: str) -> bool:
         """Drop a group added with :meth:`add_group`; new rows in it keep
-        it (they create it on Apply)."""
+        it (they create it on Apply). A group dropped for good leaves the
+        Multis that listed it whole: kept, it would be a member nobody sees
+        and Apply never writes, yet one that marks its Multi changed."""
         if name not in self._new_groups:
             return False
         self._changing()
         self._new_groups.remove(name)
         if name not in self.groups():
             self._group_edits.pop(name, None)
+            member = self.group_member(name)
+            for multi in self._multis:
+                if member in multi.members and member not in multi.base_members:
+                    multi.members[:] = [m for m in multi.members if m != member]
         return True
 
     def group_problems(self) -> dict[str, str]:
@@ -1183,19 +1223,45 @@ class Sheet:
     def add_multi(
         self, name: str, members: Iterable[int] = (),
         departments: Iterable[str] | None = None,
+        timeline: tuple[bool, bool] = (False, False),
     ) -> int:
         """A new Multi, created on Apply; its id. It covers the whole pool
-        unless ``departments`` says otherwise, as the browser's New Multi
-        does. A name with a problem is allowed here and shown by
-        :meth:`multi_problems`."""
+        unless ``departments`` says otherwise. ``timeline`` is its
+        ``(shared timeline, bookmarks)``; only a shots Multi has one. A name
+        with a problem is allowed here and shown by :meth:`multi_problems`."""
         self._changing()
+        shared, bookmarks = self._timeline(*timeline)
         multi = Multi(
             self._next_multi_id, None, name.strip(), self._live_ids(members),
             self._ordered(self.base.pool if departments is None else departments),
+            shared_timeline=shared, timeline_bookmarks=bookmarks,
         )
         self._next_multi_id += 1
         self._multis.append(multi)
         return multi.id
+
+    def _timeline(self, shared: bool, bookmarks: bool) -> tuple[bool, bool]:
+        """A Timeline this kind can hold: assets have no frames to lay end
+        to end, and bookmarks come only with a shared timeline."""
+        shared = bool(shared) and self.kind is SHOTS_KIND
+        return shared, shared and bool(bookmarks)
+
+    def set_multi_timeline(self, multi_ids: Iterable[int], shared: bool, bookmarks: bool) -> bool:
+        """Set these Multis' Timeline, as one edit. Switching shared timeline
+        on places the members not placed yet when Apply writes it, after the
+        last frame any placed member reaches; switching it off keeps their
+        places (``config.multi_timeline``)."""
+        timeline = self._timeline(shared, bookmarks)
+        changed = False
+        with self.batch():
+            for multi_id in list(multi_ids):
+                multi = self.multi(multi_id)
+                if multi.retire or multi.timeline == timeline:
+                    continue
+                self._changing()
+                multi.shared_timeline, multi.timeline_bookmarks = timeline
+                changed = True
+        return changed
 
     def rename_multi(self, multi_id: int, name: str) -> bool:
         multi = self.multi(multi_id)
@@ -1344,6 +1410,8 @@ class Sheet:
                     multi.name = multi.origin.name
                     multi.members[:] = list(multi.base_members)
                     multi.departments = multi.origin.departments
+                    multi.shared_timeline = multi.origin.shared_timeline
+                    multi.timeline_bookmarks = multi.origin.timeline_bookmarks
                     multi.retire = False
         return changed
 
@@ -1835,9 +1903,15 @@ class Sheet:
                 continue
             uri = GROUPS_URI / self.kind.key / multi.name
             if multi.is_new:
-                create.append((uri, {
+                own = {
                     'members': members(multi), 'departments': list(multi.departments),
-                }))
+                }
+                # Only a shared timeline is written: a new Multi on its
+                # members' own frames is stored as one always was.
+                if multi.shared_timeline:
+                    own['shared_timeline'] = True
+                    own['timeline_bookmarks'] = multi.timeline_bookmarks
+                create.append((uri, own))
                 continue
             if multi.renamed:
                 rename.append((multi.origin.uri, multi.name))
@@ -1857,6 +1931,12 @@ class Sheet:
                     edits['members'] = written
             if multi.departments_changed:
                 edits['departments'] = list(multi.departments)
+            if multi.timeline_changed:
+                # The starts stay as stored: switching off keeps every
+                # member's place, and switching on places the unplaced
+                # ones after Apply (EntityEditorSource.place).
+                edits['shared_timeline'] = multi.shared_timeline
+                edits['timeline_bookmarks'] = multi.timeline_bookmarks
             if edits:
                 update.append((uri, edits))
         return tuple(retire), tuple(rename), tuple(create), tuple(update)
@@ -1930,7 +2010,7 @@ class Sheet:
             if old.renamed and not renamed_done:
                 target.name = old.name
             _carry(target, old.edits)
-        sheet._carry_multis(self._multis, moved, notes)
+        sheet._carry_multis(self._multis, moved, notes, self._live_member)
         sheet._carry_group_edits(self._live_group_edits(), notes)
         return sheet, notes
 
@@ -1957,13 +2037,20 @@ class Sheet:
             if carried:
                 self._group_edits[group] = carried
 
-    def _carry_multis(self, old_multis: list[Multi], moved: Mapping[int, int], notes: list[str]) -> None:
+    def _carry_multis(
+        self, old_multis: list[Multi], moved: Mapping[int, int], notes: list[str],
+        live: Callable[[Multi, object], bool] = lambda multi, member: True,
+    ) -> None:
         """:meth:`rebase` for Multis: what each one's edits added and took
         away, onto the Multi as now stored, in the sheet's member order, so
         a member someone else added meanwhile stays (after the sheet's). A
         rename or a new Multi that is now stored (this Apply wrote it)
         falls away like a row's; a new Multi named like one stored before
-        the edits stays new."""
+        the edits stays new. ``live`` is the old sheet's
+        :meth:`_live_member`: a member it would not write (a new sequence
+        listed whole, then removed) is not carried either, or it would
+        come back as a pending edit nobody can see. A Timeline edit carries
+        over like a department's."""
         by_uri = {str(row.origin.uri): row.id for row in self._rows if row.origin is not None}
 
         def mapped(members) -> list:
@@ -1985,7 +2072,7 @@ class Sheet:
             if not old.touched and list(old.members) == list(old.base_members):
                 continue
             base_members = [] if old.is_new else mapped(old.base_members)
-            now = mapped(old.members)
+            now = mapped([m for m in old.members if live(old, m)])
             added = [m for m in now if m not in base_members]
             removed = [m for m in base_members if m not in now]
             base_departments = () if old.is_new else old.origin.departments
@@ -2007,10 +2094,14 @@ class Sheet:
                     continue
                 self._multis.append(Multi(
                     self._next_multi_id, None, old.name, now, old.departments,
+                    shared_timeline=old.shared_timeline,
+                    timeline_bookmarks=old.timeline_bookmarks,
                 ))
                 self._next_multi_id += 1
                 continue
             target.retire = old.retire
+            if old.timeline_changed:
+                target.shared_timeline, target.timeline_bookmarks = old.timeline
             if not old.is_new and old.renamed and key == old.origin.name:
                 target.name = old.name
             # The sheet's order, less what someone else took out, then what

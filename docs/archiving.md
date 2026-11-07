@@ -32,7 +32,12 @@ is left out. Pick one of three profiles:
 Every profile also takes `_config`, the workfile sidecars (`context.json`,
 `_context/`), anything else artists keep in workfile folders (painted
 textures, reference images, training runs), and the project's `otls`,
-`recipes` and `library` folders. The scenes load those.
+`recipes` and `library` folders. The scenes load those. It takes every
+edit's working versions too (the `edits` root: small JSON files, the only
+record of a cut before it is published); published edits and the media
+library are exports, kept as exports are. A published edit's `media/`
+folder holds the movies it plays as hard links, which the archive copies
+as files: each kept version carries its own copy of its movies.
 
 **Only the latest export.** The pipeline's import nodes move to the latest
 version of each export when a workfile opens, so older export versions are
@@ -55,7 +60,7 @@ HideAndReek the renders alone were 2.2 TB.
 | The `_cache`, `_proxy`, `_turntable` folders beside the project | derived |
 | Python environments (any folder with a `pyvenv.cfg`), `node_modules`, `__pycache__` | installed software |
 | `*.bak*`, `*~`, `Thumbs.db`, `desktop.ini` | noise |
-| The edit (`storage.json`'s `edit` root) and every other top-level folder: client material, `delivery`, `temp`, … | not pipeline data |
+| The `edit` root (`storage.json`'s, Resolve projects and their exports; not the editor's `edits`) and every other top-level folder: client material, `delivery`, `temp`, … | not pipeline data |
 
 Those folders stay on the server. They just aren't part of an archive you
 might send someone. To archive one of them anyway, name it in

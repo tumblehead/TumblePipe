@@ -21,7 +21,7 @@ use th_media::{Frame, FrameBuffer, FrameKey, Pixels};
 const CLIP_SPAN: usize = 1000;
 
 fn position(key: FrameKey) -> usize {
-    key.clip * CLIP_SPAN + key.index
+    key.source * CLIP_SPAN + key.index
 }
 
 fn distance(a: FrameKey, b: FrameKey) -> usize {
@@ -33,7 +33,7 @@ fn frame(bytes: usize) -> Frame {
 }
 
 fn key() -> impl Strategy<Value = FrameKey> {
-    (0usize..3, 0usize..40).prop_map(|(clip, index)| FrameKey { clip, index })
+    (0usize..3, 0usize..40).prop_map(|(source, index)| FrameKey { source, index })
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +57,7 @@ proptest! {
         for Insert { key, bytes, playhead } in inserts {
             let playhead_held = model.contains_key(&playhead) || key == playhead;
             model.insert(key, bytes);
-            buffer.insert(key, frame(bytes), playhead, distance);
+            buffer.insert(key, frame(bytes), |k| distance(k, playhead));
 
             let evicted: Vec<FrameKey> = model.keys().copied().filter(|k| !buffer.contains(*k)).collect();
             for k in &evicted {
@@ -91,7 +91,7 @@ proptest! {
     fn under_budget_nothing_is_evicted(keys in prop::collection::vec(key(), 1..80)) {
         let mut buffer = FrameBuffer::new(usize::MAX);
         for &key in &keys {
-            buffer.insert(key, frame(8), keys[0], distance);
+            buffer.insert(key, frame(8), |k| distance(k, keys[0]));
         }
         for key in keys {
             prop_assert!(buffer.contains(key));
@@ -102,7 +102,7 @@ proptest! {
     fn clear_empties(inserts in inserts()) {
         let mut buffer = FrameBuffer::new(100);
         for Insert { key, bytes, playhead } in inserts {
-            buffer.insert(key, frame(bytes), playhead, distance);
+            buffer.insert(key, frame(bytes), |k| distance(k, playhead));
         }
         buffer.clear();
         prop_assert!(buffer.is_empty());
@@ -112,15 +112,15 @@ proptest! {
 
 proptest! {
     #[test]
-    fn remove_clip_drops_that_clip_only(inserts in inserts(), clip in 0usize..3) {
+    fn remove_source_drops_that_source_only(inserts in inserts(), source in 0usize..3) {
         let mut buffer = FrameBuffer::new(usize::MAX);
         let mut model: HashMap<FrameKey, usize> = HashMap::new();
         for Insert { key, bytes, playhead } in inserts {
             model.insert(key, bytes);
-            buffer.insert(key, frame(bytes), playhead, distance);
+            buffer.insert(key, frame(bytes), |k| distance(k, playhead));
         }
-        buffer.remove_clip(clip);
-        model.retain(|k, _| k.clip != clip);
+        buffer.remove_source(source);
+        model.retain(|k, _| k.source != source);
         prop_assert_eq!(buffer.len(), model.len());
         prop_assert_eq!(buffer.used_bytes(), model.values().sum::<usize>());
         for k in model.keys() {

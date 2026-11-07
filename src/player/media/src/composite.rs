@@ -12,6 +12,12 @@
 //!
 //! The arithmetic is f32 throughout; a movie picture is rounded to code
 //! values once, at the end.
+//!
+//! [`dissolve`] is the other blend: an edit's clips through each other's
+//! fades. Their frames may be any size and kind, so each is fitted into the
+//! picture (letterboxed) and taken to display code values first (a render
+//! through its display transform), then laid over the ones below at its
+//! opacity.
 
 use std::sync::Arc;
 
@@ -104,6 +110,68 @@ pub fn composite(width: u32, height: u32, layers: &[Frame]) -> Result<Frame, Str
     Ok(Frame { width, height, pixels: Arc::new(out) })
 }
 
+/// Pixel `at` of any frame as straight RGBA: a movie's display code values
+/// in 0..1, a render's scene-linear premultiplied values as they are.
+fn pixel(frame: &Frame, at: usize) -> [f32; 4] {
+    match &*frame.pixels {
+        Pixels::Rgba16f(data) => {
+            let p = &data[at * 4..at * 4 + 4];
+            [p[0], p[1], p[2], p[3]].map(f16::to_f32)
+        }
+        _ => display_pixel(frame, at),
+    }
+}
+
+/// Where a `frame`-sized picture sits in a `width` x `height` one, fitted
+/// whole and centred: its left and top edges and its scale, in pixels.
+pub fn fit_into(frame: (u32, u32), width: u32, height: u32) -> (f32, f32, f32) {
+    let scale = (width as f32 / frame.0.max(1) as f32).min(height as f32 / frame.1.max(1) as f32);
+    let (w, h) = (frame.0 as f32 * scale, frame.1 as f32 * scale);
+    ((width as f32 - w) / 2.0, (height as f32 - h) / 2.0, scale)
+}
+
+/// `layers` (bottom first, each a frame and how much of it shows) blended
+/// into one `width` x `height` picture of display code values: each frame
+/// fitted into it whole and centred (black around it), a render's pixels
+/// taken to display values by `display(layer, rgb)` (its display transform,
+/// with exposure), then laid over the layers below at its opacity, starting
+/// from opaque black. A movie's own alpha counts as well (straight); a
+/// render's is in its premultiplied colour already. No layers is black.
+pub fn dissolve(width: u32, height: u32, layers: &[(&Frame, f32)], display: impl Fn(usize, [f32; 3]) -> [f32; 3]) -> Frame {
+    let places: Vec<(f32, f32, f32)> = layers.iter().map(|(f, _)| fit_into((f.width, f.height), width, height)).collect();
+    let mut out = vec![255u8; width as usize * height as usize * 4];
+    for y in 0..height {
+        for x in 0..width {
+            let mut below = [0.0f32; 3];
+            for (i, (frame, opacity)) in layers.iter().enumerate() {
+                let opacity = opacity.clamp(0.0, 1.0);
+                let (left, top, scale) = places[i];
+                // The frame pixel under this one's centre, if any.
+                let fx = ((x as f32 + 0.5 - left) / scale).floor();
+                let fy = ((y as f32 + 0.5 - top) / scale).floor();
+                if fx < 0.0 || fy < 0.0 || fx >= frame.width as f32 || fy >= frame.height as f32 {
+                    // Letterbox: black at this layer's opacity.
+                    below = over_straight([0.0, 0.0, 0.0, opacity], below);
+                    continue;
+                }
+                let at = fy as usize * frame.width as usize + fx as usize;
+                let p = pixel(frame, at);
+                let (rgb, alpha) = match &*frame.pixels {
+                    // Premultiplied over black is its colour, whole.
+                    Pixels::Rgba16f(_) => (display(i, [p[0], p[1], p[2]]), 1.0),
+                    _ => ([p[0], p[1], p[2]], p[3]),
+                };
+                below = over_straight([rgb[0], rgb[1], rgb[2], alpha * opacity], below);
+            }
+            let at = (y as usize * width as usize + x as usize) * 4;
+            for (slot, value) in out[at..at + 3].iter_mut().zip(below) {
+                *slot = code(value);
+            }
+        }
+    }
+    Frame { width, height, pixels: Arc::new(Pixels::Rgba8(out)) }
+}
+
 /// Black in the form a stack of `linear` (EXR) or movie layers shows, for a
 /// stack with every layer hidden.
 pub fn black(width: u32, height: u32, linear: bool) -> Frame {
@@ -191,6 +259,67 @@ mod tests {
             let got = [data[0], data[1], data[2], data[3]].map(f16::to_f32);
             prop_assert!(close(got, expected, 2e-3), "{got:?} vs {expected:?}");
         }
+    }
+
+    fn code_of(frame: &Frame, x: u32, y: u32) -> [u8; 4] {
+        let Pixels::Rgba8(data) = &*frame.pixels else { panic!("a dissolve is RGBA8") };
+        let at = ((y * frame.width + x) * 4) as usize;
+        [data[at], data[at + 1], data[at + 2], data[at + 3]]
+    }
+
+    proptest! {
+        /// A dissolve of solid frames is their straight blend, bottom first
+        /// over black, within one code value; a whole top layer shows alone;
+        /// it is opaque.
+        #[test]
+        fn a_dissolve_blends_at_each_layers_opacity(layers in prop::collection::vec((prop::array::uniform3(any::<u8>()), 0f32..=1.0), 0..4)) {
+            let frames: Vec<Frame> = layers.iter().map(|(c, _)| rgba8(3, 2, [c[0], c[1], c[2], 255])).collect();
+            let input: Vec<(&Frame, f32)> = frames.iter().zip(&layers).map(|(f, l)| (f, l.1)).collect();
+            let picture = dissolve(3, 2, &input, |_, rgb| rgb);
+            let mut reference = [0f64; 3];
+            for (c, opacity) in &layers {
+                let o = f64::from(*opacity);
+                for k in 0..3 {
+                    reference[k] = f64::from(c[k]) / 255.0 * o + reference[k] * (1.0 - o);
+                }
+            }
+            for y in 0..2 {
+                for x in 0..3 {
+                    let p = code_of(&picture, x, y);
+                    prop_assert_eq!(p[3], 255);
+                    for k in 0..3 {
+                        prop_assert!((f64::from(p[k]) / 255.0 - reference[k]).abs() <= 1.0 / 255.0 + 1e-6, "{p:?} vs {reference:?}");
+                    }
+                }
+            }
+            if let Some((c, _)) = layers.last().filter(|l| l.1 >= 1.0) {
+                prop_assert_eq!(code_of(&picture, 1, 1), [c[0], c[1], c[2], 255]);
+            }
+        }
+    }
+
+    /// A frame of another shape is fitted whole and centred, black around
+    /// it; a render goes through its display transform.
+    #[test]
+    fn a_dissolve_letterboxes_and_shows_renders_through_their_transform() {
+        let wide = rgba8(4, 1, [200, 100, 50, 255]);
+        let picture = dissolve(4, 3, &[(&wide, 1.0)], |_, rgb| rgb);
+        for x in 0..4 {
+            assert_eq!(code_of(&picture, x, 0), [0, 0, 0, 255], "above the frame");
+            assert_eq!(code_of(&picture, x, 1), [200, 100, 50, 255], "the frame, centred");
+            assert_eq!(code_of(&picture, x, 2), [0, 0, 0, 255], "below it");
+        }
+        let tall = rgba8(1, 2, [10, 20, 30, 255]);
+        let picture = dissolve(3, 2, &[(&tall, 1.0)], |_, rgb| rgb);
+        assert_eq!(code_of(&picture, 0, 0), [0, 0, 0, 255], "pillarbox");
+        assert_eq!(code_of(&picture, 1, 0), [10, 20, 30, 255]);
+        assert_eq!(code_of(&picture, 2, 1), [0, 0, 0, 255]);
+        let render = rgba16f([0.25, 0.5, 1.0, 1.0]);
+        let picture = dissolve(1, 1, &[(&render, 1.0)], |layer, rgb| {
+            assert_eq!(layer, 0);
+            rgb.map(|c| c / 2.0)
+        });
+        assert_eq!(code_of(&picture, 0, 0), [32, 64, 128, 255]);
     }
 
     #[test]

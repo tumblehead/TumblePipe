@@ -23,7 +23,10 @@ one raw property at a time; this is the friendly way. Source:
   side on the Shots tab; from a category or sequence, on that one.
 - Right-click an asset or shot card → **Open in Entity Editor…**: opens on
   its tab and group with it selected. On a Multi card it opens the Multis
-  tab with that Multi selected.
+  tab with that Multi selected, as do the Multi's **Edit Multi…** and
+  **Departments…**.
+- **New Multi…** in the browser opens the Multis tab and asks for a new
+  Multi there; see [Multis](#multis).
 
 There is one editor per project. Opening it again raises the open one. It
 is not modal, so the browser and Houdini stay usable beside it. A tab's
@@ -149,8 +152,11 @@ Root no shot uses is not created. Apply then brings the shots up to date
 ## Multis
 
 A [Multi](multis-and-roots.md#multis) gives several shots (or several
-assets) one workfile for the departments it *covers*. The editor sets them
-up from both sides.
+assets) one workfile for the departments it *covers*. The editor is where
+a Multi is set up, all of it: name, members, coverage, a shots Multi's
+Timeline and its workfiles. The browser's **New Multi…**, **Edit Multi…**
+and **Departments…** open it on the Multis tab, on that Multi (New Multi…
+asks for the new one there, in the context it was chosen from).
 
 **From the Assets or Shots tab.** The **Multis** column lists each row's
 Multis; its tooltip says which departments each covers. Select rows and
@@ -169,14 +175,28 @@ list the sequence whole: every shot in it, and any made later, is a member
 **Status**, **Members** (a count: double-click for a list of every row of
 the kind, ticked where it is a member, with each sequence or category at the
 top to tick whole; see
-[A whole sequence](multis-and-roots.md#a-whole-sequence)) and a tick box for each department
+[A whole sequence](multis-and-roots.md#a-whole-sequence)), on a shots
+Multi its **Timeline**, and a tick box for each department
 in the pool, in pipeline order. Ticking a box covers that department; with
-several cells of a column selected, one tick sets them all. **Add Multi…**
-asks for a name and the departments (all of the pool to start with) and can
-start with the rows selected on the Assets or Shots tab. **Retire**,
-**Revert**, **Undo** and **Redo** work as on the other tabs. The Multis tab
-shares its kind's undo history: an undo on the Shots tab can undo a shot
-Multi's edit, and the other way round.
+several cells of a column selected, one tick sets them all. Double-click
+**Timeline** to choose **Per shot**, **Shared** or **Shared, with
+bookmarks** ([Shared timeline](multis-and-roots.md#shared-timeline)); every
+selected cell of the column follows, and the Status says *Timeline changed*.
+**Add Multi…** asks for a name, a shots Multi's Timeline and the departments
+(all of the pool to start with) and can start with the rows selected on the
+Assets or Shots tab. **Retire**, **Revert**, **Undo** and **Redo** work as on
+the other tabs. The Multis tab shares its kind's undo history: an undo on
+the Shots tab can undo a shot Multi's edit, and the other way round.
+
+**Workfiles.** Under the table, **Workfiles of *name*** lists the selected
+Multi's workfile in each department it covers: its latest version and
+**Open**, or *none* and **New from Template**, which makes the first version
+from the department template with a graph per member. Either replaces the
+open scene, after asking what to do with its unsaved changes (save a new
+version, discard, or cancel); one at a time, the buttons waiting while a
+workfile is made. A new Multi, or one with edits not applied, says *Apply
+first* and has nothing to press. See
+[The Multi's workfiles](multis-and-roots.md#the-multis-workfiles).
 
 Members follow the sheet: rename a shot and its Multis list the new name on
 Apply; retire it and it leaves every Multi. A member the project no longer
@@ -186,8 +206,11 @@ Retiring a Multi removes it from the project; its workfiles stay on disk
 under `groups/<context>/<name>`, and its members open their own workfiles
 again. A Multi that has workfiles cannot be renamed (they would stay under
 the old name): retire it and add a new one. A member added to a Multi whose
-workfile already exists is not in that workfile until a new version is made
-from the template.
+workfile already exists has no graph in it yet: the next save of that
+workfile, or **Sync with Multi**, offers to add one, copied from another
+member's. The other way round, an export added by hand for a shot that is
+not a member offers to add the shot. See
+[Keeping the workfile and the Multi in step](multis-and-roots.md#keeping-the-workfile-and-the-multi-in-step).
 
 ## Adding assets and shots
 

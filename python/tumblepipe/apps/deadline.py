@@ -177,13 +177,36 @@ def _find_free_job_path(root_path):
         if not path.exists(): return path
     raise RuntimeError(f'Failed to find a free job path in "{root_path}"')
 
+def extra_info_entries(extra_info: dict) -> dict:
+    """``extra_info`` as Deadline job-info entries: ``ExtraInfoKeyValue<n>=<key>=<value>``.
+
+    Deadline reads the key up to the first ``=``, and a job-info file is
+    one entry per line, so a key with ``=`` or a line break, or a value
+    with a line break, is refused rather than written garbled.
+    """
+    entries = {}
+    for index, (key, value) in enumerate(extra_info.items()):
+        key, value = str(key), str(value)
+        if not key or any(c in key for c in '=\r\n') or any(c in value for c in '\r\n'):
+            raise ValueError(f'Cannot write extra info {key!r}={value!r} into a Deadline job')
+        entries[f'ExtraInfoKeyValue{index}'] = f'{key}={value}'
+    return entries
+
+def job_extra_info(batch, job) -> dict:
+    """What ``job`` carries as extra info: its batch's, then its own on top."""
+    return {**getattr(batch, 'extra_info', {}), **getattr(job, 'extra_info', {})}
+
 class Batch:
-    def __init__(self, name):
+    def __init__(self, name, extra_info = None):
         self._name = name
         self._jobs = list()
         self._deps = dict()
         self._refs = dict()
-    
+        # Key/value pairs every job of the batch carries (Deadline's
+        # ExtraInfoKeyValue; a local job's extra_info): TumblePipe stamps
+        # the project and entity here (farm.stamp).
+        self.extra_info = dict(extra_info or {})
+
     def get_name(self):
         return self._name
     
@@ -281,6 +304,8 @@ class Job:
         # Optional hpm.toml content the caller provides for the HPM plugin;
         # submit() writes it into the job dir and hands the plugin its path.
         self.manifest = None
+        # The job's own extra info, on top of its batch's (job_extra_info).
+        self.extra_info = dict()
         self._script_path = script_path
         self._args = args
     
@@ -437,7 +462,7 @@ class Deadline:
             job_info = job.job_info() | {
                 'BatchName': batch.get_name(),
                 'NetworkRoot': path_str(REPOSITORY_PATH)
-            }
+            } | extra_info_entries(job_extra_info(batch, job))
             job_deps = batch.get_deps(job_index)
             if len(job_deps) != 0:
                 job_info['JobDependencies'] = ','.join([

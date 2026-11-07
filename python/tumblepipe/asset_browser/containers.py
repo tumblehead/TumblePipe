@@ -55,30 +55,6 @@ log = logging.getLogger(__name__)
 #: The ``type:`` tag value of the cards a Multi of each context takes.
 _CONTEXT_TYPE = {"assets": "asset", "shots": "shot"}
 
-#: A shots Multi's Timeline in the Edit dialog, and the (shared timeline,
-#: bookmarks) settings each choice stands for (``config.multi_timeline``).
-#: Bookmarks come only with a shared timeline: on separate timelines every
-#: shot's bookmark would cover the same frames.
-_TIMELINE_SETTINGS = {
-    "Per shot": (False, False),
-    "Shared": (True, False),
-    "Shared, with bookmarks": (True, True),
-}
-TIMELINE_CHOICES = tuple(_TIMELINE_SETTINGS)
-
-
-def timeline_choice(shared: bool, bookmarks: bool) -> str:
-    """The Timeline choice for a Multi's settings."""
-    if not shared:
-        return "Per shot"
-    return "Shared, with bookmarks" if bookmarks else "Shared"
-
-
-def timeline_settings(choice: str) -> tuple[bool, bool]:
-    """``(shared timeline, bookmarks)`` for a Timeline choice."""
-    return _TIMELINE_SETTINGS[choice]
-
-
 def _hip_context_user_note(hip_path) -> tuple[str, str]:
     """``(user, note)`` for a workfile, from the ``_context/{version}.json``
     sidecar next to it (the same file the entity save flow writes and
@@ -1351,114 +1327,32 @@ class ContainerManager:
         return True
 
     def edit_fields(self, collection_id: str) -> list[CreationField]:
-        """The Edit dialog: a Root's asset list, a Multi's departments."""
+        """The Edit dialog of a Root: its asset list. A Multi has none: its
+        Edit… opens the Entity Editor (``PipelineCatalog``)."""
         ref = self._activated(collection_id)
-        if ref is None:
+        if not isinstance(ref, SceneContainer):
             return []
-        if isinstance(ref, SceneContainer):
-            return self.scene_edit_fields(ref)
-        from tumblepipe.config import groups as grp_mod
-        from tumblepipe.config import department as dept_mod
-        grp = grp_mod.get_group(ref.uri)
-        if grp is None:
-            return []
-        known_depts = tuple(
-            d.name for d in
-            dept_mod.list_departments(ref.context, include_generated=False)
-        )
-        fields = [
-            CreationField(
-                key="departments",
-                label="Departments",
-                field_type="multi_select",
-                choices=known_depts,
-                initial=tuple(grp.departments),
-                required=False,
-            ),
-        ]
-        # Only shots have frames to lay end to end.
-        if ref.context == "shots":
-            fields.append(CreationField(
-                key="timeline",
-                label="Timeline",
-                field_type="dropdown",
-                choices=TIMELINE_CHOICES,
-                initial=timeline_choice(
-                    grp.shared_timeline, grp.timeline_bookmarks,
-                ),
-                required=False,
-            ))
-        return fields
-
-    def _edit_timeline(self, ref: GroupContainer, grp, choice) -> bool:
-        """Apply the Edit dialog's Timeline choice; whether it changed."""
-        if choice not in TIMELINE_CHOICES:
-            return False
-        shared, bookmarks = timeline_settings(choice)
-        if (shared, bookmarks) == (grp.shared_timeline, grp.timeline_bookmarks):
-            return False
-        from tumblepipe.config import multi_timeline
-        multi_timeline.set_timeline(ref.uri, shared, bookmarks)
-        # The Multi's workfile may be the open scene: lay it out now, not
-        # on its next open.
-        try:
-            from tumblepipe.pipe.houdini import multi_timeline as session
-            session.apply_if_open(ref.uri)
-        except ImportError:
-            pass  # no Houdini session
-        return True
+        return self.scene_edit_fields(ref)
 
     def edit(self, collection_id: str, fields: dict) -> bool:
+        """A Root's Edit dialog, applied. A Multi is edited in the Entity
+        Editor, never here."""
         ref = self._activated(collection_id)
-        if ref is None:
+        if not isinstance(ref, SceneContainer):
             return False
-        if isinstance(ref, SceneContainer):
-            try:
-                changed = self.edit_scene_assets(
-                    ref, fields.get("assets", ()) or (),
-                )
-            except Exception as exc:
-                raise ConfigError(
-                    self._catalog_id,
-                    f"failed to edit root {collection_id}: {exc}",
-                    cause=exc,
-                ) from exc
-            if changed:
-                self.invalidate_membership_cache()
-                self._sync_roots(collection_id)
-            return True
-        from tumblepipe.config import groups as grp_mod
-        grp = grp_mod.get_group(ref.uri)
-        if grp is None:
-            return False
-        current = set(grp.departments)
-        new_set = set(fields.get("departments", ()) or ())
-        to_add = new_set - current
-        to_remove = current - new_set
         try:
-            # Refuse the whole edit before writing any of it, rather
-            # than stop part way when one department is another Multi's.
-            clash = grp_mod.overlap(
-                ref.context, grp.members, sorted(to_add), ref.uri,
+            changed = self.edit_scene_assets(
+                ref, fields.get("assets", ()) or (),
             )
-            if clash:
-                raise ValueError(clash)
-            for d in to_add:
-                grp_mod.add_department(ref.uri, d)
-            for d in to_remove:
-                grp_mod.remove_department(ref.uri, d)
-            self._edit_timeline(ref, grp, fields.get("timeline"))
         except Exception as exc:
             raise ConfigError(
                 self._catalog_id,
-                f"failed to edit group {collection_id}: {exc}",
+                f"failed to edit root {collection_id}: {exc}",
                 cause=exc,
             ) from exc
-        if to_add or to_remove:
+        if changed:
             self.invalidate_membership_cache()
-            # The Multi's card shows a deck row per covered department; the
-            # collection id is the card's id.
-            self._refresh.card(collection_id)
+            self._sync_roots(collection_id)
         return True
 
     def add_assets(

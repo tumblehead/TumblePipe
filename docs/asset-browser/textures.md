@@ -87,10 +87,14 @@ version it took. A newer publish changes nothing in the scene: the node's
 drop into a shading network writes the version into the file paths, so it
 stays on that version until the maps are dropped again.
 
+A [library](libraries.md)'s texture sets are copied into the project when
+dropped, and the node is pinned to the copy; **Share to Library** on a
+project set's card copies it the other way.
+
 ## Not yet
 
 - Publishing from Copernicus runs in the session. There is no farm job for it
   yet.
-- Texture sets have no sidebar section and no per-version detail view. The
-  card shows the newest version.
+- A project's texture sets have no sidebar section (a library's do), and
+  there is no per-version detail view. The card shows the newest version.
 - No `.rat` or `.tx` mipmaps are made at publish.

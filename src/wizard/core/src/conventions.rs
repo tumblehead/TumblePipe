@@ -40,10 +40,17 @@ pub const STORAGE_FILE: &str = "storage.json";
 /// `project:`, `pipeline:` and `config:` are not among them: they are the
 /// directories TumblePipe is launched with (`TH_PROJECT_PATH`,
 /// `TH_PIPELINE_PATH`, `TH_CONFIG_PATH`), so no table can move them.
-pub const PURPOSES: [&str; 11] = [
+///
+/// `edits` (an edit's working versions) came with layout v23, which adds it
+/// to a table that lacks it; a table before then is checked with
+/// [`validate_table_before_v23`].
+pub const PURPOSES: [&str; 12] = [
     "assets", "shots", "groups", "export", "cache", "render", "turntable", "temp", "proxy",
-    "preset", "edit",
+    "preset", "edit", "edits",
 ];
+
+/// The purpose v23 adds, which a table written before it does not have.
+pub const EDITS: &str = "edits";
 
 /// The placeholders a path template may use, each filled in by the package
 /// when it loads the table. Mirrored by `tumblepipe.storage.VARIABLES`.
@@ -461,8 +468,18 @@ pub fn storage_table(text: &str, scaffold: &Map<String, Value>) -> Result<Map<St
 /// Check a storage table: exactly [`PURPOSES`], each a string whose
 /// placeholders are all [`VARIABLES`].
 pub fn validate_table(table: &Map<String, Value>) -> Result<(), String> {
+    validate_table_except(table, &[])
+}
+
+/// [`validate_table`] for a table a project kept from before layout v23,
+/// which may not have [`EDITS`] yet (v23 adds it).
+pub fn validate_table_before_v23(table: &Map<String, Value>) -> Result<(), String> {
+    validate_table_except(table, &[EDITS])
+}
+
+fn validate_table_except(table: &Map<String, Value>, optional: &[&str]) -> Result<(), String> {
     for purpose in PURPOSES {
-        if !table.contains_key(purpose) {
+        if !table.contains_key(purpose) && !optional.contains(&purpose) {
             return Err(format!("no `{purpose}` entry"));
         }
     }

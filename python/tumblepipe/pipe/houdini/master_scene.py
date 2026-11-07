@@ -80,9 +80,9 @@ def build_master_scene(
     # Save a blank hip to the master path, then load it so Houdini fully
     # switches context (title bar, $HIP, ...).
     hou.hipFile.clear(suppress_save_prompt=True)
-    hou.hipFile.save(str(master_hip))
+    hou.hipFile.save(master_hip.as_posix())
     hou.hipFile.load(
-        str(master_hip), suppress_save_prompt=True, ignore_load_warnings=True,
+        master_hip.as_posix(), suppress_save_prompt=True, ignore_load_warnings=True,
     )
 
     failed: list[str] = []

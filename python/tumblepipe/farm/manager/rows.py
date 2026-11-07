@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tumblepipe.farm import stamp
 from tumblepipe.farm.local import queue
 
 LOCAL = 'local'
@@ -20,6 +21,10 @@ FARM = 'farm'
 
 UNKNOWN = 'unknown'
 FINISHED = (queue.COMPLETED, queue.CANCELLED)
+# The states a job ends in. A job in one of them has ended only once no
+# task of it renders or is still to run (:func:`ended`): a local job is
+# failed while its other tasks still render, as on Deadline.
+ENDED = (queue.COMPLETED, queue.FAILED, queue.CANCELLED)
 # The actions the window offers, by source (``deadline_jobs.COMMANDS`` maps
 # the farm ones onto deadlinecommand verbs).
 ACTIONS = {
@@ -62,6 +67,15 @@ class JobRow:
     finished: str = ''      # ISO local time it completed
     deps: tuple[str, ...] = ()  # the ids of the jobs it waits on
     timeout: int = 0        # seconds a task may take, 0 for no limit
+    # The project and entity URI the job is stamped with (farm.stamp); ''
+    # for a job submitted before the stamp: see row_project / row_entity.
+    project: str = ''
+    entity: str = ''
+    # Tasks rendering or still to run. Local: every queued, rendering or
+    # suspended task. Farm: the rendering ones, and for a job not completed
+    # or failed its queued, pending and suspended ones too (Deadline runs
+    # nothing more of a completed or failed job).
+    live_tasks: int = 0
 
 
 @dataclass(frozen=True)
@@ -124,6 +138,9 @@ def _local_chunk(job: dict) -> int:
     return spans[0][1] - spans[0][0] + 1 if spans else 0
 
 
+_LOCAL_LIVE = (queue.QUEUED, queue.RENDERING, queue.SUSPENDED)
+
+
 def local_job_rows(folder: Path, batch: dict, state: dict) -> list[JobRow]:
     statuses = queue.job_statuses(batch, state)
     rows = []
@@ -133,6 +150,7 @@ def local_job_rows(folder: Path, batch: dict, state: dict) -> list[JobRow]:
         task_states = [t['status'] for t in tasks]
         starts = [t['started'] for t in tasks if t.get('started')]
         ends = [t['finished'] for t in tasks if t.get('finished')]
+        project, entity = stamp.read(job.get('extra_info'))
         rows.append(JobRow(
             source=LOCAL,
             id=f"local:{batch['id']}/{index}",
@@ -163,6 +181,9 @@ def local_job_rows(folder: Path, batch: dict, state: dict) -> list[JobRow]:
             finished=max(ends) if ends and statuses[index] == queue.COMPLETED else '',
             deps=tuple(f"local:{batch['id']}/{dep}" for dep in job.get('deps', ())),
             timeout=int(job.get('timeout') or 0),
+            project=project,
+            entity=entity,
+            live_tasks=sum(1 for s in task_states if s in _LOCAL_LIVE),
         ))
     return rows
 
@@ -254,6 +275,11 @@ def farm_job_row(doc: dict) -> JobRow:
     )
     batch = props.get('Batch') or ''
     plugin_info = props.get('PlugInfo') if isinstance(props.get('PlugInfo'), dict) else {}
+    # The ExtraInfoKeyValue pairs the job was submitted with.
+    project, entity = stamp.read(props.get('ExDic'))
+    live = _int(doc.get('RenderingChunks'))
+    if status not in (queue.COMPLETED, queue.FAILED):
+        live += sum(_int(doc.get(key)) for key in ('QueuedChunks', 'PendingChunks', 'SuspendedChunks'))
     return JobRow(
         source=FARM,
         id=doc.get('_id', ''),
@@ -284,6 +310,9 @@ def farm_job_row(doc: dict) -> JobRow:
             str(dep.get('JobID') if isinstance(dep, dict) else dep)
             for dep in props.get('Dep') or () if dep
         ),
+        project=project,
+        entity=entity,
+        live_tasks=live,
     )
 
 
@@ -307,6 +336,55 @@ def farm_task_row(doc: dict) -> TaskRow:
     )
 
 
+# ── whose job, and is it over ─────────────────────────────
+
+# An entity URI in a batch's name: every pipeline names its batch
+# ``<project> <kinds...> <entity uri> ...`` (``pipelines._batch.batch_title``).
+_ENTITY_URI = re.compile(r'\bentity:/(?:shots|assets|groups|edits)/\S+')
+
+
+def ended(row: JobRow) -> bool:
+    """Whether nothing of ``row`` runs any more, or will: it completed,
+    failed or was cancelled, and no task of it renders or is left to run."""
+    return row.status in ENDED and row.live_tasks == 0
+
+
+def row_project(row: JobRow) -> str:
+    """The project ``row`` is for: its stamp, else its batch name's first
+    word (a batch is named ``<project> ...``)."""
+    return row.project or row.batch.split(' ', 1)[0]
+
+
+def name_entity(name: str) -> str:
+    """The entity URI a batch's name carries; '' when it carries none."""
+    match = _ENTITY_URI.search(name or '')
+    return match.group(0) if match else ''
+
+
+def row_entity(row: JobRow) -> str:
+    """The entity URI ``row`` is for: its stamp, else the one its batch's
+    name carries; '' when neither says (its context.json may: :func:`context_entity`)."""
+    return row.entity or name_entity(row.batch)
+
+
+def context_entity(context) -> str:
+    """The entity URI a job's ``context.json`` names; '' when none.
+
+    A job's context names it as ``entity.uri`` (publish, render, collapse,
+    stage...), ``entity_uri`` (build, sync) or ``edit_uri`` (Render Edit);
+    an encode or a notify names none.
+    """
+    if not isinstance(context, dict):
+        return ''
+    entity = context.get('entity')
+    if isinstance(entity, dict) and isinstance(entity.get('uri'), str):
+        return entity['uri']
+    for key in ('entity_uri', 'edit_uri'):
+        if isinstance(context.get(key), str):
+            return context[key]
+    return ''
+
+
 # ── filters ───────────────────────────────────────────────
 
 def keep(
@@ -315,14 +393,14 @@ def keep(
     ) -> bool:
     """Whether the window shows ``row`` under these filters (None: no filter).
 
-    ``project`` matches the batch name's first word: every batch is named
-    ``<project> ...`` (``pipelines._batch.batch_title``).
+    ``project`` matches the project the job is stamped with, else the
+    batch name's first word (:func:`row_project`).
     """
     if source is not None and row.source != source:
         return False
     if user is not None and row.user.lower() != user.lower():
         return False
-    if project is not None and row.batch.split(' ', 1)[0].lower() != project.lower():
+    if project is not None and row_project(row).lower() != project.lower():
         return False
     if hide_finished and row.status in FINISHED:
         return False
@@ -560,6 +638,14 @@ def renderer_details(kind: str, context: dict | None) -> list[Detail]:
         return [Detail('Runs', 'Houdini (hython), no rendering')]
     if kind == 'mp4':
         return [Detail('Runs', 'ffmpeg, encoding a video')]
+    if kind == 'edit_render':
+        result = [
+            Detail('Renderer', 'TumblePipe editor (th_player --render), then ffmpeg'),
+            Detail('Engine', 'CPU only, no licence'),
+        ]
+        if isinstance(context.get('edit_uri'), str) and isinstance(context.get('version'), str):
+            result.append(Detail('Edit', f"{context['edit_uri']}@{context['version']}"))
+        return result
     if kind in _PYTHON:
         return [Detail('Runs', 'Python, no rendering')]
     return []
@@ -596,9 +682,10 @@ def read_job_context(data_dir: str, arguments: str) -> dict:
 
 
 def _entity(row: JobRow, context: dict) -> tuple[str, str]:
-    """``(entity, department)``: the context's, else the entity in the batch's name."""
+    """``(entity, department)``: the job's stamp, else its context's, else
+    the entity in the batch's name."""
     entity = context.get('entity') if isinstance(context.get('entity'), dict) else {}
-    uri = str(entity.get('uri') or '')
+    uri = row.entity or str(entity.get('uri') or '')
     if uri:
         short = _ENTITY.sub(r'\1', uri)
     else:

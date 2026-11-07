@@ -9,5 +9,6 @@
     "temp": "{local_temp}/th_temp/{project_name}",
     "proxy": "{project_parent}/{project_name}_proxy",
     "preset": "{config_path}/presets",
-    "edit": "{project_path}/edit"
+    "edit": "{project_path}/edit",
+    "edits": "{project_path}/edits"
 }

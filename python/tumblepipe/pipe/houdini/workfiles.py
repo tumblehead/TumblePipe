@@ -64,7 +64,7 @@ def open_workfile_in_session(entity_uri: Uri, department: str) -> bool:
         # Manual update mode so the load doesn't trigger a live full-graph
         # cook on the way in. Mirrors the Browser's open flow.
         with playbar.update_mode(hou.updateMode.Manual):
-            hou.hipFile.load(str(path), suppress_save_prompt=False)
+            hou.hipFile.load(path.as_posix(), suppress_save_prompt=False)
     except hou.LoadWarning as warning:
         # Non-fatal: the scene IS open, with warnings (missing HDAs, etc).
         # Reporting this as a failure would be a lie.

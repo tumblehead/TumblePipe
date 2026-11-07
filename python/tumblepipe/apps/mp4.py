@@ -15,7 +15,35 @@ from tumblepipe.apps import houdini
 # mode keeps the notify "shrink to fit Discord" path shrinking with resolution.
 # Output is standard yuv420p H.264, universally playable. -q:v is tunable.
 _H264_ENCODE = ['-c:v', 'libopenh264', '-rc_mode', 'quality', '-q:v', '22']
-    
+
+#: The movie metadata key a playblast records its first frame under (the
+#: shot frame its first picture is), so the player can address the movie by
+#: shot frame. Read back by th_media (`MovieIndex::start_frame`) and written
+#: into older playblasts by scripts/fix_playblast_start_frames.py.
+START_FRAME_KEY = 'start_frame'
+
+
+def frame_timecode(frame: int, framerate: int) -> str:
+    """``frame`` as a non-drop SMPTE timecode at ``framerate`` (frame 0 is
+    00:00:00:00), for editors that place movies by timecode (Resolve)."""
+    if frame < 0 or framerate <= 0:
+        raise ValueError(f'No timecode for frame {frame} at {framerate} fps')
+    seconds, frames = divmod(frame, framerate)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f'{hours:02d}:{minutes:02d}:{seconds:02d}:{frames:02d}'
+
+
+def start_frame_args(first_frame: int, framerate: int) -> list[str]:
+    """The FFmpeg output arguments that record ``first_frame`` in a movie:
+    the ``start_frame`` tag (QuickTime keeps a custom tag only with
+    ``use_metadata_tags``) and a timecode track starting there."""
+    return [
+        '-movflags', 'use_metadata_tags',
+        '-metadata', f'{START_FRAME_KEY}={first_frame}',
+        '-timecode', frame_timecode(first_frame, framerate),
+    ]
+
 def from_jpg(
     framestack_path: Path,
     frame_range: BlockRange,
@@ -55,6 +83,56 @@ def from_png_alpha(
         framestack_path, ('png',), frame_range, framerate,
         output_mov_path, repeat_missing_frames, _ALPHA_MOVIE_ENCODE,
     )
+
+
+def edit_movie_args(
+    frames_pattern: Path,
+    audio_path: Path | None,
+    frame_count: int,
+    framerate: int,
+    start_timecode: str,
+    output_path: Path
+    ) -> list[str]:
+    """hffmpeg's arguments that encode an edit ``th_player --render`` wrote
+    (``farm/workers/edit_render.py``): ``frames_pattern`` (``edit.%04d.png``,
+    numbered from 0) as H.264, with ``audio_path`` (``edit.wav``) as AAC
+    when the edit has sound, and a timecode track starting at the edit's
+    ``start_timecode``, so an editor places the movie by it."""
+    if frame_count <= 0 or framerate <= 0:
+        raise ValueError(f'No movie of {frame_count} frames at {framerate} fps')
+    args = [
+        '-y',
+        '-framerate', str(framerate),
+        '-start_number', '0',
+        '-i', path_str(frames_pattern),
+    ]
+    if audio_path is not None:
+        args += ['-i', path_str(audio_path)]
+    args += [
+        '-frames:v', str(frame_count),
+        '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+        *_H264_ENCODE,
+        '-pix_fmt', 'yuv420p',
+    ]
+    if audio_path is not None:
+        args += ['-c:a', 'aac', '-b:a', '192k', '-shortest']
+    return args + ['-timecode', start_timecode, path_str(output_path)]
+
+
+def from_edit_frames(
+    frames_pattern: Path,
+    audio_path: Path | None,
+    frame_count: int,
+    framerate: int,
+    start_timecode: str,
+    output_path: Path
+    ):
+    """Encode an edit's rendered frames and sound as an H.264 + AAC mp4
+    (:func:`edit_movie_args`)."""
+    houdini.FFmpeg().run(edit_movie_args(
+        frames_pattern, audio_path, frame_count, framerate,
+        start_timecode, output_path,
+    ))
 
 
 def _encode_sequence(
@@ -154,6 +232,7 @@ def _encode_sequence(
             '-i', path_str(temp_framestack_path),
             '-frames:v', str(span_frame_count),
             *encode_args,
+            *start_frame_args(frame_range.first_frame, framerate),
             path_str(temp_output_path)
         ])
         output_path.parent.mkdir(exist_ok=True, parents=True)
@@ -197,6 +276,9 @@ def scale(
             ),
             *_H264_ENCODE,
             '-pix_fmt', 'yuv420p',
+            # Keep the start frame and timecode the movie records.
+            '-map_metadata', '0',
+            '-movflags', 'use_metadata_tags',
             path_str(temp_output_path)
         ])
         output_mp4_path.parent.mkdir(exist_ok=True, parents=True)

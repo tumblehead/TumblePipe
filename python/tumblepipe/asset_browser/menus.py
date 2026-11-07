@@ -3,7 +3,8 @@
 Every callable a menu hook hands the host is made its own failure boundary
 (:func:`reporting_menu`), so an entry that raises reaches the artist rather
 than the console. Recipe and node cards have their own menus; the catalog
-routes those before anything reaches :class:`PipelineMenus`.
+routes those before anything reaches :class:`PipelineMenus`. An edit card's
+menu is :meth:`PipelineMenus.edit_items`.
 """
 
 from __future__ import annotations
@@ -28,6 +29,13 @@ if TYPE_CHECKING:
     from .scene import SceneManager
     from .thumbnails import ThumbnailManager
     from .workfiles import WorkfileManager
+
+
+def _sync_with_multi() -> None:
+    """The open Multi workfile against its Multi
+    (``pipe.houdini.multi_sync``); imported on click, it needs ``hou``."""
+    from tumblepipe.pipe.houdini import multi_sync
+    multi_sync.sync_with_multi()
 
 
 def note_tooltip_html(version: str, user: str, note: str) -> str:
@@ -165,7 +173,7 @@ class PipelineMenus:
                 # A Multi's departments are a coverage decision, not an
                 # assignment, and EntityDepartmentsDialog rejects it
                 # outright (uri_for has no answer for a container id).
-                # Route it to the coverage editor instead.
+                # Route it to the Entity Editor's Multis tab instead.
                 (
                     lambda aid=asset_id: self._edit_group_departments(aid)
                 ) if "type:group" in (asset.tags or ()) else (
@@ -231,8 +239,52 @@ class PipelineMenus:
         return items
 
     def _play_shots(self, shots: list[Asset]) -> None:
-        name = shots[0].name if len(shots) == 1 else f"{len(shots)} shots"
-        self._ops.play_shots([a.id for a in shots], name)
+        self._ops.play_shots([a.id for a in shots])
+
+    def edit_items(self, asset: Asset) -> list:
+        """An edit card's right-click items. Built from the card (the menu
+        opens on the GUI thread, which must not list the file server); each
+        action reads what is on disk when picked."""
+        meta = asset.metadata or {}
+        asset_id = asset.id
+        items: list = [
+            MenuItem(
+                "Open in Editor",
+                lambda: self._ops.open_edit(asset_id),
+                tooltip=(
+                    f"Open working version {meta['working']}" if meta.get("working")
+                    else "Never saved: it opens empty, for its first Save"
+                ),
+            ),
+        ]
+        if meta.get("published"):
+            items.append(MenuItem(
+                "Play Published",
+                lambda: self._ops.open_edit(asset_id, published=True),
+                tooltip=f"Open the latest published version ({meta['published']}), read-only",
+            ))
+        items.append((
+            "Open Location",
+            lambda: self._ops.open_edit_location(asset_id),
+        ))
+        if meta.get("master"):
+            # A label with no action, ticked: picking it does nothing.
+            items.append(MenuItem(
+                "Master Edit", None, icon="lucide:check",
+                tooltip="This is the project's master edit: the cut the "
+                        "shots' frame ranges follow",
+            ))
+            items.append((
+                "Clear Master Edit",
+                lambda: self._ops.set_master_edit(asset_id, False),
+            ))
+        else:
+            items.append(MenuItem(
+                "Set as Master Edit",
+                lambda: self._ops.set_master_edit(asset_id, True),
+                tooltip="Make this the cut the shots' frame ranges follow",
+            ))
+        return items
 
     def deck_item_items(self, asset: Asset, deck_item_key: str) -> list:
         """A department deck item's right-click items (see
@@ -347,6 +399,10 @@ class PipelineMenus:
                     "Reload Scene",
                     lambda: self._scene.reload_current_scene(None),
                 ))
+                if is_group:
+                    # The open Multi workfile against its Multi: exports
+                    # for shots not in it, members with no export.
+                    items.append(("Sync with Multi", _sync_with_multi))
         else:
             # Empty dept: creating the first version is the whole
             # point of right-clicking here, so it leads.

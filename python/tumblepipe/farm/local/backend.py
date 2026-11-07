@@ -16,7 +16,7 @@ import platform
 from pathlib import Path
 
 from tumblepipe.api import get_user_name, path_str
-from tumblepipe.apps.deadline import open_job_folder, write_job_files
+from tumblepipe.apps.deadline import job_extra_info, open_job_folder, write_job_files
 from tumblepipe.farm import backend as farm_backend
 from tumblepipe.farm.local import queue, runner
 
@@ -28,8 +28,14 @@ def job_id(batch_id: str, job_index: int) -> str:
     return f'{ID_PREFIX}{batch_id}/{job_index}'
 
 
-def job_entry(job_path: Path, job_index: int, job, deps, plugin_info: dict) -> dict:
-    """The ``batch.json`` entry for ``job``, from what was written for the plugin."""
+def job_entry(
+    job_path: Path, job_index: int, job, deps, plugin_info: dict, extra_info: dict | None = None,
+    ) -> dict:
+    """The ``batch.json`` entry for ``job``, from what was written for the plugin.
+
+    ``extra_info`` is what a Deadline job carries as ``ExtraInfoKeyValue``
+    pairs (``apps.deadline.job_extra_info``): the project and entity stamp.
+    """
     if 'Manifest' not in plugin_info:
         raise ValueError(f'Job {job.name!r} has no hpm manifest; the local farm runs HPM jobs only')
     frames = queue.job_frames(job.frames, job.start_frame, job.end_frame, job.step_size)
@@ -53,6 +59,7 @@ def job_entry(job_path: Path, job_index: int, job, deps, plugin_info: dict) -> d
         'group': job.group or '',
         'chunk_size': int(job.chunk_size),
         'frames': frames_text(frames, job.step_size),
+        'extra_info': dict(extra_info or {}),
     }
 
 
@@ -84,7 +91,10 @@ class LocalFarm:
             job.env[farm_backend.BACKEND_ENV] = farm_backend.LOCAL
             job.job_info()  # The scheduling a Deadline job must have, checked the same way.
             plugin_info = write_job_files(job_path, job_index, job)
-            jobs.append(job_entry(job_path, job_index, job, batch.get_deps(job_index), plugin_info))
+            jobs.append(job_entry(
+                job_path, job_index, job, batch.get_deps(job_index), plugin_info,
+                job_extra_info(batch, job),
+            ))
         batch_id = queue.new_batch_id()
         queue.add_batch(self._root, {
             'version': queue.BATCH_VERSION,

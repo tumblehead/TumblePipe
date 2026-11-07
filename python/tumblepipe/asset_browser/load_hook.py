@@ -9,6 +9,11 @@ actions go through ``hou.hipFile.load`` like everything else.
 
 GUI sessions only: hython and farm jobs must render the versions they were
 submitted with. Gated on the ``auto_refresh_on_open`` Browser setting.
+
+The same callback hears every save, the Browser's and Houdini's own, and
+has a Multi's workfile checked against its Multi once the save is done
+(``pipe.houdini.multi_sync``): one callback for both, so a save never asks
+twice.
 """
 
 from __future__ import annotations
@@ -86,11 +91,28 @@ def _on_scene_opened() -> None:
     _apply_multi_timeline()
 
 
+def _on_scene_saved() -> None:
+    """Check a Multi's workfile against its Multi after the save, when
+    Houdini is idle again (the save is never held up). Upkeep: a failure
+    is logged, not shown."""
+    import logging
+
+    try:
+        from tumblepipe.pipe.houdini import multi_sync
+        multi_sync.schedule_check()
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Checking the Multi's workfile after the save failed"
+        )
+
+
 def on_hip_file_event(event_type) -> None:
     import hou
 
     if event_type == hou.hipFileEventType.AfterLoad:
         _on_scene_opened()
+    elif event_type == hou.hipFileEventType.AfterSave:
+        _on_scene_saved()
 
 
 def _scene_loaded() -> bool:
@@ -100,7 +122,7 @@ def _scene_loaded() -> bool:
 
 
 def register() -> None:
-    """Install the load callback. Safe to call more than once.
+    """Install the load (and save) callback. Safe to call more than once.
 
     A ``.hip`` given on Houdini's command line may finish loading before
     this runs, in which case no AfterLoad will follow, so an already-open

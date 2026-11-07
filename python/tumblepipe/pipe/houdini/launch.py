@@ -46,7 +46,7 @@ def launch_houdini(
     env = dict(os.environ)
     env.update(env_overrides or {})
     return subprocess.Popen(
-        [sys.executable, str(hip_path)], env=env, **_detached(),
+        [sys.executable, hip_path.as_posix()], env=env, **_detached(),
     )
 
 

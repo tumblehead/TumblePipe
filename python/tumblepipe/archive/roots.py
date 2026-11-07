@@ -23,12 +23,15 @@ from tumblepipe.util.uri import Uri
 #: its config. ``temp`` is machine-local scratch and ``preset`` lives in the
 #: config, so neither is walked on its own.
 WALKED_PURPOSES = (
-    'assets', 'shots', 'groups', 'export', 'edit',
+    'assets', 'shots', 'groups', 'edits', 'export', 'edit',
     'render', 'cache', 'proxy', 'turntable',
 )
 
-#: Purposes holding workfile folders.
-WORKFILE_PURPOSES = ('assets', 'shots', 'groups')
+#: Purposes holding workfile folders. An edit's working versions
+#: (``edits:/<name>/edit/<name>_edit_vNNNN.json``, their ``_context``
+#: sidecars and the autosave) are kept as a workfile folder's files are:
+#: always, being small and the only record of the cut before a publish.
+WORKFILE_PURPOSES = ('assets', 'shots', 'groups', 'edits')
 
 
 @dataclass(frozen=True)

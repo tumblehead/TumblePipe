@@ -250,4 +250,4 @@ def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:
     settings = config['settings']
     return submit_batch(batch_title(
         settings['purpose'], config['entity']['uri'], settings['user_name']
-    ), build, config, paths)
+    ), build, config, paths, entity=config['entity']['uri'])
