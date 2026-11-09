@@ -111,8 +111,8 @@ v10 drops its `alpha` there too (see
 
 Every consumer sorts AOVs the same way (`aov.py`): `beauty` first, then the
 `beauty_<tag>` light groups, then the `objid_*` / `holdout_*` mattes, then
-everything else — that is the order `build_comp` and the turntable read them
-in.
+everything else — that is the order `th::import_render`'s cable and the turntable read
+them in.
 
 An AOV's name is its RenderVar's prim name, lowercased: that is what the
 publish lists and what the farm splits the EXR by, so the plane Karma writes
@@ -216,7 +216,7 @@ set to 1. A render has **one** global AOV material: if something upstream
 already set a different one, the node errors rather than replace it.
 
 The farm's denoise passes mattes and ramps through untouched, and
-`build_comp` imports each `objid_*` (one channel) as a single mask and
+`th::import_render` reads each `objid_*` (one channel) as a single mask and
 `ramp_*` as a mono pass.
 
 The denoise job leaves mattes alone: it runs OIDN over every AOV except the

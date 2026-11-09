@@ -14,7 +14,7 @@ tells you when there is none.
 | Button | Tooltip | What it does |
 |---|---|---|
 | **Save** | Save current scene | Saves the scene as the **next workfile version** of its own context (never in place). With *Ask for a version note on save* on (the default), a **Save Version** dialog asks "Note for the next `<dept>` version of `<entity>` (after `vNNNN`) — optional:". Cancel there aborts the save without burning a version. Status line: `Saved <file>`. |
-| **Publish** | Publish exports | Opens the process dialog (title **Process: Publish**) with every export and build task for the scene's entity, current department **and all departments downstream of it**. See below. |
+| **Publish** | Publish exports | Opens the process dialog (title **Process: Publish**) with every export and build task in the scene for its entity, **whatever department each export node publishes into**: a model workfile that also holds the lookdev and rig exports publishes all three. See below. |
 | **Render** | Farm Submit, with the current scene's Render ticked: publish, playblast and render any shots or assets | Opens the [Farm Submit dialog](submit-jobs.md) with the loaded scene's entity's **Render** cell ticked — or every member's, for a Multi workfile — and the Playblast / Render cut pinned to the workfile's department. Tick publish, playblast and render cells for any other shots or assets there. With no pipeline workfile loaded it opens with nothing ticked. |
 | **Entity Editor** | The project's assets and shots as spreadsheets: add, edit and retire them | Opens the [Entity Editor](entity-editor.md) of the loaded workfile's project, on its shot or asset's tab and group with its row selected (in a Multi's workfile, the **Multis** tab with its Multi selected). An untitled or off-pipeline scene opens it on **Shots**, asking for the project when several are registered. |
 | **Update** | Re-import latest published versions into the current scene (no scene reload) | Re-executes every import node in place (`import_shot`, `import_assets`, `import_asset`, `import_layer`, `import_rigs`, `import_rig`, `import_model`), so `current` and `latest` pick up the newest publish. Status line: `Imports updated to latest published versions (N node(s)).` If any node fails you get a warning dialog instead — the scene may still reference older versions. |
@@ -61,10 +61,13 @@ and built by [`task_factory.py`](../../python/tumblepipe/pipe/houdini/ui/task_fa
 ### The task tree
 
 Tasks are grouped under one row per entity (a Multi workfile lists every
-member). Departments downstream of the workfile's department are listed too,
-in pool order — for a Multi workfile that is the whole pool after its
-department; up to TumblePipe 1.47.1 a Multi workfile listed only its own
-department. Columns: **Task, Department, Channel, Version, First, Last,
+member). An export node publishes the workfile it lives in, into the
+department it names, so every department the scene's export nodes name is
+listed, in pool order (the pipeline order the run follows), departments
+before the workfile's own included. Up to TumblePipe 1.97.1 only the
+workfile's department and those downstream of it were listed, and a lookdev
+export built in the model workfile never published; up to 1.47.1 a Multi
+workfile listed only its own department. Columns: **Task, Department, Channel, Version, First, Last,
 Status**. *Version* shows the version currently on disk and is replaced by
 the version a task wrote once it completes. *Channel* shows a task's own
 channel; a row that covers several (the `Validate`, `Export (<dept>)` and
@@ -83,7 +86,7 @@ but left unchecked; tick them to publish them in the same run.
 | ⤷ `Export Shared` | a connected `th::layer_split` | Writes the shared layer under `_shared/<dept>/`. |
 | ⤷ `Export (<channel>)` | each `th::export_layer` | One child per channel the department exports. |
 | `Build USD` → `Build USD (<channel>)` | one per channel found on the export nodes | Department column reads `staged`. Depends on every export row of the entity. |
-| `Export rig: <asset>` | `th::export_rig` (rig department only) | Local only — no farm mode. A cook that writes no rig file fails the task and removes its empty version folder. |
+| `Export rig: <asset>` | `th::export_rig` (any asset workfile) | At the rig department's place in the run: after the model and lookdev exports, before the rig department's `Export (rig)`. Local only — no farm mode. A cook that writes no rig file fails the task and removes its empty version folder. |
 
 Bypassed nodes, nodes addressing another entity, and `layer_split` nodes not
 wired into an export node are left out. Ticking a parent ticks its children;
@@ -96,10 +99,10 @@ recorded in its `context.json` — not by the node:
 
 | Workfile belongs to | An export node is collected when |
 |---|---|
-| a shot or an asset | its **Entity** is that same shot or asset, and its **Department** is the workfile's department or one downstream of it. |
-| a Multi | its **Entity** is a member of the Multi, with the same department rule. |
-| an asset's `rig` department | it is an un-bypassed `th::export_rig` for that asset. |
-| an asset Multi's `rig` department | it is an un-bypassed `th::export_rig` whose **Entity** is a member of the Multi — one *Export rig* task per node. `from_context` cannot pick a member, so set each node's Entity. Up to TumblePipe 1.51.0 a Multi collected no rig exports at all. |
+| a shot or an asset | its **Entity** is that same shot or asset, and its **Department** is one the entity has — any of them, departments before the workfile's own included (up to TumblePipe 1.97.1, only the workfile's department or one downstream of it). |
+| a Multi | its **Entity** is a member of the Multi, and its **Department** is in the pool of the Multi's context. |
+| an asset that has a `rig` department, in any of its workfiles | it is an un-bypassed `th::export_rig` for that asset. Up to TumblePipe 1.97.1 only the asset's `rig` workfile collected them. |
+| an asset Multi, likewise | it is an un-bypassed `th::export_rig` whose **Entity** is a member of the Multi — one *Export rig* task per node. `from_context` cannot pick a member, so set each node's Entity. Up to TumblePipe 1.51.0 a Multi collected no rig exports at all. |
 
 When nothing is collected, the warning's details say which rule each node
 failed ([`describe_missing_tasks`](../../python/tumblepipe/pipe/houdini/ui/task_collection.py)):
@@ -110,10 +113,10 @@ failed ([`describe_missing_tasks`](../../python/tumblepipe/pipe/houdini/ui/task_
 | *An export node only runs for the workfile's own entity. These address a different one …*, then one line per entity with its nodes | The nodes target other entities. Move them into that entity's workfile, or into a Multi that has it as a member. |
 | *Multi `<name>` already lists every one of them as a member.* | Those entities are all in that Multi: work in the Multi's own workfile. |
 | *An export node only runs for a member of this Multi. These address a non-member …* | Add the entity to the Multi, or move the node. |
-| *Departments published from here: … These nodes export into another one:* | The node's department is upstream of the workfile's, or not in the pool. |
+| *Departments this workfile can publish: … These nodes export into one `<entity>` does not have:* | The node's department is not one of the entity's: retired, scoped away in the Entity Editor, or never in the pool. |
 | *Bypassed:* … | Un-bypass the node. |
 | *No entity resolved …* | The node's **Entity** names something that no longer exists, or is `from_context` in a workfile with no entity. In a Multi the detail says to set each node's Entity to the member it exports. |
-| *It contains no `th::export_layer` nodes.* (`th::export_rig` in a rig workfile) | Nothing to export. |
+| *It contains no `th::export_layer` nodes.* (or `th::export_rig`, in an asset workfile) | Nothing to export. |
 
 A scene saved as a *shot* cannot become a Multi's workfile by adding
 departments to the Multi: the file still belongs to the shot. See
@@ -123,8 +126,8 @@ departments to the Multi: the file still belongs to the shot. See
 
 | Mode | Default | Effect on the tree |
 |---|---|---|
-| **In this session** | yes | Executes now, in this Houdini session. Only the **current department's** export rows (and the builds) are enabled; downstream departments are unticked. |
-| **This machine** | | Submits the farm jobs to the background queue on this machine: they run one task at a time, as a render node would run them. Every department listed — current and downstream — is enabled. |
+| **In this session** | yes | Executes now, in this Houdini session. Every row is enabled, whatever department it publishes into. Before each department, when an earlier department of the run wrote a version, the scene's imports float to it first, so the lookdev exports against the model this run just published. Up to 1.97.1 only the workfile's own department was enabled here. |
+| **This machine** | | Submits the farm jobs to the background queue on this machine: they run one task at a time, as a render node would run them. Every row with a farm job is enabled; `Export rig` rows (session only) stay unticked. |
 | **Render farm** | | Submits the same farm jobs to Deadline. The same tasks as *This machine* are enabled. |
 
 Moving between *This machine* and *Render farm* keeps your ticks. The farm
@@ -209,9 +212,12 @@ only where they run differs:
 
 - each `Export (<channel>)` child submits a **publish** job for the
   department (plus the *Downstream Exports* ticked on the node), bundling
-  the department's **latest saved workfile** — so an unsaved edit is not
-  what the farm exports. A version still being saved is passed over for the
-  one before it. It needs a pool and a priority (the node's **Pool** /
+  the **latest saved version of the workfile the node lives in** — whichever
+  department it exports into, so a lookdev export in the model workfile
+  sends the model workfile — and an unsaved edit is not what the farm
+  exports. A version still being saved is passed over for the one before
+  it. Up to 1.97.1 it bundled the target department's own workfile instead:
+  lookdev's stale one, or none at all, which failed the task. It needs a pool and a priority (the node's **Pool** /
   **Priority** parms, used wherever the job runs). The node's comment reads
   `farm export submitted` (or `this machine export submitted`) with the
   downstream departments. A submission error fails the task with

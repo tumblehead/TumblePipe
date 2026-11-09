@@ -36,7 +36,7 @@ the other installed packages' documentation. The same pages are online at
   - [Importing and exporting](nodes/import-and-export.md) — import_shot, import_asset, export_layer, cache, …
   - [Building assets](nodes/assets.md) — the model → lookdev chain, rigs, thumbnails
   - [Lighting and rendering](nodes/lighting-and-rendering.md) — render settings, AOVs, LPE tags, lookdev studio, playblast
-  - [Compositing nodes](nodes/comp.md) — build_comp and the COP toolkit
+  - [Compositing nodes](nodes/comp.md) — import_render, light_mix, export_comp and the COP toolkit
   - [Modelling and utility nodes](nodes/tools.md) — mesh tools, recipes, the VOP menu
 - [Project HDAs](project-hdas.md) — turn a subnet into a digital asset stored in the project: right-click ▸ TumblePipe ▸ Create Project HDA...
 - [VRAM Inspector](vram-inspector.md) — what is using the GPU's memory, by node, prim, primvar and texture

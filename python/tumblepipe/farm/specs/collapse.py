@@ -32,7 +32,8 @@ config = {
         'last_frame': 'int',
         'batch_size': 'int',
         'denoise': 'bool',
-        'copy_to_edit': 'bool'
+        'copy_to_edit': 'bool',
+        'composite': {...}               # optional: specs.composite.valid_recomp
     },
     'playblast': {                       # optional
         'department': 'string',
@@ -46,6 +47,7 @@ config = {
 At least one of ``render`` / ``playblast`` must be present.
 """
 
+from tumblepipe.farm.specs.composite import valid_recomp
 from tumblepipe.farm.checks import (
     valid_entity,
     check_str,
@@ -86,6 +88,7 @@ def _valid_render(render):
         if not check_int(render, key): return False
     if not check_bool(render, 'denoise'): return False
     if not check_bool(render, 'copy_to_edit'): return False
+    if 'composite' in render and not valid_recomp(render['composite']): return False
     return True
 
 

@@ -1,10 +1,13 @@
-//! Cusp normals kept from one frame to the next.
+//! Cusp and smooth normals kept from one frame to the next.
 //!
 //! A polygonal mesh without its own normals is drawn with Houdini's cusp
 //! normals ([`raster::cusp_normals`]), worked out from its points and
 //! triangles. That is a pass over every triangle and, on a heavy mesh, most
 //! of what a one-sample draft costs (274 ms of a 355 ms frame on 4.5 million
-//! triangles), so a delegate keeps them (in [`crate::ffi::ThCache`]) for the
+//! triangles). A subdivision surface without its own is drawn with smooth
+//! normals ([`raster::smooth_normals`]), another pass over its triangles (15
+//! ms of a 106 ms draft with 3.3M of them). So a delegate keeps both (in
+//! [`crate::ffi::ThCache`]) for the
 //! meshes that have a key, while the key's version and the arrays they were
 //! made from stay the same. The version changes whenever the shim rebuilds
 //! the mesh or moves its points; the arrays' addresses and lengths are
@@ -22,11 +25,14 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-/// One mesh that needs cusp normals.
+/// One mesh that needs normals: its cusp normals, one per corner (a
+/// polygonal mesh), or with `smooth` its smooth normals, one per point (a
+/// subdivision surface, [`raster::smooth_normals`]).
 pub(crate) struct Request<'a> {
     pub key: Option<MeshKey>,
     pub points: &'a [Vec3],
     pub triangles: &'a [[u32; 3]],
+    pub smooth: bool,
 }
 
 /// What a mesh's normals were made from.
@@ -35,6 +41,7 @@ struct Source {
     version: u64,
     points: (usize, usize),
     triangles: (usize, usize),
+    smooth: bool,
 }
 
 impl Source {
@@ -43,6 +50,7 @@ impl Source {
             version: r.key.map_or(0, |k| k.version),
             points: (r.points.as_ptr() as usize, r.points.len()),
             triangles: (r.triangles.as_ptr() as usize, r.triangles.len()),
+            smooth: r.smooth,
         }
     }
 }
@@ -112,7 +120,11 @@ impl Cache {
 fn compute(requests: &[Option<Request>], which: &[usize]) -> Vec<(usize, Arc<[Vec3]>)> {
     let one = |i: usize| -> Arc<[Vec3]> {
         let r = requests[i].as_ref().expect("only requests are computed");
-        raster::cusp_normals(r.points, r.triangles, raster::CUSP_DEGREES).into()
+        if r.smooth {
+            raster::smooth_normals(r.points, r.triangles).into()
+        } else {
+            raster::cusp_normals(r.points, r.triangles, raster::CUSP_DEGREES).into()
+        }
     };
     if which.len() <= 1 {
         return which.iter().map(|&i| (i, one(i))).collect();
@@ -148,7 +160,7 @@ mod tests {
         let (mut points, triangles) = cube();
         let mut cache = Cache::default();
         fn ask<'a>(points: &'a [Vec3], triangles: &'a [[u32; 3]], version: u64) -> [Option<Request<'a>>; 1] {
-            [Some(Request { key: key(1, version), points, triangles })]
+            [Some(Request { key: key(1, version), points, triangles, smooth: false })]
         }
         let (first, s) = cache.normals(&ask(&points, &triangles, 1));
         assert_eq!(s, Stats { computed: 1, kept: 0 });
@@ -168,7 +180,7 @@ mod tests {
     fn unkeyed_meshes_are_never_kept_and_undrawn_ones_are_let_go() {
         let (points, triangles) = cube();
         let mut cache = Cache::default();
-        let r = |k| Some(Request { key: k, points: &points, triangles: &triangles });
+        let r = |k| Some(Request { key: k, points: &points, triangles: &triangles, smooth: false });
         let (_, s) = cache.normals(&[r(None), r(key(1, 1)), None, r(key(2, 1))]);
         assert_eq!((s, cache.len()), (Stats { computed: 3, kept: 0 }, 2));
         let (out, s) = cache.normals(&[r(None), None, r(key(2, 1))]);
@@ -245,7 +257,7 @@ mod tests {
                         Step::Unkeyed => None,
                         _ => key(m as u64 + 1, versions[m]),
                     };
-                    Some(Request { key, points: p, triangles: t })
+                    Some(Request { key, points: p, triangles: t, smooth: false })
                 }).collect();
                 let kept_expected = requests.iter().flatten()
                     .filter(|r| r.key.is_some_and(|k| drawn.get(&k.id) == Some(&k.version)))

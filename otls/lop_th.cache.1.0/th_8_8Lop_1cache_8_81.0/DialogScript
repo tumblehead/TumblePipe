@@ -144,12 +144,14 @@
                 [ "return menus.list_to_menu(node.list_department_names())" ]
                 language python
             }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cache as th_cache; th_cache.selection_changed(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
             name    "name"
             label   "Name"
             type    string
+            joinnext
             default { "$OS" }
             menureplace {
                 [ "import tumblepipe.pipe.houdini.cache as th_cache" ]
@@ -164,6 +166,18 @@
                 [ "return menu" ]
                 language python
             }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cache as th_cache; th_cache.selection_changed(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "browse"
+            label   "Browse"
+            type    button
+            nolabel
+            default { "0" }
+            help    "Pick an existing cache of this entity, from any department or location"
+            parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_chooser_folder.svg" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cache as th_cache; th_cache.browse(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {
@@ -206,6 +220,7 @@
                 "project"   "Project"
                 "proxy"     "Proxy"
             }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cache as th_cache; th_cache.selection_changed(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
         parm {

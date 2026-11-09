@@ -12,7 +12,7 @@ Set ``FARM_VERIFY_SCREENSHOT=<png>`` to also grab the dialog to an image.
 
 Checks:
  1. The grid lists the context's terminal entities, one publish column per
-    publishable department in pool order, then Playblast and Render.
+    publishable department in pool order, then Playblast, Render and Comp.
  2. Opened for one shot, only that shot's Render cell starts ticked, and the
     opened-from department pins the preview cuts.
  3. The status scan finishes and leaves no cell pending.
@@ -58,6 +58,10 @@ Checks:
     does not, nor does a value the form no longer offers.
 20. The Channels field reads as a dropdown: an arrow pointer, no focus, no
     text selected by a double-click, and every dropdown draws its chevron.
+21. The Comp column: a cell is nothing-to-do exactly when the shot has no
+    composite workfile; a Comp tick shows only the Comp settings and
+    resolves ``comp`` with its ``comp_*`` keys; Comp beside a preview-only
+    render is blocked.
 
 The prefs file is a throwaway one (``HOUDINI_USER_PREF_DIR`` points at a
 temporary folder), so a run never changes what an artist's window remembers.
@@ -141,8 +145,8 @@ def main() -> int:
     check("1. rows are the context's terminal entities",
           set(uris) >= {str(u) for u in shots}, f"{len(uris)} rows")
     publish = mod._list_dept_names("shots", only_publishable=True, only_renderable=False)
-    check("1. publish columns in pool order, then Playblast and Render",
-          [c.label for c in dlg._columns] == publish + ["Playblast", "Render"],
+    check("1. publish columns in pool order, then Playblast, Render and Comp",
+          [c.label for c in dlg._columns] == publish + ["Playblast", "Render", "Comp"],
           ", ".join(c.label for c in dlg._columns))
     check("2. only the opened shot's Render cell starts ticked",
           dlg._ticks == {(str(shot), grid.RENDER)})
@@ -277,6 +281,40 @@ def main() -> int:
     dlg._refresh()
     check("12. nothing ticked shows the hint and no section",
           not shown() and not dlg._no_settings.isHidden(), f"{shown()}")
+
+    # ── 21: the Comp column ───────────────────────────────
+    from tumblepipe.pipe.paths import latest_complete_hip_file_path
+    mismatched = []
+    for uri in dlg._uris:
+        state = dlg._states.get((uri, grid.COMP))
+        has_workfile = latest_complete_hip_file_path(
+            dlg._uri_objects[uri], "composite") is not None
+        if (state == grid.NONE) == has_workfile:
+            mismatched.append(f"{uri}={state}")
+    check("21. a Comp cell is nothing-to-do exactly when the shot has no composite workfile",
+          not mismatched, ", ".join(mismatched[:5]))
+    dlg._ticks = {(str(shot), grid.COMP)}
+    dlg._refresh()
+    rows = dlg._resolved_rows()
+    settings = rows[0][1] if rows else {}
+    check("21. a Comp tick shows only the Comp settings and resolves comp + comp_*",
+          shown() == [grid.COMP]
+          and settings.get("comp") is True and not settings.get("render")
+          and all(k in settings for k in (
+              "comp_pool", "comp_priority", "comp_batch_size", "comp_copy_to_edit"))
+          and settings.get("comp_batch_size") == 5,
+          f"{shown()} {settings}")
+    dlg._ticks = {(str(shot), grid.COMP), (str(shot), grid.RENDER)}
+    dlg._rnd_full.setChecked(False)
+    dlg._rnd_preview.setChecked(True)
+    dlg._refresh()
+    errors = dlg._resolved_rows()[0][3]
+    dlg._rnd_preview.setChecked(False)
+    dlg._rnd_full.setChecked(True)
+    check("21. Comp beside a preview-only render is blocked",
+          any("Comp" in e for e in errors), f"{errors}")
+    dlg._clear_ticks()
+    dlg._refresh()
 
     # ── 11: the wheel scrolls the settings, never edits them ──
     # Every section showing, so the panel is tall enough to scroll.

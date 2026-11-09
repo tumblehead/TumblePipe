@@ -1,8 +1,9 @@
-"""The Farm Submit dialog: tick publish, playblast and render steps per entity, submit.
+"""The Farm Submit dialog: tick publish, playblast, render and comp steps per entity, submit.
 
 Rows are the entities of one context (shots, or assets), grouped by sequence
 or category; columns are pipeline steps — one publish column per department
-in pool order, then Playblast (shots only) and Render. A ticked cell means
+in pool order, then Playblast (shots only), Render and Comp (shots only: a
+re-comp of the shot's newest composite workfile). A ticked cell means
 "do this step for this entity", and each cell shows how up to date that step
 is: never done, stale, current, or nothing to do. Every row, column and
 sequence carries a tri-state checkbox. The policy behind all of it — states,
@@ -140,6 +141,11 @@ _COLUMN_TIPS = {
     grid.PUBLISH: "Publish the {label} department from its latest workfile.",
     grid.PLAYBLAST: "A playblast on the farm, of every department up to the Playblast cut.",
     grid.RENDER: "A render on the farm, of every department up to the Render cut.",
+    grid.COMP: (
+        "Re-comp the shot's newest composite workfile on the farm, over the "
+        "renders on disk. With Render ticked too, it waits for that render's "
+        "full range (after its denoise) and comps the new frames."
+    ),
 }
 _STATE_LINES = {
     grid.PUBLISH: (
@@ -155,7 +161,20 @@ _STATE_LINES = {
         (grid.NEVER, "never made"),
         (grid.NONE, "no frame range: nothing to make"),
     ),
+    grid.COMP: (
+        (grid.CURRENT, "newer than the shot's newest render"),
+        (grid.STALE, "a render landed after the newest comp"),
+        (grid.NEVER, "never comped"),
+        (grid.NONE, "no composite workfile: nothing to comp"),
+    ),
 }
+
+
+def _tip_kind(kind: str) -> str:
+    """The key of a column kind's state tables: publish and comp have their
+    own, Playblast and Render share the preview's."""
+    return kind if kind in (grid.PUBLISH, grid.COMP) else 'preview'
+
 
 GLYPHS = {
     grid.NONE: "·", grid.NEVER: "○", grid.UNCLAIMED: "○", grid.STALE: "●",
@@ -183,6 +202,13 @@ TIPS = {
         grid.NEVER: "never made",
         grid.STALE: "older than the newest publish it composes",
         grid.CURRENT: "newer than every publish it composes",
+        grid.PENDING: "reading status…",
+    },
+    grid.COMP: {
+        grid.NONE: "no composite workfile: make one from the composite template first",
+        grid.NEVER: "never comped",
+        grid.STALE: "a render landed after the newest comp",
+        grid.CURRENT: "newer than the shot's newest render",
         grid.PENDING: "reading status…",
     },
 }
@@ -995,6 +1021,10 @@ class _ContextPane(QWidget):
             'render_full': self._rnd_full.isChecked(),
             'standalone': self._rnd_standalone.isChecked(),
             'copy_to_edit': self._rnd_copy_edit.isChecked(),
+            # Comp is a shots-only section: the Assets tab has no such box.
+            **({} if self._comp_copy_edit is None else {
+                'comp_copy_to_edit': self._comp_copy_edit.isChecked(),
+            }),
         }
 
     def _accepts(self, key: str, value: Any) -> bool:
@@ -1028,9 +1058,11 @@ class _ContextPane(QWidget):
         boxes = {
             'render_preview': self._rnd_preview, 'render_full': self._rnd_full,
             'standalone': self._rnd_standalone, 'copy_to_edit': self._rnd_copy_edit,
+            'comp_copy_to_edit': self._comp_copy_edit,
         }
         for key, checked in remembered.restore_batch(record).items():
-            boxes[key].setChecked(checked)
+            if boxes.get(key) is not None:
+                boxes[key].setChecked(checked)
 
     # ── Toolbar ───────────────────────────────────────────
 
@@ -1210,7 +1242,7 @@ class _ContextPane(QWidget):
             return "\n".join(self._warnings.get(uri, []))
         step = self._columns[column - 1]
         state = self._states.get((uri, step.key), grid.PENDING)
-        table = TIPS[grid.PUBLISH if step.kind == grid.PUBLISH else 'preview']
+        table = TIPS[_tip_kind(step.kind)]
         ticked = " (will be submitted)" if (uri, step.key) in self._ticks else ""
         text = f"{item.text(0)}, {step.label}: {GLYPHS[state]} {table[state]}{ticked}"
         if step.key in self._collapsed:
@@ -1233,7 +1265,7 @@ class _ContextPane(QWidget):
             _COLUMN_TIPS[column.kind].format(label=column.label),
             "",
         ]
-        table = _STATE_LINES[grid.PUBLISH if column.kind == grid.PUBLISH else 'preview']
+        table = _STATE_LINES[_tip_kind(column.kind)]
         for state, meaning in table:
             lines.append(
                 f"<span style='color:{GLYPH_COLOURS[state]}'>{GLYPHS[state]}</span>"
@@ -1724,6 +1756,7 @@ class _ContextPane(QWidget):
                                 if self._context == 'shots' else None
                             ),
                             render_department=self._cut(uri, 'render_department'),
+                            comp=self._context == 'shots',
                         )
                         self._pending[self._executor.submit(farm_status.scan, probe)] = (
                             uri, self._preview_only,
@@ -1753,6 +1786,8 @@ class _ContextPane(QWidget):
                     continue
                 old.playblast_mtime = status.playblast_mtime
                 old.render_mtime = status.render_mtime
+                old.comp_workfile = status.comp_workfile
+                old.comp_mtime = status.comp_mtime
             else:
                 self._statuses[uri] = status
             self._apply_status(uri)
@@ -1790,6 +1825,13 @@ class _ContextPane(QWidget):
                     shared=column.department in status.shared,
                 )
                 continue
+            if column.kind == grid.COMP:
+                # Against the render the Render column measures (its cut's
+                # newest version), so a new render shows the comp stale.
+                self._states[key] = grid.comp_state(
+                    status.comp_workfile, status.comp_mtime, status.render_mtime,
+                )
+                continue
             field_key = 'pb_department' if column.kind == grid.PLAYBLAST else 'render_department'
             cut = grid.preview_cut(departments, self._cut(uri, field_key))
             preview = (
@@ -1824,6 +1866,10 @@ class _ContextPane(QWidget):
         else:
             self._pb_dept = None
         self._sections[grid.RENDER] = self._build_render_section()
+        if self._context == "shots":
+            self._sections[grid.COMP] = self._build_recomp_section()
+        else:
+            self._comp_copy_edit = None
         self._no_settings = QLabel(
             "Tick a cell to see its settings.\n\nHover a column's header for "
             "what it does and what its marks mean."
@@ -2240,6 +2286,30 @@ class _ContextPane(QWidget):
         form.addRow("", self._row(self._rnd_standalone, self._rnd_copy_edit))
         return box
 
+    def _build_recomp_section(self) -> Section:
+        """A re-comp of each shot's newest composite workfile — shots only.
+
+        The frames are the shot's full range and the input is the renders on
+        disk (or the render ticked beside it), so only the schedule is set
+        here. Batch size and Copy to edit are choices about the submission,
+        not properties of the shot.
+        """
+        box, form = self._section(grid.COMP, "Comp")
+        self._comp_pool = self._line('comp_pool', 'general')
+        form.addRow("Pool:", self._comp_pool)
+        self._comp_priority = self._spin('comp_priority', 0, 100)
+        form.addRow("Priority:", self._row(self._comp_priority, revert=('comp_priority',)))
+        self._comp_batch = self._spin('comp_batch_size', 1, 1000)
+        self._comp_batch.setToolTip("Frames per farm task of the comp.")
+        form.addRow("Batch:", self._row(self._comp_batch, revert=('comp_batch_size',)))
+        self._comp_copy_edit = QCheckBox("Copy to edit")
+        self._comp_copy_edit.setToolTip(
+            "Add an edit job that syncs the merged comp to the edit as its "
+            "comp layer (mattes and ramps still per channel)."
+        )
+        form.addRow("", self._row(self._comp_copy_edit))
+        return box
+
     # ── Render camera ─────────────────────────────────────
 
     def _camera_keys(self) -> list[tuple[str, str, str]]:
@@ -2456,6 +2526,8 @@ class _ContextPane(QWidget):
             'standalone': self._rnd_standalone.isChecked(),
             'copy_to_edit': self._rnd_copy_edit.isChecked(),
         })
+        if self._comp_copy_edit is not None:
+            values['comp_copy_to_edit'] = self._comp_copy_edit.isChecked()
         return values
 
     def _render_mode(self) -> str | None:

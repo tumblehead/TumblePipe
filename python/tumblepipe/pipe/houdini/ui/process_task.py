@@ -73,6 +73,26 @@ def channel_label(task: ProcessTask) -> str:
     return ', '.join(ordered) if ordered else '-'
 
 
+def runs_in_mode(task: ProcessTask, is_local: bool) -> bool:
+    """Whether ``task`` can run in the dialog's mode: in this session
+    (``is_local``) or as a farm submission (either farm).
+
+    A task runs where it has a callback for; a group, where one of its
+    children does. Every row is a node in the open workfile, whichever
+    department it publishes into, so the mode is the only thing that rules a
+    row out: export_rig is local-only, so a farm run leaves it unticked
+    instead of failing on "No farm executor". In this session used to untick
+    every export of another department, which made a lookdev export built in
+    the model workfile impossible to publish here (see
+    ``task_collection._workfile_departments``).
+    """
+    def has_callback(t: ProcessTask) -> bool:
+        return (t.execute_local if is_local else t.execute_farm) is not None
+    if task.children:
+        return any(has_callback(child) for child in task.children)
+    return has_callback(task)
+
+
 class ProcessTaskTreeModel(QStandardItemModel):
     """Tree model for process tasks grouped by entity URI"""
 
@@ -511,24 +531,18 @@ class ProcessTaskTreeModel(QStandardItemModel):
                     status_item.setText(self.STATUS_DISPLAY.get(TaskStatus.PENDING, ''))
                     status_item.setForeground(QBrush(QColor(self.STATUS_COLORS.get(TaskStatus.PENDING, '#919191'))))
 
-    def set_mode_filter(self, is_local: bool, current_department: str):
+    def set_mode_filter(self, is_local: bool):
         """
         Enable/disable tasks based on execution mode and initial selection.
 
-        Local mode: Only current department exports + build tasks are enabled.
-        Farm mode: All tasks (including downstream departments) are enabled.
-
-        If initial_enabled_task_ids is set, only those tasks can be enabled.
+        A mode ticks every task that can run in it (``runs_in_mode``),
+        whichever department it publishes into. If initial_enabled_task_ids
+        is set, only those tasks can be enabled.
         """
         self._updating_checks = True
         try:
             for task in self._tasks:
-                # Check if mode allows this task
-                mode_allowed = True
-                if is_local:
-                    # Local: Only current department exports + build allowed
-                    if task.task_type in ('export', 'export_group') and task.department != current_department:
-                        mode_allowed = False
+                mode_allowed = runs_in_mode(task, is_local)
 
                 # Check if initial selection allows this task
                 initial_allowed = True
@@ -546,8 +560,9 @@ class ProcessTaskTreeModel(QStandardItemModel):
                 # Also update children if this is a parent task
                 if task.children:
                     for child in task.children:
-                        # Children inherit parent's mode filter
-                        child_mode_allowed = mode_allowed
+                        # A child runs when its group does and it has the
+                        # mode's callback itself
+                        child_mode_allowed = mode_allowed and runs_in_mode(child, is_local)
                         child_initial_allowed = True
                         if self._initial_enabled_task_ids is not None:
                             child_initial_allowed = child.id in self._initial_enabled_task_ids

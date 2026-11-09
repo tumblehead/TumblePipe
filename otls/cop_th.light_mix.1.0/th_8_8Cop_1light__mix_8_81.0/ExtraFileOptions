@@ -1,0 +1,6 @@
+{
+	"OnCreated/IsPython":{
+		"type":"bool",
+		"value":true
+	}
+}

@@ -184,7 +184,7 @@ Radial.
 | cfx | SOP | File, Vellum Constraints, Vellum Solver, Vellum Drape, Cache |
 | light | LOP | Light Linker, Lights (Rect, Distant, Dome), Light Gobo (recipe), Light Mixer, Light Blocker, Fog |
 | render | LOP | Render Settings, Render Vars, LPE Tags, Mattes, Render Debug |
-| composite | COP | Build Comp, LOP Import, File, Depth Cull, Gradient Map, A/B Slider |
+| composite | COP | Import Render, Light Mix, Export Comp, LOP Import, File, Depth Cull, Gradient Map, A/B Slider |
 
 **Shift+Space** opens the menu for the workfile's department. Radial owns
 that key. The department comes from TumbleTrove: at startup TumblePipe

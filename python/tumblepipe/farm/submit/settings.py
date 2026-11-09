@@ -90,8 +90,9 @@ class Field:
     Args:
         key: The key ``batch_submit.submit_entity_batch`` reads. Frozen
             wire tokens — renaming one changes the farm contract.
-        section: ``'publish'`` | ``'render'`` | ``'playblast'``. The field
-            is resolved only when its section is enabled.
+        section: ``'publish'`` | ``'render'`` | ``'playblast'`` |
+            ``'comp'``. The field is resolved only when its section is
+            enabled.
         label: Human label, used by the pre-flight table's header.
         prop: Dotted path into the entity's resolved properties, or
             ``None`` for a batch field (see the module docstring).
@@ -227,6 +228,20 @@ FIELDS: tuple[Field, ...] = (
           default=False, kind='bool'),
     Field('pb_blur_samples', 'playblast', 'Blur samples',
           prop='playblast.blur_samples', default=16, kind='int'),
+
+    # ── Comp (shots only) ─────────────────────────────────
+    # A re-comp of the shot's newest composite workfile. Its frames are the
+    # shot's full range, read by batch_submit, and its input is whatever
+    # renders are on disk, so only the schedule is set here. Batch size and
+    # Copy to edit have no entity property: choices about the submission.
+    Field('comp_pool', 'comp', 'Pool', prop='farm.default_pool',
+          default='general', kind='str'),
+    Field('comp_priority', 'comp', 'Priority', prop='farm.priority',
+          default=50, kind='int'),
+    Field('comp_batch_size', 'comp', 'Batch', prop=None, default=5,
+          kind='int'),
+    Field('comp_copy_to_edit', 'comp', 'Copy to edit', prop=None,
+          default=False, kind='bool'),
 )
 
 #: The look fields and the ``pb_look`` keys they become.
@@ -239,7 +254,7 @@ PLAYBLAST_LOOK_KEYS = {
 
 FIELDS_BY_KEY: dict[str, Field] = {f.key: f for f in FIELDS}
 
-SECTIONS = ('publish', 'render', 'playblast')
+SECTIONS = ('publish', 'render', 'playblast', 'comp')
 
 
 def fields_for(sections: Sequence[str]) -> list[Field]:
@@ -354,7 +369,8 @@ def resolve_settings(
 
     Args:
         properties: That entity's resolved config properties.
-        sections: Which of ``publish`` / ``render`` / ``playblast`` are on.
+        sections: Which of ``publish`` / ``render`` / ``playblast`` /
+            ``comp`` are on.
         form: Every current form value, keyed by field key.
         pinned: Field keys the artist explicitly set — these apply to the
             whole batch. A field absent from ``pinned`` resolves per entity.
@@ -363,7 +379,7 @@ def resolve_settings(
             …) used when the entity carries no value of its own.
 
     Returns:
-        A settings dict carrying the three section booleans plus one key per
+        A settings dict carrying the four section booleans plus one key per
         resolved field. A :data:`REQUIRED` field with no value anywhere is
         **omitted**, so the farm side fails loudly instead of guessing.
     """
@@ -696,6 +712,11 @@ def entity_warnings(
     return warnings
 
 
+#: The render modes that render the full range (``batch_submit`` builds a
+#: ``full_render`` for them), the ones a Comp can follow.
+FULL_RENDER_MODES = frozenset({'full', 'preview_then_full'})
+
+
 def entity_errors(
     properties: dict,
     resolved: dict,
@@ -713,6 +734,15 @@ def entity_errors(
         requested: The channels checked for the batch.
     """
     errors: list[str] = []
+    if resolved.get('comp') and resolved.get('render') and (
+        resolved.get('render_mode') not in FULL_RENDER_MODES
+    ):
+        # batch_submit refuses it: the comp follows the full render, and a
+        # preview-only render has no frames to comp.
+        errors.append(
+            "Comp waits for the full render: tick Full range in the Render "
+            "settings, or untick Render to comp the renders on disk"
+        )
     if resolved.get('render'):
         if not channel_list(resolved):
             checked = list(requested or ())

@@ -1,0 +1,14 @@
+Operator:     th::light_mix::1.0
+Label:        th light mix
+Path:         oplib:/th::Cop/light_mix::1.0?th::Cop/light_mix::1.0
+Icon:         $TH_PIPELINE_PATH/resources/BuildComp.png
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Nov  9 15:35:16 2026
+

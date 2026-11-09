@@ -1,6 +1,11 @@
 """Copy a shot's best AOVs (the beauty, mattes and ramps of the highest
 department and version rendered) into the edit folder, and keep the edit's
-manifest of what each AOV there came from."""
+manifest of what each AOV there came from.
+
+When the composite department has a merged comp (``composite/slapcomp``,
+written by th::export_comp), that is the shot's picture: it is synced as the
+edit's ``comp`` layer and the per-channel beauties are not. Mattes and ramps
+still sync per channel, for the grade."""
 
 import shutil
 import json
@@ -11,8 +16,9 @@ from tumblepipe import naming
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.department import list_departments
 from tumblepipe.util.io import load_json_if_exists, store_json
+from tumblepipe.pipe import comp
 from tumblepipe.pipe.aovs import is_edit_aov
-from tumblepipe.pipe.paths import get_render_context
+from tumblepipe.pipe.paths import AOV, get_render_context
 from tumblepipe.pipe.paths.naming import entity_stem
 from tumblepipe.util.uri import Uri
 from tumblepipe.farm import worker
@@ -88,6 +94,41 @@ def _sync_aov_frames(shot_uri, layer_name, aov_name, aov, render_range):
         output_frame_path = frame_file(output_path, frame_index)
         shutil.copyfile(input_frame_path, output_frame_path)
 
+# The edit layer a merged comp is synced as.
+EDIT_COMP_LAYER = 'comp'
+
+def merged_comp_aov(render_context):
+    """``(version, AOV, shot department)`` of the composite department's
+    newest complete merged comp, None when it has none. The merged layer's
+    frames sit in its version folder; the AOV record points there."""
+    render = render_context.renders.get(comp.COMPOSITE_DEPARTMENT)
+    if render is None: return None
+    version_name = comp.merged_comp_layer(render.layers)
+    if version_name is None: return None
+    layer = render.layers[comp.MERGED_FOLDER][version_name]
+    context = load_json_if_exists(layer.path / 'context.json') or dict()
+    aov = AOV(path=layer.path, label='beauty', name=layer.name, suffix=layer.suffix)
+    return version_name, aov, context.get('department')
+
+def edit_plan(latest_aovs, merged):
+    """``{edit layer: {aov: (render dept, version, AOV, shot dept)}}`` to
+    sync: everything resolved, except the per-channel beauties when there
+    is a merged comp, which is synced as the ``comp`` layer instead."""
+    if merged is None: return latest_aovs
+    version_name, aov, shot_department = merged
+    plan = {
+        layer_name: {
+            aov_name: entry for aov_name, entry in layer_aovs.items()
+            if aov_name != 'beauty'
+        }
+        for layer_name, layer_aovs in latest_aovs.items()
+    }
+    plan = {layer_name: aovs for layer_name, aovs in plan.items() if aovs}
+    plan[EDIT_COMP_LAYER] = {
+        'beauty': (comp.COMPOSITE_DEPARTMENT, version_name, aov, shot_department)
+    }
+    return plan
+
 def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
 
     # Print environment variables for debugging
@@ -120,6 +161,11 @@ def main(shot_uri: Uri, purpose: str, render_range: BlockRange):
             for aov_name, (render_dept, version, aov, shot_dept) in layer_aovs.items():
                 print(f'  {layer_name}/{aov_name}: shot_dept={shot_dept}, render_dept={render_dept}, version={version}')
         print()
+
+    merged = merged_comp_aov(render_context)
+    if merged is not None:
+        print(f'Merged comp: composite/{comp.MERGED_FOLDER}/{merged[0]} (synced as the {EDIT_COMP_LAYER} layer)')
+    latest_aovs = edit_plan(latest_aovs, merged)
 
     if not latest_aovs:
         print('No AOVs found to sync')

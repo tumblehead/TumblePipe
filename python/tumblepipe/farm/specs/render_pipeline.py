@@ -25,7 +25,11 @@ config = {
     'tasks': {                  # either or both
         'partial_render': {'priority': 'int', 'denoise': 'bool', 'channel_name': 'string'},
         'full_render': {'priority': 'int', 'denoise': 'bool', 'channel_name': 'string'}
-    }
+    },
+    # Optional: re-comp the shot after the full render (Farm Submit's Comp
+    # column), waiting for its denoise, else the render
+    'composite': {'pool_name': 'string', 'priority': 'int', 'batch_size': 'int',
+                  'copy_to_edit': 'bool', 'channel_name': 'string'}
 }
 
 ``tasks.*.channel_name`` is the Discord channel the chain's notify posts to.
@@ -87,4 +91,9 @@ def is_valid_config(config) -> bool:
     if not is_str_dict(settings.get('input_paths')): return False
     if not check_bool(settings, 'copy_to_edit'): return False
     if not valid_render_tasks(config.get('tasks')): return False
+    if 'composite' in config:
+        from tumblepipe.farm.specs.composite import valid_recomp
+        if not valid_recomp(config['composite']): return False
+        # The re-comp follows the full render; a preview-only render has none.
+        if 'full_render' not in config['tasks']: return False
     return True

@@ -1,3 +1,0 @@
-import tumblepipe.pipe.houdini.cops.build_comp as th_node
-
-th_node.on_created(kwargs['node'])

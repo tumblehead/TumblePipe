@@ -3,7 +3,7 @@
         "valid" : true,
         "menulabel" : "TumbleView",
         "menupriority" : 45,
-        "depthstyle" : "opengl",
+        "depthstyle" : "linear",
         "needsselection" : true,
         "defaultpurposes" : [ "guide", "proxy" ],
         "drawmodesupport" : false,

@@ -35,10 +35,11 @@ stamps **both** (`exr.ACESCG_ATTRIB_ARGS`):
 
 The stamp is applied at every publish boundary — `split_subimages` (raw
 render), `exr.encode` (denoise; the mattes and ramps it passes through are
-byte copies that keep the split's stamp), and slapcomp's composite writes — never in
-the render/COP nodes themselves, so frames Karma or COPs write directly (an
-interactive ROP, a `build_comp` preview) still lack `chromaticities` and read
-as Rec709 in RV. Set the input colour space manually there. When adding a new
+byte copies that keep the split's stamp), slapcomp's composite writes, and the composite
+worker's copy of every comp frame to the network — never in the render/COP
+nodes themselves, so frames Karma or COPs write directly (an interactive
+ROP, a comp rendered by hand) still lack `chromaticities` and read as Rec709
+in RV. Set the input colour space manually there. When adding a new
 oiiotool publish step, splice `ACESCG_ATTRIB_ARGS` into its final write.
 
 ## Compression
@@ -80,13 +81,12 @@ own alpha honours holdouts: 0 over a held-out object, 1 over what is seen.
   denoised: it goes around the denoise straight from the render input and
   is published back onto the denoised RGB, so the published beauty is RGBA
   with the render's own coverage, in the beauty's compression.
-- **`build_comp`** takes each channel's alpha from the beauty, and only
-  from the beauty: it refuses to build or update from a beauty with no `A`
-  channel (an RGB beauty, rendered before the change — re-render it), and
-  never imports an `alpha` AOV.
+- **`th::import_render`** takes each channel's alpha from the beauty, and
+  only from the beauty: it refuses a render whose beauty has no `A` channel
+  (an RGB beauty, rendered before the change — re-render it), and never
+  reads an `alpha` AOV.
 - **slapcomp** does the same: each channel's alpha is its beauty's `A`,
-  and a beauty without one fails the slapcomp (re-render it). The composite
-  job's slapcomp resolves only the beauty.
+  and a beauty without one fails the slapcomp (re-render it).
 - The decision is made from the beauty file itself -- whether it has an
   `A` channel -- never from which AOV folders exist. slapcomp takes that
   channel by its index in oiiotool's order (`R,G,B,A`), not the EXR
@@ -100,88 +100,95 @@ own alpha honours holdouts: 0 over a held-out object, 1 over what is seen.
 
 The light groups (`beauty_<tag>`, from `th::lpe_tags`) stay RGB: they are
 summed back into a beauty, and an alpha in each would be added once per
-group. A comp that re-sums them takes A from the beauty, as above.
+group. `th::light_mix` re-sums them and takes A from the beauty, as above.
 
 An AOV no node sets falls back to the project's RenderProduct, which asks for
 DWAB, so every node that adds a data AOV sets its compression.
 
-## The build_comp node
+## The comp workfile
 
-`th::Cop/build_comp` is the COP (Copernicus) node that assembles a shot
-comp. Drop it in a `copnet` inside a **composite** department workfile —
-it resolves the shot from the workfile's `context.json` sidecar.
-
-**Update** builds (or refreshes) the network:
-
-- one subnet per shot channel, containing a typed `file` COP per AOV —
-  LPE passes (`beauty`, `beauty_*`), masks (`objid_*`), mono passes
-  (`holdout_*`, the `ramp_*` distance ramps), and utility passes
-  (`depth`, `normal`, `albedo`, …),
-- an `alpha` subnet per channel feeding the grade subnet's `alpha` input:
-  the RGBA beauty's A (read RGBA and split). Update re-points it at the
-  channel's newest beauty, and refuses a newest beauty without an `A`,
-  leaving the comp as it was. A comp built before the alpha came from the
-  beauty (no `alpha` subnet in a channel) is refused too; build it again,
-- one mask output per `objid_*` matte, named after the AOV. A matte must be
-  one channel (`th::mattes`), read from the header of the AOV's first
-  rendered frame: a 3-channel puzzle matte (from the retired
-  `th::puzzlemattes`) or an unreadable header refuses the build or update,
-  naming the matte — re-render it with `th::mattes`,
-- each import pinned to the **latest complete version** of that channel's
-  AOV, searching render departments up to the node's selected department,
-- each `file` COP asks for the plane its file actually has: a raw render
-  split names its channels `<aov>.R…`, found by the AOV's name, while the
-  denoise publishes bare `R,G,B(,A)`, which the File COP only finds as `C`
-  (asked for `beauty`, it loads nothing). The header of the first frame
-  decides, on Build and again on every Update, so a comp built on a raw
-  render follows its channels to the denoised publish,
-- a grade subnet per channel with the LPE passes re-summed to a graded
-  beauty,
-- channels over-merged back-to-front in shot channel order.
-
-The imports resolve against the shot's `channels` property
-(every shot has at least `default`). Re-pressing **Update** re-resolves to newer
-versions; `build_comp` is deliberately excluded from the Asset Browser's
-import refresh on workfile open, so a comp never silently retargets —
-the artist decides when to take new renders.
-
-The **source** switch flips the whole network between farm renders and
-locally generated proxy frames; **Preview** renders the current frame in
-place.
-
-### Proxies
-
-With the source on **Proxy**, **Update** first makes the proxies, then
-points the comp at them. It resolves the renders exactly as the Render
-source does (newest complete version per AOV, departments up to the
-node's Input), then cooks the TOP network inside the node
-(`proxy/tops`, driven by `cops/comp_proxy.py`): one local task per
-missing frame of every AOV the comp reads, each a File COP into a ROP
-Image at the **Proxy Resolution**'s pixel scale (Half writes half the
-width and height, Quarter a quarter). The beauty is written RGBA (the
-comp's alpha is its A), `objid_*` mattes, holdouts and ramps one channel,
-everything else RGB. When the cook finishes, every import is pointed at
-the proxies and its resample scales them back up, so the comp keeps its
-full-size canvas.
-
-A proxy mirrors its render on disk, under the `proxy` storage:
+A shot's comp is built by the **composite** department template: **New
+from Template** on a composite workfile makes a `comp` copnet in `/stage`
+with one column per shot channel, in the shot's channel order:
 
 ```
-<proxy>/render/<resolution>/<shot>/<department>/<channel>/v####/<aov>/<same file names>
+import_render (default)   import_render (chars)   ...
+        |                         |
+   light_mix                 light_mix
+        \________ over __________/
+                   |
+              export_comp   (Layer: comp, display flag on)
 ```
 
-with a copy of the render's `context.json` in the `v####` folder. Frames
-already there are not cooked again, so a second Update is quick and only
-a new render version makes new proxies. Proxies are a cache: delete the
-folder to free space or to force them to be remade. The tasks run
-locally, a quarter of the CPU count at a time. Farm submission always
-comps the full renders.
+The over chain stacks the channels back to front, so the last channel is on
+top (the render chain's slapcomp stacks the same way). Sticky notes mark
+where to grade a channel (after its light mix), where mattes come from (the
+import's `aovs` output) and where whole-frame work goes (above the export).
+The channels come from the shot config when the workfile is made, so a comp
+can be built before anything is rendered: each import just says it has no
+complete render yet until one lands. In a Multi's composite workfile the
+set repeats per member, side by side, each import pinned to its member.
 
-The first **Update** refuses to build when the renders cannot make a comp:
-no channel has a complete render, or a rendered channel is missing its
-`beauty` AOV. It says which, and names the folder it searched.
-Nothing is built and the node is not marked built, so the next **Update**
-after the renders land builds normally.
+Three COP nodes make the comp; their parms are in
+[Compositing nodes](nodes/comp.md).
+
+### `th::import_render`
+
+One channel's finished render. **Department** `best` reads the highest
+render department below `composite` with a complete version (denoise, else
+render); a concrete department reads only that one. **Version** `latest` is
+its newest complete version, or a `v####` pins one (a pin needs a concrete
+department). It reads **one** department's version at a time: the denoise
+publishes every AOV the comp reads, mattes and ramps as byte copies.
+
+Outputs: `rgba`, the beauty, and `aovs`, a cable of every AOV the comp
+reads, each field named after its AOV: `beauty`, the `beauty_<tag>` light
+groups, `objid_*` / `holdout_*` mattes, `ramp_*`, `albedo`, `normal`,
+`depth`, `uv`, `position`. Cable Unpack the `aovs` output to use a matte.
+Inside, one File COP per AOV feeds a cable pack; they are rebuilt only when
+the resolved version changes, never on a plain cook. Each File COP asks for
+the plane its file has: a raw render names its channels `<aov>.R…`, the
+denoise publishes bare `R,G,B(,A)`, which a File COP only finds as `C`.
+
+The **Reads** label shows what resolved (`denoise v0004, 11 AOVs`), and
+from what when it moved (`denoise v0005 (was v0004)`). A render that cannot
+be comped is refused, naming the channel, the version and why: no `beauty`
+AOV, a beauty with no `A` (re-render it), or an `objid_*` matte that is not
+one channel (a puzzle matte; re-render it with `th::mattes`).
+
+Imports follow new renders like every other import: opening the workfile
+re-resolves each one on `latest` (`scene_imports.REFRESH_SPECS`), and
+**Update** does it by hand.
+
+### `th::light_mix`
+
+Cable in, RGBA out: a channel's light groups mixed back into its beauty.
+One row per `beauty_<tag>` group, each with **Mute**, **Exposure** (stops)
+and **Tint**, plus a **Rest** row for the lights in no group (the beauty
+minus the groups). The mix is the graded groups plus Rest, never the beauty
+added to its groups, so at defaults it gives back the beauty exactly. The
+alpha is always the beauty's.
+
+A group in the cable without a row rides in Rest, so it mixes at unity
+until **Sync Rows** gives it a row of its own. Sync is pressed for you when
+the upstream import moves to another version; it adds rows and never
+removes or changes one. The network lives in the node's editable `mix`
+subnet, so it can be opened and read.
+
+### `th::export_comp`
+
+The end of the graph, and the farm submit. **Layer** `comp` writes the
+merged comp; a channel name writes a per-channel output (add a second
+`export_comp` for that). **Submit** asks where to run (Render farm or This
+machine) and submits *every* `export_comp` of the shot in the workfile as
+one composite version (see [Farm submission and MP4s](#farm-submission-and-mp4s)).
+
+An `export_comp` on Layer `comp` checks that every shot channel is read by
+an import. A channel no import reads (one added to the shot after the
+workfile was made) shows as a warning on the node, *shot channel `fx` is
+not read by this comp*, and Submit lists it and asks before submitting.
+Nothing edits the graph for you: add a column, or make the next version
+from the template.
 
 ## Rendering without a farm
 
@@ -189,14 +196,14 @@ Submit Render Jobs, the composite chain, farm playblasts and farm publishes
 all submit to a Thinkbox **Deadline** farm. A machine without the Deadline
 Client (whose installer sets `DEADLINE_PATH`) is told so when it presses
 Submit; see `docs/deadline.md` for setting one up. Choosing **This machine**
-(Farm Submit's **Run on**, the publish dialog, or the choice `build_comp`'s
+(Farm Submit's **Run on**, the publish dialog, or the choice `export_comp`'s
 Submit asks for) runs the same jobs here instead, in the background (see
 *Running farm jobs on this machine* in `docs/deadline.md`). Without either:
 
 - **Publish** — choose *In this session* in the publish process dialog.
 - **Playblast** — the `th::playblast` node renders and publishes locally.
 - **Renders for comp** — render with Karma yourself and write the frames
-  where `build_comp` looks:
+  where `th::import_render` looks:
 
   ```
   render:/render/shots/<seq>/<shot>/render/<channel>/v0001/
@@ -231,20 +238,48 @@ geometry, so composing it would be a large bill for nothing.
 
 ## Farm submission and MP4s
 
-**Submit** on the node asks where to run (Render farm or This machine) and
-hands the saved workfile to the composite job family, which chains on
-Deadline, or in the same order on this machine:
+**Submit** on `th::export_comp` saves the workfile, asks where to run
+(Render farm or This machine) and submits one composite version of the
+shot. In a Multi's workfile it submits one version per member.
 
-1. *stage* — package the workfile,
-2. *partial/full composite* — render the node's COP graph per channel on
-   the farm, writing versioned frames under
-   `render:/render/<shot>/composite/<channel>/v####/`,
-3. per-channel *MP4* conversion, plus *edit* and *slapcomp* aggregation,
-4. *slapcomp MP4* and a Discord *notify* with the result.
+- **The imports are frozen.** Every `th::import_render` on `latest` is
+  pinned to the version it resolved in the session, and a pinned one keeps
+  its pin, so the farm comps what the artist saw. The artist's workfile is
+  not changed: the job carries the pins and the worker sets them on a copy.
+- **Every export writes into the one version.** Layer `comp` writes the
+  merged comp as the version's cross-channel layer,
+  `render:/render/<shot>/composite/slapcomp/v####/` (frames directly in
+  the version folder, like the render chain's slapcomp); a channel Layer
+  writes that channel's `composite/<channel>/v####/beauty/`. The version
+  number is after every version in those folders. Each frame is stamped
+  ACEScg on its way to the network (see [Colour space](#colour-space)).
+- **Each written layer records what it read**: its `context.json` has
+  `reads = {channel: {department, version}}`.
 
-MP4s are written both as a versioned playblast and as the shot's rolling
-*daily*. Frame range, step and batch size come from the shot config by
-default and can be overridden on the node.
+Farm Submit's **Comp** column re-comps a shot without opening its workfile:
+the shot's newest composite workfile (a Multi's, when one covers the shot)
+is submitted as one merged-comp version, on its own over the renders on
+disk, or ticked beside **Render** to start after that render's denoise. Its
+imports on `latest` resolve when the job runs. The cell shows whether the
+newest comp is older than the newest render. See
+[Submitting to the farm → Comp](asset-browser/submit-jobs.md#comp-shots-only).
+
+The job chains on Deadline, or in the same order on this machine:
+
+1. *partial composite* — first, middle and last frame, posted to Discord,
+   only when **Preview Frames** is on (off by default: most of a comp task
+   is Houdini loading the workfile),
+2. *full composite* — the whole range, every `export_comp`,
+3. a review *MP4* per channel layer, *Copy to edit* when ticked,
+4. for the merged comp, the department's *MP4* and *daily* and a Discord
+   *notify*.
+
+There is no oiiotool slapcomp in the composite chain: the merged comp is
+the cross-channel layer, so the player shows it as the department's take
+and Copy to edit syncs it as the edit's `comp` layer instead of the
+per-channel beauties (mattes and ramps still sync per channel). Frame
+range, step and batch size come from the shot config by default and can be
+overridden on the node.
 
 Independent of comp, every full **render** job also auto-chains a
 *slapcomp* — a headless oiiotool over-composite of the latest complete
@@ -371,7 +406,9 @@ default, eight. On HideAndReek/010 one sample a pixel takes about 0.14 s a frame
 four 0.27 s, eight 0.34 s and sixteen 0.56 s.
 
 A worker can make the same picture on its GPU instead (Vulkan or DX12, no
-display needed): set `TH_PLAYBLAST_GPU=1` in that worker's environment.
+display needed): set `TH_PLAYBLAST_GPU=1` in that worker's environment (or
+the `th:gpu` render setting). Houdini's viewer (TumbleView) draws on the
+GPU by default; husk and the farm stay on the CPU unless asked.
 Windows builds only for now. An Intel GPU draws through DX12: the Intel
 Vulkan driver on the CI worker (UHD Graphics 630) left a trace of the
 frame before in each motion-blurred frame of a sequence. Every other GPU
@@ -408,15 +445,18 @@ husk updating the stage.
 The same renderer is in the Solaris scene viewer's renderer menu as
 **TumbleView**, above Houdini GL and Storm, so the farm
 playblast's look can be checked while working. It draws on a background
-thread: Houdini's viewer stays responsive while a frame renders, and a
-change (a camera move, an edit, a setting) stops the frame in progress and
-starts over. When the last full frame took more than 60 ms, a quick draft (one
-sample a pixel, no occlusion, no blur) shows first and the full frame
-replaces it when it is done. It draws on a transparent background, so
-Houdini's background, grid and handles show around and behind the scene,
-and it hands the viewer each pixel's prim and instance, so clicking selects
-and the selection is outlined as with Storm. Guides and proxies show by
-default, as the viewer's other GL renderers do.
+thread: Houdini's viewer stays responsive while a frame renders. While the
+camera moves, each draft in progress is finished and shown, then the next
+starts from where the camera is now. When the last full frame took more
+than 20 ms, a quick draft (one sample a pixel, no occlusion, no blur) shows
+first and the full frame replaces it when it is done. It draws on a
+transparent background, so Houdini's background, grid and handles show
+around and behind the scene, and it hands the viewer each pixel's prim and
+instance, so clicking selects and the selection is outlined as with Storm.
+It also hands the viewer each pixel's distance from the camera, so the View
+tool's default **Set Pivot** tumble orbits the point under the mouse, as with
+Storm. Guides and proxies show by default, as the viewer's other GL
+renderers do.
 
 The settings above (`th:shading`, `th:samples`, `th:ao`, the blurs) apply
 there too, read again for every frame. `th:interactive` (bool, or

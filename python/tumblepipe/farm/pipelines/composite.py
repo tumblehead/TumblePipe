@@ -1,10 +1,27 @@
-"""The composite pipeline: cook a comp workfile (``th::build_comp``) on the
-farm, and end in the review chain (``post_render``).
+"""The composite pipeline: cook a comp workfile's ``th::export_comp`` nodes
+on the farm, and end in the review chain (``post_render``).
 
-A *partial* composite does the first, middle and last frames and posts
-them; a *full* composite does the whole range (into the partial's
-version), encodes each layer's review mp4, and adds the slapcomp chain
-over the latest beauty of every channel.
+One submit is one composite version of one shot. Every export_comp of the
+shot writes into it: Layer ``comp`` (the merged comp) as the version's
+cross-channel layer, ``composite/slapcomp/v####``, and a channel layer into
+that channel's folder. With preview frames, a *partial* composite does the
+first, middle and last frames first and posts them; the *full* composite
+does the whole range, then each per-channel layer gets its review mp4, and
+the merged comp is the department's mp4, daily and notify. There is no
+oiiotool slapcomp: the merged comp is the cross-channel layer.
+
+The imports are frozen at submit: ``imports`` pins every ``th::import_render``
+of the shot to the version it resolved in the artist's session, and each
+written layer's ``context.json`` records what it read (``reads``).
+
+A **re-comp** (Farm Submit's Comp column, :func:`recomp_config`) has no
+session: it comps the shot's newest composite workfile, ``imports`` is
+empty and the worker resolves every import on its own settings when it
+runs (``latest`` moves to the newest complete render), then records what it
+read. Its one export has no node path: the worker finds the shot's
+export_comp on Layer ``comp``. Chained after a render (the render config's
+``composite`` block, see ``pipelines/render.py``), it waits for the
+render's denoise, or the render when there is none.
 
 config = {
     'entity': {'uri': 'entity:/shots/sequence/shot', 'department': 'string'},
@@ -14,17 +31,22 @@ config = {
         'priority': 'int',
         'pool_name': 'string',
         'input_path': 'string',         # the comp workfile, relative to the job's data dir
-        'node_path': 'string',
-        'layer_names': ['main', 'mirror'],
         'first_frame': 'int',
         'last_frame': 'int',
         'step_size': 'int',
         'batch_size': 'int',
         'copy_to_edit': 'bool'
     },
-    'tasks': {                          # either or both
-        'partial_composite': {'channel_name': 'string'},
-        'full_composite': {'channel_name': 'string'}
+    'exports': [{'node_path': '/stage/comp/export_comp', 'layer': 'comp'}],
+    # A node path '' (a re-comp): the shot's export_comp on that layer.
+    'imports': {      # empty for a re-comp: resolved when the worker runs
+        '/stage/comp/import_chars': {
+            'channel': 'chars', 'department': 'denoise', 'version': 'v0004'
+        }
+    },
+    'tasks': {
+        'full_composite': {'channel_name': 'string'},
+        'partial_composite': {'channel_name': 'string'}     # preview frames, optional
     }
 }
 
@@ -36,31 +58,26 @@ import logging
 
 from tumblepipe.api import path_str
 from tumblepipe.apps.deadline import Job
-from tumblepipe.config.channels import list_channels
-from tumblepipe.config.department import list_departments
 from tumblepipe.farm.checks import (
     check_bool,
     check_int,
     check_str,
-    check_str_list,
     valid_entity,
     valid_frame_range,
 )
 from tumblepipe.farm.jobs import composite as composite_job
+from tumblepipe.farm.specs.composite import valid_recomp  # noqa: F401  (the render config's block)
 from tumblepipe.farm.pipelines import post_render
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
-from tumblepipe.pipe.paths import (
-    get_aov_frame_path,
-    get_frame_path,
-    get_next_frame_path,
-    get_render_context,
-)
+from tumblepipe.pipe import comp
+from tumblepipe.pipe.paths import get_frame_path
 from tumblepipe.util.uri import Uri
 
-COMPOSITE_DEPARTMENT = 'composite'
+COMPOSITE_DEPARTMENT = comp.COMPOSITE_DEPARTMENT
 PARTIAL_PRIORITY = 90
 
 COMPOSITE_TASK_KEYS = ('partial_composite', 'full_composite')
+_IMPORT_KEYS = ('channel', 'department', 'version')
 
 
 def _valid_settings(settings) -> bool:
@@ -70,16 +87,38 @@ def _valid_settings(settings) -> bool:
     if not check_int(settings, 'priority'): return False
     if not check_str(settings, 'pool_name'): return False
     if not check_str(settings, 'input_path'): return False
-    if not check_str(settings, 'node_path'): return False
-    if not check_str_list(settings, 'layer_names'): return False
-    if len(settings['layer_names']) == 0: return False
     if not check_int(settings, 'batch_size'): return False
     if not check_bool(settings, 'copy_to_edit'): return False
     return True
 
 
+def valid_exports(exports) -> bool:
+    """A non-empty list of ``{node_path, layer}``, one node per layer. A
+    node path may be empty (a re-comp names the layer only)."""
+    if not isinstance(exports, list) or len(exports) == 0: return False
+    for export in exports:
+        if not isinstance(export, dict): return False
+        if not check_str(export, 'node_path'): return False
+        if not check_str(export, 'layer'): return False
+    layers = [export['layer'] for export in exports]
+    return len(set(layers)) == len(layers)
+
+
+def valid_imports(imports) -> bool:
+    """``{node path: {channel, department, version}}``; empty for a
+    re-comp, whose worker resolves the imports when it runs."""
+    if not isinstance(imports, dict): return False
+    for node_path, pin in imports.items():
+        if not isinstance(node_path, str) or not node_path: return False
+        if not isinstance(pin, dict): return False
+        for key in _IMPORT_KEYS:
+            if not check_str(pin, key): return False
+    return True
+
+
 def _valid_tasks(tasks) -> bool:
     if not isinstance(tasks, dict): return False
+    if 'full_composite' not in tasks: return False
     for key in COMPOSITE_TASK_KEYS:
         if key not in tasks: continue
         if not isinstance(tasks[key], dict): return False
@@ -92,6 +131,8 @@ def is_valid_config(config) -> bool:
     if 'entity' not in config: return False
     if not valid_entity(config['entity']): return False
     if not _valid_settings(config.get('settings')): return False
+    if not valid_exports(config.get('exports')): return False
+    if not valid_imports(config.get('imports')): return False
     if not _valid_tasks(config.get('tasks')): return False
     return True
 
@@ -111,21 +152,35 @@ def _shot(config: dict, staging_path: Path) -> post_render.Shot:
     )
 
 
-def _composite_job(config, shot, paths, partial, version_name=None) -> tuple[Job, str]:
-    """The composite of every layer (partial: three frames), and the version
-    it writes. Versions are counted in the first layer's folder."""
+def layer_output_path(shot: post_render.Shot, layer: str, version_name: str) -> Path:
+    """Where an export_comp's Layer writes (``pipe.comp.layer_output_path``)."""
+    return comp.layer_output_path(shot.entity_uri, layer, version_name, shot.purpose)
+
+
+def next_version(shot: post_render.Shot, layers: list[str]) -> str:
+    """The composite version a submit writes (``pipe.comp.next_composite_version``)."""
+    return comp.next_composite_version(shot.entity_uri, layers, shot.purpose)
+
+
+def _receipt_folder(layers: list[str]) -> str:
+    """The folder the per-frame receipts go in: the merged layer's when the
+    submit writes one, else the first layer's."""
+    if comp.MERGED_LAYER in layers: return comp.MERGED_FOLDER
+    return comp.output_folder(layers[0])
+
+
+def _composite_job(config, shot, paths, version_name, partial) -> Job:
+    """The composite of every export (partial: three frames) into
+    ``version_name``."""
     settings = config['settings']
-    layer_names = settings['layer_names']
+    exports = config['exports']
+    layers = [export['layer'] for export in exports]
     uri, purpose = shot.entity_uri, shot.purpose
-    if version_name is None:
-        version_name = get_next_frame_path(
-            uri, COMPOSITE_DEPARTMENT, layer_names[0], '####', 'json', purpose
-        ).parent.name
     receipt_path = get_frame_path(
-        uri, COMPOSITE_DEPARTMENT, layer_names[0], version_name,
+        uri, COMPOSITE_DEPARTMENT, _receipt_folder(layers), version_name,
         '####', 'json', purpose
     )
-    job = composite_job.build(dict(
+    return composite_job.build(dict(
         entity = config['entity'],
         title = f"{'partial' if partial else 'full'} composite {version_name}",
         priority = PARTIAL_PRIORITY if partial else settings['priority'],
@@ -137,55 +192,33 @@ def _composite_job(config, shot, paths, partial, version_name=None) -> tuple[Job
         batch_size = 1 if partial else settings['batch_size'],
         receipt_path = path_str(receipt_path),
         input_path = settings['input_path'],
-        node_path = settings['node_path'],
-        layer_names = layer_names,
-        output_paths = {
-            layer_name: path_str(get_aov_frame_path(
-                uri, COMPOSITE_DEPARTMENT, layer_name, version_name,
-                'beauty', '####', 'exr', purpose
-            ))
-            for layer_name in layer_names
-        }
+        exports = [
+            dict(
+                node_path = export['node_path'],
+                layer = export['layer'],
+                output_path = path_str(layer_output_path(shot, export['layer'], version_name)),
+            )
+            for export in exports
+        ],
+        imports = config['imports'],
     ), paths, shot.staging_path)
-    for layer_name in layer_names:
+
+
+def _write_contexts(config, shot, version_name):
+    """Each written layer's context.json, recording what the comp read
+    (a re-comp's worker records it once it has resolved)."""
+    reads = comp.provenance(config['imports']) if config['imports'] else None
+    for export in config['exports']:
+        folder = comp.output_folder(export['layer'])
         post_render.write_framestack_context(
             shot,
             get_frame_path(
-                uri, COMPOSITE_DEPARTMENT, layer_name, version_name,
-                '####', 'json', purpose
+                shot.entity_uri, COMPOSITE_DEPARTMENT, folder, version_name,
+                '####', 'json', shot.purpose
             ),
-            COMPOSITE_DEPARTMENT, layer_name, version_name
+            COMPOSITE_DEPARTMENT, folder, version_name,
+            reads = reads,
         )
-    return job, version_name
-
-
-def _latest_beauties(shot: post_render.Shot) -> dict[str, dict[str, Path]]:
-    """Each channel's latest beauty across the departments (the higher ones
-    first), in the shot's channel order: what the slapcomp stacks. The
-    beauty is RGBA; the slapcomp takes the colour and the alpha from it."""
-    if shot.entity_uri.segments[0] != 'shots':
-        raise ValueError(f'A slapcomp stacks a shot\'s channels: {shot.entity_uri}')
-    latest_aovs = get_render_context(shot.entity_uri, purpose=shot.purpose).resolve_latest_aovs(
-        [d.name for d in list_departments('shots')],
-        [d.name for d in list_departments('render')],
-        min_shot_department = None,
-        min_render_department = None,
-        aov_filter = lambda aov_name: aov_name == 'beauty'
-    )
-    input_paths = {
-        channel: {
-            aov_name: aov.get_aov_frame_path('####')
-            for aov_name, (_, _, aov, _) in latest_aovs[channel].items()
-        }
-        for channel in list_channels(shot.entity_uri)
-        if channel in latest_aovs
-    }
-    if not input_paths:
-        raise ValueError(
-            f'No rendered beauty to slapcomp for {shot.entity_uri}: render '
-            'its channels first.'
-        )
-    return input_paths
 
 
 def build(
@@ -194,55 +227,137 @@ def build(
     temp_path: Path,
     jobs: dict[str, Job],
     deps: dict[str, list[str]],
-    depends_on: list[str] | None = None
+    depends_on: list[str] | None = None,
+    prefix: str = ''
     ) -> list[str]:
     """Add the composite jobs of ``config`` to ``jobs``/``deps``, after
-    ``depends_on``; returns the names later work should depend on."""
+    ``depends_on``; returns the names later work should depend on.
+
+    ``prefix`` goes before every job name, so a re-comp can share a batch
+    with the render it follows (both have a ``sync``, a ``slapcomp_mp4``).
+    """
     depends_on = list(depends_on or [])
+    own_jobs, own_deps = {}, {}
+    terminal = _build(config, paths, temp_path, own_jobs, own_deps, depends_on)
+    names = {name: f'{prefix}{name}' for name in own_jobs}
+    for name, job in own_jobs.items():
+        jobs[names[name]] = job
+        deps[names[name]] = [names.get(dep, dep) for dep in own_deps[name]]
+    return [names[name] for name in terminal]
+
+
+def _build(config, paths, temp_path, jobs, deps, depends_on) -> list[str]:
     settings = config['settings']
     tasks = config['tasks']
     shot = _shot(config, temp_path)
-    layer_names = settings['layer_names']
-    terminal_jobs = []
+    layers = [export['layer'] for export in config['exports']]
+    merged = comp.MERGED_LAYER in layers
+    channel_layers = [layer for layer in layers if layer != comp.MERGED_LAYER]
+    version_name = next_version(shot, layers)
+    _write_contexts(config, shot, version_name)
 
-    version_name = None
+    full_after = list(depends_on)
     if 'partial_composite' in tasks:
-        job, version_name = _composite_job(config, shot, paths, partial=True)
-        jobs['partial_composite'] = job
+        jobs['partial_composite'] = _composite_job(
+            config, shot, paths, version_name, partial=True
+        )
         deps['partial_composite'] = list(depends_on)
         jobs['partial_notify'] = post_render.frames_notify_job(
-            shot, COMPOSITE_DEPARTMENT, layer_names[0], version_name,
-            tasks['partial_composite']['channel_name']
+            shot, COMPOSITE_DEPARTMENT, comp.output_folder(layers[0]), version_name,
+            tasks['partial_composite']['channel_name'],
+            frame_path = layer_output_path(shot, layers[0], version_name),
         )
         deps['partial_notify'] = ['partial_composite']
-        terminal_jobs = ['partial_notify']
+        full_after = ['partial_composite']
 
-    if 'full_composite' in tasks:
-        job, version_name = _composite_job(
-            config, shot, paths, partial=False, version_name=version_name
+    jobs['full_composite'] = _composite_job(
+        config, shot, paths, version_name, partial=False
+    )
+    deps['full_composite'] = full_after
+    terminal_jobs = []
+    for layer in channel_layers:
+        jobs[f'layer_mp4_{layer}'] = post_render.layer_mp4_job(
+            shot, COMPOSITE_DEPARTMENT, layer, version_name, settings['priority']
         )
-        jobs['full_composite'] = job
-        deps['full_composite'] = (
-            ['partial_composite'] if 'partial_composite' in tasks else list(depends_on)
+        deps[f'layer_mp4_{layer}'] = ['full_composite']
+        terminal_jobs.append(f'layer_mp4_{layer}')
+    if settings['copy_to_edit']:
+        jobs['sync'] = post_render.sync_job_for(shot)
+        deps['sync'] = ['full_composite']
+        terminal_jobs.append('sync')
+    if merged:
+        jobs['slapcomp_mp4'] = post_render.slapcomp_mp4_job(
+            shot, COMPOSITE_DEPARTMENT, version_name, settings['priority']
         )
-        for layer_name in layer_names:
-            jobs[f'layer_mp4_{layer_name}'] = post_render.layer_mp4_job(
-                shot, COMPOSITE_DEPARTMENT, layer_name, version_name,
-                settings['priority']
-            )
-            deps[f'layer_mp4_{layer_name}'] = ['full_composite']
-        terminal_jobs = post_render.add_review_chain(
-            jobs, deps, shot,
-            render_department = COMPOSITE_DEPARTMENT,
-            input_paths = _latest_beauties(shot),
-            after = ['full_composite'],
-            priority = settings['priority'],
-            discord_channel = tasks['full_composite']['channel_name'],
-            copy_to_edit = settings['copy_to_edit']
+        deps['slapcomp_mp4'] = ['full_composite']
+        jobs['slapcomp_notify'] = post_render.slapcomp_notify_job(
+            shot, COMPOSITE_DEPARTMENT, version_name,
+            tasks['full_composite']['channel_name']
         )
+        deps['slapcomp_notify'] = ['slapcomp_mp4']
+        terminal_jobs.append('slapcomp_notify')
+    if not terminal_jobs:
+        terminal_jobs = ['full_composite']
 
     logging.debug(f'Composite jobs: {list(jobs)}')
     return terminal_jobs
+
+
+RECOMP_INPUT = 'composite_workfile'
+
+
+class RecompError(Exception):
+    """A shot has nothing a re-comp could comp; the message says why."""
+
+
+def recomp_config(
+    shot_uri: Uri,
+    block: dict,
+    *,
+    user_name: str,
+    purpose: str,
+    first_frame: int,
+    last_frame: int,
+    temp_path: Path,
+    paths: dict[Path, Path],
+    ) -> dict:
+    """The composite config of a re-comp of ``shot_uri``'s newest composite
+    workfile (a Multi's, when one covers the shot), scheduled as ``block``
+    says. The workfile is bundled with the job (added to ``paths``) as it is
+    now. Raises :class:`RecompError` when the shot has no composite
+    workfile."""
+    from tumblepipe.pipe.paths import latest_complete_hip_file_path
+    import shutil
+    workfile = latest_complete_hip_file_path(shot_uri, COMPOSITE_DEPARTMENT)
+    if workfile is None or not workfile.exists():
+        raise RecompError(
+            f'{shot_uri} has no composite workfile to comp; make one from the '
+            'composite template first'
+        )
+    shot_name = '_'.join(shot_uri.segments[1:])
+    input_path = Path(RECOMP_INPUT) / f'{shot_name}{workfile.suffix}'
+    staged = temp_path / input_path
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(workfile, staged)
+    paths[staged] = input_path
+    return dict(
+        entity = dict(uri = str(shot_uri), department = COMPOSITE_DEPARTMENT),
+        settings = dict(
+            user_name = user_name,
+            purpose = purpose,
+            priority = block['priority'],
+            pool_name = block['pool_name'],
+            input_path = path_str(input_path),
+            first_frame = first_frame,
+            last_frame = last_frame,
+            step_size = 1,
+            batch_size = block['batch_size'],
+            copy_to_edit = block['copy_to_edit'],
+        ),
+        exports = [dict(node_path = '', layer = comp.MERGED_LAYER)],
+        imports = dict(),
+        tasks = dict(full_composite = dict(channel_name = block['channel_name'])),
+    )
 
 
 def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:

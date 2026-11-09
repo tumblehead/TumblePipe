@@ -4,7 +4,7 @@ Two halves, split by thread:
 
 * :func:`plan_probe` runs on the **main thread**. It does every config read —
   which workspace a department's workfiles live in (a Multi member's live in
-  the Multi's), where exports, playblasts and renders land — and packs the
+  the Multi's), where exports, playblasts, renders and comps land — and packs the
   answers into a :class:`RowProbe` of plain paths.
 * :func:`scan` runs on a **worker thread**. It only lists directories and
   stats files, so it never touches the config store, ``hou`` or Qt, and the
@@ -40,6 +40,14 @@ class PublishProbe:
 
 
 @dataclass(frozen=True)
+class CompProbe:
+    """Where a shot's composite workfiles and merged comps are."""
+    workspace_dir: Path    # the composite workspace (a Multi's, when one covers it)
+    hip_base: str          # '<workfile segments>_composite' before '_vNNNN'
+    slapcomp_dir: Path     # render:/render/<shot>/composite/slapcomp
+
+
+@dataclass(frozen=True)
 class RowProbe:
     uri: str
     publish: tuple[PublishProbe, ...]
@@ -47,6 +55,7 @@ class RowProbe:
     render_dir: Path | None        # render:/render/<entity>/<department>/default
     is_version: Callable[[str], bool] = field(compare=False, repr=False)
     version_code: Callable[[str], int] = field(compare=False, repr=False)
+    comp: CompProbe | None = None  # shots only
 
 
 @dataclass
@@ -57,6 +66,8 @@ class RowStatus:
     shared: set[str] = field(default_factory=set)  # departments on a Multi's workfile
     playblast_mtime: float | None = None
     render_mtime: float | None = None
+    comp_workfile: bool = False        # the shot has a composite workfile
+    comp_mtime: float | None = None    # newest merged comp version folder
     error: str | None = None
 
 
@@ -68,12 +79,18 @@ def plan_probe(
     *,
     playblast_department: str | None,
     render_department: str | None,
+    comp: bool = False,
 ) -> RowProbe:
     """Resolve every folder the status of ``entity_uri`` needs.
 
     Main thread only: resolving a workspace reads the config (a Multi member
     in a department its Multi covers keeps its workfiles in the Multi's
     folder). Wrap a loop of these in ``config.coherent()``.
+
+    ``comp`` (shots) adds the Comp column's folders: the composite workspace
+    (resolved like a publish department's, so a Multi's workfile counts, as
+    ``latest_complete_hip_file_path`` finds it for the re-comp) and the
+    merged comp's ``composite/slapcomp`` versions.
     """
     from tumblepipe.api import api
     from tumblepipe import naming
@@ -106,11 +123,25 @@ def plan_probe(
             / render_department / 'default'
         ))
 
+    comp_probe = None
+    if comp:
+        from tumblepipe.pipe.comp import COMPOSITE_DEPARTMENT
+        workfile_uri, workspace_dir = department_workspace(entity_uri, COMPOSITE_DEPARTMENT)
+        comp_probe = CompProbe(
+            workspace_dir=Path(workspace_dir),
+            hip_base=entity_stem(workfile_uri, COMPOSITE_DEPARTMENT),
+            slapcomp_dir=Path(api.storage.resolve(
+                Uri.parse('render:/render') / entity_uri.segments
+                / COMPOSITE_DEPARTMENT / 'slapcomp'
+            )),
+        )
+
     return RowProbe(
         uri=str(entity_uri),
         publish=tuple(publish),
         playblast_dir=playblast_dir,
         render_dir=render_dir,
+        comp=comp_probe,
         is_version=naming.is_valid_version_name,
         version_code=naming.get_version_code,
     )
@@ -152,7 +183,7 @@ def _newest(names_and_paths, probe: RowProbe):
     return best
 
 
-def _latest_hip(probe: RowProbe, publish: PublishProbe) -> Path | None:
+def _latest_hip(probe: RowProbe, publish: PublishProbe | CompProbe) -> Path | None:
     prefix = publish.hip_base + '_'
     candidates = []
     for entry in _entries(publish.workspace_dir):
@@ -198,6 +229,10 @@ def scan(probe: RowProbe) -> RowStatus:
         status.playblast_mtime = None if playblast is None else _mtime(playblast)
         render = _latest_version_dir(probe, probe.render_dir)
         status.render_mtime = None if render is None else _mtime(render)
+        if probe.comp is not None:
+            status.comp_workfile = _latest_hip(probe, probe.comp) is not None
+            comp = _latest_version_dir(probe, probe.comp.slapcomp_dir)
+            status.comp_mtime = None if comp is None else _mtime(comp)
     except Exception as error:  # a scan failure greys one row, not the grid
         status.error = str(error)
     return status

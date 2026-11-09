@@ -39,8 +39,8 @@ from pathlib import Path
 ADDRESSED_CHANNELS = {
     'renders': 'render + playblast notifies (batch_submit)',
     'exports': 'publish, stage + lookdev/comp export notifies',
-    'previews': 'th::build_comp and th::lookdev_studio previews',
-    'comp': 'th::build_comp composite notifies',
+    'previews': 'th::export_comp preview frames and th::lookdev_studio previews',
+    'comp': 'th::export_comp composite notifies',
 }
 
 

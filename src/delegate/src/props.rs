@@ -3,7 +3,7 @@
 //! mesh Hydra can hand over, including broken ones (indices past the
 //! points, NaN points from a bad deformer).
 
-use crate::ffi::{th_render, ThFrame, ThMeshView};
+use crate::ffi::{linear_depth, th_render, ThFrame, ThMeshView};
 use crate::math::{self, Mat4, Vec3};
 use crate::composite::{self, Shading};
 use crate::blur::{self, Blur, Lens};
@@ -275,7 +275,7 @@ proptest! {
         let (world_to_clip, view_to_world) = camera();
         let frame = ThFrame { width: 24, height: 16, world_to_clip, view_to_world, samples: 1, shading: 0, ao: 1,
                              blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-                             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0 };
+                             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0 };
         let view = |polygonal: u32, normals: *const f32| ThMeshView {
             points: points.as_ptr() as *const f32,
             point_count: points.len() as u32,
@@ -981,7 +981,7 @@ fn the_abi_carries_motion_and_the_lens() {
         let frame = ThFrame {
             width: 32, height: 24, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
             blur_samples, motion, camera_keys: 0, cameras: [0.0; 64],
-            focal_length: 0.5, f_stop, focus_distance: 20.0, alpha: 0,
+            focal_length: 0.5, f_stop, focus_distance: 20.0, alpha: 0, gpu: 0, linear_depth: 0,
         };
         let view = ThMeshView {
             points: points.as_ptr() as *const f32, point_count: 4,
@@ -1477,7 +1477,7 @@ fn the_abi_alpha_switch_reaches_the_post_pass() {
     let (world_to_clip, view_to_world) = camera();
     let mut frame = ThFrame { width: 8, height: 6, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
                               blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-                              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 1 };
+                              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 1, gpu: 0, linear_depth: 0 };
     let mut color = vec![0.5f32; 8 * 6 * 4];
     let status = unsafe {
         th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null())
@@ -1521,7 +1521,7 @@ fn abi_frame(width: u32, height: u32, samples: u32) -> ThFrame {
     let (world_to_clip, view_to_world) = camera();
     ThFrame { width, height, world_to_clip, view_to_world, samples, shading: 0, ao: 0,
               blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0 }
+              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0 }
 }
 
 proptest! {
@@ -1802,5 +1802,267 @@ proptest! {
             prop_assert!(kept == fresh, "a frame drawn with kept normals differs");
         }
         unsafe { crate::ffi::th_cache_free(cache) };
+    }
+}
+
+// A delegate's kept memory (raster::Scratch: sample buffers reused, a vertex
+// arena that only grows; kept smooth and cusp normals) never changes a
+// picture, whatever ran before.
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 32, ..ProptestConfig::default() })]
+
+    // Over any run of frames of any size, sample count, look, alpha and lens
+    // -- the viewer resizing, a draft (1 spp, no AO) then a full frame -- in
+    // which a mesh may switch between polygonal (cusp normals) and smooth
+    // under the same key, every frame drawn with the delegate's cache is the
+    // frame drawn without one, to the bit, ids included: nothing of an
+    // earlier frame's buffers or normals shows through.
+    #[test]
+    fn a_kept_cache_draws_any_run_of_frames_as_drawn_anew(
+        scene in prop::collection::vec(mesh_data(), 1..4),
+        steps in prop::collection::vec((
+            prop::sample::select(vec![(24u32, 18u32), (24, 18), (17, 31), (40, 9)]),
+            sample_count(), 0u32..3, any::<bool>(), any::<bool>(),
+            prop::option::of((prop::sample::select(vec![4u32, 16]), 0.5f32..4.0)),
+            prop::collection::vec(any::<bool>(), 4), [-1.5f64..1.5, -1.5f64..1.5],
+        ), 1..6),
+        transforms in transforms(),
+    ) {
+        let cache = crate::ffi::th_cache_create();
+        for (step, (size, samples, shading, ao, alpha, lens, polygonal, [dx, dy])) in steps.into_iter().enumerate() {
+            let (w, h) = (size.0 as usize, size.1 as usize);
+            let mut frame = abi_frame(size.0, size.1, samples as u32);
+            frame.shading = shading;
+            frame.ao = ao as u32;
+            frame.alpha = alpha as u32;
+            if let Some((layers, f_stop)) = lens {
+                frame.blur_samples = layers;
+                frame.focal_length = 0.05;
+                frame.f_stop = f_stop;
+                frame.focus_distance = 5.0;
+            }
+            // The instances move from frame to frame (as an orbit moves the
+            // view): what a pixel covered last frame it may not cover now.
+            let moved: Vec<Mat4> = transforms.iter().map(|&t| math::mul(&t, &translation(dx, dy, 0.0))).collect();
+            let views: Vec<ThMeshView> = scene.iter().enumerate().map(|(m, (points, triangles))| ThMeshView {
+                polygonal: polygonal[m] as u32,
+                key: m as u64 + 1,
+                version: 1,
+                ..view_of(points, triangles, &moved)
+            }).collect();
+            // Ids too: a pixel left uncovered must not keep an earlier
+            // frame's surface for the viewer to pick.
+            let draw = |cache: *const crate::ffi::ThCache| {
+                let (mut color, mut depth, mut ids) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h], vec![7i32; w * h * 2]);
+                let cancel = std::sync::atomic::AtomicU32::new(0);
+                let status = unsafe {
+                    crate::ffi::th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(),
+                                              depth.as_mut_ptr(), ids.as_mut_ptr(), &cancel, cache)
+                };
+                (status, color.iter().map(|c| c.to_bits()).collect::<Vec<_>>(),
+                 depth.iter().map(|d| d.to_bits()).collect::<Vec<_>>(), ids)
+            };
+            let kept = draw(cache);
+            let fresh = draw(std::ptr::null());
+            prop_assert_eq!(kept.0, TH_OK);
+            prop_assert!(kept == fresh, "frame {} drawn with the kept cache differs", step);
+        }
+        unsafe { crate::ffi::th_cache_free(cache) };
+    }
+
+    // Instances wholly out of view -- beside it, behind the camera, past the
+    // far plane -- are skipped by an unblurred frame (raster::outside) but
+    // drawn by a still scene's layers, which never skip: the two pictures
+    // agree to the byte however the instances are strewn, so skipping drops
+    // nothing that reaches a sample.
+    #[test]
+    fn instances_out_of_view_change_nothing(
+        size in 0.3f32..4.0, yaw in -0.8f32..0.8, pitch in -0.8f32..0.8,
+        // Across the view and its edges (the camera at z = 5 sees x and y
+        // out to +-distance), behind the camera and past the far plane.
+        spots in prop::collection::vec([-1.6f64..1.6, -1.6f64..1.6, -6.0f64..130.0], 1..12),
+        samples in prop::sample::select(vec![1usize, 4]),
+    ) {
+        let points = turned_quad(size, yaw, pitch);
+        // Each instance at its own depth: no two surfaces tie for a sample.
+        let mut placed: Vec<Mat4> = spots.iter().enumerate()
+            .map(|(i, &[u, v, distance])| translation(u * distance.abs(), v * distance.abs(), 5.0 - distance + 0.013 * i as f64))
+            .collect();
+        placed.dedup();
+        let still = [plain(&points, &QUAD, &placed)];
+        let keys: Vec<Mat4> = placed.repeat(2);
+        // A zero shutter: closing points and transforms the opening's.
+        let layers = [Mesh { points_close: Some(&points), transform_keys: &keys, ..plain(&points, &QUAD, &placed) }];
+        let f = frame(32, 24, samples);
+        let reference = raster::render(&f, &still);
+        let mut layered = blurred(f, samples * 2, true, None);
+        layered.blur.cameras[0] = f.view_to_world;
+        layered.blur.cameras[1] = f.view_to_world;
+        layered.blur.camera_keys = 2;
+        let image = raster::render_blurred(&layered, &layers);
+        prop_assert!(image.color == reference.color, "skipping out-of-view instances changed the picture");
+        prop_assert!(image.depth == reference.depth, "skipping out-of-view instances changed depth");
+        prop_assert!(image.ids == reference.ids, "skipping out-of-view instances changed ids");
+    }
+}
+
+// Linear depth (ThFrame::linear_depth, Houdini's viewer): what Houdini reads
+// as each pixel's distance from the camera, the point its Set Pivot tumble
+// orbits.
+
+/// A camera's projection, USD's row-vector layout: perspective (`s` =
+/// focal length over half the aperture, a finite far plane or none, as
+/// Houdini's viewer hands it) or orthographic (`s` = 1 over the half width).
+fn projection(s: f64, near: f64, far: Option<f64>, orthographic: bool) -> Mat4 {
+    if orthographic {
+        let f = far.unwrap_or(near * 1000.0);
+        return [s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, -2.0 / (f - near), 0.0,
+                0.0, 0.0, -(f + near) / (f - near), 1.0];
+    }
+    let (p22, p32) = match far {
+        Some(f) => (-(f + near) / (f - near), -2.0 * f * near / (f - near)),
+        None => (-1.0, -2.0 * near),
+    };
+    [s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, p22, -1.0, 0.0, 0.0, p32, 0.0]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+    // A wall square to the camera at view distance `distance`, over the
+    // left half of the frame, through any camera placement and projection
+    // (near anywhere, far finite or at infinity, perspective or
+    // orthographic): with linear depth every pixel it covers reads that
+    // distance, every pixel it leaves reads f32::MAX, and nothing else in
+    // the frame changes (colour to the bit; window depth as before).
+    #[test]
+    fn linear_depth_is_the_distance_along_the_view_axis(
+        eye in [-5.0f64..5.0, -5.0f64..5.0, -5.0f64..5.0], yaw in -3.1f64..3.1, pitch in -1.2f64..1.2,
+        near in 0.05f64..2.0, far_times in prop::option::of(20.0f64..2000.0), orthographic: bool,
+        s in 0.3f64..3.0, at in 0.05f64..0.9,
+    ) {
+        let far = far_times.map(|t| near * t);
+        // Between the planes, not on them: near * 1.5 to most of the far
+        // plane (or 400 near planes on, at infinity).
+        let reach = far.map_or(near * 400.0, |f| f * 0.9);
+        let distance = near * 1.5 + at * (reach - near * 1.5);
+        let (sy, cy) = yaw.sin_cos();
+        let (sp, cp) = pitch.sin_cos();
+        // View-to-world: pitch about x, then yaw about y, then the eye.
+        let view_to_world: Mat4 = [cy, 0.0, -sy, 0.0, sy * sp, cp, cy * sp, 0.0, sy * cp, -sp, cy * cp, 0.0,
+                                   eye[0], eye[1], eye[2], 1.0];
+        // Its inverse (a rigid transform: the rotation transposed, the eye
+        // turned back through it).
+        let r = |i: usize, j: usize| view_to_world[i * 4 + j];
+        let back = |j: usize| -(0..3).map(|k| eye[k] * r(j, k)).sum::<f64>();
+        let world_to_view: Mat4 = [r(0, 0), r(1, 0), r(2, 0), 0.0, r(0, 1), r(1, 1), r(2, 1), 0.0,
+                                   r(0, 2), r(1, 2), r(2, 2), 0.0, back(0), back(1), back(2), 1.0];
+        let proj = projection(s, near, far, orthographic);
+        // Out past the frame's top, bottom and left; its right edge down
+        // the middle.
+        let half = if orthographic { 2.0 / s } else { 2.0 * distance / s };
+        let wall_view = [[-half, -half, -distance], [0.0, -half, -distance], [0.0, half, -distance], [-half, half, -distance]];
+        let points: Vec<Vec3> = wall_view.iter()
+            .map(|&p| math::transform_point(p.map(|c| c as f32), &view_to_world))
+            .collect();
+        let triangles = [[0u32, 1, 2], [0, 2, 3]];
+        let transforms = [math::IDENTITY];
+        let (w, h) = (16usize, 16usize);
+        let mut frame = abi_frame(w as u32, h as u32, 1);
+        frame.world_to_clip = math::mul(&world_to_view, &proj);
+        frame.view_to_world = view_to_world;
+        frame.shading = 1;
+        let views = [view_of(&points, &triangles, &transforms)];
+        let draw = |frame: &ThFrame| {
+            let (mut color, mut depth) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h]);
+            let status = unsafe {
+                th_render(frame, views.as_ptr(), 1, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null())
+            };
+            (status, color, depth)
+        };
+        // Both rasterisers: the viewer draws on the GPU by default (with its
+        // own clip-depth mapping, wgpu's [0, w]), on the CPU without one.
+        let gpus: &[u32] = if cfg!(feature = "gpu") { &[0, 1] } else { &[0] };
+        for &gpu in gpus {
+            frame.gpu = gpu;
+            frame.linear_depth = 0;
+            let (status, window_color, window_depth) = draw(&frame);
+            prop_assert_eq!(status, TH_OK);
+            frame.linear_depth = 1;
+            let (status, color, depth) = draw(&frame);
+            prop_assert_eq!(status, TH_OK);
+            prop_assert!(color.iter().zip(&window_color).all(|(a, b)| a.to_bits() == b.to_bits()),
+                         "colour changed (gpu {})", gpu);
+            for y in 0..h {
+                for x in 0..w {
+                    let (z, d) = (depth[y * w + x], window_depth[y * w + x]);
+                    prop_assert!((0.0..=1.0).contains(&d), "window depth {} at {:?} (gpu {})", d, (x, y), gpu);
+                    if x + 2 <= w / 2 {
+                        prop_assert!(((z as f64) - distance).abs() <= 1e-3 * distance,
+                                     "covered pixel {:?} reads {}, the wall is {} away (window depth {}, gpu {})",
+                                     (x, y), z, distance, d, gpu);
+                    } else if x > w / 2 {
+                        prop_assert_eq!(z, f32::MAX, "uncovered pixel {:?} (window depth {}, gpu {})", (x, y), d, gpu);
+                    }
+                }
+            }
+        }
+    }
+
+    // The conversion alone, over the whole depth range: a point anywhere
+    // between the planes (spread evenly in log distance, out to 99.9% of
+    // the far plane, or a million near planes on at infinity), put through
+    // the projection to window depth as both rasterisers store it
+    // ((z / w) * 0.5 + 0.5, in f32), comes back as its view distance, to
+    // what f32 window depth can hold there; any two points keep their
+    // order, so what Houdini composites (grid, guides, handles) stays in
+    // front of or behind the scene; and nothing (1, or past) is f32::MAX.
+    #[test]
+    fn linear_depth_undoes_the_projection_and_keeps_the_order(
+        near in 0.01f64..5.0, far_times in prop::option::of(2.0f64..1e5), orthographic: bool,
+        s in 0.3f64..3.0, ats in prop::collection::vec(0.0f64..1.0, 2..16),
+    ) {
+        let far = far_times.map(|t| near * t);
+        let proj = projection(s, near, far, orthographic);
+        // The far plane the projection has (orthographic always has one).
+        let far = if orthographic { Some(far.unwrap_or(near * 1000.0)) } else { far };
+        let mut frame = abi_frame(1, 1, 1);
+        frame.view_to_world = math::IDENTITY;
+        frame.world_to_clip = proj;
+        let linear = linear_depth(&frame);
+        let reach = far.map_or(near * 1e6, |f| f * 0.999);
+        let window = |z: f64| {
+            let (clip_z, clip_w) = (-z * proj[10] + proj[14], -z * proj[11] + proj[15]);
+            ((clip_z / clip_w) * 0.5 + 0.5) as f32
+        };
+        let mut seen: Vec<(f64, f32, f32)> = ats.iter()
+            .map(|&at| {
+                let z = near * (reach / near).powf(at);
+                let d = window(z);
+                (z, d, linear(d))
+            })
+            .collect();
+        for &(z, d, back) in &seen {
+            if d >= 1.0 {
+                prop_assert_eq!(back, f32::MAX, "z {} rounds to window depth 1", z);
+                continue;
+            }
+            let next = f32::from_bits(d.to_bits() + 1);
+            if next >= 1.0 {
+                continue; // the last step before 1: only the order to check
+            }
+            // One f32 step of window depth, in distance, either side.
+            let step = (linear(next) as f64 - back as f64).abs()
+                .max((back as f64 - linear(f32::from_bits(d.to_bits().saturating_sub(1))) as f64).abs());
+            prop_assert!(((back as f64) - z).abs() <= 1e-5 * z + step,
+                         "z {} -> window {} -> {} (one step {})", z, d, back, step);
+        }
+        seen.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for pair in seen.windows(2) {
+            prop_assert!(pair[0].2 <= pair[1].2, "order lost: {:?} then {:?}", pair[0], pair[1]);
+        }
+        prop_assert_eq!(linear(1.0), f32::MAX);
+        prop_assert_eq!(linear(1.5), f32::MAX);
     }
 }

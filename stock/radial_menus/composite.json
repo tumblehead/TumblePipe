@@ -20,8 +20,28 @@
       "action": "",
       "submenu": "",
       "release_action": "",
-      "node_type": "Cop/th::build_comp::1.0",
-      "label_override": "Build Comp",
+      "node_type": "Cop/th::import_render::1.0",
+      "label_override": "Import Render",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Cop/th::light_mix::1.0",
+      "label_override": "Light Mix",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": false
+    },
+    {
+      "action": "",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "Cop/th::export_comp::1.0",
+      "label_override": "Export Comp",
       "icon_override": null,
       "hidden": false,
       "close_on_select": false

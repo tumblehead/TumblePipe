@@ -279,7 +279,7 @@ remembered one:
 |---|---|
 | Farm Submit (Asset Browser) | **Run on** beside Close and Submit |
 | Publish dialog | **In this session** (run now, in this Houdini), **This machine**, **Render farm** |
-| `th::build_comp` **Submit to farm** | asked on press: Render farm / This machine / Cancel |
+| `th::export_comp` **Submit** | asked on press: Render farm / This machine / Cancel |
 | `th::lookdev_studio` turntable submit | asked on press, the same |
 
 The Deadline check runs only when the work goes to Deadline. After a
@@ -308,6 +308,9 @@ Desktop (`python -m tumblepipe.farm.manager`).
 
 - **Filters:** *Show* (all, this machine, the farm), *Only mine*, *Only
   <project>*, *Hide finished*, and a name filter.
+- **Layout:** drag the grey lines between the panes (the job list and its
+  details, the tasks and the log, and the top and bottom halves) to resize
+  them; a line lights up under the mouse.
 - **Job details:** the pane beside the list shows the selected job's
   properties, the way the Deadline Monitor's job panel does:
   - *Job*: name, kind (the farm worker: render, playblast, publish...),

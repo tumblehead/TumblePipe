@@ -205,6 +205,13 @@ Two related traps:
   [Multis and Roots](asset-browser/multis-and-roots.md#coverage-which-departments-the-multi-owns).
 - **A Multi workfile that only exports its own department.** Up to 1.47.1 a
   Multi workfile never listed downstream departments; later releases do.
+- **Lookdev or rig built in the model workfile publishes nothing.** Up to
+  1.97.1 *In this session* unticked every export of another department, a
+  farm run sent that department's own workfile instead of this one, and
+  `th::export_rig` ran only from the rig workfile. Later releases publish
+  every department the scene's export nodes name from the workfile they
+  live in, in pipeline order
+  ([The task tree](asset-browser/export-and-publish.md#the-task-tree)).
 - **Rigs in an asset Multi.** Up to 1.51.0 an asset Multi's `rig` workfile
   never collected its `th::export_rig` nodes, even with the Entity set, and
   the details said *no th::export_layer nodes*. Later releases collect them;

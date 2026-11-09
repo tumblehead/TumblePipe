@@ -59,6 +59,7 @@ def _submit_render(config, result, output_dir) -> None:
         denoise=render['denoise'],
         copy_to_edit=render['copy_to_edit'],
         task_keys=render['task_keys'],
+        composite=render.get('composite'),
     ), paths)
 
 

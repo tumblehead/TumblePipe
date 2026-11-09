@@ -56,7 +56,6 @@ class ProcessDialog(QtWidgets.QDialog):
         self,
         title: str,
         tasks: list[ProcessTask],
-        current_department: str | None = None,
         pre_execute_callback: Callable[[], None] | None = None,
         initial_enabled_task_ids: set[str] | None = None,
         parent=None
@@ -71,7 +70,10 @@ class ProcessDialog(QtWidgets.QDialog):
         # footer collapses to a single green Done button (see _show_done_state).
         self._run_done = False
         self._pre_execute_callback = pre_execute_callback
-        self._current_department = current_department
+        # Between the departments of one run (model, then the lookdev built on
+        # it in the same workfile), the scene's imports float to what the run
+        # just published, so later departments export against it.
+        self._executor.set_refresh(self._refresh_between_departments)
 
         # Apply initial enablement if provided (selective task enabling)
         if initial_enabled_task_ids is not None:
@@ -95,9 +97,9 @@ class ProcessDialog(QtWidgets.QDialog):
         # Update mode visibility based on available task callbacks
         self._update_mode_visibility()
 
-        # Apply initial mode filter (Local is default)
-        if self._current_department:
-            self._model.set_mode_filter(is_local=True, current_department=self._current_department)
+        # Tick what the opening mode can run (In this session unless only
+        # farm tasks are offered)
+        self._model.set_mode_filter(is_local=self._local_radio.isChecked())
 
         self._update_status()
 
@@ -297,11 +299,7 @@ class ProcessDialog(QtWidgets.QDialog):
 
     def _on_mode_changed(self):
         """Update task enablement based on execution mode"""
-        if self._current_department is None:
-            return
-
-        is_local = self._local_radio.isChecked()
-        self._model.set_mode_filter(is_local, self._current_department)
+        self._model.set_mode_filter(self._local_radio.isChecked())
         self._update_status()
 
     def _update_status(self):
@@ -628,15 +626,33 @@ class ProcessDialog(QtWidgets.QDialog):
         if not _wrote_version(tasks):
             return
 
+        self._refresh_imports(
+            "Floating this scene's imports to the version just published "
+            "(it is on disk; reopen the scene or Update to see it)"
+        )
+
+    def _refresh_between_departments(self) -> None:
+        """Float the scene's imports onto what this run has published so far.
+
+        ``ProcessExecutor`` calls it before a department's tasks when an
+        earlier department of the same run wrote a version: a lookdev export
+        built in the model workfile then exports against the model this run
+        just published, not the one loaded before it. A failure is reported
+        and the run goes on, against the versions loaded before the run.
+        """
+        self._refresh_imports(
+            "Floating this scene's imports to the versions this run just "
+            "published, before the next department (it exports against the "
+            "versions loaded before the run)"
+        )
+
+    def _refresh_imports(self, what: str) -> None:
+        """``resolver.refresh_context()``; a failure is reported, never raised."""
         try:
             from tumblepipe import resolver
             resolver.refresh_context()
         except Exception as exc:
-            report_failure(
-                "Floating this scene's imports to the version just published "
-                "(it is on disk; reopen the scene or Update to see it)",
-                exc,
-            )
+            report_failure(what, exc)
 
     def _explained_skips(self) -> list:
         """Skipped tasks that gave a reason, children included.

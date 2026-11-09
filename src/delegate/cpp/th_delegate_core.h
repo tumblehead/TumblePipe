@@ -60,6 +60,12 @@ struct ThFrame {
     uint32_t alpha;             // nonzero: transparent background, colour
                                 // premultiplied by coverage, alpha = coverage;
                                 // 0: the grey backdrop and alpha 1
+    uint32_t gpu;               // nonzero: the GPU path where it works (a core
+                                // built with it, a usable adapter), else the CPU
+    uint32_t linear_depth;      // nonzero: depth out as distance along the
+                                // camera's view axis, FLT_MAX where nothing is
+                                // drawn (Houdini's viewer, depthstyle linear);
+                                // 0: window depth in [0, 1], 1 for nothing
 };
 
 // 0 = ok, 1 = bad arguments, 2 = the core panicked. `cache` may be null; one

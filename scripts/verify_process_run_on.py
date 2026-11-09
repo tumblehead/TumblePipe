@@ -12,6 +12,10 @@ farm callbacks record ``$TH_FARM_BACKEND`` instead of submitting. Checks:
   4. Execute on Render farm without a Deadline Client says why and submits
      nothing
   5. In this session runs the local callbacks with the variable untouched
+  6. a node's Submit button asks where, runs there, and answers
+  7. one workfile, several departments: all ticked In this session, and the
+     scene's imports float between departments (not within one, not before
+     the build)
 
 Run (no Houdini licence: Houdini's bundled Python, not hython; see
 ``headless-qt-verify`` in the repo notes):
@@ -124,14 +128,14 @@ def main() -> int:
     # 1. the modes, and the shared pref picking the farm
     save_pref('local')
     seen: list = []
-    farm_only = ProcessDialog('Publish', make_tasks(seen, with_local=False), current_department='anim')
+    farm_only = ProcessDialog('Publish', make_tasks(seen, with_local=False))
     labels = [farm_only._local_radio.text(), farm_only._machine_radio.text(), farm_only._farm_radio.text()]
     check('three modes', labels == ['In this session', 'This machine', 'Render farm'], str(labels))
     check('farm-only tasks hide In this session', farm_only._local_radio.isHidden() and not farm_only._mode_group.isHidden())
     check('and open on the remembered farm (This machine)', farm_only._machine_radio.isChecked())
 
     save_pref('farm')
-    both = ProcessDialog('Publish', make_tasks(seen, with_local=True), current_department='anim')
+    both = ProcessDialog('Publish', make_tasks(seen, with_local=True))
     check('with local tasks it opens In this session', both._local_radio.isChecked())
 
     # 2. moving between the farms keeps the ticks
@@ -152,7 +156,7 @@ def main() -> int:
     # 3. This machine: every farm task under TH_FARM_BACKEND=local
     seen.clear()
     save_pref('farm')
-    dialog = ProcessDialog('Publish', make_tasks(seen, with_local=True), current_department='anim')
+    dialog = ProcessDialog('Publish', make_tasks(seen, with_local=True))
     dialog._machine_radio.setChecked(True)
     dialog._execute_button.click()
     pump(app, dialog)
@@ -169,7 +173,7 @@ def main() -> int:
     # 4. Render farm without Deadline: a reason, nothing submitted
     seen.clear()
     _messages.clear()
-    dialog = ProcessDialog('Publish', make_tasks(seen, with_local=True), current_department='anim')
+    dialog = ProcessDialog('Publish', make_tasks(seen, with_local=True))
     dialog._farm_radio.setChecked(True)
     dialog._execute_button.click()
     pump(app, dialog, 1.0)
@@ -181,7 +185,7 @@ def main() -> int:
     # 5. In this session: the local callbacks, the variable untouched
     seen.clear()
     os.environ[farm_backend.BACKEND_ENV] = 'sentinel'
-    dialog = ProcessDialog('Publish', make_tasks(seen, with_local=True), current_department='anim')
+    dialog = ProcessDialog('Publish', make_tasks(seen, with_local=True))
     dialog._local_radio.setChecked(True)
     dialog._execute_button.click()
     pump(app, dialog)
@@ -218,6 +222,58 @@ def main() -> int:
     done = farm_submit.submit('the composite', 'x', node_submit)
     check('Render farm without Deadline says why and submits nothing',
           not done and not calls and 'Deadline' in _messages[-1], str(_messages))
+
+    # 7. one workfile, several departments (Martin, 2026-11-09): every row
+    # ticked In this session whatever department it publishes into, and the
+    # scene's imports float between departments so lookdev exports against
+    # the model this run just published
+    import tumblepipe
+    order: list[str] = []
+    fake_resolver = types.SimpleNamespace(refresh_context=lambda: order.append('refresh'))
+    real_resolver = sys.modules.get('tumblepipe.resolver')
+    sys.modules['tumblepipe.resolver'] = fake_resolver
+    had_attr = hasattr(tumblepipe, 'resolver')
+    old_attr = getattr(tumblepipe, 'resolver', None)
+    tumblepipe.resolver = fake_resolver
+    try:
+        asset = Uri.parse('entity:/assets/CHAR/Bean')
+
+        def export(dept):
+            def run():
+                order.append(dept)
+                return 'v0002'
+            return ProcessTask(
+                id=str(uuid.uuid4()), uri=asset, department=dept, task_type='export',
+                description=f'Export ({dept})', execute_local=run,
+                execute_farm=lambda: None,
+            )
+
+        tasks = [export('model'), export('model'), export('lookdev'), export('rig')]
+        tasks.append(ProcessTask(
+            id=str(uuid.uuid4()), uri=asset, department='staged', task_type='build',
+            description='Build', channel='default',
+            execute_local=lambda: order.append('build') or 'v0003',
+            execute_farm=lambda: None,
+        ))
+        dialog = ProcessDialog('Publish', tasks)
+        check('one workfile: every department ticked In this session',
+              dialog._local_radio.isChecked() and all(t.enabled for t in dialog._model.get_tasks()),
+              str([(t.department, t.enabled) for t in dialog._model.get_tasks()]))
+        dialog._execute_button.click()
+        pump(app, dialog)
+        expected = ['model', 'model', 'refresh', 'lookdev', 'refresh', 'rig', 'build', 'refresh']
+        check('imports float between departments, not within one, not before the build',
+              order == expected, f'{order} != {expected}')
+        dialog.close()
+    finally:
+        if real_resolver is None:
+            sys.modules.pop('tumblepipe.resolver', None)
+        else:
+            sys.modules['tumblepipe.resolver'] = real_resolver
+        if had_attr:
+            tumblepipe.resolver = old_attr
+        else:
+            del tumblepipe.resolver
 
     failed = [name for name, ok, _ in _checks if not ok]
     print(f'\n{len(_checks) - len(failed)}/{len(_checks)} checks passed')

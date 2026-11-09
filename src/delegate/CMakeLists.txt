@@ -35,7 +35,7 @@ file(WRITE "${CMAKE_BINARY_DIR}/BUILD_INFO"
 
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
-# The opt-in wgpu path (src/gpu.rs, used when TH_PLAYBLAST_GPU=1). On by
+# The wgpu path (src/gpu.rs: Houdini's viewer, or th:gpu / TH_PLAYBLAST_GPU=1). On by
 # default where it has been verified (Windows: Vulkan/DX12); elsewhere until
 # a Linux or macOS build has been checked.
 if(WIN32)

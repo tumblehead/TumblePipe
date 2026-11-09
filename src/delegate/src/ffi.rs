@@ -63,15 +63,17 @@ pub struct ThMeshView {
     pub transform_key_count: u32,
 }
 
-/// What a render delegate keeps between frames: its meshes' cusp normals
-/// ([`crate::normals`]) and, on the GPU path, its meshes' geometry and its
-/// textures on the card ([`crate::gpu::Cache`]). One per
-/// delegate, freed with it, so a closed render session gives its memory
-/// back.
+/// What a render delegate keeps between frames: its meshes' cusp and
+/// smooth normals ([`crate::normals`]), the CPU path's render buffers and
+/// transformed vertices ([`raster::Scratch`]) and, on the GPU path, its
+/// meshes' geometry and its textures on the card ([`crate::gpu::Cache`]).
+/// One per delegate, freed with it, so a closed render session gives its
+/// memory back.
 #[derive(Default)]
 pub struct ThCache {
-    /// Cusp normals of keyed polygonal meshes ([`crate::normals`]).
+    /// Normals of keyed meshes that have none of their own ([`crate::normals`]).
     pub(crate) normals: std::sync::Mutex<crate::normals::Cache>,
+    pub(crate) cpu: std::sync::Mutex<raster::Scratch>,
     #[cfg(feature = "gpu")]
     pub(crate) gpu: crate::gpu::Cache,
 }
@@ -109,23 +111,47 @@ pub struct ThFrame {
     /// premultiplied by coverage and alpha the coverage; 0, the backdrop
     /// and alpha 1.
     pub alpha: u32,
+    /// Nonzero: the GPU path where it works (built with the `gpu` feature,
+    /// a usable adapter), else the CPU one. The delegate decides (th:gpu,
+    /// TH_PLAYBLAST_GPU, else on in Houdini's viewer).
+    pub gpu: u32,
+    /// Nonzero: `depth` out as distance along the camera's view axis
+    /// ([`linear_depth`]), `f32::MAX` where nothing is drawn, as Houdini's
+    /// viewer reads it (UsdRenderers.json `"depthstyle": "linear"`); 0,
+    /// window depth in [0, 1], 1 for nothing (husk, the farm).
+    pub linear_depth: u32,
 }
 
-/// Whether this process asked for the GPU path: `TH_PLAYBLAST_GPU` set to
-/// 1, true or on.
-#[cfg(feature = "gpu")]
-fn gpu_requested() -> bool {
-    std::env::var("TH_PLAYBLAST_GPU")
-        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "on"))
-        .unwrap_or(false)
+/// Window depth (0 at the near plane, 1 at the far one or where nothing is
+/// drawn) to distance along the camera's view axis, through `f`'s
+/// projection (view-to-world times world-to-clip, row vectors): a view-space
+/// point (0, 0, z) lands at clip z = z p22 + p32, w = z p23 + p33, and
+/// ndc = clip z / w solved for z. Nothing drawn is `f32::MAX`.
+///
+/// Houdini 22's viewer decodes `"depthstyle": "opengl"` depth as near / d,
+/// not through the projection it hands the delegate (near 1, far at
+/// infinity): every surface read as about one unit away, and its Set Pivot
+/// tumble orbited the camera. `"linear"` (Karma's) leaves nothing to decode.
+pub(crate) fn linear_depth(f: &ThFrame) -> impl Fn(f32) -> f32 {
+    let p = |r: usize, c: usize| (0..4).map(|k| f.view_to_world[r * 4 + k] * f.world_to_clip[k * 4 + c]).sum::<f64>();
+    let (p22, p32, p23, p33) = (p(2, 2), p(3, 2), p(2, 3), p(3, 3));
+    move |d: f32| {
+        if d >= 1.0 || d.is_nan() {
+            return f32::MAX;
+        }
+        let ndc = 2.0 * d as f64 - 1.0;
+        (-(p32 - ndc * p33) / (ndc * p23 - p22)) as f32
+    }
 }
 
-/// The GPU path when it was asked for and works, else the CPU one. A GPU
+/// The GPU path when `gpu` asks for it and it works, else the CPU one. A GPU
 /// failure is reported (once) and the frame drawn on the CPU instead, so a
 /// worker without a usable GPU still finishes the playblast.
 /// `ids`: the caller wants the picking ids (the CPU path always makes
-/// them; the GPU path only when asked, with an extra pass).
-fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&ThCache>, ids: bool) -> raster::Image {
+/// them; the GPU path only when asked, with an extra pass). `smooth`: the
+/// meshes' kept smooth normals, by mesh, for the CPU path.
+fn render(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], cache: Option<&ThCache>, ids: bool,
+          gpu: bool) -> raster::Image {
     // A check for a new GPU or driver: TH_PLAYBLAST_COMPARE=1 draws every
     // mesh alone, small, both ways and reports the meshes whose pictures
     // differ. On HideAndReek/010 (RTX 3070) the only one is a set mesh whose
@@ -148,7 +174,7 @@ fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&ThCache>, ids: bool) ->
         }
     }
     #[cfg(feature = "gpu")]
-    if gpu_requested() {
+    if gpu {
         use std::sync::atomic::{AtomicBool, Ordering};
         static REPORTED: AtomicBool = AtomicBool::new(false);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -164,8 +190,11 @@ fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&ThCache>, ids: bool) ->
         }
     }
     #[cfg(not(feature = "gpu"))]
-    let _ = (cache, ids);
-    raster::render(frame, meshes)
+    let _ = (ids, gpu);
+    match cache {
+        Some(c) => raster::render_kept(frame, meshes, smooth, &mut c.cpu.lock().unwrap_or_else(|e| e.into_inner())),
+        None => raster::render_kept(frame, meshes, smooth, &mut raster::Scratch::default()),
+    }
 }
 
 /// The blur a frame asks for: none at 0 or 1 blur samples; motion blur when
@@ -326,29 +355,38 @@ unsafe fn render_into(
         let started = std::time::Instant::now();
         let requests: Vec<Option<crate::normals::Request>> = views
             .iter()
-            .map(|v| (v.polygonal != 0 && v.corner_normals.is_null()).then(|| crate::normals::Request {
+            .map(|v| v.corner_normals.is_null().then(|| crate::normals::Request {
                 key: (v.key != 0).then_some(MeshKey { id: v.key, version: v.version }),
                 points: points(v),
                 triangles: triangles(v),
+                smooth: v.polygonal == 0,
             }))
             .collect();
-        let (cusp, made) = {
+        let (normals, made) = {
             let mut own = crate::normals::Cache::default();
             let mut kept = cache.as_ref().map(|c| c.normals.lock().unwrap_or_else(|e| e.into_inner()));
             kept.as_deref_mut().unwrap_or(&mut own).normals(&requests)
         };
         if std::env::var_os("TH_PLAYBLAST_TIMING").is_some() {
-            eprintln!("hdThPlayblast: cusp normals {} ms ({} meshes worked out, {} kept)",
+            eprintln!("hdThPlayblast: cusp and smooth normals {} ms ({} meshes worked out, {} kept)",
                       started.elapsed().as_millis(), made.computed, made.kept);
         }
+        // Cusp normals go in as the mesh's corner normals; smooth ones, per
+        // point, alongside.
+        let smooth: Vec<Option<&[Vec3]>> = views
+            .iter()
+            .zip(&normals)
+            .map(|(v, n)| n.as_deref().filter(|n| v.polygonal == 0 && n.len() == v.point_count as usize))
+            .collect();
         let mut list = Vec::with_capacity(views.len());
-        for (v, cusp) in views.iter().zip(&cusp) {
+        for (v, n) in views.iter().zip(&normals) {
             let tris = v.triangle_count as usize;
             let tiles = if v.tiles.is_null() { &[][..] } else { slice::from_raw_parts(v.tiles, v.tile_count as usize) };
             list.push(Mesh {
                 points: points(v),
                 triangles: triangles(v),
-                corner_normals: opt_slice(v.corner_normals, tris * 3).or(cusp.as_deref().filter(|n| !n.is_empty())),
+                corner_normals: opt_slice(v.corner_normals, tris * 3)
+                    .or(n.as_deref().filter(|n| v.polygonal != 0 && !n.is_empty())),
                 corner_colors: opt_slice(v.corner_colors, tris * 3),
                 corner_uvs: opt_slice(v.corner_uvs, tris * 3),
                 base_color: v.base_color,
@@ -381,8 +419,10 @@ unsafe fn render_into(
                 alpha: f.alpha != 0,
             },
             &list,
+            &smooth,
             cache.as_ref(),
             !ids.is_null(),
+            f.gpu != 0,
         );
         if cancelled() {
             return TH_CANCELLED;
@@ -390,7 +430,15 @@ unsafe fn render_into(
         let n = f.width as usize * f.height as usize;
         slice::from_raw_parts_mut(color as *mut [f32; 4], n).copy_from_slice(&image.color);
         if !depth.is_null() {
-            slice::from_raw_parts_mut(depth, n).copy_from_slice(&image.depth);
+            let out = slice::from_raw_parts_mut(depth, n);
+            if f.linear_depth != 0 {
+                let linear = linear_depth(f);
+                for (o, &d) in out.iter_mut().zip(&image.depth) {
+                    *o = linear(d);
+                }
+            } else {
+                out.copy_from_slice(&image.depth);
+            }
         }
         if !ids.is_null() {
             let out = slice::from_raw_parts_mut(ids as *mut [i32; 2], n);
@@ -417,7 +465,7 @@ mod tests {
             world_to_clip: crate::math::IDENTITY, view_to_world: crate::math::IDENTITY,
             samples: 1, shading: 0, ao: 1,
             blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0,
+            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
         };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         let mut depth = vec![0.0f32; 8 * 4];
@@ -436,7 +484,7 @@ mod tests {
             world_to_clip: crate::math::IDENTITY, view_to_world: crate::math::IDENTITY,
             samples: 1, shading: 0, ao: 1,
             blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0,
+            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
         };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         unsafe {

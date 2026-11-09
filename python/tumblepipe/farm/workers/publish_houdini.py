@@ -23,9 +23,6 @@ from tumblepipe.pipe.houdini.lops import (
     export_layer,
     layer_split
 )
-from tumblepipe.pipe.houdini.cops import (
-    build_comp
-)
 
 class NothingToPublish(Exception):
     """The workfile has no export for this entity/department.
@@ -103,14 +100,6 @@ def _update():
         scene_imports.force_newest(native, spec)
         scene_imports.execute(native, spec)
         print(f'Updated {native.path()}')
-
-    # Import latest comp builds
-    for build_comp_node in map(
-        build_comp.BuildComp, ns.list_by_node_type('build_comp', 'Cop')
-    ):
-        if not build_comp_node.is_valid(): continue
-        build_comp_node.update()
-        print(f'Updated {build_comp_node.path()}')
 
 def _publish_entity(entity_uri: Uri, department_name: str):
     """Publish one shot or asset's department from the loaded workfile: its

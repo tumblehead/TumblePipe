@@ -18,7 +18,8 @@
 //! shim's `polygonal`), so curved surfaces are smooth and a box stays a box.
 //! It runs on the CPU, so a farm node needs no GPU, GL context or display;
 //! built with the `gpu` feature it can draw the same picture with wgpu
-//! instead, on request (`TH_PLAYBLAST_GPU=1`, see `ffi::render`).
+//! instead, on request (`ThFrame::gpu`, see `ffi::render`): in Houdini's
+//! viewer by default, elsewhere when `th:gpu` or `TH_PLAYBLAST_GPU=1` asks.
 //!
 //! Every exported function runs under `catch_unwind` (`ffi_guard`): a panic
 //! becomes an error code the shim reports, never an unwind into C++.

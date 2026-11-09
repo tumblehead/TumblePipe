@@ -22,6 +22,7 @@ config = {
         'batch_size': 'int',
         'copy_to_edit': 'bool'
     },
+    'composite': {...},     # optional: the re-comp after the render (specs.composite.valid_recomp)
     'tasks': {
         'stage': {'priority': 'int', 'channel_name': 'string'},
         'partial_render': {...},                # and/or
@@ -41,6 +42,7 @@ houdini_config = {
 }
 """
 
+from tumblepipe.farm.specs.composite import valid_recomp
 from tumblepipe.farm.checks import (
     check_bool,
     check_int,
@@ -74,6 +76,7 @@ def is_valid_config(config) -> bool:
     tasks = config.get('tasks')
     if not valid_render_tasks(tasks): return False
     if not _valid_stage(tasks.get('stage')): return False
+    if 'composite' in config and not valid_recomp(config['composite']): return False
     return True
 
 

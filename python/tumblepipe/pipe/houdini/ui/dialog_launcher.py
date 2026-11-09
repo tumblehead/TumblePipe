@@ -68,7 +68,6 @@ def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> N
     dialog = ProcessDialog(
         title=dialog_title,
         tasks=all_tasks,
-        current_department=context.department_name,
         pre_execute_callback=save_scene,
         initial_enabled_task_ids=enabled_task_ids,
         parent=hou.qt.mainWindow()
@@ -163,7 +162,6 @@ def open_process_dialog_for_publish(
     dialog = ProcessDialog(
         title=dialog_title,
         tasks=all_tasks,
-        current_department=context.department_name,
         pre_execute_callback=save_scene,
         initial_enabled_task_ids=_all_task_ids(all_tasks),
         parent=hou.qt.mainWindow(),

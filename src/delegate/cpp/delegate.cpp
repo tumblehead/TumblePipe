@@ -157,6 +157,12 @@ float const _motionWindow = 1.0f;
 // scene viewer (which sets houdini:viewport; husk does not), off elsewhere.
 TfToken const _tokInteractive("th:interactive");
 TfToken const _tokHoudiniViewport("houdini:viewport");
+// Draw on the GPU (src/gpu.rs) where the core was built with it and an
+// adapter works, else on the CPU; unset, TH_PLAYBLAST_GPU, else on for an
+// interactive pass (the viewer: a 4.5M triangle frame took 150 ms as a CPU
+// draft, 22 ms on an RTX card) and off for husk, whose frames then match a
+// farm node's with no GPU.
+TfToken const _tokGpu("th:gpu");
 
 // Whether a setting is there and not false, zero or empty.
 bool _Truthy(VtValue const& value)
@@ -217,11 +223,14 @@ double _SettingNumber(VtValue const& value, char const* env, double fallback)
 // reporting itself not converged until the frame is in; the viewer keeps
 // calling Execute meanwhile, and each call publishes whatever has finished.
 //
-// The frame borrows the meshes', materials' and instancers' arrays
-// (ThMeshView), so nothing may change them while it is drawn: every prim
-// Sync and Destroy first stops the delegate's background renders
+// The frame borrows the meshes' and materials' arrays (ThMeshView), so
+// nothing may change them while it is drawn: a mesh or material Sync, and
+// every Destroy, first stops the delegate's background renders
 // (_Workers::Edited), the way HdEmbree's render param stops its render
-// thread before an edit.
+// thread before an edit. A camera or instancer Sync only counts as an edit
+// (_Workers::Changed): a frame holds its own copy of the camera and of the
+// instance transforms, and the frame being drawn as the camera moves is
+// worth finishing (ThRenderThread::Request).
 
 // Everything one frame draws: the views and the arrays they point at.
 struct _Job
@@ -259,7 +268,9 @@ struct _FrameStats
 };
 
 // A finished frame, row 0 at the top: colour, depth, and per texel the
-// Hydra prim id and instance index (-1 where none) a viewport picks by.
+// Hydra prim id and instance index (-1 where none) a viewport picks by
+// (empty when no id buffer is bound). A viewport's images are reused frame
+// to frame, so their buffers are allocated once.
 struct _Image
 {
     unsigned int width = 0;
@@ -268,8 +279,10 @@ struct _Image
     std::vector<float> depth;
     std::vector<int32_t> primId;
     std::vector<int32_t> instanceId;
+    std::vector<int32_t> coreIds;  // the core's (view, instance) per texel
     bool final = false;      // the request's last frame, not its draft
     uint64_t request = 0;
+    double coreMs = 0.0;     // of the time it took, in the core (TH_PLAYBLAST_TIMING)
 };
 
 static_assert(sizeof(std::atomic<uint32_t>) == sizeof(uint32_t)
@@ -284,23 +297,37 @@ int32_t _Draw(_Job const& job, ThFrame const& frame, _Image* out,
     size_t const texels = static_cast<size_t>(frame.width) * frame.height;
     out->width = frame.width;
     out->height = frame.height;
-    out->color.assign(texels * 4, 0.0f);
-    out->depth.assign(texels, 1.0f);
-    std::vector<int32_t> ids(job.ids ? texels * 2 : 0, -1);
+    // Sized only: the core writes every texel (a cleared 1080p frame cost
+    // milliseconds of page faults and stores).
+    out->color.resize(texels * 4);
+    out->depth.resize(texels);
+    std::vector<int32_t>& ids = out->coreIds;
+    ids.resize(job.ids ? texels * 2 : 0);
     int32_t status;
     {
         // One core call at a time per cache (the GPU path keeps it).
         std::lock_guard<std::mutex> lock(*cacheMutex);
+        auto const started = std::chrono::steady_clock::now();
         status = th_render_ids(&frame, job.views.data(), static_cast<uint32_t>(job.views.size()),
                                out->color.data(), out->depth.data(), job.ids ? ids.data() : nullptr,
                                reinterpret_cast<uint32_t const*>(cancel), cache);
+        out->coreMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
     }
     if (status != 0) return status;
-    out->primId.assign(texels, -1);
-    out->instanceId.assign(texels, -1);
-    for (size_t i = 0; i < texels && job.ids; ++i) {
+    if (!job.ids) {
+        out->primId.clear();
+        out->instanceId.clear();
+        return 0;
+    }
+    out->primId.resize(texels);
+    out->instanceId.resize(texels);
+    for (size_t i = 0; i < texels; ++i) {
         int32_t const view = ids[i * 2];
-        if (view < 0 || static_cast<size_t>(view) >= job.primIds.size()) continue;
+        if (view < 0 || static_cast<size_t>(view) >= job.primIds.size()) {
+            out->primId[i] = -1;
+            out->instanceId[i] = -1;
+            continue;
+        }
         out->primId[i] = job.primIds[view];
         // Hydra's convention: an instance index for an instanced prim,
         // -1 for one that is not.
@@ -309,8 +336,14 @@ int32_t _Draw(_Job const& job, ThFrame const& frame, _Image* out,
     return 0;
 }
 
-// One pass's background render: frames drawn in order (a draft, then the
-// finished frame), each published as it finishes.
+// One pass's background render: the frames of the newest request drawn in
+// order (a draft, then the finished frame), each published as it finishes.
+//
+// A newer request replaces the frames still queued, and the frame being
+// drawn is finished unless the new request's draft would wait behind a
+// costly frame (ThRenderThread::Request). Cancelling whatever was drawing
+// starved the viewer: while the camera moved, each move cancelled a draft
+// that was nearly done, and nothing showed until the camera stopped.
 class ThRenderThread
 {
 public:
@@ -334,6 +367,7 @@ public:
     {
         std::unique_lock<std::mutex> lock(_mutex);
         _frames.clear();
+        _next = 0;
         _job.reset();
         if (_busy) {
             _cancel.store(1, std::memory_order_relaxed);
@@ -341,25 +375,34 @@ public:
         }
     }
 
-    // Draw `frames` of `job` for `request`, after a Stop.
-    void Start(std::shared_ptr<_Job const> job, std::vector<ThFrame> frames, uint64_t request)
+    // Draw `frames` of `job` for `request`, in place of any frames still
+    // queued, once the frame being drawn is done. That frame is cancelled
+    // when `cancel` (another size: it could not be shown), or when it is a
+    // request's finished frame and the new request starts with a draft
+    // (which would wait behind it for nothing).
+    void Request(std::shared_ptr<_Job const> job, std::vector<ThFrame> frames, uint64_t request, bool cancel)
     {
         {
             std::lock_guard<std::mutex> lock(_mutex);
+            if (_busy && (cancel || (_drawingFinal && frames.size() > 1))) {
+                _cancel.store(1, std::memory_order_relaxed);
+            }
             _job = std::move(job);
             _frames = std::move(frames);
+            _next = 0;
             _request = request;
         }
         _wake.notify_all();
     }
 
-    // The newest finished frame, when it is newer than `*seen`.
+    // Swap the newest finished frame into `*out`, when it is newer than
+    // `*seen`; `*out`'s buffers go back to the thread to draw into.
     bool Take(uint64_t* seen, _Image* out)
     {
         std::lock_guard<std::mutex> lock(_mutex);
         if (_serial == *seen) return false;
         *seen = _serial;
-        *out = _latest;
+        std::swap(*out, _latest);
         return true;
     }
 
@@ -369,49 +412,46 @@ public:
 private:
     void _Run()
     {
+        std::unique_lock<std::mutex> lock(_mutex);
         for (;;) {
-            std::shared_ptr<_Job const> job;
-            std::vector<ThFrame> frames;
-            uint64_t request;
-            {
-                std::unique_lock<std::mutex> lock(_mutex);
-                _wake.wait(lock, [this] { return _quit || !_frames.empty(); });
-                if (_quit) return;
-                job = _job;
-                frames.swap(_frames);
-                request = _request;
-                _busy = true;
-                _cancel.store(0, std::memory_order_relaxed);
-            }
-            for (size_t k = 0; k < frames.size(); ++k) {
-                auto const started = std::chrono::steady_clock::now();
-                _Image image;
-                int32_t const status = _Draw(*job, frames[k], &image, &_cancel, _cache, _cacheMutex);
-                if (status != 0) {
-                    if (status != 3) {
-                        std::fprintf(stderr, "hdThPlayblast: the core failed to render (error %d)\n", status);
-                    }
-                    break;
-                }
-                double const ms = std::chrono::duration<double, std::milli>(
-                    std::chrono::steady_clock::now() - started).count();
-                image.final = k + 1 == frames.size();
-                image.request = request;
-                if (image.final) _lastFinalMs.store(ms, std::memory_order_relaxed);
+            _wake.wait(lock, [this] { return _quit || _next < _frames.size(); });
+            if (_quit) return;
+            std::shared_ptr<_Job const> job = _job;
+            ThFrame const frame = _frames[_next++];
+            bool const final = _next == _frames.size();
+            uint64_t const request = _request;
+            _busy = true;
+            _drawingFinal = final;
+            _cancel.store(0, std::memory_order_relaxed);
+            lock.unlock();
+
+            auto const started = std::chrono::steady_clock::now();
+            int32_t const status = _Draw(*job, frame, &_spare, &_cancel, _cache, _cacheMutex);
+            double const ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started).count();
+            if (status == 0) {
+                _spare.final = final;
+                _spare.request = request;
+                if (final) _lastFinalMs.store(ms, std::memory_order_relaxed);
                 if (std::getenv("TH_PLAYBLAST_TIMING")) {
-                    std::fprintf(stderr, "hdThPlayblast: viewport %s %ux%u, %u samples%s, %zu meshes: %.0f ms\n",
-                                 image.final ? "frame" : "draft", image.width, image.height,
-                                 frames[k].samples, frames[k].ao ? " + AO" : "", job->views.size(), ms);
+                    std::fprintf(stderr, "hdThPlayblast: viewport %s %ux%u, %u samples%s, %zu meshes: %.0f ms (core %.0f)\n",
+                                 final ? "frame" : "draft", _spare.width, _spare.height, frame.samples,
+                                 frame.ao ? " + AO" : "", job->views.size(), ms, _spare.coreMs);
                 }
-                std::lock_guard<std::mutex> lock(_mutex);
-                _latest = std::move(image);
+            } else if (status != 3) {
+                std::fprintf(stderr, "hdThPlayblast: the core failed to render (error %d)\n", status);
+            }
+            job.reset();  // before Stop may return
+
+            lock.lock();
+            if (status == 0) {
+                std::swap(_latest, _spare);
                 ++_serial;
+            } else if (status != 3 && _request == request) {
+                _next = _frames.size();  // the rest of the request would fail as well
             }
-            job.reset();
-            {
-                std::lock_guard<std::mutex> lock(_mutex);
-                _busy = false;
-            }
+            _busy = false;
+            _drawingFinal = false;
             _idle.notify_all();
         }
     }
@@ -423,11 +463,14 @@ private:
     std::condition_variable _idle;
     bool _quit = false;
     bool _busy = false;
+    bool _drawingFinal = false;  // the frame drawing is its request's last
     std::shared_ptr<_Job const> _job;
-    std::vector<ThFrame> _frames;
+    std::vector<ThFrame> _frames;  // the newest request's, drawn from _next
+    size_t _next = 0;
     uint64_t _request = 0;
     std::atomic<uint32_t> _cancel{0};
-    _Image _latest;
+    _Image _spare;   // drawn into (the thread's own)
+    _Image _latest;  // the newest finished, until Take swaps it out
     uint64_t _serial = 0;
     std::atomic<double> _lastFinalMs{0.0};
     std::thread _thread;  // last: starts once everything above is built
@@ -462,6 +505,9 @@ struct _Workers
         std::lock_guard<std::mutex> lock(mutex);
         for (ThRenderThread* t : threads) t->Stop();
     }
+    // A change no frame reads while it draws: counted, so the passes draw
+    // again, without stopping them.
+    void Changed() { edits.fetch_add(1, std::memory_order_relaxed); }
     void Add(ThRenderThread* t)
     {
         std::lock_guard<std::mutex> lock(mutex);
@@ -489,6 +535,13 @@ void _Edited(HdRenderParam* param)
     if (auto* p = static_cast<ThRenderParam*>(param)) p->workers->Edited();
 }
 
+// A prim changed that a background render copied when it started (the
+// camera, an instancer's transforms): draw again, leaving it running.
+void _Changed(HdRenderParam* param)
+{
+    if (auto* p = static_cast<ThRenderParam*>(param)) p->workers->Changed();
+}
+
 bool _SamplingMotion(HdRenderParam* param)
 {
     auto* p = static_cast<ThRenderParam*>(param);
@@ -505,6 +558,11 @@ struct _Shutter
     float open = 0.0f;
     float close = 0.0f;
     float fps = 24.0f;
+
+    bool operator==(_Shutter const& o) const
+    {
+        return on == o.on && open == o.open && close == o.close && fps == o.fps;
+    }
 
     // The moment of key `k` of `keys`, evenly spread from open to close.
     float At(size_t k, size_t keys) const
@@ -874,7 +932,8 @@ public:
 
     void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits) override
     {
-        _Edited(param);
+        // A frame copies its instance transforms as it is gathered.
+        _Changed(param);
         _UpdateInstancer(delegate, dirtyBits);
         SdfPath const& id = GetId();
         if (_SamplingMotion(param) && HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
@@ -1859,6 +1918,13 @@ public:
     {
         HdFormat const component = HdGetComponentFormat(_format);
         size_t const channels = HdGetComponentCount(_format);
+        if (image.size() < static_cast<size_t>(_width) * _height * stride) return;
+        if (component == HdFormatFloat32 && channels == stride) {
+            // The formats the delegate asks for (GetDefaultAovDescriptor):
+            // whole rows, flipped (a viewport frame's copy, on its UI thread).
+            _CopyRows(image.data(), stride * sizeof(float));
+            return;
+        }
         for (size_t y = 0; y < _height; ++y) {
             size_t const src_row = static_cast<size_t>(_height - 1 - y) * _width;
             size_t const dst_row = y * _width;
@@ -1878,6 +1944,10 @@ public:
         if (image.size() < static_cast<size_t>(_width) * _height) return;
         HdFormat const component = HdGetComponentFormat(_format);
         size_t const channels = HdGetComponentCount(_format);
+        if (component == HdFormatInt32 && channels == 1) {
+            _CopyRows(image.data(), sizeof(int32_t));
+            return;
+        }
         for (size_t y = 0; y < _height; ++y) {
             size_t const src_row = static_cast<size_t>(_height - 1 - y) * _width;
             size_t const dst_row = y * _width;
@@ -1915,6 +1985,17 @@ protected:
     }
 
 private:
+    // Copy an image of this buffer's own texel layout (`texel` bytes each),
+    // row 0 at the top, to row 0 at the bottom.
+    void _CopyRows(void const* image, size_t texel)
+    {
+        size_t const row = static_cast<size_t>(_width) * texel;
+        auto const* src = static_cast<uint8_t const*>(image);
+        for (size_t y = 0; y < _height; ++y) {
+            std::memcpy(_data.data() + y * row, src + static_cast<size_t>(_height - 1 - y) * row, row);
+        }
+    }
+
     void _Store(HdFormat component, size_t at, float value)
     {
         switch (component) {
@@ -1956,7 +2037,8 @@ public:
 
     void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits) override
     {
-        _Edited(param);
+        // A frame copies the camera (ThRenderPass::_MakeFrame).
+        _Changed(param);
         bool const moved = *dirtyBits & HdCamera::DirtyTransform;
         HdCamera::Sync(delegate, param, dirtyBits);
         if (moved) {
@@ -2012,18 +2094,24 @@ struct _PassSettings
     // rather than to the level asked, as Storm does in Houdini's viewer
     // (see Subdivision).
     bool screenSized = true;
+    bool gpu = false;  // th:gpu
+    // The depth AOV as distance from the camera, as Houdini's viewer reads
+    // it (UsdRenderers.json "depthstyle": "linear"), rather than Hydra's
+    // window depth (husk, the farm).
+    bool linearDepth = false;
 
     auto Tie() const
     {
         return std::make_tuple(samples, shading, ao, alpha, blur.motion, blur.dof, blur.samples, blur.fps,
-                               interactive, screenSized);
+                               interactive, screenSized, gpu, linearDepth);
     }
     bool operator==(_PassSettings const& o) const { return Tie() == o.Tie(); }
 };
 
 // A full frame that took longer than this is drawn first as a draft (one
-// sample, no ambient occlusion or blur) while the viewport waits for it.
-double const _draftAboveMs = 60.0;
+// sample, no ambient occlusion or blur) while the viewport waits for it:
+// a moving camera is then drawn as drafts, at the rate a viewport plays.
+double const _draftAboveMs = 20.0;
 
 // -----------------------------------------------------------------------------
 // Render pass
@@ -2084,6 +2172,14 @@ protected:
             return;
         }
         _PassSettings const settings = _settings();
+        // A new depth buffer reads as nothing drawn until a frame is
+        // published, not as zeros (the near plane, or at the camera when
+        // linear): the viewer may pick a tumble pivot from it at once.
+        if (buffers.depth
+            && (buffers.depth != _depthCleared.first || buffers.depth->Generation() != _depthCleared.second)) {
+            buffers.depth->Clear(settings.linearDepth ? std::numeric_limits<float>::max() : 1.0f);
+            _depthCleared = {buffers.depth, buffers.depth->Generation()};
+        }
         if (settings.interactive) {
             _ExecuteInBackground(state, renderTags, settings, buffers);
         } else {
@@ -2151,11 +2247,19 @@ private:
     void _ExecuteInBackground(HdRenderPassStateSharedPtr const& state, TfTokenVector const& renderTags,
                               _PassSettings const& settings, _Bindings const& buffers)
     {
+        using _Clock = std::chrono::steady_clock;
+        auto const entered = _Clock::now();
+        auto ms = [](_Clock::time_point a, _Clock::time_point b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
         unsigned int const width = buffers.sized->GetWidth();
         unsigned int const height = buffers.sized->GetHeight();
         // A mesh it rebuilds stops the render and counts as an edit, so
         // the key below asks for the frame again.
         _SizeRefinement(state, renderTags, settings, width, height);
+        auto const sized = _Clock::now();
+        double stopMs = 0.0, gatherMs = 0.0, takeMs = 0.0, publishMs = 0.0;
+        bool started = false, published = false;
         GfMatrix4d const worldToView = state->GetWorldToViewMatrix();
         _Key key{width, height, worldToView, state->GetProjectionMatrix(), settings, renderTags,
                  _workers->edits.load(std::memory_order_relaxed), buffers.identity};
@@ -2164,10 +2268,21 @@ private:
             _workers->Add(_thread.get());
         }
         if (!(key == _key)) {
-            // Stopped before gathering: the old frame may still read the scene.
-            _thread->Stop();
+            started = true;
             _Shutter shutter;
             ThFrame const frame = _MakeFrame(state, settings, width, height, &shutter);
+            // The frame drawing reads the scene while this one is gathered
+            // (an edit to the scene stopped it already), unless gathering
+            // rewrites what it reads: a moving mesh's points at the ends of
+            // the shutter, kept for the last one asked (ThMesh::_Motion).
+            if (shutter.on && !(shutter == _startedShutter)) {
+                auto const t0 = _Clock::now();
+                _thread->Stop();
+                stopMs = ms(t0, _Clock::now());
+            }
+            // One of another size could not be shown: no use finishing it.
+            bool const resized = width != _key.width || height != _key.height || buffers.identity != _key.buffers;
+            _requested = _Clock::now();
             std::vector<ThFrame> frames;
             double const last = _thread->LastFinalMs();
             bool const costly = frame.samples > 1 || frame.ao || frame.blur_samples > 1;
@@ -2181,20 +2296,48 @@ private:
                 frames.push_back(draft);
             }
             frames.push_back(frame);
+            auto const t2 = _Clock::now();
             _started = _Gather(renderTags, shutter, buffers);
+            gatherMs = ms(t2, _Clock::now());
             _startedSamples = frame.samples;
-            _thread->Start(_started, std::move(frames), ++_request);
+            _startedShutter = shutter;
+            _thread->Request(_started, std::move(frames), ++_request, resized);
             _key = std::move(key);
             _converged = false;
         }
-        _Image image;
-        if (_thread->Take(&_seen, &image) && image.width == width && image.height == height) {
+        _Image& image = _shown;
+        auto const t3 = _Clock::now();
+        bool const taken = _thread->Take(&_seen, &image);
+        auto const t4 = _Clock::now();
+        takeMs = ms(t3, t4);
+        bool draft = false;
+        if (taken && image.width == width && image.height == height) {
             _Publish(buffers, image);
+            publishMs = ms(t4, _Clock::now());
+            published = true;
+            draft = !image.final;
             if (image.request == _request && _started) {
                 _workers->Drawn(_StatsOf(*_started, image.final ? _startedSamples : 1, !image.final));
             }
             if (image.final && image.request == _request) _converged = true;
         }
+        // TH_PLAYBLAST_TIMING=1: what each Execute that started a frame or
+        // published one cost the viewer's thread, how long after the
+        // request a frame reached the buffers, and how often Houdini calls.
+        if (g_timing && (started || published)) {
+            auto const left = _Clock::now();
+            std::fprintf(stderr,
+                         "hdThPlayblast: execute %ux%u%s%s: %.1f ms on the viewer's thread (refine %.1f, stop %.1f, "
+                         "gather %.1f, take %.1f, publish %.1f)%s; %.1f ms since the last execute\n",
+                         width, height, started ? " started" : "",
+                         published ? (draft ? " published draft" : " published frame") : "", ms(entered, left),
+                         ms(entered, sized), stopMs, gatherMs, takeMs, publishMs,
+                         published && image.request == _request
+                             ? TfStringPrintf(", shown %.1f ms after the request", ms(_requested, left)).c_str()
+                             : "",
+                         _lastExecute.time_since_epoch().count() ? ms(_lastExecute, entered) : 0.0);
+        }
+        _lastExecute = entered;
     }
 
     static _FrameStats _StatsOf(_Job const& job, uint32_t samples, bool draft)
@@ -2250,6 +2393,8 @@ private:
         frame.shading = settings.shading;
         frame.ao = settings.ao ? 1u : 0u;
         frame.alpha = settings.alpha ? 1u : 0u;
+        frame.gpu = settings.gpu ? 1u : 0u;
+        frame.linear_depth = settings.linearDepth ? 1u : 0u;
 
         // Motion blur over the render camera's shutter (held to the window
         // the prims sampled their motion over), depth of field from its lens.
@@ -2390,9 +2535,19 @@ private:
     _Key _key;
     uint64_t _request = 0;
     uint64_t _seen = 0;
-    // The job of the frame drawing and its samples, for the render stats.
+    // The depth buffer last cleared, and its allocation.
+    std::pair<ThRenderBuffer const*, uint64_t> _depthCleared{nullptr, 0};
+    // The job of the frame drawing and its samples, for the render stats,
+    // and the shutter it was gathered over.
     std::shared_ptr<_Job> _started;
     uint32_t _startedSamples = 0;
+    _Shutter _startedShutter;
+    // The last frame taken from the thread (its buffers go back to it).
+    _Image _shown;
+    // TH_PLAYBLAST_TIMING: when the frame drawing was asked for, and the
+    // last Execute.
+    std::chrono::steady_clock::time_point _requested;
+    std::chrono::steady_clock::time_point _lastExecute;
 };
 
 // -----------------------------------------------------------------------------
@@ -2593,8 +2748,10 @@ private:
         bool const viewer = _Truthy(GetRenderSetting(_tokHoudiniViewport));
         s.interactive = _SettingOr(GetRenderSetting(_tokInteractive), "TH_PLAYBLAST_INTERACTIVE", viewer);
         s.screenSized = !viewer;
+        s.linearDepth = viewer;
         // A viewport draws over Houdini's own background and grid.
         s.alpha = _SettingOr(GetRenderSetting(_tokAlpha), "TH_PLAYBLAST_ALPHA", s.interactive);
+        s.gpu = _SettingOr(GetRenderSetting(_tokGpu), "TH_PLAYBLAST_GPU", s.interactive);
         return s;
     }
 

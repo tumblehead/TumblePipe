@@ -276,6 +276,25 @@ def build(
             copy_to_edit = settings['copy_to_edit']
         )
 
+        # Farm Submit's Comp column: re-comp the shot once the frames the
+        # comp reads (the denoise, else the render) are on disk.
+        if config.get('composite') is not None:
+            from tumblepipe.farm.pipelines import composite as composite_pipeline
+            terminal_jobs = terminal_jobs + composite_pipeline.build(
+                composite_pipeline.recomp_config(
+                    shot.entity_uri, config['composite'],
+                    user_name = settings['user_name'],
+                    purpose = settings['purpose'],
+                    first_frame = settings['first_frame'],
+                    last_frame = settings['last_frame'],
+                    temp_path = temp_path,
+                    paths = paths,
+                ),
+                paths, temp_path, jobs, deps,
+                depends_on = review_jobs,
+                prefix = 'comp_',
+            )
+
     logging.debug(f'Render jobs: {list(jobs)}')
     return terminal_jobs
 

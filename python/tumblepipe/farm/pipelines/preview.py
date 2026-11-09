@@ -264,13 +264,16 @@ def render_config(
     denoise: bool,
     copy_to_edit: bool,
     task_keys: list[str],
+    composite: dict | None = None,
 ) -> dict:
     """The ``render/job.py`` config for a direct render of collapsed inputs.
 
     ``render_settings_path`` is absolute: the job builder reads it locally.
     ``input_paths`` are relative, resolved in the job data dir on the farm.
+    ``composite`` is the re-comp to chain after the render (Farm Submit's
+    Comp column; ``specs.composite.valid_recomp``), None for none.
     """
-    return dict(
+    config = dict(
         entity=dict(uri=str(entity_uri), department=department),
         settings=dict(
             user_name=user_name,
@@ -296,6 +299,9 @@ def render_config(
             for task_key in task_keys
         },
     )
+    if composite is not None:
+        config['composite'] = dict(composite)
+    return config
 
 
 def playblast_config(

@@ -1,4 +1,4 @@
-"""Composite a span of frames: cook the comp workfile's render node in hython
+"""Composite a span of frames: render the comp workfile's th::export_comp nodes in hython
 (``composite_houdini.py``) for the frames still missing their receipts."""
 
 from tempfile import TemporaryDirectory
@@ -27,9 +27,8 @@ def main(
     render_range: BlockRange,
     receipt_path: Path,
     input_path: Path,
-    node_path: str,
-    layer_names: list[str],
-    output_paths: dict[str, Path],
+    exports: list[dict],
+    imports: dict,
     entity_json: dict
     ) -> int:
 
@@ -74,12 +73,8 @@ def main(
             frames = missing_frames,
             receipt_path = path_str(receipt_path),
             input_path = path_str(input_path),
-            node_path = node_path,
-            layer_names = layer_names,
-            output_paths = {
-                aov_name: path_str(output_path)
-                for aov_name, output_path in output_paths.items()
-            }
+            exports = exports,
+            imports = imports
         ))
 
         # Run script in hython
@@ -117,12 +112,8 @@ def from_config(config: dict, frame_span: BlockRange) -> int:
         # The workfile is bundled into the job data dir, addressed relative
         # to it (the task runs with CWD = the hpm manifest dir).
         job_data_dir() / config['input_path'],
-        config['node_path'],
-        config['layer_names'],
-        {
-            aov_name: Path(aov_path)
-            for aov_name, aov_path in config['output_paths'].items()
-        },
+        config['exports'],
+        config['imports'],
         config['entity']
     )
 

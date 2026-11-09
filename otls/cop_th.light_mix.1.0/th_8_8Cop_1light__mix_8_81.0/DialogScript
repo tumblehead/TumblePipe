@@ -1,0 +1,92 @@
+# Dialog script for th::light_mix::1.0
+
+{
+    name	th::light_mix::1.0
+    script	th::light_mix::1.0
+    label	"th light mix"
+
+    input	aovs	aovs
+    output	rgba	rgba
+    signature	default	Default	{ Cable }	{ RGBA }
+
+    help {
+	"A channel's light groups mixed back into its beauty: the graded groups plus Rest (the beauty minus the groups)."
+    }
+
+    parm {
+        name    "mix_label"
+        label   "Mix"
+        type    label
+        default { "no light groups: Rest is the whole beauty" }
+    }
+    parm {
+        name    "sync"
+        label   "Sync Rows"
+        type    button
+        default { "0" }
+        help    "Add a row for every light group in the cable that has none. Existing rows are never changed."
+        parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.light_mix as th_node; th_node.sync(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    groupsimple {
+        name    "rest_group"
+        label   "Rest (lights in no group)"
+
+        parm {
+            name    "rest_mute"
+            label   "Mute"
+            type    toggle
+            default { "0" }
+        }
+        parm {
+            name    "rest_exposure"
+            label   "Exposure"
+            type    float
+            default { "0" }
+            range   { -5 5 }
+        }
+        parm {
+            name    "rest_tint"
+            label   "Tint"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            range   { 0 1 }
+        }
+    }
+    multiparm {
+        name    "groups"
+        label    "Light Groups"
+        default 0
+        parmtag { "multistartoffset" "1" }
+
+        parm {
+            name    "group#"
+            label   "Group"
+            type    string
+            default { "" }
+        }
+        parm {
+            name    "mute#"
+            label   "Mute"
+            type    toggle
+            default { "0" }
+        }
+        parm {
+            name    "exposure#"
+            label   "Exposure"
+            type    float
+            default { "0" }
+            range   { -5 5 }
+        }
+        parm {
+            name    "tint#"
+            label   "Tint"
+            type    color
+            size    3
+            default { "1" "1" "1" }
+            range   { 0 1 }
+        }
+    }
+
+}

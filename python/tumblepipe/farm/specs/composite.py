@@ -1,7 +1,7 @@
 """Config schemas of the composite job (``jobs/composite.py``), its worker
 (``workers/composite.py``) and the worker's hython half
-(``workers/composite_houdini.py``), which cooks a comp workfile's render
-node once per channel ("layer").
+(``workers/composite_houdini.py``), which pins a comp workfile's
+``th::import_render`` nodes and renders each ``th::export_comp``.
 
 config = {
     'entity': {'uri': 'entity:/shots/sequence/shot', 'department': 'string'},
@@ -15,11 +15,14 @@ config = {
     'batch_size': 10,
     'receipt_path': 'path/to/receipt.####.json',
     'input_path': 'path/to/input.hip',
-    'node_path': '/path/to/node',
-    'layer_names': ['main', 'mirror'],
-    'output_paths': {
-        'main': 'path/to/main/beauty.####.exr',
-        'mirror': 'path/to/mirror/beauty.####.exr'
+    'exports': [
+        {'node_path': '/stage/comp/export_comp', 'layer': 'comp',
+         'output_path': 'path/to/slapcomp/v0001/shot_slapcomp_v0001.####.exr'}
+    ],
+    'imports': {
+        '/stage/comp/import_chars': {
+            'channel': 'chars', 'department': 'denoise', 'version': 'v0004'
+        }
     }
 }
 
@@ -30,16 +33,37 @@ The hython config replaces it with the span the worker was handed and the
 """
 
 from tumblepipe.farm.checks import (
+    check_bool,
     check_int,
     check_int_list,
     check_str,
-    check_str_dict,
-    check_str_list,
     valid_entity,
     valid_frame_batches,
     valid_frame_range,
     valid_job_header,
 )
+
+_IMPORT_KEYS = ('channel', 'department', 'version')
+
+
+def _valid_exports(exports) -> bool:
+    if not isinstance(exports, list) or len(exports) == 0: return False
+    for export in exports:
+        if not isinstance(export, dict): return False
+        for key in ('node_path', 'layer', 'output_path'):
+            if not check_str(export, key): return False
+    layers = [export['layer'] for export in exports]
+    return len(set(layers)) == len(layers)
+
+
+def _valid_imports(imports) -> bool:
+    if not isinstance(imports, dict): return False
+    for node_path, pin in imports.items():
+        if not isinstance(node_path, str) or not node_path: return False
+        if not isinstance(pin, dict): return False
+        for key in _IMPORT_KEYS:
+            if not check_str(pin, key): return False
+    return True
 
 
 def _valid_composite(config) -> bool:
@@ -48,10 +72,22 @@ def _valid_composite(config) -> bool:
     if not valid_entity(config['entity']): return False
     if not check_str(config, 'receipt_path'): return False
     if not check_str(config, 'input_path'): return False
-    if not check_str(config, 'node_path'): return False
-    if not check_str_list(config, 'layer_names'): return False
-    if len(config['layer_names']) == 0: return False
-    if not check_str_dict(config, 'output_paths'): return False
+    if not _valid_exports(config.get('exports')): return False
+    if not _valid_imports(config.get('imports')): return False
+    return True
+
+
+def valid_recomp(block) -> bool:
+    """A render config's optional ``composite`` block: the re-comp that
+    follows the render (Farm Submit's Comp column; ``pipelines/composite.
+    recomp_config``) and how to schedule it."""
+    if not isinstance(block, dict): return False
+    if not check_str(block, 'pool_name'): return False
+    if not check_int(block, 'priority'): return False
+    if not check_int(block, 'batch_size'): return False
+    if block['batch_size'] <= 0: return False
+    if not check_bool(block, 'copy_to_edit'): return False
+    if not check_str(block, 'channel_name'): return False
     return True
 
 

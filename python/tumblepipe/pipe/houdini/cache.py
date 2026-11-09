@@ -17,7 +17,9 @@ The HDAs' callbacks call the module-level functions here with their
 ``kwargs``; the node's category picks the class.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Iterable
 import datetime as dt
 
 import hou
@@ -27,7 +29,7 @@ from tumblepipe import naming
 from tumblepipe.pipe import cache_context, provenance
 from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
-from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.entity_node import EntityNode, FROM_CONTEXT
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode, FrameRangeSource
 from tumblepipe.pipe.paths import (
     list_version_paths,
@@ -269,11 +271,23 @@ class CacheBase(FrameRangeNode, EntityNode):
         ))
 
     def load(self):
+        """Load the picked version; with none picked, the latest finished.
+
+        Load used to clear the node and return when no version was picked,
+        which is exactly the state after typing a name in: the artist saw
+        nothing load and no reason. A name with no versions here now says
+        where it looked, and which other departments have it.
+        """
         cache_name = self.get_cache_name()
-        version_name = self.get_version_name()
-        if cache_name is None or version_name is None:
+        if cache_name is None:
             self._clear_inner_cache()
             return
+        version_name = self.get_version_name()
+        if version_name is None:
+            version_name = self._latest_version_name()
+            if version_name is None:
+                raise self._error(self._missing_cache_message(cache_name))
+            self.parm('version').set(version_name)
         output_path = self.cache_file_path(
             self._require_cache_path(), cache_name, version_name
         )
@@ -309,6 +323,129 @@ class CacheBase(FrameRangeNode, EntityNode):
         version_name = self._latest_version_name()
         if version_name is None: return
         self.set_version_name(version_name)
+
+    def _missing_cache_message(self, cache_name: str) -> str:
+        department_name = self.require_department_name()
+        location_name = self.get_location_name()
+        message = (
+            f"no versions of cache '{cache_name}' in department "
+            f"'{department_name}' ({location_name}): looked in "
+            f"{self._require_cache_path() / cache_name}"
+        )
+        elsewhere = sorted({
+            f'{c.department} ({c.location})'
+            for c in self.browse_caches()
+            if c.name == cache_name
+            and (c.department, c.location) != (department_name, location_name)
+        })
+        if elsewhere:
+            message += (
+                f". It exists in: {', '.join(elsewhere)}; set Department "
+                '(and Location) to load it, or use the browse button next to Name.'
+            )
+        return message
+
+    # Browsing ----------------------------------------------------------------
+
+    def browse_caches(self) -> list['CacheListing']:
+        """Every cache of the addressed entity, in every department and both
+        locations, for the browse dialog: an artist loading another
+        department's cache should not have to know which one wrote it."""
+        entity_uri = self.get_entity_uri()
+        if entity_uri is None: return []
+        roots = []
+        for department in self.scoped_departments(entity_uri.segments[0]):
+            base_path = get_workspace_relpath(entity_uri, department.name)
+            for location_name in (Location.Project, Location.Proxy):
+                roots.append((
+                    department.name, location_name,
+                    self.resolve_location(location_name, base_path),
+                ))
+        return scan_caches(roots)
+
+    def pick_cache(self, listing: 'CacheListing'):
+        """Point the node at ``listing``'s latest finished version.
+
+        The node's own workfile department stays 'from_context', so a
+        workfile copied to another department keeps following its own caches.
+        """
+        context = self._workfile_context()
+        own_department = None if context is None else context.department_name
+        self.parm('department').set(
+            FROM_CONTEXT if listing.department == own_department
+            else listing.department
+        )
+        self.set_location_name(listing.location)
+        self.set_cache_name(listing.name)
+        self.parm('version').set(listing.latest or '')
+        self._update_labels()
+
+    def follow_selection(self):
+        """After the entity, department, location or name changed: keep the
+        picked version if this cache has it, else take its latest finished
+        (or none), so the Version menu never holds a version that is not
+        on disk for what the node now addresses."""
+        current = self.parm('version').eval()
+        try:
+            if current and current in self.list_version_names():
+                return
+            latest = self._latest_version_name()
+        except ns.NodeError:
+            # A half-picked address (an entity without that department yet)
+            # is the artist mid-edit, not an error to raise from a callback.
+            latest = None
+        self.parm('version').set(latest or '')
+
+
+@dataclass(frozen=True)
+class CacheListing:
+    """One cache on disk, as the browse dialog lists it."""
+    department: str
+    location: str
+    name: str
+    versions: tuple[str, ...]
+    latest: str | None
+    user: str | None
+    timestamp: str | None
+
+
+def scan_caches(roots: Iterable[tuple[str, str, Path]]) -> list[CacheListing]:
+    """The caches under each ``(department, location, cache folder)`` root.
+
+    A cache is a folder holding at least one version folder; ``latest`` is
+    what **Latest** would pick (``latest_finished``), and user/timestamp come
+    from that version's sidecar (None for caches older than sidecars).
+    Missing roots are skipped: most departments never cache.
+    """
+    listings = []
+    for department, location, root in roots:
+        root = Path(root)
+        if not root.is_dir(): continue
+        for cache_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+            versions = sorted(
+                (p.name for p in cache_dir.iterdir()
+                 if p.is_dir() and naming.is_valid_version_name(p.name)),
+                key=naming.get_version_code,
+            )
+            if not versions: continue
+            contexts = {
+                v: cache_context.load_cache_context(cache_dir / v)
+                for v in versions
+            }
+            latest = latest_finished(
+                versions, {v for v, c in contexts.items() if c is not None}
+            )
+            context = contexts.get(latest) or {}
+            listings.append(CacheListing(
+                department=department,
+                location=location,
+                name=cache_dir.name,
+                versions=tuple(versions),
+                latest=latest,
+                user=context.get('user'),
+                timestamp=context.get('timestamp'),
+            ))
+    return listings
 
 
 def latest_finished(version_names: list[str], finished: set[str]) -> str | None:
@@ -424,7 +561,46 @@ def select(kwargs):
         selected_uri = dialog.get_selected_uri()
         if selected_uri:
             raw_node.parm('entity').set(selected_uri)
-            wrap(raw_node)._update_labels()
+            node = wrap(raw_node)
+            node._update_labels()
+            node.follow_selection()
+
+
+def selection_changed(kwargs):
+    """Department / Location / Name callback."""
+    wrap(kwargs['node']).follow_selection()
+
+
+def browse(kwargs):
+    """The browse button next to Name: pick any cache of the entity."""
+    from tumblepipe.pipe.houdini.ui.cache_browser import CacheBrowserDialog
+
+    node = wrap(kwargs['node'])
+    entity_uri = node.get_entity_uri()
+    if entity_uri is None:
+        hou.ui.displayMessage(
+            "Entity is 'from_context', but this scene is not a pipeline "
+            'workfile. Pick the entity first.',
+            severity=hou.severityType.Warning,
+        )
+        return
+    try:
+        current = (
+            node.get_department_name(), node.get_location_name(),
+            node.get_cache_name(),
+        )
+    except ns.NodeError:
+        current = None
+    dialog = CacheBrowserDialog(
+        node.browse_caches(),
+        entity_label=str(entity_uri),
+        current=current,
+        parent=hou.qt.mainWindow(),
+    )
+    if dialog.exec_():
+        listing = dialog.selected_listing()
+        if listing is not None:
+            node.pick_cache(listing)
 
 
 def latest(kwargs):

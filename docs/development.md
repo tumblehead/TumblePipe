@@ -1191,23 +1191,28 @@ It builds its stage in memory and touches no project data, but it drives real
 nodes, so it needs Houdini with `otls/` on `HOUDINI_OTLSCAN_PATH` and `python/`
 on `PYTHONPATH` (e.g. TumbleTrove Desktop's `run_hython`).
 
-## build_comp alpha harness
+## Comp harness
 
-`scripts/verify_build_comp_alpha.py` drives the real `th::build_comp` node's
-Build and Update over EXR fixtures and checks the alpha wiring *and* the
-cooked pixels (see
-[Compositing → Alpha lives in the beauty](compositing.md#alpha-lives-in-the-beauty)):
-Build from an RGB beauty is refused; a comp built from a raw render's RGBA
-beauty (`beauty.R/G/B/A`) reads the beauty RGBA and splits output 3 out;
-Updated to the denoise's RGBA publish (bare `R,G,B,A`) every File COP asks
-for plane `C` (a File COP asked for `beauty` on bare channels loads
-nothing); and Update onto an RGB beauty is refused and changes nothing.
+`scripts/verify_comp.py` drives the comp nodes (`th::import_render`,
+`th::light_mix`, `th::export_comp`) and the real composite worker in a
+throwaway project (see [Compositing](compositing.md#the-comp-workfile)). It
+stages synthetic renders with the install's `hoiiotool`: a two-channel shot
+with a raw render and a denoise of `default`, and a `chars` render with
+`beauty_key` / `beauty_rim` light groups, a one-channel matte and a pass the
+comp does not read. It checks resolution (`best`, pins, refusals), the cable
+fields, the light mix's pixels (defaults give back the beauty, Mute,
+Exposure, an idempotent Sync), the unread-channel warning, the freeze plan,
+and then runs `farm/workers/composite_houdini.py` in a second hython on the
+config the job would pass: the merged frame is `chars` over `default`,
+stamped ACEScg, with its receipts, and the version's context.json records
+the renders it read. It then runs the worker again as Farm Submit's Comp
+column does (no frozen imports, the export found by layer), which must write
+the next version. A Multi's submit plans one version per member.
 
-It answers build_comp's project lookups itself (a subclass plus module-level
-stand-ins, installed *after* the nodes are created, because the HDA's
-OnCreated reloads `build_comp`), writes its fixtures with the install's
-`hoiiotool` to a temp dir, and puts this checkout's `python/` first on
-`sys.path`. Run it with hython (e.g. TumbleTrove Desktop's `run_hython`).
+The child hython runs with `HOUDINI_PACKAGE_SKIP=1` and this checkout's
+`otls/` on `HOUDINI_OTLSCAN_PATH`, so an installed tumblepipe package cannot
+shadow it. Run it with hython (e.g. TumbleTrove Desktop's `run_hython`);
+`VERIFY_DEBUG=1` prints the traceback of a failing resolve.
 
 ## Project HDA harness
 
@@ -1290,7 +1295,7 @@ created and runs its own copy from then on: "New workfile from template"
 loads `<project>/_config/templates/<context>/<department>/template.py`, not
 the package's. **Editing a packaged template changes new projects only.** An
 existing project gets the change only when a numbered refresh step brings it
-(v2, v9, v12, v14–v16 and v18–v21 so far), so a fix nobody migrates is a fix nobody has: the
+(v2, v9, v12, v14–v16, v18–v21 and v24 so far), so a fix nobody migrates is a fix nobody has: the
 rig/blendshape dive fix shipped in 1.77.0 and the animation template's
 `KeyError: 'uri'` fix both sat in the scaffold, unseen by every project past
 v12, until v14.
@@ -1388,6 +1393,13 @@ beside it is a gitignored build artifact.
   (zero diff), so an HDA edit produces a reviewable diff of just the change.
   `-x` writes a compressed binary `Contents.gz`, which still builds but is
   undiffable. `compile-hdas` collapses the other way with `hotl -l`.
+- **The comp HDAs are generated, not hand-edited.** `th::import_render`,
+  `th::light_mix` and `th::export_comp` are built from code by
+  `hython scripts/make_comp_hdas.py`, which rewrites their
+  `otls/cop_th.<name>.1.0/` directories. Change the script (or the Python
+  the nodes call, `python/tumblepipe/pipe/houdini/cops/<name>.py`) and
+  regenerate; an edit made only in the expanded otls is lost on the next
+  run. Then run `scripts/verify_comp.py` (*Comp harness* above).
 - **Edit the definition's interface, not an instance's.** Calling
   `setParmTemplateGroup()` on an HDA *instance* and then `updateFromNode()`
   silently fails to carry nested multiparm children. Use
@@ -1651,7 +1663,24 @@ together. Houdini merges every
 `depthstyle`, `defaultpurposes`, `allowbackgroundupdate`, `pauseonupdate`,
 `aovsupport`, `drawmodesupport`, `showhydraprocedurals`,
 `showinviewportmenu`, `destroyifdeactivated` and `preloadlibraries`. Ours:
-`depthstyle "opengl"` (the core writes NDC depth in [0, 1]),
+`depthstyle "linear"`: in the viewer (`houdini:viewport`) the shim sets
+`ThFrame::linear_depth` and the core writes depth as distance along the
+camera's view axis (`ffi::linear_depth`; nothing drawn is `FLT_MAX`), while
+husk and the farm keep Hydra's window depth. `props.rs`
+(`linear_depth_is_the_distance_along_the_view_axis`) holds it for any
+camera, near and far plane (at infinity too) and orthographic views, on
+both rasterisers (the viewer draws on the GPU by default);
+`linear_depth_undoes_the_projection_and_keeps_the_order` holds the
+conversion over the whole depth range, out to what f32 window depth can
+still tell apart, and keeps near before far for what Houdini composites
+over the scene. Houdini 22 decodes `"opengl"`
+depth as near / d rather than through the projection it hands the delegate
+(near 1, far at infinity), so every surface read as about one unit away and
+the View tool's Set Pivot tumble pivoted on the camera; measured live, the
+pivot sat at 1 / d of the depth written. `"linear"` is Karma's style and
+leaves nothing to decode. A new depth buffer is cleared to nothing drawn
+when bound, not left at zeros, so a pivot picked before the first frame is
+published is not at the camera either. The rest:
 `needsselection` (Houdini draws the outline from the primId/instanceId
 AOVs, over a transparent background), guides and proxies by default.
 
@@ -1663,14 +1692,34 @@ set). That decides `th:interactive`'s default:
 - **Off (husk, farm):** `ThRenderPass::_ExecuteNow`, synchronous as before.
 - **On (viewer):** `_ExecuteInBackground`. The pass keys a frame on size,
   view, projection, settings, render tags, the delegate's edit count and the
-  buffers' identity and allocation generation. A changed key stops the
-  background frame (`ThRenderThread::Stop`), gathers a `_Job` (views plus
-  owned copies of what they point to) and starts a new one; `IsConverged` is
-  false until that request's final frame is published. Every prim `Sync` and
-  every `Destroy*` calls `_Workers::Edited()` first, which bumps the edit
-  count and stops all background frames, so no frame reads a prim while
-  Hydra changes it (HdEmbree's rule). Frames serialise on the shared
-  geometry cache through `cacheMutex`.
+  buffers' identity and allocation generation. A changed key gathers a
+  `_Job` (views plus owned copies of what they point to) and hands it to the
+  pass's thread (`ThRenderThread::Request`): a draft (one sample, no
+  occlusion or blur) when the last full frame took over `_draftAboveMs`
+  (20 ms), then the full frame. The new request replaces the frames still
+  queued, but the frame being drawn is finished, not cancelled, unless it is
+  a full frame and the new request starts with a draft (or the size
+  changed). Cancelling whatever was drawing starved the viewer: each camera
+  move cancelled a draft that was nearly done, and nothing showed until the
+  camera stopped. `IsConverged` is false until the newest request's full
+  frame is published. A mesh or material `Sync` and every `Destroy*` call
+  `_Workers::Edited()` first, which bumps the edit count and stops all
+  background frames, so no frame reads a prim while Hydra changes it
+  (HdEmbree's rule). A camera or instancer `Sync` only bumps the count
+  (`_Workers::Changed()`): a frame copies the camera (`_MakeFrame`) and the
+  instance transforms (`_Gather`), so gathering the next frame while one
+  draws is safe, except across a shutter change, where gathering rewrites a
+  moving mesh's shutter points (`ThMesh::_Motion`) and the pass stops the
+  thread first. Frames serialise on the shared geometry cache through
+  `cacheMutex`. The thread draws into its own image and swaps it with the
+  newest finished one, and `Take` swaps that into the pass, so the buffers
+  are allocated once; `_Publish` copies whole rows into the delegate's own
+  AOV formats (Float32Vec4, Float32, Int32), flipping them.
+- **GPU in the viewer:** `th:gpu` (bool; unset, `TH_PLAYBLAST_GPU`, else on
+  for an interactive pass and off for husk) sets `ThFrame::gpu` on every
+  frame, and the core draws on the GPU where it was built with it and an
+  adapter works (CPU otherwise). husk and the farm stay on the CPU unless
+  asked, so their frames match a worker with no GPU.
 - **Cancellation** goes through `th_render_ids(..., cancel)`: the Rust side
   installs a thread-local `cancel::Token` for the call, the rasteriser
   checks it between band batches and inside the pool, the post pass skips
@@ -1686,15 +1735,46 @@ set). That decides `th:interactive`'s default:
   instance into an `Rg32Sint` target with its own depth test, in the same
   order as the scene pass, so it keeps the same surface. (A third target
   on the scene pass would exceed the 32 bytes a sample wgpu allows.)
-- **Cusp normals** are kept in the delegate's `ThCache` (`normals.rs`)
-  for meshes with a key, while the key's version and the point and
-  triangle arrays stay the same; the misses are worked out a mesh at a time
-  across the pool's threads, and meshes a call does not draw are let go.
-  A draft of a still scene then no longer pays for them.
+- **Cusp and smooth normals** are kept in the delegate's `ThCache`
+  (`normals.rs`) for meshes with a key, while the key's version and the
+  point and triangle arrays stay the same: cusp normals (per corner) for a
+  polygonal mesh, smooth ones (per point) for a subdivision surface, either
+  only where the mesh has no normals of its own. The misses are worked out a
+  mesh at a time across the pool's threads, and meshes a call does not draw
+  are let go. A draft of a still scene then no longer pays for them.
+- **The CPU path's memory** is kept in `ThCache` too (`raster::Scratch`):
+  the render buffers of the last two frame shapes (draft and full) and an
+  `Arena` of the instances' transformed vertices, grown but never freed or
+  cleared. A reused buffer clears only depth and ids (depth says what was
+  drawn, and the occlusion blur tests drawn samples by their distance, not
+  by a normal left from an earlier frame). Per-frame allocations, their
+  page faults and their frees had been a quarter of a draft.
+- **Culling:** an instance whose bounding box lies wholly beyond one plane
+  of an unblurred pass's view is neither transformed nor binned. The
+  rasteriser fetches a triangle's corner attributes only once one of its
+  samples passes the depth test, and clips on the stack.
+- **The GPU path** reads colour, depth and ids back in one submission and
+  one wait, each copied once out of the mapped buffer.
 
 `TH_PLAYBLAST_TIMING=1` logs each viewer frame (`viewport draft|frame WxH,
-N samples + AO, M meshes: X ms`) and the core's cusp normals (`N meshes
+N samples + AO, M meshes: X ms (core Y)`), each Execute that started or
+published a frame (`execute WxH started published draft: X ms on the
+viewer's thread (refine, stop, gather, take, publish), shown N ms after the
+request; M ms since the last execute`) and the core's normals (`N meshes
 worked out, M kept`).
+
+`cargo run --release --example viewport_bench [--features gpu] -- --size
+1065x599 --scene medium --only draft [--gpu] [--no-ids]` in `src/delegate`
+times the core through the C ABI as the viewer calls it (kept cache, ids,
+transparent background) on a generated set orbited by the camera (`small`,
+`medium` with 4.5M triangles, 6.6M drawn, `large`). On an RTX workstation
+at the viewer's 1065x599, medium: a draft takes 40 ms on the CPU (150 ms
+before this pass) and 14.5 ms on the GPU (40 ms), a full frame 173 ms on
+the CPU (480 ms).
+
+To drive the viewer itself: orbit a Camera LOP the viewport looks through
+(`vp.setCamera(path)`) from a `hou.ui.addEventLoopCallback`. A default
+camera moved through HOM never reaches Hydra.
 
 The viewer's render stats (Display Options) come from
 `ThRenderDelegate::GetRenderStats`: `rendererName` (TumbleView), and as

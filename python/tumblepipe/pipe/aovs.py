@@ -13,7 +13,8 @@ an unnecessarily lossless colour pass costs disk, a lossy data pass costs a
 comp.
 
 It also names the mattes and distance ramps, which the farm's denoise
-publishes untouched and ``build_comp`` imports as masks and mono passes.
+publishes untouched and ``th::import_render`` carries as masks and mono
+passes in its cable.
 """
 
 COLOR_AOV_NAMES = frozenset({

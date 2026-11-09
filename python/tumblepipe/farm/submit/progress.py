@@ -64,6 +64,29 @@ def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
+def problems(state: dict, names: dict[str, str]) -> list[tuple[str, str]]:
+    """Each entity whose row went wrong, by name, with what went wrong in
+    full: a failed submission's error, else a clean-up's.
+
+    The status column cuts long errors short, and an error often says how to
+    fix it, so the progress card lists these under its table. Entities come
+    in the order of ``names`` (the table's); a name is its URI when missing.
+    """
+    out = []
+    for uri, name in names.items():
+        row = state.get('rows', {}).get(uri)
+        cleanup = state.get('cleanup', {}).get(uri)
+        status = row.get('status') if isinstance(row, dict) else None
+        if status == FAILED:
+            error = row.get('error') or 'failed, with no reason given'
+        elif isinstance(cleanup, dict) and cleanup.get('error'):
+            error = f"old jobs not cleaned up: {cleanup['error']}"
+        else:
+            continue
+        out.append((name or uri, str(error)))
+    return out
+
+
 def row_text(row: dict | None, cleanup: dict | None, backend: str) -> str:
     """What an entity's row says: its status, then what its clean-up did.
 

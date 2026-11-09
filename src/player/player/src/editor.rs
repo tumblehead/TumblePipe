@@ -1034,7 +1034,9 @@ impl Editor {
     /// The Shots bin lists each sequence's shots under its name; the Media
     /// bin its items. Each row is a name and, quieter, what it is.
     fn bins_view(&self) -> Element<Message> {
-        let tabs = segmented(Id::new("bin tabs"), self.bin_tab).push("Shots").push("Media").on_select(Message::BinTab);
+        // Out of keyboard focus, as are the panel's buttons: a click on them
+        // must leave the arrows, Home/End and Space to the timeline (on_key).
+        let tabs = segmented(Id::new("bin tabs"), self.bin_tab).push("Shots").push("Media").on_select(Message::BinTab).focusable(false);
         let rows: Vec<BinRow> = match self.bin_tab {
             0 => shot_rows(&self.bins.shots),
             _ => self
@@ -1071,7 +1073,7 @@ impl Editor {
         };
         let writable = !self.doc.read_only();
         let put = |id: &'static str, label: &str, overlay: bool| {
-            let b = look::button(Id::new(id), text(label.to_owned()).font_size(12.0)).padding(Padding::from([3.0, 8.0]));
+            let b = look::button(Id::new(id), text(label.to_owned()).font_size(12.0)).padding(Padding::from([3.0, 8.0])).focusable(false);
             if writable { b.on_press(move || Message::BinPut(overlay)) } else { b }
         };
         let mut actions = row().spacing(6.0).push(put("insert", "Insert", false)).push(put("overlay", "Overlay", true));
@@ -1079,14 +1081,16 @@ impl Editor {
             actions = actions.push(
                 look::button(Id::new("new shot"), text("New shot…").font_size(12.0))
                     .padding(Padding::from([3.0, 8.0]))
-                    .on_press(|| Message::Open(OpenDialog::NewShot)),
+                    .on_press(|| Message::Open(OpenDialog::NewShot))
+                    .focusable(false),
             );
         }
         if self.bin_tab == 1 {
             actions = actions.push(
                 look::button(Id::new("import"), text("Import…").font_size(12.0))
                     .padding(Padding::from([3.0, 8.0]))
-                    .on_press(|| Message::Open(OpenDialog::Import)),
+                    .on_press(|| Message::Open(OpenDialog::Import))
+                    .focusable(false),
             );
         }
         let mut page = column().spacing(8.0).padding(Padding::from([10.0, 10.0])).push(tabs);

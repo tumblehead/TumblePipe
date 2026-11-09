@@ -377,7 +377,7 @@ def cop_plane_name(channel_names: Optional[list[str]], aov_name: str) -> str:
     """The name a File COP finds an AOV file's channels under.
 
     ``aov_name`` when the channels are `<aov>.`-prefixed (or can't be read --
-    what build_comp always asked for), ``C`` when they are bare.
+    what the comp always asked for), ``C`` when they are bare.
     """
     if not channel_names: return aov_name
     if any('.' in channel for channel in channel_names): return aov_name
@@ -522,6 +522,20 @@ def encode(input_path, output_path, compression: str):
         'oiiotool', path_str(input_path),
         *ACESCG_ATTRIB_ARGS,
         '--compression', compression,
+        '-o', path_str(output_path)
+    ])
+
+def stamp_acescg(input_path, output_path):
+    """Copy an EXR to ``output_path`` with the ACEScg colour stamp.
+
+    A COP ROP writes frames with neither stamp, so RV and Nuke read them as
+    Rec.709; the composite worker sends every frame through here on its way
+    to the network.
+    """
+    _require_suffix(input_path, '.exr')
+    _run([
+        'oiiotool', path_str(input_path),
+        *ACESCG_ATTRIB_ARGS,
         '-o', path_str(output_path)
     ])
 

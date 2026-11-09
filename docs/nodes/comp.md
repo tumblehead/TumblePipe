@@ -1,71 +1,92 @@
 # Compositing nodes
 
-The Copernicus (COP) toolkit: the shot comp builder and its camera, the
+The Copernicus (COP) toolkit: the shot comp nodes and its camera, the
 comp helpers under `_TumblePipe/comp`, the texture and material COPs under
 `_TumblePipe/lookdev`, and the COP network context menu. Where renders land,
-what colour space they are in and how a comp reaches the farm is in
-[Compositing](../compositing.md); this page is about the nodes.
+what colour space they are in, how the composite template wires a comp and
+how it reaches the farm is in [Compositing](../compositing.md); this page is
+about the nodes.
 
 None of these HDAs carries built-in help text, so this page is the reference.
 
-## `th::build_comp` (COP)
+## `th::import_render` (COP)
 
-Build and submit the shot comp. Tab menu `_TumblePipe/pipeline`; drop it in
-a `copnet` inside a **composite** shot workfile. What **Update** builds —
-one subnet per shot channel with a typed `file` COP per AOV pinned to the
-latest complete render version, a grade subnet per channel, channels
-over-merged in shot order — is described in
-[Compositing → The build_comp node](../compositing.md#the-build_comp-node)
-and not repeated here.
-Source: [`otls/cop_th.build_comp.1.0`](../../otls/cop_th.build_comp.1.0/th_8_8Cop_1build__comp_8_81.0/DialogScript),
-[`cops/build_comp.py`](../../python/tumblepipe/pipe/houdini/cops/build_comp.py).
+One channel's finished render into a comp. Tab menu `_TumblePipe/pipeline`;
+the composite template makes one per shot channel. Outputs **rgba** (the
+beauty; its A is the channel's alpha) and **aovs** (a cable of every AOV the
+comp reads, each field named after its AOV). What it resolves and refuses is
+in [Compositing → `th::import_render`](../compositing.md#thimport_render).
+Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th_8_8Cop_1import__render_8_81.0/DialogScript),
+[`cops/import_render.py`](../../python/tumblepipe/pipe/houdini/cops/import_render.py),
+[`pipe/comp.py`](../../python/tumblepipe/pipe/comp.py).
 
 | Label | Default | What it does |
 |---|---|---|
-| Shot | `from_context` | The shot; the label under it shows what resolved |
-| Input | `denoise` | The highest render department to read from — the imports search departments up to this one |
-| Quality | Render | **Render** reads farm frames; **Proxy** reads locally generated, scaled-down copies of the same versions |
-| Proxy Resolution | Full Size | Full / Half / Quarter — the proxies are written at 1, 1/2 or 1/4 size and scaled back up by the imports |
-| Farm › Pool, Priority | first pool, `50` | |
-| Farm › Render Layer | `all` | Listed, but nothing reads it |
-| Jobs › Submit Partial | on | Also render **Start/Middle/End-Frame** as a quick preview task |
-| Jobs › Submit Full | on | Render the full range |
+| Shot | `from_context` | Shots only (*Select Shot*); the label under it shows what resolved. In a Multi's workfile the template pins it to the member |
+| Channel | `default` | A menu of the shot's channels |
+| Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render); or one department |
+| Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department) |
+| Reads | | What resolved (`denoise v0004, 11 AOVs`), from what when it moved, or why nothing did |
+
+Buttons: **Update** re-resolves (opening the workfile does it too, for an
+import on `latest`); **Open Location** opens the resolved version's folder.
+Changing Channel, Department or Version resolves at once; a render that
+cannot be comped shows its reason on **Reads** instead of a dialog.
+
+## `th::light_mix` (COP)
+
+A channel's light groups mixed back into its beauty. Tab menu
+`_TumblePipe/pipeline`; the template puts one under each import. Input
+**aovs** (an import's cable), output **rgba**. The mix is the graded groups
+plus **Rest** (the beauty minus the groups), so at defaults it is the beauty
+exactly; see [Compositing → `th::light_mix`](../compositing.md#thlight_mix).
+Source: [`otls/cop_th.light_mix.1.0`](../../otls/cop_th.light_mix.1.0/th_8_8Cop_1light__mix_8_81.0/DialogScript),
+[`cops/light_mix.py`](../../python/tumblepipe/pipe/houdini/cops/light_mix.py).
+
+| Label | Default | What it does |
+|---|---|---|
+| Mix | | Which groups the mix grades on its own |
+| Sync Rows | | Adds a row for each light group the cable has and no row does; never removes or changes a row. Pressed for you when the upstream import moves version |
+| Rest › Mute, Exposure, Tint | off, `0`, white | The lights in no group |
+| Light Groups › Group, Mute, Exposure, Tint | | One row per `beauty_<tag>`: Exposure in stops |
+
+A light group without a row rides in Rest at unity, so it looks right before
+anyone syncs.
+
+## `th::export_comp` (COP)
+
+The end of a comp graph, and its farm submit. Tab menu
+`_TumblePipe/pipeline`; the template ends in one, display flag on. One RGBA
+input. What a submit writes and chains is in
+[Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s).
+Source: [`otls/cop_th.export_comp.1.0`](../../otls/cop_th.export_comp.1.0/th_8_8Cop_1export__comp_8_81.0/DialogScript),
+[`cops/export_comp.py`](../../python/tumblepipe/pipe/houdini/cops/export_comp.py).
+
+| Label | Default | What it does |
+|---|---|---|
+| Shot | `from_context` | Shots only |
+| Layer | `comp` | `comp` = the merged comp, written as the version's `slapcomp` layer; or a channel, for a per-channel output |
+| Warning | | Shot channels no import reads (Layer `comp` only) |
+| Jobs › Preview Frames | off | Also render first, middle and last frame as a quick task, posted before the full range |
 | Jobs › Frame Range | From Config | The shot's range plus roll, or From Settings (**Start/End-Frame**, **Pre/Post-Roll**) |
-| Jobs › Step size, Batch size | `0`, `5` | |
+| Jobs › Step, Batch Size | `1`, `5` | |
+| Jobs › Copy to Edit | off | Sync the comp into the edit when it is done |
+| Farm › Pool, Priority | the project's default pool, `50` | |
 
 Buttons:
 
-- **Update COP network** — builds the network on first press, then
-  re-resolves every import to the newest complete version. With Quality on
-  Proxy it first cooks the node's TOP network to write the missing proxy
-  frames, then points the imports at them (see
-  [Compositing → Proxies](../compositing.md#proxies)); **Stop** cancels
-  that cook.
-- **Render to mplay** — renders the current frame in place.
-- **Submit to farm** — saves the hip, flips Quality to Render for the
-  save, and submits a composite job: a *stage* task, a *partial composite*
-  (three frames, when Submit Partial is on) and a *full composite* (when
-  Submit Full is on), one layer per shot channel. What the job writes and
-  chains (MP4s, slapcomp, Discord) is in
-  [Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s).
+- **Submit** — saves the workfile, asks where to run (Render farm / This
+  machine) and submits *every* `export_comp` of the shot in the workfile
+  as one composite version, with every import frozen at what it resolved.
+  Unread channels are listed and asked about first. In a Multi's workfile,
+  one version per member.
+- **Open Location** — the folder the Layer writes into.
 
 Gotchas:
 
-- The node needs a saved **shot** workfile; Submit fails with *Invalid
-  workfile path* otherwise, and `from_context` in an asset workfile resolves
-  nothing. In a Multi's comp workfile it resolves nothing either — a
-  composite is built for one shot, so set **Shot** to the member; Submit
-  there says so rather than sending the farm the Multi.
-- The first Update refuses to build when no channel has a complete render,
-  or a rendered channel has no `beauty` AOV. It says which and
-  where it looked, and builds normally on the next Update once the renders
-  are there. Without a farm, see
-  [Rendering without a farm](../compositing.md#rendering-without-a-farm).
-- Update is the only thing that retargets versions. The Asset Browser's
-  refresh-on-open deliberately skips this node, so a comp never silently
-  picks up new renders — press Update when you want them.
-- Frames written by **Render to mplay** carry no `chromaticities`, so RV and
-  Nuke read them as Rec.709; see
+- A Layer can be written by one `export_comp` per shot; Submit refuses two.
+- A comp rendered by hand (a ROP Image) carries no `chromaticities`, so RV
+  and Nuke read it as Rec.709; the farm stamps every frame. See
   [Colour space](../compositing.md#colour-space).
 
 ## `th::import_lop_camera` (COP)

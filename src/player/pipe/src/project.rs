@@ -13,7 +13,7 @@ use crate::db;
 ///
 /// A newer project is refused: a future migration may change the shape of
 /// the files TumblePipe here writes, and it cannot tell which ones did.
-pub const CONFIG_LAYOUT_VERSION: u32 = 23;
+pub const CONFIG_LAYOUT_VERSION: u32 = 24;
 
 /// The oldest `_config/` layout this reads and writes: the last one
 /// that changed the shape of `_config/db/` or `storage.json`.
@@ -21,12 +21,13 @@ pub const CONFIG_LAYOUT_VERSION: u32 = 23;
 /// An older project would not fail on its own -- it would be read and
 /// written wrongly (before v13 the publish channels were stored as
 /// `variants`, so a channel added here would be invisible to the pipeline)
-/// -- so it is refused up front with the fix. v14 to v23 refreshed
+/// -- so it is refused up front with the fix. v14 to v24 refreshed
 /// department templates, moved WSL paths out of `storage.json` values
 /// (v17), added the `groom` department to the pool (v21), moved the
 /// group schema under `schemas:/groups/<context>` (v22) and added the
 /// `edits` context (v23: a storage purpose, a department context, schemas
-/// and the `entity:/edits` root, all new keys); none changed a shape
+/// and the `entity:/edits` root, all new keys); v24 refreshed only the
+/// composite template; none changed a shape
 /// TumblePipe here touches. Edits themselves need v23. When TumblePipe adds a migration, bump
 /// [`CONFIG_LAYOUT_VERSION`], and this too if the new step changes a shape.
 pub const OLDEST_LAYOUT_VERSION: u32 = 13;

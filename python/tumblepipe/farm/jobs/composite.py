@@ -1,4 +1,5 @@
-"""The composite job: runs ``workers/composite.py`` over a comp workfile."""
+"""The composite job: runs ``workers/composite.py`` over a comp workfile:
+renders its ``th::export_comp`` nodes with the imports pinned."""
 
 from pathlib import Path
 import json
@@ -17,9 +18,8 @@ def build(config, paths, staging_path):
         step_size = config['step_size'],
         receipt_path = config['receipt_path'],
         input_path = config['input_path'],
-        node_path = config['node_path'],
-        layer_names = config['layer_names'],
-        output_paths = config['output_paths']
+        exports = config['exports'],
+        imports = config['imports']
     ), staging_path,
         name = config['title'],
         pool = config['pool_name'],

@@ -484,9 +484,14 @@ A rig can also be built **on the stage** for Houdini's APEX Animate LOP
 (SOP Import APEX Scene in Character mode, APEX SOP Rig Builder, Configure
 APEX Rig) and published as a USD layer: end the rig workfile's stage in a
 [`th::export_layer`](import-and-export.md#thexport_layer-lop) with
-Department `rig`. **Publish** (and the node's **Export**) collects it in a
-rig workfile alongside any `th::export_rig` (before, a rig workfile only
-collected `th::export_rig` and said there were no export tasks).
+Department `rig`. **Publish** (and the node's **Export**) collects it
+alongside any `th::export_rig` (before, a rig workfile only collected
+`th::export_rig` and said there were no export tasks).
+
+Neither needs the rig workfile: any workfile of the asset collects its
+`th::export_rig` and its Department `rig` exports, so model, lookdev and rig
+can live in one file and publish in one run, in pipeline order. Up to
+TumblePipe 1.97.1 only the `rig` workfile collected `th::export_rig`.
 
 - Put each character at or below the asset prim (`/CHAR/Ryan`): set the
   SOP Import APEX Scene's **Import Path Prefix** to it. Its default `/$OS`

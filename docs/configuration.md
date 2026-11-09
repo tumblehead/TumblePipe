@@ -510,7 +510,7 @@ left exactly as it was, rather than stamped part-way at the last step that
 happened to succeed.
 
 A migration never replaces a file without preserving the original — the one
-exception is a template a stock refresh (v12, v14–v16, v18–v21) recognises as a version the scaffold shipped, which
+exception is a template a stock refresh (v12, v14–v16, v18–v21, v24) recognises as a version the scaffold shipped, which
 holds nothing of the project's. Which of the two it does depends on how
 load-bearing the file is:
 
@@ -794,6 +794,19 @@ load-bearing the file is:
   Each original is kept as `<file>.v23.bak`. A file that already has an
   `edits` part keeps it untouched. The master edit is `master_edit` on
   `config:/project`; unset means no master, so it needs no step.
+
+- **The composite template without th::build_comp (v24).** The stock
+  composite template now builds the comp from th::import_render,
+  th::light_mix and th::export_comp; th::build_comp, which the old one
+  placed, is gone from the package. The step touches only
+  `_config/templates/shots/composite/template.py`: a stock copy (a version
+  the scaffold shipped) is replaced with the packaged one, no backup, as
+  v12 does; a customised copy whose text names `build_comp` is replaced
+  too, its original kept as `template.py.v24.bak` (with the HDA gone it
+  could only fail at New from Template; port what it changed onto the new
+  template). A customised copy that does not name `build_comp`, and a
+  project with no composite template, are left as they are. An existing
+  `.v24.bak` is never overwritten, and line endings are kept.
 
 ### Migrating at launch
 

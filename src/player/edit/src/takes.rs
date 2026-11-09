@@ -177,4 +177,57 @@ mod tests {
             assert_eq!(pick(&t, &pinned), Some(i), "{}", take.label);
         }
     }
+
+    use proptest::prelude::*;
+
+    /// A shot's renders as discovery lists them: the render departments in
+    /// pipeline order (render, denoise, composite), each one's plain takes
+    /// by layer (the slapcomp last) then version, then its stacks; after
+    /// the playblasts. A department is its layers' versions and its stacks'.
+    fn discovered(departments: &[(Vec<(usize, u32)>, Vec<u32>)]) -> Vec<Take> {
+        let mut takes = vec![movie("animation", "v0001")];
+        for (name, (plain, stacks)) in ["render", "denoise", "composite"].iter().zip(departments) {
+            let mut plain = plain.clone();
+            plain.sort_by_key(|&(layer, version)| (layer == 2, layer, version));
+            plain.dedup();
+            for (layer, version) in plain {
+                takes.push(exr(name, ["default", "fx", SLAPCOMP][layer], &format!("v{version:04}")));
+            }
+            let mut stacks = stacks.clone();
+            stacks.sort_unstable();
+            stacks.dedup();
+            takes.extend(stacks.into_iter().map(|v| stack(name, &format!("v{v:04}"))));
+        }
+        takes
+    }
+
+    fn department_strategy() -> impl Strategy<Value = (Vec<(usize, u32)>, Vec<u32>)> {
+        (prop::collection::vec((0usize..3, 1u32..30), 0..6), prop::collection::vec(1u32..30, 0..3))
+    }
+
+    proptest! {
+        /// With a composite version, best available is the composite
+        /// department's merged comp, its newest version, whatever the
+        /// earlier departments hold and whatever stacks the composite has.
+        #[test]
+        fn best_available_picks_the_composite_slapcomp_when_there_is_one(
+            render in department_strategy(),
+            denoise in department_strategy(),
+            composite in department_strategy(),
+        ) {
+            let newest = composite.0.iter().filter(|&&(layer, _)| layer == 2).map(|&(_, v)| v).max();
+            let takes = discovered(&[render, denoise, composite.clone()]);
+            let picked = pick(&takes, &Rule::best()).map(|i| &takes[i]);
+            if let Some(newest) = newest {
+                let picked = picked.expect("a composite slapcomp exists");
+                prop_assert_eq!(picked.department.as_str(), "composite");
+                prop_assert_eq!(picked.layer(), Some(SLAPCOMP));
+                prop_assert_eq!(&picked.version, &format!("v{newest:04}"));
+            } else if !composite.0.is_empty() {
+                // No merged comp: still the composite department, never an
+                // earlier one.
+                prop_assert_eq!(picked.expect("a composite render exists").department.as_str(), "composite");
+            }
+        }
+    }
 }

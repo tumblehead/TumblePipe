@@ -230,7 +230,7 @@ class PipelineSettingsWidget(QWidget):
             "browser, File > Open or anywhere else, re-execute every "
             "import node in it so 'current' and 'latest' pull in the "
             "newest published versions. Runs in manual update mode and "
-            "does not re-cook create_model / build_comp, so it re-resolves "
+            "does not re-cook create_model, so it re-resolves "
             "references without cooking the whole workgraph."
         )
         self._auto_refresh_checkbox.setChecked(

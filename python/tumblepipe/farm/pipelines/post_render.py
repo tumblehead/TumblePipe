@@ -1,11 +1,12 @@
 """The jobs that follow a shot's render or composite: the review chain.
 
-Both the render pipeline (``pipelines/render.py``) and the composite
-pipeline (``pipelines/composite.py``) end the same way once their frames
+The render pipeline (``pipelines/render.py``) ends this way once its frames
 exist: each channel's beauty is encoded to a review mp4, the channels are
 stacked into a slapcomp that is encoded and posted to Discord, and with
-*Copy to edit* the shot's best AOVs are synced into the edit. This module
-builds those jobs, so the two pipelines differ only in what they render.
+*Copy to edit* the shot's best AOVs are synced into the edit. The composite
+pipeline (``pipelines/composite.py``) uses the same jobs, but its
+cross-channel layer is the merged comp it renders itself, so it has no
+slapcomp job.
 
 Every frame stack a job writes gets a ``context.json`` beside its versions
 (:func:`write_framestack_context`); the render readers rely on its keys.
@@ -66,14 +67,16 @@ def write_framestack_context(
     receipt_path: Path,
     render_department: str,
     channel: str,
-    version_name: str
+    version_name: str,
+    reads: dict | None = None
     ) -> None:
     """The ``context.json`` of a rendered frame stack, beside its versions.
 
-    An on-disk format the render readers (build_comp, the AOV resolve) key
-    on. Nothing reads ``channel`` back — the channel is the stack's own
-    directory — so stacks written before the rename, which spell it
-    ``variant``, need no reader for it.
+    An on-disk format the render readers (th::import_render, the AOV
+    resolve) key on. Nothing reads ``channel`` back — the channel is the
+    stack's own directory — so stacks written before the rename, which spell
+    it ``variant``, need no reader for it. A composite version also records
+    what it read, ``reads = {channel: {department, version}}``.
     """
     store_json(receipt_path.parent / 'context.json', dict(
         entity = str(shot.entity_uri),
@@ -83,7 +86,8 @@ def write_framestack_context(
         version_name = version_name,
         first_frame = shot.first_frame,
         last_frame = shot.last_frame,
-        step_size = shot.step_size
+        step_size = shot.step_size,
+        **({} if reads is None else dict(reads = reads))
     ))
 
 
@@ -204,10 +208,17 @@ def frames_notify_job(
     render_department: str,
     channel: str,
     version_name: str,
-    discord_channel: str
+    discord_channel: str,
+    frame_path: Path | None = None
     ) -> Job:
-    """Post a channel's first, middle and last beauty frames."""
+    """Post a channel's first, middle and last beauty frames (or those of
+    ``frame_path``, a frame pattern, such as a merged comp's)."""
     uri = shot.entity_uri
+    if frame_path is None:
+        frame_path = get_aov_frame_path(
+            uri, render_department, channel, version_name,
+            'beauty', '####', 'exr', shot.purpose
+        )
     return notify_job.build(dict(
         title = f'notify partial {render_department} {version_name}',
         priority = notify_job.PRIORITY,
@@ -217,10 +228,7 @@ def frames_notify_job(
         message = f'{uri} - {render_department} - {version_name}',
         command = dict(
             mode = 'partial',
-            frame_path = path_str(get_aov_frame_path(
-                uri, render_department, channel, version_name,
-                'beauty', '####', 'exr', shot.purpose
-            )),
+            frame_path = path_str(frame_path),
             first_frame = shot.first_frame,
             middle_frame = shot.middle_frame,
             last_frame = shot.last_frame

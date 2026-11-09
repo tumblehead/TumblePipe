@@ -6,6 +6,7 @@ engine — task *collection* and *building* live in ``task_collection`` /
 ``task_factory``, and the node → dialog entry point in ``dialog_launcher``.
 """
 
+from collections.abc import Callable
 from contextlib import contextmanager
 import traceback
 import sys
@@ -69,6 +70,36 @@ def _validation_cancelled_type() -> type:
     return ValidationCancelled
 
 
+# What build tasks are filed under (task_factory). A build composes the staged
+# files from what is on disk and reads nothing from the session's stage.
+_BUILD_DEPARTMENT = 'staged'
+
+
+def departments_written(task: ProcessTask) -> set[str]:
+    """The departments ``task`` or one of its children wrote a version into
+    this run, builds aside."""
+    return {
+        t.department for t in (task, *(task.children or ()))
+        if t.exported_version and t.department
+        and t.department != _BUILD_DEPARTMENT
+    }
+
+
+def needs_refresh(written: set[str], department: str | None) -> bool:
+    """Whether the scene's imports must float before a task of ``department``.
+
+    ``written`` holds the departments that wrote a version since the last
+    refresh. Another department in it means this task would otherwise see
+    the versions loaded before the run: the lookdev built in the model
+    workfile, exported against the old model. Tasks of the department that
+    wrote never ask (a department's exports stay one block), and a build
+    never does, since it reads disk, not the scene.
+    """
+    if not department or department == _BUILD_DEPARTMENT:
+        return False
+    return any(name != department for name in written)
+
+
 def _version_of(result) -> str | None:
     """Read the version an export/build callback wrote, if it reported one.
 
@@ -130,6 +161,15 @@ class ProcessExecutor(QObject):
         self._is_running: bool = False
         self._current_index: int = 0
         self._executed_split_paths: set[str] = set()  # Track executed layer_split nodes
+        # Re-resolves the scene's imports between departments of a session
+        # run (see needs_refresh); None runs without.
+        self._refresh: Callable[[], None] | None = None
+        self._written: set[str] = set()  # departments written since the last refresh
+
+    def set_refresh(self, refresh: Callable[[], None] | None):
+        """What floats the scene's imports between the departments of a run
+        in this session; the dialog passes ``resolver.refresh_context``."""
+        self._refresh = refresh
 
     def set_tasks(self, tasks: list[ProcessTask]):
         """Set the list of tasks to execute"""
@@ -180,6 +220,7 @@ class ProcessExecutor(QObject):
         self._is_running = True
         self._current_index = 0
         self._executed_split_paths.clear()  # Reset deduplication tracking
+        self._written.clear()
         _validation_session.reset()  # Reset validation choices for new run
         # Use QTimer to allow UI updates between tasks
         QTimer.singleShot(0, self._execute_next_task)
@@ -216,6 +257,14 @@ class ProcessExecutor(QObject):
             QTimer.singleShot(0, self._execute_next_task)
             return
 
+        # Farm submissions write nothing here, so only a session run floats
+        if (
+            self._mode == 'local' and self._refresh is not None
+            and needs_refresh(self._written, task.department)
+        ):
+            self._refresh()
+            self._written.clear()
+
         task.status = TaskStatus.RUNNING
         self.task_started.emit(task.id)
 
@@ -250,6 +299,8 @@ class ProcessExecutor(QObject):
                 task.error_message = error_msg
                 self.task_failed.emit(task.id, task.error_message)
 
+        # Children that finished before a sibling failed wrote theirs too
+        self._written |= departments_written(task)
         self._current_index += 1
         # Continue with next task after a short delay to allow UI update
         QTimer.singleShot(100, self._execute_next_task)

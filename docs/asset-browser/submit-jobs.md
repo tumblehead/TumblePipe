@@ -54,7 +54,8 @@ Closing the dialog keeps, per project and tab, for the next time it opens:
 
 - the settings you **pinned** (set for the whole submission), except
   **Frames**, which belong to the shots they were typed for;
-- the Render section's **Range**, **Standalone** and **Copy to edit** choices;
+- the Render section's **Range**, **Standalone** and **Copy to edit** choices,
+  and the Comp section's **Copy to edit**;
 - the columns you collapsed.
 
 And for the dialog as a whole: which settings sections are collapsed, whether
@@ -113,11 +114,12 @@ category). Columns are the pipeline steps:
 
 - one **publish** column per publishable department, in pipeline (pool)
   order;
-- **Playblast** (shots only) and **Render**;
+- **Playblast** (shots only), **Render** and **Comp** (shots only, see
+  [Comp](#comp-shots-only));
 - **Warnings**.
 
 Each kind of step has a colour: blue for publishes, violet for Playblast,
-pink for Render. It runs along the top of the kind's column headers, fills
+pink for Render, cyan for Comp. It runs along the top of the kind's column headers, fills
 its ticked cells, and edges the kind's settings section beside the grid, so
 a section can be traced to the cells it speaks for. A heavier rule separates the kinds.
 
@@ -146,15 +148,15 @@ a click on the sliver does nothing.
 
 ### What a cell shows
 
-| Mark | Publish column | Playblast / Render column |
-|---|---|---|
-| `·` dim | no workfile for this department — nothing to do | no frame range configured — cannot run |
-| `○` | a workfile exists but was never exported | never made |
-| `○` dim | the only workfile is a [Multi](multis-and-roots.md#multis)'s, and it has never exported this entity — Select stale skips it, but you can tick it | — |
-| `●` amber | the workfile was saved after its latest export | older than the newest publish it composes |
-| `✓` green | exported since the last workfile save | newer than every publish it composes |
-| `…` | status not read yet | status not read yet |
-| filled in the kind's colour | **will be submitted** | **will be submitted** |
+| Mark | Publish column | Playblast / Render column | Comp column |
+|---|---|---|---|
+| `·` dim | no workfile for this department — nothing to do | no frame range configured — cannot run | no composite workfile — nothing to comp |
+| `○` | a workfile exists but was never exported | never made | never comped |
+| `○` dim | the only workfile is a [Multi](multis-and-roots.md#multis)'s, and it has never exported this entity — Select stale skips it, but you can tick it | — | — |
+| `●` amber | the workfile was saved after its latest export | older than the newest publish it composes | a render landed after the newest comp |
+| `✓` green | exported since the last workfile save | newer than every publish it composes | newer than the newest render |
+| `…` | status not read yet | status not read yet | status not read yet |
+| filled in the kind's colour | **will be submitted** | **will be submitted** | **will be submitted** |
 
 A preview "composes" the departments of its **Up to** cut: a playblast up to
 animation is stale when layout or animation was published after it, not when
@@ -221,6 +223,10 @@ The Warnings column says, per row, what the submission would run into:
   cell.
 - `department '<x>' is not assigned to this entity` — the pool still
   composes it, so this is a warning, not a block.
+- `Comp waits for the full render: …` — Comp and Render are ticked on the
+  row, but the Render **Range** is Preview only, which makes no frames to
+  comp. This one **blocks** the submit: tick **Full range**, or untick
+  Render to comp the renders already on disk.
 
 ### Before it submits
 
@@ -241,8 +247,9 @@ A single entity with nothing to check skips the review and is sent at once.
 
 ## The settings
 
-The right-hand column holds the settings for the ticked cells, in three
-sections: **Publish**, **Playblast** (shots only) and **Render**. A section
+The right-hand column holds the settings for the ticked cells, in four
+sections: **Publish**, **Playblast** (shots only), **Render** and **Comp**
+(shots only). A section
 shows only while at least one cell of its kind is ticked — tick a Render cell
 and the Render settings appear; with nothing ticked the column says *Tick a
 cell to see its settings.* A pinned field in a hidden section keeps its
@@ -395,6 +402,39 @@ by any department layer that authors the render settings prim (typically a
 `render.enabledof`, ray-limit and dicing properties are **not** read at submit;
 setting them in the config changes nothing on the farm.
 
+### Comp (shots only)
+
+A **Comp** cell re-comps the shot on the farm: its newest composite workfile
+(the one [made from the composite template](../compositing.md#the-comp-workfile);
+a [Multi](multis-and-roots.md#multis)'s, when a Multi covers the shot's
+composite department) over the shot's full frame range, written as a new
+version of the merged comp, `render:/render/<shot>/composite/slapcomp/v####/`.
+The workfile is bundled as it is when you submit; its `th::import_render`
+nodes on `latest` resolve when the job runs, so it comps the newest renders,
+and a pinned import stays pinned.
+
+- **Ticked alone**, it comps the renders already on disk.
+- **Ticked with Render**, the comp waits for that render: it starts after
+  the full render's denoise (or the render, without Denoise) and comps the
+  frames it made. The Render **Range** must include **Full range**; with
+  Preview only, the row is blocked (see [Warnings](#warnings)).
+
+The cell is `·` (it cannot be ticked) when the shot has no composite
+workfile: make one from the composite template first. Otherwise it is `○`
+until the shot has a merged comp, and `●` stale when a render landed after
+the newest comp: the render the Render column measures, the newest version of
+the Render **Up to** department's `default` channel, so changing that cut
+re-reads it. A comp is not a preview of the publishes: a stale department
+does not make it stale, and ticking Comp alone raises no
+`stale and not ticked` warning (Render beside it still does).
+
+| Field | Per-entity source | Default when unset | Notes |
+|---|---|---|---|
+| **Pool** | `farm.default_pool` | `general` | |
+| **Priority** | `farm.priority` | 50 | |
+| **Batch** | — | 5 | Frames per farm task of the comp. |
+| **Copy to edit** | — | off | Adds an *edit* job that syncs the merged comp to the edit as its `comp` layer (mattes and ramps still per channel); see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s). |
+
 #### Channels the farm refuses
 
 A channel is only worth rendering where something was exported under it. Two
@@ -421,7 +461,8 @@ least one cell before submitting."), when a Render cell is ticked with no
 channel checked or neither **Preview** nor **Full range**, or when the farm
 is not set up on this machine. Otherwise it shows the
 [review](#before-it-submits), and will not submit while any entity is blocked
-(a Render cell on an entity that defines none of the checked channels).
+(a Render cell on an entity that defines none of the checked channels, or a
+Comp cell beside a Preview-only render).
 
 It then does the cheap part in Houdini — each ticked row's settings resolved
 into a **plan** — and hands the rest to a separate process running Houdini's
@@ -450,8 +491,11 @@ when any were and `; old jobs not cleaned up: <why>` when the clean-up
 failed, `failed: <error>`, or `cancelled, not sent`), and a bar below
 the rows carrying the summary (`Submitting… 3 of 20`, then `20 of 20 sent`,
 with `, N failed` or `, N cancelled` when any were; green once done cleanly,
-red if anything failed, grey if cancelled). **Open log folder**, **Farm
-Manager**, **Cancel** and **Close window** sit below it.
+red if anything failed, grey if cancelled). A row's status is cut short when
+it is long; under the rows, each entity that failed, or whose clean-up did, is
+listed with its whole error, which often says how to fix it (select it to
+copy it). **Open log folder**, **Farm Manager**, **Cancel** and **Close
+window** sit below it.
 
 Once it is over, **Back to grid** (or Esc) returns to the grid with the sent
 entities unticked and their status read again, to submit more; **Close**
@@ -523,7 +567,7 @@ from Desktop carry **no user name** in their batch names and notifications.
 ## What is submitted per entity
 
 `submit_entity_batch` builds one Deadline batch per entity named
-`<project> [publish] [render] [playblast] <entity uri> <user> <timestamp>`,
+`<project> [publish] [render] [playblast] [comp] <entity uri> <user> <timestamp>`,
 staged through a temp directory and submitted via `export:/other/jobs`.
 
 **Publish** — each ticked department, in pipeline order, is skipped when it
@@ -572,6 +616,14 @@ so a broken stage fails in the submission's progress rather than on the farm:
   (no overrides) and one playblast job is submitted over the shot's
   configured range.
 
+**Comp** — the shot's newest finished composite workfile
+(`latest_complete_hip_file_path`, a Multi's when one covers the shot) is
+bundled with the batch; a shot with none fails with `<shot> has no composite
+workfile to comp; make one from the composite template first`. Without a
+render on the row the composite jobs (named `comp_…`) run at once; with one,
+they are part of the render chain and start after its full-range denoise.
+Comp on an asset, or beside a render without the full range, is refused.
+
 Either way the render department must be renderable (`Render department
 '<x>' is not renderable. Renderable departments: …` otherwise), the
 [department cut](../composition.md#the-department-cut) — every pool
@@ -613,7 +665,7 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | **build** | after a farm publish; Build USD in Farm mode; before the previews of a row that also publishes | `build` / `build_<channel>` (`general`) | `_staged/<channel>/vNNNN/` |
 | **collapse** | Playblast or (non-Standalone) Render cells on a row that also publishes | `collapse` (`houdini`), after the row's builds; it then submits the playblast and render families above with the fresh snapshot | nothing of its own; the previews' batches |
 | **playblast** | Playblast cells | `playblast` (`playblast`) → `playblast_notify` (`general`) | `render:/playblast/<shot>/<dept>/<sequence>_<shot>_<dept>_vNNNN.mp4` + the daily |
-| **composite** | the `th::build_comp` node's **Submit** | see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s) | `render:/render/<shot>/composite/…` |
+| **composite** | the `th::export_comp` node's **Submit**; [Comp](#comp-shots-only) cells (jobs prefixed `comp_`: `comp_full_composite` → `comp_slapcomp_mp4` → `comp_slapcomp_notify`, and `comp_sync` with Copy to edit; after the render's denoise when Render is ticked too) | see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s) | `render:/render/<shot>/composite/…`; a Comp cell writes the merged comp, `composite/slapcomp/vNNNN/` |
 | **export_render** | the `th::lookdev_studio` HDA | `export` (`houdini`) → `notify` | lookdev turntable renders |
 | **edit_render** | the Edits tab's **Render Edit** | `edit_render` (`encode`), one task, no notify | `render:/edits/<name>/<name>_edit_vNNNN.mp4` |
 

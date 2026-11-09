@@ -37,7 +37,7 @@ from tumblepipe.pipe.paths import (
     latest_export_path,
     next_export_path,
     get_layer_file_name,
-    latest_hip_file_path
+    latest_complete_hip_file_path,
 )
 from tumblepipe.pipe.usd.sublayer_refs import add_sublayer
 from tumblepipe.pipe.context import (
@@ -556,6 +556,36 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
         (out_dir / temp_export_name).rename(out_dir / layer_file_name)
         flatten_sidecar_directories(out_dir)
 
+    def _own_workfile(self) -> tuple[Path, str]:
+        """The workfile this node lives in, as last saved, and its department:
+        what a farm export bundles.
+
+        An export node publishes the workfile it lives in, whichever
+        department it exports into: a lookdev export built in the model
+        workfile publishes the model workfile's lookdev. This used to bundle
+        the *target* department's workfile, so the farm republished
+        lookdev's own (stale, or missing) workfile instead, and crashed on
+        ``None.exists()`` when there was none. The newest finished save: one
+        still being written is passed over (the publish dialog saves the
+        scene before it submits).
+        """
+        context = self._workfile_context()
+        if context is None:
+            raise ExportLayerError(
+                f'{self.path()}: the open scene ({hou.hipFile.path()}) is not '
+                'a pipeline workfile, so there is no saved workfile to send '
+                'to the farm. Save it as a workfile first.'
+            )
+        workfile_path = latest_complete_hip_file_path(
+            context.entity_uri, context.department_name
+        )
+        if workfile_path is None or not workfile_path.exists():
+            raise ExportLayerError(
+                f'No saved workfile found for {context.entity_uri} '
+                f'{context.department_name} to send to the farm.'
+            )
+        return workfile_path, context.department_name
+
     def _export_farm(self):
         # Each getter raises when its parm does not resolve
         entity_uri = self.require_entity_uri()
@@ -566,13 +596,10 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
         pool_name = self.get_pool_name()
         priority = self.get_priority()
 
-        # Get workfile path for bundling
-        workfile_path = latest_hip_file_path(entity_uri, department_name)
-        if not workfile_path.exists():
-            raise ExportLayerError(f"No workfile found for {entity_uri} {department_name}")
+        workfile_path, workfile_department = self._own_workfile()
         from tumblepipe.farm.pipelines.publish import bundle_workfile
         paths = {}
-        workfile_dest = bundle_workfile(workfile_path, department_name, paths)
+        workfile_dest = bundle_workfile(workfile_path, workfile_department, paths)
 
         config = {
             'entity': {

@@ -31,7 +31,9 @@ A shot clip keeps a *rule*, not a file: which take it shows is worked out
 each time the edit opens, so a new playblast or render shows up in the cut
 by itself. A new clip's rule is **Best available**: a render when the shot
 has one, else a playblast; the most downstream department; for a render the
-`slapcomp` layer, else `default`; the newest version.
+`slapcomp` layer, else `default`; the newest version. In the composite
+department the `slapcomp` layer is the comp itself (`th::export_comp` on
+Layer `comp`), not an oiiotool stack of the channels.
 
 Right-click a shot clip to change its rule. **Best available** goes back to
 the default. The **Source** (playblast or render), **Department** and
@@ -134,6 +136,11 @@ Every change is one step of undo, however many clips it moves.
 | B | show / hide the burn-ins |
 
 On macOS, use Cmd for Ctrl.
+
+The keys are the timeline's whatever you clicked last: the Shots/Media switch
+and the bin's buttons do not keep the keyboard. A bin list you click in takes
+Up/Down, Home/End and Enter to move through it; click the timeline to give
+the keys back.
 
 Playback shows every frame: when the next frame is not decoded yet, the
 editor waits for it instead of skipping it. While there is sound, playback

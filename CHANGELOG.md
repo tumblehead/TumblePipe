@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.97.1 — 2026-11-09
+
+### Fixes
+- fix(wizard): tt_setup and tt_prepare build on Linux again (`f3116fda`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.97.0 (`e8df60be`)
+
 ## v1.97.0 — 2026-11-09
 
 ### Features

@@ -2,7 +2,8 @@
 //! [`crate::composite`], made with wgpu (Vulkan, DX12 or Metal, headless: no
 //! window, GL context or display).
 //!
-//! Opt-in (`TH_PLAYBLAST_GPU=1`, see [`crate::ffi`]); any failure falls back
+//! Asked for per frame (`ThFrame::gpu`: on in Houdini's viewer, else
+//! `th:gpu` or `TH_PLAYBLAST_GPU=1`, see [`crate::ffi`]); any failure falls back
 //! to the CPU path, which stays the reference: `gpu.wgsl` fills the same
 //! render buffer as `raster.rs` does, `post.wgsl` makes the picture from it
 //! as `composite.rs` does, and the tests below compare the two.
@@ -139,6 +140,32 @@ struct PostLayer {
 /// only, so no padding).
 fn bytes<T: Copy>(values: &[T]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(values.as_ptr() as *const u8, std::mem::size_of_val(values)) }
+}
+
+/// Numbers (and arrays of them) every bit pattern is a value of, as the
+/// GPU writes them: what [`append_values`] may copy bytes into.
+trait Plain: Copy {}
+impl Plain for f32 {}
+impl Plain for [f32; 4] {}
+impl Plain for [i32; 2] {}
+
+// The GPU's buffers are little-endian, as is every target this builds for.
+const _: () = assert!(cfg!(target_endian = "little"));
+
+/// Append the values `bytes` holds (a whole number of them) to `out` in
+/// one copy: a read back frame's buffers went through a copy and a
+/// per-value conversion each, 6 ms of a 20 ms viewport draft.
+fn append_values<T: Plain>(out: &mut Vec<T>, bytes: &[u8]) {
+    let size = std::mem::size_of::<T>();
+    debug_assert_eq!(bytes.len() % size, 0);
+    let n = bytes.len() / size;
+    out.reserve(n);
+    // SAFETY: room for `n` more was reserved, `T` is plain (any bytes are a
+    // value) and the source is a separate allocation.
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out.as_mut_ptr().add(out.len()) as *mut u8, n * size);
+        out.set_len(out.len() + n);
+    }
 }
 
 fn align(n: usize, to: usize) -> usize {
@@ -325,9 +352,9 @@ pub(crate) fn render_with_stats(frame: &Frame, meshes: &[Mesh], cache: Option<&C
 pub(crate) fn render_ids_with_stats(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>, ids: bool)
                                     -> Result<(Image, Stats), String> {
     gpu()?.scoped(frame, |gpu| {
-        let (mut image, stats) = if !blur::active(frame, meshes) {
+        if !blur::active(frame, meshes) {
             let mut stats = gpu.draw(frame, meshes, cache, None, ids)?;
-            (gpu.read_back(&mut stats)?, stats)
+            Ok((gpu.read_back(ids, &mut stats)?, stats))
         } else {
             let plan = blur::Plan::new(frame, composite::sample_offsets(frame.samples).len());
             let mut sum = Vec::new();
@@ -339,12 +366,8 @@ pub(crate) fn render_ids_with_stats(frame: &Frame, meshes: &[Mesh], cache: Optio
                 total.add(&stats);
             }
             total.chunks = plan.chunks.len();
-            (gpu.sum_finish(sum, plan.chunks.len(), frame.alpha, &mut total)?, total)
-        };
-        if ids {
-            image.ids = gpu.read_ids()?;
+            Ok((gpu.sum_finish(sum, plan.chunks.len(), frame.alpha, ids, &mut total)?, total))
         }
-        Ok((image, stats))
     })
 }
 
@@ -1434,7 +1457,7 @@ impl Gpu {
     #[cfg(test)]
     fn post(&self, frame: &Frame, stats: &mut Stats) -> Result<Image, String> {
         self.post_pass(frame, stats)?;
-        self.read_back(stats)
+        self.read_back(false, stats)
     }
 
     /// The post pass over the targets' render buffer: the finished image in
@@ -1501,76 +1524,84 @@ impl Gpu {
         Ok(())
     }
 
-    /// The targets' finished image read back.
-    fn read_back(&self, stats: &mut Stats) -> Result<Image, String> {
+    /// The targets' finished image read back, with the picking ids the
+    /// last [`Gpu::draw`] with ids made when `ids`.
+    fn read_back(&self, ids: bool, stats: &mut Stats) -> Result<Image, String> {
         let targets = self.targets.as_ref().ok_or("no targets")?;
-        self.read_back_from(&targets.color, &targets.depth, stats)
+        self.read_back_from(&targets.color, &targets.depth, ids, stats)
     }
 
-    /// The picking ids the last [`Gpu::draw`] with ids made, read back.
-    fn read_ids(&self) -> Result<Vec<[i32; 2]>, String> {
+    /// An image (colour and depth buffers of the targets' size) read back,
+    /// and the targets' ids with `ids`: one submission and one wait for all
+    /// of them (the ids' own round trip was 2.5 ms of a viewport draft),
+    /// each copied once from the mapped buffer into the image.
+    fn read_back_from(&self, color: &wgpu::Buffer, depth: &wgpu::Buffer, ids: bool, stats: &mut Stats)
+                      -> Result<Image, String> {
         let targets = self.targets.as_ref().ok_or("no targets")?;
         let (w, h) = (targets.size.0, targets.size.1);
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.copy_texture_to_buffer(
-            targets.ids.as_image_copy(),
-            wgpu::TexelCopyBufferInfo {
-                buffer: &targets.read_ids,
-                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(targets.ids_row as u32), rows_per_image: Some(h as u32) },
-            },
-            wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
-        );
-        self.queue.submit([encoder.finish()]);
-        let slice = targets.read_ids.slice(..(targets.ids_row * h) as u64);
-        let (tx, rx) = mpsc::channel();
-        slice.map_async(wgpu::MapMode::Read, move |r| {
-            let _ = tx.send(r);
-        });
-        self.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
-        let data = slice.get_mapped_range().map_err(|e| e.to_string())?;
-        let i32_at = |b: &[u8]| i32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-        let ids = data
-            .chunks_exact(targets.ids_row)
-            .flat_map(|row| row[..w * 8].as_chunks::<8>().0.iter().map(|p| [i32_at(&p[0..]), i32_at(&p[4..])]))
-            .collect();
-        drop(data);
-        targets.read_ids.unmap();
-        Ok(ids)
-    }
-
-    /// An image (colour and depth buffers of the targets' size) read back.
-    fn read_back_from(&self, color: &wgpu::Buffer, depth: &wgpu::Buffer, stats: &mut Stats) -> Result<Image, String> {
-        let targets = self.targets.as_ref().ok_or("no targets")?;
-        let plane = targets.size.0 * targets.size.1;
+        let plane = w * h;
         let started = Instant::now();
         let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.copy_buffer_to_buffer(color, 0, &targets.read_color, 0, (plane * 16) as u64);
         encoder.copy_buffer_to_buffer(depth, 0, &targets.read_depth, 0, (plane * 4) as u64);
+        if ids {
+            encoder.copy_texture_to_buffer(
+                targets.ids.as_image_copy(),
+                wgpu::TexelCopyBufferInfo {
+                    buffer: &targets.read_ids,
+                    layout: wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(targets.ids_row as u32),
+                        rows_per_image: Some(h as u32),
+                    },
+                },
+                wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
+            );
+        }
         self.queue.submit([encoder.finish()]);
-        let map = |buf: &wgpu::Buffer, size: usize| -> Result<Vec<u8>, String> {
-            let slice = buf.slice(..size as u64);
-            let (tx, rx) = mpsc::channel();
+
+        let mut slices = vec![
+            (&targets.read_color, targets.read_color.slice(..(plane * 16) as u64)),
+            (&targets.read_depth, targets.read_depth.slice(..(plane * 4) as u64)),
+        ];
+        if ids {
+            slices.push((&targets.read_ids, targets.read_ids.slice(..(targets.ids_row * h) as u64)));
+        }
+        let (tx, rx) = mpsc::channel();
+        for (_, slice) in &slices {
+            let tx = tx.clone();
             slice.map_async(wgpu::MapMode::Read, move |r| {
                 let _ = tx.send(r);
             });
-            self.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| e.to_string())?;
+        }
+        drop(tx);
+        self.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| e.to_string())?;
+        for _ in &slices {
             rx.recv().map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
-            let data = slice.get_mapped_range().map_err(|e| e.to_string())?.to_vec();
-            buf.unmap();
-            Ok(data)
-        };
-        let (color_bytes, depth_bytes) = (map(&targets.read_color, plane * 16)?, map(&targets.read_depth, plane * 4)?);
-        let f32_at = |b: &[u8]| f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
-        let color: Vec<[f32; 4]> = color_bytes
-            .as_chunks::<16>()
-            .0
-            .iter()
-            .map(|c| [f32_at(&c[0..]), f32_at(&c[4..]), f32_at(&c[8..]), f32_at(&c[12..])])
-            .collect();
-        let depth: Vec<f32> = depth_bytes.as_chunks::<4>().0.iter().map(|b| f32_at(b)).collect();
+        }
+
+        let mut image = Image { color: Vec::new(), depth: Vec::new(), ids: Vec::new() };
+        {
+            let data = slices[0].1.get_mapped_range().map_err(|e| e.to_string())?;
+            append_values(&mut image.color, &data);
+        }
+        {
+            let data = slices[1].1.get_mapped_range().map_err(|e| e.to_string())?;
+            append_values(&mut image.depth, &data);
+        }
+        if ids {
+            // Rows padded to the copy alignment.
+            let data = slices[2].1.get_mapped_range().map_err(|e| e.to_string())?;
+            image.ids.reserve(plane);
+            for row in data.chunks_exact(targets.ids_row) {
+                append_values(&mut image.ids, &row[..w * 8]);
+            }
+        }
+        for (buffer, _) in &slices {
+            buffer.unmap();
+        }
         stats.read_back = started.elapsed();
-        Ok(Image { color, depth, ids: Vec::new() })
+        Ok(image)
     }
 
     /// One `sum.wgsl` pass over slot-sized buffers: `dst` and `src` are
@@ -1636,8 +1667,8 @@ impl Gpu {
     /// merged from the last slot down (a chunk count's bits, the larger
     /// sum on the left, as [`blur::average`]'s odd one out is), times one
     /// over the count; alpha too with `alpha` (a transparent background),
-    /// else 1.
-    fn sum_finish(&mut self, mut sum: Vec<usize>, count: usize, alpha: bool, stats: &mut Stats)
+    /// else 1. With `ids`, the ids the first chunk drew.
+    fn sum_finish(&mut self, mut sum: Vec<usize>, count: usize, alpha: bool, ids: bool, stats: &mut Stats)
                   -> Result<Image, String> {
         assert_eq!(sum.iter().sum::<usize>(), count, "every chunk on the sum");
         let started = Instant::now();
@@ -1655,7 +1686,7 @@ impl Gpu {
         self.sum_pass(&mut encoder, &self.sum.scale, &targets.slots[0], [&targets.color, &targets.depth]);
         self.queue.submit([encoder.finish()]);
         let [color, depth] = &targets.slots[0];
-        let image = self.read_back_from(color, depth, stats)?;
+        let image = self.read_back_from(color, depth, ids, stats)?;
         stats.read_back = started.elapsed();
         Ok(image)
     }
@@ -1773,7 +1804,7 @@ mod tests {
                 gpu.queue.write_buffer(&targets.depth, 0, bytes(depth));
                 gpu.sum_push(&mut sum);
             }
-            gpu.sum_finish(sum, images.len(), alpha, &mut Stats::default())
+            gpu.sum_finish(sum, images.len(), alpha, false, &mut Stats::default())
         }).unwrap_or_else(|e| panic!("GPU average failed: {e}"))
     }
 

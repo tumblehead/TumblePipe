@@ -21,8 +21,8 @@ strip = "symbols"
 
 [features]
 default = []
-# The opt-in GPU path (src/gpu.rs), switched on per process by
-# TH_PLAYBLAST_GPU=1. CMake's TH_DELEGATE_GPU option builds with it.
+# The GPU path (src/gpu.rs), asked for per frame (ThFrame::gpu: in
+# Houdini's viewer, or th:gpu / TH_PLAYBLAST_GPU=1). CMake's TH_DELEGATE_GPU option builds with it.
 gpu = ["dep:wgpu", "dep:pollster"]
 
 [dependencies]

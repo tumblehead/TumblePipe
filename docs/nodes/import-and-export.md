@@ -258,7 +258,7 @@ Source: [`otls/lop_th.export_layer.1.0`](../../otls/lop_th.export_layer.1.0/th_8
 |---|---|---|
 | Entity | `from_context` | Asset or shot to publish |
 | Channel | `default` | Channel to publish under |
-| Department | `from_context` | Department to publish; menu lists the entity's publishable departments |
+| Department | `from_context` | Department to publish; menu lists the entity's publishable departments. Any of them, from any of the entity's workfiles: the node publishes the workfile it lives in, so a lookdev export in the model workfile publishes lookdev from there |
 | Frame Range | From context | From context (the entity's database range, roll included) or From settings |
 | First/Last/Step-Frame, Pre/Post-Roll | `1001 1001 1`, `0 0` | Only with From settings. **Step is ignored** — exports always run every frame |
 | Time Offset | From Multi | Where the frame range sits in this scene: the export cooks the range moved by the offset, then moves the written samples back, so the published layer is on the range's own frames. **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** and **Manual** (**Offset Frames**) as on `import_shot` |
@@ -424,14 +424,17 @@ Source: [`otls/lop_th.cache.1.0`](../../otls/lop_th.cache.1.0/th_8_8Lop_1cache_8
 |---|---|---|
 | Entity | `from_context` | Whose cache folder to use |
 | Department | `from_context` | Which workfile's cache folder; the menu lists **all** the entity's departments, so a node can load a cache another department wrote |
-| Name | `$OS` | Cache name (menu lists existing names) |
-| Version | *(empty)* | Version to load; **Latest** button fills in the newest |
+| Name | `$OS` | Cache name (menu lists the names in the addressed folder). The browse button beside it lists **every** cache of the entity, in all departments and both locations, with its latest version, who wrote it and when; picking one sets Department, Location, Name and Version |
+| Version | *(empty)* | Version to load; **Latest** button fills in the newest finished one. Changing Entity, Department, Location or Name keeps the version if the new cache has it, else switches to that cache's latest |
 | Location | Project | `project:` or `proxy:` storage |
 | Frame Range | Single Frame | Single Frame, Playback Range, **From Entity (Database)** (the entity's range plus roll), or From Settings |
 | First/Last/Step-Frame, Pre/Post-Roll | `1001 1001 1`, `0 0` | With From Settings |
 
 **Cache** writes the next version and loads it; **Load** loads the chosen
-version. The node turns green when the loaded version is the newest, orange
+version, or the newest finished one when none is chosen. A Name with no
+versions where the node looks makes Load refuse, saying the folder it looked
+in and which other departments/locations have a cache by that name. The node
+turns green when the loaded version is the newest, orange
 otherwise, and its comment says which is which. A single-frame cache is
 time-shifted so it holds on that frame.
 
@@ -450,10 +453,8 @@ Gotchas:
 - With **From Entity (Database)** and no authored range, the node refuses
   with the comment *No frame range: the entity has none authored in the
   database.*
-- An empty Version on **Load** picks the **oldest** version, not the newest —
-  press **Latest** first.
 - A Department the entity does not have empties the menus, and Cache/Load
-  silently do nothing.
+  refuse, listing the departments the entity does have.
 - Caches publish **by reference**: the export leaves them where they are
   instead of copying them into the version folder, and a deleted cache
   version fails the export as a dangling arc —

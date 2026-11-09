@@ -241,21 +241,33 @@ fn lerp_corner(a: &Corner, b: &Corner, t: f32) -> Corner {
     }
 }
 
+/// A triangle clipped to the near plane: up to four corners, on the stack
+/// (a Vec per triangle, and another for its screen positions, were 13M
+/// allocations a 6.6M triangle frame).
+struct Poly {
+    corners: [Corner; 4],
+    len: usize,
+}
+
 /// Clip a triangle to the near plane (z >= -w, GL clip space).
-fn clip_near(tri: [Corner; 3]) -> Vec<Corner> {
+fn clip_near(tri: [Corner; 3]) -> Poly {
     let inside = |c: &Corner| c.clip[2] + c.clip[3] >= 0.0;
+    let mut out = Poly { corners: [tri[0]; 4], len: 0 };
     if tri.iter().all(inside) {
-        return tri.to_vec();
+        out.corners[..3].copy_from_slice(&tri);
+        out.len = 3;
+        return out;
     }
-    let mut out = Vec::with_capacity(4);
     for i in 0..3 {
         let (a, b) = (&tri[i], &tri[(i + 1) % 3]);
         let (da, db) = (a.clip[2] + a.clip[3], b.clip[2] + b.clip[3]);
         if da >= 0.0 {
-            out.push(*a);
+            out.corners[out.len] = *a;
+            out.len += 1;
         }
         if (da >= 0.0) != (db >= 0.0) {
-            out.push(lerp_corner(a, b, da / (da - db)));
+            out.corners[out.len] = lerp_corner(a, b, da / (da - db));
+            out.len += 1;
         }
     }
     out
@@ -302,24 +314,27 @@ impl Raster<'_> {
         c.color
     }
 
-    fn draw(&self, band: &mut Band, mesh: &Mesh, poly: &[Corner], id: [i32; 2]) {
+    /// Draw a polygon (3 or 4 corners, as a fan) at clip positions `clip`,
+    /// corner k's attributes being `corner(k)`: fetched only once one of a
+    /// triangle's samples passes the depth test, as most of a dense mesh's
+    /// triangles that reach a sample's box cover none or lie behind.
+    fn draw(&self, band: &mut Band, mesh: &Mesh, clip: &[[f32; 4]], corner: impl Fn(usize) -> Corner,
+            id: [i32; 2]) {
         let rows = band.depth[0].len() / self.width;
         let (w, h) = (self.width as f32, self.height as f32);
         let [ox_lo, ox_hi, oy_lo, oy_hi] = self.spread;
         // Screen-space vertices: x right, y down, z in [0, 1], 1/w.
-        let screen: Vec<[f32; 4]> = poly
-            .iter()
-            .map(|c| {
-                let iw = 1.0 / c.clip[3];
-                [
-                    (c.clip[0] * iw * 0.5 + 0.5) * w,
-                    (0.5 - c.clip[1] * iw * 0.5) * h,
-                    c.clip[2] * iw * 0.5 + 0.5,
-                    iw,
-                ]
-            })
-            .collect();
-        for i in 1..poly.len().saturating_sub(1) {
+        let mut screen = [[0.0f32; 4]; 4];
+        for (s, c) in screen.iter_mut().zip(clip) {
+            let iw = 1.0 / c[3];
+            *s = [
+                (c[0] * iw * 0.5 + 0.5) * w,
+                (0.5 - c[1] * iw * 0.5) * h,
+                c[2] * iw * 0.5 + 0.5,
+                iw,
+            ];
+        }
+        for i in 1..clip.len().saturating_sub(1) {
             let idx = [0, i, i + 1];
             let s = idx.map(|k| screen[k]);
             let area = (s[1][0] - s[0][0]) * (s[2][1] - s[0][1])
@@ -338,7 +353,7 @@ impl Raster<'_> {
             if max_x < min_x as i64 || max_y < min_y {
                 continue;
             }
-            let corners = idx.map(|k| &poly[k]);
+            let mut fetched: Option<[Corner; 3]> = None;
             // Each barycentric weight is an edge function over the area, so
             // a sample's weights are its pixel centre's plus a fixed step.
             let edges = [(s[1], s[2]), (s[2], s[0]), (s[0], s[1])];
@@ -361,6 +376,8 @@ impl Raster<'_> {
                         if !(z >= 0.0 && z < band.depth[k][at]) {
                             continue;
                         }
+                        let corners = fetched.get_or_insert_with(|| idx.map(&corner));
+                        let corners = [&corners[0], &corners[1], &corners[2]];
                         // Perspective-correct weights.
                         let (p0, p1, p2) = (b0 * s[0][3], b1 * s[1][3], b2 * s[2][3]);
                         let sum = p0 + p1 + p2;
@@ -410,9 +427,15 @@ impl Raster<'_> {
             color: mesh.corner_colors.map_or(mesh.base_color, |c| c[t * 3 + k]),
             uv: mesh.corner_uvs.map_or([0.0, 0.0], |u| u[t * 3 + k]),
         };
+        let clip = vi.map(|v| inst.clip[v]);
+        if clip.iter().all(|c| c[2] + c[3] >= 0.0) {
+            self.draw(band, mesh, &clip, corner, id);
+            return;
+        }
         let poly = clip_near([corner(0), corner(1), corner(2)]);
-        if poly.len() >= 3 {
-            self.draw(band, mesh, &poly, id);
+        if poly.len >= 3 {
+            let clip: [[f32; 4]; 4] = std::array::from_fn(|k| poly.corners[k].clip);
+            self.draw(band, mesh, &clip[..poly.len], |k| poly.corners[k], id);
         }
     }
 }
@@ -586,15 +609,20 @@ fn bin(instances: &[Inst], which: &[usize], meshes: &[Mesh], width: usize, heigh
     });
     let mut parts = parts.into_inner().unwrap();
     parts.sort_unstable_by_key(|(c, _)| *c);
-    let mut bins: Vec<Bands> = vec![vec![Vec::new(); band_count]; grids.len()];
-    for (_, part) in parts {
-        for (grid_bins, grid_part) in bins.iter_mut().zip(part) {
-            for (bin, mut items) in grid_bins.iter_mut().zip(grid_part) {
-                bin.append(&mut items);
-            }
+    // Each band of each grid is its chunks' pairs in chunk order, the
+    // bands joined in parallel, each sized once (appended one after the
+    // other on this thread, growing as they went, they were a third of
+    // binning).
+    let cells: Vec<(usize, usize)> = (0..grids.len()).flat_map(|g| (0..band_count).map(move |b| (g, b))).collect();
+    let mut joined = par_map(&cells, |&(g, b)| {
+        let mut band = Vec::with_capacity(parts.iter().map(|(_, p)| p[g][b].len()).sum());
+        for (_, part) in &parts {
+            band.extend_from_slice(&part[g][b]);
         }
-    }
-    bins
+        band
+    })
+    .into_iter();
+    (0..grids.len()).map(|_| joined.by_ref().take(band_count).collect()).collect()
 }
 
 /// Two bands' (instance, triangle) pairs, each in ascending order, as one
@@ -616,41 +644,174 @@ fn merge(a: &[(u32, u32)], b: &[(u32, u32)]) -> Vec<(u32, u32)> {
     out
 }
 
-/// Clip positions of `points` through `xform` then `world_to_clip`.
-fn clip_of(points: &[Vec3], xform: &Mat4, world_to_clip: &Mat4) -> Vec<[f32; 4]> {
-    let to_clip = math::mul(xform, world_to_clip);
-    points
-        .iter()
-        .map(|&p| {
-            let c = math::transform_point4(p, &to_clip);
-            [c[0] as f32, c[1] as f32, c[2] as f32, c[3] as f32]
-        })
-        .collect()
+/// The least and greatest corner of `points`' bounding box, none for no
+/// points.
+fn bounds_of(points: &[Vec3]) -> Option<(Vec3, Vec3)> {
+    let first = *points.first()?;
+    Some(points.iter().fold((first, first), |(lo, hi), p| {
+        (std::array::from_fn(|k| lo[k].min(p[k])), std::array::from_fn(|k| hi[k].max(p[k])))
+    }))
 }
 
-/// World positions of `points` and the mesh's normals through `xform`:
-/// what a pass draws that does not depend on its camera.
-fn world_of(mesh: &Mesh, smooth: Option<&Vec<Vec3>>, points: &[Vec3], xform: &Mat4) -> (Vec<Vec3>, Vec<Vec3>) {
-    let nm = math::normal_matrix(xform);
-    let world = points.iter().map(|&p| math::transform_point(p, xform)).collect();
-    let normals = match (mesh.corner_normals, smooth) {
-        (Some(n), _) => n.iter().map(|&n| math::transform_normal(n, &nm)).collect(),
-        (None, Some(n)) => n.iter().map(|&n| math::transform_normal(n, &nm)).collect(),
-        (None, None) => Vec::new(),
-    };
+/// Whether a box (`bounds_of`, object space) through `xform` then
+/// `world_to_clip` lies wholly beyond one plane of the view (its sides,
+/// near and far): nothing of it can reach a sample, as the near clip and
+/// the depth test ([`Raster::draw`]) keep what is beyond the other two out.
+fn outside((lo, hi): (Vec3, Vec3), xform: &Mat4, world_to_clip: &Mat4) -> bool {
+    let to_clip = math::mul(xform, world_to_clip);
+    let mut beyond = [true; 6];
+    for k in 0..8 {
+        let corner = std::array::from_fn(|a| if k >> a & 1 == 0 { lo[a] } else { hi[a] });
+        let [x, y, z, w] = math::transform_point4(corner, &to_clip);
+        for (b, out) in beyond.iter_mut().zip([x < -w, x > w, y < -w, y > w, z < -w, z > w]) {
+            *b &= out;
+        }
+    }
+    beyond.contains(&true)
+}
+
+/// Clip positions of `points` through `xform` then `world_to_clip`, into
+/// `out` (one per point).
+fn clip_into(points: &[Vec3], xform: &Mat4, world_to_clip: &Mat4, out: &mut [[f32; 4]]) {
+    let to_clip = math::mul(xform, world_to_clip);
+    for (o, &p) in out.iter_mut().zip(points) {
+        let c = math::transform_point4(p, &to_clip);
+        *o = [c[0] as f32, c[1] as f32, c[2] as f32, c[3] as f32];
+    }
+}
+
+fn clip_of(points: &[Vec3], xform: &Mat4, world_to_clip: &Mat4) -> Vec<[f32; 4]> {
+    let mut out = vec![[0.0; 4]; points.len()];
+    clip_into(points, xform, world_to_clip, &mut out);
+    out
+}
+
+/// How many normals an instance of `mesh` draws with: one per corner when
+/// it has its own, else one per point (`smooth`), else none.
+fn normal_count(mesh: &Mesh, smooth: Option<&[Vec3]>) -> usize {
+    mesh.corner_normals.or(smooth).map_or(0, <[Vec3]>::len)
+}
+
+/// World positions of `points` and the mesh's normals through `xform`,
+/// into `world` and `normals` ([`normal_count`] of them): what a pass
+/// draws that does not depend on its camera.
+fn world_into(mesh: &Mesh, smooth: Option<&[Vec3]>, points: &[Vec3], xform: &Mat4, world: &mut [Vec3],
+              normals: &mut [Vec3]) {
+    for (o, &p) in world.iter_mut().zip(points) {
+        *o = math::transform_point(p, xform);
+    }
+    if let Some(n) = mesh.corner_normals.or(smooth) {
+        let nm = math::normal_matrix(xform);
+        for (o, &n) in normals.iter_mut().zip(n) {
+            *o = math::transform_normal(n, &nm);
+        }
+    }
+}
+
+fn world_of(mesh: &Mesh, smooth: Option<&[Vec3]>, points: &[Vec3], xform: &Mat4) -> (Vec<Vec3>, Vec<Vec3>) {
+    let (mut world, mut normals) = (vec![[0.0; 3]; points.len()], vec![[0.0; 3]; normal_count(mesh, smooth)]);
+    world_into(mesh, smooth, points, xform, &mut world, &mut normals);
     (world, normals)
 }
 
-fn transform_instance(mesh_index: usize, mesh: &Mesh, smooth: Option<&Vec<Vec3>>,
-                      xform: &Mat4, world_to_clip: &Mat4, close: Option<(&[Vec3], f32)>) -> InstanceVerts {
-    // The points at this pass's moment of the shutter, when they move.
+/// An instance's vertices for a pass of its own, into `clip`, `world` and
+/// `normals`: at `close`'s moment of the shutter when its points move.
+#[allow(clippy::too_many_arguments)]
+fn transform_into(mesh: &Mesh, smooth: Option<&[Vec3]>, xform: &Mat4, world_to_clip: &Mat4,
+                  close: Option<(&[Vec3], f32)>, clip: &mut [[f32; 4]], world: &mut [Vec3], normals: &mut [Vec3]) {
     let moved: Option<Vec<Vec3>> = close.map(|(close, s)| {
         mesh.points.iter().zip(close).map(|(&a, &b)| blur::point_at(a, b, s)).collect()
     });
     let points = moved.as_deref().unwrap_or(mesh.points);
-    let clip = clip_of(points, xform, world_to_clip);
-    let (world, normals) = world_of(mesh, smooth, points, xform);
-    InstanceVerts { mesh: mesh_index, clip, world, normals }
+    clip_into(points, xform, world_to_clip, clip);
+    world_into(mesh, smooth, points, xform, world, normals);
+}
+
+/// [`transform_into`] into vectors of its own: what a pass makes of an
+/// instance, for the tests.
+#[cfg(test)]
+fn transform_instance(mesh_index: usize, mesh: &Mesh, smooth: Option<&[Vec3]>, xform: &Mat4, world_to_clip: &Mat4,
+                      close: Option<(&[Vec3], f32)>) -> InstanceVerts {
+    let n = mesh.points.len();
+    let mut v = InstanceVerts {
+        mesh: mesh_index,
+        clip: vec![[0.0; 4]; n],
+        world: vec![[0.0; 3]; n],
+        normals: vec![[0.0; 3]; normal_count(mesh, smooth)],
+    };
+    transform_into(mesh, smooth, xform, world_to_clip, close, &mut v.clip, &mut v.world, &mut v.normals);
+    v
+}
+
+/// The transformed vertices of a pass's instances, end to end, kept from
+/// frame to frame ([`Scratch`]): grown when a frame needs more, never
+/// shrunk or cleared, as every value a pass reads it wrote first. Made per
+/// instance, they were up to 180 MB of allocations a frame, their page
+/// faults and as long again to free.
+#[derive(Default)]
+pub(crate) struct Arena {
+    clip: Vec<[f32; 4]>,
+    world: Vec<Vec3>,
+    normals: Vec<Vec3>,
+}
+
+impl Arena {
+    /// Room for at least `[clip, world, normals]` values.
+    fn reserve(&mut self, [c, w, n]: [usize; 3]) {
+        if self.clip.len() < c {
+            self.clip.resize(c, [0.0; 4]);
+        }
+        if self.world.len() < w {
+            self.world.resize(w, [0.0; 3]);
+        }
+        if self.normals.len() < n {
+            self.normals.resize(n, [0.0; 3]);
+        }
+    }
+}
+
+/// The largest render buffer a delegate keeps between frames (a viewport
+/// at 1080p and eight samples is 600 MB): a larger one is made per frame
+/// rather than held while the viewer sits still.
+const KEEP_BYTES: usize = 1 << 30;
+
+/// What the CPU path draws into and through, kept by a delegate from one
+/// frame to the next ([`crate::ffi::ThCache`]) so a viewport's frames
+/// allocate nothing large: the render buffers of the last two frame shapes
+/// (a viewer alternates a one-sample draft with the full frame) and the
+/// instances' transformed vertices.
+#[derive(Default)]
+pub(crate) struct Scratch {
+    samples: Vec<Samples>,
+    arena: Arena,
+}
+
+impl Scratch {
+    /// An empty render buffer of `width x height` with `offsets`, a kept
+    /// one when it fits.
+    fn samples(&mut self, width: usize, height: usize, offsets: &[(f32, f32)]) -> Samples {
+        match self.samples.iter().position(|s| s.fits(width, height, offsets)) {
+            Some(i) => {
+                let mut samples = self.samples.remove(i);
+                samples.clear();
+                samples
+            }
+            None => Samples::empty(width, height, offsets.to_vec()),
+        }
+    }
+
+    /// Keep `samples` for a later frame, in place of the least recent of
+    /// two; not a buffer over [`KEEP_BYTES`].
+    fn keep(&mut self, samples: Samples) {
+        let bytes = samples.depth.len() * (16 + 16 + 4) + samples.ids.len() * 8;
+        if bytes > KEEP_BYTES {
+            return;
+        }
+        self.samples.push(samples);
+        if self.samples.len() > 2 {
+            self.samples.remove(0);
+        }
+    }
 }
 
 /// `f` of every item, in parallel on the pool, in the items' order.
@@ -723,24 +884,53 @@ impl Shared {
 
 /// Render `meshes` through `frame`'s camera at `frame.width x frame.height`.
 pub fn render(frame: &Frame, meshes: &[Mesh]) -> Image {
+    render_kept(frame, meshes, &[], &mut Scratch::default())
+}
+
+/// [`render`] with what a delegate keeps between frames: each mesh's
+/// smooth point normals where it has them (`smooth`, by mesh; the rest are
+/// worked out here) and the buffers of earlier frames (`scratch`).
+pub(crate) fn render_kept(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], scratch: &mut Scratch)
+                          -> Image {
+    let made = smooth_missing(meshes, smooth);
+    let smooth = smooth_of(meshes, smooth, &made);
     if !blur::active(frame, meshes) {
-        return composite::resolve(frame, &render_buffer(frame, meshes));
+        let offsets = composite::sample_offsets(frame.samples);
+        let mut samples = scratch.samples(frame.width, frame.height, &offsets);
+        let pass = Pass {
+            layers: 0..offsets.len(),
+            world_to_clip: frame.world_to_clip,
+            view: View::new(&frame.view_to_world),
+            time: None,
+        };
+        render_passes(frame, meshes, &smooth, &offsets, std::slice::from_ref(&pass), &mut Shared::off(),
+                      VERTEX_BUDGET, &mut samples, &mut scratch.arena);
+        let image = composite::resolve(frame, &samples);
+        scratch.keep(samples);
+        return image;
     }
-    render_blurred(frame, meshes)
+    blurred(frame, meshes, &smooth, true, VERTEX_BUDGET, scratch)
 }
 
 /// A blurred frame ([`crate::blur`]): each chunk of layers drawn layer by
 /// layer through its own camera and moment, resolved, and the chunks'
 /// pictures averaged.
+#[cfg(test)]
 pub(crate) fn render_blurred(frame: &Frame, meshes: &[Mesh]) -> Image {
     render_blurred_with(frame, meshes, true, VERTEX_BUDGET)
 }
 
 /// [`render_blurred`], sharing still instances' vertices across layers or
 /// not, in batches of `budget` vertices.
+#[cfg(test)]
 pub(crate) fn render_blurred_with(frame: &Frame, meshes: &[Mesh], share: bool, budget: usize) -> Image {
+    let made = smooth_missing(meshes, &[]);
+    blurred(frame, meshes, &smooth_of(meshes, &[], &made), share, budget, &mut Scratch::default())
+}
+
+fn blurred(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], share: bool, budget: usize,
+           scratch: &mut Scratch) -> Image {
     let offsets = composite::sample_offsets(frame.samples);
-    let smooth = smooth_all(meshes);
     let plan = blur::Plan::new(frame, offsets.len());
     let mut shared = if share { Shared::new(meshes, &plan, budget) } else { Shared::off() };
     let images = plan
@@ -757,21 +947,44 @@ pub(crate) fn render_blurred_with(frame: &Frame, meshes: &[Mesh], share: bool, b
                     time: frame.blur.motion.then_some(layer.time),
                 })
                 .collect();
-            let samples = render_passes(frame, meshes, &smooth, &offsets, &passes, &mut shared, budget);
-            composite::resolve(frame, &samples)
+            let mut samples = scratch.samples(frame.width, frame.height, &offsets);
+            render_passes(frame, meshes, smooth, &offsets, &passes, &mut shared, budget, &mut samples,
+                          &mut scratch.arena);
+            let image = composite::resolve(frame, &samples);
+            scratch.keep(samples);
+            image
         })
         .collect();
     blur::average(images, frame.alpha)
 }
 
-fn smooth_all(meshes: &[Mesh]) -> Vec<Option<Vec<Vec3>>> {
-    meshes
-        .iter()
-        .map(|m| m.corner_normals.is_none().then(|| smooth_normals(m.points, m.triangles)))
+/// The smooth point normals of the meshes that draw with them (no corner
+/// normals) and are not in `given`, by mesh, a mesh at a time on the pool.
+fn smooth_missing(meshes: &[Mesh], given: &[Option<&[Vec3]>]) -> Vec<Option<Vec<Vec3>>> {
+    let missing: Vec<usize> = (0..meshes.len())
+        .filter(|&m| meshes[m].corner_normals.is_none() && given.get(m).copied().flatten().is_none())
+        .collect();
+    let mut out: Vec<Option<Vec<Vec3>>> = (0..meshes.len()).map(|_| None).collect();
+    for (m, normals) in missing.iter().zip(par_map(&missing, |&m| smooth_normals(meshes[m].points, meshes[m].triangles))) {
+        out[*m] = Some(normals);
+    }
+    out
+}
+
+/// Each mesh's smooth point normals, from `given` or `made`
+/// ([`smooth_missing`]); none for a mesh with corner normals.
+fn smooth_of<'a>(meshes: &[Mesh], given: &[Option<&'a [Vec3]>], made: &'a [Option<Vec<Vec3>>])
+                 -> Vec<Option<&'a [Vec3]>> {
+    (0..meshes.len())
+        .map(|m| match meshes[m].corner_normals {
+            Some(_) => None,
+            None => made[m].as_deref().or(given.get(m).copied().flatten()),
+        })
         .collect()
 }
 
 /// The render buffer [`render`] makes an unblurred picture from.
+#[cfg(all(test, feature = "gpu"))]
 pub(crate) fn render_buffer(frame: &Frame, meshes: &[Mesh]) -> Samples {
     let offsets = composite::sample_offsets(frame.samples);
     let pass = Pass {
@@ -780,8 +993,11 @@ pub(crate) fn render_buffer(frame: &Frame, meshes: &[Mesh]) -> Samples {
         view: View::new(&frame.view_to_world),
         time: None,
     };
-    render_passes(frame, meshes, &smooth_all(meshes), &offsets, std::slice::from_ref(&pass), &mut Shared::off(),
-                  VERTEX_BUDGET)
+    let made = smooth_missing(meshes, &[]);
+    let mut samples = Samples::empty(frame.width, frame.height, offsets.clone());
+    render_passes(frame, meshes, &smooth_of(meshes, &[], &made), &offsets, std::slice::from_ref(&pass),
+                  &mut Shared::off(), VERTEX_BUDGET, &mut samples, &mut Arena::default());
+    samples
 }
 
 /// Some layers of the render buffer drawn through one camera at one moment
@@ -796,25 +1012,17 @@ pub(crate) struct Pass {
     pub time: Option<f32>,
 }
 
-/// What a pass makes of an instance itself: everything, or only the clip
-/// positions of a still instance whose world positions and normals are
-/// shared.
-enum Own {
-    All(InstanceVerts),
-    Clip(Vec<[f32; 4]>),
-}
-
-/// The render buffer of `meshes`, `offsets.len()` layers, filled by
-/// `passes`, each one pass over the triangles. Instances go in batches of
+/// Fill `samples` (empty, of the frame's size and `all_offsets`) with
+/// `meshes`, by `passes`, each one pass over the triangles. Instances go in batches of
 /// at most `budget` vertices, every pass drawing a batch before the next
 /// batch is made; each layer so takes the batches, and the triangles in
 /// them, in the same order whatever is shared.
-fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
-                 all_offsets: &[(f32, f32)], passes: &[Pass], shared: &mut Shared, budget: usize) -> Samples {
+#[allow(clippy::too_many_arguments)]
+fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all_offsets: &[(f32, f32)],
+                 passes: &[Pass], shared: &mut Shared, budget: usize, samples: &mut Samples, arena: &mut Arena) {
     let (w, h) = (frame.width, frame.height);
-    let mut samples = Samples::empty(w, h, all_offsets.to_vec());
     if w == 0 || h == 0 {
-        return samples;
+        return;
     }
     let started = std::time::Instant::now();
     let zero = std::time::Duration::ZERO;
@@ -822,6 +1030,8 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
     let band_rows = 16usize.max(h / (threads() * 8)).min(h.max(1));
     let plane = w * h;
     let jobs = jobs(meshes);
+    let every_mesh: Vec<usize> = (0..meshes.len()).collect();
+    let bounds = par_map(&every_mesh, |&m| bounds_of(meshes[m].points));
     // A mesh every pass draws at its `points` and `transforms`.
     let motion = passes.iter().any(|p| p.time.is_some());
     let still = |m: usize| shared.on && (!motion || !blur::moves(&meshes[m]));
@@ -852,7 +1062,7 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
                 (true, Some(wc)) => clip_of(mesh.points, xform, wc),
                 _ => Vec::new(),
             };
-            let (world, normals) = world_of(mesh, smooth[m].as_ref(), mesh.points, xform);
+            let (world, normals) = world_of(mesh, smooth[m], mesh.points, xform);
             InstanceVerts { mesh: m, clip, world, normals }
         });
         for (j, v) in missing.into_iter().zip(made) {
@@ -878,7 +1088,6 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
         }
         binning += t0.elapsed();
         let moving: Vec<usize> = (0..batch.len()).filter(|&k| !is_still[k]).collect();
-        let every: Vec<usize> = (0..batch.len()).collect();
         let kept = &shared.verts;
         let still_bins = shared.bins.as_ref();
 
@@ -893,35 +1102,88 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
             ];
             let raster = Raster { width: w, height: h, meshes, view: pass.view, offsets, spread };
 
-            // Transform what the pass needs of its own, in parallel.
+            // Transform what the pass needs of its own, in parallel, into
+            // the arena: everything, or only the clip positions of a still
+            // instance whose world positions and normals are shared.
             let t0 = std::time::Instant::now();
-            let todo: Vec<usize> = batch.clone().filter(|&j| !(still(jobs[j].0) && same_clip)).collect();
-            let mut own: Vec<Option<Own>> = (0..batch.len()).map(|_| None).collect();
-            let made = par_map(&todo, |&j| {
-                let (m, inst) = jobs[j];
-                let mesh = &meshes[m];
-                if still(m) {
-                    return Own::Clip(clip_of(mesh.points, &mesh.transforms[inst], &pass.world_to_clip));
+            // An instance wholly out of an unblurred pass's view is neither
+            // transformed nor binned (half the instances of an orbit around
+            // a set, a third of a draft's time). Its triangles could reach
+            // no sample; the picture is the same.
+            let culled: Vec<bool> = batch
+                .clone()
+                .map(|j| {
+                    let (m, inst) = jobs[j];
+                    pass.time.is_none()
+                        && !(still(m) && same_clip)
+                        && bounds[m].is_some_and(|b| outside(b, &meshes[m].transforms[inst], &pass.world_to_clip))
+                })
+                .collect();
+            let todo: Vec<usize> =
+                batch.clone().filter(|&j| !(still(jobs[j].0) && same_clip) && !culled[j - batch.start]).collect();
+            let lens: Vec<[usize; 3]> = todo
+                .iter()
+                .map(|&j| {
+                    let m = jobs[j].0;
+                    let n = meshes[m].points.len();
+                    if still(m) { [n, 0, 0] } else { [n, n, normal_count(&meshes[m], smooth[m])] }
+                })
+                .collect();
+            let totals = lens.iter().fold([0; 3], |a, l| [a[0] + l[0], a[1] + l[1], a[2] + l[2]]);
+            arena.reserve(totals);
+            {
+                let (mut clip, mut world, mut normals) =
+                    (&mut arena.clip[..totals[0]], &mut arena.world[..totals[1]], &mut arena.normals[..totals[2]]);
+                let mut items = Vec::with_capacity(todo.len());
+                for (&j, l) in todo.iter().zip(&lens) {
+                    let (c, rest) = std::mem::take(&mut clip).split_at_mut(l[0]);
+                    clip = rest;
+                    let (wd, rest) = std::mem::take(&mut world).split_at_mut(l[1]);
+                    world = rest;
+                    let (n, rest) = std::mem::take(&mut normals).split_at_mut(l[2]);
+                    normals = rest;
+                    items.push((j, c, wd, n));
                 }
-                let (xform, close) = match pass.time {
-                    Some(s) => (blur::transform_at(mesh, inst, s), blur::closing_points(mesh).map(|c| (c, s))),
-                    None => (mesh.transforms[inst], None),
-                };
-                Own::All(transform_instance(m, mesh, smooth[m].as_ref(), &xform, &pass.world_to_clip, close))
-            });
-            for (j, o) in todo.into_iter().zip(made) {
-                own[j - batch.start] = Some(o);
+                let items = Mutex::new(items);
+                pool::each_thread(&|| loop {
+                    let item = items.lock().unwrap().pop();
+                    let Some((j, clip, world, normals)) = item else { break };
+                    let (m, inst) = jobs[j];
+                    let mesh = &meshes[m];
+                    if still(m) {
+                        clip_into(mesh.points, &mesh.transforms[inst], &pass.world_to_clip, clip);
+                        continue;
+                    }
+                    let (xform, close) = match pass.time {
+                        Some(s) => (blur::transform_at(mesh, inst, s), blur::closing_points(mesh).map(|c| (c, s))),
+                        None => (mesh.transforms[inst], None),
+                    };
+                    transform_into(mesh, smooth[m], &xform, &pass.world_to_clip, close, clip, world, normals);
+                });
+            }
+            let mut own: Vec<Option<[std::ops::Range<usize>; 3]>> = vec![None; batch.len()];
+            let mut at = [0usize; 3];
+            for (&j, l) in todo.iter().zip(&lens) {
+                own[j - batch.start] = Some(std::array::from_fn(|k| at[k]..at[k] + l[k]));
+                at = std::array::from_fn(|k| at[k] + l[k]);
             }
             let shared_view = |j: usize| kept[j].as_ref().expect("a still instance is made before its passes").view();
             let instances: Vec<Inst> = batch
                 .clone()
                 .zip(&own)
                 .map(|(j, o)| match o {
-                    Some(Own::All(v)) => v.view(),
-                    Some(Own::Clip(clip)) => Inst { clip, ..shared_view(j) },
+                    Some([c, _, _]) if still(jobs[j].0) => Inst { clip: &arena.clip[c.clone()], ..shared_view(j) },
+                    Some([c, wd, n]) => Inst {
+                        mesh: jobs[j].0,
+                        clip: &arena.clip[c.clone()],
+                        world: &arena.world[wd.clone()],
+                        normals: &arena.normals[n.clone()],
+                    },
+                    None if culled[j - batch.start] => Inst { mesh: jobs[j].0, clip: &[], world: &[], normals: &[] },
                     None => shared_view(j),
                 })
                 .collect();
+            let visible: Vec<usize> = (0..batch.len()).filter(|&k| !culled[k]).collect();
 
             // Sort the batch's triangles into the bands they touch, then
             // rasterise, each thread taking whole bands (in every layer of
@@ -939,7 +1201,7 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
                         still.iter().zip(&own).map(|(a, b)| std::borrow::Cow::Owned(merge(a, b))).collect()
                     }
                 }
-                None => bin(&instances, &every, meshes, w, h, band_rows, band_count, std::slice::from_ref(&grid))
+                None => bin(&instances, &visible, meshes, w, h, band_rows, band_count, std::slice::from_ref(&grid))
                     .pop()
                     .expect("one grid")
                     .into_iter()
@@ -999,8 +1261,6 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
                   if passes.len() > 1 { format!(" in {} passes", passes.len()) } else { String::new() },
                   transforming.as_millis(), binning.as_millis(), filling.as_millis());
     }
-
-    samples
 }
 
 #[cfg(test)]
@@ -1166,6 +1426,26 @@ mod tests {
         assert!(!Shared::new(&meshes, &blur::Plan::new(&f, 4), 8).same_clip, "a moving camera");
     }
 
+    /// Not vacuous: a box beside the view, behind the camera or past the
+    /// far plane is skipped; one in view or through the near plane is not.
+    #[test]
+    fn boxes_beside_behind_and_beyond_the_view_are_skipped() {
+        let (world_to_clip, _) = camera();
+        let unit = ([-1.0f32, -1.0, -1.0], [1.0f32, 1.0, 1.0]);
+        let at = |x: f64, y: f64, z: f64| {
+            let mut m = math::IDENTITY;
+            m[12] = x;
+            m[13] = y;
+            m[14] = z;
+            m
+        };
+        for (where_, x, y, z, skipped) in [("in view", 0.0, 0.0, 0.0, false), ("through the near plane", 0.0, 0.0, 5.0, false),
+                                         ("beside", 40.0, 0.0, 0.0, true), ("above", 0.0, 40.0, 0.0, true),
+                                         ("behind", 0.0, 0.0, 9.0, true), ("beyond far", 0.0, 0.0, -200.0, true)] {
+            assert_eq!(outside(unit, &at(x, y, z), &world_to_clip), skipped, "{where_}");
+        }
+    }
+
     use proptest::prelude::*;
 
     proptest! {
@@ -1185,7 +1465,7 @@ mod tests {
             let transforms = [xform];
             let mesh = Mesh { corner_normals: authored.then_some(&normals[..]), ..quad_mesh(&points, &triangles, &transforms) };
             let smooth = (!authored).then(|| smooth_normals(&points, &triangles));
-            let (world, shared_normals) = world_of(&mesh, smooth.as_ref(), mesh.points, &xform);
+            let (world, shared_normals) = world_of(&mesh, smooth.as_deref(), mesh.points, &xform);
             // A layer's own transform, written out: what every layer made
             // before still instances were shared.
             let nm = math::normal_matrix(&xform);
@@ -1206,7 +1486,7 @@ mod tests {
                 let clip_ref: Vec<[f32; 4]> = points.iter()
                     .map(|&p| math::transform_point4(p, &to_clip).map(|c| c as f32))
                     .collect();
-                let own = transform_instance(0, &mesh, smooth.as_ref(), &xform, &layer, None);
+                let own = transform_instance(0, &mesh, smooth.as_deref(), &xform, &layer, None);
                 prop_assert_eq!(cbits(&clip_of(mesh.points, &xform, &layer)), cbits(&clip_ref));
                 prop_assert_eq!(cbits(&own.clip), cbits(&clip_ref));
                 prop_assert_eq!(bits(&own.world), bits(&world_ref));
@@ -1266,6 +1546,36 @@ mod tests {
                     }
                 }
                 prop_assert_eq!(&alone[0], &expected);
+            }
+        }
+
+        /// A box `outside` turns away holds no point the view can see, for
+        /// any instance transform (turned, scaled, moved) and any camera
+        /// shift: skipping it can drop nothing drawn.
+        #[test]
+        fn a_box_outside_the_view_holds_nothing_in_view(
+            lo in [-3.0f32..3.0, -3.0f32..3.0, -3.0f32..3.0], extent in [0.0f32..4.0, 0.0f32..4.0, 0.0f32..4.0],
+            yaw in -3.2f64..3.2, scale in 0.05f64..4.0,
+            at in [-30.0f64..30.0, -30.0f64..30.0, -200.0f64..30.0], shift in [-3.0f64..3.0, -3.0f64..3.0],
+            probes in prop::collection::vec([0.0f32..=1.0, 0.0f32..=1.0, 0.0f32..=1.0], 64),
+        ) {
+            let hi: Vec3 = std::array::from_fn(|k| lo[k] + extent[k]);
+            let (c, s) = (yaw.cos() * scale, yaw.sin() * scale);
+            let xform: Mat4 = [c, 0.0, -s, 0.0, 0.0, scale, 0.0, 0.0, s, 0.0, c, 0.0, at[0], at[1], at[2], 1.0];
+            let (world_to_clip, _) = camera();
+            let mut moved = math::IDENTITY;
+            moved[12] = shift[0];
+            moved[13] = shift[1];
+            let world_to_clip = math::mul(&moved, &world_to_clip);
+            if outside((lo, hi), &xform, &world_to_clip) {
+                let to_clip = math::mul(&xform, &world_to_clip);
+                let corners = (0..8).map(|k| std::array::from_fn(|a| if k >> a & 1 == 0 { 0.0 } else { 1.0 }));
+                for t in probes.into_iter().chain(corners) {
+                    let p: Vec3 = std::array::from_fn(|k| lo[k] + t[k] * extent[k]);
+                    let [x, y, z, w] = math::transform_point4(p, &to_clip);
+                    let seen = (-w..=w).contains(&x) && (-w..=w).contains(&y) && (-w..=w).contains(&z);
+                    prop_assert!(!seen, "{:?} is in view, its box was skipped", p);
+                }
             }
         }
 

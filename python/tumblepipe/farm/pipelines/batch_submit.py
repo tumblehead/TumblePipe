@@ -26,7 +26,7 @@ from tumblepipe.config.channels import (
 )
 from tumblepipe.config.department import list_departments, department_names_up_to
 from tumblepipe.farm.backend import get_farm
-from tumblepipe.config.timeline import FrameRange
+from tumblepipe.config.timeline import FrameRange, get_frame_range
 from tumblepipe.farm.jobs import stage as stage_job
 from tumblepipe.farm.jobs import collapse as collapse_job
 from tumblepipe.farm.jobs import publish as publish_job
@@ -34,6 +34,7 @@ from tumblepipe.farm.pipelines import build as build_pipeline
 from tumblepipe.farm.pipelines import render as render_pipeline
 from tumblepipe.farm.pipelines import playblast as playblast_pipeline
 from tumblepipe.farm.pipelines import edit_render as edit_render_pipeline
+from tumblepipe.farm.pipelines import composite as composite_pipeline
 from tumblepipe.farm.pipelines import preview
 from tumblepipe.pipe import render_layers
 from tumblepipe.farm.pipelines import publish as publish_pipeline
@@ -190,6 +191,11 @@ def submit_entity_batch(config: dict) -> list[str]:
                 - Playblast section: pb_department, pb_pool, pb_priority,
                                      pb_res, pb_look
                                      (specs.playblast.valid_look)
+                - comp: bool (optional, shots) - re-comp the shot's newest
+                        composite workfile; with render it waits for the
+                        full render's denoise, else the render
+                - Comp section: comp_pool, comp_priority, comp_batch_size,
+                                comp_copy_to_edit
 
             An Edits tab row (context ``edits``) is a Render Edit instead:
             its settings are version, pool_name and priority
@@ -220,7 +226,8 @@ def submit_entity_batch(config: dict) -> list[str]:
     do_publish = settings['publish']
     do_render = settings['render']
     do_playblast = settings['playblast']
-    if not do_publish and not do_render and not do_playblast:
+    do_comp = settings.get('comp', False)
+    if not do_publish and not do_render and not do_playblast and not do_comp:
         return []
 
     # The publish job itself always runs at publish_job.PRIORITY. The builds
@@ -261,6 +268,18 @@ def submit_entity_batch(config: dict) -> list[str]:
                 f"Unknown render_mode {render_mode!r}: expected one of "
                 f"{', '.join(RENDER_TASK_KEYS)}."
             )
+
+    # The re-comp's schedule (specs.composite.valid_recomp). It posts to the
+    # comp channel, as an export_comp's submit does.
+    comp_block = None
+    if do_comp:
+        comp_block = dict(
+            pool_name=settings['comp_pool'],
+            priority=settings['comp_priority'],
+            batch_size=settings['comp_batch_size'],
+            copy_to_edit=settings['comp_copy_to_edit'],
+            channel_name='comp',
+        )
 
     if do_playblast:
         pb_department = settings.get('pb_department')
@@ -328,6 +347,19 @@ def submit_entity_batch(config: dict) -> list[str]:
             f"Playblast is only supported for shots, not '{entity_context}'"
         )
 
+    # A comp is a shot's, and follows a render's full range: a preview-only
+    # render has no frames to comp.
+    if do_comp and entity_context != 'shots':
+        raise BatchSubmitError(
+            f"Comp is only supported for shots, not '{entity_context}'"
+        )
+    if do_comp and do_render and 'full_render' not in render_task_keys:
+        raise BatchSubmitError(
+            f"Comp follows the full render, and {entity_uri}'s render submits "
+            "only its check frames: choose a render mode with the full range, "
+            "or tick Comp on its own once the render is done."
+        )
+
     # Get departments list
     departments = list_departments(entity_context)
     department_names = [d.name for d in departments]
@@ -356,7 +388,8 @@ def submit_entity_batch(config: dict) -> list[str]:
         kind for kind, wanted in (
             ('publish', do_publish),
             ('render', do_render),
-            ('playblast', do_playblast)
+            ('playblast', do_playblast),
+            ('comp', do_comp)
         )
         if wanted
     ]
@@ -493,6 +526,8 @@ def submit_entity_batch(config: dict) -> list[str]:
                         denoise=denoise,
                         copy_to_edit=copy_to_edit,
                     )
+                    if comp_block is not None:
+                        collapse_config['render']['composite'] = comp_block
                 else:
                     try:
                         input_paths = preview.collapse_render_inputs(
@@ -521,6 +556,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         denoise=denoise,
                         copy_to_edit=copy_to_edit,
                         task_keys=list(render_task_keys),
+                        composite=comp_block,
                     )
                     try:
                         render_pipeline.build(
@@ -561,6 +597,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         batch_size=batch_size,
                         copy_to_edit=copy_to_edit
                     ),
+                    **({} if comp_block is None else {'composite': comp_block}),
                     tasks={
                         'stage': dict(priority=render_priority, channel_name='exports'),
                         **{
@@ -624,6 +661,31 @@ def submit_entity_batch(config: dict) -> list[str]:
                     raise BatchSubmitError(
                         f"Could not build playblast job for {entity_uri}: {e}"
                     ) from e
+
+        # A comp on its own: the shot's newest composite workfile over its
+        # renders as they are now. With a render, the render chain carries
+        # it (its config's composite block) and starts it after the denoise.
+        if do_comp and not do_render:
+            shot_range = get_frame_range(entity_uri)
+            if shot_range is None:
+                raise BatchSubmitError(f"No frame range for {entity_uri}")
+            comp_range = shot_range.full_range()
+            try:
+                composite_pipeline.build(
+                    composite_pipeline.recomp_config(
+                        entity_uri, comp_block,
+                        user_name=user_name,
+                        purpose='render',
+                        first_frame=comp_range.first_frame,
+                        last_frame=comp_range.last_frame,
+                        temp_path=temp_path,
+                        paths=paths,
+                    ),
+                    paths, temp_path, jobs, deps,
+                    prefix='comp_',
+                )
+            except composite_pipeline.RecompError as e:
+                raise BatchSubmitError(str(e)) from e
 
         if collapse_config is not None:
             try:

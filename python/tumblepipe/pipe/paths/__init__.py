@@ -31,9 +31,6 @@ from tumblepipe.pipe.paths.render import (
     get_aov_frame_path,
     get_render,
     get_render_context,
-    mirror_aov,
-    get_proxy_aov,
-    comp_input_problems,
 )
 from tumblepipe.pipe.paths.review import (
     get_layer_playblast_path,
@@ -111,9 +108,6 @@ __all__ = [
     'get_aov_frame_path',
     'get_render',
     'get_render_context',
-    'mirror_aov',
-    'get_proxy_aov',
-    'comp_input_problems',
     # review
     'get_layer_playblast_path',
     'get_layer_playblast_movie_path',

@@ -1,0 +1,16 @@
+{
+	"values":["22.0.429"
+	],
+	"indexes":{
+		"hdaroot/inputs.userdata":0,
+		"hdaroot/mix/alpha.userdata":0,
+		"hdaroot/mix.userdata":0,
+		"hdaroot/mix/rest.userdata":0,
+		"hdaroot/mix/beauty_rgb.userdata":0,
+		"hdaroot/mix/inputs.userdata":0,
+		"hdaroot/mix/rgba.userdata":0,
+		"hdaroot/mix/unpack.userdata":0,
+		"hdaroot/mix/outputs.userdata":0,
+		"hdaroot/outputs.userdata":0
+	}
+}

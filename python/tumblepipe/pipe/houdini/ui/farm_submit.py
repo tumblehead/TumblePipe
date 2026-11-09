@@ -1,6 +1,6 @@
 """Submitting farm work from inside Houdini: one choice, one check, one answer.
 
-A node's own Submit button (th::build_comp, th::lookdev_studio) and the
+A node's own Submit button (th::export_comp, th::lookdev_studio) and the
 publish dialog submit from where their settings live, through the same
 ``farm.pipelines`` jobs Farm Submit uses. This module gives them what Farm
 Submit's dialog gives its grid:

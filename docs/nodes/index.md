@@ -60,7 +60,9 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | `th::import_rigs` | SOP | Load several rigs, one row each, with per-row version pins |
 | `th::export_rig` | SOP | Publish the rig department |
 | `th::playblast` | SOP | OpenGL flipbook from a SOP context |
-| `th::build_comp` | COP | Build and submit the shot comp |
+| `th::import_render` | COP | One channel's finished render into a comp: the beauty and a cable of its AOVs |
+| `th::light_mix` | COP | A channel's light groups mixed back into its beauty |
+| `th::export_comp` | COP | The end of a comp graph; submits the shot's composite version |
 
 ### `_TumblePipe/model`
 

@@ -6,8 +6,8 @@ testable headlessly (``tests/test_farm_grid.py``). The dialog
 status scan (``submit_status``) supplies the per-cell states.
 
 The grid is *steps*, not settings: rows are entities, columns are pipeline
-steps (one publish column per department, then Playblast and Render), and a
-ticked cell means "do this step for this entity". Settings stay in the
+steps (one publish column per department, then Playblast, Render and, for
+shots, Comp), and a ticked cell means "do this step for this entity". Settings stay in the
 per-entity tri-state form (``submit_settings``).
 
 Publish cells are individual departments. Ticking anim and light on a row
@@ -37,7 +37,15 @@ NEEDS_WORK = frozenset({NEVER, STALE})
 PUBLISH = 'publish'
 PLAYBLAST = 'playblast'
 RENDER = 'render'
-KINDS = (PUBLISH, PLAYBLAST, RENDER)
+# Re-comp a shot's newest composite workfile on the farm (designs/
+# comp-template.md §7). It reads the shot's renders, not its publishes.
+COMP = 'comp'
+KINDS = (PUBLISH, PLAYBLAST, RENDER, COMP)
+# The kinds that compose published departments up to a cut, so can show
+# what is published stale (``unpublished_upstream``). Comp is not one: it
+# comps the renders on disk, and a stale publish reaches it only through a
+# Render ticked beside it, which warns for itself.
+PREVIEWS = (PLAYBLAST, RENDER)
 
 
 @dataclass(frozen=True)
@@ -56,7 +64,9 @@ def publish_key(department: str) -> str:
 def columns_for(context: str, publish_departments: Sequence[str]) -> list[Column]:
     """The step columns for ``context``, publish departments in pool order.
 
-    Playblast is a shots-only preview, as it is on the farm side.
+    Playblast is a shots-only preview, as it is on the farm side. Comp,
+    after Render, is shots-only too: a re-comp is a shot's composite
+    workfile over its renders (``batch_submit`` refuses one on an asset).
     """
     columns = [
         Column(publish_key(name), name, PUBLISH, name)
@@ -65,6 +75,8 @@ def columns_for(context: str, publish_departments: Sequence[str]) -> list[Column
     if context == 'shots':
         columns.append(Column(PLAYBLAST, 'Playblast', PLAYBLAST))
     columns.append(Column(RENDER, 'Render', RENDER))
+    if context == 'shots':
+        columns.append(Column(COMP, 'Comp', COMP))
     return columns
 
 
@@ -113,6 +125,20 @@ def preview_state(
     if newest is not None and newest > preview_mtime:
         return STALE
     return CURRENT
+
+
+def comp_state(
+    has_workfile: bool,
+    comp_mtime: float | None,
+    render_mtime: float | None,
+) -> str:
+    """A shot's Comp cell.
+
+    Nothing to do without a composite workfile (the farm would refuse the
+    re-comp); otherwise :func:`preview_state` with the render as the one
+    upstream: stale when a render landed after the newest comp.
+    """
+    return preview_state(comp_mtime, [render_mtime], available=has_workfile)
 
 
 # ── ticks ─────────────────────────────────────────────────
@@ -244,7 +270,7 @@ def unpublished_upstream(
     """
     previews = [
         c for c in columns
-        if c.kind in (PLAYBLAST, RENDER) and (uri, c.key) in ticks
+        if c.kind in PREVIEWS and (uri, c.key) in ticks
     ]
     if not previews:
         return []
@@ -316,7 +342,7 @@ def summary(
     ticks: set,
     noun: tuple[str, str] = ('entity', 'entities'),
 ) -> str:
-    """``3 publishes · 2 playblasts · 1 render — 2 shots``, or ``Nothing ticked``."""
+    """``3 publishes · 2 playblasts · 1 render · 1 comp — 2 shots``, or ``Nothing ticked``."""
     counts = {kind: 0 for kind in KINDS}
     rows = 0
     for uri in uris:
@@ -332,6 +358,7 @@ def summary(
         PUBLISH: ('publish', 'publishes'),
         PLAYBLAST: ('playblast', 'playblasts'),
         RENDER: ('render', 'renders'),
+        COMP: ('comp', 'comps'),
     }
     parts = [
         f"{counts[kind]} {words[kind][counts[kind] != 1]}"

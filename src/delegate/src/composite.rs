@@ -178,6 +178,22 @@ impl Samples {
     pub fn count(&self) -> usize {
         self.offsets.len()
     }
+
+    /// This buffer emptied for another frame of its shape, its memory kept
+    /// (a new 1080p buffer of 8 samples is 300 MB of page faults, and as
+    /// much again to free). Only depth and ids are cleared: depth says
+    /// what was drawn, and nothing reads a sample's albedo or normal where
+    /// nothing was.
+    pub(crate) fn clear(&mut self) {
+        let w = self.width.max(1);
+        par_rows(&mut self.depth, w, |_, row| row.fill(1.0));
+        par_rows(&mut self.ids, w, |_, row| row.fill([-1, -1]));
+    }
+
+    /// Whether this buffer is of `width x height` with these sample offsets.
+    pub(crate) fn fits(&self, width: usize, height: usize, offsets: &[(f32, f32)]) -> bool {
+        self.width == width && self.height == height && self.offsets == offsets
+    }
 }
 
 /// The camera as the rasterisers need it: its position and unit right, up
@@ -400,8 +416,8 @@ pub(crate) fn ambient_occlusion(samples: &Samples, proj: &Mat4) -> Vec<f32> {
                 *out = ao;
             }
         });
-        blur_pass(out, &mut across, normal, w, h, AO_BLUR_PX, true, period);
-        blur_pass(&across, out, normal, w, h, AO_BLUR_PX, false, period);
+        blur_pass(out, &mut across, normal, distance, w, h, AO_BLUR_PX, true, period);
+        blur_pass(&across, out, normal, distance, w, h, AO_BLUR_PX, false, period);
     }
     ao
 }
@@ -418,29 +434,32 @@ pub(crate) fn ambient_occlusion(samples: &Samples, proj: &Mat4) -> Vec<f32> {
 /// lighter. A phase reached only across onto another surface weighs, and
 /// counts, next to nothing.
 #[allow(clippy::too_many_arguments)]
-fn blur_pass(ao: &[f32], out: &mut [f32], normal: &[[f32; 4]], w: usize, h: usize, radius: usize, across: bool,
-             period: usize) {
+fn blur_pass(ao: &[f32], out: &mut [f32], normal: &[[f32; 4]], distance: &[f32], w: usize, h: usize,
+             radius: usize, across: bool, period: usize) {
     let (stride, len) = if across { (1, w) } else { (w, h) };
     par_rows(out, w, |y, row| {
         for (x, out) in row.iter_mut().enumerate() {
             let at = y * w + x;
-            let n = normal[at];
-            if n[3].is_nan() || n[3] <= 0.0 {
+            // The layer's distances say what was drawn (NaN where nothing
+            // was): a reused render buffer keeps old normals there.
+            let (n, d) = (normal[at], distance[at]);
+            if d.is_nan() || d <= 0.0 {
                 *out = ao[at]; // nothing drawn
                 continue;
             }
-            let inv_gap = 1.0 / (0.02 * n[3]).max(1e-6);
+            let inv_gap = 1.0 / (0.02 * d).max(1e-6);
             let pos = if across { x } else { y };
             let (lo, hi) = (pos.saturating_sub(radius), (pos + radius).min(len - 1));
             let (mut sums, mut weights) = ([0.0f32; 4], [0.0f32; 4]);
             let mut phase = lo % period;
             for q in lo..=hi {
                 let at = at + q * stride - pos * stride;
-                let m = normal[at];
-                if m[3] > 0.0 {
-                    // Drawn (NaN or 0 where nothing was).
+                let e = distance[at];
+                if e > 0.0 {
+                    // Drawn (NaN where nothing was).
+                    let m = normal[at];
                     let agree = (n[0] * m[0] + n[1] * m[1] + n[2] * m[2]).max(0.0).powi(8);
-                    let gap = (m[3] - n[3]).abs() * inv_gap;
+                    let gap = (e - d).abs() * inv_gap;
                     let spatial = if q.abs_diff(pos) == radius { 0.5 } else { 1.0 };
                     let wgt = spatial * agree / (1.0 + gap * gap);
                     sums[phase] += ao[at] * wgt;

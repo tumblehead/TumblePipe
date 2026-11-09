@@ -25,6 +25,7 @@ clear of the cell states' green (current), amber (stale) and red (error).
 
 from __future__ import annotations
 
+import html
 import logging
 import subprocess
 
@@ -60,11 +61,13 @@ KIND_COLOURS = {
     grid.PUBLISH: "#6ea2ef",
     grid.PLAYBLAST: "#ad92ee",
     grid.RENDER: "#ec88bd",
+    grid.COMP: "#62c3d0",
 }
 KIND_FILLS = {
     grid.PUBLISH: "#2f5b99",
     grid.PLAYBLAST: "#56449a",
     grid.RENDER: "#8f3f6c",
+    grid.COMP: "#23646d",
 }
 # The Edits tab's one step renders a movie: it wears Render's colour.
 EDIT_KIND = grid.RENDER
@@ -820,6 +823,20 @@ class SubmissionView(QWidget):
         _fit_rows(self.table, len(self._configs))
         root.addWidget(self.table, 1)
 
+        # What went wrong, in full: the status column cuts long errors short,
+        # and they often say how to fix it. Selectable, so it can be copied.
+        self._names = {
+            config['entity']['uri']: config['entity'].get('name') or config['entity']['uri'].split(':/', 1)[-1]
+            for config in self._configs
+        }
+        self._problems = QLabel()
+        self._problems.setWordWrap(True)
+        self._problems.setTextFormat(Qt.PlainText)
+        self._problems.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self._problems.setStyleSheet(f"color: {ERROR_COLOUR};")
+        self._problems.setVisible(False)
+        root.addWidget(self._problems)
+
         self.bar = QProgressBar()
         self.bar.setStyleSheet(_PROGRESS_STYLE)
         self.bar.setTextVisible(True)
@@ -927,7 +944,11 @@ class SubmissionView(QWidget):
         if status == submit_progress.DONE and isinstance(cleanup, dict) and cleanup.get('error'):
             colour = STALE_COLOUR
         item.setForeground(2, QColor(colour))
-        item.setToolTip(2, item.text(2))
+        # Rich text, so Qt wraps a long error instead of one screen-wide line.
+        item.setToolTip(2, f"<p>{html.escape(item.text(2))}</p>")
+        problems = submit_progress.problems(self._state, self._names)
+        self._problems.setText("\n".join(f"{name}: {error}" for name, error in problems))
+        self._problems.setVisible(bool(problems))
 
     def _counts(self) -> tuple[int, int, int]:
         return submit_progress.counts(self._state)

@@ -1,0 +1,10 @@
+""
+DialogScript	DialogScript
+CreateScript	CreateScript
+InternalFileOptions	InternalFileOptions
+Contents.gz	Contents.gz
+OnCreated	OnCreated
+ExtraFileOptions	ExtraFileOptions
+OnLoaded	OnLoaded
+Tools.shelf	Tools.shelf
+TypePropertiesOptions	TypePropertiesOptions

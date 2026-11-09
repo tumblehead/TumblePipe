@@ -32,64 +32,60 @@ from .task_factory import (
 )
 
 
-def _get_downstream_departments(
-    entity_type: str, current_department: str, entity_uri: Uri | None = None,
-    ) -> list[str]:
-    """Get list of downstream departments for an entity.
+def _workfile_departments(context: Context, entity_type: str | None) -> list[str]:
+    """Every department a workfile's export nodes may publish, in pool order.
 
-    Scoped to the entity when we have its URI: a shot that only carries
-    tracking has nothing downstream of it, and offering publish tasks for
-    departments it does not have would be noise. Falls back to the whole pool
-    for a group (whose members can differ) or an unresolvable entity.
+    An export node publishes the workfile it lives in, into whichever
+    department it names: a model workfile can hold the lookdev and rig
+    exports too, and publishes all three (Martin, 2026-11: model, lookdev
+    and rig built in one file). So the scope is every department the entity
+    has, not the workfile's own and those downstream of it. That narrower
+    scope came with the idea that another department's row meant
+    "republish that department's own workfile", which only a farm job could
+    do: in this session its rows were unticked, and on the farm it bundled
+    the other department's workfile, so a lookdev export built in the model
+    file never published. Republishing departments from their own
+    workfiles is what the browser's batch publish does (an export node's
+    Downstream Exports re-runs this same workfile for each later
+    department).
 
-    Order is the pool's — an entity's assignment is a filter over it, never a
-    reordering — so "downstream" stays the pipeline's notion of downstream.
+    Scoped to the entity when it is one (a shot that only carries tracking
+    offers no rows for departments it does not have); a Multi, whose members
+    can differ, takes its context's whole pool. The workfile's own
+    department is always in scope, even when the entity was scoped away
+    from it since. Order is the pool's, the pipeline order the run follows,
+    so model publishes before the lookdev that imports it.
     """
-    if entity_type == 'shot':
-        context = 'shots'
-    elif entity_type == 'asset':
-        context = 'assets'
+    if entity_type in ('shot', 'asset'):
+        departments = list_entity_departments(context.entity_uri)
     elif entity_type == 'group':
-        # A Multi's URI is ``groups:/<context>/<name>``, so its first
-        # segment names the context its members are drawn from. The Multi
-        # carries no department assignment of its own — its members' can
-        # differ — so it takes the whole pool, which is what the paragraph
-        # above always promised and what this branch did not do: it fell
-        # through to the bare ``return []``, so a Multi workfile offered
-        # only its own department and never anything downstream of it.
-        if entity_uri is None or len(entity_uri.segments) == 0:
-            return []
-        context = entity_uri.segments[0]
-        entity_uri = None
+        # A Multi's URI is ``groups:/<context>/<name>``: its first segment
+        # names the context its members are drawn from.
+        segments = context.entity_uri.segments
+        if len(segments) == 0:
+            return [context.department_name]
+        departments = list_departments(segments[0])
     else:
-        return []
-
-    if entity_uri is not None:
-        departments = list_entity_departments(entity_uri)
-    else:
-        departments = list_departments(context)
-
-    if len(departments) == 0:
-        return []
-
-    department_names = [dept.name for dept in departments]
-    if current_department not in department_names:
-        return []
-
-    department_index = department_names.index(current_department)
-    return department_names[department_index + 1:]
+        return [context.department_name]
+    names = [department.name for department in departments]
+    if context.department_name not in names:
+        names.insert(0, context.department_name)
+    return names
 
 
-def _is_rig_context(context: Context, entity_type: str | None) -> bool:
-    """Does this workfile publish export_rig SOPs (as well as export_layer LOPs)?
+def _publishes_rigs(
+    context: Context, entity_type: str | None, departments: list[str],
+    ) -> bool:
+    """Does this workfile collect export_rig SOPs (as well as export_layer LOPs)?
 
-    The rig department of an asset *or of an asset Multi*. The Multi half
-    was missing: a character team merged their rigs into one Multi rig
-    workfile and every export_rig in it went uncollected, because the
-    group collector only looks for export_layer — so Publish and each
-    node's own Export button both said "no export tasks".
+    Any workfile of an asset or an asset Multi that can publish the rig
+    department: export_rig always exports into ``rig``, and a model workfile
+    holding the rig too publishes it (see ``_workfile_departments``). It
+    used to take the rig workfile itself; before that, a rig *Multi* was
+    missed as well, and every export_rig in a merged character rig workfile
+    went uncollected.
     """
-    if context.department_name != 'rig':
+    if 'rig' not in departments:
         return False
     if entity_type == 'asset':
         return True
@@ -184,14 +180,12 @@ def describe_missing_tasks(context: Context) -> str:
             )
         member_uris = set(group.members)
 
-    departments = [context.department_name] + _get_downstream_departments(
-        entity_type, context.department_name, entity_uri=context.entity_uri,
-    )
+    departments = _workfile_departments(context, entity_type)
 
-    # Mirror the collectors that actually ran: a rig context collects its
-    # export_rig SOPs and its export_layer LOPs (a LOP rig), every other
-    # context its export_layer LOPs.
-    if _is_rig_context(context, entity_type):
+    # Mirror the collectors that actually ran: an asset workfile collects
+    # its export_rig SOPs and its export_layer LOPs, a shot workfile its
+    # export_layer LOPs.
+    if _publishes_rigs(context, entity_type, departments):
         nodes = _list_nodes(_RIG_EXPORTS) + _list_nodes(_LAYER_EXPORTS)
         node_kind = 'th::export_rig or th::export_layer'
     else:
@@ -257,8 +251,8 @@ def describe_missing_tasks(context: Context) -> str:
                 )
     if wrong_department:
         lines.append(
-            f'Departments published from here: {", ".join(departments)}. '
-            f'These nodes export into another one:'
+            f'Departments this workfile can publish: {", ".join(departments)}. '
+            f'These nodes export into one {owner} does not have:'
         )
         lines.extend(_format_node_group(wrong_department))
     if bypassed:
@@ -285,12 +279,12 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
     """Collect all publish tasks for the current context.
 
     The workfile publishes its own entity — or, in a Multi's workfile, every
-    member — in its own department and every one downstream of it. Every
-    context publishes its export_layer LOPs (and the layer_split LOPs
-    upstream of them); a rig context its export_rig SOPs first. A rig
-    workfile's export_layer publishes a LOP rig: APEX characters authored
-    on the stage, for an APEX Animate LOP. It used to be skipped, so a LOP
-    rig could not be published at all ("no export tasks").
+    member — into every department its export nodes name
+    (``_workfile_departments``), in pipeline order. Every context publishes
+    its export_layer LOPs (and the layer_split LOPs upstream of them); an
+    asset workfile its export_rig SOPs too, at the rig department's place
+    in that order, ahead of the rig department's export_layer (a LOP rig:
+    APEX characters authored on the stage, for an APEX Animate LOP).
     """
     if context is None:
         return []
@@ -298,14 +292,15 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
     owned = _owned_entity_uris(context, entity_type)
     if not owned:
         return []
-    departments = [context.department_name] + _get_downstream_departments(
-        entity_type, context.department_name, entity_uri=context.entity_uri,
-    )
+    departments = _workfile_departments(context, entity_type)
     rig_tasks = (
         _collect_rig_publish_tasks(owned)
-        if _is_rig_context(context, entity_type) else []
+        if _publishes_rigs(context, entity_type, departments) else []
     )
-    return rig_tasks + _collect_layer_publish_tasks(owned, departments)
+    rig_tasks_by_entity: dict[str, list[ProcessTask]] = {}
+    for task in rig_tasks:
+        rig_tasks_by_entity.setdefault(str(task.uri), []).append(task)
+    return _collect_layer_publish_tasks(owned, departments, rig_tasks_by_entity)
 
 
 def _publishes(node, owned: set[Uri], departments: list[str]) -> bool:
@@ -338,13 +333,21 @@ def _list_nodes(kind) -> list:
 
 def _collect_layer_publish_tasks(
     owned: set[Uri], departments: list[str],
+    rig_tasks_by_entity: dict[str, list[ProcessTask]] | None = None,
     ) -> list[ProcessTask]:
     """Validation + grouped export tasks per entity and department, then a
     grouped build task per entity.
 
     A layer_split node is collected only when it is upstream of a collected
     export node; it runs inside its department's export group.
+
+    ``rig_tasks_by_entity`` (export_rig validation + export, per entity URI)
+    go in at the rig department's place in the pipeline order: after the
+    model and lookdev exports of the same run, which a rig is built on, and
+    before the rig department's own export_layer. An entity with only
+    export_rig tasks gets no build, as before.
     """
+    rig_tasks_by_entity = rig_tasks_by_entity or {}
     export_nodes = [
         node for node in _list_nodes(_LAYER_EXPORTS)
         if _publishes(node, owned, departments)
@@ -373,11 +376,19 @@ def _collect_layer_publish_tasks(
     splits = _by_entity_and_department(split_nodes)
 
     tasks = []
-    for uri_str in sorted(exports):
-        entity_exports = exports[uri_str]
+    for uri_str in sorted(set(exports) | set(rig_tasks_by_entity)):
+        entity_exports = exports.get(uri_str, {})
+        entity_rig_tasks = rig_tasks_by_entity.get(uri_str, [])
         entity_uri = Uri.parse(uri_str)
         export_task_ids = []
-        for department in sorted(entity_exports, key=departments.index):
+        entity_departments = set(entity_exports)
+        if entity_rig_tasks:
+            entity_departments.add('rig')
+        for department in sorted(entity_departments, key=departments.index):
+            if department == 'rig':
+                tasks.extend(entity_rig_tasks)
+            if department not in entity_exports:
+                continue
             department_exports = entity_exports[department]
             first_frame, last_frame = _get_frame_range_values(
                 entity_uri, department_exports[0]
@@ -399,6 +410,9 @@ def _collect_layer_publish_tasks(
             )
             tasks.append(group_task)
             export_task_ids.append(group_task.id)
+
+        if not entity_exports:
+            continue  # export_rig only: no layer to build from, as before
 
         # One build per entity, over every channel its exports publish. Its
         # frame range is the first export node's: exports of one entity
@@ -422,7 +436,8 @@ def _collect_layer_publish_tasks(
 def _collect_rig_publish_tasks(owned_uris: set[Uri]) -> list[ProcessTask]:
     """Collect publish tasks for the export_rig nodes addressing ``owned_uris``.
 
-    One asset for an asset rig workfile, every member for an asset Multi.
+    One asset for an asset workfile (any department, see
+    ``_publishes_rigs``), every member for an asset Multi.
     """
     tasks = []
     rig_export_nodes = [

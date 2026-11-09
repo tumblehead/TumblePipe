@@ -129,7 +129,9 @@ def main(config: dict, _frame_span: BlockRange) -> int:
                 batch_size = batch_size,
                 copy_to_edit = copy_to_edit
             ),
-            tasks = tasks
+            tasks = tasks,
+            # The re-comp after the render (Farm Submit's Comp column)
+            **({} if config.get('composite') is None else dict(composite = config['composite']))
         ), {
             render_settings_path: relative_render_settings_path,
             export_path: relative_export_path

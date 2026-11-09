@@ -359,7 +359,8 @@ parm) — `lops_cache` (USD) for the LOP `th::cache`, `cache` (`.bgeo.sc`) for
 the SOP `th::cache`. Leaving both on `from_context` targets the node's own
 workfile — the common case, byte-identical to the pre-Department behaviour —
 while pointing Department (or Entity) elsewhere lets a node **load a cache
-another workfile produced**. The export guard stays in agreement because
+another workfile produced** — the browse button next to Name lists every
+cache of the entity across departments and sets both for you. The export guard stays in agreement because
 `export_checks.versioned_cache_roots()` walks the actual `th::cache` nodes in the scene —
 LOP and SOP alike, through `cache.list_cache_locations()`, not the
 workfile's own location — so it
@@ -721,9 +722,10 @@ it is pinned to, and its Status says when a newer one is published; its
 parm has no refresh decision, and `scripts/verify_import_refresh.py`
 (hython) checks the whole path against real nodes.
 
-The refresh only touches import nodes — `create_model` and `build_comp`
-are deliberately excluded, so a plain open re-resolves references
-without cooking the whole workgraph. It does not reach the farm until
+The refresh only touches import nodes — `create_model` is deliberately
+excluded, so a plain open re-resolves references without cooking the whole
+workgraph. A comp's `th::import_render` is an import like any other: on
+`latest` it moves to the newest complete render when the workfile opens. It does not reach the farm until
 the shot/asset is re-staged (see below — the farm pins `current`).
 
 ## Picking up new versions mid-session

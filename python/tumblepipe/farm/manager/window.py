@@ -109,6 +109,23 @@ CLEANUP_WORDS = {
 # Batch names a confirmation lists per side before "… and N more".
 _CONFIRM_NAMES = 12
 
+# A splitter handle's line: the grey of the header rules and a hovered
+# scrollbar, lighter than the panels' borders so it stands out from them.
+_HANDLE = '#4a4a4a'
+
+
+def _handle_line(axis: str, colour: str) -> str:
+    """A splitter handle's fill: a 1px `colour` line across the middle of its
+    7px, the background either side, so the handle shows where to grab
+    (one the colour of the background could not be found). `axis` is the
+    one the handle is thin along: 'y' for a vertical splitter's."""
+    end = 'x2:0, y2:1' if axis == 'y' else 'x2:1, y2:0'
+    return (
+        f"qlineargradient(x1:0, y1:0, {end}, stop:0 {BG_DARKEST}, stop:0.42 {BG_DARKEST},"
+        f" stop:0.43 {colour}, stop:0.57 {colour}, stop:0.58 {BG_DARKEST}, stop:1 {BG_DARKEST})"
+    )
+
+
 _STYLE = f"""
 QWidget {{
     background-color: {BG_DARKEST};
@@ -149,7 +166,14 @@ QLineEdit, QComboBox {{
 }}
 QComboBox::drop-down {{ border: none; width: 16px; }}
 QComboBox QAbstractItemView {{ background-color: {BG_DARK}; border: 1px solid {BORDER}; }}
-QSplitter::handle {{ background-color: {BG_DARKEST}; }}
+QSplitter::handle:vertical {{ height: 7px; background: {_handle_line('y', _HANDLE)}; }}
+QSplitter::handle:horizontal {{ width: 7px; background: {_handle_line('x', _HANDLE)}; }}
+QSplitter::handle:vertical:hover, QSplitter::handle:vertical:pressed {{
+    background: {_handle_line('y', ACCENT)};
+}}
+QSplitter::handle:horizontal:hover, QSplitter::handle:horizontal:pressed {{
+    background: {_handle_line('x', ACCENT)};
+}}
 QPlainTextEdit {{ padding: 4px; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
 QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0; }}
@@ -182,6 +206,14 @@ _NO_TASK = 'Select a task to see its log'
 _NO_DETAILS = 'Select a job to see its details'
 # Where the details pane puts the machine's load: after what renders the job.
 _MACHINE_SECTION = 'This machine'
+
+
+def _show_handles(splitter: QSplitter) -> None:
+    """Let `splitter`'s handles light up under the mouse: _STYLE draws each
+    as a 1px line with 3px to grab either side, highlighted on hover, which
+    Qt reports to a handle only with WA_Hover set."""
+    for index in range(1, splitter.count()):
+        splitter.handle(index).setAttribute(Qt.WA_Hover, True)
 
 
 def _when(iso: str) -> str:
@@ -330,6 +362,10 @@ class ManagerWindow(QWidget):
         bottom.setSizes([700, 700])
         splitter.addWidget(bottom)
         splitter.setSizes([460, 380])
+        # Each handle is drawn as a line that lights up under the mouse
+        # (_STYLE): a handle the colour of the background could not be found.
+        for each in (splitter, top, bottom):
+            _show_handles(each)
         root.addWidget(splitter, 1)
 
         # The footer: where both farms stand on the left, refreshed every

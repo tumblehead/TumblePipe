@@ -125,6 +125,15 @@ pub enum Step {
     /// with their own storage purpose, department pool and schema (see
     /// [`v23_plan`]).
     EditsContext,
+    /// v24 — the stock composite template builds the comp from
+    /// th::import_render, th::light_mix and th::export_comp; th::build_comp,
+    /// which the old one placed, is gone from the package. Only
+    /// `templates/shots/composite/template.py` is touched (see
+    /// [`v24_plan`]): a stock copy is replaced as v12 replaces one, and a
+    /// customised copy that names `build_comp` is replaced too, its original
+    /// kept as `template.py.v24.bak`, since with the HDA gone it can only
+    /// fail at New from Template.
+    CompositeWithoutBuildComp,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -169,7 +178,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 23] = [
+pub const STEPS: [Step; 24] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -193,6 +202,7 @@ pub const STEPS: [Step; 23] = [
     Step::AddGroomDepartment,
     Step::GroupSchemaUnderRoots,
     Step::EditsContext,
+    Step::CompositeWithoutBuildComp,
 ];
 
 impl Step {
@@ -222,6 +232,7 @@ impl Step {
             Step::AddGroomDepartment => 21,
             Step::GroupSchemaUnderRoots => 22,
             Step::EditsContext => 23,
+            Step::CompositeWithoutBuildComp => 24,
         }
     }
 
@@ -290,6 +301,9 @@ impl Step {
             }
             Step::EditsContext => {
                 "add the edits context: the edits storage purpose, the edit department and the edit schema"
+            }
+            Step::CompositeWithoutBuildComp => {
+                "refresh _config/templates/shots/composite for the comp nodes that replace th::build_comp"
             }
         }
     }
@@ -535,6 +549,12 @@ impl Step {
             // Blocked when a file it adds to is unreadable or misshapen, or
             // the packaged scaffold has no `edits` path.
             Step::EditsContext => match v23_plan(&cfg, template_dir) {
+                Ok(_) => Readiness::Ready,
+                Err(why) => Readiness::Blocked(why),
+            },
+            // Blocked only when the project's composite template cannot be
+            // read, or the packaged templates are missing.
+            Step::CompositeWithoutBuildComp => match v24_plan(&cfg, template_dir) {
                 Ok(_) => Readiness::Ready,
                 Err(why) => Readiness::Blocked(why),
             },
@@ -1059,6 +1079,20 @@ impl Step {
                 }
                 Ok(())
             }
+            Step::CompositeWithoutBuildComp => match v24_plan(&cfg, template_dir)? {
+                None => Ok(()),
+                Some(V24Write { path, text, backup: false }) => {
+                    // Stock: what the scaffold shipped, nothing to keep.
+                    let style = newlines::style_of_file(&path);
+                    std::fs::write(&path, newlines::apply(&text, style))
+                        .map_err(|e| format!("could not write {}: {e}", path.display()))
+                }
+                // Customised: the original is kept as `.v24.bak` (an
+                // existing one, from an earlier run, is never overwritten).
+                Some(V24Write { path, text, backup: true }) => {
+                    write_preserving_as(&path, &text, "v24.bak")
+                }
+            },
             Step::ScratchOffWslPaths => {
                 // Own backup suffix: the `.v11.bak` v11 left is that step's
                 // original and stays.
@@ -1168,6 +1202,75 @@ fn refresh_stock_templates(cfg: &Path, template_dir: &Path) -> Result<(), String
             .map_err(|e| format!("could not write {}: {e}", path.display()))?;
     }
     Ok(())
+}
+
+/// The one template v24 refreshes, as its directory under `templates/`.
+const COMPOSITE: &str = "shots/composite";
+
+/// What a customised composite template that v24 replaces names: the HDA
+/// the old stock template placed, which this release deletes.
+const BUILD_COMP: &str = "build_comp";
+
+/// v24's one write: the project's composite template, the packaged LF text,
+/// and whether the original is kept as `.v24.bak` (a customised copy) or not
+/// (a stock one).
+#[derive(Debug, PartialEq, Eq)]
+struct V24Write {
+    path: PathBuf,
+    text: String,
+    backup: bool,
+}
+
+/// v24's work for a project: `Ok(Some(write))` when the composite template is
+/// to be replaced, `Ok(None)` when it is left alone, or why it cannot be read.
+///
+/// - Missing, or already the packaged text (bar line endings): nothing to do.
+///   A project past v12 that has no composite template deleted it, and this
+///   step does not put it back.
+/// - Stock ([`templates::is_stock`]): replaced, no backup, as v12 does.
+/// - Customised and naming `build_comp`: replaced, the original kept as
+///   `template.py.v24.bak`. th::build_comp is gone from the package, so the
+///   template could only fail at New from Template; unlike v12's removed
+///   APIs, refusing would leave the project nothing to do but delete it.
+/// - Customised and not naming it: the studio's own, left byte-identical.
+///
+/// A package with no composite template has nothing to refresh to: no-op.
+fn v24_plan(cfg: &Path, template_dir: &Path) -> Result<Option<V24Write>, String> {
+    let source = scaffold_templates_dir(template_dir);
+    if !source.is_dir() {
+        return Err(format!(
+            "packaged templates not found at {} — the TumblePipe package is incomplete",
+            source.display()
+        ));
+    }
+    let relative: PathBuf = COMPOSITE.split('/').collect();
+    let packaged = source.join(&relative).join("template.py");
+    let new_text = match std::fs::read_to_string(&packaged) {
+        Ok(text) => newlines::normalize(&text),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("cannot read {}: {err}", packaged.display())),
+    };
+    let path = cfg.join("templates").join(&relative).join("template.py");
+    let old = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("cannot read {}: {err}", path.display())),
+    };
+    if newlines::normalize(&old) == new_text {
+        return Ok(None);
+    }
+    let backup = if templates::is_stock(COMPOSITE, &old) {
+        false
+    } else if old.contains(BUILD_COMP) {
+        true
+    } else {
+        return Ok(None);
+    };
+    Ok(Some(V24Write {
+        path,
+        text: new_text,
+        backup,
+    }))
 }
 
 /// The asset department v21 adds, and its properties: it publishes, and the
@@ -3111,7 +3214,7 @@ mod tests {
         let cfg = dir.path().join("_config");
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
 
         let path = cfg.join(conventions::STORAGE_FILE);
         let table = load_json(&path).unwrap();
@@ -3687,6 +3790,7 @@ mod tests {
             (Step::AddGroomDepartment, Readiness::Blocked(_)),
             (Step::GroupSchemaUnderRoots, Readiness::Ready),
             (Step::EditsContext, Readiness::Ready),
+            (Step::CompositeWithoutBuildComp, Readiness::Ready),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -3797,7 +3901,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 23);
+        assert_eq!(latest_version(), 24);
         assert_eq!(current_version(&target).unwrap(), latest_version());
         assert!(pending(&target).unwrap().is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -3943,8 +4047,8 @@ mod tests {
         let dir = project_at_v12_with_variants();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 11);
-        assert_eq!(report.to, 23);
+        assert_eq!(report.applied.len(), 12);
+        assert_eq!(report.to, 24);
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -4001,7 +4105,7 @@ mod tests {
         let template = scaffold();
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -4019,7 +4123,7 @@ mod tests {
         write_version(&dir.path().join("_config"), 12).unwrap();
         let second = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 23);
+        assert_eq!(second.to, 24);
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -4099,7 +4203,7 @@ mod tests {
         }
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
         let animation =
             std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
         assert_eq!(
@@ -4131,7 +4235,7 @@ mod tests {
         std::fs::write(&path, &shipped_at_v14).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             layout.replace("
@@ -4173,8 +4277,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v15).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 8);
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(report.applied.len(), 9);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         // Only rigged assets get a row (since 80def61306: the animatable ones)
@@ -4199,8 +4303,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v17).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 6);
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(report.applied.len(), 7);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("anim_camera.parm('loppath').set(camera_edit_node.path())"));
@@ -4222,8 +4326,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v18).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 5);
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(report.applied.len(), 6);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(layout, packaged_text("shots/layout"));
         assert!(layout.contains("layout_rigs.add_layout_animate(scene_node, camera_node, entity_uri)"));
@@ -4245,8 +4349,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v19).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 4);
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(report.applied.len(), 5);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("layout_keys_rows.add_to_dive("));
@@ -4326,10 +4430,11 @@ mod tests {
             vec![
                 (Step::AddGroomDepartment, Ok(())),
                 (Step::GroupSchemaUnderRoots, Ok(())),
-                (Step::EditsContext, Ok(()))
+                (Step::EditsContext, Ok(())),
+                (Step::CompositeWithoutBuildComp, Ok(()))
             ]
         );
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
         assert_eq!(
             asset_departments(dir.path()),
             ["model", "blendshape", "groom", "lookdev", "rig"]
@@ -4444,9 +4549,13 @@ mod tests {
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(
             report.applied,
-            vec![(Step::GroupSchemaUnderRoots, Ok(())), (Step::EditsContext, Ok(()))]
+            vec![
+                (Step::GroupSchemaUnderRoots, Ok(())),
+                (Step::EditsContext, Ok(())),
+                (Step::CompositeWithoutBuildComp, Ok(()))
+            ]
         );
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
         let roots = group_roots(dir.path());
         assert_eq!(roots.as_object().unwrap().keys().collect::<Vec<_>>(), ["shots", "assets"]);
         for root in GROUP_ROOTS {
@@ -4580,8 +4689,11 @@ mod tests {
         .collect();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied, vec![(Step::EditsContext, Ok(()))]);
-        assert_eq!(current_version(dir.path()).unwrap(), 23);
+        assert_eq!(
+            report.applied,
+            vec![(Step::EditsContext, Ok(())), (Step::CompositeWithoutBuildComp, Ok(()))]
+        );
+        assert_eq!(current_version(dir.path()).unwrap(), 24);
 
         let packaged = packaged_scaffold().join("_config");
         let storage = load_json(&dir.path().join("_config").join(conventions::STORAGE_FILE)).unwrap();
@@ -4664,5 +4776,193 @@ mod tests {
         table.shift_remove(EDITS);
         assert!(conventions::validate_table_before_v23(&table).is_ok());
         assert!(conventions::validate_table(&table).is_err());
+    }
+
+    // ── v24: the composite template without th::build_comp ─────────────
+
+    /// The new stock composite template is a fixture (so a STOCK row), and
+    /// it no longer places th::build_comp.
+    #[test]
+    fn v24_the_packaged_composite_template_is_among_the_fixtures() {
+        let packaged = packaged_text(COMPOSITE);
+        assert!(!packaged.contains(BUILD_COMP), "the packaged template still names build_comp");
+        assert!(templates::is_stock(COMPOSITE, &packaged));
+        assert!(
+            shipped_templates()
+                .iter()
+                .any(|(relative, _, text)| relative == COMPOSITE && newlines::normalize(text) == packaged),
+            "no fixture under tests/fixtures/templates/{COMPOSITE}/ holds the packaged template"
+        );
+    }
+
+    /// A v23 project with no composite template gets none from v24.
+    #[test]
+    fn v24_leaves_a_missing_composite_template_missing() {
+        let dir = project(Some(23));
+        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(report.applied, vec![(Step::CompositeWithoutBuildComp, Ok(()))]);
+        assert!(!project_template(dir.path(), COMPOSITE).exists());
+    }
+
+    mod v24_props {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn composite_fixtures() -> Vec<String> {
+            shipped_templates()
+                .into_iter()
+                .filter(|(relative, _, _)| relative == COMPOSITE)
+                .map(|(_, _, text)| text)
+                .collect()
+        }
+
+        /// Text of a studio's own, which never names build_comp.
+        fn own_lines() -> impl Strategy<Value = String> {
+            prop::collection::vec("[ -~]{0,40}", 0..12).prop_map(|lines| lines.join("\n"))
+        }
+
+        /// A line that names build_comp, as a customised template would.
+        fn build_comp_line() -> impl Strategy<Value = String> {
+            prop::sample::select(vec![
+                "from tumblepipe.pipe.houdini.cops import build_comp",
+                "    node = build_comp.create(copnet, 'comp')",
+                "comp = copnet.createNode('th::build_comp', 'comp')",
+                "# build_comp is ours",
+            ])
+            .prop_map(str::to_string)
+        }
+
+        fn with_style(text: &str, crlf: bool) -> String {
+            if crlf {
+                newlines::apply(text, "\r\n")
+            } else {
+                newlines::normalize(text)
+            }
+        }
+
+        /// A v23 project holding `text` (bytes as given) as its composite
+        /// template; returns the project and the template's path.
+        fn project_with(text: &str) -> (tempfile::TempDir, PathBuf) {
+            let dir = project(Some(23));
+            let path = project_template(dir.path(), COMPOSITE);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+            (dir, path)
+        }
+
+        fn backup_of(path: &Path) -> PathBuf {
+            path.with_file_name("template.py.v24.bak")
+        }
+
+        /// Every file in the template's directory, with its bytes.
+        fn snapshot(path: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+            let mut files = Vec::new();
+            find_files(path.parent().unwrap(), None, &mut files);
+            files
+                .into_iter()
+                .map(|f| {
+                    let bytes = std::fs::read(&f).unwrap();
+                    (f, bytes)
+                })
+                .collect()
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(48))]
+
+            /// Every composite template the scaffold shipped becomes the
+            /// packaged one, line endings kept, no backup.
+            #[test]
+            fn v24_replaces_a_stock_composite_template(
+                index in any::<prop::sample::Index>(),
+                crlf in any::<bool>(),
+            ) {
+                let fixtures = composite_fixtures();
+                let text = with_style(index.get(&fixtures), crlf);
+                let (dir, path) = project_with(&text);
+                let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+                prop_assert!(report.is_ok(), "{:?}", report);
+                prop_assert_eq!(current_version(dir.path()).unwrap(), 24);
+                let after = std::fs::read_to_string(&path).unwrap();
+                prop_assert_eq!(newlines::normalize(&after), packaged_text(COMPOSITE));
+                prop_assert_eq!(newlines::style_of(&after), newlines::style_of(&text));
+                prop_assert!(!backup_of(&path).exists(), "no backup of a stock template");
+            }
+
+            /// A customised template naming build_comp becomes the packaged
+            /// one, line endings kept, its original byte for byte in
+            /// `template.py.v24.bak`.
+            #[test]
+            fn v24_replaces_a_customised_template_naming_build_comp(
+                before in own_lines(),
+                line in build_comp_line(),
+                after in own_lines(),
+                crlf in any::<bool>(),
+            ) {
+                let text = with_style(&format!("{before}\n{line}\n{after}\n"), crlf);
+                prop_assume!(!templates::is_stock(COMPOSITE, &text));
+                let (dir, path) = project_with(&text);
+                let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+                prop_assert!(report.is_ok(), "{:?}", report);
+                let now = std::fs::read_to_string(&path).unwrap();
+                prop_assert_eq!(newlines::normalize(&now), packaged_text(COMPOSITE));
+                prop_assert_eq!(newlines::style_of(&now), newlines::style_of(&text));
+                prop_assert_eq!(std::fs::read(backup_of(&path)).unwrap(), text.into_bytes());
+            }
+
+            /// A customised template that does not name build_comp is the
+            /// studio's own: byte-identical, CRLF or LF, and no backup.
+            #[test]
+            fn v24_leaves_a_customised_template_without_build_comp_alone(
+                text in own_lines(),
+                crlf in any::<bool>(),
+            ) {
+                let text = with_style(&format!("# ours\n{text}\n"), crlf);
+                prop_assume!(!text.contains(BUILD_COMP));
+                let (dir, path) = project_with(&text);
+                let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+                prop_assert!(report.is_ok(), "{:?}", report);
+                prop_assert_eq!(current_version(dir.path()).unwrap(), 24);
+                prop_assert_eq!(std::fs::read(&path).unwrap(), text.into_bytes());
+                prop_assert!(!backup_of(&path).exists());
+            }
+
+            /// A second run changes nothing, whatever the template was; and
+            /// a `.v24.bak` already there is never overwritten.
+            #[test]
+            fn v24_is_idempotent_and_keeps_an_existing_backup(
+                kind in 0..3usize,
+                index in any::<prop::sample::Index>(),
+                own in own_lines(),
+                line in build_comp_line(),
+                crlf in any::<bool>(),
+                earlier in own_lines(),
+            ) {
+                let text = match kind {
+                    0 => index.get(&composite_fixtures()).clone(),
+                    1 => format!("{own}\n{line}\n"),
+                    _ => format!("# ours\n{own}\n").replace(BUILD_COMP, "comp"),
+                };
+                let text = with_style(&text, crlf);
+                let (dir, path) = project_with(&text);
+                let template = packaged_scaffold();
+                prop_assert!(migrate(dir.path(), &template).unwrap().is_ok());
+                let first = snapshot(&path);
+                write_version(&dir.path().join("_config"), 23).unwrap();
+                prop_assert!(migrate(dir.path(), &template).unwrap().is_ok());
+                prop_assert_eq!(snapshot(&path), first);
+                prop_assert_eq!(v24_plan(&dir.path().join("_config"), &template).unwrap(), None);
+
+                // A backup from an earlier run is the true original and stays.
+                let (dir, path) = project_with(&with_style(&format!("{own}\n{line}\n"), crlf));
+                let kept = format!("# the earlier original\n{earlier}\n");
+                std::fs::write(backup_of(&path), &kept).unwrap();
+                prop_assert!(migrate(dir.path(), &template).unwrap().is_ok());
+                prop_assert_eq!(std::fs::read_to_string(backup_of(&path)).unwrap(), kept);
+                let now = std::fs::read_to_string(&path).unwrap();
+                prop_assert_eq!(newlines::normalize(&now), packaged_text(COMPOSITE));
+            }
+        }
     }
 }

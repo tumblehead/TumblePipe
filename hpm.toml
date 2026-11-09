@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.97.1"
+version = "1.98.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -299,14 +299,6 @@ source = "otls/cop_th.a_b_slider.1.0.hda"
 
 [[operators]]
 kind = "hda"
-type_name = "th::build_comp::1.0"
-label = "th build comp"
-category = "Cop"
-tab_submenu = "_TumblePipe/pipeline"
-source = "otls/cop_th.build_comp.1.0.hda"
-
-[[operators]]
-kind = "hda"
 type_name = "th::cop_material::1.0"
 label = "th cop material"
 category = "Cop"
@@ -331,6 +323,14 @@ source = "otls/cop_th.depth_cull.1.0.hda"
 
 [[operators]]
 kind = "hda"
+type_name = "th::export_comp::1.0"
+label = "th export comp"
+category = "Cop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/cop_th.export_comp.1.0.hda"
+
+[[operators]]
+kind = "hda"
 type_name = "th::export_texture::1.0"
 label = "th export texture"
 category = "Cop"
@@ -352,6 +352,22 @@ label = "th import lop camera"
 category = "Cop"
 tab_submenu = "_TumblePipe/comp"
 source = "otls/cop_th.import_lop_camera.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::import_render::1.0"
+label = "th import render"
+category = "Cop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/cop_th.import_render.1.0.hda"
+
+[[operators]]
+kind = "hda"
+type_name = "th::light_mix::1.0"
+label = "th light mix"
+category = "Cop"
+tab_submenu = "_TumblePipe/pipeline"
+source = "otls/cop_th.light_mix.1.0.hda"
 
 [[operators]]
 kind = "hda"

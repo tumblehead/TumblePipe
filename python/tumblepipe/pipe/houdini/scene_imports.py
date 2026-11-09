@@ -76,6 +76,11 @@ REFRESH_SPECS = (
     ImportSpec("import_model", "Sop",
                "tumblepipe.pipe.houdini.sops.import_model:ImportModel",
                newest="current"),
+    # A comp's renders: on `latest` it moves to the newest complete render
+    # when the workfile opens; a composite submit freezes it in the job.
+    ImportSpec("import_render", "Cop",
+               "tumblepipe.pipe.houdini.cops.import_render:ImportRender",
+               newest="latest"),
 )
 
 # Expanded HDA dir name (without version) -> the REFRESH_SPECS type inside it

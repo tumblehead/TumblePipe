@@ -1,0 +1,15 @@
+Operator:     th::export_comp::1.0
+Label:        th export comp
+Path:         oplib:/th::Cop/export_comp::1.0?th::Cop/export_comp::1.0
+Icon:         $TH_PIPELINE_PATH/resources/BuildComp.png
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 1
+Outputs:      0
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Mon Nov  9 15:35:16 2026
+
