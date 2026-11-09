@@ -833,17 +833,17 @@ class PipelineCatalog(Catalog):
             QuickAction(id="save", label="Save", icon="save-all", tooltip="Save current scene"),
             QuickAction(id="publish", label="Publish", icon="send", tooltip="Publish exports"),
             QuickAction(
+                # The one way to the Farm Submit dialog from the toolbar
+                # (a second, Publish-ticked "Farm Submit" button opened the
+                # same dialog). Publishing on the farm is also Publish's.
                 id="render", label="Render", icon="clapperboard",
-                tooltip="Submit render jobs for the current scene's entity",
+                tooltip="Farm Submit, with the current scene's Render ticked: "
+                        "publish, playblast and render any shots or assets",
             ),
             QuickAction(
                 id="entity_editor", label="Entity Editor", icon="table-2",
                 tooltip="The project's assets and shots as spreadsheets: add, "
                         "edit and retire them",
-            ),
-            QuickAction(
-                id="farm", label="Farm Submit", icon="upload",
-                tooltip="Publish, playblast and render any shots on the farm",
             ),
             QuickAction(
                 # Not in TumbleTrove's bundled icon set (a missing name draws
@@ -874,8 +874,6 @@ class PipelineCatalog(Catalog):
             self._scene.render_current_scene(done_cb)
         elif action_id == "entity_editor":
             self._open_scene_entity_editor(done_cb)
-        elif action_id == "farm":
-            self._scene.open_farm(done_cb)
         elif action_id == "farm_manager":
             self._scene.open_farm_manager(done_cb)
         elif action_id == "update":

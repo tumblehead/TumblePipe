@@ -95,8 +95,14 @@ class ValidationConfirmDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # Header
-        header = QLabel(f"Validation failed for {entity_name} ({department})")
-        header.setStyleSheet("font-weight: bold; color: #ff6b6b; font-size: 14px;")
+        # A result with warnings only passed: say so (the rig validation
+        # shows its dialog for warnings too)
+        if result is not None and result.passed:
+            header = QLabel(f"Validation warnings for {entity_name} ({department})")
+            header.setStyleSheet("font-weight: bold; color: #f0c05a; font-size: 14px;")
+        else:
+            header = QLabel(f"Validation failed for {entity_name} ({department})")
+            header.setStyleSheet("font-weight: bold; color: #ff6b6b; font-size: 14px;")
         layout.addWidget(header)
 
         # Validation issues — grouped tree

@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.96.0"
+version = "1.97.1"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -110,6 +110,10 @@ include = [
     "stock/**",
     "otls/**",
     "OPmenu.xml",                # the node right-click menu's TumblePipe entries
+    # hdThPlayblast in the Solaris viewer's renderer menu: label, place, and
+    # the purposes and procedurals a farm playblast draws. Houdini merges
+    # every UsdRenderers.json on HOUDINI_PATH, so Karma's and VK's stay.
+    "UsdRenderers.json",
     "python/tumblepipe/**",
     "python3.13libs/**",
     "desktop/TumblePipe.desk",

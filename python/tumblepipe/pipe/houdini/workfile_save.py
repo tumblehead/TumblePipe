@@ -7,6 +7,7 @@ testable, without a Houdini session.
 """
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 import hou
@@ -21,7 +22,9 @@ from tumblepipe.pipe.paths import (
     release_reserved_version,
     reserve_next_hip_file_path,
 )
+from tumblepipe.pipe.paths.workspace import is_reservation_stub
 from tumblepipe.pipe.houdini import context_options
+from tumblepipe.util.io import load_json_if_exists
 from tumblepipe.util.uri import Uri
 
 logger = logging.getLogger(__name__)
@@ -116,12 +119,124 @@ def commit_next_workfile(
         release_reserved_version(next_path)
         raise
 
+    workspace = next_path.parent
+    _write_pending_entries(workspace)
+
     next_context = workfile_context(entity_uri, department_name, next_path)
-    save_context(
-        next_path.parent, prev_context, next_context,
+    pending = _PendingEntry(
+        hip_path=next_path,
+        prev_context=prev_context,
+        next_context=next_context,
         houdini_version=hou.applicationVersionString(),
-        file_extension=next_path.suffix.lstrip("."),
         note=note,
     )
-    save_entity_context(next_path.parent, next_context)
+    try:
+        pending.write()
+    except OSError as exc:
+        # The pointer stays where it was: it is written last so it never
+        # names a version whose entry is missing.
+        _pending_entries[(workspace, next_context.version_name)] = pending
+        raise WorkfileHistoryError(next_path, exc, entry_pending=True) from exc
+    try:
+        save_entity_context(workspace, next_context)
+    except OSError as exc:
+        raise WorkfileHistoryError(next_path, exc, entry_pending=False) from exc
     return next_path
+
+
+@dataclass(frozen=True)
+class _PendingEntry:
+    """What ``save_context`` was given for a saved hip, kept so the entry can
+    be written again with the artist's real note and lineage."""
+
+    hip_path: Path
+    prev_context: Context | None
+    next_context: Context
+    houdini_version: str
+    note: str
+
+    def write(self) -> None:
+        save_context(
+            self.hip_path.parent, self.prev_context, self.next_context,
+            houdini_version=self.houdini_version,
+            file_extension=self.hip_path.suffix.lstrip("."),
+            note=self.note,
+        )
+
+
+#: (workspace, version) -> the ``_context`` entry this session saved a hip
+#: for but could not write (issue #21). The session's next save in that
+#: workspace writes it; a session that ends first leaves it to
+#: ``verify_context_chain --repair``, which synthesizes one without the note.
+_pending_entries: dict[tuple[Path, str], _PendingEntry] = {}
+
+
+def _write_pending_entries(workspace: Path) -> None:
+    """Write the entries a failed save in ``workspace`` left pending.
+
+    Only over a reservation claim or nothing: an entry already there (a
+    repair ran meanwhile) is a valid one and is kept. One still locked stays
+    pending for the save after; it never fails this save.
+    """
+    for key in [key for key in _pending_entries if key[0] == workspace]:
+        pending = _pending_entries[key]
+        entry_path = workspace / "_context" / f"{key[1]}.json"
+        try:
+            entry = load_json_if_exists(entry_path)
+            missing = not isinstance(entry, dict) or is_reservation_stub(entry)
+            if missing and pending.hip_path.exists():
+                pending.write()
+                logger.info(f"wrote the pending history entry of {key[1]}")
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                f"the history entry of {key[1]} still could not be written "
+                f"({exc}); trying again at the next save"
+            )
+            continue
+        del _pending_entries[key]
+
+
+class WorkfileHistoryError(RuntimeError):
+    """The hip saved, but its version history (the ``_context`` entry or the
+    ``context.json`` pointer) could not be written.
+
+    The raw OSError names the temp file ``store_json`` renames into place
+    (``_context\\tmpXXXX.json``), which tells the artist nothing; a reader
+    on Windows or SMB holding the entry past ``REPLACE_TIMEOUT`` raised it
+    as a bare WinError 32 (issue #21). This names the version that saved,
+    says the work is safe, and what happens next.
+
+    ``entry_pending``: the ``_context`` entry failed and is kept for the
+    session's next save; otherwise only the pointer failed, which that save
+    moves past anyway.
+    """
+
+    def __init__(self, hip_path: Path, cause: OSError, entry_pending: bool):
+        self.hip_path = Path(hip_path)
+        self.cause = cause
+        self.entry_pending = entry_pending
+        version = self.hip_path.stem.rsplit("_", 1)[-1]
+        if isinstance(cause, PermissionError):
+            why = (
+                "another program has the workspace's history open "
+                f"({cause.strerror or cause})"
+            )
+        else:
+            why = f"{type(cause).__name__}: {cause.strerror or cause}"
+        if entry_pending:
+            then = (
+                "Its history entry is written at your next save in this "
+                "Houdini session. If you close Houdini before saving again, "
+                f'run scripts/verify_context_chain.py "{self.hip_path.parent}" '
+                "--repair, or ask your pipeline TD."
+            )
+        else:
+            then = (
+                "Until your next save the browser may show the version "
+                f"before {version} as the latest."
+            )
+        super().__init__(
+            f"{version} was saved to {self.hip_path.name}, but its version "
+            f"history could not be written: {why}. Your work is in that "
+            f"file. {then}"
+        )

@@ -36,6 +36,7 @@ from .asset_structure import (
     validate_rig_structure,
 )
 from .shot_structure import validate_layout_publish, validate_shot_root_prims
+from .rig import validate_rig_character
 
 # Global registry instance with all built-in validators
 _registry = StageValidatorRegistry()
@@ -181,4 +182,5 @@ __all__ = [
     'validate_lookdev_structure',
     'validate_shot_root_prims',
     'validate_layout_publish',
+    'validate_rig_character',
 ]

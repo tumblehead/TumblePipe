@@ -46,6 +46,7 @@ name, and the title, gain a `*` while there are edits not applied.
 | **Animatable** | Assets | `animatable`, as a tick box. Typing `yes` or `no` works too. A shot's copies of an animatable asset, or of one with a rig published, are plain references rather than USD instances, so each copy can carry its own animation. An unticked asset with a rig reads **No, rigged**: its copies already animate, and ticking it also makes its own exports write every frame instead of the first. Copy leaves the note out. The import nodes stamp the answer (ticked, or a rig published) on the asset's prims as `animatable`, which Import Rigs' **Discover** reads ([`th::import_rigs`](../nodes/assets.md#thimport_rigs-sop)); a change shows up on a prim when its import node imports again. |
 | **Root** | Shots | The shot's [Root](multis-and-roots.md), picked from a dropdown. **Inherit** puts it back to the sequence's, set on the [sequence's row](#sequence-and-category-rows). |
 | **Multis** | both | The Multis the entity belongs to. Double-click to change them; see [Multis](#multis). |
+| **Layers** | Shots | The shot's render layers, bottom to top: `characters: /CHAR/*; fx: /FX/*`. Double-click to edit them; see [Render layers](#render-layers). |
 | **Assets** | Shots | What the shot imports: its Root's assets, then the Root's parents'. Empty for a shot with no Root. See [Which assets a shot imports](#which-assets-a-shot-imports). |
 
 The dropdown above the sheet shows one category or sequence, or all of
@@ -148,6 +149,50 @@ assets and set instance counts:
 Root changes are tinted like any other edit and are written on Apply. A new
 Root no shot uses is not created. Apply then brings the shots up to date
 (see [Apply](#apply)), so a workfile opened next imports what was ticked.
+
+## Render layers
+
+The **Layers** column is the shot's render layers, the bottom one first,
+written as `name: prims` and separated by `;`:
+`characters: /CHAR/*; fx: /FX/*`. `default` is always the bottom layer and
+holds every prim no other layer names; it is left out of the text unless it
+has prims of its own. A shot that renders as one layer shows nothing. What
+the farm and the layered playblasts do with them is in
+[Render layers from `channel_prims`](../nodes/lighting-and-rendering.md#render-layers-from-channel_prims-render-passes).
+
+Double-click the cell (or right-click → **Edit Layers…**) for its dialog:
+one row per layer with its **Prims** and, when the open workfile is that
+shot's, how many prims each pattern **Matches** on the open stage (a
+pattern that matches nothing turns red). **Add Layer** adds one on top,
+**Move Up** / **Move Down** reorder them, and **Use Selection** puts the
+prims selected in the Scene Graph Tree or a viewer into the current row.
+Prims are paths and globs (`/CHAR/*`, `/SET/**`, `/CHAR/hero[12]`, `^` to
+leave some out), separated by spaces; Houdini-only syntax such as
+`%type:Mesh`, commas and a `[...]` set that is not one are refused, because
+farm renders match them outside Houdini. Layer names are letters and digits,
+and no two may differ only by case (`fx` and `FX`, or a `Default` beside
+`default`): their exports would share a folder. Names and patterns stored
+before these rules stay as they are until changed. A layer without prims
+renders its own exports and makes no pass.
+
+- **On a sequence's row** the layers are what its shots inherit, shown
+  grey on each shot until a shot sets its own. A whole project's default
+  goes on the project in the [Config Editor](config-editor.md).
+- **On a selection** OK sets the same layers on every selected shot.
+- **Inherit** puts a shot's layers back to what its sequence (or the
+  project) gives it.
+- A channel a department has **exported** cannot be removed or renamed
+  here: its renders read those exports. Its row is locked and leaving it
+  out is a problem that blocks OK.
+
+The cell takes typed or pasted text too, in the same `name: prims; name`
+form, so a column of layers can be copied from one sequence to another.
+Apply writes the shot's `channels` and `channel_prims`
+([Configuration](../configuration.md#storage)), keeping only what differs
+from what the shot inherits: a shot that adds `characters` to its
+sequence's `fx` stores the `characters` pattern alone. The shot's detail
+panel shows the same layers on its **Layers** row, marked *(inherited)*
+when they come from the sequence or project.
 
 ## Multis
 

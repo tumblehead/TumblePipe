@@ -12,6 +12,70 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.97.0 — 2026-11-09
+
+### Features
+- feat(delegate): TumbleView draws subdivision surfaces, refined as far as the frame shows (`73e2c56a`)
+- feat(asset-browser): One toolbar button to Farm Submit (`28fd1026`)
+- feat(entity-editor): Render layers in a Layers column on the Shots tab (`7900fd13`)
+- feat(delegate): TumbleView keeps cusp normals and picks on the GPU path (`2003f8a6`)
+- feat(playblast): the viewport renderer shows as TumbleView everywhere (`95cc741b`)
+- feat(delegate): the viewport renderer is called TumbleView in Houdini (`98020ed5`)
+- feat(delegate): hdThPlayblast as a Solaris viewport renderer (`e54f7d48`)
+- feat(workfile_save): the next save writes a history entry a failed save owes (`7b8056f8`)
+
+### Fixes
+- fix(farm): Farm Submit leaves default unchecked unless it renders a layer (`95de3653`)
+- fix(asset-browser): Farm Submit's dropdowns look like dropdowns (`2608575b`)
+- fix(layers): No case-twin layers, and the editor's pattern check is the farm's (`396c9a54`)
+- fix(workfile_save): a failed history write names the saved version (`d9bae55b`)
+
+### Performance
+- perf(import_assets): read the rows once per cook, entity checks from a set (`b19ac4b6`)
+
+### Refactors
+- refactor(farm): Drop what the removed Farm Submit button left behind (`ca4845de`)
+
+### Documentation
+- docs(delegate): The timing line's refine levels (`26deb9e4`)
+- docs(layers): Pattern and layer-name rules of the Layers column (`7ddddc51`)
+- docs(development): The delegate's property tests and mutation-check seeds (`94cfcb59`)
+- docs(deadline): This machine refuses a dev checkout too; test workers in hython (`1985ffd3`)
+- docs(designs): comp template — live test findings and tests (`e6ae97ef`)
+- docs(designs): comp template round 2 — build_comp deleted, tests, docs list (`441c3e41`)
+- docs(designs): compositing from the department template, without build_comp (`3d7ffba0`)
+- docs(tests): the viewport renderer's id, cancel and menu-entry tests (`9d57d2f3`)
+- docs: regenerate CHANGELOG.md for v1.96.0 (`db5009b1`)
+
+### Tests
+- test(entity-editor): Group Apply properties compare Layers by what they resolve to (`896d63f5`)
+- test(rig): A rig workfile collects a validation before each rig export (`38ed139c`)
+- test(farm): Channel seeds, and Farm Submit's copy of the layer rule held to the farm's (`e48b9b92`)
+- test(delegate): Property tests for kept normals, GPU ids under blur, cached cancels (`36380462`)
+- test(farm_validators): the delegate's env scan sees _SettingOr (`546e80ee`)
+- test(delegate): properties for the viewport renderer's ids, cancel and menu entry (`9b0ff9e9`)
+- test(verify_import_refresh): publish a rig before the import_rigs un-bypass (`4c1ab62d`)
+
+### Other Changes
+- Merge branch 'feat/rig-publish-validation' (`4b093e4a`)
+- Merge remote-tracking branch 'origin/master' (`22b5970c`)
+- Merge remote-tracking branch 'origin/master' (`ba8cb0fb`)
+- Rig publish: validate the character (viz off, normals on big shapes) (`7a1bf49a`)
+- Merge pull request 'ci: agent-driven nightly test on a Woodpecker cron' (#23) from ci/nightly into master (`77eb52de`)
+
+## v1.96.0 — 2026-11-07
+
+### Features
+- feat(browser): one right-click menu, wherever it opens (`3aaa74f2`)
+- feat(editor): the menu bar on Linux too, and a toolbar without the action buttons (`ca1cdf33`)
+
+### Documentation
+- docs(browser): the right-click menus in sections, Open Folder everywhere (`aa0ae29b`)
+- docs: regenerate CHANGELOG.md for v1.95.0 (`dd0354ba`)
+
+### Tests
+- test(catalog): a stub on a module's shared catalog ends with its property (`60163ce7`)
+
 ## v1.95.0 — 2026-11-07
 
 ### Features

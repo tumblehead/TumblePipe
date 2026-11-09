@@ -32,7 +32,7 @@ never touches ``hou``, and runs headless
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Iterable
 
 from PySide6.QtCore import (
     QAbstractTableModel, QItemSelectionModel, QModelIndex, QSortFilterProxyModel,
@@ -65,12 +65,13 @@ _TIMING = (es.FRAME_START, es.FRAME_END, es.LENGTH, es.ROLL_START, es.ROLL_END, 
 # width.
 COLUMNS = {
     'assets': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ANIMATABLE, es.MULTIS),
-    'shots': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ROOT, es.MULTIS, es.ASSETS),
+    'shots': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ROOT, es.MULTIS, es.LAYERS, es.ASSETS),
 }
 _WIDTHS = {
     es.GROUP: 100, es.NAME: 110, STATUS: 150, es.FRAME_START: 64,
     es.FRAME_END: 64, es.LENGTH: 64, es.ROLL_START: 70, es.ROLL_END: 70,
     es.FPS: 56, es.ANIMATABLE: 90, es.ROOT: 120, es.MULTIS: 150, es.ASSETS: 220,
+    es.LAYERS: 200,
 }
 #: Edited through a dialog, never typed or pasted into.
 _DIALOG_COLUMNS = frozenset({es.ASSETS, es.MULTIS})
@@ -160,6 +161,16 @@ _LEGEND_TIP = (
 )
 
 
+_LAYERS_TIP = (
+    'Render layers, bottom to top: each channel and the prims it holds. On '
+    'the farm every layer renders as its own pass, the layers above it held '
+    'out and the ones below hidden from camera (both still cast shadows), '
+    'and the slapcomp stacks them back up. default, at the bottom, holds '
+    'every prim no other layer names. Double-click to edit; Paste takes '
+    '"characters: /CHAR/*; fx: /FX/*".'
+)
+
+
 def _font(bold: bool = False, italic: bool = False, strike: bool = False) -> QFont:
     font = QFont()
     font.setBold(bold)
@@ -197,6 +208,14 @@ class EntityEditorSource:
     template, then calls ``done`` (made or not). Both replace the open
     scene, asking to save it first, as the browser's Open and New from
     Template do.
+
+    A shot's Layers, for the Shots tab: ``channel_exports`` names the
+    channels it has department exports under (``pipe.render_layers.
+    was_exported``), which its Layers must keep. ``selected_prims`` is the
+    prims selected in the Scene Graph Tree or a viewer, for **Use
+    Selection**; ``count_prims`` how many prims a pattern names on the open
+    stage when the open workfile is that shot's (None otherwise), matched
+    the way the farm matches it.
     """
     project: str
     config: object
@@ -213,6 +232,9 @@ class EntityEditorSource:
     new_multi_workfile: Callable[[Uri, str, Callable[[], None]], None] = (
         lambda uri, department, done: done()
     )
+    channel_exports: Callable[[Uri], Iterable[str]] = lambda uri: ()
+    selected_prims: Callable[[], list[str]] = list
+    count_prims: Callable[[Uri, str], int | None] = lambda uri, pattern: None
 
 
 def _hint(text: str = '') -> QLabel:
@@ -486,7 +508,8 @@ class _SheetModel(QAbstractTableModel):
         if role == Qt.CheckStateRole and column == es.ANIMATABLE:
             return Qt.Checked if sheet.group_value(group, column) else Qt.Unchecked
         if role == Qt.ToolTipRole:
-            return self._group_tooltip(group, column)
+            tooltip = self._group_tooltip(group, column)
+            return f'{tooltip}\n\n{_LAYERS_TIP}' if column == es.LAYERS else tooltip
         if column == STATUS:
             return self.group_status(group)[1] if role == Qt.ForegroundRole else None
         valued = column in self._pane.values_columns
@@ -632,6 +655,8 @@ class _SheetModel(QAbstractTableModel):
             return int(Qt.AlignRight | Qt.AlignVCenter)
         if role == Qt.ToolTipRole:
             tooltip = self._tooltip(row, column)
+            if column == es.LAYERS:
+                tooltip = f'{tooltip}\n\n{_LAYERS_TIP}'
             if self._rig_note(row, column):
                 tooltip = (
                     'Has a rig published, so a shot\'s copies of it are plain '
@@ -812,6 +837,11 @@ class _Delegate(QStyledItemDelegate):
             return None
         if column == es.MULTIS:
             QTimer.singleShot(0, lambda i=QModelIndex(index): self._pane.edit_multis(i))
+            return None
+        if column == es.LAYERS:
+            # Its own editor (a list, a prim picker); typed and pasted text
+            # still reaches the cell through the pane.
+            QTimer.singleShot(0, lambda i=QModelIndex(index): self._pane.edit_layers(i))
             return None
         if column == es.ROOT:
             combo = QComboBox(parent)
@@ -1084,6 +1114,269 @@ class RootAssetsDialog(QDialog):
         self.accept()
 
 
+class LayersDialog(QDialog):
+    """The Layers cell's editor: a shot's (or a sequence's) render layers,
+    bottom to top, each a channel and the prims it holds.
+
+    ``default`` is always the first row and cannot be renamed or removed; a
+    channel ``exported`` holds department exports and cannot be removed
+    either. **Use Selection** puts the prims selected in the Scene Graph
+    Tree or a viewer into the current row. Each row's Matches is counted on
+    the open stage when the open workfile is ``uri``'s (the farm's own
+    matcher). After OK, ``value`` is the Layers, or ``inherit`` is True to
+    put them back to what the shot inherits.
+    """
+
+    _NAME, _PRIMS, _MATCHES = range(3)
+
+    def __init__(
+        self, pane: '_SheetPane', targets: list[str], current: es.Layers, *,
+        inherited: es.Layers, inherited_from: str, own: bool,
+        exported: frozenset[str], uri: Uri | None, source: EntityEditorSource,
+    ) -> None:
+        super().__init__(pane)
+        self._current = current
+        self._exported = exported
+        self._uri = uri
+        self._source = source
+        self.value: es.Layers = current
+        self.inherit = False
+        title = targets[0] if len(targets) == 1 else f'{targets[0]} and {len(targets) - 1} more'
+        self.setWindowTitle(f'Layers of {title}')
+        self.resize(scaled(640), scaled(420))
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(_hint(
+            'First row is the bottom layer. On the farm each layer renders as its own pass: '
+            'the layers above it cut a hole in it, the ones below are hidden '
+            'from camera, and both still cast shadows; the slapcomp stacks '
+            'them back up. <b>default</b> holds every prim no other layer '
+            'names. A channel without prims makes no pass.'
+        ))
+        if len(targets) > 1:
+            layout.addWidget(_hint(f'OK sets these layers on {_short(targets)}.'))
+        if not own:
+            layout.addWidget(_hint(f'Inherited from {inherited_from}; OK sets them here.'))
+
+        table = self._table = QTableWidget(0, 3)
+        table.setHorizontalHeaderLabels(['Layer', 'Prims', 'Matches'])
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(self._NAME, QHeaderView.Interactive)
+        header.setSectionResizeMode(self._PRIMS, QHeaderView.Stretch)
+        header.setSectionResizeMode(self._MATCHES, QHeaderView.ResizeToContents)
+        table.setColumnWidth(self._NAME, scaled(140))
+        table.verticalHeader().setVisible(False)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SingleSelection)
+        table.currentCellChanged.connect(lambda *_a: self._update())
+        layout.addWidget(table, 1)
+        for name, pattern in current.entries:
+            self._append(name, pattern)
+
+        actions = QHBoxLayout()
+        self._add = _button('Add Layer', self._on_add, style=_BUTTON_ADD_STYLE,
+                            tip='A new layer on top.')
+        self._remove = _button('Remove', self._on_remove)
+        # The list reads like the Layers text, bottom layer first: Move Up
+        # puts a layer one place lower in the stack.
+        self._up = _button('Move Up', lambda: self._move(-1),
+                           tip='One row up: one place lower in the stack.')
+        self._down = _button('Move Down', lambda: self._move(1),
+                             tip='One row down: one place higher in the stack.')
+        self._pick = _button(
+            'Use Selection', self._on_pick,
+            tip='The prims selected in the Scene Graph Tree or a viewer, as '
+                'this layer\'s prims.',
+        )
+        for button in (self._add, self._remove, self._up, self._down):
+            actions.addWidget(button)
+        actions.addStretch()
+        actions.addWidget(self._pick)
+        layout.addLayout(actions)
+        self._note = _hint()
+        layout.addWidget(self._note)
+        self._problem = _hint()
+        self._problem.setStyleSheet(_HINT_STYLE.replace(TEXT_DIM, DANGER))
+        layout.addWidget(self._problem)
+
+        buttons = QHBoxLayout()
+        self._inherit = _button(
+            'Inherit', self._on_inherit,
+            tip=f'Back to what it inherits from {inherited_from}: '
+                f'{inherited.text() or "no layers"}.',
+        )
+        self._inherit.setVisible(own)
+        buttons.addWidget(self._inherit)
+        buttons.addStretch()
+        buttons.addWidget(_button('Cancel', self.reject))
+        self._ok = _button('OK', self._on_ok, primary=True)
+        self._ok.setDefault(True)
+        buttons.addWidget(self._ok)
+        layout.addLayout(buttons)
+        self._count_all()
+        self._update()
+
+    # ── Rows ─────────────────────────────────────────────
+
+    def _append(self, name: str = '', pattern: str = '') -> None:
+        table = self._table
+        row = table.rowCount()
+        table.insertRow(row)
+        name_edit = QLineEdit(name)
+        name_edit.setPlaceholderText('characters')
+        default = name == es.DEFAULT_CHANNEL and row == 0
+        name_edit.setReadOnly(default)
+        if default:
+            name_edit.setToolTip('The bottom layer; every shot has it.')
+        elif name in self._exported:
+            name_edit.setReadOnly(True)
+            name_edit.setToolTip(
+                f'{name} has exports of its own, which its renders read: it '
+                'stays a layer.'
+            )
+        prims_edit = QLineEdit(pattern)
+        prims_edit.setPlaceholderText(
+            'everything the other layers leave' if default
+            else '/CHAR/*  (no prims: renders its own exports, no pass)'
+        )
+        for edit in (name_edit, prims_edit):
+            edit.textChanged.connect(lambda *_a: self._update())
+        prims_edit.editingFinished.connect(lambda e=prims_edit: self._count(self._row_of(e)))
+        table.setCellWidget(row, self._NAME, name_edit)
+        table.setCellWidget(row, self._PRIMS, prims_edit)
+        table.setItem(row, self._MATCHES, QTableWidgetItem(''))
+
+    def _row_of(self, widget) -> int:
+        for row in range(self._table.rowCount()):
+            if self._table.cellWidget(row, self._PRIMS) is widget:
+                return row
+        return -1
+
+    def _text(self, row: int, column: int) -> str:
+        widget = self._table.cellWidget(row, column)
+        return widget.text().strip() if widget is not None else ''
+
+    def entries(self) -> list[tuple[str, str]]:
+        return [
+            (self._text(row, self._NAME), self._text(row, self._PRIMS))
+            for row in range(self._table.rowCount())
+        ]
+
+    def _set_rows(self, entries: list[tuple[str, str]], current: int) -> None:
+        self._table.setRowCount(0)
+        for name, pattern in entries:
+            self._append(name, pattern)
+        self._table.setCurrentCell(current, self._PRIMS)
+        self._count_all()
+        self._update()
+
+    def _locked(self, row: int) -> bool:
+        name = self._text(row, self._NAME)
+        return row == 0 or name in self._exported
+
+    # ── Actions ──────────────────────────────────────────
+
+    def _on_add(self) -> None:
+        self._append()
+        row = self._table.rowCount() - 1
+        self._table.setCurrentCell(row, self._NAME)
+        self._table.cellWidget(row, self._NAME).setFocus()
+        self._update()
+
+    def _on_remove(self) -> None:
+        row = self._table.currentRow()
+        if row <= 0 or self._locked(row):
+            return
+        entries = self.entries()
+        del entries[row]
+        self._set_rows(entries, min(row, len(entries) - 1))
+
+    def _move(self, step: int) -> None:
+        row = self._table.currentRow()
+        target = row + step
+        if row <= 0 or target <= 0 or target >= self._table.rowCount():
+            return    # default stays at the bottom
+        entries = self.entries()
+        entries[row], entries[target] = entries[target], entries[row]
+        self._set_rows(entries, target)
+
+    def _on_pick(self) -> None:
+        row = self._table.currentRow()
+        if row < 0:
+            return
+        paths = [p for p in self._source.selected_prims() if p]
+        if not paths:
+            self._note.setText(
+                'Nothing is selected: select prims in the Scene Graph Tree '
+                'or a viewer, then Use Selection.'
+            )
+            return
+        self._table.cellWidget(row, self._PRIMS).setText(' '.join(paths))
+        self._count(row)
+
+    def _on_inherit(self) -> None:
+        self.inherit = True
+        self.accept()
+
+    def _on_ok(self) -> None:
+        try:
+            self.value = es.Layers.make(self.entries(), self._current)
+        except ValueError as exc:
+            self._problem.setText(str(exc))
+            return
+        self.accept()
+
+    # ── State ────────────────────────────────────────────
+
+    def _count(self, row: int) -> None:
+        if row < 0:
+            return
+        item = self._table.item(row, self._MATCHES)
+        pattern = self._text(row, self._PRIMS)
+        if not pattern:
+            item.setText('the rest' if row == 0 else '')
+            return
+        count = None
+        if self._uri is not None and not es.prim_pattern_problem(pattern):
+            try:
+                count = self._source.count_prims(self._uri, pattern)
+            except Exception:  # noqa: BLE001  a stage that will not compose
+                count = None
+        item.setText('' if count is None else _plural(count, 'prim'))
+        item.setForeground(_RED if count == 0 else QBrush())
+
+    def _count_all(self) -> None:
+        for row in range(self._table.rowCount()):
+            self._count(row)
+        counted = any(
+            self._table.item(row, self._MATCHES).text().endswith(('prim', 'prims'))
+            for row in range(self._table.rowCount())
+        )
+        if not counted and self._uri is not None and any(p for _, p in self.entries()):
+            self._note.setText(
+                'Open a workfile of this shot to see what each layer matches.'
+            )
+
+    def _update(self) -> None:
+        row = self._table.currentRow()
+        last = self._table.rowCount() - 1
+        self._remove.setEnabled(row > 0 and not self._locked(row))
+        self._up.setEnabled(row > 1)
+        self._down.setEnabled(0 < row < last)
+        self._pick.setEnabled(row >= 0)
+        problem = ''
+        try:
+            layers = es.Layers.make(self.entries(), self._current)
+        except ValueError as exc:
+            problem = str(exc)
+        else:
+            lost = sorted(self._exported - set(layers.names))
+            if lost:
+                problem = f'{", ".join(lost)} has exports of its own: keep it'
+        self._problem.setText(problem)
+        self._ok.setEnabled(not problem)
+
+
 class AddShotsDialog(QDialog):
     """New rows from a name pattern: SH### from 10 by 10, a frame range,
     and a Root. The rows only join the sheet; Apply creates them."""
@@ -1322,12 +1615,12 @@ class _SheetPane(QWidget):
         self.kind = kind
         self.columns = COLUMNS[kind.key]
         self._values = frozenset(
-            c for c in self.columns if c in kind.fields or c == es.LENGTH
+            c for c in self.columns if c in kind.values or c == es.LENGTH
         )
         source = window.source
         self.sheet = es.Sheet(
             es.load(source.config, kind), source.rename_blocker,
-            source.multi_rename_blocker,
+            source.multi_rename_blocker, source.channel_exports,
         )
         self._errors: list[str] = []
         self._build_ui()
@@ -1887,6 +2180,70 @@ class _SheetPane(QWidget):
                 self.sheet.set_group_membership(groups, multi_id, True)
         self.edit(change)
 
+    def edit_layers(self, index) -> None:
+        """The Layers cell: the render layers of the selected shots, or, on
+        a sequence's own row, of the selected sequences (what their shots
+        inherit). Opens on the clicked cell's layers; OK sets them on every
+        target."""
+        if not index.isValid():
+            return
+        groups = self._target_groups(index)
+        ids = [] if groups else self._target_rows(index)
+        if not ids and not groups:
+            return
+        sheet = self.sheet
+        source = self.window_.source
+        key = self._row_id(index)
+        if groups:
+            group = key.name
+            current = sheet.group_value(group, es.LAYERS)
+            inherited = sheet.base.for_new_group.values.get(es.LAYERS)
+            state = sheet.group_state(group, es.LAYERS)
+            origin = sheet.group_source(group, es.LAYERS) or 'the project'
+            names = [f'{self.kind.group} {g}' for g in groups]
+            exported: frozenset[str] = frozenset()
+            uri = None
+        else:
+            row = sheet.row(key if key in ids else ids[0])
+            current = sheet.value(row, es.LAYERS)
+            inherited = sheet.inherited(row).values.get(es.LAYERS)
+            state = sheet.state(row, es.LAYERS)
+            origin = sheet.source(row, es.LAYERS) or 'the project'
+            rows = [sheet.row(i) for i in ids]
+            names = [f'{r.group}/{r.name}' for r in rows]
+            exported = frozenset().union(*(
+                sheet.exported_channels(r.origin.uri) for r in rows if r.origin is not None
+            ))
+            uri = row.origin.uri if row.origin is not None else None
+        dialog = LayersDialog(
+            self, names, current if isinstance(current, es.Layers) else es.Layers(),
+            inherited=inherited if isinstance(inherited, es.Layers) else es.Layers(),
+            inherited_from=origin, own=state in (es.OWN, es.SET),
+            exported=exported, uri=uri, source=source,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        def change():
+            for group in groups:
+                try:
+                    if dialog.inherit:
+                        sheet.reset_group(group, es.LAYERS)
+                    else:
+                        sheet.set_group_value(group, es.LAYERS, dialog.value)
+                except ValueError as exc:
+                    self._errors.append(f'{self.kind.group} {group}: {exc}')
+            for row_id in ids:
+                try:
+                    if dialog.inherit:
+                        sheet.reset(row_id, es.LAYERS)
+                    else:
+                        sheet.set_value(row_id, es.LAYERS, dialog.value)
+                except ValueError as exc:
+                    row = sheet.row(row_id)
+                    self._errors.append(f'{row.group}/{row.name}: {exc}')
+        self.edit(change)
+
     def _set_membership(self, ids, groups, multi_id: int, member: bool) -> None:
         if groups:
             self.sheet.set_group_membership(groups, multi_id, member)
@@ -1970,6 +2327,7 @@ class _SheetPane(QWidget):
         if self.kind is es.SHOTS_KIND:
             current = self.table.currentIndex()
             entries.append(('Edit Assets…', lambda: self.edit_assets(current), current.isValid()))
+            entries.append(('Edit Layers…', lambda: self.edit_layers(current), current.isValid()))
         group = self.proxy.group
         if group in self.sheet.new_groups:
             entries += [None, (

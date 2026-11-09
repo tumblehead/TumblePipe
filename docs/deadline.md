@@ -119,7 +119,7 @@ Each worker needs the same environment as an artist workstation:
   the workstations use, so jobs that reference `P:\...` resolve identically.
   Without matching drive letters, the job will fail to read project files.
 - **An NVIDIA GPU for the `karma` group** — final renders and playblasts
-  both run there. A playblast with the default `viewport` renderer draws on
+  both run there. A playblast with the default `viewport` renderer (TumbleView) draws on
   the CPU with TumblePipe's own render delegate and takes no licence; with
   the `karma` renderer it renders with
   Karma XPU in a preview mode (by default scene materials off and the scene's
@@ -261,6 +261,16 @@ on Deadline, and runs in the background as a render node would run it.
 A local render takes this machine's licences: a `hython` beside the open
 Houdini, and `husk` a Karma licence. It also shares the GPU with the
 viewport.
+
+**Not from a dev session.** *This machine* builds the same `hpm.toml`
+manifests as the farm, so it refuses a dev or editable checkout just as
+Deadline does: *Cannot submit to the HPM farm plugin from a non-HPM
+install*. To test a worker against the dev tree, run its Houdini half in
+`hython` on the config its job would pass. For the composite, that is
+`farm/workers/composite_houdini.py <config.json>`, where `config.json`
+has `entity`, `first_frame`, `last_frame`, `frames`, `receipt_path`,
+`input_path`, `node_path`, `layer_names` and `output_paths`
+(`farm/workers/composite.py` writes it).
 
 **Every farm submit offers the same choice**, and they all share the
 remembered one:

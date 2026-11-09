@@ -29,8 +29,7 @@ up on this machine* and submits nothing. Working without a farm is covered in
 
 | From | Menu / button | Opens on | Ticked |
 |---|---|---|---|
-| The toolbar | **Farm Submit** quick action | **Shots** (**Assets** when the loaded scene is an asset's) | The loaded workfile's entity's publish cell for the workfile's department — or, in a [Multi](multis-and-roots.md#multis) workfile, every member's. Nothing with no workfile loaded. |
-| The toolbar | **Render** quick action | The scene's context (**Shots** with no workfile loaded) | The loaded scene's entity's **Render** cell — or, in a Multi workfile, every member's. Nothing with no workfile loaded. |
+| The toolbar | **Render** quick action | The scene's context (**Shots** with no workfile loaded) | The loaded scene's entity's **Render** cell — or, in a [Multi](multis-and-roots.md#multis) workfile, every member's. Nothing with no workfile loaded. |
 | A card's right-click menu | **Submit Jobs…** | The card's context | That entity's **Render** cell |
 | A multi-selection's right-click menu | **Submit Jobs for N selected…** | The cards' context | Each selected card's **Render** cell |
 | TumbleTrove Desktop, outside Houdini | the project's Scripts panel → **Farm Submit** | **Shots** | Nothing — see [From TumbleTrove Desktop](#from-tumbletrove-desktop) |
@@ -321,7 +320,7 @@ worker could take from the same pools.
 | **Pool** | `farm.default_pool` | `general` |
 | **Priority** | `farm.priority` | 50 |
 
-Shading and Blur apply to the viewport renderer, Light, Samples and
+Shading and Blur apply to TumbleView, Light, Samples and
 Materials to Karma, and only the chosen **Renderer**'s rows show. While
 Renderer is left `⟨per entity⟩` (the shots disagree), both sets show, each
 label naming its renderer (`Shading (viewport)`, `Materials (Karma)`), under
@@ -344,12 +343,12 @@ TumblePipe's own render delegate, on the CPU and with no licence; `karma` is
 Karma XPU, lit and sampled by the fields below, which `viewport` ignores.
 See [Compositing → Playblast](../compositing.md#playblast).
 
-**Shading** is the `viewport` renderer's look, all with ambient occlusion:
+**Shading** is TumbleView's look, all with ambient occlusion:
 `lit` is the scene's colours under lights that follow the camera; `clay` is
 the same lights on plain grey; `albedo` is the scene's colours unlit;
 `occlusion` is white with only the ambient occlusion. Karma ignores it.
 
-**Blur** is the `viewport` renderer's motion blur (over the shot camera's
+**Blur** is TumbleView's motion blur (over the shot camera's
 shutter) and depth of field (from its f-stop and focus distance; an f-stop
 of 0 stays sharp), averaged over the blur samples (2–64). Both are off by
 default, and off the frames are exactly as without them. Karma ignores it.
@@ -367,7 +366,7 @@ pixel samples: more is cleaner and slower.
 |---|---|---|---|
 | **Up to** | `submission.render.department` | last renderable department (the whole shot) | Renders every department up to and including this one; departments after it are left out. Also names the render output. |
 | **Camera** | — | read-only | The camera the render looks through: the `camera` of the RenderSettings prim in the latest published layer of the strongest department in the **Up to** cut that sets one, else the project's `root_default_prims.usda`. Read from the first checked channel; the tooltip names the department per entity, and `⟨per entity⟩` means the ticked entities disagree. A preview — the farm still asks the composed stage. |
-| **Channels** | — | the entities' own channel lists | A checkable menu (`(none — check at least one)` when empty) with **All**. Lists the *union* of the rendering entities' channels, `default` first; opens with the *intersection* checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the review list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
+| **Channels** | — | the entities' own channel lists | A dropdown of checkboxes (`(none — check at least one)` when nothing is checked) with **All**; click it to pick, it takes no typing. Lists the *union* of the rendering entities' channels, `default` first. Opens with the channels *every* rendering entity starts with checked: its own channels, plus `default` only when it has no others or `default` is one of its [render layers](../nodes/lighting-and-rendering.md#render-layers-from-channel_prims-render-passes) (the remainder, under the slapcomp). So a shot split into `heart`, `background` and `bubbles` by export branches does not also render its whole unsplit scene; check `default` to. When the entities share nothing it opens with `default` if one of them renders unsplit, else with nothing checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the review list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
 | **Range** | — | Full range ticked | Two checkboxes. **Full range** renders everything and chains slapcomp + MP4; **Preview (first / middle / last)** renders three check frames and posts them to Discord. Tick both to get the preview first, with the full range queued behind it. One of the two must be ticked. |
 | **Frames** (first → last) | `frame_start` / `frame_end` | *required* — omitted, and the entity fails with "no frame range configured" | |
 | **Pre / Post roll** | `roll_start` / `roll_end` | 0 / 0 | **Extends** the rendered range: `first - pre … last + post`. |
@@ -410,7 +409,10 @@ checks behind the dialog make sure a channel never quietly renders the
   department has exported that channel: `No department of <shot> has
   exported channel '<x>' …`. Departments that did not export it still fall
   back to their `default` layer; the build only fails when *every* layer
-  would be a `default` one.
+  would be a `default` one. A render layer with prims
+  ([Render layers](entity-editor.md#render-layers)) that nothing exported
+  is the exception: it is a pass of the `default` scene, so it renders
+  from the `default` build instead of failing.
 
 ## Submit
 

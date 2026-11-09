@@ -24,11 +24,13 @@
 //! becomes an error code the shim reports, never an unwind into C++.
 
 pub mod blur;
+mod cancel;
 pub mod composite;
 pub mod ffi;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod math;
+mod normals;
 mod pool;
 pub mod raster;
 pub mod texture;
@@ -45,6 +47,8 @@ pub const TH_OK: i32 = 0;
 pub const TH_ERR_ARGS: i32 = 1;
 /// The core panicked; the buffer contents are undefined.
 pub const TH_ERR_PANIC: i32 = 2;
+/// The caller cancelled the frame (`th_render_ids`); nothing was copied out.
+pub const TH_CANCELLED: i32 = 3;
 
 pub(crate) fn ffi_guard(body: impl FnOnce() -> i32) -> i32 {
     panic::catch_unwind(AssertUnwindSafe(body)).unwrap_or(TH_ERR_PANIC)

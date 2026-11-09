@@ -52,6 +52,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import Callable, Iterable, Iterator, Mapping
 
+from tumblepipe.config.channels import (
+    CHANNEL_PRIMS_PROPERTY, CHANNEL_PROPERTY, channel_name_problem,
+    prim_pattern_problem, read_channel_names, read_channel_prims,
+)
 from tumblepipe.config.shot_batch import (
     ASSETS_URI, SHOTS_URI, name_problem, same_but_case,
 )
@@ -73,6 +77,10 @@ NAME = 'name'
 ASSETS = 'assets'
 #: Not stored on the entity: the Multis that list it as a member.
 MULTIS = 'multis'
+#: Shots only, and not one stored key but two: the shot's channels in
+#: order and each one's prim pattern (``channels`` + ``channel_prims``), its
+#: render layers (:class:`Layers`).
+LAYERS = 'layers'
 
 SCENES_URI = Uri.parse('scenes:/')
 GROUPS_URI = Uri.parse('groups:/')
@@ -85,6 +93,7 @@ _LABELS = {
     FRAME_START: 'Start', FRAME_END: 'End', LENGTH: 'Length',
     ROLL_START: 'Pre-roll', ROLL_END: 'Post-roll', FPS: 'FPS', ROOT: 'Root',
     ANIMATABLE: 'Animatable', ASSETS: 'Assets', MULTIS: 'Multis',
+    LAYERS: 'Layers',
 }
 
 _INT_FIELDS = frozenset({FRAME_START, FRAME_END, ROLL_START, ROLL_END, LENGTH})
@@ -115,6 +124,14 @@ class Kind:
     everyone: str          # 'all assets' / 'all shots'
     other_root: Uri        # the other kind: no group may share a name with its groups
     other_group: str       # 'a sequence' / 'an asset category'
+    #: Whether its entities have render layers (:data:`LAYERS`): shots.
+    layered: bool = False
+
+    @property
+    def values(self) -> tuple[str, ...]:
+        """Every value the sheet edits: the stored ``fields``, then
+        :data:`LAYERS` for a layered kind (two stored keys, not one)."""
+        return (*self.fields, LAYERS) if self.layered else self.fields
 
     def label(self, column: str) -> str:
         if column == GROUP:
@@ -132,7 +149,7 @@ class Kind:
 _TIMING = (FRAME_START, FRAME_END, ROLL_START, ROLL_END, FPS)
 SHOTS_KIND = Kind(
     'shots', SHOTS_URI, 'sequence', 'shot', (*_TIMING, ROOT),
-    'all shots', ASSETS_URI, 'an asset category',
+    'all shots', ASSETS_URI, 'an asset category', layered=True,
 )
 ASSETS_KIND = Kind(
     'assets', ASSETS_URI, 'category', 'asset', (*_TIMING, ANIMATABLE),
@@ -159,6 +176,157 @@ def _is_number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+@dataclass(frozen=True)
+class Layers:
+    """A shot's render layers: its channels bottom to top, ``default``
+    first, each with its prim pattern ('' for none).
+
+    What ``config.channels.channel_layers`` makes of it: ``default`` without
+    a pattern is every prim the other layers leave, another channel without
+    one makes no pass (a channel some department exports renders its own
+    stage). Stored as two keys, ``channels`` (the order) and
+    ``channel_prims`` (the patterns): see :func:`_pin_layers`.
+
+    As text (what a cell shows, copies and takes when typed or pasted):
+    ``characters: /CHAR/*; fx: /FX/*``. ``default`` is written only when it
+    has a pattern; a channel with none is its bare name.
+    """
+    entries: tuple[tuple[str, str], ...] = ((DEFAULT_CHANNEL, ''),)
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        return tuple(name for name, _ in self.entries)
+
+    @property
+    def layered(self) -> bool:
+        """Whether any channel names prims: a farm render makes passes."""
+        return any(pattern for _, pattern in self.entries)
+
+    def pattern(self, name: str) -> str:
+        return dict(self.entries).get(name, '')
+
+    def text(self) -> str:
+        parts = []
+        for name, pattern in self.entries:
+            if name == DEFAULT_CHANNEL and not pattern:
+                continue
+            parts.append(f'{name}: {pattern}' if pattern else name)
+        return '; '.join(parts)
+
+    @classmethod
+    def make(
+        cls, entries: Iterable[tuple[str, str]], keep: 'Layers | None' = None,
+    ) -> 'Layers':
+        """Layers of ``entries`` (``default`` put first, added when absent);
+        ValueError names the first that cannot be one. What ``keep`` (the
+        value being edited) already holds passes as it is: a channel named
+        before today's rule, a pattern the farm will refuse at submit."""
+        kept = set(keep.entries) if keep is not None else set()
+        kept_names = set(keep.names) if keep is not None else set()
+        # ``default`` is always there, listed or not: a ``Default`` beside
+        # it would be a second channel differing only by case.
+        seen: dict[str, str] = {DEFAULT_CHANNEL: DEFAULT_CHANNEL}
+        listed: set[str] = set()
+        out: list[tuple[str, str]] = []
+        for name, pattern in entries:
+            name, pattern = str(name).strip(), ' '.join(str(pattern or '').split())
+            if name != DEFAULT_CHANNEL and name not in kept_names:
+                problem = channel_name_problem(name)
+                if problem:
+                    raise ValueError(problem)
+            if name in listed:
+                raise ValueError(f"Layer '{name}' is listed twice")
+            # A spelling an earlier layer (or default) took in another case.
+            # Twins the edited value already holds stay: stored before this
+            # rule, and refusing them would refuse the value unchanged.
+            other = seen.setdefault(name.casefold(), name)
+            if other != name and not (name in kept_names and other in kept_names):
+                raise ValueError(f"Layers '{other}' and '{name}' differ only by case")
+            listed.add(name)
+            if (name, pattern) not in kept:
+                problem = prim_pattern_problem(pattern)
+                if problem:
+                    raise ValueError(f'{name}: {problem}')
+            out.append((name, pattern))
+        default = [entry for entry in out if entry[0] == DEFAULT_CHANNEL]
+        rest = [entry for entry in out if entry[0] != DEFAULT_CHANNEL]
+        return cls(tuple((default or [(DEFAULT_CHANNEL, '')]) + rest))
+
+    @classmethod
+    def parse(cls, text: str, keep: 'Layers | None' = None) -> 'Layers':
+        """:meth:`text` read back. ValueError says what is wrong."""
+        entries = []
+        for part in str(text).split(';'):
+            part = part.strip()
+            if not part:
+                continue
+            name, _, pattern = part.partition(':')
+            if not name.strip():
+                raise ValueError(f'"{part}" names no layer (write name: /prims)')
+            entries.append((name, pattern))
+        return cls.make(entries, keep)
+
+    @classmethod
+    def of_properties(cls, properties: Mapping | None) -> 'Layers':
+        """The layers resolved ``properties`` give, read as
+        ``config.channels`` reads them for the farm; never refused."""
+        properties = properties or {}
+        names = [DEFAULT_CHANNEL, *read_channel_names(properties)]
+        prims = read_channel_prims(properties)
+        return cls(tuple(
+            (name, _pattern(prims.get(name))) for name in dict.fromkeys(names)
+        ))
+
+
+def _pattern(value) -> str:
+    """A stored ``channel_prims`` value as a pattern: blank and non-strings
+    are none, as ``config.channels.read_channel_prims`` reads them."""
+    return ' '.join(value.split()) if isinstance(value, str) else ''
+
+
+#: Where a level of the tree leaves the layers: ``(channels, prims)`` as
+#: stored, merged root to leaf the way ``get_properties`` merges them (a
+#: ``channels`` list replaces, ``channel_prims`` merges key by key).
+LayerState = tuple[tuple[str, ...], Mapping[str, object]]
+_NO_LAYERS: LayerState = ((DEFAULT_CHANNEL,), {})
+
+
+def _has_layers(own: Mapping | None) -> bool:
+    return bool(own) and (CHANNEL_PROPERTY in own or CHANNEL_PRIMS_PROPERTY in own)
+
+
+def _layer_keys(own: Mapping) -> dict[str, object]:
+    return {key: own[key] for key in (CHANNEL_PROPERTY, CHANNEL_PRIMS_PROPERTY) if key in own}
+
+
+def _layers_state_of(inherited: LayerState, layers: Layers) -> LayerState:
+    """The state ``layers`` leave once written over ``inherited`` (as
+    :func:`_pin_layers` writes them)."""
+    return layers.names, {**inherited[1], **dict(layers.entries)}
+
+
+def _layer_state(state: LayerState, own: Mapping | None) -> LayerState:
+    channels, prims = state
+    if own:
+        stored = own.get(CHANNEL_PROPERTY)
+        if isinstance(stored, list):
+            channels = tuple(str(name) for name in stored)
+        stored = own.get(CHANNEL_PRIMS_PROPERTY)
+        if isinstance(stored, dict):
+            prims = {**prims, **stored}
+    return channels, prims
+
+
+def _layers_of(state: LayerState) -> Layers:
+    """The layers a level holds, as ``config.channels.list_channels`` and
+    ``read_channel_prims`` read them: ``default`` first."""
+    channels, prims = state
+    names = [DEFAULT_CHANNEL] + [
+        name for name in dict.fromkeys(channels) if name != DEFAULT_CHANNEL
+    ]
+    return Layers(tuple((name, _pattern(prims.get(name))) for name in names))
+
+
 def parse_value(name: str, value) -> object:
     """``value`` (typed text or a number) as field ``name`` stores it.
 
@@ -167,6 +335,8 @@ def parse_value(name: str, value) -> object:
     ``scenes:/`` URI string. Raises ValueError saying what the field takes.
     """
     label = _LABELS.get(name, name)
+    if name == LAYERS:
+        return value if isinstance(value, Layers) else Layers.parse(value)
     if name == ROOT:
         text = str(value).strip()
         if not text:
@@ -208,6 +378,8 @@ def format_value(name: str, value) -> str:
     fps from one row to another changed it."""
     if value is None:
         return ''
+    if name == LAYERS:
+        return value.text() if isinstance(value, Layers) else ''
     if name == ROOT:
         return root_path(value) if isinstance(value, str) else '(old asset list)'
     if isinstance(value, bool):
@@ -270,6 +442,10 @@ class Record:
     name: str
     uri: Uri
     own: Mapping[str, object]
+    #: Its own ``channels`` / ``channel_prims`` as stored (None: neither),
+    #: merged onto what it inherits each time its Layers are read, so a
+    #: sequence's pending Layers reach a shot that pins only some of them.
+    layer_own: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -292,6 +468,10 @@ class Inherited:
     it comes from ("sequence sq010", "the project's defaults", ...)."""
     values: Mapping[str, object]
     sources: Mapping[str, str]
+    #: A layered kind's ``channels`` and ``channel_prims`` as merged down to
+    #: here, which an entity's own keys merge onto (``values[LAYERS]`` is
+    #: what they make).
+    layer_state: LayerState = _NO_LAYERS
 
 
 @dataclass(frozen=True)
@@ -331,6 +511,13 @@ def _inherited(config, kind: Kind, group: str | None) -> Inherited:
             if name in schema.fields:
                 values[name] = schema.fields[name].default
                 sources[name] = "the project's defaults"
+    layer_state = _NO_LAYERS
+    if kind.layered:
+        if schema is not None and CHANNEL_PROPERTY in schema.fields:
+            layer_state = _layer_state(
+                layer_state, {CHANNEL_PROPERTY: schema.fields[CHANNEL_PROPERTY].default},
+            )
+        sources[LAYERS] = "the project's defaults"
     chain = [(_PROJECT, 'the project'), (kind.root, kind.everyone)]
     if group is not None:
         chain.append((kind.root / group, f'{kind.group} {group}'))
@@ -340,7 +527,12 @@ def _inherited(config, kind: Kind, group: str | None) -> Inherited:
             if name in own:
                 values[name] = own[name]
                 sources[name] = label
-    return Inherited(values, sources)
+        if kind.layered and _has_layers(own):
+            layer_state = _layer_state(layer_state, own)
+            sources[LAYERS] = label
+    if kind.layered:
+        values[LAYERS] = _layers_of(layer_state)
+    return Inherited(values, sources, layer_state)
 
 
 def _load_roots(config) -> dict[str, tuple[RootAsset, ...]]:
@@ -396,18 +588,22 @@ def load(config, kind: Kind = SHOTS_KIND) -> Base:
     with config.coherent():
         records: list[Record] = []
         groups: list[str] = []
+        by_group: dict[str, Inherited] = {}
         for uri in config.list_entity_uris(kind.root, closure=True):
             segments = uri.segments[1:]
             if not segments:
                 continue
             if segments[0] not in groups:
                 groups.append(segments[0])
+                by_group[segments[0]] = _inherited(config, kind, segments[0])
             if len(segments) == 2:
                 own = config.get_own_properties(uri) or {}
                 records.append(Record(
                     segments[0], segments[1], kind.root / segments[0] / segments[1],
-                    {name: own[name] for name in kind.fields if name in own},
+                    _own_fields(config, kind, uri, by_group[segments[0]]),
+                    _layer_keys(own) if kind.layered and _has_layers(own) else None,
                 ))
+        for_new_group = _inherited(config, kind, None)
         other_groups = frozenset(
             uri.segments[1]
             for uri in config.list_entity_uris(kind.other_root, closure=True)
@@ -423,19 +619,26 @@ def load(config, kind: Kind = SHOTS_KIND) -> Base:
             records=tuple(records),
             groups=tuple(groups),
             other_groups=other_groups,
-            by_group={g: _inherited(config, kind, g) for g in groups},
-            for_new_group=_inherited(config, kind, None),
+            by_group=by_group,
+            for_new_group=for_new_group,
             roots=_load_roots(config) if kind is SHOTS_KIND else {},
             assets=assets,
             multis=_load_multis(config, kind),
             pool=_load_pool(config, kind),
-            group_own={g: _own_fields(config, kind, kind.root / g) for g in groups},
+            group_own={
+                g: _own_fields(config, kind, kind.root / g, for_new_group) for g in groups
+            },
         )
 
 
-def _own_fields(config, kind: Kind, uri: Uri) -> dict[str, object]:
+def _own_fields(config, kind: Kind, uri: Uri, inherited: Inherited) -> dict[str, object]:
+    """``uri``'s own values of the kind's fields. Layers count as its own
+    when it stores either key, and are what its keys make of ``inherited``'s."""
     own = config.get_own_properties(uri) or {}
-    return {name: own[name] for name in kind.fields if name in own}
+    values = {name: own[name] for name in kind.fields if name in own}
+    if kind.layered and _has_layers(own):
+        values[LAYERS] = _layers_of(_layer_state(inherited.layer_state, own))
+    return values
 
 
 # ---------------------------------------------------------------------------
@@ -576,17 +779,23 @@ class Sheet:
     module docstring. ``rename_blocker`` says why a stored entity cannot be
     renamed ('' when it can): ``pipe.entity_files`` refuses one with files
     on disk. ``multi_rename_blocker`` says the same of a stored Multi, whose
-    workfiles live in a folder named after it."""
+    workfiles live in a folder named after it. ``channel_exports`` names
+    the channels a stored shot has department exports under
+    (``pipe.render_layers.was_exported``): Layers that leave one out are a
+    problem, since that channel's renders read those exports."""
 
     def __init__(
         self, base: Base, rename_blocker: Callable[[Uri], str] | None = None,
         multi_rename_blocker: Callable[[Uri], str] | None = None,
+        channel_exports: Callable[[Uri], Iterable[str]] | None = None,
     ) -> None:
         self.base = base
         self.kind = base.kind
         self._rename_blocker = rename_blocker
         self._multi_rename_blocker = multi_rename_blocker
+        self._channel_exports = channel_exports
         self._blocked: dict[str, str] = {}
+        self._exported: dict[str, frozenset[str]] = {}
         self._rows = [
             Row(i, record, record.group, record.name)
             for i, record in enumerate(base.records)
@@ -663,6 +872,12 @@ class Sheet:
         if edit is not _MISSING and edit is not RESET:
             return edit
         if edit is _MISSING and row.origin is not None and name in row.origin.own:
+            if name == LAYERS and row.origin.layer_own is not None:
+                # Its own keys over what it inherits now, pending group
+                # Layers included: it may pin only the order, or one pattern.
+                return _layers_of(_layer_state(
+                    self.inherited(row).layer_state, row.origin.layer_own,
+                ))
             return row.origin.own[name]
         return self.inherited(row).values.get(name)
 
@@ -889,14 +1104,22 @@ class Sheet:
     def group_inherited(self, group: str) -> Inherited:
         """What an entity in ``group`` inherits once applied: the group's
         pending values included."""
-        if not self._group_edits.get(group):
+        edits = self._group_edits.get(group)
+        if not edits:
             return self.base.inherited(group)
         base = self.base.for_new_group
         values, sources = dict(base.values), dict(base.sources)
         for name, value in self.group_own(group).items():
             values[name] = value
             sources[name] = f'{self.kind.group} {group}'
-        return Inherited(values, sources)
+        stored = self.base.by_group.get(group, base)
+        layer_state = stored.layer_state
+        layers = edits.get(LAYERS, _MISSING)
+        if layers is RESET:
+            layer_state = base.layer_state
+        elif isinstance(layers, Layers):
+            layer_state = _layers_state_of(stored.layer_state, layers)
+        return Inherited(values, sources, layer_state)
 
     def group_value(self, group: str, name: str) -> object:
         """What the group holds for ``name`` once applied (None: nothing)."""
@@ -950,9 +1173,9 @@ class Sheet:
             if not _is_int(start):
                 raise ValueError(f'Give the {self.kind.group} a start frame first')
             return self.set_group_value(group, FRAME_END, start + length - 1)
-        if name not in self.kind.fields:
+        if name not in self.kind.values:
             raise ValueError(f'{self.kind.group.capitalize()}s have no {self.kind.label(name)}')
-        value = parse_value(name, value)
+        value = self._parse(name, value, self.group_value(group, name))
         if name == ROOT and not self.root_exists(value):
             raise ValueError(f"No Root named '{root_path(value)}'")
         if value == self.group_value(group, name):
@@ -977,7 +1200,7 @@ class Sheet:
         """Put a group's value back to inherited (Length: the end frame)."""
         if name == LENGTH:
             name = FRAME_END
-        if name not in self.kind.fields:
+        if name not in self.kind.values:
             return False
         edits = self._group_edits.get(group, {})
         if name in self.base.group_own.get(group, {}):
@@ -1552,9 +1775,9 @@ class Sheet:
             if not _is_int(start):
                 raise ValueError(f'Give the {self.kind.item} a start frame first')
             return self.set_value(row_id, FRAME_END, start + length - 1)
-        if name not in self.kind.fields:
+        if name not in self.kind.values:
             raise ValueError(f'{self.kind.item.capitalize()}s have no {self.kind.label(name)}')
-        value = parse_value(name, value)
+        value = self._parse(name, value, self.value(row, name))
         if name == ROOT and not self.root_exists(value):
             raise ValueError(f"No Root named '{root_path(value)}'")
         if value == self.value(row, name):
@@ -1581,7 +1804,7 @@ class Sheet:
             return False
         if name == LENGTH:
             name = FRAME_END
-        if name not in self.kind.fields:
+        if name not in self.kind.values:
             return False
         if row.origin is not None and name in row.origin.own:
             if row.edits.get(name, _MISSING) is RESET:
@@ -1797,7 +2020,43 @@ class Sheet:
         return self._blocked[key]
 
     def _value_problem(self, row: Row) -> str:
-        return self._values_problem(lambda name: self.value(row, name))
+        return self._values_problem(lambda name: self.value(row, name)) \
+            or self._layers_problem(row)
+
+    def exported_channels(self, uri: Uri) -> frozenset[str]:
+        """The channels stored entity ``uri`` has department exports under
+        (none without ``channel_exports``); asked once per entity."""
+        if self._channel_exports is None:
+            return frozenset()
+        key = str(uri)
+        if key not in self._exported:
+            self._exported[key] = frozenset(self._channel_exports(uri) or ())
+        return self._exported[key]
+
+    def _layers_problem(self, row: Row) -> str:
+        """Layers that drop a channel the shot has exports under: that
+        channel would vanish from Farm Submit with its exports still there."""
+        if row.origin is None or LAYERS not in row.edits:
+            return ''
+        value = self.value(row, LAYERS)
+        kept = set(value.names) if isinstance(value, Layers) else {DEFAULT_CHANNEL}
+        lost = sorted(self.exported_channels(row.origin.uri) - kept)
+        if not lost:
+            return ''
+        names = ', '.join(lost)
+        return (
+            f'{names} {"has" if len(lost) == 1 else "have"} exports of '
+            f'{"its" if len(lost) == 1 else "their"} own: keep '
+            f'{"it" if len(lost) == 1 else "them"} in the Layers'
+        )
+
+    def _parse(self, name: str, value, current) -> object:
+        """``parse_value``; Layers keep what ``current`` already holds."""
+        if name == LAYERS:
+            if isinstance(value, Layers):
+                return Layers.make(value.entries, current if isinstance(current, Layers) else None)
+            return Layers.parse(value, current if isinstance(current, Layers) else None)
+        return parse_value(name, value)
 
     @staticmethod
     def _values_problem(value: Callable[[str], object]) -> str:
@@ -1955,7 +2214,9 @@ class Sheet:
         new (still a problem). Multis are carried by
         :meth:`_carry_multis`. Undo starts over.
         """
-        sheet = Sheet(base, self._rename_blocker, self._multi_rename_blocker)
+        sheet = Sheet(
+            base, self._rename_blocker, self._multi_rename_blocker, self._channel_exports,
+        )
         sheet._new_groups = [g for g in self._new_groups if g not in base.groups]
         notes = []
         moved: dict[int, int] = {}   # this sheet's row ids -> the new sheet's
@@ -2158,11 +2419,57 @@ def _update(config, uri: Uri, edits: Mapping[str, object]) -> None:
     if own is None:
         raise ValueError(f'{_label(uri)} is no longer in the project')
     for name, value in edits.items():
-        if value is RESET:
+        if name == LAYERS:
+            if value is RESET:
+                own.pop(CHANNEL_PROPERTY, None)
+                own.pop(CHANNEL_PRIMS_PROPERTY, None)
+            else:
+                _pin_layers(own, config.get_inherited_properties(uri) or {}, value)
+        elif value is RESET:
             own.pop(name, None)
         else:
             own[name] = value
     config.set_own_properties(uri, own)
+
+
+def _pin_layers(own: dict, inherited: Mapping, layers: Layers) -> None:
+    """Write ``layers`` into ``own`` (an entity's own properties) as the
+    fewest keys that make them, given what it ``inherited``
+    (``get_inherited_properties``, read at Apply time).
+
+    ``channels`` is pinned only when the order differs from the inherited
+    one, and a pattern only where it differs from the inherited pattern
+    (``""`` drops an inherited one), so a layer the sheet did not change
+    keeps following the sequence or project. What was already pinned stays
+    pinned, as typed-over values do, and patterns of channels the layers do
+    not list are left as they were.
+    """
+    inherited_layers = _layers_of(_layer_state(_NO_LAYERS, inherited))
+    names = list(layers.names)
+    if CHANNEL_PROPERTY in own or tuple(names) != inherited_layers.names:
+        own[CHANNEL_PROPERTY] = names
+    stored = own.get(CHANNEL_PRIMS_PROPERTY)
+    stored = dict(stored) if isinstance(stored, dict) else {}
+    raw = inherited.get(CHANNEL_PRIMS_PROPERTY)
+    raw = raw if isinstance(raw, dict) else {}
+    prims = {name: value for name, value in stored.items() if name not in layers.names}
+    for name, pattern in layers.entries:
+        if name in stored or pattern != _pattern(raw.get(name)):
+            prims[name] = pattern
+    if prims:
+        own[CHANNEL_PRIMS_PROPERTY] = prims
+    else:
+        own.pop(CHANNEL_PRIMS_PROPERTY, None)
+
+
+def _create(config, uri: Uri, own: Mapping[str, object]) -> None:
+    """A new entity with ``own`` values; its Layers, if set, as
+    :func:`_update` writes them (two keys, against what it inherits)."""
+    values = dict(own)
+    layers = values.pop(LAYERS, None)
+    config.add_entity(uri, values)
+    if isinstance(layers, Layers):
+        _update(config, uri, {LAYERS: layers})
 
 
 def _write_root(config, uri: str, assets: tuple[RootAsset, ...], new: bool) -> None:
@@ -2209,7 +2516,7 @@ def apply(
     for uri, edits in changes.group_update:
         step(f'Updating {_label(uri)}', _update, config, uri, edits)
     for uri, own in changes.create:
-        step(f'Creating {_label(uri)}', config.add_entity, uri, dict(own))
+        step(f'Creating {_label(uri)}', _create, config, uri, own)
     for uri, edits in changes.update:
         step(f'Updating {_label(uri)}', _update, config, uri, edits)
     # Multis last: a new shot can be a member, and a retired Multi frees

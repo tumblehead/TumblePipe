@@ -82,7 +82,7 @@ pub fn normal_matrix(m: &Mat4) -> [f32; 9] {
         let cols: Vec<usize> = (0..3).filter(|&i| i != c).collect();
         let minor = a(rows[0], cols[0]) * a(rows[1], cols[1])
             - a(rows[0], cols[1]) * a(rows[1], cols[0]);
-        if (r + c) % 2 == 0 { minor } else { -minor }
+        if (r + c).is_multiple_of(2) { minor } else { -minor }
     };
     let mut out = [0.0f32; 9];
     for r in 0..3 {

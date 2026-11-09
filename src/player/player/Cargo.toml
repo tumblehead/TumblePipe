@@ -25,7 +25,7 @@ png = "0.18"
 serde_json.workspace = true
 # Sound out. On by default; Linux builds need ALSA headers (libasound2-dev)
 # and the binary then links libasound.so.2.
-cpal = { version = "0.16", optional = true }
+cpal = { version = "0.18", optional = true }
 
 # Native menus (Primer's `os` feature) on Windows and macOS only: on Linux
 # it would link GTK, which artists' machines would then need installed.

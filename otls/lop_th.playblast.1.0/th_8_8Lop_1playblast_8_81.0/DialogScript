@@ -96,9 +96,9 @@
             label   "Renderer"
             type    string
             default { "viewport" }
-            help    "Viewport: TumblePipe's own renderer (hdThPlayblast), the farm playblast's look, rendered with husk. Houdini GL: Houdini's own flipbook, exactly as the viewport draws (hair, curves and volumes too)."
+            help    "TumbleView: TumblePipe's own viewport renderer (hdThPlayblast), the farm playblast's look, rendered with husk. Houdini GL: Houdini's own flipbook, exactly as the viewport draws (hair, curves and volumes too)."
             menu {
-                "viewport"  "Viewport (hdThPlayblast)"
+                "viewport"  "TumbleView"
                 "gl"        "Houdini GL"
             }
             parmtag { "script_callback_language" "python" }
@@ -226,7 +226,7 @@
             label   "Render Layers"
             type    toggle
             default { "0" }
-            help    "Also write one movie per render layer (the shot's channels): only that layer's prims, on a transparent background, beside the whole picture's movie and with its version. The shot's channel_prims config names each layer's prims (e.g. characters: /CHAR/*); default without a pattern takes every prim the other layers leave. The sequence player stacks the layers in channel order and can hide each one. Viewport renderer only."
+            help    "Also write one movie per render layer (the shot's channels): only that layer's prims, on a transparent background, beside the whole picture's movie and with its version. The shot's channel_prims config names each layer's prims (e.g. characters: /CHAR/*); default without a pattern takes every prim the other layers leave. The sequence player stacks the layers in channel order and can hide each one. TumbleView only."
             disablewhen "{ renderer != viewport }"
             parmtag { "script_callback_language" "python" }
         }

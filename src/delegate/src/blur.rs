@@ -123,7 +123,7 @@ pub(crate) fn closing_points<'a>(mesh: &Mesh<'a>) -> Option<&'a [Vec3]> {
 pub(crate) fn transform_keys<'a>(mesh: &Mesh<'a>) -> &'a [Mat4] {
     let n = mesh.transforms.len();
     let keys = mesh.transform_keys;
-    if n > 0 && keys.len() >= 2 * n && keys.len() % n == 0 && keys.len() / n <= MAX_KEYS { keys } else { &[] }
+    if n > 0 && keys.len() >= 2 * n && keys.len().is_multiple_of(n) && keys.len() / n <= MAX_KEYS { keys } else { &[] }
 }
 
 /// `a + (b - a) * t`, per element.

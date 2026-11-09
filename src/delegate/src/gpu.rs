@@ -47,9 +47,13 @@ use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use wgpu::util::DeviceExt;
 
-const CHUNK_TRIANGLES: usize = 1 << 20;
-const SUBMIT_TRIANGLES: u64 = 32_000_000;
-const SUBMIT_BYTES: usize = 256 << 20;
+// Under test, budgets small enough that the tests' scenes (a few boxes, a
+// few thousand instances) cross chunk and submission boundaries, so every
+// picture and id the tests compare has been drawn over several submissions
+// as a heavy scene is.
+const CHUNK_TRIANGLES: usize = if cfg!(test) { 8 } else { 1 << 20 };
+const SUBMIT_TRIANGLES: u64 = if cfg!(test) { 2_000 } else { 32_000_000 };
+const SUBMIT_BYTES: usize = if cfg!(test) { 16 << 10 } else { 256 << 20 };
 /// Corners a [`Cache`] keeps on the card at most; a mesh past it goes up
 /// each frame, as it would without a cache.
 const CACHE_BYTES: usize = 3 << 30;
@@ -59,6 +63,9 @@ const CACHE_BYTES: usize = 3 << 30;
 /// Each is 16 bytes a sample, the most two targets may share (32).
 const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+/// The picking ids, mesh and instance a pixel: a target of their own, since
+/// a third on the scene pass would pass the 32 bytes a sample.
+const IDS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg32Sint;
 /// `post.wgsl`'s workgroups are 8 x 8 pixels.
 const GROUP: u32 = 8;
 
@@ -181,8 +188,9 @@ struct Chunk {
 /// Everything a mesh's corners are made from. Its version changes when the
 /// shim rebuilds it; the data's addresses, sizes and base colour change when
 /// its material switches between colours and textures without a rebuild.
-/// Not the normals' address: the cusp normals are computed anew each frame
-/// (from points and triangles, which the version covers).
+/// Not the normals' address: cusp normals are made from points and
+/// triangles, which the version covers, and come anew whenever the
+/// delegate's normal cache ([`crate::normals`]) works them out again.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Signature {
     version: u64,
@@ -265,6 +273,9 @@ struct Gpu {
     /// The same, for a blurred frame's meshes whose points move: a third
     /// vertex buffer holds each corner's closing position.
     scene_moving: wgpu::RenderPipeline,
+    /// The same two drawing the picking ids (`fs_ids`).
+    ids: wgpu::RenderPipeline,
+    ids_moving: wgpu::RenderPipeline,
     globals_layout: wgpu::BindGroupLayout,
     mesh_layout: wgpu::BindGroupLayout,
     post_layout: wgpu::BindGroupLayout,
@@ -287,8 +298,10 @@ fn gpu() -> Result<std::sync::MutexGuard<'static, Gpu>, String> {
 /// Render `meshes` on the GPU, keeping their geometry in `cache` for the
 /// next frame. The device is opened on first use and kept for the process
 /// (husk renders every frame through the same delegate).
-pub fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>) -> Result<Image, String> {
-    let (image, stats) = render_with_stats(frame, meshes, cache)?;
+/// With `ids`, the image's ids too (an extra pass over the first layer);
+/// without, they are left empty.
+pub fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>, ids: bool) -> Result<Image, String> {
+    let (image, stats) = render_ids_with_stats(frame, meshes, cache, ids)?;
     if std::env::var_os("TH_PLAYBLAST_TIMING").is_some() {
         let mb = |b: usize| b as f64 / (1 << 20) as f64;
         eprintln!(
@@ -303,25 +316,35 @@ pub fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>) -> Result<I
     Ok(image)
 }
 
+#[cfg(test)]
 pub(crate) fn render_with_stats(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>)
                                 -> Result<(Image, Stats), String> {
+    render_ids_with_stats(frame, meshes, cache, false)
+}
+
+pub(crate) fn render_ids_with_stats(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>, ids: bool)
+                                    -> Result<(Image, Stats), String> {
     gpu()?.scoped(frame, |gpu| {
-        if !blur::active(frame, meshes) {
-            let mut stats = gpu.draw(frame, meshes, cache, None)?;
-            let image = gpu.read_back(&mut stats)?;
-            return Ok((image, stats));
+        let (mut image, stats) = if !blur::active(frame, meshes) {
+            let mut stats = gpu.draw(frame, meshes, cache, None, ids)?;
+            (gpu.read_back(&mut stats)?, stats)
+        } else {
+            let plan = blur::Plan::new(frame, composite::sample_offsets(frame.samples).len());
+            let mut sum = Vec::new();
+            let mut total = Stats::default();
+            for (c, chunk) in plan.chunks.iter().enumerate() {
+                // The ids are the first chunk's first layer's, as on the CPU.
+                let stats = gpu.draw(frame, meshes, cache, Some(chunk), ids && c == 0)?;
+                gpu.sum_push(&mut sum);
+                total.add(&stats);
+            }
+            total.chunks = plan.chunks.len();
+            (gpu.sum_finish(sum, plan.chunks.len(), frame.alpha, &mut total)?, total)
+        };
+        if ids {
+            image.ids = gpu.read_ids()?;
         }
-        let plan = blur::Plan::new(frame, composite::sample_offsets(frame.samples).len());
-        let mut sum = Vec::new();
-        let mut total = Stats::default();
-        for chunk in &plan.chunks {
-            let stats = gpu.draw(frame, meshes, cache, Some(chunk))?;
-            gpu.sum_push(&mut sum);
-            total.add(&stats);
-        }
-        total.chunks = plan.chunks.len();
-        let image = gpu.sum_finish(sum, plan.chunks.len(), frame.alpha, &mut total)?;
-        Ok((image, total))
+        Ok((image, stats))
     })
 }
 
@@ -370,6 +393,13 @@ struct Targets {
     size: (usize, usize, usize),
     /// Per layer: albedo, normal and depth attachment views.
     layer_views: Vec<[wgpu::TextureView; 3]>,
+    /// The picking ids and the depth their own test keeps (one layer), and
+    /// the buffer they are read back through, rows padded to 256 bytes.
+    ids: wgpu::Texture,
+    ids_view: wgpu::TextureView,
+    ids_depth: wgpu::TextureView,
+    read_ids: wgpu::Buffer,
+    ids_row: usize,
     #[cfg(test)]
     albedo: wgpu::Texture,
     #[cfg(test)]
@@ -396,6 +426,7 @@ impl Targets {
         let attach = |view, clear_to: wgpu::Color| Some(wgpu::RenderPassColorAttachment {
             view,
             resolve_target: None,
+            depth_slice: None,
             ops: wgpu::Operations {
                 load: if clear { wgpu::LoadOp::Clear(clear_to) } else { wgpu::LoadOp::Load },
                 store: wgpu::StoreOp::Store,
@@ -417,6 +448,38 @@ impl Targets {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
+        })
+    }
+
+    /// A pass drawing the picking ids, clearing them (to -1, nothing) first
+    /// or not. It has its own depth, tested as the scene pass's first layer
+    /// is and over the same draws in the same order, so the surface it
+    /// names at a pixel is the one that layer keeps there.
+    fn id_pass<'e>(&self, encoder: &'e mut wgpu::CommandEncoder, clear: bool) -> wgpu::RenderPass<'e> {
+        let none = wgpu::Color { r: -1.0, g: -1.0, b: 0.0, a: 0.0 };
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("ids"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &self.ids_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: if clear { wgpu::LoadOp::Clear(none) } else { wgpu::LoadOp::Load },
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.ids_depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: if clear { wgpu::LoadOp::Clear(1.0) } else { wgpu::LoadOp::Load },
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
         })
     }
 }
@@ -435,6 +498,8 @@ struct Batch<'a> {
     pending_bytes: usize,
     pending_triangles: u64,
     elapsed: Duration,
+    /// Draw the picking ids too ([`Targets::id_pass`]).
+    ids: bool,
 }
 
 impl Batch<'_> {
@@ -501,9 +566,33 @@ impl Batch<'_> {
                     p.draw(0..d.vertices, base + d.instances.start..base + d.instances.end);
                 }
             }
+            if self.ids {
+                // The first layer's draws again, naming what they draw.
+                let mut p = self.targets.id_pass(&mut encoder, false);
+                p.set_bind_group(0, &self.globals[0], &[]);
+                let mut moving = None;
+                for d in &self.draws {
+                    let r = self.resources[d.mesh].as_ref().expect("drawn meshes have resources");
+                    let buffer = match d.corners {
+                        Corners::Cached { id, chunk } => &cache.meshes[&id].chunks[chunk].buffer,
+                        Corners::Transient(i) => &self.transient[i].buffer,
+                    };
+                    if moving != Some(d.motion.is_some()) {
+                        moving = Some(d.motion.is_some());
+                        p.set_pipeline(if d.motion.is_some() { &self.gpu.ids_moving } else { &self.gpu.ids });
+                    }
+                    p.set_bind_group(1, &r.bind, &[]);
+                    p.set_vertex_buffer(0, buffer.slice(..));
+                    p.set_vertex_buffer(1, r.instances.slice(..));
+                    if let Some(m) = d.motion {
+                        p.set_vertex_buffer(2, self.motion[m].slice(..));
+                    }
+                    p.draw(0..d.vertices, d.instances.clone());
+                }
+            }
         }
         self.gpu.queue.submit([encoder.finish()]);
-        self.gpu.device.poll(wgpu::Maintain::Wait);
+        let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely()); // a lost device fails the frame's read back
         self.draws.clear();
         self.pending_bytes = 0;
         self.pending_triangles = 0;
@@ -564,12 +653,17 @@ const INTEL: u32 = 0x8086;
 
 /// The high-performance adapter among `backends`, if any.
 fn adapter_of(backends: wgpu::Backends) -> Option<wgpu::Adapter> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends, ..Default::default() });
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends,
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    });
     pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: None,
         force_fallback_adapter: false,
+        apply_limit_buckets: false,
     }))
+    .ok()
 }
 
 /// Whether to draw on `info`'s adapter through DirectX 12 instead: an Intel
@@ -604,11 +698,12 @@ impl Gpu {
                 required_features: wgpu::Features::empty(),
                 required_limits: limits.clone(),
                 memory_hints: wgpu::MemoryHints::Performance,
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                trace: wgpu::Trace::Off,
             },
-            None,
         ))
         .map_err(|e| e.to_string())?;
-        device.on_uncaptured_error(Box::new(|e| eprintln!("hdThPlayblast: GPU error: {e}")));
+        device.on_uncaptured_error(std::sync::Arc::new(|e| eprintln!("hdThPlayblast: GPU error: {e}")));
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("hdThPlayblast"),
@@ -667,56 +762,60 @@ impl Gpu {
         ];
         let scene_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("scene"),
-            bind_group_layouts: &[&globals_layout, &mesh_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&globals_layout), Some(&mesh_layout)],
+            immediate_size: 0,
         });
         let closing_attrs = wgpu::vertex_attr_array![15 => Float32x3];
         let buffers = [
-            wgpu::VertexBufferLayout {
+            Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Vertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &vertex_attrs,
-            },
-            wgpu::VertexBufferLayout {
+            }),
+            Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Instance>() as u64,
                 step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &instance_attrs,
-            },
-            wgpu::VertexBufferLayout {
+            }),
+            Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Vec3>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &closing_attrs,
-            },
+            }),
         ];
-        let scene_pipeline = |entry_point: &str, buffers: &[wgpu::VertexBufferLayout]| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("scene"),
+        let id_targets = [target(IDS_FORMAT)];
+        let pipeline = |entry_point: &str, buffers: &[Option<wgpu::VertexBufferLayout>], fragment: &str,
+                        targets: &[Option<wgpu::ColorTargetState>]| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(fragment),
             layout: Some(&scene_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point,
+                entry_point: Some(entry_point),
                 compilation_options: Default::default(),
                 buffers,
             },
             primitive,
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs",
+                entry_point: Some(fragment),
                 compilation_options: Default::default(),
-                targets: &color_targets,
+                targets,
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
-        let scene = scene_pipeline("vs", &buffers[..2]);
-        let scene_moving = scene_pipeline("vs_moving", &buffers);
+        let scene = pipeline("vs", &buffers[..2], "fs", &color_targets);
+        let scene_moving = pipeline("vs_moving", &buffers, "fs", &color_targets);
+        let ids = pipeline("vs", &buffers[..2], "fs_ids", &id_targets);
+        let ids_moving = pipeline("vs_moving", &buffers, "fs_ids", &id_targets);
 
         // The post pass: one bind group for every entry point (post.wgsl).
         let compute = wgpu::ShaderStages::COMPUTE;
@@ -770,15 +869,15 @@ impl Gpu {
         });
         let post_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("post"),
-            bind_group_layouts: &[&post_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&post_layout)],
+            immediate_size: 0,
         });
         let entry = |name| {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(name),
                 layout: Some(&post_pipeline_layout),
                 module: &post_shader,
-                entry_point: name,
+                entry_point: Some(name),
                 compilation_options: Default::default(),
                 cache: None,
             })
@@ -803,15 +902,15 @@ impl Gpu {
         });
         let sum_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sum"),
-            bind_group_layouts: &[&sum_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&sum_layout)],
+            immediate_size: 0,
         });
         let sum_entry = |name| {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(name),
                 layout: Some(&sum_pipeline_layout),
                 module: &sum_shader,
-                entry_point: name,
+                entry_point: Some(name),
                 compilation_options: Default::default(),
                 cache: None,
             })
@@ -824,10 +923,10 @@ impl Gpu {
             address_mode_v: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
-        Ok(Gpu { device, queue, scene, scene_moving, globals_layout, mesh_layout, post_layout, post, sum_layout, sum, sampler, limits,
+        Ok(Gpu { device, queue, scene, scene_moving, ids, ids_moving, globals_layout, mesh_layout, post_layout, post, sum_layout, sum, sampler, limits,
                  targets: None })
     }
 
@@ -838,14 +937,14 @@ impl Gpu {
             return Err(format!("{}x{} is larger than the GPU's textures", frame.width, frame.height));
         }
         let plane_bytes = (frame.width * frame.height * 16) as u64;
-        if plane_bytes > self.limits.max_storage_buffer_binding_size as u64 || plane_bytes > self.limits.max_buffer_size {
+        if plane_bytes > self.limits.max_storage_buffer_binding_size || plane_bytes > self.limits.max_buffer_size {
             return Err(format!("{}x{} is larger than the GPU's buffers", frame.width, frame.height));
         }
-        self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
-        self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let memory = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+        let validation = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let result = body(self);
-        let validation = pollster::block_on(self.device.pop_error_scope());
-        let memory = pollster::block_on(self.device.pop_error_scope());
+        let validation = pollster::block_on(validation.pop());
+        let memory = pollster::block_on(memory.pop());
         if let Some(error) = validation.or(memory) {
             self.targets = None; // they may be what failed
             return Err(error.to_string());
@@ -887,6 +986,19 @@ impl Gpu {
         let layer_views = (0..layers as u32)
             .map(|k| [layer_view(&albedo, k), layer_view(&normal, k), layer_view(&depth_target, k)])
             .collect();
+        let single = |format, usage| device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("ids"),
+            size: wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage,
+            view_formats: &[],
+        });
+        let ids = single(IDS_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC);
+        let ids_view = ids.create_view(&Default::default());
+        let ids_depth = single(DEPTH_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT).create_view(&Default::default());
         let array_view = |t: &wgpu::Texture| t.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             ..Default::default()
@@ -919,6 +1031,8 @@ impl Gpu {
         let read_back = wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST;
         let read_color = buffer("read color", plane * 16, read_back);
         let read_depth = buffer("read depth", plane * 4, read_back);
+        let ids_row = align(w * 8, wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize);
+        let read_ids = buffer("read ids", ids_row * h, read_back);
 
         // The taps and each layer's offset: fixed for this sample count.
         let offsets = composite::sample_offsets(layers);
@@ -963,6 +1077,11 @@ impl Gpu {
         self.targets.insert(Targets {
             size: (w, h, layers),
             layer_views,
+            ids,
+            ids_view,
+            ids_depth,
+            read_ids,
+            ids_row,
             #[cfg(test)]
             albedo,
             #[cfg(test)]
@@ -1005,14 +1124,14 @@ impl Gpu {
                     .collect(),
             };
             self.queue.write_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d { x: 0, y: 0, z: layer as u32 },
                     aspect: wgpu::TextureAspect::All,
                 },
                 bytes(&texels),
-                wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some(4 * w as u32), rows_per_image: Some(h as u32) },
+                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * w as u32), rows_per_image: Some(h as u32) },
                 wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
             );
         }
@@ -1025,7 +1144,7 @@ impl Gpu {
     /// A mesh's instances and material. Unblurred, one set of instances
     /// every layer draws; blurred (`layers`), one per layer, at its moment
     /// of the shutter (with `motion`) and through its camera.
-    fn mesh_resources(&self, mesh: &Mesh, world_to_clip: &Mat4, cache: &mut CacheInner,
+    fn mesh_resources(&self, index: usize, mesh: &Mesh, world_to_clip: &Mat4, cache: &mut CacheInner,
                       layers: Option<&[LayerCamera]>, motion: bool) -> MeshResources {
         let instance = |m: &Mat4, world_to_clip: &Mat4| {
             let nm = math::normal_matrix(m);
@@ -1057,7 +1176,7 @@ impl Gpu {
         }
         let params = MeshParams {
             base: [mesh.base_color[0], mesh.base_color[1], mesh.base_color[2], 1.0],
-            mode: [textured as i32, plain as i32, 0, 0],
+            mode: [textured as i32, plain as i32, index as i32, 0],
             layers,
         };
         let tiles: &[(i32, &Texture)] = if textured { &mesh.tiles } else { &[] };
@@ -1098,8 +1217,9 @@ impl Gpu {
     /// Draw `meshes` into the targets and run the post pass, which leaves
     /// the picture in the targets' colour and depth. `chunk`: a blurred
     /// frame's chunk, each layer through its own camera.
-    fn draw(&mut self, frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>, chunk: Option<&[LayerCamera]>)
-            -> Result<Stats, String> {
+    /// With `ids`, the picking ids too, of the first layer.
+    fn draw(&mut self, frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>, chunk: Option<&[LayerCamera]>,
+            ids: bool) -> Result<Stats, String> {
         let (w, h) = (frame.width, frame.height);
         let offsets = composite::sample_offsets(frame.samples);
         let layers = offsets.len();
@@ -1146,6 +1266,9 @@ impl Gpu {
         for k in 0..layers {
             drop(targets.pass(&mut encoder, true, k));
         }
+        if ids {
+            drop(targets.id_pass(&mut encoder, true));
+        }
         gpu.queue.submit([encoder.finish()]);
 
         // Without a cache, this frame's own, dropped at its end.
@@ -1159,8 +1282,9 @@ impl Gpu {
 
         let resources: Vec<Option<MeshResources>> = meshes
             .iter()
-            .map(|m| (!m.transforms.is_empty() && !m.triangles.is_empty())
-                .then(|| gpu.mesh_resources(m, &frame.world_to_clip, inner, chunk, motion)))
+            .enumerate()
+            .map(|(i, m)| (!m.transforms.is_empty() && !m.triangles.is_empty())
+                .then(|| gpu.mesh_resources(i, m, &frame.world_to_clip, inner, chunk, motion)))
             .collect();
 
         let mut batch = Batch {
@@ -1174,6 +1298,7 @@ impl Gpu {
             pending_bytes: 0,
             pending_triangles: 0,
             elapsed: Duration::ZERO,
+            ids,
         };
         for (m, mesh) in meshes.iter().enumerate() {
             if resources[m].is_none() {
@@ -1282,14 +1407,14 @@ impl Gpu {
         let plane = w * h;
         let write = |texture: &wgpu::Texture, data: &[u8], k: usize| {
             self.queue.write_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d { x: 0, y: 0, z: k as u32 },
                     aspect: wgpu::TextureAspect::All,
                 },
                 data,
-                wgpu::ImageDataLayout { offset: 0, bytes_per_row: Some((w * 16) as u32), rows_per_image: Some(h as u32) },
+                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some((w * 16) as u32), rows_per_image: Some(h as u32) },
                 wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
             );
         };
@@ -1371,7 +1496,7 @@ impl Gpu {
             run(&self.post.finish, 0);
         }
         self.queue.submit([encoder.finish()]);
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| e.to_string())?;
         stats.post = started.elapsed();
         Ok(())
     }
@@ -1380,6 +1505,38 @@ impl Gpu {
     fn read_back(&self, stats: &mut Stats) -> Result<Image, String> {
         let targets = self.targets.as_ref().ok_or("no targets")?;
         self.read_back_from(&targets.color, &targets.depth, stats)
+    }
+
+    /// The picking ids the last [`Gpu::draw`] with ids made, read back.
+    fn read_ids(&self) -> Result<Vec<[i32; 2]>, String> {
+        let targets = self.targets.as_ref().ok_or("no targets")?;
+        let (w, h) = (targets.size.0, targets.size.1);
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_buffer(
+            targets.ids.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &targets.read_ids,
+                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(targets.ids_row as u32), rows_per_image: Some(h as u32) },
+            },
+            wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
+        );
+        self.queue.submit([encoder.finish()]);
+        let slice = targets.read_ids.slice(..(targets.ids_row * h) as u64);
+        let (tx, rx) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        let data = slice.get_mapped_range().map_err(|e| e.to_string())?;
+        let i32_at = |b: &[u8]| i32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        let ids = data
+            .chunks_exact(targets.ids_row)
+            .flat_map(|row| row[..w * 8].as_chunks::<8>().0.iter().map(|p| [i32_at(&p[0..]), i32_at(&p[4..])]))
+            .collect();
+        drop(data);
+        targets.read_ids.unmap();
+        Ok(ids)
     }
 
     /// An image (colour and depth buffers of the targets' size) read back.
@@ -1397,21 +1554,23 @@ impl Gpu {
             slice.map_async(wgpu::MapMode::Read, move |r| {
                 let _ = tx.send(r);
             });
-            self.device.poll(wgpu::Maintain::Wait);
+            self.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| e.to_string())?;
             rx.recv().map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
-            let data = slice.get_mapped_range().to_vec();
+            let data = slice.get_mapped_range().map_err(|e| e.to_string())?.to_vec();
             buf.unmap();
             Ok(data)
         };
         let (color_bytes, depth_bytes) = (map(&targets.read_color, plane * 16)?, map(&targets.read_depth, plane * 4)?);
         let f32_at = |b: &[u8]| f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
         let color: Vec<[f32; 4]> = color_bytes
-            .chunks_exact(16)
+            .as_chunks::<16>()
+            .0
+            .iter()
             .map(|c| [f32_at(&c[0..]), f32_at(&c[4..]), f32_at(&c[8..]), f32_at(&c[12..])])
             .collect();
-        let depth: Vec<f32> = depth_bytes.chunks_exact(4).map(f32_at).collect();
+        let depth: Vec<f32> = depth_bytes.as_chunks::<4>().0.iter().map(|b| f32_at(b)).collect();
         stats.read_back = started.elapsed();
-        Ok(Image { color, depth })
+        Ok(Image { color, depth, ids: Vec::new() })
     }
 
     /// One `sum.wgsl` pass over slot-sized buffers: `dst` and `src` are
@@ -1583,7 +1742,7 @@ mod tests {
 
     fn compare(frame: &Frame, meshes: &[Mesh]) -> (f32, f32) {
         let cpu = raster::render(frame, meshes);
-        let gpu = render(frame, meshes, None).unwrap_or_else(|e| panic!("GPU render failed: {e}"));
+        let gpu = render(frame, meshes, None, false).unwrap_or_else(|e| panic!("GPU render failed: {e}"));
         let (color, depth) = differences(&cpu, &gpu);
         eprintln!("cpu vs gpu: {color:.4} of pixels differ in colour, {depth:.4} in depth");
         (color, depth)
@@ -1644,7 +1803,7 @@ mod tests {
         fn chunks_averaged_on_the_card_are_the_cpus_average_bit_for_bit((pixels, images) in chunk_pictures(),
                                                                          alpha: bool) {
             let got = average_on_card(pixels, &images, alpha);
-            let want = blur::average(images.into_iter().map(|(color, depth)| Image { color, depth }).collect(), alpha);
+            let want = blur::average(images.into_iter().map(|(color, depth)| Image { color, depth, ids: Vec::new() }).collect(), alpha);
             let bits = |i: &Image| (i.color.iter().flatten().map(|v| v.to_bits()).collect::<Vec<_>>(),
                                     i.depth.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
             prop_assert_eq!(bits(&got), bits(&want));
@@ -1705,9 +1864,9 @@ mod tests {
 
     #[test]
     fn many_instances_split_across_submissions() {
-        // 40k instances of a 2-triangle quad would be one draw; with a tiny
-        // per-submission budget it is not. Here the real budget applies and
-        // the picture must still match.
+        // 40k instances of a 2-triangle quad would be one draw; under test's
+        // small per-submission budget it is forty, and the picture and the
+        // ids must still match.
         let (points, triangles) = quad();
         let transforms: Vec<Mat4> = (0..40_000)
             .map(|i| {
@@ -1718,7 +1877,12 @@ mod tests {
                 m
             })
             .collect();
-        agrees(compare(&frame(160, 120, 1), &[mesh(&points, &triangles, &transforms)]));
+        let meshes = [mesh(&points, &triangles, &transforms)];
+        agrees(compare(&frame(160, 120, 1), &meshes));
+        let f = frame(160, 120, 1);
+        let (gpu, _) = render_ids_with_stats(&f, &meshes, None, true).expect("GPU");
+        let off = id_disagreements(&raster::render(&f, &meshes), &gpu, &meshes);
+        assert!(off <= 160 * 120 / 50, "{off} pixels name something else");
     }
 
     // -- the post pass alone ------------------------------------------------
@@ -2038,16 +2202,35 @@ mod tests {
             }
             let cpu = raster::render(&f, &meshes);
             let cache = Cache::default();
-            let gpu = render(&f, &meshes, cached.then_some(&cache)).unwrap_or_else(|e| panic!("GPU render failed: {e}"));
+            let gpu = render(&f, &meshes, cached.then_some(&cache), true).unwrap_or_else(|e| panic!("GPU render failed: {e}"));
+            // The ids, from the moving pipelines' id pass: those of the
+            // CPU's first layer but along edges.
+            let off = id_disagreements(&cpu, &gpu, &meshes);
+            prop_assert!(off <= (w * h) / 50 + 2, "{} of {} pixels name something else", off, w * h);
             let (color, depth) = if alpha {
                 differences_within(&cpu, &gpu, 1.0 / crate::blur::layers(&f, &meshes) as f32)
             } else {
                 differences(&cpu, &gpu)
             };
+            // The boxes turn about y only, so their sides stay exactly
+            // upright on screen: when a side lands on a sample at one moment
+            // of the shutter, the two may decide it differently all the way
+            // down a column (seed 924a: 14 pixels, each one layer off). So a
+            // pixel no more than one layer's share off in every channel is
+            // such a decision, and two whole columns of them are allowed;
+            // anything further off is held to [`DIFFERING`].
+            let share = 1.0 / crate::blur::layers(&f, &meshes) as f32 + 1e-4;
+            // (Counted as the comparison counts them: over grey when transparent.)
+            let over = |p: &[f32; 4], c: usize| if alpha { p[c] + (1.0 - p[3]) * 0.5 } else { p[c] };
+            let decided = cpu.color.iter().zip(&gpu.color)
+                .filter(|(a, b)| (0..3).any(|c| (encode(over(a, c)) - encode(over(b, c))).abs() > STEPS)
+                                 && (0..4).all(|c| (a[c] - b[c]).abs() <= share))
+                .count();
+            let color = color - decided.min(2 * h) as f32 / (w * h) as f32;
             prop_assert!(color <= DIFFERING && depth <= DIFFERING, "color {color}, depth {depth}");
             if cached {
                 // Drawn again from the card: the same picture.
-                let again = render(&f, &meshes, Some(&cache)).unwrap();
+                let again = render(&f, &meshes, Some(&cache), false).unwrap();
                 prop_assert!(again.color == gpu.color && again.depth == gpu.depth);
             }
         }
@@ -2064,7 +2247,7 @@ mod tests {
         let still = mesh(&points, &triangles, &one);
         let moving = Mesh { points_close: Some(&close), transform_keys: &keys, ..mesh(&points, &triangles, &one) };
         let mut f = frame(64, 40, 8);
-        let reference = render(&f, &[still], None).unwrap();
+        let reference = render(&f, &[still], None, false).unwrap();
         f.blur.samples = 32;
         let (image, stats) = render_with_stats(&f, &[moving], None).unwrap();
         assert!(image.color == reference.color && image.depth == reference.depth);
@@ -2086,9 +2269,84 @@ mod tests {
             let close: Vec<Vec3> = points.iter().map(|p| math::add(*p, shift)).collect();
             let m = Mesh { points_close: Some(&close), ..keyed(&points, &triangles, &one, id, 1) };
             let (cached, stats) = render_with_stats(&f, std::slice::from_ref(&m), Some(&cache)).unwrap();
-            let fresh = render(&f, std::slice::from_ref(&Mesh { key: None, ..m }), None).unwrap();
+            let fresh = render(&f, std::slice::from_ref(&Mesh { key: None, ..m }), None, false).unwrap();
             assert!(cached.color == fresh.color, "shift {shift:?}: cached corners moved wrong");
             assert!(stats.cached_meshes > 0 || shift[0] > 0.0, "the second frame reuses the corners");
         }
+    }
+
+    // -- picking ids ----------------------------------------------------------
+
+    /// The pixels whose ids the two paths do not agree on, and checks that
+    /// every id the GPU gives names a mesh drawn and an instance it has.
+    fn id_disagreements(cpu: &Image, gpu: &Image, meshes: &[Mesh]) -> usize {
+        assert_eq!(gpu.ids.len(), cpu.ids.len(), "the GPU made ids for every pixel");
+        for &[m, i] in &gpu.ids {
+            assert!((m == -1 && i == -1) || ((m as usize) < meshes.len() && (i as usize) < meshes[m as usize].transforms.len()),
+                    "id {:?} names nothing drawn", [m, i]);
+        }
+        cpu.ids.iter().zip(&gpu.ids).filter(|(a, b)| a != b).count()
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 32, ..ProptestConfig::default() })]
+
+        /// The GPU names the mesh and instance the CPU does at every pixel
+        /// but a few along edges, where the two rasterisers' coverage of a
+        /// pixel centre may differ, whatever the sample count, with the
+        /// cache or without, drawn in one submission or several.
+        #[test]
+        fn the_gpu_names_what_the_cpu_names(
+            boxes in prop::collection::vec(a_box(), 1..4),
+            offsets in prop::collection::vec([-2.0f64..2.0, -1.0f64..1.0, -1.5f64..0.5], 1..4),
+            samples in prop::sample::select(vec![1usize, 4, 8]),
+            cached: bool,
+            (w, h) in (16usize..80, 12usize..60),
+        ) {
+            let built: Vec<_> = boxes.iter().map(|(c, s, yaw, _)| boxed(*c, *s, *yaw)).collect();
+            let transforms: Vec<Mat4> = offsets.iter().map(|o| translation(o[0], o[1], o[2])).collect();
+            let floor = vec![[-6.0, -1.0, 4.0], [6.0, -1.0, 4.0], [6.0, -1.0, -8.0], [-6.0, -1.0, -8.0]];
+            let floor_tris = vec![[0u32, 1, 2], [0, 2, 3]];
+            let one = [IDENTITY];
+            let mut meshes: Vec<Mesh> = built.iter().map(|(p, t)| keyed(p, t, &transforms, new_id(), 1)).collect();
+            meshes.push(mesh(&floor, &floor_tris, &one));
+            let f = frame(w, h, samples);
+            let cache = Cache::default();
+            let cpu = raster::render(&f, &meshes);
+            let (gpu, _) = render_ids_with_stats(&f, &meshes, cached.then_some(&cache), true)
+                .map_err(|e| TestCaseError::fail(format!("GPU failed: {e}")))?;
+            let off = id_disagreements(&cpu, &gpu, &meshes);
+            prop_assert!(off <= (w * h) / 50 + 2, "{} of {} pixels name something else", off, w * h);
+            if cached {
+                // Drawn again from the corners on the card: the same ids.
+                let (again, stats) = render_ids_with_stats(&f, &meshes, Some(&cache), true)
+                    .map_err(|e| TestCaseError::fail(format!("GPU failed: {e}")))?;
+                prop_assert!(stats.cached_meshes > 0);
+                prop_assert!(again.ids == gpu.ids, "cached corners name different surfaces");
+            }
+        }
+    }
+
+    #[test]
+    fn ids_are_made_only_when_asked_for_and_survive_blur() {
+        let (points, triangles) = boxed([0.0, 0.0, 0.0], [0.8, 0.8, 0.8], 0.4);
+        let transforms = [translation(-1.0, 0.0, 0.0), translation(1.2, 0.2, -0.5)];
+        let meshes = [mesh(&points, &triangles, &transforms)];
+        let f = frame(64, 48, 4);
+        let (plain, _) = render_with_stats(&f, &meshes, None).expect("GPU");
+        assert!(plain.ids.is_empty(), "no ids unless asked for");
+        let (named, _) = render_ids_with_stats(&f, &meshes, None, true).expect("GPU");
+        assert!(named.color == plain.color && named.depth == plain.depth, "the ids pass changes no pixel");
+        assert!(named.ids.iter().any(|&id| id == [0, 0]) && named.ids.iter().any(|&id| id == [0, 1]));
+        // Depth of field: the ids are the first chunk's first layer's, so
+        // each names an instance, and the blurred frame still has both.
+        let lens = crate::blur::Lens::of_camera(50.0, 0.5, 5.0);
+        let blurred = Frame { blur: crate::blur::Blur { samples: 16, lens, ..crate::blur::Blur::OFF }, ..f };
+        assert!(blur::active(&blurred, &meshes));
+        let cpu = raster::render(&blurred, &meshes);
+        let (gpu, stats) = render_ids_with_stats(&blurred, &meshes, None, true).expect("GPU");
+        assert!(stats.chunks > 1);
+        let off = id_disagreements(&cpu, &gpu, &meshes);
+        assert!(off <= 64 * 48 / 50, "{off} pixels differ");
     }
 }

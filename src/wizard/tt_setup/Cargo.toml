@@ -2,7 +2,7 @@
 name = "tt_setup"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.95"
 description = "TumblePipe project-setup wizard (the tt_setup package hook)"
 license = "Apache-2.0"
 publish = false
@@ -19,8 +19,16 @@ th_project_core = { path = "../core" }
 # eframe/egui: immediate-mode GUI, one self-contained binary, instant cold
 # start — the whole point of moving off the uv+PySide6 provisioning path.
 # glow (OpenGL) renderer keeps the binary smaller than the wgpu default.
-eframe = { version = "0.28", default-features = false, features = ["glow", "default_fonts"] }
-egui = "0.28"
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+egui = "0.37"
 # Native OS folder picker (replaces Qt's QFileDialog.getExistingDirectory).
-rfd = "0.14"
+rfd = "0.18"
 serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
+
+# eframe 0.37 turns winit's defaults off, which left Linux with no window
+# backend at all ("platform not supported by winit"; v1.97.0's Linux build).
+# x11 + wayland above name the backends; wayland-dlopen loads libwayland at
+# run time, as 0.28's winit defaults did, so building needs no wayland dev
+# package and a machine without Wayland still starts on X11.
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "0.30", default-features = false, features = ["wayland-dlopen"] }

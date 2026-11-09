@@ -18,7 +18,9 @@ Paste as New, a Root's assets edited for every shot using it, a shot given
 its own Root, the Root dialog's shared-Root warning, the Multis tab
 (coverage ticks across a selection, the Multis cell's dialog, overlapping
 coverage refused, a shots Multi's Timeline, the selected Multi's workfiles
-opened or made one at a time, the browser's New Multi…), New Sequence…,
+opened or made one at a time, the browser's New Multi…), the Layers
+cell's dialog (a shot's and a sequence's, Use Selection, match counts, an
+exported channel kept, Inherit) and a Layers value typed, New Sequence…,
 problems blocking Apply, Apply of every tab through the
 real ``pipe.entity_files``, and the database afterwards. Prints OK/FAIL per check; exits 1 on any FAIL.
 """
@@ -37,6 +39,7 @@ from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QMessageBox, QPu
 
 from tumblepipe.api import default_client  # noqa: E402
 from tumblepipe.config import entity_sheet as es  # noqa: E402
+from tumblepipe.config.channels import list_channel_layers  # noqa: E402
 from tumblepipe.config.department import list_departments  # noqa: E402
 from tumblepipe.config.multi_timeline import TIMELINE_CHOICES  # noqa: E402
 from tumblepipe.pipe import entity_files  # noqa: E402
@@ -121,6 +124,12 @@ source = ee.EntityEditorSource(
     multi_workfiles=_multi_workfiles,
     open_multi_workfile=_open_multi_workfile,
     new_multi_workfile=_new_multi_workfile,
+    # SH020 has an fx export; the open workfile is SH010's.
+    channel_exports=lambda uri: ['fx'] if uri == SHOTS / 'sq010' / 'SH020' else [],
+    selected_prims=lambda: ['/CHAR/ryan', '/CHAR/kate'],
+    count_prims=lambda uri, pattern: (
+        len(pattern.split()) if uri == SHOTS / 'sq010' / 'SH010' else None
+    ),
 )
 window = ee.EntityEditorWindow(source, kind='shots')
 window.show()
@@ -568,6 +577,120 @@ if len(sys.argv) > 1:
     app.processEvents()
     window.grab().save(sys.argv[1].replace('.png', '-sequences.png'))
 
+# ── Layers ─────────────────────────────────────────────────────────────────
+
+LAYERS_COLUMN = shots.columns.index(es.LAYERS)
+seen = {}
+
+
+def _fx_on_sequence(dialog):
+    seen['sequence inherit'] = not dialog._inherit.isHidden()
+    seen['sequence default locked'] = dialog._table.cellWidget(0, dialog._NAME).isReadOnly()
+    dialog._on_add()
+    dialog._table.cellWidget(1, dialog._NAME).setText('fx')
+    dialog._table.cellWidget(1, dialog._PRIMS).setText('/FX/*')
+    dialog._on_ok()
+    return QDialog.Accepted
+
+
+ee.LayersDialog.exec = _fx_on_sequence
+shots.select_cells([(SQ010, LAYERS_COLUMN)], current=(SQ010, LAYERS_COLUMN))
+shots.edit_layers(shots.index_of(SQ010, es.LAYERS))
+check("a sequence's Layers dialog has no Inherit while it sets none",
+      seen['sequence inherit'] is False, seen)
+check('its default row cannot be renamed', seen['sequence default locked'])
+check('the sequence row shows its layers, pending',
+      shots.index_of(SQ010, es.LAYERS).data() == 'fx: /FX/*'
+      and shots.index_of(SQ010, es.LAYERS).data(Qt.BackgroundRole) == ee._PENDING,
+      shots.index_of(SQ010, es.LAYERS).data())
+_row, sh020_layers = cell(shots, 'sq010', 'SH020', es.LAYERS)
+check('its shots show them inherited, at once',
+      sh020_layers.data() == 'fx: /FX/*' and sh020_layers.data(Qt.ForegroundRole) == ee._INHERITED,
+      sh020_layers.data())
+
+
+def _characters_from_selection(dialog):
+    seen['matches before'] = dialog._table.item(1, dialog._MATCHES).text()
+    seen['rest'] = dialog._table.item(0, dialog._MATCHES).text()
+    dialog._on_add()
+    dialog._table.setCurrentCell(0, dialog._PRIMS)
+    seen['remove default'] = dialog._remove.isEnabled()
+    dialog._table.setCurrentCell(2, dialog._PRIMS)
+    dialog._table.cellWidget(2, dialog._NAME).setText('characters')
+    seen['ok without prims'] = dialog._ok.isEnabled()
+    dialog._on_pick()
+    seen['matches'] = dialog._table.item(2, dialog._MATCHES).text()
+    dialog._table.cellWidget(2, dialog._NAME).setText('char acters')
+    seen['bad name blocks'] = (not dialog._ok.isEnabled(), dialog._problem.text())
+    dialog._table.cellWidget(2, dialog._NAME).setText('characters')
+    dialog._on_ok()
+    return QDialog.Accepted
+
+
+r010, _i = cell(shots, 'sq010', 'SH010', es.LAYERS)
+ee.LayersDialog.exec = _characters_from_selection
+shots.select_cells([(r010.id, LAYERS_COLUMN)], current=(r010.id, LAYERS_COLUMN))
+shots.edit_layers(shots.index_of(r010.id, es.LAYERS))
+check("the open shot's layers are counted on its stage",
+      seen['matches before'] == '1 prim' and seen['rest'] == 'the rest', seen)
+check('default cannot be removed', seen['remove default'] is False)
+check('a layer without prims is allowed', seen['ok without prims'])
+check('Use Selection fills the layer and counts it', seen['matches'] == '2 prims', seen['matches'])
+check('a bad channel name blocks OK', seen['bad name blocks'][0], seen['bad name blocks'])
+_row, sh010_layers = cell(shots, 'sq010', 'SH010', es.LAYERS)
+check("the shot shows its own layers on top of the sequence's",
+      sh010_layers.data() == 'fx: /FX/*; characters: /CHAR/ryan /CHAR/kate'
+      and sh010_layers.data(Qt.FontRole).bold(), sh010_layers.data())
+
+
+def _drop_export(dialog):
+    row = next(r for r in range(dialog._table.rowCount())
+               if dialog._table.cellWidget(r, dialog._NAME).text() == 'fx')
+    dialog._table.setCurrentCell(row, dialog._PRIMS)
+    seen['export remove'] = dialog._remove.isEnabled()
+    seen['export locked'] = dialog._table.cellWidget(row, dialog._NAME).isReadOnly()
+    dialog._set_rows([('default', '')], 0)
+    seen['export ok'] = dialog._ok.isEnabled()
+    seen['export problem'] = dialog._problem.text()
+    return QDialog.Rejected
+
+
+r020, _i = cell(shots, 'sq010', 'SH020', es.LAYERS)
+ee.LayersDialog.exec = _drop_export
+shots.select_cells([(r020.id, LAYERS_COLUMN)], current=(r020.id, LAYERS_COLUMN))
+shots.edit_layers(shots.index_of(r020.id, es.LAYERS))
+check('an exported channel cannot be removed or renamed',
+      seen['export remove'] is False and seen['export locked'], seen)
+check('dropping it blocks OK and says why',
+      seen['export ok'] is False and 'fx has exports' in seen['export problem'], seen['export problem'])
+check('Cancel changes nothing', shots.sheet.state(shots.sheet.row(r020.id), es.LAYERS) == es.INHERITED,
+      shots.sheet.state(shots.sheet.row(r020.id), es.LAYERS))
+
+# Typed (or pasted) like any cell: ``name: prims; name``.
+r030, _i = cell(shots, 'sq010', 'SH030', es.LAYERS)
+shots.select_cells([(r030.id, LAYERS_COLUMN)])
+shots.commit(shots.index_of(r030.id, es.LAYERS), 'fx: /FX/*; matte')
+check('a typed Layers value adds a channel without prims',
+      shots.index_of(r030.id, es.LAYERS).data() == 'fx: /FX/*; matte',
+      shots.index_of(r030.id, es.LAYERS).data())
+
+
+def _inherit(dialog):
+    seen['inherit shown'] = not dialog._inherit.isHidden()
+    dialog._on_inherit()
+    return QDialog.Accepted
+
+
+ee.LayersDialog.exec = _inherit
+shots.select_cells([(r020.id, LAYERS_COLUMN)])
+shots.commit(shots.index_of(r020.id, es.LAYERS), 'fx: /FX/sparks')
+shots.select_cells([(r020.id, LAYERS_COLUMN)], current=(r020.id, LAYERS_COLUMN))
+shots.edit_layers(shots.index_of(r020.id, es.LAYERS))
+check("Inherit puts a shot's layers back to its sequence's",
+      seen['inherit shown'] and shots.index_of(r020.id, es.LAYERS).data() == 'fx: /FX/*'
+      and shots.sheet.state(shots.sheet.row(r020.id), es.LAYERS) == es.INHERITED,
+      (seen, shots.index_of(r020.id, es.LAYERS).data()))
+
 # ── Apply ──────────────────────────────────────────────────────────────────
 
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
@@ -619,6 +742,23 @@ check('the sequence\'s Root written on the sequence',
 check('its shots keep no Root of their own', all(
     'scene' not in config.get_own_properties(SHOTS / 'sq020' / s) for s in ('SH010', 'SH020')
 ))
+sq010 = config.get_own_properties(SHOTS / 'sq010')
+check("the sequence's layers written on the sequence",
+      sq010.get('channels') == ['default', 'fx'] and sq010.get('channel_prims') == {'fx': '/FX/*'}, sq010)
+sh010 = config.get_own_properties(SHOTS / 'sq010' / 'SH010')
+check('a shot keeps only the layers it adds',
+      sh010.get('channels') == ['default', 'fx', 'characters']
+      and sh010.get('channel_prims') == {'characters': '/CHAR/ryan /CHAR/kate'}, sh010)
+sh020 = config.get_own_properties(SHOTS / 'sq010' / 'SH020')
+check('an inheriting shot writes no layers',
+      'channels' not in sh020 and 'channel_prims' not in sh020, sh020)
+sh030 = config.get_own_properties(SHOTS / 'sq010' / 'SH030')
+check('a typed channel without prims is written as a channel only',
+      sh030.get('channels') == ['default', 'fx', 'matte'] and 'channel_prims' not in sh030, sh030)
+layers = list_channel_layers(SHOTS / 'sq010' / 'SH010')
+check('the farm reads the layers the column showed', layers == [
+    ('default', None), ('fx', '/FX/*'), ('characters', '/CHAR/ryan /CHAR/kate'),
+], layers)
 check('they resolve the sequence\'s Root', all(
     config.get_properties(SHOTS / 'sq020' / s).get('scene') == 'scenes:/town' for s in ('SH010', 'SH020')
 ))

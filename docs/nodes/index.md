@@ -51,7 +51,7 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | `th::layer_split` | LOP | Publish a `_shared` layer that every channel of the entity sublayers |
 | `th::sop_modify` | LOP | Pull prims into an editable SOP network and cache the result back as clips |
 | `th::lpe_tags` | LOP | Seed LPE tag rows from the lights in the stage |
-| `th::playblast` | LOP | Playblast the stage (our viewport renderer or Houdini GL) through the pipeline's playblast folders |
+| `th::playblast` | LOP | Playblast the stage (TumbleView, our viewport renderer, or Houdini GL) through the pipeline's playblast folders |
 | `th::render_settings` | LOP | Karma render settings with load/save presets; its **AOVs** section is `th::render_vars`; Karma's own AOV toggles locked off |
 | `th::cache` | SOP | Versioned `.bgeo.sc` cache in the workfile's cache folder |
 | `th::import_asset` | SOP | The LOP `import_asset` wrapped for SOPs; optionally unpacked to polygons |

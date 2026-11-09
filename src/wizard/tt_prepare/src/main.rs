@@ -256,8 +256,10 @@ struct Unconfigured {
 }
 
 impl eframe::App for Unconfigured {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::bottom("actions").show(ctx, |ui| {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        let ctx = &ctx;
+        egui::Panel::bottom("actions").show(ui, |ui| {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if ui.button("Launch anyway").clicked() {
@@ -267,7 +269,7 @@ impl eframe::App for Unconfigured {
             });
             ui.add_space(6.0);
         });
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.add_space(4.0);
             ui.heading("This project has not been configured for TumblePipe yet");
             ui.add_space(4.0);
@@ -436,7 +438,7 @@ impl Lock {
             .and_then(|modified| SystemTime::now().duration_since(modified).ok());
         // An age that cannot be read is not stale: a lock is only broken when
         // it is known to be old.
-        if age.map_or(true, |age| age < LOCK_STALE_AFTER) {
+        if age.is_none_or(|age| age < LOCK_STALE_AFTER) {
             return Err(Self::held(&path));
         }
         match std::fs::remove_file(&path) {
@@ -559,8 +561,10 @@ fn migrate_now(plan: &Plan) -> Result<String, String> {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::bottom("actions").show(ctx, |ui| {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        let ctx = &ctx;
+        egui::Panel::bottom("actions").show(ui, |ui| {
             ui.add_space(6.0);
             if ui.button("Continue to Houdini").clicked() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -568,7 +572,7 @@ impl eframe::App for App {
             ui.add_space(6.0);
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.add_space(4.0);
             ui.heading("This project could not be migrated");
             ui.add_space(4.0);

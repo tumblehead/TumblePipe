@@ -4,7 +4,7 @@
 
 Run by ``scripts/farm_launcher.py`` in Houdini's bundled Python (which has
 PySide6 and ``pxr`` and takes no licence), with the environment Houdini would
-have for the project. The dialog is the same one the Farm Submit quick action opens
+have for the project. The dialog is the same one the Render quick action opens
 inside Houdini; only the host differs, so no Houdini session is needed to
 publish, playblast and render on the farm.
 """

@@ -571,24 +571,64 @@ def _channel_list_text(names: Sequence[str]) -> str:
     return shown
 
 
+#: The key of a shot's render-layer patterns. A local copy of
+#: ``tumblepipe.config.channels.CHANNEL_PRIMS_PROPERTY``, for the same reason
+#: as ``DEFAULT_CHANNEL``.
+CHANNEL_PRIMS_KEY = 'channel_prims'
+
+
+def default_is_layer(properties: dict) -> bool:
+    """Whether ``default`` is one of the entity's render layers: some channel
+    it defines names prims (``channel_prims``), which makes ``default`` the
+    remainder layer, the bottom of the slapcomp. Mirrors
+    ``config.channels.channel_layers`` (blank and non-string patterns are
+    none)."""
+    prims = (properties or {}).get(CHANNEL_PRIMS_KEY)
+    if not isinstance(prims, dict):
+        return False
+    defined = set(channel_names(properties or {}))
+    return any(
+        name in defined and isinstance(pattern, str) and pattern.strip()
+        for name, pattern in prims.items()
+    )
+
+
+def channel_seed(properties: dict) -> list[str]:
+    """The channels one entity's render opens checked with.
+
+    Its channel list, but ``default`` only when it is all there is or a
+    render layer (:func:`default_is_layer`). Every entity has ``default``,
+    so it stays in the menu; a shot split into channels by export branches
+    (``heart``, ``background``, ``bubbles``) would otherwise also render its
+    whole unsplit scene, which nobody asked for (Remy, 2026-11-09).
+    """
+    names = channel_names(properties or {})
+    if len(names) == 1 or default_is_layer(properties):
+        return names
+    return names[1:]
+
+
 def channel_intersection(properties_list: Sequence[dict]) -> list[str]:
-    """Channels *every* entity in the batch defines, ``default`` first.
+    """Channels *every* entity in the batch opens checked with
+    (:func:`channel_seed`), in menu order.
 
     What the menu opens *checked*. For a single entity this is exactly its
-    own channel list, which is what the old csv field pre-filled — so the
-    Render quick action is unchanged. For a batch it is the largest set that
-    renders on all of them, which matters because paleindia shots carry
-    6-13 channels and barely overlap: seeding the union there would check
-    twenty-odd channels and warn on every single entity.
+    seed. For a batch it is the largest set that renders on all of them,
+    which matters because paleindia shots carry 6-13 channels and barely
+    overlap: seeding the union there would check twenty-odd channels and
+    warn on every single entity.
 
-    Never empty: ``channel_names`` gives every entity ``default``.
+    When the seeds share nothing it is ``default`` if any entity's seed
+    holds it (a batch mixing unsplit shots with split ones keeps rendering
+    the unsplit ones), else empty: the menu then says to check one, rather
+    than quietly rendering every shot unsplit.
     """
-    names = [DEFAULT_CHANNEL]
     if not properties_list:
-        return names
-    shared = set(channel_names(properties_list[0] or {}))
-    for properties in properties_list[1:]:
-        shared &= set(channel_names(properties or {}))
+        return [DEFAULT_CHANNEL]
+    seeds = [set(channel_seed(properties or {})) for properties in properties_list]
+    shared = set.intersection(*seeds)
+    if not shared and any(DEFAULT_CHANNEL in seed for seed in seeds):
+        shared = {DEFAULT_CHANNEL}
     # Ordered by the union so the menu and the seed agree on order.
     return [n for n in channel_union(properties_list) if n in shared]
 

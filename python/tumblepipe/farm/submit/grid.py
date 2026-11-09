@@ -212,8 +212,9 @@ def default_preview_department(renderable: Sequence[str]) -> str | None:
 
     The *last* renderable department, so an unconfigured preview composes
     the whole shot. The first used to be the default, which on a typical
-    pool is layout: a playblast from the Farm Submit button — which has no
-    workfile department to pin — then silently left out animation.
+    pool is layout: a playblast from Farm Submit opened with no workfile
+    department to pin (a card's Submit Jobs…, TumbleTrove Desktop's Farm
+    Submit) then silently left out animation.
     """
     return renderable[-1] if renderable else None
 

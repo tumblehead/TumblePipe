@@ -706,7 +706,7 @@ fn find_files(root: &Path, name: Option<&str>, out: &mut Vec<PathBuf>) {
     for item in items {
         if item.is_dir() {
             find_files(&item, name, out);
-        } else if name.map_or(true, |want| {
+        } else if name.is_none_or(|want| {
             item.file_name().and_then(|n| n.to_str()) == Some(want)
         }) {
             out.push(item);

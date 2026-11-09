@@ -37,9 +37,8 @@ and sections, and the window's size are remembered per project and tab
 
 The grid always lists every entity of the context. Opened from the Render
 quick action or a card's **Submit Jobs…**, it has those entities' Render
-cells ticked; from the **Farm Submit** quick action, the open workfile's
-entities have their department's publish cell ticked. With no pipeline
-workfile open, both open with nothing ticked. The settings panel shows only
+cells ticked. With no pipeline workfile open, the Render quick action opens
+it with nothing ticked. The settings panel shows only
 the sections of the step kinds that have a ticked cell.
 
 **Assets** and **Shots** tabs switch the context. The dialog opens on the
@@ -223,6 +222,12 @@ QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; 
 QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 """
 
+# The dropdowns' arrow. Restyling a combo's drop-down drops Qt's own arrow,
+# which left every dropdown here looking like a text field (Remy,
+# 2026-11-09); a CSS border triangle draws as a flat bar in Qt 6, so it is
+# an image. Forward slashes: a stylesheet url() takes no backslashes.
+_CHEVRON = (Path(__file__).parent / "icons" / "chevron-down.svg").as_posix()
+
 
 _DIALOG_STYLE = f"""
 QDialog {{ background-color: {BG_DARKEST}; }}
@@ -279,7 +284,19 @@ QMenu {{
 QMenu::item {{ padding: 5px 22px 5px 24px; }}
 QMenu::item:selected {{ background-color: #2f3f55; }}
 QMenu::separator {{ height: 1px; background: {BORDER}; margin: 4px 8px; }}
-QComboBox::drop-down {{ border: none; width: 16px; }}
+QComboBox {{ padding-right: 22px; }}
+QComboBox::drop-down {{
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    border: none;
+    width: 20px;
+}}
+QComboBox::down-arrow {{
+    image: url("{_CHEVRON}");
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+}}
 QComboBox QAbstractItemView {{
     background-color: {BG_DARK};
     color: {TEXT_PRIMARY};
@@ -436,6 +453,18 @@ _ARROW_WIDTH = 20
 
 # ── Widgets ───────────────────────────────────────────────
 
+# What the Renderer combo shows for each playblast renderer; looks and jobs
+# keep the name (``viewport``, ``karma``).
+RENDERER_LABELS = {'viewport': 'TumbleView', 'karma': 'Karma'}
+
+
+def _combo_index(box: QComboBox, value: str) -> int:
+    """The row holding ``value``: as an item's data (an item shown under a
+    label), else as its text."""
+    index = box.findData(value)
+    return index if index >= 0 else box.findText(value)
+
+
 class _CheckableComboBox(QComboBox):
     """A combo box whose popup is a checkable list — pick several by mouse.
 
@@ -463,6 +492,13 @@ class _CheckableComboBox(QComboBox):
         self.setEditable(True)
         self.setInsertPolicy(QComboBox.NoInsert)
         self.lineEdit().setReadOnly(True)
+        # And it must not look typeable: a text cursor and selectable text
+        # had artists clicking in to type a list (Remy, 2026-11-09). The
+        # pointer is an arrow, the field never takes focus, and the mouse
+        # events that would select are swallowed (eventFilter).
+        self.lineEdit().setCursor(Qt.ArrowCursor)
+        self.lineEdit().setFocusPolicy(Qt.NoFocus)
+        self.lineEdit().setContextMenuPolicy(Qt.NoContextMenu)
         # Without an explicit delegate the check indicators stop being drawn
         # once a stylesheet is in play (the dialog's own).
         self.setItemDelegate(QStyledItemDelegate(self))
@@ -532,6 +568,10 @@ class _CheckableComboBox(QComboBox):
             # click there opens the menu instead of doing nothing.
             self.showPopup()
             return True
+        if obj is self.lineEdit() and kind in (
+            QEvent.MouseButtonDblClick, QEvent.MouseMove, QEvent.MouseButtonRelease,
+        ):
+            return True    # no selecting the summary by double-click or drag
         return super().eventFilter(obj, event)
 
     def _refresh_text(self, *_args) -> None:
@@ -623,7 +663,9 @@ class _PinnedField:
         if self.kind == 'combo':
             if w.currentIndex() <= 0:
                 return resolve.MIXED
-            return w.currentText()
+            # An item shown under a label keeps its value as its data.
+            data = w.currentData()
+            return data if data is not None else w.currentText()
         if self.kind == 'toggle':
             # Rows: placeholder, yes, no.
             index = w.currentIndex()
@@ -646,7 +688,7 @@ class _PinnedField:
             if value is None:
                 w.setCurrentIndex(0)
             else:
-                index = w.findText(str(value))
+                index = _combo_index(w, str(value))
                 # A department the entity names but this context does not
                 # offer would otherwise silently select the placeholder's
                 # neighbour; park on the placeholder instead.
@@ -969,7 +1011,7 @@ class _ContextPane(QWidget):
         if entry.kind in ('check', 'toggle'):
             return isinstance(value, bool)
         if entry.kind == 'combo':
-            return isinstance(value, str) and widget.findText(value) > 0
+            return isinstance(value, str) and _combo_index(widget, value) > 0
         return isinstance(value, str) and bool(value.strip())
 
     def _restore_remembered(self) -> None:
@@ -1440,7 +1482,7 @@ class _ContextPane(QWidget):
                 # leaves a gap per row).
                 form.setRowVisible(row, shown)
                 if label is not None:
-                    label.setText(f"{text} ({'Karma' if name == 'karma' else name}):" if mixed else f"{text}:")
+                    label.setText(f"{text} ({RENDERER_LABELS.get(name, name)}):" if mixed else f"{text}:")
         form.setRowVisible(self._pb_hint, mixed)
 
     def _show_reverts(self) -> None:
@@ -1908,11 +1950,14 @@ class _ContextPane(QWidget):
         self._register(key, box, 'check')
         return box
 
-    def _combo(self, key: str, names: Sequence[str]) -> QComboBox:
-        """A department combo with a leading per-entity placeholder."""
+    def _combo(self, key: str, names: Sequence[str],
+               labels: dict[str, str] | None = None) -> QComboBox:
+        """A department combo with a leading per-entity placeholder. A name
+        in ``labels`` shows as its label and keeps the name as its value."""
         box = QComboBox()
         box.addItem(PER_ENTITY_TEXT)
-        box.addItems(list(names))
+        for name in names:
+            box.addItem((labels or {}).get(name, name), name)
         self._register(key, box, 'combo')
         return box
 
@@ -2016,17 +2061,17 @@ class _ContextPane(QWidget):
         form.addRow("Resolution:", self._row(
             self._pb_width, "×", self._pb_height, revert=('pb_res_x', 'pb_res_y'),
         ))
-        self._pb_renderer = self._combo('pb_renderer', PLAYBLAST_RENDERERS)
+        self._pb_renderer = self._combo('pb_renderer', PLAYBLAST_RENDERERS, RENDERER_LABELS)
         self._pb_renderer.setToolTip(
-            "viewport: the viewport's look — display colours and textures, "
-            "shaded as set below. Fast, on the CPU, takes no licence.\n"
-            "karma: Karma XPU, lit and sampled as set below. Takes a Karma "
+            "TumbleView: TumblePipe's viewport renderer — display colours and "
+            "textures, shaded as set below. Fast, on the CPU, takes no licence.\n"
+            "Karma: Karma XPU, lit and sampled as set below. Takes a Karma "
             "licence and an NVIDIA GPU."
         )
         form.addRow("Renderer:", self._row(self._pb_renderer, revert=('pb_renderer',)))
         self._pb_shading = self._combo('pb_shading', PLAYBLAST_SHADINGS)
         self._pb_shading.setToolTip(
-            "Viewport only. Every option has ambient occlusion.\n"
+            "TumbleView only. Every option has ambient occlusion.\n"
             "lit: the scene's colours under lights that follow the camera.\n"
             "clay: the same lights on plain grey.\n"
             "albedo: the scene's colours, unlit.\n"
@@ -2036,19 +2081,19 @@ class _ContextPane(QWidget):
         form.addRow("Shading:", shading_row)
         self._pb_motion_blur = self._check('pb_motion_blur', "Motion blur")
         self._pb_motion_blur.setToolTip(
-            "Viewport only. Blur what moves while the shot camera's shutter "
+            "TumbleView only. Blur what moves while the shot camera's shutter "
             "is open. Partially checked = each entity keeps its own "
             "configured value."
         )
         self._pb_dof = self._check('pb_dof', "Depth of field")
         self._pb_dof.setToolTip(
-            "Viewport only. Defocus by the shot camera's lens: its f-stop "
+            "TumbleView only. Defocus by the shot camera's lens: its f-stop "
             "and focus distance (an f-stop of 0 stays sharp). Partially "
             "checked = each entity keeps its own configured value."
         )
         self._pb_blur_samples = self._spin('pb_blur_samples', 2, 64)
         self._pb_blur_samples.setToolTip(
-            "Viewport only. Images averaged per frame for the blurs: more is "
+            "TumbleView only. Images averaged per frame for the blurs: more is "
             "smoother and slower."
         )
         blur_row = self._row(
@@ -2373,9 +2418,11 @@ class _ContextPane(QWidget):
         """Repopulate the channel menu from the rows being rendered.
 
         The menu lists the *union*, because a channel only one shot defines
-        still has to be selectable. The first build checks the
-        *intersection* — for one entity exactly its own list; for a batch
-        the largest set that renders on all of them. After that, picks carry
+        still has to be selectable. The first build checks what every
+        entity opens with (``channel_intersection`` over ``channel_seed``):
+        its channels, ``default`` only when that is all it has or a render
+        layer; for a batch the largest such set that renders on all of
+        them. After that, picks carry
         over by name, so a channel arriving with a newly ticked entity
         starts unchecked: widening the submission must never widen the
         render.
@@ -2723,7 +2770,8 @@ class SubmitJobsDialog(QDialog):
 
     Args:
         entity_uris: Entities to start with ticked (``tick_kinds`` on each).
-            May be empty — the Farm Submit quick action opens with nothing ticked.
+            May be empty: the Render quick action with no workfile open, and
+            TumbleTrove Desktop's Farm Submit, open with nothing ticked.
             A Multi (``groups:`` URI) stands for its members.
         entity_names: Display names parallel to ``entity_uris``.
         context: ``'shots'``, ``'assets'`` or ``'edits'`` — the tab the
@@ -2737,8 +2785,8 @@ class SubmitJobsDialog(QDialog):
             back to each entity's ``submission.render.department``.
         tick_kinds: Step kinds to tick for ``entity_uris`` —
             ``grid.RENDER`` by default, what the Render quick action and
-            **Submit Jobs…** have always meant; ``grid.PUBLISH`` from the
-            Farm Submit quick action, narrowed to ``department``'s column.
+            **Submit Jobs…** open with; ``grid.PUBLISH`` is narrowed to
+            ``department``'s column.
     """
 
     def __init__(

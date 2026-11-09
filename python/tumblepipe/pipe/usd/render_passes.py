@@ -34,61 +34,30 @@ import sys
 
 from pxr import Sdf, Usd, UsdGeom, UsdRender
 
+from tumblepipe.config.channels import HOUDINI_ONLY_SYNTAX, prim_glob_regex
 from tumblepipe.pipe.render_layers import RenderPassError, render_pass_path
 
 
 # --- pattern expansion -------------------------------------------------------
 
-_HOUDINI_ONLY = re.compile(r'[%{}@<>]')
-
-
-def _component_regex(component: str) -> str:
-    out = []
-    i = 0
-    while i < len(component):
-        char = component[i]
-        if char == '*':
-            out.append('[^/]*')
-        elif char == '?':
-            out.append('[^/]')
-        elif char == '[':
-            end = component.find(']', i + 1)
-            if end == -1:
-                out.append(re.escape(char))
-            else:
-                out.append('[' + component[i + 1:end].replace('\\', '\\\\') + ']')
-                i = end
-        else:
-            out.append(re.escape(char))
-        i += 1
-    return ''.join(out)
-
+# The Houdini-only check and the glob translation are config.channels':
+# one definition with the editors' check (prim_pattern_problem), so the
+# Entity Editor never takes a pattern this refuses.
 
 def _glob_regex(token: str) -> re.Pattern:
-    """``token`` (an absolute path glob) as a regex over prim paths. ``**``
-    is one or more levels, wherever it stands, as in Houdini:
-    ``/SET/**`` is what is under ``/SET``, and ``/*/**/*`` does not match
-    ``/SET/tree`` (checked against ``hou.LopSelectionRule``, 22.0.368)."""
-    if not token.startswith('/'):
-        raise RenderPassError(
-            f'prim pattern {token!r} is not an absolute path; outside Houdini '
-            f'only absolute paths and globs (/CHAR/*, /SET/**) are understood'
-        )
-    components = [c for c in token.split('/') if c]
-    parts = []
-    for component in components:
-        if component == '**':
-            parts.append('(?:/[^/]+)+')
-        else:
-            parts.append('/' + _component_regex(component))
-    return re.compile('^' + ''.join(parts) + '$')
+    """``token`` as a regex over prim paths (:func:`prim_glob_regex`, the
+    one translation the editors' check uses too)."""
+    try:
+        return prim_glob_regex(token)
+    except ValueError as exc:
+        raise RenderPassError(str(exc)) from exc
 
 
 def glob_expand(stage: Usd.Stage, pattern: str) -> set[Sdf.Path]:
     """The prims ``pattern`` matches, without Houdini: whitespace
     separated absolute-path globs, a ``^`` (or ``-``) token removing its
     matches. Houdini-only syntax (``%type:Mesh``, ``{...}``) is refused."""
-    if _HOUDINI_ONLY.search(pattern):
+    if HOUDINI_ONLY_SYNTAX.search(pattern):
         raise RenderPassError(
             f'prim pattern {pattern!r} uses Houdini-only syntax; it can only be '
             f'expanded where Houdini runs. Use plain paths and globs '

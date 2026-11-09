@@ -731,6 +731,7 @@ proptest! {
         off.blur.camera_keys = 2;
         let image = raster::render(&off, &moving);
         prop_assert!(image.color == reference.color && image.depth == reference.depth);
+        prop_assert!(image.ids == reference.ids, "ids differ");
         prop_assert!(!blur::active(&off, &moving));
     }
 
@@ -764,6 +765,7 @@ proptest! {
         let image = raster::render_blurred(&layered, &zero_shutter);
         prop_assert!(image.color == reference.color, "layered picture differs");
         prop_assert!(image.depth == reference.depth, "layered depth differs");
+        prop_assert!(image.ids == reference.ids, "layered ids differ");
     }
 
     /// A small upright bar moving across the shutter smears along its path,
@@ -1488,4 +1490,317 @@ fn the_abi_alpha_switch_reaches_the_post_pass() {
     };
     assert_eq!(status, TH_OK);
     assert!(color.chunks(4).all(|p| p[3] == 1.0 && p[0] > 0.1), "the backdrop, opaque");
+}
+
+// Picking ids (th_render_ids): what the viewport selects by.
+
+fn view_of(points: &[Vec3], triangles: &[[u32; 3]], transforms: &[Mat4]) -> ThMeshView {
+    ThMeshView {
+        points: points.as_ptr() as *const f32,
+        point_count: points.len() as u32,
+        triangles: triangles.as_ptr() as *const u32,
+        triangle_count: triangles.len() as u32,
+        corner_normals: std::ptr::null(),
+        corner_colors: std::ptr::null(),
+        corner_uvs: std::ptr::null(),
+        base_color: [0.6, 0.5, 0.4],
+        tiles: std::ptr::null(),
+        tile_count: 0,
+        transforms: transforms.as_ptr() as *const f64,
+        transform_count: transforms.len() as u32,
+        polygonal: 0,
+        key: 0,
+        version: 0,
+        points_close: std::ptr::null(),
+        transform_keys: std::ptr::null(),
+        transform_key_count: 0,
+    }
+}
+
+fn abi_frame(width: u32, height: u32, samples: u32) -> ThFrame {
+    let (world_to_clip, view_to_world) = camera();
+    ThFrame { width, height, world_to_clip, view_to_world, samples, shading: 0, ao: 0,
+              blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
+              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0 }
+}
+
+proptest! {
+    // One sample a pixel: a pixel names a surface exactly where it is
+    // covered, and the surface it names, drawn alone, is what covers it
+    // (the same depth), as an instance that mesh has.
+    #[test]
+    fn ids_name_the_surface_a_pixel_sees(
+        (pa, ta) in mesh_data(),
+        (pb, tb) in mesh_data(),
+        transforms in transforms(),
+    ) {
+        let f = Frame { ao: false, ..frame(24, 18, 1) };
+        let meshes = [plain(&pa, &ta, &transforms), plain(&pb, &tb, &transforms)];
+        let both = raster::render(&f, &meshes);
+        prop_assert_eq!(both.ids.len(), 24 * 18);
+        for (p, (&[m, i], &z)) in both.ids.iter().zip(&both.depth).enumerate() {
+            prop_assert_eq!(m >= 0, z < 1.0, "pixel {} id {:?} depth {}", p, [m, i], z);
+            if m < 0 {
+                prop_assert_eq!(i, -1);
+                continue;
+            }
+            prop_assert!((m as usize) < meshes.len() && (i as usize) < transforms.len());
+            let alone = raster::render(&f, std::slice::from_ref(&meshes[m as usize]));
+            prop_assert_eq!(alone.depth[p], z, "pixel {} names mesh {}", p, m);
+        }
+    }
+
+    // Through the ABI: the ids are the core's for the views it draws, each
+    // mesh index mapped back to the caller's, wherever among the views the
+    // ones it skips (a missing points, triangles or transforms pointer) sit.
+    #[test]
+    fn abi_ids_index_the_callers_meshes(
+        views in prop::collection::vec((mesh_data(), transforms(), 0usize..4), 1..6),
+        samples in sample_count(),
+    ) {
+        let (w, h) = (20usize, 14usize);
+        let mut abi = Vec::new();
+        let mut kept = Vec::new();
+        for (i, ((points, triangles), transforms, skip)) in views.iter().enumerate() {
+            let mut view = view_of(points, triangles, transforms);
+            match skip {
+                1 => view.points = std::ptr::null(),
+                2 => view.triangles = std::ptr::null(),
+                3 => view.transforms = std::ptr::null(),
+                _ => kept.push(i),
+            }
+            abi.push(view);
+        }
+        let abi_f = abi_frame(w as u32, h as u32, samples as u32);
+        let mut color = vec![0.0f32; w * h * 4];
+        let mut depth = vec![0.0f32; w * h];
+        let mut ids = vec![7i32; w * h * 2];
+        let status = unsafe {
+            crate::ffi::th_render_ids(&abi_f, abi.as_ptr(), abi.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(),
+                                      ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
+        };
+        prop_assert_eq!(status, TH_OK);
+        let meshes: Vec<Mesh> = kept.iter()
+            .map(|&i| { let ((p, t), m, _) = &views[i]; plain(p, t, m) })
+            .collect();
+        let core = raster::render(&Frame { ao: false, ..frame(w, h, samples) }, &meshes);
+        for (p, (got, want)) in ids.chunks(2).zip(&core.ids).enumerate() {
+            let want = if want[0] < 0 { [-1, -1] } else { [kept[want[0] as usize] as i32, want[1]] };
+            prop_assert_eq!(got, &want[..], "pixel {}", p);
+        }
+    }
+
+    // What a pixel names does not depend on the look: shading, occlusion
+    // and a transparent background change the colours only.
+    #[test]
+    fn ids_ignore_the_look(
+        (pa, ta) in mesh_data(), (pb, tb) in mesh_data(), transforms in transforms(),
+        samples in sample_count(), shading in shading_mode(), ao in any::<bool>(), alpha in any::<bool>(),
+    ) {
+        let meshes = [plain(&pa, &ta, &transforms), plain(&pb, &tb, &transforms)];
+        let reference = raster::render(&Frame { ao: false, ..frame(24, 18, samples) }, &meshes);
+        let looked = raster::render(&Frame { shading, ao, alpha, ..frame(24, 18, samples) }, &meshes);
+        prop_assert!(looked.ids == reference.ids);
+        prop_assert!(looked.depth == reference.depth);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 24, ..ProptestConfig::default() })]
+
+    // Blurred, a pixel names what the first layer (the shutter's opening,
+    // the lens's first point) sees there: an instance of a mesh that, drawn
+    // alone through the same blur, covers the pixel; and a pixel that names
+    // something is covered in the picture too. The meshes' order is the
+    // caller's even though moving and still instances are drawn apart.
+    #[test]
+    fn blurred_ids_name_a_surface_that_covers_the_pixel(
+        quads in quads(), moves in prop::collection::vec(any::<bool>(), 4),
+        shift in [-1.0f32..1.0, -1.0f32..1.0, -0.5f32..0.5],
+        samples in prop::sample::select(vec![1usize, 4]), chunks in prop::sample::select(vec![1usize, 2, 4]),
+    ) {
+        let (w, h) = (32usize, 24usize);
+        let geometry: Vec<(Vec<Vec3>, [Mat4; 1])> = quads.iter()
+            .map(|&(s, yaw, pitch, at)| (turned_quad(s, yaw, pitch), [translation(at[0], at[1], at[2])]))
+            .collect();
+        let closing: Vec<Vec<Vec3>> = geometry.iter()
+            .map(|(p, _)| p.iter().map(|&q| math::add(q, shift)).collect())
+            .collect();
+        let meshes: Vec<Mesh> = geometry.iter().zip(&closing).zip(&moves)
+            .map(|(((p, t), c), &moving)| Mesh { points_close: moving.then_some(&c[..]), ..white(p, t) })
+            .collect();
+        let f = Frame { alpha: true, ..blurred(flat_frame(w, h, samples), samples * chunks, true, None) };
+        let image = raster::render(&f, &meshes);
+        prop_assert_eq!(image.ids.len(), w * h);
+        let alone: Vec<raster::Image> = meshes.iter()
+            .map(|m| raster::render(&f, std::slice::from_ref(m)))
+            .collect();
+        for (p, &[m, i]) in image.ids.iter().enumerate() {
+            if m < 0 {
+                prop_assert_eq!(i, -1);
+                continue;
+            }
+            prop_assert!((m as usize) < meshes.len() && i == 0, "pixel {} names {:?}", p, [m, i]);
+            prop_assert!(image.color[p][3] > 0.0, "pixel {} names mesh {} but is uncovered", p, m);
+            prop_assert!(alone[m as usize].color[p][3] > 0.0, "pixel {} names mesh {}, which alone misses it", p, m);
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 16, ..ProptestConfig::default() })]
+
+    // A cancel at any moment, from another thread as the viewport's render
+    // thread is stopped, is all or nothing: either the call finishes and
+    // writes exactly the uncancelled frame, or it reports TH_CANCELLED and
+    // the caller's buffers are untouched. Afterwards the thread has no
+    // cancel token left, so the next call draws in full. With the
+    // delegate's cache (the viewer's case), a cancelled call leaves nothing
+    // stale in it: the next call, drawn from what it kept, is the frame
+    // drawn without a cache.
+    #[test]
+    fn a_cancel_at_any_moment_is_all_or_nothing(
+        quads in quads(), samples in prop::sample::select(vec![4usize, 8]), motion in any::<bool>(),
+        delay_us in 0u64..4000, cached in any::<bool>(),
+    ) {
+        let (w, h) = (96usize, 72usize);
+        let geometry: Vec<(Vec<Vec3>, [Mat4; 1])> = quads.iter()
+            .map(|&(s, yaw, pitch, at)| (turned_quad(s, yaw, pitch), [translation(at[0], at[1], at[2])]))
+            .collect();
+        let views: Vec<ThMeshView> = geometry.iter().enumerate()
+            .map(|(i, (p, t))| ThMeshView { polygonal: 1, key: i as u64 + 1, version: 1, ..view_of(p, &QUAD, t) })
+            .collect();
+        let mut frame = abi_frame(w as u32, h as u32, samples as u32);
+        frame.ao = 1;
+        let cache = if cached { crate::ffi::th_cache_create() } else { std::ptr::null_mut() };
+        if motion {
+            // The camera moves over the shutter: every frame is blurred.
+            frame.motion = 1;
+            frame.blur_samples = 16;
+            frame.camera_keys = 2;
+            let (_, view_to_world) = camera();
+            frame.cameras[..16].copy_from_slice(&view_to_world);
+            frame.cameras[16..32].copy_from_slice(&math::mul(&view_to_world, &translation(0.3, 0.1, 0.0)));
+        }
+        let call_with = |cache: *const crate::ffi::ThCache, cancel: *const std::sync::atomic::AtomicU32,
+                         color: &mut Vec<f32>, depth: &mut Vec<f32>, ids: &mut Vec<i32>| unsafe {
+            crate::ffi::th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(),
+                                      depth.as_mut_ptr(), ids.as_mut_ptr(), cancel, cache)
+        };
+        let call = |cancel: *const std::sync::atomic::AtomicU32, color: &mut Vec<f32>, depth: &mut Vec<f32>, ids: &mut Vec<i32>|
+            call_with(cache, cancel, color, depth, ids);
+        // The reference: no cache, never cancelled.
+        let (mut rc, mut rd, mut ri) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h], vec![0i32; w * h * 2]);
+        prop_assert_eq!(call_with(std::ptr::null(), std::ptr::null(), &mut rc, &mut rd, &mut ri), TH_OK);
+
+        let cancel = std::sync::atomic::AtomicU32::new(0);
+        let (mut color, mut depth, mut ids) = (vec![-5.0f32; w * h * 4], vec![-5.0f32; w * h], vec![-5i32; w * h * 2]);
+        let status = std::thread::scope(|s| {
+            s.spawn(|| {
+                std::thread::sleep(std::time::Duration::from_micros(delay_us));
+                cancel.store(1, std::sync::atomic::Ordering::Relaxed);
+            });
+            call(&cancel, &mut color, &mut depth, &mut ids)
+        });
+        prop_assert!(!crate::cancel::Token::current().is_set(), "the call left its cancel token behind");
+        if status == TH_OK {
+            prop_assert!(color == rc && depth == rd && ids == ri, "a finished call wrote a different frame");
+        } else {
+            prop_assert_eq!(status, crate::TH_CANCELLED);
+            prop_assert!(color.iter().all(|&c| c == -5.0) && depth.iter().all(|&d| d == -5.0)
+                         && ids.iter().all(|&i| i == -5), "a cancelled call wrote to the caller's buffers");
+        }
+        // The same thread, no cancel: the full frame.
+        let (mut ac, mut ad, mut ai) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h], vec![0i32; w * h * 2]);
+        prop_assert_eq!(call(std::ptr::null(), &mut ac, &mut ad, &mut ai), TH_OK);
+        prop_assert!(ac == rc && ad == rd && ai == ri);
+        unsafe { crate::ffi::th_cache_free(cache) };
+    }
+}
+
+#[test]
+fn a_cancelled_frame_writes_nothing() {
+    let points: Vec<Vec3> = vec![[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [0.0, 1.0, 0.0]];
+    let triangles = vec![[0u32, 1, 2]];
+    let transforms = vec![math::IDENTITY];
+    let view = view_of(&points, &triangles, &transforms);
+    let frame = abi_frame(16, 12, 8);
+    let mut color = vec![-5.0f32; 16 * 12 * 4];
+    let mut ids = vec![-5i32; 16 * 12 * 2];
+    let cancel = std::sync::atomic::AtomicU32::new(1);
+    let status = unsafe {
+        crate::ffi::th_render_ids(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(),
+                                  ids.as_mut_ptr(), &cancel, std::ptr::null())
+    };
+    assert_eq!(status, crate::TH_CANCELLED);
+    assert!(color.iter().all(|&c| c == -5.0) && ids.iter().all(|&i| i == -5));
+    // Not cancelled, the same call draws the triangle and names it.
+    cancel.store(0, std::sync::atomic::Ordering::Relaxed);
+    let status = unsafe {
+        crate::ffi::th_render_ids(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(),
+                                  ids.as_mut_ptr(), &cancel, std::ptr::null())
+    };
+    assert_eq!(status, TH_OK);
+    assert_eq!(&ids[(6 * 16 + 8) * 2..(6 * 16 + 8) * 2 + 2], &[0, 0]);
+}
+
+// Kept cusp normals (crate::normals): a delegate's cache never changes a
+// picture.
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 32, ..ProptestConfig::default() })]
+
+    // Over any run of frames in which polygonal meshes hold still, move
+    // their points in place (saying so with a new version, as the shim
+    // does) or are left out, every frame drawn with the delegate's cache is
+    // the frame drawn without one, to the bit.
+    #[test]
+    fn frames_with_kept_normals_are_frames_worked_out_anew(
+        mut scene in prop::collection::vec(mesh_data(), 1..4),
+        steps in prop::collection::vec(prop::collection::vec((0u8..3, 0.5f32..1.5), 3), 1..6),
+        transforms in transforms(),
+        samples in sample_count(),
+    ) {
+        let (w, h) = (24usize, 18usize);
+        let mut frame = abi_frame(w as u32, h as u32, samples as u32);
+        frame.ao = 1;
+        let mut versions = vec![1u64; scene.len()];
+        let cache = crate::ffi::th_cache_create();
+        let draw = |views: &[ThMeshView], cache: *const crate::ffi::ThCache| {
+            let (mut color, mut depth) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h]);
+            let status = unsafe {
+                th_render(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(), cache)
+            };
+            (status, color.iter().map(|c| c.to_bits()).collect::<Vec<_>>(), depth.iter().map(|d| d.to_bits()).collect::<Vec<_>>())
+        };
+        for step in steps {
+            let mut drawn = Vec::new();
+            for (m, (points, _)) in scene.iter_mut().enumerate() {
+                let (edit, scale) = step[m % step.len()];
+                match edit {
+                    1 => {
+                        for p in points.iter_mut() {
+                            p[1] *= scale;
+                            p[2] += scale * p[0];
+                        }
+                        versions[m] += 1;
+                        drawn.push(m);
+                    }
+                    2 => {}
+                    _ => drawn.push(m),
+                }
+            }
+            let views: Vec<ThMeshView> = drawn.iter().map(|&m| ThMeshView {
+                polygonal: 1,
+                key: m as u64 + 1,
+                version: versions[m],
+                ..view_of(&scene[m].0, &scene[m].1, &transforms)
+            }).collect();
+            let kept = draw(&views, cache);
+            let fresh = draw(&views, std::ptr::null());
+            prop_assert_eq!(kept.0, TH_OK);
+            prop_assert!(kept == fresh, "a frame drawn with kept normals differs");
+        }
+        unsafe { crate::ffi::th_cache_free(cache) };
+    }
 }

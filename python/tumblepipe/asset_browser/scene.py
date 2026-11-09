@@ -642,20 +642,6 @@ class SceneManager:
         if dialog is None:
             _settle()
 
-    def open_farm(self, refresh_cb=None) -> None:
-        """Open the Farm Submit grid with the loaded workfile's publish ticked.
-
-        Every entity is listed either way; the loaded workfile's entities
-        (a Multi's members, for a group workfile) start with their
-        department's publish cell ticked, and any other cell can be ticked
-        by hand. With no pipeline workfile loaded the grid opens with
-        nothing ticked. Shots, unless the loaded scene is an asset's — then
-        assets, since the grid shows one context at a time.
-        """
-        run_on_main_thread(lambda: self._open_farm_grid(
-            refresh_cb, tick_kinds=(farm_grid.PUBLISH,), action="Opening the Farm Submit dialog",
-        ))
-
     def open_farm_manager(self, refresh_cb=None) -> None:
         """Open the Farm Manager: local and farm jobs, their tasks and logs."""
         def _open():
@@ -673,19 +659,19 @@ class SceneManager:
     def render_current_scene(self, refresh_cb=None) -> None:
         """Open the Farm Submit grid with the loaded workfile's Render ticked.
 
-        The quick-action sibling of :meth:`open_farm`: the same grid of
-        every entity, but seeded with the loaded entity's Render cell. The
-        workfile's department pins the render cut. With no pipeline workfile
-        loaded it opens with nothing ticked rather than refusing.
+        The toolbar's one way to the grid (the Render quick action): every
+        entity is listed, the loaded entity's Render cell (a Multi's
+        members', for a group workfile) starts ticked, and any other cell
+        can be ticked by hand. The workfile's department pins the render
+        cut. With no pipeline workfile loaded it opens with nothing ticked
+        rather than refusing.
         """
-        run_on_main_thread(lambda: self._open_farm_grid(
-            refresh_cb, tick_kinds=(farm_grid.RENDER,), action="Render submit",
-        ))
+        run_on_main_thread(lambda: self._open_farm_grid(refresh_cb))
 
-    def _open_farm_grid(self, refresh_cb, *, tick_kinds, action: str) -> None:
-        """Open the Farm Submit grid, seeding ``tick_kinds`` on the loaded entity.
+    def _open_farm_grid(self, refresh_cb) -> None:
+        """Open the Farm Submit grid, the loaded entity's Render ticked.
 
-        Marshalled onto the main thread by the callers: the quick actions can
+        Marshalled onto the main thread by the caller: the quick action can
         fire off the GUI thread, and opening a Qt dialog (or touching
         ``hou.hipFile``) off-thread is unsupported. The loaded scene's
         project is activated first so department lookups and entity
@@ -705,10 +691,10 @@ class SceneManager:
                     self._activator.activate(scene_proj)
             uris, names, context, department = farm_seed(scene_ctx, _multi_members)
             open_submit_jobs_dialog(
-                uris, names, context, department=department, tick_kinds=tick_kinds,
+                uris, names, context, department=department,
             )
         except Exception as exc:
-            report_failure(action, exc)
+            report_failure("Render submit", exc)
         finally:
             if callable(refresh_cb):
                 refresh_cb()
@@ -830,10 +816,9 @@ def open_submit_jobs_dialog(
 ) -> None:
     """Open the Farm Submit grid (:class:`SubmitJobsDialog`) for ``context``.
 
-    ``uris`` start with ``tick_kinds`` ticked — Render, for the Render
-    quick action and **Submit Jobs…**; nothing, for the Farm Submit quick
-    action. The owning project must be active already, so department
-    lookups resolve against the right install.
+    ``uris`` start with ``tick_kinds`` ticked: Render, for the Render
+    quick action and **Submit Jobs…**. The owning project must be active
+    already, so department lookups resolve against the right install.
 
     Non-modal: Houdini stays usable while the grid is open, and the
     submission itself runs in another process once it is sent. Imported

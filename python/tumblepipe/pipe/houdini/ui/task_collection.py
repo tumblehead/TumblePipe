@@ -23,6 +23,7 @@ from .process_task import ProcessTask
 from .helpers import get_entity_type
 from .task_factory import (
     _create_validation_task,
+    _create_rig_validation_task,
     _create_export_group_task,
     _create_build_group_task,
     _get_frame_range_values,
@@ -438,12 +439,16 @@ def _collect_rig_publish_tasks(owned_uris: set[Uri]) -> list[ProcessTask]:
         node_ref = export_node
         first_frame, last_frame = _get_frame_range_values(asset_uri)
 
+        validation_task = _create_rig_validation_task(asset_uri, export_node, channel)
+        tasks.append(validation_task)
+
         task = ProcessTask(
             id=str(uuid.uuid4()),
             uri=asset_uri,
             department='rig',
             task_type='export',
             channel=channel,
+            depends_on=[validation_task.id],
             description=f"Export rig: {_uri_name(asset_uri)}",
             current_version=version,
             execute_local=lambda n=node_ref: n.execute(force_local=True),

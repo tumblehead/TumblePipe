@@ -5,7 +5,7 @@
                 "Types": {
                     "HdThPlayblastRendererPlugin": {
                         "bases": ["HdRendererPlugin"],
-                        "displayName": "TumblePipe Playblast",
+                        "displayName": "TumbleView",
                         "priority": 0
                     }
                 }

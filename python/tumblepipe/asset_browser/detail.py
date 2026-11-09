@@ -443,7 +443,33 @@ class DetailSectionBuilder:
         if scene_label:
             suffix = " (inherited)" if inherited else ""
             rows.append(("Root", f"{scene_label}{suffix}"))
+        layers_label, inherited = self.shot_layers_label(ctx.detail.id)
+        if layers_label:
+            suffix = " (inherited)" if inherited else ""
+            rows.append(("Layers", f"{layers_label}{suffix}"))
         return self.build_info_table(rows)
+
+    def shot_layers_label(self, asset_id: str) -> tuple[str, bool]:
+        """``(label, inherited)`` for a shot's render layers as the Entity
+        Editor's Layers column writes them (``characters: /CHAR/*; fx``),
+        or ``("", False)`` when it has none past ``default``. ``inherited``
+        is True when the shot sets none of them itself."""
+        proj = self._resolver.project_for(asset_id)
+        if proj is None or not self._clients.is_ready(proj.name):
+            return ("", False)
+        self._activator.activate(proj)
+        from tumblepipe.api import api
+        from tumblepipe.config import entity_sheet as es
+        from tumblepipe.config.channels import CHANNEL_PRIMS_PROPERTY, CHANNEL_PROPERTY
+        shot_uri = self._resolver.uri_for(asset_id)
+        try:
+            layers = es.Layers.of_properties(api.config.get_properties(shot_uri))
+            own = api.config.get_own_properties(shot_uri) or {}
+        except Exception:  # noqa: BLE001  a config that will not read
+            return ("", False)
+        label = layers.text()
+        inherited = CHANNEL_PROPERTY not in own and CHANNEL_PRIMS_PROPERTY not in own
+        return (label, inherited and bool(label))
 
     def shot_scene_label(self, asset_id: str) -> tuple[str, bool]:
         """Return ``(label, inherited)`` for the scene currently

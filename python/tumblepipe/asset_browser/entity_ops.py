@@ -712,6 +712,49 @@ class EntityOps:
                 if uri.purpose == "groups":
                     session.apply_if_open(uri)
 
+        def channel_exports(uri) -> list[str]:
+            # The Layers editor keeps these: their renders read the exports.
+            from tumblepipe.config.channels import list_channels
+            from tumblepipe.pipe.render_layers import was_exported
+            return [
+                channel for channel in list_channels(uri)
+                if channel != "default" and was_exported(uri, channel)
+            ]
+
+        def selected_prims() -> list[str]:
+            # Use Selection: the Scene Graph Tree and the viewers share it.
+            for pane in hou.ui.paneTabs():
+                if pane.type() != hou.paneTabType.SceneViewer:
+                    continue
+                getter = getattr(pane, "currentSceneGraphSelection", None)
+                if getter is None:
+                    continue
+                try:
+                    paths = [str(p) for p in getter()]
+                except Exception as exc:  # noqa: BLE001  not a LOP viewer
+                    log.debug("Use Selection: %s: %s", pane.name(), exc)
+                    continue
+                if paths:
+                    return paths
+            return []
+
+        def count_prims(uri, pattern) -> int | None:
+            # Counted on the open stage, only when it is this shot's: the
+            # farm's matcher on another shot's stage would mislead.
+            from tumblepipe.pipe.houdini.scene_context import scene_context
+            from tumblepipe.pipe.usd.render_passes import expand_pattern, top_most
+            try:
+                context = scene_context()
+                if context is None or context.entity_uri != uri:
+                    return None
+                display = hou.node("/stage").displayNode()
+                stage = display.stage() if display is not None else None
+                if stage is None:
+                    return None
+                return len(top_most(expand_pattern(stage, pattern)))
+            except Exception:  # noqa: BLE001  a stage that will not compose
+                return None
+
         def multi_id(uri) -> str:
             return f"group:{project_name}:{'/'.join(uri.segments)}"
 
@@ -755,6 +798,9 @@ class EntityOps:
                 multi_workfiles=on_project(multi_workfiles),
                 open_multi_workfile=open_multi_workfile,
                 new_multi_workfile=new_multi_workfile,
+                channel_exports=on_project(channel_exports),
+                selected_prims=selected_prims,
+                count_prims=on_project(count_prims),
             ),
             parent=hou.qt.mainWindow(),
             kind=kind,

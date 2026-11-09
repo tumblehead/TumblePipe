@@ -956,7 +956,7 @@ ends here. Resubmit with **Renderer** `karma` meanwhile.
 
 ### Motion blur or depth of field is on, but the playblast is sharp
 
-The `viewport` renderer blurs only what the stage gives it. Run the
+TumbleView (the `viewport` renderer) blurs only what the stage gives it. Run the
 playblast with `TH_PLAYBLAST_TIMING=1` and read the per-frame
 `hdThPlayblast:` line: it says how many meshes are `moving`, then `blur N
 samples, shutter open A..B` (or `shutter off`), the camera keys and the

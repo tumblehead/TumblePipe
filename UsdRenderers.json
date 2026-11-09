@@ -1,0 +1,12 @@
+{
+    "HdThPlayblastRendererPlugin" : {
+        "valid" : true,
+        "menulabel" : "TumbleView",
+        "menupriority" : 45,
+        "depthstyle" : "opengl",
+        "needsselection" : true,
+        "defaultpurposes" : [ "guide", "proxy" ],
+        "drawmodesupport" : false,
+        "showhydraprocedurals" : false
+    }
+}

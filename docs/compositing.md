@@ -266,7 +266,7 @@ apart; playblasts made up to 1.87 are bare `v####.mp4` and are still read,
 each keeping the name it was written with:
 
 - **In-session** — the `th::playblast` node renders right in the artist's
-  session. The LOP's **Renderer** picks how: **Viewport (hdThPlayblast)**,
+  session. The LOP's **Renderer** picks how: **TumbleView**,
   the default, is the farm playblast's own renderer (below), run with husk
   on the node's cache, so an in-session playblast looks like a farm one;
   its **Shading** is the farm dialog's (lit, clay, albedo, occlusion), and a
@@ -275,7 +275,7 @@ each keeping the name it was written with:
   what you get, hair, curves and volumes included, with its own Shading
   Mode and Lighting. **Motion Blur**, **Depth of Field** and **Blur
   Samples** (off, off, 16) work with both, from the camera's shutter and
-  lens: the viewport renderer's blurs, or the flipbook's own. The SOP
+  lens: TumbleView's blurs, or the flipbook's own. The SOP
   `th::playblast` always renders through Houdini GL. With the viewport
   renderer, **Render Layers** also writes a movie per render layer (the
   shot's channels, prims picked by its `channel_prims`), which the sequence
@@ -308,8 +308,8 @@ each keeping the name it was written with:
   stack the same way a render's does — up to and including the one picked,
   see [Composition → The department cut](composition.md#the-department-cut).
 
-The `viewport` renderer is TumblePipe's own Hydra render delegate,
-`hdThPlayblast`, shipped with the package. It draws what the viewport draws
+TumbleView (the renderer setting `viewport`) is TumblePipe's own Hydra
+render delegate, `hdThPlayblast`, shipped with the package. It draws what the viewport draws
 — proxy geometry where an asset has one, USD shapes (cubes, spheres,
 cylinders, cones, capsules) as meshes, the stage's display colours and
 textures (including the colours Karma materials take from them) — on the
@@ -323,6 +323,17 @@ It draws meshes only, so hair and other curves are left out, and husk does
 not run the stage's Houdini procedurals (hair grooms) for it: they would
 make nothing it draws, and running them before every frame cost
 HideAndReek/010 about 3 s a frame.
+
+A subdivision surface (a mesh whose subdivision scheme is Catmull-Clark or
+Loop, which is also what USD makes of a mesh that names no scheme) is drawn
+smooth, as Houdini's viewport draws it at a high Level of Detail. A mesh
+written as polygons (scheme `none`, what Houdini writes unless told
+otherwise) is drawn as it is. The farm refines a subdivision surface only
+until its edges are about two pixels long where it comes closest to the
+camera, and not at all while it is out of view: husk's default complexity
+asks for refine level 8 (65,536 faces of each one), far more than a frame
+can show. The complexity stays the most it is refined to: husk's
+`--complexity low` draws the cage.
 
 It draws the way a game engine does: the geometry goes into a render
 buffer (colour, normal and depth per sample), and a post pass makes the
@@ -386,14 +397,36 @@ where each frame's time goes: the drawing and post pass step by step (on
 the GPU: the meshes and megabytes sent and kept on the card, the drawing,
 the post pass and the read-back), then how long Hydra spent syncing meshes,
 how many it rebuilt, how many it updated by their points alone (a mesh
-whose points are all that changed keeps its triangles) and the time since
+whose points are all that changed keeps its triangles), the refine level
+asked of its subdivision surfaces and the highest drawn, and the time since
 the last frame. On HideAndReek/010
 that last figure is 0.4–0.9 s against the CPU render's 0.34 s; the rest is
 husk updating the stage.
 
+### In Solaris's viewer
+
+The same renderer is in the Solaris scene viewer's renderer menu as
+**TumbleView**, above Houdini GL and Storm, so the farm
+playblast's look can be checked while working. It draws on a background
+thread: Houdini's viewer stays responsive while a frame renders, and a
+change (a camera move, an edit, a setting) stops the frame in progress and
+starts over. When the last full frame took more than 60 ms, a quick draft (one
+sample a pixel, no occlusion, no blur) shows first and the full frame
+replaces it when it is done. It draws on a transparent background, so
+Houdini's background, grid and handles show around and behind the scene,
+and it hands the viewer each pixel's prim and instance, so clicking selects
+and the selection is outlined as with Storm. Guides and proxies show by
+default, as the viewer's other GL renderers do.
+
+The settings above (`th:shading`, `th:samples`, `th:ao`, the blurs) apply
+there too, read again for every frame. `th:interactive` (bool, or
+`TH_PLAYBLAST_INTERACTIVE`) turns the background drawing on or off; unset,
+it is on in Houdini's viewer and off elsewhere, so husk and the farm render
+every frame to the end as before. `th:alpha` defaults to on with it.
+
 ### Motion blur and depth of field
 
-The viewport renderer can blur, both off by default; the dialog's **Blur**
+TumbleView can blur, both off by default; the dialog's **Blur**
 row turns them on (Motion blur, Depth of field, Blur samples, 16 by
 default). Off, the picture is the one above, to the byte. **Motion blur**
 spreads what moves over the render camera's shutter (its Shutter Open and

@@ -64,8 +64,12 @@ migrator in `src/wizard` rewrites JSON byte for byte as `json.dump` wrote it.
 Each builds a small example from its crate on first use and drives it as a
 subprocess (`tests/_cargo.py`). Without cargo they fail rather than skip.
 The crates have their own tests, including `proptest` properties in the
-resolver and in the wizard's migrations: run `cargo test` in `src/resolver`
-and in `src/wizard`.
+resolver, in the wizard's migrations and in the delegate: run `cargo test`
+in `src/resolver` and in `src/wizard`, and `cargo test --release` in
+`src/delegate` (add `--features gpu` on a machine with a GPU, to hold the
+GPU path to the CPU's pictures; the build workers do not run it). When
+you break code on purpose to check that a property catches it, delete
+the seed that run writes: it records a bug that never existed.
 
 The asset-browser catalog tests (`test_catalog*.py`) and the docs link
 check run against the **shipped TumbleTrove SDK**: `tests/_catalog.py`
@@ -1540,7 +1544,7 @@ the GPU the average is made on the card, `sum.wgsl`);
 `cargo test --features gpu` holds it to the CPU path's picture on the
 machine's GPU, which the build workers do not run;
 `.ci/smoke_delegate.py` renders a test stage through a finished build with
-husk), into `plugins/houdini<major>/`; `build-wizard` cargo-builds both hook apps
+husk, synchronously and through the viewer's background path), into `plugins/houdini<major>/`; `build-wizard` cargo-builds both hook apps
 (`tt_setup` and `tt_prepare`) into `bin/<platform>/`; `build-player` builds the
 sequence player and its FFmpeg into the same place ([Sequence
 player](#sequence-player)); `compile-hdas` collapses the
@@ -1629,6 +1633,135 @@ comes ahead of the one `viewport_env` prepends. To render a local build of
 the delegate through husk while a tumblepipe package is installed, run husk
 with `HOUDINI_PACKAGE_SKIP=1` (or a dev-override launch, whose package is
 the working tree).
+
+### hdThPlayblast in Solaris's viewer
+
+`UsdRenderers.json` (repo root, staged by `[stage] include`) puts the
+delegate in the scene viewer's renderer menu as **TumbleView**. The name is
+spelled three times and the three must agree: the entry's `menulabel`,
+`displayName` in `src/delegate/cpp/plugInfo.json.in`, and the name
+`delegate.cpp` registers the implicit-surface scene index under (Hydra
+matches scene-index plugins by display name, so a mismatch silently drops
+cubes and spheres from the frame). The plugin type,
+`HdThPlayblastRendererPlugin`, is what husk's `-R` and farm jobs name and
+does not change with it. `tests/test_viewport_renderer.py` holds the three
+together. Houdini merges every
+`UsdRenderers.json` on `HOUDINI_PATH`; the keys it reads (libHUSD) are
+`valid`, `menulabel`, `menupriority`, `needsdepth`, `needsselection`,
+`depthstyle`, `defaultpurposes`, `allowbackgroundupdate`, `pauseonupdate`,
+`aovsupport`, `drawmodesupport`, `showhydraprocedurals`,
+`showinviewportmenu`, `destroyifdeactivated` and `preloadlibraries`. Ours:
+`depthstyle "opengl"` (the core writes NDC depth in [0, 1]),
+`needsselection` (Houdini draws the outline from the primId/instanceId
+AOVs, over a transparent background), guides and proxies by default.
+
+The viewer reads the AOVs through `HUSD_RenderBuffer::map()`, CPU memory, so
+the buffers stay host buffers. It sets `houdini:viewport` (bool) among the
+render settings; husk does not (`TH_PLAYBLAST_SETTINGS=1` prints what a host
+set). That decides `th:interactive`'s default:
+
+- **Off (husk, farm):** `ThRenderPass::_ExecuteNow`, synchronous as before.
+- **On (viewer):** `_ExecuteInBackground`. The pass keys a frame on size,
+  view, projection, settings, render tags, the delegate's edit count and the
+  buffers' identity and allocation generation. A changed key stops the
+  background frame (`ThRenderThread::Stop`), gathers a `_Job` (views plus
+  owned copies of what they point to) and starts a new one; `IsConverged` is
+  false until that request's final frame is published. Every prim `Sync` and
+  every `Destroy*` calls `_Workers::Edited()` first, which bumps the edit
+  count and stops all background frames, so no frame reads a prim while
+  Hydra changes it (HdEmbree's rule). Frames serialise on the shared
+  geometry cache through `cacheMutex`.
+- **Cancellation** goes through `th_render_ids(..., cancel)`: the Rust side
+  installs a thread-local `cancel::Token` for the call, the rasteriser
+  checks it between band batches and inside the pool, the post pass skips
+  occlusion, and a cancelled call returns `TH_CANCELLED` (3) without
+  writing the caller's buffers.
+- **Ids:** `th_render_ids` also writes, per pixel, the index of the caller's
+  mesh and the instance seen by sample 0 of the first layer (-1 for none),
+  remapped past the views `th_render` skips; the shim maps them to Hydra's
+  primId and (for instanced meshes) instanceId. The shim asks for ids only
+  when a primId or instanceId buffer is bound (the viewer's picking), so a
+  husk or farm frame does not pay for them. The GPU path makes them too: a
+  second pass over the first layer's draws writes mesh and
+  instance into an `Rg32Sint` target with its own depth test, in the same
+  order as the scene pass, so it keeps the same surface. (A third target
+  on the scene pass would exceed the 32 bytes a sample wgpu allows.)
+- **Cusp normals** are kept in the delegate's `ThCache` (`normals.rs`)
+  for meshes with a key, while the key's version and the point and
+  triangle arrays stay the same; the misses are worked out a mesh at a time
+  across the pool's threads, and meshes a call does not draw are let go.
+  A draft of a still scene then no longer pays for them.
+
+`TH_PLAYBLAST_TIMING=1` logs each viewer frame (`viewport draft|frame WxH,
+N samples + AO, M meshes: X ms`) and the core's cusp normals (`N meshes
+worked out, M kept`).
+
+The viewer's render stats (Display Options) come from
+`ThRenderDelegate::GetRenderStats`: `rendererName` (TumbleView), and as
+`rendererStage` one line about the last frame put in the buffers (full or
+draft, samples, meshes, triangles, and for subdivision surfaces the refine
+level asked and drawn), with each value under its own key too.
+
+### hdThPlayblast: subdivision surfaces
+
+A mesh whose scheme is `catmullClark` or `loop` (USD's fallback is
+`catmullClark`) is drawn refined; `none` and `bilinear` (what implicit
+cubes become) are polygonal and drawn as authored. `delegate.cpp`
+(Subdivision) refines uniformly with OpenSubdiv 3.7 through USD's
+`PxOsdRefinerFactory`, which reads the scheme, creases, corners, holes and
+boundary rules from the topology as Storm does, and draws the last level's
+faces. Display colour and uvs are carried down at their own rate (uniform,
+vertex, varying; each face-varying primvar is a channel of its own, its
+indices the channel's topology). Authored normals are the cage's, so a
+refined mesh drops them and the core smooths its own. The Windows build
+links OpenSubdiv's static `libosdCPU_md.lib` from Houdini's dsolib; Linux
+and macOS take its symbols from the shared library Houdini has loaded.
+
+How far it is refined:
+
+- **Asked:** `HdDisplayStyle::refineLevel`. The viewer's Level of Detail
+  sets it (Level of Detail 1 asks for 0, the cage), and husk's
+  `--complexity` (measured on 22.0.368: `low` 0, `medium` 2, `high` 4,
+  `veryhigh`, the default, 8). `_kMostRefinedFaces` (16 M faces a mesh)
+  lowers it for a dense cage.
+- **Drawn, in Houdini's viewer** (`houdini:viewport`): the level asked, as
+  Storm draws it.
+- **Drawn, in husk:** no further than the frame shows,
+  `ThMesh::ScreenLevel`: the levels that bring the cage's mean edge length
+  down to `_kRefinedEdgePixels` (2) at the view depth of its bounds'
+  nearest corner (the near plane where it crosses it), through the pass's
+  projection and buffer size; 0 when every corner of its bounds is beyond
+  one side of the frame (with a 25 % margin for blur) or in front of the
+  near plane; for an instanced mesh, its nearest instance in view. Never
+  past the level asked. Level 8 refined a 10-face grid into 1.2 M triangles
+  and a 50 k-face character to the face cap; screen-sized, the smoke's cube
+  draws at level 6, lit, 3 of 19,200 pixels more than 8/255 apart from it
+  at level 8.
+
+The level depends on the camera, and a still mesh is not synced again when
+only the camera moves, so the pass picks it as it draws:
+`ThRenderPass::_SizeRefinement` runs before gathering on both paths,
+works out each drawn subdivision surface's level, and rebuilds the ones
+whose level changed (`ThMesh::Resize`) through
+`HdRenderIndex::GetSceneDelegateForRprim`, several at once
+(`WorkParallelForN`, as Hydra syncs them), after `_Workers::Edited()`.
+`Sync` itself rebuilds a mesh at the level last picked for it (the cage
+until a pass has picked one), and a new refine level asked only records
+it. A points-only update refines the new points at the mesh's level and
+measures its cage again. `TH_PLAYBLAST_TIMING=1` ends each husk frame's
+line with `refine level N, drawn at M` (the highest drawn).
+
+`.ci/smoke_delegate.py` checks it through husk: the Catmull-Clark cube
+refined at the default complexity and drawn as its cage at `low`; random
+grids that refining must not change (flat Catmull-Clark lattices, uniform
+and face-varying colours, holes; polygonal schemes never refined); random
+cubes whose drawn level follows the frame (lit, the picture the full
+level draws but for a few edge pixels; four times the focal length,
+two levels more; four times as deep, two less; scene units scaled with the
+camera, the same; out of view, none; an instancer, its nearest copy in
+view; square to the camera, edges of at most two pixels); and, with a
+RenderSettings prim setting `houdini:viewport`, the level asked on either
+path. Mutation-checked: each of the sizing's parts, broken, fails one.
 
 ## The package manifest
 

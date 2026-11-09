@@ -278,9 +278,12 @@ Farm renders turn each layer into a USD render pass with holdouts
 and layered playblasts split by it. It is inherited like any property and merged key by key: a
 pattern set on the project (or a sequence) holds for every shot under it,
 a shot sets or replaces patterns channel by channel, and a pattern of `""`
-drops that channel's layer on the shot. No migration adds it; add it with
-the Config Editor's **Add Field** (then change the field's type to
-object). `th::playblast`'s **Render Layers** reads it
+drops that channel's layer on the shot. No migration adds it; set it, with
+the channels, in the Entity Editor's
+[Layers column](asset-browser/entity-editor.md#render-layers) on a shot or
+sequence, which writes only what differs from what is inherited. A
+project-wide default is the Config Editor's **Add Field** on the project
+(then change the field's type to object). `th::playblast`'s **Render Layers** reads it
 ([Layered playblasts](nodes/lighting-and-rendering.md#layered-playblasts)).
 
 ### Departments

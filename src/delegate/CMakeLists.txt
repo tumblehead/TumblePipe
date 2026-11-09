@@ -121,7 +121,7 @@ if(APPLE)
     target_link_options(hdThPlayblast PRIVATE -undefined dynamic_lookup)
 elseif(WIN32)
     set(_hfs_usd_libdir "${HFS}/custom/houdini/dsolib")
-    foreach(_usdlib arch tf gf vt sdf hf hd hdsi hio trace work plug python)
+    foreach(_usdlib arch tf gf vt sdf hf hd hdsi hio pxOsd trace work plug python)
         find_library(HFS_PXR_${_usdlib}
             NAMES libpxr_${_usdlib} pxr_${_usdlib}
             HINTS "${_hfs_usd_libdir}"
@@ -133,6 +133,18 @@ elseif(WIN32)
         endif()
         target_link_libraries(hdThPlayblast PRIVATE "${HFS_PXR_${_usdlib}}")
     endforeach()
+
+    # OpenSubdiv (subdivision surfaces, cpp/delegate.cpp): a static library
+    # on Windows, linked into pxOsd too. Elsewhere its symbols come from the
+    # shared library Houdini has loaded, as the pxr ones do.
+    find_library(HFS_OSD_CPU
+        NAMES libosdCPU_md osdCPU
+        HINTS "${_hfs_usd_libdir}"
+        NO_DEFAULT_PATH)
+    if(NOT HFS_OSD_CPU)
+        message(FATAL_ERROR "Could not find OpenSubdiv's libosdCPU_md under ${_hfs_usd_libdir}.")
+    endif()
+    target_link_libraries(hdThPlayblast PRIVATE "${HFS_OSD_CPU}")
 
     find_library(HFS_PYTHON
         NAMES python313

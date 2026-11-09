@@ -14,6 +14,8 @@ a bare pane (only what the section builder touches) and pins:
      under viewport, Light / Samples / Materials under karma. With Renderer
      per entity every row shows, each label naming its renderer, under a
      line saying why (greyed-out rows read as locked, 2026-11).
+  5. The viewport renderer shows as TumbleView and reads back as
+     ``viewport``, the name looks and jobs keep.
 
 Run (no Houdini, no project):
     QT_QPA_PLATFORM=offscreen TUMBLETROVE_PYTHON=<tumbletrove>/python \\
@@ -142,6 +144,12 @@ def main() -> int:
               and all(('(' in text) == mixed for text in labels('viewport') + labels('karma')),
               f"{labels('viewport') + labels('karma')}")
 
+    # 5. The renderer shows as TumbleView and stays 'viewport' in looks and jobs
+    renderer.seed('viewport')
+    check("Renderer viewport shows as TumbleView and reads back as viewport",
+          renderer.widget.currentText() == 'TumbleView' and renderer.value() == 'viewport',
+          f"{renderer.widget.currentText()!r} -> {renderer.value()!r}")
+
     shot = os.environ.get('PLAYBLAST_SECTION_SCREENSHOT')
     if shot:
         box.resize(520, box.sizeHint().height())
@@ -150,7 +158,7 @@ def main() -> int:
             pane._scope_playblast_look()
             box.grab().save(shot.replace('.png', f'_{chosen}.png'))
 
-    total = 1 + 3 + 3 + 6
+    total = 1 + 3 + 3 + 6 + 1
     print(f"\n{total - len(FAILED)}/{total} checks passed")
     return 1 if FAILED else 0
 

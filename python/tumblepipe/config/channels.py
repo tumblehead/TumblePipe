@@ -34,8 +34,11 @@ everything that reads a channel *out of published data* accepts both
 spellings, through that function, while every writer emits only ``channel``.
 """
 
+import re
+
 from tumblepipe.api import api
 from tumblepipe.config.entities import get_entity_type  # noqa: F401  (re-export)
+from tumblepipe.naming import is_valid_entity_name
 from tumblepipe.util.uri import Uri
 
 DEFAULT_CHANNEL = 'default'
@@ -212,9 +215,103 @@ def remove_channel(entity_uri: Uri, channel_name: str) -> None:
 #: render's collapse may run.
 #: Inherited like every entity property and deep-merged, so a project-level
 #: value is every shot's default and a shot overrides it channel by channel
-#: (``""`` drops a channel's layer: blank patterns are ignored). Set it in the Config Editor
-#: (Add Field on the entity's properties); nothing writes it for you.
+#: (``""`` drops a channel's layer: blank patterns are ignored). Set in the
+#: Entity Editor's Layers column on the Shots tab (with ``channels``), which
+#: writes only what differs from what a shot inherits.
 CHANNEL_PRIMS_PROPERTY = 'channel_prims'
+
+
+#: Prim pattern syntax only Houdini's ``hou.LopSelectionRule`` expands
+#: (``%type:Mesh``, ``{...}``, ``@``, ``<...>``). A render's collapse may run
+#: where Houdini is not (the submit runner), so ``channel_prims`` refuses it.
+HOUDINI_ONLY_SYNTAX = re.compile(r'[%{}@<>]')
+
+
+def _component_regex(component: str) -> str:
+    out = []
+    i = 0
+    while i < len(component):
+        char = component[i]
+        if char == '*':
+            out.append('[^/]*')
+        elif char == '?':
+            out.append('[^/]')
+        elif char == '[':
+            end = component.find(']', i + 1)
+            if end == -1:
+                out.append(re.escape(char))
+            else:
+                out.append('[' + component[i + 1:end].replace('\\', '\\\\') + ']')
+                i = end
+        else:
+            out.append(re.escape(char))
+        i += 1
+    return ''.join(out)
+
+
+def prim_glob_regex(token: str) -> re.Pattern:
+    """``token`` (an absolute path glob) as a regex over prim paths: what
+    farm renders match ``channel_prims`` with outside Houdini
+    (``pipe.usd.render_passes.glob_expand``) and what
+    :func:`prim_pattern_problem` checks. ``**`` is one or more levels,
+    wherever it stands, as in Houdini: ``/SET/**`` is what is under
+    ``/SET``, and ``/*/**/*`` does not match ``/SET/tree`` (checked against
+    ``hou.LopSelectionRule``, 22.0.368). ValueError when it is not one."""
+    if not token.startswith('/'):
+        raise ValueError(
+            f'prim pattern {token!r} is not an absolute path; outside Houdini '
+            f'only absolute paths and globs (/CHAR/*, /SET/**) are understood'
+        )
+    parts = []
+    for component in (c for c in token.split('/') if c):
+        if component == '**':
+            parts.append('(?:/[^/]+)+')
+        else:
+            parts.append('/' + _component_regex(component))
+    try:
+        return re.compile('^' + ''.join(parts) + '$')
+    except re.error as exc:
+        raise ValueError(
+            f'prim pattern {token!r} has a [...] set that is not one '
+            f'([01], [a-z]): {exc}'
+        ) from exc
+
+
+def prim_pattern_problem(pattern: str) -> str:
+    """Why ``pattern`` cannot be a ``channel_prims`` value, or ''. Blank is
+    fine (no pattern). Every token is an absolute path or glob, ``^`` (or
+    ``-``) before one removing its matches, separated by spaces."""
+    text = (pattern or '').strip()
+    if not text:
+        return ''
+    if HOUDINI_ONLY_SYNTAX.search(text):
+        return (
+            f'"{text}" uses Houdini-only syntax; render layers take plain prim '
+            'paths and globs (/CHAR/*, /SET/**, ^/SET/sky)'
+        )
+    for token in text.split():
+        path = token[1:] if token[0] in '^-' else token
+        if not path.startswith('/'):
+            return f'"{token}" is not a prim path; start it with / (/CHAR/*)'
+        if ',' in path or ';' in path:
+            return (
+                f'"{token}": separate prim patterns with spaces, not commas'
+            )
+        try:
+            prim_glob_regex(path)
+        except ValueError:
+            return f'"{token}" has a [...] set that is not one; write [01] or [a-z]'
+    return ''
+
+
+def channel_name_problem(name: str) -> str:
+    """Why ``name`` cannot name a new channel, or '': the entity name rule,
+    letters and digits."""
+    if not name:
+        return 'No channel name'
+    if not is_valid_entity_name(name):
+        return f"Channel name '{name}' may only use letters and digits"
+    return ''
 
 
 def read_channel_prims(properties) -> dict[str, str]:

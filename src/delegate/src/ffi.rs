@@ -6,7 +6,8 @@ use crate::composite::Shading;
 use crate::blur::{self, Blur, Lens};
 use crate::raster::{self, Frame, Mesh, MeshKey};
 use crate::texture::Texture;
-use crate::{ffi_guard, TH_ERR_ARGS, TH_OK};
+use crate::{ffi_guard, TH_CANCELLED, TH_ERR_ARGS, TH_OK};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::slice;
 
 /// One image of a texture set: `tile` is the UDIM number, 0 for a plain
@@ -62,12 +63,15 @@ pub struct ThMeshView {
     pub transform_key_count: u32,
 }
 
-/// What a render delegate keeps between frames: on the GPU path, its meshes'
-/// geometry and its textures on the card ([`crate::gpu::Cache`]). One per
+/// What a render delegate keeps between frames: its meshes' cusp normals
+/// ([`crate::normals`]) and, on the GPU path, its meshes' geometry and its
+/// textures on the card ([`crate::gpu::Cache`]). One per
 /// delegate, freed with it, so a closed render session gives its memory
 /// back.
 #[derive(Default)]
 pub struct ThCache {
+    /// Cusp normals of keyed polygonal meshes ([`crate::normals`]).
+    pub(crate) normals: std::sync::Mutex<crate::normals::Cache>,
     #[cfg(feature = "gpu")]
     pub(crate) gpu: crate::gpu::Cache,
 }
@@ -119,7 +123,9 @@ fn gpu_requested() -> bool {
 /// The GPU path when it was asked for and works, else the CPU one. A GPU
 /// failure is reported (once) and the frame drawn on the CPU instead, so a
 /// worker without a usable GPU still finishes the playblast.
-fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&ThCache>) -> raster::Image {
+/// `ids`: the caller wants the picking ids (the CPU path always makes
+/// them; the GPU path only when asked, with an extra pass).
+fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&ThCache>, ids: bool) -> raster::Image {
     // A check for a new GPU or driver: TH_PLAYBLAST_COMPARE=1 draws every
     // mesh alone, small, both ways and reports the meshes whose pictures
     // differ. On HideAndReek/010 (RTX 3070) the only one is a set mesh whose
@@ -129,7 +135,7 @@ fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&ThCache>) -> raster::Im
         let small = Frame { width: 320, height: 180, samples: 1, blur: Blur::OFF, ..*frame };
         for (i, m) in meshes.iter().enumerate() {
             let one = std::slice::from_ref(m);
-            let (cpu, gpu) = (raster::render(&small, one), crate::gpu::render(&small, one, None));
+            let (cpu, gpu) = (raster::render(&small, one), crate::gpu::render(&small, one, None, false));
             let gpu = match gpu { Ok(g) => g, Err(e) => { eprintln!("mesh {i}: GPU error {e}"); continue } };
             let cov = |d: &[f32]| d.iter().filter(|&&z| z < 1.0).count();
             let diff = cpu.color.iter().zip(&gpu.color).filter(|(a, b)| (0..3).any(|c| (a[c] - b[c]).abs() > 0.02)).count();
@@ -146,7 +152,7 @@ fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&ThCache>) -> raster::Im
         use std::sync::atomic::{AtomicBool, Ordering};
         static REPORTED: AtomicBool = AtomicBool::new(false);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::gpu::render(frame, meshes, cache.map(|c| &c.gpu))
+            crate::gpu::render(frame, meshes, cache.map(|c| &c.gpu), ids)
         }));
         let error = match result {
             Ok(Ok(image)) => return image,
@@ -158,7 +164,7 @@ fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&ThCache>) -> raster::Im
         }
     }
     #[cfg(not(feature = "gpu"))]
-    let _ = cache;
+    let _ = (cache, ids);
     raster::render(frame, meshes)
 }
 
@@ -257,7 +263,48 @@ pub unsafe extern "C" fn th_render(
     depth: *mut f32,
     cache: *const ThCache,
 ) -> i32 {
+    render_into(frame, meshes, mesh_count, color, depth, std::ptr::null_mut(), std::ptr::null(), cache)
+}
+
+/// [`th_render`] for a viewport. Also writes `ids` (may be null): per
+/// texel, row 0 at the top, two ints, the index into `meshes` and the
+/// instance (into its transforms) the texel's first sample sees, -1 -1
+/// for none, on the CPU and the GPU path alike.
+/// `cancel` (may be null) is checked while drawing: set it non-zero from
+/// another thread to give the frame up, and the call returns
+/// [`TH_CANCELLED`] having written nothing.
+///
+/// # Safety
+/// As [`th_render`]; `ids` valid for `width * height * 2` ints, `cancel`
+/// for the whole call.
+#[no_mangle]
+pub unsafe extern "C" fn th_render_ids(
+    frame: *const ThFrame,
+    meshes: *const ThMeshView,
+    mesh_count: u32,
+    color: *mut f32,
+    depth: *mut f32,
+    ids: *mut i32,
+    cancel: *const AtomicU32,
+    cache: *const ThCache,
+) -> i32 {
+    render_into(frame, meshes, mesh_count, color, depth, ids, cancel, cache)
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn render_into(
+    frame: *const ThFrame,
+    meshes: *const ThMeshView,
+    mesh_count: u32,
+    color: *mut f32,
+    depth: *mut f32,
+    ids: *mut i32,
+    cancel: *const AtomicU32,
+    cache: *const ThCache,
+) -> i32 {
     ffi_guard(|| {
+        let _scope = crate::cancel::Scope::new(cancel);
+        let cancelled = || !cancel.is_null() && (*cancel).load(Ordering::Relaxed) != 0;
         if frame.is_null() || color.is_null() || (meshes.is_null() && mesh_count > 0) {
             return TH_ERR_ARGS;
         }
@@ -266,22 +313,33 @@ pub unsafe extern "C" fn th_render(
             return TH_ERR_ARGS;
         }
         let views = if mesh_count > 0 { slice::from_raw_parts(meshes, mesh_count as usize) } else { &[] };
-        let views: Vec<&ThMeshView> = views
+        // The views drawn, and where each sits in `meshes` (for `ids`).
+        let (kept, views): (Vec<i32>, Vec<&ThMeshView>) = views
             .iter()
-            .filter(|v| !v.points.is_null() && !v.triangles.is_null() && !v.transforms.is_null())
-            .collect();
+            .enumerate()
+            .filter(|(_, v)| !v.points.is_null() && !v.triangles.is_null() && !v.transforms.is_null())
+            .map(|(i, v)| (i as i32, v))
+            .unzip();
         let points = |v: &ThMeshView| slice::from_raw_parts(v.points as *const Vec3, v.point_count as usize);
         let triangles = |v: &ThMeshView| slice::from_raw_parts(v.triangles as *const [u32; 3], v.triangle_count as usize);
-        // Owned here, borrowed by the meshes below.
+        // Owned here (or by the cache), borrowed by the meshes below.
         let started = std::time::Instant::now();
-        let cusp: Vec<Option<Vec<Vec3>>> = views
+        let requests: Vec<Option<crate::normals::Request>> = views
             .iter()
-            .map(|v| (v.polygonal != 0 && v.corner_normals.is_null())
-                .then(|| raster::cusp_normals(points(v), triangles(v), raster::CUSP_DEGREES)))
+            .map(|v| (v.polygonal != 0 && v.corner_normals.is_null()).then(|| crate::normals::Request {
+                key: (v.key != 0).then_some(MeshKey { id: v.key, version: v.version }),
+                points: points(v),
+                triangles: triangles(v),
+            }))
             .collect();
+        let (cusp, made) = {
+            let mut own = crate::normals::Cache::default();
+            let mut kept = cache.as_ref().map(|c| c.normals.lock().unwrap_or_else(|e| e.into_inner()));
+            kept.as_deref_mut().unwrap_or(&mut own).normals(&requests)
+        };
         if std::env::var_os("TH_PLAYBLAST_TIMING").is_some() {
-            eprintln!("hdThPlayblast: cusp normals {} ms for {} meshes",
-                      started.elapsed().as_millis(), cusp.iter().filter(|c| c.is_some()).count());
+            eprintln!("hdThPlayblast: cusp normals {} ms ({} meshes worked out, {} kept)",
+                      started.elapsed().as_millis(), made.computed, made.kept);
         }
         let mut list = Vec::with_capacity(views.len());
         for (v, cusp) in views.iter().zip(&cusp) {
@@ -324,11 +382,25 @@ pub unsafe extern "C" fn th_render(
             },
             &list,
             cache.as_ref(),
+            !ids.is_null(),
         );
+        if cancelled() {
+            return TH_CANCELLED;
+        }
         let n = f.width as usize * f.height as usize;
         slice::from_raw_parts_mut(color as *mut [f32; 4], n).copy_from_slice(&image.color);
         if !depth.is_null() {
             slice::from_raw_parts_mut(depth, n).copy_from_slice(&image.depth);
+        }
+        if !ids.is_null() {
+            let out = slice::from_raw_parts_mut(ids as *mut [i32; 2], n);
+            if image.ids.len() == n {
+                for (o, &[m, i]) in out.iter_mut().zip(&image.ids) {
+                    *o = if m >= 0 { [kept[m as usize], i] } else { [-1, -1] };
+                }
+            } else {
+                out.fill([-1, -1]);
+            }
         }
         TH_OK
     })
@@ -447,7 +519,7 @@ pub unsafe extern "C" fn th_triangulate(
             return TH_ERR_ARGS;
         }
         let out_c = slice::from_raw_parts_mut(corners, tris.len() * 3);
-        for (dst, t) in out_c.chunks_exact_mut(3).zip(&tris) {
+        for (dst, t) in out_c.as_chunks_mut::<3>().0.iter_mut().zip(&tris) {
             dst.copy_from_slice(t);
         }
         slice::from_raw_parts_mut(faces, fs.len()).copy_from_slice(&fs);

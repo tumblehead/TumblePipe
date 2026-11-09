@@ -227,8 +227,9 @@ would soften their edges.
 ## Render layers (channels)
 
 A render layer is a **channel** of the shot, not a node: add the channel to
-the shot (the entity's `channels` property, via `config/channels.py` or the
-Asset Browser). Then either name its prims in `channel_prims` and let the
+the shot (the entity's `channels` property: the Entity Editor's
+[Layers column](../asset-browser/entity-editor.md#render-layers), or
+`config/channels.py`). Then either name its prims in `channel_prims` and let the
 farm render it as a render pass (below), or in the render workfile branch
 the shot's chain once per channel and end each branch in its own
 [`th::export_layer`](import-and-export.md#thexport_layer-lop) with **Channel**
@@ -246,8 +247,11 @@ before an overlay such as `feathers` (see
 ### Render layers from `channel_prims` (render passes)
 
 The quickest way to split a shot needs no branch and no extra exports:
-add the channel, then name its prims in the shot's `channel_prims` property
-(see [Configuration](../configuration.md), the same map the
+in the [Entity Editor](../asset-browser/entity-editor.md#render-layers)'s
+Shots tab, double-click the shot's (or its sequence's) **Layers** cell, add
+a layer and give it its prims, or type `characters: /CHAR/*` into the cell,
+then Apply. That writes the shot's channels and its `channel_prims`
+property (see [Configuration](../configuration.md), the same map the
 [layered playblasts](#layered-playblasts) read):
 
 ```json
@@ -279,9 +283,16 @@ A channel no department ever exported is a **pass-only** layer: it renders
 the `default` channel's stage and its pass picks the layer out. A channel
 that *was* exported (a branch, as below) keeps rendering its own stage, with
 its pass on top. Outside Houdini (the submit runner, plain-Python farm
-tasks) a pattern is matched as a path glob (`/CHAR/*`, `/SET/**`, `^`
-to exclude); Houdini-only syntax such as `%type:Mesh` is refused there, so
-keep `channel_prims` to paths and globs.
+tasks) a pattern is matched as a path glob (`/CHAR/*`, `/SET/**`,
+`/CHAR/hero[12]`, `^` to exclude); Houdini-only syntax such as
+`%type:Mesh`, and a `[...]` set that is not one (`[]`, `[z-a]`), is refused
+there, so keep `channel_prims` to paths and globs. The Entity Editor's
+Layers column runs the same check, so it never takes a pattern the farm
+would refuse.
+
+Farm Submit's **Channels** menu opens with every layer of such a shot
+checked, `default` (the remainder) included, so the slapcomp is whole
+(see [Farm Submit: Render](../asset-browser/submit-jobs.md#render)).
 
 ### Render layers from branches
 
@@ -298,7 +309,9 @@ by hand with a **Render Geometry Settings** LOP per layer:
 - any further layer (e.g. **feathers**) holds out everything else the same way.
 
 Put `th::mattes` upstream of the branch so every layer carries the same matte
-and ramp AOVs. `th::render_layer_setup` and the *th configure render layer
+and ramp AOVs. Farm Submit's **Channels** menu opens with the branch
+channels checked but not `default`, which would render the whole unsplit
+shot; check it when you want that too. `th::render_layer_setup` and the *th configure render layer
 matte* recipe were removed in 1.67.0: neither applied its overrides (the HDA's
 internal references pointed at parameters that did not exist).
 
@@ -493,7 +506,7 @@ Source: [`otls/lop_th.mesh_outline.1.0`](../../otls/lop_th.mesh_outline.1.0/th_8
 Playblast the stage through the pipeline's playblast folders. Tab menu
 `_TumblePipe/pipeline`; feed it the stage to preview. **Playblast** caches
 the stage to a temporary USD, renders one JPG per frame with the chosen
-camera (through the farm's viewport renderer with husk, or Houdini's
+camera (through TumbleView, the farm's viewport renderer, with husk, or Houdini's
 flipbook ROP: **Renderer**), encodes an MP4 and copies it to the
 next `render:/playblast/<shot>/<department>/<sequence>_<shot>_<department>_v####.mp4` **and** the shot's
 rolling daily. How this compares with a farm playblast is in
@@ -506,23 +519,23 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 | Entity | `from_context` | The shot — the shared Entity button (shots only, *Select Shot*), as on `th::import_shot`; the label beside it shows what `from_context` resolved to |
 | Department | `from_context` | `from_context` (the workfile's department) or one of the shot's **renderable** departments |
 | Camera | first camera | The cameras in the input stage: under `/cameras` or `/scene/cameras`, else anywhere on the stage. Left empty it is the first one, the camera the menu shows |
-| Renderer | Viewport (hdThPlayblast) | **Viewport**: the farm playblast's renderer (hdThPlayblast) run with husk, the same look as a farm playblast, with a progress bar that stops husk when cancelled. **Houdini GL**: Houdini's flipbook, exactly as the viewport draws (hair, curves and volumes too). Existing nodes take the default, Viewport |
-| Shading | Lit | Viewport renderer only: Lit, Clay, Albedo or Occlusion, as in the farm dialog |
+| Renderer | TumbleView | **TumbleView**: the farm playblast's renderer (hdThPlayblast) run with husk, the same look as a farm playblast, with a progress bar that stops husk when cancelled. **Houdini GL**: Houdini's flipbook, exactly as the viewport draws (hair, curves and volumes too). Existing nodes take the default, TumbleView |
+| Shading | Lit | TumbleView only: Lit, Clay, Albedo or Occlusion, as in the farm dialog |
 | Shading Mode, Lighting | Smooth Shaded, Headlight Only | Houdini GL only: viewport look of the flipbook |
 | Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**) |
 | Resolution | the shot's render resolution | An expression: the shot's `render.resolution`, so the playblast has the render's frame; `1280 720` while no shot resolves. Type over it for your own size; Revert to Defaults brings the shot's back. A node made before 1.85 keeps the size it had |
-| Motion Blur, Depth of Field, Blur Samples | off, off, 16 | Blurs from the camera's Shutter Open/Close and its F-Stop and Focus Distance: the viewport renderer's, or the flipbook's own under Houdini GL; Blur Samples is how many images each frame averages |
-| Render Layers | off | Viewport renderer only: also write one movie per render layer, see [Layered playblasts](#layered-playblasts) |
+| Motion Blur, Depth of Field, Blur Samples | off, off, 16 | Blurs from the camera's Shutter Open/Close and its F-Stop and Focus Distance: TumbleView's, or the flipbook's own under Houdini GL; Blur Samples is how many images each frame averages |
+| Render Layers | off | TumbleView only: also write one movie per render layer, see [Layered playblasts](#layered-playblasts) |
 | Playblast | | Render, encode and publish |
 | View latest | | Open the newest MP4 for this shot and department (a message if there is none) |
 | Browse All | | Open the playblast folder |
 
 Gotchas:
 
-- The viewport renderer draws meshes (and USD shapes) only: hair, curves,
+- TumbleView draws meshes (and USD shapes) only: hair, curves,
   points and volumes are left out, as on the farm. Switch **Renderer** to
   Houdini GL when the preview needs them.
-- The viewport renderer always draws over its grey backdrop unless
+- TumbleView always draws over its grey backdrop unless
   `TH_PLAYBLAST_ALPHA=1` (or the render setting `th:alpha`) asks for a
   transparent background: alpha is then each pixel's coverage. What the
   frames hold then (premultiplied in EXR, straight in display space in PNG)
@@ -569,9 +582,10 @@ Animation movies, lossless with alpha (H.264 has no alpha). The
 timeline that can be hidden.
 
 Which prims a layer holds comes from the shot's `channel_prims` config
-property, a channel → prim pattern map set in the Config Editor (Add Field,
-type object) on the shot or, for every shot under it, on the project or a
-sequence. It merges channel by channel down the tree: a shot can replace one
+property, a channel → prim pattern map set in the Entity Editor's
+[Layers column](../asset-browser/entity-editor.md#render-layers) on the
+shot or, for every shot under it, on its sequence (or on the project in the
+Config Editor). It merges channel by channel down the tree: a shot can replace one
 channel's pattern, or drop it with `""`, and keep the rest:
 
 ```json

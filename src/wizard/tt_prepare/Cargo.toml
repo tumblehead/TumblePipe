@@ -2,7 +2,7 @@
 name = "tt_prepare"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.95"
 description = "TumblePipe launch-time _config migrator (the tt_prepare package hook)"
 license = "Apache-2.0"
 publish = false
@@ -19,12 +19,20 @@ th_project_core = { path = "../core" }
 # The desktop does not put package-declared [runtime] vars into a hook's
 # environment, so the project path is read back out of the project's own
 # hpm.toml (under $TT_PROJECT_DIR) when TH_PROJECT_PATH is absent.
-toml = "0.8"
+toml = "1.2"
 # The migration UI. Same stack as tt_setup so the two apps look alike, but the
 # window is only ever created when a project actually has something pending —
 # the common launch reads one small file and exits before egui is touched.
-eframe = { version = "0.28", default-features = false, features = ["glow", "default_fonts"] }
-egui = "0.28"
+eframe = { version = "0.37", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+egui = "0.37"
 
 [dev-dependencies]
 tempfile = "3"
+
+# eframe 0.37 turns winit's defaults off, which left Linux with no window
+# backend at all ("platform not supported by winit"; v1.97.0's Linux build).
+# x11 + wayland above name the backends; wayland-dlopen loads libwayland at
+# run time, as 0.28's winit defaults did, so building needs no wayland dev
+# package and a machine without Wayland still starts on X11.
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "0.30", default-features = false, features = ["wayland-dlopen"] }

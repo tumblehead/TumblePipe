@@ -85,6 +85,11 @@ pub struct Image {
     pub color: Vec<[f32; 4]>,
     /// Normalised device depth in [0, 1], 1 = far / nothing drawn.
     pub depth: Vec<f32>,
+    /// Per pixel, the mesh and instance (indices into the meshes rendered
+    /// and their transforms) whose surface the pixel's first sample sees,
+    /// [-1, -1] where it sees none: what a viewport picks and highlights
+    /// by. Empty when the path does not record them (the GPU path).
+    pub ids: Vec<[i32; 2]>,
 }
 
 pub(crate) fn srgb_to_linear(v: f32) -> f32 {
@@ -265,6 +270,8 @@ struct Band<'a> {
     albedo: Vec<&'a mut [[f32; 4]]>,
     normal: Vec<&'a mut [[f32; 4]]>,
     depth: Vec<&'a mut [f32]>,
+    /// The first layer's ids ([`Samples::ids`]), in the pass that draws it.
+    ids: Option<&'a mut [[i32; 2]]>,
 }
 
 struct Raster<'a> {
@@ -295,7 +302,7 @@ impl Raster<'_> {
         c.color
     }
 
-    fn draw(&self, band: &mut Band, mesh: &Mesh, poly: &[Corner]) {
+    fn draw(&self, band: &mut Band, mesh: &Mesh, poly: &[Corner], id: [i32; 2]) {
         let rows = band.depth[0].len() / self.width;
         let (w, h) = (self.width as f32, self.height as f32);
         let [ox_lo, ox_hi, oy_lo, oy_hi] = self.spread;
@@ -381,13 +388,18 @@ impl Raster<'_> {
                         band.depth[k][at] = z;
                         band.albedo[k][at] = [rgb[0], rgb[1], rgb[2], 1.0];
                         band.normal[k][at] = self.view.buffer_normal(c.normal, c.world);
+                        if k == 0 {
+                            if let Some(ids) = band.ids.as_deref_mut() {
+                                ids[at] = id;
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    fn draw_triangle(&self, band: &mut Band, inst: &Inst, t: usize) {
+    fn draw_triangle(&self, band: &mut Band, inst: &Inst, t: usize, id: [i32; 2]) {
         let mesh = &self.meshes[inst.mesh];
         let vi = mesh.triangles[t].map(|i| i as usize);
         let per_corner_normals = mesh.corner_normals.is_some();
@@ -400,7 +412,7 @@ impl Raster<'_> {
         };
         let poly = clip_near([corner(0), corner(1), corner(2)]);
         if poly.len() >= 3 {
-            self.draw(band, mesh, &poly);
+            self.draw(band, mesh, &poly, id);
         }
     }
 }
@@ -815,8 +827,9 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
     let still = |m: usize| shared.on && (!motion || !blur::moves(&meshes[m]));
     let same_clip = shared.same_clip;
 
+    let cancel = crate::cancel::Token::current();
     let mut start = 0;
-    while start < jobs.len() {
+    while start < jobs.len() && !cancel.is_set() {
         // Batches of instances under the budget.
         let mut end = start;
         let mut verts = 0;
@@ -941,6 +954,7 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
                 .map(|l| l.chunks_mut(band_rows * w)).collect();
             let mut depth: Vec<_> = samples.depth.chunks_mut(plane).skip(layers.start).take(layers.len())
                 .map(|l| l.chunks_mut(band_rows * w)).collect();
+            let mut ids = (layers.start == 0).then(|| samples.ids.chunks_mut(band_rows * w));
             let bands: Vec<(Band, &[(u32, u32)])> = bins
                 .iter()
                 .enumerate()
@@ -950,16 +964,21 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<Vec<Vec3>>],
                         albedo: albedo.iter_mut().map(|l| l.next().expect("a band in every layer")).collect(),
                         normal: normal.iter_mut().map(|l| l.next().expect("a band in every layer")).collect(),
                         depth: depth.iter_mut().map(|l| l.next().expect("a band in every layer")).collect(),
+                        ids: ids.as_mut().and_then(|l| l.next()),
                     };
                     (band, &bin[..])
                 })
                 .collect();
             let queue = Mutex::new(bands);
+            let job_ids: Vec<[i32; 2]> = batch.clone().map(|j| [jobs[j].0 as i32, jobs[j].1 as i32]).collect();
             pool::each_thread(&|| loop {
+                if cancel.is_set() {
+                    break;
+                }
                 let item = queue.lock().unwrap().pop();
                 let Some((mut band, triangles)) = item else { break };
                 for &(inst, t) in triangles {
-                    raster.draw_triangle(&mut band, &instances[inst as usize], t as usize);
+                    raster.draw_triangle(&mut band, &instances[inst as usize], t as usize, job_ids[inst as usize]);
                 }
             });
             transforming += t1 - t0;

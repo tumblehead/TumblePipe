@@ -207,6 +207,64 @@ def _create_validation_task(
     )
 
 
+def _create_rig_validation_task(asset_uri: Uri, export_node, channel: str) -> ProcessTask:
+    """Validate the character an export_rig node is about to write.
+
+    A rig publishes SOP geometry, not a stage, so it has its own checks
+    (``validators.rig``): the Main control's viz is off (error) and big shapes
+    carry normals (warning). The character is the export_rig node's input.
+
+    Unlike the stage validation this one is on by default and shows its
+    dialog for warnings too: both checks are about what every shot that loads
+    the rig gets, and a logged warning nobody reads changes nothing. The
+    artist can still Continue past it. export_rig is local-only, so there is
+    no farm path.
+    """
+    def validate_local_fn():
+        from tumblepipe.pipe.houdini.validators import validate_rig_character
+        from .validation_dialog import ValidationConfirmDialog, ValidationCancelled
+        import hou
+
+        source = export_node.native().input(0)
+        geo = source.geometry() if source is not None else None
+        result = validate_rig_character(geo)
+        if not result.issues:
+            return
+        logger.warning(
+            "Rig validation for %s (%s):\n%s",
+            _uri_name(asset_uri), channel, result.format_message(),
+        )
+
+        if _validation_session.has_remembered_choice():
+            if _validation_session.get_remembered_choice() == ValidationSession.CONTINUE:
+                return
+            raise ValidationCancelled("Export cancelled by user")
+
+        dialog = ValidationConfirmDialog(
+            validation_result=result,
+            department='rig',
+            entity_name=_uri_name(asset_uri),
+            parent=hou.qt.mainWindow()
+        )
+        dialog.exec_()
+        if dialog.remember_choice:
+            _validation_session.set_remembered_choice(dialog.user_choice)
+        if dialog.user_choice != ValidationConfirmDialog.CONTINUE:
+            raise ValidationCancelled("Export cancelled by user")
+
+    return ProcessTask(
+        id=str(uuid.uuid4()),
+        uri=asset_uri,
+        department='rig',
+        task_type='validate',
+        description=f"Validate rig: {_uri_name(asset_uri)}",
+        execute_local=validate_local_fn,
+        execute_farm=None,  # export_rig is local-only
+        channel=channel,
+        status=TaskStatus.PENDING,
+    )
+
+
 def _create_export_group_task(
     entity_uri: Uri,
     department: str,

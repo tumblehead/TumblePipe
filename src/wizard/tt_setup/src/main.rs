@@ -291,7 +291,9 @@ impl WizardApp {
 }
 
 impl eframe::App for WizardApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        let ctx = &ctx;
         // Error modal takes precedence and keeps the user on the page after a
         // failed scaffold.
         if let Some(message) = self.error.clone() {
@@ -311,7 +313,7 @@ impl eframe::App for WizardApp {
         let modal_open = self.error.is_some();
         let plan = self.plan();
 
-        egui::TopBottomPanel::bottom("buttons").show(ctx, |ui| {
+        egui::Panel::bottom("buttons").show(ui, |ui| {
             ui.add_enabled_ui(!modal_open, |ui| {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -335,7 +337,7 @@ impl eframe::App for WizardApp {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_enabled_ui(!modal_open, |ui| self.ui_page(ui, plan.as_ref()));
             });

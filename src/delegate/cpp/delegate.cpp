@@ -29,14 +29,17 @@
 #include <pxr/base/gf/matrix4d.h>
 #include <pxr/base/gf/quatf.h>
 #include <pxr/base/gf/quath.h>
+#include <pxr/base/gf/range3d.h>
 #include <pxr/base/gf/rotation.h>
 #include <pxr/base/gf/vec2f.h>
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec3i.h>
+#include <pxr/base/gf/vec4d.h>
 #include <pxr/base/gf/vec4f.h>
 #include <pxr/base/tf/diagnostic.h>
 #include <pxr/base/tf/stringUtils.h>
 #include <pxr/base/vt/array.h>
+#include <pxr/base/work/loops.h>
 #include <pxr/imaging/hd/aov.h>
 #include <pxr/imaging/hd/camera.h>
 #include <pxr/imaging/hd/changeTracker.h>
@@ -61,22 +64,29 @@
 #include <pxr/imaging/hd/tokens.h>
 #include <pxr/imaging/hdsi/implicitSurfaceSceneIndex.h>
 #include <pxr/imaging/hio/image.h>
+#include <pxr/imaging/pxOsd/refinerFactory.h>
 #include <pxr/usd/sdf/assetPath.h>
+
+#include <opensubdiv/far/primvarRefiner.h>
+#include <opensubdiv/far/topologyRefiner.h>
 
 #include <algorithm>
 #include <cstring>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <unordered_map>
 #include <vector>
@@ -142,6 +152,25 @@ TfToken const _tokAlpha("th:alpha");
 // camera's shutter is held to that window.
 float const _motionWindow = 1.0f;
 
+// Draw on a background thread and return from Execute at once, as a
+// viewport needs; unset, TH_PLAYBLAST_INTERACTIVE, else on in Houdini's
+// scene viewer (which sets houdini:viewport; husk does not), off elsewhere.
+TfToken const _tokInteractive("th:interactive");
+TfToken const _tokHoudiniViewport("houdini:viewport");
+
+// Whether a setting is there and not false, zero or empty.
+bool _Truthy(VtValue const& value)
+{
+    if (value.IsEmpty()) return false;
+    if (value.IsHolding<bool>()) return value.UncheckedGet<bool>();
+    if (value.IsHolding<int>()) return value.UncheckedGet<int>() != 0;
+    if (value.IsHolding<int64_t>()) return value.UncheckedGet<int64_t>() != 0;
+    if (value.IsHolding<double>()) return value.UncheckedGet<double>() != 0.0;
+    if (value.IsHolding<float>()) return value.UncheckedGet<float>() != 0.0f;
+    std::string const s = TfStringToLower(TfStringTrim(_SettingString(value)));
+    return !(s.empty() || s == "0" || s == "false" || s == "off");
+}
+
 // An on/off setting: a bool or int render setting, else `env` set to 1,
 // true or on.
 bool _SettingOn(VtValue const& value, char const* env)
@@ -150,6 +179,19 @@ bool _SettingOn(VtValue const& value, char const* env)
     if (value.IsHolding<int>()) return value.UncheckedGet<int>() != 0;
     std::string const s = _EnvLower(env);
     return s == "1" || s == "true" || s == "on";
+}
+
+// An on/off setting with a default: a bool or int render setting, else
+// `env` when set (1, true or on), else `fallback`.
+bool _SettingOr(VtValue const& value, char const* env, bool fallback)
+{
+    if (value.IsHolding<bool>()) return value.UncheckedGet<bool>();
+    if (value.IsHolding<int>()) return value.UncheckedGet<int>() != 0;
+    if (std::getenv(env)) {
+        std::string const s = _EnvLower(env);
+        return s == "1" || s == "true" || s == "on";
+    }
+    return fallback;
 }
 
 // A positive number: the render setting, else `env`, else `fallback`.
@@ -163,12 +205,289 @@ double _SettingNumber(VtValue const& value, char const* env, double fallback)
     return v > 0.0 ? v : fallback;
 }
 
+// -----------------------------------------------------------------------------
+// Background rendering, for a viewport
+// -----------------------------------------------------------------------------
+//
+// husk asks for a frame and waits for it; Houdini's scene viewer calls a
+// pass's Execute on its UI thread, and a frame drawn there froze the UI for
+// as long as it took (a 4.5M triangle scene: 355 ms per camera move). So an
+// interactive pass (ThRenderPass) gathers the frame on the calling thread
+// and draws it on a ThRenderThread of its own, returning at once and
+// reporting itself not converged until the frame is in; the viewer keeps
+// calling Execute meanwhile, and each call publishes whatever has finished.
+//
+// The frame borrows the meshes', materials' and instancers' arrays
+// (ThMeshView), so nothing may change them while it is drawn: every prim
+// Sync and Destroy first stops the delegate's background renders
+// (_Workers::Edited), the way HdEmbree's render param stops its render
+// thread before an edit.
+
+// Everything one frame draws: the views and the arrays they point at.
+struct _Job
+{
+    std::vector<ThMeshView> views;
+    std::vector<std::vector<double>> transforms;  // owned; views point in
+    std::vector<std::vector<double>> keys;
+    std::vector<int32_t> primIds;                 // per view: the rprim's
+    std::vector<uint8_t> instanced;               // per view: from an instancer
+    // A primId or instanceId buffer is bound (the viewer's picking). Only
+    // then are ids asked of the core: the GPU path pays a pass for them.
+    bool ids = false;
+    // For the render stats: the subdivision surfaces drawn refined, the
+    // refine level Houdini asked of them and the highest drawn (lower where
+    // a husk frame needs no more, or a mesh would pass _kMostRefinedFaces),
+    // and the triangles drawn.
+    size_t subdivided = 0;
+    int refineAsked = 0;
+    int refineDrawn = 0;
+    size_t triangles = 0;
+};
+
+// What the viewer's render stats show (HdRenderDelegate::GetRenderStats):
+// the last frame put in the buffers.
+struct _FrameStats
+{
+    bool any = false;
+    bool draft = false;
+    uint32_t samples = 0;
+    size_t meshes = 0;
+    size_t triangles = 0;
+    size_t subdivided = 0;
+    int refineAsked = 0;
+    int refineDrawn = 0;
+};
+
+// A finished frame, row 0 at the top: colour, depth, and per texel the
+// Hydra prim id and instance index (-1 where none) a viewport picks by.
+struct _Image
+{
+    unsigned int width = 0;
+    unsigned int height = 0;
+    std::vector<float> color;
+    std::vector<float> depth;
+    std::vector<int32_t> primId;
+    std::vector<int32_t> instanceId;
+    bool final = false;      // the request's last frame, not its draft
+    uint64_t request = 0;
+};
+
+static_assert(sizeof(std::atomic<uint32_t>) == sizeof(uint32_t)
+                  && std::atomic<uint32_t>::is_always_lock_free,
+              "th_render_ids reads the cancel flag as a plain 32-bit atomic");
+
+// Draw `job` through `frame` into `out` (sized to the frame). The core's
+// status: 0 ok, 3 cancelled.
+int32_t _Draw(_Job const& job, ThFrame const& frame, _Image* out,
+              std::atomic<uint32_t> const* cancel, ThCache const* cache, std::mutex* cacheMutex)
+{
+    size_t const texels = static_cast<size_t>(frame.width) * frame.height;
+    out->width = frame.width;
+    out->height = frame.height;
+    out->color.assign(texels * 4, 0.0f);
+    out->depth.assign(texels, 1.0f);
+    std::vector<int32_t> ids(job.ids ? texels * 2 : 0, -1);
+    int32_t status;
+    {
+        // One core call at a time per cache (the GPU path keeps it).
+        std::lock_guard<std::mutex> lock(*cacheMutex);
+        status = th_render_ids(&frame, job.views.data(), static_cast<uint32_t>(job.views.size()),
+                               out->color.data(), out->depth.data(), job.ids ? ids.data() : nullptr,
+                               reinterpret_cast<uint32_t const*>(cancel), cache);
+    }
+    if (status != 0) return status;
+    out->primId.assign(texels, -1);
+    out->instanceId.assign(texels, -1);
+    for (size_t i = 0; i < texels && job.ids; ++i) {
+        int32_t const view = ids[i * 2];
+        if (view < 0 || static_cast<size_t>(view) >= job.primIds.size()) continue;
+        out->primId[i] = job.primIds[view];
+        // Hydra's convention: an instance index for an instanced prim,
+        // -1 for one that is not.
+        out->instanceId[i] = job.instanced[view] ? ids[i * 2 + 1] : -1;
+    }
+    return 0;
+}
+
+// One pass's background render: frames drawn in order (a draft, then the
+// finished frame), each published as it finishes.
+class ThRenderThread
+{
+public:
+    ThRenderThread(ThCache const* cache, std::mutex* cacheMutex)
+        : _cache(cache), _cacheMutex(cacheMutex), _thread([this] { _Run(); }) {}
+
+    ~ThRenderThread()
+    {
+        Stop();
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _quit = true;
+        }
+        _wake.notify_all();
+        _thread.join();
+    }
+
+    // Give up the frame being drawn and anything queued; returns once the
+    // thread holds no view of the scene.
+    void Stop()
+    {
+        std::unique_lock<std::mutex> lock(_mutex);
+        _frames.clear();
+        _job.reset();
+        if (_busy) {
+            _cancel.store(1, std::memory_order_relaxed);
+            _idle.wait(lock, [this] { return !_busy; });
+        }
+    }
+
+    // Draw `frames` of `job` for `request`, after a Stop.
+    void Start(std::shared_ptr<_Job const> job, std::vector<ThFrame> frames, uint64_t request)
+    {
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _job = std::move(job);
+            _frames = std::move(frames);
+            _request = request;
+        }
+        _wake.notify_all();
+    }
+
+    // The newest finished frame, when it is newer than `*seen`.
+    bool Take(uint64_t* seen, _Image* out)
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (_serial == *seen) return false;
+        *seen = _serial;
+        *out = _latest;
+        return true;
+    }
+
+    // How long the last finished (not draft) frame took to draw.
+    double LastFinalMs() const { return _lastFinalMs.load(std::memory_order_relaxed); }
+
+private:
+    void _Run()
+    {
+        for (;;) {
+            std::shared_ptr<_Job const> job;
+            std::vector<ThFrame> frames;
+            uint64_t request;
+            {
+                std::unique_lock<std::mutex> lock(_mutex);
+                _wake.wait(lock, [this] { return _quit || !_frames.empty(); });
+                if (_quit) return;
+                job = _job;
+                frames.swap(_frames);
+                request = _request;
+                _busy = true;
+                _cancel.store(0, std::memory_order_relaxed);
+            }
+            for (size_t k = 0; k < frames.size(); ++k) {
+                auto const started = std::chrono::steady_clock::now();
+                _Image image;
+                int32_t const status = _Draw(*job, frames[k], &image, &_cancel, _cache, _cacheMutex);
+                if (status != 0) {
+                    if (status != 3) {
+                        std::fprintf(stderr, "hdThPlayblast: the core failed to render (error %d)\n", status);
+                    }
+                    break;
+                }
+                double const ms = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - started).count();
+                image.final = k + 1 == frames.size();
+                image.request = request;
+                if (image.final) _lastFinalMs.store(ms, std::memory_order_relaxed);
+                if (std::getenv("TH_PLAYBLAST_TIMING")) {
+                    std::fprintf(stderr, "hdThPlayblast: viewport %s %ux%u, %u samples%s, %zu meshes: %.0f ms\n",
+                                 image.final ? "frame" : "draft", image.width, image.height,
+                                 frames[k].samples, frames[k].ao ? " + AO" : "", job->views.size(), ms);
+                }
+                std::lock_guard<std::mutex> lock(_mutex);
+                _latest = std::move(image);
+                ++_serial;
+            }
+            job.reset();
+            {
+                std::lock_guard<std::mutex> lock(_mutex);
+                _busy = false;
+            }
+            _idle.notify_all();
+        }
+    }
+
+    ThCache const* _cache;
+    std::mutex* _cacheMutex;
+    std::mutex _mutex;
+    std::condition_variable _wake;
+    std::condition_variable _idle;
+    bool _quit = false;
+    bool _busy = false;
+    std::shared_ptr<_Job const> _job;
+    std::vector<ThFrame> _frames;
+    uint64_t _request = 0;
+    std::atomic<uint32_t> _cancel{0};
+    _Image _latest;
+    uint64_t _serial = 0;
+    std::atomic<double> _lastFinalMs{0.0};
+    std::thread _thread;  // last: starts once everything above is built
+};
+
+// A delegate's background renders, which every scene edit stops first, and
+// a count of the edits (a pass redraws when it changes). Shared with the
+// passes, which may outlive their delegate's render param.
+struct _Workers
+{
+    std::mutex mutex;
+    std::vector<ThRenderThread*> threads;
+    std::atomic<uint64_t> edits{0};
+    std::mutex cacheMutex;  // one core call per cache at a time
+    std::mutex statsMutex;
+    _FrameStats stats;
+
+    void Drawn(_FrameStats const& s)
+    {
+        std::lock_guard<std::mutex> lock(statsMutex);
+        stats = s;
+    }
+    _FrameStats LastDrawn()
+    {
+        std::lock_guard<std::mutex> lock(statsMutex);
+        return stats;
+    }
+
+    void Edited()
+    {
+        edits.fetch_add(1, std::memory_order_relaxed);
+        std::lock_guard<std::mutex> lock(mutex);
+        for (ThRenderThread* t : threads) t->Stop();
+    }
+    void Add(ThRenderThread* t)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        threads.push_back(t);
+    }
+    void Remove(ThRenderThread* t)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        threads.erase(std::remove(threads.begin(), threads.end(), t), threads.end());
+    }
+};
+
 // What the render delegate tells its prims as they sync: whether to sample
-// their motion (th:motionBlur).
+// their motion (th:motionBlur), and the background renders to stop before
+// an edit.
 struct ThRenderParam final : public HdRenderParam
 {
     std::atomic<bool> motion{false};
+    std::shared_ptr<_Workers> workers = std::make_shared<_Workers>();
 };
+
+// Before a prim changes the arrays a background render reads: stop it.
+void _Edited(HdRenderParam* param)
+{
+    if (auto* p = static_cast<ThRenderParam*>(param)) p->workers->Edited();
+}
 
 bool _SamplingMotion(HdRenderParam* param)
 {
@@ -354,27 +673,36 @@ VtArray<T> _AsArray(VtValue const& value)
     return VtArray<T>();
 }
 
-// One value per triangle corner (3 per triangle) of primvar `name`, or empty
-// when it does not have that type or is short of values. `corners` and
-// `faces` are th_triangulate's: per triangle, three positions in the face
-// vertex indices `fvi` (where a face-varying value is too) and its face.
+// Primvar `name`'s values with its indices applied (one per face vertex for
+// an indexed face-varying primvar), or empty when it does not have that type.
 template <typename T>
-std::vector<T> _CornerValues(HdSceneDelegate* delegate, SdfPath const& id, TfToken const& name,
-                             HdInterpolation interp, std::vector<uint32_t> const& corners,
-                             std::vector<uint32_t> const& faces, VtIntArray const& fvi)
+VtArray<T> _FlatValues(HdSceneDelegate* delegate, SdfPath const& id, TfToken const& name)
 {
     VtIntArray indices;
     VtArray<T> values = _AsArray<T>(delegate->GetIndexedPrimvar(id, name, &indices));
+    if (values.empty() || indices.empty()) {
+        return values;
+    }
+    VtArray<T> flat(indices.size());
+    for (size_t i = 0; i < indices.size(); ++i) {
+        int const at = indices[i];
+        flat[i] = at >= 0 && static_cast<size_t>(at) < values.size() ? values[at] : T();
+    }
+    return flat;
+}
+
+// One value per triangle corner (3 per triangle) of `values`, a primvar of
+// interpolation `interp` over the faces triangulated, or empty when it is
+// short of values. `corners` and `faces` are th_triangulate's: per triangle,
+// three positions in the face vertex indices `fvi` (where a face-varying
+// value is too) and its face.
+template <typename T>
+std::vector<T> _CornerValues(VtArray<T> const& values, HdInterpolation interp,
+                             std::vector<uint32_t> const& corners,
+                             std::vector<uint32_t> const& faces, VtIntArray const& fvi)
+{
     if (values.empty()) {
         return {};
-    }
-    if (!indices.empty()) {
-        VtArray<T> flat(indices.size());
-        for (size_t i = 0; i < indices.size(); ++i) {
-            int const at = indices[i];
-            flat[i] = at >= 0 && static_cast<size_t>(at) < values.size() ? values[at] : T();
-        }
-        values = flat;
     }
     size_t const n = faces.size();
     std::vector<T> out(n * 3);
@@ -409,6 +737,133 @@ std::vector<T> _CornerValues(HdSceneDelegate* delegate, SdfPath const& id, TfTok
 }
 
 // -----------------------------------------------------------------------------
+// Subdivision
+// -----------------------------------------------------------------------------
+//
+// A Catmull-Clark or Loop mesh is drawn refined to the level Houdini asks
+// for, as its own viewport does: HdDisplayStyle::refineLevel, which the
+// viewer's Level of Detail sets (libHUSD's refine level fallback) and husk's
+// --complexity. Refined uniformly by OpenSubdiv (through USD's pxOsd, which
+// reads the scheme, creases, corners, holes and boundary rules from the
+// topology, as Storm does), and drawn as the faces of the last level.
+//
+// That level is the most a mesh is refined to. Houdini's viewer gets it
+// exactly, as Storm draws it. husk's default complexity (veryhigh) asks for
+// level 8: 65,536 faces of each one, many more than a frame has pixels to
+// show. So a husk frame refines each mesh only until its edges are about
+// _kRefinedEdgePixels long where it comes closest to the camera, and not at
+// all while it is out of view (ThMesh::ScreenLevel). Past that, refining
+// changes nothing the frame can show.
+//
+// A pass picks each mesh's level as it draws, from its own camera
+// (ThRenderPass::_SizeRefinement), and rebuilds the meshes whose level
+// changed. Sync rebuilds a mesh at the level last picked for it: the cage,
+// until a pass has picked one.
+
+using _OsdRefiner = OpenSubdiv::Far::TopologyRefiner;
+
+// A value OpenSubdiv's primvar refiner can blend.
+template <typename T>
+struct _OsdValue
+{
+    T v;
+    void Clear() { v = T(0.0f); }
+    void AddWithWeight(_OsdValue const& s, float w) { v += s.v * w; }
+};
+
+// How a primvar's values are carried down the levels.
+enum class _Rate { Vertex, Varying, Uniform, FaceVarying };
+
+// `coarse` (values at level 0, at `rate`, of face-varying channel `channel`)
+// at the refiner's last level; empty when there are too few of them.
+template <typename T>
+VtArray<T> _Refine(_OsdRefiner const& refiner, _Rate rate, int channel, VtArray<T> const& coarse)
+{
+    auto count = [&](int level) -> size_t {
+        OpenSubdiv::Far::TopologyLevel const& l = refiner.GetLevel(level);
+        switch (rate) {
+        case _Rate::Uniform: return static_cast<size_t>(l.GetNumFaces());
+        case _Rate::FaceVarying: return static_cast<size_t>(l.GetNumFVarValues(channel));
+        default: return static_cast<size_t>(l.GetNumVertices());
+        }
+    };
+    size_t const first = count(0);
+    if (coarse.size() < first) return {};
+    std::vector<_OsdValue<T>> src(first), dst;
+    for (size_t i = 0; i < first; ++i) src[i].v = coarse[i];
+    OpenSubdiv::Far::PrimvarRefiner const primvars(refiner);
+    for (int level = 1; level <= refiner.GetMaxLevel(); ++level) {
+        dst.assign(count(level), _OsdValue<T>{T(0.0f)});
+        _OsdValue<T> const* s = src.data();
+        _OsdValue<T>* d = dst.data();
+        switch (rate) {
+        case _Rate::Vertex: primvars.Interpolate(level, s, d); break;
+        case _Rate::Varying: primvars.InterpolateVarying(level, s, d); break;
+        case _Rate::Uniform: primvars.InterpolateFaceUniform(level, s, d); break;
+        case _Rate::FaceVarying: primvars.InterpolateFaceVarying(level, s, d, channel); break;
+        }
+        src.swap(dst);
+    }
+    VtArray<T> out(src.size());
+    for (size_t i = 0; i < src.size(); ++i) out[i] = src[i].v;
+    return out;
+}
+
+// The most faces a refined mesh may have: a mesh that would pass it at the
+// level asked for is drawn a level or more lower (each level makes four
+// faces of one), rather than run the process out of memory.
+static constexpr size_t _kMostRefinedFaces = size_t(16) << 20;
+
+// The level a mesh of `faces` faces is refined to when `asked` is.
+static int _RefineLevelFor(size_t faces, int asked)
+{
+    int level = std::min(asked, 10);  // OpenSubdiv's limit
+    while (level > 0 && (faces << (2 * level)) > _kMostRefinedFaces) --level;
+    return level;
+}
+
+// The longest a husk frame leaves an edge of a refined mesh, in pixels.
+static constexpr double _kRefinedEdgePixels = 2.0;
+
+// The level that brings edges `pixels` long down to _kRefinedEdgePixels
+// (each level halves them).
+static int _LevelForPixels(double pixels)
+{
+    int level = 0;
+    while (level < 10 && pixels > _kRefinedEdgePixels) {
+        pixels *= 0.5;
+        ++level;
+    }
+    return level;
+}
+
+// The bounds of a cage's `points` and the mean length of its faces' edges.
+static void _MeasureCage(VtVec3fArray const& points, VtIntArray const& counts, VtIntArray const& indices,
+                         GfRange3d* box, double* edge)
+{
+    *box = GfRange3d();
+    for (GfVec3f const& p : points) box->UnionWith(GfVec3d(p));
+    double sum = 0.0;
+    size_t edges = 0;
+    size_t at = 0;
+    for (int const count : counts) {
+        if (count < 0 || at + static_cast<size_t>(count) > indices.size()) break;
+        for (int k = 0; k < count; ++k) {
+            int const a = indices[at + k];
+            int const b = indices[at + (k + 1) % count];
+            if (a < 0 || b < 0 || static_cast<size_t>(a) >= points.size()
+                || static_cast<size_t>(b) >= points.size()) {
+                continue;
+            }
+            sum += (GfVec3d(points[a]) - GfVec3d(points[b])).GetLength();
+            ++edges;
+        }
+        at += static_cast<size_t>(count);
+    }
+    *edge = edges ? sum / static_cast<double>(edges) : 0.0;
+}
+
+// -----------------------------------------------------------------------------
 // Instancer
 // -----------------------------------------------------------------------------
 
@@ -419,6 +874,7 @@ public:
 
     void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits) override
     {
+        _Edited(param);
         _UpdateInstancer(delegate, dirtyBits);
         SdfPath const& id = GetId();
         if (_SamplingMotion(param) && HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
@@ -548,8 +1004,9 @@ public:
 
     HdDirtyBits GetInitialDirtyBitsMask() const override { return HdMaterial::AllDirty; }
 
-    void Sync(HdSceneDelegate* delegate, HdRenderParam*, HdDirtyBits* dirtyBits) override
+    void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits) override
     {
+        _Edited(param);
         if (*dirtyBits & HdMaterial::DirtyResource) {
             _hasColor = false;
             _usesDisplayColor = false;
@@ -706,6 +1163,7 @@ static bool const g_timing = std::getenv("TH_PLAYBLAST_TIMING") != nullptr;
 static std::atomic<long long> g_syncNs{0};
 static std::atomic<int> g_rebuilds{0};
 static std::atomic<int> g_pointUpdates{0};
+static std::atomic<int> g_subdivided{0};  // of those rebuilt, drawn refined
 // Mesh keys for the core (ThMeshView::key): never reused in the process.
 static std::atomic<uint64_t> g_nextMeshKey{1};
 struct _SyncTimer {
@@ -733,6 +1191,7 @@ public:
               TfToken const&) override
     {
         _SyncTimer timer;
+        _Edited(param);
         SdfPath const& id = GetId();
         bool const motion = _SamplingMotion(param);
         if (*dirtyBits & HdChangeTracker::DirtyMaterialId) {
@@ -751,6 +1210,12 @@ public:
         _UpdateInstancer(delegate, dirtyBits);
         HdInstancer::_SyncInstancerAndParents(delegate->GetRenderIndex(), GetInstancerId());
 
+        // The refine level Houdini asks for (the viewer's Level of Detail,
+        // husk's --complexity). The pass refines the mesh to it as it draws
+        // (see Subdivision), so a new one rebuilds nothing here.
+        if (HdChangeTracker::IsDisplayStyleDirty(*dirtyBits, id)) {
+            _refineLevel = GetDisplayStyle(delegate).refineLevel;
+        }
         bool const topologyDirty = HdChangeTracker::IsTopologyDirty(*dirtyBits, id);
         bool const pointsDirty = HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->points);
         if (topologyDirty || pointsDirty || HdChangeTracker::IsAnyPrimvarDirty(*dirtyBits, id)) {
@@ -773,6 +1238,93 @@ public:
     // instanced) at a moment of the shutter, or the frame's for null. With
     // the shutter open, the view also gets the mesh's points at its opening
     // and closing, and its transforms at keys across it, when they move.
+    // The refine level Houdini asks of this mesh (0 for a polygonal one),
+    // and the level it is drawn at (lower where a husk frame needs no more,
+    // or refining it that far would pass _kMostRefinedFaces).
+    int RefineAsked() const { return _polygonal ? 0 : _refineLevel; }
+    int RefineDrawn() const { return _refiner ? _refiner->GetMaxLevel() : 0; }
+
+    // A subdivision surface Sync has built (only those are refined).
+    bool Subdivides() const { return !_polygonal && !_coarse.empty(); }
+
+    // The most a pass may refine this mesh: the level asked for, lower when
+    // that would pass _kMostRefinedFaces.
+    int RefineCap() const { return _polygonal ? 0 : _RefineLevelFor(_cageFaces, _refineLevel); }
+
+    // The level a pass last refined it to (0 until one has).
+    int SizedLevel() const { return _sizedLevel; }
+
+    // Rebuild it refined to `level`, a pass's pick (ThRenderPass::_SizeRefinement).
+    void Resize(HdSceneDelegate* delegate, int level, bool motion)
+    {
+        _sizedLevel = level;
+        _Rebuild(delegate, motion);
+        g_rebuilds.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // The level a husk frame refines it to, seen through `worldToView` and
+    // `projection` at `width x height` (see Subdivision): enough that its
+    // cage's mean edge comes down to _kRefinedEdgePixels at the depth of
+    // its nearest corner; none out of view (every corner of its bounds
+    // past one side of the frame, with a margin for blur, or in front of
+    // the near plane, which the core clips at). An instanced mesh takes its
+    // nearest instance's. Never past RefineCap.
+    int ScreenLevel(std::vector<GfMatrix4d> const& instances, GfMatrix4d const& worldToView,
+                    GfMatrix4d const& projection, unsigned int width, unsigned int height) const
+    {
+        int const cap = RefineCap();
+        if (cap == 0 || _cageBox.IsEmpty() || !(_cageEdge > 0.0)) return 0;
+        // Hydra's projections are GL's, for row vectors: a perspective one
+        // puts -z (the depth) in w.
+        bool const perspective = projection[2][3] != 0.0;
+        double const nearPlane = perspective ? projection[3][2] / (projection[2][2] - 1.0) : 0.0;
+        // The pixels a unit spans across the view at depth 1 (perspective)
+        // or at any depth (orthographic).
+        double const k = 0.5 * std::max(std::abs(projection[0][0]) * width,
+                                        std::abs(projection[1][1]) * height);
+        int level = 0;
+        auto at = [&](GfMatrix4d const& toWorld) {
+            GfMatrix4d const toView = toWorld * worldToView;
+            GfMatrix4d const toClip = toView * projection;
+            int beyond[5] = {0, 0, 0, 0, 0};
+            double nearest = std::numeric_limits<double>::infinity();
+            for (int i = 0; i < 8; ++i) {
+                GfVec3d const c = _cageBox.GetCorner(i);
+                GfVec4d const p = GfVec4d(c[0], c[1], c[2], 1.0) * toClip;
+                double const side = 1.25 * p[3];
+                beyond[0] += p[0] < -side;
+                beyond[1] += p[0] > side;
+                beyond[2] += p[1] < -side;
+                beyond[3] += p[1] > side;
+                beyond[4] += p[2] < -p[3];
+                nearest = std::min(nearest, -toView.TransformAffine(c)[2]);
+            }
+            if (std::find(beyond, beyond + 5, 8) != beyond + 5) return;
+            double const scale = std::max({GfVec3d(toView[0][0], toView[0][1], toView[0][2]).GetLength(),
+                                           GfVec3d(toView[1][0], toView[1][1], toView[1][2]).GetLength(),
+                                           GfVec3d(toView[2][0], toView[2][1], toView[2][2]).GetLength()});
+            double pixels = _cageEdge * scale * k;
+            if (perspective) {
+                double const depth = std::max(nearest, nearPlane);
+                if (!(depth > 0.0)) {
+                    level = cap;
+                    return;
+                }
+                pixels /= depth;
+            }
+            level = std::max(level, _LevelForPixels(pixels));
+        };
+        if (GetInstancerId().IsEmpty()) {
+            at(_transform);
+        } else {
+            for (GfMatrix4d const& inst : instances) {
+                at(_transform * inst);
+                if (level >= cap) break;
+            }
+        }
+        return std::min(level, cap);
+    }
+
     bool View(ThMeshView* view, std::vector<double>* transforms, std::vector<double>* keys,
               ThMaterial const* material,
               std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
@@ -850,29 +1402,27 @@ private:
                  std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
                  size_t instancerKeys, _Shutter const& s, size_t instanceCount) const
     {
-        size_t const n = _points.size() / 3;
+        // Moved as authored (the coarse points), then refined as drawn.
+        size_t const n = _coarse.size();
         bool const samples = _pointSamples.count >= 2;
         if (samples || !_velocities.empty()) {
             if (!(_motionFor == std::make_tuple(_version, s.open, s.close, s.fps))) {
                 _motionFor = std::make_tuple(_version, s.open, s.close, s.fps);
                 ++_motionVersion;
-                _open.assign(n * 3, 0.0f);
-                _close.assign(n * 3, 0.0f);
                 auto fill = [&](std::vector<float>& out, float t) {
+                    VtVec3fArray p;
                     if (samples) {
-                        VtVec3fArray const p = _pointSamples.Resample(t);
-                        for (size_t i = 0; i < n && i < p.size(); ++i) {
-                            for (int c = 0; c < 3; ++c) out[i * 3 + c] = p[i][c];
-                        }
-                        return;
-                    }
-                    float const sec = t / s.fps;
-                    for (size_t i = 0; i < n; ++i) {
-                        for (int c = 0; c < 3; ++c) {
-                            float a = _accelerations.empty() ? 0.0f : _accelerations[i][c];
-                            out[i * 3 + c] = _points[i * 3 + c] + _velocities[i][c] * sec + 0.5f * a * sec * sec;
+                        p = _pointSamples.Resample(t);
+                        if (p.size() != n) p = _coarse;
+                    } else {
+                        float const sec = t / s.fps;
+                        p.resize(n);
+                        for (size_t i = 0; i < n; ++i) {
+                            GfVec3f const a = _accelerations.empty() ? GfVec3f(0.0f) : _accelerations[i];
+                            p[i] = _coarse[i] + _velocities[i] * sec + a * (0.5f * sec * sec);
                         }
                     }
+                    out = _Drawn(p);
                 };
                 fill(_open, s.open);
                 fill(_close, s.close);
@@ -1018,15 +1568,58 @@ private:
         if (_triangles.empty()) return false;
         HdExtComputationPrimvarDescriptorVector computed;
         VtVec3fArray const points = _ReadPoints(delegate, &computed);
-        if (points.empty() || points.size() * 3 != _points.size()) return false;
+        if (points.empty() || points.size() != _coarse.size()) return false;
         _PointMotion const m = _ReadMotion(delegate, computed, points.size(), motion);
-        static_assert(sizeof(GfVec3f) == 3 * sizeof(float), "GfVec3f is three packed floats");
-        bool const samePoints = std::memcmp(points.cdata(), _points.data(), _points.size() * sizeof(float)) == 0;
-        if (samePoints && _SameMotion(m)) return true;
+        if (_SameBits(points, _coarse) && _SameMotion(m)) return true;
         ++_version;  // the GPU path's copy of the old points is stale
-        std::memcpy(_points.data(), points.cdata(), _points.size() * sizeof(float));
+        _coarse = points;
+        if (!_polygonal) _MeasureCage(points, _cageCounts, _cageIndices, &_cageBox, &_cageEdge);
+        _points = _Drawn(points);
         _SetMotion(m);
         return true;
+    }
+
+    // `coarse` (points as authored) as drawn, three floats a point:
+    // refined when the mesh is.
+    std::vector<float> _Drawn(VtVec3fArray const& coarse) const
+    {
+        VtVec3fArray const drawn = _refiner ? _Refine(*_refiner, _Rate::Vertex, 0, coarse) : coarse;
+        static_assert(sizeof(GfVec3f) == 3 * sizeof(float), "GfVec3f is three packed floats");
+        float const* f = reinterpret_cast<float const*>(drawn.cdata());
+        return std::vector<float>(f, f + drawn.size() * 3);
+    }
+
+    // Primvar `name` (of `interp`) over the faces drawn: as authored, or
+    // carried down to the refined mesh's faces, vertices or face vertices.
+    template <typename T>
+    VtArray<T> _SurfaceValues(HdSceneDelegate* delegate, TfToken const& name, HdInterpolation interp) const
+    {
+        SdfPath const& id = GetId();
+        if (!_refiner) return _FlatValues<T>(delegate, id, name);
+        switch (interp) {
+        case HdInterpolationConstant: return _FlatValues<T>(delegate, id, name);
+        case HdInterpolationUniform: return _Refine(*_refiner, _Rate::Uniform, 0, _FlatValues<T>(delegate, id, name));
+        case HdInterpolationVertex: return _Refine(*_refiner, _Rate::Vertex, 0, _FlatValues<T>(delegate, id, name));
+        case HdInterpolationVarying: return _Refine(*_refiner, _Rate::Varying, 0, _FlatValues<T>(delegate, id, name));
+        case HdInterpolationFaceVarying: {
+            auto channel = _fvarChannels.find(name);
+            if (channel == _fvarChannels.end()) return {};
+            VtIntArray indices;  // the channel's topology, given to the refiner
+            VtArray<T> const values = _AsArray<T>(delegate->GetIndexedPrimvar(id, name, &indices));
+            VtArray<T> const refined = _Refine(*_refiner, _Rate::FaceVarying, channel->second, values);
+            if (refined.empty()) return {};
+            OpenSubdiv::Far::TopologyLevel const& last = _refiner->GetLevel(_refiner->GetMaxLevel());
+            VtArray<T> out;
+            out.reserve(static_cast<size_t>(last.GetNumFaceVertices()));
+            for (int f = 0; f < last.GetNumFaces(); ++f) {
+                for (int const v : last.GetFaceFVarValues(f, channel->second)) {
+                    out.push_back(static_cast<size_t>(v) < refined.size() ? refined[v] : T(0.0f));
+                }
+            }
+            return out;
+        }
+        default: return {};
+        }
     }
 
     void _Rebuild(HdSceneDelegate* delegate, bool motion)
@@ -1039,19 +1632,99 @@ private:
         _colors.clear();
         _uvs.clear();
 
+        _refiner.reset();
+        _fvarChannels.clear();
+        _coarse = VtVec3fArray();
+        _cageFaces = 0;
+        _cageCounts = VtIntArray();
+        _cageIndices = VtIntArray();
+        _cageBox = GfRange3d();
+        _cageEdge = 0.0;
+
         HdMeshTopology const topology = GetMeshTopology(delegate);
 
         HdExtComputationPrimvarDescriptorVector computed;
         VtVec3fArray const points = _ReadPoints(delegate, &computed);
         if (points.empty()) return;
+        _coarse = points;
+
+        // A polygonal mesh (scheme none or bilinear, which is what implicit
+        // cubes become) with no normals gets Houdini's cusp normals rather
+        // than smoothing across every edge; the core computes them (ffi.rs).
+        TfToken const scheme = topology.GetScheme();
+        _polygonal = scheme == _tokNone || scheme == _tokBilinear;
+
+        // The primvars drawn: display colour, normals and uvs.
+        std::vector<std::pair<HdPrimvarDescriptor, HdInterpolation>> drawnPrimvars;
+        for (HdInterpolation interp :
+             {HdInterpolationConstant, HdInterpolationUniform, HdInterpolationVarying,
+              HdInterpolationVertex, HdInterpolationFaceVarying}) {
+            for (HdPrimvarDescriptor const& pv : delegate->GetPrimvarDescriptors(id, interp)) {
+                if (pv.name == _tokDisplayColor || pv.name == HdTokens->normals
+                    || pv.role == HdPrimvarRoleTokens->textureCoordinate
+                    || pv.name == TfToken("st") || pv.name == TfToken("uv")) {
+                    drawnPrimvars.emplace_back(pv, interp);
+                }
+            }
+        }
+
+        // The faces drawn: as authored, or refined (see Subdivision).
+        VtIntArray counts = topology.GetFaceVertexCounts();
+        VtIntArray fvi = topology.GetFaceVertexIndices();
+        VtIntArray holes = topology.GetHoleIndices();
+        VtVec3fArray drawn = points;
+        if (!_polygonal) {
+            // What a pass sizes its refinement by (ScreenLevel).
+            _cageFaces = counts.size();
+            _cageCounts = counts;
+            _cageIndices = fvi;
+            _MeasureCage(points, counts, fvi, &_cageBox, &_cageEdge);
+        }
+        // The level a pass last picked for it (the cage until one has).
+        int const level = _polygonal ? 0 : std::min(_sizedLevel, _RefineLevelFor(counts.size(), _refineLevel));
+        if (level > 0) {
+            // Each face-varying primvar drawn is a channel of its own, its
+            // indices (or one value per face vertex) its topology.
+            std::vector<VtIntArray> channels;
+            for (auto const& [pv, interp] : drawnPrimvars) {
+                if (interp != HdInterpolationFaceVarying || pv.name == HdTokens->normals) continue;
+                VtIntArray indices;
+                VtValue const values = delegate->GetIndexedPrimvar(id, pv.name, &indices);
+                if (indices.empty()) {
+                    indices.resize(values.GetArraySize());
+                    for (size_t i = 0; i < indices.size(); ++i) indices[i] = static_cast<int>(i);
+                }
+                if (indices.size() != fvi.size()) continue;
+                _fvarChannels[pv.name] = static_cast<int>(channels.size());
+                channels.push_back(indices);
+            }
+            _refiner = PxOsdRefinerFactory::Create(topology.GetPxOsdMeshTopology(), channels, id.GetToken());
+            if (_refiner && static_cast<size_t>(_refiner->GetLevel(0).GetNumVertices()) <= points.size()) {
+                _OsdRefiner::UniformOptions options(level);
+                options.fullTopologyInLastLevel = true;
+                _refiner->RefineUniform(options);
+                drawn = _Refine(*_refiner, _Rate::Vertex, 0, points);
+                OpenSubdiv::Far::TopologyLevel const& last = _refiner->GetLevel(level);
+                counts.clear();
+                fvi.clear();
+                holes.clear();
+                for (int f = 0; f < last.GetNumFaces(); ++f) {
+                    OpenSubdiv::Far::ConstIndexArray const verts = last.GetFaceVertices(f);
+                    counts.push_back(verts.size());
+                    for (int const v : verts) fvi.push_back(v);
+                    if (last.IsFaceHole(f)) holes.push_back(f);
+                }
+                g_subdivided.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                _refiner.reset();
+                _fvarChannels.clear();
+            }
+        }
 
         // Not HdMeshUtil::ComputeTriangleIndices: it fans every face, which
         // fills a concave face's notch and a keyhole face's opening (a wall's
         // window). th_triangulate keeps the fan for a convex face and
         // ear-clips a concave one, wound as HdMeshUtil winds it.
-        VtIntArray const& counts = topology.GetFaceVertexCounts();
-        VtIntArray const& fvi = topology.GetFaceVertexIndices();
-        VtIntArray const& holes = topology.GetHoleIndices();
         size_t capacity = 0;
         for (int const c : counts) {
             if (c > 2) capacity += static_cast<size_t>(c - 2);
@@ -1061,7 +1734,7 @@ private:
         std::vector<uint32_t> faces(capacity);
         static_assert(sizeof(GfVec3f) == 3 * sizeof(float), "GfVec3f is three packed floats");
         uint32_t const count = th_triangulate(
-            reinterpret_cast<float const*>(points.cdata()), static_cast<uint32_t>(points.size()),
+            reinterpret_cast<float const*>(drawn.cdata()), static_cast<uint32_t>(drawn.size()),
             counts.cdata(), static_cast<uint32_t>(counts.size()),
             fvi.cdata(), static_cast<uint32_t>(fvi.size()),
             holes.cdata(), static_cast<uint32_t>(holes.size()),
@@ -1071,10 +1744,8 @@ private:
         corners.resize(static_cast<size_t>(count) * 3);
         faces.resize(count);
 
-        _points.reserve(points.size() * 3);
-        for (GfVec3f const& p : points) {
-            _points.insert(_points.end(), {p[0], p[1], p[2]});
-        }
+        float const* drawnFloats = reinterpret_cast<float const*>(drawn.cdata());
+        _points.assign(drawnFloats, drawnFloats + drawn.size() * 3);
 
         _SetMotion(_ReadMotion(delegate, computed, points.size(), motion));
         _triangles.reserve(corners.size());
@@ -1082,34 +1753,26 @@ private:
             _triangles.push_back(static_cast<uint32_t>(std::max(0, fvi[c])));
         }
 
-        for (HdInterpolation interp :
-             {HdInterpolationConstant, HdInterpolationUniform, HdInterpolationVarying,
-              HdInterpolationVertex, HdInterpolationFaceVarying}) {
-            for (HdPrimvarDescriptor const& pv : delegate->GetPrimvarDescriptors(id, interp)) {
-                if (pv.name == _tokDisplayColor) {
-                    auto c = _CornerValues<GfVec3f>(delegate, id, pv.name, interp, corners, faces, fvi);
-                    _colors.clear();
-                    for (GfVec3f const& v : c) _colors.insert(_colors.end(), {v[0], v[1], v[2]});
-                } else if (pv.name == HdTokens->normals) {
-                    auto n = _CornerValues<GfVec3f>(delegate, id, pv.name, interp, corners, faces, fvi);
-                    _normals.clear();
-                    for (GfVec3f const& v : n) _normals.insert(_normals.end(), {v[0], v[1], v[2]});
-                } else if (pv.role == HdPrimvarRoleTokens->textureCoordinate
-                           || pv.name == TfToken("st") || pv.name == TfToken("uv")) {
-                    auto uv = _CornerValues<GfVec2f>(delegate, id, pv.name, interp, corners, faces, fvi);
-                    if (!uv.empty()) {
-                        std::vector<float>& out = _uvs[pv.name];
-                        for (GfVec2f const& v : uv) out.insert(out.end(), {v[0], v[1]});
-                    }
+        for (auto const& [pv, interp] : drawnPrimvars) {
+            if (pv.name == _tokDisplayColor) {
+                auto c = _CornerValues(_SurfaceValues<GfVec3f>(delegate, pv.name, interp), interp, corners, faces, fvi);
+                _colors.clear();
+                for (GfVec3f const& v : c) _colors.insert(_colors.end(), {v[0], v[1], v[2]});
+            } else if (pv.name == HdTokens->normals) {
+                // A refined surface's normals are its own (smooth, from the
+                // core), as USD has it: authored ones are for the cage.
+                if (_refiner) continue;
+                auto n = _CornerValues(_FlatValues<GfVec3f>(delegate, id, pv.name), interp, corners, faces, fvi);
+                _normals.clear();
+                for (GfVec3f const& v : n) _normals.insert(_normals.end(), {v[0], v[1], v[2]});
+            } else {
+                auto uv = _CornerValues(_SurfaceValues<GfVec2f>(delegate, pv.name, interp), interp, corners, faces, fvi);
+                if (!uv.empty()) {
+                    std::vector<float>& out = _uvs[pv.name];
+                    for (GfVec2f const& v : uv) out.insert(out.end(), {v[0], v[1]});
                 }
             }
         }
-
-        // A polygonal mesh (scheme none or bilinear, which is what implicit
-        // cubes become) with no normals gets Houdini's cusp normals rather
-        // than smoothing across every edge; the core computes them (ffi.rs).
-        TfToken const scheme = topology.GetScheme();
-        _polygonal = scheme == _tokNone || scheme == _tokBilinear;
     }
 
     GfMatrix4d _transform{1.0};
@@ -1129,6 +1792,23 @@ private:
     std::vector<float> _colors;
     std::map<TfToken, std::vector<float>> _uvs;
     bool _polygonal = false;
+    // The points as authored (before refining), the refine level Houdini
+    // asks for, the level a pass last picked (see Subdivision), and the
+    // refiner of a mesh drawn refined (null otherwise) with each
+    // face-varying primvar's channel in it.
+    VtVec3fArray _coarse;
+    int _refineLevel = 0;
+    int _sizedLevel = 0;
+    // A subdivision surface's cage, as ScreenLevel sizes it: its face count,
+    // topology (to measure it again when only the points change), bounds and
+    // mean edge length, all as authored.
+    size_t _cageFaces = 0;
+    VtIntArray _cageCounts;
+    VtIntArray _cageIndices;
+    GfRange3d _cageBox;
+    double _cageEdge = 0.0;
+    PxOsdTopologyRefinerSharedPtr _refiner;
+    std::map<TfToken, int> _fvarChannels;
     uint64_t const _key;
     uint64_t _version = 0;
 };
@@ -1154,8 +1834,12 @@ public:
         _height = static_cast<unsigned int>(dimensions[1]);
         _format = format;
         _data.assign(static_cast<size_t>(_width) * _height * HdDataSizeOfFormat(format), 0);
+        ++_generation;
         return true;
     }
+
+    // Bumped by every allocation: a pass rewrites a buffer that is new.
+    uint64_t Generation() const { return _generation; }
 
     unsigned int GetWidth() const override { return _width; }
     unsigned int GetHeight() const override { return _height; }
@@ -1182,6 +1866,30 @@ public:
                 for (size_t c = 0; c < channels; ++c) {
                     float const v = c < stride ? image[(src_row + x) * stride + c] : 0.0f;
                     _Store(component, (dst_row + x) * channels + c, v);
+                }
+            }
+        }
+    }
+
+    // Write one int per texel (prim and instance ids), row 0 at the top as
+    // in Write.
+    void WriteInts(std::vector<int32_t> const& image)
+    {
+        if (image.size() < static_cast<size_t>(_width) * _height) return;
+        HdFormat const component = HdGetComponentFormat(_format);
+        size_t const channels = HdGetComponentCount(_format);
+        for (size_t y = 0; y < _height; ++y) {
+            size_t const src_row = static_cast<size_t>(_height - 1 - y) * _width;
+            size_t const dst_row = y * _width;
+            for (size_t x = 0; x < _width; ++x) {
+                int32_t const v = image[src_row + x];
+                for (size_t c = 0; c < channels; ++c) {
+                    size_t const at = (dst_row + x) * channels + c;
+                    if (component == HdFormatInt32) {
+                        reinterpret_cast<int32_t*>(_data.data())[at] = v;
+                    } else {
+                        _Store(component, at, static_cast<float>(v));
+                    }
                 }
             }
         }
@@ -1234,6 +1942,7 @@ private:
     HdFormat _format = HdFormatInvalid;
     std::vector<uint8_t> _data;
     int _mappers = 0;
+    uint64_t _generation = 0;
 };
 
 // -----------------------------------------------------------------------------
@@ -1247,6 +1956,7 @@ public:
 
     void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits) override
     {
+        _Edited(param);
         bool const moved = *dirtyBits & HdCamera::DirtyTransform;
         HdCamera::Sync(delegate, param, dirtyBits);
         if (moved) {
@@ -1286,6 +1996,35 @@ struct _BlurSettings
     float fps = 24.0f;
 };
 
+// What a pass draws with. Read from the render settings for every frame
+// (ThRenderDelegate::_ReadSettings), as a viewport changes them while it
+// runs; husk sets them before the first.
+struct _PassSettings
+{
+    int samples = _defaultSamples;
+    uint32_t shading = 0;
+    bool ao = true;
+    bool alpha = false;
+    _BlurSettings blur;
+    // Draw on a background thread (a viewport) rather than in Execute (husk).
+    bool interactive = false;
+    // Refine subdivision surfaces only as far as the frame shows (husk),
+    // rather than to the level asked, as Storm does in Houdini's viewer
+    // (see Subdivision).
+    bool screenSized = true;
+
+    auto Tie() const
+    {
+        return std::make_tuple(samples, shading, ao, alpha, blur.motion, blur.dof, blur.samples, blur.fps,
+                               interactive, screenSized);
+    }
+    bool operator==(_PassSettings const& o) const { return Tie() == o.Tie(); }
+};
+
+// A full frame that took longer than this is drawn first as a draft (one
+// sample, no ambient occlusion or blur) while the viewport waits for it.
+double const _draftAboveMs = 60.0;
+
 // -----------------------------------------------------------------------------
 // Render pass
 // -----------------------------------------------------------------------------
@@ -1293,34 +2032,211 @@ struct _BlurSettings
 class ThRenderPass final : public HdRenderPass
 {
 public:
-    ThRenderPass(HdRenderIndex* index, HdRprimCollection const& collection, int samples,
-                 uint32_t shading, bool ao, bool alpha, _BlurSettings blur, ThCache const* cache)
-        : HdRenderPass(index, collection), _samples(samples), _shading(shading), _ao(ao),
-          _alpha(alpha), _blur(blur), _cache(cache) {}
+    ThRenderPass(HdRenderIndex* index, HdRprimCollection const& collection,
+                 std::function<_PassSettings()> settings, ThCache const* cache,
+                 std::shared_ptr<_Workers> workers)
+        : HdRenderPass(index, collection), _settings(std::move(settings)), _cache(cache),
+          _workers(std::move(workers)) {}
 
-    bool IsConverged() const override { return true; }
+    ~ThRenderPass() override
+    {
+        if (_thread) {
+            _workers->Remove(_thread.get());
+            _thread.reset();
+        }
+    }
+
+    // husk's frames are drawn in Execute; a viewport's is converged once
+    // its finished frame (not the draft) is in the buffers.
+    bool IsConverged() const override { return _converged.load(std::memory_order_relaxed); }
 
 protected:
+    // The render buffers the pass writes, by AOV.
+    struct _Bindings
+    {
+        ThRenderBuffer* color = nullptr;
+        ThRenderBuffer* depth = nullptr;
+        ThRenderBuffer* primId = nullptr;
+        ThRenderBuffer* instanceId = nullptr;
+        std::vector<ThRenderBuffer*> others;  // filled with -1
+        ThRenderBuffer* sized = nullptr;      // the one the frame takes its size from
+        // Each bound buffer and its allocation: a new one needs the frame again.
+        std::vector<std::pair<ThRenderBuffer const*, uint64_t>> identity;
+    };
+
     void _Execute(HdRenderPassStateSharedPtr const& state,
                   TfTokenVector const& renderTags) override
     {
-        auto const started = std::chrono::steady_clock::now();
-        ThRenderBuffer* colorBuffer = nullptr;
-        ThRenderBuffer* depthBuffer = nullptr;
-        std::vector<ThRenderBuffer*> others;
+        _Bindings buffers;
         for (HdRenderPassAovBinding const& binding : state->GetAovBindings()) {
             auto* buffer = dynamic_cast<ThRenderBuffer*>(binding.renderBuffer);
             if (!buffer || buffer->GetWidth() == 0 || buffer->GetHeight() == 0) continue;
-            if (binding.aovName == HdAovTokens->color) colorBuffer = buffer;
-            else if (binding.aovName == HdAovTokens->depth) depthBuffer = buffer;
-            else others.push_back(buffer);
+            buffers.identity.emplace_back(buffer, buffer->Generation());
+            if (binding.aovName == HdAovTokens->color) buffers.color = buffer;
+            else if (binding.aovName == HdAovTokens->depth) buffers.depth = buffer;
+            else if (binding.aovName == HdAovTokens->primId) buffers.primId = buffer;
+            else if (binding.aovName == HdAovTokens->instanceId) buffers.instanceId = buffer;
+            else buffers.others.push_back(buffer);
         }
-        for (ThRenderBuffer* b : others) b->Clear(-1.0f);
-        ThRenderBuffer* sized = colorBuffer ? colorBuffer : depthBuffer;
-        if (!sized) return;
+        buffers.sized = buffers.color ? buffers.color : buffers.depth;
+        if (!buffers.sized) {
+            _converged = true;
+            return;
+        }
+        _PassSettings const settings = _settings();
+        if (settings.interactive) {
+            _ExecuteInBackground(state, renderTags, settings, buffers);
+        } else {
+            _ExecuteNow(state, renderTags, settings, buffers);
+        }
+    }
 
-        unsigned int const width = sized->GetWidth();
-        unsigned int const height = sized->GetHeight();
+private:
+    // husk: draw the frame here and return with it in the buffers.
+    void _ExecuteNow(HdRenderPassStateSharedPtr const& state, TfTokenVector const& renderTags,
+                     _PassSettings const& settings, _Bindings const& buffers)
+    {
+        auto const started = std::chrono::steady_clock::now();
+        _SizeRefinement(state, renderTags, settings, buffers.sized->GetWidth(), buffers.sized->GetHeight());
+        _Shutter shutter;
+        ThFrame const frame = _MakeFrame(state, settings, buffers.sized->GetWidth(),
+                                         buffers.sized->GetHeight(), &shutter);
+        std::shared_ptr<_Job> const job = _Gather(renderTags, shutter, buffers);
+        auto const gathered = std::chrono::steady_clock::now();
+        _Image image;
+        int32_t const status = _Draw(*job, frame, &image, nullptr, _cache, &_workers->cacheMutex);
+        if (status != 0) {
+            TF_WARN("hdThPlayblast: the core failed to render (error %d)", status);
+            return;
+        }
+        _Publish(buffers, image);
+        _converged = true;
+        _workers->Drawn(_StatsOf(*job, frame.samples, false));
+
+        // TH_PLAYBLAST_TIMING=1: where a frame's time goes (the scene sync
+        // husk does before this pass is the gap between two lines).
+        if (std::getenv("TH_PLAYBLAST_TIMING")) {
+            auto const done = std::chrono::steady_clock::now();
+            auto ms = [](auto a, auto b) {
+                return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count();
+            };
+            size_t triangles = 0, instances = 0, moving = 0;
+            for (ThMeshView const& v : job->views) {
+                triangles += static_cast<size_t>(v.triangle_count) * v.transform_count;
+                instances += v.transform_count;
+                moving += (v.points_close || v.transform_key_count) ? 1 : 0;
+            }
+            static std::chrono::steady_clock::time_point previous;
+            long long const since =
+                previous.time_since_epoch().count() ? ms(previous, done) : 0;
+            previous = done;
+            std::fprintf(stderr,
+                         "hdThPlayblast: %zu meshes (%zu moving), %zu instances, %zu triangles; "
+                         "blur %u samples, shutter %s %.3g..%.3g, %u camera keys, f-stop %.3g; "
+                         "gather %lld ms, render %lld ms; mesh sync %lld ms (thread time), "
+                         "%d rebuilt (%d subdivided), %d with new points only; refine level %d, drawn at %d; "
+                         "%lld ms since the last frame\n",
+                         job->views.size(), moving, instances, triangles,
+                         frame.blur_samples, shutter.on ? "open" : "off", shutter.open, shutter.close,
+                         frame.camera_keys, frame.f_stop,
+                         static_cast<long long>(ms(started, gathered)),
+                         static_cast<long long>(ms(gathered, done)),
+                         g_syncNs.exchange(0) / 1000000, g_rebuilds.exchange(0), g_subdivided.exchange(0),
+                         g_pointUpdates.exchange(0), job->refineAsked, job->refineDrawn, since);
+        }
+    }
+
+    // A viewport: start the frame on the pass's thread when anything it
+    // depends on changed, and put whatever has finished in the buffers.
+    void _ExecuteInBackground(HdRenderPassStateSharedPtr const& state, TfTokenVector const& renderTags,
+                              _PassSettings const& settings, _Bindings const& buffers)
+    {
+        unsigned int const width = buffers.sized->GetWidth();
+        unsigned int const height = buffers.sized->GetHeight();
+        // A mesh it rebuilds stops the render and counts as an edit, so
+        // the key below asks for the frame again.
+        _SizeRefinement(state, renderTags, settings, width, height);
+        GfMatrix4d const worldToView = state->GetWorldToViewMatrix();
+        _Key key{width, height, worldToView, state->GetProjectionMatrix(), settings, renderTags,
+                 _workers->edits.load(std::memory_order_relaxed), buffers.identity};
+        if (!_thread) {
+            _thread = std::make_unique<ThRenderThread>(_cache, &_workers->cacheMutex);
+            _workers->Add(_thread.get());
+        }
+        if (!(key == _key)) {
+            // Stopped before gathering: the old frame may still read the scene.
+            _thread->Stop();
+            _Shutter shutter;
+            ThFrame const frame = _MakeFrame(state, settings, width, height, &shutter);
+            std::vector<ThFrame> frames;
+            double const last = _thread->LastFinalMs();
+            bool const costly = frame.samples > 1 || frame.ao || frame.blur_samples > 1;
+            if (costly && (last == 0.0 || last > _draftAboveMs)) {
+                ThFrame draft = frame;
+                draft.samples = 1;
+                draft.ao = 0;
+                draft.blur_samples = 0;
+                draft.motion = 0;
+                draft.camera_keys = 0;
+                frames.push_back(draft);
+            }
+            frames.push_back(frame);
+            _started = _Gather(renderTags, shutter, buffers);
+            _startedSamples = frame.samples;
+            _thread->Start(_started, std::move(frames), ++_request);
+            _key = std::move(key);
+            _converged = false;
+        }
+        _Image image;
+        if (_thread->Take(&_seen, &image) && image.width == width && image.height == height) {
+            _Publish(buffers, image);
+            if (image.request == _request && _started) {
+                _workers->Drawn(_StatsOf(*_started, image.final ? _startedSamples : 1, !image.final));
+            }
+            if (image.final && image.request == _request) _converged = true;
+        }
+    }
+
+    static _FrameStats _StatsOf(_Job const& job, uint32_t samples, bool draft)
+    {
+        _FrameStats s;
+        s.any = true;
+        s.draft = draft;
+        s.samples = samples;
+        s.meshes = job.views.size();
+        s.triangles = job.triangles;
+        s.subdivided = job.subdivided;
+        s.refineAsked = job.refineAsked;
+        s.refineDrawn = job.refineDrawn;
+        return s;
+    }
+
+    // What a viewport frame depends on besides the scene's prims (whose
+    // edits _Workers counts).
+    struct _Key
+    {
+        unsigned int width = 0;
+        unsigned int height = 0;
+        GfMatrix4d worldToView{1.0};
+        GfMatrix4d projection{1.0};
+        _PassSettings settings;
+        TfTokenVector renderTags;
+        uint64_t edits = 0;
+        std::vector<std::pair<ThRenderBuffer const*, uint64_t>> buffers;
+
+        bool operator==(_Key const& o) const
+        {
+            return width == o.width && height == o.height && worldToView == o.worldToView
+                && projection == o.projection && settings == o.settings && renderTags == o.renderTags
+                && edits == o.edits && buffers == o.buffers;
+        }
+    };
+
+    // The frame `settings` ask for through the pass's camera, at
+    // `width x height`, and the shutter it is drawn over.
+    ThFrame _MakeFrame(HdRenderPassStateSharedPtr const& state, _PassSettings const& settings,
+                       unsigned int width, unsigned int height, _Shutter* shutter) const
+    {
         GfMatrix4d const worldToView = state->GetWorldToViewMatrix();
         GfMatrix4d const worldToClip = worldToView * state->GetProjectionMatrix();
         GfMatrix4d const viewToWorld = worldToView.GetInverse();
@@ -1330,54 +2246,101 @@ protected:
         frame.height = height;
         std::copy(worldToClip.GetArray(), worldToClip.GetArray() + 16, frame.world_to_clip);
         std::copy(viewToWorld.GetArray(), viewToWorld.GetArray() + 16, frame.view_to_world);
-        frame.samples = static_cast<uint32_t>(std::max(1, _samples));
-        frame.shading = _shading;
-        frame.ao = _ao ? 1u : 0u;
-        frame.alpha = _alpha ? 1u : 0u;
+        frame.samples = static_cast<uint32_t>(std::max(1, settings.samples));
+        frame.shading = settings.shading;
+        frame.ao = settings.ao ? 1u : 0u;
+        frame.alpha = settings.alpha ? 1u : 0u;
 
         // Motion blur over the render camera's shutter (held to the window
         // the prims sampled their motion over), depth of field from its lens.
+        _BlurSettings const& blur = settings.blur;
         HdCamera const* camera = state->GetCamera();
-        _Shutter shutter;
-        shutter.fps = _blur.fps;
-        if (_blur.motion && camera) {
-            shutter.open = static_cast<float>(std::clamp(camera->GetShutterOpen(), -1.0 * _motionWindow, 1.0 * _motionWindow));
-            shutter.close = static_cast<float>(std::clamp(camera->GetShutterClose(), -1.0 * _motionWindow, 1.0 * _motionWindow));
-            shutter.on = shutter.close > shutter.open;
+        *shutter = _Shutter{};
+        shutter->fps = blur.fps;
+        if (blur.motion && camera) {
+            shutter->open = static_cast<float>(std::clamp(camera->GetShutterOpen(), -1.0 * _motionWindow, 1.0 * _motionWindow));
+            shutter->close = static_cast<float>(std::clamp(camera->GetShutterClose(), -1.0 * _motionWindow, 1.0 * _motionWindow));
+            shutter->on = shutter->close > shutter->open;
         }
-        if (_blur.motion || _blur.dof) {
-            frame.blur_samples = static_cast<uint32_t>(std::max(1, _blur.samples));
+        if (blur.motion || blur.dof) {
+            frame.blur_samples = static_cast<uint32_t>(std::max(1, blur.samples));
         }
-        frame.motion = shutter.on ? 1u : 0u;
+        frame.motion = shutter->on ? 1u : 0u;
         if (auto const* thCamera = dynamic_cast<ThCamera const*>(camera)) {
-            frame.camera_keys = thCamera->Keys(shutter, frame.cameras);
+            frame.camera_keys = thCamera->Keys(*shutter, frame.cameras);
         }
-        if (_blur.dof && camera) {
+        if (blur.dof && camera) {
             frame.focal_length = camera->GetFocalLength();
             frame.f_stop = camera->GetFStop();
             frame.focus_distance = camera->GetFocusDistance();
         }
+        return frame;
+    }
 
-        // The meshes this pass draws: visible, and of a render tag (purpose)
-        // the pass asked for.
+    // A mesh the pass draws: visible, and of a render tag (purpose) the
+    // pass asked for.
+    static bool _Draws(ThMesh const* mesh, TfTokenVector const& renderTags)
+    {
+        return mesh && mesh->IsVisible()
+            && (renderTags.empty()
+                || std::find(renderTags.begin(), renderTags.end(), mesh->GetRenderTag()) != renderTags.end());
+    }
+
+    // Refine each subdivision surface drawn to the level this frame needs
+    // (see Subdivision): the level asked in Houdini's viewer, as far as the
+    // camera shows in husk (ThMesh::ScreenLevel). The meshes whose level
+    // changed are rebuilt, several at once as Hydra syncs them.
+    void _SizeRefinement(HdRenderPassStateSharedPtr const& state, TfTokenVector const& renderTags,
+                         _PassSettings const& settings, unsigned int width, unsigned int height) const
+    {
         HdRenderIndex& index = *GetRenderIndex();
-        std::vector<ThMeshView> views;
-        std::vector<std::vector<double>> transforms;
-        std::vector<std::vector<double>> keys;
+        GfMatrix4d const worldToView = state->GetWorldToViewMatrix();
+        GfMatrix4d const projection = state->GetProjectionMatrix();
+        std::vector<std::pair<ThMesh*, int>> resized;
+        for (SdfPath const& id : index.GetRprimIds()) {
+            // The delegate made it (CreateRprim): not a const object.
+            auto* mesh = const_cast<ThMesh*>(dynamic_cast<ThMesh const*>(index.GetRprim(id)));
+            if (!_Draws(mesh, renderTags) || !mesh->Subdivides()) continue;
+            int level = mesh->RefineCap();
+            if (level > 0 && settings.screenSized) {
+                std::vector<GfMatrix4d> instances;
+                if (!mesh->GetInstancerId().IsEmpty()) {
+                    if (auto* instancer = dynamic_cast<ThInstancer*>(index.GetInstancer(mesh->GetInstancerId()))) {
+                        instances = instancer->ComputeInstanceTransforms(mesh->GetId(), nullptr);
+                    }
+                }
+                level = mesh->ScreenLevel(instances, worldToView, projection, width, height);
+            }
+            if (level != mesh->SizedLevel()) resized.emplace_back(mesh, level);
+        }
+        if (resized.empty()) return;
+        _workers->Edited();  // nothing may draw the meshes while they change
+        bool const motion = _SamplingMotion(index.GetRenderDelegate()->GetRenderParam());
+        WorkParallelForN(resized.size(), [&](size_t begin, size_t end) {
+            for (size_t i = begin; i < end; ++i) {
+                ThMesh* mesh = resized[i].first;
+                if (HdSceneDelegate* delegate = index.GetSceneDelegateForRprim(mesh->GetId())) {
+                    mesh->Resize(delegate, resized[i].second, motion);
+                }
+            }
+        });
+    }
+
+    // The meshes the pass draws (_Draws), with what they point at.
+    std::shared_ptr<_Job> _Gather(TfTokenVector const& renderTags, _Shutter const& shutter,
+                                  _Bindings const& buffers) const
+    {
+        auto job = std::make_shared<_Job>();
+        job->ids = buffers.primId || buffers.instanceId;
+        HdRenderIndex& index = *GetRenderIndex();
         std::vector<ThMesh const*> meshes;
         for (SdfPath const& id : index.GetRprimIds()) {
             auto const* mesh = dynamic_cast<ThMesh const*>(index.GetRprim(id));
-            if (!mesh || !mesh->IsVisible()) continue;
-            if (!renderTags.empty()
-                && std::find(renderTags.begin(), renderTags.end(), mesh->GetRenderTag())
-                       == renderTags.end()) {
-                continue;
-            }
-            meshes.push_back(mesh);
+            if (_Draws(mesh, renderTags)) meshes.push_back(mesh);
         }
-        views.reserve(meshes.size());
-        transforms.resize(meshes.size());
-        keys.resize(meshes.size());
+        job->views.reserve(meshes.size());
+        job->transforms.resize(meshes.size());
+        job->keys.resize(meshes.size());
         for (size_t i = 0; i < meshes.size(); ++i) {
             ThMesh const* mesh = meshes[i];
             ThInstancer* instancer = mesh->GetInstancerId().IsEmpty() ? nullptr
@@ -1393,66 +2356,43 @@ protected:
                     index.GetSprim(HdPrimTypeTokens->material, mesh->GetMaterialId()));
             }
             ThMeshView view;
-            if (mesh->View(&view, &transforms[i], &keys[i], material, instancesAt, instancerKeys, shutter)) {
-                views.push_back(view);
+            if (mesh->View(&view, &job->transforms[i], &job->keys[i], material, instancesAt, instancerKeys, shutter)) {
+                job->views.push_back(view);
+                job->triangles += static_cast<size_t>(view.triangle_count) * view.transform_count;
+                job->refineAsked = std::max(job->refineAsked, mesh->RefineAsked());
+                if (int const drawn = mesh->RefineDrawn()) {
+                    ++job->subdivided;
+                    job->refineDrawn = std::max(job->refineDrawn, drawn);
+                }
+                job->primIds.push_back(mesh->GetPrimId());
+                job->instanced.push_back(instancer ? 1 : 0);
             }
         }
-
-        auto const gathered = std::chrono::steady_clock::now();
-        size_t const texels = static_cast<size_t>(width) * height;
-        std::vector<float> color(texels * 4);
-        std::vector<float> depth(texels);
-        int32_t const status = th_render(&frame, views.data(),
-                                         static_cast<uint32_t>(views.size()),
-                                         color.data(), depth.data(), _cache);
-        if (status != 0) {
-            TF_WARN("hdThPlayblast: the core failed to render (error %d)", status);
-            return;
-        }
-        if (colorBuffer) colorBuffer->Write(color, 4);
-        if (depthBuffer) depthBuffer->Write(depth, 1);
-
-        // TH_PLAYBLAST_TIMING=1: where a frame's time goes (the scene sync
-        // husk does before this pass is the gap between two lines).
-        if (std::getenv("TH_PLAYBLAST_TIMING")) {
-            auto const done = std::chrono::steady_clock::now();
-            auto ms = [](auto a, auto b) {
-                return std::chrono::duration_cast<std::chrono::milliseconds>(b - a).count();
-            };
-            size_t triangles = 0, instances = 0;
-            for (ThMeshView const& v : views) {
-                triangles += static_cast<size_t>(v.triangle_count) * v.transform_count;
-                instances += v.transform_count;
-            }
-            static std::chrono::steady_clock::time_point previous;
-            long long const since =
-                previous.time_since_epoch().count() ? ms(previous, done) : 0;
-            previous = done;
-            size_t moving = 0;
-            for (ThMeshView const& v : views) {
-                moving += (v.points_close || v.transform_key_count) ? 1 : 0;
-            }
-            std::fprintf(stderr,
-                         "hdThPlayblast: %zu meshes (%zu moving), %zu instances, %zu triangles; "
-                         "blur %u samples, shutter %s %.3g..%.3g, %u camera keys, f-stop %.3g; "
-                         "gather %lld ms, render %lld ms; mesh sync %lld ms (thread time), "
-                         "%d rebuilt, %d with new points only; %lld ms since the last frame\n",
-                         views.size(), moving, instances, triangles,
-                         frame.blur_samples, shutter.on ? "open" : "off", shutter.open, shutter.close,
-                         frame.camera_keys, frame.f_stop,
-                         static_cast<long long>(ms(started, gathered)),
-                         static_cast<long long>(ms(gathered, done)),
-                         g_syncNs.exchange(0) / 1000000, g_rebuilds.exchange(0), g_pointUpdates.exchange(0), since);
-        }
+        return job;
     }
 
-private:
-    int _samples;
-    uint32_t _shading;
-    bool _ao;
-    bool _alpha;
-    _BlurSettings _blur;
+    // Put a finished frame in the bound buffers.
+    static void _Publish(_Bindings const& buffers, _Image const& image)
+    {
+        if (buffers.color) buffers.color->Write(image.color, 4);
+        if (buffers.depth) buffers.depth->Write(image.depth, 1);
+        if (buffers.primId) buffers.primId->WriteInts(image.primId);
+        if (buffers.instanceId) buffers.instanceId->WriteInts(image.instanceId);
+        for (ThRenderBuffer* b : buffers.others) b->Clear(-1.0f);
+    }
+
+    std::function<_PassSettings()> _settings;
     ThCache const* _cache;  // the delegate's; outlives its passes
+    std::shared_ptr<_Workers> _workers;
+    std::atomic<bool> _converged{false};
+    // A viewport's: its thread, the frame it is drawing and the last shown.
+    std::unique_ptr<ThRenderThread> _thread;
+    _Key _key;
+    uint64_t _request = 0;
+    uint64_t _seen = 0;
+    // The job of the frame drawing and its samples, for the render stats.
+    std::shared_ptr<_Job> _started;
+    uint32_t _startedSamples = 0;
 };
 
 // -----------------------------------------------------------------------------
@@ -1468,12 +2408,45 @@ public:
 
     HdRenderParam* GetRenderParam() const override { return const_cast<ThRenderParam*>(&_param); }
 
+    // The viewer's render stats (its Display Options): the last frame
+    // drawn, as one line under the renderer's name.
+    VtDictionary GetRenderStats() const override
+    {
+        _FrameStats const s = _param.workers->LastDrawn();
+        VtDictionary out;
+        out["rendererName"] = VtValue(std::string("TumbleView"));
+        out["percentDone"] = VtValue(s.any && !s.draft ? 100.0 : 0.0);
+        if (!s.any) return out;
+        std::string line = TfStringPrintf(
+            "%s, %u sample%s; %zu mesh%s, %zu triangles",
+            s.draft ? "draft" : "full", s.samples, s.samples == 1 ? "" : "s",
+            s.meshes, s.meshes == 1 ? "" : "es", s.triangles);
+        if (s.refineAsked > 0) {
+            line += TfStringPrintf("; refine level %d", s.refineAsked);
+            if (s.refineDrawn != s.refineAsked) line += TfStringPrintf(" (drawn at %d)", s.refineDrawn);
+            line += TfStringPrintf(", %zu subdivided", s.subdivided);
+        }
+        out["rendererStage"] = VtValue(line);
+        out["meshes"] = VtValue(static_cast<int64_t>(s.meshes));
+        out["triangles"] = VtValue(static_cast<int64_t>(s.triangles));
+        out["samples"] = VtValue(static_cast<int>(s.samples));
+        out["draft"] = VtValue(s.draft);
+        out["refineLevel"] = VtValue(s.refineAsked);
+        out["refineLevelDrawn"] = VtValue(s.refineDrawn);
+        out["subdividedMeshes"] = VtValue(static_cast<int64_t>(s.subdivided));
+        return out;
+    }
+
     void SetRenderSetting(TfToken const& key, VtValue const& value) override
     {
         HdRenderDelegate::SetRenderSetting(key, value);
         _UpdateParam();
     }
-    ~ThRenderDelegate() override { th_cache_free(_cache); }
+    ~ThRenderDelegate() override
+    {
+        _param.workers->Edited();  // no background frame may read the cache
+        th_cache_free(_cache);
+    }
 
     TfTokenVector const& GetSupportedRprimTypes() const override
     {
@@ -1522,41 +2495,27 @@ public:
     HdRenderPassSharedPtr CreateRenderPass(HdRenderIndex* index,
                                            HdRprimCollection const& collection) override
     {
-        int samples = _defaultSamples;
-        VtValue const samplesSetting = GetRenderSetting(_tokSamples);
-        if (samplesSetting.IsHolding<int>()) {
-            samples = samplesSetting.UncheckedGet<int>();
-        } else if (char const* env = std::getenv("TH_PLAYBLAST_SAMPLES")) {
-            if (int const value = std::atoi(env); value > 0) samples = value;
+        // TH_PLAYBLAST_SETTINGS=1: what the host set (Houdini's viewer and
+        // husk differ; th:interactive's default comes from it).
+        if (std::getenv("TH_PLAYBLAST_SETTINGS")) {
+            for (auto const& [key, value] : _settingsMap) {
+                std::fprintf(stderr, "hdThPlayblast: setting %s = %s (%s)\n", key.GetText(),
+                             TfStringify(value).c_str(), value.GetTypeName().c_str());
+            }
         }
-        std::string shading = _SettingString(GetRenderSetting(_tokShading));
-        if (shading.empty()) shading = _EnvLower("TH_PLAYBLAST_SHADING");
-        VtValue const aoSetting = GetRenderSetting(_tokAo);
-        bool ao = true;
-        if (aoSetting.IsHolding<bool>()) {
-            ao = aoSetting.UncheckedGet<bool>();
-        } else if (aoSetting.IsHolding<int>()) {
-            ao = aoSetting.UncheckedGet<int>() != 0;
-        } else {
-            std::string const env = _EnvLower("TH_PLAYBLAST_AO");
-            ao = !(env == "0" || env == "false" || env == "off");
-        }
-        _BlurSettings blur;
-        blur.motion = _SettingOn(GetRenderSetting(_tokMotionBlur), "TH_PLAYBLAST_MOTION_BLUR");
-        blur.dof = _SettingOn(GetRenderSetting(_tokDepthOfField), "TH_PLAYBLAST_DOF");
-        blur.samples = static_cast<int>(_SettingNumber(GetRenderSetting(_tokBlurSamples),
-                                                       "TH_PLAYBLAST_BLUR_SAMPLES", _defaultBlurSamples));
-        blur.fps = static_cast<float>(_SettingNumber(GetRenderSetting(_tokFps), "TH_PLAYBLAST_FPS", 24.0));
-        bool const alpha = _SettingOn(GetRenderSetting(_tokAlpha), "TH_PLAYBLAST_ALPHA");
-        return std::make_shared<ThRenderPass>(index, collection, samples,
-                                              _ShadingNumber(shading), ao, alpha, blur, _cache);
+        return std::make_shared<ThRenderPass>(index, collection, [this] { return _ReadSettings(); },
+                                              _cache, _param.workers);
     }
 
     HdInstancer* CreateInstancer(HdSceneDelegate* delegate, SdfPath const& id) override
     {
         return new ThInstancer(delegate, id);
     }
-    void DestroyInstancer(HdInstancer* instancer) override { delete instancer; }
+    void DestroyInstancer(HdInstancer* instancer) override
+    {
+        _param.workers->Edited();
+        delete instancer;
+    }
 
     HdRprim* CreateRprim(TfToken const& typeId, SdfPath const& id) override
     {
@@ -1565,7 +2524,11 @@ public:
         }
         return nullptr;
     }
-    void DestroyRprim(HdRprim* rprim) override { delete rprim; }
+    void DestroyRprim(HdRprim* rprim) override
+    {
+        _param.workers->Edited();
+        delete rprim;
+    }
 
     HdSprim* CreateSprim(TfToken const& typeId, SdfPath const& id) override
     {
@@ -1578,7 +2541,11 @@ public:
     {
         return CreateSprim(typeId, SdfPath::EmptyPath());
     }
-    void DestroySprim(HdSprim* sprim) override { delete sprim; }
+    void DestroySprim(HdSprim* sprim) override
+    {
+        _param.workers->Edited();
+        delete sprim;
+    }
 
     HdBprim* CreateBprim(TfToken const& typeId, SdfPath const& id) override
     {
@@ -1596,6 +2563,41 @@ public:
     void CommitResources(HdChangeTracker*) override {}
 
 private:
+    // A pass's settings, read for every frame (_PassSettings).
+    _PassSettings _ReadSettings() const
+    {
+        _PassSettings s;
+        VtValue const samplesSetting = GetRenderSetting(_tokSamples);
+        if (samplesSetting.IsHolding<int>()) {
+            s.samples = samplesSetting.UncheckedGet<int>();
+        } else if (char const* env = std::getenv("TH_PLAYBLAST_SAMPLES")) {
+            if (int const value = std::atoi(env); value > 0) s.samples = value;
+        }
+        std::string shading = _SettingString(GetRenderSetting(_tokShading));
+        if (shading.empty()) shading = _EnvLower("TH_PLAYBLAST_SHADING");
+        s.shading = _ShadingNumber(shading);
+        VtValue const aoSetting = GetRenderSetting(_tokAo);
+        if (aoSetting.IsHolding<bool>()) {
+            s.ao = aoSetting.UncheckedGet<bool>();
+        } else if (aoSetting.IsHolding<int>()) {
+            s.ao = aoSetting.UncheckedGet<int>() != 0;
+        } else {
+            std::string const env = _EnvLower("TH_PLAYBLAST_AO");
+            s.ao = !(env == "0" || env == "false" || env == "off");
+        }
+        s.blur.motion = _SettingOn(GetRenderSetting(_tokMotionBlur), "TH_PLAYBLAST_MOTION_BLUR");
+        s.blur.dof = _SettingOn(GetRenderSetting(_tokDepthOfField), "TH_PLAYBLAST_DOF");
+        s.blur.samples = static_cast<int>(_SettingNumber(GetRenderSetting(_tokBlurSamples),
+                                                         "TH_PLAYBLAST_BLUR_SAMPLES", _defaultBlurSamples));
+        s.blur.fps = static_cast<float>(_SettingNumber(GetRenderSetting(_tokFps), "TH_PLAYBLAST_FPS", 24.0));
+        bool const viewer = _Truthy(GetRenderSetting(_tokHoudiniViewport));
+        s.interactive = _SettingOr(GetRenderSetting(_tokInteractive), "TH_PLAYBLAST_INTERACTIVE", viewer);
+        s.screenSized = !viewer;
+        // A viewport draws over Houdini's own background and grid.
+        s.alpha = _SettingOr(GetRenderSetting(_tokAlpha), "TH_PLAYBLAST_ALPHA", s.interactive);
+        return s;
+    }
+
     // Prims sample their motion while th:motionBlur is on.
     void _UpdateParam()
     {
@@ -1652,7 +2654,7 @@ void _RegisterImplicitSurfacesToMesh()
                              HdPrimTypeTokens->capsule, HdPrimTypeTokens->plane};
     HdDataSourceBaseHandle const modes[] = {toMesh, toMesh, toMesh, toMesh, toMesh, toMesh};
     HdSceneIndexPluginRegistry::GetInstance().RegisterSceneIndexForRenderer(
-        "TumblePipe Playblast",
+        "TumbleView",
         [](std::string const&, HdSceneIndexBaseRefPtr const& input,
            HdContainerDataSourceHandle const& args) -> HdSceneIndexBaseRefPtr {
             return HdsiImplicitSurfaceSceneIndex::New(input, args);

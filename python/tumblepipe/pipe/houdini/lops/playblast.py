@@ -265,9 +265,9 @@ class Playblast(FrameRangeNode, EntityNode):
         if not layers:
             raise self._error(
                 f'Render Layers is on, but {shot_uri} names no prims for any of '
-                f'its channels. Add a "{CHANNEL_PRIMS_PROPERTY}" field to the '
-                f'shot (or the project) in the Config Editor, mapping a channel '
-                f'to a prim pattern, e.g. {{"characters": "/CHAR/*"}}.'
+                f'its channels. Set its layers in the Entity Editor (Shots tab, '
+                f'Layers column, on the shot or its sequence), e.g. '
+                f'"characters: /CHAR/*", which writes {CHANNEL_PRIMS_PROPERTY}.'
             )
         return layers
 

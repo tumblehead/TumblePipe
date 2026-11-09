@@ -67,6 +67,15 @@ struct ThFrame {
 int32_t th_render(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_count,
                   float* color, float* depth, ThCache const* cache);
 
+// th_render for a viewport. Also writes `ids` (may be null): per texel, row
+// 0 at the top, the index into `meshes` and the instance the texel's first
+// sample sees, -1 -1 for none, on the CPU and GPU paths. `cancel` (may be
+// null) is a 32-bit atomic read while drawing: set it non-zero from another
+// thread to give the frame up, and the call returns 3 having written nothing.
+int32_t th_render_ids(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_count,
+                      float* color, float* depth, int32_t* ids, uint32_t const* cancel,
+                      ThCache const* cache);
+
 // Triangles of a polygon mesh: Hydra's fan for a convex face, ear clipping
 // for a concave one (src/triangulate.rs). Per triangle, three `corners`
 // (positions in `indices`, where face-varying values are too) and its face.

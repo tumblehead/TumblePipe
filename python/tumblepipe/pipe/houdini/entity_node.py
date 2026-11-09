@@ -132,6 +132,24 @@ class EntityNode(ns.Node):
             )
         return [FROM_CONTEXT] + [str(uri) for uri in uris]
 
+    def _addresses(self, entity_uri_raw: str) -> bool:
+        """Whether ``entity_uri_raw`` is one of ``list_entity_uris()``.
+
+        The base listing is kept as a set per store generation: a refresh
+        of an import_assets workfile with N rows asks about 8 times per
+        row, and scanning a fresh list of N strings each time was O(N^2)
+        (8M Uri.__str__ at 1,000 rows, issue #20). A subclass with its own
+        listing is asked directly.
+        """
+        if type(self).list_entity_uris is not EntityNode.list_entity_uris:
+            return entity_uri_raw in self.list_entity_uris()
+        contexts = self.ENTITY_CONTEXTS or ('assets', 'shots')
+        addressable = api.config.memoized(
+            f'entity_node.addressable:{",".join(contexts)}', ('entity',),
+            lambda: frozenset(EntityNode.list_entity_uris(self)),
+        )
+        return entity_uri_raw in addressable
+
     # Entity resolution
 
     def get_entity_uri(self) -> Uri | None:
@@ -143,7 +161,7 @@ class EntityNode(ns.Node):
         entity_uri_raw = self.parm(self.ENTITY_PARM).eval()
         if entity_uri_raw == FROM_CONTEXT:
             return self._from_context_entity_uri()
-        if entity_uri_raw not in self.list_entity_uris():  # Compare strings
+        if not self._addresses(entity_uri_raw):
             raise self._error(
                 f"entity '{entity_uri_raw}' is not an entity this node can "
                 'address. Pick one with the Entity button.'
@@ -166,7 +184,7 @@ class EntityNode(ns.Node):
         return get_entity_type(entity_uri)
 
     def set_entity_uri(self, entity_uri: Uri):
-        if str(entity_uri) not in self.list_entity_uris():  # Compare strings
+        if not self._addresses(str(entity_uri)):
             raise self._error(
                 f'{entity_uri} is not an entity this node can address'
             )

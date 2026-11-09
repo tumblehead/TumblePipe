@@ -86,17 +86,17 @@ impl Speaker {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         let device = cpal::default_host().default_output_device().ok_or("no audio output device")?;
         let config = device.default_output_config().map_err(|e| e.to_string())?;
-        let rate = config.sample_rate().0;
+        let rate = config.sample_rate();
         let channels = usize::from(config.channels());
         let shared = Arc::new(Mutex::new(Playback::default()));
-        let stream_config: cpal::StreamConfig = config.clone().into();
-        let error = |e: cpal::StreamError| eprintln!("th_player: audio output: {e}");
+        let stream_config: cpal::StreamConfig = config.into();
+        let error = |e: cpal::Error| eprintln!("th_player: audio output: {e}");
         macro_rules! stream {
             ($t:ty) => {{
                 let shared = Arc::clone(&shared);
                 let mut stereo = Vec::new();
                 device.build_output_stream(
-                    &stream_config,
+                    stream_config,
                     move |data: &mut [$t], _| {
                         let frames = data.len() / channels.max(1);
                         stereo.resize(frames * 2, 0.0f32);

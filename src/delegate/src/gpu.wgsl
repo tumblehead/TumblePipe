@@ -24,7 +24,8 @@ struct Globals {
 
 struct MeshParams {
     base: vec4<f32>,
-    // x: 1 = textured (has uvs and tiles); y: 1 = a plain texture in layer 0
+    // x: 1 = textured (has uvs and tiles); y: 1 = a plain texture in layer 0;
+    // z: the mesh's index in the frame's meshes (fs_ids).
     mode: vec4<i32>,
     // Layer of UDIM tile 1001 + i at [i / 4][i % 4], -1 for none.
     layers: array<vec4<i32>, 25>,
@@ -59,22 +60,25 @@ struct VsOut {
     @location(1) normal: vec3<f32>,
     @location(2) color: vec3<f32>,
     @location(3) uv: vec2<f32>,
+    // The draw's instance: in the first layer, where fs_ids reads it, the
+    // instance's index among the mesh's transforms.
+    @location(4) @interpolate(flat) instance: u32,
 };
 
 @vertex
-fn vs(v: VsIn) -> VsOut {
-    return vertex(v, v.pos);
+fn vs(v: VsIn, @builtin(instance_index) instance: u32) -> VsOut {
+    return vertex(v, v.pos, instance);
 }
 
 // A moving mesh's corner at the layer's moment, between its position at the
 // shutter's opening (pos) and closing, as blur::point_at moves it.
 @vertex
-fn vs_moving(v: VsIn, @location(15) closing: vec3<f32>) -> VsOut {
+fn vs_moving(v: VsIn, @location(15) closing: vec3<f32>, @builtin(instance_index) instance: u32) -> VsOut {
     let s = g.jitter.z;
-    return vertex(v, v.pos + (closing - v.pos) * s);
+    return vertex(v, v.pos + (closing - v.pos) * s, instance);
 }
 
-fn vertex(v: VsIn, pos: vec3<f32>) -> VsOut {
+fn vertex(v: VsIn, pos: vec3<f32>, instance: u32) -> VsOut {
     let w = pos.x * v.m0 + pos.y * v.m1 + pos.z * v.m2 + v.m3;
     var c = pos.x * v.c0 + pos.y * v.c1 + pos.z * v.c2 + v.c3;
     c = vec4<f32>(c.x + g.jitter.x * c.w, c.y + g.jitter.y * c.w, c.z, c.w);
@@ -87,6 +91,7 @@ fn vertex(v: VsIn, pos: vec3<f32>) -> VsOut {
     out.normal = v.normal.x * v.n0.xyz + v.normal.y * v.n1.xyz + v.normal.z * v.n2.xyz;
     out.color = v.color;
     out.uv = v.uv;
+    out.instance = instance;
     return out;
 }
 
@@ -139,4 +144,12 @@ fn fs(in: VsOut) -> Buffer {
     out.albedo = vec4<f32>(albedo(in), in.clip.z);
     out.normal = vec4<f32>(v, dot(to_eye, g.back.xyz));
     return out;
+}
+
+// The picking ids (raster.rs Samples::ids): the mesh and instance a pixel's
+// first sample sees, drawn into their own target with their own depth test
+// (gpu.rs Targets::id_pass), as the CPU path records them.
+@fragment
+fn fs_ids(in: VsOut) -> @location(0) vec2<i32> {
+    return vec2<i32>(m.mode.z, i32(in.instance));
 }

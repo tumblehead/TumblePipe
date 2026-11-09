@@ -155,12 +155,23 @@ pub struct Samples {
     pub normal: Vec<[f32; 4]>,
     /// Normalised device depth in [0, 1], 1 = nothing drawn.
     pub depth: Vec<f32>,
+    /// One per pixel (not per sample): the mesh and instance the first
+    /// layer's sample sees, [-1, -1] for none ([`crate::raster::Image::ids`]).
+    pub ids: Vec<[i32; 2]>,
 }
 
 impl Samples {
     pub fn empty(width: usize, height: usize, offsets: Vec<(f32, f32)>) -> Samples {
         let n = width * height * offsets.len();
-        Samples { width, height, offsets, albedo: vec![[0.0; 4]; n], normal: vec![[0.0; 4]; n], depth: vec![1.0; n] }
+        Samples {
+            width,
+            height,
+            offsets,
+            albedo: vec![[0.0; 4]; n],
+            normal: vec![[0.0; 4]; n],
+            depth: vec![1.0; n],
+            ids: vec![[-1, -1]; width * height],
+        }
     }
 
     /// Samples per pixel.
@@ -491,7 +502,12 @@ pub fn resolve(frame: &Frame, samples: &Samples) -> Image {
     };
     let started = std::time::Instant::now();
 
-    let ao = if frame.ao { ambient_occlusion(samples, &proj) } else { vec![1.0; plane * n] };
+    // A cancelled frame is thrown away: skip the occlusion, its dearest part.
+    let ao = if frame.ao && !crate::cancel::Token::current().is_set() {
+        ambient_occlusion(samples, &proj)
+    } else {
+        vec![1.0; plane * n]
+    };
     let occluded = started.elapsed();
 
     let mut color = vec![[0.0f32; 4]; plane];
@@ -538,7 +554,7 @@ pub fn resolve(frame: &Frame, samples: &Samples) -> Image {
             occluded.as_millis()
         );
     }
-    Image { color, depth }
+    Image { color, depth, ids: samples.ids.clone() }
 }
 
 #[cfg(test)]

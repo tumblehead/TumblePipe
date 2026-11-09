@@ -33,9 +33,10 @@ Checks:
     instead of editing (and so pinning) the field.
 12. The settings panel shows only the sections of the ticked step kinds,
     and a hint when nothing is ticked.
-13. Opened the way the Farm Submit quick action opens it — the workfile's
-    shot, Publish, its department — only that department's publish cell
-    is ticked; opened with no workfile, every row and nothing ticked.
+13. Opened the way the Render quick action opens it — the workfile's
+    shot and department — only its Render cell is ticked and only the
+    Render section shows; opened with no workfile, every row and nothing
+    ticked.
 14. A department whose only workfile is a Multi's that has never exported
     the entity is unclaimed: tickable, but Select stale leaves it alone.
 15. A closed dialog is deleted, not kept hidden under its parent (Houdini's
@@ -55,6 +56,8 @@ Checks:
 19. What the window remembers: a pinned setting, the Render batch choices
     and a collapsed column come back on the next opening; the frame range
     does not, nor does a value the form no longer offers.
+20. The Channels field reads as a dropdown: an arrow pointer, no focus, no
+    text selected by a double-click, and every dropdown draws its chevron.
 
 The prefs file is a throwaway one (``HOUDINI_USER_PREF_DIR`` points at a
 temporary folder), so a run never changes what an artist's window remembers.
@@ -318,19 +321,18 @@ def main() -> int:
         print(f"screenshot: {shot_path}")
     win.reject()
 
-    # ── 13: how the Farm Submit quick action opens it ────
+    # ── 13: how the Render quick action opens it ─────────
     farm_dept = publish[-1]
     farm_win = mod.SubmitJobsDialog(
-        [shot], [shot.segments[-1]], "shots",
-        department=farm_dept, tick_kinds=(grid.PUBLISH,),
+        [shot], [shot.segments[-1]], "shots", department=farm_dept,
     )
     farm = farm_win._panes["shots"]
-    check("13. from a workfile only its department's publish cell is ticked",
-          farm._ticks == {(str(shot), grid.publish_key(farm_dept))}
-          and [k for k, b in farm._sections.items() if not b.isHidden()] == [grid.PUBLISH],
+    check("13. from a workfile only its Render cell is ticked",
+          farm._ticks == {(str(shot), grid.RENDER)}
+          and [k for k, b in farm._sections.items() if not b.isHidden()] == [grid.RENDER],
           f"{sorted(farm._ticks)}")
     farm_win.reject()
-    bare_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=(grid.PUBLISH,))
+    bare_win = mod.SubmitJobsDialog([], [], "shots")
     bare = bare_win._panes["shots"]
     check("13. with no workfile every row is listed and nothing ticked",
           not bare._ticks and set(bare._uris) >= {str(u) for u in shots},
@@ -550,6 +552,23 @@ def main() -> int:
           and stored["ui"]["size"] == [1234, 777],
           f"{sorted(again._collapsed)} {stored['ui'].get('size')}")
     again_win.reject()
+
+    # ── 20: the Channels field is a dropdown, not a text field ──
+    menu_win = mod.SubmitJobsDialog([shot], [shot.segments[-1]], "shots")
+    menu_win.show()
+    app.processEvents()
+    channels = menu_win._panes["shots"]._rnd_channels
+    summary = channels.lineEdit()
+    check("20. the Channels summary shows an arrow pointer and never takes focus",
+          summary.cursor().shape() == Qt.ArrowCursor and summary.focusPolicy() == Qt.NoFocus)
+    QTest.mouseDClick(summary, Qt.LeftButton, pos=QPoint(10, summary.height() // 2))
+    channels.hidePopup()
+    app.processEvents()
+    check("20. double-clicking the summary selects none of its text",
+          not summary.hasSelectedText(), repr(summary.selectedText()))
+    check("20. every dropdown draws its arrow image",
+          "chevron-down.svg" in mod._DIALOG_STYLE and Path(mod._CHEVRON).is_file(), mod._CHEVRON)
+    menu_win.reject()
 
     # ── 9: a real snapshot in this interpreter ────────────
     staged = next(

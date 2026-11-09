@@ -95,6 +95,18 @@ def publish_model(version: str) -> None:
     }), encoding="utf-8")
 
 
+def publish_rig(version: str) -> None:
+    """A minimal SOP rig export: an empty geometry file is all import_rigs
+    needs to count the asset as rigged (``has_rig_export``) and load it."""
+    from tumblepipe.pipe.paths.naming import entity_stem
+
+    root = api.storage.resolve(get_export_uri(ASSET, "default", "rig"))
+    out = Path(root) / version
+    out.mkdir(parents=True, exist_ok=True)
+    hou.Geometry().saveToFile(
+        str(out / f"{entity_stem(ASSET, 'rig', version)}.bgeo.sc"))
+
+
 def loaded_version(node) -> str:
     return Path(node.parm("import_filepath2").eval()).stem.rsplit("_", 1)[-1]
 
@@ -178,6 +190,17 @@ def check_bypass() -> None:
         native.parm(count_parm).set(1)
         native.parm("entity1").set(str(ASSET))
         node.execute()
+        if wrapper is import_rigs.ImportRigs:
+            # A 'latest' row for an asset with no rig published is skipped
+            # (c8d1bd90), so the node rightly stays bypassed until one is.
+            check("th::import_rigs::2.0: a row with no rig published stays "
+                  "bypassed",
+                  native.isBypassed()
+                  and "No rig published: crate" in native.comment(),
+                  f"bypassed={native.isBypassed()} "
+                  f"comment={native.comment()!r}")
+            publish_rig("v0001")
+            node.execute()
         check(f"{native.type().name()}: bypassed while empty, not after",
               was and not native.isBypassed(),
               f"empty={was} with_rows={native.isBypassed()} "

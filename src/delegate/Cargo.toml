@@ -2,7 +2,7 @@
 name = "th_delegate_core"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.76"
+rust-version = "1.88"
 description = "Rendering core for TumblePipe's playblast Hydra render delegate"
 license = "Apache-2.0"
 publish = false
@@ -26,8 +26,8 @@ default = []
 gpu = ["dep:wgpu", "dep:pollster"]
 
 [dependencies]
-wgpu = { version = "22", optional = true }
-pollster = { version = "0.3", optional = true }
+wgpu = { version = "30", optional = true }
+pollster = { version = "1", optional = true }
 
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }

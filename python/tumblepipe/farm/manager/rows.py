@@ -613,7 +613,7 @@ def renderer_details(kind: str, context: dict | None) -> list[Detail]:
         look = context.get('look') if isinstance(context.get('look'), dict) else {}
         if look.get('renderer', 'karma') == 'viewport':
             result = [
-                Detail('Renderer', 'TumblePipe viewport renderer (hdThPlayblast)'),
+                Detail('Renderer', 'TumbleView (hdThPlayblast)'),
                 Detail('Engine', 'CPU only, no licence'),
             ]
             if look.get('shading'):
