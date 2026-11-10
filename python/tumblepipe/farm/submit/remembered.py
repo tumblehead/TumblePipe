@@ -5,9 +5,10 @@ own values again, so a renderer or sample count set for the last submission
 had to be set again. The window now keeps, per project and tab:
 
 * the settings the artist **pinned** (set for the whole submission), except
-  the frame range, which belongs to the shots it was typed for;
+  the frame ranges (the Render's and the Comp's), which belong to the shots
+  they were typed for;
 * the Render section's batch choices (Preview / Full range, Standalone,
-  Copy to edit) and the Comp section's Copy to edit;
+  Copy to edit) and the Comp section's Preview frames and Copy to edit;
 * which columns the artist collapsed;
 
 and, for the window as a whole, which settings sections are collapsed,
@@ -26,13 +27,15 @@ from typing import Any, Callable, Mapping
 
 # Pinned settings never carried to the next opening: the frame range is the
 # shots' own, and a remembered 1001-1100 would quietly cut a longer shot.
-NOT_REMEMBERED = frozenset({'first_frame', 'last_frame'})
+NOT_REMEMBERED = frozenset({
+    'first_frame', 'last_frame', 'comp_first_frame', 'comp_last_frame',
+})
 
 # The batch check boxes (plain check boxes, never per entity): the Render
-# section's four, then the Comp section's Copy to edit.
+# section's four, then the Comp section's Copy to edit and Preview frames.
 BATCH_KEYS = (
     'render_preview', 'render_full', 'standalone', 'copy_to_edit',
-    'comp_copy_to_edit',
+    'comp_copy_to_edit', 'comp_preview',
 )
 
 # Window-wide choices and their defaults.

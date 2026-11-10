@@ -26,7 +26,7 @@
 /// `tests/fixtures/templates/`, and the tests fail when the packaged
 /// templates change without a row here, because a project left on that
 /// version would otherwise read as customised to the next refresh.
-pub const STOCK: [(&str, u64); 88] = [
+pub const STOCK: [(&str, u64); 94] = [
     ("assets/blendshape", 0x3e996f0cd9278155), // 886fc6b725
     ("assets/blendshape", 0x479bbf9dd255f96a), // 072f370dc7
     ("assets/blendshape", 0x6b8a6905dffbc0c1), // f631e117d8
@@ -35,7 +35,9 @@ pub const STOCK: [(&str, u64); 88] = [
     ("assets/blendshape", 0xb60e6ede03b40ab8), // b9f3d2b74a
     ("assets/blendshape", 0xe76b5826a13378a4), // 9be7a5aafe
     ("assets/blendshape", 0xcd06531206b5db8d), // ad76a88205
+    ("assets/blendshape", 0x539bb05f156be3a9), // 7b1e9882de
     ("assets/groom", 0xea5631f706384b7b), // 182b03a573
+    ("assets/groom", 0x95c82591b799ad3a), // 5b408566de
     ("assets/lookdev", 0x1b3f29bea006e0a5), // a52ecf9e17
     ("assets/lookdev", 0x5760ea8fa74b4ae6), // 0445abd52a
     ("assets/lookdev", 0x7d544393eea3ca05), // 89fb4b2835
@@ -43,6 +45,7 @@ pub const STOCK: [(&str, u64); 88] = [
     ("assets/lookdev", 0xabdfa1baff88d653), // 199dedf97b
     ("assets/lookdev", 0xac8f53b1cff5a4c0), // 93fb8328c1
     ("assets/lookdev", 0xd75145e0ca70ff57), // 4e182c5f3e
+    ("assets/lookdev", 0x430b49ac311cbca1), // 230f273409
     ("assets/model", 0x34d8dae8309f9b10), // f53431d1cc
     ("assets/model", 0x744cd703d57a3f75), // 4f5f9cf926
     ("assets/model", 0x8901f1f6a57ede7d), // 8c37af36a9
@@ -92,15 +95,18 @@ pub const STOCK: [(&str, u64); 88] = [
     ("shots/crowd", 0xa48d835191483bd7), // 9bfdf0b4b7
     ("shots/crowd", 0xfc0906730461684f), // 8cb06b64b7
     ("shots/crowd", 0xfeb667a023138b31), // 3f412f30a0
+    ("shots/crowd", 0x48da7d5de8e527a3), // d8d23c4f37
     ("shots/effects", 0x1d66313972dca460), // dda0c6c711
     ("shots/effects", 0x1e18e1cc5e040b43), // 4fb9d5c07c
     ("shots/effects", 0x694b6444464210cd), // 0502b7692c
     ("shots/effects", 0xca7144a1d45349af), // 4a84299b45
+    ("shots/effects", 0xfe1977461273b537), // d84505ccfe
     ("shots/environment", 0x65a4ab9b587440b6), // 4d5108f9f5
     ("shots/environment", 0x889349d8b350e383), // 0bf9593376
     ("shots/environment", 0xa11ec97508c2af88), // 10c6322e61
     ("shots/environment", 0xacf4d3578c316251), // 5cffcb8b02
     ("shots/environment", 0xef11529ea7a8bd27), // 15814406da
+    ("shots/environment", 0x1c4fea46e6233ef2), // cd9823b0f6
     ("shots/layout", 0x1bb8e988a26aa63c), // cb72b1129e
     ("shots/layout", 0x1da682d6e161acdc), // 747683f395
     ("shots/layout", 0xf792f94ff804f1b9), // e5a3cf17a6

@@ -58,7 +58,8 @@ class ProcessDialog(QtWidgets.QDialog):
         tasks: list[ProcessTask],
         pre_execute_callback: Callable[[], None] | None = None,
         initial_enabled_task_ids: set[str] | None = None,
-        parent=None
+        parent=None,
+        post_execute_callback: Callable[[], None] | None = None,
     ):
         super().__init__(parent)
         self._title = title
@@ -70,6 +71,9 @@ class ProcessDialog(QtWidgets.QDialog):
         # footer collapses to a single green Done button (see _show_done_state).
         self._run_done = False
         self._pre_execute_callback = pre_execute_callback
+        # Runs once a run has finished, whatever its outcome (the launchers
+        # save the scene again if the run itself dirtied it).
+        self._post_execute_callback = post_execute_callback
         # Between the departments of one run (model, then the lookdev built on
         # it in the same workfile), the scene's imports float to what the run
         # just published, so later departments export against it.
@@ -555,6 +559,12 @@ class ProcessDialog(QtWidgets.QDialog):
         # version into this process' filesystem view (farm submissions write
         # nothing here), so this is gated on a version having actually landed.
         self._refresh_session_after_local_publish(tasks)
+
+        if self._post_execute_callback is not None:
+            try:
+                self._post_execute_callback()
+            except Exception as exc:
+                report_failure("Saving the scene after the run", exc)
 
         # Update status
         if failed:

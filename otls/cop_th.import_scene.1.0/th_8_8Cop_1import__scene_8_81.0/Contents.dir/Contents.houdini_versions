@@ -1,0 +1,27 @@
+{
+	"values":["22.0.429","2"
+	],
+	"indexes":{
+		"hdaroot/lopnet/import_shot/procedurals/enable.userdata":0,
+		"hdaroot/lopnet/import_shot.userdata":1,
+		"hdaroot/lopnet/import_shot/duplicates.userdata":0,
+		"hdaroot/objnet/camera/camOrigin.userdata":0,
+		"hdaroot/objnet/camera/xform1.userdata":0,
+		"hdaroot/objnet.userdata":0,
+		"hdaroot/lopnet/import_shot/procedurals/output0.userdata":0,
+		"hdaroot/geometry.userdata":0,
+		"hdaroot/lopnet/import_shot/duplicates/output0.userdata":0,
+		"hdaroot/lopnet.userdata":0,
+		"hdaroot/inputs.userdata":0,
+		"hdaroot/geometry/output.userdata":0,
+		"hdaroot/lopnet/import_shot/procedurals.userdata":0,
+		"hdaroot/objnet/camera/file1.userdata":0,
+		"hdaroot/lopnet/import_shot/metadata.userdata":0,
+		"hdaroot/camera.userdata":0,
+		"hdaroot/objnet/camera.userdata":0,
+		"hdaroot/geometry/unpackusd.userdata":0,
+		"hdaroot/lopnet/import_shot/import.userdata":0,
+		"hdaroot/geometry/lopimport.userdata":0,
+		"hdaroot/outputs.userdata":0
+	}
+}

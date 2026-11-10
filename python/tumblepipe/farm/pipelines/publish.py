@@ -15,6 +15,7 @@ from tumblepipe.apps.deadline import Job
 from tumblepipe.config.timeline import get_export_frame_range
 from tumblepipe.farm.jobs import notify as notify_job
 from tumblepipe.farm.jobs import publish as publish_job
+from tumblepipe.farm.pipelines import build as build_pipeline
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.farm.specs import publish as publish_spec
 from tumblepipe.pipe.paths import (
@@ -144,7 +145,31 @@ def build(
         command = dict(mode = 'notify')
     ), dict(), temp_path)
     deps['notify'] = ['publish']
-    return ['notify']
+    tails = ['notify']
+    build_task = publish_spec.build_task(config)
+    if build_task is not None:
+        tails += _build_jobs(config, build_task, temp_path, jobs, deps)
+    return tails
+
+
+def _build_jobs(config, build_task, temp_path, jobs, deps) -> list[str]:
+    """One staged build per channel, each after the publish job."""
+    names = []
+    for channel_name in build_task['channels']:
+        build_config = {
+            'entity_uri': config['entity']['uri'],
+            'channel_name': channel_name,
+            'priority': config['settings']['priority'],
+            'pool_name': config['settings']['pool_name'],
+        }
+        if 'first_frame' in build_task:
+            build_config['first_frame'] = build_task['first_frame']
+            build_config['last_frame'] = build_task['last_frame']
+        name = f'build_{channel_name}'
+        jobs[name] = build_pipeline.create(build_config, temp_path)
+        deps[name] = ['publish']
+        names.append(name)
+    return names
 
 
 def submit(config: dict, paths: dict[Path, Path] | None = None) -> list[str]:

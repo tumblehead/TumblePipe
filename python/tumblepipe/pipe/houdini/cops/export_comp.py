@@ -84,7 +84,10 @@ class ExportComp(FrameRangeNode, FarmNode, EntityNode):
         if self.parm('layer').eval() != comp.MERGED_LAYER: return []
         shot_uri = self.get_entity_uri()
         if shot_uri is None: return []
-        read = [node.get_channel_name() for node in find_imports(shot_uri)]
+        read = [
+            channel for node in find_imports(shot_uri)
+            for channel in node.read_channels()
+        ]
         return comp.unread_channels(list_channels(shot_uri), read)
 
     def refresh_warning(self) -> str:
@@ -167,15 +170,7 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
     for submit in submits.values():
         states = []
         for node in find_imports(submit.shot_uri):
-            resolved = node.execute()
-            states.append(comp.ImportState(
-                node_path = node.path(),
-                channel = node.get_channel_name(),
-                department = node.get_department_setting(),
-                version = node.get_version_setting(),
-                resolved_department = resolved.department,
-                resolved_version = resolved.version,
-            ))
+            states += node.import_states()
         if not states:
             raise submit.settings._error(
                 f'no th::import_render reads {submit.shot_uri}: there is '

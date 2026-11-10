@@ -29,7 +29,10 @@ config = {
     # Optional: re-comp the shot after the full render (Farm Submit's Comp
     # column), waiting for its denoise, else the render
     'composite': {'pool_name': 'string', 'priority': 'int', 'batch_size': 'int',
-                  'copy_to_edit': 'bool', 'channel_name': 'string'}
+                  'copy_to_edit': 'bool', 'channel_name': 'string',
+                  # optional: specs.composite.valid_recomp
+                  'step_size': 'int', 'preview_frames': 'bool',
+                  'first_frame': 'int', 'last_frame': 'int'}
 }
 
 ``tasks.*.channel_name`` is the Discord channel the chain's notify posts to.
@@ -96,4 +99,9 @@ def is_valid_config(config) -> bool:
         if not valid_recomp(config['composite']): return False
         # The re-comp follows the full render; a preview-only render has none.
         if 'full_render' not in config['tasks']: return False
+        # It comps the frames this render makes, so its own frames (when it
+        # names any) lie inside the render's.
+        block = config['composite']
+        if block.get('first_frame', settings['first_frame']) < settings['first_frame']: return False
+        if block.get('last_frame', settings['last_frame']) > settings['last_frame']: return False
     return True

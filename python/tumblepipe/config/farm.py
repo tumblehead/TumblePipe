@@ -28,15 +28,35 @@ class PriorityPreset:
 
 
 def _get_root_farm() -> dict:
+    """The root's resolved farm settings (schema defaults merged): for reads."""
     props = api.config.get_properties(ENTITY_ROOT_URI) or {}
     farm = props.get('farm')
     return dict(farm) if isinstance(farm, dict) else {}
 
 
+def _edit_root_farm(*keys: str) -> dict:
+    """The root's OWN farm settings to edit and write back, with ``keys``
+    seeded from the resolved value when the root does not pin them yet.
+
+    Editing the resolved dict pinned every farm schema default (priority,
+    tile count, the timeouts) on the root the first time a pool or preset
+    changed, so a later default change never reached that project (QA
+    2026-11-10). Only the keys an edit touches are pinned now.
+    """
+    own = (api.config.get_own_properties(ENTITY_ROOT_URI) or {}).get('farm')
+    farm = dict(own) if isinstance(own, dict) else {}
+    resolved = _get_root_farm()
+    for key in keys:
+        if key not in farm and key in resolved:
+            farm[key] = resolved[key]
+    return farm
+
+
 def _write_root_farm(farm: dict) -> None:
     # Pin only the 'farm' sub-object onto the entity root's own properties.
     # The root is what every entity inherits from, so writing its resolved
-    # dict back would pin the entire schema there permanently.
+    # dict back would pin the entire schema there permanently; callers pass
+    # the own sub-object from _edit_root_farm for the same reason.
     own = api.config.get_own_properties(ENTITY_ROOT_URI) or {}
     own = dict(own)
     own['farm'] = farm
@@ -56,7 +76,7 @@ def get_default_pool() -> str | None:
 
 def add_pool(name: str) -> None:
     """Add a new render pool."""
-    farm = _get_root_farm()
+    farm = _edit_root_farm('pools')
     pools = list(farm.get('pools', []))
     if name in pools:
         raise ValueError(f'Pool already exists: {name}')
@@ -67,7 +87,7 @@ def add_pool(name: str) -> None:
 
 def remove_pool(name: str) -> None:
     """Remove a render pool."""
-    farm = _get_root_farm()
+    farm = _edit_root_farm('pools', 'default_pool')
     pools = list(farm.get('pools', []))
     if name not in pools:
         raise ValueError(f'Pool does not exist: {name}')
@@ -101,7 +121,7 @@ def add_priority_preset(name: str, value: int) -> None:
     """Add a new priority preset."""
     if not 0 <= value <= 100:
         raise ValueError('Priority value must be between 0 and 100')
-    farm = _get_root_farm()
+    farm = _edit_root_farm('priorities')
     presets = dict(farm.get('priorities', {}) or {})
     if name in presets:
         raise ValueError(f'Priority preset already exists: {name}')
@@ -112,7 +132,7 @@ def add_priority_preset(name: str, value: int) -> None:
 
 def remove_priority_preset(name: str) -> None:
     """Remove a priority preset."""
-    farm = _get_root_farm()
+    farm = _edit_root_farm('priorities', 'default_priority')
     presets = dict(farm.get('priorities', {}) or {})
     if name not in presets:
         raise ValueError(f'Priority preset does not exist: {name}')
@@ -125,7 +145,7 @@ def remove_priority_preset(name: str) -> None:
 
 def set_default_priority_preset(name: str) -> None:
     """Set the default priority preset."""
-    farm = _get_root_farm()
+    farm = _edit_root_farm('priorities')
     presets = farm.get('priorities', {}) or {}
     if name not in presets:
         raise ValueError(f'Priority preset does not exist: {name}')

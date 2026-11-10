@@ -67,11 +67,12 @@ Content-Type: text/plain
 
 comment ""
 position 0 5.55112e-17
-connectornextid 1
+connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
 0 "output1"
+1 "output2"
 }
 inputsNamed3
 {
@@ -130,7 +131,7 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	mix 1 1 "input1"
+0 	mix 2 1 "input1"
 }
 inputs
 {
@@ -180,19 +181,21 @@ Content-Type: text/plain
 
 comment ""
 position 0 1.5
-connectornextid 2
+connectornextid 3
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault off exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
-1 "output1"
+2 "output1"
 }
 inputsNamed3
 {
 0 	inputs 0 1 "input1"
+1 	inputs 1 1 "input2"
 }
 inputs
 {
 0 	inputs 0 1
+1 	inputs 1 1
 }
 stat
 {
@@ -213,12 +216,14 @@ Content-Type: text/plain
 {
 version 0.8
 cablerenamebylabel	[ 0	locks=0 ]	(	"off"	)
-inputs	[ 0	locks=0 ]	(	1	)
+inputs	[ 0	locks=0 ]	(	2	)
 outputs	[ 0	locks=0 ]	(	1	)
 inputlabel1	[ 0	locks=0 ]	(	aovs	)
 inputtype1	[ 0	locks=0 ]	(	"cable"	)
 outputlabel1	[ 0	locks=0 ]	(	rgba	)
 outputtype1	[ 0	locks=0 ]	(	"vector4"	)
+inputlabel2	[ 0	locks=0 ]	(	rgba	)
+inputtype2	[ 0	locks=0 ]	(	"vector4"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -245,11 +250,12 @@ Content-Type: text/plain
 
 comment ""
 position 0 5.55112e-17
-connectornextid 1
+connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
 0 "output1"
+1 "output2"
 }
 inputsNamed3
 {
@@ -358,11 +364,10 @@ Content-Type: text/plain
 
 comment ""
 position 0 4
-connectornextid 2
+connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
-1 "output1"
 }
 inputsNamed3
 {
@@ -391,11 +396,7 @@ Content-Type: text/plain
 {
 version 0.8
 setfields	[ 0	locks=0 ]	(	0	)
-fields	[ 0	locks=0 ]	(	1	)
-fieldname1	[ 0	locks=0 ]	(	beauty	)
-fieldmenu1	[ 0	locks=0 ]	(	"-1"	)
-index1	[ 0	locks=0 ]	(	0	)
-fieldtype1	[ 0	locks=0 ]	(	"auto"	)
+fields	[ 0	locks=0 ]	(	0	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -430,11 +431,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	unpack 1 1 "rgba"
+0 	inputs 1 1 "rgba"
 }
 inputs
 {
-0 	unpack 0 1
+0 	inputs 1 1
 }
 stat
 {
@@ -492,11 +493,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	unpack 1 1 "rgba"
+0 	inputs 1 1 "rgba"
 }
 inputs
 {
-0 	unpack 0 1
+0 	inputs 1 1
 }
 stat
 {

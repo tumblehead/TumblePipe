@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6a905b8f876bd848c563bf8ec2ce3e7dfa57b405f8b22fd4d494d42ceebe33d1 # shrinks to takes = [Take { label: "animation v0001", department: "animation", version: "v0001", media: Movie { path: "" } }], at = Index(0)

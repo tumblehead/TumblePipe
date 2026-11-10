@@ -180,11 +180,15 @@ mod tests {
 
     use proptest::prelude::*;
 
+    /// One render department's takes: plain ones as (layer, version), and
+    /// its stacks' versions.
+    type Department = (Vec<(usize, u32)>, Vec<u32>);
+
     /// A shot's renders as discovery lists them: the render departments in
     /// pipeline order (render, denoise, composite), each one's plain takes
     /// by layer (the slapcomp last) then version, then its stacks; after
     /// the playblasts. A department is its layers' versions and its stacks'.
-    fn discovered(departments: &[(Vec<(usize, u32)>, Vec<u32>)]) -> Vec<Take> {
+    fn discovered(departments: &[Department]) -> Vec<Take> {
         let mut takes = vec![movie("animation", "v0001")];
         for (name, (plain, stacks)) in ["render", "denoise", "composite"].iter().zip(departments) {
             let mut plain = plain.clone();

@@ -2454,7 +2454,12 @@ class _CheckList(QWidget):
         table.setHorizontalHeaderLabels(list(headers))
         table.verticalHeader().setVisible(False)
         table.setSelectionMode(QAbstractItemView.NoSelection)
-        table.horizontalHeader().setSectionResizeMode(len(headers) - 1, QHeaderView.Stretch)
+        header = table.horizontalHeader()
+        # The names are what is ticked: never cut them short ("SQ010/..."
+        # on every shot row), the detail column takes what is left.
+        if len(headers) > 1:
+            header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(len(headers) - 1, QHeaderView.Stretch)
         layout.addWidget(table, 1)
         self._items: list[QTableWidgetItem] = []
 

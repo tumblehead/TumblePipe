@@ -12,6 +12,36 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.98.0 — 2026-11-09
+
+### Features
+- feat(farm-submit): a Comp column re-comps the shot after its render (`a0b0165c`)
+- feat(config): composite template builds the comp; migration v24 (`56cb0aec`)
+- feat(comp): build the comp from the composite template; th::build_comp is gone (`e78ba2cd`)
+- feat(cache): browse existing caches; Load takes the latest when no version is picked (`4c0d3c9d`)
+
+### Fixes
+- fix(farm-submit): the queue card shows a failed row's whole error (`e7cf634d`)
+- fix(farm-manager): splitter handles that can be found (`495d4c33`)
+- fix(editor): the arrows, Home/End and Space reach the timeline (`3b4c5846`)
+- fix(editor): Play and Burn-ins no longer close the window (`f141462c`)
+- fix(publish): an export node publishes the workfile it lives in (`fa2ce5ef`)
+
+### Performance
+- perf(tumbleview): realtime in Solaris's viewer; Set Pivot orbits the clicked point (`4a637b31`)
+
+### Documentation
+- docs(comp): the comp workfile, its nodes, the Comp column and migration v24 (`cab12a61`)
+- docs: editor keys after a click, Farm Submit full errors, Farm Manager panes (`3af3cafa`)
+- docs(design): department groups, one workfile for several departments (`fdafec2f`)
+- docs: regenerate CHANGELOG.md for v1.97.1 (`df97dd25`)
+
+### Tests
+- test(comp): properties for the comp template, its farm chain and the Comp column (`a597c495`)
+- test(farm): TH_PLAYBLAST_GPU is the machine's opt-in, not a blur the worker sets (`e5a559d9`)
+- test(publish): properties for publishing several departments from one workfile (`c97354ff`)
+- test(cache): properties for browsing and loading another department's cache (`02253be2`)
+
 ## v1.97.1 — 2026-11-09
 
 ### Fixes

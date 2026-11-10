@@ -59,6 +59,8 @@ LABELLED = {
         "tumblepipe.pipe.houdini.sops.playblast:Playblast",
     ("import_lop_camera", "Cop"):
         "tumblepipe.pipe.houdini.cops.import_lop_camera:ImportLopCamera",
+    ("import_scene", "Cop"):
+        "tumblepipe.pipe.houdini.cops.import_scene:ImportScene",
 }
 
 

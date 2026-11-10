@@ -1,9 +1,9 @@
-"""Build the comp HDAs (th::import_render, th::light_mix, th::export_comp)
-from code and expand them into otls/.
+"""Build the comp HDAs (th::import_render, th::light_mix, th::export_comp,
+th::import_scene) from code and expand them into otls/.
 
     hython scripts/make_comp_hdas.py
 
-The three nodes' interfaces and contents are written here, so a change is a
+The nodes' interfaces and contents are written here, so a change is a
 diff of this file plus the regenerated otls/ sources (see otls/README.md).
 Each node is built as a COP subnet, turned into a digital asset in a temp
 .hda, given its DialogScript and sections, and expanded with ``hotl -t``
@@ -33,6 +33,7 @@ ICONS = {
     'import_render': '$TH_PIPELINE_PATH/resources/ImportAssetLayer.png',
     'light_mix': '$TH_PIPELINE_PATH/resources/BuildComp.png',
     'export_comp': '$TH_PIPELINE_PATH/resources/BuildComp.png',
+    'import_scene': '$TH_PIPELINE_PATH/resources/ImportAssetLayer.png',
 }
 
 TOOLS_SHELF = """<?xml version="1.0" encoding="UTF-8"?>
@@ -117,7 +118,7 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
     signature	default	Default	{{ }}	{{ RGBA Cable }}
 
     help {{
-	"One channel's finished render: the beauty (rgba) and a cable of every AOV the comp reads (aovs)."
+	"A shot's finished render: the beauty (rgba) and a cable of the other AOVs the comp reads (aovs). Channel * reads every channel: rgba is them laid over each other, the cable carries each channel's beauty and AOVs."
     }}
 
     groupsimple {{
@@ -130,7 +131,13 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             label   "Channel"
             type    string
             default {{ "default" }}
-            {_menu('import_render', 'ImportRender', 'list_channel_names')}
+            help    "The channel to read; All channels (*) reads every channel of the shot in this one node."
+            menu {{
+                [ "from tumblepipe.pipe.houdini.cops import import_render" ]
+                [ "" ]
+                [ "return import_render.ImportRender(hou.pwd()).channel_menu()" ]
+                language python
+            }}
             {_callback('import_render', 'changed')}
         }}
         parm {{
@@ -171,6 +178,35 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             invisible
             default {{ "" }}
         }}
+        parm {{
+            name    "build_key"
+            label   "Build Key"
+            type    string
+            invisible
+            default {{ "" }}
+        }}
+        parm {{
+            name    "pins"
+            label   "Pins"
+            type    string
+            invisible
+            default {{ "" }}
+            help    "Set by the composite worker: an all-channels import's frozen version per channel."
+        }}
+    }}
+
+    groupsimple {{
+        name    "outputs_group"
+        label   "Outputs"
+
+        parm {{
+            name    "unpack_outputs"
+            label   "AOV Outputs"
+            type    toggle
+            default {{ "0" }}
+            help    "Keep a Cable Unpack beside the node with one output per AOV in the cable, kept in step with it."
+            {_callback('import_render', 'unpack_changed')}
+        }}
     }}
 
     groupsimple {{
@@ -206,11 +242,12 @@ LIGHT_MIX_DS = f"""# Dialog script for th::light_mix::1.0
     label	"th light mix"
 
     input	aovs	aovs
+    input	rgba	rgba
     output	rgba	rgba
-    signature	default	Default	{{ Cable }}	{{ RGBA }}
+    signature	default	Default	{{ Cable RGBA }}	{{ RGBA }}
 
     help {{
-	"A channel's light groups mixed back into its beauty: the graded groups plus Rest (the beauty minus the groups)."
+	"A channel's light groups mixed back into its beauty: the graded groups plus Rest (the beauty minus the groups). Inputs: the import's aovs cable and its rgba beauty (wired for you on sync)."
     }}
 
     parm {{
@@ -458,6 +495,132 @@ EXPORT_COMP_DS = f"""# Dialog script for th::export_comp::1.0
 """
 
 
+IMPORT_SCENE_DS = f"""# Dialog script for th::import_scene::1.0
+
+{{
+    name	th::import_scene::1.0
+    script	th::import_scene::1.0
+    label	"th import scene"
+
+    output	geometry	geometry
+    output	camera	camera
+    signature	default	Default	{{ }}	{{ Geometry Metadata }}
+
+    help {{
+	"The shot's staged scene as geometry and its render camera, for rasterizing in a comp (wire both into a Rasterize Geometry)."
+    }}
+
+    groupsimple {{
+        name    "selection"
+        label   "Scene"
+
+{_entity_parms('import_scene')}
+        parm {{
+            name    "channel"
+            label   "Channel"
+            type    string
+            default {{ "default" }}
+            menu {{
+                [ "opmenu -l -a lopnet/import_shot channel" ]
+            }}
+        }}
+        parm {{
+            name    "department"
+            label   "Department"
+            type    string
+            default {{ "from_context" }}
+            menu {{
+                [ "opmenu -l -a lopnet/import_shot department" ]
+            }}
+        }}
+        parm {{
+            name    "version"
+            label   "Version"
+            type    string
+            default {{ "latest" }}
+            menu {{
+                [ "opmenu -l -a lopnet/import_shot version" ]
+            }}
+        }}
+        parm {{
+            name    "version_label"
+            label   "Reads"
+            type    label
+            default {{ "" }}
+        }}
+    }}
+
+    groupsimple {{
+        name    "geometry_group"
+        label   "Geometry"
+
+        parm {{
+            name    "primpattern"
+            label   "Primitives"
+            type    string
+            default {{ "/*" }}
+            help    "The prims imported as geometry; anything that is not geometry (cameras, lights) adds nothing."
+        }}
+        parm {{
+            name    "purpose"
+            label   "Purpose"
+            type    string
+            default {{ "render" }}
+            menu {{
+                "render"    "Render"
+                "proxy"     "Proxy"
+                "guide"     "Guide"
+            }}
+        }}
+        parm {{
+            name    "timesample"
+            label   "Time Sample"
+            type    ordinal
+            default {{ "1" }}
+            help    "Animated imports the current frame and recooks every frame; Static imports one frame."
+            menu {{
+                "static"    "Static"
+                "animated"  "Animated"
+            }}
+        }}
+        parm {{
+            name    "staticimportframe"
+            label   "Static Frame"
+            type    float
+            default {{ "$FSTART" }}
+            hidewhen "{{ timesample == 1 }}"
+        }}
+    }}
+
+    groupsimple {{
+        name    "camera_group"
+        label   "Camera"
+
+        parm {{
+            name    "camera_prim"
+            label   "Camera"
+            type    string
+            default {{ "/cameras/render_camera" }}
+        }}
+    }}
+
+    groupsimple {{
+        name    "actions"
+        label   "Actions"
+
+        parm {{
+            name    "execute"
+            label   "Import"
+            type    button
+            default {{ "0" }}
+            {_callback('import_scene', 'execute')}
+        }}
+    }}
+
+}}
+"""
+
+
 def _on_created(module):
     return (
         f'import tumblepipe.pipe.houdini.cops.{module} as th_node\n\n'
@@ -490,11 +653,13 @@ def build_import_render(root):
 
 
 def build_light_mix(root):
-    _set_io(root, [('aovs', 'cable')], [('rgba', 'vector4')])
+    io = [('aovs', 'cable'), ('rgba', 'vector4')]
+    _set_io(root, io, [('rgba', 'vector4')])
     mix = root.createNode('subnet', 'mix')
-    _set_io(mix, [('aovs', 'cable')], [('rgba', 'vector4')])
+    _set_io(mix, io, [('rgba', 'vector4')])
     mix.setColor(hou.Color((1.0, 0.0, 1.0)))
     mix.setInput(0, root.node('inputs'), 0)
+    mix.setInput(1, root.node('inputs'), 1)
     root.node('outputs').setInput(0, mix, 0)
     mix.setPosition(hou.Vector2(0, 1.5))
     # The default network: no groups, Rest is the beauty
@@ -504,6 +669,9 @@ def build_light_mix(root):
         def parm(self, name):
             return _NullParm()
 
+        def native(self):
+            return _Unwired(root)
+
     _Prototype(root)._build([])
     return ['mix']
 
@@ -511,6 +679,20 @@ def build_light_mix(root):
 class _NullParm:
     def set(self, *_): pass
     def eval(self): return 0
+
+
+class _Unwired:
+    """The prototype light mix's node: its beauty input reads as wired, so
+    the default network takes the beauty from the rgba input, not the cable
+    (``_build`` reads an empty rgba input as "the cable carries it")."""
+    def __init__(self, root):
+        self._root = root
+
+    def node(self, path):
+        return self._root.node(path)
+
+    def input(self, index):
+        return self._root  # not None: wired
 
 
 def build_export_comp(root):
@@ -529,10 +711,52 @@ def build_export_comp(root):
     return []
 
 
+def build_import_scene(root):
+    """The staged shot (th::import_shot, payloads loaded) as unpacked
+    polygons through a SOP Import, and its camera through a Camera Import."""
+    _set_io(root, [], [('geometry', 'geo'), ('camera', 'metadata')])
+    lopnet = root.createNode('lopnet', 'lopnet')
+    shot = lopnet.createNode('th::import_shot::1.0', 'import_shot')
+    for name in ('entity', 'channel', 'department', 'version'):
+        shot.parm(name).setExpression(f'chs("../../{name}")', hou.exprLanguage.Hscript)
+    shot.parm('loadpayloads').set(1)
+    lopnet.setPosition(hou.Vector2(0, 3.0))
+
+    geometry = root.createNode('sopimport', 'geometry')
+    lopimport = geometry.createNode('lopimport::2.0', 'lopimport')
+    lopimport.parm('loppath').set('../../lopnet/import_shot')
+    for name in ('primpattern', 'purpose'):
+        lopimport.parm(name).setExpression(f'chs("../../{name}")', hou.exprLanguage.Hscript)
+    for name in ('timesample', 'staticimportframe'):
+        lopimport.parm(name).setExpression(f'ch("../../{name}")', hou.exprLanguage.Hscript)
+    unpack = geometry.createNode('unpackusd::2.0', 'unpackusd')
+    unpack.parm('output').set(1)  # polygons
+    unpack.setInput(0, lopimport, 0)
+    out = geometry.node('output') or geometry.createNode('output', 'output')
+    out.setInput(0, unpack, 0)
+    geometry.setPosition(hou.Vector2(-1.5, 1.5))
+
+    objnet = root.createNode('objnet', 'objnet')
+    lopcam = objnet.createNode('lopimportcam', 'camera')
+    lopcam.parm('loppath').set('../../lopnet/import_shot')
+    lopcam.parm('primpath').setExpression('chs("../../camera_prim")', hou.exprLanguage.Hscript)
+    objnet.setPosition(hou.Vector2(1.5, 3.0))
+    camera = root.createNode('cameraimport', 'camera')
+    camera.parm('camera').set('../objnet/camera')
+    camera.setPosition(hou.Vector2(1.5, 1.5))
+
+    outputs = root.node('outputs')
+    outputs.setInput(0, geometry, 0)
+    outputs.setInput(1, camera, 0)
+    return ['lopnet/import_shot']
+
+
+# (name, label, build, dialog script, min inputs, max inputs)
 NODES = [
-    ('import_render', 'th import render', build_import_render, IMPORT_RENDER_DS, 0),
-    ('light_mix', 'th light mix', build_light_mix, LIGHT_MIX_DS, 1),
-    ('export_comp', 'th export comp', build_export_comp, EXPORT_COMP_DS, 1),
+    ('import_render', 'th import render', build_import_render, IMPORT_RENDER_DS, 0, 0),
+    ('light_mix', 'th light mix', build_light_mix, LIGHT_MIX_DS, 1, 2),
+    ('export_comp', 'th export comp', build_export_comp, EXPORT_COMP_DS, 1, 1),
+    ('import_scene', 'th import scene', build_import_scene, IMPORT_SCENE_DS, 0, 0),
 ]
 
 ON_LOADED = {
@@ -543,7 +767,7 @@ ON_LOADED = {
 }
 
 
-def make(name, label, build, dialog_script, inputs, temp_dir):
+def make(name, label, build, dialog_script, min_inputs, max_inputs, temp_dir):
     type_name = f'th::{name}::1.0'
     copnet = hou.node('/img').createNode('copnet', f'build_{name}')
     root = copnet.createNode('subnet', name)
@@ -553,8 +777,8 @@ def make(name, label, build, dialog_script, inputs, temp_dir):
         name = type_name,
         hda_file_name = str(hda_path),
         description = label,
-        min_num_inputs = inputs,
-        max_num_inputs = inputs,
+        min_num_inputs = min_inputs,
+        max_num_inputs = max_inputs,
         ignore_external_references = True,
     )
     definition = node.type().definition()
@@ -595,8 +819,8 @@ def expand(hda_path, name):
 
 def main():
     with tempfile.TemporaryDirectory() as temp_dir:
-        for name, label, build, dialog_script, inputs in NODES:
-            hda_path = make(name, label, build, dialog_script, inputs, temp_dir)
+        for name, label, build, dialog_script, min_inputs, max_inputs in NODES:
+            hda_path = make(name, label, build, dialog_script, min_inputs, max_inputs, temp_dir)
             expand(hda_path, name)
 
 

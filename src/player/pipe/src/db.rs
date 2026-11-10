@@ -3,7 +3,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use serde::Serialize as _;
 use serde_json::{Value, json};
 use thiserror::Error;
 
@@ -71,9 +70,10 @@ pub fn read_with_mtime(db_dir: &Path, purpose: &str) -> Result<(Value, String), 
 }
 
 /// Atomically write `data` to `<db_dir>/<purpose>.json` using a temp file in
-/// the same directory plus a rename. Indentation matches the Python writer
-/// (`json.dump(..., indent=4)`) so on-disk diffs stay stable. Returns the new
-/// mtime string.
+/// the same directory plus a rename, byte for byte as TumblePipe's store
+/// writes it ([`crate::io::store_json`]: `json.dump(indent=4)` with Python's
+/// ASCII escapes, `\r\n` lines on Windows), so a file both write never
+/// churns. Returns the new mtime string.
 pub fn write_atomic(db_dir: &Path, purpose: &str, data: &Value) -> Result<String, DbError> {
     let file_name = format!("{purpose}.json");
     let target = purpose_path(db_dir, purpose);
@@ -84,11 +84,9 @@ pub fn write_atomic(db_dir: &Path, purpose: &str, data: &Value) -> Result<String
         .tempfile_in(db_dir)
         .map_err(|source| DbError::Write { file: file_name.clone(), source })?;
 
-    let indent = b"    ";
-    let formatter = serde_json::ser::PrettyFormatter::with_indent(indent);
-    let mut ser = serde_json::Serializer::with_formatter(tmp.as_file_mut(), formatter);
-    data.serialize(&mut ser).map_err(|source| DbError::Parse { file: file_name.clone(), source })?;
-    tmp.as_file_mut().write_all(b"\n").map_err(|source| DbError::Write { file: file_name.clone(), source })?;
+    tmp.as_file_mut()
+        .write_all(crate::io::python_text(data).as_bytes())
+        .map_err(|source| DbError::Write { file: file_name.clone(), source })?;
     tmp.as_file_mut().sync_all().map_err(|source| DbError::Write { file: file_name.clone(), source })?;
 
     // Renamed with the retry a reader holding the file open needs on
@@ -224,7 +222,8 @@ pub fn remove_child(root: &mut Value, segments: &[String], file: &str) -> Result
     children.shift_remove(last).ok_or_else(|| DbError::Shape { file: file.to_string(), context: format!("no child named {last:?}") })
 }
 
-/// Rename the child at `segments` within its parent's children map.
+/// Rename the child at `segments` within its parent's children map, keeping
+/// its place among its siblings.
 pub fn rename_child(root: &mut Value, segments: &[String], new_name: &str, file: &str) -> Result<(), DbError> {
     let (last, parent_segments) =
         segments.split_last().ok_or_else(|| DbError::Shape { file: file.to_string(), context: "cannot rename a root node".to_string() })?;
@@ -240,10 +239,15 @@ pub fn rename_child(root: &mut Value, segments: &[String], new_name: &str, file:
     if children.contains_key(new_name) {
         return Err(DbError::Shape { file: file.to_string(), context: format!("destination name {new_name:?} already exists") });
     }
-    let value = children
-        .shift_remove(last)
-        .ok_or_else(|| DbError::Shape { file: file.to_string(), context: format!("no child named {last:?}") })?;
-    children.insert(new_name.to_string(), value);
+    if !children.contains_key(last) {
+        return Err(DbError::Shape { file: file.to_string(), context: format!("no child named {last:?}") });
+    }
+    // In place, as `store.rename_entity`: child order is pipeline order for
+    // departments.
+    *children = std::mem::take(children)
+        .into_iter()
+        .map(|(name, child)| (if name == *last { new_name.to_string() } else { name }, child))
+        .collect();
     Ok(())
 }
 
@@ -495,6 +499,49 @@ mod tests {
                 prop_assert!(!named || is_valid_entity_name(&new_name));
             }
         }
+
+        /// A renamed node keeps its place among its siblings (department
+        /// order is pipeline order), as `store.rename_entity` keeps it.
+        #[test]
+        fn rename_keeps_the_place(
+            names in proptest::collection::vec("[a-z]{1,4}", 1..6),
+            pick in any::<proptest::sample::Index>(),
+        ) {
+            let mut unique: Vec<String> = Vec::new();
+            for n in names { if !unique.contains(&n) { unique.push(n); } }
+            let old = pick.get(&unique).clone();
+            let mut tree = node(unique.iter().map(|n| (n.clone(), node(serde_json::Map::new()))).collect());
+            rename_child(&mut tree, std::slice::from_ref(&old), "NEW", "departments.json").unwrap();
+            let expected: Vec<String> = unique.iter().map(|n| if *n == old { "NEW".to_string() } else { n.clone() }).collect();
+            prop_assert_eq!(children_at(&tree, std::iter::empty::<&str>()), expected);
+        }
+
+        /// What `write_atomic` writes is byte for byte what TumblePipe's
+        /// store writes (`io::store_json`, parity-tested against Python):
+        /// `\uXXXX` escapes, Windows lines, no trailing newline.
+        #[test]
+        fn writes_what_the_store_writes(value in json_value()) {
+            let dir = tempfile::tempdir().unwrap();
+            write_atomic(dir.path(), "x", &value).unwrap();
+            crate::io::store_json(&dir.path().join("y.json"), &value).unwrap();
+            prop_assert_eq!(std::fs::read(dir.path().join("x.json")).unwrap(), std::fs::read(dir.path().join("y.json")).unwrap());
+            prop_assert_eq!(read(dir.path(), "x.json").unwrap(), value);
+        }
+    }
+
+    fn json_value() -> impl Strategy<Value = Value> {
+        let leaf = prop_oneof![
+            Just(Value::Null),
+            any::<bool>().prop_map(Value::Bool),
+            any::<i64>().prop_map(Value::from),
+            "[a-zA-Z0-9 \"\\\\/éøß💡\u{7f}\n\t]{0,6}".prop_map(Value::String),
+        ];
+        leaf.prop_recursive(3, 24, 4, |inner| {
+            prop_oneof![
+                proptest::collection::vec(inner.clone(), 0..4).prop_map(Value::Array),
+                proptest::collection::vec(("[a-zø]{1,3}", inner), 0..4).prop_map(|kv| Value::Object(kv.into_iter().collect())),
+            ]
+        })
     }
 
     #[test]

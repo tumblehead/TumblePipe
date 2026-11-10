@@ -327,13 +327,27 @@ DEPT_API_SHORT_FALLBACK = {
 # ── Module-level helpers ─────────────────────────────────────────
 
 
+def _is_multi(col: Collection) -> bool:
+    """A Multi leaf or a Multis subheader (``type:group`` in its tag)."""
+    return "type:group" in (col.tag or "").split("+")
+
+
 def cascade_counts(col: Collection) -> Collection:
-    """Return a new Collection whose count is the sum of all descendant counts."""
+    """Return a new Collection whose count is the sum of its descendants'.
+
+    Multis are left out of the sum: a Multi's members are shots or assets
+    already counted under their sequence or category, so Assets read 9 for
+    six assets once a Multi held three of them. A Multis subheader keeps
+    its own count, the number of Multis it lists, not their members.
+    """
     import dataclasses
     if not col.children:
         return col
     cascaded_children = tuple(cascade_counts(c) for c in col.children)
-    total = sum(c.count for c in cascaded_children)
+    counted = [c for c in cascaded_children if not _is_multi(c)]
+    if not counted and _is_multi(col):
+        return dataclasses.replace(col, children=cascaded_children)
+    total = sum(c.count for c in counted)
     return dataclasses.replace(col, children=cascaded_children, count=total)
 
 

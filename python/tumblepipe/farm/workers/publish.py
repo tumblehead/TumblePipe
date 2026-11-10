@@ -81,6 +81,21 @@ def _next_export_path(entity):
     department_name = entity['department']
     return next_export_path(entity_uri, PUBLISH_CHANNEL, department_name)
 
+def queues_own_build(config: dict, entity_type: str | None, is_renderable) -> bool:
+    """Whether this publish queues the entity's staged build itself.
+
+    A renderable asset department does, unless the config carries a
+    tasks.build (``specs.publish``): then the publish dialog's run owns the
+    build, chained after a publish job, and a second one would write the
+    same staged version twice.
+    """
+    if publish_spec.build_task(config) is not None:
+        return False
+    if entity_type != 'asset':
+        return False
+    return bool(is_renderable('assets', config['entity']['department']))
+
+
 SCRIPT_PATH = Path(__file__).parent / 'publish_houdini.py'
 def main(config: dict, _frame_span: BlockRange) -> int:
 
@@ -125,8 +140,9 @@ def main(config: dict, _frame_span: BlockRange) -> int:
         return error(f'Export not found: {export_path}')
 
     # Auto-trigger asset build if this is a renderable asset department
-    entity_type = _get_entity_type(entity_uri)
-    if entity_type == 'asset' and is_renderable('assets', department_name):
+    if publish_spec.build_task(config) is not None:
+        logging.info('The run owns the staged build (chained in a publish batch); not queuing another')
+    elif queues_own_build(config, _get_entity_type(entity_uri), is_renderable):
         logging.info(f'Renderable asset department published: {department_name}')
         _trigger_asset_build(entity_uri, config['settings'], PUBLISH_CHANNEL)
 

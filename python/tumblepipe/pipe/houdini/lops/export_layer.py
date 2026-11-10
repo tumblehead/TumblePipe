@@ -586,7 +586,13 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             )
         return workfile_path, context.department_name
 
-    def _export_farm(self):
+    def _export_farm(self, build: dict | None = None):
+        """Submit the publish of this node's department to the farm.
+
+        ``build`` is the publish dialog's Build USD task riding along
+        (``specs.publish`` tasks.build): its builds chain after the publish
+        job in the same batch, and the worker queues none of its own.
+        """
         # Each getter raises when its parm does not resolve
         entity_uri = self.require_entity_uri()
         department_name = self.require_department_name()
@@ -620,6 +626,8 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             },
             'workfile_path': path_str(workfile_dest)
         }
+        if build is not None:
+            config['tasks']['build'] = build
 
         # A failed submit raises, so the publish dialog marks the task failed
         # (with the error in its report). It used to show the error and

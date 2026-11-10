@@ -108,7 +108,9 @@ class Field:
             has no entity source and no default: left unpinned it is not
             sent at all, so the render uses what the scene says. Sending a
             seeded default here is what rendered motion blur for a scene
-            whose render settings turned it off.
+            whose render settings turned it off. The comp's frames work
+            the same way: left unset they follow the range batch_submit
+            reads (the render's, else the shot's).
         derive: Reads the entity's value out of another property when
             ``prop`` carries none, before ``default`` (the playblast size
             from the shot's render resolution). None when nothing derives.
@@ -230,10 +232,13 @@ FIELDS: tuple[Field, ...] = (
           prop='playblast.blur_samples', default=16, kind='int'),
 
     # ── Comp (shots only) ─────────────────────────────────
-    # A re-comp of the shot's newest composite workfile. Its frames are the
-    # shot's full range, read by batch_submit, and its input is whatever
-    # renders are on disk, so only the schedule is set here. Batch size and
-    # Copy to edit have no entity property: choices about the submission.
+    # A re-comp of the shot's newest composite workfile, over whatever
+    # renders are on disk (or the render ticked beside it). The fields
+    # mirror an export_comp's own Jobs and Farm parms. Preview frames, step,
+    # batch size and Copy to edit have no entity property: choices about
+    # the submission. The frames follow the render's range (rolls
+    # included), else the shot's, read by batch_submit; the two frame
+    # fields are overrides, sent only when the artist sets one.
     Field('comp_pool', 'comp', 'Pool', prop='farm.default_pool',
           default='general', kind='str'),
     Field('comp_priority', 'comp', 'Priority', prop='farm.priority',
@@ -242,6 +247,11 @@ FIELDS: tuple[Field, ...] = (
           kind='int'),
     Field('comp_copy_to_edit', 'comp', 'Copy to edit', prop=None,
           default=False, kind='bool'),
+    Field('comp_preview', 'comp', 'Preview frames', prop=None,
+          default=False, kind='bool'),
+    Field('comp_step', 'comp', 'Step', prop=None, default=1, kind='int'),
+    Field('comp_first_frame', 'comp', 'First', kind='int', override=True),
+    Field('comp_last_frame', 'comp', 'Last', kind='int', override=True),
 )
 
 #: The look fields and the ``pb_look`` keys they become.
@@ -709,12 +719,59 @@ def entity_warnings(
             _department_warning(resolved.get('pb_department'), departments)
         )
 
+    if resolved.get('comp') and not resolved.get('render'):
+        frames = comp_frames(properties, resolved)
+        if frames is not None:
+            (first, last), (shot_first, shot_last) = frames
+            if first <= last and (first < shot_first or last > shot_last):
+                # Not blocked: renders on disk may run past the shot's range.
+                warnings.append(
+                    f"the comp frames {first}-{last} reach outside the "
+                    f"shot's {shot_first}-{shot_last}: a frame no render "
+                    f"made is missing from the comp"
+                )
+
     return warnings
 
 
 #: The render modes that render the full range (``batch_submit`` builds a
 #: ``full_render`` for them), the ones a Comp can follow.
 FULL_RENDER_MODES = frozenset({'full', 'preview_then_full'})
+
+
+def _int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def comp_frames(
+    properties: dict,
+    resolved: dict,
+) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    """``((first, last), (follow_first, follow_last))`` of a row's comp.
+
+    The range a comp follows is the render's, rolls included, when Render is
+    ticked beside it, else the shot's (its ``frame_start``..``frame_end``
+    and rolls); ``comp_first_frame``/``comp_last_frame`` replace either end
+    when the artist set one. ``batch_submit`` reads the same rule
+    (``pipelines.composite.recomp_range``). None when there is no range to
+    follow (the entity has none; the render warns for itself).
+    """
+    if resolved.get('render'):
+        first, last = _int(resolved.get('first_frame')), _int(resolved.get('last_frame'))
+        pre, post = resolved.get('pre_roll', 0), resolved.get('post_roll', 0)
+    else:
+        first, last = _int(properties.get('frame_start')), _int(properties.get('frame_end'))
+        pre, post = properties.get('roll_start', 0), properties.get('roll_end', 0)
+    if first is None or last is None:
+        return None
+    follows = (first - (_int(pre) or 0), last + (_int(post) or 0))
+    own_first = _int(resolved.get('comp_first_frame'))
+    own_last = _int(resolved.get('comp_last_frame'))
+    return (
+        (follows[0] if own_first is None else own_first,
+         follows[1] if own_last is None else own_last),
+        follows,
+    )
 
 
 def entity_errors(
@@ -743,6 +800,23 @@ def entity_errors(
             "Comp waits for the full render: tick Full range in the Render "
             "settings, or untick Render to comp the renders on disk"
         )
+    if resolved.get('comp'):
+        frames = comp_frames(properties, resolved)
+        if frames is not None:
+            (first, last), (follow_first, follow_last) = frames
+            if first > last:
+                errors.append(
+                    f"the comp frames {first}-{last} end before they start"
+                )
+            elif resolved.get('render') and (
+                first < follow_first or last > follow_last
+            ):
+                # batch_submit refuses it: the comp reads this render.
+                errors.append(
+                    f"the comp frames {first}-{last} reach outside the "
+                    f"render's {follow_first}-{follow_last}: comp inside "
+                    f"them, or untick Render to comp the renders on disk"
+                )
     if resolved.get('render'):
         if not channel_list(resolved):
             checked = list(requested or ())

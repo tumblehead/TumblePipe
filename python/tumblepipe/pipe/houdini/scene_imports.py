@@ -89,6 +89,7 @@ REFRESH_SPECS = (
 REFRESHED_BY_INNER_NODE = {
     "sop_th.import_asset": "import_asset",
     "cop_th.import_lop_camera": "import_shot",
+    "cop_th.import_scene": "import_shot",
 }
 
 # HDAs with a version parm that pick among caches the node wrote itself,

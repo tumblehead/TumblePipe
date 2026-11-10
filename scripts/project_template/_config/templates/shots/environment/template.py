@@ -6,6 +6,12 @@ from tumblepipe.pipe.houdini.lops import (
 )
 from tumblepipe.pipe.houdini.nodes import disable_layer_save_path
 
+# The SOP Create authors under /SET/<node name>. Its default, /<node
+# name>, is a root prim of its own, which shot publish validation refuses
+# (only asset categories, collections, lights, cameras and Render may sit
+# at the root), so a new workfile failed its first publish.
+PRIM_ROOT = '/SET/$OS'
+
 # Environment dresses around what comes after it (the animation camera,
 # characters), so its import_shot leaves out only its own layer.
 
@@ -19,6 +25,8 @@ def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     # Create the sop create node for environment work
     sop_node = scene_node.createNode('sopcreate', 'environment')
     disable_layer_save_path(sop_node)
+    sop_node.parm('primpath').set(PRIM_ROOT)
+    sop_node.parm('pathprefix').set(PRIM_ROOT)
     sop_node.setInput(0, prev_node)
     prev_node = sop_node
 
@@ -45,6 +53,8 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         # Create the sop create node for environment work
         sop_node = scene_node.createNode('sopcreate', f'environment_{member_name}')
         disable_layer_save_path(sop_node)
+        sop_node.parm('primpath').set(PRIM_ROOT)
+        sop_node.parm('pathprefix').set(PRIM_ROOT)
         sop_node.setInput(0, prev_node)
         prev_node = sop_node
 

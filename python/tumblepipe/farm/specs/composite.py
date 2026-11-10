@@ -80,7 +80,22 @@ def _valid_composite(config) -> bool:
 def valid_recomp(block) -> bool:
     """A render config's optional ``composite`` block: the re-comp that
     follows the render (Farm Submit's Comp column; ``pipelines/composite.
-    recomp_config``) and how to schedule it."""
+    recomp_config``) and how to schedule it.
+
+    block = {
+        'pool_name': 'string', 'priority': 'int', 'batch_size': 'int',
+        'copy_to_edit': 'bool', 'channel_name': 'string',
+        'step_size': 'int',         # optional, default 1
+        'preview_frames': 'bool',   # optional, default False: first/middle/last first
+        'first_frame': 'int',       # optional: the comp's own first frame
+        'last_frame': 'int',        # optional: the comp's own last frame
+    }
+
+    The optional keys arrived after the block first shipped (v1.98.0), so
+    a block without them (a job queued by that version) still validates
+    and means what it did: every frame of the range it follows, no preview
+    frames. A missing first or last frame follows that range's.
+    """
     if not isinstance(block, dict): return False
     if not check_str(block, 'pool_name'): return False
     if not check_int(block, 'priority'): return False
@@ -88,6 +103,14 @@ def valid_recomp(block) -> bool:
     if block['batch_size'] <= 0: return False
     if not check_bool(block, 'copy_to_edit'): return False
     if not check_str(block, 'channel_name'): return False
+    if 'step_size' in block:
+        if not check_int(block, 'step_size'): return False
+        if block['step_size'] <= 0: return False
+    if 'preview_frames' in block and not check_bool(block, 'preview_frames'): return False
+    for key in ('first_frame', 'last_frame'):
+        if key in block and not check_int(block, key): return False
+    if 'first_frame' in block and 'last_frame' in block:
+        if block['first_frame'] > block['last_frame']: return False
     return True
 
 

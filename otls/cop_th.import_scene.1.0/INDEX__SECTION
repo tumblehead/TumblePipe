@@ -1,0 +1,15 @@
+Operator:     th::import_scene::1.0
+Label:        th import scene
+Path:         oplib:/th::Cop/import_scene::1.0?th::Cop/import_scene::1.0
+Icon:         $TH_PIPELINE_PATH/resources/ImportAssetLayer.png
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 0
+Outputs:      2
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Tue Nov 10 10:56:53 2026
+

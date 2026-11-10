@@ -10,7 +10,7 @@
     signature	default	Default	{ }	{ RGBA Cable }
 
     help {
-	"One channel's finished render: the beauty (rgba) and a cable of every AOV the comp reads (aovs)."
+	"A shot's finished render: the beauty (rgba) and a cable of the other AOVs the comp reads (aovs). Channel * reads every channel: rgba is them laid over each other, the cable carries each channel's beauty and AOVs."
     }
 
     groupsimple {
@@ -48,12 +48,11 @@
             label   "Channel"
             type    string
             default { "default" }
+            help    "The channel to read; All channels (*) reads every channel of the shot in this one node."
             menu {
                 [ "from tumblepipe.pipe.houdini.cops import import_render" ]
-                [ "from tumblepipe.pipe.houdini import menus" ]
                 [ "" ]
-                [ "node = import_render.ImportRender(hou.pwd())" ]
-                [ "return menus.list_to_menu(node.list_channel_names())" ]
+                [ "return import_render.ImportRender(hou.pwd()).channel_menu()" ]
                 language python
             }
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.changed(kwargs)" }
@@ -112,6 +111,36 @@
             type    string
             invisible
             default { "" }
+        }
+        parm {
+            name    "build_key"
+            label   "Build Key"
+            type    string
+            invisible
+            default { "" }
+        }
+        parm {
+            name    "pins"
+            label   "Pins"
+            type    string
+            invisible
+            default { "" }
+            help    "Set by the composite worker: an all-channels import's frozen version per channel."
+        }
+    }
+
+    groupsimple {
+        name    "outputs_group"
+        label   "Outputs"
+
+        parm {
+            name    "unpack_outputs"
+            label   "AOV Outputs"
+            type    toggle
+            default { "0" }
+            help    "Keep a Cable Unpack beside the node with one output per AOV in the cable, kept in step with it."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.unpack_changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
         }
     }
 

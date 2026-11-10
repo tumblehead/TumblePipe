@@ -447,6 +447,17 @@ check('each is a new pending Multi, empty, covering every department, with its T
       and chase.timeline == (True, False) and list(chase.departments) == list(shots.sheet.base.pool)
       and not props.members and props.timeline == (False, False),
       (chase, props))
+members = ee.MultiMembersDialog(window, shots.sheet, chase)
+members.show()
+app.processEvents()
+_table = members.list.table
+_widest = max(
+    _table.fontMetrics().horizontalAdvance(_table.item(r, 0).text())
+    for r in range(_table.rowCount())
+)
+check('the members dialog shows each name whole, not "sq010/..."',
+      _table.columnWidth(0) >= _widest, (_table.columnWidth(0), _widest))
+members.close()
 multis.set_context('shots')
 if len(sys.argv) > 1:
     window.show_kind('multis')

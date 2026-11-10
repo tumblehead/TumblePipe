@@ -107,6 +107,10 @@ PER_ENTITY_TEXT = "⟨per entity⟩"
 # sent, so the render uses whatever the scene's render settings author.
 FROM_SCENE_TEXT = "⟨from scene⟩"
 
+# Shown by an unset comp frame: nothing is sent, so the comp follows the
+# render's range, else the shot's (``farm.submit.settings.comp_frames``).
+FULL_RANGE_TEXT = "⟨full range⟩"
+
 # The render_mode the Range checkboxes send, keyed by (preview, full range)
 # (batch_submit.RENDER_TASK_KEYS maps it to the render chains). Neither
 # ticked has no mode: submit refuses it.
@@ -1024,6 +1028,7 @@ class _ContextPane(QWidget):
             # Comp is a shots-only section: the Assets tab has no such box.
             **({} if self._comp_copy_edit is None else {
                 'comp_copy_to_edit': self._comp_copy_edit.isChecked(),
+                'comp_preview': self._comp_preview.isChecked(),
             }),
         }
 
@@ -1059,6 +1064,7 @@ class _ContextPane(QWidget):
             'render_preview': self._rnd_preview, 'render_full': self._rnd_full,
             'standalone': self._rnd_standalone, 'copy_to_edit': self._rnd_copy_edit,
             'comp_copy_to_edit': self._comp_copy_edit,
+            'comp_preview': self._comp_preview,
         }
         for key, checked in remembered.restore_batch(record).items():
             if boxes.get(key) is not None:
@@ -1870,6 +1876,7 @@ class _ContextPane(QWidget):
             self._sections[grid.COMP] = self._build_recomp_section()
         else:
             self._comp_copy_edit = None
+            self._comp_preview = None
         self._no_settings = QLabel(
             "Tick a cell to see its settings.\n\nHover a column's header for "
             "what it does and what its marks mean."
@@ -1953,6 +1960,7 @@ class _ContextPane(QWidget):
 
     def _spin(
         self, key: str, low: int, high: int, *, override: bool = False,
+        unset_text: str = FROM_SCENE_TEXT,
     ) -> QSpinBox:
         """An integer field that can park on ``⟨per entity⟩``.
 
@@ -1960,7 +1968,9 @@ class _ContextPane(QWidget):
         carries ``specialValueText`` — Qt's own idiom for "no value". One
         step, not a far-away sentinel: the minimum is reachable by spinning,
         so anything further would let a bounded field (pre-roll, tiles) be
-        typed below its real lower bound.
+        typed below its real lower bound. An override field parks on
+        ``unset_text`` instead (the caller then sets its own tooltip when
+        the scene is not what it follows).
         """
         box = QSpinBox()
         # No arrows: the stylesheet left them as two dots that read as a
@@ -1968,7 +1978,7 @@ class _ContextPane(QWidget):
         box.setButtonSymbols(QAbstractSpinBox.NoButtons)
         box.setRange(low - 1, high)
         if override:
-            box.setSpecialValueText(FROM_SCENE_TEXT)
+            box.setSpecialValueText(unset_text)
             box.setToolTip(
                 "Leave on ⟨from scene⟩ to render with the scene's own render "
                 "settings; a value here overrides them on the farm."
@@ -2289,25 +2299,93 @@ class _ContextPane(QWidget):
     def _build_recomp_section(self) -> Section:
         """A re-comp of each shot's newest composite workfile — shots only.
 
-        The frames are the shot's full range and the input is the renders on
-        disk (or the render ticked beside it), so only the schedule is set
-        here. Batch size and Copy to edit are choices about the submission,
-        not properties of the shot.
+        The input is the renders on disk (or the render ticked beside it).
+        The rows mirror an export_comp's own Jobs and Farm parms: preview
+        frames, the frames, step, batch size, Copy to edit, pool and
+        priority. The frames follow the render's range when Render is
+        ticked beside it, else the shot's (each rolls included), unless set
+        here. Preview frames, step, batch size and Copy to edit are choices
+        about the submission, not properties of the shot.
         """
         box, form = self._section(grid.COMP, "Comp")
-        self._comp_pool = self._line('comp_pool', 'general')
-        form.addRow("Pool:", self._comp_pool)
-        self._comp_priority = self._spin('comp_priority', 0, 100)
-        form.addRow("Priority:", self._row(self._comp_priority, revert=('comp_priority',)))
+        # Batch field, like the Render's Range boxes: no per-entity state.
+        self._comp_preview = QCheckBox("Preview frames (first / middle / last)")
+        self._comp_preview.setToolTip(
+            "Comp the first, middle and last frame first and post them to "
+            "Discord; the full comp waits for them. As an export_comp's "
+            "Preview Frames."
+        )
+        form.addRow("Range:", self._row(self._comp_preview))
+        self._comp_first = self._spin(
+            'comp_first_frame', -1_000_000, 1_000_000,
+            override=True, unset_text=FULL_RANGE_TEXT,
+        )
+        self._comp_last = self._spin(
+            'comp_last_frame', -1_000_000, 1_000_000,
+            override=True, unset_text=FULL_RANGE_TEXT,
+        )
+        frames_tip = (
+            "Leave on ⟨full range⟩ to comp every frame of the render ticked "
+            "beside it, or, with no render, of the shot's range from the "
+            "config (rolls included) — an export_comp's From Config. Type a "
+            "frame to comp from or to it instead; with a render it must lie "
+            "inside the render's frames."
+        )
+        self._comp_first.setToolTip(frames_tip)
+        self._comp_last.setToolTip(frames_tip)
+        form.addRow("Frames:", self._row(
+            self._comp_first, "→", self._comp_last,
+            revert=('comp_first_frame', 'comp_last_frame'),
+        ))
+        self._comp_step = self._spin('comp_step', 1, 100)
+        self._comp_step.setToolTip(
+            "Comp every Nth frame of the range (1: every frame)."
+        )
         self._comp_batch = self._spin('comp_batch_size', 1, 1000)
         self._comp_batch.setToolTip("Frames per farm task of the comp.")
-        form.addRow("Batch:", self._row(self._comp_batch, revert=('comp_batch_size',)))
+        form.addRow("Step / Batch:", self._row(
+            self._comp_step, "/", self._comp_batch,
+            revert=('comp_step', 'comp_batch_size'),
+        ))
+        self._comp_pool = self._pool('comp_pool')
+        form.addRow("Pool:", self._row(self._comp_pool, revert=('comp_pool',)))
+        self._comp_priority = self._spin('comp_priority', 0, 100)
+        form.addRow("Priority:", self._row(self._comp_priority, revert=('comp_priority',)))
         self._comp_copy_edit = QCheckBox("Copy to edit")
         self._comp_copy_edit.setToolTip(
             "Add an edit job that syncs the merged comp to the edit as its "
             "comp layer (mattes and ramps still per channel)."
         )
         form.addRow("", self._row(self._comp_copy_edit))
+        return box
+
+    def _pool(self, key: str) -> QWidget:
+        """A Pool field as the project's pools in a dropdown, the way a th::
+        farm node's Pool menu offers them, the project default named.
+
+        ``⟨per entity⟩`` (and a pool the entity names that the project no
+        longer lists) leaves each entity on its own ``farm.default_pool``.
+        A project that lists no pools gets the free-text field instead, so
+        a pool can still be named.
+        """
+        from tumblepipe.config import farm as farm_config
+        try:
+            pools = [pool.name for pool in farm_config.list_pools()]
+            default_pool = farm_config.get_default_pool()
+        except Exception:  # a config read must not stop the dialog opening
+            log.exception("Could not read the project's farm pools")
+            pools, default_pool = [], None
+        if not pools:
+            return self._line(key, 'general')
+        labels = (
+            {default_pool: f"{default_pool} (project default)"}
+            if default_pool in pools else {}
+        )
+        box = self._combo(key, pools, labels)
+        box.setToolTip(
+            "The farm pool to comp in. ⟨per entity⟩: each shot's own "
+            "configured pool (the project default unless the shot sets one)."
+        )
         return box
 
     # ── Render camera ─────────────────────────────────────
@@ -2528,6 +2606,7 @@ class _ContextPane(QWidget):
         })
         if self._comp_copy_edit is not None:
             values['comp_copy_to_edit'] = self._comp_copy_edit.isChecked()
+            values['comp_preview'] = self._comp_preview.isChecked()
         return values
 
     def _render_mode(self) -> str | None:

@@ -329,6 +329,7 @@ def _create_export_group_task(
             current_version=version,
             execute_local=lambda n=node_ref: n.execute(force_local=True),
             execute_farm=lambda n=node_ref: n._export_farm(),
+            execute_farm_with_builds=lambda build, n=node_ref: n._export_farm(build=build),
             first_frame=first_frame,
             last_frame=last_frame,
         )

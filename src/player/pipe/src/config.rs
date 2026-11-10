@@ -41,6 +41,12 @@ pub enum ConfigError {
     CaseCollision { wanted: String, existing: String },
     #[error("Name '{0}' may only use letters and digits")]
     BadName(String),
+    #[error("A purpose root cannot be renamed")]
+    RootRename,
+    #[error("Entity '{0}' already exists")]
+    NameTaken(String),
+    #[error("Entity name '{wanted}' collides with existing '{existing}' (names may not differ only by case)")]
+    RenameCaseCollision { wanted: String, existing: String },
 }
 
 /// The entity kinds whose names follow [`is_valid_entity_name`]
@@ -316,6 +322,41 @@ impl Config {
         self.write_root(&uri.purpose, data)
     }
 
+    /// Rename `uri` to `new_name`, keeping its place among its siblings
+    /// (`rename_entity`): child order is pipeline order for departments.
+    /// Refuses a root, a node that does not exist, a name taken or one that
+    /// differs from a sibling's only by case, and a new category, sequence,
+    /// asset or shot name not of letters and digits. Only the config row:
+    /// files named after it are the caller's.
+    pub fn rename_entity(&self, uri: &Uri, new_name: &str) -> Result<(), ConfigError> {
+        let Some((old_name, parents)) = uri.segments.split_last() else { return Err(ConfigError::RootRename) };
+        let mut data = self.read_disk(&uri.purpose)?.ok_or(ConfigError::Missing)?;
+        if lookup(&data, &uri.segments).is_none() {
+            return Err(ConfigError::Missing);
+        }
+        let mut new_path = parents.to_vec();
+        new_path.push(new_name.to_string());
+        if lookup(&data, &new_path).is_some() {
+            return Err(ConfigError::NameTaken(new_name.to_string()));
+        }
+        if let Some((wanted, existing)) = find_case_collision(&data, &new_path) {
+            return Err(ConfigError::RenameCaseCollision { wanted, existing });
+        }
+        if let Some(problem) = new_name_problem(&uri.purpose, &data, &new_path) {
+            return Err(problem);
+        }
+        let mut node = &mut data;
+        for step in parents {
+            node = node.get_mut("children").and_then(|c| c.get_mut(step)).ok_or(ConfigError::Missing)?;
+        }
+        let children = node.get_mut("children").and_then(Value::as_object_mut).ok_or(ConfigError::Missing)?;
+        *children = std::mem::take(children)
+            .into_iter()
+            .map(|(name, child)| (if name == *old_name { new_name.to_string() } else { name }, child))
+            .collect();
+        self.write_root(&uri.purpose, data)
+    }
+
     /// Remove `uri` and everything under it (`remove_entity`).
     pub fn remove_entity(&self, uri: &Uri) -> Result<(), ConfigError> {
         let mut data = self.read_disk(&uri.purpose)?.ok_or(ConfigError::Missing)?;
@@ -411,5 +452,41 @@ mod tests {
         assert_eq!(fresh.get_own_properties(&uri("entity:/shots/Seq_01/sh010")).unwrap().unwrap()["fps"], json!(24));
         fresh.remove_entity(&uri("entity:/shots/Seq_01/sh010")).unwrap();
         assert!(!Config::new(_dir.path()).exists(&uri("entity:/shots/Seq_01/sh010")).unwrap());
+    }
+
+    proptest::proptest! {
+        /// A rename keeps the node's place among its siblings and its
+        /// subtree, and is refused (nothing written) for a name taken, one
+        /// differing from a sibling's only by case, or a bad entity name.
+        #[test]
+        fn rename_keeps_place_and_refuses_as_python(
+            names in proptest::collection::vec("[A-Ca-c][0-9]", 1..6),
+            pick in proptest::prelude::any::<proptest::sample::Index>(),
+            new_name in "[A-Ca-c_][0-9]",
+        ) {
+            let mut unique: Vec<String> = Vec::new();
+            for n in names { if !unique.iter().any(|u: &String| u.to_lowercase() == n.to_lowercase()) { unique.push(n); } }
+            let old = pick.get(&unique).clone();
+            let children: Map<String, Value> = unique.iter().map(|n| (n.clone(), json!({"properties": {"n": n}, "children": {}}))).collect();
+            let entity = json!({"properties": {}, "children": {"shots": {"properties": {}, "children": children}}});
+            let (dir, config) = project(&[("entity", entity.clone())]);
+            let result = config.rename_entity(&Uri::new("entity", ["shots", old.as_str()]), &new_name);
+            let on_disk = load_json(&dir.path().join("db").join("entity.json")).unwrap();
+            if unique.contains(&new_name) {
+                proptest::prop_assert_eq!(result, Err(ConfigError::NameTaken(new_name.clone())));
+            } else if let Some(existing) = unique.iter().find(|u| u.to_lowercase() == new_name.to_lowercase()) {
+                proptest::prop_assert_eq!(result, Err(ConfigError::RenameCaseCollision { wanted: new_name.clone(), existing: existing.clone() }));
+            } else if new_name.contains('_') {
+                proptest::prop_assert_eq!(result, Err(ConfigError::BadName(new_name.clone())));
+            } else {
+                proptest::prop_assert_eq!(result, Ok(()));
+                let names: Vec<String> = on_disk["children"]["shots"]["children"].as_object().unwrap().keys().cloned().collect();
+                let expected: Vec<String> = unique.iter().map(|n| if *n == old { new_name.clone() } else { n.clone() }).collect();
+                proptest::prop_assert_eq!(names, expected);
+                proptest::prop_assert_eq!(&on_disk["children"]["shots"]["children"][&new_name]["properties"]["n"], &json!(old));
+                return Ok(());
+            }
+            proptest::prop_assert_eq!(on_disk, entity);
+        }
     }
 }

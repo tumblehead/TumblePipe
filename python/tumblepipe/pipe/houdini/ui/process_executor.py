@@ -70,6 +70,11 @@ def _validation_cancelled_type() -> type:
     return ValidationCancelled
 
 
+# Why a task stopped when the artist pressed Cancel Export on a validation
+# failure: the reason its row and the skipped-steps note show.
+CANCELLED_AT_VALIDATION = 'cancelled at validation'
+
+
 # What build tasks are filed under (task_factory). A build composes the staged
 # files from what is on disk and reads nothing from the session's stage.
 _BUILD_DEPARTMENT = 'staged'
@@ -109,6 +114,63 @@ def _version_of(result) -> str | None:
     if isinstance(result, str) and result.startswith('v'):
         return result
     return None
+
+
+def _enabled_children(task: ProcessTask) -> list[ProcessTask]:
+    return [child for child in task.children or () if child.enabled]
+
+
+def farm_build_plan(tasks: list[ProcessTask]) -> tuple[dict[str, str], dict[str, str]]:
+    """Which farm exports of a run take its Build USD tasks along.
+
+    A farm run used to submit each Build USD as a batch of its own, with no
+    dependency on the publish jobs (so it could stage before they landed),
+    while the publish worker of a renderable asset department queued
+    another build of the same staged version. Now the builds ride in a
+    publish batch, chained after its publish job.
+
+    Returns ``(carriers, members)``, both export child id -> build group id.
+    ``members`` holds every enabled farm export of an entity, before that
+    entity's enabled build group: its publish owns no build (the worker
+    queues none). ``carriers`` holds, per build group, the one export whose
+    batch chains the builds: the last row of the build group's last enabled
+    dependency group, when that row is such an export, since that publish
+    is submitted last. A build group without one keeps its own submission.
+    """
+    carriers: dict[str, str] = {}
+    members: dict[str, str] = {}
+    for at, group in enumerate(tasks):
+        if group.task_type != 'build_group' or not group.enabled:
+            continue
+        if not _enabled_children(group):
+            continue
+        exports = [
+            (task, child)
+            for task in tasks[:at]
+            if task.enabled and task.task_type == 'export_group'
+            and task.uri == group.uri
+            for child in _enabled_children(task)
+            if child.execute_farm_with_builds is not None
+        ]
+        for _, child in exports:
+            members[child.id] = group.id
+        # What the builds must follow: the publishes they wait for and every
+        # other publish of the entity before them.
+        dependencies = [
+            task for task in tasks[:at]
+            if task.enabled and (
+                task.id in group.depends_on
+                or (task.task_type == 'export_group' and task.uri == group.uri)
+            )
+        ]
+        if not dependencies:
+            continue
+        # The last row of that group must be the carrier: a row after it
+        # would submit after the builds were queued.
+        last_rows = _enabled_children(dependencies[-1])
+        if last_rows and last_rows[-1].execute_farm_with_builds is not None                 and last_rows[-1].id in members:
+            carriers[last_rows[-1].id] = group.id
+    return carriers, members
 
 
 class ValidationSession:
@@ -165,6 +227,11 @@ class ProcessExecutor(QObject):
         # run (see needs_refresh); None runs without.
         self._refresh: Callable[[], None] | None = None
         self._written: set[str] = set()  # departments written since the last refresh
+        # Farm runs: the exports that take the Build USD tasks along
+        # (farm_build_plan) and the build groups a publish batch now carries.
+        self._build_carriers: dict[str, str] = {}
+        self._build_members: dict[str, str] = {}
+        self._carried_builds: set[str] = set()
 
     def set_refresh(self, refresh: Callable[[], None] | None):
         """What floats the scene's imports between the departments of a run
@@ -221,6 +288,11 @@ class ProcessExecutor(QObject):
         self._current_index = 0
         self._executed_split_paths.clear()  # Reset deduplication tracking
         self._written.clear()
+        self._carried_builds.clear()
+        if self._mode == 'farm':
+            self._build_carriers, self._build_members = farm_build_plan(self._tasks)
+        else:
+            self._build_carriers, self._build_members = {}, {}
         _validation_session.reset()  # Reset validation choices for new run
         # Use QTimer to allow UI updates between tasks
         QTimer.singleShot(0, self._execute_next_task)
@@ -290,8 +362,12 @@ class ProcessExecutor(QObject):
                 self.task_skipped.emit(task.id, str(e))
             # Check if this is a user-initiated cancellation (no error dialog needed)
             elif isinstance(e, _validation_cancelled_type()):
+                # Intentional, so no task_failed - but the row was told it
+                # started and must be told it stopped, or it keeps the
+                # running mark after the run.
                 task.status = TaskStatus.SKIPPED
-                # Don't emit task_failed - this was intentional
+                task.error_message = CANCELLED_AT_VALIDATION
+                self.task_skipped.emit(task.id, CANCELLED_AT_VALIDATION)
             else:
                 task.status = TaskStatus.FAILED
                 # Capture full traceback for debugging
@@ -325,6 +401,40 @@ class ProcessExecutor(QObject):
             else:
                 raise RuntimeError("No farm executor defined for task")
 
+    def _build_task_for(self, child: ProcessTask) -> dict:
+        """The publish config's tasks.build for a member export (see
+        farm_build_plan): the enabled build channels when it carries them
+        and every other dependency of the build group already completed,
+        otherwise none (a later publish carries them, or the build group,
+        skipped or run on its own, decides)."""
+        group_id = self._build_members[child.id]
+        group = next(task for task in self._tasks if task.id == group_id)
+        if self._build_carriers.get(child.id) != group_id:
+            return {'channels': []}
+        for dep_id in group.depends_on:
+            if dep_id == child.parent_id:
+                continue
+            dep = next((task for task in self._tasks if task.id == dep_id), None)
+            if dep is not None and dep.enabled and dep.status != TaskStatus.COMPLETED:
+                return {'channels': []}
+        build = {'channels': [c.channel or 'default' for c in _enabled_children(group)]}
+        if group.first_frame is not None and group.last_frame is not None:
+            build['first_frame'] = group.first_frame
+            build['last_frame'] = group.last_frame
+        return build
+
+    def _report_carried_builds(self, parent_task: ProcessTask):
+        """A build group whose builds a publish batch carries: its rows
+        finish without a submission of their own."""
+        for child in parent_task.children:
+            if not child.enabled:
+                child.status = TaskStatus.SKIPPED
+                continue
+            child.status = TaskStatus.RUNNING
+            self.task_started.emit(child.id)
+            child.status = TaskStatus.COMPLETED
+            self.task_completed.emit(child.id)
+
     def _execute_grouped_task(self, parent_task: ProcessTask):
         """Execute a grouped task by running its enabled children.
 
@@ -332,6 +442,10 @@ class ProcessExecutor(QObject):
         the same node multiple times when shared across channels.
         """
         if not parent_task.children:
+            return
+
+        if parent_task.id in self._carried_builds:
+            self._report_carried_builds(parent_task)
             return
 
         for child in parent_task.children:
@@ -358,7 +472,13 @@ class ProcessExecutor(QObject):
                     else:
                         raise RuntimeError(f"No local executor defined for child task: {child.description}")
                 else:  # farm
-                    if child.execute_farm is not None:
+                    if child.id in self._build_members and child.execute_farm_with_builds is not None:
+                        build = self._build_task_for(child)
+                        with farm_backend.using(self._backend):
+                            child.exported_version = _version_of(child.execute_farm_with_builds(build))
+                        if build['channels']:
+                            self._carried_builds.add(self._build_members[child.id])
+                    elif child.execute_farm is not None:
                         with farm_backend.using(self._backend):
                             child.exported_version = _version_of(child.execute_farm())
                     else:
@@ -380,6 +500,8 @@ class ProcessExecutor(QObject):
                 # Check if this is a user-initiated cancellation
                 elif isinstance(e, _validation_cancelled_type()):
                     child.status = TaskStatus.SKIPPED
+                    child.error_message = CANCELLED_AT_VALIDATION
+                    self.task_skipped.emit(child.id, CANCELLED_AT_VALIDATION)
                     raise  # Re-raise to skip parent task too
                 else:
                     child.status = TaskStatus.FAILED

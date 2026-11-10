@@ -23,6 +23,19 @@ fn uri(request: &Value) -> Result<Uri, String> {
     Uri::parse(text(request, "uri")?).map_err(|e| e.to_string())
 }
 
+fn named_uri(request: &Value, key: &str) -> Result<Uri, String> {
+    Uri::parse(text(request, key)?).map_err(|e| e.to_string())
+}
+
+fn texts(request: &Value, key: &str) -> Result<Vec<String>, String> {
+    let values = request.get(key).and_then(Value::as_array).ok_or_else(|| format!("request has no '{key}'"))?;
+    values.iter().map(|v| v.as_str().map(str::to_string).ok_or_else(|| format!("'{key}' holds {v}, not text"))).collect()
+}
+
+fn uris(request: &Value, key: &str) -> Result<Vec<Uri>, String> {
+    texts(request, key)?.iter().map(|u| Uri::parse(u).map_err(|e| e.to_string())).collect()
+}
+
 /// The project the request names (`project`, `pipeline`, `config`), else
 /// the environment's.
 fn project(request: &Value) -> Result<Project, String> {
@@ -90,6 +103,53 @@ fn answer(request: &Value) -> Result<Value, String> {
                 .collect::<Result<Vec<_>, _>>()?;
             th_pipe::groups::place_new_members(config, &uris)?;
             Value::Null
+        }
+        "add_group" => {
+            let group = th_pipe::groups::add_group(
+                config,
+                text(request, "context")?,
+                text(request, "name")?,
+                &uris(request, "members")?,
+                &texts(request, "departments")?,
+            )?;
+            json!(group.to_string())
+        }
+        "add_member" => {
+            th_pipe::groups::add_member(config, &named_uri(request, "group")?, &named_uri(request, "member")?).map(|()| Value::Null)?
+        }
+        "remove_member" => {
+            th_pipe::groups::remove_member(config, &named_uri(request, "group")?, &named_uri(request, "member")?).map(|()| Value::Null)?
+        }
+        "add_group_department" => {
+            th_pipe::groups::add_department(config, &named_uri(request, "group")?, text(request, "department")?).map(|()| Value::Null)?
+        }
+        "remove_group_department" => {
+            th_pipe::groups::remove_department(config, &named_uri(request, "group")?, text(request, "department")?).map(|()| Value::Null)?
+        }
+        "overlap" => {
+            let group = request.get("group").and_then(Value::as_str).map(Uri::parse).transpose().map_err(|e| e.to_string())?;
+            json!(th_pipe::groups::overlap(
+                config,
+                text(request, "context")?,
+                &uris(request, "members")?,
+                &texts(request, "departments")?,
+                group.as_ref()
+            )?)
+        }
+        "rename_entity" => json!(entities::rename_entity(&project, &uri(request)?, text(request, "name")?)?.to_string()),
+        "add_channel" => departments::add_channel(config, &uri(request)?, text(request, "name")?).map(|()| Value::Null)?,
+        "remove_channel" => departments::remove_channel(config, &uri(request)?, text(request, "name")?).map(|()| Value::Null)?,
+        "add_department" => {
+            let flag = |key: &str, default: bool| request.get(key).and_then(Value::as_bool).unwrap_or(default);
+            let flags = departments::NewDepartment {
+                independent: flag("independent", false),
+                publishable: flag("publishable", true),
+                renderable: flag("renderable", false),
+                generated: flag("generated", false),
+                enabled: flag("enabled", true),
+                short: request.get("short").and_then(Value::as_str).map(str::to_string),
+            };
+            json!(departments::add_department(config, text(request, "context")?, text(request, "name")?, &flags)?.to_string())
         }
         other => return Err(format!("unknown op '{other}'")),
     })

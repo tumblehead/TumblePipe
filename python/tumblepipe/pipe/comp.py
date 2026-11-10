@@ -40,6 +40,8 @@ MERGED_LAYER = 'comp'
 # import_render's Department and Version tokens.
 BEST = 'best'
 LATEST = 'latest'
+# import_render's Channel token for every channel of the shot in one node.
+ALL_CHANNELS = '*'
 
 # The AOV every channel's comp needs: the RGBA beauty, whose A is the
 # channel's alpha.
@@ -49,6 +51,11 @@ LIGHT_GROUP_PREFIX = 'beauty_'
 
 class CompError(Exception):
     """A comp cannot be made from what is on disk; the message says why."""
+
+
+class NotRendered(CompError):
+    """A channel has no complete render in the departments asked (yet): an
+    all-channels import leaves such a channel out instead of failing."""
 
 
 ###############################################################################
@@ -91,10 +98,48 @@ def is_colour_aov(aov_name: str) -> bool:
 
 def cable_fields(aov_labels: Iterable[str]) -> list[str]:
     """The fields of import_render's ``aovs`` cable for a version's AOVs:
-    the included ones, the beauty first, then by name. Unique."""
-    included = {label for label in aov_labels if aov_included(label)}
-    rest = sorted(label for label in included if label != BEAUTY)
-    return ([BEAUTY] if BEAUTY in included else []) + rest
+    the included ones but the beauty, by name. Unique.
+
+    The beauty is the node's ``rgba`` output, so the cable does not carry it
+    a second time (a light mix takes it on its own ``rgba`` input)."""
+    return sorted({
+        label for label in aov_labels
+        if aov_included(label) and label != BEAUTY
+    })
+
+
+def file_fields(aov_labels: Iterable[str]) -> list[str]:
+    """Every AOV an import_render reads from disk: the beauty first (when
+    there is one), then the cable's fields."""
+    labels = list(aov_labels)
+    beauty = [BEAUTY] if BEAUTY in labels else []
+    return beauty + cable_fields(labels)
+
+
+def layer_field(channel: str, field: str) -> str:
+    """A field of an all-channels import's cable: a channel's beauty is
+    named after the channel, its AOVs ``<channel>_<aov>``."""
+    return channel if field == BEAUTY else f'{channel}_{field}'
+
+
+def all_channels_fields(fields_by_channel: Mapping[str, Iterable[str]]) -> list[str]:
+    """The cable of an all-channels import (Channel ``*``): per channel, in
+    the order given (the shot's), its beauty then its AOVs, each named by
+    :func:`layer_field`. Raises :class:`CompError` when two names collide
+    (channel ``a`` with AOV ``b_c`` and channel ``a_b`` with AOV ``c``)."""
+    fields: list[str] = []
+    owner: dict[str, str] = dict()
+    for channel, channel_fields in fields_by_channel.items():
+        for field in [BEAUTY] + [f for f in channel_fields if f != BEAUTY]:
+            name = layer_field(channel, field)
+            if name in owner:
+                raise CompError(
+                    f'channels "{owner[name]}" and "{channel}" both give a '
+                    f'cable field "{name}"; read them with one import each'
+                )
+            owner[name] = channel
+            fields.append(name)
+    return fields
 
 
 def light_groups(fields: Iterable[str]) -> list[str]:
@@ -244,7 +289,13 @@ class Resolved:
 
     @property
     def fields(self) -> list[str]:
+        """The ``aovs`` cable's fields (no beauty: it is ``rgba``)."""
         return cable_fields(self.aovs)
+
+    @property
+    def file_fields(self) -> list[str]:
+        """Every AOV read from disk, the beauty first."""
+        return file_fields(self.aovs)
 
     @property
     def label(self) -> str:
@@ -323,7 +374,113 @@ def resolve_render(
             },
         )
     where = ' or '.join(reversed(candidates)) or 'any render department'
-    raise CompError(f'channel "{channel}" has no complete render in {where} yet')
+    raise NotRendered(f'channel "{channel}" has no complete render in {where} yet')
+
+
+def resolve_channels(
+    renders: Mapping,
+    render_department_names: Iterable[str],
+    channels: Iterable[str],
+    department: str = BEST,
+    version: str = LATEST,
+    pins: Optional[Mapping[str, tuple[str, str]]] = None,
+    ) -> tuple[dict[str, Resolved], list[str]]:
+    """What an all-channels import reads: ``({channel: Resolved}, channels
+    left out)``, in ``channels``' order.
+
+    Every channel resolves on ``department`` at ``latest``; one with no
+    complete render there (:class:`NotRendered`) is left out, unless the
+    farm pinned it (``pins``: ``{channel: (department, version)}``), which
+    must resolve. Any other refusal is raised, and so is a version pin (each
+    channel has versions of its own) and nothing rendered at all.
+    """
+    if version != LATEST:
+        raise CompError(
+            f'version {version} is pinned, but the node reads all channels, '
+            'which have versions of their own: read the channel with an '
+            'import of its own to pin it'
+        )
+    pins = pins or {}
+    departments = list(render_department_names)
+    reads: dict[str, Resolved] = dict()
+    skipped: list[str] = []
+    first_skip: Optional[NotRendered] = None
+    for channel in channels:
+        if channel in pins:
+            reads[channel] = resolve_render(renders, departments, channel, *pins[channel])
+            continue
+        try:
+            reads[channel] = resolve_render(renders, departments, channel, department, version)
+        except NotRendered as error:
+            skipped.append(channel)
+            first_skip = first_skip or error
+    if not reads:
+        raise first_skip or CompError('the shot has no channels')
+    all_channels_fields({c: r.fields for c, r in reads.items()})
+    return reads, skipped
+
+
+###############################################################################
+# The import's network
+###############################################################################
+@dataclass(frozen=True)
+class FileRead:
+    """One File COP an import_render builds: its node name, and the AOV of
+    the channel it reads."""
+    name: str
+    channel: str
+    aov: str
+
+
+@dataclass(frozen=True)
+class DivePlan:
+    """The network inside an import_render: its File COPs in build order,
+    the cable pack's fields (each a File COP's name), and the beauties laid
+    over each other for ``rgba``, back to front."""
+    files: tuple
+    fields: tuple
+    beauties: tuple
+
+    def aov_of(self, name: str) -> str:
+        return next(read.aov for read in self.files if read.name == name)
+
+    @property
+    def signatures(self) -> dict[str, str]:
+        """Each cable field's COP type (a Cable Unpack ``fieldtype`` token)."""
+        return {field: aov_signature(self.aov_of(field)) for field in self.fields}
+
+
+def dive_plan(aovs_by_channel: Mapping[str, Iterable[str]], all_channels: bool) -> DivePlan:
+    """The import's network for what it reads (``{channel: AOV labels}``,
+    in the shot's channel order).
+
+    One channel: a File COP per AOV named after it, the cable every one but
+    the beauty, ``rgba`` the beauty. All channels: names by
+    :func:`layer_field`, the cable every channel's beauty and AOVs
+    (:func:`all_channels_fields`), ``rgba`` the beauties over each other.
+    """
+    files = []
+    beauties = []
+    for channel, labels in aovs_by_channel.items():
+        for aov in file_fields(labels):
+            name = layer_field(channel, aov) if all_channels else aov
+            files.append(FileRead(name, channel, aov))
+            if aov == BEAUTY:
+                beauties.append(name)
+    if all_channels:
+        fields = all_channels_fields({
+            channel: cable_fields(labels) for channel, labels in aovs_by_channel.items()
+        })
+    else:
+        labels = next(iter(aovs_by_channel.values()), [])
+        fields = cable_fields(labels)
+    return DivePlan(tuple(files), tuple(fields), tuple(beauties))
+
+
+def mix_unpack_fields(groups: Iterable[str], cable_beauty: bool) -> list[str]:
+    """The fields a light mix unpacks from its cable: the beauty first when
+    the cable carries it (an empty beauty input), then the graded groups."""
+    return ([BEAUTY] if cable_beauty else []) + list(groups)
 
 
 ###############################################################################
@@ -383,6 +540,70 @@ def freeze_plan(imports: Iterable[ImportState]) -> dict[str, dict]:
             version = version,
         )
     return plan
+
+
+# An all-channels import is frozen per channel: its plan keys are
+# ``<node path>#<channel>``.
+PLAN_KEY_SEPARATOR = '#'
+
+
+def plan_key(node_path: str, channel: str, all_channels: bool) -> str:
+    """The freeze plan's key for one channel an import reads."""
+    if not all_channels: return node_path
+    return f'{node_path}{PLAN_KEY_SEPARATOR}{channel}'
+
+
+def split_plan_key(key: str) -> tuple[str, Optional[str]]:
+    """``(node path, channel)`` of a plan key; the channel is None for a
+    one-channel import's key (its channel is in the pin)."""
+    if PLAN_KEY_SEPARATOR not in key: return key, None
+    node_path, channel = key.rsplit(PLAN_KEY_SEPARATOR, 1)
+    return node_path, channel
+
+
+def format_pins(pins: Mapping[str, tuple[str, str]]) -> str:
+    """An all-channels import's per-channel pins as its ``pins`` parm holds
+    them: ``channel:department:version`` separated by spaces."""
+    return ' '.join(
+        f'{channel}:{department}:{version}'
+        for channel, (department, version) in pins.items()
+    )
+
+
+def parse_pins(text: str) -> dict[str, tuple[str, str]]:
+    """The inverse of :func:`format_pins`; malformed entries are skipped."""
+    pins: dict = dict()
+    for entry in text.split():
+        parts = entry.split(':')
+        if len(parts) != 3 or not all(parts): continue
+        pins[parts[0]] = (parts[1], parts[2])
+    return pins
+
+
+def pins_by_node(plan: Mapping[str, Mapping]) -> dict[str, dict[str, tuple[str, str]]]:
+    """A freeze plan per import node: ``{node path: {channel: (department,
+    version)}}`` (an all-channels import has one entry per channel)."""
+    nodes: dict = dict()
+    for key, pin in plan.items():
+        node_path, _channel = split_plan_key(key)
+        nodes.setdefault(node_path, dict())[pin['channel']] = (pin['department'], pin['version'])
+    return nodes
+
+
+def build_key(shot_uri, reads: Mapping[str, tuple[str, str]]) -> str:
+    """What an import_render's File COPs were built for: its shot, and per
+    channel the department and version read. A change in any of them, the
+    channel included, rebuilds them (two channels can both resolve to
+    ``denoise v0001``, so the version alone does not tell them apart)."""
+    return ' '.join([str(shot_uri)] + [
+        f'{channel}:{department}:{version}'
+        for channel, (department, version) in reads.items()
+    ])
+
+
+def build_key_channels(key: str) -> list[str]:
+    """The channels a build key read, in order."""
+    return [entry.split(':', 1)[0] for entry in key.split()[1:]]
 
 
 def provenance(plan: Mapping[str, Mapping]) -> dict[str, dict]:

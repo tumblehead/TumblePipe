@@ -11,10 +11,11 @@ None of these HDAs carries built-in help text, so this page is the reference.
 
 ## `th::import_render` (COP)
 
-One channel's finished render into a comp. Tab menu `_TumblePipe/pipeline`;
+A shot's finished render into a comp. Tab menu `_TumblePipe/pipeline`;
 the composite template makes one per shot channel. Outputs **rgba** (the
-beauty; its A is the channel's alpha) and **aovs** (a cable of every AOV the
-comp reads, each field named after its AOV). What it resolves and refuses is
+beauty; its A is the channel's alpha) and **aovs** (a cable of the channel's
+other AOVs the comp reads, each field named after its AOV; the beauty is not
+in it a second time). What it resolves and refuses is
 in [Compositing → `th::import_render`](../compositing.md#thimport_render).
 Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th_8_8Cop_1import__render_8_81.0/DialogScript),
 [`cops/import_render.py`](../../python/tumblepipe/pipe/houdini/cops/import_render.py),
@@ -23,21 +24,41 @@ Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th
 | Label | Default | What it does |
 |---|---|---|
 | Shot | `from_context` | Shots only (*Select Shot*); the label under it shows what resolved. In a Multi's workfile the template pins it to the member |
-| Channel | `default` | A menu of the shot's channels |
+| Channel | `default` | A menu of the shot's channels, then **All channels** (`*`): every channel in this one node (below) |
 | Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render); or one department |
 | Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department) |
-| Reads | | What resolved (`denoise v0004, 11 AOVs`), from what when it moved, or why nothing did |
+| Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did |
+| Outputs › AOV Outputs | off | Keeps a Cable Unpack named `<node>_aovs` beside the node, wired to **aovs**, with one typed output per field, and keeps its fields in step when the version changes. Turning it off removes the unpack unless something reads it |
 
 Buttons: **Update** re-resolves (opening the workfile does it too, for an
 import on `latest`); **Open Location** opens the resolved version's folder.
 Changing Channel, Department or Version resolves at once; a render that
-cannot be comped shows its reason on **Reads** instead of a dialog.
+cannot be comped shows its reason on **Reads** instead of a dialog. The File
+COPs inside are rebuilt whenever the shot, channel, department or version
+read changes (a copied import switched to another channel reads the new
+channel even when both resolve to the same version).
+
+**All channels** (`*`): **rgba** is the channels laid over each other in the
+shot's channel order, the last on top (as the template stacks them), and
+**aovs** carries each channel's beauty, named after the channel, and its AOVs
+as `<channel>_<aov>`; turn on AOV Outputs for one output per layer and AOV. A
+channel not rendered yet is left out and named on **Reads** (and
+`export_comp` warns it is unread). Version stays `latest`: to pin a version,
+read that channel with an import of its own. A light mix grades one
+channel's light groups, so it refuses an all-channels cable. Submit freezes
+each channel it read.
+
+Why the per-AOV outputs are on a companion node: a digital asset's output
+count is fixed by its type, so only a built-in node (Cable Unpack, Rasterize
+Geometry) can grow outputs with its fields.
 
 ## `th::light_mix` (COP)
 
 A channel's light groups mixed back into its beauty. Tab menu
-`_TumblePipe/pipeline`; the template puts one under each import. Input
-**aovs** (an import's cable), output **rgba**. The mix is the graded groups
+`_TumblePipe/pipeline`; the template puts one under each import. Inputs
+**aovs** (an import's cable) and **rgba** (its beauty, wired from that import
+for you when it is empty), output **rgba**. A cable that still carries a
+`beauty` field (built before 1.99) is read when **rgba** is empty. The mix is the graded groups
 plus **Rest** (the beauty minus the groups), so at defaults it is the beauty
 exactly; see [Compositing → `th::light_mix`](../compositing.md#thlight_mix).
 Source: [`otls/cop_th.light_mix.1.0`](../../otls/cop_th.light_mix.1.0/th_8_8Cop_1light__mix_8_81.0/DialogScript),
@@ -46,7 +67,7 @@ Source: [`otls/cop_th.light_mix.1.0`](../../otls/cop_th.light_mix.1.0/th_8_8Cop_
 | Label | Default | What it does |
 |---|---|---|
 | Mix | | Which groups the mix grades on its own |
-| Sync Rows | | Adds a row for each light group the cable has and no row does; never removes or changes a row. Pressed for you when the upstream import moves version |
+| Sync Rows | | Wires the import's **rgba** into an empty beauty input, then adds a row for each light group the cable has and no row does; never removes or changes a row. Pressed for you when the upstream import rebuilds |
 | Rest › Mute, Exposure, Tint | off, `0`, white | The lights in no group |
 | Light Groups › Group, Mute, Exposure, Tint | | One row per `beauty_<tag>`: Exposure in stops |
 
@@ -89,6 +110,33 @@ Gotchas:
   and Nuke read it as Rec.709; the farm stamps every frame. See
   [Colour space](../compositing.md#colour-space).
 
+## `th::import_scene` (COP)
+
+The shot's staged scene as **geometry** and its render camera as **camera**,
+typed so both wire straight into a Rasterize Geometry (`camera_ref` and
+`geometry`): Copernicus can rasterize anything in the shot. Tab menu
+`_TumblePipe/pipeline`. Inside, an embedded
+[`th::import_shot`](import-and-export.md#thimport_shot-lop) composes the
+staged stage **with payloads**; a SOP Import lifts the prims out (LOP Import,
+Unpack USD to polygons) and a Camera Import reads the camera through a
+`lopimportcam`. Opening a workfile refreshes it through the inner import.
+Source: [`otls/cop_th.import_scene.1.0`](../../otls/cop_th.import_scene.1.0/th_8_8Cop_1import__scene_8_81.0/DialogScript),
+[`cops/import_scene.py`](../../python/tumblepipe/pipe/houdini/cops/import_scene.py).
+
+| Label | Default | What it does |
+|---|---|---|
+| Shot | `from_context` | Shots only |
+| Channel, Department, Version | `default`, `from_context`, `latest` | As on `import_shot` |
+| Reads | | The staged version the inner import loaded |
+| Geometry › Primitives | `/*` | The prims imported; cameras and lights add nothing |
+| Geometry › Purpose | Render | Render / Proxy / Guide |
+| Geometry › Time Sample | Animated | Animated follows the frame; Static imports **Static Frame** once |
+| Camera › Camera | `/cameras/render_camera` | The camera prim |
+| Import | | Runs the embedded `import_shot` |
+
+The geometry is the whole staged shot, payloads and all: narrow
+**Primitives** to what the comp needs on a heavy shot.
+
 ## `th::import_lop_camera` (COP)
 
 Bring the shot's render camera into COPs, for the nodes that need real
@@ -97,6 +145,9 @@ camera data (depth, projections). Tab menu `_TumblePipe/comp`. It embeds a
 the shot's staged stage **without payloads**, lifts `/cameras/render_camera`
 out through a `lopimportcam` and feeds a `cameraimport` COP; see
 [The shot camera in comp](../compositing.md#the-shot-camera-in-comp).
+Its output is typed RGBA, so it cannot feed a Rasterize Geometry's camera
+input: for that use [`th::import_scene`](#thimport_scene-cop), whose
+**camera** output is Metadata.
 Source: [`otls/cop_th.import_lop_camera.1.0`](../../otls/cop_th.import_lop_camera.1.0/th_8_8Cop_1import__lop__camera_8_81.0/DialogScript),
 [`cops/import_lop_camera.py`](../../python/tumblepipe/pipe/houdini/cops/import_lop_camera.py).
 

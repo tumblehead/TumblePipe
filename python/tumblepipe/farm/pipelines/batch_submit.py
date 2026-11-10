@@ -35,6 +35,7 @@ from tumblepipe.farm.pipelines import render as render_pipeline
 from tumblepipe.farm.pipelines import playblast as playblast_pipeline
 from tumblepipe.farm.pipelines import edit_render as edit_render_pipeline
 from tumblepipe.farm.pipelines import composite as composite_pipeline
+from tumblepipe.farm.specs import composite as composite_spec
 from tumblepipe.farm.pipelines import preview
 from tumblepipe.pipe import render_layers
 from tumblepipe.farm.pipelines import publish as publish_pipeline
@@ -195,7 +196,12 @@ def submit_entity_batch(config: dict) -> list[str]:
                         composite workfile; with render it waits for the
                         full render's denoise, else the render
                 - Comp section: comp_pool, comp_priority, comp_batch_size,
-                                comp_copy_to_edit
+                                comp_copy_to_edit; optional comp_step
+                                (default 1), comp_preview (default False:
+                                comp first/middle/last first),
+                                comp_first_frame / comp_last_frame (default:
+                                the render's range, else the shot's; with a
+                                render, inside the render's)
 
             An Edits tab row (context ``edits``) is a Render Edit instead:
             its settings are version, pool_name and priority
@@ -269,8 +275,11 @@ def submit_entity_batch(config: dict) -> list[str]:
                 f"{', '.join(RENDER_TASK_KEYS)}."
             )
 
-    # The re-comp's schedule (specs.composite.valid_recomp). It posts to the
-    # comp channel, as an export_comp's submit does.
+    # The re-comp's schedule and frames (specs.composite.valid_recomp). It
+    # posts to the comp channel, as an export_comp's submit does. Step and
+    # preview frames default to what a v1.98.0 caller got (every frame, no
+    # preview); a first or last frame is sent only when the artist set one
+    # (a submit_settings override field), else the comp follows the range.
     comp_block = None
     if do_comp:
         comp_block = dict(
@@ -279,7 +288,12 @@ def submit_entity_batch(config: dict) -> list[str]:
             batch_size=settings['comp_batch_size'],
             copy_to_edit=settings['comp_copy_to_edit'],
             channel_name='comp',
+            step_size=settings.get('comp_step', 1),
+            preview_frames=settings.get('comp_preview', False),
         )
+        for key in ('first_frame', 'last_frame'):
+            if settings.get(f'comp_{key}') is not None:
+                comp_block[key] = settings[f'comp_{key}']
 
     if do_playblast:
         pb_department = settings.get('pb_department')
@@ -359,6 +373,31 @@ def submit_entity_batch(config: dict) -> list[str]:
             "only its check frames: choose a render mode with the full range, "
             "or tick Comp on its own once the render is done."
         )
+
+    # The comp's frames: the render's range (rolls included) when it follows
+    # one, else the shot's, each end replaced by a frame the artist set. A
+    # comp after a render may not reach past it: it reads that render.
+    comp_range = None
+    if do_comp:
+        if do_render:
+            follows = (first_frame, last_frame)
+        else:
+            shot_range = get_frame_range(entity_uri)
+            if shot_range is None:
+                raise BatchSubmitError(f"No frame range for {entity_uri}")
+            full = shot_range.full_range()
+            follows = (full.first_frame, full.last_frame)
+        try:
+            comp_range = composite_pipeline.recomp_range(
+                comp_block, *follows, inside=do_render,
+            )
+        except composite_pipeline.RecompError as e:
+            raise BatchSubmitError(f"{entity_uri}: {e}") from e
+        if not composite_spec.valid_recomp(comp_block):
+            raise BatchSubmitError(
+                f"Invalid comp settings for {entity_uri}: the step and batch "
+                f"size must be at least 1 ({comp_block})"
+            )
 
     # Get departments list
     departments = list_departments(entity_context)
@@ -666,18 +705,14 @@ def submit_entity_batch(config: dict) -> list[str]:
         # renders as they are now. With a render, the render chain carries
         # it (its config's composite block) and starts it after the denoise.
         if do_comp and not do_render:
-            shot_range = get_frame_range(entity_uri)
-            if shot_range is None:
-                raise BatchSubmitError(f"No frame range for {entity_uri}")
-            comp_range = shot_range.full_range()
             try:
                 composite_pipeline.build(
                     composite_pipeline.recomp_config(
                         entity_uri, comp_block,
                         user_name=user_name,
                         purpose='render',
-                        first_frame=comp_range.first_frame,
-                        last_frame=comp_range.last_frame,
+                        first_frame=comp_range[0],
+                        last_frame=comp_range[1],
                         temp_path=temp_path,
                         paths=paths,
                     ),

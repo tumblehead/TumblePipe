@@ -403,6 +403,20 @@ only when this machine has a Deadline Client), and it stops reading while
 the browser is hidden or closed. The ring needs a TumbleTrove with the
 `get_quick_action_busy` hook; an older one shows the button without it.
 
+Hover the **Farm Manager** button for a summary of your jobs in this
+project, from the same count: those still queued or rendering plus those
+submitted in the last 24 hours. It names how many shots (or assets) they
+are for, the jobs running, queued, completed and failed, the tasks done of
+all, and, while work is under way, about when it will be done. That time
+is a rough guess: for each running batch, the time since it started scaled
+by the share of its tasks still to do; it is left out until every running
+batch has a task done. When some of those jobs have failed, the summary
+names their shots, and the button shows a small orange dot at its top-right
+corner (on the **⋯** button when the toolbar is too narrow for it). The dot
+goes once you retry or remove the failed jobs in the Farm Manager, or a day
+after they were submitted. The dot needs a TumbleTrove with the
+`get_quick_action_alert` hook; an older one shows the hover without it.
+
 ## Further reading
 
 - [deadline-hpm-plugin](https://github.com/tumblehead/deadline-hpm-plugin) — the default plugin and its options

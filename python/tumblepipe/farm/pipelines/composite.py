@@ -21,7 +21,11 @@ runs (``latest`` moves to the newest complete render), then records what it
 read. Its one export has no node path: the worker finds the shot's
 export_comp on Layer ``comp``. Chained after a render (the render config's
 ``composite`` block, see ``pipelines/render.py``), it waits for the
-render's denoise, or the render when there is none.
+render's denoise, or the render when there is none. Its frames are the
+render's range (or, alone, the shot's), unless the block names its own
+first or last frame; the block also carries the step and whether to comp
+the preview frames first, as an export_comp's Submit does
+(``specs.composite.valid_recomp``).
 
 config = {
     'entity': {'uri': 'entity:/shots/sequence/shot', 'department': 'string'},
@@ -306,8 +310,46 @@ def _build(config, paths, temp_path, jobs, deps, depends_on) -> list[str]:
 RECOMP_INPUT = 'composite_workfile'
 
 
+#: The Discord channel a re-comp's preview frames post to, as an
+#: export_comp's own Submit posts them.
+RECOMP_PREVIEW_CHANNEL = 'previews'
+
+
 class RecompError(Exception):
-    """A shot has nothing a re-comp could comp; the message says why."""
+    """A shot has nothing a re-comp could comp, or the frames asked for make
+    no range; the message says why."""
+
+
+def recomp_range(
+    block: dict,
+    first_frame: int,
+    last_frame: int,
+    *,
+    inside: bool = False,
+    ) -> tuple[int, int]:
+    """The first and last frame a re-comp scheduled as ``block`` comps.
+
+    ``first_frame``/``last_frame`` are the range it follows: the render's
+    (rolls included) when it is chained after one, else the shot's. The
+    block's own ``first_frame``/``last_frame`` replace either end. With
+    ``inside`` (a comp chained after a render) the comp may not reach past
+    the range it follows: those frames are not in the render it reads.
+    Raises :class:`RecompError` when the frames make no range.
+    """
+    first = block.get('first_frame', first_frame)
+    last = block.get('last_frame', last_frame)
+    if first > last:
+        raise RecompError(
+            f'the comp frames {first}-{last} end before they start'
+        )
+    if inside and (first < first_frame or last > last_frame):
+        raise RecompError(
+            f'the comp frames {first}-{last} reach outside the render\'s '
+            f'{first_frame}-{last_frame}; the comp reads the frames this '
+            'render makes, so comp inside them (or untick Render to comp '
+            'the renders on disk)'
+        )
+    return first, last
 
 
 def recomp_config(
@@ -325,9 +367,15 @@ def recomp_config(
     workfile (a Multi's, when one covers the shot), scheduled as ``block``
     says. The workfile is bundled with the job (added to ``paths``) as it is
     now. Raises :class:`RecompError` when the shot has no composite
-    workfile."""
+    workfile, or the block's frames make no range.
+
+    ``first_frame``/``last_frame`` are the range the comp follows; the
+    block's own frames, step and preview frames apply over it
+    (:func:`recomp_range`), as an export_comp's Frame Range, Step and
+    Preview Frames do for its own Submit."""
     from tumblepipe.pipe.paths import latest_complete_hip_file_path
     import shutil
+    first_frame, last_frame = recomp_range(block, first_frame, last_frame)
     workfile = latest_complete_hip_file_path(shot_uri, COMPOSITE_DEPARTMENT)
     if workfile is None or not workfile.exists():
         raise RecompError(
@@ -340,6 +388,9 @@ def recomp_config(
     staged.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(workfile, staged)
     paths[staged] = input_path
+    tasks = dict(full_composite = dict(channel_name = block['channel_name']))
+    if block.get('preview_frames', False):
+        tasks['partial_composite'] = dict(channel_name = RECOMP_PREVIEW_CHANNEL)
     return dict(
         entity = dict(uri = str(shot_uri), department = COMPOSITE_DEPARTMENT),
         settings = dict(
@@ -350,13 +401,13 @@ def recomp_config(
             input_path = path_str(input_path),
             first_frame = first_frame,
             last_frame = last_frame,
-            step_size = 1,
+            step_size = block.get('step_size', 1),
             batch_size = block['batch_size'],
             copy_to_edit = block['copy_to_edit'],
         ),
         exports = [dict(node_path = '', layer = comp.MERGED_LAYER)],
         imports = dict(),
-        tasks = dict(full_composite = dict(channel_name = block['channel_name'])),
+        tasks = tasks,
     )
 
 

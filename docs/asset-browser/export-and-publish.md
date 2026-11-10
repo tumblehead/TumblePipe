@@ -233,10 +233,19 @@ export runs: the dialog's mode does. *Farm* only enables the node's
 **Downstream Exports**. (Before 1.84, *In this session* on a node left on
 *Farm* submitted a farm job instead, and a farm publish of such a workfile
 submitted another publish instead of exporting.)
-- each `Build USD (<channel>)` child submits a **build** job with the
-  project's default pool and priority (`farm.default_pool`, the default
-  priority preset). A project with no default pool fails the task with a
-  message saying so.
+- the entity's `Build USD (<channel>)` rows ride in the batch of the
+  entity's **last** publish: one **build** job per ticked channel, each
+  after that batch's publish job, with the export node's pool and
+  priority. The entity's other publishes queue no build, so each staged
+  version is built once and only after its publishes land. (Through 1.98 the
+  rows submitted a build batch of their own with no dependency on the
+  publish, while the publish worker of a renderable asset department queued
+  another build of the same version.) When no publish can carry them (the
+  last row of the last export group is not a farm export, or a publish the
+  build waits for did not submit), the rows submit their own build batch
+  with the project's default pool and priority (`farm.default_pool`, the
+  default priority preset); a project with no default pool fails the task
+  with a message saying so.
 
 The farm publish task runs the same export code headlessly, then posts a
 Discord notify. It does **not** save a new workfile version: the export
@@ -244,7 +253,7 @@ records what was published, and the workfile stays yours. (Through 1.55.0 it
 did, which gave a Multi's workfile one new version per shot published, each
 of the scene its job had loaded — possibly older than your latest save.)
 After a *renderable* asset department publishes it also queues the asset's
-build. Validation on the farm has no dialog: a failing
+build, unless the publish dialog's run owns the build (above). Validation on the farm has no dialog: a failing
 validator fails the job. What each job family chains is tabulated in
 [Submitting to the farm](submit-jobs.md#job-families).
 

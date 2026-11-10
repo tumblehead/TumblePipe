@@ -56,6 +56,13 @@ pub fn load_json(path: &Path) -> Result<Value, String> {
     serde_json::from_slice(&bytes).map_err(|e| format!("invalid JSON in {}: {e}", path.display()))
 }
 
+/// The text [`store_json`] writes for `value`: [`to_python_json`], in
+/// `\r\n` lines on Windows, as Python writes a file in text mode.
+pub fn python_text(value: &Value) -> String {
+    let text = to_python_json(value);
+    if cfg!(windows) { text.replace('\n', "\r\n") } else { text }
+}
+
 /// Write `value` to `path` atomically, as `util.io.store_json`: into a
 /// temporary file beside it, then renamed over it ([`replace_file`]). The
 /// file is either whole or untouched.
@@ -67,10 +74,7 @@ pub fn store_json(path: &Path, value: &Value) -> std::io::Result<()> {
     std::fs::create_dir_all(parent)?;
     let temp = tempfile::Builder::new().prefix(".tmp").suffix(".json").tempfile_in(parent)?;
     let temp_path = temp.into_temp_path();
-    // Python writes the file in text mode: `\r\n` lines on Windows.
-    let text = to_python_json(value);
-    let text = if cfg!(windows) { text.replace('\n', "\r\n") } else { text };
-    std::fs::write(&temp_path, text)?;
+    std::fs::write(&temp_path, python_text(value))?;
     // Renamed by hand, with the retry; the TempPath deletes a leftover.
     replace_file(&temp_path, path)?;
     // The file is gone from under the TempPath now; do not let it try again.

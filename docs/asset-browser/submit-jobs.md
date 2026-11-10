@@ -53,9 +53,10 @@ you can go **Back to grid** and submit more.
 Closing the dialog keeps, per project and tab, for the next time it opens:
 
 - the settings you **pinned** (set for the whole submission), except
-  **Frames**, which belong to the shots they were typed for;
+  **Frames** (the Render's and the Comp's), which belong to the shots they
+  were typed for;
 - the Render section's **Range**, **Standalone** and **Copy to edit** choices,
-  and the Comp section's **Copy to edit**;
+  and the Comp section's **Preview frames** and **Copy to edit**;
 - the columns you collapsed.
 
 And for the dialog as a whole: which settings sections are collapsed, whether
@@ -227,6 +228,16 @@ The Warnings column says, per row, what the submission would run into:
   row, but the Render **Range** is Preview only, which makes no frames to
   comp. This one **blocks** the submit: tick **Full range**, or untick
   Render to comp the renders already on disk.
+- `the comp frames <a>-<b> end before they start` — the Comp **Frames** you
+  typed are the wrong way round. **Blocks**.
+- `the comp frames <a>-<b> reach outside the render's <c>-<d>: …` — Comp and
+  Render are ticked on the row and the Comp **Frames** go past the frames
+  the render makes (its **Frames** with the rolls). **Blocks**: comp inside
+  them, or untick Render to comp the renders on disk.
+- `the comp frames <a>-<b> reach outside the shot's <c>-<d>: …` — a Comp
+  ticked alone, over frames past the shot's range from the config (rolls
+  included). A warning, not a block: the renders on disk may run past it,
+  but a frame no render made is missing from the comp.
 
 ### Before it submits
 
@@ -407,8 +418,9 @@ setting them in the config changes nothing on the farm.
 A **Comp** cell re-comps the shot on the farm: its newest composite workfile
 (the one [made from the composite template](../compositing.md#the-comp-workfile);
 a [Multi](multis-and-roots.md#multis)'s, when a Multi covers the shot's
-composite department) over the shot's full frame range, written as a new
-version of the merged comp, `render:/render/<shot>/composite/slapcomp/v####/`.
+composite department) over the shot's full frame range (or the frames you
+set), written as a new version of the merged comp,
+`render:/render/<shot>/composite/slapcomp/v####/`.
 The workfile is bundled as it is when you submit; its `th::import_render`
 nodes on `latest` resolve when the job runs, so it comps the newest renders,
 and a pinned import stays pinned.
@@ -428,12 +440,23 @@ re-reads it. A comp is not a preview of the publishes: a stale department
 does not make it stale, and ticking Comp alone raises no
 `stale and not ticked` warning (Render beside it still does).
 
+The section offers what an `export_comp`'s own **Jobs** and **Farm** parms
+do for its Submit (see [Compositing nodes](../nodes/comp.md)), in the
+dialog's way: a field you leave alone follows each shot.
+
 | Field | Per-entity source | Default when unset | Notes |
 |---|---|---|---|
-| **Pool** | `farm.default_pool` | `general` | |
-| **Priority** | `farm.priority` | 50 | |
+| **Range** | — | off | **Preview frames (first / middle / last)**: comp those three frames first and post them to Discord (`previews`); the full comp waits for them. The node's **Preview Frames**. Beside a render, the preview frames still wait for the whole render. |
+| **Frames** | — | `⟨full range⟩` | Left on `⟨full range⟩`, the comp comps every frame of the render ticked beside it (its **Frames** with the rolls), or, ticked alone, the shot's range from the config with its rolls (the node's **From Config**). Type a first and/or last frame to comp from or to it instead (the node's **From Settings**); the other end keeps following. Beside a render the frames must lie inside the render's; past them, or the wrong way round, the row is blocked (see [Warnings](#warnings)). ↺ goes back to `⟨full range⟩`. Not remembered for the next opening. |
+| **Step** | — | 1 | Comp every Nth frame of the range. |
 | **Batch** | — | 5 | Frames per farm task of the comp. |
+| **Pool** | `farm.default_pool` | `general` | A dropdown of the project's farm pools, the project default marked `(project default)`, as a `th::` node's **Pool** menu offers them. `⟨per entity⟩` leaves each shot on its own pool. A project that lists no pools gets a text field instead. |
+| **Priority** | `farm.priority` | 50 | |
 | **Copy to edit** | — | off | Adds an *edit* job that syncs the merged comp to the edit as its `comp` layer (mattes and ramps still per channel); see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s). |
+
+The node's **Pre/Post-Roll** have no field of their own: **Frames** names
+the frames the comp comps, rolls and all, and `⟨full range⟩` already
+includes the shot's (or the render's) rolls.
 
 #### Channels the farm refuses
 
@@ -662,7 +685,7 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | **render**, Preview + Full range | Render cells | both chains above; each `full_render_<ch>` waits on its `partial_render_<ch>` and renders into the same version | the preview's three frames are posted, then the full range overwrites them in the same version folder |
 | **render**, Standalone | Render cells with **Standalone** | `stage` (`houdini`) → the render chain above | `stage_<channel>.usd` in the job's data dir |
 | **publish** | Publish cells; Farm mode in the process dialog | `publish_<dept>` (`houdini`) per department, chained → `notify` (`general`). A renderable asset publish then queues a **build** | `export/<entity>/<channel>/<dept>/vNNNN/` |
-| **build** | after a farm publish; Build USD in Farm mode; before the previews of a row that also publishes | `build` / `build_<channel>` (`general`) | `_staged/<channel>/vNNNN/` |
+| **build** | after a farm publish (in its batch when the publish dialog's Build USD rides along); Build USD in Farm mode; before the previews of a row that also publishes | `build` / `build_<channel>` (`general`) | `_staged/<channel>/vNNNN/` |
 | **collapse** | Playblast or (non-Standalone) Render cells on a row that also publishes | `collapse` (`houdini`), after the row's builds; it then submits the playblast and render families above with the fresh snapshot | nothing of its own; the previews' batches |
 | **playblast** | Playblast cells | `playblast` (`playblast`) → `playblast_notify` (`general`) | `render:/playblast/<shot>/<dept>/<sequence>_<shot>_<dept>_vNNNN.mp4` + the daily |
 | **composite** | the `th::export_comp` node's **Submit**; [Comp](#comp-shots-only) cells (jobs prefixed `comp_`: `comp_full_composite` → `comp_slapcomp_mp4` → `comp_slapcomp_notify`, and `comp_sync` with Copy to edit; after the render's denoise when Render is ticked too) | see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s) | `render:/render/<shot>/composite/…`; a Comp cell writes the merged comp, `composite/slapcomp/vNNNN/` |

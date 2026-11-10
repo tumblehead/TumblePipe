@@ -52,15 +52,12 @@ def resolve_imports(entity_uri: Uri) -> tuple[dict | None, str | None]:
     states = []
     for node in import_render.find_imports(entity_uri):
         try:
-            resolved = node.execute()
+            node_states = node.import_states()
         except ns.NodeError as exc:
             return None, str(exc)
-        print(f'  {node.path()}: {resolved.channel} {resolved.department} {resolved.version}')
-        states.append(comp.ImportState(
-            node.path(), resolved.channel,
-            node.get_department_setting(), node.get_version_setting(),
-            resolved.department, resolved.version,
-        ))
+        for state in node_states:
+            print(f'  {node.path()}: {state.channel} {state.resolved_department} {state.resolved_version}')
+        states += node_states
     if not states:
         return None, f'the workfile has no th::import_render for {entity_uri}'
     return comp.freeze_plan(states), None
@@ -110,23 +107,36 @@ def pin_imports(imports: dict, entity_uri: Uri) -> str | None:
     their member already)."""
     from tumblepipe.pipe.houdini.cops.import_render import ImportRender
     import tumblepipe.pipe.houdini.nodes as ns
-    for node_path, pin in imports.items():
+    # An all-channels import is frozen per channel (plan key
+    # "<node path>#<channel>"): gather its pins first.
+    for node_path, pins in comp.pins_by_node(imports).items():
         native = hou.node(node_path)
         if native is None:
             return f'Import not found: {node_path}'
         node = ImportRender(native)
         _point_at_shot(native, entity_uri)
-        if node.get_channel_name() != pin['channel']:
-            return (
-                f'{node_path} reads channel "{node.get_channel_name()}", '
-                f'the submit froze "{pin["channel"]}"'
-            )
-        node.pin(pin['department'], pin['version'])
+        if node.is_all_channels():
+            node.pin_channels(pins)
+        else:
+            (channel, (department, version)), = pins.items()
+            if node.get_channel_name() != channel:
+                return (
+                    f'{node_path} reads channel "{node.get_channel_name()}", '
+                    f'the submit froze "{channel}"'
+                )
+            node.pin(department, version)
         try:
-            resolved = node.execute()
+            reads = node.execute()
         except ns.NodeError as exc:
             return str(exc)
-        print(f'  {node_path}: {pin["channel"]} {resolved.department} {resolved.version}')
+        frozen = set(pins)
+        if set(reads) != frozen:
+            return (
+                f'{node_path} reads channels {sorted(reads)}, the submit '
+                f'froze {sorted(frozen)}'
+            )
+        for channel, resolved in reads.items():
+            print(f'  {node_path}: {channel} {resolved.department} {resolved.version}')
     return None
 
 

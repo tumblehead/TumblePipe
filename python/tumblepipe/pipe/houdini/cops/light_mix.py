@@ -1,6 +1,9 @@
 """th::light_mix: a channel's light groups mixed back into its beauty.
 
-Cable in (an import_render's ``aovs``), RGBA out. One row per light group
+Two inputs, RGBA out: the cable of an import_render (``aovs``) and its
+beauty (``rgba``), which a sync wires from that import when it is empty (the
+cable no longer carries the beauty; a cable that does is read when the
+second input is empty). One row per light group
 (``beauty_<tag>``): Mute, Exposure (stops) and Tint. The mix is the graded
 groups plus **Rest**, the beauty minus the groups (the lights in no group),
 which has a row of its own. So at defaults the output is the beauty
@@ -27,6 +30,9 @@ TYPE_NAME = 'light_mix'
 
 MIX = 'mix'
 ROWS_PARM = 'groups'
+# The inputs: the import's cable, and its beauty.
+CABLE_INPUT = 0
+BEAUTY_INPUT = 1
 
 
 class LightMix(ns.Node):
@@ -52,8 +58,10 @@ class LightMix(ns.Node):
             native.parm(f'exposure{index}').set(0.0)
             native.parmTuple(f'tint{index}').set((1.0, 1.0, 1.0))
 
-    def upstream_fields(self) -> list[str]:
-        """The cable fields of the import_render this mix reads."""
+    def upstream(self):
+        """The import_render whose cable this mix reads; the node's error
+        when there is none, or when it reads every channel (a mix grades one
+        channel's light groups)."""
         from tumblepipe.pipe.houdini.cops.import_render import upstream_import
         source = upstream_import(self.native())
         if source is None:
@@ -61,12 +69,33 @@ class LightMix(ns.Node):
                 "the input is not a th::import_render's aovs cable; wire the "
                 "import's second output into the mix"
             )
-        return source.get_fields()
+        if source.is_all_channels():
+            raise self._error(
+                f'{source.path()} reads all channels; a light mix grades one '
+                "channel's light groups, so read that channel with an import "
+                'of its own'
+            )
+        return source
+
+    def upstream_fields(self) -> list[str]:
+        """The cable fields of the import_render this mix reads."""
+        return self.upstream().get_fields()
+
+    def connect_beauty(self, source=None):
+        """Wire the upstream import's ``rgba`` into an empty beauty input."""
+        from tumblepipe.pipe.houdini.cops.import_render import RGBA_OUTPUT
+        native = self.native()
+        if native.input(BEAUTY_INPUT) is not None: return
+        source = source or self.upstream()
+        native.setInput(BEAUTY_INPUT, source.native(), RGBA_OUTPUT)
 
     def sync_rows(self):
-        """Sync Rows: a row for every light group the cable has none for,
-        then rebuild the mix over the groups present."""
-        fields = self.upstream_fields()
+        """Sync Rows: wire the beauty when its input is empty, add a row for
+        every light group the cable has none for, then rebuild the mix over
+        the groups present."""
+        source = self.upstream()
+        fields = source.get_fields()
+        self.connect_beauty(source)
         rows = comp.sync_rows(self.rows(), comp.light_groups(fields))
         self._set_rows(rows)
         self._build(comp.mixed_groups(rows, fields))
@@ -78,22 +107,28 @@ class LightMix(ns.Node):
         for child in mix.children():
             if child.name() in ('inputs', 'outputs'): continue
             child.destroy()
+        _ensure_io(mix)
         inputs, outputs = mix.node('inputs'), mix.node('outputs')
 
+        # The beauty comes on its own input; a mix whose beauty input is
+        # empty reads a cable that still carries it (built before the
+        # cable dropped it, or packed by hand).
+        cable_beauty = self.native().input(BEAUTY_INPUT) is None
         unpack = mix.createNode('cableunpack', 'unpack')
-        fields = [comp.BEAUTY] + groups
+        fields = comp.mix_unpack_fields(groups, cable_beauty)
         unpack.parm('fields').set(len(fields))
         for index, field in enumerate(fields, start=1):
             unpack.parm(f'fieldname{index}').set(field)
-        unpack.setInput(0, inputs, 0)
+        unpack.setInput(0, inputs, CABLE_INPUT)
         unpack.setPosition(hou.Vector2(0.0, 4.0))
+        beauty, beauty_output = (unpack, 0) if cable_beauty else (inputs, BEAUTY_INPUT)
 
         beauty_rgb = mix.createNode('rgbatorgb', 'beauty_rgb')
         beauty_rgb.parm('unpremult').set(0)
-        beauty_rgb.setInput(0, unpack, 0)
+        beauty_rgb.setInput(0, beauty, beauty_output)
         beauty_rgb.setPosition(hou.Vector2(-3.0, 2.5))
         alpha = mix.createNode('channelsplit', 'alpha')
-        alpha.setInput(0, unpack, 0)
+        alpha.setInput(0, beauty, beauty_output)
         alpha.setPosition(hou.Vector2(-6.0, 2.5))
 
         # Rest: the beauty minus every graded group
@@ -102,7 +137,7 @@ class LightMix(ns.Node):
             minus = mix.createNode('blend', f'minus_{group}')
             minus.parm('mode').set('subtract')
             minus.setInput(0, rest, 0)
-            minus.setInput(1, unpack, index + 1)
+            minus.setInput(1, unpack, fields.index(group))
             minus.setPosition(hou.Vector2(-3.0, 1.5 - index))
             rest = minus
         rest_grade = mix.createNode('bright', 'rest')
@@ -114,7 +149,7 @@ class LightMix(ns.Node):
         for index, group in enumerate(groups):
             row = self._row_index(group)
             grade = mix.createNode('bright', group)
-            grade.setInput(0, unpack, index + 1)
+            grade.setInput(0, unpack, fields.index(group))
             _drive(grade, f'mute{row}', f'exposure{row}', f'tint{row}')
             grade.setPosition(hou.Vector2(index * 2.5, 2.5))
             plus = mix.createNode('blend', f'plus_{group}')
@@ -136,6 +171,19 @@ class LightMix(ns.Node):
             f'{len(groups)} light group{"" if len(groups) == 1 else "s"} + Rest'
             if groups else 'no light groups: Rest is the whole beauty'
         )
+
+
+def _ensure_io(mix):
+    """Give the mix subnet the HDA's two inputs: one saved before the beauty
+    input existed has only the cable."""
+    if mix.parm('inputs').eval() == 2: return
+    mix.parm('inputs').set(2)
+    for index, (label, kind) in enumerate((('aovs', 'cable'), ('rgba', 'vector4')), start=1):
+        mix.parm(f'inputlabel{index}').set(label)
+        mix.parm(f'inputtype{index}').set(kind)
+    root_inputs = mix.parent().node('inputs')
+    mix.setInput(CABLE_INPUT, root_inputs, CABLE_INPUT)
+    mix.setInput(BEAUTY_INPUT, root_inputs, BEAUTY_INPUT)
 
 
 def _drive(bright, mute: str, exposure: str, tint: str):

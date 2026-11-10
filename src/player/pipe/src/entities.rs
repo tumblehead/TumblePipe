@@ -124,6 +124,28 @@ pub fn delete_entity(project: &Project, entity: &Uri, stamp: &str) -> Result<Vec
     Ok(moved)
 }
 
+/// Rename `entity` to `new_name` (`entity_files.rename_entity`): its config
+/// row, keeping its place, and every Multi listing it (or what is under it)
+/// lists the new name. Refuses an entity with files on disk: they sit in
+/// folders named after it and would stay under the old name. The new URI.
+pub fn rename_entity(project: &Project, entity: &Uri, new_name: &str) -> Result<Uri, String> {
+    if has_entity_files(project, entity)? {
+        return Err(format!(
+            "'{}' has workfiles or exports on disk, so it can't be renamed: they would stay under the old name and the \
+             renamed entity would come up empty. Use Duplicate\u{2026} on its card in the Asset Browser to make a copy \
+             under the new name, then delete the old one.",
+            entity.last().unwrap_or_default()
+        ));
+    }
+    let mut segments = entity.segments.clone();
+    segments.pop();
+    segments.push(new_name.to_string());
+    let new_uri = Uri::new(&entity.purpose, segments);
+    project.config.rename_entity(entity, new_name).map_err(|e| e.to_string())?;
+    crate::groups::rename_member_everywhere(&project.config, entity, &new_uri)?;
+    Ok(new_uri)
+}
+
 /// Create the shot `entity:/shots/<sequence>/<shot>` with its frames,
 /// creating the sequence when it is new (`shot_batch.create`). Refuses a
 /// shot that exists, a case variant of an existing name, and a name not of

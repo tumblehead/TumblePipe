@@ -192,8 +192,11 @@ def _build(scene_node, entity_uri: Uri, department_name: str, suffix: str = '',
 
     # Import the model department (entity resolves from context)
     import_node = import_layer.create(scene_node, f'IMPORT_MODEL{suffix}')
-    import_node.set_department_name('model')
+    # Pin first: in a Multi's workfile 'from_context' resolves no entity,
+    # and until it has one the import offers no department but
+    # 'from_context', so setting 'model' first raised.
     if pin: _pin_entity(import_node, entity_uri)
+    import_node.set_department_name('model')
 
     # Press Import on create, so the node comes up resolved (entity/version
     # labels filled, layer paths wired) instead of inert until clicked.

@@ -36,6 +36,10 @@ class ProcessTask:
     error_message: str | None = None                # Error message if failed
     execute_local: Callable[[], None] | None = None # Function to execute locally
     execute_farm: Callable[[], None] | None = None  # Function to execute on farm
+    # A farm export that can chain the staged builds after its publish job:
+    # called with the publish config's tasks.build (specs.publish) instead
+    # of execute_farm when the run's Build USD task rides with it.
+    execute_farm_with_builds: Callable[[dict], object] | None = None
     current_version: str | None = None              # Current export version (if known)
     exported_version: str | None = None             # Version this run wrote (set on completion)
     channel: str | None = None                      # Publish channel name (for build tasks)

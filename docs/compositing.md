@@ -130,7 +130,8 @@ complete render yet until one lands. In a Multi's composite workfile the
 set repeats per member, side by side, each import pinned to its member.
 
 Three COP nodes make the comp; their parms are in
-[Compositing nodes](nodes/comp.md).
+[Compositing nodes](nodes/comp.md). `th::import_scene` adds the shot itself:
+its staged geometry and render camera, ready for a Rasterize Geometry.
 
 ### `th::import_render`
 
@@ -141,12 +142,22 @@ its newest complete version, or a `v####` pins one (a pin needs a concrete
 department). It reads **one** department's version at a time: the denoise
 publishes every AOV the comp reads, mattes and ramps as byte copies.
 
-Outputs: `rgba`, the beauty, and `aovs`, a cable of every AOV the comp
-reads, each field named after its AOV: `beauty`, the `beauty_<tag>` light
+Outputs: `rgba`, the beauty, and `aovs`, a cable of the other AOVs the
+comp reads, each field named after its AOV: the `beauty_<tag>` light
 groups, `objid_*` / `holdout_*` mattes, `ramp_*`, `albedo`, `normal`,
-`depth`, `uv`, `position`. Cable Unpack the `aovs` output to use a matte.
-Inside, one File COP per AOV feeds a cable pack; they are rebuilt only when
-the resolved version changes, never on a plain cook. Each File COP asks for
+`depth`, `uv`, `position` (the beauty is `rgba`, not in the cable again).
+Cable Unpack the `aovs` output to use a matte, or tick **AOV Outputs**: the
+node keeps a Cable Unpack beside it with one output per AOV, in step with
+the cable. Inside, one File COP per AOV, the cable's into a cable pack; they
+are rebuilt when the shot, channel, department or version read changes,
+never on a plain cook.
+
+Channel **All channels** (`*`) reads every channel of the shot in one node:
+`rgba` is the channels over each other (last on top, as the template stacks
+them) and the cable carries each channel's beauty, named after the channel,
+and its AOVs as `<channel>_<aov>`. A channel with nothing rendered yet is
+left out and named on **Reads**. Its Version stays `latest`, and Submit
+freezes each channel it read (plan keys `<node path>#<channel>`). Each File COP asks for
 the plane its file has: a raw render names its channels `<aov>.R…`, the
 denoise publishes bare `R,G,B(,A)`, which a File COP only finds as `C`.
 
@@ -162,7 +173,8 @@ re-resolves each one on `latest` (`scene_imports.REFRESH_SPECS`), and
 
 ### `th::light_mix`
 
-Cable in, RGBA out: a channel's light groups mixed back into its beauty.
+Cable and beauty in, RGBA out: a channel's light groups mixed back into
+its beauty. The beauty input is wired from the import for you on a sync.
 One row per `beauty_<tag>` group, each with **Mute**, **Exposure** (stops)
 and **Tint**, plus a **Rest** row for the lights in no group (the beauty
 minus the groups). The mix is the graded groups plus Rest, never the beauty
@@ -171,7 +183,7 @@ alpha is always the beauty's.
 
 A group in the cable without a row rides in Rest, so it mixes at unity
 until **Sync Rows** gives it a row of its own. Sync is pressed for you when
-the upstream import moves to another version; it adds rows and never
+the upstream import rebuilds (another version or channel); it adds rows and never
 removes or changes one. The network lives in the node's editable `mix`
 subnet, so it can be opened and read.
 
@@ -236,6 +248,11 @@ Internally it composes the shot's staged stage with an embedded
 payloads** — a camera is a light prim, and comp has no use for the shot's
 geometry, so composing it would be a large bill for nothing.
 
+To rasterize the shot itself, use `th::Cop/import_scene` instead: it loads
+the payloads and outputs **geometry** and **camera** typed for Rasterize
+Geometry (`import_lop_camera`'s output is typed RGBA, which that input
+does not take).
+
 ## Farm submission and MP4s
 
 **Submit** on `th::export_comp` saves the workfile, asks where to run
@@ -261,7 +278,10 @@ the shot's newest composite workfile (a Multi's, when one covers the shot)
 is submitted as one merged-comp version, on its own over the renders on
 disk, or ticked beside **Render** to start after that render's denoise. Its
 imports on `latest` resolve when the job runs. The cell shows whether the
-newest comp is older than the newest render. See
+newest comp is older than the newest render. Its settings follow the
+node's: **Preview frames**, **Frames** (the render's range, else the shot's,
+unless you type your own), **Step**, **Batch**, **Pool**, **Priority** and
+**Copy to edit**. See
 [Submitting to the farm → Comp](asset-browser/submit-jobs.md#comp-shots-only).
 
 The job chains on Deadline, or in the same order on this machine:

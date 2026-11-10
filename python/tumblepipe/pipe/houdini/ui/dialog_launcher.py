@@ -15,10 +15,70 @@ the two used to cycle.
 """
 
 
+import os
+
 from .task_collection import (
     collect_tasks_for_export_node,
     describe_missing_tasks,
 )
+
+
+class SaveAroundRun:
+    """Save the scene before a run, and again after it if the run dirtied it.
+
+    A publish writes bookkeeping onto its nodes (an export's file and
+    last-export parms), so a scene saved just before the run was dirty again
+    right after it: every department switch after a publish asked to save
+    changes the artist never made. The dialog is modal, so a scene that was
+    clean after ``before`` and is dirty after the run was dirtied by the run;
+    ``after`` saves only then. A scene the save left dirty (or one that
+    failed to save) is left for the artist.
+
+    The second save keeps the first save's modification time: "stale" is a
+    workfile saved after its last export (``farm.submit.grid.publish_state``,
+    ``_publish.is_out_of_date``), and the run's own bookkeeping must not make
+    the department it just published read as stale.
+    """
+
+    def __init__(self, hip_file=None, stat=os.stat, utime=os.utime):
+        if hip_file is None:
+            import hou
+            hip_file = hou.hipFile
+        self._hip_file = hip_file
+        self._stat = stat
+        self._utime = utime
+        self._clean_before = False
+        self._saved = None   # (path, mtime_ns) of the pre-run save
+
+    def before(self) -> None:
+        self._clean_before = False
+        self._saved = None
+        self._hip_file.save()
+        self._clean_before = not self._hip_file.hasUnsavedChanges()
+        if self._clean_before:
+            path = self._hip_file.path()
+            try:
+                self._saved = (path, self._stat(path).st_mtime_ns)
+            except OSError:
+                self._saved = None
+
+    def after(self) -> None:
+        if self._clean_before and self._hip_file.hasUnsavedChanges():
+            self._hip_file.save()
+            self._restore_mtime()
+        self._clean_before = False
+        self._saved = None
+
+    def _restore_mtime(self) -> None:
+        if self._saved is None:
+            return
+        # The pre-run file: saved under another name since, it is untouched.
+        path, mtime_ns = self._saved
+        try:
+            now = self._stat(path)
+            self._utime(path, ns=(now.st_atime_ns, mtime_ns))
+        except OSError:
+            pass   # the workfile reads as stale; nothing is lost
 
 
 def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> None:
@@ -62,15 +122,14 @@ def open_process_dialog_for_node(export_node, dialog_title: str = "Export") -> N
         )
         return
 
-    def save_scene():
-        hou.hipFile.save()
-
+    save = SaveAroundRun()
     dialog = ProcessDialog(
         title=dialog_title,
         tasks=all_tasks,
-        pre_execute_callback=save_scene,
+        pre_execute_callback=save.before,
         initial_enabled_task_ids=enabled_task_ids,
-        parent=hou.qt.mainWindow()
+        parent=hou.qt.mainWindow(),
+        post_execute_callback=save.after,
     )
     dialog.exec_()
 
@@ -155,16 +214,15 @@ def open_process_dialog_for_publish(
         )
         return None
 
-    def save_scene():
-        hou.hipFile.save()
-
+    save = SaveAroundRun()
     anchor = QtWidgets.QApplication.activeWindow()
     dialog = ProcessDialog(
         title=dialog_title,
         tasks=all_tasks,
-        pre_execute_callback=save_scene,
+        pre_execute_callback=save.before,
         initial_enabled_task_ids=_all_task_ids(all_tasks),
         parent=hou.qt.mainWindow(),
+        post_execute_callback=save.after,
     )
     dialog.setAttribute(QtCore.Qt.WA_DeleteOnClose)
     if on_closed is not None:

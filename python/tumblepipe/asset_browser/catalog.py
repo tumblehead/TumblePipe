@@ -949,13 +949,21 @@ class PipelineCatalog(Catalog):
         """
         if action_id != "farm_manager":
             return False
-        activity = getattr(self, "_farm_activity", None)
-        if activity is None:
-            from tumblepipe.farm.manager.activity import FarmActivity
-            activity = self._farm_activity = FarmActivity()
-            activity.start()
-        activity.touch()
-        return activity.busy
+        return _watch_farm(self).busy
+
+    def get_quick_action_alert(self, action_id: str) -> bool:
+        """Whether the quick action's button shows its warning badge.
+
+        The Farm Manager's does while some of this user's recent jobs in
+        this project (still under way, or submitted in the last day) are
+        failed; retrying or removing them takes it away. Read from the same
+        daemon thread as :meth:`get_quick_action_busy`, never waiting on
+        it. A TumbleTrove without the hook never asks: the method is then
+        simply unused.
+        """
+        if action_id != "farm_manager":
+            return False
+        return _watch_farm(self).alert
 
     def cleanup(self) -> None:
         """Browser shutdown: stop counting farm jobs."""
@@ -976,6 +984,10 @@ class PipelineCatalog(Catalog):
         - ``save``: last mtime of the currently-loaded hip file.
         - ``publish``: mtime of the latest published version for the
           current scene's (entity, dept, channel) tuple.
+        - ``farm_manager``: this user's recent farm work in this project,
+          as the farm watcher last counted it (shots, jobs by state, tasks,
+          a rough finish time, the failed shots). Asked on the GUI thread
+          on hover, so it only reads what the watcher's thread counted.
 
         Returns ``None`` for actions we don't track (e.g. ``reload``) so
         the button falls back to its regular QToolTip.
@@ -1001,6 +1013,24 @@ class PipelineCatalog(Catalog):
             if path is None:
                 return format_age_html("Last published", None)
             return format_age_html("Last published", path.stat().st_mtime)
+
+        if action_id == "farm_manager":
+            import datetime as dt
+
+            from tumbletrove.asset_browser.core import theme
+
+            from tumblepipe.farm.manager.activity import summary_html
+            activity = _watch_farm(self)
+            # An older TumbleTrove may lack a token: the defaults stand in.
+            colours = {
+                key: getattr(theme, name) for key, name in
+                (("dim", "TEXT_SECONDARY"), ("warn", "WARNING"))
+                if isinstance(getattr(theme, name, None), str)
+            }
+            return summary_html(
+                activity.summary, dt.datetime.now(),
+                hours=activity.recent_hours, **colours,
+            )
 
         return None
 
@@ -1395,6 +1425,18 @@ class PipelineCatalog(Catalog):
         self._clients.clear()
         self._activator.reset()
         self.invalidate_cache()
+
+
+def _watch_farm(catalog):
+    """The catalog's farm watcher, started on the first ask and kept
+    reading while asked. Never does I/O itself: the GUI thread calls this."""
+    activity = getattr(catalog, "_farm_activity", None)
+    if activity is None:
+        from tumblepipe.farm.manager.activity import FarmActivity
+        activity = catalog._farm_activity = FarmActivity()
+        activity.start()
+    activity.touch()
+    return activity
 
 
 def _distinct(errors: list[CatalogError]) -> tuple[CatalogError, ...]:

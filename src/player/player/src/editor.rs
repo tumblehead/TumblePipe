@@ -36,7 +36,7 @@ use primer::ImageHandle;
 use primer::keyboard::{Key, Modifiers};
 use primer::prelude::*;
 use primer::subscription::{self, time};
-use th_edit::document::{ClipRef, Frame as EditFrame, FrozenSource, Rule, Source, TrackKind, TrackRef, Version, VersionRule, WorkingEdit};
+use th_edit::document::{ClipRef, Frame as EditFrame, FrozenSource, Source, TrackKind, TrackRef, WorkingEdit};
 use th_edit::ops::{Op, Refused};
 use th_media::sound::Sound;
 use th_media::{ExrView, Frame, FrameKey, Media, Proxy};
@@ -385,7 +385,7 @@ pub enum Message {
     ClipMenu(ClipRef),
     /// A take for the menu's clips: by index of the menu clip's takes, or
     /// None for the best available.
-    Take(ClipRef, Option<usize>),
+    Take(ClipRef, Option<usize>, bool),
     Bins(Result<BinData, String>),
     BinTab(usize),
     BinPick(usize),
@@ -866,8 +866,9 @@ impl Editor {
     /// The take menu's choice for `menu`'s clip, applied to it and the other
     /// selected clips: the same take for clips of the same shot, the same
     /// department, kind and layer (newest) for other shots; or the best
-    /// available for all.
-    fn change_take(&mut self, menu: ClipRef, take: Option<usize>) -> Command<Message> {
+    /// available for all. Only a Version row (`pin`) pins, and only on the
+    /// clicked clip's shot; a source or department row follows the newest.
+    fn change_take(&mut self, menu: ClipRef, take: Option<usize>, pin: bool) -> Command<Message> {
         let Some(Source::Shot { shot: menu_shot, .. }) = clip_source(&self.doc.edit, menu).cloned() else { return Command::none() };
         let picked: Option<Take> = take.and_then(|t| {
             let entry = &self.entries[self.entry_of(clip_source(&self.doc.edit, menu)?)?];
@@ -879,19 +880,7 @@ impl Editor {
             .into_iter()
             .filter_map(|clip| {
                 let Some(Source::Shot { shot, .. }) = clip_source(&self.doc.edit, clip).cloned() else { return None };
-                let rule = match &picked {
-                    None => Rule::best(),
-                    Some(t) => Rule {
-                        department: Some(t.department.clone()),
-                        kind: Some(th_edit::takes::kind_of(t)),
-                        layer: t.layer().map(str::to_owned),
-                        version: if shot == menu_shot {
-                            Version::try_from(t.version.clone()).map(VersionRule::Pinned).unwrap_or(VersionRule::Latest)
-                        } else {
-                            VersionRule::Latest
-                        },
-                    },
-                };
+                let rule = take_menu::rule(picked.as_ref(), pin && shot == menu_shot);
                 Some(Op::SetSource { clip, source: Source::Shot { shot, take: rule } })
             })
             .collect();
@@ -985,15 +974,16 @@ impl Editor {
             && let Some(source @ Source::Shot { .. }) = clip_source(&self.doc.edit, clip)
             && let Some(resolved) = self.entry_of(source).and_then(|i| self.entries[i].resolved())
         {
-            menu = menu.item("Best available", move || Message::Take(clip, None));
+            menu = menu.item("Best available", move || Message::Take(clip, None, false));
             if let Some(shown) = resolved.take {
                 let takes = resolved.takes.clone();
                 let of_kind = |kind| takes.iter().rposition(|t| t.kind() == kind);
                 for submenu in take_menu::submenus(&resolved.takes, shown, of_kind) {
+                    let pins = submenu.pins;
                     let rows = submenu
                         .rows
                         .into_iter()
-                        .fold(MenuList::new(), |rows, (take, label)| rows.item(label, move || Message::Take(clip, Some(take))));
+                        .fold(MenuList::new(), |rows, (take, label)| rows.item(label, move || Message::Take(clip, Some(take), pins)));
                     menu = menu.submenu(submenu.label, rows);
                 }
             }
@@ -1685,7 +1675,7 @@ impl Application for Editor {
             }
             Message::Resolved(index, result) => self.resolved(index, result),
             Message::ClipMenu(clip) => self.menu_clip = Some(clip),
-            Message::Take(clip, take) => return self.change_take(clip, take),
+            Message::Take(clip, take, pin) => return self.change_take(clip, take, pin),
             Message::Bins(result) => match result {
                 Ok(bins) => self.bins = bins,
                 Err(e) => self.status = Some((format!("The bins: {e}"), true)),
@@ -2055,6 +2045,7 @@ pub fn open_document(paths: &ProjectPaths, edit: Option<&str>, shots: &[String])
 #[cfg(test)]
 mod tests {
     use super::*;
+    use th_edit::document::{Rule, VersionRule};
 
     #[test]
     fn engine_sources_skip_the_black_one() {

@@ -31,7 +31,17 @@ class LookdevStudio(FrameRangeNode, FarmNode, ns.Node):
         return self.parm('farm_stepsize').eval()
 
     def get_aov_names(self):
-        root = self.native().node('OUT/stage_OUT').stage().GetPseudoRoot()
+        stage = self.native().node('OUT/stage_OUT').stage()
+        if stage is None:
+            # The studio's inner network errors until Primitives names
+            # something, and an errored LOP has no stage.
+            if not self.parm('primpattern').eval().strip():
+                raise self._error(
+                    'set Selection > Primitives to the asset to put on the '
+                    'turntable (for example /CHAR/hero)'
+                )
+            raise self._error('the turntable stage does not cook; see the errors inside the node')
+        root = stage.GetPseudoRoot()
         return [
             aov_path.rsplit('/', 1)[-1].lower()
             for aov_path in prim_queries.list_render_vars(root)

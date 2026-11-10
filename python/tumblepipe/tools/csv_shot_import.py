@@ -97,7 +97,9 @@ def sync_from_csv(csv_path: Path, dry_run: bool = False) -> dict:
     for sequence in plan.sequences_to_create:
         print(f"  [ADD SEQ] entity:/shots/{sequence}")
     for planned in plan.shots:
-        uri = shot_batch.shot_uri(planned.row.sequence, planned.row.shot)
+        # Text, not a Uri: a refused row's name ("SH 050") is not a valid
+        # Uri segment, and building one aborted the whole import.
+        uri = f"entity:/shots/{planned.row.sequence}/{planned.row.shot}"
         if planned.status is shot_batch.Status.NEW:
             print(f"  [ADD] {uri} (frames {planned.row.frame_start}-{planned.row.frame_end})")
         elif planned.status is shot_batch.Status.INVALID:
