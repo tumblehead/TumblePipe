@@ -154,6 +154,11 @@ Source: [`otls/lop_th.lpe_tags.1.0`](../../otls/lop_th.lpe_tags.1.0/th_8_8Lop_1l
 | Tags › LPE Tag | `light_group#` | The tag; the AOV is `beauty_<tag>` |
 | Tags › Lights | all input prims | Prim pattern of the lights that get the tag |
 
+The node authors no Karma image filter: a render comes out un-denoised and
+Farm Submit's **Denoise** is the one denoise (OIDN with the albedo and normal
+AOVs, on the farm). Before 2026-11-10 it switched on Karma's own OIDN filter,
+so husk denoised every render and Denoise ran OIDN a second time.
+
 Gotchas:
 
 - A tag nothing carries produces no AOV and no error — only the Status line

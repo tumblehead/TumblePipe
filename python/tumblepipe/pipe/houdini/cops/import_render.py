@@ -9,15 +9,26 @@ its own ``rgba`` input, which is wired for you.
 Channel ``*`` (*All channels*) reads every channel of the shot in one node:
 ``rgba`` is the channels laid over each other back to front in the shot's
 channel order (the last on top, as the template stacks them), and the cable
-carries every channel's beauty (named after the channel) and AOVs
-(``<channel>_<aov>``). A channel with nothing rendered yet is left out and
-named on the Reads label. Such an import is frozen per channel
-(``pipe.comp.plan_key``).
+carries every channel's AOVs (``<channel>_<aov>``). A channel with nothing
+rendered yet is left out and named on the Reads label. Such an import is
+frozen per channel (``pipe.comp.plan_key``).
 
-*AOV Outputs* keeps a Cable Unpack beside the node, wired to ``aovs``, with
-one output per field, and keeps its fields in step with the cable. A
-digital asset's output count is fixed by its type, so the per-AOV outputs
-live on that companion node (a Cable Unpack's outputs follow its fields).
+The third output, ``beauties``, is a cable of each channel's beauty named
+after the channel (one field for a one-channel import). The beauties are
+not in ``aovs``: a simple comp takes them without unpacking the AOVs (Remy,
+2026-11-10).
+
+A digital asset's output count is fixed by its type, so per-field outputs
+live on companion Cable Unpacks beside the node (a Cable Unpack's outputs
+follow its fields), each kept in step with its cable:
+
+* *Channel Outputs* (on by default): an all-channels import keeps one,
+  wired to ``beauties``, with an output per channel.
+* *AOV Outputs*: one wired to ``aovs``, with an output per AOV.
+
+A companion's wires follow their field when its fields change, and a wire
+from an AOV Outputs field that moved to ``beauties`` (an import built before
+the beauties left the cable) moves to the Channel Outputs node.
 
 What it resolves is ``pipe.comp.resolve_render``; this module points the
 File COPs inside the node's ``dive`` subnet at it. They are regenerated only
@@ -43,12 +54,18 @@ from tumblepipe.pipe.houdini.entity_node import EntityNode
 
 TYPE_NAME = 'import_render'
 
-# The editable subnet the File COPs live in, its cable pack, and the
+# The editable subnet the File COPs live in, its cable packs, and the
 # node's outputs (in order).
 DIVE = 'dive'
 PACK = 'pack'
+BEAUTIES_PACK = 'beauties'
 RGBA_OUTPUT = 0
 AOVS_OUTPUT = 1
+BEAUTIES_OUTPUT = 2
+# The dive's outputs, as (label, COP subnet output type). An import saved
+# before ``beauties`` existed has a dive with the first two; a build gives
+# it all three.
+DIVE_OUTPUTS = (('rgba', 'vector4'), ('aovs', 'cable'), ('beauties', 'cable'))
 
 # Parm values the node stores what it last resolved in, so a refresh that
 # resolves the same thing touches nothing.
@@ -57,12 +74,16 @@ FIELDS_PARM = 'fields'          # the cable's fields, space separated
 BUILD_KEY_PARM = 'build_key'    # pipe.comp.build_key of the last build
 PINS_PARM = 'pins'              # an all-channels import's farm pins
 UNPACK_PARM = 'unpack_outputs'
+BEAUTY_UNPACK_PARM = 'beauty_outputs'
 
 # The Channel menu's label for comp.ALL_CHANNELS.
 ALL_CHANNELS_LABEL = 'All channels'
-# User data marking the Cable Unpack an import keeps for AOV Outputs.
+# User data marking the Cable Unpacks an import keeps for AOV Outputs and
+# Channel Outputs.
 UNPACK_MARK = 'th_import_render_outputs'
 UNPACK_SUFFIX = '_aovs'
+BEAUTY_UNPACK_MARK = 'th_import_render_beauties'
+BEAUTY_UNPACK_SUFFIX = '_beauties'
 
 # A File COP's 'missingdata' token for a missing frame: output empty (zero),
 # so a frame outside the render's range (a pre-roll) does not fail the cook.
@@ -182,6 +203,12 @@ class ImportRender(EntityNode):
     def get_unpack_outputs(self) -> bool:
         return bool(self.parm(UNPACK_PARM).eval())
 
+    def get_beauty_outputs(self) -> bool:
+        """Channel Outputs: on, and the node reads all channels (a
+        one-channel import's beauty is its ``rgba``)."""
+        parm = self.parm(BEAUTY_UNPACK_PARM)
+        return parm is not None and bool(parm.eval()) and self.is_all_channels()
+
     # Resolution
 
     def resolve(self) -> comp.Resolved:
@@ -243,8 +270,9 @@ class ImportRender(EntityNode):
         """Resolve, and point the File COPs at it when what the node reads
         changed. Returns ``{channel: Resolved}``.
 
-        A rebuild syncs the downstream light mixes' rows and the AOV
-        Outputs unpack; every export_comp re-checks the channels it reads.
+        A rebuild syncs the downstream light mixes' rows; the Channel and
+        AOV Outputs unpacks follow what it reads; every export_comp
+        re-checks the channels it reads.
         """
         previous = self.get_resolved()
         previous_key = self.get_build_key()
@@ -266,7 +294,7 @@ class ImportRender(EntityNode):
         self._update_labels(self._label(reads, skipped, previous, previous_key))
         if rebuilt:
             _sync_downstream_mixes(self.native())
-        self.sync_unpack(plan)
+        self.sync_unpacks(plan)
         _refresh_exports()
         return reads
 
@@ -308,18 +336,22 @@ class ImportRender(EntityNode):
     def _dive_built(self, plan: comp.DivePlan) -> bool:
         dive = self.native().node(DIVE)
         if dive is None or self.get_fields() != list(plan.fields): return False
+        # An import saved before the beauties cable has no beauties pack.
+        if dive.node(BEAUTIES_PACK) is None: return False
         return all(dive.node(read.name) is not None for read in plan.files)
 
     def _build(self, reads: dict[str, comp.Resolved], plan: comp.DivePlan, key: str):
         """Rebuild the dive: one File COP per AOV read, the cable's into
-        the pack, the beauty (or the channels laid over each other) to
-        ``rgba``. Nothing outside the dive changes."""
+        the pack, each beauty into the beauties pack, the beauty (or the
+        channels laid over each other) to ``rgba``. Nothing outside the dive
+        changes."""
         dive = self.native().node(DIVE)
         if dive is None:
             raise self._error(f'the node has no {DIVE} subnet (a broken HDA)')
         for child in dive.children():
             if child.name() in ('inputs', 'outputs'): continue
             child.destroy()
+        _ensure_dive_outputs(dive)
         outputs = dive.node('outputs')
         pack = dive.createNode('cablepack', PACK)
         files: dict[str, hou.Node] = dict()
@@ -340,10 +372,13 @@ class ImportRender(EntityNode):
             pack.parm(f'fieldname{index + 1}').set(field)
         width = max(column - 1, 0) * 2.5
         pack.setPosition(hou.Vector2(width / 2, 0.0))
+        beauty_pack = _pack(dive, BEAUTIES_PACK, beauties, list(plan.beauty_fields))
+        beauty_pack.setPosition(hou.Vector2(width / 2 + 2.5, 0.0))
         rgba = _over_chain(dive, beauties, hou.Vector2(width / 2 - 2.5, 0.0))
         if rgba is not None:
             outputs.setInput(RGBA_OUTPUT, rgba, 0)
         outputs.setInput(AOVS_OUTPUT, pack, 0)
+        outputs.setInput(BEAUTIES_OUTPUT, beauty_pack, 0)
         outputs.setPosition(hou.Vector2(width / 2, -1.5 - max(len(beauties) - 1, 0)))
         single = None if self.is_all_channels() else next(iter(reads.values()))
         self.parm(RESOLVED_PARM).set(
@@ -352,50 +387,63 @@ class ImportRender(EntityNode):
         self.parm(FIELDS_PARM).set(' '.join(fields))
         self.parm(BUILD_KEY_PARM).set(key)
 
-    # AOV Outputs
+    # Channel Outputs and AOV Outputs
 
-    def find_unpack(self):
-        """The Cable Unpack this import keeps for AOV Outputs, None if none."""
-        native = self.native()
-        for connection in native.outputConnections():
-            if connection.outputIndex() != AOVS_OUTPUT: continue
+    def find_unpack(self, output_index: int = AOVS_OUTPUT):
+        """The Cable Unpack this import keeps on ``output_index`` (AOV
+        Outputs on ``aovs``, Channel Outputs on ``beauties``), None if none."""
+        mark = _UNPACKS[output_index][0]
+        for connection in self.native().outputConnections():
+            if connection.outputIndex() != output_index: continue
             node = connection.outputNode()
-            if node.userData(UNPACK_MARK) is not None:
+            if node.userData(mark) is not None:
                 return node
         return None
 
-    def sync_unpack(self, plan: comp.DivePlan | None):
-        """Keep the AOV Outputs unpack in step with ``plan`` (what the node
-        just resolved): create it beside the node when the toggle is on,
-        give it one typed output per cable field, and remove it when the
-        toggle goes off and nothing reads it (``plan`` may then be None)."""
-        unpack = self.find_unpack()
-        if not self.get_unpack_outputs():
+    def sync_unpacks(self, plan: comp.DivePlan | None):
+        """Keep both companions in step with ``plan`` (what the node just
+        resolved; None when it is not known, which only removes). Channel
+        Outputs first, so a wire AOV Outputs drops for a beauty can move to
+        it."""
+        beauties = self.sync_unpack(plan, BEAUTIES_OUTPUT)
+        self.sync_unpack(plan, AOVS_OUTPUT, rehome=beauties)
+
+    def sync_unpack(self, plan: comp.DivePlan | None,
+                    output_index: int = AOVS_OUTPUT, rehome=None):
+        """Keep the companion unpack on ``output_index`` in step with
+        ``plan``: create it beside the node when its toggle is on, give it
+        one typed output per cable field, and remove it when the toggle is
+        off and nothing reads it. Wires follow their field; a wire whose
+        field is gone moves to the same-named output of ``rehome`` (another
+        unpack) when it has one. Returns the unpack, None when there is
+        none."""
+        wanted = (self.get_beauty_outputs() if output_index == BEAUTIES_OUTPUT
+                  else self.get_unpack_outputs())
+        mark, suffix, offset = _UNPACKS[output_index]
+        unpack = self.find_unpack(output_index)
+        if not wanted:
             if unpack is not None and not unpack.outputConnections():
                 unpack.destroy()
-            return
+                return None
+            return unpack
         if plan is None:
-            raise self._error('AOV Outputs needs what the node reads: press Update')
+            raise self._error('the outputs need what the node reads: press Update')
+        if output_index == BEAUTIES_OUTPUT:
+            fields, signatures = list(plan.beauty_fields), plan.beauty_signatures
+        else:
+            fields, signatures = list(plan.fields), plan.signatures
         native = self.native()
         if unpack is None:
             unpack = native.parent().createNode(
-                'cableunpack', f'{native.name()}{UNPACK_SUFFIX}'
+                'cableunpack', f'{native.name()}{suffix}'
             )
-            unpack.setUserData(UNPACK_MARK, native.name())
-            unpack.setInput(0, native, AOVS_OUTPUT)
-            unpack.setPosition(native.position() + hou.Vector2(2.0, -0.75))
+            unpack.setUserData(mark, native.name())
+            unpack.setInput(0, native, output_index)
+            unpack.setPosition(native.position() + hou.Vector2(*offset))
             unpack.setColor(native.color())
-        fields = list(plan.fields)
-        signatures = plan.signatures
-        current = [
-            unpack.parm(f'fieldname{index}').eval()
-            for index in range(1, unpack.parm('fields').eval() + 1)
-        ]
-        if current == fields: return
-        unpack.parm('fields').set(len(fields))
-        for index, field in enumerate(fields, start=1):
-            unpack.parm(f'fieldname{index}').set(field)
-            unpack.parm(f'fieldtype{index}').set(signatures[field])
+        if _unpack_fields(unpack) != fields:
+            _set_unpack_fields(unpack, fields, signatures, rehome)
+        return unpack
 
     def open_location(self):
         resolved = self.get_resolved()
@@ -409,6 +457,73 @@ class ImportRender(EntityNode):
         if not path.exists():
             raise self._error(f'{path_str(path)} does not exist yet')
         hou.ui.showInFileBrowser(path_str(path))
+
+
+# Each companion unpack, by the output it reads: (user data mark, name
+# suffix, offset from the import). Plain tuples: the module imports
+# without Houdini (the tests' hou stub has no Vector2).
+_UNPACKS = {
+    AOVS_OUTPUT: (UNPACK_MARK, UNPACK_SUFFIX, (2.0, -0.75)),
+    BEAUTIES_OUTPUT: (BEAUTY_UNPACK_MARK, BEAUTY_UNPACK_SUFFIX, (-2.5, -0.75)),
+}
+
+
+def _unpack_fields(unpack) -> list[str]:
+    return [
+        unpack.parm(f'fieldname{index}').eval()
+        for index in range(1, unpack.parm('fields').eval() + 1)
+    ]
+
+
+def _set_unpack_fields(unpack, fields: list[str], signatures, rehome=None):
+    """Give ``unpack`` these fields, its wires following their field: a
+    Cable Unpack's outputs are by position, so renaming the fields in place
+    would leave a wire on whatever field took its slot."""
+    current = _unpack_fields(unpack)
+    rehome_fields = _unpack_fields(rehome) if rehome is not None else []
+    targets = comp.follow_fields(current, fields, rehome_fields)
+    # (old output, downstream node, its input); a connection's outputNode()
+    # is the downstream node, its inputNode() this unpack.
+    wires = [
+        (c.outputIndex(), c.outputNode(), c.inputIndex())
+        for c in unpack.outputConnections()
+        if c.outputIndex() < len(current)
+    ]
+    for _, node, input_index in wires:
+        node.setInput(input_index, None)
+    unpack.parm('fields').set(len(fields))
+    for index, field in enumerate(fields, start=1):
+        unpack.parm(f'fieldname{index}').set(field)
+        unpack.parm(f'fieldtype{index}').set(signatures[field])
+    for output, node, input_index in wires:
+        target = targets[output]
+        if target is None: continue
+        moved, index = target
+        node.setInput(input_index, rehome if moved else unpack, index)
+
+
+def _ensure_dive_outputs(dive):
+    """Give the dive every output in DIVE_OUTPUTS (an import saved before
+    ``beauties`` existed has two)."""
+    if dive.parm('outputs') is None: return
+    if dive.parm('outputs').eval() >= len(DIVE_OUTPUTS): return
+    dive.parm('outputs').set(len(DIVE_OUTPUTS))
+    for index, (label, kind) in enumerate(DIVE_OUTPUTS, start=1):
+        dive.parm(f'outputlabel{index}').set(label)
+        dive.parm(f'outputtype{index}').set(kind)
+
+
+def _pack(dive, name: str, sources: list, fields: list[str]):
+    """A Cable Pack in ``dive`` with ``sources`` as ``fields``, in order."""
+    pack = dive.createNode('cablepack', name)
+    for index, source in enumerate(sources):
+        pack.setInput(index, source, 0)
+    # Name the fields once every input is wired: wiring an input resizes
+    # the pack's field list to the inputs.
+    pack.parm('fields').set(len(fields))
+    for index, field in enumerate(fields):
+        pack.parm(f'fieldname{index + 1}').set(field)
+    return pack
 
 
 def _over_chain(dive, beauties: list, position):
@@ -540,13 +655,14 @@ def changed(kwargs):
 
 
 def unpack_changed(kwargs):
-    """AOV Outputs toggled: add or remove the Cable Unpack beside the node."""
+    """AOV Outputs or Channel Outputs toggled: add or remove the Cable
+    Unpacks beside the node."""
     node = ImportRender(kwargs['node'])
-    with ns.node_errors_as_message('AOV Outputs'):
-        if node.get_unpack_outputs():
-            node.execute()  # resolves (rebuilding nothing unchanged) and syncs it
+    with ns.node_errors_as_message('Outputs'):
+        if node.get_unpack_outputs() or node.get_beauty_outputs():
+            node.execute()  # resolves (rebuilding nothing unchanged) and syncs them
         else:
-            node.sync_unpack(None)
+            node.sync_unpacks(None)
 
 
 def open_location(kwargs):

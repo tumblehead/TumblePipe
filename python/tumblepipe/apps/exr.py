@@ -542,20 +542,39 @@ def stamp_acescg(input_path, output_path):
 def dwab_encode(input_path, output_path):
     return encode(input_path, output_path, 'dwab:45')
 
+# The review look: ACEScg into the OCIO config's sRGB display, default view.
+DISPLAY_ARGS = ['--iscolorspace', 'acescg', '--ociodisplay', 'sRGB - Display', '']
+
+
+def to_display_args(input_path, output_path, channel_names=None) -> list[str]:
+    """oiiotool arguments (no program name) that write ``input_path`` (an
+    EXR) as an 8-bit display image at ``output_path``.
+
+    Uses hoiiotool, not Houdini's iconvert: iconvert takes a Houdini licence,
+    so every mp4 and notify task competed with the renders for one and
+    failed when the farm ran short (QA 2026-11-10, qabeta). The transform is
+    the same (16-bit outputs agree to 3/65535); ``--dither`` matches
+    iconvert's dithering at 8 bits. The first three channels are taken by
+    index (a raw split names them ``beauty.R``, a denoise ``R``), a mono AOV
+    is repeated to grey.
+    """
+    channel_count = len(channel_names) if channel_names else 3
+    selector = _channel_selector(channel_count) or '0,0,0'
+    return [
+        path_str(input_path),
+        '--ch', selector,
+        *DISPLAY_ARGS,
+        '--dither',
+        '-d', 'uint8',
+        '-o', path_str(output_path),
+    ]
+
+
 def to_jpeg(input_path, output_path):
     _require_suffix(input_path, '.exr')
     _require_suffix(output_path, '.jpg')
-
-    # Convert to JPEG
-    # Note: Using --ociodisplay with empty string for view uses the OCIO config's default view
-    iconvert = houdini.IConvert()
-    iconvert.run(
-        [
-            '--iscolorspace', 'acescg',
-            '--ociodisplay', 'sRGB - Display', '',
-            path_str(input_path),
-            path_str(output_path)
-        ],
+    _oiiotool().run(
+        to_display_args(input_path, output_path, read_channel_names(input_path)),
         env = dict(
             OCIO = path_str(Path(os.environ['OCIO'])),
         )

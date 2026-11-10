@@ -39,7 +39,9 @@ from tumblepipe.farm.jobs import notify as notify_job
 from tumblepipe.farm.jobs import playblast as playblast_job
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.farm.specs import playblast as playblast_spec
-from tumblepipe.pipe.paths import get_daily_path, get_next_playblast_path, playblast_version_of
+from tumblepipe.pipe.paths import (
+    get_daily_path, get_next_playblast_path, playblast_version_of, reserve_playblast,
+)
 from tumblepipe.util.uri import Uri
 
 
@@ -85,6 +87,9 @@ def build(
     # Versioned playblast + rolling daily, resolved at submit time like the
     # local playblast HDA (get_next_* bumps the version).
     playblast_path = get_next_playblast_path(entity_uri, department_name, purpose)
+    # Held until the worker writes it: a second submit before then takes
+    # the next version instead of overwriting this one.
+    reserve_playblast(playblast_path)
     daily_path = get_daily_path(entity_uri, department_name, purpose)
     version_name = playblast_version_of(playblast_path)
 

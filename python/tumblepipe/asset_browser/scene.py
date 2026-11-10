@@ -107,9 +107,10 @@ class SceneManager:
         if fps is not None:
             playbar.set_fps(fps)
 
-    def refresh_scene_imports(self) -> tuple[int, int]:
+    def refresh_scene_imports(self, force: bool = False) -> tuple[int, int]:
         """Re-execute every import node in the loaded scene so the latest
         published versions flow in. Returns ``(executed, failed)``.
+        ``force`` runs them even when nothing they read has moved.
 
         Opening a scene no longer calls this: ``load_hook`` refreshes on
         every ``hou.hipFile`` load, however the scene was opened. What is
@@ -120,7 +121,7 @@ class SceneManager:
         from tumblepipe.pipe.houdini.scene_imports import (
             refresh_scene_imports,
         )
-        return refresh_scene_imports()
+        return refresh_scene_imports(force=force)
 
     def update_scene_imports(self, refresh_cb=None) -> None:
         """Re-execute the loaded scene's import nodes in place — no hip
@@ -149,7 +150,7 @@ class SceneManager:
                 if proj is not None:
                     self._activator.activate(proj)
                 with playbar.update_mode(hou.updateMode.Manual):
-                    executed, failed = self.refresh_scene_imports()
+                    executed, failed = self.refresh_scene_imports(force=True)
                 if failed:
                     # The sweep deliberately survives a bad node, which used
                     # to mean "every import node failed" and "all good" showed

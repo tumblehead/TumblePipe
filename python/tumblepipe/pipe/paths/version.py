@@ -50,6 +50,39 @@ def cached_version_listings():
     finally:
         _listing_scope.cache = None
 
+@contextmanager
+def recorded_version_reads():
+    """Within this block, every listing and latest-version read is
+    recorded: yields ``{(kind, folder): value}`` with ``kind`` ``'list'``
+    (the version names) or ``'latest'`` (the name, or None), what
+    :func:`read_version_listing` gives back for the same key.
+
+    The scene import refresh keeps it per node to tell, on the next open,
+    whether anything the node read has moved. A nested block's reads are
+    the outer block's too.
+    """
+    outer = getattr(_listing_scope, 'reads', None)
+    reads = {}
+    _listing_scope.reads = reads
+    try:
+        yield reads
+    finally:
+        _listing_scope.reads = outer
+        if outer is not None:
+            outer.update(reads)
+
+def _record(key, value):
+    reads = getattr(_listing_scope, 'reads', None)
+    if reads is not None:
+        reads[key] = value
+
+def read_version_listing(kind: str, folder: str):
+    """The value :func:`recorded_version_reads` records for a key, read now."""
+    if kind == 'list':
+        return [p.name for p in list_version_paths(Path(folder))]
+    latest = get_latest_version_path(Path(folder))
+    return latest.name if latest is not None else None
+
 def _scan_version_paths(path: Path) -> list[Path]:
     # One scandir, not exists() + iterdir() + is_dir() per entry: on Windows
     # DirEntry.is_dir() comes with the listing, so a folder of versions
@@ -70,12 +103,15 @@ def _scan_version_paths(path: Path) -> list[Path]:
 def list_version_paths(path: Path) -> list[Path]:
     """The version folders under ``path``, oldest first; [] when it is missing."""
     cache = getattr(_listing_scope, 'cache', None)
-    if cache is None:
-        return _scan_version_paths(path)
     key = ('list', str(path))
-    if key not in cache:
-        cache[key] = _scan_version_paths(path)
-    return list(cache[key])
+    if cache is None:
+        result = _scan_version_paths(path)
+    else:
+        if key not in cache:
+            cache[key] = _scan_version_paths(path)
+        result = list(cache[key])
+    _record(key, [p.name for p in result])
+    return result
 
 def is_finished_version(version_path: Path) -> bool:
     """Whether a version folder is finished: its ``context.json`` is there.
@@ -96,12 +132,15 @@ def get_latest_version_path(path: Path) -> Optional[Path]:
     (src/resolver/src/version.rs) has the same rule.
     """
     cache = getattr(_listing_scope, 'cache', None)
-    if cache is None:
-        return _find_latest_version_path(path)
     key = ('latest', str(path))
-    if key not in cache:
-        cache[key] = _find_latest_version_path(path)
-    return cache[key]
+    if cache is None:
+        result = _find_latest_version_path(path)
+    else:
+        if key not in cache:
+            cache[key] = _find_latest_version_path(path)
+        result = cache[key]
+    _record(key, result.name if result is not None else None)
+    return result
 
 def _find_latest_version_path(path: Path) -> Optional[Path]:
     version_paths = list_version_paths(path)

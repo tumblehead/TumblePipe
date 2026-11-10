@@ -226,7 +226,7 @@
             label   "Attribute Painted"
             type    integer
             invisible
-            default { [ "phm().isattribpainted(pwd(), pwd().parm( expandString('$CH') ).multiParmInstanceIndices()[0])" python ] }
+            default { "0" }
             range   { 0 10 }
             parmtag { "script_callback_language" "python" }
         }

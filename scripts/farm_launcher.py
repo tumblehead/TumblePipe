@@ -34,7 +34,8 @@ to scripts; until it does, submissions made from here carry no user name.
 archive window (``tumblepipe.archive.app``) on its Archive or Restore tab,
 ``rebuild``, which re-makes a restored project's left-out caches in hython,
 ``prune``, the Prune Old Exports window (``tumblepipe.prune_app``), or
-``edits``, the editor on the project (``tumblepipe.editor_app``).
+``edits``, the editor on the project's master edit, else on every shot
+(``tumblepipe.editor_app``).
 """
 
 from __future__ import annotations

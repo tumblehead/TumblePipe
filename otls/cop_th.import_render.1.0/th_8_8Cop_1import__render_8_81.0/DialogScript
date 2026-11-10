@@ -7,10 +7,11 @@
 
     output	rgba	rgba
     output	aovs	aovs
-    signature	default	Default	{ }	{ RGBA Cable }
+    output	beauties	beauties
+    signature	default	Default	{ }	{ RGBA Cable Cable }
 
     help {
-	"A shot's finished render: the beauty (rgba) and a cable of the other AOVs the comp reads (aovs). Channel * reads every channel: rgba is them laid over each other, the cable carries each channel's beauty and AOVs."
+	"A shot's finished render: the beauty (rgba), a cable of the other AOVs the comp reads (aovs) and a cable of each channel's beauty (beauties). Channel * reads every channel: rgba is them laid over each other, Channel Outputs keeps one output per channel beside the node."
     }
 
     groupsimple {
@@ -133,6 +134,15 @@
         name    "outputs_group"
         label   "Outputs"
 
+        parm {
+            name    "beauty_outputs"
+            label   "Channel Outputs"
+            type    toggle
+            default { "1" }
+            help    "All channels: keep a Cable Unpack beside the node with one output per channel's beauty, kept in step with the channels read."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.unpack_changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
         parm {
             name    "unpack_outputs"
             label   "AOV Outputs"

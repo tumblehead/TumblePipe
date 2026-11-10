@@ -4,7 +4,7 @@
 A playblast is monolithic: unlike a render (frames chunked across many
 Deadline tasks), the mp4 encode needs every frame, so one task renders the
 whole range and encodes the video. It renders with the look's renderer: the
-viewport look (hdThPlayblast, no licence) or Karma XPU in a preview mode (see
+viewport look (hdThPlayblast, on the CPU) or Karma XPU in a preview mode (see
 ``workers.playblast.xpu_args``).
 
 config = {

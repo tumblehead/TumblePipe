@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import os
+import threading
 from pathlib import Path
 
 
@@ -193,7 +194,39 @@ def try_resolve_entity_uri(uri: str) -> str | None:
     """
     from pxr import Ar
     resolved = Ar.GetResolver().Resolve(uri)
-    return str(resolved) if resolved else None
+    result = str(resolved) if resolved else None
+    reads = getattr(_recording, 'reads', None)
+    if reads is not None:
+        reads[(uri, os.environ.get(LATEST_MODE_ENV_VAR) == "1")] = result
+    return result
+
+
+_recording = threading.local()
+
+
+@contextmanager
+def recorded_resolves():
+    """Within this block, every :func:`try_resolve_entity_uri` (and so
+    :func:`resolve_entity_uri`) is recorded: yields ``{(uri, latest_mode):
+    resolved path or None}``. A nested block's resolves are the outer
+    block's too. The scene import refresh re-resolves them on the next open
+    (:func:`resolve_as`) to tell whether a "latest" has moved.
+    """
+    outer = getattr(_recording, 'reads', None)
+    reads = {}
+    _recording.reads = reads
+    try:
+        yield reads
+    finally:
+        _recording.reads = outer
+        if outer is not None:
+            outer.update(reads)
+
+
+def resolve_as(uri: str, latest: bool) -> str | None:
+    """What ``uri`` resolves to now under the given latest mode."""
+    with latest_mode(latest):
+        return try_resolve_entity_uri(uri)
 
 
 def plugin_resources_path(pipeline_path: os.PathLike, houdini_major: int) -> Path:

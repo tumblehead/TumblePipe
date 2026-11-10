@@ -12,8 +12,9 @@ from tumblepipe.api import path_str
 # viewport_env rather than by the farm env (farm.env.get_base_env), which is
 # built on the submitting machine. It rasterises on the CPU with the viewport's look --
 # display colours and textures, shaded as the look's 'shading' says, with
-# ambient occlusion -- and husk takes no licence for it: Houdini's licence is
-# only checked out for Karma. HideAndReek/010 (6.8M triangles) renders in
+# ambient occlusion. husk still checks a licence out for it, Houdini
+# Engine/Core/FX first unless told otherwise: the farm worker asks for the
+# Karma Renderer licence (workers.playblast.LICENCE_ARGS). HideAndReek/010 (6.8M triangles) renders in
 # ~0.34 s a frame at 1280x720 and eight samples a pixel; with husk updating
 # the stage and its 40 animated meshes, a frame takes 0.4-0.9 s.
 #

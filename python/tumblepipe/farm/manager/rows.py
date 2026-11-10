@@ -25,6 +25,13 @@ FINISHED = (queue.COMPLETED, queue.CANCELLED)
 # task of it renders or is still to run (:func:`ended`): a local job is
 # failed while its other tasks still render, as on Deadline.
 ENDED = (queue.COMPLETED, queue.FAILED, queue.CANCELLED)
+# Every state a row can show. The window marks each row with its state's
+# colour and lists them in this order in its legend: live work first, then
+# what needs a look, then what is done. ``unknown`` is left out of the
+# legend; it means a state this vocabulary does not have.
+STATES = (queue.RENDERING, queue.QUEUED, queue.PENDING, queue.SUSPENDED,
+          queue.FAILED, queue.COMPLETED, queue.CANCELLED, UNKNOWN)
+LEGEND = tuple(state for state in STATES if state != UNKNOWN)
 # The actions the window offers, by source (``deadline_jobs.COMMANDS`` maps
 # the farm ones onto deadlinecommand verbs).
 ACTIONS = {
@@ -598,8 +605,11 @@ _PYTHON = {'notify', 'sync', 'slapcomp'}
 
 
 def renderer_details(kind: str, context: dict | None) -> list[Detail]:
-    """What renders the job and on which devices, from its worker and context."""
-    context = context if isinstance(context, dict) else {}
+    """What renders the job and on which devices, from its worker and context
+    (None while it is being read; an old playblast's context has no look:
+    those rendered with Karma)."""
+    loaded = isinstance(context, dict)
+    context = context if loaded else {}
     if kind == 'render':
         result = [
             Detail('Renderer', 'Karma (husk)'),
@@ -610,11 +620,13 @@ def renderer_details(kind: str, context: dict | None) -> list[Detail]:
             result.append(Detail('Tiles per frame', str(tiles)))
         return result + _resolution(context)
     if kind == 'playblast':
+        if not loaded:
+            return []   # its context is not read yet: which renderer is unknown
         look = context.get('look') if isinstance(context.get('look'), dict) else {}
         if look.get('renderer', 'karma') == 'viewport':
             result = [
                 Detail('Renderer', 'TumbleView (hdThPlayblast)'),
-                Detail('Engine', 'CPU only, no licence'),
+                Detail('Engine', 'CPU only, a Karma licence'),
             ]
             if look.get('shading'):
                 result.append(Detail('Shading', str(look['shading'])))
@@ -707,6 +719,7 @@ def job_details(
     ``tasks`` are the job's (for times; [] when not loaded), ``context`` its
     context.json, ``names`` job names by id (for its dependencies).
     """
+    raw_context = context
     context = context if isinstance(context, dict) else {}
     names = names or {}
     entity, department = _entity(row, context)
@@ -764,7 +777,7 @@ def job_details(
     # What it renders with and how long it takes first: what a glance at a
     # render is for. The window puts this machine's load after Renderer.
     sections = [
-        ('Job', job), ('Renderer', renderer_details(row.kind, context)), ('Time', time),
+        ('Job', job), ('Renderer', renderer_details(row.kind, raw_context)), ('Time', time),
         ('Frames', frames), ('Scheduling', scheduling), ('Output', output),
     ]
     result = []

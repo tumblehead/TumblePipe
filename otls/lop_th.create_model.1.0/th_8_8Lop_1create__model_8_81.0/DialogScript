@@ -1059,7 +1059,7 @@
                 label   "Auto-fill Materials"
                 type    button
                 default { "0" }
-                parmtag { "script_callback" "kwargs['node'].hm().fillmaterials(kwargs)" }
+                parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.create_model as th_node; th_node.fill_materials(kwargs['node'])" }
                 parmtag { "script_callback_language" "python" }
             }
             multiparm {

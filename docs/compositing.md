@@ -142,10 +142,11 @@ its newest complete version, or a `v####` pins one (a pin needs a concrete
 department). It reads **one** department's version at a time: the denoise
 publishes every AOV the comp reads, mattes and ramps as byte copies.
 
-Outputs: `rgba`, the beauty, and `aovs`, a cable of the other AOVs the
+Outputs: `rgba`, the beauty; `aovs`, a cable of the other AOVs the
 comp reads, each field named after its AOV: the `beauty_<tag>` light
 groups, `objid_*` / `holdout_*` mattes, `ramp_*`, `albedo`, `normal`,
-`depth`, `uv`, `position` (the beauty is `rgba`, not in the cable again).
+`depth`, `uv`, `position` (never a beauty); and `beauties`, a cable of each
+channel's beauty named after the channel.
 Cable Unpack the `aovs` output to use a matte, or tick **AOV Outputs**: the
 node keeps a Cable Unpack beside it with one output per AOV, in step with
 the cable. Inside, one File COP per AOV, the cable's into a cable pack; they
@@ -154,8 +155,11 @@ never on a plain cook.
 
 Channel **All channels** (`*`) reads every channel of the shot in one node:
 `rgba` is the channels over each other (last on top, as the template stacks
-them) and the cable carries each channel's beauty, named after the channel,
-and its AOVs as `<channel>_<aov>`. A channel with nothing rendered yet is
+them), `beauties` carries each channel's beauty, named after the channel,
+and `aovs` only the AOVs, as `<channel>_<aov>`. **Channel Outputs** (on by
+default) keeps a Cable Unpack beside the node with one output per channel,
+so a simple comp takes each channel's beauty without unpacking the AOVs. A
+channel with nothing rendered yet is
 left out and named on **Reads**. Its Version stays `latest`, and Submit
 freezes each channel it read (plan keys `<node path>#<channel>`). Each File COP asks for
 the plane its file has: a raw render names its channels `<aov>.R…`, the
@@ -252,6 +256,12 @@ To rasterize the shot itself, use `th::Cop/import_scene` instead: it loads
 the payloads and outputs **geometry** and **camera** typed for Rasterize
 Geometry (`import_lop_camera`'s output is typed RGBA, which that input
 does not take).
+
+Both frame the camera at the resolution the shot renders at: the width of
+the stage's RenderSettings (`/Render`), the height that width times the
+camera's aspect ratio. A Rasterize Geometry pass therefore lines up pixel
+for pixel with the renders. (USD keeps the resolution on RenderSettings,
+not on the camera; without one the camera falls back to Houdini's 1280.)
 
 ## Farm submission and MP4s
 
@@ -370,8 +380,9 @@ cylinders, cones, capsules) as meshes, the stage's display colours and
 textures (including the colours Karma materials take from them) — on the
 worker's CPU. A mesh exported without normals gets them computed as Houdini
 does: smooth, with hard edges kept only where faces meet at more than 60
-degrees (a box stays a box). It needs no GPU and husk takes no licence for
-it, and HideAndReek/010's 6.8 million triangles draw in about 0.34 s a frame
+degrees (a box stays a box). It needs no GPU; husk takes a Karma Renderer
+licence for it as for Karma (a worker that has none fails "No licenses could
+be found"), and HideAndReek/010's 6.8 million triangles draw in about 0.34 s a frame
 at 1280 × 720 with eight samples a pixel, the post pass below included. It
 ignores Light, Samples and Materials.
 It draws meshes only, so hair and other curves are left out, and husk does

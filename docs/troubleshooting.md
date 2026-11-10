@@ -63,7 +63,8 @@ re-listing the same rig versions. Later releases check each config file and
 list each version folder once per refresh, and a graphical Houdini trusts a
 config file's last check for a second, which also speeds up cooks and frame
 changes. In the log, `Import refresh: re-executed N import node(s), M failed`
-marks the end of that step.
+marks the end of that step, or `Import refresh: N import node(s), nothing
+moved` when no import read anything new and none ran (after 1.99).
 
 ### My other Houdini's Asset Browser doesn't show what I just saved or published
 

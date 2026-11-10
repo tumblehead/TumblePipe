@@ -115,10 +115,11 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
 
     output	rgba	rgba
     output	aovs	aovs
-    signature	default	Default	{{ }}	{{ RGBA Cable }}
+    output	beauties	beauties
+    signature	default	Default	{{ }}	{{ RGBA Cable Cable }}
 
     help {{
-	"A shot's finished render: the beauty (rgba) and a cable of the other AOVs the comp reads (aovs). Channel * reads every channel: rgba is them laid over each other, the cable carries each channel's beauty and AOVs."
+	"A shot's finished render: the beauty (rgba), a cable of the other AOVs the comp reads (aovs) and a cable of each channel's beauty (beauties). Channel * reads every channel: rgba is them laid over each other, Channel Outputs keeps one output per channel beside the node."
     }}
 
     groupsimple {{
@@ -199,6 +200,14 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
         name    "outputs_group"
         label   "Outputs"
 
+        parm {{
+            name    "beauty_outputs"
+            label   "Channel Outputs"
+            type    toggle
+            default {{ "1" }}
+            help    "All channels: keep a Cable Unpack beside the node with one output per channel's beauty, kept in step with the channels read."
+            {_callback('import_render', 'unpack_changed')}
+        }}
         parm {{
             name    "unpack_outputs"
             label   "AOV Outputs"
@@ -641,13 +650,14 @@ def _set_io(subnet, inputs, outputs):
 
 
 def build_import_render(root):
-    _set_io(root, [], [('rgba', 'vector4'), ('aovs', 'cable')])
+    io = [('rgba', 'vector4'), ('aovs', 'cable'), ('beauties', 'cable')]
+    _set_io(root, [], io)
     dive = root.createNode('subnet', 'dive')
-    _set_io(dive, [], [('rgba', 'vector4'), ('aovs', 'cable')])
+    _set_io(dive, [], io)
     dive.setColor(hou.Color((1.0, 0.0, 1.0)))
     outputs = root.node('outputs')
-    outputs.setInput(0, dive, 0)
-    outputs.setInput(1, dive, 1)
+    for index in range(len(io)):
+        outputs.setInput(index, dive, index)
     dive.setPosition(hou.Vector2(0, 1.5))
     return ['dive']
 
@@ -740,6 +750,10 @@ def build_import_scene(root):
     lopcam = objnet.createNode('lopimportcam', 'camera')
     lopcam.parm('loppath').set('../../lopnet/import_shot')
     lopcam.parm('primpath').setExpression('chs("../../camera_prim")', hou.exprLanguage.Hscript)
+    # The render's width, not lopimportcam's 1280 (USD keeps the resolution
+    # on RenderSettings, not the camera); resy stays width x camera aspect.
+    from tumblepipe.pipe.houdini.render_camera import LOP_IMPORT_CAMERA_WIDTH_EXPR
+    lopcam.parm('resx').setExpression(LOP_IMPORT_CAMERA_WIDTH_EXPR, hou.exprLanguage.Python)
     objnet.setPosition(hou.Vector2(1.5, 3.0))
     camera = root.createNode('cameraimport', 'camera')
     camera.parm('camera').set('../objnet/camera')

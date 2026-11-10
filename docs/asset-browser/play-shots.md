@@ -171,7 +171,10 @@ the project's edits, each with its newest working version and newest
 published one; the edit chosen opens in a window of its own (an untitled
 window it was chosen from closes when it holds nothing of yours: empty, or
 the project's shots unchanged since it opened). **Edits** in TumbleTrove
-Desktop's Scripts panel starts the editor on the project. **Save** writes
+Desktop's Scripts panel starts the editor on the whole film: the project's
+[master edit](#the-master-edit), or when the project has none, an untitled
+edit of every shot.
+**Save** writes
 its next working version (`v0001`, `v0002`, ...) with a note; **Save As**
 names a new edit. While an edit is open it is autosaved every minute;
 when the editor finds an autosave newer than the working version it opens,
@@ -214,7 +217,8 @@ which writes the frames as PNGs, the sound as a WAV and `render.json`.
 ### The master edit
 
 One edit can be the project's **master edit** (the toolbar's checkbox): the
-cut the shots' frame ranges follow. Publishing it lists the shot changes its
+cut the shots' frame ranges follow, and the one **Edits** in TumbleTrove
+Desktop opens. Publishing it lists the shot changes its
 cut makes, each with a tick box:
 
 - a planned shot (**New shot…** in the Shots bin puts one in the cut, with

@@ -1,5 +1,5 @@
-"""Stack each channel's RGBA beauty (or the sum of its LPEs, with the
-beauty's alpha) over the channels below it: the quick comp of a render."""
+"""Stack each channel's RGBA beauty over the channels below it: the quick
+comp of a render."""
 
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -30,8 +30,8 @@ def rgba_command(
     ) -> list[str]:
     """The oiiotool command that makes one layer's RGBA for the slapcomp.
 
-    The colour is ``rgb_path``'s first three channels (the beauty itself, or
-    the sum of its LPEs); the alpha is the RGBA beauty's own, its channel
+    The colour is ``rgb_path``'s first three channels (the slapcomp passes
+    the beauty itself); the alpha is the RGBA beauty's own, its channel
     ``beauty_alpha_index`` in oiiotool's order. Channels are selected by
     position, never by name: per-AOV files carry `<aov>.R`-style names and a
     by-name `--ch` silently zero-fills what it can't find (solid black).
@@ -111,46 +111,13 @@ def _composite_frame(
                     f'(an RGB beauty; re-render it): {beauty_path}'
                 )
 
-            # Find all LPE AOVs (beauty_*)
-            lpe_aovs = {
-                aov_name: aov_path
-                for aov_name, aov_path in layer_aovs.items()
-                if aov_name.lower().startswith('beauty_') and aov_name.lower() != 'beauty'
-            }
-
-            # Determine the RGB source (either LPE composite or beauty)
-            if lpe_aovs:
-                print(f'  Layer {layer_name}: Compositing {len(lpe_aovs)} LPE AOVs')
-
-                # Build oiiotool command to add all LPE AOVs together
-                oiiotool_cmd = ['oiiotool']
-
-                for lpe_index, (lpe_name, lpe_path) in enumerate(lpe_aovs.items()):
-                    # A missing LPE would drop its light from the sum (and,
-                    # as the first operand, misplace every --add after it).
-                    lpe_frame_path = frame_file(lpe_path, frame_index)
-                    if not lpe_frame_path.exists():
-                        return error(f'LPE AOV {lpe_name} frame not found: {lpe_frame_path}')
-
-                    # Add this LPE to the command
-                    oiiotool_cmd.append(path_str(lpe_frame_path))
-
-                    # Add previous result if not first LPE
-                    if lpe_index > 0:
-                        oiiotool_cmd.append('--add')
-
-                # Save composited LPEs to temp file
-                rgb_source_path = temp_path / f'layer_{layer_index}_lpe_composite.exr'
-                oiiotool_cmd.extend([
-                    *exr.ACESCG_ATTRIB_ARGS,
-                    '-o', path_str(rgb_source_path)
-                ])
-
-                exr._run(oiiotool_cmd, env=_get_ocio_env())
-            else:
-                # No LPE AOVs, use beauty directly as RGB source
-                print(f'  Layer {layer_name}: Using beauty AOV directly')
-                rgb_source_path = beauty_path
+            # The layer's RGB is its beauty's. Its light groups
+            # (``beauty_*``) are not summed in its place: a light in no
+            # group dropped out of the slapcomp, and Karma's group AOVs do
+            # not add up to the beauty pixel for pixel (QA 2026-11-10: the
+            # slapcomp differed from the composite's comp, whose light mix
+            # gives back the beauty at defaults, on 0.2% of the pixels).
+            rgb_source_path = beauty_path
 
             # Make the layer RGBA
             layer_rgba_path = temp_path / f'layer_{layer_index}_rgba.exr'

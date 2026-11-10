@@ -469,10 +469,17 @@ def named_version_refusal(version_name: str, complete: bool) -> str | None:
 
     A finished version is never overwritten: something may load it. An
     unfinished one (no sidecar: a crashed or interrupted cache) is written
-    over, which is what re-running it means.
+    over, which is what re-running it means. The name must be the standard
+    spelling of its version code (``v0001``, ``v10000``; never ``v00001``).
     """
     if not naming.is_valid_version_name(version_name):
         return f"'{version_name}' is not a version name (vNNNN)"
+    # 'v00001' passes is_valid_version_name (v10000 and up must) but spells
+    # version 1 a second way: written, it would sit beside 'v0001' as a
+    # second folder for the same version code.
+    canonical = naming.get_version_name(naming.get_version_code(version_name))
+    if version_name != canonical:
+        return f"'{version_name}' is not a version name (vNNNN); did you mean '{canonical}'?"
     if complete:
         return f"cache version '{version_name}' already exists and finished"
     return None

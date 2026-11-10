@@ -279,7 +279,33 @@ class JsonConfigStore:
         if not hasattr(scope, 'depth'):
             scope.depth = 0
             scope.synced = set()
+            scope.reads = None
         return scope
+
+    @contextmanager
+    def recorded_reads(self):
+        """Within this block, every purpose read on this thread is
+        recorded: yields the set of purposes. A nested block's reads are
+        the outer block's too. With :meth:`loaded_stamp`, the scene import
+        refresh tells whether a config file a node read has changed since.
+        """
+        scope = self._scope_state()
+        outer = getattr(scope, 'reads', None)
+        reads = set()
+        scope.reads = reads
+        try:
+            yield reads
+        finally:
+            scope.reads = outer
+            if outer is not None:
+                outer.update(reads)
+
+    def loaded_stamp(self, purpose: str) -> tuple[int, int] | None:
+        """The stamp of ``purpose`` as loaded now (it is loaded, under
+        the usual coherent-scope and stamp-window rules); None when the
+        file is absent."""
+        self._load(purpose)
+        return self._stamps.get(purpose)
 
     @contextmanager
     def _coherent(self):
@@ -310,6 +336,9 @@ class JsonConfigStore:
         window old over another process's write.
         """
         scope = self._scope_state()
+        reads = getattr(scope, 'reads', None)
+        if reads is not None:
+            reads.add(purpose)
         if scope.depth > 0 and purpose in scope.synced:
             return self._cache.get(purpose)
         # Taken before the stat: a write landing during it is then at most

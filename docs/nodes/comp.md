@@ -13,9 +13,10 @@ None of these HDAs carries built-in help text, so this page is the reference.
 
 A shot's finished render into a comp. Tab menu `_TumblePipe/pipeline`;
 the composite template makes one per shot channel. Outputs **rgba** (the
-beauty; its A is the channel's alpha) and **aovs** (a cable of the channel's
-other AOVs the comp reads, each field named after its AOV; the beauty is not
-in it a second time). What it resolves and refuses is
+beauty; its A is the channel's alpha), **aovs** (a cable of the channel's
+other AOVs the comp reads, each field named after its AOV; never a beauty)
+and **beauties** (a cable of each channel's beauty, named after the
+channel). What it resolves and refuses is
 in [Compositing → `th::import_render`](../compositing.md#thimport_render).
 Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th_8_8Cop_1import__render_8_81.0/DialogScript),
 [`cops/import_render.py`](../../python/tumblepipe/pipe/houdini/cops/import_render.py),
@@ -28,6 +29,7 @@ Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th
 | Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render); or one department |
 | Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department) |
 | Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did |
+| Outputs › Channel Outputs | on | All channels only: keeps a Cable Unpack named `<node>_beauties` beside the node, wired to **beauties**, with one RGBA output per channel read (`default`, `heart`, ...), in step with the channels. Turning it off removes the unpack unless something reads it |
 | Outputs › AOV Outputs | off | Keeps a Cable Unpack named `<node>_aovs` beside the node, wired to **aovs**, with one typed output per field, and keeps its fields in step when the version changes. Turning it off removes the unpack unless something reads it |
 
 Buttons: **Update** re-resolves (opening the workfile does it too, for an
@@ -39,18 +41,23 @@ read changes (a copied import switched to another channel reads the new
 channel even when both resolve to the same version).
 
 **All channels** (`*`): **rgba** is the channels laid over each other in the
-shot's channel order, the last on top (as the template stacks them), and
-**aovs** carries each channel's beauty, named after the channel, and its AOVs
-as `<channel>_<aov>`; turn on AOV Outputs for one output per layer and AOV. A
+shot's channel order, the last on top (as the template stacks them),
+**beauties** carries each channel's beauty, named after the channel (Channel
+Outputs gives one output per channel, so a simple comp needs no unpacking),
+and **aovs** carries only the AOVs, as `<channel>_<aov>`; turn on AOV Outputs
+for one output per AOV. An import made with TumblePipe 1.99 carried the beauties in
+**aovs**: its first Update moves a wire on an old AOV Outputs beauty to the
+same channel on Channel Outputs. A
 channel not rendered yet is left out and named on **Reads** (and
 `export_comp` warns it is unread). Version stays `latest`: to pin a version,
 read that channel with an import of its own. A light mix grades one
 channel's light groups, so it refuses an all-channels cable. Submit freezes
 each channel it read.
 
-Why the per-AOV outputs are on a companion node: a digital asset's output
-count is fixed by its type, so only a built-in node (Cable Unpack, Rasterize
-Geometry) can grow outputs with its fields.
+Why the per-channel and per-AOV outputs are on companion nodes: a digital
+asset's output count is fixed by its type, so only a built-in node (Cable
+Unpack, Rasterize Geometry) can grow outputs with its fields. A companion's
+wires follow their field when its fields change.
 
 ## `th::light_mix` (COP)
 

@@ -15,8 +15,7 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.util.uri import Uri
-from tumblepipe.apps import mp4, houdini
-from tumblepipe.apps.houdini import IConvert
+from tumblepipe.apps import mp4, houdini, exr
 from tumblepipe.config.discord import (
     is_configured as is_discord_configured,
     get_token as get_discord_token,
@@ -332,7 +331,7 @@ def _create_panorama_exr(
     houdini.OIIOTool().run(command)
 
 def _exr_to_jpeg_bytes(path: Path) -> bytes:
-    """Convert EXR to JPEG bytes using iconvert, preserving color profiles."""
+    """Convert EXR to JPEG bytes (exr.to_display_args), preserving color profiles."""
     
     # Check that OCIO has been set
     assert os.environ.get('OCIO') is not None, (
@@ -347,15 +346,9 @@ def _exr_to_jpeg_bytes(path: Path) -> bytes:
         temp_path = Path(temp_dir)
         temp_jpeg_path = temp_path / 'temp.jpg'
 
-        # Convert EXR to JPEG using iconvert (same as exr.to_jpeg)
-        iconvert = IConvert()
-        iconvert.run(
-            [
-                '--iscolorspace', 'acescg',
-                '--ociodisplay', 'sRGB - Display', '',
-                path_str(path),
-                path_str(temp_jpeg_path)
-            ],
+        # The same conversion as exr.to_jpeg (hoiiotool: no licence)
+        houdini.OIIOTool().run(
+            exr.to_display_args(path, temp_jpeg_path, exr.read_channel_names(path)),
             env = dict(OCIO=ocio_value())
         )
 
@@ -468,6 +461,19 @@ def main(
     ) -> int:
     # Print environment variables for debugging
     print_env()
+
+    # Nothing to post to: skip before any work. A partial's panorama runs
+    # oiiotool (before 2026-11-10 also iconvert, a Houdini licence) and a full's
+    # mp4 may be rescaled; with no discord setup that work was thrown away,
+    # and a licence refusal turned the job red (QA 2026-11-10, qabeta on the
+    # farm). _post keeps its own check.
+    if not is_discord_configured():
+        print(
+            'Skipping discord notification: this project has no discord '
+            'configuration (set config:/discord token and channels to '
+            f'enable it). Would have posted to #{channel_name}.'
+        )
+        return 0
 
     match command:
         case CommandNotify():

@@ -23,7 +23,7 @@ export_comp}.py``; the farm half is ``farm/pipelines/composite.py``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Optional
+from typing import Iterable, Mapping, Optional, Sequence
 
 from tumblepipe import naming
 from tumblepipe.pipe.aovs import is_ramp_aov
@@ -117,20 +117,23 @@ def file_fields(aov_labels: Iterable[str]) -> list[str]:
 
 
 def layer_field(channel: str, field: str) -> str:
-    """A field of an all-channels import's cable: a channel's beauty is
-    named after the channel, its AOVs ``<channel>_<aov>``."""
+    """A field of an all-channels import: a channel's beauty is named after
+    the channel (in the ``beauties`` cable), its AOVs ``<channel>_<aov>``
+    (in the ``aovs`` cable)."""
     return channel if field == BEAUTY else f'{channel}_{field}'
 
 
 def all_channels_fields(fields_by_channel: Mapping[str, Iterable[str]]) -> list[str]:
-    """The cable of an all-channels import (Channel ``*``): per channel, in
-    the order given (the shot's), its beauty then its AOVs, each named by
-    :func:`layer_field`. Raises :class:`CompError` when two names collide
-    (channel ``a`` with AOV ``b_c`` and channel ``a_b`` with AOV ``c``)."""
+    """The ``aovs`` cable of an all-channels import (Channel ``*``): per
+    channel, in the order given (the shot's), its AOVs, each named by
+    :func:`layer_field`. No beauty: the beauties ride the ``beauties`` cable
+    (Remy, 2026-11-10: a simple comp should not dig them out of the AOVs).
+    Raises :class:`CompError` when two names collide (channel ``a`` with AOV
+    ``b_c`` and channel ``a_b`` with AOV ``c``)."""
     fields: list[str] = []
     owner: dict[str, str] = dict()
     for channel, channel_fields in fields_by_channel.items():
-        for field in [BEAUTY] + [f for f in channel_fields if f != BEAUTY]:
+        for field in [f for f in channel_fields if f != BEAUTY]:
             name = layer_field(channel, field)
             if name in owner:
                 raise CompError(
@@ -435,11 +438,14 @@ class FileRead:
 @dataclass(frozen=True)
 class DivePlan:
     """The network inside an import_render: its File COPs in build order,
-    the cable pack's fields (each a File COP's name), and the beauties laid
-    over each other for ``rgba``, back to front."""
+    the ``aovs`` cable's fields (each a File COP's name), the beauties laid
+    over each other for ``rgba`` (File COP names, back to front), and the
+    ``beauties`` cable's fields (each beauty named after its channel, in the
+    same order)."""
     files: tuple
     fields: tuple
     beauties: tuple
+    beauty_fields: tuple = ()
 
     def aov_of(self, name: str) -> str:
         return next(read.aov for read in self.files if read.name == name)
@@ -449,6 +455,11 @@ class DivePlan:
         """Each cable field's COP type (a Cable Unpack ``fieldtype`` token)."""
         return {field: aov_signature(self.aov_of(field)) for field in self.fields}
 
+    @property
+    def beauty_signatures(self) -> dict[str, str]:
+        """Each ``beauties`` field's COP type: a beauty's."""
+        return {field: aov_signature(BEAUTY) for field in self.beauty_fields}
+
 
 def dive_plan(aovs_by_channel: Mapping[str, Iterable[str]], all_channels: bool) -> DivePlan:
     """The import's network for what it reads (``{channel: AOV labels}``,
@@ -456,17 +467,21 @@ def dive_plan(aovs_by_channel: Mapping[str, Iterable[str]], all_channels: bool) 
 
     One channel: a File COP per AOV named after it, the cable every one but
     the beauty, ``rgba`` the beauty. All channels: names by
-    :func:`layer_field`, the cable every channel's beauty and AOVs
+    :func:`layer_field`, the cable every channel's AOVs
     (:func:`all_channels_fields`), ``rgba`` the beauties over each other.
+    Either way the ``beauties`` cable carries each channel's beauty, named
+    after the channel.
     """
     files = []
     beauties = []
+    beauty_fields = []
     for channel, labels in aovs_by_channel.items():
         for aov in file_fields(labels):
             name = layer_field(channel, aov) if all_channels else aov
             files.append(FileRead(name, channel, aov))
             if aov == BEAUTY:
                 beauties.append(name)
+                beauty_fields.append(channel)
     if all_channels:
         fields = all_channels_fields({
             channel: cable_fields(labels) for channel, labels in aovs_by_channel.items()
@@ -474,7 +489,26 @@ def dive_plan(aovs_by_channel: Mapping[str, Iterable[str]], all_channels: bool) 
     else:
         labels = next(iter(aovs_by_channel.values()), [])
         fields = cable_fields(labels)
-    return DivePlan(tuple(files), tuple(fields), tuple(beauties))
+    return DivePlan(tuple(files), tuple(fields), tuple(beauties), tuple(beauty_fields))
+
+
+def follow_fields(old: Sequence[str], new: Sequence[str],
+                  rehome: Sequence[str] = ()) -> list[Optional[tuple[bool, int]]]:
+    """Where a wire on each of a Cable Unpack's ``old`` outputs goes when its
+    fields become ``new``: ``(False, i)`` the same field at its new place,
+    ``(True, i)`` the same-named output of the ``rehome`` unpack when ``new``
+    lost it (a beauty that moved from ``aovs`` to ``beauties``), None when
+    the field is gone. A Cable Unpack's outputs are by position, so without
+    this a wire stays on whatever field takes its slot."""
+    targets: list[Optional[tuple[bool, int]]] = []
+    for field in old:
+        if field in new:
+            targets.append((False, list(new).index(field)))
+        elif field in rehome:
+            targets.append((True, list(rehome).index(field)))
+        else:
+            targets.append(None)
+    return targets
 
 
 def mix_unpack_fields(groups: Iterable[str], cable_beauty: bool) -> list[str]:

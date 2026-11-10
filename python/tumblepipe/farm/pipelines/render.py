@@ -135,11 +135,14 @@ def _render_job(
 
 
 def _denoise_job(
-    config, shot, channel, aov_names, task_key, render_version_name
+    config, shot, channel, aov_names, task_key, render_version_name,
+    version_name=None
     ) -> tuple[Job, str]:
-    """A channel's denoise of its render version, and the version it writes."""
+    """A channel's denoise of its render version, and the version it writes:
+    ``version_name`` (the partial denoise's, for the full one), else the
+    channel's next denoise version."""
     render_department = config['settings']['render_department_name']
-    receipt_path = _receipt_path(shot, DENOISE_DEPARTMENT, channel)
+    receipt_path = _receipt_path(shot, DENOISE_DEPARTMENT, channel, version_name)
     version_name = receipt_path.parent.name
     partial = task_key == 'partial_render'
     job = denoise_job.build(dict(
@@ -198,6 +201,7 @@ def build(
         deps[name] = list(job_deps)
 
     render_versions = {}
+    denoise_versions = {}
     terminal_jobs = []
 
     # Partial: first, middle and last frames of each channel, posted
@@ -216,6 +220,7 @@ def build(
                 job, frames_version = _denoise_job(
                     config, shot, channel, aov_names, 'partial_render', version_name
                 )
+                denoise_versions[channel] = frames_version
                 _add(f'partial_denoise_{channel}', job, [frames_job])
                 frames_job, frames_department = f'partial_denoise_{channel}', DENOISE_DEPARTMENT
             # The Discord channel to post in is the task's, not the render
@@ -246,8 +251,13 @@ def build(
             _add(f'full_render_{channel}', job, render_deps)
             review_job, review_version = f'full_render_{channel}', version_name
             if full['denoise']:
+                # Into the partial denoise's version, as the full render
+                # goes into the partial render's: one version per submit
+                # (QA 2026-11-10: the full denoise took the next version,
+                # leaving a three-frame denoise version beside it).
                 job, review_version = _denoise_job(
-                    config, shot, channel, aov_names, 'full_render', version_name
+                    config, shot, channel, aov_names, 'full_render', version_name,
+                    denoise_versions.get(channel)
                 )
                 _add(f'full_denoise_{channel}', job, [review_job])
                 review_job = f'full_denoise_{channel}'

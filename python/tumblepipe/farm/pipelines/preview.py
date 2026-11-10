@@ -103,7 +103,10 @@ def aov_names(entity_uri: Uri, channels: list[str]) -> list[str]:
             aov_set.update(get_aov_names_from_context(context_data, channel))
             aov_set.update(aggregate_aov_names_from_inputs(context_data, channel))
     if aov_set:
-        return list(aov_set)
+        # Sorted: a set's order changes with every process (string hash
+        # seeds), and the list goes into the job's render_settings.json, so
+        # resubmitting the same shot wrote a different config each time.
+        return sorted(aov_set)
 
     # Every project carries it (the project template's): without it no
     # render would know its AOVs.

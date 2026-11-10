@@ -82,7 +82,15 @@ def create(scene, name):
 def on_created(raw_node):
     # 'entity' keeps its 'from_context' default — see the module docstring.
     ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
-    ImportLopCamera(raw_node)._update_labels()
+    node = ImportLopCamera(raw_node)
+    # Import at once, like th::import_scene: dropped in a shot workfile the
+    # camera is there with nothing to press (it used to stay empty until
+    # Import, or until the scene was reopened). Outside a shot the labels
+    # say so instead of failing the creation.
+    try:
+        node.execute()
+    except Exception:
+        node._update_labels()
 
 
 def execute(kwargs):

@@ -72,7 +72,9 @@ KNOWN_GAPS = {
 }
 
 # Every idiom used to reach an HDA's PythonModule from a callback or a menu.
-_CALL = re.compile(r'(?:hou\.phm|(?:\w+\.)?hdaModule)\(\)\.(\w+)')
+# A parm *expression* says `phm()` / `hm()` bare (`hou` is implicit there),
+# a callback `hou.phm()`, `kwargs['node'].hm()` or `hdaModule()`.
+_CALL = re.compile(r'(?:(?<!\w)(?:hou\.)?p?hm|(?:\w+\.)?hdaModule)\(\)\.(\w+)')
 # Callbacks forward to plain functions; forwarders also construct wrapper
 # classes (`import_shot.ImportShot(...)`), so both count as "defined".
 _DEF = re.compile(r'^(?:def|class)\s+(\w+)', re.M)

@@ -120,7 +120,9 @@ Each worker needs the same environment as an artist workstation:
   Without matching drive letters, the job will fail to read project files.
 - **An NVIDIA GPU for the `karma` group** — final renders and playblasts
   both run there. A playblast with the default `viewport` renderer (TumbleView) draws on
-  the CPU with TumblePipe's own render delegate and takes no licence; with
+  the CPU with TumblePipe's own render delegate; husk still checks out a
+  Karma Renderer licence for it (without `--check-licenses` it would take a
+  Houdini Engine/Core/FX seat first); with
   the `karma` renderer it renders with
   Karma XPU in a preview mode (by default scene materials off and the scene's
   lights replaced by one dome light at 32 samples; the Farm Submit dialog's
@@ -297,9 +299,12 @@ Houdini-side submits set the variable for the call with
 
 The **Farm Manager** shows the jobs on this machine and on the Deadline farm
 in one list. Each batch is a row, with its jobs under it, showing state,
-progress, task count, errors, user and submit time. Failed jobs are red and
-rendering ones blue; finished jobs are dimmed so the ones that need you stand
-out. A batch is listed under its project, kind and entity (hover it for the
+progress, task count, errors, user and submit time. A dot before each
+batch, job and task name shows its state in colour, explained by the legend
+at the bottom of the window (hover an entry for what it means), so the list
+reads at a glance without the Status column in view. A failed one's name is
+red, and so is its batch's; finished jobs are dimmed so the ones that need
+you stand out. A batch is listed under its project, kind and entity (hover it for the
 full Deadline batch name). To open it, use
 **TumbleTrove ▸ TumblePipe ▸ Farm Manager** in Houdini's menu bar, the
 browser's **Farm Manager** quick action, the **Farm Manager** button of a

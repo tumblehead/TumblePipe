@@ -42,9 +42,11 @@ TEMP = Path(tempfile.mkdtemp(prefix='farm-manager-verify-'))
 os.environ['TH_LOCAL_FARM_DIR'] = str(TEMP / 'local_farm')
 os.environ.setdefault('TH_USER', 'tester')
 
+from PySide6.QtGui import QColor  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from tumblepipe.farm.local import queue, runner  # noqa: E402
+from tumblepipe.farm.manager import rows  # noqa: E402
 
 _checks: list[tuple[str, bool, str]] = []
 
@@ -279,6 +281,34 @@ def main() -> int:
           [states[f'{live_id}/0'], states[f'{live_id}/1']] == [queue.RENDERING, queue.PENDING], str(states))
     check('newest batch first', win._jobs.topLevelItem(0).data(0, manager_window.KEY_ROLE) == live_id)
 
+    print('1b. status dots, red failed names, the legend')
+    mw = manager_window
+    red = QColor(mw.DANGER).name()
+
+    def name_colour(item, column=mw.NAME):
+        return item.foreground(column).color().name()
+
+    failed_job = win._job_items[f'{done_id}/1']
+    done_job = win._job_items[f'{done_id}/0']
+    check('every job and batch row has a status dot before its name',
+          all(not item.icon(mw.NAME).isNull()
+              for item in list(win._job_items.values()) + list(win._batch_items.values())))
+    check("the dot is the state's own (one icon per state)",
+          failed_job.icon(mw.NAME).cacheKey() == mw.status_dot(queue.FAILED).cacheKey()
+          and done_job.icon(mw.NAME).cacheKey() == mw.status_dot(queue.COMPLETED).cacheKey())
+    check("a failed job's name is red", name_colour(failed_job) == red, name_colour(failed_job))
+    check('its batch, failed too, has a red name', name_colour(batches[done_id]) == red,
+          name_colour(batches[done_id]))
+    check("a completed job's name is not red", name_colour(done_job) != red, name_colour(done_job))
+    check("a live batch's name is not red", name_colour(batches[live_id]) != red)
+    check('the legend lists every state but unknown, in order',
+          list(win._legend) == list(rows.LEGEND), str(list(win._legend)))
+    check('each legend state has a colour and a tip',
+          all(state in mw.STATUS_COLOURS and mw.STATUS_TIPS.get(state) for state in rows.LEGEND))
+    colours = [mw.STATUS_COLOURS[state] for state in rows.LEGEND]
+    check('no two legend states share a colour', len(set(colours)) == len(colours), str(colours))
+    check('the legend is shown', all(label.isVisible() for label in win._legend.values()))
+
     print('2. tasks and logs')
     win._jobs.clearSelection()
     win._job_items[f'{done_id}/1'].setSelected(True)
@@ -289,6 +319,10 @@ def main() -> int:
     pump(app, 1.2)
     check('its log is shown', 'log of job 1 task 0' in win._log.toPlainText(), win._log.toPlainText()[:200])
     check('its error is in the task row', 'return code' in win._task_items[0].text(manager_window.T_ERROR))
+    failed_task = win._task_items[0]
+    check('the failed task has its dot and a red number',
+          not failed_task.icon(manager_window.T_TASK).isNull()
+          and failed_task.foreground(manager_window.T_TASK).color().name() == QColor(manager_window.DANGER).name())
 
     win._jobs.clearSelection()
     win._job_items[f'{live_id}/0'].setSelected(True)

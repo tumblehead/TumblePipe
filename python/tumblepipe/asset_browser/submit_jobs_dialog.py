@@ -2120,7 +2120,7 @@ class _ContextPane(QWidget):
         self._pb_renderer = self._combo('pb_renderer', PLAYBLAST_RENDERERS, RENDERER_LABELS)
         self._pb_renderer.setToolTip(
             "TumbleView: TumblePipe's viewport renderer — display colours and "
-            "textures, shaded as set below. Fast, on the CPU, takes no licence.\n"
+            "textures, shaded as set below. Fast, on the CPU; takes a Karma licence.\n"
             "Karma: Karma XPU, lit and sampled as set below. Takes a Karma "
             "licence and an NVIDIA GPU."
         )

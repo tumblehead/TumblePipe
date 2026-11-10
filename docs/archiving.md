@@ -157,7 +157,9 @@ Each workfile opens once in hython, and its caches run in the order they were
 first made, so a cache that feeds another is made first. Every cache is
 written back into **its own version**. Downstream workfiles load caches by
 version, so a re-made cache must land where it was. A finished version is
-never overwritten.
+never overwritten, and a version name must be spelled the standard way
+(`v0001`, not `v00001`), so a rebuild never starts a second folder for the
+same version.
 
 A rebuild doesn't reproduce a cache bit for bit when it depends on a random
 seed, the time, or an input that's gone. Keep such caches in the archive

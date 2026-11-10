@@ -357,7 +357,8 @@ is described in [Compositing → Playblast](../compositing.md#playblast).
 
 **Renderer** picks what draws the frames: `viewport` is the viewport's look
 (display colours and textures, shaded as **Shading** says) from
-TumblePipe's own render delegate, on the CPU and with no licence; `karma` is
+TumblePipe's own render delegate, on the CPU (husk still takes a Karma
+Renderer licence, never an artist's Houdini seat); `karma` is
 Karma XPU, lit and sampled by the fields below, which `viewport` ignores.
 See [Compositing → Playblast](../compositing.md#playblast).
 

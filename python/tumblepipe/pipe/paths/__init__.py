@@ -40,6 +40,8 @@ from tumblepipe.pipe.paths.review import (
     get_next_playblast_path,
     get_latest_playblast_path,
     playblast_version_of,
+    release_playblast,
+    reserve_playblast,
     get_layer_daily_path,
     get_daily_path,
 )
@@ -116,6 +118,8 @@ __all__ = [
     'get_next_playblast_path',
     'get_latest_playblast_path',
     'playblast_version_of',
+    'release_playblast',
+    'reserve_playblast',
     'get_layer_daily_path',
     'get_daily_path',
     # workspace

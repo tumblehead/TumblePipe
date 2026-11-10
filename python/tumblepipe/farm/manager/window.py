@@ -24,7 +24,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import QRect, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QStyle,
@@ -63,6 +63,18 @@ STATUS_COLOURS = {
     queue.CANCELLED: TEXT_DIM,
     rows.UNKNOWN: TEXT_DIM,
 }
+# What each state means, under the pointer on the legend.
+STATUS_TIPS = {
+    queue.RENDERING: 'A task is rendering',
+    queue.QUEUED: 'Waiting for a worker',
+    queue.PENDING: 'Waiting on another job to finish',
+    queue.SUSPENDED: 'Paused: Resume runs it again',
+    queue.FAILED: 'A task failed: select it to read the error',
+    queue.COMPLETED: 'Done',
+    queue.CANCELLED: 'Stopped before it finished',
+}
+# The status dot before each row's name, and the legend's.
+DOT_SIZE = 10
 WHERE = {rows.LOCAL: 'This machine', rows.FARM: 'Farm'}
 # The headers above the task list and the log share a height, so the two
 # panes start on the same line whether or not a header holds buttons.
@@ -225,6 +237,35 @@ def _is_finished(status: str) -> bool:
     return status in rows.FINISHED
 
 
+def status_colour(status: str) -> str:
+    return STATUS_COLOURS.get(status, TEXT_SECONDARY)
+
+
+_DOTS: dict[str, QIcon] = {}
+
+
+def _dot_pixmap(status: str) -> QPixmap:
+    ratio = QApplication.instance().devicePixelRatio() if QApplication.instance() else 1.0
+    pixmap = QPixmap(int(DOT_SIZE * ratio), int(DOT_SIZE * ratio))
+    pixmap.setDevicePixelRatio(ratio)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(status_colour(status)))
+    painter.drawEllipse(1, 1, DOT_SIZE - 2, DOT_SIZE - 2)
+    painter.end()
+    return pixmap
+
+
+def status_dot(status: str) -> QIcon:
+    """A dot in the state's colour, drawn once per state."""
+    icon = _DOTS.get(status)
+    if icon is None:
+        icon = _DOTS[status] = QIcon(_dot_pixmap(status))
+    return icon
+
+
 def _jobs(count: int) -> str:
     return f"{count} job{'' if count == 1 else 's'}"
 
@@ -367,6 +408,7 @@ class ManagerWindow(QWidget):
         for each in (splitter, top, bottom):
             _show_handles(each)
         root.addWidget(splitter, 1)
+        root.addLayout(self._build_legend())
 
         # The footer: where both farms stand on the left, refreshed every
         # second; on the right the last action's answer, which stays until
@@ -438,6 +480,27 @@ class ManagerWindow(QWidget):
         refresh.clicked.connect(self._refresh_all)
         bar.addWidget(refresh)
         bar.addWidget(self._build_cleanup())
+        return bar
+
+    def _build_legend(self) -> QHBoxLayout:
+        """What the dots before the rows' names mean, so the list reads at
+        a glance without the Status column in view."""
+        bar = QHBoxLayout()
+        bar.setSpacing(14)
+        self._legend: dict[str, QLabel] = {}
+        for status in rows.LEGEND:
+            entry = QHBoxLayout()
+            entry.setSpacing(5)
+            dot = QLabel()
+            dot.setPixmap(_dot_pixmap(status))
+            label = QLabel(status)
+            label.setStyleSheet(f'color: {TEXT_SECONDARY};')
+            for widget in (dot, label):
+                widget.setToolTip(STATUS_TIPS.get(status, ''))
+                entry.addWidget(widget)
+            self._legend[status] = label
+            bar.addLayout(entry)
+        bar.addStretch(1)
         return bar
 
     def _build_cleanup(self) -> QPushButton:
@@ -877,7 +940,12 @@ class ManagerWindow(QWidget):
         text = QColor(TEXT_SECONDARY if finished else TEXT_PRIMARY)
         for column in (NAME, WHERE_COL, TASKS, USER, SUBMITTED):
             item.setForeground(column, text)
-        colour = QColor(STATUS_COLOURS.get(status, TEXT_SECONDARY))
+        # The state at a glance where the eye reads the row, the name: its
+        # dot (see the legend), and a failed row's name in red.
+        item.setIcon(NAME, status_dot(status))
+        if status == queue.FAILED:
+            item.setForeground(NAME, QColor(DANGER))
+        colour = QColor(status_colour(status))
         item.setText(STATUS, status)
         item.setForeground(STATUS, colour)
         item.setText(PROGRESS, f'{progress:.0f}%')
@@ -968,8 +1036,9 @@ class ManagerWindow(QWidget):
                 item = QTreeWidgetItem(tree)
                 item.setData(T_TASK, KEY_ROLE, task.index)
                 self._task_items[task.index] = item
-            colour = QColor(STATUS_COLOURS.get(task.status, TEXT_SECONDARY))
+            colour = QColor(status_colour(task.status))
             item.setText(T_TASK, str(task.index))
+            item.setIcon(T_TASK, status_dot(task.status))
             item.setText(T_FRAMES, task.frames)
             item.setText(T_STATUS, task.status)
             item.setForeground(T_STATUS, colour)
@@ -980,6 +1049,8 @@ class ManagerWindow(QWidget):
             text = QColor(TEXT_SECONDARY if _is_finished(task.status) else TEXT_PRIMARY)
             for column in (T_TASK, T_FRAMES, T_WORKER, T_STARTED, T_FINISHED):
                 item.setForeground(column, text)
+            if task.status == queue.FAILED:
+                item.setForeground(T_TASK, QColor(DANGER))
             item.setText(T_WORKER, task.worker)
             item.setText(T_STARTED, _when(task.started))
             item.setText(T_FINISHED, _when(task.finished))

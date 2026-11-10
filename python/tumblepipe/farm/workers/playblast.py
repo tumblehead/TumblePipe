@@ -24,6 +24,7 @@ from tumblepipe.farm.env import get_base_env, print_env, job_data_dir
 from tumblepipe.farm.frames import frame_file, HOUDINI_FRAME_TOKEN
 from tumblepipe.farm.specs import playblast as playblast_spec
 from tumblepipe.farm.worker import ensure_dir, error, headline
+from tumblepipe.pipe.paths.review import release_playblast
 
 # Karma XPU as a playblast, by default a clay look instead of the scene's
 # shading. It draws through CUDA/OptiX, so it needs a GPU but no GL context
@@ -39,6 +40,22 @@ from tumblepipe.farm.worker import ensure_dir, error, headline
 # --timelimit-image stops a runaway frame at XPU_FRAME_SECONDS and keeps the
 # partial image, so one heavy frame cannot hold the whole shot.
 XPU_FRAME_SECONDS = 120
+
+
+# husk checks a licence out whatever draws the frames, our viewport delegate
+# included: with no --check-licenses it asks for Houdini Engine, Core or FX
+# first (husk --list-license-checks), seats shared with artists, and
+# "Karma Renderer" only after them. QA 2026-11-10: a TumbleView farm
+# playblast failed "No licenses could be found" on a worker without a seat.
+LICENCE_ARGS = ['--check-licenses', 'Karma Renderer']
+
+
+def husk_renderer_args(look: dict) -> list[str]:
+    """husk's renderer arguments for ``look``: our viewport delegate or
+    Karma XPU, either way on the Karma Renderer licence, never a seat."""
+    if playblast_spec.look_renderer(look) == 'viewport':
+        return [*LICENCE_ARGS, *viewport_args()]
+    return [*LICENCE_ARGS, '--allowed-procedurals', 'all', *xpu_args(look)]
 
 
 def xpu_args(look: dict) -> list[str]:
@@ -169,11 +186,10 @@ def main(
         # picked the first camera on the stage. 'a' also emits ALF_PROGRESS,
         # which Deadline reads as task progress.
         #
-        # --check-licenses 'Karma Renderer' is what the render worker passes,
-        # and a Karma playblast needs it too: without it husk takes a Houdini
-        # Core/FX seat (five, shared with artists) and fails "No licenses
-        # could be found" while Karma licences sit free. The viewport
-        # renderer needs none.
+        # --check-licenses 'Karma Renderer' (LICENCE_ARGS) is what the render
+        # worker passes, and both playblast renderers need it: without it
+        # husk takes a Houdini Core/FX seat (shared with artists) and fails
+        # "No licenses could be found" while Karma licences sit free.
         headline('Rendering playblast frames')
         width, height = resolution
         renderer = playblast_spec.look_renderer(look)
@@ -186,10 +202,7 @@ def main(
             print('Blur: motion {}, depth of field {}, {} samples'.format(*blur))
             env = viewport_env(env, Path(api.PIPELINE_PATH), houdini_major, shading,
                                blur, fps)
-            renderer_args = viewport_args()
-        else:
-            renderer_args = ['--check-licenses', 'Karma Renderer',
-                             '--allowed-procedurals', 'all', *xpu_args(look)]
+        renderer_args = husk_renderer_args(look)
         # husk can exit 0 having written nothing ("All AOVs bypassed"), and
         # non-zero having written part of the range: render_problem checks
         # both.
@@ -239,6 +252,9 @@ def main(
         for output_path in output_paths:
             if not output_path.exists():
                 return error(f'Output not copied: {output_path}')
+        # The versioned movie is there: its submit-time reservation goes.
+        for output_path in output_paths:
+            release_playblast(output_path)
 
     print('Success')
     return 0

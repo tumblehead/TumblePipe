@@ -9,6 +9,16 @@ read, and a version keeps whichever name it was written with.
 
 A daily is the one current movie of an entity's department,
 ``{purpose}:/daily/{kind}/{dept}`` (``.../{layer}``) named after the entity.
+
+A farm or local-queue playblast takes its version when it is submitted but
+writes the movie only when it finishes, so a second submit in between used
+to take the same version and the later of the two overwrote the other (QA
+2026-11-10). A submit now reserves its version with a
+``<movie>.reserved`` marker beside it (:func:`reserve_playblast`): the next
+version counts the markers, the listings and "latest" read movies only, and
+the worker removes the marker once the movie is written
+(:func:`release_playblast`). A job that never finishes leaves its version
+unused, not reused.
 """
 
 from typing import Optional
@@ -22,6 +32,7 @@ from tumblepipe.pipe.paths.naming import entity_stem
 from tumblepipe.pipe.paths.version import get_next_version_name
 
 _MOVIE_EXTENSION = 'mp4'
+_RESERVED_SUFFIX = '.reserved'
 
 
 def _playblast_dir(
@@ -88,9 +99,42 @@ def _latest_movie(directory: Path, stem: str) -> Optional[Path]:
     return versions[_sorted_versions(versions)[-1]]
 
 
+def _reserved_versions(directory: Path, stem: str) -> set[str]:
+    """Versions held by a submitted playblast that has not written its movie."""
+    if not directory.is_dir(): return set()
+    reserved = set()
+    for marker in directory.glob(f'*.{_MOVIE_EXTENSION}{_RESERVED_SUFFIX}'):
+        movie = marker.with_name(marker.name[:-len(_RESERVED_SUFFIX)])
+        version_name = _version_of_movie(movie, stem)
+        if version_name is not None:
+            reserved.add(version_name)
+    return reserved
+
+
+def reservation_path(movie_path: Path) -> Path:
+    """The marker that holds ``movie_path``'s version until it is written."""
+    return movie_path.with_name(movie_path.name + _RESERVED_SUFFIX)
+
+
+def reserve_playblast(movie_path: Path) -> None:
+    """Hold ``movie_path``'s version for a submitted playblast, so the next
+    submit takes the version after it."""
+    marker = reservation_path(movie_path)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch(exist_ok=True)
+
+
+def release_playblast(movie_path: Path) -> None:
+    """Drop ``movie_path``'s reservation (none is fine): its movie is there."""
+    reservation_path(movie_path).unlink(missing_ok=True)
+
+
 def _next_movie(directory: Path, stem: str) -> Path:
-    """The shot-named file one version past the highest in ``directory``."""
-    versions = _sorted_versions(_movie_versions(directory, stem))
+    """The shot-named file one version past the highest in ``directory``,
+    reserved versions included."""
+    versions = _sorted_versions(
+        set(_movie_versions(directory, stem)) | _reserved_versions(directory, stem)
+    )
     next_version_name = (
         get_next_version_name(versions[-1]) if versions
         else naming.get_version_name(1)

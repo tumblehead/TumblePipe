@@ -703,6 +703,19 @@ Browser → pipeline settings, *on* by default), persisted to
 restores load-time-frozen behavior. hython and farm jobs never refresh:
 they keep the versions they were submitted with.
 
+The refresh runs the nodes only when something they read has moved. After
+running them it keeps, in the scene, a fingerprint per node of what it read:
+the version folders it listed, the config files it loaded, the `entity:`
+URIs it resolved and its own parameters. The next open checks those first.
+When nothing moved, nothing runs and the scene opens unchanged; through 1.99
+every open re-ran the imports, which re-set their parameters, so a workfile
+given on Houdini's command line (a launch from TumbleTrove Desktop) opened
+already marked changed and the first switch asked to save changes nobody
+made. When anything moved (a new publish, a config edit, a parameter you
+changed), every import node runs, as before: a node downstream of the moved
+one imports what it brings in. The Asset Browser's **Update** always runs
+them all.
+
 The refreshed node types are `import_shot`, `import_assets`, `import_asset`,
 `import_layer`, `import_rigs`, `import_rig` and the SOP `import_model`. An
 import node inside another one (the children `import_assets` builds, the

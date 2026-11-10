@@ -395,12 +395,22 @@ def _start(player: Path, arguments: list[str]) -> None:
     # The editor outlives Houdini, so it must not hold Houdini's output: when
     # that is a pipe (TumbleTrove Desktop reads it), whoever reads it would
     # wait on the editor too. Its own log keeps what it prints, a panic
-    # included; errors it shows in its window.
+    # included; errors it shows in its window. th_player is a console
+    # program (``--render`` prints to it), and Houdini has no console, so on
+    # Windows it would get a new, empty console window of its own beside the
+    # editor's (QA 2026-11-10): ask for none.
     with PLAYER_LOG.open('wb') as log:
         subprocess.Popen(
             arguments,
             stdin = subprocess.DEVNULL,
             stdout = log,
             stderr = log,
-            cwd = str(player.parent)
+            cwd = str(player.parent),
+            **_no_console()
         )
+
+def _no_console() -> dict:
+    """Popen's arguments that start a console program without a console
+    window: ``CREATE_NO_WINDOW`` on Windows, nothing elsewhere."""
+    if sys.platform != 'win32': return {}
+    return {'creationflags': subprocess.CREATE_NO_WINDOW}

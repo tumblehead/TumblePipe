@@ -16,11 +16,16 @@ the config the job passes. Then it checks:
   import kept the old channel's frames until the department was toggled);
 - each light mix gets its import's ``rgba`` on its beauty input;
 - Channel ``*`` reads every channel in one node: ``rgba`` is the channels
-  over each other, the cable every channel's beauty and AOVs; a channel
-  not rendered yet is left out and named; the freeze pins each channel, and
-  the worker renders the comp from those pins;
-- AOV Outputs keeps a Cable Unpack with one typed output per cable field,
-  and removes it when turned off;
+  over each other, the cable every channel's AOVs, the ``beauties`` cable
+  each channel's beauty; a channel not rendered yet is left out and named;
+  the freeze pins each channel, and the worker renders the comp from those
+  pins;
+- Channel Outputs (on by default) keeps a Cable Unpack with one output per
+  channel's beauty (Remy, 2026-11-10); AOV Outputs keeps one with one typed
+  output per cable field, and removes it when turned off;
+- an all-channels import built before the beauties left the cable (a dive
+  with two outputs, an AOV Outputs unpack with the beauties, a wire on one)
+  rebuilds, and the wire moves to the Channel Outputs unpack;
 - th::import_scene hands COPs the staged shot's geometry and camera, with
   the output types a Rasterize Geometry takes;
 - each channel's light mix at defaults equals its beauty (never beauty plus
@@ -311,6 +316,56 @@ def check_channel_switch(shot_uri, label):
     source.execute()
 
 
+def check_old_all_channels(node, label, want_fields):
+    """An all-channels import as v1.99.0 left it: a dive with two outputs and
+    no beauties pack, an AOV Outputs unpack whose fields start with the
+    beauties, a null wired to its chars output. Update rebuilds the dive,
+    and the null's wire moves to the Channel Outputs unpack's chars."""
+    native = node.native()
+    beauties = node.find_unpack(import_render.BEAUTIES_OUTPUT)
+    if beauties is not None:
+        beauties.destroy()
+    dive = native.node(import_render.DIVE)
+    dive.node(import_render.BEAUTIES_PACK).destroy()
+    dive.parm('outputs').set(2)
+    old_fields = ['default', 'chars'] + want_fields
+    unpack = native.parent().createNode('cableunpack', f'{native.name()}_aovs')
+    unpack.setUserData(import_render.UNPACK_MARK, native.name())
+    unpack.setInput(0, native, import_render.AOVS_OUTPUT)
+    unpack.parm('fields').set(len(old_fields))
+    for index, field in enumerate(old_fields, start=1):
+        unpack.parm(f'fieldname{index}').set(field)
+    reader = native.parent().createNode('null', 'reads_chars')
+    reader.setInput(0, unpack, 1)
+    depth = native.parent().createNode('null', 'reads_depth')
+    depth.setInput(0, unpack, old_fields.index('chars_depth'))
+    node.parm(import_render.UNPACK_PARM).set(1)
+    node.execute()  # as opening the workfile does
+    beauties = node.find_unpack(import_render.BEAUTIES_OUTPUT)
+    check(f'{label}: an old import gets its beauties pack back',
+          dive.node(import_render.BEAUTIES_PACK) is not None)
+    check(f'{label}: an old import gets a Channel Outputs unpack', beauties is not None)
+    check(f'{label}: the old unpack drops the beauties',
+          list(unpack.outputLabels()) == want_fields, str(unpack.outputLabels()))
+    wired = reader.inputConnections()
+    check(f'{label}: a wire on the old chars output moves to Channel Outputs',
+          beauties is not None and len(wired) == 1
+          and wired[0].inputNode().path() == beauties.path()
+          and wired[0].outputIndex() == 1,
+          str([(c.inputNode().path(), c.outputIndex()) for c in wired]))
+    wired = depth.inputConnections()
+    check(f'{label}: a wire on an AOV follows its field',
+          len(wired) == 1 and wired[0].inputNode().path() == unpack.path()
+          and wired[0].outputIndex() == want_fields.index('chars_depth'),
+          str([(c.inputNode().path(), c.outputIndex()) for c in wired]))
+    if beauties is not None:
+        close(f'{label}: the moved wire reads the chars beauty', render_average(reader, 0), CHARS_BEAUTY)
+    for extra in (reader, depth, unpack):
+        extra.destroy()
+    node.parm(import_render.UNPACK_PARM).set(0)
+    node.execute()
+
+
 def check_all_channels(shot_uri, label):
     """Channel ``*``: every channel in one node; returns its export and the
     submit, for the worker. The comp is the all-channels import's rgba into
@@ -329,13 +384,32 @@ def check_all_channels(shot_uri, label):
           str(node.channel_menu()))
     check(f'{label}: all channels read default and chars',
           node.read_channels() == ['default', 'chars'], str(node.read_channels()))
-    want_fields = ['default', 'chars', 'chars_beauty_key', 'chars_beauty_rim',
-                   'chars_depth', 'chars_objid_hero']
-    check(f'{label}: the cable carries each channel beauty and AOVs',
+    want_fields = ['chars_beauty_key', 'chars_beauty_rim', 'chars_depth', 'chars_objid_hero']
+    check(f'{label}: the cable carries each channel AOVs, no beauty',
           node.get_fields() == want_fields, str(node.get_fields()))
     a = CHARS_BEAUTY[3]
     over = tuple(f + b * (1 - a) for f, b in zip(CHARS_BEAUTY, DEFAULT_BEAUTY))
     close(f'{label}: all-channels rgba is chars over default', render_average(node.native(), 0), over)
+
+    # Channel Outputs (on by default)
+    check(f'{label}: the node has rgba, aovs and beauties outputs',
+          list(node.native().outputLabels()) == ['rgba', 'aovs', 'beauties'],
+          str(node.native().outputLabels()))
+    beauties = node.find_unpack(import_render.BEAUTIES_OUTPUT)
+    check(f'{label}: Channel Outputs keeps a Cable Unpack beside the node', beauties is not None)
+    if beauties is not None:
+        check(f'{label}: one output per channel, named after it',
+              list(beauties.outputLabels()) == ['default', 'chars'], str(beauties.outputLabels()))
+        check(f'{label}: the channel outputs are RGBA',
+              list(beauties.outputDataTypes()) == ['RGBA', 'RGBA'], str(beauties.outputDataTypes()))
+        close(f'{label}: the default output is the default beauty', render_average(beauties, 0), DEFAULT_BEAUTY)
+        close(f'{label}: the chars output is the chars beauty', render_average(beauties, 1), CHARS_BEAUTY)
+    node.parm(import_render.BEAUTY_UNPACK_PARM).set(0)
+    node.execute()  # as the Channel Outputs callback does
+    check(f'{label}: Channel Outputs off removes the unread unpack',
+          node.find_unpack(import_render.BEAUTIES_OUTPUT) is None)
+    node.parm(import_render.BEAUTY_UNPACK_PARM).set(1)
+    node.execute()
 
     mix = light_mix.create(copnet, 'mix_all')
     mix.native().setInput(0, node.native(), import_render.AOVS_OUTPUT)
@@ -355,14 +429,14 @@ def check_all_channels(shot_uri, label):
     if unpack is not None:
         check(f'{label}: the unpack has one output per cable field',
               list(unpack.outputLabels()) == want_fields, str(unpack.outputLabels()))
-        check(f'{label}: the unpack outputs are typed (beauty RGBA, depth RGB, matte Mono)',
-              list(unpack.outputDataTypes()) == ['RGBA', 'RGBA', 'RGB', 'RGB', 'RGB', 'Mono'],
+        check(f'{label}: the unpack outputs are typed (light groups and depth RGB, matte Mono)',
+              list(unpack.outputDataTypes()) == ['RGB', 'RGB', 'RGB', 'Mono'],
               str(unpack.outputDataTypes()))
-        close(f'{label}: the unpack chars output is the chars beauty',
-              render_average(unpack, 1), CHARS_BEAUTY)
     node.parm(import_render.UNPACK_PARM).set(0)
     node.execute()  # as the AOV Outputs callback does
     check(f'{label}: AOV Outputs off removes the unread unpack', node.find_unpack() is None)
+
+    check_old_all_channels(node, label, want_fields)
 
     export = export_comp.create(copnet, 'export_comp')
     export.native().setInput(0, node.native(), import_render.RGBA_OUTPUT)
@@ -396,7 +470,7 @@ def check_all_channels(shot_uri, label):
 def check_scene(shot_uri):
     """th::import_scene on a staged shot: a cube and the render camera."""
     print('--- th::import_scene: the staged shot as geometry and camera')
-    from pxr import Usd, UsdGeom
+    from pxr import Gf, Usd, UsdGeom, UsdRender
     from tumblepipe.pipe.paths.staged import get_staged_file_path
     staged = get_staged_file_path(shot_uri, 'v0001')
     staged.parent.mkdir(parents=True, exist_ok=True)
@@ -405,6 +479,8 @@ def check_scene(shot_uri):
     UsdGeom.Cube.Define(stage, '/props/box').CreateSizeAttr(2.0)
     camera = UsdGeom.Camera.Define(stage, '/cameras/render_camera')
     UsdGeom.Xformable(camera).AddTranslateOp().Set((0.0, 0.0, 10.0))
+    # Not lopimportcam's 1280 x 720 default: the camera must take it up.
+    UsdRender.Settings.Define(stage, '/Render/rendersettings').CreateResolutionAttr(Gf.Vec2i(1600, 900))
     stage.GetRootLayer().Save()
     (staged.parent / 'context.json').write_text(json.dumps(dict(
         entity=str(shot_uri), version_name='v0001', channel='default',
@@ -455,6 +531,15 @@ def check_scene(shot_uri):
     except hou.OperationFailed as error:
         errors = [str(error)]
     check('import_scene: Rasterize Geometry cooks on its two outputs', not errors, str(errors))
+    # QA 2026-11-10: the camera framed every shot at lopimportcam's default
+    # 1280 x 720, so a rasterized pass was smaller than the render.
+    check('import_scene: the camera is as wide as the stage renders',
+          lopcam is not None and lopcam.parm('resx').eval() == 1600,
+          str(lopcam and lopcam.parm('resx').eval()))
+    layer = None if errors else raster.layer(0)
+    check('import_scene: Rasterize Geometry renders at the render width',
+          layer is not None and layer.bufferResolution()[0] == 1600,
+          str(layer and layer.bufferResolution()))
 
 
 def run_worker(shot_uri, submit, label, recomp=False, want_merged=None):

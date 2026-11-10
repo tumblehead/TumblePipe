@@ -12,6 +12,52 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.99.0 — 2026-11-10
+
+### Features
+- feat(comp): import_render reads all channels, drops the beauty from its cable, keeps AOV outputs; th::import_scene (`9b9f30ca`)
+- feat(farm-submit): the Comp column offers what export_comp's Submit does (`7bca2e0d`)
+- feat(farm-manager): a hover summary and a failed-jobs badge on the Farm Manager button (`0d8441ce`)
+- feat(pipe): channel edits over inherited channels; add_department (`d90be486`)
+- feat(pipe): Multi edits, entity rename, as TumblePipe makes them (`2d7d982d`)
+
+### Fixes
+- fix(publish): the post-run save keeps the workfile's pre-run save time (`2fd7ea62`)
+- fix(publish): a farm run's Build USD rides in the entity's last publish batch (`6eb54c4f`)
+- fix(comp): th::import_scene follows New from Current like its siblings (`124870db`)
+- fix(publish): a run leaves the scene saved and every row finished (`168b1211`)
+- fix(templates): effects, environment and crowd author under a category (`2f17386d`)
+- fix(hdas): drop stale parameter values that warned on every drop; turntable Submit names a missing Primitives (`d111b3ce`)
+- fix(templates): blendshape shapes land under blshp; Multi model imports pin first (`f8c66718`)
+- fix(farm): pool and preset edits pin only the farm keys they change (`5a8ea602`)
+- fix(csv-import): a refused shot name no longer aborts the import (`4d1d73d6`)
+- fix(browser): sidebar counts leave Multi members out (`4bcdaf99`)
+- fix(entity-editor): tick lists show each name whole (`d98241b0`)
+- fix(pipe): a renamed db node keeps its place; db writes are Python's bytes (`e5d65fd6`)
+- fix(editor): a take menu Source or Department row follows the newest version (`4ca6a33b`)
+- fix(player): clippy type_complexity in the takes test helper (`cf896a39`)
+
+### Documentation
+- docs(qa): P4 checkpoint decisions (ledger 34 v25 at end of pass, ledger 36 build in publish batch) (`2f8969a3`)
+- docs(qa): P3 ledger row 36 (duplicate staged builds) and raw QoL notes (`51b2c16f`)
+- docs(qa): P1 ledger rows 30-31 (settings round-trip, issues #34 #35) (`40f4a94c`)
+- docs(qa): P2 ledger, QoL notes and a take-menu proptest seed (`4e7d68d3`)
+- docs(design): edit-entity status is built; there is no range Multi guard (`ee08d48f`)
+- docs(design): pipeline QA pass plan (2026-11) (`586e0cc3`)
+- docs: regenerate CHANGELOG.md for v1.98.0 (`c4b246aa`)
+
+### Tests
+- test(comp): the import_render's decisions are pure and property-tested (`044284cb`)
+- test(pipe): parity for Multi edits, renames, channels and departments (`4ae87d44`)
+
+### Chores
+- chore(hpm): list th::import_scene in the operator index (`cfe34fc1`)
+
+### Other Changes
+- Merge remote-tracking branch 'origin/master' into qa/pipeline-2026-11 (`8058bc1e`)
+- Merge remote-tracking branch 'origin/master' (`cff11738`)
+- Merge remote-tracking branch 'origin/master' (`8f6866dc`)
+
 ## v1.98.0 — 2026-11-09
 
 ### Features

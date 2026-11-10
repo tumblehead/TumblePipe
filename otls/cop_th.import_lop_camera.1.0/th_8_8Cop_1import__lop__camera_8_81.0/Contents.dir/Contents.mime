@@ -1575,6 +1575,15 @@ Content-Disposition: attachment; filename="hdaroot/objnet/lopimportcam.chn"
 Content-Type: text/plain
 
 {
+    channel resx {
+      lefttype = extend
+      righttype = extend
+      default = 1280
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = __import__('tumblepipe.pipe.houdini.render_camera',fromlist=['stage_render_width']).stage_render_width(pwd()) language = python }
+    }
     channel resy {
       lefttype = extend
       righttype = extend
@@ -1710,7 +1719,7 @@ tdisplay	[ 0	locks=0 ]	(	"off"	)
 display	[ 0	locks=0 ]	(	1	)
 folder0	[ 0	locks=0 ]	(	0	0	0	)
 iconscale	[ 0	locks=0 ]	(	1	)
-res	[ 0	locks=0 ]	(	1280	[ resy	720 ] 	)
+res	[ 0	locks=0 ]	(	[ resx	1280 ] 	[ resy	720 ] 	)
 resMenu	[ 0	locks=0 ]	(	0	)
 aspect	[ 0	locks=0 ]	(	1	)
 projection	[ 0	locks=0 ]	(	[ projection	0 ] 	)

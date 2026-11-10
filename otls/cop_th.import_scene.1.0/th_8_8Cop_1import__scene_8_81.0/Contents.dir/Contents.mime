@@ -2001,6 +2001,15 @@ Content-Type: text/plain
 
 	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = chs(\"../../camera_prim\") }
     }
+    channel resx {
+      lefttype = extend
+      righttype = extend
+      default = 1280
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = __import__('tumblepipe.pipe.houdini.render_camera',fromlist=['stage_render_width']).stage_render_width(pwd()) language = python }
+    }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -2044,7 +2053,7 @@ tdisplay	[ 0	locks=0 ]	(	"off"	)
 display	[ 0	locks=0 ]	(	1	)
 folder0	[ 0	locks=0 ]	(	0	0	0	)
 iconscale	[ 0	locks=0 ]	(	1	)
-res	[ 0	locks=0 ]	(	1280	[ resy	720 ] 	)
+res	[ 0	locks=0 ]	(	[ resx	1280 ] 	[ resy	720 ] 	)
 resMenu	[ 0	locks=0 ]	(	0	)
 aspect	[ 0	locks=0 ]	(	1	)
 projection	[ 0	locks=0 ]	(	[ projection	0 ] 	)

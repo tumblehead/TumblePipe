@@ -131,10 +131,22 @@ def build(
     deps: dict[str, list[str]],
     depends_on: list[str] | None = None
     ) -> list[str]:
-    """Add the publish job and its notify after ``depends_on``."""
+    """Add the publish job after ``depends_on``, the staged builds the run
+    owns after it, and its notify last.
+
+    The notify waits for the builds too: until they finish, the published
+    version is not in the staged stage downstream departments read, so
+    "Published" would be announced early (QA 2026-11-10: the farm ran the
+    notify before the build had started).
+    """
     entity_uri = config['entity']['uri']
     jobs['publish'] = publish_job.build(config, paths, temp_path)
     deps['publish'] = list(depends_on or [])
+    build_task = publish_spec.build_task(config)
+    builds = (
+        _build_jobs(config, build_task, temp_path, jobs, deps)
+        if build_task is not None else []
+    )
     jobs['notify'] = notify_job.build(dict(
         title = f'notify publish {entity_uri}',
         priority = notify_job.PRIORITY,
@@ -144,12 +156,8 @@ def build(
         message = f'Published {entity_uri}{_downstream_suffix(config)}',
         command = dict(mode = 'notify')
     ), dict(), temp_path)
-    deps['notify'] = ['publish']
-    tails = ['notify']
-    build_task = publish_spec.build_task(config)
-    if build_task is not None:
-        tails += _build_jobs(config, build_task, temp_path, jobs, deps)
-    return tails
+    deps['notify'] = ['publish', *builds]
+    return ['notify', *builds]
 
 
 def _build_jobs(config, build_task, temp_path, jobs, deps) -> list[str]:

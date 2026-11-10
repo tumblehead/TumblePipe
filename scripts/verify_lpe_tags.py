@@ -144,6 +144,14 @@ def main():
           render_vars(generated),
           ['beauty', 'beauty_fill', 'beauty_side', 'beauty_top'])
 
+    # The farm's Denoise is the one denoise (QA 2026-11-10, ledger 59): the
+    # node used to switch on Karma's OIDN image filter, so husk denoised the
+    # render and the farm's denoise ran OIDN a second time.
+    settings = every.stage().GetPrimAtPath('/Render/rendersettings')
+    attribute = settings.GetAttribute('karma:global:imagefilter')
+    check("no Karma image filter is authored (the farm denoises)",
+          bool(attribute) and attribute.HasAuthoredValue(), False)
+
     if _failures:
         print("\n%d FAILURE(S): %s" % (len(_failures), ", ".join(_failures)))
         return 1

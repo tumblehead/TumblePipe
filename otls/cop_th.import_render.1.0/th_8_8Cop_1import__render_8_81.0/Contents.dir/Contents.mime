@@ -123,7 +123,7 @@ Content-Type: text/plain
 
 comment ""
 position 10.6236 5.55112e-17
-connectornextid 2
+connectornextid 3
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
@@ -132,11 +132,13 @@ inputsNamed3
 {
 0 	dive 0 1 "input1"
 1 	dive 1 1 "input2"
+2 	dive 2 1 "input3"
 }
 inputs
 {
 0 	dive 0 1
 1 	dive 1 1
+2 	dive 2 1
 }
 stat
 {
@@ -182,12 +184,13 @@ Content-Type: text/plain
 
 comment ""
 position 0 1.5
-connectornextid 2
+connectornextid 3
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault off exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
 0 "output1"
 1 "output2"
+2 "output3"
 }
 inputsNamed3
 {
@@ -215,11 +218,13 @@ Content-Type: text/plain
 version 0.8
 cablerenamebylabel	[ 0	locks=0 ]	(	"off"	)
 inputs	[ 0	locks=0 ]	(	0	)
-outputs	[ 0	locks=0 ]	(	2	)
+outputs	[ 0	locks=0 ]	(	3	)
 outputlabel1	[ 0	locks=0 ]	(	rgba	)
 outputtype1	[ 0	locks=0 ]	(	"vector4"	)
 outputlabel2	[ 0	locks=0 ]	(	aovs	)
 outputtype2	[ 0	locks=0 ]	(	"cable"	)
+outputlabel3	[ 0	locks=0 ]	(	beauties	)
+outputtype3	[ 0	locks=0 ]	(	"cable"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY

@@ -7,6 +7,18 @@ reopened scene shows whatever was imported when it was last saved — a model
 published since then does not appear. :func:`refresh_scene_imports` re-runs
 every import node so ``current``/``latest`` pick up the newest publish.
 
+Only when something moved, though: re-running an import re-sets its parms,
+and Houdini marks the scene changed for a ``Parm.set`` of the value it
+already holds, so a launch with nothing new published opened the workfile
+dirty and the first switch asked to save changes nobody made (QA ledger 51,
+2026-11-10). After running the nodes the refresh keeps a fingerprint per
+node of what it read: the version folders it listed, the config files it
+loaded, the ``entity:`` URIs it resolved, and its own parms. The next
+refresh compares them all first; when every node's fingerprint still holds,
+nothing runs. When any one moved, every node runs, as before: an import
+downstream of the moved one reads what it imports, which no fingerprint
+holds.
+
 :data:`REFRESH_SPECS` is the list of node types that get re-run. HDAs that
 choose a version but are refreshed through a node inside them, or that do
 not import upstream publishes at all, are named in
@@ -18,7 +30,9 @@ long as the list was written by hand.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
+import json
 import logging
 from dataclasses import dataclass
 from typing import Iterable, Optional
@@ -175,18 +189,113 @@ def find_import_nodes() -> list:
     return [matched[path] for path in outermost(matched)]
 
 
-def refresh_scene_imports() -> tuple[int, int]:
-    """Re-execute the loaded scene's import nodes. Returns ``(executed,
-    failed)``.
+# Root-node user data: {node path: fingerprint} as JSON, saved with the hip.
+# User data set to the value it holds does not mark the scene changed.
+FINGERPRINTS_KEY = "th_import_refresh"
+_FINGERPRINT_VERSION = 1
 
-    One bad node (stale HDA, missing export) is logged and counted, not
-    raised, so the rest of the scene still refreshes. The caller owns the
+
+def _parms_digest(native) -> str:
+    """A digest of a node's parms as authored (expressions, not values)."""
+    digest = hashlib.sha1()
+    parms = getattr(native, "parms", None)
+    for parm in (parms() if parms is not None else ()):
+        try:
+            raw = parm.rawValue()
+        except Exception:
+            raw = ""
+        digest.update(f"{parm.name()}={raw}\n".encode("utf-8", "replace"))
+    return digest.hexdigest()
+
+
+def fingerprint(native, versions: dict, purposes, resolves: dict,
+                config) -> dict:
+    """What a node read while it ran, as JSON-ready data: version reads
+    (``recorded_version_reads``), config purposes with their stamps now,
+    entity URI resolves (``recorded_resolves``), its parms digest, and the
+    resolver latest mode it left set."""
+    from tumblepipe import resolver
+
+    return {
+        "v": _FINGERPRINT_VERSION,
+        "parms": _parms_digest(native),
+        "versions": sorted([kind, folder, value]
+                           for (kind, folder), value in versions.items()),
+        "config": sorted([purpose, list(config.loaded_stamp(purpose) or ())]
+                         for purpose in purposes),
+        "resolves": sorted([uri, latest, value]
+                           for (uri, latest), value in resolves.items()),
+        "latest_mode": resolver.get_latest_mode(),
+    }
+
+
+def fingerprint_holds(native, stored, config) -> bool:
+    """Whether everything a stored fingerprint read still reads the same."""
+    from tumblepipe import resolver
+    from tumblepipe.pipe.paths.version import read_version_listing
+
+    if not isinstance(stored, dict) or stored.get("v") != _FINGERPRINT_VERSION:
+        return False
+    try:
+        if stored["parms"] != _parms_digest(native):
+            return False
+        for purpose, stamp in stored["config"]:
+            if list(config.loaded_stamp(purpose) or ()) != stamp:
+                return False
+        for kind, folder, value in stored["versions"]:
+            if read_version_listing(kind, folder) != value:
+                return False
+        for uri, latest, value in stored["resolves"]:
+            if resolver.resolve_as(uri, latest) != value:
+                return False
+    except Exception:
+        logger.debug("Import refresh: fingerprint check of %s failed",
+                     native.path(), exc_info=True)
+        return False
+    return True
+
+
+def _root():
+    import hou
+
+    return hou.node("/")
+
+
+def _load_fingerprints(root) -> dict:
+    user_data = getattr(root, "userData", None)
+    raw = user_data(FINGERPRINTS_KEY) if user_data is not None else None
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _store_fingerprints(root, fingerprints: dict) -> None:
+    set_user_data = getattr(root, "setUserData", None)
+    if set_user_data is not None:
+        set_user_data(FINGERPRINTS_KEY,
+                      json.dumps(fingerprints, sort_keys=True))
+
+
+def refresh_scene_imports(force: bool = False) -> tuple[int, int]:
+    """Re-execute the loaded scene's import nodes when anything they read
+    has moved. Returns ``(executed, failed)``; ``(0, 0)`` when nothing
+    moved and nothing ran (the scene is left unchanged).
+
+    ``force`` runs them whatever the fingerprints say (the artist's Update
+    Imports). One bad node (stale HDA, missing export) is logged and
+    counted, not raised, so the rest of the scene still refreshes; it keeps
+    no fingerprint, so the next refresh runs again. The caller owns the
     update mode: run this under ``util.update_mode(hou.updateMode.Manual)``
     in a GUI session so the re-imports don't each cook the graph.
     """
     from tumblepipe import resolver
     from tumblepipe.api import api
     from tumblepipe.pipe.paths import cached_version_listings
+    from tumblepipe.pipe.paths.version import recorded_version_reads
 
     executed = 0
     failed = 0
@@ -204,15 +313,40 @@ def refresh_scene_imports() -> tuple[int, int]:
         except Exception:
             logger.exception("Import refresh: listing import nodes failed")
             return (0, 1)
+        root = _root()
+        stored = _load_fingerprints(root)
+        if nodes and not force and all(
+            fingerprint_holds(native, stored.get(native.path()), api.config)
+            for native, _ in nodes
+        ):
+            # Leave the resolver mode as the last import would have.
+            resolver.set_latest_mode(
+                bool(stored[nodes[-1][0].path()]["latest_mode"]))
+            logger.info(
+                "Import refresh: %d import node(s), nothing moved", len(nodes))
+            return (0, 0)
+        fingerprints = {}
         for native, spec in nodes:
             try:
-                execute(native, spec)
+                with (recorded_version_reads() as versions,
+                      api.config.recorded_reads() as purposes,
+                      resolver.recorded_resolves() as resolves):
+                    execute(native, spec)
                 executed += 1
             except Exception:
                 logger.exception(
                     "Import refresh: executing %s failed", native.path(),
                 )
                 failed += 1
+                continue
+            try:
+                fingerprints[native.path()] = fingerprint(
+                    native, versions, purposes, resolves, api.config)
+            except Exception:
+                logger.debug("Import refresh: fingerprinting %s failed",
+                             native.path(), exc_info=True)
+        if stored or fingerprints:
+            _store_fingerprints(root, fingerprints)
 
     if executed or failed:
         logger.info(
