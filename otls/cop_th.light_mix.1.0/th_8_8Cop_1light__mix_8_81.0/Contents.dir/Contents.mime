@@ -218,12 +218,12 @@ version 0.8
 cablerenamebylabel	[ 0	locks=0 ]	(	"off"	)
 inputs	[ 0	locks=0 ]	(	2	)
 outputs	[ 0	locks=0 ]	(	1	)
-inputlabel1	[ 0	locks=0 ]	(	aovs	)
-inputtype1	[ 0	locks=0 ]	(	"cable"	)
+inputlabel1	[ 0	locks=0 ]	(	rgba	)
+inputtype1	[ 0	locks=0 ]	(	"vector4"	)
 outputlabel1	[ 0	locks=0 ]	(	rgba	)
 outputtype1	[ 0	locks=0 ]	(	"vector4"	)
-inputlabel2	[ 0	locks=0 ]	(	rgba	)
-inputtype2	[ 0	locks=0 ]	(	"vector4"	)
+inputlabel2	[ 0	locks=0 ]	(	aovs	)
+inputtype2	[ 0	locks=0 ]	(	"cable"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -371,11 +371,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	inputs 0 1 "input1"
+0 	inputs 1 1 "input1"
 }
 inputs
 {
-0 	inputs 0 1
+0 	inputs 1 1
 }
 stat
 {
@@ -431,11 +431,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	inputs 1 1 "rgba"
+0 	inputs 0 1 "rgba"
 }
 inputs
 {
-0 	inputs 1 1
+0 	inputs 0 1
 }
 stat
 {
@@ -493,11 +493,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	inputs 1 1 "rgba"
+0 	inputs 0 1 "rgba"
 }
 inputs
 {
-0 	inputs 1 1
+0 	inputs 0 1
 }
 stat
 {

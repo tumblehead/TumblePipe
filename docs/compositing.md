@@ -137,7 +137,11 @@ its staged geometry and render camera, ready for a Rasterize Geometry.
 
 One channel's finished render. **Department** `best` reads the highest
 render department below `composite` with a complete version (denoise, else
-render); a concrete department reads only that one. **Version** `latest` is
+render), passing over one a lower department has superseded: a denoise of
+an older render than the newest one, as when a render goes out with Denoise
+off after an earlier denoised one. A denoise records the render version it
+read; one written before that is judged by when it was submitted. A
+concrete department reads only that one. **Version** `latest` is
 its newest complete version, or a `v####` pins one (a pin needs a concrete
 department). It reads **one** department's version at a time: the denoise
 publishes every AOV the comp reads, mattes and ramps as byte copies.
@@ -177,8 +181,8 @@ re-resolves each one on `latest` (`scene_imports.REFRESH_SPECS`), and
 
 ### `th::light_mix`
 
-Cable and beauty in, RGBA out: a channel's light groups mixed back into
-its beauty. The beauty input is wired from the import for you on a sync.
+Beauty and cable in (in the order the import puts them out), RGBA out: a
+channel's light groups mixed back into its beauty. The beauty input is wired from the import for you on a sync.
 One row per `beauty_<tag>` group, each with **Mute**, **Exposure** (stops)
 and **Tint**, plus a **Rest** row for the lights in no group (the beauty
 minus the groups). The mix is the graded groups plus Rest, never the beauty

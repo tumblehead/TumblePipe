@@ -168,8 +168,11 @@ def _denoise_job(
             ).items()
         }
     ), dict(), shot.staging_path)
+    # What it denoises, so a comp's "best" can tell this version from a
+    # stale one once a newer render lands (pipe.comp.is_stale)
     post_render.write_framestack_context(
-        shot, receipt_path, DENOISE_DEPARTMENT, channel, version_name
+        shot, receipt_path, DENOISE_DEPARTMENT, channel, version_name,
+        reads = {channel: dict(department=render_department, version=render_version_name)},
     )
     return job, version_name
 
@@ -287,7 +290,8 @@ def build(
         )
 
         # Farm Submit's Comp column: re-comp the shot once the frames the
-        # comp reads (the denoise, else the render) are on disk.
+        # comp reads (this submit's denoise, else its render: the imports'
+        # best passes over an older denoise, pipe.comp.is_stale) are on disk.
         if config.get('composite') is not None:
             from tumblepipe.farm.pipelines import composite as composite_pipeline
             terminal_jobs = terminal_jobs + composite_pipeline.build(

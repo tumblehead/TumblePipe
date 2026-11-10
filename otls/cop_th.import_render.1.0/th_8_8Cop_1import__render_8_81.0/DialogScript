@@ -64,7 +64,7 @@
             label   "Department"
             type    string
             default { "best" }
-            help    "best: the highest render department below composite with a complete version (denoise, else render)."
+            help    "best: the highest render department below composite with a complete version (denoise, else render), unless the denoise was made from an older render than the newest one."
             menu {
                 [ "from tumblepipe.pipe.houdini.cops import import_render" ]
                 [ "from tumblepipe.pipe.houdini import menus" ]

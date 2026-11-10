@@ -10,9 +10,22 @@ def generate(kwargs):
     plenty of setups group lights whose names say nothing about the
     grouping. Rows written here are meant to be edited.
     """
+    import hou
     node = kwargs['node']
-    root = node.stage().GetPseudoRoot()
-    proposals = prim_queries.propose_lpe_tags(root)
+    # The input's stage: this node's own output carries the tags its rows
+    # authored, which would feed the current rows back in.
+    source = node.inputs()[0] if node.inputs() and node.inputs()[0] is not None else node
+    stage = source.stage()
+    proposals = prim_queries.propose_lpe_tags(stage.GetPseudoRoot()) if stage else []
+    if not proposals:
+        # Leave the rows as they are: clearing them threw away the tags
+        # someone set up.
+        message = f"No lights found in {source.path()}'s stage; the tags are unchanged."
+        if hou.isUIAvailable():
+            hou.ui.displayMessage(message, title='Generate LPEs from scene')
+        else:
+            print(message)
+        return
     node.parm("tags").set(len(proposals))
     for i, (tag_name, prim_paths) in enumerate(proposals):
         node.parm(f"lpetag{i}").set(tag_name)

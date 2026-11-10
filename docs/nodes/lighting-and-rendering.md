@@ -150,7 +150,7 @@ Source: [`otls/lop_th.lpe_tags.1.0`](../../otls/lop_th.lpe_tags.1.0/th_8_8Lop_1l
 | Label | Default | What it does |
 |---|---|---|
 | Status | *(hidden when empty)* | *No light carries: a, b …* — tags whose Lights pattern selects nothing. Each one silently costs its `beauty_<tag>` AOV |
-| Generate LPEs from scene | | Fills the rows from the lights' names: everything before the first `_` becomes the tag, so `side_key` and `side_rim` both propose `side`; a light with no `_` proposes nothing. A starting point only — edit the rows |
+| Generate LPEs from scene | | Fills the rows from the lights in the node's input: a light's own LPE tag if it has one, else its name before the first `_` (so `side_key` and `side_rim` both propose `side`), else its whole name (`key`, `rim`, `dome`). Every light gets a row. With no lights it leaves the rows as they are and says so. A starting point only — edit the rows |
 | Tags › LPE Tag | `light_group#` | The tag; the AOV is `beauty_<tag>` |
 | Tags › Lights | all input prims | Prim pattern of the lights that get the tag |
 

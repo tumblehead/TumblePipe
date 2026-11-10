@@ -9,12 +9,15 @@ tags), builds a comp workfile from the composite template, freezes it as
 Submit does, and runs the composite worker's hython half in a subprocess on
 the config the job passes. Then it checks:
 
-- the imports resolve one department each (``best``: denoise, else render),
+- the imports resolve one department each (``best``: denoise, else render;
+  a stale denoise is pinned in tests/test_best_skips_stale_denoise.py),
   and the cable carries exactly the comp's AOVs but the beauty (``rgba``);
 - an import switched to another channel that resolves to the same
   department and version reads the new channel (Remy, 2026-11-10: a copied
   import kept the old channel's frames until the department was toggled);
-- each light mix gets its import's ``rgba`` on its beauty input;
+- each light mix gets its import's ``rgba`` on its beauty input, takes
+  rgba then aovs so the wires do not cross, and cooks with no warning; a
+  mix saved cable first is rewired on load (Remy, 2026-11-10);
 - Channel ``*`` reads every channel in one node: ``rgba`` is the channels
   over each other, the cable every channel's AOVs, the ``beauties`` cable
   each channel's beauty; a channel not rendered yet is left out and named;
@@ -251,11 +254,39 @@ def check_single(template, shot_uri, label):
         check(f'{label}: the {channel} mix takes its import rgba on its beauty input',
               beauty_input is not None and beauty_input.path() == imports[channel].path(),
               str(beauty_input and beauty_input.path()))
+    for channel in ('default', 'chars'):
+        wires = sorted((c.inputIndex(), c.outputIndex())
+                       for c in mixes[f'light_mix_{channel}'].native().inputConnections())
+        check(f'{label}: the {channel} mix takes rgba then aovs, so the wires do not cross',
+              wires == [(light_mix.BEAUTY_INPUT, import_render.RGBA_OUTPUT),
+                        (light_mix.CABLE_INPUT, import_render.AOVS_OUTPUT)], str(wires))
+        mix_native = mixes[f'light_mix_{channel}'].native()
+        mix_native.cook(force=True)
+        problems = list(mix_native.warnings()) + list(mix_native.errors())
+        check(f'{label}: the {channel} mix cooks with no warning or error',
+              not problems, str(problems))
     close(f'{label}: chars mix at defaults equals its beauty',
           render_average(chars_mix.native()), CHARS_BEAUTY)
     close(f'{label}: default mix (no groups) equals its beauty',
           render_average(mixes['light_mix_default'].native()), DEFAULT_BEAUTY)
+    # A mix saved before the inputs swapped loads cable first, its network
+    # built that way round: loading it puts both back in order.
     native = chars_mix.native()
+    source = imports['chars'].native()
+    native.setInput(0, source, import_render.AOVS_OUTPUT)
+    native.setInput(1, source, import_render.RGBA_OUTPUT)
+    inner = native.node(light_mix.MIX)
+    inner.parm('inputlabel1').set('aovs')
+    inner.parm('inputtype1').set('cable')
+    inner.parm('inputlabel2').set('rgba')
+    inner.parm('inputtype2').set('vector4')
+    light_mix.on_loaded(native)
+    wires = sorted((c.inputIndex(), c.outputIndex()) for c in native.inputConnections())
+    check(f'{label}: an old cable-first mix is rewired rgba then aovs on load',
+          wires == [(light_mix.BEAUTY_INPUT, import_render.RGBA_OUTPUT),
+                    (light_mix.CABLE_INPUT, import_render.AOVS_OUTPUT)], str(wires))
+    close(f'{label}: the rewired old mix at defaults equals its beauty',
+          render_average(native), CHARS_BEAUTY)
     native.parm('mute1').set(1)
     want = tuple(c * (1 - CHARS_GROUPS['beauty_key']) for c in CHARS_BEAUTY[:3]) + (CHARS_BEAUTY[3],)
     close(f'{label}: a muted group drops out exactly (alpha kept)', render_average(native), want)

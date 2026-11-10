@@ -22,7 +22,9 @@ export_comp}.py``; the farm half is ``farm/pipelines/composite.py``.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence
 
 from tumblepipe import naming
@@ -321,6 +323,79 @@ def list_versions(renders: Mapping, department: str, channel: str) -> list[str]:
     return _complete_versions(renders.get(department), channel)
 
 
+@dataclass(frozen=True)
+class Newest:
+    """A department's newest complete version of a channel, and where it
+    came from: ``submitted``, when its ``context.json`` was written (at
+    submit, so submission order); ``source``, the ``(department, version)``
+    it was made from, when it records one (a denoise of a render)."""
+    department: str
+    version: str
+    submitted: Optional[float] = None
+    source: Optional[tuple[str, str]] = None
+
+
+def is_stale(higher: Newest, lower: Newest) -> bool:
+    """Whether ``lower``'s newest version supersedes ``higher``'s: ``higher``
+    was not made from it, and ``lower`` is the newer one.
+
+    A denoise of render v0003 is stale once render v0005 is rendered with
+    Denoise off: best read the old denoise over the new render, so a comp
+    came out denoised although its render was not (wifi_retina, 2026-11-10).
+    """
+    if higher.source is not None and higher.source[0] == lower.department:
+        source_version = higher.source[1]
+        return (source_version != lower.version
+                and naming.get_version_code(lower.version)
+                > naming.get_version_code(source_version))
+    if higher.submitted is None or lower.submitted is None:
+        return False
+    return lower.submitted > higher.submitted
+
+
+def best_departments(newest: Sequence[Newest]) -> list[str]:
+    """``newest`` (highest department first, each with a version) without
+    the departments a lower one supersedes (:func:`is_stale`): ``best``
+    reads the first that is left."""
+    return [
+        entry.department for index, entry in enumerate(newest)
+        if not any(is_stale(entry, lower) for lower in newest[index + 1:])
+    ]
+
+
+def layer_newest(department: str, version: str, layer, channel: str) -> Newest:
+    """``layer`` (``department``'s ``version`` of ``channel``) as a
+    :class:`Newest`, its provenance read from its ``context.json``."""
+    submitted, source = None, None
+    path = getattr(layer, 'path', None)
+    if path is not None:
+        context_path = Path(path) / 'context.json'
+        try:
+            submitted = context_path.stat().st_mtime
+            reads = (json.loads(context_path.read_text(encoding='utf-8')) or {}).get('reads') or {}
+            read = reads.get(channel)
+            if read and read.get('department') and read.get('version'):
+                source = (read['department'], read['version'])
+        except (OSError, ValueError, AttributeError):
+            pass
+    return Newest(department, version, submitted, source)
+
+
+def _newest(renders: Mapping, department: str, channel: str) -> Optional[Newest]:
+    versions = list_versions(renders, department, channel)
+    if not versions: return None
+    layer = renders[department].layers[channel][versions[0]]
+    return layer_newest(department, versions[0], layer, channel)
+
+
+def _fresh_candidates(renders: Mapping, candidates: list[str], channel: str) -> list[str]:
+    """``candidates`` (highest first) without the departments whose newest
+    version a lower department's supersedes."""
+    newest = [n for n in (_newest(renders, d, channel) for d in candidates) if n]
+    fresh = set(best_departments(newest))
+    return [d for d in candidates if d in fresh or d not in {n.department for n in newest}]
+
+
 def resolve_render(
     renders: Mapping,
     render_department_names: Iterable[str],
@@ -354,6 +429,8 @@ def resolve_render(
                 f'({", ".join(readable) or "none"})'
             )
         candidates = [department]
+    if department == BEST:
+        candidates = _fresh_candidates(renders, candidates, channel)
     for candidate in candidates:
         versions = list_versions(renders, candidate, channel)
         if version == LATEST:
@@ -740,13 +817,23 @@ def next_composite_version(shot_uri, layers: Iterable[str], purpose: str = 'rend
 # The template
 ###############################################################################
 # Network-editor units. One column per channel; a Multi repeats the set per
-# member, MEMBER_STRIDE further along x.
+# member, MEMBER_GAP further along x. A position is a node's lower-left
+# corner.
+#
+# A COP node is a tile with its image preview, 1.77 wide and 1.68 to 1.98
+# tall (hou.Node.size() in 22.0.429: export_comp, light_mix, import_render
+# and blend), with its type and name drawn above it. NODE_FOOTPRINT is that
+# tile plus its label: no two may overlap. Rows used to be 1.2 to 1.5 apart,
+# so every import sat on its light mix and the overs on each other (Remy,
+# 2026-11-10).
+NODE_FOOTPRINT = (1.8, 2.7)
+ROW = 3.0
 COLUMN_STRIDE = 4.0
-IMPORT_Y = 3.0
-MIX_Y = 1.5
+IMPORT_Y = 2 * ROW
+MIX_Y = ROW
 OVER_Y = 0.0
-OVER_STEP_Y = -1.2
-EXPORT_GAP_Y = -2.0
+OVER_STEP_Y = -ROW
+EXPORT_GAP_Y = -ROW
 MEMBER_GAP = 4.0
 
 

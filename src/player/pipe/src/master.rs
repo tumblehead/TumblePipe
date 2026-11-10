@@ -153,6 +153,35 @@ pub fn changes(project: &Project, uses: &[ShotUse], previous: &[ShotUse]) -> Res
     Ok(out)
 }
 
+/// The frame a shot made in `sequence` starts on (a planned shot of the
+/// master edit, see [`Change::Create`]): the `frame_start` it would inherit
+/// there, from the sequence or, for a sequence not made yet, from
+/// `entity:/shots`; 1001 when the project sets none.
+pub fn new_shot_start(project: &Project, sequence: &str) -> Result<Frame, String> {
+    let mut places = vec!["entity:/shots".to_string()];
+    if !sequence.is_empty() {
+        places.insert(0, format!("entity:/shots/{sequence}"));
+    }
+    for place in places {
+        let uri = Uri::parse(&place).map_err(|e| e.to_string())?;
+        let Some(properties) = project.config.get_properties(&uri).map_err(|e| e.to_string())? else { continue };
+        match properties.get("frame_start") {
+            Some(Value::Number(n)) => {
+                if let Some(start) = n.as_i64().or_else(|| n.as_f64().map(|f| f.trunc() as i64)) {
+                    return Ok(start);
+                }
+            }
+            Some(Value::String(s)) => {
+                if let Ok(start) = s.trim().parse::<Frame>() {
+                    return Ok(start);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(1001)
+}
+
 /// Write `change` (`stamp` names a retire's archive folder, see
 /// `entities::archive_stamp`).
 pub fn apply(project: &Project, change: &Change, stamp: &str) -> Result<(), String> {
@@ -301,6 +330,60 @@ mod tests {
         assert_eq!(config.get("fps"), Some(&Value::from(24)), "the project keeps its other keys");
         set_master_edit(&open(&root), None).unwrap();
         assert_eq!(master_edit(&open(&root)).unwrap(), None);
+    }
+
+    fn pin(root: &std::path::Path, uri: &str, start: Frame) {
+        let p = open(root);
+        let uri = Uri::parse(uri).unwrap();
+        let mut own = p.config.get_own_properties(&uri).unwrap().unwrap_or_default();
+        own.insert("frame_start".into(), Value::from(start));
+        p.config.set_own_properties(&uri, own).unwrap();
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(24))]
+
+        /// QA 2026-11-10 (qabeta, master publish): a planned shot always
+        /// started on 1001, so in a project whose shots start on 1 New
+        /// Shot... made SQ010/SH040 1001-1048 beside SH010 1-48. It starts
+        /// where its sequence's shots start, and is created there.
+        #[test]
+        fn a_planned_shot_starts_where_its_sequence_starts(
+            // Above the schema's 5 frames of roll: a range starts on frame 1 or later.
+            project_start in proptest::option::of(6i64..2000),
+            sequence_start in proptest::option::of(6i64..2000),
+            new_sequence in proptest::bool::ANY,
+            frames in 1i64..200,
+        ) {
+            let (_dir, root) = project();
+            let p = open(&root);
+            create_shot(&p, "S", "010", 5, 9).unwrap();
+            {
+                // The sequence and the shot made beside it inherit the range.
+                let p = open(&root);
+                let seq = Uri::parse("entity:/shots/S").unwrap();
+                p.config.set_own_properties(&seq, Map::new()).unwrap();
+            }
+            if let Some(start) = project_start {
+                pin(&root, "entity:/shots", start);
+            }
+            if let Some(start) = sequence_start {
+                pin(&root, "entity:/shots/S", start);
+            }
+            let sequence = if new_sequence { "T" } else { "S" };
+            let want = match (new_sequence, sequence_start, project_start) {
+                (false, Some(s), _) => s,
+                (_, _, Some(s)) => s,
+                _ => 1001,
+            };
+            let p = open(&root);
+            let first = new_shot_start(&p, sequence).unwrap();
+            proptest::prop_assert_eq!(first, want);
+            let shot = Uri::parse(&format!("entity:/shots/{sequence}/020")).unwrap();
+            apply(&p, &Change::Create { shot: shot.clone(), first, last: first + frames - 1 }, "x").unwrap();
+            let range = get_frame_range(&open(&root).config, &shot).unwrap().map(|r| (r.start_frame, r.end_frame));
+            proptest::prop_assert_eq!(range, Some((want, want + frames - 1)));
+        }
     }
 
     #[test]

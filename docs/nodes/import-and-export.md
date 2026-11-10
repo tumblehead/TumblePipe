@@ -250,7 +250,9 @@ Gotchas:
 Publish the department layer. `_TumblePipe/pipeline`; every department
 template ends in one (`EXPORT_MODEL`, `export_shot`, …). Everything above it
 in the network is what gets published; the node's output carries a
-layerbreak so nothing after it leaks into another export.
+layerbreak so nothing after it leaks into another export. Textures
+Copernicus renders for the layer (a material's `op:` path) are written
+beside it in the version folder, and the published layer names them there.
 Source: [`otls/lop_th.export_layer.1.0`](../../otls/lop_th.export_layer.1.0/th_8_8Lop_1export__layer_8_81.0/DialogScript),
 [`lops/export_layer.py`](../../python/tumblepipe/pipe/houdini/lops/export_layer.py).
 

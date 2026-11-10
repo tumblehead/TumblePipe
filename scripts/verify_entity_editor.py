@@ -181,6 +181,15 @@ check('messages go to the footer, not a line under the table',
 
 # The current cell's row is tinted along its whole width, selected or not.
 from PySide6.QtCore import QItemSelectionModel  # noqa: E402
+from PySide6.QtGui import QColor, QPalette  # noqa: E402
+from tumbletrove.asset_browser.core.theme import BG_DARK  # noqa: E402
+# The tint is a faint TEXT_PRIMARY wash made for Houdini's dark palette.
+# Offscreen the table is unthemed white, where the wash cannot show (ledger
+# 22), so give the table the dark base it always has in Houdini.
+_dark = shots.table.palette()
+_dark.setColor(QPalette.Base, QColor(BG_DARK))
+_dark.setColor(QPalette.AlternateBase, QColor(BG_DARK))
+shots.table.setPalette(_dark)
 shots.table.clearSelection()
 _row, other = cell(shots, 'sq010', 'SH030', es.NAME)
 shots.table.selectionModel().setCurrentIndex(other, QItemSelectionModel.NoUpdate)

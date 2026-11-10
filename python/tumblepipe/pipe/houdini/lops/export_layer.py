@@ -544,7 +544,8 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
     def _export_frames(self, out_dir, layer_file_name, first_frame, last_frame, description):
         """Run the export ROP for ``first_frame``..``last_frame`` into
         ``out_dir/layer_file_name``, flattening its sidecar folders."""
-        # 'stage.usd' as the ROP's file name makes its sidecar folder 'stage/'
+        # COP textures land in 'stage.usd.textures/' beside it; the flatten
+        # below moves them up and repoints the layers at them
         temp_export_name = 'stage.usd'
         self.parm('export_f1').deleteAllKeyframes()
         self.parm('export_f2').deleteAllKeyframes()

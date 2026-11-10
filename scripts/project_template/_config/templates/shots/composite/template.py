@@ -39,7 +39,7 @@ def _build(copnet, shot_uri: Uri, suffix: str = '', x: float = 0.0, pin: bool = 
         nodes[name] = node.native()
     for name, import_name in layout.mixes.items():
         node = light_mix.create(copnet, name)
-        node.native().setInput(0, nodes[import_name], import_render.AOVS_OUTPUT)
+        node.native().setInput(light_mix.CABLE_INPUT, nodes[import_name], import_render.AOVS_OUTPUT)
         nodes[name] = node.native()
     for over_name, back, front in layout.overs:
         over = copnet.createNode('blend', over_name)

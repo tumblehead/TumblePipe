@@ -366,8 +366,8 @@ the shots, each in this order:
 
 After the writes, Apply stages the Roots: a Root whose list changed is
 exported, a shot whose Root changed gets a new root layer, and a shot that
-has no staged build yet is built (one graph scan for all of them, a few
-seconds on a large project). The footer says what it did, e.g. *Applied:
+has no staged build yet is built (each reads only the layers it needs; no
+scan of the project's dependency graph). The footer says what it did, e.g. *Applied:
 3 shots; staged Root forest; updated 2 shots*. Shots without a Root are not
 touched. If staging fails, Apply says so; the writes stay, and **Stage Root
 & Rebuild Shots…** on the Root card in the browser runs it by hand. See

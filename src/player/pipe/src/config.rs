@@ -171,6 +171,11 @@ impl Config {
         let file = self.db_file(purpose);
         store_json(&file, &data).map_err(|e| ConfigError::Write { file: file.display().to_string(), reason: e.to_string() })?;
         self.cache.lock().unwrap().insert(purpose.to_string(), Some(Arc::new(data)));
+        // This machine's open Asset Browsers hear of it and refresh, as
+        // they do for the Python config store's writes (`crate::events`).
+        if let Some(config_path) = self.db_path.parent() {
+            crate::events::announce(config_path, crate::events::CONFIG, "", purpose);
+        }
         Ok(())
     }
 
@@ -411,6 +416,54 @@ mod tests {
 
     fn uri(text: &str) -> Uri {
         Uri::parse(text).unwrap()
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(32))]
+
+        /// QA 2026-11-10: the editor's writes (a master publish's created
+        /// shot and range change) never reached the change journal, so an
+        /// open browser kept the old shots. Every write, whichever kind,
+        /// announces one config change of its purpose for this project, as
+        /// the Python store's `write_root` does; a read announces nothing.
+        #[test]
+        fn every_write_announces_its_purpose(
+            writes in proptest::collection::vec((0usize..4, proptest::sample::select(vec!["entity", "config", "groups"]), "[a-z]{1,6}"), 0..8),
+        ) {
+            let (dir, config) = project(&[]);
+            let journal = dir.path().join("events").join(crate::events::JOURNAL_NAME);
+            crate::events::TEST_JOURNAL.with(|j| *j.borrow_mut() = Some(journal.clone()));
+            let mut want = Vec::new();
+            for (kind, purpose, name) in &writes {
+                let node = uri(&format!("{purpose}:/{name}"));
+                let props: Properties = serde_json::from_value(json!({"k": name})).unwrap();
+                let wrote = match kind {
+                    0 => config.set_own_properties(&node, props).is_ok(),
+                    1 => config.set_own_keys(&node, props).is_ok(),
+                    2 => config.add_entity(&node, props).is_ok(),
+                    _ => { let _ = config.get_properties(&node); false }
+                };
+                if wrote {
+                    want.push(purpose.to_string());
+                }
+            }
+            crate::events::TEST_JOURNAL.with(|j| *j.borrow_mut() = None);
+            let key = crate::events::project_key(dir.path());
+            let got: Vec<String> = match std::fs::read(&journal) {
+                Err(_) => vec![],
+                Ok(bytes) => bytes
+                    .split(|&b| b == b'\n')
+                    .skip(1)
+                    .filter(|l| !l.is_empty())
+                    .map(|l| {
+                        let v: Value = serde_json::from_slice(l).unwrap();
+                        assert_eq!((v["project"].as_str(), v["kind"].as_str(), v["uri"].as_str()), (Some(key.as_str()), Some("config"), Some("")));
+                        v["detail"].as_str().unwrap().to_owned()
+                    })
+                    .collect(),
+            };
+            proptest::prop_assert_eq!(got, want);
+        }
     }
 
     #[test]

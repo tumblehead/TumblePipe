@@ -27,7 +27,7 @@ VERSION_ENV = 'HPM_VERSION'
 RELEASES_REPO = '3db-dk/hpm'
 # Keep in lockstep with deadline-hpm-plugin's DEFAULT_HPM_VERSION, so a local
 # task runs under the hpm a render node would.
-DEFAULT_VERSION = 'v0.22.2'
+DEFAULT_VERSION = 'v0.36.1'
 # The operating system's own CA bundles: macOS, Debian/Ubuntu, RHEL/Rocky.
 SYSTEM_CA_FILES = (
     '/etc/ssl/cert.pem',

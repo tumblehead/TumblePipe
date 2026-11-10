@@ -208,6 +208,16 @@ def _repin_expression(parm, source: str, target: str) -> bool:
     return True
 
 
+def _repinned_type(parm) -> bool:
+    """Whether ``parm`` can hold a pin a copy must move: a String parm, or
+    a Label showing one (an entity node's 'entity_label'). With Labels left
+    out a copied export read the source's shot while it published the
+    target's (QA 2026-11-10). Labels are not pins: :func:`_pins` ignores
+    them."""
+    kind = parm.parmTemplate().type()
+    return kind in (hou.parmTemplateType.String, hou.parmTemplateType.Label)
+
+
 def _repin(node, source: str, target: str, network: str, renames: dict) -> int:
     """Pin ``node`` (and an editable subnet's contents) to ``target`` where
     it was pinned to ``source``, in values and in expressions, and point
@@ -219,7 +229,7 @@ def _repin(node, source: str, target: str, network: str, renames: dict) -> int:
                 changed += 1
                 continue
             try:
-                if parm.parmTemplate().type() != hou.parmTemplateType.String:
+                if not _repinned_type(parm):
                     continue
                 value = parm.unexpandedString()
             except hou.OperationFailed:

@@ -1,6 +1,5 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
-import shutil
 
 import hou
 
@@ -51,6 +50,7 @@ class LookdevStudio(FrameRangeNode, FarmNode, ns.Node):
 
         # Import the job module
         from tumblepipe.farm.pipelines import export_render as export_render_job
+        from tumblepipe.farm.pipelines.publish import bundle_workfile
 
         # A turntable renders one asset, from that asset's workfile. A
         # Multi's workfile records the group, which names no entity for the
@@ -79,11 +79,17 @@ class LookdevStudio(FrameRangeNode, FarmNode, ns.Node):
         with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Save the work file and copy it to the temporary directory
-            input_path = temp_path / 'workfile.hip'
-            relative_input_path = input_path.relative_to(temp_path)
+            # Save the workfile and bundle it with its context.json, as a
+            # publish does: on the worker the scene's th:: nodes left on
+            # 'from_context' (the template's LOOKDEV) resolve their entity
+            # from that context.json beside a versioned hip. A bare
+            # 'workfile.hip' resolved none, so LOOKDEV errored and the
+            # export failed with "no stage input connected" (QA 2026-11-10).
             hou.hipFile.save()
-            shutil.copyfile(hou.hipFile.path(), input_path)
+            paths = dict()
+            relative_input_path = bundle_workfile(
+                Path(hou.hipFile.path()), context.department_name, paths,
+            )
 
             # Prepare tasks
             tasks = dict()
@@ -139,7 +145,7 @@ class LookdevStudio(FrameRangeNode, FarmNode, ns.Node):
                 ),
                 tasks = tasks
             ), {
-                input_path: relative_input_path,
+                **paths,
                 render_settings_path: relative_render_settings_path
             })
 

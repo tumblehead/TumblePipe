@@ -13,6 +13,7 @@ pub mod discovery;
 pub mod edit_files;
 pub mod edits;
 pub mod entities;
+pub mod events;
 pub mod groups;
 pub mod io;
 pub mod master;

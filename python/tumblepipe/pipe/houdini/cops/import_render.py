@@ -586,23 +586,30 @@ def find_imports(entity_uri: Uri | None = None) -> list[ImportRender]:
     return found
 
 
-def upstream_import(native, output_index: int = AOVS_OUTPUT):
-    """The import_render whose ``aovs`` cable reaches ``native``'s first
-    input, following first inputs upstream; None when there is none."""
+def upstream_output(native, input_index: int = 0):
+    """``(import_render, its output index)`` that reaches ``native``'s input
+    ``input_index``, following first inputs upstream; None when none does."""
     seen = set()
-    current = native
+    current, index = native, input_index
     while current is not None and current.path() not in seen:
         seen.add(current.path())
         connections = current.inputConnections()
         connection = next(
-            (c for c in connections if c.inputIndex() == 0), None
+            (c for c in connections if c.inputIndex() == index), None
         )
         if connection is None: return None
         source = connection.inputNode()
         if _is_import_render(source):
-            return ImportRender(source)
-        current = source
+            return ImportRender(source), connection.outputIndex()
+        current, index = source, 0
     return None
+
+
+def upstream_import(native, input_index: int = 0):
+    """The import_render that reaches ``native``'s input ``input_index``
+    (its first), following first inputs upstream; None when there is none."""
+    found = upstream_output(native, input_index)
+    return None if found is None else found[0]
 
 
 def _is_import_render(native) -> bool:
@@ -615,7 +622,7 @@ def _sync_downstream_mixes(native):
     """Sync the rows of every light_mix that reads this import's cable."""
     from tumblepipe.pipe.houdini.cops import light_mix
     for mix in light_mix.find_mixes():
-        source = upstream_import(mix.native())
+        source = mix.cable_import()
         if source is None or source.path() != native.path(): continue
         try:
             mix.sync_rows()

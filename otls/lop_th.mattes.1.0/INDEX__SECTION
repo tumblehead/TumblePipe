@@ -1,7 +1,7 @@
 Operator:     th::mattes::1.0
 Label:        th mattes
 Path:         oplib:/th::Lop/mattes::1.0?th::Lop/mattes::1.0
-Icon:         LOP_subnet
+Icon:         $TH_PIPELINE_PATH/resources/PuzzleMattes.png
 Table:        Lop
 License:      
 Extra:        

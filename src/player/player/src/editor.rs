@@ -224,6 +224,16 @@ pub struct BinData {
     media: Vec<editing::BinItem>,
     /// The project's master edit.
     master: Option<String>,
+    /// The frame a new shot starts on, by sequence
+    /// ([`master::new_shot_start`]); `""` for a sequence not made yet.
+    shot_starts: std::collections::BTreeMap<String, EditFrame>,
+}
+
+impl BinData {
+    /// The frame a new shot of `sequence` starts on.
+    fn shot_start(&self, sequence: &str) -> EditFrame {
+        self.shot_starts.get(sequence).or_else(|| self.shot_starts.get("")).copied().unwrap_or(1001)
+    }
 }
 
 fn load_bins(paths: &ProjectPaths, fps: u32) -> Result<BinData, String> {
@@ -235,7 +245,13 @@ fn load_bins(paths: &ProjectPaths, fps: u32) -> Result<BinData, String> {
             items.push(editing::BinItem::of(&item, &last, fps));
         }
     }
-    Ok(BinData { shots, media: items, master: master::master_edit(&project)? })
+    let mut shot_starts = std::collections::BTreeMap::new();
+    shot_starts.insert(String::new(), master::new_shot_start(&project, "")?);
+    for sequence in shots.iter().map(|s| s.sequence.clone()).collect::<BTreeSet<_>>() {
+        let start = master::new_shot_start(&project, &sequence)?;
+        shot_starts.insert(sequence, start);
+    }
+    Ok(BinData { shots, media: items, master: master::master_edit(&project)?, shot_starts })
 }
 
 /// A row of a bin: a sequence's name over its shots, or something to put
@@ -1251,7 +1267,8 @@ impl Editor {
             return Command::none();
         }
         self.dialog = None;
-        let planned = BinShot { uri, sequence: sequence.into(), name: name.into(), first: 1001, last: 1000 + frames };
+        let first = self.bins.shot_start(sequence);
+        let planned = BinShot { uri, sequence: sequence.into(), name: name.into(), first, last: first + frames - 1 };
         let track = self.targets().first().map(|c| c.track).filter(|t| t.kind == TrackKind::Video).map_or(0, |t| t.index);
         let ops = editing::put(&self.doc.edit, Some(planned.clip(self.position as EditFrame)), None, track, false);
         self.edit(&ops)

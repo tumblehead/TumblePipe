@@ -174,6 +174,27 @@ class RenderContext:
         min_shot_idx = get_dept_priority(min_shot_department, shot_department_priority)
         min_render_idx = get_dept_priority(min_render_department, render_department_priority)
 
+        # A render department whose newest version of a layer a lower one
+        # supersedes is passed over: a stale denoise of an older render is
+        # not the shot's picture (pipe.comp.is_stale).
+        from tumblepipe.pipe import comp
+        fresh = dict()
+        layer_names = {name for render in self.renders.values() for name in render.layers}
+        for layer_name in layer_names:
+            newest = []
+            for render_department_name in sorted(
+                self.renders,
+                key = lambda d: get_dept_priority(d, render_department_priority),
+                reverse = True,
+                ):
+                layer_versions = self.renders[render_department_name].layers.get(layer_name)
+                latest = get_latest_layer_with_frame_range(layer_versions or {})
+                if latest is None: continue
+                newest.append(comp.layer_newest(
+                    render_department_name, latest[0], latest[1], layer_name
+                ))
+            fresh[layer_name] = set(comp.best_departments(newest))
+
         latest_aovs = {}
         # Rank of each stored entry: (shot dept, render dept, version) priority,
         # compared lexicographically - higher wins.
@@ -191,6 +212,7 @@ class RenderContext:
                 latest = get_latest_layer_with_frame_range(layer_versions)
                 if latest is None: continue
                 version_name, layer, frame_range = latest
+                if render_department_name not in fresh[layer_name]: continue
 
                 shot_dept = get_shot_department(layer)
                 rank = (

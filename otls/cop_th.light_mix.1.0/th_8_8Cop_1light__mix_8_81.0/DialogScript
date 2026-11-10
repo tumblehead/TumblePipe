@@ -5,13 +5,13 @@
     script	th::light_mix::1.0
     label	"th light mix"
 
-    input	aovs	aovs
     input	rgba	rgba
+    input	aovs	aovs
     output	rgba	rgba
-    signature	default	Default	{ Cable RGBA }	{ RGBA }
+    signature	default	Default	{ RGBA Cable }	{ RGBA }
 
     help {
-	"A channel's light groups mixed back into its beauty: the graded groups plus Rest (the beauty minus the groups). Inputs: the import's aovs cable and its rgba beauty (wired for you on sync)."
+	"A channel's light groups mixed back into its beauty: the graded groups plus Rest (the beauty minus the groups). Inputs: the import's rgba beauty (wired for you on sync) and its aovs cable, in the order of the import's outputs."
     }
 
     parm {

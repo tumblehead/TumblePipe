@@ -537,6 +537,12 @@ class ProcessDialog(QtWidgets.QDialog):
         # Force UI repaint
         QtWidgets.QApplication.processEvents()
 
+    def _show_status(self, text: str):
+        """Show ``text`` on the status label at once, mid-run."""
+        self._status_label.setText(text)
+        self._status_label.setStyleSheet("color: gray;")
+        self._status_label.repaint()
+
     def _on_all_completed(self):
         """Handle all tasks completed signal"""
         self._is_executing = False
@@ -558,9 +564,15 @@ class ProcessDialog(QtWidgets.QDialog):
         # version without a Houdini restart. Only a *local* publish writes a
         # version into this process' filesystem view (farm submissions write
         # nothing here), so this is gated on a version having actually landed.
+        # Name the after-run steps on the label: they run on this thread, and
+        # the last task's "Running: ..." text used to stay up through them,
+        # so their time read as the task's (2026-11-10, Build USD). repaint()
+        # draws the label now without running the event loop.
+        self._show_status("Updating this scene's imports...")
         self._refresh_session_after_local_publish(tasks)
 
         if self._post_execute_callback is not None:
+            self._show_status("Saving the scene...")
             try:
                 self._post_execute_callback()
             except Exception as exc:

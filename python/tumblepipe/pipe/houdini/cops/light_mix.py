@@ -1,9 +1,12 @@
 """th::light_mix: a channel's light groups mixed back into its beauty.
 
-Two inputs, RGBA out: the cable of an import_render (``aovs``) and its
-beauty (``rgba``), which a sync wires from that import when it is empty (the
-cable no longer carries the beauty; a cable that does is read when the
-second input is empty). One row per light group
+Two inputs, RGBA out: an import_render's beauty (``rgba``) and its cable
+(``aovs``), in the order the import's outputs come in, so the two wires do
+not cross (Remy, 2026-11-10; the cable used to come first). A sync wires the
+beauty from that import when its input is empty (the cable no longer
+carries the beauty; a cable that does is read when the beauty input is
+empty), and puts a mix wired the old way round back in order
+(:func:`swapped_inputs`). One row per light group
 (``beauty_<tag>``): Mute, Exposure (stops) and Tint. The mix is the graded
 groups plus **Rest**, the beauty minus the groups (the lights in no group),
 which has a row of its own. So at defaults the output is the beauty
@@ -30,9 +33,24 @@ TYPE_NAME = 'light_mix'
 
 MIX = 'mix'
 ROWS_PARM = 'groups'
-# The inputs: the import's cable, and its beauty.
-CABLE_INPUT = 0
-BEAUTY_INPUT = 1
+# The inputs: the import's beauty, and its cable (import_render's outputs'
+# order: rgba, then aovs).
+BEAUTY_INPUT = 0
+CABLE_INPUT = 1
+# The mix subnet's inputs, in the HDA's order
+MIX_IO = (('rgba', 'vector4'), ('aovs', 'cable'))
+
+
+def swapped_inputs(sources: dict) -> bool:
+    """Whether a mix's inputs are the old way round: ``sources`` maps an
+    input index to the import output index reaching it (None when the
+    input reaches no import). The cable on the beauty input, or the beauty
+    on the cable input, is a mix wired before the inputs swapped."""
+    from tumblepipe.pipe.houdini.cops.import_render import AOVS_OUTPUT, RGBA_OUTPUT
+    beauty, cable = sources.get(BEAUTY_INPUT), sources.get(CABLE_INPUT)
+    return (beauty == AOVS_OUTPUT and cable != AOVS_OUTPUT) or (
+        cable == RGBA_OUTPUT and beauty != RGBA_OUTPUT
+    )
 
 
 class LightMix(ns.Node):
@@ -58,16 +76,41 @@ class LightMix(ns.Node):
             native.parm(f'exposure{index}').set(0.0)
             native.parmTuple(f'tint{index}').set((1.0, 1.0, 1.0))
 
+    def order_inputs(self) -> bool:
+        """Swap a mix wired the old way round (cable first) into the
+        HDA's order; whether it did."""
+        from tumblepipe.pipe.houdini.cops.import_render import upstream_output
+        native = self.native()
+        sources = dict()
+        for index in (BEAUTY_INPUT, CABLE_INPUT):
+            found = upstream_output(native, index)
+            sources[index] = None if found is None else found[1]
+        if not swapped_inputs(sources): return False
+        wires = {c.inputIndex(): (c.inputNode(), c.outputIndex())
+                 for c in native.inputConnections()}
+        for index in (BEAUTY_INPUT, CABLE_INPUT):
+            native.setInput(index, None)
+        for index, other in ((BEAUTY_INPUT, CABLE_INPUT), (CABLE_INPUT, BEAUTY_INPUT)):
+            if other in wires:
+                native.setInput(index, *wires[other])
+        return True
+
+    def cable_import(self):
+        """The import_render whose cable reaches the cable input (inputs
+        put in order first), None when there is none."""
+        from tumblepipe.pipe.houdini.cops.import_render import upstream_import
+        self.order_inputs()
+        return upstream_import(self.native(), input_index=CABLE_INPUT)
+
     def upstream(self):
         """The import_render whose cable this mix reads; the node's error
         when there is none, or when it reads every channel (a mix grades one
         channel's light groups)."""
-        from tumblepipe.pipe.houdini.cops.import_render import upstream_import
-        source = upstream_import(self.native())
+        source = self.cable_import()
         if source is None:
             raise self._error(
-                "the input is not a th::import_render's aovs cable; wire the "
-                "import's second output into the mix"
+                "the aovs input is not a th::import_render's aovs cable; wire "
+                "the import's aovs output into the mix's aovs input"
             )
         if source.is_all_channels():
             raise self._error(
@@ -174,16 +217,21 @@ class LightMix(ns.Node):
 
 
 def _ensure_io(mix):
-    """Give the mix subnet the HDA's two inputs: one saved before the beauty
-    input existed has only the cable."""
-    if mix.parm('inputs').eval() == 2: return
-    mix.parm('inputs').set(2)
-    for index, (label, kind) in enumerate((('aovs', 'cable'), ('rgba', 'vector4')), start=1):
+    """Give the mix subnet the HDA's two inputs in the HDA's order: one
+    saved before the beauty input existed has only the cable, one saved
+    before the inputs swapped has them cable first."""
+    current = [
+        (mix.parm(f'inputlabel{index}').eval(), mix.parm(f'inputtype{index}').eval())
+        for index in range(1, mix.parm('inputs').eval() + 1)
+    ]
+    if current == list(MIX_IO): return
+    mix.parm('inputs').set(len(MIX_IO))
+    for index, (label, kind) in enumerate(MIX_IO, start=1):
         mix.parm(f'inputlabel{index}').set(label)
         mix.parm(f'inputtype{index}').set(kind)
     root_inputs = mix.parent().node('inputs')
-    mix.setInput(CABLE_INPUT, root_inputs, CABLE_INPUT)
     mix.setInput(BEAUTY_INPUT, root_inputs, BEAUTY_INPUT)
+    mix.setInput(CABLE_INPUT, root_inputs, CABLE_INPUT)
 
 
 def _drive(bright, mute: str, exposure: str, tint: str):
@@ -208,6 +256,22 @@ def create(scene, name):
 
 def on_created(raw_node):
     ns.set_node_style(raw_node)
+
+
+def on_loaded(raw_node):
+    """A mix saved before the inputs swapped: its wires come back cable
+    first and its mix network reads them that way, so put the wires in
+    order and rebuild the network. A mix with nothing to read keeps its
+    own error until it is wired."""
+    node = LightMix(raw_node)
+    mix = raw_node.node(MIX)
+    old_io = mix is not None and mix.parm('inputlabel1').eval() != MIX_IO[0][0]
+    if not node.order_inputs() and not old_io: return
+    try:
+        node.sync_rows()
+    except Exception:
+        if mix is not None:
+            _ensure_io(mix)
 
 
 def sync(kwargs):

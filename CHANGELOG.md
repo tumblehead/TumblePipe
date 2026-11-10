@@ -12,6 +12,53 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.100.0 — 2026-11-10
+
+### Features
+- feat(edits): Desktop's Edits opens the project's master edit (`6f2e7be3`)
+- feat(comp): import_render's beauties get their own cable and an output per channel (`86034856`)
+- feat(farm-manager): a status dot on every row and a legend; failed names red (`ff076f0d`)
+
+### Fixes
+- fix(hdas): create_model's Auto-fill Materials reaches its function; the callback audit sees bare phm()/hm() (`3f88a8d1`)
+- fix(editor): Play and Open Edit start the editor without a console window (`0234f85f`)
+- fix(cache): a named cache version must be spelled the standard way (`1cdc3f26`)
+- fix(playblast): a TumbleView farm playblast takes a Karma licence, not a seat (`638b2cca`)
+- fix(playblast): a submitted playblast holds its version until it is written (`305722b2`)
+- fix(imports): opening a scene re-runs its imports only when something moved (`9f44f8cb`)
+- fix(render): th::lpe_tags authors no Karma image filter (one denoise) (`332661c0`)
+- fix(farm): review JPEGs from hoiiotool, not iconvert (no licence) (`49093e3a`)
+- fix(farm): a notify without Discord skips before any work (`da0c4c6c`)
+- fix(farm): a preview-then-full render writes one denoise version (`1a85a56f`)
+- fix(farm): a publish batch's notify waits for the builds it chains (`3a532f81`)
+- fix(comp): COP cameras frame the shot at its render resolution (`2bc754a6`)
+- fix(farm): the slapcomp stacks each channel's beauty, not its light groups (`d08a3634`)
+- fix(farm): render submits name their AOVs in one order (`ae34732c`)
+
+### Documentation
+- docs(comp): note in the comp template design where import_render's outputs went (`2e641444`)
+- docs(qa): ledger 62 overwrite seen live (`be8dcff4`)
+- docs(qa): ledger 64 viewport playblast licence (`6eebad12`)
+- docs(qa): ledger 62 playblast version reservations, 63 job error limit (`bbf579df`)
+- docs(qa): ledger 51 and 59 resolved, 60 hoiiotool review JPEGs, 61 farm licence workers (`5667a0fc`)
+- docs(qa): ledger 58-59, notify skip and double denoise (`fc3529b3`)
+- docs(qa): ledger 55-57, qabeta farm publishes and render fixes (`ffcc1f87`)
+- docs(farm): slapcomp rgba_command docstring names the beauty only (`192b48cc`)
+- docs(qa): v24 customised composite check (ledger 48), ledger 24 closed as env (`2dccecba`)
+- docs(qa): P5 local render results (ledger 45-46), issues #41 #42 (`ea29becc`)
+- docs: regenerate CHANGELOG.md for v1.99.0 (`5312b208`)
+
+### Tests
+- test: preconditions use assume(), so a vacuous property fails (`84a00943`)
+- test(ui): a live-session audit that every push button and action is wired (`9b4394e8`)
+- test(comp): pin import_render's outputs and companion wiring; import without Houdini (`8468b30e`)
+- test(cache): properties for Latest, named versions, and Cache/Load agreement (`34bd3d1b`)
+- test: pin batch_status's priority and newest_radial's version pick (`79545e09`)
+- test(radial): read Radial from hpm's installed packages when the fetch cache is empty (`ccc3479c`)
+
+### Other Changes
+- Merge remote-tracking branch 'origin/master' into qa/pipeline-2026-11 (`13baea83`)
+
 ## v1.99.0 — 2026-11-10
 
 ### Features

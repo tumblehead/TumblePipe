@@ -208,7 +208,7 @@ def _latest_asset_layer_paths(
 
 
 def resolve_shot_build(
-    graph: Graph,
+    graph: Graph | None,
     api,
     shot_uri: Uri,
     shot_departments: list[str],
@@ -219,10 +219,10 @@ def resolve_shot_build(
     """
     Resolve all versions needed to build a shot.
 
-    Uses graph to find entities, then looks up latest versions.
+    Looks up the latest version of each layer the shot needs.
 
     Args:
-        graph: Scanned dependency graph
+        graph: Unused (None is fine): the layers are read directly
         api: API client
         shot_uri: Shot URI to build
         shot_departments: List of shot department names
@@ -239,9 +239,6 @@ def resolve_shot_build(
         'asset_channels': {asset_uri: channel_name}
     }
     """
-    if not graph.scanned:
-        raise ValueError("Graph not scanned")
-
     if asset_channels is None:
         asset_channels = {}
 
@@ -343,7 +340,7 @@ def arrived_from_downstream(inputs, downstream_departments) -> bool:
 
 
 def resolve_asset_build(
-    graph: Graph,
+    graph: Graph | None,
     api,
     asset_uri: Uri,
     asset_departments: list[str],
@@ -356,7 +353,7 @@ def resolve_asset_build(
     (e.g., lookdev, model) in the specified order.
 
     Args:
-        graph: Scanned dependency graph
+        graph: Unused (None is fine): the layers are read directly
         api: API client
         asset_uri: Asset URI to build (e.g., entity:/assets/CHAR/Steen)
         asset_departments: List of department names in priority order
@@ -372,9 +369,6 @@ def resolve_asset_build(
         'asset_channels': {tracked_asset_uri: channel_name}
     }
     """
-    if not graph.scanned:
-        raise ValueError("Graph not scanned")
-
     # Find latest version for each department (with channel support)
     department_layers = {}
     for department_name in asset_departments:

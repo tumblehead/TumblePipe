@@ -130,7 +130,6 @@ def sync_roots(shot_uris=None) -> RootSync:
     Root and shot is its own step: a failure is logged, recorded in the
     result and does not stop the others.
     """
-    from tumblepipe.pipe import graph
     from tumblepipe.pipe.staged_build import build_staged
 
     result = RootSync()
@@ -168,7 +167,6 @@ def sync_roots(shot_uris=None) -> RootSync:
 
     if not to_build:
         return result
-    dependency_graph = graph.scan()
     for shot_uri in to_build:
         try:
             frame_range = get_frame_range(shot_uri)
@@ -178,7 +176,6 @@ def sync_roots(shot_uris=None) -> RootSync:
                 shot_uri,
                 next_staged_file_path(shot_uri),
                 frame_range.full_range(),
-                dependency_graph=dependency_graph,
             )
         except Exception as error:
             log.exception("Building %s failed", shot_uri)

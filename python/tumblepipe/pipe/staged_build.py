@@ -19,7 +19,6 @@ from tumblepipe.config.department import list_departments
 from tumblepipe.config.entities import get_entity_type as _get_entity_type
 from tumblepipe.config.timeline import BlockRange, require_fps
 from tumblepipe.pipe import build as pipe_build
-from tumblepipe.pipe import graph
 from tumblepipe.pipe.paths import current_staged_path
 from tumblepipe.pipe.scene_build import generate_root_version, root_layer_is_stale
 from tumblepipe.pipe.usd.sublayer_refs import (
@@ -360,8 +359,8 @@ def _build_shot(
     channel_name: str,
     dependency_graph=None,
 ) -> None:
-    """Build staged .usda for a shot; ``dependency_graph`` is a scan to
-    reuse (staging several shots scans once), else one is made."""
+    """Build staged .usda for a shot. ``dependency_graph`` is unused (see
+    :func:`build_staged`)."""
     _section('Shot Build')
     print(f'Shot URI: {shot_uri}')
     print(f'Output path: {output_path}')
@@ -389,10 +388,10 @@ def _build_shot(
         root_layer_path = generate_root_version(shot_uri)
         print(f'Generated root layer: {root_layer_path}')
 
-    # Scan dependency graph and resolve all needed layers for shot
-    if dependency_graph is None:
-        print('Scanning dependency graph...')
-        dependency_graph = graph.scan()
+    # Resolve the layers the shot needs. No dependency graph scan: it walked
+    # every asset and shot x department on the project share and nothing
+    # read it (an in-session Build USD sat over a minute on "Evaluating
+    # python", 2026-11-10).
     try:
         resolved_context = pipe_build.resolve_shot_build(
             dependency_graph,
@@ -477,11 +476,9 @@ def _build_asset(
     if not renderable_departments:
         raise StagedBuildError('No renderable asset departments configured')
 
-    # Scan dependency graph and resolve all needed layers for asset
-    print('Scanning dependency graph...')
-    dependency_graph = graph.scan()
+    # Resolve the layers the asset needs (no graph scan, as for a shot)
     resolved_context = pipe_build.resolve_asset_build(
-        dependency_graph,
+        None,
         api,
         asset_uri,
         asset_departments=renderable_departments,
@@ -540,8 +537,9 @@ def build_staged(
 
     A shot needs ``render_range``; an asset takes one only when it is
     animated (its timing goes into the layer). Nothing is written when
-    ``output_path`` already exists. A shot build reuses
-    ``dependency_graph`` when given a scan. Raises :class:`StagedBuildError`.
+    ``output_path`` already exists. ``dependency_graph`` is accepted and
+    ignored: the build reads each layer it needs directly, so a scan of the
+    whole project's graph only cost time. Raises :class:`StagedBuildError`.
     """
     entity_type = _get_entity_type(entity_uri)
     if entity_type == 'shot':

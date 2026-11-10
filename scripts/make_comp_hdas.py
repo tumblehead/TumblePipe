@@ -146,7 +146,7 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             label   "Department"
             type    string
             default {{ "best" }}
-            help    "best: the highest render department below composite with a complete version (denoise, else render)."
+            help    "best: the highest render department below composite with a complete version (denoise, else render), unless the denoise was made from an older render than the newest one."
             {_menu('import_render', 'ImportRender', 'list_department_names')}
             {_callback('import_render', 'changed')}
         }}
@@ -250,13 +250,13 @@ LIGHT_MIX_DS = f"""# Dialog script for th::light_mix::1.0
     script	th::light_mix::1.0
     label	"th light mix"
 
-    input	aovs	aovs
     input	rgba	rgba
+    input	aovs	aovs
     output	rgba	rgba
-    signature	default	Default	{{ Cable RGBA }}	{{ RGBA }}
+    signature	default	Default	{{ RGBA Cable }}	{{ RGBA }}
 
     help {{
-	"A channel's light groups mixed back into its beauty: the graded groups plus Rest (the beauty minus the groups). Inputs: the import's aovs cable and its rgba beauty (wired for you on sync)."
+	"A channel's light groups mixed back into its beauty: the graded groups plus Rest (the beauty minus the groups). Inputs: the import's rgba beauty (wired for you on sync) and its aovs cable, in the order of the import's outputs."
     }}
 
     parm {{
@@ -663,7 +663,8 @@ def build_import_render(root):
 
 
 def build_light_mix(root):
-    io = [('aovs', 'cable'), ('rgba', 'vector4')]
+    from tumblepipe.pipe.houdini.cops.light_mix import MIX_IO
+    io = list(MIX_IO)
     _set_io(root, io, [('rgba', 'vector4')])
     mix = root.createNode('subnet', 'mix')
     _set_io(mix, io, [('rgba', 'vector4')])
@@ -774,6 +775,10 @@ NODES = [
 ]
 
 ON_LOADED = {
+    'light_mix': (
+        'import tumblepipe.pipe.houdini.cops.light_mix as th_node\n\n'
+        "th_node.on_loaded(kwargs['node'])\n"
+    ),
     'export_comp': (
         'import tumblepipe.pipe.houdini.cops.export_comp as th_node\n\n'
         "th_node.on_loaded(kwargs['node'])\n"

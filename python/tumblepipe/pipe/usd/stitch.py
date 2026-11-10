@@ -7,8 +7,12 @@ interactive exporter (``pipe.houdini.lops.export_layer``) and the farm's
 (``farm.workers.export_houdini``) both go through here.
 """
 
+import os
 from pathlib import Path
 import shutil
+
+# The files a flatten repoints: every USD layer an export writes
+USD_SUFFIXES = ('.usd', '.usda', '.usdc')
 
 
 class UsdStitchError(Exception):
@@ -42,24 +46,88 @@ def flatten_sidecar_directories(export_path: Path) -> None:
     """Flatten Houdini's ``{filename}.usd.textures`` sidecar directories.
 
     Houdini writes COP-generated textures into a ``{filename}.usd.textures/``
-    directory beside the exported USD. Move that content up next to the USD
-    and drop the empty directory so the published layer's relative texture
-    references resolve and (for batched export) the stitch can carry the
-    textures through to the output alongside the main layer.
+    directory beside the exported USD, and the layer names each texture
+    there (``@./stage.usd.textures/img/tex/OUT.1.exr@``). Move that content
+    up next to the USD, drop the empty directory, and point every USD file
+    under ``export_path`` at where its textures went, so (for a batched
+    export) the stitch carries the textures through beside the main layer.
+
+    The paths used to stay as they were, so a published lookdev layer named
+    textures in a folder that no longer existed and every COP texture broke
+    after export (Remy, 2026-11-10).
     """
-    for item in export_path.iterdir():
-        if item.is_dir() and item.name.endswith('.usd.textures'):
-            # Move all contents from sidecar dir to parent
-            for sidecar_item in item.iterdir():
-                target = export_path / sidecar_item.name
-                if target.exists():
-                    if target.is_dir():
-                        shutil.rmtree(target)
-                    else:
-                        target.unlink()
-                sidecar_item.rename(target)
-            # Remove empty sidecar directory
-            item.rmdir()
+    sidecars = [
+        item for item in export_path.iterdir()
+        if item.is_dir() and item.name.endswith('.usd.textures')
+    ]
+    if not sidecars: return
+    _repoint_sidecar_paths(export_path, sidecars)
+    for item in sidecars:
+        _merge_into(item, export_path)
+
+
+def _merge_into(source: Path, target: Path) -> None:
+    """Move everything in ``source`` into ``target`` and remove ``source``.
+    Folders merge (two sidecars both holding ``img/`` keep both sets of
+    textures; the first used to be deleted); a file replaces its namesake."""
+    for item in source.iterdir():
+        dest = target / item.name
+        if item.is_dir() and dest.is_dir():
+            _merge_into(item, dest)
+            continue
+        if dest.is_dir():
+            shutil.rmtree(dest)
+        elif dest.exists():
+            dest.unlink()
+        item.rename(dest)
+    source.rmdir()
+
+
+
+def flattened_asset_path(asset_path: str, layer_dir: Path, export_path: Path,
+                         sidecar_names) -> str:
+    """Where a layer's ``asset_path`` points once the sidecar folders named
+    ``sidecar_names`` (directly under ``export_path``) are flattened into
+    ``export_path``; ``asset_path`` itself when it points anywhere else.
+
+    Pure path arithmetic: nothing is read from disk, so a UDIM or frame
+    token (``<UDIM>``, ``$F4``) passes through as text.
+    """
+    if not asset_path or ':' in asset_path.split('/', 1)[0]:
+        return asset_path  # empty, op:/, a URI, or a drive letter
+    if os.path.isabs(asset_path): return asset_path
+    target = os.path.normpath(os.path.join(str(layer_dir), asset_path))
+    root = os.path.normpath(str(export_path))
+    for name in sidecar_names:
+        sidecar = os.path.join(root, name)
+        if target == sidecar or not target.startswith(sidecar + os.sep):
+            continue
+        moved = os.path.join(root, os.path.relpath(target, sidecar))
+        relative = os.path.relpath(moved, str(layer_dir)).replace(os.sep, '/')
+        return relative if relative.startswith('../') else './' + relative
+    return asset_path
+
+
+def _repoint_sidecar_paths(export_path: Path, sidecars: list[Path]) -> None:
+    """Rewrite the asset paths of every USD file under ``export_path`` that
+    point into one of ``sidecars`` to where the flatten moves them."""
+    from pxr import Sdf, UsdUtils
+    names = [item.name for item in sidecars]
+    for layer_path in sorted(export_path.rglob('*')):
+        if layer_path.suffix not in USD_SUFFIXES or not layer_path.is_file():
+            continue
+        layer = Sdf.Layer.FindOrOpen(str(layer_path))
+        if layer is None: continue
+        changed = []
+
+        def repoint(path, layer_dir=layer_path.parent):
+            new = flattened_asset_path(path, layer_dir, export_path, names)
+            if new != path: changed.append(path)
+            return new
+
+        UsdUtils.ModifyAssetPaths(layer, repoint)
+        if changed:
+            layer.Save()
 
 
 def stitch_usd_files(input_files: list[Path], output_file: Path) -> None:

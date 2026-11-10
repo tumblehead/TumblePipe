@@ -204,22 +204,32 @@ def list_light_prims(prim):
     return [subprim for subprim in _iter_prims(prim) if is_light_prim(subprim)]
 
 
-def propose_lpe_tags(prim, separator='_'):
-    """Suggest (tag, [prim paths]) from how the lights are named.
+def propose_lpe_tag(light_prim, separator='_'):
+    """The tag Generate proposes for one light: the LPE tag it already
+    carries, else the leading token of its name ('side_key' -> 'side'),
+    else its whole name ('key')."""
+    carried = _prim_lpe_tags(light_prim)
+    if carried: return carried[0]
+    name = light_prim.GetName()
+    head = name.split(separator, 1)[0]
+    return head if head else name
 
-    Groups every light in the stage by the leading token of its name, so
-    'side_key' and 'side_rim' both propose the tag 'side'. Lights whose
-    name carries no separator have no tag to infer and are skipped.
+
+def propose_lpe_tags(prim, separator='_'):
+    """Suggest (tag, [prim paths]) for every light in the stage, in
+    traversal order: each light by :func:`propose_lpe_tag`, so 'side_key'
+    and 'side_rim' both propose 'side', and a light named 'key' its own tag.
+
+    A light whose name has no separator used to be skipped, so a scene of
+    lights named 'key', 'rim' or 'dome' proposed nothing and Generate
+    cleared the node's rows (Remy, 2026-11-10).
 
     Backs the node's Generate button, which is only ever a starting point:
     tags are a lighting decision and often have nothing to do with names.
     """
     proposals = dict()
     for light_prim in list_light_prims(prim):
-        name = light_prim.GetName()
-        if separator not in name: continue
-        tag_name = name.split(separator, 1)[0]
-        if not tag_name: continue
+        tag_name = propose_lpe_tag(light_prim, separator)
         proposals.setdefault(tag_name, []).append(str(light_prim.GetPath()))
     return [(tag_name, proposals[tag_name]) for tag_name in proposals]
 

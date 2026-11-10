@@ -26,7 +26,7 @@ Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th
 |---|---|---|
 | Shot | `from_context` | Shots only (*Select Shot*); the label under it shows what resolved. In a Multi's workfile the template pins it to the member |
 | Channel | `default` | A menu of the shot's channels, then **All channels** (`*`): every channel in this one node (below) |
-| Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render); or one department |
+| Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render), unless the denoise was made from an older render than the newest one (a render with Denoise off); or one department |
 | Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department) |
 | Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did |
 | Outputs › Channel Outputs | on | All channels only: keeps a Cable Unpack named `<node>_beauties` beside the node, wired to **beauties**, with one RGBA output per channel read (`default`, `heart`, ...), in step with the channels. Turning it off removes the unpack unless something reads it |
@@ -63,8 +63,10 @@ wires follow their field when its fields change.
 
 A channel's light groups mixed back into its beauty. Tab menu
 `_TumblePipe/pipeline`; the template puts one under each import. Inputs
-**aovs** (an import's cable) and **rgba** (its beauty, wired from that import
-for you when it is empty), output **rgba**. A cable that still carries a
+**rgba** (an import's beauty, wired from that import for you when it is
+empty) and **aovs** (its cable), in the order of the import's outputs so
+the wires do not cross; output **rgba**. A mix saved cable first (in an
+older workfile) is rewired in this order when the workfile opens. A cable that still carries a
 `beauty` field (built before 1.99) is read when **rgba** is empty. The mix is the graded groups
 plus **Rest** (the beauty minus the groups), so at defaults it is the beauty
 exactly; see [Compositing → `th::light_mix`](../compositing.md#thlight_mix).

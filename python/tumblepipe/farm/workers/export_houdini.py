@@ -20,6 +20,29 @@ from tumblepipe.farm import worker
 from tumblepipe.farm.specs import export as export_spec
 from tumblepipe.farm.worker import error, headline
 
+def stage_failure(node_path: str, errors) -> str:
+    """Why ``node_path`` has no stage: its first cook error, else a
+    disconnected node (the case the interactive executor skips over)."""
+    errors = [str(e).strip() for e in (errors or ()) if str(e).strip()]
+    if errors:
+        return f'The stage of {node_path} failed to cook: {errors[0]}'
+    return (
+        f'Node has no stage input connected: {node_path}. '
+        'Check for a disconnected export node in the workfile.'
+    )
+
+
+def prepare_chunks_dir(output_path: Path) -> Path:
+    """The folder a batched export writes its chunks into, beside
+    ``output_path``, made with every missing parent: the export folder the
+    worker names (``<temp>/export``) does not exist yet, so a plain mkdir
+    failed and every batched turntable export died with WinError 3 (QA
+    2026-11-10)."""
+    chunks_dir = Path(output_path).parent / 'chunks'
+    chunks_dir.mkdir(parents=True, exist_ok=True)
+    return chunks_dir
+
+
 def _connect(node1, node2):
     port = len(node2.inputs())
     node2.setInput(port, node1)
@@ -67,13 +90,12 @@ def main(
     included_aov_names = _get_aov_names(render_settings_path)
     stage = input_node.stage()
     if stage is None:
-        # Same disconnected-node case the interactive executor skips over.
         # A worker has nobody watching, so it fails - but it must say why
-        # rather than dying on None.GetPseudoRoot().
-        return error(
-            f'Node has no stage input connected: {node_path}. '
-            'Check for a disconnected export node in the workfile.'
-        )
+        # rather than dying on None.GetPseudoRoot(). An errored LOP has no
+        # stage either: name its cook error, not a disconnection (a turntable
+        # whose LOOKDEV could not resolve 'from_context' read "no stage
+        # input connected", QA 2026-11-10).
+        return error(stage_failure(node_path, input_node.errors()))
     root = stage.GetPseudoRoot()
     aov_paths = {
         aov_path.rsplit('/', 1)[1]: aov_path
@@ -113,9 +135,7 @@ def main(
         output_file_name = output_path.name  # e.g., "stage.usd"
         output_dir = output_path.parent
 
-        # Create chunks directory
-        chunks_dir = output_dir / 'chunks'
-        chunks_dir.mkdir(exist_ok=True)
+        chunks_dir = prepare_chunks_dir(output_path)
         chunk_dirs = []
 
         for chunk_start, chunk_end in chunks:
