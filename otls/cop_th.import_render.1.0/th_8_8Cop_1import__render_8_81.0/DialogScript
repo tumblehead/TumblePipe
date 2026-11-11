@@ -94,6 +94,38 @@
         parmtag { "script_callback_language" "python" }
         }
         parm {
+            name    "time_offset_mode"
+            label   "Time Offset"
+            type    string
+            default { "from_multi" }
+            help    "Moves the shot's renders to where the shot sits in this scene: frame F reads the render's frame F minus the offset. From Multi: the shot's place on a Multi's shared timeline (no offset anywhere else). The farm always comps the shot's own frames."
+            menu {
+                "from_multi"    "From Multi"
+                "none"          "None"
+                "manual"        "Manual"
+            }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "time_offset"
+            label   "Offset Frames"
+            type    integer
+            default { "0" }
+            disablewhen "{ time_offset_mode != manual }"
+            range   { -1000 1000 }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "applied_offset"
+            label   "Applied Offset"
+            type    integer
+            invisible
+            default { "0" }
+            help    "The offset the File COPs read (frame F reads the render's F minus it); kept by the node."
+        }
+        parm {
             name    "version_label"
             label   "Reads"
             type    label

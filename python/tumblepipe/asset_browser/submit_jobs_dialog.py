@@ -90,7 +90,12 @@ from tumblepipe.farm.submit import camera as render_camera
 from tumblepipe.farm.submit import settings as resolve
 from tumblepipe.pipe.houdini.ui.report import report_failure
 from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
-from tumblepipe.farm.specs.playblast import PLAYBLAST_RENDERERS, PLAYBLAST_SHADINGS
+from tumblepipe.farm.specs.playblast import (
+    PLAYBLAST_CULLS,
+    PLAYBLAST_LIGHTINGS,
+    PLAYBLAST_RENDERERS,
+    PLAYBLAST_SHADINGS,
+)
 
 from .farm_submit_ui import (
     EDIT_KIND, KIND_COLOURS, KIND_FILLS, FolderTabBar, NoticeCard, Overlay,
@@ -2140,13 +2145,32 @@ class _ContextPane(QWidget):
         self._pb_shading = self._combo('pb_shading', PLAYBLAST_SHADINGS)
         self._pb_shading.setToolTip(
             "TumbleView only. Every option has ambient occlusion.\n"
-            "lit: the scene's colours under lights that follow the camera.\n"
-            "clay: the same lights on plain grey.\n"
+            "lit: the scene's colours, lit as Lighting says.\n"
+            "clay: the same light on plain grey.\n"
             "albedo: the scene's colours, unlit.\n"
             "occlusion: white, with only the ambient occlusion."
         )
         shading_row = self._row(self._pb_shading, revert=('pb_shading',))
         form.addRow("Shading:", shading_row)
+        self._pb_lighting = self._combo('pb_lighting', PLAYBLAST_LIGHTINGS)
+        self._pb_lighting.setToolTip(
+            "TumbleView only. What lights lit and clay shading.\n"
+            "scene: the scene's own lights when it has any, else the "
+            "headlight.\n"
+            "headlight: key, fill and rim lights that follow the camera, "
+            "always."
+        )
+        lighting_row = self._row(self._pb_lighting, revert=('pb_lighting',))
+        form.addRow("Lighting:", lighting_row)
+        self._pb_cull = self._combo('pb_cull', PLAYBLAST_CULLS)
+        self._pb_cull.setToolTip(
+            "TumbleView only. Which faces are left out.\n"
+            "off: none (only what the scene itself asks).\n"
+            "back: every mesh's back faces, so a single-sided wall seen "
+            "from behind is see-through."
+        )
+        cull_row = self._row(self._pb_cull, revert=('pb_cull',))
+        form.addRow("Culling:", cull_row)
         self._pb_motion_blur = self._check('pb_motion_blur', "Motion blur")
         self._pb_motion_blur.setToolTip(
             "TumbleView only. Blur what moves while the shot camera's shutter "
@@ -2196,7 +2220,10 @@ class _ContextPane(QWidget):
                 (form.labelForField(row), row, text) for row, text in rows
             ]
             for renderer, rows in (
-                ('viewport', ((shading_row, "Shading"), (blur_row, "Blur"))),
+                ('viewport', (
+                    (shading_row, "Shading"), (lighting_row, "Lighting"),
+                    (cull_row, "Culling"), (blur_row, "Blur"),
+                )),
                 ('karma', (
                     (light_row, "Light"), (samples_row, "Samples"),
                     (materials_row, "Materials"),

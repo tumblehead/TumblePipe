@@ -1612,7 +1612,8 @@ The delegate normally writes opaque frames: every pixel over the grey
 backdrop gradient, alpha 1. `TH_PLAYBLAST_ALPHA` (`1`/`true`/`on`; unset,
 `0`, `false` or `off` is off, the default), or the render setting
 `th:alpha` (a bool or int on the render settings, which wins over the
-variable, as `th:samples`, `th:shading` and the blur settings do), leaves
+variable, as `th:samples`, `th:shading`, `th:lighting`, `th:cull` and the
+blur settings do), leaves
 the background transparent. `viewport_env(..., alpha=True)`
 (`apps/viewport_renderer.py`) sets the variable for husk.
 
@@ -1717,10 +1718,15 @@ picture for any light set (`scene_lights()` in `gpu.rs`).
   husk under a distant and a sphere light on the CPU and the GPU and checks
   its centre against the mapping, and that an invisible light and the
   headlight setting give the rig.
+- Artists set it as **Lighting** in the farm dialog's playblast (the
+  look's `lighting`, `specs.playblast.PLAYBLAST_LIGHTINGS`, the entity
+  property `playblast.lighting`) and on the LOP and SOP th::playblast
+  (parm `viewport_lighting`; the LOP's `lighting` parm is Houdini GL's).
+  The farm worker and `tumbleview.husk_env` pass it as
+  `TH_PLAYBLAST_LIGHTING` (`viewport_env(..., lighting=)`). A look or node
+  from before it existed reads `scene`.
 - Not done: light linking, shadows, light filters, shaping (spot cones,
-  IES), dome textures, mesh/portal/plugin lights, instanced lights, and
-  `th:lighting` in the farm dialog and the th::playblast node (farm
-  playblasts take the default, the scene's lights).
+  IES), dome textures, mesh/portal/plugin lights, instanced lights.
 
 ### hdThPlayblast: see-through surfaces
 
@@ -1875,9 +1881,24 @@ viewer's frame key, so changing it redraws.
   mirrored instance gets the other pipeline. No discard in the shader, so
   early depth testing stays.
 - **What culls:** husk's pass says Nothing and USD prims DontCare, so
-  playblasts and the farm cull nothing, bit for bit as before. A draw
+  playblasts and the farm cull nothing unless asked (below). A draw
   mode's cards ask for Back. What the Houdini viewer's pass asks for (its
   backface culling display option) has not been checked in the GUI.
+- **`th:cull`** (a string render setting; unset, `TH_PLAYBLAST_CULL`, read
+  as `th:shading` is): `back` gives every mesh view cull 1 (back) whatever
+  Hydra's styles or `doubleSided` say (`_PassSettings::cullBack`, passed
+  through `_Gather` to `ThMesh::Views`); anything else, `off` by default,
+  is the resolution above. It is part of the pass settings, so the
+  viewer's frame key changes with it. Artists set it as **Culling** in
+  the farm dialog's playblast (the look's `cull`,
+  `specs.playblast.PLAYBLAST_CULLS`, entity property `playblast.cull`)
+  and **Backface Culling** on the LOP and SOP th::playblast (parm
+  `cull`); `viewport_env(..., cull=)` passes it to husk. A look or node
+  from before it existed reads `off`. `.ci/smoke_delegate.py`
+  (`_check_cull`) renders a single-sided quad from the front and from
+  behind on the CPU and the GPU: with `back` the one seen from behind is
+  gone and the one seen from the front is the unculled picture to the
+  pixel.
 
 `props.rs` (`culling_drops_exactly_the_instances_showing_the_culled_side`)
 holds the picture to the bit to the instances left drawn with nothing

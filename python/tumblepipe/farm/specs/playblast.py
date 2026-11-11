@@ -19,6 +19,8 @@ config = {
     'look': {                      # see valid_look
         'renderer': 'viewport' | 'karma',   # optional, absent = 'karma'
         'shading': 'lit' | 'clay' | 'albedo' | 'occlusion',  # viewport only; optional, absent = 'lit'
+        'lighting': 'scene' | 'headlight',  # viewport only; optional, absent = 'scene'
+        'cull': 'off' | 'back',    # viewport only; optional, absent = 'off'
         'light': 'dome' | 'headlight' | 'scene',   # karma only
         'samples': 'int',          # karma only
         'materials': 'bool',       # karma only: scene materials, not clay
@@ -63,11 +65,28 @@ PLAYBLAST_RENDERERS = ('viewport', 'karma')
 #   occlusion -- white, darkened only by the ambient occlusion.
 PLAYBLAST_SHADINGS = ('lit', 'clay', 'albedo', 'occlusion')
 
+# What lights the viewport renderer's frame (hdThPlayblast's th:lighting,
+# TH_PLAYBLAST_LIGHTING), for the shadings that are lit:
+#   scene     -- the scene's own lights (distant, sphere, disk, rect,
+#                cylinder and dome) when it has any visible, else the
+#                headlight rig. The default.
+#   headlight -- key, fill and rim lights fixed to the camera, always.
+# Not the look's 'light', which is Karma's.
+PLAYBLAST_LIGHTINGS = ('scene', 'headlight')
+
+# Which faces the viewport renderer leaves out (hdThPlayblast's th:cull,
+# TH_PLAYBLAST_CULL):
+#   off  -- only what the scene's own cull styles ask; a playblast through
+#           husk culls nothing. The default.
+#   back -- every mesh's back faces, so a single-sided wall seen from
+#           behind is see-through (Discord, Martin 2026-11-11).
+PLAYBLAST_CULLS = ('off', 'back')
+
 # The look a playblast gets when its submission names none: a collapse job
 # submitted before the look existed. The dialog's defaults
 # (farm.submit.settings) match it; tests/test_submit_settings.py pins that.
 DEFAULT_LOOK = {
-    'renderer': 'viewport', 'shading': 'lit',
+    'renderer': 'viewport', 'shading': 'lit', 'lighting': 'scene', 'cull': 'off',
     'light': 'dome', 'samples': 32, 'materials': False,
     'motion_blur': False, 'dof': True, 'blur_samples': 16,
 }
@@ -95,6 +114,19 @@ def look_shading(look: dict) -> str:
     return look.get('shading', 'lit')
 
 
+def look_lighting(look: dict) -> str:
+    """What lights a valid look's viewport frame. A look submitted before
+    the lighting existed is lit by the scene, which is what it was drawn
+    with."""
+    return look.get('lighting', 'scene')
+
+
+def look_cull(look: dict) -> str:
+    """Which faces a valid look's viewport frame leaves out. A look
+    submitted before culling existed culls nothing."""
+    return look.get('cull', 'off')
+
+
 def look_blur(look: dict) -> tuple[bool, bool, int]:
     """A valid look's viewport blurs: motion blur, depth of field, and blur
     samples. A look submitted before the blurs existed is drawn sharp."""
@@ -106,11 +138,14 @@ def look_blur(look: dict) -> tuple[bool, bool, int]:
 
 
 def valid_look(look) -> bool:
-    """A playblast look: its renderer, the viewport's shading and blurs,
-    how Karma lights it, its samples, clay or materials."""
+    """A playblast look: its renderer, the viewport's shading, lighting,
+    culling and blurs, how Karma lights it, its samples, clay or
+    materials."""
     if not isinstance(look, dict): return False
     if look_renderer(look) not in PLAYBLAST_RENDERERS: return False
     if look_shading(look) not in PLAYBLAST_SHADINGS: return False
+    if look_lighting(look) not in PLAYBLAST_LIGHTINGS: return False
+    if look_cull(look) not in PLAYBLAST_CULLS: return False
     if not check_str(look, 'light'): return False
     if look['light'] not in PLAYBLAST_LIGHTS: return False
     if not check_int(look, 'samples'): return False

@@ -195,9 +195,26 @@ def houdini_python(hfs: Path) -> Path:
 
 
 def forced_site_packages(python: Path) -> list[str]:
-    """Where Houdini keeps PySide6 for that interpreter (Windows layout)."""
-    forced = python.parent / 'lib' / 'site-packages-forced'
-    return [str(forced)] if forced.is_dir() else []
+    """Where Houdini keeps PySide6 for that interpreter, which is not on its
+    own ``sys.path``: ``python313/lib/site-packages-forced`` on Windows,
+    ``<prefix>/lib/python3.13/site-packages-forced`` beside ``bin/`` on
+    macOS (seen in 22.0.466's Python.framework) and Linux. Without it the
+    Farm Submit grid failed on macOS with "No module named 'PySide6'"
+    (Martin, 2026-11-11)."""
+    candidates = [python.parent / 'lib' / 'site-packages-forced']
+    candidates += sorted(
+        (python.parent.parent / 'lib').glob('python3*/site-packages-forced')
+    )
+    return [str(path) for path in candidates if path.is_dir()]
+
+
+def macos_frameworks(hfs: Path) -> Path | None:
+    """The Houdini app's ``Frameworks`` folder when ``hfs`` is a macOS HFS
+    (``<app>/Frameworks/Houdini.framework/Versions/<v>/Resources``)."""
+    parents = hfs.parents
+    if len(parents) > 3 and parents[2].name == 'Houdini.framework':
+        return parents[3]
+    return None
 
 
 # ── replaying the Houdini package files ───────────────────
@@ -314,6 +331,17 @@ def build_env(base: dict, package_dir: Path, hfs: Path, version: tuple[int, ...]
         env.setdefault('TH_USER', env['TT_USER_NAME'])
     replay_packages(package_dir, env)
     env['PATH'] = str(hfs / 'bin') + os.pathsep + env.get('PATH', '')
+    # macOS: plugins built against Houdini (the tumbleResolver USD plugin)
+    # link @rpath/Houdini.framework, which Houdini's own executable finds
+    # and its bare Python does not: every Farm Submit from the Render
+    # Manager failed "Failed to load plugin 'tumbleResolver'" (Martin,
+    # 2026-11-11). dyld then looks in the app's Frameworks folder.
+    frameworks = macos_frameworks(hfs)
+    if frameworks is not None:
+        existing = env.get('DYLD_FALLBACK_FRAMEWORK_PATH')
+        env['DYLD_FALLBACK_FRAMEWORK_PATH'] = (
+            str(frameworks) + (os.pathsep + existing if existing else '')
+        )
     env['PYTHONUTF8'] = '1'
     return env
 

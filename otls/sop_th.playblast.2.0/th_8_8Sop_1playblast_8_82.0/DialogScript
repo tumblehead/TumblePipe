@@ -89,6 +89,36 @@
     }
 
     groupsimple {
+        name    "settings"
+        label   "Settings"
+
+        parm {
+            name    "viewport_lighting"
+            label   "Lighting"
+            type    string
+            default { "scene" }
+            help    "What lights the playblast. Scene Lights: the scene's own lights when it has any, else the headlight. Headlight: key, fill and rim lights that follow the camera, always."
+            menu {
+                "scene"     "Scene Lights"
+                "headlight" "Headlight"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "cull"
+            label   "Backface Culling"
+            type    string
+            default { "off" }
+            help    "Off: draw both sides of every face (only what the scene itself asks is culled). Back Faces: leave out every mesh's back faces, so a single-sided wall seen from behind is see-through."
+            menu {
+                "off"       "Off"
+                "back"      "Back Faces"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupsimple {
         name    "actions"
         label   "Actions"
 

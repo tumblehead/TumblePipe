@@ -155,6 +155,17 @@ uint32_t _LightingNumber(std::string const& name)
     return n == "headlight" ? 1u : 0u;
 }
 
+// Which faces every mesh drops: "off" (only what Hydra's cull styles ask,
+// see Culling in ThMesh::Views) or "back" (every mesh's back faces, whatever
+// Hydra asks); unset, TH_PLAYBLAST_CULL, else off.
+TfToken const _tokCull("th:cull");
+
+// Whether th:cull asks for every mesh's back faces culled.
+bool _CullBack(std::string const& name)
+{
+    return TfStringToLower(TfStringTrim(name)) == "back";
+}
+
 // Motion blur over the render camera's shutter; unset, TH_PLAYBLAST_MOTION_BLUR
 // (1/true/on), else off.
 TfToken const _tokMotionBlur("th:motionBlur");
@@ -1529,15 +1540,17 @@ public:
     // styles cull only a mesh that is not doubleSided. husk's pass says
     // Nothing and USD prims DontCare, so playblasts cull nothing; the
     // viewer's pass, and stand-ins such as a draw mode's cards (Back),
-    // can. The core culls by winding (raster::Cull).
+    // can. The core culls by winding (raster::Cull). `cullBack` (th:cull
+    // "back") overrides all of that: every view drops its back faces.
     size_t Views(std::vector<ThMeshView>* views, std::vector<double>* transforms, std::vector<double>* keys,
                  std::function<ThMaterial const*(SdfPath const&)> const& materialOf,
                  std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
-                 size_t instancerKeys, _Shutter const& shutter, HdCullStyle passCull) const
+                 size_t instancerKeys, _Shutter const& shutter, HdCullStyle passCull,
+                 bool cullBack) const
     {
         ThMeshView view;
         if (!_View(&view, transforms, keys, instancesAt, instancerKeys, shutter)) return 0;
-        view.cull = _CullCode(passCull);
+        view.cull = cullBack ? 1u : _CullCode(passCull);
         if (_parts.empty()) {
             _Paint(&view, materialOf(GetMaterialId()), 0);
             views->push_back(view);
@@ -2852,6 +2865,7 @@ struct _PassSettings
     int samples = _defaultSamples;
     uint32_t shading = 0;
     uint32_t lighting = 0;  // th:lighting: 0 scene, 1 headlight
+    bool cullBack = false;  // th:cull "back": every mesh's back faces culled
     bool ao = true;
     bool alpha = false;
     _BlurSettings blur;
@@ -2869,7 +2883,7 @@ struct _PassSettings
 
     auto Tie() const
     {
-        return std::make_tuple(samples, shading, lighting, ao, alpha, blur.motion, blur.dof, blur.samples, blur.fps,
+        return std::make_tuple(samples, shading, lighting, cullBack, ao, alpha, blur.motion, blur.dof, blur.samples, blur.fps,
                                interactive, screenSized, gpu, linearDepth);
     }
     bool operator==(_PassSettings const& o) const { return Tie() == o.Tie(); }
@@ -2964,7 +2978,7 @@ private:
         _Shutter shutter;
         ThFrame const frame = _MakeFrame(state, settings, buffers.sized->GetWidth(),
                                          buffers.sized->GetHeight(), &shutter);
-        std::shared_ptr<_Job> const job = _Gather(state, renderTags, shutter, buffers);
+        std::shared_ptr<_Job> const job = _Gather(state, renderTags, shutter, buffers, settings.cullBack);
         auto const gathered = std::chrono::steady_clock::now();
         _Image image;
         int32_t const status = _Draw(*job, frame, &image, nullptr, _cache, &_workers->cacheMutex);
@@ -3064,7 +3078,7 @@ private:
             }
             frames.push_back(frame);
             auto const t2 = _Clock::now();
-            _started = _Gather(state, renderTags, shutter, buffers);
+            _started = _Gather(state, renderTags, shutter, buffers, settings.cullBack);
             gatherMs = ms(t2, _Clock::now());
             _startedSamples = frame.samples;
             _startedShutter = shutter;
@@ -3241,9 +3255,10 @@ private:
     }
 
     // The meshes the pass draws (_Draws), with what they point at, culled
-    // as the pass state says (ThMesh::Views).
+    // as the pass state says (ThMesh::Views), or every back face when
+    // `cullBack` (th:cull "back").
     std::shared_ptr<_Job> _Gather(HdRenderPassStateSharedPtr const& state, TfTokenVector const& renderTags,
-                                  _Shutter const& shutter, _Bindings const& buffers) const
+                                  _Shutter const& shutter, _Bindings const& buffers, bool cullBack) const
     {
         HdCullStyle const passCull = state->GetCullStyle();
         auto job = std::make_shared<_Job>();
@@ -3274,7 +3289,7 @@ private:
             // picked as the mesh.
             size_t const first = job->views.size();
             if (mesh->Views(&job->views, &job->transforms[i], &job->keys[i], materialOf, instancesAt, instancerKeys,
-                            shutter, passCull) == 0) {
+                            shutter, passCull, cullBack) == 0) {
                 continue;
             }
             for (size_t k = first; k < job->views.size(); ++k) {
@@ -3609,6 +3624,9 @@ private:
         std::string lighting = _SettingString(GetRenderSetting(_tokLighting));
         if (lighting.empty()) lighting = _EnvLower("TH_PLAYBLAST_LIGHTING");
         s.lighting = _LightingNumber(lighting);
+        std::string cull = _SettingString(GetRenderSetting(_tokCull));
+        if (cull.empty()) cull = _EnvLower("TH_PLAYBLAST_CULL");
+        s.cullBack = _CullBack(cull);
         VtValue const aoSetting = GetRenderSetting(_tokAo);
         if (aoSetting.IsHolding<bool>()) {
             s.ao = aoSetting.UncheckedGet<bool>();

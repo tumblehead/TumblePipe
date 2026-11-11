@@ -17,7 +17,12 @@ the config the job passes. Then it checks:
   import kept the old channel's frames until the department was toggled);
 - each light mix gets its import's ``rgba`` on its beauty input, takes
   rgba then aovs so the wires do not cross, and cooks with no warning; a
-  mix saved cable first is rewired on load (Remy, 2026-11-10);
+  mix saved cable first is rewired on load (Remy, 2026-11-10), also when
+  a saved workfile is opened with hou.hipFile.load: its rebuild inside the
+  load crashed Houdini (Remy, 2026-11-11);
+- export_comp passes its input through, so it shows what it exports, and
+  its Frame Range menu names the frames From Config gives (Remy,
+  2026-11-11);
 - Channel ``*`` reads every channel in one node: ``rgba`` is the channels
   over each other, the cable every channel's AOVs, the ``beauties`` cable
   each channel's beauty; a channel not rendered yet is left out and named;
@@ -42,6 +47,10 @@ the config the job passes. Then it checks:
 - the freeze pins what resolved, and a channel no import reads is reported;
 - a Multi's workfile (two shots in one comp network) submits one composite
   version per shot, each with only its own imports;
+- on a shared timeline a member's imports read its renders where it sits
+  (frame F reads the render's F - offset), a member at offset 0 keeps plain
+  frames, and an import set to None (as the worker sets them) reads the
+  shot's own frames (Remy, 2026-11-11);
 - the worker's output has no "Render failed".
 
 Shot SH010 stores its channels without ``default`` (``["chars"]``), SH020
@@ -302,6 +311,12 @@ def check_single(template, shot_uri, label):
     export = export_comp.find_exports()[0]
     check(f'{label}: export_comp has no warning while every channel is read',
           export.refresh_warning() == '', export.parm('warning').eval())
+    upstream = export.native().input(0)
+    close(f'{label}: export_comp shows its input', render_average(export.native()),
+          render_average(upstream))
+    menu_label = export.parm('frame_range').menuLabels()[0]
+    check(f'{label}: From Config names its frames',
+          menu_label == f'From Config ({FIRST}-{LAST})', menu_label)
 
     # A channel added to the shot later
     own = api.config.get_own_properties(shot_uri) or {}
@@ -324,6 +339,27 @@ def check_single(template, shot_uri, label):
     check(f'{label}: the freeze leaves the workfile on latest',
           all(n.get_version_setting() == 'latest' for n in imports.values()))
     return export, submits[0]
+
+
+def check_load_cable_first(label):
+    """A workfile saved with a cable-first mix, opened: the mix is put in
+    order once the load has finished. Rebuilt inside the load, it crashed
+    Houdini (signal 11 in OP_Node::syncNodeVersionIfNeeded; Remy,
+    2026-11-11): this check then never prints, the process dies."""
+    native = hou.node('/stage/comp/light_mix_chars')
+    source = native.input(light_mix.CABLE_INPUT)
+    native.setInput(0, source, import_render.AOVS_OUTPUT)
+    native.setInput(1, source, import_render.RGBA_OUTPUT)
+    hip = TEMP_ROOT / f'{label.split()[0]}_cable_first.hip'
+    hou.hipFile.save(path_str(hip))
+    hou.hipFile.load(path_str(hip), suppress_save_prompt=True, ignore_load_warnings=True)
+    native = hou.node('/stage/comp/light_mix_chars')
+    wires = sorted((c.inputIndex(), c.outputIndex()) for c in native.inputConnections())
+    check(f'{label}: a saved cable-first mix opens without a crash, rewired rgba then aovs',
+          wires == [(light_mix.BEAUTY_INPUT, import_render.RGBA_OUTPUT),
+                    (light_mix.CABLE_INPUT, import_render.AOVS_OUTPUT)], str(wires))
+    close(f'{label}: the reopened mix at defaults equals its beauty',
+          render_average(native), CHARS_BEAUTY)
 
 
 def check_channel_switch(shot_uri, label):
@@ -658,6 +694,55 @@ def check_multi(template, shots):
               json.dumps(submit.plan))
         config = export_comp.job_config(submit, 'composite', 'workfile.hip')
         check(f'Multi: {member} job is for its own shot', config['entity']['uri'] == str(submit.shot_uri))
+    check_shared_timeline(shots)
+
+
+def _file_frames(node, frame):
+    """The frame numbers ``node``'s File COPs read at scene frame ``frame``."""
+    dive = node.native().node(import_render.DIVE)
+    return sorted({
+        int(f.parm('filename').evalAtFrame(frame).rsplit('.', 2)[-2])
+        for f in dive.children() if f.type().name() == 'file'
+    })
+
+
+def check_shared_timeline(shots):
+    """The second member sits right after the first on a shared timeline:
+    its scene frames are its own plus (LAST - FIRST + 1)."""
+    from tumblepipe.pipe.houdini import multi_timeline as session_timeline
+    first, second = shots
+    shift = LAST - FIRST + 1
+    offsets = {str(first): 0, str(second): shift}
+    saved = session_timeline.scene_time_offset
+    session_timeline.scene_time_offset = lambda uri: offsets.get(str(uri), 0)
+    try:
+        import_render.sync_time_offsets()
+        for node in import_render.find_imports():
+            uri = str(node.get_entity_uri())
+            name = node.native().name()
+            if uri == str(second):
+                check(f'Shared timeline: {name} reads its own frames where it sits',
+                      node.get_applied_offset() == shift
+                      and _file_frames(node, FIRST + shift) == [FIRST],
+                      f'{node.get_applied_offset()} {_file_frames(node, FIRST + shift)}')
+            else:
+                plain = all(
+                    import_render.PLAIN_FRAME in f.parm('filename').unexpandedString()
+                    for f in node.native().node(import_render.DIVE).children()
+                    if f.type().name() == 'file'
+                )
+                check(f'Shared timeline: {name} at offset 0 keeps plain frames',
+                      node.get_applied_offset() == 0 and plain
+                      and _file_frames(node, FIRST) == [FIRST])
+        # As the composite worker sets them: the shot's own frames
+        for node in import_render.find_imports(second):
+            node.parm('time_offset_mode').set('none')
+            node.execute()
+            check(f'Shared timeline: {node.native().name()} set to None reads its own frames',
+                  node.get_applied_offset() == 0 and _file_frames(node, FIRST) == [FIRST],
+                  f'{node.get_applied_offset()} {_file_frames(node, FIRST)}')
+    finally:
+        session_timeline.scene_time_offset = saved
 
 
 def main():
@@ -668,6 +753,7 @@ def main():
     template = load_template()
     for shot_uri, label in ((sh010, 'SH010 ["chars"]'), (sh020, 'SH020 ["default","chars"]')):
         _, submit = check_single(template, shot_uri, label)
+        check_load_cable_first(label)
         check_channel_switch(shot_uri, label)
         version = run_worker(shot_uri, submit, label.split()[0])
         check(f'{label}: first composite version is v0001', version == 'v0001', version)

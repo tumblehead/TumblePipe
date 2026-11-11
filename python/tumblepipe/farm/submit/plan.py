@@ -57,7 +57,7 @@ import os
 import subprocess
 import sys
 import traceback
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 PLAN_VERSION = 1
 PLAN_NAME = 'plan.json'
@@ -240,7 +240,31 @@ def child_env(plan: dict, base: dict | None = None) -> dict:
     ]
     env['PYTHONPATH'] = os.pathsep.join(parts)
     env['PYTHONUTF8'] = '1'
+    _find_houdini_frameworks(env)
     return env
+
+
+def macos_frameworks(hfs: str) -> PurePosixPath | None:
+    """The Houdini app's ``Frameworks`` folder when ``hfs`` is a macOS HFS
+    (``<app>/Frameworks/Houdini.framework/Versions/<v>/Resources``)."""
+    parents = PurePosixPath(hfs).parents
+    if len(parents) > 3 and parents[2].name == 'Houdini.framework':
+        return parents[3]
+    return None
+
+
+def _find_houdini_frameworks(env: dict) -> None:
+    """macOS: the runner is Houdini's bare Python, and USD plugins built
+    against Houdini (tumbleResolver) link ``@rpath/Houdini.framework``,
+    which only Houdini's own executable finds. Every submit from the Render
+    Manager failed "Failed to load plugin 'tumbleResolver'" (Martin,
+    2026-11-11); dyld now falls back to the app's Frameworks folder."""
+    hfs = env.get('HFS')
+    frameworks = macos_frameworks(hfs) if hfs else None
+    if frameworks is None: return
+    existing = [p for p in env.get('DYLD_FALLBACK_FRAMEWORK_PATH', '').split(':') if p]
+    if str(frameworks) in existing: return
+    env['DYLD_FALLBACK_FRAMEWORK_PATH'] = ':'.join([str(frameworks)] + existing)
 
 
 def launch(plan_path: Path) -> subprocess.Popen:

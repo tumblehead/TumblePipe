@@ -229,10 +229,11 @@
             type    string
             default { "single_frame" }
             menu {
-                "single_frame"      "Single Frame"
-                "playback_range"    "Playback Range"
-                "from_context"      "From Entity (Database)"
-                "from_settings"     "From Settings"
+                [ "from tumblepipe.pipe.houdini import frame_range" ]
+                [ "from tumblepipe.pipe.houdini import cache" ]
+                [ "" ]
+                [ "return frame_range.menu(cache.LopCache(hou.pwd()), (('single_frame', 'Single Frame'), ('playback_range', 'Playback Range'), ('from_context', 'From Entity (Database)'), ('from_settings', 'From Settings')))" ]
+                language python
             }
             parmtag { "script_callback_language" "python" }
         }

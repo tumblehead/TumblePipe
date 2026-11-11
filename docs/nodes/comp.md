@@ -29,6 +29,8 @@ Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th
 | Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render), unless the denoise was made from an older render than the newest one (a render with Denoise off); or one department |
 | Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department) |
 | Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did |
+| Time Offset | From Multi | Moves the shot's renders to where the shot sits in this scene: frame F reads the render's frame F minus the offset. **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** keeps the render on its own frames; **Manual** uses **Offset Frames**. The farm always comps each shot on its own frames, whatever this says |
+| Offset Frames | `0` | Manual only |
 | Outputs › Channel Outputs | on | All channels only: keeps a Cable Unpack named `<node>_beauties` beside the node, wired to **beauties**, with one RGBA output per channel read (`default`, `heart`, ...), in step with the channels. Turning it off removes the unpack unless something reads it |
 | Outputs › AOV Outputs | off | Keeps a Cable Unpack named `<node>_aovs` beside the node, wired to **aovs**, with one typed output per field, and keeps its fields in step when the version changes. Turning it off removes the unpack unless something reads it |
 
@@ -94,7 +96,8 @@ anyone syncs.
 
 The end of a comp graph, and its farm submit. Tab menu
 `_TumblePipe/pipeline`; the template ends in one, display flag on. One RGBA
-input. What a submit writes and chains is in
+input, passed through unchanged to its **comp** output, so the node shows
+what it exports and can be wired on. What a submit writes and chains is in
 [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s).
 Source: [`otls/cop_th.export_comp.1.0`](../../otls/cop_th.export_comp.1.0/th_8_8Cop_1export__comp_8_81.0/DialogScript),
 [`cops/export_comp.py`](../../python/tumblepipe/pipe/houdini/cops/export_comp.py).
@@ -105,7 +108,7 @@ Source: [`otls/cop_th.export_comp.1.0`](../../otls/cop_th.export_comp.1.0/th_8_8
 | Layer | `comp` | `comp` = the merged comp, written as the version's `slapcomp` layer; or a channel, for a per-channel output |
 | Warning | | Shot channels no import reads (Layer `comp` only) |
 | Jobs › Preview Frames | off | Also render first, middle and last frame as a quick task, posted before the full range |
-| Jobs › Frame Range | From Config | The frames every import's render covers (each frozen read's `context.json` range, intersected), else the shot's range plus roll; or From Settings (**Start/End-Frame**, **Pre/Post-Roll**). Submit warns when a range reaches past the renders: those frames comp over empty input. The farm log also has a `WARNING:` line per channel for any frame its render does not cover |
+| Jobs › Frame Range | From Config | The menu shows the frames From Config gives, e.g. `From Config (1001-1100)`. The frames every import's render covers (each frozen read's `context.json` range, intersected), else the shot's range plus roll; or From Settings (**Start/End-Frame**, **Pre/Post-Roll**). Submit warns when a range reaches past the renders: those frames comp over empty input. The farm log also has a `WARNING:` line per channel for any frame its render does not cover |
 | Jobs › Step, Batch Size | `1`, `5` | |
 | Jobs › Copy to Edit | off | Sync the comp into the edit when it is done |
 | Farm › Pool, Priority | the project's default pool, `50` | |

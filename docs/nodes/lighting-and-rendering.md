@@ -560,8 +560,10 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 | Camera | first camera | The cameras in the input stage: under `/cameras` or `/scene/cameras`, else anywhere on the stage. Left empty it is the first one, the camera the menu shows |
 | Renderer | TumbleView | **TumbleView**: the farm playblast's renderer (hdThPlayblast) run with husk, the same look as a farm playblast, with a progress bar that stops husk when cancelled. **Houdini GL**: Houdini's flipbook, exactly as the viewport draws (hair, curves and volumes too). Existing nodes take the default, TumbleView |
 | Shading | Lit | TumbleView only: Lit, Clay, Albedo or Occlusion, as in the farm dialog |
+| Lighting (TumbleView) | Scene Lights | TumbleView only: what lights Lit and Clay. **Scene Lights**: the scene's own lights, or the camera lights when it has none. **Headlight**: key, fill and rim lights that follow the camera, always. Parm `viewport_lighting`, the render setting `th:lighting` |
+| Backface Culling | Off | TumbleView only. **Off**: both sides of every face are drawn. **Back Faces**: every mesh's back faces are left out, so a single-sided wall seen from behind is see-through. Parm `cull`, the render setting `th:cull` |
 | Shading Mode, Lighting | Smooth Shaded, Headlight Only | Houdini GL only: viewport look of the flipbook |
-| Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**) |
+| Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**). The menu names the frames From Config gives, e.g. `From Config (1001-1100)` |
 | Resolution | the shot's render resolution | An expression: the shot's `render.resolution`, so the playblast has the render's frame; `1280 720` while no shot resolves. Type over it for your own size; Revert to Defaults brings the shot's back. A node made before 1.85 keeps the size it had |
 | Motion Blur, Depth of Field, Blur Samples | off, on, 16 | Blurs from the camera's Shutter Open/Close and its F-Stop and Focus Distance: TumbleView's, or the flipbook's own under Houdini GL; Blur Samples is how many images each frame averages |
 | Render Layers | off | TumbleView only: also write one movie per render layer, see [Layered playblasts](#layered-playblasts) |
@@ -587,9 +589,17 @@ Gotchas:
 - TumbleView's Lit and Clay shading use the scene's own lights (distant,
   sphere, rect, disk, cylinder and dome, as bright as Karma renders them, no
   shadows); a scene without lights gets fixed lights that follow the camera.
-  The render setting `th:lighting` = `headlight` (or `TH_PLAYBLAST_LIGHTING`)
-  keeps the camera lights even in a lit scene. See [Compositing →
-  Playblast](../compositing.md#playblast).
+  **Lighting** = Headlight (the render setting `th:lighting` = `headlight`,
+  or `TH_PLAYBLAST_LIGHTING`) keeps the camera lights even in a lit scene.
+  See [Compositing → Playblast](../compositing.md#playblast).
+- TumbleView draws both sides of every face, as husk asks for no culling.
+  **Backface Culling** = Back Faces (the render setting `th:cull` = `back`,
+  or `TH_PLAYBLAST_CULL`) leaves out every mesh's back faces, whatever the
+  mesh's `doubleSided`: a room's wall between the camera and the action
+  stops hiding it when its faces point inward. The SOP `th::playblast` has
+  the same **Lighting** and **Backface Culling** parms (its Live playblast
+  uses them too), and the farm dialog's playblast has **Lighting** and
+  **Culling**.
 - TumbleView always draws over its grey backdrop unless
   `TH_PLAYBLAST_ALPHA=1` (or the render setting `th:alpha`) asks for a
   transparent background: alpha is then each pixel's coverage. What the

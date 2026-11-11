@@ -262,7 +262,24 @@ def on_loaded(raw_node):
     """A mix saved before the inputs swapped: its wires come back cable
     first and its mix network reads them that way, so put the wires in
     order and rebuild the network. A mix with nothing to read keeps its
-    own error until it is wired."""
+    own error until it is wired.
+
+    The rebuild destroys nodes, so it waits until the scene has loaded:
+    done inside the load it crashed Houdini (Remy, 2026-11-11;
+    ``pipe.houdini.after_load``)."""
+    from tumblepipe.pipe.houdini import after_load
+    session_id = raw_node.sessionId()
+
+    def repair():
+        native = hou.nodeBySessionId(session_id)
+        if native is not None:
+            repair_loaded(native)
+
+    after_load.run(repair)
+
+
+def repair_loaded(raw_node):
+    """:func:`on_loaded`'s work, on a scene that has finished loading."""
     node = LightMix(raw_node)
     mix = raw_node.node(MIX)
     old_io = mix is not None and mix.parm('inputlabel1').eval() != MIX_IO[0][0]

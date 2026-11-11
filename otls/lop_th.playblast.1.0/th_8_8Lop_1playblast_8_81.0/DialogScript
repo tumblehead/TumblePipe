@@ -119,6 +119,32 @@
             parmtag { "script_callback_language" "python" }
         }
         parm {
+            name    "viewport_lighting"
+            label   "Lighting"
+            type    string
+            default { "scene" }
+            help    "What lights Lit and Clay shading. Scene Lights: the scene's own lights when it has any, else the headlight. Headlight: key, fill and rim lights that follow the camera, always."
+            hidewhen "{ renderer != viewport }"
+            menu {
+                "scene"     "Scene Lights"
+                "headlight" "Headlight"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "cull"
+            label   "Backface Culling"
+            type    string
+            default { "off" }
+            help    "Off: draw both sides of every face (only what the scene itself asks is culled). Back Faces: leave out every mesh's back faces, so a single-sided wall seen from behind is see-through."
+            hidewhen "{ renderer != viewport }"
+            menu {
+                "off"       "Off"
+                "back"      "Back Faces"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
             name    "shadingmode"
             label   "Shading Mode"
             type    ordinal
@@ -160,8 +186,11 @@
             type    string
             default { "from_context" }
             menu {
-                "from_context"  "From Config"
-                "from_settings" "From Settings"
+                [ "from tumblepipe.pipe.houdini import frame_range" ]
+                [ "from tumblepipe.pipe.houdini.lops import playblast" ]
+                [ "" ]
+                [ "return frame_range.menu(playblast.Playblast(hou.pwd()), (('from_context', 'From Config'), ('from_settings', 'From Settings')))" ]
+                language python
             }
             parmtag { "script_callback_language" "python" }
         }

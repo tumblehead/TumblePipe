@@ -16,6 +16,8 @@ a bare pane (only what the section builder touches) and pins:
      line saying why (greyed-out rows read as locked, 2026-11).
   5. The viewport renderer shows as TumbleView and reads back as
      ``viewport``, the name looks and jobs keep.
+  6. Lighting and Culling (Martin, 2026-11-11) are TumbleView rows whose
+     menus offer the spec's values and read back as the look's tokens.
 
 Run (no Houdini, no project):
     QT_QPA_PLATFORM=offscreen TUMBLETROVE_PYTHON=<tumbletrove>/python \\
@@ -150,6 +152,25 @@ def main() -> int:
           renderer.widget.currentText() == 'TumbleView' and renderer.value() == 'viewport',
           f"{renderer.widget.currentText()!r} -> {renderer.value()!r}")
 
+    # 6. Lighting and Culling (Martin, 2026-11-11): TumbleView rows, menus
+    # of the spec's values, read back as the look's tokens
+    from tumblepipe.farm.specs.playblast import PLAYBLAST_CULLS, PLAYBLAST_LIGHTINGS
+    for key, label, values in (('pb_lighting', 'Lighting', PLAYBLAST_LIGHTINGS),
+                               ('pb_cull', 'Culling', PLAYBLAST_CULLS)):
+        field = pane._fields[key]
+        widget = field.widget
+        items = [widget.itemText(i) for i in range(widget.count())]
+        offered = [item for item in items if item != sjd.PER_ENTITY_TEXT]
+        check(f"{label} offers {list(values)}", offered == list(values), str(items))
+        renderer.seed('viewport')
+        pane._scope_playblast_look()
+        texts = [text for _label, _row, text in pane._pb_rows['viewport']]
+        check(f"{label} is a TumbleView row", label in texts, str(texts))
+        for value in values:
+            field.seed(value)
+            check(f"{label} seeded {value} reads back {value}", field.value() == value,
+                  repr(field.value()))
+
     shot = os.environ.get('PLAYBLAST_SECTION_SCREENSHOT')
     if shot:
         box.resize(520, box.sizeHint().height())
@@ -158,7 +179,7 @@ def main() -> int:
             pane._scope_playblast_look()
             box.grab().save(shot.replace('.png', f'_{chosen}.png'))
 
-    total = 1 + 3 + 3 + 6 + 1
+    total = 1 + 3 + 3 + 6 + 1 + 2 * 4
     print(f"\n{total - len(FAILED)}/{total} checks passed")
     return 1 if FAILED else 0
 

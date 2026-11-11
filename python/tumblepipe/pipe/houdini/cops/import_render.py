@@ -39,6 +39,17 @@ The node joins ``scene_imports.REFRESH_SPECS``: opening a workfile
 re-resolves an import on ``latest``, like every other import. When it
 rebuilds, the light mixes reading its cable sync their rows and the
 export_comps re-check which channels the comp reads.
+
+On a Multi's shared timeline a member shot sits on other frames than its
+own (``config.multi_timeline``), and its renders are on its own. The node's
+**Time Offset** (``pipe.houdini.time_offset``, From Multi by default, as on
+import_shot) moves the renders there: frame F of the scene reads the
+render's frame F - offset (Remy, 2026-11-11: a bookmark-timeline Multi's
+comp read every member but the first on the wrong frames, so they were
+black). The offset is kept in ``applied_offset``, which the File COPs read,
+so a timeline edit moves them without a rebuild (:func:`sync_time_offsets`).
+An import that never had an offset keeps plain ``$F4`` frames. The composite
+worker sets every import to None: a farm comp writes the shot's own frames.
 """
 
 import hou
@@ -51,8 +62,15 @@ from tumblepipe.pipe import comp
 from tumblepipe.pipe.paths import get_render_context
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
+from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
 
 TYPE_NAME = 'import_render'
+
+# The offset the File COPs read, and the frame expression that reads it:
+# frame F of the scene is the render's frame F - offset.
+APPLIED_OFFSET_PARM = 'applied_offset'
+PLAIN_FRAME = '$F4'
+OFFSET_FRAME = f'`padzero(4, $F-ch("../../{APPLIED_OFFSET_PARM}"))`'
 
 # The editable subnet the File COPs live in, its cable packs, and the
 # node's outputs (in order).
@@ -116,9 +134,39 @@ def version_menu(shot_uri: Uri | None, department: str, channel: str) -> list[st
     return [comp.LATEST] + comp.list_versions(renders, department, channel)
 
 
-class ImportRender(EntityNode):
+class ImportRender(TimeOffsetNode, EntityNode):
 
     ENTITY_CONTEXTS = ('shots',)
+
+    # Time offset (a shared-timeline Multi)
+
+    def get_applied_offset(self) -> int:
+        parm = self.parm(APPLIED_OFFSET_PARM)
+        return 0 if parm is None else int(parm.eval())
+
+    def files_follow_offset(self) -> bool:
+        """Whether the dive's File COPs read ``applied_offset`` (an import
+        that never had an offset reads plain ``$F4``)."""
+        dive = self.native().node(DIVE)
+        if dive is None: return False
+        files = [c for c in dive.children() if c.type().name() == 'file']
+        return bool(files) and all(
+            OFFSET_FRAME in f.parm('filename').unexpandedString() for f in files
+        )
+
+    def sync_time_offset(self) -> bool:
+        """Store the node's time offset where its File COPs read it;
+        whether the dive needs a rebuild to read it (an offset on an import
+        whose File COPs read plain frames)."""
+        try:
+            offset = self.get_time_offset()
+        except ns.NodeError:
+            offset = 0
+        parm = self.native().parm(APPLIED_OFFSET_PARM)
+        if parm is None: return False  # an HDA build without the parm
+        if int(parm.eval()) != offset:
+            parm.set(offset)
+        return offset != 0 and not self.files_follow_offset()
 
     # Menus (read-only; Houdini evaluates them on every redraw)
 
@@ -288,9 +336,11 @@ class ImportRender(EntityNode):
         plan = comp.dive_plan(
             {c: r.aovs for c, r in reads.items()}, self.is_all_channels()
         )
-        rebuilt = key != previous_key or not self._dive_built(plan)
+        offset_unread = self.sync_time_offset()
+        rebuilt = key != previous_key or not self._dive_built(plan) or offset_unread
         if rebuilt:
-            self._build(reads, plan, key)
+            follow = self.get_applied_offset() != 0 or self.files_follow_offset()
+            self._build(reads, plan, key, follow_offset=follow)
         self._update_labels(self._label(reads, skipped, previous, previous_key))
         if rebuilt:
             _sync_downstream_mixes(self.native())
@@ -340,11 +390,12 @@ class ImportRender(EntityNode):
         if dive.node(BEAUTIES_PACK) is None: return False
         return all(dive.node(read.name) is not None for read in plan.files)
 
-    def _build(self, reads: dict[str, comp.Resolved], plan: comp.DivePlan, key: str):
+    def _build(self, reads: dict[str, comp.Resolved], plan: comp.DivePlan, key: str,
+               follow_offset: bool = False):
         """Rebuild the dive: one File COP per AOV read, the cable's into
         the pack, each beauty into the beauties pack, the beauty (or the
         channels laid over each other) to ``rgba``. Nothing outside the dive
-        changes."""
+        changes. ``follow_offset``: the File COPs read ``applied_offset``."""
         dive = self.native().node(DIVE)
         if dive is None:
             raise self._error(f'the node has no {DIVE} subnet (a broken HDA)')
@@ -357,7 +408,8 @@ class ImportRender(EntityNode):
         files: dict[str, hou.Node] = dict()
         for column, read in enumerate(plan.files):
             file_node = dive.createNode('file', read.name)
-            _configure_file(file_node, reads[read.channel].aovs[read.aov], read.aov)
+            _configure_file(file_node, reads[read.channel].aovs[read.aov], read.aov,
+                            follow_offset)
             file_node.setPosition(hou.Vector2(column * 2.5, 2.0))
             files[read.name] = file_node
         beauties = [files[name] for name in plan.beauties]
@@ -556,9 +608,9 @@ def _over_chain(dive, beauties: list, position):
     return back
 
 
-def _configure_file(file_node, aov, field: str):
+def _configure_file(file_node, aov, field: str, follow_offset: bool = False):
     render_range = aov.get_frame_range()
-    frame_path = aov.get_aov_frame_path('$F4')
+    frame_path = aov.get_aov_frame_path(OFFSET_FRAME if follow_offset else PLAIN_FRAME)
     file_node.parm('filename').set(path_str(frame_path))
     file_node.parm('videoframestart').deleteAllKeyframes()
     if render_range is not None:
@@ -582,6 +634,23 @@ def _unbuildable_message(shot_uri, resolved: comp.Resolved, problems) -> str:
         f'"{resolved.channel}": ' + '; '.join(problems) + '. Renders are read '
         f'from {render_root}/<department>/<channel>/v####/<aov>/.'
     )
+
+
+def sync_time_offsets() -> int:
+    """Give every import its current time offset (the open Multi's shared
+    timeline was laid out or edited); an import whose File COPs did not
+    read an offset yet rebuilds. The number that changed what they read."""
+    changed = 0
+    for node in find_imports():
+        before = node.get_applied_offset()
+        if node.sync_time_offset():
+            try:
+                node.execute()
+            except ns.NodeError:
+                continue
+        if node.get_applied_offset() != before:
+            changed += 1
+    return changed
 
 
 def find_imports(entity_uri: Uri | None = None) -> list[ImportRender]:

@@ -52,7 +52,11 @@ class FrameRangeNode:
         return self.parm(self.FRAME_RANGE_PARM).eval()
 
     def get_frame_range(self) -> FrameRange:
-        source = self.get_frame_range_source()
+        return self.frame_range_for(self.get_frame_range_source())
+
+    def frame_range_for(self, source: str) -> FrameRange:
+        """The range ``source`` gives on this node, whichever the menu is set
+        to (the menu shows what each choice would give: :func:`menu`)."""
         match source:
             case FrameRangeSource.SINGLE_FRAME:
                 frame = round(hou.frame())
@@ -89,3 +93,40 @@ class FrameRangeNode:
         return FrameRange(
             frame_settings[0], frame_settings[1], start_roll, end_roll, step
         )
+
+
+# The menu entries that show the frames they give: the settings are on the
+# node already, and a single frame is the current one.
+_SHOWN = (FrameRangeSource.ENTITY, FrameRangeSource.PLAYBACK_RANGE)
+
+
+def describe(frame_range: FrameRange) -> str:
+    """``1001-1100``, then the rolls and the step when there are any."""
+    text = f'{frame_range.start_frame}-{frame_range.end_frame}'
+    if frame_range.start_roll or frame_range.end_roll:
+        text += f', roll {frame_range.start_roll}/{frame_range.end_roll}'
+    if frame_range.step_size != 1:
+        text += f', step {frame_range.step_size}'
+    return text
+
+
+def menu_items(entries, range_for) -> list[str]:
+    """A Frame Range menu as Houdini's flat [token, label, ...] list: the
+    From Config and Playback Range entries name the frames they give
+    (Remy, 2026-11-11: an export's From Config hid a long shot's length).
+    ``range_for(token)`` gives a token's range or raises; an entry whose
+    range cannot be had keeps its plain label."""
+    items = []
+    for token, label in entries:
+        if token in _SHOWN:
+            try:
+                label = f'{label} ({describe(range_for(token))})'
+            except Exception:  # noqa: BLE001
+                pass
+        items += [token, label]
+    return items
+
+
+def menu(node: FrameRangeNode, entries) -> list[str]:
+    """:func:`menu_items` for ``node``'s Frame Range menu script."""
+    return menu_items(entries, node.frame_range_for)

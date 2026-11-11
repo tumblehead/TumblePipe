@@ -34,7 +34,8 @@ class Plan:
     camera, the shot's own frames, its fps and resolution, and how far a
     shared-timeline Multi moves the shot in this session (``time_offset``:
     the animation is cached on the moved frames, ``cache_range``, and
-    rendered on the shot's own)."""
+    rendered on the shot's own), and TumbleView's ``lighting`` and ``cull``
+    (the node's Lighting and Backface Culling)."""
     entity_uri: Uri
     department_name: str
     camera_path: str
@@ -42,6 +43,8 @@ class Plan:
     fps: float
     res: tuple[int, int]
     time_offset: int = 0
+    lighting: str = 'scene'
+    cull: str = 'off'
 
     @property
     def cache_range(self) -> BlockRange:
@@ -144,6 +147,7 @@ class Playblast(TimeOffsetNode, EntityNode):
             fps=fps,
             res=render_camera.resolution(str(entity_uri)) or DEFAULT_RES,
             time_offset=self.get_time_offset(),
+            **tumbleview.node_lighting_and_cull(self.native()),
         )
 
     def playblast(self):
@@ -170,6 +174,7 @@ class Playblast(TimeOffsetNode, EntityNode):
             try:
                 tumbleview.render(
                     cache_path, jpg_path, camera_path, list(render_range), fps, res,
+                    look=tumbleview.Look(lighting=plan.lighting, cull=plan.cull),
                     time_offset=plan.time_offset,
                 )
             except tumbleview.TumbleViewError as error:

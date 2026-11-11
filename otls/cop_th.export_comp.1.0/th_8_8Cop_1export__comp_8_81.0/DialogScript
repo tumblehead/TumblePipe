@@ -6,10 +6,11 @@
     label	"th export comp"
 
     input	comp	comp
-    signature	default	Default	{ RGBA }	{ }
+    output	comp	comp
+    signature	default	Default	{ RGBA }	{ RGBA }
 
     help {
-	"The end of a comp. Submit renders every export_comp in the workfile as one composite version per shot."
+	"The end of a comp. Submit renders every export_comp in the workfile as one composite version per shot. Its input passes through, so the node shows what it exports."
     }
 
     groupsimple {
@@ -85,8 +86,11 @@
             type    string
             default { "from_context" }
             menu {
-                "from_context"  "From Config"
-                "from_settings" "From Settings"
+                [ "from tumblepipe.pipe.houdini import frame_range" ]
+                [ "from tumblepipe.pipe.houdini.cops import export_comp" ]
+                [ "" ]
+                [ "return frame_range.menu(export_comp.ExportComp(hou.pwd()), (('from_context', 'From Config'), ('from_settings', 'From Settings')))" ]
+                language python
             }
         }
         parm {

@@ -217,6 +217,12 @@ FIELDS: tuple[Field, ...] = (
           default='viewport', kind='str'),
     Field('pb_shading', 'playblast', 'Shading', prop='playblast.shading',
           default='lit', kind='str'),
+    # The viewport renderer's lighting and culling (specs.playblast.
+    # PLAYBLAST_LIGHTINGS / PLAYBLAST_CULLS); 'light' below is Karma's.
+    Field('pb_lighting', 'playblast', 'Lighting', prop='playblast.lighting',
+          default='scene', kind='str'),
+    Field('pb_cull', 'playblast', 'Culling', prop='playblast.cull',
+          default='off', kind='str'),
     Field('pb_light', 'playblast', 'Light', prop='playblast.light',
           default='dome', kind='str'),
     Field('pb_samples', 'playblast', 'Samples', prop='playblast.samples',
@@ -256,7 +262,8 @@ FIELDS: tuple[Field, ...] = (
 
 #: The look fields and the ``pb_look`` keys they become.
 PLAYBLAST_LOOK_KEYS = {
-    'pb_renderer': 'renderer', 'pb_shading': 'shading', 'pb_light': 'light',
+    'pb_renderer': 'renderer', 'pb_shading': 'shading',
+    'pb_lighting': 'lighting', 'pb_cull': 'cull', 'pb_light': 'light',
     'pb_samples': 'samples', 'pb_materials': 'materials',
     'pb_motion_blur': 'motion_blur', 'pb_dof': 'dof',
     'pb_blur_samples': 'blur_samples',

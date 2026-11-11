@@ -261,7 +261,7 @@ Source: [`otls/lop_th.export_layer.1.0`](../../otls/lop_th.export_layer.1.0/th_8
 | Entity | `from_context` | Asset or shot to publish |
 | Channel | `default` | Channel to publish under |
 | Department | `from_context` | Department to publish; menu lists the entity's publishable departments. Any of them, from any of the entity's workfiles: the node publishes the workfile it lives in, so a lookdev export in the model workfile publishes lookdev from there |
-| Frame Range | From context | From context (the entity's database range, roll included) or From settings |
+| Frame Range | From context | From context (the entity's database range, roll included) or From settings. The menu names the frames From context gives, e.g. `(1001-1100)` |
 | First/Last/Step-Frame, Pre/Post-Roll | `1001 1001 1`, `0 0` | Only with From settings. **Step is ignored** — exports always run every frame |
 | Time Offset | From Multi | Where the frame range sits in this scene: the export cooks the range moved by the offset, then moves the written samples back, so the published layer is on the range's own frames. **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** and **Manual** (**Offset Frames**) as on `import_shot` |
 | Offset Frames | `0` | With Manual |
@@ -429,7 +429,7 @@ Source: [`otls/lop_th.cache.1.0`](../../otls/lop_th.cache.1.0/th_8_8Lop_1cache_8
 | Name | `$OS` | Cache name (menu lists the names in the addressed folder). The browse button beside it lists **every** cache of the entity, in all departments and both locations, with its latest version, who wrote it and when; picking one sets Department, Location, Name and Version |
 | Version | *(empty)* | Version to load; **Latest** button fills in the newest finished one. Changing Entity, Department, Location or Name keeps the version if the new cache has it, else switches to that cache's latest |
 | Location | Project | `project:` or `proxy:` storage |
-| Frame Range | Single Frame | Single Frame, Playback Range, **From Entity (Database)** (the entity's range plus roll), or From Settings |
+| Frame Range | Single Frame | Single Frame, Playback Range, **From Entity (Database)** (the entity's range plus roll), or From Settings. The menu names the frames Playback Range and From Entity give, e.g. `(1001-1100)` |
 | First/Last/Step-Frame, Pre/Post-Roll | `1001 1001 1`, `0 0` | With From Settings |
 
 **Cache** writes the next version and loads it; **Load** loads the chosen

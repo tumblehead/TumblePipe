@@ -41,6 +41,16 @@ def _point_at_shot(native, entity_uri: Uri):
         native.parm('entity').set(str(entity_uri))
 
 
+def _own_frames(native):
+    """An import reads the shot's renders on the shot's own frames: the
+    worker comps and writes those, whatever shared timeline the workfile's
+    Multi lays the shot on (``cops.import_render``'s Time Offset)."""
+    from tumblepipe.pipe.houdini.time_offset import TimeOffsetSource
+    parm = native.parm('time_offset_mode')
+    if parm is not None:
+        parm.set(TimeOffsetSource.NONE)
+
+
 def resolve_imports(entity_uri: Uri) -> tuple[dict | None, str | None]:
     """A re-comp's imports: every import_render of the shot resolved on
     its own settings now. ``(plan, None)`` with what each read, or
@@ -49,6 +59,7 @@ def resolve_imports(entity_uri: Uri) -> tuple[dict | None, str | None]:
     import tumblepipe.pipe.houdini.nodes as ns
     for native in ns.list_by_node_type(import_render.TYPE_NAME, 'Cop'):
         _point_at_shot(native, entity_uri)
+        _own_frames(native)
     states = []
     for node in import_render.find_imports(entity_uri):
         try:
@@ -131,6 +142,7 @@ def pin_imports(imports: dict, entity_uri: Uri) -> str | None:
             return f'Import not found: {node_path}'
         node = ImportRender(native)
         _point_at_shot(native, entity_uri)
+        _own_frames(native)
         if node.is_all_channels():
             node.pin_channels(pins)
         else:

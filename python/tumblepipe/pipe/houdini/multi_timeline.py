@@ -98,10 +98,22 @@ def apply(group: groups_mod.Group | None = None) -> bool:
         if group is not None and group.shared_timeline else None
     )
     sync_bookmarks(group if span is not None else None)
+    _sync_comp_offsets()
     if span is None:
         return False
     playbar.set_frame_range(span, preserve_current_frame=True)
     return True
+
+
+def _sync_comp_offsets() -> None:
+    """The comp's th::import_render nodes read each member's renders where
+    it sits on the shared timeline (``cops.import_render``). A failure is
+    printed and never stops the layout."""
+    try:
+        from tumblepipe.pipe.houdini.cops import import_render
+        import_render.sync_time_offsets()
+    except Exception as exc:  # noqa: BLE001
+        print(f'th::import_render time offsets: {exc}')
 
 
 def apply_if_open(group_uri: Uri) -> bool:

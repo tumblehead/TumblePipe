@@ -137,8 +137,11 @@
             type    string
             default { "from_context" }
             menu {
-                "from_context"  "From context"
-                "from_settings" "From settings"
+                [ "from tumblepipe.pipe.houdini import frame_range" ]
+                [ "from tumblepipe.pipe.houdini.lops import layer_split" ]
+                [ "" ]
+                [ "return frame_range.menu(layer_split.LayerSplit(hou.pwd()), (('from_context', 'From context'), ('from_settings', 'From settings')))" ]
+                language python
             }
             parmtag { "script_callback_language" "python" }
         }

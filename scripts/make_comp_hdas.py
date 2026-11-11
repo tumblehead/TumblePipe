@@ -160,6 +160,36 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             {_callback('import_render', 'changed')}
         }}
         parm {{
+            name    "time_offset_mode"
+            label   "Time Offset"
+            type    string
+            default {{ "from_multi" }}
+            help    "Moves the shot's renders to where the shot sits in this scene: frame F reads the render's frame F minus the offset. From Multi: the shot's place on a Multi's shared timeline (no offset anywhere else). The farm always comps the shot's own frames."
+            menu {{
+                "from_multi"    "From Multi"
+                "none"          "None"
+                "manual"        "Manual"
+            }}
+            {_callback('import_render', 'changed')}
+        }}
+        parm {{
+            name    "time_offset"
+            label   "Offset Frames"
+            type    integer
+            default {{ "0" }}
+            disablewhen "{{ time_offset_mode != manual }}"
+            range   {{ -1000 1000 }}
+            {_callback('import_render', 'changed')}
+        }}
+        parm {{
+            name    "applied_offset"
+            label   "Applied Offset"
+            type    integer
+            invisible
+            default {{ "0" }}
+            help    "The offset the File COPs read (frame F reads the render's F minus it); kept by the node."
+        }}
+        parm {{
             name    "version_label"
             label   "Reads"
             type    label
@@ -355,10 +385,11 @@ EXPORT_COMP_DS = f"""# Dialog script for th::export_comp::1.0
     label	"th export comp"
 
     input	comp	comp
-    signature	default	Default	{{ RGBA }}	{{ }}
+    output	comp	comp
+    signature	default	Default	{{ RGBA }}	{{ RGBA }}
 
     help {{
-	"The end of a comp. Submit renders every export_comp in the workfile as one composite version per shot."
+	"The end of a comp. Submit renders every export_comp in the workfile as one composite version per shot. Its input passes through, so the node shows what it exports."
     }}
 
     groupsimple {{
@@ -401,8 +432,11 @@ EXPORT_COMP_DS = f"""# Dialog script for th::export_comp::1.0
             type    string
             default {{ "from_context" }}
             menu {{
-                "from_context"  "From Config"
-                "from_settings" "From Settings"
+                [ "from tumblepipe.pipe.houdini import frame_range" ]
+                [ "from tumblepipe.pipe.houdini.cops import export_comp" ]
+                [ "" ]
+                [ "return frame_range.menu(export_comp.ExportComp(hou.pwd()), (('from_context', 'From Config'), ('from_settings', 'From Settings')))" ]
+                language python
             }}
         }}
         parm {{
@@ -716,7 +750,10 @@ class _Unwired:
 
 
 def build_export_comp(root):
-    _set_io(root, [('comp', 'vector4')], [])
+    # The input passes through, so the node shows what it exports in the
+    # viewer and its thumbnail (Remy, 2026-11-11: it showed nothing).
+    _set_io(root, [('comp', 'vector4')], [('comp', 'vector4')])
+    root.node('outputs').setInput(0, root.node('inputs'), 0)
     render = root.createNode('rop_image', 'render')
     render.setInput(0, root.node('inputs'), 0)
     render.parm('trange').set('normal')
