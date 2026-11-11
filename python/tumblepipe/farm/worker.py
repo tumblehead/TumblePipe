@@ -84,6 +84,21 @@ def run(
     return main(config, BlockRange(args.first_frame, args.last_frame))
 
 
+def stepped(frame_span: BlockRange, config: dict) -> BlockRange:
+    """The frames a task owns: its span's bounds (the farm's per-task argv)
+    by the job's ``step_size`` (the context's, ``checks.valid_step``).
+
+    Workers get only a task's first and last frame. A stepped full render
+    (step 10, batch 5: task 1001-1041) dropped the step and rendered all 41
+    frames of the span, every frame of the shot (QA 2026-11-10); the
+    composite worker had already been fixed the same way."""
+    return BlockRange(
+        frame_span.first_frame,
+        frame_span.last_frame,
+        config['step_size'],
+    )
+
+
 def ensure_dir(path: Path, attempts: int = 5, delay: float = 0.2) -> None:
     """``path.mkdir(parents=True, exist_ok=True)`` that survives a race on SMB.
 

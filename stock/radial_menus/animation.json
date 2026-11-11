@@ -65,6 +65,16 @@
       "icon_override": "$TH_PIPELINE_PATH/resources/Cache.png",
       "hidden": false,
       "close_on_select": false
+    },
+    {
+      "action": "tumblepipe.live_playblast",
+      "submenu": "",
+      "release_action": "",
+      "node_type": "",
+      "label_override": "Live Playblast",
+      "icon_override": null,
+      "hidden": false,
+      "close_on_select": true
     }
   ],
   "center": null,

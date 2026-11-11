@@ -3,7 +3,8 @@
 //! mesh Hydra can hand over, including broken ones (indices past the
 //! points, NaN points from a bad deformer).
 
-use crate::ffi::{linear_depth, th_render, ThFrame, ThMeshView};
+use crate::ffi::{linear_depth, th_render, ThFrame, ThLight, ThMeshView};
+use crate::lights::{LightShape, Lighting, SceneLight, SceneLights};
 use crate::math::{self, Mat4, Vec3};
 use crate::composite::{self, Shading};
 use crate::blur::{self, Blur, Lens};
@@ -32,7 +33,7 @@ fn camera() -> (Mat4, Mat4) {
 fn frame(width: usize, height: usize, samples: usize) -> Frame {
     let (world_to_clip, view_to_world) = camera();
     Frame { width, height, world_to_clip, view_to_world, samples, shading: Shading::Lit, ao: true, blur: Blur::OFF,
-            alpha: false }
+            alpha: false, lights: crate::lights::SceneLights::NONE }
 }
 
 /// A sample count the rasteriser has a pattern for.
@@ -75,7 +76,7 @@ fn plain<'a>(points: &'a [Vec3], triangles: &'a [[u32; 3]], transforms: &'a [Mat
     Mesh {
         points, triangles, corner_normals: None, corner_colors: None, corner_uvs: None,
         base_color: [0.6, 0.5, 0.4], tiles: Vec::new(), transforms, key: None,
-        points_close: None, transform_keys: &[],
+        points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing,
     }
 }
 
@@ -275,7 +276,8 @@ proptest! {
         let (world_to_clip, view_to_world) = camera();
         let frame = ThFrame { width: 24, height: 16, world_to_clip, view_to_world, samples: 1, shading: 0, ao: 1,
                              blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-                             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0 };
+                             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
+            lights: std::ptr::null(), light_count: 0, lighting: 0 };
         let view = |polygonal: u32, normals: *const f32| ThMeshView {
             points: points.as_ptr() as *const f32,
             point_count: points.len() as u32,
@@ -295,6 +297,7 @@ proptest! {
             points_close: std::ptr::null(),
             transform_keys: std::ptr::null(),
             transform_key_count: 0,
+            transparency: 0.0, cull: 0,
         };
         let draw = |v: ThMeshView| {
             let mut color = vec![0.0f32; 24 * 16 * 4];
@@ -982,6 +985,7 @@ fn the_abi_carries_motion_and_the_lens() {
             width: 32, height: 24, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
             blur_samples, motion, camera_keys: 0, cameras: [0.0; 64],
             focal_length: 0.5, f_stop, focus_distance: 20.0, alpha: 0, gpu: 0, linear_depth: 0,
+            lights: std::ptr::null(), light_count: 0, lighting: 0,
         };
         let view = ThMeshView {
             points: points.as_ptr() as *const f32, point_count: 4,
@@ -991,7 +995,7 @@ fn the_abi_carries_motion_and_the_lens() {
             transforms: one.as_ptr() as *const f64, transform_count: 1, polygonal: 0, key: 0, version: 0,
             points_close: if with_close { close.as_ptr() as *const f32 } else { std::ptr::null() },
             transform_keys: if with_keys { keys.as_ptr() as *const f64 } else { std::ptr::null() },
-            transform_key_count: if with_keys { 2 } else { 0 },
+            transform_key_count: if with_keys { 2 } else { 0 }, transparency: 0.0, cull: 0,
         };
         let mut color = vec![0.0f32; 32 * 24 * 4];
         assert_eq!(unsafe { th_render(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) }, TH_OK);
@@ -1477,7 +1481,8 @@ fn the_abi_alpha_switch_reaches_the_post_pass() {
     let (world_to_clip, view_to_world) = camera();
     let mut frame = ThFrame { width: 8, height: 6, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
                               blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-                              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 1, gpu: 0, linear_depth: 0 };
+                              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 1, gpu: 0, linear_depth: 0,
+            lights: std::ptr::null(), light_count: 0, lighting: 0 };
     let mut color = vec![0.5f32; 8 * 6 * 4];
     let status = unsafe {
         th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null())
@@ -1514,6 +1519,7 @@ fn view_of(points: &[Vec3], triangles: &[[u32; 3]], transforms: &[Mat4]) -> ThMe
         points_close: std::ptr::null(),
         transform_keys: std::ptr::null(),
         transform_key_count: 0,
+        transparency: 0.0, cull: 0,
     }
 }
 
@@ -1521,7 +1527,8 @@ fn abi_frame(width: u32, height: u32, samples: u32) -> ThFrame {
     let (world_to_clip, view_to_world) = camera();
     ThFrame { width, height, world_to_clip, view_to_world, samples, shading: 0, ao: 0,
               blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0 }
+              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
+            lights: std::ptr::null(), light_count: 0, lighting: 0 }
 }
 
 proptest! {
@@ -2065,4 +2072,677 @@ proptest! {
         prop_assert_eq!(linear(1.0), f32::MAX);
         prop_assert_eq!(linear(1.5), f32::MAX);
     }
+}
+
+// ---------------------------------------------------------------------------
+// See-through surfaces (raster::Surface::Glass): a mesh of opacity under 1
+// blended over the opaque picture.
+// ---------------------------------------------------------------------------
+
+/// A square filling the whole view (the camera sees +-d at distance d) at
+/// world depth `z`, of `opacity` and `color`.
+fn pane<'a>(points: &'a [Vec3], transforms: &'a [Mat4], color: Vec3, opacity: f32) -> Mesh<'a> {
+    Mesh { base_color: color, opacity, ..plain(points, &QUAD, transforms) }
+}
+
+/// The corners and transform of a square at depth `z` that fills the view.
+fn pane_at(z: f64) -> (Vec<Vec3>, [Mat4; 1]) {
+    let size = (5.0 - z) as f32 * 2.0 + 1.0;
+    (turned_quad(size, 0.0, 0.0), [translation(0.0, 0.0, z)])
+}
+
+const ONE_TRIANGLE: [[u32; 3]; 1] = [[0, 1, 2]];
+
+fn see_through() -> impl Strategy<Value = f32> {
+    0.02f32..0.98
+}
+
+fn colour() -> impl Strategy<Value = Vec3> {
+    [0.0f32..1.0, 0.0f32..1.0, 0.0f32..1.0]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 24, ..ProptestConfig::default() })]
+
+    /// What cannot be seen changes nothing, to the byte (colour, alpha,
+    /// depth and ids), in any shading, with occlusion or depth of field or
+    /// not: a mesh of opacity 0 or less in front of everything, and a
+    /// see-through one behind an opaque wall (the opaque depth hides it).
+    /// An opacity of 1 or more, or NaN, is opaque.
+    #[test]
+    fn what_cannot_be_seen_through_changes_nothing(
+        quads in quads(), samples in sample_count(), shading in shading_mode(), ao: bool, alpha: bool,
+        dof: bool, invisible in prop::sample::select(vec![0.0f32, -1.0]), hidden in see_through(),
+        opaque in prop::sample::select(vec![1.0f32, 2.0, f32::INFINITY, f32::NAN]),
+    ) {
+        let geometry = quad_geometry(&quads);
+        // One triangle: the opaque rasteriser's test can leave a sample
+        // uncovered along an edge two triangles share, where glass behind
+        // would show.
+        let (wall, wall_at) = (vec![[-40.0f32, -40.0, 0.0], [80.0, -40.0, 0.0], [-40.0, 80.0, 0.0]], [translation(0.0, 0.0, -6.0)]);
+        let (front, front_at) = pane_at(4.0);
+        let (back, back_at) = pane_at(-8.0);
+        let mut scene: Vec<Mesh> = geometry.iter().map(|(p, t)| plain(p, &QUAD, t)).collect();
+        scene.push(Mesh { base_color: [0.3, 0.6, 0.2], ..plain(&wall, &ONE_TRIANGLE, &wall_at) });
+        let mut f = Frame { shading, ao, alpha, ..frame(32, 24, samples) };
+        if dof {
+            f = blurred(f, 16, false, Lens::of_camera(0.5, 0.05, 3.0));
+        }
+        let reference = raster::render(&f, &scene);
+        let same = |image: &raster::Image| image.color.iter().zip(&reference.color)
+            .all(|(a, b)| a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits()))
+            && image.depth == reference.depth && image.ids == reference.ids;
+
+        let mut with_invisible: Vec<Mesh> = geometry.iter().map(|(p, t)| plain(p, &QUAD, t)).collect();
+        with_invisible.push(Mesh { base_color: [0.3, 0.6, 0.2], ..plain(&wall, &ONE_TRIANGLE, &wall_at) });
+        with_invisible.push(pane(&front, &front_at, [1.0, 0.0, 1.0], invisible));
+        prop_assert!(same(&raster::render(&f, &with_invisible)), "an invisible mesh changed the picture");
+
+        let mut with_hidden: Vec<Mesh> = geometry.iter().map(|(p, t)| plain(p, &QUAD, t)).collect();
+        with_hidden.push(Mesh { base_color: [0.3, 0.6, 0.2], ..plain(&wall, &ONE_TRIANGLE, &wall_at) });
+        with_hidden.push(pane(&back, &back_at, [1.0, 0.0, 1.0], hidden));
+        prop_assert!(same(&raster::render(&f, &with_hidden)), "glass behind the wall changed the picture");
+
+        let solid: Vec<Mesh> = scene.iter().map(|m| Mesh { opacity: opaque, tiles: Vec::new(), ..*m }).collect();
+        prop_assert!(same(&raster::render(&f, &solid)), "opacity {} is not opaque", opaque);
+    }
+
+    /// A see-through surface in front of everything blends over the
+    /// picture behind it: unlit, every pixel is `a * colour + (1 - a) *`
+    /// the pixel without it, alpha `a + (1 - a) *` its alpha (a transparent
+    /// background: see-through surfaces add partial coverage), depth as
+    /// without it, and every pixel picks it (the nearest surface).
+    #[test]
+    fn a_see_through_surface_blends_over_the_picture_behind(
+        quads in quads(), samples in sample_count(), alpha: bool, a in see_through(), c in colour(),
+    ) {
+        let geometry = quad_geometry(&quads);
+        let (front, front_at) = pane_at(4.0);
+        let behind: Vec<Mesh> = geometry.iter().map(|(p, t)| plain(p, &QUAD, t)).collect();
+        let mut meshes: Vec<Mesh> = geometry.iter().map(|(p, t)| plain(p, &QUAD, t)).collect();
+        meshes.push(pane(&front, &front_at, c, a));
+        let f = Frame { alpha, ..flat_frame(32, 24, samples) };
+        let without = raster::render(&f, &behind);
+        let with = raster::render(&f, &meshes);
+        prop_assert!(with.depth == without.depth, "a see-through surface wrote depth");
+        for (p, (o, t)) in without.color.iter().zip(&with.color).enumerate() {
+            for k in 0..3 {
+                let want = a * c[k] + (1.0 - a) * o[k];
+                prop_assert!((t[k] - want).abs() < 1e-5, "pixel {} channel {}: {} is not {} (a {}, behind {:?})",
+                             p, k, t[k], want, a, o);
+            }
+            let want = if alpha { a + (1.0 - a) * o[3] } else { 1.0 };
+            prop_assert!((t[3] - want).abs() < 1e-5, "pixel {}: alpha {} is not {}", p, t[3], want);
+        }
+        let glass = meshes.len() as i32 - 1;
+        prop_assert!(with.ids.iter().all(|&id| id == [glass, 0]), "the pane in front is not what every pixel picks");
+    }
+
+    /// Several see-through surfaces blend in any order alike (weighted
+    /// blended order-independent transparency): drawn front to back or
+    /// back to front, the picture is the same within rounding, and it is
+    /// the blend's: what is behind times the product of one minus each
+    /// opacity, plus their opacity-weighted mean colour times the rest.
+    /// Picking names the nearest whichever order they came in.
+    #[test]
+    fn see_through_surfaces_blend_in_any_order(
+        quads in quads(), samples in sample_count(), alpha: bool,
+        panes in prop::collection::vec((see_through(), colour()), 2..5),
+    ) {
+        let geometry = quad_geometry(&quads);
+        let built: Vec<(Vec<Vec3>, [Mat4; 1])> = (0..panes.len()).map(|i| pane_at(3.7 + 0.25 * i as f64)).collect();
+        let glass: Vec<Mesh> = built.iter().zip(&panes).map(|((p, t), &(a, c))| pane(p, t, c, a)).collect();
+        let behind: Vec<Mesh> = geometry.iter().map(|(p, t)| plain(p, &QUAD, t)).collect();
+        let f = Frame { alpha, ..flat_frame(32, 24, samples) };
+        let without = raster::render(&f, &behind);
+        let order = |reversed: bool| -> Vec<Mesh> {
+            let mut m: Vec<Mesh> = geometry.iter().map(|(p, t)| plain(p, &QUAD, t)).collect();
+            let mut g: Vec<Mesh> = glass.iter().map(|m| Mesh { tiles: Vec::new(), ..*m }).collect();
+            if reversed {
+                g.reverse();
+            }
+            m.extend(g);
+            m
+        };
+        let (forward, backward) = (raster::render(&f, &order(false)), raster::render(&f, &order(true)));
+        let reveal: f32 = panes.iter().map(|(a, _)| 1.0 - a).product();
+        let weight: f32 = panes.iter().map(|(a, _)| a).sum();
+        let mean: Vec3 = std::array::from_fn(|k| panes.iter().map(|(a, c)| a * c[k]).sum::<f32>() / weight);
+        for (p, o) in without.color.iter().enumerate() {
+            let (x, y) = (forward.color[p], backward.color[p]);
+            for k in 0..3 {
+                prop_assert!((x[k] - y[k]).abs() < 1e-5, "pixel {}: the order changed {} to {}", p, x[k], y[k]);
+                let want = o[k] * reveal + mean[k] * (1.0 - reveal);
+                prop_assert!((x[k] - want).abs() < 1e-5, "pixel {} channel {}: {} is not the blend {}", p, k, x[k], want);
+            }
+            let want = if alpha { o[3] + (1.0 - o[3]) * (1.0 - reveal) } else { 1.0 };
+            prop_assert!((x[3] - want).abs() < 1e-5 && (y[3] - want).abs() < 1e-5, "pixel {}: alpha {} / {} is not {}",
+                         p, x[3], y[3], want);
+        }
+        // The nearest pane is the last built: last in the forward order,
+        // first of the panes in the backward one.
+        let n = geometry.len() as i32;
+        let last = n + panes.len() as i32 - 1;
+        prop_assert!(forward.ids.iter().all(|&id| id == [last, 0]), "forward: not the nearest pane");
+        prop_assert!(backward.ids.iter().all(|&id| id == [n, 0]), "backward: not the nearest pane");
+    }
+
+    /// A still scene with see-through surfaces, drawn in layers (motion
+    /// blur on, nothing moving, a pinhole), is the unblurred picture to the
+    /// byte: each layer blends its own samples as the single pass does.
+    #[test]
+    fn see_through_surfaces_drawn_in_layers_are_the_unblurred_picture(
+        quads in quads(), samples in prop::sample::select(vec![1usize, 4, 8]),
+        chunks in prop::sample::select(vec![1usize, 2, 4]), a in see_through(), which in 0usize..4,
+    ) {
+        let geometry = quad_geometry(&quads);
+        let pick = which % geometry.len();
+        let meshes: Vec<Mesh> = geometry.iter().enumerate()
+            .map(|(i, (p, t))| Mesh { opacity: if i == pick { a } else { 1.0 }, ..plain(p, &QUAD, t) })
+            .collect();
+        let f = frame(32, 24, samples);
+        let reference = raster::render(&f, &meshes);
+        let mut layered = blurred(f, samples * chunks, true, None);
+        layered.blur.cameras[0] = f.view_to_world;
+        layered.blur.cameras[1] = f.view_to_world;
+        layered.blur.camera_keys = 2;
+        let image = raster::render_blurred(&layered, &meshes);
+        prop_assert!(image.color == reference.color, "layered picture differs");
+        prop_assert!(image.depth == reference.depth && image.ids == reference.ids);
+    }
+}
+
+/// Through the C ABI: `transparency` is one minus the opacity, so a zeroed
+/// view is opaque; NaN is opaque and the rest is clamped. A fully
+/// transparent view draws nothing; a half one blends over the backdrop.
+#[test]
+fn the_abi_transparency_is_one_minus_the_opacity() {
+    use crate::ffi::opacity_of;
+    assert_eq!(opacity_of(0.0), 1.0);
+    assert_eq!(opacity_of(1.0), 0.0);
+    assert_eq!(opacity_of(0.25), 0.75);
+    assert_eq!(opacity_of(f32::NAN), 1.0);
+    assert_eq!(opacity_of(-3.0), 1.0);
+    assert_eq!(opacity_of(5.0), 0.0);
+
+    let (points, at) = pane_at(4.0);
+    let mut frame = abi_frame(8, 6, 4);
+    frame.shading = Shading::Albedo.abi();
+    let draw = |transparency: f32| {
+        let view = ThMeshView { base_color: [1.0, 1.0, 1.0], transparency, ..view_of(&points, &QUAD, &at) };
+        let mut color = vec![0.0f32; 8 * 6 * 4];
+        assert_eq!(unsafe { th_render(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) },
+                   TH_OK);
+        color
+    };
+    let mut empty = vec![0.0f32; 8 * 6 * 4];
+    assert_eq!(unsafe { th_render(&frame, std::ptr::null(), 0, empty.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) },
+               TH_OK);
+    assert_eq!(draw(1.0), empty, "fully transparent draws nothing");
+    let half = draw(0.5);
+    for y in 0..6 {
+        let g = backdrop_at(y, 6);
+        for p in half[y * 8 * 4..(y + 1) * 8 * 4].chunks(4) {
+            assert!((p[0] - (0.5 + 0.5 * g)).abs() < 1e-5, "row {y}: {p:?} is not half white over {g}");
+        }
+    }
+    assert!(draw(0.0).chunks(4).all(|p| p[0] == 1.0), "opaque white");
+}
+
+// ---------------------------------------------------------------------------
+// A mesh in parts (the shim's GeomSubsets): one view per material, each a
+// run of the mesh's triangles, with the whole mesh's normals
+// (ffi::th_mesh_normals).
+// ---------------------------------------------------------------------------
+
+/// A bumpy sheet facing the camera: an `n` x `n` grid of points at
+/// `heights` (towards the camera), two triangles a cell.
+pub(crate) fn sheet(n: usize, heights: &[f32]) -> (Vec<Vec3>, Vec<[u32; 3]>) {
+    let at = |i: usize| (i as f32 / (n - 1) as f32) * 3.0 - 1.5;
+    let points = (0..n * n).map(|k| [at(k % n), at(k / n), heights[k]]).collect();
+    let mut triangles = Vec::new();
+    for y in 0..n - 1 {
+        for x in 0..n - 1 {
+            let (k, n) = ((y * n + x) as u32, n as u32);
+            triangles.push([k, k + 1, k + n + 1]);
+            triangles.push([k, k + n + 1, k + n]);
+        }
+    }
+    (points, triangles)
+}
+
+/// A sheet's size, heights, and per triangle the part (0..3) it is in.
+pub(crate) fn parted_sheet() -> impl Strategy<Value = (usize, Vec<f32>, Vec<usize>)> {
+    (3usize..7).prop_flat_map(|n| {
+        (Just(n), prop::collection::vec(-0.6f32..0.6, n * n), prop::collection::vec(0usize..3, 2 * (n - 1) * (n - 1)))
+    })
+}
+
+/// The sheet's triangles sorted by part (as the shim sorts them), and each
+/// part's run of them.
+pub(crate) fn by_part(triangles: &[[u32; 3]], part: &[usize]) -> (Vec<[u32; 3]>, Vec<(usize, std::ops::Range<usize>)>) {
+    let mut sorted = Vec::new();
+    let mut runs = Vec::new();
+    for p in 0..3 {
+        let first = sorted.len();
+        sorted.extend(triangles.iter().zip(part).filter(|(_, &q)| q == p).map(|(t, _)| *t));
+        if sorted.len() > first {
+            runs.push((p, first..sorted.len()));
+        }
+    }
+    (sorted, runs)
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 32, ..ProptestConfig::default() })]
+
+    /// A mesh drawn as one view per part, each painted its own colour and
+    /// given the whole mesh's normals, is to the bit the whole mesh drawn
+    /// once with each corner coloured by its part: colour, depth and ids
+    /// (a part naming the mesh), cusp or smooth, lit and occluded. Normals
+    /// worked out per part would crease the shading where parts meet.
+    #[test]
+    fn a_mesh_drawn_in_parts_is_the_whole_mesh_coloured_by_part(
+        (n, heights, part) in parted_sheet(), polygonal: bool, samples in prop::sample::select(vec![1u32, 4]),
+        colours in prop::collection::vec(colour(), 3),
+    ) {
+        use crate::ffi::{mesh_normals, th_render_ids};
+        let (points, triangles) = sheet(n, &heights);
+        let (sorted, runs) = by_part(&triangles, &part);
+        let at = [translation(0.0, 0.0, 1.0)];
+        let mut corner_colors = Vec::new();
+        for (p, run) in &runs {
+            corner_colors.extend(std::iter::repeat_n(colours[*p], run.len() * 3));
+        }
+        let whole = ThMeshView {
+            corner_colors: corner_colors.as_ptr() as *const f32,
+            polygonal: polygonal as u32,
+            ..view_of(&points, &sorted, &at)
+        };
+        let normals = mesh_normals(&points, &sorted, polygonal);
+        prop_assert_eq!(normals.len(), sorted.len() * 3);
+        let parts: Vec<ThMeshView> = runs.iter().map(|(p, run)| ThMeshView {
+            triangles: sorted[run.clone()].as_ptr() as *const u32,
+            triangle_count: run.len() as u32,
+            corner_normals: normals[run.start * 3..].as_ptr() as *const f32,
+            base_color: colours[*p],
+            polygonal: polygonal as u32,
+            ..view_of(&points, &sorted, &at)
+        }).collect();
+        let mut frame = abi_frame(40, 30, samples);
+        frame.ao = 1;
+        let draw = |views: &[ThMeshView]| {
+            let (mut color, mut depth, mut ids) = (vec![0.0f32; 40 * 30 * 4], vec![0.0f32; 40 * 30], vec![0i32; 40 * 30 * 2]);
+            let status = unsafe {
+                th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(),
+                              ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
+            };
+            assert_eq!(status, TH_OK);
+            (color, depth, ids)
+        };
+        let (wc, wd, wi) = draw(std::slice::from_ref(&whole));
+        let (pc, pd, pi) = draw(&parts);
+        prop_assert!(wc.iter().zip(&pc).all(|(a, b)| a.to_bits() == b.to_bits()), "the parts are not the whole mesh's colour");
+        prop_assert!(wd == pd, "depth differs");
+        let named: Vec<i32> = pi.chunks(2).flat_map(|id| if id[0] >= 0 { [0, id[1]] } else { [-1, -1] }).collect();
+        prop_assert!(wi == named, "a part does not pick as the mesh");
+    }
+}
+
+/// How an instance of a quad is placed for culling: turned (yaw, pitch),
+/// scaled with each axis possibly mirrored, and moved.
+pub(crate) type Placing = (f64, f64, [f64; 3], [f64; 3]);
+
+/// One to four instances' placings, none turned edge-on to the camera.
+pub(crate) fn placings() -> impl Strategy<Value = Vec<Placing>> {
+    let axis = (any::<bool>(), 0.5f64..1.0).prop_map(|(mirror, s)| if mirror { -s } else { s });
+    prop::collection::vec(
+        (-2.8f64..2.8, -1.2f64..1.2, [axis.clone(), axis.clone(), axis], [-1.5f64..1.5, -1.5f64..1.5, -2.0f64..1.0]),
+        1..5,
+    )
+}
+
+/// An instance's transform from its placing.
+pub(crate) fn placed((yaw, pitch, s, t): &Placing) -> Mat4 {
+    let (cy, sy, cp, sp) = (yaw.cos(), yaw.sin(), pitch.cos(), pitch.sin());
+    let scale: Mat4 = [s[0], 0.0, 0.0, 0.0, 0.0, s[1], 0.0, 0.0, 0.0, 0.0, s[2], 0.0, 0.0, 0.0, 0.0, 1.0];
+    let turn_y: Mat4 = [cy, 0.0, -sy, 0.0, 0.0, 1.0, 0.0, 0.0, sy, 0.0, cy, 0.0, 0.0, 0.0, 0.0, 1.0];
+    let turn_x: Mat4 = [1.0, 0.0, 0.0, 0.0, 0.0, cp, sp, 0.0, 0.0, -sp, cp, 0.0, 0.0, 0.0, 0.0, 1.0];
+    math::mul(&math::mul(&math::mul(&scale, &turn_y), &turn_x), &translation(t[0], t[1], t[2]))
+}
+
+/// A unit quad in z = 0 wound counter-clockwise seen from +z (its front
+/// faces +z), or clockwise when `reversed`.
+pub(crate) fn facing_quad(reversed: bool) -> (Vec<Vec3>, Vec<[u32; 3]>) {
+    let points = vec![[-0.5, -0.5, 0.0], [0.5, -0.5, 0.0], [0.5, 0.5, 0.0], [-0.5, 0.5, 0.0]];
+    let triangles = if reversed { vec![[0, 2, 1], [0, 3, 2]] } else { QUAD.to_vec() };
+    (points, triangles)
+}
+
+/// Whether the front of `facing_quad(reversed)` placed by `xform` faces
+/// the camera (at z = 5), worked out from the surface's normal carried
+/// through the transform as normals are, not from any winding on screen;
+/// None when it is too near edge-on to say.
+pub(crate) fn front_faces_camera(xform: &Mat4, reversed: bool) -> Option<bool> {
+    let normal = math::normalize(math::transform_normal([0.0, 0.0, if reversed { -1.0 } else { 1.0 }],
+                                                        &math::normal_matrix(xform)));
+    let centre = math::transform_point([0.0; 3], xform);
+    let to_eye = math::normalize(math::sub([0.0, 0.0, 5.0], centre));
+    let cos = math::dot(normal, to_eye);
+    (cos.abs() > 0.25).then_some(cos > 0.0)
+}
+
+/// Whether an instance whose front does or does not face the camera is
+/// culled by `cull`.
+pub(crate) fn culled(cull: raster::Cull, front: bool) -> bool {
+    match cull {
+        raster::Cull::Nothing => false,
+        raster::Cull::Back => !front,
+        raster::Cull::Front => front,
+    }
+}
+
+pub(crate) fn cull_style() -> impl Strategy<Value = raster::Cull> {
+    prop::sample::select(vec![raster::Cull::Nothing, raster::Cull::Back, raster::Cull::Front])
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+    /// Culling a side drops exactly the instances showing it: the picture
+    /// is, to the bit, the instances left drawn with nothing culled, and
+    /// they alone are picked. Which side shows comes from the surface's
+    /// normal through the instance's transform, so a mirroring transform
+    /// keeps its front outside (Storm's rule), and a quad wound the other
+    /// way has its front on the other side.
+    #[test]
+    fn culling_drops_exactly_the_instances_showing_the_culled_side(
+        placing in placings(), reversed: bool, cull in cull_style(), samples in prop::sample::select(vec![1usize, 4]),
+    ) {
+        let (points, triangles) = facing_quad(reversed);
+        let transforms: Vec<Mat4> = placing.iter().map(placed).collect();
+        let fronts: Option<Vec<bool>> = transforms.iter().map(|m| front_faces_camera(m, reversed)).collect();
+        let Some(fronts) = fronts else { return Ok(()) };
+        let kept: Vec<usize> = (0..transforms.len()).filter(|&i| !culled(cull, fronts[i])).collect();
+        let kept_transforms: Vec<Mat4> = kept.iter().map(|&i| transforms[i]).collect();
+        let f = frame(48, 36, samples);
+        let image = raster::render(&f, &[Mesh { cull, ..plain(&points, &triangles, &transforms) }]);
+        let want = raster::render(&f, &[plain(&points, &triangles, &kept_transforms)]);
+        prop_assert!(image.color.iter().zip(&want.color).all(|(a, b)| a.map(f32::to_bits) == b.map(f32::to_bits)),
+                     "the picture is not the instances left's ({:?}, fronts {:?})", cull, fronts);
+        prop_assert!(image.depth == want.depth, "depth differs");
+        let named: Vec<[i32; 2]> = want.ids.iter().map(|&[m, i]| if m < 0 { [m, i] } else { [m, kept[i as usize] as i32] }).collect();
+        prop_assert!(image.ids == named, "a culled instance is picked");
+    }
+}
+
+/// Through the ABI: `cull` 1 drops a quad facing the camera with its back,
+/// 2 one facing it with its front, 0 neither; unknown codes cull nothing.
+#[test]
+fn cull_through_the_abi() {
+    use crate::ffi::th_render_ids;
+    let at = [translation(0.0, 0.0, 1.0)];
+    let draw = |reversed: bool, cull: u32| {
+        let (points, triangles) = facing_quad(reversed);
+        let view = ThMeshView { cull, ..view_of(&points, &triangles, &at) };
+        let frame = abi_frame(20, 16, 1);
+        let (mut color, mut depth, mut ids) = (vec![0.0f32; 20 * 16 * 4], vec![0.0f32; 20 * 16], vec![0i32; 20 * 16 * 2]);
+        let status = unsafe {
+            th_render_ids(&frame, &view, 1, color.as_mut_ptr(), depth.as_mut_ptr(), ids.as_mut_ptr(),
+                          std::ptr::null(), std::ptr::null())
+        };
+        assert_eq!(status, TH_OK);
+        ids.chunks(2).filter(|id| id[0] >= 0).count()
+    };
+    for (reversed, cull, drawn) in [(false, 0, true), (false, 1, true), (false, 2, false), (true, 0, true),
+                                    (true, 1, false), (true, 2, true), (true, 7, true)] {
+        assert_eq!(draw(reversed, cull) > 0, drawn, "reversed {reversed}, cull {cull}");
+    }
+}
+
+/// A quad 60 across running away from the camera ([`camera`], far plane
+/// 100 away) from 50 to 150 deep as it rises: its lower half on screen in
+/// front of the far plane, its upper half beyond it.
+pub(crate) fn past_the_far_plane() -> (Vec<Vec3>, Vec<[u32; 3]>) {
+    (vec![[-30.0, -30.0, -45.0], [30.0, -30.0, -45.0], [30.0, 30.0, -145.0], [-30.0, 30.0, -145.0]], QUAD.to_vec())
+}
+
+/// How far from the camera the ray through screen point (`xn`, `yn`, NDC)
+/// meets [`past_the_far_plane`]'s quad, None when it misses it.
+pub(crate) fn past_the_far_plane_depth(xn: f64, yn: f64) -> Option<f64> {
+    // The quad's plane is z = -95 - 5/3 y; the ray is (0, 0, 5) + t (xn, yn, -1).
+    let t = 100.0 / (1.0 - 5.0 / 3.0 * yn);
+    (t > 0.0 && (t * xn).abs() <= 30.0 && (t * yn).abs() <= 30.0).then_some(t)
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 8, ..ProptestConfig::default() })]
+
+    /// The far plane is kept per sample, not per mesh or triangle: of a
+    /// triangle that crosses it, what is in front is drawn and what is
+    /// beyond shows the backdrop (depth 1), and nothing beyond is picked.
+    /// (The instance cull is only a shortcut; the depth test's `z < 1`
+    /// keeps the plane.) Pixels within a few units of the plane or the
+    /// quad's edges are left out: their samples may go either way.
+    #[test]
+    fn what_is_past_the_far_plane_is_not_drawn(samples in sample_count()) {
+        let (points, triangles) = past_the_far_plane();
+        let one = [math::IDENTITY];
+        let (w, h) = (64usize, 48usize);
+        let image = raster::render(&frame(w, h, samples), &[plain(&points, &triangles, &one)]);
+        let (mut near, mut far) = (0, 0);
+        for y in 0..h {
+            for x in 0..w {
+                let xn = (x as f64 + 0.5) / w as f64 * 2.0 - 1.0;
+                let yn = 1.0 - (y as f64 + 0.5) / h as f64 * 2.0;
+                let at = y * w + x;
+                let Some(t) = past_the_far_plane_depth(xn, yn) else { continue };
+                let inside = (t * xn).abs() < 28.0 && (t * yn).abs() < 28.0;
+                if inside && t < 92.0 {
+                    near += 1;
+                    prop_assert!(image.depth[at] < 1.0, "({}, {}) at {:.1} is not drawn", x, y, t);
+                } else if t > 108.0 {
+                    far += 1;
+                    prop_assert!(image.depth[at] == 1.0, "({}, {}) at {:.1} is drawn", x, y, t);
+                    prop_assert!(image.ids[at][0] < 0, "({}, {}) at {:.1} is picked", x, y, t);
+                }
+            }
+        }
+        prop_assert!(near > 100 && far > 40, "near {}, far {}", near, far);
+    }
+}
+
+/// th_mesh_normals: the core's normals for a mesh, one per corner; nothing
+/// to do for no triangles, an error for a null pointer.
+#[test]
+fn mesh_normals_through_the_abi() {
+    use crate::ffi::{mesh_normals, th_mesh_normals};
+    let heights = [0.0, 0.3, -0.2, 0.1, 0.5, 0.0, 0.2, -0.4, 0.1, 0.0, 0.3, 0.2, -0.1, 0.0, 0.4, 0.1];
+    let (points, triangles) = sheet(4, &heights);
+    for polygonal in [0u32, 1] {
+        let mut out = vec![0.0f32; triangles.len() * 9];
+        let status = unsafe {
+            th_mesh_normals(points.as_ptr() as *const f32, points.len() as u32, triangles.as_ptr() as *const u32,
+                            triangles.len() as u32, polygonal, out.as_mut_ptr())
+        };
+        assert_eq!(status, TH_OK);
+        let want: Vec<f32> = mesh_normals(&points, &triangles, polygonal != 0).into_iter().flatten().collect();
+        assert_eq!(out, want);
+        if polygonal == 1 {
+            let cusp: Vec<f32> =
+                raster::cusp_normals(&points, &triangles, raster::CUSP_DEGREES).into_iter().flatten().collect();
+            assert_eq!(out, cusp);
+        } else {
+            let smooth = raster::smooth_normals(&points, &triangles);
+            assert_eq!(&out[..3], &smooth[triangles[0][0] as usize][..]);
+        }
+    }
+    unsafe {
+        assert_eq!(th_mesh_normals(std::ptr::null(), 0, std::ptr::null(), 0, 0, std::ptr::null_mut()), TH_OK);
+        assert_eq!(th_mesh_normals(points.as_ptr() as *const f32, points.len() as u32, triangles.as_ptr() as *const u32,
+                                   triangles.len() as u32, 0, std::ptr::null_mut()), crate::TH_ERR_ARGS);
+    }
+}
+
+// Scene lights (crate::lights): the scene's UsdLux lights instead of the
+// fixed camera rig.
+
+/// Light to world for a light at `at` facing `facing` (its -Z), unscaled.
+fn facing_transform(facing: Vec3, at: Vec3) -> Mat4 {
+    let z = math::normalize(math::scale(facing, -1.0));
+    let up = if z[1].abs() < 0.9 { [0.0, 1.0, 0.0] } else { [1.0, 0.0, 0.0] };
+    let x = math::normalize(math::cross(up, z));
+    let y = math::cross(z, x);
+    let mut m = math::IDENTITY;
+    for (r, axis) in [x, y, z, at].iter().enumerate() {
+        for c in 0..3 {
+            m[r * 4 + c] = axis[c] as f64;
+        }
+    }
+    m
+}
+
+fn unit() -> impl Strategy<Value = Vec3> {
+    [-1.0f32..1.0, -1.0f32..1.0, -1.0f32..1.0]
+        .prop_filter("not near zero", |v| math::dot(*v, *v) > 0.05)
+        .prop_map(math::normalize)
+}
+
+/// A few lights of any kind about the origin, as the shim hands them over.
+fn some_lights() -> impl Strategy<Value = Vec<SceneLight>> {
+    let one = (0u32..6, colour(), 0.1f32..20.0, any::<bool>(), any::<bool>(), point(), unit(),
+               [0.05f32..1.0, 0.1f32..2.0, 0.1f32..2.0, 0.1f32..2.0]);
+    prop::collection::vec(one, 1..6).prop_map(|lights| {
+        lights.into_iter()
+            .map(|(kind, color, intensity, normalize, point, at, facing, sizes)| {
+                let shape = LightShape::from_abi(kind).unwrap();
+                SceneLight::placed(shape, math::scale(color, intensity), normalize, point, 0.53, sizes,
+                                   &facing_transform(facing, at))
+            })
+            .collect()
+    })
+}
+
+/// The fixed rig's lighting as it was before scene lights existed: a grey
+/// k, one scalar highlight of the key light.
+fn rig_as_it_was(shading: Shading, albedo: Vec3, n: Vec3, v: Vec3) -> Vec3 {
+    let albedo = if shading == Shading::Clay { composite::CLAY_ALBEDO } else { albedo };
+    let lights = composite::LIGHTS.map(|(l, i)| (math::normalize(l), i));
+    let mut k = composite::GROUND + (composite::SKY - composite::GROUND) * (0.5 + 0.5 * n[1]);
+    for &(l, intensity) in &lights {
+        k += intensity * math::dot(n, l).max(0.0);
+    }
+    let h = math::normalize(math::add(lights[0].0, v));
+    let spec = composite::SPECULAR * math::dot(n, h).max(0.0).powi(composite::SHININESS);
+    [albedo[0] * k + spec, albedo[1] * k + spec, albedo[2] * k + spec]
+}
+
+proptest! {
+    /// No scene lights (or the headlight asked for) is the fixed rig to the
+    /// bit, lit or clay, wherever the surface is.
+    #[test]
+    fn no_scene_lights_is_the_fixed_rig(
+        shading in prop::sample::select(vec![Shading::Lit, Shading::Clay]),
+        albedo in colour(), n in unit(), v in unit(), p in point(),
+    ) {
+        let lighting = Lighting::new(&SceneLights::NONE, &camera().1);
+        prop_assert_eq!(composite::light(shading, albedo, n, v, p, &lighting), rig_as_it_was(shading, albedo, n, v));
+    }
+
+    /// One normalized distant light shining straight onto a surface seen
+    /// head on lights it to albedo x intensity x colour / pi (Karma's
+    /// brightness), plus the highlight of that light.
+    #[test]
+    fn a_distant_light_along_the_normal_lights_albedo_times_its_colour(
+        albedo in colour(), color in colour(), intensity in 0.0f32..50.0, n in unit(),
+    ) {
+        let light = SceneLight::placed(LightShape::Distant, math::scale(color, intensity), true, false, 0.53,
+                                       [0.0; 4], &facing_transform(math::scale(n, -1.0), [0.0; 3]));
+        let lighting = Lighting::new(&SceneLights::new(&[light]), &math::IDENTITY);
+        let got = composite::light(Shading::Lit, albedo, n, n, [0.0, 0.0, -3.0], &lighting);
+        for c in 0..3 {
+            let e = color[c] * intensity / std::f32::consts::PI;
+            let want = albedo[c] * e + crate::lights::SCENE_SPECULAR * e;
+            prop_assert!((got[c] - want).abs() <= 1e-4 * want.max(1.0), "channel {}: {} vs {}", c, got[c], want);
+        }
+    }
+
+    /// Clay is lit by the scene's lights as a lit surface of the clay
+    /// colour; albedo and occlusion are not lit at all.
+    #[test]
+    fn clay_takes_the_same_lights_and_flat_shading_none(
+        lights in some_lights(), albedo in colour(), n in unit(), v in unit(), p in point(),
+    ) {
+        let lighting = Lighting::new(&SceneLights::new(&lights), &camera().1);
+        prop_assert_eq!(composite::light(Shading::Clay, albedo, n, v, p, &lighting),
+                        composite::light(Shading::Lit, composite::CLAY_ALBEDO, n, v, p, &lighting));
+        prop_assert_eq!(composite::light(Shading::Albedo, albedo, n, v, p, &lighting), albedo);
+        prop_assert_eq!(composite::light(Shading::Occlusion, albedo, n, v, p, &lighting), [1.0; 3]);
+    }
+
+    /// Lighting never goes negative or non-finite, and more light (every
+    /// light brighter) never darkens a surface.
+    #[test]
+    fn scene_lighting_is_finite_and_grows_with_the_lights(
+        lights in some_lights(), albedo in colour(), n in unit(), v in unit(), p in point(), more in 1.0f32..4.0,
+    ) {
+        let view = camera().1;
+        let lit = composite::light(Shading::Lit, albedo, n, v, p, &Lighting::new(&SceneLights::new(&lights), &view));
+        let brighter: Vec<SceneLight> = lights.iter()
+            .map(|l| SceneLight { radiance: math::scale(l.radiance, more), ..*l })
+            .collect();
+        let lit_more = composite::light(Shading::Lit, albedo, n, v, p,
+                                        &Lighting::new(&SceneLights::new(&brighter), &view));
+        for c in 0..3 {
+            prop_assert!(lit[c].is_finite() && lit[c] >= 0.0, "{:?}", lit);
+            prop_assert!(lit_more[c] >= lit[c] * (1.0 - 1e-5), "{:?} brighter is {:?}", lit, lit_more);
+        }
+    }
+}
+
+/// A light the shim hands over: at `at`, facing `facing`, normalized.
+fn abi_light(kind: u32, intensity: f32, at: Vec3, facing: Vec3) -> ThLight {
+    ThLight {
+        transform: facing_transform(facing, at),
+        kind, normalize: 1, point: 0,
+        color: [1.0, 0.9, 0.8], intensity, temperature: 0.0,
+        angle: 0.53, radius: 0.2, width: 1.0, height: 1.0, length: 1.0,
+    }
+}
+
+/// Through the ABI: the headlight setting is the fixed rig whatever the
+/// scene's lights; lights of no known kind are left out (only such lights
+/// is the rig); a light of intensity 0 adds nothing; and a scene light
+/// changes the picture.
+#[test]
+fn the_abi_lighting_switch_and_lights_that_add_nothing() {
+    let points = vec![[-1.5f32, -1.5, 0.0], [1.5, -1.5, 0.0], [1.5, 1.5, 0.0], [-1.5, 1.5, 0.0]];
+    let one = [math::IDENTITY];
+    let view = view_of(&points, &QUAD, &one);
+    let draw = |lights: &[ThLight], lighting: u32| {
+        let mut f = abi_frame(16, 12, 4);
+        f.lights = if lights.is_empty() { std::ptr::null() } else { lights.as_ptr() };
+        f.light_count = lights.len() as u32;
+        f.lighting = lighting;
+        let mut color = vec![0.0f32; 16 * 12 * 4];
+        let status = unsafe {
+            th_render(&f, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null())
+        };
+        assert_eq!(status, TH_OK);
+        color
+    };
+    let rig = draw(&[], 0);
+    let key = abi_light(1, 40.0, [0.5, 1.0, 2.0], [0.0, 0.0, -1.0]);
+    let sun = abi_light(0, 2.0, [0.0; 3], [0.3, -0.5, -1.0]);
+    let lit = draw(&[key, sun], 0);
+    assert_ne!(lit, rig, "scene lights light the frame");
+    assert_eq!(draw(&[key, sun], 1), rig, "the headlight is the rig");
+    assert_eq!(draw(&[abi_light(9, 5.0, [0.0; 3], [0.0, 0.0, -1.0])], 0), rig, "an unknown light is no light");
+    let dark = abi_light(2, 0.0, [0.0, 0.0, 1.0], [0.0, 0.0, -1.0]);
+    let unknown = abi_light(7, 3.0, [0.0; 3], [0.0, 0.0, -1.0]);
+    assert_eq!(draw(&[key, sun, dark, unknown], 0), lit, "a dark light and an unknown one add nothing");
+    // The light falls on the quad's side facing the camera: brighter in the
+    // corner nearer the sphere light (up and right) than the far one.
+    let at = |x: usize, y: usize| lit[(y * 16 + x) * 4];
+    assert!(at(10, 4) > at(3, 9), "nearer the light is brighter: {} vs {}", at(10, 4), at(3, 9));
 }

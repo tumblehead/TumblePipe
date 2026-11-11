@@ -48,6 +48,7 @@ from tumblepipe.config.department import (
 from tumblepipe.config.channels import DEFAULT_CHANNEL
 from tumblepipe.pipe.paths import latest_export_path
 from tumblepipe.pipe import render_layers
+from tumblepipe.pipe.aovs import excluded_render_vars
 from tumblepipe.pipe.houdini import prim_queries
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.lops import (
@@ -241,7 +242,7 @@ def build_render_stage_graph(
                 aov_path.rsplit('/', 1)[1]: aov_path
                 for aov_path in prim_queries.list_render_vars(root)
             }
-            excluded_aov_names = set(aov_paths.keys()) - included_aov_names
+            excluded_aov_names = excluded_render_vars(aov_paths, included_aov_names)
             prune_aovs_node = scene_node.createNode(
                 'prune', f'{name_prefix}prune_aovs'
             )

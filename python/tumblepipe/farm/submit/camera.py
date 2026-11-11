@@ -9,9 +9,16 @@ the first one that authors a RenderSettings ``camera`` relationship wins —
 which is what composition would pick. With none, the project's
 ``root_default_prims.usda`` speaks.
 
-It is a preview of the answer, not the answer: a camera relationship authored
-somewhere this skips (a sublayer of an export, an asset) would compose the
-same way but not show here. The farm still asks the composed stage.
+The same pass reads the render settings the dialog can override
+(:data:`SCENE_SETTINGS`: samples, motion blur, DOF), each on its own: the
+strongest layer that authors that attribute on the RenderSettings prim wins,
+then the project default; one nothing authors renders at Karma's own default
+(``None``). The dialog shows them as what ``⟨from scene⟩`` means (#69).
+
+It is a preview of the answer, not the answer: a camera relationship or
+setting authored somewhere this skips (a sublayer of an export, an asset)
+would compose the same way but not show here. The farm still asks the
+composed stage.
 
 Split like ``submit_status``: :func:`plan_probe` does the config reads on the
 main thread, :func:`read_camera` only opens files, on a worker thread.
@@ -30,6 +37,16 @@ _MAX_DEPTH = 3
 
 LAYER_SUFFIXES = ('.usd', '.usda', '.usdc')
 
+#: The dialog's scene overrides and the RenderSettings attribute each one
+#: overrides on the farm. Must match ``batch_submit.RENDER_OVERRIDE_MAP``
+#: (``tests/test_farm_submit_scene_values.py`` pins it); not imported, so
+#: this module stays light on the dialog's worker thread.
+SCENE_SETTINGS = {
+    'samples': 'karma:global:pathtracedsamples',
+    'mblur': 'karma:object:mblur',
+    'dof': 'karma:global:enable_dof',
+}
+
 
 @dataclass(frozen=True)
 class CameraProbe:
@@ -47,6 +64,9 @@ class RenderCamera:
     camera: str | None
     source: str = ''       # the department whose layer authored it, or 'project default'
     error: str | None = None
+    # Settings key (SCENE_SETTINGS) -> (value, source). A key nothing
+    # authors maps to (None, ''): the renderer's own default.
+    settings: dict = field(default_factory=dict, compare=False)
 
 
 def plan_probe(entity_uri, channel: str, department: str) -> CameraProbe:
@@ -106,9 +126,72 @@ def authored_camera(layer) -> str | None:
     return None
 
 
-def _layer_camera(path: Path) -> str | None:
+def _attribute_value(layer, attr):
+    """An attribute spec's default, else its first time sample, else None."""
+    if attr.HasDefaultValue():
+        return attr.default
+    times = layer.ListTimeSamplesForPath(attr.path)
+    if times:
+        return layer.QueryTimeSample(attr.path, min(times))
+    return None
+
+
+def authored_settings(layer, names) -> dict:
+    """The values ``layer`` authors for the attributes ``names`` on a
+    RenderSettings prim spec (typed, or an ``over`` that is not a
+    RenderProduct, as :func:`authored_camera` reads). Only the authored ones
+    are keys; the first spec found that authors one wins."""
+    wanted = set(names)
+    found: dict = {}
+
+    def visit(spec, depth: int) -> None:
+        typed = spec.typeName == 'RenderSettings'
+        over = not spec.typeName and 'productName' not in spec.attributes
+        if typed or over:
+            for name in wanted - found.keys():
+                attr = spec.attributes.get(name) if spec.attributes else None
+                if attr is None:
+                    continue
+                value = _attribute_value(layer, attr)
+                if value is not None:
+                    found[name] = value
+        if depth >= _MAX_DEPTH or not wanted - found.keys():
+            return
+        for child in spec.nameChildren:
+            visit(child, depth + 1)
+
+    for root in layer.rootPrims:
+        visit(root, 1)
+        if not wanted - found.keys():
+            break
+    return found
+
+
+def strongest_settings(layers) -> dict:
+    """Settings key -> (value, source), from ``layers`` strongest first.
+
+    ``layers`` is ``(source, {attribute: value})`` per layer, strongest
+    first, the project default last. Each setting is decided on its own,
+    as composition decides each attribute: the first layer authoring it
+    wins. One no layer authors is ``(None, '')``: the renderer's default.
+    """
+    result = {}
+    for key, attribute in SCENE_SETTINGS.items():
+        result[key] = (None, '')
+        for source, authored in layers:
+            if attribute in authored:
+                result[key] = (authored[attribute], source)
+                break
+    return result
+
+
+def _open_layer(path: Path):
     from pxr import Sdf
-    layer = Sdf.Layer.FindOrOpen(str(path))
+    return Sdf.Layer.FindOrOpen(str(path))
+
+
+def _layer_camera(path: Path) -> str | None:
+    layer = _open_layer(path)
     if layer is None:
         return None
     return authored_camera(layer)
@@ -128,23 +211,48 @@ def _latest_version_dir(probe: CameraProbe, directory: Path) -> Path | None:
     return directory / max(names, key=probe.version_code)
 
 
+def _probe_layers(probe: CameraProbe):
+    """``(source, path)`` for every layer the probe reads, strongest first:
+    each cut department's latest export, then the project default."""
+    for department, directory in probe.export_dirs:
+        version_dir = _latest_version_dir(probe, directory)
+        if version_dir is None:
+            continue
+        for path in sorted(version_dir.iterdir()):
+            if path.suffix in LAYER_SUFFIXES:
+                yield department, path
+    if probe.root_defaults is not None and probe.root_defaults.exists():
+        yield 'project default', probe.root_defaults
+
+
 def read_camera(probe: CameraProbe) -> RenderCamera:
-    """Worker thread: the camera the strongest published layer names."""
+    """Worker thread: the camera the strongest published layer names, and
+    the scene's value of each :data:`SCENE_SETTINGS` attribute.
+
+    Stops opening layers once the camera and every setting are found; a
+    setting nothing authors costs the same walk the camera already made
+    when only the project default names it.
+    """
     try:
-        for department, directory in probe.export_dirs:
-            version_dir = _latest_version_dir(probe, directory)
-            if version_dir is None:
+        camera, camera_source = None, ''
+        attributes = set(SCENE_SETTINGS.values())
+        authored: list = []
+        seen: set = set()
+        for source, path in _probe_layers(probe):
+            layer = _open_layer(path)
+            if layer is None:
                 continue
-            for path in sorted(version_dir.iterdir()):
-                if path.suffix not in LAYER_SUFFIXES:
-                    continue
-                camera = _layer_camera(path)
-                if camera:
-                    return RenderCamera(probe.uri, camera, department)
-        if probe.root_defaults is not None and probe.root_defaults.exists():
-            camera = _layer_camera(probe.root_defaults)
-            if camera:
-                return RenderCamera(probe.uri, camera, 'project default')
-        return RenderCamera(probe.uri, None)
+            if camera is None:
+                camera = authored_camera(layer)
+                camera_source = source if camera else ''
+            values = authored_settings(layer, attributes - seen)
+            seen |= values.keys()
+            authored.append((source, values))
+            if camera is not None and seen >= attributes:
+                break
+        return RenderCamera(
+            probe.uri, camera, camera_source,
+            settings=strongest_settings(authored),
+        )
     except Exception as error:  # noqa: BLE001 — shown in the dialog, not raised
         return RenderCamera(probe.uri, None, error=str(error))

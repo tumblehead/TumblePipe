@@ -80,4 +80,29 @@
 
     }
 
+    groupsimple {
+        name    "live_playblast_folder"
+        label   "Live Playblast"
+
+        parm {
+            name    "live_playblast"
+            label   "Live"
+            type    button
+            joinnext
+            default { "0" }
+            help    "Playblast the shot in the background (TumbleView, GPU), the current frame first, for the player's Live take. Uses the th::playblast in anim_dive, which says the shot, department and camera; one is added on the workfile's shot when there is none."
+            parmtag { "script_callback" "from tumblepipe.pipe.houdini import live_playblast; live_playblast.start_from_animate(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "live_playblast_stop"
+            label   "Stop"
+            type    button
+            default { "0" }
+            help    "Stop the live playblast rendering in the background."
+            parmtag { "script_callback" "from tumblepipe.pipe.houdini import live_playblast; live_playblast.stop_from_animate(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+    }
+
 }

@@ -456,6 +456,184 @@ check('each is a new pending Multi, empty, covering every department, with its T
       and chase.timeline == (True, False) and list(chase.departments) == list(shots.sheet.base.pool)
       and not props.members and props.timeline == (False, False),
       (chase, props))
+# New Multi… picked on a category row (#30): offered to start with that
+# category whole, ticked, and it does.
+offered = []
+_category = assets.sheet.groups()[0]
+
+
+def _new_from_row(dialog):
+    offered.append(dialog.start_with is not None and dialog.start_with.isChecked()
+                   and _category in dialog.start_with.text())
+    dialog._name.setText('Rowmulti')
+    return QDialog.Accepted
+
+
+ee.NewMultiDialog.exec = _new_from_row
+window.new_multi('assets', _category)
+from_row = next((m for m in assets.sheet.multis if m.name == 'Rowmulti'), None)
+check('New Multi… from a category row offers that category, ticked',
+      offered == [True], offered)
+check('and the new Multi lists the category whole',
+      from_row is not None and list(from_row.members) == [assets.sheet.group_member(_category)],
+      from_row and from_row.members)
+ee.NewMultiDialog.exec = _new_chase
+
+# The Multis table scrolls sideways with Shift+wheel, and a click on a
+# cell it can see does not scroll it away from the pointer (#30).
+from PySide6.QtCore import QPoint, QPointF  # noqa: E402
+from PySide6.QtGui import QWheelEvent  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+
+def _widen(pane, width=400):
+    """Columns wider than the window, so the table has sideways room."""
+    widths = [pane.table.columnWidth(c) for c in range(pane.proxy.columnCount())]
+    for c in range(pane.proxy.columnCount()):
+        pane.table.setColumnWidth(c, width)
+    app.processEvents()
+    return widths
+
+
+def _wheel(table, dy, modifiers):
+    centre = QPointF(table.viewport().rect().center())
+    event = QWheelEvent(
+        centre, QPointF(table.viewport().mapToGlobal(centre.toPoint())),
+        QPoint(0, 0), QPoint(0, dy), Qt.NoButton, modifiers,
+        Qt.NoScrollPhase, False,
+    )
+    QApplication.sendEvent(table.viewport(), event)
+    app.processEvents()
+
+
+window.show_kind('multis')
+multis.set_context('shots')
+_widths = _widen(multis)
+_hbar = multis.table.horizontalScrollBar()
+_hbar.setValue(0)
+_wheel(multis.table, -120, Qt.ShiftModifier)
+check('Shift+wheel scrolls the Multis table sideways',
+      _hbar.maximum() > 0 and _hbar.value() > 0, (_hbar.maximum(), _hbar.value()))
+for _c, _w in enumerate(_widths):
+    multis.table.setColumnWidth(_c, _w)
+
+# A click on a frame cell the Shots table shows only in part (the timing
+# cells select on a click; nothing toggles).
+window.show_kind('shots')
+_widths = _widen(shots)  # each narrower than the view: Qt would scroll to it
+_table = shots.table
+_hbar = _table.horizontalScrollBar()
+_hbar.setValue(0)
+app.processEvents()
+_row = next(r for r in range(shots.proxy.rowCount())
+            if not isinstance(shots._row_id(shots.proxy.index(r, 0)), ee.GroupKey))
+_view = _table.viewport().width()
+
+
+def _straddler():
+    """The column cut by the view's right edge, if one is."""
+    return next((
+        c for c in range(shots.proxy.columnCount())
+        if _table.visualRect(shots.proxy.index(_row, c)).left() + 20 < _view
+        < _table.visualRect(shots.proxy.index(_row, c)).right() - 20
+    ), None)
+
+
+for _first in (400, 300, 200, 350, 250):
+    _table.setColumnWidth(0, _first)
+    app.processEvents()
+    if _straddler() is not None:
+        break
+_col = _straddler()
+_cell = shots.proxy.index(_row, _col)
+_rect = _table.visualRect(_cell)
+QTest.mouseClick(_table.viewport(), Qt.LeftButton, Qt.NoModifier,
+                 QPoint(_view - 4, _rect.center().y()))
+# Qt scrolls to a clicked cell on a timer, once a double click is ruled out.
+QTest.qWait(QApplication.doubleClickInterval() + 300)
+check('clicking a partly visible cell selects it and leaves the table where it was',
+      _hbar.value() == 0 and _table.currentIndex() == _cell,
+      (_hbar.value(), shots.columns[_col]))
+for _c, _w in enumerate(_widths):
+    _table.setColumnWidth(_c, _w)
+
+# The Sequence and Shot columns stay in view while the rest scroll (#40).
+from PySide6.QtWidgets import QLineEdit as _QLineEdit  # noqa: E402
+
+_frozen = _table.frozen_view()
+_shown = [c for c in range(shots.proxy.columnCount()) if not _frozen.isColumnHidden(c)]
+check('the Shots table freezes its Sequence and Shot columns',
+      [shots.columns[c] for c in _shown] == [ee.es.GROUP, ee.es.NAME], _shown)
+_widths = _widen(shots, 300)
+_hbar.setValue(_hbar.maximum())
+app.processEvents()
+_fw = _table.frozen_width()
+check('scrolled right, the frozen columns still show at the left edge',
+      _hbar.value() > 0 and _frozen.isVisible() and _frozen.width() >= _fw == 600
+      and _frozen.columnViewportPosition(0) == 0
+      and _table.visualRect(shots.proxy.index(_row, 1)).right() < _fw,
+      (_hbar.value(), _frozen.width(), _fw))
+_cell = shots.proxy.index(_row, 2)
+_table.selectionModel().setCurrentIndex(_cell, ee.QItemSelectionModel.ClearAndSelect)
+_table.scrollTo(_cell)
+app.processEvents()
+check('a cell scrolled to comes out from under the frozen columns',
+      _table.visualRect(_cell).left() >= _fw, (_table.visualRect(_cell).left(), _fw))
+_hbar.setValue(_hbar.maximum())
+_at = _hbar.value()
+_table.scrollTo(shots.proxy.index(_row, 0))
+check('going to a frozen cell does not scroll sideways', _hbar.value() == _at,
+      (_at, _hbar.value()))
+_table.setColumnWidth(0, 180)
+app.processEvents()
+check('resizing a frozen column in the table resizes the frozen view',
+      _frozen.columnWidth(0) == 180 and _table.frozen_width() == 480
+      and _frozen.width() >= 480, (_frozen.columnWidth(0), _frozen.width()))
+_frozen.horizontalHeader().resizeSection(1, 220)
+app.processEvents()
+check('dragging the frozen header resizes the table column',
+      _table.columnWidth(1) == 220, _table.columnWidth(1))
+_vbar = _table.verticalScrollBar()
+_vbar.setValue(_vbar.maximum())
+check('the frozen columns scroll with the rows',
+      _frozen.verticalScrollBar().value() == _vbar.value(),
+      (_frozen.verticalScrollBar().value(), _vbar.value()))
+_vbar.setValue(0)
+# A click on a sequence's name in the frozen view folds it, as it did.
+_group_row = next(r for r in range(shots.proxy.rowCount())
+                  if isinstance(shots._row_id(shots.proxy.index(r, 0)), ee.GroupKey))
+_before = shots.proxy.rowCount()
+_point = _frozen.visualRect(shots.proxy.index(_group_row, 0)).center()
+QTest.mouseClick(_frozen.viewport(), Qt.LeftButton, Qt.NoModifier, _point)
+app.processEvents()
+_folded = shots.proxy.rowCount()
+QTest.mouseClick(_frozen.viewport(), Qt.LeftButton, Qt.NoModifier, _point)
+app.processEvents()
+check('a click on a frozen sequence name folds and unfolds it',
+      _folded < _before == shots.proxy.rowCount(), (_before, _folded))
+# Editing a frozen cell from the keyboard opens its editor in the frozen
+# view, not underneath it.
+_editable = next((
+    shots.proxy.index(r, c) for r in range(shots.proxy.rowCount()) for c in (1, 0)
+    if shots.proxy.flags(shots.proxy.index(r, c)) & Qt.ItemIsEditable
+), None)
+if _editable is None:
+    print('SKIP  no editable frozen cell')
+else:
+    _table.setFocus()
+    _table.selectionModel().setCurrentIndex(_editable, ee.QItemSelectionModel.ClearAndSelect)
+    QTest.keyClick(_table, Qt.Key_F2)
+    app.processEvents()
+    _in_frozen = _frozen.viewport().findChildren(_QLineEdit)
+    _in_main = _table.viewport().findChildren(_QLineEdit)
+    check('F2 on a frozen cell edits it in the frozen view',
+          bool(_in_frozen) and not _in_main, (len(_in_frozen), len(_in_main)))
+    for _editor in _in_frozen:
+        QTest.keyClick(_editor, Qt.Key_Escape)
+    app.processEvents()
+_hbar.setValue(0)
+for _c, _w in enumerate(_widths):
+    _table.setColumnWidth(_c, _w)
+multis.set_context('shots')
 members = ee.MultiMembersDialog(window, shots.sheet, chase)
 members.show()
 app.processEvents()
@@ -714,7 +892,21 @@ check("Inherit puts a shot's layers back to its sequence's",
 # ── Apply ──────────────────────────────────────────────────────────────────
 
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
+# Shots that an Apply makes overlap on a shared timeline are warned about,
+# with Repack offered (#31): overlaps read before and after the writes.
+import dataclasses  # noqa: E402
+from tumblepipe.asset_browser import timeline_repack  # noqa: E402
+_reads = iter([{}, {'groups:/shots/Chase': [('a', 'b')]}])
+_offered, _repacked = [], []
+window.source = dataclasses.replace(
+    window.source, overlaps=lambda: next(_reads, {}), repack=_repacked.append,
+)
+_offer = timeline_repack.offer_repack
+timeline_repack.offer_repack = lambda parent, found, repack: _offered.append(found) or []
 ok = window.apply()
+timeline_repack.offer_repack = _offer
+check('Apply offers Repack for the overlap it made, and repacks nothing unasked',
+      _offered == [{'groups:/shots/Chase': [('a', 'b')]}] and _repacked == [], (_offered, _repacked))
 check('Apply succeeds', ok and applied == [True])
 check('nothing left pending', not window.dirty)
 app.processEvents()

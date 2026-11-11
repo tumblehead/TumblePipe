@@ -33,7 +33,14 @@ Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th
 | Outputs › AOV Outputs | off | Keeps a Cable Unpack named `<node>_aovs` beside the node, wired to **aovs**, with one typed output per field, and keeps its fields in step when the version changes. Turning it off removes the unpack unless something reads it |
 
 Buttons: **Update** re-resolves (opening the workfile does it too, for an
-import on `latest`); **Open Location** opens the resolved version's folder.
+import on `latest`); **Open Location** opens the resolved version's folder;
+**Render** opens [Farm Submit](../asset-browser/submit-jobs.md) on the
+Shots tab with this shot's Render cell ticked and this import's Channel
+checked in the Render settings (every channel for **All channels**). A
+concrete Department becomes the render's **Up to**, the department the
+render is written under, so the import reads the new render once it is
+done; `best` leaves each shot's own. It is the same window as the toolbar's
+Render quick action, so an open one gives way to it.
 Changing Channel, Department or Version resolves at once; a render that
 cannot be comped shows its reason on **Reads** instead of a dialog. The File
 COPs inside are rebuilt whenever the shot, channel, department or version
@@ -98,7 +105,7 @@ Source: [`otls/cop_th.export_comp.1.0`](../../otls/cop_th.export_comp.1.0/th_8_8
 | Layer | `comp` | `comp` = the merged comp, written as the version's `slapcomp` layer; or a channel, for a per-channel output |
 | Warning | | Shot channels no import reads (Layer `comp` only) |
 | Jobs › Preview Frames | off | Also render first, middle and last frame as a quick task, posted before the full range |
-| Jobs › Frame Range | From Config | The shot's range plus roll, or From Settings (**Start/End-Frame**, **Pre/Post-Roll**) |
+| Jobs › Frame Range | From Config | The frames every import's render covers (each frozen read's `context.json` range, intersected), else the shot's range plus roll; or From Settings (**Start/End-Frame**, **Pre/Post-Roll**). Submit warns when a range reaches past the renders: those frames comp over empty input. The farm log also has a `WARNING:` line per channel for any frame its render does not cover |
 | Jobs › Step, Batch Size | `1`, `5` | |
 | Jobs › Copy to Edit | off | Sync the comp into the edit when it is done |
 | Farm › Pool, Priority | the project's default pool, `50` | |

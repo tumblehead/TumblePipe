@@ -172,8 +172,13 @@ to a linted one. `git commit --no-verify` bypasses it for a single commit.
 No hook runs the tests: a pre-push hook used to, and it was removed because
 it ran on every push, branch deletions included, and blocked pushes whenever
 the shell lacked the test environment. Run the preflight below (its `tests`
-stage is the minigun property suite, and `hdas` the binary-HDA check) before
-pushing work.
+stage is the minigun property suite, `rust` the Rust crates' own tests, and
+`hdas` the binary-HDA check) before pushing work.
+
+The minigun suite runs no crate's `cargo test`, so a green suite says
+nothing about the wizard, the resolver, the delegate or the player. Work
+that touches `src/`, or anything a crate reads (such as the packaged
+templates the wizard fingerprints), needs `preflight.py --only rust` too.
 
 ## Preflight
 
@@ -188,7 +193,17 @@ uv run --no-project python .ci/preflight.py
 ```
 
 Stages: `lint` (ruff E9,F), `hdas`, `hdapy`, `hdapaths`, `reports`, `tests`,
-`harness`.
+`rust`, `harness`.
+
+`rust` runs `cargo test --locked` in `src/resolver`, `src/wizard` and
+`src/delegate` (on Windows inside vcvars64's environment), then
+`.ci/build_player.py --test` for the player workspace: `cargo fmt --check`,
+clippy with `-D warnings` and the whole workspace's tests, in the release
+build's FFmpeg and OpenColorIO environment. The first run in a fresh
+checkout builds FFmpeg into `build-ffmpeg-<platform>/`, which takes a while;
+a worktree can junction (or symlink) that folder from the main checkout. It
+is the local half of `.ci/test.sh`, which the CI workers run on a manual
+`RUN=tests` pipeline.
 
 `hdapy` runs `.ci/quality_gates/check_hda_python.py`: the `PythonModule` and
 event-script sections of every expanded HDA under `otls/` are extensionless,
@@ -605,8 +620,9 @@ separate shared libraries beside `th_player`, never linked statically.
 - Each platform builds from its committed bindings. A new platform has none
   and fails to compile until they are regenerated (below) and committed.
 - Primer is used without its default `os` feature (native menus and tray
-  icons). On Linux that feature links GTK and libxdo, which every artist
-  machine would then need.
+  icons) except on macOS. On Linux that feature links GTK and libxdo, which
+  every artist machine would then need; on Windows the native menu bar
+  ignores the editor's theme, so Primer draws the menu in the window.
 - All three platforms have been built from a clean clone on the build
   workers, and the media tests pass on each.
 
@@ -692,9 +708,11 @@ The tests:
   what writes is greyed on a read-only edit, and with Command or Alt held a
   letter acts only through a chord the menu shows. Add a key there, with
   its menu item, not in `editor.rs`; Primer's
-  `os` feature is on for Windows and macOS only (player/Cargo.toml), as on
-  Linux it would link GTK, so there Primer draws the declaration inside the
-  window instead (its `&` access letters, its shortcuts as hints); the keys
+  `os` feature is on for macOS only (player/Cargo.toml): the native Windows
+  bar is a white Win32 menu that ignores the theme, and on Linux it would
+  link GTK, so on both Primer draws the declaration inside the window
+  instead, in the editor's theme (its `&` access letters, its shortcuts as
+  hints); the keys
   are `on_key`'s on every platform, so the toolbar carries no actions. On macOS
   only Command chords are given to the menu as shortcuts, since the menu
   takes a key before the window sees it. Each distinct
@@ -1295,7 +1313,7 @@ created and runs its own copy from then on: "New workfile from template"
 loads `<project>/_config/templates/<context>/<department>/template.py`, not
 the package's. **Editing a packaged template changes new projects only.** An
 existing project gets the change only when a numbered refresh step brings it
-(v2, v9, v12, v14–v16, v18–v21 and v24 so far), so a fix nobody migrates is a fix nobody has: the
+(v2, v9, v12, v14–v16, v18–v21, v24–v26 so far), so a fix nobody migrates is a fix nobody has: the
 rig/blendshape dive fix shipped in 1.77.0 and the animation template's
 `KeyError: 'uri'` fix both sat in the scaffold, unseen by every project past
 v12, until v14.
@@ -1646,6 +1664,230 @@ the delegate through husk while a tumblepipe package is installed, run husk
 with `HOUDINI_PACKAGE_SKIP=1` (or a dev-override launch, whose package is
 the working tree).
 
+### hdThPlayblast: scene lights
+
+The delegate syncs the Hydra light sprims (`distantLight`, `sphereLight`,
+`rectLight`, `diskLight`, `cylinderLight`, `domeLight`; `ThLightPrim` in
+`cpp/delegate.cpp`) and hands the visible ones over as authored
+(`ThFrame::lights`, `ThLight`): the transform, intensity x 2^exposure x
+diffuse, colour, colour temperature (when enabled), normalize,
+treatAsPoint, angle, radius, width, height, length. The frame's job keeps
+a copy, so a light edit counts as a change (`_Changed`), not an edit that
+stops the background render. The per-frame value only: motion-blur
+sub-samples do not move the lights. `src/lights.rs` turns them into camera
+space for the frame (`Lighting`), and `composite::light` lights each
+sample with them on both paths (`post.wgsl` and `gpu.wgsl`'s `light`,
+16 lamps in the uniform blocks); the GPU tests hold the two to the same
+picture for any light set (`scene_lights()` in `gpu.rs`).
+
+- **Shading.** Lambert's cosine from each light, no shadows (Houdini GL's
+  "normal" lighting has none). Distant lights are directional; sphere,
+  rect, disk and cylinder lights are points at their centre, the direction
+  and the 1/d^2 falloff worked out per sample from its rebuilt position,
+  d^2 held above the light's own size; rect and disk lights also take the
+  cosine of their emitting side (their -Z). Dome lights add an even ambient
+  of colour x intensity (textures ignored) in place of the rig's sky and
+  ground. The highlight (`lights::SCENE_SPECULAR`, the rig's 0.05 over its
+  key's 0.62) is of the light brightest as seen from the camera, tinted by
+  the light it gives the sample. Clay is lit the same; albedo and occlusion
+  are not lit.
+- **Brightness is Karma's**, measured with Karma CPU (Houdini 22.0.429) on
+  a 0.5 grey Lambert plane two units under each light: the table in
+  `src/lights.rs`, held by `lights_are_as_bright_as_in_karma`. In short a
+  surface of colour `albedo` comes out `albedo x k`, with `k = L cos / pi`
+  for a normalized distant light (L = intensity x 2^exposure x colour), `L
+  Omega cos / pi` for one of angle `a` not normalized (Omega the solid
+  angle of a cone of angle `a`: a default Light LOP distant light,
+  0.53 degrees, is nearly black in Karma, so here too; husk's own
+  headlight is intensity 57225 for that reason), `L r^2 cos / d^2` for a
+  sphere (normalized `L cos / (4 pi d^2)`; treatAsPoint `L cos / (pi d^2)`),
+  `L w h cos cos_e / (pi d^2)` for a rect (normalized without `w h`), and
+  `L` for a dome. Colour temperature is the Planckian locus at luminance 1
+  (`lights::blackbody`, within 2% of Karma's tint from 3000 K to 9000 K).
+- **Fallback.** No visible light of those kinds, or `th:lighting` =
+  `headlight` (`TH_PLAYBLAST_LIGHTING`, read as `th:shading` is), is the
+  fixed camera rig, bit for bit (`no_scene_lights_is_the_fixed_rig`).
+  husk adds a distant light `/husk_headlight/__the_headlight` (libHUSD's
+  default headlight) to a stage without lights; the delegate skips any
+  light named `__the_headlight`, so such a stage keeps the rig.
+- At most 16 lights (`lights::MAX_LIGHTS`): every dome is summed into one,
+  and past that the brightest by their strength are kept.
+- `TH_PLAYBLAST_LIGHTS=1` lists each frame's lights as read.
+  `.ci/smoke_delegate.py` (`_check_lights`) renders a grey wall through
+  husk under a distant and a sphere light on the CPU and the GPU and checks
+  its centre against the mapping, and that an invisible light and the
+  headlight setting give the rig.
+- Not done: light linking, shadows, light filters, shaping (spot cones,
+  IES), dome textures, mesh/portal/plugin lights, instanced lights, and
+  `th:lighting` in the farm dialog and the th::playblast node (farm
+  playblasts take the default, the scene's lights).
+
+### hdThPlayblast: see-through surfaces
+
+Each mesh carries one opacity (`ThMeshView::transparency`, one minus it,
+so a zeroed view is opaque; `raster::Mesh::opacity` in the core).
+
+Where it comes from (the shim, `cpp/delegate.cpp`): the bound material's
+surface shader when it says something about it, else the mesh's
+`displayOpacity` primvar (its mean, whatever its interpolation; 1 when
+unauthored). `ThMaterial::_ReadOpacity` reads, in the render context the
+material colour comes from (`kma`, then `mtlx`, then the universal one):
+
+- `opacity` (UsdPreviewSurface float; MaterialX standard_surface color3,
+  taken as its mean) or OpenPBR `geometry_opacity`;
+- `transmission` (standard_surface, what Karma's material builder writes)
+  or OpenPBR `transmission_weight`, as see-through: the opacity times
+  `1 - transmission` (clamped to [0, 1]);
+- UsdPreviewSurface `opacityThreshold` above 0, a cut-out: an opacity under
+  it draws nothing, at or over it opaque.
+
+An `opacity` wired to a primvar reader of `displayOpacity` uses the
+primvar (times the transmission factor). Wired to anything else (a
+texture's alpha, a procedural) it is not evaluated and the surface stays
+opaque, as before; so does a texture's own alpha channel.
+
+How it is drawn (`raster.rs` `Surface`, `composite.rs` "See-through
+surfaces", `gpu.wgsl` `fs_glass`, `post.wgsl` `accumulate`): opacity 1 (or
+more, or NaN) is opaque and drawn exactly as before (the output of a scene
+without see-through meshes is unchanged to the bit, and the GPU path then
+allocates nothing more). Opacity 0 or less is not drawn and cannot be
+picked. In between, after all the opaque surfaces, each sample a
+see-through surface reaches in front of the opaque depth is lit there (the
+same lights and shading mode as the post pass, with no ambient occlusion)
+and added to that sample's **weighted blended order-independent
+transparency** sums with every weight 1: `sum(a * colour)`, `sum(a)` and
+the revealage `prod(1 - a)`. The post pass then makes the sample
+`behind * reveal + sum(a * colour) / sum(a) * (1 - reveal)`, where behind
+is the opaque surface's lit, occluded colour or the backdrop. One layer is
+exact (`a * colour + (1 - a) * behind`); several are order independent
+(the sums commute, so only rounding depends on the order), and the
+revealage, so how much of what is behind shows, is exact. Limits of that
+choice:
+
+- Stacked layers of different colours blend to their opacity-weighted
+  mean colour, not front-over-back: a red pane in front of a blue one looks
+  the same as blue in front of red. For a cornea over an iris (one layer
+  over an opaque surface) this does not arise.
+- See-through surfaces write no depth, receive no ambient occlusion and
+  cast none, and the depth AOV is the opaque surfaces' (Houdini's viewer
+  composites its grid and handles by it).
+- A mesh's front and back faces both blend (unless its cull style culls
+  one, see backface culling below), so a closed see-through shell shows
+  twice its opacity's worth.
+
+Alpha (`th:alpha`, a transparent background): a sample nothing opaque
+covers gets coverage `1 - reveal`, so see-through surfaces add partial
+alpha and the colour stays premultiplied.
+
+Picking (`th_render_ids`, the viewer's selection): the nearest surface a
+pixel's first sample sees, see-through or not, so clicking a window selects
+the glass, as in Houdini's GL viewer. The CPU path keeps the nearest
+see-through depth per pixel (`Samples::near`) for it; the GPU path draws
+see-through meshes in its id pass too, after the opaque ones, with the id
+pass's own depth.
+
+Motion blur and depth of field need nothing more: each layer blends its own
+samples, and the layers average as before.
+
+Exactness: see-through surfaces are not depth-tested against each other,
+so a sample on an edge two triangles share must be blended once, not
+twice. The CPU rasteriser's coverage test for opaque surfaces (barycentric
+weights stepped per sample, inclusive) can give such a sample to both
+triangles (the depth test then keeps one) or, rarely, to neither (a
+sub-sample crack, seen at 16 samples); see-through surfaces take an exact
+edge test instead (`raster.rs` `Edges`: each edge evaluated in one fixed
+corner order, with a tie rule), so every sample goes to exactly one
+triangle. The GPU's rasteriser does that by itself. On the card the sums
+are half floats (`Rgba16Float` / `R16Float`, the formats every adapter can
+blend into), which keeps the GPU's picture within 2e-3 of the CPU's.
+
+### hdThPlayblast: materials on faces (GeomSubsets)
+
+A mesh whose faces are bound to materials of their own (a `GeomSubset` of
+the `materialBind` family with a `material:binding`, which Hydra hands over
+in the mesh topology, `HdGeomSubset::materialId`) is drawn in **parts**,
+one `ThMeshView` per material (`ThMesh::_SplitBySubsets`, "Subsets" in
+`cpp/delegate.cpp`). Each part is painted exactly as a whole mesh is
+(`ThMesh::_Paint`): the material's base colour or texture wins, else the
+mesh's display colour, else grey; its opacity the material's, else the
+display opacity, so a subset can be see-through while the rest is opaque.
+Faces in no subset, or in a subset bound to nothing, keep the mesh's own
+material.
+
+The design, and why:
+
+- **Parts are runs of the triangles.** Once every per-corner value is made
+  (normals, display colour, uvs), the triangles are sorted by material
+  (stable), and each part is a run of them: a pointer and a count into the
+  same arrays, so the points are shared and nothing is copied per part. The
+  face each triangle came from decides its part, so triangulation (fan or
+  ear clipping) and holes change nothing; a refined subdivision surface's
+  faces carry their cage face (a uniform value carried down the refiner's
+  levels, `_Refine` with `_Rate::Uniform`).
+- **One mechanism for colour, texture and opacity.** A per-face colour
+  through the corner colours would have covered constant colours only; a
+  textured or see-through subset needs a view of its own anyway (a view has
+  one texture set and one opacity), so every subset material gets one.
+- **No crease where parts meet.** Normals worked out per part would smooth
+  each over its own faces only, a visible seam along every material border
+  on a smooth surface. So a mesh without normals of its own that is drawn in
+  two or more parts gets the whole mesh's normals from the core,
+  `th_mesh_normals` (cusp normals for a polygonal mesh, smooth point normals
+  at each corner for a subdivision surface, the same functions the core
+  uses), as explicit corner normals, remade whenever its points move
+  (`_UpdatePoints`). `props.rs`
+  (`a_mesh_drawn_in_parts_is_the_whole_mesh_coloured_by_part`) holds a mesh
+  in parts to the bit to the whole mesh drawn once with each corner coloured
+  by its part, cusp or smooth; without the whole mesh's normals it fails.
+  `gpu.rs` (`a_mesh_in_parts_matches_the_cpu`) holds the GPU to the CPU.
+- **Keys:** part 0 keeps the mesh's key, the others get keys of their own
+  (`_partKeys`, never reused), so the GPU cache keeps each part's corners.
+  Every part is picked as the mesh (its primId).
+- A mesh whose subsets bind no material, or whose every face keeps the
+  mesh's material, is one view exactly as before: a scene without subset
+  materials renders bit for bit as before.
+
+Limits: a moving mesh drawn in parts with motion blur takes the normals of
+the frame's points at every moment of the shutter (a whole mesh's are
+worked out from the shutter's opening); overlapping subsets (invalid USD)
+give a face its first subset's material.
+
+### hdThPlayblast: backface culling
+
+Hydra's cull style is resolved as Storm resolves it (`ThMesh::_CullCode`):
+the prim's style (`delegate->GetCullStyle`, synced on `DirtyCullStyle`), or
+the render pass state's when the prim's is DontCare; `BackUnlessDoubleSided`
+and `FrontUnlessDoubleSided` cull only a mesh that is not `doubleSided`
+(`DirtyDoubleSided`). The result goes to the core as `ThMeshView::cull` (0
+nothing, 1 back, 2 front; `raster::Cull`). The pass's style is part of the
+viewer's frame key, so changing it redraws.
+
+- **Front:** counter-clockwise triangles (the shim winds a left-handed
+  mesh's the other way), seen through the instance's transform: a
+  mirroring transform (negative determinant, `math::det3`) swaps front and
+  back (`Cull::through`), so the front stays outside, as in Storm.
+- **CPU:** `Raster::draw` drops a triangle by the sign of its screen area
+  before any sample is touched; a culled triangle writes nothing, picking
+  ids included. Per instance the side is worked out once (`job_culls`).
+- **GPU:** the hardware culls (`cull_mode`, `FrontFace::Ccw`): every scene,
+  id and see-through pipeline exists per side (`Culled`), and each mesh's
+  instances are drawn in runs culling the same side (`cull_runs`), so a
+  mirrored instance gets the other pipeline. No discard in the shader, so
+  early depth testing stays.
+- **What culls:** husk's pass says Nothing and USD prims DontCare, so
+  playblasts and the farm cull nothing, bit for bit as before. A draw
+  mode's cards ask for Back. What the Houdini viewer's pass asks for (its
+  backface culling display option) has not been checked in the GUI.
+
+`props.rs` (`culling_drops_exactly_the_instances_showing_the_culled_side`)
+holds the picture to the bit to the instances left drawn with nothing
+culled, for turned, mirrored and reversed quads, which side faces the
+camera judged from the normal carried through the transform (not from
+screen winding); it fails with the winding rule inverted or without the
+mirror swap. `cull_through_the_abi` holds the codes. `gpu.rs`
+(`culling_matches_the_cpu`) holds the card to the CPU, ids included; it
+fails with the faces swapped or without the per-instance runs.
+
 ### hdThPlayblast in Solaris's viewer
 
 `UsdRenderers.json` (repo root, staged by `[stage] include`) puts the
@@ -1683,6 +1925,27 @@ when bound, not left at zeros, so a pivot picked before the first frame is
 published is not at the camera either. The rest:
 `needsselection` (Houdini draws the outline from the primId/instanceId
 AOVs, over a transparent background), guides and proxies by default.
+
+`drawmodesupport true`: models with `model:drawMode` (bounds, origin,
+cards) and `model:applyDrawMode` draw as their stand-ins in the viewer, as
+in Storm, rather than as full geometry. The flag only asks Houdini's viewer
+(libHUSD) to switch the draw mode scene index on; husk never does (no flag,
+whatever the json says), so playblasts and the farm draw full geometry as
+before. UsdImaging builds the stand-ins and the delegate draws what it is
+handed: bounds and origin are linear basis curves named `boundsCurves` and
+`originCurves` under the model, width 1 and meant as one-pixel lines, so
+`ThStrokes` drops their widths (`_DrawModeStandin`) and draws them at the
+minimum pixel width; drawn with their width they were a solid block. Cards
+are a mesh `cardsMesh` with a GeomSubset per side, each bound to a
+UsdPreviewSurface reading its `model:cardTexture<Side>` through the primvar
+`cardsUv` (no texture-coordinate role), which is why `ThMesh` also reads
+whatever uv primvar the mesh's or its subsets' materials name, and why cards
+rely on materials on faces. They need the model's `extentsHint`; without it
+UsdImaging makes every point zero. Checked with `usdrecord --renderer
+TumbleView` (UsdImagingGL applies draw modes; husk does not): bounds a
+one-pixel wire box, cards one texture per side. Not driven in the Houdini
+GUI. Known gaps: a card texture given as a relative path is used unresolved;
+a material whose uv primvar name changes does not rebuild the meshes using it.
 
 The viewer reads the AOVs through `HUSD_RenderBuffer::map()`, CPU memory, so
 the buffers stay host buffers. It sets `houdini:viewport` (bool) among the
@@ -1750,8 +2013,13 @@ set). That decides `th:interactive`'s default:
   by a normal left from an earlier frame). Per-frame allocations, their
   page faults and their frees had been a quarter of a draft.
 - **Culling:** an instance whose bounding box lies wholly beyond one plane
-  of an unblurred pass's view is neither transformed nor binned. The
-  rasteriser fetches a triangle's corner attributes only once one of its
+  of an unblurred pass's view is neither transformed nor binned. That is
+  only a shortcut: the far plane is kept per sample on both paths (the
+  CPU's depth test takes only `0 <= z < 1` against a buffer cleared to 1,
+  the GPU's hardware clips at w and tests Less against 1), so of a
+  triangle crossing it, the part beyond shows the backdrop and is never
+  picked (`props.rs` `what_is_past_the_far_plane_is_not_drawn`, `gpu.rs`
+  `the_far_plane_cuts_as_on_the_cpu`). The rasteriser fetches a triangle's corner attributes only once one of its
   samples passes the depth test, and clips on the stack.
 - **The GPU path** reads colour, depth and ids back in one submission and
   one wait, each copied once out of the mapped buffer.
@@ -1842,6 +2110,73 @@ camera, the same; out of view, none; an instancer, its nearest copy in
 view; square to the camera, edges of at most two pixels); and, with a
 RenderSettings prim setting `houdini:viewport`, the level asked on either
 path. Mutation-checked: each of the sizing's parts, broken, fails one.
+
+### hdThPlayblast: curves and points
+
+`BasisCurves` and `Points` are drawn as the GL viewport draws them, so a
+SOP or APEX playblast through TumbleView shows ropes, whiskers, rig curves
+and particles. `delegate.cpp` (`ThStrokes`, as `ThCurves` and `ThPoints`)
+hands them to the core as authored, in a `ThCurvesView` each: vertices
+(curve indices applied), curve vertex counts, type, basis (`bezier`,
+`bspline`, `catmullRom`; `centripetalCatmullRom` as `catmullRom`) and wrap
+(`nonperiodic`, `periodic`, `pinned`), `widths` and `displayColor` with
+their interpolation (constant, uniform, varying, vertex), the material's
+colour in place of display colour as for a mesh, instances, and motion
+(points at the shutter's opening and closing from sampled points or
+velocities, transforms at keys across it). `th_render_scene` takes them
+after the meshes; in its ids curves view `j` is `mesh_count + j`, so
+picking and the viewer's highlight name the curves prim and instance.
+
+The core (`src/curves.rs`) makes their geometry for each frame, because it
+faces the camera and its thinnest size is in pixels: a curve is a ribbon
+of its authored width, never under `MIN_CURVE_PIXELS` (1) across at its
+depth; a point a disc of its width, never under `MIN_POINT_PIXELS` (2)
+across; so a curve or point with no width is a line or a dot. A ribbon
+runs on past each open end by half its width, and by at least
+`CAP_PIXELS` / 2 (0.75 px) across the view: a line a pixel wide and about a
+pixel long (a fine hair, a short rig curve) could otherwise sit between
+pixel centres and draw nothing. A line pointing at the camera, a dot on
+screen however long, makes up its cap across the view. It is mitred at
+bends and broken at bends sharper than `BREAK_DEGREES` (90) as seen (a
+line turning gently in depth can fold right back on screen), each side
+capped past the bend; every point makes four vertices either way, so a
+shutter's opening and closing line up even when a bend sharpens between
+them. The pixel floor is taken where each vertex ends up, so a cap running
+deeper into the picture does not thin out. Normals face
+the camera, bent across a ribbon and out to a disc's rim like a tube's or
+a sphere's, so lit and clay shading round them off and albedo is the flat
+display colour. Cubic curves are evaluated to polylines (USD's basis
+matrices; a pinned bspline or catmullRom gets USD's phantom end vertices,
+`2 P0 - P1`), each span cut into one segment per `SEGMENT_PIXELS` (4) of
+its control polygon on screen, at most `MOST_STEPS` (64); vertex widths
+and colours follow the basis, varying ones run linearly per segment. The
+geometry is world space, one mesh per instance, with no key: every frame
+uploads it afresh on the GPU path rather than keeping view-dependent
+geometry on the card. With motion blur an instance's geometry at the
+shutter's closing (its closing points through its last transform key) is
+cut as its opening was (`curves::Plan`), so the two line up vertex for
+vertex and blur like a mesh's points. Everything after that (both
+rasterisers, ids, cancel, alpha, both depth styles, blur and depth-of-field
+layers) is the mesh path. Not drawn: authored curve `normals` (oriented
+ribbons are drawn camera-facing), and hair a Houdini procedural would make
+(husk does not run procedurals for the delegate).
+
+`props_curves.rs` holds it: the bases' end and pass-through points, span
+counts, unbroken, closed and pinned curves; a width-less curve an unbroken
+line no more than about a pixel wide at any depth and direction (bent,
+sub-pixel or of no length included), authored
+widths drawn to size, discs covering their centres and nothing outside
+their radius, display colours under albedo, ids naming the curves view and
+instance through the ABI, a moving point smearing along its path, and a
+closing cut as its opening. `gpu.rs`'s `curves_and_points_match_the_cpu`
+and `random_curves_and_points_match_the_cpu` hold the GPU path to the
+CPU's picture and ids. These properties are worth shaking with
+`PROPTEST_CASES=2000` after a change to `curves.rs`: the sub-pixel cases
+(a line about a pixel long between pixel centres, a hairpin seen in
+depth, a line pointing at the camera) turned up only there. `.ci/smoke_delegate.py`
+draws a wire, a rope and two point sets through husk, on the CPU, the GPU
+and the viewer's background path. Mutation-checked: the pixel floor and a
+basis matrix, broken, each fail a property.
 
 ## The package manifest
 

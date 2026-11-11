@@ -38,7 +38,7 @@ import re
 
 from tumblepipe.api import api
 from tumblepipe.config.entities import get_entity_type  # noqa: F401  (re-export)
-from tumblepipe.naming import is_valid_entity_name
+from tumblepipe.naming import entity_name_problem
 from tumblepipe.util.uri import Uri
 
 DEFAULT_CHANNEL = 'default'
@@ -305,12 +305,13 @@ def prim_pattern_problem(pattern: str) -> str:
 
 
 def channel_name_problem(name: str) -> str:
-    """Why ``name`` cannot name a new channel, or '': the entity name rule,
-    letters and digits."""
+    """Why ``name`` cannot name a new channel, or '': the entity name rule
+    (letters and digits, no Windows device name)."""
     if not name:
         return 'No channel name'
-    if not is_valid_entity_name(name):
-        return f"Channel name '{name}' may only use letters and digits"
+    problem = entity_name_problem(name)
+    if problem:
+        return f"Channel name '{name}' {problem}"
     return ''
 
 

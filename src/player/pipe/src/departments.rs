@@ -109,8 +109,8 @@ pub fn channel_name_problem(name: &str) -> String {
     if name.is_empty() {
         return "No channel name".into();
     }
-    if !crate::naming::is_valid_entity_name(name) {
-        return format!("Channel name '{name}' may only use letters and digits");
+    if let Some(problem) = crate::naming::entity_name_problem(name) {
+        return format!("Channel name '{name}' {problem}");
     }
     String::new()
 }
@@ -178,6 +178,10 @@ pub fn validate_department_name(name: &str) -> Result<(), String> {
     }
     if RESERVED_NAMES.contains(&name) {
         return Err(format!("'{name}' is reserved for a pipeline pseudo-department ({})", RESERVED_NAMES.join(", ")));
+    }
+    if crate::naming::is_windows_reserved(name) {
+        // A department is a folder in every workspace and export path.
+        return Err(format!("'{name}' is a device name Windows reserves (CON, PRN, AUX, NUL, COM0-9, LPT0-9)"));
     }
     Ok(())
 }
@@ -281,12 +285,12 @@ mod tests {
         /// and one that exists; anything else is appended to the pool with
         /// every flag Python writes.
         #[test]
-        fn add_department_refuses_as_python(name in proptest::sample::select(vec!["root", "staged", "none", " x", "a/b", "", "model", "rig", "Root"])) {
+        fn add_department_refuses_as_python(name in proptest::sample::select(vec!["root", "staged", "none", " x", "a/b", "", "model", "rig", "Root", "aux", "Com1", "LPT9", "console"])) {
             let (_dir, root) = crate::testing::make_project();
             let config = Config::new(&root.join("_config"));
             add_department(&config, "assets", "model", &NewDepartment::default()).unwrap();
             let result = add_department(&config, "assets", name, &NewDepartment::default());
-            let refused = ["root", "staged", "none", " x", "a/b", "", "model"].contains(&name);
+            let refused = ["root", "staged", "none", " x", "a/b", "", "model", "aux", "Com1", "LPT9"].contains(&name);
             prop_assert_eq!(result.is_err(), refused, "{:?}", result);
             if !refused {
                 prop_assert_eq!(config.child_names(&Uri::new("departments", ["assets"])).unwrap(), vec!["model".to_string(), name.to_string()]);

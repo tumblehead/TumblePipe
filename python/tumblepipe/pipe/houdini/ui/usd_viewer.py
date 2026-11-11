@@ -1,360 +1,122 @@
-"""USD viewer launcher for external tools like 3D-Info and USD Manager."""
+"""Open a USD file in usdview, the viewer Houdini bundles under ``$HFS/bin``.
+
+The publish dialog's "View latest export" is the only caller. There is no
+viewer setting: usdview ships with every Houdini, so the only thing that can
+be missing is the executable itself, and the error says so.
+"""
 
 from pathlib import Path
 from typing import Optional
-import subprocess
 import logging
-from enum import Enum
-
-from PySide6 import QtCore
+import os
+import platform
+import subprocess
 
 from tumblepipe.util.houdini import hou
 
 
 logger = logging.getLogger(__name__)
 
-
-class USDViewerType(Enum):
-    """Available USD viewer types."""
-
-    THREE_D_INFO = "3d-info"
-    USD_MANAGER = "usd-manager"
-    USDVIEW = "usdview"
-    AUTO = "auto"
+USD_EXTENSIONS = frozenset({'.usd', '.usda', '.usdc', '.usdz'})
 
 
-class USDViewerLauncher(QtCore.QObject):
-    """Handles launching external USD viewers.
+def is_usd_file(path: Path) -> bool:
+    """True if ``path`` has a USD extension (any case)."""
+    return path.suffix.lower() in USD_EXTENSIONS
 
-    This class manages launching various USD viewing applications like
-    3D-Info (artist-friendly viewer), USD Manager (file browser/editor),
-    and usdview (Pixar's official viewer).
+
+def usdview_path(hfs: Path, system: Optional[str] = None) -> Path:
+    """Where usdview lives under ``hfs`` on ``system`` (default: this OS).
+
+    Windows ships a ``usdview.cmd`` wrapper that calls hython; Linux and
+    macOS ship a ``usdview`` script.
     """
+    system = (system or platform.system()).lower()
+    name = 'usdview.cmd' if system == 'windows' else 'usdview'
+    return Path(hfs) / 'bin' / name
 
-    # Supported USD file extensions
-    USD_EXTENSIONS = {'.usd', '.usda', '.usdc', '.usdz'}
 
-    def __init__(self, parent=None):
-        """Initialize the USD viewer launcher.
-
-        Args:
-            parent: Optional parent QObject
-        """
-        super().__init__(parent)
-        self._settings = QtCore.QSettings('Tumblehead', 'ProjectBrowser')
-
-    def launch_viewer(self, file_path: Path, viewer_type: USDViewerType = USDViewerType.AUTO) -> None:
-        """Launch a USD viewer for the given file.
-
-        Args:
-            file_path: Path to the USD file to view
-            viewer_type: Type of viewer to launch (defaults to AUTO for preference-based)
-
-        Raises:
-            ValueError: ``file_path`` is not a USD file, or no viewer of
-                that type is configured.
-            FileNotFoundError: the file or the viewer executable is missing.
-            OSError: the viewer process could not be started.
-        """
-        if not self.is_usd_file(file_path):
-            raise ValueError(f"{file_path} is not a USD file")
-        if not file_path.exists():
-            raise FileNotFoundError(f"{file_path} does not exist")
-
-        # Resolve AUTO to actual viewer type
-        if viewer_type == USDViewerType.AUTO:
-            viewer_type = self.get_preferred_viewer()
-
-        viewer_path = self._get_viewer_path(viewer_type)
-        if not viewer_path:
-            raise ValueError(
-                f"No {viewer_type.value} viewer is configured. Set one in "
-                "Settings > Configure USD Viewers."
-            )
-        if not viewer_path.exists():
-            raise FileNotFoundError(
-                f"The {viewer_type.value} viewer is not at {viewer_path}"
-            )
-
-        # Launch viewer as detached process
-        self._launch_process(viewer_path, file_path)
-        logger.info(f"Launched {viewer_type.value} for {file_path}")
-
-    def _get_3d_info_from_bin_path(self) -> Optional[Path]:
-        """Get path to 3D-Info executable from TH_BIN_PATH environment variable.
-
-        Looks for 3D-Info in: %TH_BIN_PATH%/cst_3dinfo-v0.4.4/cst_3dinfo.exe
-
-        Returns:
-            Path to 3D-Info if found, None otherwise.
-        """
-        import os
-        import platform
-
-        # Check if TH_BIN_PATH is set
-        bin_path = os.environ.get('TH_BIN_PATH')
-        if not bin_path:
-            return None
-
-        # Platform-specific executable name
-        system = platform.system().lower()
-        if system == 'windows':
-            executable_path = Path(bin_path) / 'cst_3dinfo-v0.4.4' / 'cst_3dinfo.exe'
-        elif system == 'linux':
-            # Future: adjust for Linux distribution name/path
-            executable_path = Path(bin_path) / 'cst_3dinfo-v0.4.4' / 'cst_3dinfo'
-        elif system == 'darwin':
-            # Future: adjust for macOS distribution name/path
-            executable_path = Path(bin_path) / 'cst_3dinfo-v0.4.4' / 'cst_3dinfo'
-        else:
-            return None
-
-        return executable_path if executable_path.exists() else None
-
-    def _get_usdview_from_houdini(self) -> Optional[Path]:
-        """Get path to usdview from Houdini's bundled tools.
-
-        Uses hou.getenv('HFS') to get Houdini installation directory,
-        which works reliably from within a running Houdini session.
-
-        Returns:
-            Path to usdview if found, None otherwise.
-        """
-        import platform
-
-        if hou is None:
-            return None
+def _current_hfs() -> Optional[str]:
+    if hou is not None:
         hfs = hou.getenv('HFS')
+        if hfs:
+            return hfs
+    return os.environ.get('HFS') or None
 
-        if not hfs:
-            return None
 
-        # Platform-specific executable/script name
-        system = platform.system().lower()
-        if system == 'windows':
-            # Windows uses .cmd wrapper script that calls hython
-            executable_path = Path(hfs) / 'bin' / 'usdview.cmd'
-        elif system == 'linux':
-            executable_path = Path(hfs) / 'bin' / 'usdview'
-        elif system == 'darwin':
-            executable_path = Path(hfs) / 'bin' / 'usdview'
-        else:
-            return None
+def find_usdview(hfs: Optional[str] = None) -> Path:
+    """The usdview executable of ``hfs`` (default: the running Houdini's).
 
-        return executable_path if executable_path.exists() else None
+    Raises:
+        FileNotFoundError: ``$HFS`` is not set, or has no usdview in ``bin``.
+    """
+    hfs = hfs if hfs is not None else _current_hfs()
+    if not hfs:
+        raise FileNotFoundError("usdview not found: $HFS is not set")
+    path = usdview_path(Path(hfs))
+    if not path.exists():
+        raise FileNotFoundError(f"usdview not found under {Path(hfs) / 'bin'}")
+    return path
 
-    @classmethod
-    def is_usd_file(cls, path: Path) -> bool:
-        """Check if the given path is a USD file.
 
-        Args:
-            path: Path to check
+def launch_usdview(file_path: Path, hfs: Optional[str] = None) -> None:
+    """Open ``file_path`` in usdview as a detached process.
 
-        Returns:
-            True if the file has a USD extension, False otherwise
-        """
-        return path.suffix.lower() in cls.USD_EXTENSIONS
+    Raises:
+        ValueError: ``file_path`` is not a USD file.
+        FileNotFoundError: the file, or usdview under ``$HFS/bin``, is missing.
+        OSError: the viewer process could not be started.
+    """
+    if not is_usd_file(file_path):
+        raise ValueError(f"{file_path} is not a USD file")
+    if not file_path.exists():
+        raise FileNotFoundError(f"{file_path} does not exist")
+    viewer = find_usdview(hfs)
+    subprocess.Popen(
+        [str(viewer), str(file_path)],
+        cwd=str(viewer.parent),
+        env=_add_resolver_env(os.environ.copy()),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    logger.info(f"Launched usdview for {file_path}")
 
-    def get_preferred_viewer(self) -> USDViewerType:
-        """Get the user's preferred USD viewer from settings.
 
-        Returns:
-            The preferred viewer type, defaults to USDVIEW
-        """
-        viewer_str = self._settings.value('usd_viewer/preferred', 'USDVIEW')
-        try:
-            return USDViewerType[viewer_str]
-        except KeyError:
-            return USDViewerType.USDVIEW
+def _add_resolver_env(env: dict) -> dict:
+    """Let the out-of-process usdview resolve ``entity:/`` sublayers.
 
-    def set_preferred_viewer(self, viewer_type: USDViewerType):
-        """Set the user's preferred USD viewer.
+    Prepends the tumbleResolver plugin to ``PXR_PLUGINPATH_NAME`` and the
+    pipeline's python to ``PYTHONPATH``.
+    """
+    from tumblepipe.resolver import plugin_resources_path
 
-        Args:
-            viewer_type: The viewer type to set as preferred
-        """
-        if viewer_type == USDViewerType.AUTO:
-            return  # Can't set AUTO as preference
-        self._settings.setValue('usd_viewer/preferred', viewer_type.name)
-
-    def get_viewer_path(self, viewer_type: USDViewerType) -> Optional[Path]:
-        """Get the configured path for a viewer type.
-
-        Args:
-            viewer_type: The viewer type to get path for
-
-        Returns:
-            Path to viewer executable, or None if not configured
-        """
-        return self._get_viewer_path(viewer_type)
-
-    def set_viewer_path(self, viewer_type: USDViewerType, path: Optional[Path]):
-        """Set the path for a viewer type.
-
-        Args:
-            viewer_type: The viewer type to configure
-            path: Path to the viewer executable (None to clear)
-        """
-        key = f'usd_viewer/{viewer_type.value}_path'
-        if path is None:
-            self._settings.remove(key)
-        else:
-            self._settings.setValue(key, str(path))
-
-    def is_viewer_configured(self, viewer_type: USDViewerType) -> bool:
-        """Check if a viewer type is configured and available.
-
-        For 3D-Info: Checks TH_BIN_PATH environment variable, then user-configured path.
-        For other viewers: Checks user-configured path only.
-
-        Args:
-            viewer_type: The viewer type to check
-
-        Returns:
-            True if configured and executable exists, False otherwise
-        """
-        if viewer_type == USDViewerType.AUTO:
-            viewer_type = self.get_preferred_viewer()
-
-        path = self._get_viewer_path(viewer_type)
-        return path is not None and path.exists()
-
-    def get_available_viewers(self) -> list[USDViewerType]:
-        """Get list of configured and available viewers.
-
-        Returns:
-            List of viewer types that are configured and have valid executables
-        """
-        available = []
-        for viewer_type in [USDViewerType.THREE_D_INFO, USDViewerType.USD_MANAGER, USDViewerType.USDVIEW]:
-            if self.is_viewer_configured(viewer_type):
-                available.append(viewer_type)
-        return available
-
-    def _get_viewer_path(self, viewer_type: USDViewerType) -> Optional[Path]:
-        """Internal method to get viewer path from environment, then settings.
-
-        For 3D-Info: Checks TH_BIN_PATH environment variable first, then user-configured path.
-        For usdview: Checks Houdini bundled version via hou.getenv('HFS'), then user-configured path.
-        For other viewers: Uses only user-configured path.
-
-        Args:
-            viewer_type: The viewer type
-
-        Returns:
-            Path object or None
-        """
-        # For 3D-Info, check TH_BIN_PATH environment variable first
-        if viewer_type == USDViewerType.THREE_D_INFO:
-            env_path = self._get_3d_info_from_bin_path()
-            if env_path:
-                return env_path
-
-        # For usdview, check Houdini bundled version first
-        if viewer_type == USDViewerType.USDVIEW:
-            houdini_path = self._get_usdview_from_houdini()
-            if houdini_path:
-                return houdini_path
-
-        # Fall back to user-configured path from settings
-        key = f'usd_viewer/{viewer_type.value}_path'
-        path_str = self._settings.value(key)
-        if path_str:
-            return Path(path_str)
-        return None
-
-    def _launch_process(self, viewer_path: Path, file_path: Path):
-        """Launch the viewer process.
-
-        Args:
-            viewer_path: Path to viewer executable
-            file_path: Path to USD file to open
-
-        Raises:
-            subprocess.SubprocessError: If process launch fails
-        """
-        import os
-
-        # Convert paths to strings
-        viewer_str = str(viewer_path)
-        file_str = str(file_path)
-
-        # Set working directory to viewer's directory
-        # This is needed for viewers like 3D-Info that look for resources relative to cwd
-        cwd = str(viewer_path.parent)
-
-        # Build environment with USD resolver paths
-        # This allows external viewers to resolve entity:/ URIs in sublayers
-        env = os.environ.copy()
-        env = self._add_resolver_env(env)
-
-        # Build command - try different argument formats for 3D-Info
-        # Some viewers need --file or -f flag, others just take the path
-        exe_name = os.path.basename(viewer_str).lower()
-
-        if 'cst_3dinfo' in exe_name or '3d-info' in exe_name or '3dinfo' in exe_name:
-            # Try with --file flag for 3D-Info
-            cmd = [viewer_str, '--file', file_str]
-        else:
-            # Default: just pass file path as argument
-            cmd = [viewer_str, file_str]
-
-        # Launch as detached process so it doesn't block
-        subprocess.Popen(
-            cmd,
-            cwd=cwd,
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True
-        )
-
-    def _add_resolver_env(self, env: dict) -> dict:
-        """Add USD resolver environment variables for entity:/ URI resolution.
-
-        Configures PXR_PLUGINPATH_NAME and PYTHONPATH so external viewers can
-        resolve entity:/ URIs using our custom USD asset resolver.
-
-        Args:
-            env: Base environment dictionary to modify
-
-        Returns:
-            Modified environment dictionary with resolver paths
-        """
-        import os
-
-        from tumblepipe.resolver import plugin_resources_path
-
-        pipeline_path = os.environ.get('TH_PIPELINE_PATH')
-        if not pipeline_path:
-            return env
-
-        # The out-of-process viewer links this session's USD, so the resolver
-        # build must match the running Houdini's major (the USD ABI is per-major).
-        import hou
-        houdini_major = hou.applicationVersion()[0]
-        resolver_resources = plugin_resources_path(pipeline_path, houdini_major=houdini_major)
-        if not resolver_resources.exists():
-            logger.warning(f"USD resolver resources not found: {resolver_resources}")
-            return env
-
-        # Prepend the tumbleResolver plugin path so USD discovers it.
-        current_plugin_path = env.get('PXR_PLUGINPATH_NAME', '')
-        env['PXR_PLUGINPATH_NAME'] = (
-            f"{resolver_resources}{os.pathsep}{current_plugin_path}"
-            if current_plugin_path
-            else str(resolver_resources)
-        )
-
-        # Expose tumblepipe.resolver on PYTHONPATH so the viewer's hython
-        # session can toggle latest mode, etc.
-        pipeline_python = Path(pipeline_path) / 'python'
-        if pipeline_python.exists():
-            current_python_path = env.get('PYTHONPATH', '')
-            env['PYTHONPATH'] = (
-                f"{pipeline_python}{os.pathsep}{current_python_path}"
-                if current_python_path
-                else str(pipeline_python)
-            )
-
+    pipeline_path = os.environ.get('TH_PIPELINE_PATH')
+    if not pipeline_path or hou is None:
         return env
+
+    # usdview links this session's USD, so the resolver build must match the
+    # running Houdini's major (the USD ABI is per-major).
+    houdini_major = hou.applicationVersion()[0]
+    resolver_resources = plugin_resources_path(pipeline_path, houdini_major=houdini_major)
+    if not resolver_resources.exists():
+        logger.warning(f"USD resolver resources not found: {resolver_resources}")
+        return env
+
+    current_plugin_path = env.get('PXR_PLUGINPATH_NAME', '')
+    env['PXR_PLUGINPATH_NAME'] = (
+        f"{resolver_resources}{os.pathsep}{current_plugin_path}"
+        if current_plugin_path
+        else str(resolver_resources)
+    )
+
+    pipeline_python = Path(pipeline_path) / 'python'
+    if pipeline_python.exists():
+        current_python_path = env.get('PYTHONPATH', '')
+        env['PYTHONPATH'] = (
+            f"{pipeline_python}{os.pathsep}{current_python_path}"
+            if current_python_path
+            else str(pipeline_python)
+        )
+
+    return env

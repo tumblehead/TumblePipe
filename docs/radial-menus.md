@@ -144,21 +144,31 @@ where you want to force it. A failure shows a warning dialog:
 
 Two further menus are built in Python rather than JSON and bound at the
 radial's `network.cop` and `network.vop` contexts, the context IDs the
-radial reports for a Copernicus and a VOP network. They open on the same
-key as the radial's own menus: Radial's **Open menus with** setting
-(**TumbleTrove ▸ Settings… ▸ Radial**, Space by default). Over a COP or VOP
-network that key opens these menus in place of Radial's network menu.
-Change the setting and they move with it; clear it and they are unbound
-along with Radial's own. They are bound once the Houdini UI is up, so a
-headless `hython` session has none. See
+radial reports for a Copernicus and a VOP network.
+
+- The **COP** menu opens on the same key as the radial's own menus:
+  Radial's **Open menus with** setting (**TumbleTrove ▸ Settings… ▸
+  Radial**, X by default). Over a COP network that key opens it in place
+  of Radial's network menu. Change the setting and it moves with it; clear
+  it and it is unbound along with Radial's own.
+- The **VOP** (material) menu opens on **Alt+E**. Over a VOP network,
+  holding X and clicking a node is Houdini's **Visualize Output**, so the
+  menu stays off Radial's key and leaves X to Houdini there.
+
+Both are bound once the Houdini UI is up, so a headless `hython` session
+has none. See
 [Project structure → radial_menus](project_structure.md#radial_menus).
 
 - **COP** — submenus **Convert** (Mono/UV/RGB/RGBA), **Pattern**, **Filter**,
   **Composite** (over, blend, multiply, add, under, subtract, divide), plus
   **File** and **Render**; the convert, composite and render entries run
   TumblePipe's `coputils` helpers on the selected nodes. See [Comp](nodes/comp.md).
-- **VOP** — submenus **Image**, **Adjust**, **Generators** and **Utility**,
-  each placing MaterialX / Karma VOP nodes. See [Tools](nodes/tools.md).
+- **Material** (VOP) — submenus **Image**, **Adjust**, **Generators** and
+  **Utility**, each placing MaterialX / Karma VOP nodes, and a **Surface**
+  centre: release on it for a Standard Surface, or open it for OpenPBR,
+  Surface Material and Displacement. Like Radial's own network menus, hold
+  and release over a slice to place it, or tap to keep the menu open. See
+  [Tools](nodes/tools.md).
 
 ## Shift+Space: the department menu
 
@@ -178,7 +188,7 @@ Radial.
 | rig | SOP | Import Model, Skeleton, Capture, Pack Folder, Rig Doctor, Export Rig |
 | layout | LOP | Import Assets, Edit, Transform, Camera, Prune, Export Layer |
 | environment | LOP | Import Assets, Grass (recipe), Instancer, Edit, Prune, Export Layer |
-| animation | SOP | Import Rigs, Scene Animate, Scene Invoke, Playblast, Cache |
+| animation | SOP | Import Rigs, Scene Animate, Scene Invoke, Playblast, Cache, Live Playblast |
 | crowd | SOP | Agent, Crowd Source, Agent Layer, File, Cache |
 | effects | SOP | File, Pyro Solver, RBD Solver, Vellum Solver, Cache |
 | cfx | SOP | File, Vellum Constraints, Vellum Solver, Vellum Drape, Cache |
@@ -213,7 +223,8 @@ and logs nothing, and Shift+Space does nothing.
 ## Keyboard shortcuts
 
 TumblePipe registers no Houdini hotkeys of its own. The only keys it claims
-are the three radial keys above (**Alt+T**, **Alt+R**, **Alt+F**), and only
-while `tumbleradial` is installed. **Shift+Space** belongs to Radial;
-TumblePipe only supplies the menus it opens. The COP and VOP menus claim no key; they
-use whichever key Radial's own menus open with.
+are the radial keys above (**Alt+T**, **Alt+R**, **Alt+F**, and **Alt+E**
+for the VOP menu over a VOP network), and only while `tumbleradial` is
+installed. **Shift+Space** belongs to Radial; TumblePipe only supplies the
+menus it opens. The COP menu claims no key; it uses whichever key Radial's
+own menus open with.

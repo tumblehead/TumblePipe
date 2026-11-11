@@ -332,6 +332,17 @@ class PipelineSettingsWidget(QWidget):
         outer.addWidget(self._layout_animate_checkbox)
         self._defaults_project = None
 
+        # Farm pools and priority presets (#34): Farm Submit offers only
+        # what the project lists, and the Database Editor was the only way
+        # to change it.
+        self._farm_title = QLabel("")
+        self._farm_title.setStyleSheet(self._defaults_title.styleSheet())
+        outer.addWidget(self._farm_title)
+        from .farm_defaults import FarmDefaultsEditor
+        self._farm_editor = FarmDefaultsEditor(
+            activator=self._catalog._activator, parent=self)
+        outer.addWidget(self._farm_editor)
+
         self._refresh_list()
 
     def _save_pref(self, what: str, **changes) -> None:
@@ -475,6 +486,8 @@ class PipelineSettingsWidget(QWidget):
             self._pool_editor.set_project(
                 None, editable=False, note="Select a project above.")
             self._show_layout_animate(None, False)
+            self._farm_title.setText("Farm")
+            self._farm_editor.set_project(None, editable=False)
             return
         name = self._working[self._current_index].name
         self._defaults_title.setText(f"Department pool — {name}")
@@ -486,11 +499,15 @@ class PipelineSettingsWidget(QWidget):
                      "its config, which is read once the project is "
                      "registered.")
             self._show_layout_animate(None, False)
+            self._farm_title.setText(f"Farm — {name}")
+            self._farm_editor.set_project(None, editable=False)
             return
         allowed, reason = access.can_edit_project_defaults(project)
         # set_project activates the project: the checkbox reads its config
         self._pool_editor.set_project(project, editable=allowed, note=reason)
         self._show_layout_animate(project, allowed)
+        self._farm_title.setText(f"Farm — {name}")
+        self._farm_editor.set_project(project, editable=allowed)
 
     def _on_row_changed(self, row: int) -> None:
         if row < 0 or row >= len(self._working):

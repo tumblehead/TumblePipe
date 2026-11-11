@@ -10,6 +10,11 @@ choose **Play N Shots**, to open them back to back in the editor as an
 untitled edit. Nothing in the project changes until you save it, and
 Resolve is not involved.
 
+To play more than a hand-picked selection: right-click a **sequence** in
+the sidebar (or the empty space of a view narrowed to one sequence) and
+choose **Play Sequence** for all its shots in name order, or choose **Play**
+on a **shots Multi** for its members in [timeline order](multis-and-roots.md#play-open-folder-add-entity-and-delete).
+
 An edit with nothing in it yet starts as the whole film: the editor
 opened on no shots, and an edit that has never been saved, open with every
 shot of the project end to end, in sequence and shot order, each its play
@@ -72,9 +77,9 @@ Over the picture is the toolbar: the edit's name and version (with `*`
 while it has unsaved changes), **Master edit** (see below), **Burn-ins**, and
 the timecode. Under the picture are the display, view and exposure.
 
-The actions are in the menu bar: on Windows the window's, on macOS the one
-at the top of the screen, and on Linux a bar drawn at the top of the window
-(press a title, or Alt with its underlined letter, or F10). **File** (open,
+The actions are in the menu bar: on macOS the one at the top of the screen,
+and on Windows and Linux a bar drawn at the top of the window (press a
+title, or Alt with its underlined letter, or F10). **File** (open,
 save, publish, the master edit, new shot, import media), **Edit** (undo,
 redo, split, lift, ripple delete, marker, selection, and putting the bin's
 pick in the cut), **Playback** (play, step, jump by a second or to an edit
@@ -91,7 +96,10 @@ each sequence's under its name;
 project as versioned items: **Import…** copies a file in). Select an item
 and press **Insert** (the cut opens at the playhead and everything after it
 moves on, on every track) or **Overlay** (it goes over what is there).
-Double-clicking an item inserts it. A movie brings its sound onto an audio
+Either moves the playhead to the end of what it put, so picking SH010,
+SH020 and SH030 and pressing Insert after each builds the cut in that
+order (up to 1.101.0 the playhead stayed put and the cut came out
+backwards). Double-clicking an item inserts it. A movie brings its sound onto an audio
 track.
 
 Under the picture are the tracks: a ruler, then the video tracks (the top
@@ -104,7 +112,9 @@ why. The ruler marks the markers, the playhead, and in a lighter strip the
 frames already decoded. Amber means *now*: the playhead, the timecode, a
 clip being dragged.
 
-- Click or drag on the ruler, or on empty track, to seek.
+- Click or drag on the ruler, or on empty track, to seek. A click past the
+  last clip parks on the cut's end (one past its last frame), where an
+  Insert appends.
 - Click a clip to select it; Shift or Ctrl-click adds it or takes it out.
 - Drag a clip to move it, onto another track of its kind too. With Alt held
   it slips: the clip stays and the frames in it move.
@@ -123,7 +133,10 @@ Every change is one step of undo, however many clips it moves.
 | Left / Right | step one frame back / forward |
 | Alt+Left / Alt+Right | jump one second back / forward |
 | Ctrl+Left / Ctrl+Right | jump to the previous / next cut |
-| Home / End | the first / last frame |
+| Home / End | the first frame / the cut's end, one past its last frame (up to 1.101.0 End stopped on the last frame, so an Insert there split the last clip) |
+| Up / Down | the selected clips (none: the clip under the playhead) show the next newer / older version of the take they show, pinned, as the take menu's Version rows do |
+| Ctrl+Up / Ctrl+Down | the previous / next department of that kind (its newest version), as the Department rows |
+| Shift+Up / Shift+Down | playblast / render, as the Source rows |
 | S | split the selected clips at the playhead (none selected: the top video clip there) |
 | M | a marker at the playhead |
 | Delete | lift the selected clips, leaving a gap |
@@ -176,7 +189,8 @@ Desktop's Scripts panel starts the editor on the whole film: the project's
 edit of every shot.
 **Save** writes
 its next working version (`v0001`, `v0002`, ...) with a note; **Save As**
-names a new edit. While an edit is open it is autosaved every minute;
+names a new edit (a name it refuses says why under the Name field, as you
+type). While an edit is open it is autosaved every minute;
 when the editor finds an autosave newer than the working version it opens,
 it offers it back. Closing with unsaved changes asks first.
 
@@ -198,10 +212,13 @@ per edit, with its latest published version and newest working version, and
 whether it is the master edit. Right-click a card: **Open in Editor** opens
 its newest working version (an edit never saved opens empty), **Play
 Published** its latest published version, read-only (there only once it has
-one), **Open Folder** its working folder, and **Set as Master Edit** makes
+one), **Render Edit…** (also only once published) opens Farm Submit on its
+Edits tab with this edit ticked, **Open Folder** its working folder, and **Set as Master Edit** makes
 it the master edit (the master edit's card is ticked **Master Edit** and
-offers **Clear Master Edit** instead). Edits are made in the editor, not in
-the browser.
+offers **Clear Master Edit** instead; in the grid its card carries a
+**MASTER** chip, on a TumbleTrove newer than 0.59.0). Edits are made in the editor, not
+in the browser: an edit card is not offered **Add to Multi** or **Refresh
+Thumbnail**.
 
 A published version can be rendered into a movie on the farm: the **Edits**
 tab of [Farm Submit](submit-jobs.md#the-edits-tab) offers each edit's
@@ -224,6 +241,10 @@ cut makes, each with a tick box:
 - a planned shot (**New shot…** in the Shots bin puts one in the cut, with
   its sequence, name and length) is created with the range it has;
 - a shot whose clip is longer or shorter than its range gets the new range;
+- a shot (or planned shot) that plays at another fps than the master edit
+  gets the master's fps, pinned on the shot (its own `fps` key; up to
+  1.101.0 the master never wrote fps). Roll is not written: the cut has no
+  handles to say otherwise, and a created shot takes the project's;
 - a shot the master edit used to have and no longer does is retired. These
   are not ticked: tick them to retire the shots.
 

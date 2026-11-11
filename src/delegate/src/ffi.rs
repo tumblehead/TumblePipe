@@ -3,6 +3,7 @@
 
 use crate::math::{Mat4, Vec3};
 use crate::composite::Shading;
+use crate::lights::{LightShape, SceneLight, SceneLights};
 use crate::blur::{self, Blur, Lens};
 use crate::raster::{self, Frame, Mesh, MeshKey};
 use crate::texture::Texture;
@@ -59,6 +60,62 @@ pub struct ThMeshView {
     /// With motion blur, optional: `transform_key_count` (2 to
     /// `blur::MAX_KEYS`) transforms per instance at moments evenly spread
     /// over the shutter, key-major, 16 doubles each.
+    pub transform_keys: *const f64,
+    pub transform_key_count: u32,
+    /// One minus the surface's opacity (`raster::Mesh::opacity`), so that
+    /// a zeroed view is opaque: 0 opaque, drawn as before; between 0 and 1
+    /// see-through, blended over the opaque surfaces; 1 or more not drawn.
+    pub transparency: f32,
+    /// The side of the triangles not drawn (`raster::Cull`): 0 neither, 1
+    /// the back, 2 the front. The shim resolves Hydra's cull style (the
+    /// prim's, else the pass's; the "unless double-sided" styles by the
+    /// prim's doubleSided) to one of these.
+    pub cull: u32,
+}
+
+/// A view's opacity from its transparency, in [0, 1]; NaN opaque.
+pub(crate) fn opacity_of(transparency: f32) -> f32 {
+    if transparency.is_nan() { 1.0 } else { (1.0 - transparency).clamp(0.0, 1.0) }
+}
+
+/// Borrowed geometry of one basis curves or points prim and every instance
+/// of it ([`crate::curves`]). Drawn as camera-facing ribbons and discs made
+/// for each frame, so nothing of it is kept on the card.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ThCurvesView {
+    /// `point_count` xyz triples, object space: the curves' vertices, or
+    /// the points.
+    pub points: *const f32,
+    pub point_count: u32,
+    /// Vertices per curve, `curve_count` of them (ignored for points).
+    pub curve_vertex_counts: *const i32,
+    pub curve_count: u32,
+    /// 0 points, 1 linear curves, 2 cubic curves.
+    pub kind: u32,
+    /// Of cubic curves: 0 bezier, 1 bspline, 2 catmullRom.
+    pub basis: u32,
+    /// 0 nonperiodic, 1 periodic, 2 pinned.
+    pub wrap: u32,
+    /// Optional, `width_count` widths (object space), spread by
+    /// `width_interp`: 0 constant, 1 uniform (per curve), 2 varying, 3
+    /// vertex. None, or a count that does not fit: as thin as
+    /// `curves::MIN_CURVE_PIXELS` / `curves::MIN_POINT_PIXELS`.
+    pub widths: *const f32,
+    pub width_count: u32,
+    pub width_interp: u32,
+    /// Optional, `color_count` linear rgb triples, spread as the widths.
+    pub colors: *const f32,
+    pub color_count: u32,
+    pub color_interp: u32,
+    /// Albedo where there are no colours.
+    pub base_color: [f32; 3],
+    /// As [`ThMeshView`]'s: one object-to-world matrix per instance.
+    pub transforms: *const f64,
+    pub transform_count: u32,
+    /// With motion blur, optional: the points at the shutter's closing.
+    pub points_close: *const f32,
+    /// With motion blur, optional: as [`ThMeshView::transform_keys`].
     pub transform_keys: *const f64,
     pub transform_key_count: u32,
 }
@@ -120,6 +177,63 @@ pub struct ThFrame {
     /// viewer reads it (UsdRenderers.json `"depthstyle": "linear"`); 0,
     /// window depth in [0, 1], 1 for nothing (husk, the farm).
     pub linear_depth: u32,
+    /// The scene's lights (`light_count`, may be null when 0): the frame
+    /// is lit by them (`crate::lights`) unless `lighting` is 1 or none is
+    /// a light this core knows, then by the fixed camera rig.
+    pub lights: *const ThLight,
+    pub light_count: u32,
+    /// 0: the scene's lights when it has any; 1: the headlight (the fixed
+    /// camera rig) always (`th:lighting`).
+    pub lighting: u32,
+}
+
+/// A UsdLux light as authored (`crate::lights::SceneLight`), the shim's
+/// enabled, visible light sprims.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ThLight {
+    /// Light to world, USD row-vector layout.
+    pub transform: [f64; 16],
+    /// 0 distant, 1 sphere, 2 rect, 3 disk, 4 cylinder, 5 dome; others
+    /// are left out.
+    pub kind: u32,
+    /// Nonzero: inputs:normalize.
+    pub normalize: u32,
+    /// Nonzero: a sphere light's treatAsPoint.
+    pub point: u32,
+    /// inputs:color, linear.
+    pub color: [f32; 3],
+    /// inputs:intensity x 2^inputs:exposure x inputs:diffuse.
+    pub intensity: f32,
+    /// inputs:colorTemperature in kelvin when enableColorTemperature is
+    /// on, else 0.
+    pub temperature: f32,
+    /// inputs:angle (distant, degrees), radius, width, height, length.
+    pub angle: f32,
+    pub radius: f32,
+    pub width: f32,
+    pub height: f32,
+    pub length: f32,
+}
+
+/// The frame's scene lights (`crate::lights::SceneLights`): none (so the
+/// fixed rig) when `f` asks for the headlight or has no light of a known
+/// kind.
+pub(crate) unsafe fn scene_lights(f: &ThFrame) -> SceneLights {
+    if f.lighting == 1 || f.lights.is_null() || f.light_count == 0 {
+        return SceneLights::NONE;
+    }
+    let lights: Vec<SceneLight> = slice::from_raw_parts(f.lights, f.light_count as usize)
+        .iter()
+        .filter_map(|l| {
+            let shape = LightShape::from_abi(l.kind)?;
+            let tint = if l.temperature > 0.0 { crate::lights::blackbody(l.temperature) } else { [1.0; 3] };
+            let radiance = [0, 1, 2].map(|c| l.color[c] * tint[c] * l.intensity);
+            Some(SceneLight::placed(shape, radiance, l.normalize != 0, l.point != 0, l.angle,
+                                    [l.radius, l.width, l.height, l.length], &l.transform))
+        })
+        .collect();
+    SceneLights::new(&lights)
 }
 
 /// Window depth (0 at the near plane, 1 at the far one or where nothing is
@@ -292,7 +406,7 @@ pub unsafe extern "C" fn th_render(
     depth: *mut f32,
     cache: *const ThCache,
 ) -> i32 {
-    render_into(frame, meshes, mesh_count, color, depth, std::ptr::null_mut(), std::ptr::null(), cache)
+    render_into(frame, meshes, mesh_count, std::ptr::null(), 0, color, depth, std::ptr::null_mut(), std::ptr::null(), cache)
 }
 
 /// [`th_render`] for a viewport. Also writes `ids` (may be null): per
@@ -317,7 +431,96 @@ pub unsafe extern "C" fn th_render_ids(
     cancel: *const AtomicU32,
     cache: *const ThCache,
 ) -> i32 {
-    render_into(frame, meshes, mesh_count, color, depth, ids, cancel, cache)
+    render_into(frame, meshes, mesh_count, std::ptr::null(), 0, color, depth, ids, cancel, cache)
+}
+
+/// [`th_render_ids`] with basis curves and points as well ([`ThCurvesView`],
+/// [`crate::curves`]): camera-facing ribbons and discs made for this frame.
+/// In `ids`, curves view `j` is `mesh_count + j`, with the instance as for a
+/// mesh.
+///
+/// # Safety
+/// As [`th_render_ids`]; every pointer in `curves` valid for the counts it
+/// is given with.
+#[no_mangle]
+pub unsafe extern "C" fn th_render_scene(
+    frame: *const ThFrame,
+    meshes: *const ThMeshView,
+    mesh_count: u32,
+    curves: *const ThCurvesView,
+    curves_count: u32,
+    color: *mut f32,
+    depth: *mut f32,
+    ids: *mut i32,
+    cancel: *const AtomicU32,
+    cache: *const ThCache,
+) -> i32 {
+    render_into(frame, meshes, mesh_count, curves, curves_count, color, depth, ids, cancel, cache)
+}
+
+/// One instance of a curves view, made for a frame: the geometry, its
+/// closing (with motion blur), and the view and instance it came from.
+struct MadeStrokes {
+    view: usize,
+    instance: usize,
+    base_color: Vec3,
+    made: crate::curves::Made,
+    close: Option<Vec<Vec3>>,
+}
+
+/// The geometry of `views` through `frame` ([`crate::curves::expand`]),
+/// one per instance, in world space. With motion blur, each instance's
+/// geometry at the shutter's opening (its points through its first
+/// transform key) and closing (its closing points through its last), cut
+/// alike so the two line up.
+unsafe fn make_strokes(frame: &Frame, views: &[ThCurvesView]) -> Vec<MadeStrokes> {
+    use crate::curves::{expand, Camera, Interp, Kind, Strokes, Wrap};
+    let camera = Camera::of(frame);
+    let moving = frame.blur.motion && frame.blur.samples > 1;
+    let mut out = Vec::new();
+    for (j, v) in views.iter().enumerate() {
+        if v.points.is_null() || v.transforms.is_null() || v.point_count == 0 || v.transform_count == 0 {
+            continue;
+        }
+        let kind = Kind::from_abi(v.kind, v.basis);
+        let n = v.point_count as usize;
+        let points = slice::from_raw_parts(v.points as *const Vec3, n);
+        let counts = int_slice(v.curve_vertex_counts, v.curve_count);
+        if kind != Kind::Points && counts.is_empty() {
+            continue;
+        }
+        let strokes = Strokes {
+            kind,
+            wrap: Wrap::from_abi(v.wrap),
+            points,
+            counts,
+            widths: if v.widths.is_null() { &[] } else { slice::from_raw_parts(v.widths, v.width_count as usize) },
+            width_interp: Interp::from_abi(v.width_interp),
+            colors: opt_slice(v.colors, v.color_count as usize).unwrap_or(&[]),
+            color_interp: Interp::from_abi(v.color_interp),
+        };
+        let tc = v.transform_count as usize;
+        let transforms = slice::from_raw_parts(v.transforms as *const Mat4, tc);
+        let kc = v.transform_key_count as usize;
+        let keys: &[Mat4] = if moving && !v.transform_keys.is_null() && (2..=blur::MAX_KEYS).contains(&kc) {
+            slice::from_raw_parts(v.transform_keys as *const Mat4, kc * tc)
+        } else {
+            &[]
+        };
+        let close_points = if moving { opt_slice::<Vec3>(v.points_close, n) } else { None };
+        for (i, transform) in transforms.iter().enumerate() {
+            let (open_m, close_m) = if keys.is_empty() { (transform, transform) } else { (&keys[i], &keys[(kc - 1) * tc + i]) };
+            let (made, plan) = expand(&strokes, points, open_m, &camera, None);
+            if made.triangles.is_empty() {
+                continue;
+            }
+            let close = (close_points.is_some() || !keys.is_empty()).then(|| {
+                expand(&strokes, close_points.unwrap_or(points), close_m, &camera, Some(&plan)).0.points
+            }).filter(|c| c.len() == made.points.len());
+            out.push(MadeStrokes { view: j, instance: i, base_color: v.base_color, made, close });
+        }
+    }
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -325,6 +528,8 @@ unsafe fn render_into(
     frame: *const ThFrame,
     meshes: *const ThMeshView,
     mesh_count: u32,
+    curves: *const ThCurvesView,
+    curves_count: u32,
     color: *mut f32,
     depth: *mut f32,
     ids: *mut i32,
@@ -334,7 +539,8 @@ unsafe fn render_into(
     ffi_guard(|| {
         let _scope = crate::cancel::Scope::new(cancel);
         let cancelled = || !cancel.is_null() && (*cancel).load(Ordering::Relaxed) != 0;
-        if frame.is_null() || color.is_null() || (meshes.is_null() && mesh_count > 0) {
+        if frame.is_null() || color.is_null() || (meshes.is_null() && mesh_count > 0)
+            || (curves.is_null() && curves_count > 0) {
             return TH_ERR_ARGS;
         }
         let f = &*frame;
@@ -373,12 +579,33 @@ unsafe fn render_into(
         }
         // Cusp normals go in as the mesh's corner normals; smooth ones, per
         // point, alongside.
-        let smooth: Vec<Option<&[Vec3]>> = views
+        let mut smooth: Vec<Option<&[Vec3]>> = views
             .iter()
             .zip(&normals)
             .map(|(v, n)| n.as_deref().filter(|n| v.polygonal == 0 && n.len() == v.point_count as usize))
             .collect();
-        let mut list = Vec::with_capacity(views.len());
+        let render_frame = Frame {
+            width: f.width as usize,
+            height: f.height as usize,
+            world_to_clip: f.world_to_clip,
+            view_to_world: f.view_to_world,
+            samples: f.samples.max(1) as usize,
+            shading: Shading::from_abi(f.shading),
+            ao: f.ao != 0,
+            blur: blur_of(f),
+            alpha: f.alpha != 0,
+            lights: scene_lights(f),
+        };
+        // Curves and points, made for this frame: after the meshes, each
+        // instance a mesh of its own in world space.
+        let curve_views = if curves_count > 0 { slice::from_raw_parts(curves, curves_count as usize) } else { &[] };
+        let started = std::time::Instant::now();
+        let strokes = make_strokes(&render_frame, curve_views);
+        if !curve_views.is_empty() && std::env::var_os("TH_PLAYBLAST_TIMING").is_some() {
+            eprintln!("hdThPlayblast: curves and points {} ms ({} views, {} triangles)", started.elapsed().as_millis(),
+                      curve_views.len(), strokes.iter().map(|s| s.made.triangles.len()).sum::<usize>());
+        }
+        let mut list = Vec::with_capacity(views.len() + strokes.len());
         for (v, n) in views.iter().zip(&normals) {
             let tris = v.triangle_count as usize;
             let tiles = if v.tiles.is_null() { &[][..] } else { slice::from_raw_parts(v.tiles, v.tile_count as usize) };
@@ -404,20 +631,16 @@ unsafe fn render_into(
                     slice::from_raw_parts(v.transform_keys as *const Mat4,
                                           v.transform_key_count as usize * v.transform_count as usize)
                 },
+                opacity: opacity_of(v.transparency),
+                cull: raster::Cull::from_abi(v.cull),
             });
         }
+        for s in &strokes {
+            list.push(crate::curves::mesh(&s.made, s.close.as_deref(), s.base_color));
+            smooth.push(None);
+        }
         let image = render(
-            &Frame {
-                width: f.width as usize,
-                height: f.height as usize,
-                world_to_clip: f.world_to_clip,
-                view_to_world: f.view_to_world,
-                samples: f.samples.max(1) as usize,
-                shading: Shading::from_abi(f.shading),
-                ao: f.ao != 0,
-                blur: blur_of(f),
-                alpha: f.alpha != 0,
-            },
+            &render_frame,
             &list,
             &smooth,
             cache.as_ref(),
@@ -443,8 +666,16 @@ unsafe fn render_into(
         if !ids.is_null() {
             let out = slice::from_raw_parts_mut(ids as *mut [i32; 2], n);
             if image.ids.len() == n {
+                let meshes_drawn = kept.len();
                 for (o, &[m, i]) in out.iter_mut().zip(&image.ids) {
-                    *o = if m >= 0 { [kept[m as usize], i] } else { [-1, -1] };
+                    *o = if m < 0 {
+                        [-1, -1]
+                    } else if (m as usize) < meshes_drawn {
+                        [kept[m as usize], i]
+                    } else {
+                        let s = &strokes[m as usize - meshes_drawn];
+                        [(mesh_count as usize + s.view) as i32, s.instance as i32]
+                    };
                 }
             } else {
                 out.fill([-1, -1]);
@@ -466,6 +697,7 @@ mod tests {
             samples: 1, shading: 0, ao: 1,
             blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
+            lights: std::ptr::null(), light_count: 0, lighting: 0,
         };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         let mut depth = vec![0.0f32; 8 * 4];
@@ -485,6 +717,7 @@ mod tests {
             samples: 1, shading: 0, ao: 1,
             blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
+            lights: std::ptr::null(), light_count: 0, lighting: 0,
         };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         unsafe {
@@ -514,6 +747,54 @@ unsafe fn int_slice<'a>(ptr: *const i32, count: u32) -> &'a [i32] {
     } else {
         slice::from_raw_parts(ptr, count as usize)
     }
+}
+
+/// The normals the core draws a mesh with when it has none of its own, one
+/// per triangle corner into `corner_normals` (`9 * triangle_count` floats):
+/// cusp normals ([`raster::cusp_normals`]) for a `polygonal` one, else its
+/// smooth point normals ([`raster::smooth_normals`]) at each corner; +z at
+/// a corner past the points. The shim draws a mesh whose faces have
+/// materials of their own (GeomSubsets) as one view per material, and hands
+/// each the whole mesh's normals from here, so its parts meet without a
+/// crease: worked out per part, each would be smoothed only over its own
+/// faces. Returns 0, or 1 for a null pointer.
+///
+/// # Safety
+/// `points` valid for `point_count` xyz triples, `triangles` for
+/// `3 * triangle_count` indices, `corner_normals` for `9 * triangle_count`
+/// writes.
+#[no_mangle]
+pub unsafe extern "C" fn th_mesh_normals(
+    points: *const f32,
+    point_count: u32,
+    triangles: *const u32,
+    triangle_count: u32,
+    polygonal: u32,
+    corner_normals: *mut f32,
+) -> i32 {
+    ffi_guard(|| {
+        if (points.is_null() && point_count > 0) || (triangles.is_null() && triangle_count > 0)
+            || (corner_normals.is_null() && triangle_count > 0) {
+            return TH_ERR_ARGS;
+        }
+        if triangle_count == 0 {
+            return TH_OK;
+        }
+        let pts: &[Vec3] = if point_count == 0 { &[] } else { slice::from_raw_parts(points as *const Vec3, point_count as usize) };
+        let tris = slice::from_raw_parts(triangles as *const [u32; 3], triangle_count as usize);
+        let out = slice::from_raw_parts_mut(corner_normals as *mut Vec3, tris.len() * 3);
+        out.copy_from_slice(&mesh_normals(pts, tris, polygonal != 0));
+        TH_OK
+    })
+}
+
+/// [`th_mesh_normals`]'s normals, one per corner.
+pub(crate) fn mesh_normals(points: &[Vec3], triangles: &[[u32; 3]], polygonal: bool) -> Vec<Vec3> {
+    if polygonal {
+        return raster::cusp_normals(points, triangles, raster::CUSP_DEGREES);
+    }
+    let smooth = raster::smooth_normals(points, triangles);
+    triangles.iter().flat_map(|t| t.map(|i| smooth.get(i as usize).copied().unwrap_or([0.0, 0.0, 1.0]))).collect()
 }
 
 /// Triangulate a polygon mesh ([`crate::triangulate`]): Hydra's fan for a

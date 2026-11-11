@@ -20,7 +20,9 @@ config = {
         'last_frame': 'int',
         'step_size': 'int',
         'batch_size': 'int',
-        'copy_to_edit': 'bool'
+        'copy_to_edit': 'bool',
+        'cut_range': ['int', 'int']  # optional: the range minus its roll,
+                                     # where the preview's check frames sit
     },
     'tasks': {                  # either or both
         'partial_render': {'priority': 'int', 'denoise': 'bool', 'channel_name': 'string'},
@@ -81,7 +83,19 @@ def valid_render_settings(settings) -> bool:
     if not check_int(settings, 'last_frame'): return False
     if not check_int(settings, 'step_size'): return False
     if not check_int(settings, 'batch_size'): return False
+    if not valid_cut_range(settings): return False
     return True
+
+
+def valid_cut_range(block) -> bool:
+    """An optional ``cut_range`` [first, last] inside ``block``'s
+    first_frame..last_frame (the frames in the cut, without the roll)."""
+    if 'cut_range' not in block: return True
+    cut_range = block['cut_range']
+    if not isinstance(cut_range, list) or len(cut_range) != 2: return False
+    first, last = cut_range
+    if not all(isinstance(f, int) and not isinstance(f, bool) for f in cut_range): return False
+    return block['first_frame'] <= first <= last <= block['last_frame']
 
 
 def is_valid_config(config) -> bool:

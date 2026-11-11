@@ -27,6 +27,7 @@ from tumblepipe.pipe.houdini.ui.report import (
 
 from tumblepipe.config import shot_batch
 
+from . import creation_check
 from . import edits as edits
 from . import nodes as nodes
 from . import recipes as recipes
@@ -40,6 +41,10 @@ log = logging.getLogger(__name__)
 #: rather than the browser's generic form; see
 #: :meth:`EntityOps.creation_fields`.
 ENTITY_EDITOR = "entity_editor"
+#: Import Shots from CSV… (#32): a file dialog and the import's plan, not
+#: the generic form; see :meth:`EntityOps.import_shots_csv`.
+IMPORT_SHOTS_CSV = "import_shots_csv"
+PLAY_SEQUENCE = "play_sequence"
 
 if TYPE_CHECKING:
     from .projects import PipelineProjectRegistry
@@ -53,6 +58,28 @@ if TYPE_CHECKING:
     from .scene import SceneManager
     from .containers import ContainerManager
     from .workfiles import WorkfileManager
+
+
+def only_project(names: list[str]) -> str:
+    """The project to open without asking: the only one registered, else ''.
+
+    The Entity Editor asked "Project:" from a one-item combo whenever the
+    scope named no project, an extra dialog and click every time (#35).
+    """
+    return names[0] if len(names) == 1 else ""
+
+
+def sequence_shots(entity_uris, sequence: str) -> list:
+    """The shots of *sequence* among *entity_uris*, in name order: what
+    Play Sequence plays (#26)."""
+    return sorted(
+        (
+            uri for uri in entity_uris
+            if len(uri.segments) == 3
+            and uri.segments[0] == "shots" and uri.segments[1] == sequence
+        ),
+        key=lambda uri: uri.segments[2],
+    )
 
 
 def creation_scope(tags) -> str:
@@ -173,6 +200,9 @@ class EntityOps:
         sequence = CreationOption("new_sequence", "New Sequence...", "folder")
         multi = CreationOption("new_group", "New Multi...", "users")
         root = CreationOption("new_scene", "New Root...", "layers")
+        csv_import = CreationOption(
+            IMPORT_SHOTS_CSV, "Import Shots from CSV...", "file-input",
+        )
         recipe = CreationOption(recipes.CREATE_OPTION, "New Recipe...", "puzzle")
         scope = creation_scope(tags)
         if scope == "group":
@@ -187,7 +217,13 @@ class EntityOps:
         if scope == "assets":
             return [asset, editor, category, multi, root]
         if scope == "shots":
-            return [shot, editor, sequence, multi, root]
+            options = [shot, editor, sequence, csv_import, multi, root]
+            # On one sequence (its sidebar row, or the view narrowed to
+            # it): play its shots in the editor (#26). An action, not a
+            # creation, so it leads the list.
+            if any(t.startswith("sequence:") for t in tags):
+                options.insert(0, CreationOption(PLAY_SEQUENCE, "Play Sequence", "play"))
+            return options
         return [asset, shot, editor, recipe, multi, root]
 
     def node_drop_creation_option(self, tags=frozenset()):
@@ -225,6 +261,22 @@ class EntityOps:
                  if t.startswith(f"{LIBRARY_TAG_KEY}:")), "")
             return self._recipes.creation_fields(
                 default_proj, projects, default_library)
+
+        if option_id == PLAY_SEQUENCE:
+            # No form: the editor opens on the sequence's shots.
+            seq = next(
+                (t.partition(":")[2] for t in tags if t.startswith("sequence:")), "",
+            )
+            if seq:
+                self.play_sequence(default_proj, seq)
+            return []
+
+        if option_id == IMPORT_SHOTS_CSV:
+            # Like the Entity Editor: no form. The file dialog is modal, so
+            # it opens once the browser's callback has returned.
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self.import_shots_csv(default_proj))
+            return []
 
         if option_id == ENTITY_EDITOR:
             # The browser asks for an option's fields only once the artist
@@ -379,7 +431,13 @@ class EntityOps:
             default_ctx = bound_ctx or (
                 scope if scope in ("shots", "assets") else "shots"
             )
-            self.open_new_multi(default_proj, default_ctx)
+            # Picked on a category or sequence row: offer that one whole.
+            prefix = "category:" if default_ctx == "assets" else "sequence:"
+            group = next(
+                (t.partition(":")[2] for t in tags if t.startswith(prefix)),
+                "",
+            )
+            self.open_new_multi(default_proj, default_ctx, group)
             return []
 
         if option_id == "new_scene":
@@ -396,6 +454,48 @@ class EntityOps:
             return fields
 
         return []
+
+    @staticmethod
+    def _entity_paths(client) -> set[tuple[str, ...]]:
+        """Every entity of the client's project, as URI segment tuples."""
+        return {
+            tuple(uri.segments)
+            for uri in client.config.list_entity_uris(None, closure=True)
+        }
+
+    def validate_creation(self, option_id, fields):
+        """Why the creation form's values would be refused, per field.
+
+        TumbleTrove asks this on the GUI thread as the artist types
+        (``Catalog.validate_creation``), and keeps OK disabled while there
+        is a reason (#29). The rule is ``creation_check``, the one
+        :meth:`create` refuses by. A project not loaded yet finds nothing:
+        :meth:`create` still has the last word.
+        """
+        if option_id != "new_scene" and option_id not in creation_check.OPTIONS:
+            return {}
+        proj_name = str(fields.get("project") or "")
+        if not proj_name:
+            projects = list(self._registry.all())
+            proj_name = projects[0].name if len(projects) == 1 else ""
+        if not proj_name or not self._clients.is_ready(proj_name):
+            return {}
+        if option_id == "new_scene":
+            # New Root: the one refusal its create has, a Root of that name.
+            name = str(fields.get("name") or "").strip()
+            proj = self._registry.get(proj_name)
+            if not name or proj is None:
+                return {}
+            self._activator.activate(proj)
+            from tumblepipe.config import scene as scn_mod
+            problem = creation_check.root_problem(
+                name, scn_mod.get_scene_by_uri(uris.scene(name)) is not None,
+            )
+            return {"name": problem} if problem else {}
+        client = self._clients.get(proj_name)
+        return creation_check.creation_problems(
+            option_id, fields, self._entity_paths(client),
+        )
 
     def create(self, option_id, fields):
         """Create what the creation dialog describes; the new card's id or
@@ -431,31 +531,19 @@ class EntityOps:
             hou.ui.displayMessage(str(err))
             return None
 
-        # A bucket name belongs to one kind only. Card ids are
-        # ``PROJECT/BUCKET/NAME`` and the kind is read back from whether
-        # BUCKET is a category, so a sequence named like a category sends
-        # every shot in it to ``entity:/assets/...``.
-        def _bucket_of_other_kind(bucket: str, kind: str) -> bool:
-            other = (
-                self._buckets.sequences(proj_name) if kind == "category"
-                else self._buckets.categories(proj_name)
+        # The dialog asks validate_creation as the artist types (#29);
+        # this refuses by the same rule (creation_check), so the two
+        # cannot disagree. A bucket name belongs to one kind only (card
+        # ids are ``PROJECT/BUCKET/NAME`` and the kind is read back from
+        # whether BUCKET is a category), new names are letters and digits
+        # only, and nothing that exists is made twice.
+        def _refused() -> bool:
+            problems = creation_check.creation_problems(
+                option_id, fields, self._entity_paths(client),
             )
-            if bucket not in other:
-                return False
-            hou.ui.displayMessage(
-                f"'{bucket}' is already a "
-                f"{'sequence' if kind == 'category' else 'category'}; "
-                f"a {kind} cannot share its name."
-            )
-            return True
-
-        # New names are letters and digits only (add_entity refuses the
-        # rest); say so before a URI is built from one.
-        def _misnamed(kind: str, entity_name: str) -> bool:
-            problem = shot_batch.name_problem(kind, entity_name)
-            if problem:
-                hou.ui.displayMessage(f"{problem}.")
-            return bool(problem)
+            if problems:
+                hou.ui.displayMessage("\n".join(problems.values()))
+            return bool(problems)
 
         # Parent-only entity creation: ``new_category`` and
         # ``new_sequence`` register a 2-segment URI (no asset/shot name)
@@ -467,17 +555,9 @@ class EntityOps:
             if not category:
                 hou.ui.displayMessage("Category is required.")
                 return None
-            if _misnamed("category", category):
+            if _refused():
                 return None
-            if _bucket_of_other_kind(category, "category"):
-                return None
-            cat_uri = uris.entity_category(category)
-            if client.config.get_properties(cat_uri) is not None:
-                hou.ui.displayMessage(
-                    f"Category '{category}' already exists."
-                )
-                return None
-            client.config.add_entity(cat_uri, {})
+            client.config.add_entity(uris.entity_category(category), {})
             self._index.invalidate(shots=False)
             return None  # No card to select — empty category
 
@@ -486,17 +566,9 @@ class EntityOps:
             if not sequence:
                 hou.ui.displayMessage("Sequence is required.")
                 return None
-            if _misnamed("sequence", sequence):
+            if _refused():
                 return None
-            if _bucket_of_other_kind(sequence, "sequence"):
-                return None
-            seq_uri = uris.entity_sequence(sequence)
-            if client.config.get_properties(seq_uri) is not None:
-                hou.ui.displayMessage(
-                    f"Sequence '{sequence}' already exists."
-                )
-                return None
-            client.config.add_entity(seq_uri, {})
+            client.config.add_entity(uris.entity_sequence(sequence), {})
             self._index.invalidate(assets=False)
             return None  # No card to select — empty sequence
 
@@ -510,22 +582,9 @@ class EntityOps:
             if not category:
                 hou.ui.displayMessage("Category is required.")
                 return None
-            # An existing category is fine, even one named before the name
-            # rule; only creating one implicitly under a sequence's name, or
-            # misnamed, is refused.
-            if category not in self._buckets.categories(proj_name) and (
-                _misnamed("category", category)
-                or _bucket_of_other_kind(category, "category")
-            ):
-                return None
-            if _misnamed("asset", name):
+            if _refused():
                 return None
             entity_uri = uris.entity_asset(category, name)
-            if client.config.get_properties(entity_uri) is not None:
-                hou.ui.displayMessage(
-                    f"Asset '{name}' already exists in '{category}'."
-                )
-                return None
             client.config.add_entity(entity_uri, {"name": name})
             self._index.invalidate(shots=False)
             return uris.asset_id_for(proj_name, entity_uri)
@@ -535,21 +594,11 @@ class EntityOps:
             if not sequence:
                 hou.ui.displayMessage("Sequence is required.")
                 return None
-            if sequence not in self._buckets.sequences(proj_name) and (
-                _misnamed("sequence", sequence)
-                or _bucket_of_other_kind(sequence, "sequence")
-            ):
-                return None
-            if _misnamed("shot", name):
+            if _refused():
                 return None
             frame_start = int(fields.get("frame_start", "1001"))
             frame_end = int(fields.get("frame_end", "1100"))
             entity_uri = uris.entity_shot(sequence, name)
-            if client.config.get_properties(entity_uri) is not None:
-                hou.ui.displayMessage(
-                    f"Shot '{name}' already exists in '{sequence}'."
-                )
-                return None
             client.config.add_entity(
                 entity_uri,
                 {"frame_start": frame_start, "frame_end": frame_end},
@@ -592,10 +641,11 @@ class EntityOps:
 
         if option_id == "new_scene":
             from tumblepipe.config import scene as scn_mod
-            if scn_mod.get_scene_by_uri(uris.scene(name)) is not None:
-                hou.ui.displayMessage(
-                    f"Root '{name}' already exists."
-                )
+            problem = creation_check.root_problem(
+                name, scn_mod.get_scene_by_uri(uris.scene(name)) is not None,
+            )
+            if problem:
+                hou.ui.displayMessage(problem)
                 return None
             scn_mod.add_scene(name)
             hou.ui.setStatusMessage(
@@ -636,6 +686,8 @@ class EntityOps:
 
         if not project_name:
             names = sorted(p.name for p in self._registry.all())
+            project_name = only_project(names)
+        if not project_name:
             project_name, ok = QInputDialog.getItem(
                 hou.qt.mainWindow(), "Entity Editor", "Project:", names, 0, False,
             )
@@ -686,12 +738,7 @@ class EntityOps:
                 "stay under the old name. Retire it and add a new Multi."
             )
 
-        def on_applied() -> None:
-            # The Multi membership cache too: Apply can change who is in one.
-            self._invalidate_cache()
-            self._index.invalidate()
-            self._refresh.sidebar()
-            self._refresh.grid()
+        on_applied = self.editor_applied
 
         def stage_roots() -> str:
             from tumblepipe.pipe.root_staging import sync_roots
@@ -801,6 +848,8 @@ class EntityOps:
                 channel_exports=on_project(channel_exports),
                 selected_prims=selected_prims,
                 count_prims=on_project(count_prims),
+                overlaps=on_project(self._overlaps),
+                repack=on_project(self.repack_timeline),
             ),
             parent=hou.qt.mainWindow(),
             kind=kind,
@@ -810,9 +859,69 @@ class EntityOps:
         window.show()
         return window
 
-    def open_new_multi(self, project_name: str, context: str) -> None:
+    def import_shots_csv(self, project_name: str, path: str = "") -> int:
+        """Import Shots from CSV… (#32): pick a sheet, show what importing
+        it does (the CLI dry run's lines), and write that on Import. The
+        shots made; 0 when cancelled or refused.
+
+        ``path`` skips the file dialog (scripts, tests).
+        """
+        import hou
+        from tumblepipe.tools import csv_shot_import as tool
+
+        projects = list(self._registry.all())
+        if not project_name and len(projects) == 1:
+            project_name = projects[0].name
+        proj = self._registry.get(project_name)
+        if proj is None:
+            hou.ui.displayMessage("Pick a project first: Import Shots from CSV imports into one.")
+            return 0
+        qt = getattr(hou, "qt", None)  # absent outside a Houdini GUI
+        parent = qt.mainWindow() if qt is not None else None
+        if not path:
+            from PySide6.QtWidgets import QFileDialog
+            path, _ = QFileDialog.getOpenFileName(
+                parent, f"Import Shots from CSV — {project_name}", "",
+                "CSV sheets (*.csv);;All files (*)",
+            )
+            if not path:
+                return 0
+        self._activator.activate(proj)
+        client = self._clients.get(project_name)
+        try:
+            sheet = tool.plan_sheet(Path(path), client.config)
+        except (OSError, UnicodeDecodeError, ValueError) as error:
+            # NoHeaderRow is a ValueError: the sheet's layout, said plainly.
+            hou.ui.displayMessage(f"Could not read {Path(path).name}:\n\n{error}")
+            return 0
+        if self.confirm_csv_import(project_name, path, sheet, parent) is not True:
+            return 0
+        created = tool.write_plan(client.config, sheet.plan)
+        self._invalidate_cache()
+        self._index.invalidate(assets=False)
+        self._refresh.sidebar()
+        self._refresh.grid()
+        hou.ui.setStatusMessage(
+            f"Imported {len(created)} shot{'s' if len(created) != 1 else ''} "
+            f"from {Path(path).name}",
+            severity=hou.severityType.Message,
+        )
+        return len(created)
+
+    @staticmethod
+    def confirm_csv_import(project_name, path, sheet, parent) -> bool:
+        """The plan dialog; True on Import. Tests swap it."""
+        from PySide6.QtWidgets import QDialog
+        from . import csv_import
+        dialog = csv_import.make_dialog(project_name, str(path), sheet, parent)
+        return dialog.exec() == QDialog.Accepted
+
+    def open_new_multi(
+        self, project_name: str, context: str, group: str = "",
+    ) -> None:
         """The browser's **New Multi...**: the project's Entity Editor on
-        its Multis tab of ``context``, asking for a new Multi there.
+        its Multis tab of ``context``, asking for a new Multi there,
+        offered to start with ``group`` (the row it was picked on).
 
         Asked once the browser's callback has returned: the name dialog
         is modal, and a modal ``exec()`` inside the callback would stall
@@ -822,7 +931,7 @@ class EntityOps:
 
         window = self.open_entity_editor(project_name, "multis", context)
         if window is not None:
-            QTimer.singleShot(0, lambda: window.new_multi(context))
+            QTimer.singleShot(0, lambda: window.new_multi(context, group))
 
     def open_entity_editor_for(self, asset_id: str) -> None:
         """An asset, shot or Multi card's **Open in Entity Editor…**: its
@@ -961,6 +1070,11 @@ class EntityOps:
         }
         if not submitted:
             return False
+        # Shared timelines this edit makes overlap are warned about (#31).
+        proj = self._registry.get(project_name)
+        if proj is not None:
+            self._activator.activate(proj)
+        before = self._overlaps()
         try:
             # The dialog always resubmits every field it showed, and
             # :meth:`edit_fields` seeds those fields from the RESOLVED view — so a
@@ -991,7 +1105,44 @@ class EntityOps:
                 cause=exc,
             ) from exc
         self._invalidate_cache()
+        self._warn_new_overlaps(before)
         return True
+
+    def _overlaps(self) -> dict:
+        """The active project's shared-timeline overlaps, for a before and
+        after; {} when they cannot be read (the edit still goes ahead)."""
+        from tumblepipe.config import multi_timeline
+        try:
+            return multi_timeline.overlapping_multis()
+        except Exception:  # noqa: BLE001  a warning, never a blocker
+            log.exception("Reading shared timelines")
+            return {}
+
+    def _warn_new_overlaps(self, before: dict, parent=None) -> list[str]:
+        """Offer Repack for the Multis whose shots an edit made overlap;
+        never repacks unasked. The Multis repacked."""
+        from tumblepipe.config import multi_timeline
+        found = multi_timeline.new_overlaps(before, self._overlaps())
+        if not found:
+            return []
+        return self.offer_repack(parent, found, self.repack_timeline)
+
+    @staticmethod
+    def offer_repack(parent, found, repack) -> list[str]:
+        """The warning (``timeline_repack.offer_repack``); tests swap it."""
+        from .timeline_repack import offer_repack
+        return offer_repack(parent, found, repack)
+
+    def repack_timeline(self, group_uri) -> None:
+        """Repack a Multi of the active project, and its open workfile."""
+        from tumblepipe.config import multi_timeline
+        multi_timeline.repack(group_uri)
+        self._invalidate_cache()
+        try:
+            from tumblepipe.pipe.houdini import multi_timeline as session
+        except ImportError:
+            return
+        session.apply_if_open(group_uri)
 
     def delete(self, asset_id: str) -> bool:
         """Delete the asset or shot, its folders archived with it."""
@@ -1292,6 +1443,66 @@ class EntityOps:
 
         run_in_background("Play", _work, lambda _: None)
 
+    def editor_applied(self) -> None:
+        """The Entity Editor wrote the database: drop what the browser
+        cached and show it again. The detail panels too: Apply changes
+        what they print (channels, frame range, Root), and they kept the
+        old text until something else refreshed them (#40)."""
+        # The Multi membership cache too: Apply can change who is in one.
+        self._invalidate_cache()
+        self._index.invalidate()
+        self._refresh.sidebar()
+        self._refresh.grid()
+        self._refresh.detail()
+
+    def play_shot_uris(self, project_name: str, uris: list) -> None:
+        """Open the shots *uris* of *project_name* back to back in the
+        editor, in the order given (a shots Multi's Play, #26)."""
+        from tumblepipe.pipe import review_playlist
+
+        proj = self._registry.get(project_name)
+        if proj is None:
+            raise ValueError(f"{project_name} is not a registered project")
+        uris = list(uris)
+        if not uris:
+            raise ValueError("No shots to play")
+
+        def _work() -> None:
+            self._clients.get(project_name)  # it blocks: the Client builds
+            self._activator.activate(proj)
+            review_playlist.play_shots(uris)
+
+        run_in_background("Play", _work, lambda _: None)
+
+    def play_sequence(self, project_name: str, sequence: str) -> None:
+        """Open every shot of *sequence* in the editor, in name order (the
+        sequence row's Play Sequence, #26). A sequence with no shot says so."""
+        from tumblepipe.pipe import review_playlist
+
+        proj = self._registry.get(project_name)
+        if proj is None:
+            raise ValueError(f"{project_name} is not a registered project")
+
+        def _work() -> int:
+            client = self._clients.get(project_name)  # it blocks
+            shots = sequence_shots(
+                client.config.list_entity_uris(None, closure=True), sequence,
+            )
+            if shots:
+                self._activator.activate(proj)
+                review_playlist.play_shots(shots)
+            return len(shots)
+
+        def _done(count) -> None:
+            if not count:
+                import hou
+                hou.ui.setStatusMessage(
+                    f"Sequence {sequence} has no shots to play",
+                    severity=hou.severityType.Warning,
+                )
+
+        run_in_background("Play Sequence", _work, _done)
+
     # ── Edits (see edits.py) ─────────────────────────────
 
     def _edit_project(self, asset_id: str):
@@ -1332,6 +1543,16 @@ class EntityOps:
             "Play Published" if published else "Open in Editor",
             _work, lambda _: None,
         )
+
+    def render_edit(self, asset_id: str) -> None:
+        """Open Farm Submit on its Edits tab with this edit's Render Edit
+        ticked (#28), in the edit's own project. The row offers the
+        edit's latest published version first."""
+        from tumblepipe.farm.submit import grid as farm_grid
+
+        ref, proj = self._edit_project(asset_id)
+        self._activator.activate(proj)
+        open_submit_jobs_dialog([ref.uri], [ref.name], farm_grid.EDITS)
 
     def set_master_edit(self, asset_id: str, master: bool) -> None:
         """Make the edit the project's master edit (``master``), or leave

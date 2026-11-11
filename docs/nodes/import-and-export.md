@@ -680,3 +680,40 @@ Source: [`otls/lop_th.animate.2.0`](../../otls/lop_th.animate.2.0/th_8_8Lop_1ani
 [`lops/animate_xforms.py`](../../python/tumblepipe/pipe/houdini/lops/animate_xforms.py),
 [`lops/animate_points.py`](../../python/tumblepipe/pipe/houdini/lops/animate_points.py),
 [`lops/animate_invoke.py`](../../python/tumblepipe/pipe/houdini/lops/animate_invoke.py).
+
+### Live Playblast
+
+**Live** renders the shot in the background while you keep animating: the
+`th::playblast` (SOP) in the dive renders it with TumbleView on the GPU,
+from the current frame to the end and then from the start, into a folder on
+this machine (`%LOCALAPPDATA%/tumblepipe/live/` on Windows,
+`~/.local/state/tumblepipe/live/` on Linux,
+`~/Library/Application Support/tumblepipe/live/` on macOS). The player
+will show those frames as they land (not yet: it is being built). There is
+no movie, no version and no daily: use **Playblast** on the `th::playblast`
+for that.
+
+Houdini is busy only while the animation is written to the cache (every
+frame of the shot is evaluated, as for any playblast; Esc cancels it). The
+render then runs on its own, and the status bar says when it is done or
+where its log is when it fails. Pressing **Live** again starts over and
+stops the render still going; **Stop** stops it. Quitting Houdini stops it
+too. If Houdini is killed or crashes, the render runs on to the end; the
+next **Live** on that shot stops it if it is still going.
+
+The shot, department and camera are the dive's `th::playblast`'s. A single
+shot's dive without one gets one when you first press **Live**, on the
+workfile's shot. A Multi's dives each have one set to their member shot
+(the template adds them); a dive in a Multi without one is refused, since
+the workfile names no one shot. In a Multi with a shared timeline, the
+member is rendered on its own frames, however far along the timeline it
+sits.
+
+The same render starts from the **Live Playblast** tool on the TumblePipe
+shelf (**Alt+Shift+L**, unless that key or the tool already has another
+key in your hotkeys) and from the animation radial (**Shift+Space** in an
+animation workfile). They render the selected `th::playblast` or
+`th::animate` nodes, else the `th::animate` the network editor is in, else
+the scene's only one, and ask when there are several. Source:
+[`live_playblast.py`](../../python/tumblepipe/pipe/houdini/live_playblast.py),
+[`pipe/live.py`](../../python/tumblepipe/pipe/live.py).

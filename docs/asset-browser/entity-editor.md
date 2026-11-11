@@ -52,6 +52,11 @@ name, and the title, gain a `*` while there are edits not applied.
 The dropdown above the sheet shows one category or sequence, or all of
 them. **Filter** narrows the rows to names that contain the text.
 
+The first two columns (the category or sequence, and the name) stay in view
+while the others scroll sideways. **Shift+wheel** scrolls a table sideways,
+as does the plain wheel when all its rows fit; a click on a cell that is
+only partly in view selects it without scrolling it under the pointer.
+
 ### Sequence and category rows
 
 Each sequence (or category) has a row of its own, shaded, above its shots
@@ -316,7 +321,9 @@ old one.
 Only rows you touched are checked, so old data never blocks an Apply. A row
 needs fixing when:
 
-- a new name uses anything but letters and digits, or is empty. This covers
+- a new name uses anything but letters and digits, is empty, or is a
+  Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9`,
+  `LPT0`-`LPT9`, in any case). This covers
   a new or renamed asset or shot and a new category or sequence. An
   existing category or sequence keeps its name, so new rows still go into
   one named before this rule (such as `Seq_0010`);
@@ -386,3 +393,10 @@ Closing the editor with edits not applied asks: **Apply**, **Discard** or
 
 The same name rules and spreadsheet parsing are used by the CSV importer
 ([`tools/csv_shot_import`](../../python/tumblepipe/tools/csv_shot_import.py)).
+In the browser it is **Import Shots from CSV...** on the Shots section's
+"+" and right-click menus: pick the sheet, and a dialog lists what the
+import would do (`[ADD SEQ]`, `[ADD]`, `[ERROR]` lines, the dry run the
+command line prints) before **Import N Shots** writes exactly that. The
+header row is found by its column names (`Sequence`, `ShotName`, `Start`,
+`End`) wherever it sits in the sheet; a sheet without one is refused with
+the names it needs.

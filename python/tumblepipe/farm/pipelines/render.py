@@ -68,8 +68,14 @@ def _shot(config: dict, staging_path: Path) -> post_render.Shot:
         first_frame = settings['first_frame'],
         last_frame = settings['last_frame'],
         step_size = settings['step_size'],
-        staging_path = staging_path
+        staging_path = staging_path,
+        cut_range = _cut_range(settings)
     )
+
+
+def _cut_range(settings: dict) -> tuple[int, int] | None:
+    cut_range = settings.get('cut_range')
+    return None if cut_range is None else (cut_range[0], cut_range[1])
 
 
 def _aov_paths(shot, render_department, channel, version_name, aov_names) -> dict[str, Path]:
@@ -113,7 +119,7 @@ def _render_job(
         tile_count = settings['tile_count'],
         first_frame = shot.first_frame,
         last_frame = shot.last_frame,
-        frames = [shot.first_frame, shot.middle_frame, shot.last_frame] if partial else [],
+        frames = list(shot.check_frames) if partial else [],
         step_size = 1 if partial else shot.step_size,
         batch_size = 1 if partial else settings['batch_size'],
         input_path = settings['input_paths'][channel],
@@ -151,8 +157,10 @@ def _denoise_job(
         pool_name = shot.pool_name,
         first_frame = shot.first_frame,
         last_frame = shot.last_frame,
-        frames = [shot.first_frame, shot.middle_frame, shot.last_frame] if partial else [],
-        step_size = 1,
+        frames = list(shot.check_frames) if partial else [],
+        # The frames the render rendered: a stepped render has no
+        # in-between frames to denoise.
+        step_size = 1 if partial else shot.step_size,
         batch_size = 1 if partial else FULL_DENOISE_BATCH_SIZE,
         input_paths = {
             aov_name: path_str(aov_path)

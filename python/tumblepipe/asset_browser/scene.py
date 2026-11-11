@@ -814,12 +814,15 @@ def open_submit_jobs_dialog(
     uris: list, names: list[str], context: str,
     department: str | None = None,
     tick_kinds: tuple[str, ...] = (farm_grid.RENDER,),
+    channels: tuple[str, ...] | None = None,
 ) -> None:
     """Open the Farm Submit grid (:class:`SubmitJobsDialog`) for ``context``.
 
     ``uris`` start with ``tick_kinds`` ticked: Render, for the Render
-    quick action and **Submit Jobs…**. The owning project must be active
-    already, so department lookups resolve against the right install.
+    quick action and **Submit Jobs…**. ``channels`` opens the Render
+    channel menu on those channels (``*``: all) instead of its usual seed:
+    th::import_render's **Render** button. The owning project must be
+    active already, so department lookups resolve against the right install.
 
     Non-modal: Houdini stays usable while the grid is open, and the
     submission itself runs in another process once it is sent. Imported
@@ -830,10 +833,35 @@ def open_submit_jobs_dialog(
     global _submit_dialog
     import hou
     from .submit_jobs_dialog import SubmitJobsDialog
+    # One Farm Submit window (#41): the open one gives way to the new
+    # context and ticks, where it stood, unless it is still sending a
+    # submission, which keeps its window.
+    geometry = None
+    previous = _live_submit_dialog()
+    if previous is not None and not previous.is_submitting():
+        geometry = previous.geometry()
+        previous.close()
     dialog = SubmitJobsDialog(
         uris, names, context, parent=hou.qt.mainWindow(),
-        department=department, tick_kinds=tick_kinds,
+        department=department, tick_kinds=tick_kinds, channels=channels,
     )
+    if geometry is not None:
+        dialog.setGeometry(geometry)
     _submit_dialog = dialog
     dialog.show()
     dialog.raise_()
+
+
+def _live_submit_dialog():
+    """The Farm Submit window still on screen, else None (closed, or its
+    C++ side deleted on close)."""
+    dialog = _submit_dialog
+    if dialog is None:
+        return None
+    try:
+        from shiboken6 import isValid
+        if not isValid(dialog):
+            return None
+        return dialog if dialog.isVisible() else None
+    except Exception:
+        return None

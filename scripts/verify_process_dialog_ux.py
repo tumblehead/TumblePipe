@@ -27,6 +27,14 @@ than the one it superseded:
 ...and that the footer reads unambiguously before and after a run
 (tumblepipe__bugs 2026-09-16, "this window is still confusing"):
 
+...and that the dialog says what its marks mean (#36):
+
+  8. the version column is headed "Current" and a group row shows its
+     children's versions; on This machine a finished publish row gets the
+     queued mark, not the tick a validation (run here) gets; and the
+     validation prompt's "Apply this choice to remaining validations"
+     starts ticked
+
   7. Execute is a fully styled (bordered, filled) button, so Houdini's style
      paints it rather than dropping it to bare text; a clean run collapses
      the footer to one green Done button that accepts the dialog, while a
@@ -229,8 +237,8 @@ def main() -> int:
         version_cell(grouped_dialog, grouped_child),
     )
     check(
-        'group row itself reports no version',
-        version_cell(grouped_dialog, group) == '-',
+        "the group row shows its child's version, kept current",
+        version_cell(grouped_dialog, group) == 'v0003',
         version_cell(grouped_dialog, group),
     )
 
@@ -372,6 +380,69 @@ def main() -> int:
     check('failed run offers Close, not Done', failed_dialog._cancel_button.text() == 'Close', failed_dialog._cancel_button.text())
     failed_dialog._on_cancel_clicked()
     check('Close after a failure rejects the dialog', failed_dialog.result() == QtWidgets.QDialog.Rejected, str(failed_dialog.result()))
+
+    # --- Case 8: what the marks mean (#36) --------------------------------
+    from tumblepipe.farm import backend as farm_backend
+    from tumblepipe.pipe.houdini.ui import farm_submit, process_task
+    from tumblepipe.pipe.houdini.ui import validation_dialog
+
+    model = clean._model
+    check('the version column is headed Current',
+          model.horizontalHeaderItem(model.COLUMN_VERSION).text() == 'Current'
+          and bool(model.horizontalHeaderItem(model.COLUMN_VERSION).toolTip()))
+    before = make_task('Export (chars)', 'model', lambda: None, current_version='v0004')
+    group_before = make_task('Export (model)', 'model', None, children=[before], task_type='export_group')
+    unrun = ProcessDialog('Publish', [group_before])
+    check("a collapsed group row shows its children's version before the run",
+          version_cell(unrun, group_before) == 'v0004', version_cell(unrun, group_before))
+
+    def status_cell(dialog, task):
+        item = dialog._model._task_items[task.id]
+        return item.parent().child(item.row(), dialog._model.COLUMN_STATUS)
+
+    saved = farm_submit.check_backend, farm_submit.remember_backend
+    farm_submit.check_backend = lambda backend, title: True
+    farm_submit.remember_backend = lambda backend: None
+    try:
+        validate = make_task('Validate', 'model', None, task_type='validate')
+        validate.execute_farm = lambda: None
+        publish = make_task('Export (model)', 'model', None)
+        publish.execute_farm = lambda: None
+        queued_dialog = ProcessDialog('Publish', [validate, publish])
+        queued_dialog._machine_radio.setChecked(True)
+        done3 = []
+        queued_dialog._executor.all_completed.connect(lambda: done3.append(True))
+        queued_dialog._on_execute_clicked()
+        deadline = time.monotonic() + 10.0
+        while not done3 and time.monotonic() < deadline:
+            QtWidgets.QApplication.processEvents()
+            time.sleep(0.01)
+    finally:
+        farm_submit.check_backend, farm_submit.remember_backend = saved
+    check('the queued run finished', bool(done3) and queued_dialog._backend() == farm_backend.LOCAL)
+    check('a publish queued on this machine gets the queued mark, with a tooltip',
+          status_cell(queued_dialog, publish).text() == process_task.QUEUED_MARK
+          and 'Farm Manager' in status_cell(queued_dialog, publish).toolTip(),
+          status_cell(queued_dialog, publish).text())
+    check('the validation, run here, keeps the tick',
+          status_cell(queued_dialog, validate).text()
+          == queued_dialog._model.STATUS_DISPLAY[TaskStatus.COMPLETED],
+          status_cell(queued_dialog, validate).text())
+    check('an in-session publish keeps the tick',
+          status_cell(clean, clean._model.get_tasks()[0]).text()
+          == clean._model.STATUS_DISPLAY[TaskStatus.COMPLETED])
+    queued_dialog._model.reset_all_status()
+    check('a reset clears the queued mark and its tooltip',
+          status_cell(queued_dialog, publish).toolTip() == ''
+          and status_cell(queued_dialog, publish).text()
+          == queued_dialog._model.STATUS_DISPLAY[TaskStatus.PENDING])
+
+    prompt = validation_dialog.ValidationConfirmDialog(
+        validation_message='[ERROR] /x: bad', department='model', entity_name='hero')
+    check('"Apply this choice to remaining validations" starts ticked',
+          prompt._remember_checkbox.isChecked())
+    prompt._on_cancel()
+    check('and the choice is then remembered', prompt.remember_choice is True)
 
     failed = [name for name, ok, _ in _checks if not ok]
     print()

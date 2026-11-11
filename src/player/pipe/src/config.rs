@@ -39,7 +39,7 @@ pub enum ConfigError {
         "Entity name '{wanted}' collides with existing '{existing}' (names may not differ only by case — case-variant hierarchies split exports and sidecars)"
     )]
     CaseCollision { wanted: String, existing: String },
-    #[error("Name '{0}' may only use letters and digits")]
+    #[error("Name '{0}' {reason}", reason = crate::naming::entity_name_reason(.0))]
     BadName(String),
     #[error("A purpose root cannot be renamed")]
     RootRename,
@@ -498,6 +498,11 @@ mod tests {
             Err(ConfigError::CaseCollision { wanted: "seq_01".into(), existing: "Seq_01".into() })
         );
         assert_eq!(config.add_entity(&uri("entity:/shots/010/sh_1"), Properties::new()), Err(ConfigError::BadName("sh_1".into())));
+        // A Windows device name is refused, and the message says why.
+        let refused = config.add_entity(&uri("entity:/shots/010/Aux"), Properties::new());
+        assert_eq!(refused, Err(ConfigError::BadName("Aux".into())));
+        assert!(refused.unwrap_err().to_string().contains("device name Windows reserves"));
+        assert!(ConfigError::BadName("sh_1".into()).to_string().ends_with("may only use letters and digits"));
         // An old sequence name still takes new shots.
         config.add_entity(&uri("entity:/shots/Seq_01/sh010"), json!({"fps": 24}).as_object().unwrap().clone()).unwrap();
         assert_eq!(config.add_entity(&uri("entity:/shots/Seq_01/sh010"), Properties::new()), Err(ConfigError::Exists));

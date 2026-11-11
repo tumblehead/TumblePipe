@@ -31,7 +31,7 @@ Content-Disposition: attachment; filename="hdaroot.def"
 Content-Type: text/plain
 
 comment ""
-position -3.52437 1.64653
+position 0 0
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on debug off
 outputsNamed3
@@ -976,6 +976,9 @@ reftype	[ 0	locks=0 ]	(	copy	)
 makeinstances	[ 0	locks=0 ]	(	"off"	)
 primkind	[ 0	locks=0 ]	(	__automatic__	)
 parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+recordduplicateinfogroup	[ 0	locks=0 ]	(	0	)
+addascustomdata	[ 0	locks=0 ]	(	"off"	)
+customdataname	[ 0	locks=0 ]	(	duplicates	)
 collectionpath	[ 0	locks=0 ]	(	""	)
 collectionname	[ 0	locks=0 ]	(	""	)
 promotecollections	[ 0	locks=0 ]	(	""	)
@@ -1909,6 +1912,18 @@ Content-Type: text/plain
         label   "Exposure Time"
         export  none
     }
+    parm {
+        name    "xn__houdinicanvasdistance_control_cob"
+        baseparm
+        label   "Canvas Distance"
+        export  none
+    }
+    parm {
+        name    "xn__houdinicanvasdistance_bbb"
+        baseparm
+        label   "Canvas Distance"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/dicing_focal_length.chn"
@@ -2204,6 +2219,8 @@ xn__houdinibackgroundimage_control_ypb	[ 0	locks=0 ]	(	none	)
 xn__houdinibackgroundimage_xcb	[ 0	locks=0 ]	(	""	)
 xn__houdiniforegroundimage_control_ypb	[ 0	locks=0 ]	(	none	)
 xn__houdiniforegroundimage_xcb	[ 0	locks=0 ]	(	""	)
+xn__houdinicanvasdistance_control_cob	[ 0	locks=0 ]	(	none	)
+xn__houdinicanvasdistance_bbb	[ 0	locks=0 ]	(	1	)
 xn__shutteropen_control_16a	[ 0	locks=0 ]	(	none	)
 xn__shutteropen_0ta	[ 0	locks=0 ]	(	-0.25	)
 xn__shutterclose_control_o8a	[ 0	locks=0 ]	(	none	)
@@ -3318,6 +3335,18 @@ Content-Type: text/plain
         label   "Exposure Time"
         export  none
     }
+    parm {
+        name    "xn__houdinicanvasdistance_control_cob"
+        baseparm
+        label   "Canvas Distance"
+        export  none
+    }
+    parm {
+        name    "xn__houdinicanvasdistance_bbb"
+        baseparm
+        label   "Canvas Distance"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/init_screen_window.chn"
@@ -3634,6 +3663,8 @@ xn__houdinibackgroundimage_control_ypb	[ 0	locks=0 ]	(	none	)
 xn__houdinibackgroundimage_xcb	[ 0	locks=0 ]	(	""	)
 xn__houdiniforegroundimage_control_ypb	[ 0	locks=0 ]	(	none	)
 xn__houdiniforegroundimage_xcb	[ 0	locks=0 ]	(	""	)
+xn__houdinicanvasdistance_control_cob	[ 0	locks=0 ]	(	none	)
+xn__houdinicanvasdistance_bbb	[ 0	locks=0 ]	(	1	)
 xn__shutteropen_control_16a	[ 0	locks=0 ]	(	none	)
 xn__shutteropen_0ta	[ 0	locks=0 ]	(	-0.25	)
 xn__shutterclose_control_o8a	[ 0	locks=0 ]	(	none	)
@@ -4492,6 +4523,18 @@ Content-Type: text/plain
         label   "Exposure Time"
         export  none
     }
+    parm {
+        name    "xn__houdinicanvasdistance_control_cob"
+        baseparm
+        label   "Canvas Distance"
+        export  none
+    }
+    parm {
+        name    "xn__houdinicanvasdistance_bbb"
+        baseparm
+        label   "Canvas Distance"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/invert_aspect_ratio.chn"
@@ -4834,6 +4877,8 @@ xn__houdinibackgroundimage_control_ypb	[ 0	locks=0 ]	(	none	)
 xn__houdinibackgroundimage_xcb	[ 0	locks=0 ]	(	""	)
 xn__houdiniforegroundimage_control_ypb	[ 0	locks=0 ]	(	none	)
 xn__houdiniforegroundimage_xcb	[ 0	locks=0 ]	(	""	)
+xn__houdinicanvasdistance_control_cob	[ 0	locks=0 ]	(	none	)
+xn__houdinicanvasdistance_bbb	[ 0	locks=0 ]	(	1	)
 xn__shutteropen_control_16a	[ 0	locks=0 ]	(	none	)
 xn__shutteropen_0ta	[ 0	locks=0 ]	(	-0.25	)
 xn__shutterclose_control_o8a	[ 0	locks=0 ]	(	none	)
@@ -5692,6 +5737,18 @@ Content-Type: text/plain
         label   "Exposure Time"
         export  none
     }
+    parm {
+        name    "xn__houdinicanvasdistance_control_cob"
+        baseparm
+        label   "Canvas Distance"
+        export  none
+    }
+    parm {
+        name    "xn__houdinicanvasdistance_bbb"
+        baseparm
+        label   "Canvas Distance"
+        export  none
+    }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/overscan.chn"
@@ -6048,6 +6105,8 @@ xn__houdinibackgroundimage_control_ypb	[ 0	locks=0 ]	(	none	)
 xn__houdinibackgroundimage_xcb	[ 0	locks=0 ]	(	""	)
 xn__houdiniforegroundimage_control_ypb	[ 0	locks=0 ]	(	none	)
 xn__houdiniforegroundimage_xcb	[ 0	locks=0 ]	(	""	)
+xn__houdinicanvasdistance_control_cob	[ 0	locks=0 ]	(	none	)
+xn__houdinicanvasdistance_bbb	[ 0	locks=0 ]	(	1	)
 xn__shutteropen_control_16a	[ 0	locks=0 ]	(	none	)
 xn__shutteropen_0ta	[ 0	locks=0 ]	(	-0.25	)
 xn__shutterclose_control_o8a	[ 0	locks=0 ]	(	none	)
@@ -6482,7 +6541,7 @@ Content-Type: text/plain
     parm {
         name    "beauty_mse"
         baseparm
-        label   "variance"
+        label   "beauty variance"
         joinnext
         export  none
     }
@@ -6502,7 +6561,7 @@ Content-Type: text/plain
     parm {
         name    "albedo_mse"
         baseparm
-        label   "variance"
+        label   "albedo variance"
         export  none
     }
     parm {
@@ -6515,7 +6574,7 @@ Content-Type: text/plain
     parm {
         name    "normal_mse"
         baseparm
-        label   "variance"
+        label   "normal variance"
         export  none
     }
     parm {
@@ -6634,13 +6693,13 @@ Content-Type: text/plain
         parm {
             name    "albedo_mse_compression"
             baseparm
-            label   "albedo_mse"
+            label   "albedo variance"
             export  none
         }
         parm {
             name    "normal_mse_compression"
             baseparm
-            label   "normal_mse"
+            label   "normal variance"
             export  none
         }
         parm {
@@ -6652,7 +6711,7 @@ Content-Type: text/plain
         parm {
             name    "beauty_mse_compression"
             baseparm
-            label   "beauty_mse"
+            label   "beauty variance"
             export  none
         }
     }
@@ -6679,7 +6738,7 @@ Content-Type: text/plain
     parm {
         name    "diffuse_indirect"
         baseparm
-        label   "indirect"
+        label   "diffuse indirect"
         export  none
     }
     parm {
@@ -6691,7 +6750,7 @@ Content-Type: text/plain
     parm {
         name    "specular_indirect"
         baseparm
-        label   "indirect"
+        label   "specular indirect"
         export  none
     }
     parm {
@@ -6752,25 +6811,25 @@ Content-Type: text/plain
     parm {
         name    "diffuse_direct_compression"
         baseparm
-        label   "diffuse_direct"
+        label   "diffuse direct"
         export  none
     }
     parm {
         name    "diffuse_indirect_compression"
         baseparm
-        label   "diffuse_indirect"
+        label   "diffuse indirect"
         export  none
     }
     parm {
         name    "specular_direct_compression"
         baseparm
-        label   "specular_direct"
+        label   "specular direct"
         export  none
     }
     parm {
         name    "specular_indirect_compression"
         baseparm
-        label   "specular_indirect"
+        label   "specular indirect"
         export  none
     }
     parm {
@@ -6812,13 +6871,39 @@ Content-Type: text/plain
     parm {
         name    "motionvectors_compression"
         baseparm
-        label   "motionvectors"
+        label   "motion vectors"
         export  none
     }
     parm {
         name    "velocity_compression"
         baseparm
         label   "velocity"
+        export  none
+    }
+    parm {
+        name    "cryptoprimitives"
+        baseparm
+        label   "cryptoprimitives"
+        nolabel
+        export  none
+    }
+    parm {
+        name    "cryptoprimitives_compression"
+        baseparm
+        label   "cryptoprimitives"
+        export  none
+    }
+    parm {
+        name    "cryptomaterials"
+        baseparm
+        label   "cryptomaterials"
+        nolabel
+        export  none
+    }
+    parm {
+        name    "cryptomaterials_compression"
+        baseparm
+        label   "cryptomaterials"
         export  none
     }
 
@@ -7275,6 +7360,40 @@ return 0 if (prim.IsValid() and prim.IsActive()) else 1" language = python }
 
 	 length = 0 expr = ch(\"../velocity_compression\") }
     }
+    channel cryptoprimitives {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../cryptoprimitives\") }
+    }
+    channel cryptoprimitives_compression {
+      lefttype = extend
+      righttype = extend
+      default = 4
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../cryptoprimitives_compression\") }
+    }
+    channel cryptomaterials {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../cryptomaterials\") }
+    }
+    channel cryptomaterials_compression {
+      lefttype = extend
+      righttype = extend
+      default = 4
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../cryptomaterials_compression\") }
+    }
   }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
@@ -7284,61 +7403,65 @@ Content-Type: text/plain
 {
 version 0.8
 beauty	[ 0	locks=0 ]	(	[ beauty	0 ] 	)
+beauty_compression	[ 0	locks=0 ]	(	[ beauty_compression	1 ] 	)
 beauty_mse	[ 0	locks=0 ]	(	[ beauty_mse	0 ] 	)
+beauty_mse_compression	[ 0	locks=0 ]	(	[ beauty_mse_compression	1 ] 	)
 sample_count	[ 0	locks=0 ]	(	[ sample_count	0 ] 	)
-alpha	[ 0	locks=0 ]	(	"off"	)
+samples_compression	[ 0	locks=0 ]	(	[ samples_compression	6 ] 	)
 albedo	[ 0	locks=0 ]	(	[ albedo	0 ] 	)
+albedo_compression	[ 0	locks=0 ]	(	[ albedo_compression	1 ] 	)
 albedo_mse	[ 0	locks=0 ]	(	[ albedo_mse	0 ] 	)
+albedo_mse_compression	[ 0	locks=0 ]	(	[ albedo_mse_compression	6 ] 	)
 normal	[ 0	locks=0 ]	(	[ normal	0 ] 	)
+normal_compression	[ 0	locks=0 ]	(	[ normal_compression	6 ] 	)
 normal_mse	[ 0	locks=0 ]	(	[ normal_mse	0 ] 	)
+normal_mse_compression	[ 0	locks=0 ]	(	[ normal_mse_compression	6 ] 	)
 sepparm	[ 0	locks=0 ]	(	)
 uv	[ 0	locks=0 ]	(	[ uv	0 ] 	)
+uv_compression	[ 0	locks=0 ]	(	[ uv_compression	6 ] 	)
 position	[ 0	locks=0 ]	(	[ position	0 ] 	)
-diffuse	[ 0	locks=0 ]	(	[ diffuse	0 ] 	)
-specular	[ 0	locks=0 ]	(	[ specular	0 ] 	)
+position_compression	[ 0	locks=0 ]	(	[ position_compression	6 ] 	)
 depth	[ 0	locks=0 ]	(	[ depth	0 ] 	)
-volume	[ 0	locks=0 ]	(	[ volume	0 ] 	)
+depth_compression	[ 0	locks=0 ]	(	[ depth_compression	6 ] 	)
+diffuse	[ 0	locks=0 ]	(	[ diffuse	0 ] 	)
+diffuse_compression	[ 0	locks=0 ]	(	[ diffuse_compression	1 ] 	)
+specular	[ 0	locks=0 ]	(	[ specular	0 ] 	)
+specular_compression	[ 0	locks=0 ]	(	[ specular_compression	1 ] 	)
 emission	[ 0	locks=0 ]	(	[ emission	0 ] 	)
+emission_compression	[ 0	locks=0 ]	(	[ emission_compression	1 ] 	)
+volume	[ 0	locks=0 ]	(	[ volume	0 ] 	)
+volume_compression	[ 0	locks=0 ]	(	[ volume_compression	1 ] 	)
 sepparm2	[ 0	locks=0 ]	(	)
 diffuse_direct	[ 0	locks=0 ]	(	[ diffuse_direct	0 ] 	)
-diffuse_indirect	[ 0	locks=0 ]	(	[ diffuse_indirect	0 ] 	)
-specular_direct	[ 0	locks=0 ]	(	[ specular_direct	0 ] 	)
-specular_indirect	[ 0	locks=0 ]	(	[ specular_indirect	0 ] 	)
-transmission	[ 0	locks=0 ]	(	[ transmission	0 ] 	)
-sss	[ 0	locks=0 ]	(	[ sss	0 ] 	)
-coat	[ 0	locks=0 ]	(	[ coat	0 ] 	)
-unshadowed	[ 0	locks=0 ]	(	[ unshadowed	0 ] 	)
-shadow	[ 0	locks=0 ]	(	[ shadow	0 ] 	)
-ao	[ 0	locks=0 ]	(	[ ao	0 ] 	)
-motionvectors	[ 0	locks=0 ]	(	[ motionvectors	0 ] 	)
-velocity	[ 0	locks=0 ]	(	[ velocity	0 ] 	)
-alpha_compression	[ 0	locks=0 ]	(	"zip"	)
-albedo_compression	[ 0	locks=0 ]	(	[ albedo_compression	1 ] 	)
-diffuse_compression	[ 0	locks=0 ]	(	[ diffuse_compression	1 ] 	)
-normal_compression	[ 0	locks=0 ]	(	[ normal_compression	6 ] 	)
-specular_compression	[ 0	locks=0 ]	(	[ specular_compression	1 ] 	)
-depth_compression	[ 0	locks=0 ]	(	[ depth_compression	6 ] 	)
-emission_compression	[ 0	locks=0 ]	(	[ emission_compression	1 ] 	)
-volume_compression	[ 0	locks=0 ]	(	[ volume_compression	1 ] 	)
-position_compression	[ 0	locks=0 ]	(	[ position_compression	6 ] 	)
-uv_compression	[ 0	locks=0 ]	(	[ uv_compression	6 ] 	)
-beauty_compression	[ 0	locks=0 ]	(	[ beauty_compression	1 ] 	)
-albedo_mse_compression	[ 0	locks=0 ]	(	[ albedo_mse_compression	6 ] 	)
-normal_mse_compression	[ 0	locks=0 ]	(	[ normal_mse_compression	6 ] 	)
-samples_compression	[ 0	locks=0 ]	(	[ samples_compression	6 ] 	)
-beauty_mse_compression	[ 0	locks=0 ]	(	[ beauty_mse_compression	1 ] 	)
 diffuse_direct_compression	[ 0	locks=0 ]	(	[ diffuse_direct_compression	1 ] 	)
+diffuse_indirect	[ 0	locks=0 ]	(	[ diffuse_indirect	0 ] 	)
 diffuse_indirect_compression	[ 0	locks=0 ]	(	[ diffuse_indirect_compression	1 ] 	)
+specular_direct	[ 0	locks=0 ]	(	[ specular_direct	0 ] 	)
 specular_direct_compression	[ 0	locks=0 ]	(	[ specular_direct_compression	1 ] 	)
+specular_indirect	[ 0	locks=0 ]	(	[ specular_indirect	0 ] 	)
 specular_indirect_compression	[ 0	locks=0 ]	(	[ specular_indirect_compression	1 ] 	)
+transmission	[ 0	locks=0 ]	(	[ transmission	0 ] 	)
 transmission_compression	[ 0	locks=0 ]	(	[ transmission_compression	1 ] 	)
+sss	[ 0	locks=0 ]	(	[ sss	0 ] 	)
 sss_compression	[ 0	locks=0 ]	(	[ sss_compression	1 ] 	)
+coat	[ 0	locks=0 ]	(	[ coat	0 ] 	)
 coat_compression	[ 0	locks=0 ]	(	[ coat_compression	1 ] 	)
+unshadowed	[ 0	locks=0 ]	(	[ unshadowed	0 ] 	)
 unshadowed_compression	[ 0	locks=0 ]	(	[ unshadowed_compression	1 ] 	)
+shadow	[ 0	locks=0 ]	(	[ shadow	0 ] 	)
 shadow_compression	[ 0	locks=0 ]	(	[ shadow_compression	1 ] 	)
+ao	[ 0	locks=0 ]	(	[ ao	0 ] 	)
 ao_compression	[ 0	locks=0 ]	(	[ ao_compression	6 ] 	)
+motionvectors	[ 0	locks=0 ]	(	[ motionvectors	0 ] 	)
 motionvectors_compression	[ 0	locks=0 ]	(	[ motionvectors_compression	6 ] 	)
+velocity	[ 0	locks=0 ]	(	[ velocity	0 ] 	)
 velocity_compression	[ 0	locks=0 ]	(	[ velocity_compression	6 ] 	)
+cryptoprimitives	[ 0	locks=0 ]	(	[ cryptoprimitives	0 ] 	)
+cryptoprimitives_compression	[ 0	locks=0 ]	(	[ cryptoprimitives_compression	4 ] 	)
+cryptomaterials	[ 0	locks=0 ]	(	[ cryptomaterials	0 ] 	)
+cryptomaterials_compression	[ 0	locks=0 ]	(	[ cryptomaterials_compression	4 ] 	)
+alpha	[ 0	locks=0 ]	(	"off"	)
+alpha_compression	[ 0	locks=0 ]	(	"zip"	)
 lop_activation	[ 0	locks=0 ]	(	"on"	)
 compression_folder2	[ 0	locks=0 ]	(	0	)
 }

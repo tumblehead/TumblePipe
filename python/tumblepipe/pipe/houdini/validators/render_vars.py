@@ -1,6 +1,6 @@
 """RenderVar validation - ensures prim names match aov:name attributes."""
 
-from tumblepipe.pipe.usd.render_vars import FIX, twin_problems
+from tumblepipe.pipe.usd.render_vars import FIX, twin_problems, var_planes, var_problems
 from tumblepipe.pipe.houdini import prim_queries
 from .base import ValidationResult
 
@@ -46,8 +46,13 @@ def validate_render_var_names(root) -> ValidationResult:
         if not prim.IsValid():
             continue
 
-        # Extract prim name from path
-        prim_name = prim_path.rsplit('/', 1)[-1]
+        # A var that names its plane is checked by the farm's rule (its
+        # plane is its name; a cryptomatte is named crypto*, Karma's
+        # Cryptomatte LOP naming the plane in aov:husk:name).
+        if var_planes(prim):
+            for problem in var_problems(prim):
+                result.add_error(problem, prim_path, suggestion=FIX)
+            continue
 
         # Get the aov:name attribute
         aov_attr = prim.GetAttribute('driver:parameters:aov:name')
@@ -62,29 +67,14 @@ def validate_render_var_names(root) -> ValidationResult:
             )
             continue
 
-        aov_name = aov_attr.Get()
-        if aov_name is None:
-            result.add_warning(
-                "Empty 'driver:parameters:aov:name' attribute",
-                prim_path,
-                suggestion=(
-                    "Set a non-empty AOV name on the Render Var LOP (e.g. "
-                    "'beauty', 'N', 'albedo')."
-                ),
-            )
-            continue
-
-        # Compare names (case-insensitive to catch common issues)
-        if prim_name.lower() != str(aov_name).lower():
-            result.add_error(
-                f"Prim name '{prim_name}' does not match aov:name '{aov_name}'",
-                prim_path,
-                suggestion=(
-                    "Rename either the Render Var prim or its aov:name so they "
-                    "match. Mismatch means the rendered AOV file will have a "
-                    "different name from what the prim implies."
-                ),
-            )
+        result.add_warning(
+            "Empty 'driver:parameters:aov:name' attribute",
+            prim_path,
+            suggestion=(
+                "Set a non-empty AOV name on the Render Var LOP (e.g. "
+                "'beauty', 'N', 'albedo')."
+            ),
+        )
 
     return result
 

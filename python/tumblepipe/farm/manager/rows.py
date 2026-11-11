@@ -427,6 +427,55 @@ def batch_status(statuses: list[str]) -> str:
     return queue.COMPLETED
 
 
+#: Job states that mean work is still going.
+_LIVE = (queue.RENDERING, queue.QUEUED, queue.PENDING)
+
+
+def batch_status_text(statuses: list[str]) -> str:
+    """A batch row's Status text: :func:`batch_status`, except that a batch
+    with failed jobs that is still working says both, ``rendering · 2
+    failed``, so a row whose render is at 23/24 does not read as dead
+    because two encodes failed (#46). Its dot stays the failed red."""
+    status = batch_status(statuses)
+    failed = statuses.count(queue.FAILED)
+    live = next((s for s in _LIVE if s in statuses), None)
+    if status == queue.FAILED and live is not None:
+        return f'{live} · {failed} failed'
+    return status
+
+
+def failed_with_job(task: 'TaskRow', job_status: str) -> bool:
+    """A task Deadline failed with its job: failed, its job failed, and it
+    has no error of its own (its job's error limit was reached elsewhere)."""
+    return (
+        task.status == queue.FAILED and job_status == queue.FAILED
+        and not task.error and not task.errors
+    )
+
+
+def job_failure_text(errors: list[tuple[str, str]]) -> str:
+    """Why a job failed, from its error reports' ``(worker, first line)``:
+    ``failed with its job: 7 errors on abel-5060, 5 on john-3090 (No
+    licenses could be found)``, workers by count, the commonest message."""
+    if not errors:
+        return 'failed with its job (it has no error reports)'
+    counts: dict[str, int] = {}
+    messages: dict[str, int] = {}
+    for worker, message in errors:
+        counts[worker or 'an unknown worker'] = counts.get(worker or 'an unknown worker', 0) + 1
+        if message:
+            messages[message] = messages.get(message, 0) + 1
+    order = sorted(counts, key=lambda w: (-counts[w], w))
+    first, rest = order[0], order[1:]
+    noun = 'error' if counts[first] == 1 else 'errors'
+    text = f'failed with its job: {counts[first]} {noun} on {first}'
+    text += ''.join(f', {counts[w]} on {w}' for w in rest)
+    if messages:
+        common = sorted(messages, key=lambda m: (-messages[m], m))[0]
+        text += f' ({common})'
+    return text
+
+
 # ── display ───────────────────────────────────────────────
 
 _STAMP = re.compile(r'\s+\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}$')

@@ -9,9 +9,11 @@ from tumblepipe.pipe.houdini.nodes import disable_layer_save_path
 # --- /stage layout -------------------------------------------------------
 # Explicit positions: this department owns its layout, so nothing here calls
 # layoutChildren(). Group workfiles repeat the arrangement per member,
-# shifted along x by COLUMN_STRIDE.
+# shifted along x by COLUMN_STRIDE: wide enough that a column's sticky note
+# clears the previous column's nodes and their labels (#40;
+# tests/test_template_column_stride.py).
 RIGGING_POS = hou.Vector2(0.12, -0.35)
-COLUMN_STRIDE = 4.0
+COLUMN_STRIDE = 6.0
 
 STAGE_NOTE = ('Create Rig in here -->',
               hou.Vector2(-2.81, -0.4), hou.Vector2(2.5, 0.46))

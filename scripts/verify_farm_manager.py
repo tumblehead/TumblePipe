@@ -42,6 +42,10 @@ TEMP = Path(tempfile.mkdtemp(prefix='farm-manager-verify-'))
 os.environ['TH_LOCAL_FARM_DIR'] = str(TEMP / 'local_farm')
 os.environ.setdefault('TH_USER', 'tester')
 
+# Houdini's Qt DLLs live in $HFS/bin, which Python does not search on PATH.
+if os.environ.get('HFS') and hasattr(os, 'add_dll_directory'):
+    os.add_dll_directory(str(Path(os.environ['HFS']) / 'bin'))
+
 from PySide6.QtGui import QColor  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -385,6 +389,26 @@ def main() -> int:
 
     print('6. clean up (a fake farm: nothing reaches Deadline)')
     verify_cleanup(app, win, root, project, done, live)
+
+    print('7. a failed batch still working says both; short columns fit (#46)')
+    mixed = make_batch(root, f'{project} render sh030 tester', [[queue.FAILED], [queue.RENDERING]], [[], []])
+    win._refresh_local()
+    mixed_id = f'local:{mixed.name}'
+    deadline = time.monotonic() + 10
+    while mixed_id not in win._batch_items and time.monotonic() < deadline:
+        pump(app, 0.3)
+    item = win._batch_items.get(mixed_id)
+    check('a batch with a failed and a rendering job reads "rendering · 1 failed"',
+          item is not None and item.text(mw.STATUS) == 'rendering · 1 failed',
+          item.text(mw.STATUS) if item is not None else 'not listed')
+    check('and keeps its failed dot', item is not None
+          and item.icon(mw.NAME).cacheKey() == mw.status_dot(queue.FAILED).cacheKey())
+    header = win._jobs.header()
+    check('Status, Submitted, Where, Tasks, User and Errors fit their text',
+          all(header.sectionResizeMode(c) == mw.QHeaderView.ResizeToContents
+              for c in (mw.STATUS, mw.SUBMITTED, mw.WHERE_COL, mw.TASKS, mw.USER, mw.ERRORS)))
+    check('the Submitted cell carries its full time as a tooltip',
+          item is not None and item.toolTip(mw.SUBMITTED) != '')
 
     if len(sys.argv) > 1:
         win.resize(1500, 900)

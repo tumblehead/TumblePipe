@@ -35,12 +35,13 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 
 from PySide6.QtCore import (
-    QAbstractTableModel, QItemSelectionModel, QModelIndex, QSortFilterProxyModel,
+    QAbstractTableModel, QItemSelectionModel, QModelIndex, QPersistentModelIndex,
+    QSortFilterProxyModel,
     Qt, QTimer,
 )
 from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QPen, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QComboBox, QDialog, QFormLayout,
+    QAbstractItemView, QApplication, QComboBox, QDialog, QFormLayout, QFrame,
     QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
     QMenu, QMessageBox, QPushButton, QSpinBox, QStackedWidget, QStyle,
     QStyledItemDelegate, QStyleOptionViewItem, QTabBar, QTableView,
@@ -50,9 +51,14 @@ from PySide6.QtWidgets import (
 from tumblepipe.config import entity_sheet as es
 from tumblepipe.config import shot_batch
 from tumblepipe.config.multi_timeline import (
-    TIMELINE_CHOICES, timeline_choice, timeline_settings,
+    TIMELINE_CHOICES, new_overlaps, timeline_choice, timeline_settings,
 )
 from tumblepipe.util.uri import Uri
+
+from .table_scroll import (
+    FROZEN_COLUMNS, hidden_under_frozen, horizontal_wheel_steps,
+    keep_view_on_click, scrolls_sideways,
+)
 from tumbletrove.asset_browser.core.theme import (
     ACCENT, ACCENT_HOVER, BG_DARK, BUTTON_GHOST_STYLE, BUTTON_PRIMARY_STYLE,
     COMBO_STYLE, DANGER, FONT_FAMILY, FONT_SMALL, SUCCESS, TEXT_DIM,
@@ -216,6 +222,11 @@ class EntityEditorSource:
     Selection**; ``count_prims`` how many prims a pattern names on the open
     stage when the open workfile is that shot's (None otherwise), matched
     the way the farm matches it.
+
+    Shared timelines (#31): ``overlaps`` maps each shots Multi whose
+    members overlap to the pairs (``config.multi_timeline.
+    overlapping_multis`` on this project), read before and after an Apply;
+    ``repack`` lays one out afresh, when the artist asks.
     """
     project: str
     config: object
@@ -235,6 +246,8 @@ class EntityEditorSource:
     channel_exports: Callable[[Uri], Iterable[str]] = lambda uri: ()
     selected_prims: Callable[[], list[str]] = list
     count_prims: Callable[[Uri, str], int | None] = lambda uri, pattern: None
+    overlaps: Callable[[], dict] = dict
+    repack: Callable[[Uri], object] = lambda uri: None
 
 
 def _hint(text: str = '') -> QLabel:
@@ -315,6 +328,170 @@ class GroupKey:
 
 
 _GROUP_FILL = _brush(TEXT_PRIMARY, 14)
+
+
+class _Table(QTableView):
+    """The Entity Editor's table: Shift+wheel (or the wheel when nothing
+    scrolls vertically) scrolls sideways, and a click does not scroll the
+    cell it lands on away from the pointer (#30, ``table_scroll``).
+    :meth:`freeze_columns` keeps its leading columns in view (#40)."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        # The cell last clicked, until a key moves on. Qt scrolls to a
+        # clicked cell on a timer after the press (to tell a double click
+        # apart), so "during the press" is not enough.
+        self._clicked = QPersistentModelIndex()
+        self._frozen: QTableView | None = None
+        self._frozen_count = 0
+
+    # ── Frozen leading columns (#40) ──────────────────────
+
+    def freeze_columns(self, count: int) -> None:
+        """Keep the first ``count`` columns in view while the rest scroll
+        sideways. Call once the model, delegate, selection and edit
+        settings are set: they are shared with, or copied to, a second
+        view of those columns drawn over this one's left edge. Keys stay
+        with this table; a frozen cell is edited in the frozen view."""
+        frozen = self._frozen = QTableView(self)
+        self._frozen_count = count
+        frozen.setObjectName('frozen_columns')
+        frozen.setModel(self.model())
+        frozen.setSelectionModel(self.selectionModel())
+        frozen.setItemDelegate(self.itemDelegate())
+        frozen.setSelectionBehavior(self.selectionBehavior())
+        frozen.setSelectionMode(self.selectionMode())
+        frozen.setEditTriggers(self.editTriggers())
+        frozen.setFocusPolicy(Qt.NoFocus)
+        frozen.verticalHeader().setVisible(False)
+        frozen.verticalHeader().setDefaultSectionSize(
+            self.verticalHeader().defaultSectionSize())
+        frozen.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        frozen.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        frozen.setVerticalScrollMode(self.verticalScrollMode())
+        frozen.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        frozen.horizontalHeader().setStretchLastSection(False)
+        # No frame and no stylesheet of its own: it must look like the
+        # table it lies on, whatever palette or app stylesheet styles that.
+        frozen.setFrameShape(QFrame.NoFrame)
+        frozen.setContextMenuPolicy(Qt.CustomContextMenu)
+        frozen.customContextMenuRequested.connect(self.customContextMenuRequested)
+        frozen.clicked.connect(self.clicked)
+        # One vertical position, one set of widths, whichever view moved.
+        frozen.verticalScrollBar().valueChanged.connect(self.verticalScrollBar().setValue)
+        self.verticalScrollBar().valueChanged.connect(frozen.verticalScrollBar().setValue)
+        self.horizontalHeader().sectionResized.connect(self._main_section_resized)
+        frozen.horizontalHeader().sectionResized.connect(self._frozen_section_resized)
+        self.verticalHeader().sectionResized.connect(
+            lambda row, _old, new: frozen.setRowHeight(row, new))
+        self.horizontalHeader().geometriesChanged.connect(self._place_frozen)
+        for signal in (
+            self.model().modelReset, self.model().layoutChanged,
+            self.model().columnsInserted, self.model().columnsRemoved,
+        ):
+            signal.connect(self._sync_frozen_columns)
+        self.selectionModel().currentRowChanged.connect(
+            lambda *_a: frozen.viewport().update())
+        self._sync_frozen_columns()
+        frozen.show()
+
+    def frozen_view(self) -> QTableView | None:
+        return self._frozen
+
+    def frozen_width(self) -> int:
+        """The width the frozen columns cover, 0 when none are frozen."""
+        return sum(self.columnWidth(i) for i in range(self._frozen_count))
+
+    def _sync_frozen_columns(self, *_args) -> None:
+        frozen = self._frozen
+        for column in range(self.model().columnCount()):
+            frozen.setColumnHidden(column, column >= self._frozen_count)
+            if column < self._frozen_count:
+                frozen.setColumnWidth(column, self.columnWidth(column))
+        self._place_frozen()
+
+    def _main_section_resized(self, column: int, _old: int, new: int) -> None:
+        if column < self._frozen_count:
+            self._frozen.setColumnWidth(column, new)
+            self._place_frozen()
+
+    def _frozen_section_resized(self, column: int, _old: int, new: int) -> None:
+        # The frozen header covers this table's own: a drag there is the
+        # artist resizing the column.
+        if column < self._frozen_count and self.columnWidth(column) != new:
+            self.setColumnWidth(column, new)
+
+    def _place_frozen(self) -> None:
+        if self._frozen is None:
+            return
+        frame = self.frameWidth()
+        self._frozen.setGeometry(
+            frame, frame, self.frozen_width(),
+            self.viewport().height() + self.horizontalHeader().height(),
+        )
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt)
+        super().resizeEvent(event)
+        self._place_frozen()
+
+    def edit(self, index, trigger=None, event=None) -> bool:  # noqa: A003 (Qt)
+        # A frozen cell's editor must open in the frozen view: in this one
+        # it would open underneath it.
+        if trigger is None:
+            return super().edit(index)
+        if (
+            self._frozen is not None and index.isValid()
+            and index.column() < self._frozen_count
+            and trigger != QAbstractItemView.NoEditTriggers
+        ):
+            return self._frozen.edit(index, trigger, event)
+        return super().edit(index, trigger, event)
+
+    def wheelEvent(self, event) -> None:  # noqa: N802 (Qt)
+        bar = self.horizontalScrollBar()
+        steps = horizontal_wheel_steps(
+            bool(event.modifiers() & Qt.ShiftModifier),
+            self.verticalScrollBar().maximum(),
+            event.angleDelta().y(), event.angleDelta().x(),
+            bar.singleStep(),
+        )
+        if steps and bar.maximum() > 0:
+            bar.setValue(bar.value() + steps)
+            event.accept()
+            return
+        super().wheelEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt)
+        self._clicked = QPersistentModelIndex(self.indexAt(event.position().toPoint()))
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 (Qt)
+        self._clicked = QPersistentModelIndex()
+        super().keyPressEvent(event)
+
+    def scrollTo(self, index, hint=QAbstractItemView.EnsureVisible) -> None:  # noqa: N802 (Qt)
+        rect = self.visualRect(index)
+        clicked = self._clicked.isValid() and QModelIndex(self._clicked) == index
+        if keep_view_on_click(rect.left(), rect.right(), self.viewport().width(), clicked):
+            return
+        if not self._frozen_count:
+            super().scrollTo(index, hint)
+            return
+        bar = self.horizontalScrollBar()
+        if not scrolls_sideways(index.column(), self._frozen_count):
+            # Always in view (the frozen columns): only the rows scroll.
+            value = bar.value()
+            super().scrollTo(index, hint)
+            bar.setValue(value)
+            return
+        super().scrollTo(index, hint)
+        # Qt may have put the cell at the left edge, under the frozen columns.
+        per_pixel = self.horizontalScrollMode() == QAbstractItemView.ScrollPerPixel
+        for _ in range(self.model().columnCount() + 1):
+            hidden = hidden_under_frozen(self.visualRect(index).left(), self.frozen_width())
+            if not hidden or bar.value() <= bar.minimum():
+                break
+            bar.setValue(bar.value() - (hidden if per_pixel else 1))
 
 
 class _SheetModel(QAbstractTableModel):
@@ -1664,7 +1841,7 @@ class _SheetPane(QWidget):
         self.model = _SheetModel(self)
         self.proxy = _Filter()
         self.proxy.setSourceModel(self.model)
-        table = self.table = QTableView()
+        table = self.table = _Table()
         table.setModel(self.proxy)
         table.setItemDelegate(_Delegate(self))
         table.setSelectionBehavior(QAbstractItemView.SelectItems)
@@ -1684,6 +1861,9 @@ class _SheetPane(QWidget):
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(self._context_menu)
         table.clicked.connect(self._on_clicked)
+        # The group and name stay in view while the columns to their
+        # right scroll (#40).
+        table.freeze_columns(FROZEN_COLUMNS)
         outer.addWidget(table, 1)
         for keys, slot in (
             (QKeySequence.Copy, self._copy),
@@ -3229,7 +3409,7 @@ class _MultiPane(QWidget):
         self.model = _MultiModel(self)
         self.proxy = _MultiFilter()
         self.proxy.setSourceModel(self.model)
-        table = self.table = QTableView()
+        table = self.table = _Table()
         table.setModel(self.proxy)
         table.setItemDelegate(_MultiDelegate(self))
         table.setSelectionBehavior(QAbstractItemView.SelectItems)
@@ -3403,24 +3583,38 @@ class _MultiPane(QWidget):
         ids, groups = dialog.row_ids(), dialog.groups()
         self.edit(lambda: self.sheet.set_multi_members(multi.id, ids, groups))
 
-    def add_dialog(self, from_selection: bool = True) -> None:
+    def add_dialog(self, from_selection: bool = True, group: str = '') -> None:
         """Add Multi…: a new pending Multi. ``from_selection``: offer to
-        start it with the rows selected on the kind's tab (the browser's
-        New Multi… starts it empty)."""
+        start it with the rows selected on the kind's tab. ``group``: the
+        browser's New Multi… from a category or sequence row, offered to
+        start with that group whole (#30); otherwise it starts empty."""
         rows = [
             row_id for row_id in self.entity_pane.selected_row_ids()
             if not self.sheet.row(row_id).retire
         ] if from_selection else []
         kind = self.sheet.kind
-        start = f'Start with the {_plural(len(rows), kind.item)} selected on the {kind.key.capitalize()} tab' if rows else ''
+        groups = [group] if group and group in self.sheet.groups() else []
+        if groups:
+            start = f'Start with {kind.group} {group} (whole, and what is made in it later)'
+        elif rows:
+            start = f'Start with the {_plural(len(rows), kind.item)} selected on the {kind.key.capitalize()} tab'
+        else:
+            start = ''
         dialog = NewMultiDialog(self.sheet, start_with=start, parent=self)
         if dialog.exec() != QDialog.Accepted or dialog.problem():
             return
-        members = rows if dialog.with_selection() else []
+        chosen = dialog.with_selection()
+        members = rows if chosen and not groups else []
         created = []
-        self.edit(lambda: created.append(self.sheet.add_multi(
-            dialog.name(), members, dialog.chosen(), dialog.timeline(),
-        )))
+
+        def change():
+            multi_id = self.sheet.add_multi(
+                dialog.name(), members, dialog.chosen(), dialog.timeline(),
+            )
+            if chosen and groups:
+                self.sheet.set_group_membership(groups, multi_id, True)
+            created.append(multi_id)
+        self.edit(change)
         if created:
             self.select_cells([(created[0], 0)], (created[0], 0))
 
@@ -3684,11 +3878,13 @@ class EntityEditorWindow(QDialog):
         else:
             self.panes[kind].focus(group, name)
 
-    def new_multi(self, context: str = 'shots') -> None:
+    def new_multi(self, context: str = 'shots', group: str = '') -> None:
         """The browser's New Multi…: the Multis tab of ``context``, asking
-        for a new Multi there. It is pending like any other edit."""
+        for a new Multi there, offered to start with ``group`` (the
+        category or sequence row it was picked on). It is pending like any
+        other edit."""
         self.focus('multis', context)
-        self.multis_pane.add_dialog(from_selection=False)
+        self.multis_pane.add_dialog(from_selection=False, group=group)
 
     def _discard_all(self) -> None:
         if not self.dirty:
@@ -3785,6 +3981,7 @@ class EntityEditorWindow(QDialog):
         error = None
         staged = ''
         staging_error = None
+        overlaps_before = self.source.overlaps()
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             for _pane, change in changes:
@@ -3838,6 +4035,12 @@ class EntityEditorWindow(QDialog):
                 f'their Roots:\n\n{staging_error}\n\nRun Stage Root & '
                 'Rebuild Shots… on the Root card in the browser.',
             )
+        # A longer shot can now run into the next on a shared timeline:
+        # say so and offer Repack, never repack unasked.
+        from .timeline_repack import offer_repack
+        found = new_overlaps(overlaps_before, self.source.overlaps())
+        if offer_repack(self, found, self.source.repack):
+            self._rebase()
         applied = f'Applied: {done}' if done else 'Applied'
         self.say(f'{applied}; {staged}.' if staged else f'{applied}.')
         return True

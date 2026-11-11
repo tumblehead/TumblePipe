@@ -56,7 +56,7 @@ Gotchas:
 - These values are what the farm renders. The Farm Submit dialog's Samples,
   Motion blur and DOF send nothing unless you set them there, and its
   **Camera** row shows the camera this node's published layer names — see
-  [Submit Jobs → Render](../asset-browser/submit-jobs.md#render).
+  [Submit Jobs → Render](../asset-browser/submit-jobs.md#render-shots-only).
 - The prim these settings are written to is project-owned (`/Render/…` or
   `/scene/Render/…`); the submit dialog's overrides find it by asking the
   stage — see
@@ -93,6 +93,7 @@ Source: [`otls/lop_th.render_vars.1.1`](../../otls/lop_th.render_vars.1.1/th_8_8
 | unshadowed, shadow | `unshadowed`, `shadow` | The beauty with nothing casting shadows, and the light shadows take away (`unshadowed − shadow = beauty`). Not `beauty_*`: slapcomp sums those as light groups |
 | ao | `ao` | Ambient occlusion |
 | motion vectors / velocity | `motionvectors`, `velocity` | Screen-space motion (`ray:motionvector`) and world-space velocity (`ray:velocity`) |
+| cryptoprimitives, cryptomaterials | `cryptoprimitives`, `cryptomaterials` | Cryptomattes of the prims (`__name`) and the materials (`__materialname`), overlap 6; see [Cryptomattes](#cryptomattes) |
 
 These are Karma's own AOVs (the sources its Render Properties toggles use)
 under TumblePipe names: lowercase, the var and its plane named alike.
@@ -125,6 +126,28 @@ at submit, or by the farm's stage task, with every such var named and the fix
 in the scene, and the publish's `render_var_names` and `render_var_twins`
 checks report it. Up to 1.93 such a render failed on the farm with
 `Missing required AOVs in rendered output: ['beauty']`.
+
+### Cryptomattes
+
+Tick **cryptoprimitives** or **cryptomaterials** to render a cryptomatte:
+pick objects or materials by name in comp instead of rendering an `objid_*`
+matte per selection. Karma renders a cryptomatte `X` as a preview plane `X`,
+rank planes `X00`, `X01`, `X02` (two id/coverage pairs each, overlap 6) and
+its manifest in the EXR header. The farm keeps that together: each
+cryptomatte is published as **one** EXR in its AOV folder holding the
+preview, the ranks (float) and its own manifest, written lossless whatever
+the beauty uses, and the denoise passes it through untouched
+(`apps/exr.py` `cryptomattes`). Its Compression menu offers lossless
+choices only.
+
+Karma's own **Karma Cryptomatte** LOP works too: the farm reads the plane
+it names in `driver:parameters:aov:husk:name` (1.101 and older refused every such
+render as naming no plane). Whatever authors it, a cryptomatte
+var must be named `crypto*` (Karma's defaults `CryptoPrimitives` and
+`CryptoMaterials` are), and a var named `crypto*` must be a cryptomatte:
+that name is how the farm, the denoise and the comp know one
+(`pipe/aovs.py` `is_cryptomatte_aov`), and a render breaking either rule is
+refused at submit like any other var naming problem.
 
 Each AOV is one row: its toggle, its name, and its **Compression** menu, the
 EXR compression that AOV is written with, greyed out while the toggle is off
@@ -220,14 +243,15 @@ Rays that miss run no shader, so the sky gets the RenderVar's default value,
 set to 1. A render has **one** global AOV material: if something upstream
 already set a different one, the node errors rather than replace it.
 
-The farm's denoise passes mattes and ramps through untouched, and
+The farm's denoise passes mattes, ramps and cryptomattes through untouched, and
 `th::import_render` reads each `objid_*` (one channel) as a single mask and
 `ramp_*` as a mono pass.
 
 The denoise job leaves mattes alone: it runs OIDN over every AOV except the
-`*_mse` variances and the `objid_*` / `holdout_*` mattes and `ramp_*`
-distance ramps, which it publishes as byte copies of the render — denoising
-would soften their edges.
+`*_mse` variances, the `objid_*` / `holdout_*` mattes, the `ramp_*`
+distance ramps and the `crypto*` cryptomattes, which it publishes as byte
+copies of the render — denoising would soften their edges (and scramble a
+cryptomatte's ids).
 
 ## Render layers (channels)
 
@@ -297,7 +321,7 @@ would refuse.
 
 Farm Submit's **Channels** menu opens with every layer of such a shot
 checked, `default` (the remainder) included, so the slapcomp is whole
-(see [Farm Submit: Render](../asset-browser/submit-jobs.md#render)).
+(see [Farm Submit: Render](../asset-browser/submit-jobs.md#render-shots-only)).
 
 ### Render layers from branches
 
@@ -384,6 +408,16 @@ Gotchas:
   [Where the render settings live](../composition.md#where-the-render-settings-live).
 - The Karma preview renders and flipbooks land in `$HIP/turntable/` and
   MPlay, not in the pipeline's render tree.
+- The studio's HDRI and backdrop fabric are files embedded in the HDA
+  (`opdef:/th::Lop/lookdev_studio::2.0?environment_texture.exr`,
+  `?drape_fabric.jpg`). husk cannot read `opdef:` paths, so the farm export
+  copies every `opdef:` / `oplib:` file the stage uses into `embedded/` beside
+  the exported stage and points the attributes there
+  (`pipe/usd/embedded_assets.py`). Up to 1.101.0 farm turntables rendered
+  without them.
+- **Step size** is honoured on the farm: a task renders only its stepped
+  frames (step 10, batch 5: 1001, 1011 … 1041). Up to 1.101.0 the render
+  worker dropped the step and rendered every frame of the range.
 
 ## `th::light_blocker` (LOP)
 
@@ -529,7 +563,7 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 | Shading Mode, Lighting | Smooth Shaded, Headlight Only | Houdini GL only: viewport look of the flipbook |
 | Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**) |
 | Resolution | the shot's render resolution | An expression: the shot's `render.resolution`, so the playblast has the render's frame; `1280 720` while no shot resolves. Type over it for your own size; Revert to Defaults brings the shot's back. A node made before 1.85 keeps the size it had |
-| Motion Blur, Depth of Field, Blur Samples | off, off, 16 | Blurs from the camera's Shutter Open/Close and its F-Stop and Focus Distance: TumbleView's, or the flipbook's own under Houdini GL; Blur Samples is how many images each frame averages |
+| Motion Blur, Depth of Field, Blur Samples | off, on, 16 | Blurs from the camera's Shutter Open/Close and its F-Stop and Focus Distance: TumbleView's, or the flipbook's own under Houdini GL; Blur Samples is how many images each frame averages |
 | Render Layers | off | TumbleView only: also write one movie per render layer, see [Layered playblasts](#layered-playblasts) |
 | Playblast | | Render, encode and publish |
 | View latest | | Open the newest MP4 for this shot and department (a message if there is none) |
@@ -537,9 +571,25 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 
 Gotchas:
 
-- TumbleView draws meshes (and USD shapes) only: hair, curves,
-  points and volumes are left out, as on the farm. Switch **Renderer** to
-  Houdini GL when the preview needs them.
+- TumbleView draws meshes, USD shapes, basis curves and points: curves as
+  ribbons of their width (at least a pixel across, so a curve with no width
+  is a line, as in the viewport) and points as dots (at least two pixels).
+  Volumes, and hair that a Houdini procedural (a groom) would make, are
+  left out, as on the farm. Switch **Renderer** to Houdini GL when the
+  preview needs them.
+- TumbleView draws a see-through material (opacity, transmission or an
+  opacity cut-out under 1) or a `displayOpacity` under 1 blended over what
+  is behind it, one opacity per mesh; an opacity map (a texture) is not
+  read and leaves the surface opaque. See [Compositing →
+  Playblast](../compositing.md#playblast).
+- TumbleView draws materials bound to some of a mesh's faces (GeomSubsets)
+  on those faces, the rest in the mesh's own material, as the viewport does.
+- TumbleView's Lit and Clay shading use the scene's own lights (distant,
+  sphere, rect, disk, cylinder and dome, as bright as Karma renders them, no
+  shadows); a scene without lights gets fixed lights that follow the camera.
+  The render setting `th:lighting` = `headlight` (or `TH_PLAYBLAST_LIGHTING`)
+  keeps the camera lights even in a lit scene. See [Compositing →
+  Playblast](../compositing.md#playblast).
 - TumbleView always draws over its grey backdrop unless
   `TH_PLAYBLAST_ALPHA=1` (or the render setting `th:alpha`) asks for a
   transparent background: alpha is then each pixel's coverage. What the
@@ -559,6 +609,12 @@ Gotchas:
   new Multi animation workfile has this done already: each member's
   `animate_shot_<member>` dive holds a SOP `th::playblast` set to that shot
   and `render_camera`.
+- In a Multi with a **shared timeline** a member sits later on the
+  session's timeline than on its own frames (its time offset). The
+  playblast caches the frames the session shows it on, and the movie is
+  the shot on its own frames, with either renderer. Before 2026-11-11 it
+  cached the shot's own frames there, which for a member with an offset
+  were another stretch of the session.
 - A parm that does not resolve (Entity, Department, Camera, no frame range
   or fps) shows as a warning dialog titled *Playblast* that names the parm to
   fix. Before 1.83 it showed as a Python traceback, which read as a crash.
@@ -615,7 +671,8 @@ renderer. The farm playblast does not make layers.
 
 ## `th::playblast` (SOP)
 
-The same publish path from a SOP context, rendered through an OpenGL ROP.
+The same publish path from a SOP context, rendered with TumbleView (our
+viewport renderer, hdThPlayblast, through husk) like the LOP's default.
 Tab menu `_TumblePipe/pipeline`. It carries the shared Entity button (shots
 only, *Select Shot*) and writes the same versioned MP4 and daily as the LOP.
 Source: [`otls/sop_th.playblast.2.0`](../../otls/sop_th.playblast.2.0/th_8_8Sop_1playblast_8_82.0/DialogScript),
@@ -627,11 +684,28 @@ Source: [`otls/sop_th.playblast.2.0`](../../otls/sop_th.playblast.2.0/th_8_8Sop_
 | Department | `from_context` | Menu of the shot's renderable departments — **pick one**: the node does not resolve `from_context` here, and an unlisted value makes the buttons fail |
 | Camera | *(empty)* | Cameras in the stage the node reads, found as on the LOP. Empty is the first one, as on the LOP |
 | Playblast, View Latest, Browse All | | As the LOP |
+| Live, Stop Live | | Render in the background to this machine's live folder for the player, no version: see [`th::animate` → Live Playblast](import-and-export.md#live-playblast) |
 
 The frame range is always the shot's configured range plus roll; there is no
-override. The camera and geometry are read from a LOP node named `IN_stage`
+override. The camera and the set are read from a LOP node named `IN_stage`
 that the HDA addresses relative to itself, so the node depends on where it is
-placed.
+placed. In a Multi with a shared timeline, the shot sits later on the
+session's timeline than on its own frames (its time offset): the node
+caches the frames the session shows it on and renders, and names, the
+shot's own.
+
+What it renders: its input, written to USD at the prims its `path` attribute
+names (a character's `/<category>/<character>/...`, where the animation
+publishes; geometry with no `path` goes under `/live`), over the shot stage
+with everything but `/SET`, the camera and `/Render` deactivated
+(`stage/keep`). So a character's last published animation cannot show
+through the one being playblasted. The stage is pruned rather than grafted
+from: graftbranches flattens its source, which strips everything above the
+shot import's Layer Break, the set and the camera included. The node writes that to a `cache.usd` over the shot's range
+(`stage/cache`) and renders it with husk, as the LOP does: lit shading, the
+shot's render resolution (1280x720 when it has none), a progress bar that
+stops husk when cancelled. It used to render through an OpenGL ROP, which
+drew unlit frames on every run after the first in a session (2026-11-11).
 
 Its input can be geometry or an APEX scene. A scene (a Scene Animate's
 output, as in a `th::animate` dive, which has no Scene Invoke since 1.92) is

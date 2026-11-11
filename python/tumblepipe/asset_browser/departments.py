@@ -294,6 +294,9 @@ class DepartmentPoolEditor(QWidget):
         return self._working[self._context]
 
     def _refresh_list(self) -> None:
+        # Rebuilding the rows resets the scroll; a Move Up/Down near the
+        # bottom of a long pool jumped the list back to the top (#35).
+        scroll = self._list.verticalScrollBar().value()
         self._list.blockSignals(True)
         self._list.clear()
         for dept in self._depts():
@@ -302,8 +305,10 @@ class DepartmentPoolEditor(QWidget):
             if not dept.enabled:
                 item.setForeground(QColor(TEXT_DIM))
         self._list.blockSignals(False)
+        self._list.verticalScrollBar().setValue(scroll)
         if self._current is not None and 0 <= self._current < len(self._depts()):
             self._list.setCurrentRow(self._current)
+            self._list.scrollToItem(self._list.item(self._current))
         else:
             self._current = None
             self._on_row_changed(-1)
@@ -501,9 +506,17 @@ class DepartmentPoolEditor(QWidget):
         self._invalidate_cache()
         self._refresh.detail()
         # Re-read what was written, so the editor shows the pool as it now is
-        # and Apply greys out until the next change.
+        # and Apply greys out until the next change. Keep the department
+        # that was selected: dropping it made the next Move Down after an
+        # Apply silently do nothing (#35).
+        selected = (self._depts()[self._current].name
+                    if self._current is not None else None)
         self.set_project(self._project, editable=self._editable,
                          note=self._note.text())
+        names = [d.name for d in self._depts()]
+        if selected in names:
+            self._current = names.index(selected)
+            self._refresh_list()
 
     def _on_revert(self) -> None:
         self.set_project(self._project, editable=self._editable,
@@ -516,12 +529,12 @@ class DepartmentPoolEditor(QWidget):
         for context in CONTEXTS:
             working = self._working[context]
             live = {
-                d.name for d in
+                d.name: d for d in
                 dept_mod.list_departments(context, include_disabled=True)
             }
             wanted = {d.name for d in working}
 
-            for name in live - wanted:
+            for name in live.keys() - wanted:
                 dept_mod.remove_department(context, name)
 
             for dept in working:
@@ -536,12 +549,9 @@ class DepartmentPoolEditor(QWidget):
                         short=dept.short or None,
                     )
                     continue
-                dept_mod.set_independent(context, dept.name, dept.independent)
-                dept_mod.set_publishable(context, dept.name, dept.publishable)
-                dept_mod.set_renderable(context, dept.name, dept.renderable)
-                dept_mod.set_generated(context, dept.name, dept.generated)
-                dept_mod.set_enabled(context, dept.name, dept.enabled)
-                dept_mod.set_short(context, dept.name, dept.short or None)
+                changes = dept_mod.flag_changes(live[dept.name], dept)
+                for flag, value in changes.items():
+                    getattr(dept_mod, f"set_{flag}")(context, dept.name, value)
 
             # Order last: the adds above appended, so this is what actually
             # places them.

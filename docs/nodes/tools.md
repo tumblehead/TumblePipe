@@ -103,13 +103,19 @@ Source: [`otls/vop_th.triplanar_projection.1.0`](../../otls/vop_th.triplanar_pro
 
 ## The VOP network context menu
 
-In a VOP network the radial's context menu (see
+In a VOP network **Alt+E** (see
 [Radial menus → COP and VOP network context menus](../radial-menus.md#cop-and-vop-network-context-menus))
-shows a **VOP** menu registered from
-[`startup.py`](../../python/tumblepipe/startup.py) (`_register_vop_menu`).
-It is a port of Houdini's own `vop.json` radial with its broken entries
-fixed, and every item simply places a MaterialX or Karma VOP. It only
-exists while the `tumbleradial` package is installed.
+opens a **VOP** menu registered from
+[`startup.py`](../../python/tumblepipe/startup.py) (`_build_vop_menu`). It
+is not on Radial's X key: over a VOP network, holding X and clicking a node
+is Houdini's Visualize Output.
+It began as a port of Houdini's own `vop.json` radial and now works like
+Radial's own network menus: four submenus (Image, Adjust, Generators,
+Utility) and a **Surface** centre (release: Standard Surface; open it for
+OpenPBR, Surface Material, Displacement). Every item simply places a
+MaterialX or Karma VOP, and `tests/test_radial_startup.py` checks each node
+type and icon against the installed Houdini. It only exists while the
+`tumbleradial` package is installed.
 
 | Submenu | Items (node placed) |
 |---|---|

@@ -1041,6 +1041,56 @@
                 "b44a"  "B44A (lossy)"
             }
         }
+        parm {
+            name    "cryptoprimitives"
+            label   "cryptoprimitives"
+            type    toggle
+            nolabel
+            joinnext
+            default { "0" }
+            help    "Cryptomatte of the scene's prims (Karma primvar __name): pick objects in comp. Renders a preview and rank planes the farm keeps together with their manifest."
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "cryptoprimitives_compression"
+            label   "cryptoprimitives"
+            type    ordinal
+            default { "4" }
+            help    "EXR compression this cryptomatte is written with: lossless only, since a lossy one scrambles its ids."
+            disablewhen "{ cryptoprimitives == 0 }"
+            menu {
+                "none"  "No compression"
+                "piz"   "PIZ (lossless)"
+                "rle"   "RLE (lossless)"
+                "zips"  "ZIP, single scanline (lossless)"
+                "zip"   "ZIP (lossless)"
+            }
+        }
+        parm {
+            name    "cryptomaterials"
+            label   "cryptomaterials"
+            type    toggle
+            nolabel
+            joinnext
+            default { "0" }
+            help    "Cryptomatte of the materials (Karma primvar __materialname): pick by material in comp. Renders a preview and rank planes the farm keeps together with their manifest."
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "cryptomaterials_compression"
+            label   "cryptomaterials"
+            type    ordinal
+            default { "4" }
+            help    "EXR compression this cryptomatte is written with: lossless only, since a lossy one scrambles its ids."
+            disablewhen "{ cryptomaterials == 0 }"
+            menu {
+                "none"  "No compression"
+                "piz"   "PIZ (lossless)"
+                "rle"   "RLE (lossless)"
+                "zips"  "ZIP, single scanline (lossless)"
+                "zip"   "ZIP (lossless)"
+            }
+        }
     }
 
 }

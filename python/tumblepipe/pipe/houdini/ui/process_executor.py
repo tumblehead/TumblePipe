@@ -300,7 +300,7 @@ class ProcessExecutor(QObject):
     def _execute_next_task(self):
         """Execute the next enabled task in the queue"""
         if not self._is_running:
-            self.all_completed.emit()
+            self._finish()
             return
 
         # Skip disabled tasks
@@ -326,6 +326,9 @@ class ProcessExecutor(QObject):
             task.error_message = skip_reason
             self.task_skipped.emit(task.id, skip_reason or '')
             self._current_index += 1
+            if not any(t.enabled for t in self._tasks[self._current_index:]):
+                self._finish()
+                return
             QTimer.singleShot(0, self._execute_next_task)
             return
 
@@ -378,8 +381,24 @@ class ProcessExecutor(QObject):
         # Children that finished before a sibling failed wrote theirs too
         self._written |= departments_written(task)
         self._current_index += 1
+        # The run ends here, not on a timer. In Houdini a Qt timer started
+        # right after a long export can wait for the next window event: the
+        # last task's "Running: ..." stayed up, and the Done state never
+        # drew until the artist resized the dialog (Discord 2026-11-10).
+        if not self._is_running or not any(
+                t.enabled for t in self._tasks[self._current_index:]):
+            self._finish()
+            return
         # Continue with next task after a short delay to allow UI update
         QTimer.singleShot(100, self._execute_next_task)
+
+    def _finish(self) -> None:
+        """Mark the remaining disabled tasks skipped and report the end."""
+        for task in self._tasks[self._current_index:]:
+            if not task.enabled:
+                task.status = TaskStatus.SKIPPED
+        self._is_running = False
+        self.all_completed.emit()
 
     def _task_progress_reporter(self, task: ProcessTask):
         """Progress reporter that forwards a task's breadcrumbs as a signal."""

@@ -30,7 +30,7 @@ pub enum DbError {
     MtimeMismatch { file: String, expected: String, actual: String },
     #[error("unexpected shape in {file}: {context}")]
     Shape { file: String, context: String },
-    #[error("name {name:?} may only use letters and digits")]
+    #[error("name {name:?} {reason}", reason = crate::naming::entity_name_reason(.name))]
     BadEntityName { name: String },
     #[error("system clock is before UNIX epoch: {0}")]
     Clock(String),
@@ -154,11 +154,9 @@ pub fn lookup_mut<'a>(root: &'a mut Value, segments: &[String]) -> Option<&'a mu
 const NAMED_KINDS: &[&str] = &["assets", "shots", "edits"];
 
 /// TumblePipe's entity name rule (`tumblepipe.naming.is_valid_entity_name`):
-/// ASCII letters and digits only. Names are joined with `_` all over the
-/// pipeline (node names, farm job keys, file stems), so `PROP/old_tree` and
-/// `PROP_old/tree` would collide.
+/// [`crate::naming::is_valid_entity_name`], kept here for callers of `db`.
 pub fn is_valid_entity_name(name: &str) -> bool {
-    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric())
+    crate::naming::is_valid_entity_name(name)
 }
 
 /// Whether `segments[depth]` in `file` names a category, asset, sequence or
@@ -422,10 +420,15 @@ mod tests {
             })
     }
 
-    /// Python's `str.isascii() and str.isalnum()`, the rule TumblePipe's
-    /// `naming.is_valid_entity_name` applies, written independently.
+    /// Python's `str.isascii() and str.isalnum()` and not a Windows device
+    /// name, the rule TumblePipe's `naming.is_valid_entity_name` applies,
+    /// written independently.
     fn python_rule(name: &str) -> bool {
-        name.is_ascii() && !name.is_empty() && name.chars().all(char::is_alphanumeric)
+        let ascii = name.is_ascii() && !name.is_empty() && name.chars().all(char::is_alphanumeric);
+        let lower = name.to_lowercase();
+        let device = ["con", "prn", "aux", "nul"].contains(&lower.as_str())
+            || (lower.len() == 4 && (lower.starts_with("com") || lower.starts_with("lpt")) && lower.as_bytes()[3].is_ascii_digit());
+        ascii && !device
     }
 
     proptest! {

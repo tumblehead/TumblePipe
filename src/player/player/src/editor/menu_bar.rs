@@ -5,10 +5,11 @@
 //! that sends its message, an item is greyed when its key does nothing, and no
 //! key acts with Command or Alt held unless the menu shows that chord.
 //!
-//! On Windows and macOS the menu is the window's menu bar or the global one; on
-//! Linux the player is built without Primer's `os` feature (it would need
-//! GTK), and Primer draws the same declaration inside the window instead, as
-//! a bar above the editor: the `&` in a label is its access letter there too,
+//! On macOS the menu is the global menu bar. On Windows and Linux the player is
+//! built without Primer's `os` feature (the native Windows bar ignores the
+//! theme, and Linux's would need GTK), and Primer draws the same declaration
+//! inside the window instead, as a themed bar above the editor: the `&` in a
+//! label is its access letter there,
 //! and the shortcuts are hints, the keys being [`key_message`]'s either way.
 //! Every item is greyed while a dialog is open, as the keys are then, and
 //! the ones that change the cut while the edit is read-only.
@@ -18,6 +19,7 @@ use primer::menu::{Accelerator, Menu, MenuItem};
 
 use super::{Editor, Message, OpenDialog};
 use crate::editing::Origin;
+use crate::take_menu::TakeAxis;
 
 const COMMAND: Modifiers = Modifiers::COMMAND;
 const SHIFT: Modifiers = Modifiers { shift: true, ..Modifiers::NONE };
@@ -40,8 +42,9 @@ pub(super) struct State {
     pub picked: bool,
     pub playing: bool,
     pub burnins: bool,
-    /// The last frame of the edit.
-    pub last: usize,
+    /// The cut's end, one past its last frame: where Go to End parks, so
+    /// an Insert there appends (#25).
+    pub end: usize,
 }
 
 /// One row of a menu. A handful are built per frame, so the size of a
@@ -118,6 +121,14 @@ fn edit_menu(s: &State) -> Vec<Entry> {
         Entry::Separator,
         item("&Insert Bin Pick", Message::BinPut(false), picked, None),
         item("&Overlay Bin Pick", Message::BinPut(true), picked, None),
+        Entry::Separator,
+        // The take keys (#47), as the old playlist player had them.
+        item("&Newer Version", Message::TakeStep(TakeAxis::Version, 1), s.writable, named(Named::ArrowUp, NONE)),
+        item("Older &Version", Message::TakeStep(TakeAxis::Version, -1), s.writable, named(Named::ArrowDown, NONE)),
+        item("&Previous Department", Message::TakeStep(TakeAxis::Department, -1), s.writable, named(Named::ArrowUp, COMMAND)),
+        item("Ne&xt Department", Message::TakeStep(TakeAxis::Department, 1), s.writable, named(Named::ArrowDown, COMMAND)),
+        item("Previous Source (Playblast / Render)", Message::TakeStep(TakeAxis::Source, -1), s.writable, named(Named::ArrowUp, SHIFT)),
+        item("Next Source (Playblast / Render)", Message::TakeStep(TakeAxis::Source, 1), s.writable, named(Named::ArrowDown, SHIFT)),
     ]
 }
 
@@ -133,7 +144,7 @@ fn playback_menu(s: &State) -> Vec<Entry> {
         item("Next Edit Point", Message::Cut(1), s.free, named(Named::ArrowRight, COMMAND)),
         Entry::Separator,
         item("Go to &Start", Message::Seek(0), s.free, named(Named::Home, NONE)),
-        item("Go to &End", Message::Seek(s.last), s.free, named(Named::End, NONE)),
+        item("Go to &End", Message::Seek(s.end), s.free, named(Named::End, NONE)),
     ]
 }
 
@@ -158,8 +169,14 @@ pub(super) fn key_message(state: &State, key: Key, modifiers: Modifiers) -> Opti
         Key::Named(Named::ArrowLeft) if modifiers.alt => Some(Message::Seconds(-1)),
         Key::Named(Named::ArrowRight) => Some(Message::Step(1)),
         Key::Named(Named::ArrowLeft) => Some(Message::Step(-1)),
+        Key::Named(Named::ArrowUp) if command => Some(Message::TakeStep(TakeAxis::Department, -1)),
+        Key::Named(Named::ArrowDown) if command => Some(Message::TakeStep(TakeAxis::Department, 1)),
+        Key::Named(Named::ArrowUp) if modifiers.shift => Some(Message::TakeStep(TakeAxis::Source, -1)),
+        Key::Named(Named::ArrowDown) if modifiers.shift => Some(Message::TakeStep(TakeAxis::Source, 1)),
+        Key::Named(Named::ArrowUp) => Some(Message::TakeStep(TakeAxis::Version, 1)),
+        Key::Named(Named::ArrowDown) => Some(Message::TakeStep(TakeAxis::Version, -1)),
         Key::Named(Named::Home) => Some(Message::Seek(0)),
-        Key::Named(Named::End) => Some(Message::Seek(state.last)),
+        Key::Named(Named::End) => Some(Message::Seek(state.end)),
         Key::Named(Named::Space) => Some(Message::TogglePlay),
         Key::Named(Named::Escape) => Some(Message::ClearSelection),
         Key::Named(Named::Delete | Named::Backspace) if modifiers.shift => Some(Message::RippleDelete),
@@ -223,7 +240,7 @@ impl Editor {
             picked: self.bin_pick.is_some(),
             playing: self.playing,
             burnins: self.burnins,
-            last: self.doc.edit.length().max(1) as usize - 1,
+            end: self.end(),
         }
     }
 
@@ -249,7 +266,7 @@ mod tests {
     use proptest::prelude::*;
 
     fn state() -> impl Strategy<Value = State> {
-        (any::<[bool; 7]>(), proptest::option::of(any::<bool>()), 0usize..10_000).prop_map(|(b, master, last)| State {
+        (any::<[bool; 7]>(), proptest::option::of(any::<bool>()), 0usize..10_000).prop_map(|(b, master, end)| State {
             free: b[0],
             writable: b[0] && b[1],
             named: b[2],
@@ -257,7 +274,7 @@ mod tests {
             picked: b[3],
             playing: b[4],
             burnins: b[5],
-            last,
+            end,
         })
     }
 
@@ -305,7 +322,7 @@ mod tests {
 
     /// Whether `message` changes the cut or its file, so needs a writable edit.
     fn writes(message: &str) -> bool {
-        ["Undo", "Redo", "Split", "Lift", "RippleDelete", "Marker", "BinPut", "Open(Save)", "Open(Publish)", "Open(NewShot)"]
+        ["Undo", "Redo", "Split", "Lift", "RippleDelete", "Marker", "BinPut", "TakeStep", "Open(Save)", "Open(Publish)", "Open(NewShot)"]
             .iter()
             .any(|w| message == *w || message.starts_with(&format!("{w}(")))
     }
@@ -396,7 +413,7 @@ mod tests {
     #[test]
     fn the_bars_access_letters_are_distinct() {
         let state =
-            State { free: true, writable: true, named: true, master: Some(false), picked: true, playing: false, burnins: true, last: 99 };
+            State { free: true, writable: true, named: true, master: Some(false), picked: true, playing: false, burnins: true, end: 99 };
         let letters: Vec<char> = headings(&state)
             .iter()
             .map(|h| h.label[h.label.find('&').unwrap() + 1..].chars().next().unwrap().to_ascii_lowercase())

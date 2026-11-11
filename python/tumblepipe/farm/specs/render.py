@@ -22,6 +22,7 @@ config = {
 
 context = {     # what the worker reads; Deadline appends the frame span
     'tile_count': 4,
+    'step_size': 1,         # the task's frames: first..last by this (required)
     'receipt_path': ...,
     'input_path': ...,
     'output_paths': {...},
@@ -35,6 +36,7 @@ from tumblepipe.farm.checks import (
     check_str_dict,
     valid_frame_batches,
     valid_job_header,
+    valid_step,
 )
 
 # husk tiles a frame into a square grid.
@@ -51,6 +53,7 @@ def is_valid_context(config) -> bool:
     # holding {} and exited 0 having published no image at all.
     if len(config['output_paths']) == 0: return False
     if 'render_pass' in config and not check_str(config, 'render_pass'): return False
+    if not valid_step(config): return False
     return True
 
 

@@ -211,8 +211,9 @@ def _create_rig_validation_task(asset_uri: Uri, export_node, channel: str) -> Pr
     """Validate the character an export_rig node is about to write.
 
     A rig publishes SOP geometry, not a stage, so it has its own checks
-    (``validators.rig``): the Main control's viz is off (error) and big shapes
-    carry normals (warning). The character is the export_rig node's input.
+    (``validators.rig``): the Main control's viz is off (error), the shapes
+    carry a path under the asset (error) and big shapes carry normals
+    (warning). The character is the export_rig node's input.
 
     Unlike the stage validation this one is on by default and shows its
     dialog for warnings too: both checks are about what every shot that loads
@@ -225,9 +226,19 @@ def _create_rig_validation_task(asset_uri: Uri, export_node, channel: str) -> Pr
         from .validation_dialog import ValidationConfirmDialog, ValidationCancelled
         import hou
 
+        from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
+
         source = export_node.native().input(0)
         geo = source.geometry() if source is not None else None
-        result = validate_rig_character(geo)
+        joint_nodes = [] if source is None else [
+            node.path() for node in [source, *source.inputAncestors()]
+            if 'apex_joints' in node.type().name()
+        ]
+        result = validate_rig_character(
+            geo,
+            asset_prim_path=uri_to_prim_path(asset_uri),
+            joint_nodes=joint_nodes,
+        )
         if not result.issues:
             return
         logger.warning(

@@ -66,6 +66,54 @@ def _show_stage_in_network_editors() -> None:
         pane_tab.setPwd(stage)
 
 
+def _stamp_multi_range(entity_uri) -> None:
+    """A new Multi workfile's playbar (#39): a Multi resolves no entity
+    range of its own, so an assets Multi opened at Houdini's 1-240 while a
+    single asset's opened at its 1001 range. It now starts at its shared
+    timeline, else the span of its members' ranges
+    (``multi_timeline.creation_span``). Anything else is left alone."""
+    if entity_uri.purpose != 'groups':
+        return
+    from tumblepipe.config import groups as grp_mod
+    from tumblepipe.config import multi_timeline
+    from tumblepipe.pipe.houdini import playbar
+    group = grp_mod.get_group(entity_uri)
+    if group is None:
+        return
+    span = multi_timeline.creation_span(group)
+    if span is not None:
+        playbar.set_frame_range(span)
+
+
+def _frame_stage() -> None:
+    """Frame every Solaris viewer's stage on a new workfile (#39).
+
+    A new layout workfile opened with the default camera inside the set's
+    room box, so the stage looked empty until the artist framed it. Viewers
+    with a camera locked to the view are left alone, as is a session
+    without a UI. Never raises: a viewport that cannot frame changes
+    nothing about the workfile.
+    """
+    import hou
+    if not hou.isUIAvailable():
+        return
+    try:
+        stage = hou.node("/stage")
+        display = stage.displayNode() if stage is not None else None
+        if display is not None:
+            display.stage()  # cook it, so there is something to frame
+        for pane_tab in hou.ui.paneTabs():
+            if pane_tab.type() != hou.paneTabType.SceneViewer:
+                continue
+            viewport = pane_tab.curViewport()
+            camera_path = getattr(viewport, 'cameraPath', lambda: '')()
+            if viewport.camera() is not None or camera_path:
+                continue
+            viewport.frameAll()
+    except Exception as exc:  # noqa: BLE001 - framing is a convenience
+        log.warning("Framing the new workfile's stage: %s", exc)
+
+
 def _stage_shot_roots(entity_uri) -> None:
     """Bring a new workfile's shots up to date with their Roots.
 
@@ -566,6 +614,7 @@ class WorkfileManager:
         """
 
         def _do_create() -> None:
+            not_kept = ""
             try:
                 import hou
                 from tumblepipe.pipe.context import (
@@ -575,7 +624,9 @@ class WorkfileManager:
                 from tumblepipe.pipe.houdini.workfile_save import (
                     save_hip_file,
                 )
-                from tumblepipe.pipe.paths import reserve_next_hip_file_path
+                from tumblepipe.pipe.paths import (
+                    release_new_workfile, reserve_next_hip_file_path,
+                )
 
                 # The new workfile replaces the open scene: its unsaved
                 # changes first, before a version is reserved.
@@ -586,61 +637,95 @@ class WorkfileManager:
                 # thread can clobber the global client between activate
                 # and the path resolution that depends on it.
                 self._activator.activate(proj)
-                next_path = reserve_next_hip_file_path(
+                reserved_path = next_path = reserve_next_hip_file_path(
                     entity_uri, dept, nc_type=session_nc_type(),
                 )
-                template_path = Path(client.storage.resolve(
-                    uris.dept_template(context, dept),
-                ))
-
-                next_path.parent.mkdir(parents=True, exist_ok=True)
-                hou.hipFile.clear(suppress_save_prompt=decision)
-                _show_stage_in_network_editors()
-                # Houdini may rewrite the extension (Education/Apprentice
-                # save .hip as .hipnc); record the path it actually wrote.
-                next_path = save_hip_file(
-                    next_path, workfile_context(entity_uri, dept, next_path),
+                pointer = reserved_path.parent / "context.json"
+                pointer_before = (
+                    pointer.read_bytes() if pointer.exists() else None
                 )
+                # From the reservation to the last save, a failure (a
+                # template that raises, most often) takes the version back
+                # out and clears the half-built scene, so the retry is the
+                # same version, not the next one (#39).
+                try:
+                    template_path = Path(client.storage.resolve(
+                        uris.dept_template(context, dept),
+                    ))
 
-                new_ctx = workfile_context(entity_uri, dept, next_path)
-                save_context(
-                    next_path.parent, None, new_ctx,
-                    file_extension=next_path.suffix.lstrip("."),
-                )
-                save_entity_context(next_path.parent, new_ctx)
-
-                # A department need not ship a template: it then starts
-                # from an empty /stage.
-                template_applied = template_path.exists()
-                if template_applied:
-                    # The template's import_shot (and animation's rig scrape,
-                    # inside create) imports nothing for a shot with no
-                    # staged build, or the old Root's assets for one whose
-                    # Root changed: bring its files up to date first.
-                    _stage_shot_roots(entity_uri)
-                    from tumblepipe.pipe.houdini import playbar
-                    from tumblepipe.pipe.houdini.scene_imports import (
-                        refresh_scene_imports,
+                    next_path.parent.mkdir(parents=True, exist_ok=True)
+                    hou.hipFile.clear(suppress_save_prompt=decision)
+                    _show_stage_in_network_editors()
+                    # Houdini may rewrite the extension (Education/Apprentice
+                    # save .hip as .hipnc); record the path it actually wrote.
+                    next_path = save_hip_file(
+                        next_path, workfile_context(entity_uri, dept, next_path),
                     )
-                    from tumblepipe.pipe.houdini.ui.helpers import load_module
-                    template = load_module(template_path, module_name)
-                    template.create(hou.node("/stage"), entity_uri, dept)
-                    # A template creates its import nodes but need not run
-                    # them (only animation's does), so a new layout or light
-                    # workfile showed no geometry until the artist pressed
-                    # Import. Bring them in as opening a scene does.
-                    with playbar.update_mode(hou.updateMode.Manual):
-                        refresh_scene_imports()
 
-                # Stamp the config timeline into the fresh workfile so it
-                # persists in the hip. force_frame_range=True: creation is
-                # the one time a non-animatable entity (asset) should get
-                # its starting range — subsequent opens leave it be so the
-                # artist can freely move it.
-                self._scene.apply_scene_timeline(
-                    asset_id, force_frame_range=True,
-                )
-                hou.hipFile.save(next_path.as_posix())
+                    new_ctx = workfile_context(entity_uri, dept, next_path)
+                    save_context(
+                        next_path.parent, None, new_ctx,
+                        file_extension=next_path.suffix.lstrip("."),
+                    )
+                    save_entity_context(next_path.parent, new_ctx)
+
+                    # A department need not ship a template: it then starts
+                    # from an empty /stage.
+                    template_applied = template_path.exists()
+                    if template_applied:
+                        # The template's import_shot (and animation's rig
+                        # scrape, inside create) imports nothing for a shot
+                        # with no staged build, or the old Root's assets for
+                        # one whose Root changed: bring its files up to date
+                        # first.
+                        _stage_shot_roots(entity_uri)
+                        from tumblepipe.pipe.houdini import playbar
+                        from tumblepipe.pipe.houdini.scene_imports import (
+                            refresh_scene_imports,
+                        )
+                        from tumblepipe.pipe.houdini.ui.helpers import (
+                            load_module,
+                        )
+                        template = load_module(template_path, module_name)
+                        template.create(hou.node("/stage"), entity_uri, dept)
+                        # A template creates its import nodes but need not
+                        # run them (only animation's does), so a new layout
+                        # or light workfile showed no geometry until the
+                        # artist pressed Import. Bring them in as opening a
+                        # scene does.
+                        with playbar.update_mode(hou.updateMode.Manual):
+                            refresh_scene_imports()
+
+                    # Stamp the config timeline into the fresh workfile so it
+                    # persists in the hip. force_frame_range=True: creation
+                    # is the one time a non-animatable entity (asset) should
+                    # get its starting range — subsequent opens leave it be
+                    # so the artist can freely move it. A Multi has no range
+                    # of its own: it gets its members' (#39).
+                    self._scene.apply_scene_timeline(
+                        asset_id, force_frame_range=True,
+                    )
+                    _stamp_multi_range(entity_uri)
+                    _frame_stage()
+                    hou.hipFile.save(next_path.as_posix())
+                except BaseException:
+                    release_new_workfile(
+                        [reserved_path, next_path], pointer_before,
+                    )
+                    not_kept = f" ({next_path.name} was not kept)"
+                    try:
+                        from tumblepipe.pipe.context import announce_change
+                        from tumblepipe.util import events
+                        # Watchers that saw the pointer move see it go back.
+                        announce_change(events.WORKFILE, entity_uri, dept)
+                        self._invalidate_cache()
+                        hou.hipFile.clear(suppress_save_prompt=True)
+                    except Exception as clear_exc:  # noqa: BLE001
+                        log.warning(
+                            "Cleaning up after the failed template: %s",
+                            clear_exc,
+                        )
+                    raise
 
                 log.info(
                     "Created %s (template_applied=%s)",
@@ -661,7 +746,8 @@ class WorkfileManager:
                 self._refresh.card(asset_id)
             except Exception as exc:
                 report_failure(
-                    f"Creating a workfile for {asset_id}/{dept}", exc,
+                    f"Creating a workfile for {asset_id}/{dept}{not_kept}",
+                    exc,
                 )
             finally:
                 if callable(refresh_cb):

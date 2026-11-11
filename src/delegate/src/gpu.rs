@@ -21,6 +21,13 @@
 //! drawn by every pass. The post pass then works through the layers on the
 //! card, and only the finished image and its depth are read back.
 //!
+//! See-through meshes ([`raster::Surface::Glass`]) are drawn after every
+//! opaque one, by a pass per layer of their own (`fs_glass`) that tests
+//! the layer's depth without writing it and blends into two more targets,
+//! the weighted sums and the revealage, which the post pass blends over
+//! each sample as `composite.rs` does. Those targets are made at the
+//! frame's size only once a frame has see-through meshes.
+//!
 //! With a [`Cache`] (the render delegate's), a mesh's corners stay on the
 //! card from frame to frame while its [`MeshKey`](crate::raster::MeshKey)
 //! and data stay the same, so a shot uploads only the meshes Hydra rebuilt.
@@ -40,8 +47,9 @@ use crate::blur::{self, LayerCamera};
 use crate::composite::{self, View};
 #[cfg(test)]
 use crate::composite::{Samples, Shading};
+use crate::lights::{Lighting, MAX_LIGHTS};
 use crate::math::{self, Mat4, Vec3};
-use crate::raster::{self, Frame, Image, Mesh};
+use crate::raster::{self, Cull, Frame, Image, Mesh, Surface};
 use crate::texture::Texture;
 use std::collections::HashMap;
 use std::sync::{mpsc, Mutex, OnceLock};
@@ -67,6 +75,13 @@ const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 /// The picking ids, mesh and instance a pixel: a target of their own, since
 /// a third on the scene pass would pass the 32 bytes a sample.
 const IDS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rg32Sint;
+/// The see-through surfaces' weighted sums and revealage
+/// ([`crate::composite::Samples::accum`], `reveal`): formats a blend can
+/// add into and multiply into on every adapter (32-bit float targets blend
+/// only with an optional feature), drawn by a pass of their own after the
+/// opaque surfaces, tested against their depth.
+const ACCUM_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+const REVEAL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R16Float;
 /// `post.wgsl`'s workgroups are 8 x 8 pixels.
 const GROUP: u32 = 8;
 
@@ -99,6 +114,36 @@ struct Globals {
     up: [f32; 4],
     back: [f32; 4],
     jitter: [f32; 4],
+    light: [[f32; 4]; 3],
+    clay: [f32; 4],
+    shade: [u32; 4],
+    lamps: [[[f32; 4]; 3]; MAX_LIGHTS],
+}
+
+/// A frame's [`Lighting`] as both shaders read it: sky, ground and
+/// highlight (`Globals::light`, `PostGlobals::light`), and the lamps.
+struct Lights {
+    head: [[f32; 4]; 3],
+    lamps: [[[f32; 4]; 3]; MAX_LIGHTS],
+}
+
+impl Lights {
+    fn new(l: &Lighting) -> Lights {
+        let mut lamps = [[[0.0f32; 4]; 3]; MAX_LIGHTS];
+        for (out, lamp) in lamps.iter_mut().zip(&l.lamps[..l.count]) {
+            let (a, c, x) = (lamp.at, lamp.color, lamp.axis);
+            *out = [[a[0], a[1], a[2], lamp.kind as f32], [c[0], c[1], c[2], lamp.floor], [x[0], x[1], x[2], 0.0]];
+        }
+        let (s, g) = (l.sky, l.ground);
+        Lights {
+            head: [
+                [s[0], s[1], s[2], l.count as f32],
+                [g[0], g[1], g[2], l.shine as f32],
+                [l.specular, composite::SHININESS as f32, l.tinted as u32 as f32, 0.0],
+            ],
+            lamps,
+        }
+    }
 }
 
 #[repr(C)]
@@ -121,11 +166,11 @@ struct PostGlobals {
     tiers01: [f32; 4],
     tier2: [f32; 4],
     ao: [f32; 4],
-    lights: [[f32; 4]; 3],
-    ambient: [f32; 4],
+    light: [[f32; 4]; 3],
     clay: [f32; 4],
     backdrop: [f32; 4],
     pattern: [[u32; 4]; 4],
+    lamps: [[[f32; 4]; 3]; MAX_LIGHTS],
 }
 
 /// `post.wgsl`'s `Layer`.
@@ -293,16 +338,25 @@ struct SumPipelines {
     scale: wgpu::ComputePipeline,
 }
 
+/// One pipeline per side culled, indexed by [`Cull`] (`as usize`): the
+/// hardware culls, so a culled triangle never reaches the fragment shader
+/// and early depth testing stays on.
+type Culled = [wgpu::RenderPipeline; 3];
+
 struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    scene: wgpu::RenderPipeline,
+    scene: Culled,
     /// The same, for a blurred frame's meshes whose points move: a third
     /// vertex buffer holds each corner's closing position.
-    scene_moving: wgpu::RenderPipeline,
+    scene_moving: Culled,
     /// The same two drawing the picking ids (`fs_ids`).
-    ids: wgpu::RenderPipeline,
-    ids_moving: wgpu::RenderPipeline,
+    ids: Culled,
+    ids_moving: Culled,
+    /// The same two drawing see-through surfaces (`fs_glass`) into the
+    /// weighted sums ([`Targets::glass_pass`]).
+    glass: Culled,
+    glass_moving: Culled,
     globals_layout: wgpu::BindGroupLayout,
     mesh_layout: wgpu::BindGroupLayout,
     post_layout: wgpu::BindGroupLayout,
@@ -389,6 +443,23 @@ struct MeshResources {
     /// every layer draws the same (unblurred), else `instance_count`.
     layer_stride: u32,
     bind: wgpu::BindGroup,
+    /// The instances in runs culling the same side: the mesh's, swapped
+    /// where an instance's transform mirrors ([`Cull::through`]).
+    runs: Vec<(std::ops::Range<u32>, Cull)>,
+}
+
+/// `mesh`'s instances in runs of the same side culled (one run when it
+/// culls nothing or none of its transforms mirrors).
+fn cull_runs(mesh: &Mesh) -> Vec<(std::ops::Range<u32>, Cull)> {
+    let mut runs: Vec<(std::ops::Range<u32>, Cull)> = Vec::new();
+    for (i, xform) in mesh.transforms.iter().enumerate() {
+        let cull = mesh.cull.through(xform);
+        match runs.last_mut() {
+            Some((run, c)) if *c == cull => run.end = i as u32 + 1,
+            _ => runs.push((i as u32..i as u32 + 1, cull)),
+        }
+    }
+    runs
 }
 
 /// Where a draw's corners are: a cached mesh's chunk, or a chunk drawn this
@@ -408,6 +479,8 @@ struct Draw {
     /// The corners' closing positions in the batch's `motion`, when the
     /// mesh's points move: drawn by the moving pipeline.
     motion: Option<usize>,
+    /// The side the instances' triangles are not drawn from.
+    cull: Cull,
 }
 
 /// The render targets for one size and sample count, and the post pass's
@@ -416,6 +489,10 @@ struct Targets {
     size: (usize, usize, usize),
     /// Per layer: albedo, normal and depth attachment views.
     layer_views: Vec<[wgpu::TextureView; 3]>,
+    /// Per layer: the see-through surfaces' weighted sums and revealage,
+    /// of the frame's size when `glass`, else a texel.
+    glass_views: Vec<[wgpu::TextureView; 2]>,
+    glass: bool,
     /// The picking ids and the depth their own test keeps (one layer), and
     /// the buffer they are read back through, rows padded to 256 bytes.
     ids: wgpu::Texture,
@@ -475,10 +552,42 @@ impl Targets {
         })
     }
 
+    /// A pass drawing see-through surfaces into layer `k`'s weighted sums
+    /// and revealage, clearing them first (to nothing added, all revealed)
+    /// or not, tested against the layer's opaque depth, which it keeps.
+    fn glass_pass<'e>(&self, encoder: &'e mut wgpu::CommandEncoder, clear: bool, k: usize) -> wgpu::RenderPass<'e> {
+        let attach = |view, clear_to: wgpu::Color| Some(wgpu::RenderPassColorAttachment {
+            view,
+            resolve_target: None,
+            depth_slice: None,
+            ops: wgpu::Operations {
+                load: if clear { wgpu::LoadOp::Clear(clear_to) } else { wgpu::LoadOp::Load },
+                store: wgpu::StoreOp::Store,
+            },
+        });
+        let [accum, reveal] = &self.glass_views[k];
+        let all = wgpu::Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("glass"),
+            color_attachments: &[attach(accum, wgpu::Color::TRANSPARENT), attach(reveal, all)],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.layer_views[k][2],
+                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        })
+    }
+
     /// A pass drawing the picking ids, clearing them (to -1, nothing) first
     /// or not. It has its own depth, tested as the scene pass's first layer
     /// is and over the same draws in the same order, so the surface it
-    /// names at a pixel is the one that layer keeps there.
+    /// names at a pixel is the one that layer keeps there; see-through
+    /// meshes, drawn after the opaque ones, write it too, so the nearest
+    /// surface of either kind is named (as `raster.rs` does with
+    /// `Samples::near`).
     fn id_pass<'e>(&self, encoder: &'e mut wgpu::CommandEncoder, clear: bool) -> wgpu::RenderPass<'e> {
         let none = wgpu::Color { r: -1.0, g: -1.0, b: 0.0, a: 0.0 };
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -523,6 +632,9 @@ struct Batch<'a> {
     elapsed: Duration,
     /// Draw the picking ids too ([`Targets::id_pass`]).
     ids: bool,
+    /// The draws are see-through surfaces ([`Targets::glass_pass`]); every
+    /// opaque one is drawn (flushed) before the first of them.
+    glass: bool,
 }
 
 impl Batch<'_> {
@@ -532,14 +644,16 @@ impl Batch<'_> {
         let res = self.resources[mesh].as_ref().expect("drawn meshes have resources");
         let tris = (vertices / 3).max(1) as u64;
         let per_run = (SUBMIT_TRIANGLES / tris).clamp(1, res.instance_count as u64) as u32;
-        let mut first = 0;
-        while first < res.instance_count {
-            let last = (first + per_run).min(res.instance_count);
-            self.draws.push(Draw { mesh, corners, vertices, instances: first..last, motion });
-            self.pending_triangles += tris * (last - first) as u64 * self.globals.len() as u64;
-            first = last;
-            if self.pending_triangles >= SUBMIT_TRIANGLES {
-                self.flush(cache);
+        for (run, cull) in &res.runs {
+            let mut first = run.start;
+            while first < run.end {
+                let last = (first + per_run).min(run.end);
+                self.draws.push(Draw { mesh, corners, vertices, instances: first..last, motion, cull: *cull });
+                self.pending_triangles += tris * (last - first) as u64 * self.globals.len() as u64;
+                first = last;
+                if self.pending_triangles >= SUBMIT_TRIANGLES {
+                    self.flush(cache);
+                }
             }
         }
         if self.draws.is_empty() {
@@ -564,20 +678,29 @@ impl Batch<'_> {
         let started = Instant::now();
         let mut encoder = self.gpu.device.create_command_encoder(&Default::default());
         if !self.draws.is_empty() {
+            let (still, moved) = if self.glass {
+                (&self.gpu.glass, &self.gpu.glass_moving)
+            } else {
+                (&self.gpu.scene, &self.gpu.scene_moving)
+            };
             for (k, globals) in self.globals.iter().enumerate() {
-                let mut p = self.targets.pass(&mut encoder, false, k);
-                p.set_pipeline(&self.gpu.scene);
+                let mut p = if self.glass {
+                    self.targets.glass_pass(&mut encoder, false, k)
+                } else {
+                    self.targets.pass(&mut encoder, false, k)
+                };
                 p.set_bind_group(0, globals, &[]);
-                let mut moving = false;
+                let mut current = None;
                 for d in &self.draws {
                     let r = self.resources[d.mesh].as_ref().expect("drawn meshes have resources");
                     let buffer = match d.corners {
                         Corners::Cached { id, chunk } => &cache.meshes[&id].chunks[chunk].buffer,
                         Corners::Transient(i) => &self.transient[i].buffer,
                     };
-                    if d.motion.is_some() != moving {
-                        moving = d.motion.is_some();
-                        p.set_pipeline(if moving { &self.gpu.scene_moving } else { &self.gpu.scene });
+                    let wanted = (d.motion.is_some(), d.cull);
+                    if current != Some(wanted) {
+                        current = Some(wanted);
+                        p.set_pipeline(&if wanted.0 { moved } else { still }[d.cull as usize]);
                     }
                     p.set_bind_group(1, &r.bind, &[]);
                     p.set_vertex_buffer(0, buffer.slice(..));
@@ -593,16 +716,18 @@ impl Batch<'_> {
                 // The first layer's draws again, naming what they draw.
                 let mut p = self.targets.id_pass(&mut encoder, false);
                 p.set_bind_group(0, &self.globals[0], &[]);
-                let mut moving = None;
+                let mut current = None;
                 for d in &self.draws {
                     let r = self.resources[d.mesh].as_ref().expect("drawn meshes have resources");
                     let buffer = match d.corners {
                         Corners::Cached { id, chunk } => &cache.meshes[&id].chunks[chunk].buffer,
                         Corners::Transient(i) => &self.transient[i].buffer,
                     };
-                    if moving != Some(d.motion.is_some()) {
-                        moving = Some(d.motion.is_some());
-                        p.set_pipeline(if d.motion.is_some() { &self.gpu.ids_moving } else { &self.gpu.ids });
+                    let wanted = (d.motion.is_some(), d.cull);
+                    if current != Some(wanted) {
+                        current = Some(wanted);
+                        let set = if wanted.0 { &self.gpu.ids_moving } else { &self.gpu.ids };
+                        p.set_pipeline(&set[d.cull as usize]);
                     }
                     p.set_bind_group(1, &r.bind, &[]);
                     p.set_vertex_buffer(0, buffer.slice(..));
@@ -771,9 +896,16 @@ impl Gpu {
 
         let target = |format| Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL });
         let color_targets = [target(COLOR_FORMAT), target(COLOR_FORMAT)];
-        let primitive = wgpu::PrimitiveState {
+        // Counter-clockwise in clip space is the front, as on the CPU path
+        // (raster::Cull).
+        let primitive = |cull: Cull| wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
-            cull_mode: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: match cull {
+                Cull::Nothing => None,
+                Cull::Back => Some(wgpu::Face::Back),
+                Cull::Front => Some(wgpu::Face::Front),
+            },
             ..Default::default()
         };
 
@@ -807,8 +939,32 @@ impl Gpu {
             }),
         ];
         let id_targets = [target(IDS_FORMAT)];
-        let pipeline = |entry_point: &str, buffers: &[Option<wgpu::VertexBufferLayout>], fragment: &str,
-                        targets: &[Option<wgpu::ColorTargetState>]| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        // See-through surfaces: the weighted sums added up, the revealage
+        // multiplied by one minus each opacity.
+        let add = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
+        };
+        let reveal = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::Zero,
+            dst_factor: wgpu::BlendFactor::OneMinusSrc,
+            operation: wgpu::BlendOperation::Add,
+        };
+        let glass_targets = [
+            Some(wgpu::ColorTargetState {
+                format: ACCUM_FORMAT,
+                blend: Some(wgpu::BlendState { color: add, alpha: add }),
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+            Some(wgpu::ColorTargetState {
+                format: REVEAL_FORMAT,
+                blend: Some(wgpu::BlendState { color: reveal, alpha: reveal }),
+                write_mask: wgpu::ColorWrites::ALL,
+            }),
+        ];
+        let one = |entry_point: &str, buffers: &[Option<wgpu::VertexBufferLayout>], fragment: &str,
+                   targets: &[Option<wgpu::ColorTargetState>], cull: Cull| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(fragment),
             layout: Some(&scene_layout),
             vertex: wgpu::VertexState {
@@ -817,10 +973,12 @@ impl Gpu {
                 compilation_options: Default::default(),
                 buffers,
             },
-            primitive,
+            primitive: primitive(cull),
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
+                // See-through surfaces are tested against the opaque depth
+                // and leave it as it is.
+                depth_write_enabled: Some(fragment != "fs_glass"),
                 depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
                 bias: Default::default(),
@@ -835,10 +993,16 @@ impl Gpu {
             multiview_mask: None,
             cache: None,
         });
+        let pipeline = |entry_point: &str, buffers: &[Option<wgpu::VertexBufferLayout>], fragment: &str,
+                        targets: &[Option<wgpu::ColorTargetState>]| -> Culled {
+            [Cull::Nothing, Cull::Back, Cull::Front].map(|cull| one(entry_point, buffers, fragment, targets, cull))
+        };
         let scene = pipeline("vs", &buffers[..2], "fs", &color_targets);
         let scene_moving = pipeline("vs_moving", &buffers, "fs", &color_targets);
         let ids = pipeline("vs", &buffers[..2], "fs_ids", &id_targets);
         let ids_moving = pipeline("vs_moving", &buffers, "fs_ids", &id_targets);
+        let glass = pipeline("vs", &buffers[..2], "fs_glass", &glass_targets);
+        let glass_moving = pipeline("vs_moving", &buffers, "fs_glass", &glass_targets);
 
         // The post pass: one bind group for every entry point (post.wgsl).
         let compute = wgpu::ShaderStages::COMPUTE;
@@ -884,6 +1048,8 @@ impl Gpu {
                 storage(7, false),
                 storage(8, false),
                 storage(9, false),
+                texture(10),
+                texture(11),
             ],
         });
         let post_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -949,7 +1115,7 @@ impl Gpu {
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
-        Ok(Gpu { device, queue, scene, scene_moving, ids, ids_moving, globals_layout, mesh_layout, post_layout, post, sum_layout, sum, sampler, limits,
+        Ok(Gpu { device, queue, scene, scene_moving, ids, ids_moving, glass, glass_moving, globals_layout, mesh_layout, post_layout, post, sum_layout, sum, sampler, limits,
                  targets: None })
     }
 
@@ -975,18 +1141,22 @@ impl Gpu {
         result
     }
 
-    /// The targets for a `w x h` frame of `layers` samples a pixel, made
-    /// anew when the last frame's do not fit.
-    fn targets(&mut self, w: usize, h: usize, layers: usize) -> &Targets {
-        if self.targets.as_ref().is_some_and(|t| t.size == (w, h, layers)) {
+    /// The targets for a `w x h` frame of `layers` samples a pixel, with
+    /// room for see-through surfaces when `glass`, made anew when the last
+    /// frame's do not fit. Without `glass` their sums are a single texel
+    /// a layer (the post pass then reads none), so a scene with no
+    /// see-through surface keeps the memory it had; once one has been
+    /// drawn at a size, the room stays while the size does.
+    fn targets(&mut self, w: usize, h: usize, layers: usize, glass: bool) -> &Targets {
+        if self.targets.as_ref().is_some_and(|t| t.size == (w, h, layers) && (t.glass || !glass)) {
             return self.targets.as_ref().expect("checked");
         }
         self.targets = None; // free the old ones first
         let device = &self.device;
-        let texture = |format, usage| {
+        let sized = |format, usage, (tw, th): (usize, usize)| {
             device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("target"),
-                size: wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: layers as u32 },
+                size: wgpu::Extent3d { width: tw as u32, height: th as u32, depth_or_array_layers: layers as u32 },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -995,6 +1165,7 @@ impl Gpu {
                 view_formats: &[],
             })
         };
+        let texture = |format, usage| sized(format, usage, (w, h));
         let read = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_DST;
         let albedo = texture(COLOR_FORMAT, read);
@@ -1009,6 +1180,11 @@ impl Gpu {
         let layer_views = (0..layers as u32)
             .map(|k| [layer_view(&albedo, k), layer_view(&normal, k), layer_view(&depth_target, k)])
             .collect();
+        let drawn = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        let glass_size = if glass { (w, h) } else { (1, 1) };
+        let accum = sized(ACCUM_FORMAT, drawn, glass_size);
+        let reveal = sized(REVEAL_FORMAT, drawn, glass_size);
+        let glass_views = (0..layers as u32).map(|k| [layer_view(&accum, k), layer_view(&reveal, k)]).collect();
         let single = |format, usage| device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ids"),
             size: wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
@@ -1071,6 +1247,7 @@ impl Gpu {
         self.queue.write_buffer(&layer_buffer, 0, &layer_bytes);
 
         let (albedo_array, normal_array) = (array_view(&albedo), array_view(&normal));
+        let (accum_array, reveal_array) = (array_view(&accum), array_view(&reveal));
         fn whole(b: &wgpu::Buffer) -> wgpu::BindingResource<'_> {
             b.as_entire_binding()
         }
@@ -1095,11 +1272,15 @@ impl Gpu {
                 wgpu::BindGroupEntry { binding: 7, resource: whole(&across) },
                 wgpu::BindGroupEntry { binding: 8, resource: whole(&color) },
                 wgpu::BindGroupEntry { binding: 9, resource: whole(&depth) },
+                wgpu::BindGroupEntry { binding: 10, resource: wgpu::BindingResource::TextureView(&accum_array) },
+                wgpu::BindGroupEntry { binding: 11, resource: wgpu::BindingResource::TextureView(&reveal_array) },
             ],
         });
         self.targets.insert(Targets {
             size: (w, h, layers),
             layer_views,
+            glass_views,
+            glass,
             ids,
             ids_view,
             ids_depth,
@@ -1198,7 +1379,7 @@ impl Gpu {
             }
         }
         let params = MeshParams {
-            base: [mesh.base_color[0], mesh.base_color[1], mesh.base_color[2], 1.0],
+            base: [mesh.base_color[0], mesh.base_color[1], mesh.base_color[2], mesh.opacity],
             mode: [textured as i32, plain as i32, index as i32, 0],
             layers,
         };
@@ -1234,6 +1415,7 @@ impl Gpu {
             instance_count: count as u32,
             layer_stride,
             bind,
+            runs: cull_runs(mesh),
         }
     }
 
@@ -1246,12 +1428,15 @@ impl Gpu {
         let (w, h) = (frame.width, frame.height);
         let offsets = composite::sample_offsets(frame.samples);
         let layers = offsets.len();
-        self.targets(w, h, layers);
+        let glass = raster::any_glass(meshes);
+        self.targets(w, h, layers, glass);
         let gpu = &*self;
         let targets = gpu.targets.as_ref().expect("made above");
 
         let motion = chunk.is_some() && frame.blur.motion;
         let axis = |a: Vec3| [a[0], a[1], a[2], 0.0];
+        let lights = Lights::new(&Lighting::new(&frame.lights, &frame.view_to_world));
+        let clay = composite::CLAY_ALBEDO;
         // Per layer: to sample (ox, oy) pixels from each centre (y down),
         // move the picture ox left and oy up (clip y points up); a blurred
         // layer's camera and, in jitter.z, its moment of the shutter.
@@ -1270,6 +1455,10 @@ impl Gpu {
                     up: axis(view.axes[1]),
                     back: axis(view.axes[2]),
                     jitter: [-2.0 * ox / w as f32, 2.0 * oy / h as f32, time, 0.0],
+                    light: lights.head,
+                    clay: [clay[0], clay[1], clay[2], 0.0],
+                    shade: [frame.shading.abi(), 0, 0, 0],
+                    lamps: lights.lamps,
                 };
                 let buffer = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("globals"),
@@ -1284,10 +1473,14 @@ impl Gpu {
             })
             .collect();
 
-        // Clear the targets: no colour, no normal, far depth.
+        // Clear the targets: no colour, no normal, far depth; and with
+        // see-through surfaces, nothing added and everything revealed.
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         for k in 0..layers {
             drop(targets.pass(&mut encoder, true, k));
+            if glass {
+                drop(targets.glass_pass(&mut encoder, true, k));
+            }
         }
         if ids {
             drop(targets.id_pass(&mut encoder, true));
@@ -1306,8 +1499,13 @@ impl Gpu {
         let resources: Vec<Option<MeshResources>> = meshes
             .iter()
             .enumerate()
-            .map(|(i, m)| (!m.transforms.is_empty() && !m.triangles.is_empty())
+            .map(|(i, m)| (!m.transforms.is_empty() && !m.triangles.is_empty() && Surface::of(m).is_some())
                 .then(|| gpu.mesh_resources(i, m, &frame.world_to_clip, inner, chunk, motion)))
+            .collect();
+        // The opaque meshes, then the see-through ones over them.
+        let order: Vec<usize> = [Surface::Opaque, Surface::Glass]
+            .iter()
+            .flat_map(|&s| (0..meshes.len()).filter(move |&m| Surface::of(&meshes[m]) == Some(s)))
             .collect();
 
         let mut batch = Batch {
@@ -1322,10 +1520,20 @@ impl Gpu {
             pending_triangles: 0,
             elapsed: Duration::ZERO,
             ids,
+            glass: false,
         };
-        for (m, mesh) in meshes.iter().enumerate() {
+        for m in order {
+            let mesh = &meshes[m];
             if resources[m].is_none() {
                 continue;
+            }
+            if !batch.glass && Surface::of(mesh) == Some(Surface::Glass) {
+                // Every opaque surface drawn first: the see-through ones
+                // are tested against their depth.
+                batch.flush(inner);
+                batch.transient.clear();
+                batch.motion.clear();
+                batch.glass = true;
             }
             let signature = Signature::of(mesh);
             let id = mesh.key.filter(|_| caching).map(|k| k.id);
@@ -1417,7 +1625,7 @@ impl Gpu {
         stats.resident_bytes = if caching { inner.bytes } else { 0 };
         drop(guard);
 
-        self.post_pass(frame, &mut stats)?;
+        self.post_pass(frame, glass, &mut stats)?;
         Ok(stats)
     }
 
@@ -1425,7 +1633,7 @@ impl Gpu {
     #[cfg(test)]
     fn upload_samples(&mut self, samples: &Samples) -> Result<(), String> {
         let (w, h, layers) = (samples.width, samples.height, samples.count());
-        self.targets(w, h, layers);
+        self.targets(w, h, layers, false);
         let targets = self.targets.as_ref().expect("made above");
         let plane = w * h;
         let write = |texture: &wgpu::Texture, data: &[u8], k: usize| {
@@ -1456,13 +1664,14 @@ impl Gpu {
     /// image read back.
     #[cfg(test)]
     fn post(&self, frame: &Frame, stats: &mut Stats) -> Result<Image, String> {
-        self.post_pass(frame, stats)?;
+        self.post_pass(frame, false, stats)?;
         self.read_back(false, stats)
     }
 
     /// The post pass over the targets' render buffer: the finished image in
-    /// the targets' colour and depth.
-    fn post_pass(&self, frame: &Frame, stats: &mut Stats) -> Result<(), String> {
+    /// the targets' colour and depth. With `glass`, the see-through
+    /// surfaces' sums blended over each sample.
+    fn post_pass(&self, frame: &Frame, glass: bool, stats: &mut Stats) -> Result<(), String> {
         let targets = self.targets.as_ref().ok_or("no targets")?;
         let (w, h, layers) = targets.size;
         let started = Instant::now();
@@ -1474,10 +1683,7 @@ impl Gpu {
         for (i, &turn) in pattern.iter().enumerate() {
             cells[i / 4][i % 4] = turn as u32;
         }
-        let lights = composite::LIGHTS.map(|(l, i)| {
-            let l = math::normalize(l);
-            [l[0], l[1], l[2], i]
-        });
+        let lights = Lights::new(&Lighting::new(&frame.lights, &frame.view_to_world));
         let [t0, t1, t2] = composite::AO_TIERS;
         let clay = composite::CLAY_ALBEDO;
         let globals = PostGlobals {
@@ -1490,11 +1696,12 @@ impl Gpu {
             tiers01: [t0.0, t0.1, t1.0, t1.1],
             tier2: [t2.0, t2.1, 0.0, 0.0],
             ao: [composite::AO_FADE_PX.0, composite::AO_FADE_PX.1, composite::AO_GAIN, composite::AO_BIAS],
-            lights,
-            ambient: [composite::SKY, composite::GROUND, composite::SPECULAR, composite::SHININESS as f32],
+            light: lights.head,
             clay: [clay[0], clay[1], clay[2], 1.0 / layers as f32],
-            backdrop: [composite::BACKDROP_TOP, composite::BACKDROP_BOTTOM, frame.alpha as u32 as f32, 0.0],
+            backdrop: [composite::BACKDROP_TOP, composite::BACKDROP_BOTTOM, frame.alpha as u32 as f32,
+                       glass as u32 as f32],
             pattern: cells,
+            lamps: lights.lamps,
         };
         self.queue.write_buffer(&targets.globals, 0, bytes(&[globals]));
 
@@ -1727,7 +1934,8 @@ mod tests {
     fn frame(w: usize, h: usize, samples: usize) -> Frame {
         let (world_to_clip, view_to_world) = camera();
         Frame { width: w, height: h, world_to_clip, view_to_world, samples,
-                shading: composite::Shading::Lit, ao: true, blur: crate::blur::Blur::OFF, alpha: false }
+                shading: composite::Shading::Lit, ao: true, blur: crate::blur::Blur::OFF, alpha: false,
+                lights: crate::lights::SceneLights::NONE }
     }
 
     fn encode(v: f32) -> i32 {
@@ -1789,14 +1997,14 @@ mod tests {
     fn mesh<'a>(points: &'a [Vec3], triangles: &'a [[u32; 3]], transforms: &'a [Mat4]) -> Mesh<'a> {
         Mesh { points, triangles, corner_normals: None, corner_colors: None, corner_uvs: None,
                base_color: [0.8, 0.3, 0.1], tiles: Vec::new(), transforms, key: None,
-               points_close: None, transform_keys: &[] }
+               points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing}
     }
 
     /// `images` (colour and depth, `pixels` each) averaged on the card
     /// through the sum a blurred frame uses; alpha too with `alpha`.
     fn average_on_card(pixels: usize, images: &[(Vec<[f32; 4]>, Vec<f32>)], alpha: bool) -> Image {
         gpu().expect("a GPU").scoped(&frame(pixels, 1, 1), |gpu| {
-            gpu.targets(pixels, 1, 1);
+            gpu.targets(pixels, 1, 1, false);
             let mut sum = Vec::new();
             for (color, depth) in images {
                 let targets = gpu.targets.as_ref().expect("made above");
@@ -1893,6 +2101,154 @@ mod tests {
         agrees(compare(&frame(128, 64, 1), &[textured, coloured]));
     }
 
+    /// Curves (linear and cubic, with and without widths, open and closed)
+    /// and points, made for the frame ([`crate::curves`]), drawn on the
+    /// card as on the CPU: the picture, the depth and the ids.
+    #[test]
+    fn curves_and_points_match_the_cpu() {
+        use crate::curves::{expand, mesh, Basis, Camera, Interp, Kind, Strokes, Wrap};
+        let f = frame(160, 120, 4);
+        let cam = Camera::of(&f);
+        let wavy: Vec<Vec3> = (0..10).map(|i| [-3.0 + 0.66 * i as f32, if i % 2 == 0 { -0.5 } else { 0.5 }, -1.0]).collect();
+        let ring: Vec<Vec3> = (0..8).map(|i| {
+            let a = i as f32 * std::f32::consts::TAU / 8.0;
+            [1.5 * a.cos(), 1.0 + 0.8 * a.sin(), 0.5]
+        }).collect();
+        let polyline = [[-3.0f32, -2.0, 0.0], [-1.0, -1.2, 0.5], [1.0, -2.2, 0.0], [3.0, -1.5, -0.5]];
+        let dots: Vec<Vec3> = (0..30).map(|i| [-3.0 + 0.2 * i as f32, 2.2 - 0.05 * i as f32, (i % 5) as f32 * 0.3]).collect();
+        let dot_widths: Vec<f32> = (0..30).map(|i| if i % 3 == 0 { 0.0 } else { 0.05 + 0.01 * i as f32 }).collect();
+        let dot_colors: Vec<Vec3> = (0..30).map(|i| [i as f32 / 30.0, 0.5, 1.0 - i as f32 / 30.0]).collect();
+        let wavy_widths: Vec<f32> = (0..10).map(|i| 0.02 + 0.03 * i as f32).collect();
+        let red = [[0.9f32, 0.1, 0.1]];
+        let sets = [
+            Strokes { kind: Kind::Cubic(Basis::Bspline), wrap: Wrap::Pinned, points: &wavy, counts: &[10],
+                      widths: &wavy_widths, width_interp: Interp::Vertex, colors: &[], color_interp: Interp::Constant },
+            Strokes { kind: Kind::Cubic(Basis::CatmullRom), wrap: Wrap::Periodic, points: &ring, counts: &[8],
+                      widths: &[], width_interp: Interp::Constant, colors: &red, color_interp: Interp::Constant },
+            Strokes { kind: Kind::Linear, wrap: Wrap::Nonperiodic, points: &polyline, counts: &[4],
+                      widths: &[0.15], width_interp: Interp::Constant, colors: &[], color_interp: Interp::Constant },
+            Strokes { kind: Kind::Points, wrap: Wrap::Nonperiodic, points: &dots, counts: &[],
+                      widths: &dot_widths, width_interp: Interp::Vertex, colors: &dot_colors, color_interp: Interp::Vertex },
+        ];
+        let made: Vec<_> = sets.iter().map(|s| expand(s, s.points, &IDENTITY, &cam, None).0).collect();
+        let meshes: Vec<Mesh> = made.iter().map(|m| mesh(m, None, [0.7, 0.7, 0.7])).collect();
+        agrees(compare(&f, &meshes));
+        let cpu = raster::render(&f, &meshes);
+        let gpu = render(&f, &meshes, None, true).expect("GPU");
+        let differ = cpu.ids.iter().zip(&gpu.ids).filter(|(a, b)| a != b).count() as f32 / cpu.ids.len() as f32;
+        assert!(differ <= 0.01, "{differ} of the ids differ");
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(32))]
+
+        /// Random curves (any kind, basis and wrap, with widths or none)
+        /// and points drawn on the card as on the CPU: picture, depth, ids.
+        #[test]
+        fn random_curves_and_points_match_the_cpu(
+            sets in prop::collection::vec((0u32..3, 0u32..3, 0u32..3,
+                                           prop::collection::vec([-3.0f32..3.0, -2.0f32..2.0, -2.0f32..2.0], 2..12),
+                                           prop_oneof![Just(0.0f32), 0.01f32..0.3]), 1..5),
+            samples in prop::sample::select(vec![1usize, 4]),
+        ) {
+            use crate::curves::{expand, mesh, Camera, Interp, Kind, Strokes, Wrap};
+            let f = frame(128, 96, samples);
+            let cam = Camera::of(&f);
+            let counts: Vec<[i32; 1]> = sets.iter().map(|s| [s.3.len() as i32]).collect();
+            let widths: Vec<[f32; 1]> = sets.iter().map(|s| [s.4]).collect();
+            let made: Vec<_> = sets.iter().enumerate().map(|(i, (kind, basis, wrap, pts, _))| {
+                let s = Strokes { kind: Kind::from_abi(*kind, *basis), wrap: Wrap::from_abi(*wrap), points: pts,
+                                  counts: &counts[i], widths: &widths[i], width_interp: Interp::Constant,
+                                  colors: &[], color_interp: Interp::Constant };
+                expand(&s, pts, &IDENTITY, &cam, None).0
+            }).collect();
+            let meshes: Vec<Mesh> = made.iter().enumerate()
+                .map(|(i, m)| mesh(m, None, [0.2 + 0.2 * i as f32, 0.7, 0.9 - 0.2 * i as f32])).collect();
+            let (color, depth) = compare(&f, &meshes);
+            prop_assert!(color <= DIFFERING && depth <= DIFFERING, "color {}, depth {}", color, depth);
+            let cpu = raster::render(&f, &meshes);
+            let gpu = render(&f, &meshes, None, true).expect("GPU");
+            let differ = cpu.ids.iter().zip(&gpu.ids).filter(|(a, b)| a != b).count() as f32 / cpu.ids.len() as f32;
+            prop_assert!(differ <= 0.01, "{} of the ids differ", differ);
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(16))]
+
+        /// A mesh in parts (the shim's GeomSubsets: a view per material,
+        /// each a run of the triangles with the whole mesh's normals) is
+        /// drawn on the card as on the CPU.
+        #[test]
+        fn a_mesh_in_parts_matches_the_cpu((n, heights, part) in crate::props::parted_sheet(), polygonal: bool) {
+            let (points, triangles) = crate::props::sheet(n, &heights);
+            let (sorted, runs) = crate::props::by_part(&triangles, &part);
+            let normals = crate::ffi::mesh_normals(&points, &sorted, polygonal);
+            let at = [translation(0.0, 0.0, 1.0)];
+            let colours = [[0.9, 0.2, 0.1], [0.1, 0.8, 0.2], [0.2, 0.3, 0.9]];
+            let meshes: Vec<Mesh> = runs.iter().map(|(p, run)| Mesh {
+                triangles: &sorted[run.clone()],
+                corner_normals: Some(&normals[run.start * 3..run.end * 3]),
+                base_color: colours[*p],
+                ..mesh(&points, &sorted, &at)
+            }).collect();
+            agrees(compare(&frame(96, 72, 4), &meshes));
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(24))]
+
+        /// Culling on the card (the hardware's, a pipeline per side, the
+        /// instances in runs by whether their transform mirrors) drops what
+        /// the CPU drops: the pictures and the ids agree, and a culled
+        /// instance is never picked. Two meshes, one wound the other way.
+        #[test]
+        fn culling_matches_the_cpu(
+            placing in crate::props::placings(), more in crate::props::placings(),
+            cull in crate::props::cull_style(), other in crate::props::cull_style(),
+        ) {
+            let (points, triangles) = crate::props::facing_quad(false);
+            let (back_points, back_triangles) = crate::props::facing_quad(true);
+            let at: Vec<Mat4> = placing.iter().map(crate::props::placed).collect();
+            let at_more: Vec<Mat4> = more.iter().map(crate::props::placed).collect();
+            let meshes = [
+                Mesh { cull, ..mesh(&points, &triangles, &at) },
+                Mesh { cull: other, base_color: [0.2, 0.5, 0.9], ..mesh(&back_points, &back_triangles, &at_more) },
+            ];
+            let f = frame(96, 72, 4);
+            agrees(compare(&f, &meshes));
+            let (gpu, _) = render_ids_with_stats(&f, &meshes, None, true).expect("GPU");
+            let cpu = raster::render(&f, &meshes);
+            let off = id_disagreements(&cpu, &gpu, &meshes);
+            prop_assert!(off <= 96 * 72 / 100, "{} pixels name something else", off);
+            for (m, (mesh, reversed)) in meshes.iter().zip([false, true]).enumerate() {
+                for (i, xform) in mesh.transforms.iter().enumerate() {
+                    if crate::props::front_faces_camera(xform, reversed)
+                        .is_some_and(|front| crate::props::culled(mesh.cull, front)) {
+                        prop_assert!(!gpu.ids.contains(&[m as i32, i as i32]), "culled instance {}/{} picked", m, i);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A quad crossing the far plane is cut at it on the card as on the CPU
+    /// (the hardware's clip, the CPU's depth test), ids included.
+    #[test]
+    fn the_far_plane_cuts_as_on_the_cpu() {
+        let (points, triangles) = crate::props::past_the_far_plane();
+        let one = [IDENTITY];
+        let meshes = [mesh(&points, &triangles, &one)];
+        for samples in [1, 4] {
+            let f = frame(96, 72, samples);
+            agrees(compare(&f, &meshes));
+            let (gpu, _) = render_ids_with_stats(&f, &meshes, None, true).expect("GPU");
+            let off = id_disagreements(&raster::render(&f, &meshes), &gpu, &meshes);
+            assert!(off <= 96 * 72 / 100, "{off} pixels name something else");
+        }
+    }
+
     #[test]
     fn many_instances_split_across_submissions() {
         // 40k instances of a 2-triangle quad would be one draw; under test's
@@ -1950,6 +2306,38 @@ mod tests {
         prop::sample::select(vec![Shading::Lit, Shading::Clay, Shading::Albedo, Shading::Occlusion])
     }
 
+    /// The fixed rig (none), or up to [`MAX_LIGHTS`] scene lights of every
+    /// kind about the boxes, facing any way.
+    fn scene_lights() -> impl Strategy<Value = crate::lights::SceneLights> {
+        use crate::lights::{LightShape, SceneLight, SceneLights};
+        let one = (0u32..6, [0.0f32..1.0, 0.0f32..1.0, 0.0f32..1.0], 0.2f32..3.0, any::<bool>(),
+                   [-4.0f32..4.0, -0.5f32..4.0, -6.0f32..5.0], -3.2f32..3.2, -1.5f32..1.5);
+        prop::option::of(prop::collection::vec(one, 1..=MAX_LIGHTS)).prop_map(|lights| {
+            let Some(lights) = lights else { return SceneLights::NONE };
+            let made: Vec<SceneLight> = lights.into_iter()
+                .map(|(kind, color, intensity, normalize, at, yaw, pitch)| {
+                    // The light's Z axis turned by yaw and pitch; it faces -Z.
+                    let z = [yaw.sin() * pitch.cos(), pitch.sin(), yaw.cos() * pitch.cos()];
+                    let up = if z[1].abs() < 0.9 { [0.0, 1.0, 0.0] } else { [1.0, 0.0, 0.0] };
+                    let x = math::normalize(math::cross(up, z));
+                    let y = math::cross(z, x);
+                    let mut m = IDENTITY;
+                    for (r, axis) in [x, y, z, at].iter().enumerate() {
+                        for c in 0..3 {
+                            m[r * 4 + c] = axis[c] as f64;
+                        }
+                    }
+                    let shape = LightShape::from_abi(kind).unwrap();
+                    // Point lights need more to show at a few units.
+                    let gain = if matches!(shape, LightShape::Distant | LightShape::Dome) { 1.0 } else { 12.0 };
+                    SceneLight::placed(shape, math::scale(color, intensity * gain), normalize, false, 0.53,
+                                       [0.3, 1.0, 0.8, 1.0], &m)
+                })
+                .collect();
+            SceneLights::new(&made)
+        })
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig { cases: 48, ..ProptestConfig::default() })]
 
@@ -1966,6 +2354,7 @@ mod tests {
             ao: bool,
             alpha: bool,
             (w, h) in (8usize..90, 8usize..70),
+            lights in scene_lights(),
         ) {
             let built: Vec<_> = boxes.iter().map(|(c, s, yaw, _)| boxed(*c, *s, *yaw)).collect();
             let floor = vec![[-6.0, -1.0, 4.0], [6.0, -1.0, 4.0], [6.0, -1.0, -8.0], [-6.0, -1.0, -8.0]];
@@ -1975,7 +2364,7 @@ mod tests {
                 .map(|((p, t), (_, _, _, color))| Mesh { base_color: *color, ..mesh(p, t, &one) })
                 .collect();
             meshes.push(mesh(&floor, &floor_tris, &one));
-            let f = Frame { shading, ao, alpha, ..frame(w, h, samples) };
+            let f = Frame { shading, ao, alpha, lights, ..frame(w, h, samples) };
             let buffer = raster::render_buffer(&f, &meshes);
             let cpu = composite::resolve(&f, &buffer);
             let gpu = resolve(&f, &buffer).map_err(|e| TestCaseError::fail(format!("GPU post pass failed: {e}")))?;
@@ -2265,6 +2654,101 @@ mod tests {
                 prop_assert!(again.color == gpu.color && again.depth == gpu.depth);
             }
         }
+    }
+
+    // -- see-through surfaces --------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 40, ..ProptestConfig::default() })]
+
+        /// See-through boxes (front and back faces blended, over each other
+        /// and over opaque ones and a floor) draw on the GPU as on the CPU,
+        /// in any shading, sample count, occlusion setting, over the
+        /// backdrop or transparent, unblurred or with the camera moving
+        /// over the shutter: the picture agrees as an opaque one does (the
+        /// weighted sums are half floats on the card), depth is the opaque
+        /// surfaces' on both, and the ids name the nearest surface,
+        /// see-through or not, but along edges.
+        #[test]
+        fn the_gpu_blends_see_through_surfaces_as_the_cpu_does(
+            boxes in prop::collection::vec((a_box(), prop::option::of(0.05f32..0.95)), 1..5),
+            samples in prop::sample::select(vec![1usize, 4, 8]),
+            shading in shading(), ao: bool, alpha: bool, moving: bool, cached: bool,
+            lights in scene_lights(),
+        ) {
+            let (w, h) = (64usize, 40usize);
+            let built: Vec<_> = boxes.iter().map(|((c, s, yaw, _), _)| boxed(*c, *s, *yaw)).collect();
+            let floor = vec![[-6.0, -1.0, 4.0], [6.0, -1.0, 4.0], [6.0, -1.0, -8.0], [-6.0, -1.0, -8.0]];
+            let floor_tris = vec![[0u32, 1, 2], [0, 2, 3]];
+            let one = [IDENTITY];
+            let mut meshes: Vec<Mesh> = built.iter().zip(&boxes)
+                .map(|((p, t), ((_, _, _, color), opacity))| Mesh {
+                    base_color: *color,
+                    opacity: opacity.unwrap_or(1.0),
+                    key: cached.then(|| MeshKey { id: new_id(), version: 1 }),
+                    ..mesh(p, t, &one)
+                })
+                .collect();
+            meshes.push(mesh(&floor, &floor_tris, &one));
+            let mut f = Frame { shading, ao, alpha, lights, ..frame(w, h, samples) };
+            if moving {
+                f.blur = crate::blur::Blur { samples: 16, motion: true, ..crate::blur::Blur::OFF };
+                f.blur.cameras[0] = f.view_to_world;
+                f.blur.cameras[1] = math::mul(&f.view_to_world, &translation(0.15, 0.05, 0.0));
+                f.blur.camera_keys = 2;
+            }
+            let cpu = raster::render(&f, &meshes);
+            let cache = Cache::default();
+            let (gpu, _) = render_ids_with_stats(&f, &meshes, cached.then_some(&cache), true)
+                .map_err(|e| TestCaseError::fail(format!("GPU failed: {e}")))?;
+            let off = id_disagreements(&cpu, &gpu, &meshes);
+            prop_assert!(off <= (w * h) / 50 + 2, "{} of {} pixels name something else", off, w * h);
+            let layers = crate::blur::layers(&f, &meshes);
+            let (color, depth) = if alpha { differences_within(&cpu, &gpu, 1.0 / layers as f32) } else { differences(&cpu, &gpu) };
+            // As the_gpu_blurs_as_the_cpu_does: upright box sides decided
+            // differently down a column, a layer's share off, are allowed
+            // two columns' worth.
+            let share = 1.0 / layers as f32 + 1e-4;
+            let over = |p: &[f32; 4], c: usize| if alpha { p[c] + (1.0 - p[3]) * 0.5 } else { p[c] };
+            let decided = cpu.color.iter().zip(&gpu.color)
+                .filter(|(a, b)| (0..3).any(|c| (encode(over(a, c)) - encode(over(b, c))).abs() > STEPS)
+                                 && (0..4).all(|c| (a[c] - b[c]).abs() <= share))
+                .count();
+            let color = color - decided.min(2 * h) as f32 / (w * h) as f32;
+            prop_assert!(color <= DIFFERING && depth <= DIFFERING, "color {color}, depth {depth}");
+        }
+    }
+
+    /// A see-through pane over an opaque one: the GPU's blend is the
+    /// CPU's to within a half float's rounding, not merely the same 8-bit
+    /// picture, and without see-through surfaces the frame is drawn as it
+    /// was (the opaque picture, every pixel).
+    #[test]
+    fn a_see_through_pane_blends_to_within_rounding() {
+        let (points, triangles) = quad();
+        // Both fill the frame, so no edge (which the two rasterisers may
+        // decide differently) is in it.
+        let filling = |z: f64| {
+            let mut m = translation(0.0, 0.0, z);
+            m[0] = 4.0;
+            m[5] = 4.0;
+            [m]
+        };
+        let (near, far) = (filling(4.0), filling(2.0));
+        let f = Frame { shading: Shading::Albedo, ao: false, ..frame(48, 32, 4) };
+        let back = || Mesh { base_color: [0.2, 0.7, 0.4], ..mesh(&points, &triangles, &far) };
+        for opacity in [0.1f32, 0.5, 0.9] {
+            let meshes = [back(), Mesh { base_color: [0.9, 0.2, 0.1], opacity, ..mesh(&points, &triangles, &near) }];
+            let cpu = raster::render(&f, &meshes);
+            let gpu = render(&f, &meshes, None, false).unwrap();
+            let worst = cpu.color.iter().zip(&gpu.color)
+                .map(|(a, b)| (0..4).map(|c| (a[c] - b[c]).abs()).fold(0.0f32, f32::max))
+                .fold(0.0f32, f32::max);
+            assert!(worst < 2e-3, "opacity {opacity}: off by {worst}");
+            assert!(cpu.depth == gpu.depth || cpu.depth.iter().zip(&gpu.depth).all(|(a, b)| (a - b).abs() < 1e-6));
+        }
+        let opaque = [back()];
+        agrees(differences(&raster::render(&f, &opaque), &render(&f, &opaque, None, false).unwrap()));
     }
 
     /// Off is off on the GPU too: with both blurs switched off, motion data

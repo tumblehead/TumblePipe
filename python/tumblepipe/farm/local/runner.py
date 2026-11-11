@@ -267,7 +267,8 @@ class Runner:
                 write(' Preparing HPM task '.center(100, '='))
                 command_hpm = self._hpm()
                 write(f'hpm executable: {" ".join(command_hpm)}')
-                env = local_task.task_env(self._environ, job.get('env_file'), job['data_dir'])
+                env = local_task.task_env(
+                    self._environ, job.get('env_file'), job['data_dir'], job.get('env'))
                 if job.get('env_file'):
                     write(f"Loading job environment from: {job['env_file']}")
                 job_dir = local_task.prepare_job_dir(job['manifest'])

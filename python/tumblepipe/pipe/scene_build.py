@@ -22,6 +22,9 @@ from tumblepipe.config.scene import (
     get_inherited_scene_ref,
 )
 from tumblepipe.config.timeline import get_frame_range, require_fps
+from tumblepipe.config.renderer import get_entity_render_settings
+from tumblepipe.pipe.usd import render_overrides
+from tumblepipe.pipe.usd.render_overrides import RenderOverride
 from tumblepipe.pipe.context import root_input
 from tumblepipe.pipe.paths import (
     get_next_version_path,
@@ -106,13 +109,41 @@ def shot_root(shot_uri: Uri) -> Uri | None:
     return None if scene_ref is None else Uri.parse(scene_ref)
 
 
+def _root_defaults_path() -> Path:
+    return api.storage.resolve(Uri.parse('config:/usd/root_default_prims.usda'))
+
+
+def planned_render_override(shot_uri: Uri) -> RenderOverride | None:
+    """The RenderSettings override the shot's next root layer carries
+    (``pipe.usd.render_overrides``); None when the project did not opt in."""
+    render = get_entity_render_settings(shot_uri)
+    if not render_overrides.applies(render):
+        return None
+    defaults_path = _root_defaults_path()
+    if not defaults_path.exists():
+        return None
+    return render_overrides.plan_for_defaults(render, defaults_path)
+
+
+def shot_render_override(shot_uri: Uri) -> RenderOverride | None:
+    """The override the shot's newest root layer carries, or None."""
+    version_path = latest_root_version_path(shot_uri)
+    if version_path is None:
+        return None
+    parameters = load_json(version_path / 'context.json').get('parameters', {})
+    return RenderOverride.from_json(parameters.get('render_override'))
+
+
 def root_layer_is_stale(shot_uri: Uri) -> bool:
     """True when the shot has no root layer, or its newest one names
-    another Root than the shot (or its sequence) now points at."""
+    another Root than the shot (or its sequence) now points at, or carries
+    another render override than its config now asks for."""
     if latest_root_version_path(shot_uri) is None:
         return True
     scene_ref, _ = get_inherited_scene_ref(shot_uri)
-    return shot_root(shot_uri) != scene_ref
+    if shot_root(shot_uri) != scene_ref:
+        return True
+    return shot_render_override(shot_uri) != planned_render_override(shot_uri)
 
 
 def export_scene_version(scene_uri: Uri) -> Path:
@@ -260,19 +291,26 @@ def generate_root_version(shot_uri: Uri) -> Path:
         end_frame=full_range.last_frame
     )
 
+    # The shot's configured camera and resolution, when the project opted
+    # in (#52): an over of the defaults' settings prim, stronger than them.
+    override = planned_render_override(shot_uri)
+    if override is not None:
+        usda_content += '\n\n' + render_overrides.override_usda(override) + '\n'
+
     # Write files
     version_path.mkdir(parents=True, exist_ok=True)
     store_text(output_path, usda_content)
 
     # Write context.json
+    parameters = {'scene': str(scene_ref) if scene_ref else None}
+    if override is not None:
+        parameters['render_override'] = override.to_json()
     context_path = version_path / 'context.json'
     store_json(context_path, {
         'uri': str(shot_uri),
         'department': 'root',
         'version': version_name,
-        'parameters': {
-            'scene': str(scene_ref) if scene_ref else None
-        }
+        'parameters': parameters,
     })
 
     return output_path

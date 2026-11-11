@@ -32,6 +32,10 @@ pub const MAX_BYTES: u64 = 256 * 1024;
 pub const DIR_ENV: &str = "TH_EVENTS_DIR";
 /// A config db file was written: `uri` is empty, `detail` the purpose.
 pub const CONFIG: &str = "config";
+/// A workfile version was committed: `uri` the entity, `detail` the department.
+pub const WORKFILE: &str = "workfile";
+/// An export version was finished: `uri` the entity, `detail` the department.
+pub const EXPORT: &str = "export";
 
 /// The per-user folder the journal lives in, on local disk.
 pub fn journal_dir() -> PathBuf {

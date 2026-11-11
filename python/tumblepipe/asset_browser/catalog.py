@@ -224,6 +224,7 @@ class PipelineCatalog(Catalog):
         self._container_menu = ContainerMenu(
             self._containers,
             open_entity_editor=lambda cid: self._ops.open_entity_editor_for(cid),
+            play_shots=lambda project, uris: self._ops.play_shot_uris(project, uris),
         )
         # Recipes: node clusters saved under <project>/recipes/ (see
         # recipes.py). Nodes: every HDA this package ships, package-wide
@@ -1045,6 +1046,11 @@ class PipelineCatalog(Catalog):
     def get_creation_fields(self, option_id, tags=frozenset()):
         return self._ops.creation_fields(option_id, tags)
 
+    def validate_creation(self, option_id, fields):
+        """Why the creation form's values would be refused, per field
+        (asked as the artist types, by a TumbleTrove with the hook)."""
+        return self._ops.validate_creation(option_id, fields)
+
     def create_entity(self, option_id, fields):
         """The new card's id, or None. A failure raises into the browser,
         which reports it."""
@@ -1090,6 +1096,27 @@ class PipelineCatalog(Catalog):
             nodes.is_node_id(asset.id)
             or containers.parse(asset.id) is not None
         )
+
+    def can_add_to_container(self, asset: Asset, collection_id: str) -> bool:
+        """The card menu's "Add to" targets (#28): only entity cards, and
+        only containers whose kind takes them (``containers.refusal``, the
+        rule the add enforces). Edits, library cards, node cards and
+        container cards join nothing; a shot is not offered an assets
+        Multi."""
+        ref = containers.parse(collection_id)
+        if ref is None:
+            return True
+        if (
+            self._kinds.owns(asset.id)
+            or nodes.is_node_id(asset.id)
+            or containers.parse(asset.id) is not None
+        ):
+            return False
+        return containers.refusal(ref, self._resolver.uri_for(asset.id)) is None
+
+    def can_refresh_thumbnail(self, asset: Asset) -> bool:
+        """An edit card has no thumbnail to refresh (#28)."""
+        return not edits.is_edit_id(asset.id)
 
     def delete_entity(self, asset_id):
         if containers.parse(asset_id) is not None:

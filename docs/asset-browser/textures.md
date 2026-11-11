@@ -22,7 +22,8 @@ A version counts once its `context.json` is there, so a publish that failed
 halfway is never read. A version whose `context.json` cannot be read (cut
 short, hand-edited, a sync tool's conflict copy) is skipped the same way. The
 newest *finished* version is the latest. Set names
-follow the entity name rule: letters and digits only. Two sets of one owner
+follow the entity name rule: letters and digits only, and not a Windows
+device name such as `CON` or `AUX`. Two sets of one owner
 cannot differ only by case (`rock` and `Rock` would be one folder on Windows
 and macOS): publishing the second is refused, and a library drop publishes
 into the existing spelling.

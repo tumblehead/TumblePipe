@@ -21,6 +21,7 @@
 //! keys.
 
 mod audio;
+mod board;
 mod burnin;
 mod colour;
 mod display;

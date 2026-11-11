@@ -28,6 +28,16 @@ from tumblepipe.farm.worker import ensure_dir, error, headline
 REQUIRED_AOVS = {'beauty', 'normal', 'albedo'}
 
 
+def husk_frame_args(render_range: BlockRange) -> list[str]:
+    """husk's frame flags for exactly the frames of ``render_range``: its
+    first, how many, and the step between them."""
+    return [
+        '--frame', str(render_range.first_frame),
+        '--frame-count', str(len(render_range)),
+        '--frame-inc', str(render_range.step_size),
+    ]
+
+
 def main(
     tile_count: int,
     render_range: BlockRange,
@@ -95,8 +105,7 @@ def main(
             '--allowed-procedurals', 'all',
             '--threads', '-1',
             '--engine', 'xpu',
-            '--frame', str(render_range.first_frame),
-            '--frame-count', str(len(render_range))
+            *husk_frame_args(render_range),
         ]
         # A render layer: the stage's RenderPass for it holds out the layers
         # above and hides the layers below (pipe.usd.render_passes).
@@ -242,8 +251,10 @@ def main(
     print('Success')
     return 0
 
-def from_config(config: dict, render_range: BlockRange) -> int:
-    """Render ``render_range`` as the job's context.json describes."""
+def from_config(config: dict, frame_span: BlockRange) -> int:
+    """Render the stepped frames of ``frame_span`` as the job's context.json
+    describes (``worker.stepped``)."""
+    render_range = worker.stepped(frame_span, config)
     headline('Config')
     print(json.dumps(config, indent=4))
 

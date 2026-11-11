@@ -67,9 +67,16 @@ listed, in pool order (the pipeline order the run follows), departments
 before the workfile's own included. Up to TumblePipe 1.97.1 only the
 workfile's department and those downstream of it were listed, and a lookdev
 export built in the model workfile never published; up to 1.47.1 a Multi
-workfile listed only its own department. Columns: **Task, Department, Channel, Version, First, Last,
-Status**. *Version* shows the version currently on disk and is replaced by
-the version a task wrote once it completes. *Channel* shows a task's own
+workfile listed only its own department. Columns: **Task, Department, Channel, Current, First, Last,
+Status**. *Current* shows the version currently on disk (not the one the run
+will write) and is replaced by the version a task wrote once it completes in
+this session; a group row such as `Export (model)` shows its children's
+versions, so a collapsed group no longer reads `-`. Up to 1.101.0 the column
+was headed *Version*, and read like the version the run was about to write.
+*Status* gives a task finished in this session a tick; on *This machine* or
+the *Render farm* a publish, build or render row that only submitted its job
+gets an amber **↗** (queued) instead, with a tooltip pointing at the Farm
+Manager. Validation rows still run in the session and keep the tick. *Channel* shows a task's own
 channel; a row that covers several (the `Validate`, `Export (<dept>)` and
 `Build USD` rows) lists them all, `default` first, so a collapsed entity
 still shows every channel it publishes. Up to 1.66.0 those rows read `-` and
@@ -267,7 +274,7 @@ A department with no entry runs nothing.
 | Context / department | Validators |
 |---|---|
 | assets / model | `model_structure`, `rest_geometry` |
-| assets / rig | `rig_structure` (a LOP rig only: `th::export_rig` is not validated) |
+| assets / rig | `rig_structure` (a LOP rig only; a `th::export_rig` gets its own `Validate rig: <asset>` row, the rig checks below) |
 | assets / blendshape | `blendshape_structure` |
 | assets / groom | `groom_structure` |
 | assets / lookdev | `lookdev_structure`, `material_bindings` |
@@ -279,7 +286,9 @@ A department with no entry runs nothing.
 (they are logged). When a validation row is ticked and errors are found,
 the **Validation Issues - `<dept>`** dialog opens ("Validation failed for
 `<entity>` (`<dept>`)") listing each issue with its suggestion, a checkbox
-**Apply this choice to remaining validations**, and **Continue Anyway** /
+**Apply this choice to remaining validations** (ticked by default, so a
+Multi publish asks once instead of once per shot; untick it to answer shot
+by shot — up to 1.101.0 it started unticked), and **Continue Anyway** /
 **Cancel Export** (the default). Cancelling marks the department's tasks
 skipped without an error report. The export node's own **Validate** button
 runs the same set read-only and answers **Validation Passed**, **Validation
@@ -290,7 +299,8 @@ Passed With Warnings**, or the issue list with a **Close** button.
 | `model_structure`, `blendshape_structure`, `groom_structure`, `lookdev_structure` | `Asset prim not found at path: <path>` (author the asset prim — `create_asset_model` does); `Asset prim must be of type 'Xform', found '<type>'`; `Missing required '<geo|blshp|groom|mtl>' child prim` (create the Scope under the asset); `'<name>' prim must be of type 'Scope', found '<type>'`. A wrong type with no transform on it only warns (`... it will be published as a Scope` / `as an Xform`) and the export retypes it in the published layer: an asset prim with no type or a Scope becomes an Xform; a geo/blshp/groom/mtl with no type or an Xform (what SOP Import makes) becomes a Scope. A transform on it, or any other type, stays an error. Warns `No entity URI provided` when the export node's Entity is unresolved. |
 | `rig_structure` | `Asset prim not found at path: <path>`; `No APEX character at or below <asset>: nothing for an APEX Animate LOP to animate` (build the character on the stage — SOP Import APEX Scene in Character mode, APEX SOP Rig Builder, Configure APEX Rig — before the `export_layer`; a SOP rig publishes through `th::export_rig`); `APEX character outside the asset prim <asset>` (set the SOP Import APEX Scene's Import Path Prefix to the asset prim or below it: its default `/$OS` puts the character where no shot composes it). No `geo` Scope is required. Warns `No entity URI provided`. |
 | `rest_geometry` | Warnings only: `Mesh missing rest positions (primvars:rest or primvars:Pref)`, `Mesh missing normals (primvars:normals or normals)`. |
-| `material_bindings` | Warning only: `Mesh has no material binding`. |
+| `material_bindings` | `No mesh under <asset> has a material bound (N mesh(es))`: the lookdev binds nothing (an empty material assigner); fill its Primitives. When some meshes are bound, each unbound one only warns `Mesh has no material binding`. A material counts when it resolves for the mesh: a binding on a parent or through a collection is enough. Meshes outside the asset prim (a lookdev studio's floor) are not checked. Up to 1.101.0 everything was a warning, so a lookdev with empty assigners published clean, and only a binding on the mesh itself counted. |
+| rig checks (`Validate rig: <asset>`, on by default; the dialog opens for warnings too) | `Main_Viz is 1: the rig would publish with its viz on` — the Viz slider on the rig's Main control, which TumbleRig's `th::apex_joints` creates at 1 (the suggestion names the `th::apex_joints` nodes upstream; it is not a parameter on them): set it to 0 on the rig before `th::export_rig`. `No shape of the rig has a path attribute …` — `th::animate` would put the geometry at `/Geometry` and every animation publish would fail `shot_root_prims`; give the geometry a `path` under the asset prim before it is packed. `<shape> has geometry outside <asset> (…)` — a path that does not compose with the asset. Warns `<shape> (N points) has no normals …` for a shape of 50,000 points or more with no normals and no normals node in the graph. Up to 1.101.0 the path checks did not exist and the viz suggestion did not say where Main_Viz lives. |
 | `shot_root_prims` | `Disallowed root prim '<name>'. Only asset categories, collections, lights, cameras, Render, and scene are allowed.` — reparent the content under an allowed root. Houdini's own `/HoudiniLayerInfo` is ignored. A `/_METADATA` (from an upstream layer published before metadata moved to customData) is disallowed like any other root: re-export that upstream department. |
 | `cameras` | `No Camera prims found in stage` (add one under `/cameras/`); `Render camera path not found in stage: <path>` (fix Camera Path on the Render Settings LOP). Warnings for bad clipping range, non-positive near clip, missing or non-positive `focalLength`. |
 | `render_settings` | `the stage carries no UsdRender.Settings prim …` (or several — exactly one is required); `RenderSettings missing 'camera' relationship`, `… has no target`, `RenderSettings camera target does not exist: <path>`. Warnings when `products` is missing or empty. |

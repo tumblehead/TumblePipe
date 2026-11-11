@@ -20,7 +20,8 @@ config = {
         'last_frame': 'int',
         'step_size': 'int',
         'batch_size': 'int',
-        'copy_to_edit': 'bool'
+        'copy_to_edit': 'bool',
+        'cut_range': ['int', 'int']             # optional (specs.render_pipeline)
     },
     'composite': {...},     # optional: the re-comp after the render (specs.composite.valid_recomp)
     'tasks': {

@@ -25,17 +25,32 @@ struct Globals {
     tier2: vec4<f32>,
     // AO_FADE_PX.0, AO_FADE_PX.1, AO_GAIN, AO_BIAS
     ao: vec4<f32>,
-    // per light: direction from the surface (unit, camera space), intensity
-    lights: array<vec4<f32>, 3>,
-    // SKY, GROUND, SPECULAR, SHININESS
-    ambient: vec4<f32>,
+    // lights::Lighting (gpu.rs Lights): the sky ambient and in w the lamp
+    // count; the ground ambient and in w the lamp the highlight is of; the
+    // highlight's strength, SHININESS, 1 = tinted by that lamp's light
+    sky: vec4<f32>,
+    ground: vec4<f32>,
+    spec: vec4<f32>,
     // CLAY_ALBEDO, 1 / layers
     clay: vec4<f32>,
     // BACKDROP_TOP, BACKDROP_BOTTOM (display-referred), 1 = transparent
-    // background (no backdrop, alpha = coverage; composite.rs's Frame::alpha)
+    // background (no backdrop, alpha = coverage; composite.rs's Frame::alpha),
+    // 1 = see-through surfaces to blend over each sample (accum_tex, reveal_tex)
     backdrop: vec4<f32>,
     // composite::rotation_pattern, row by row, 4 a vec4
     pattern: array<vec4<u32>, 4>,
+    // the lamps, `sky.w` of them
+    lamps: array<Lamp, 16>,
+};
+
+// lights::Lamp, as gpu.wgsl's: xyz the unit direction towards it (w 0,
+// directional) or its position (w 1 a point, 2 a point lighting the side it
+// faces), camera space; rgb its light (a point's at unit distance), w the
+// least squared distance; xyz the unit direction a facing lamp emits towards.
+struct Lamp {
+    at: vec4<f32>,
+    color: vec4<f32>,
+    axis: vec4<f32>,
 };
 
 struct Layer {
@@ -59,6 +74,11 @@ struct Layer {
 @group(0) @binding(7) var<storage, read_write> across: array<f32>;
 @group(0) @binding(8) var<storage, read_write> color: array<vec4<f32>>;
 @group(0) @binding(9) var<storage, read_write> depth: array<f32>;
+// the see-through surfaces' weighted sums (lit colour times opacity, and
+// opacity) and revealage, per layer (composite.rs Samples::accum, reveal);
+// read only when g.backdrop.w says there are any
+@group(0) @binding(10) var accum_tex: texture_2d_array<f32>;
+@group(0) @binding(11) var reveal_tex: texture_2d_array<f32>;
 
 fn unproject(sx: f32, sy: f32, d: f32) -> vec3<f32> {
     let ndc_x = sx * g.scale.x - 1.0;
@@ -283,8 +303,36 @@ fn srgb_to_linear(v: f32) -> f32 {
     return pow((v + 0.055) / 1.055, 2.4);
 }
 
-// composite::light.
-fn light(shading: u32, surface: vec3<f32>, n: vec3<f32>, v: vec3<f32>) -> vec3<f32> {
+// lights::Lamp::toward (gpu.wgsl's toward).
+struct Toward {
+    l: vec3<f32>,
+    e: vec3<f32>,
+};
+
+fn toward(i: u32, p: vec3<f32>) -> Toward {
+    let lamp = g.lamps[i];
+    var t: Toward;
+    if (lamp.at.w == 0.0) {
+        t.l = lamp.at.xyz;
+        t.e = lamp.color.xyz;
+        return t;
+    }
+    let d = lamp.at.xyz - p;
+    let dd = dot(d, d);
+    t.l = vec3<f32>(0.0, 0.0, 1.0);
+    if (dd > 0.0) {
+        t.l = d * (1.0 / sqrt(dd));
+    }
+    var f = 1.0 / max(dd, lamp.color.w);
+    if (lamp.at.w == 2.0) {
+        f = f * max(-dot(lamp.axis.xyz, t.l), 0.0);
+    }
+    t.e = lamp.color.xyz * f;
+    return t;
+}
+
+// composite::light: the surface at camera-space point `p`.
+fn light(shading: u32, surface: vec3<f32>, n: vec3<f32>, v: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
     if (shading == 2u) {
         return surface;
     }
@@ -295,17 +343,27 @@ fn light(shading: u32, surface: vec3<f32>, n: vec3<f32>, v: vec3<f32>) -> vec3<f
     if (shading == 1u) {
         base = g.clay.xyz;
     }
-    var k = g.ambient.y + (g.ambient.x - g.ambient.y) * (0.5 + 0.5 * n.y);
-    for (var i = 0u; i < 3u; i = i + 1u) {
-        k = k + g.lights[i].w * max(dot(n, g.lights[i].xyz), 0.0);
+    var k = g.ground.xyz + (g.sky.xyz - g.ground.xyz) * (0.5 + 0.5 * n.y);
+    let count = u32(g.sky.w);
+    for (var i = 0u; i < count; i = i + 1u) {
+        let t = toward(i, p);
+        k = k + t.e * max(dot(n, t.l), 0.0);
     }
-    let half_vector = safe_normalize(g.lights[0].xyz + v);
-    let nh = max(dot(n, half_vector), 0.0);
-    var spec = 0.0;
-    if (nh > 0.0) {
-        spec = g.ambient.z * pow(nh, g.ambient.w);
+    var spec = vec3<f32>(0.0);
+    if (count > 0u && g.spec.x > 0.0) {
+        let t = toward(u32(g.ground.w), p);
+        let half_vector = safe_normalize(t.l + v);
+        let nh = max(dot(n, half_vector), 0.0);
+        if (nh > 0.0) {
+            let s = g.spec.x * pow(nh, g.spec.y);
+            if (g.spec.z != 0.0) {
+                spec = t.e * s;
+            } else {
+                spec = vec3<f32>(s);
+            }
+        }
     }
-    return base * k + vec3<f32>(spec);
+    return base * k + spec;
 }
 
 // composite::resolve: this layer's sample of each pixel, lit and occluded
@@ -330,12 +388,13 @@ fn accumulate(@builtin(global_invocation_id) id: vec3<u32>) {
         let nd = textureLoad(normal_tex, texel(id.xy), l, 0);
         let sx = f32(id.x) + 0.5 + layer.offset.x;
         let sy = f32(id.y) + 0.5 + layer.offset.y;
-        let v = safe_normalize(-unproject(sx, sy, nd.w));
+        let p = unproject(sx, sy, nd.w);
+        let v = safe_normalize(-p);
         var ao = 1.0;
         if (g.mode.y == 1u) {
             ao = occlusion[at];
         }
-        c = light(g.mode.z, a.xyz, nd.xyz, v) * ao;
+        c = light(g.mode.z, a.xyz, nd.xyz, v, p) * ao;
     } else {
         var t = 0.0;
         if (h > 1u) {
@@ -346,6 +405,21 @@ fn accumulate(@builtin(global_invocation_id) id: vec3<u32>) {
             b = srgb_to_linear(g.backdrop.x + (g.backdrop.y - g.backdrop.x) * t);
         }
         c = vec3<f32>(b, b, b);
+    }
+    // composite::resolve's see-through blend: what is behind shows by the
+    // revealage, the surfaces' weighted mean colour by the rest; where
+    // nothing opaque is, the rest is coverage too.
+    if (g.backdrop.w != 0.0) {
+        let s = textureLoad(accum_tex, texel(id.xy), l, 0);
+        if (s.w > 0.0) {
+            let r = textureLoad(reveal_tex, texel(id.xy), l, 0).x;
+            let over = 1.0 / s.w;
+            let k = 1.0 - r;
+            c = vec3<f32>(c.x * r + s.x * over * k, c.y * r + s.y * over * k, c.z * r + s.z * over * k);
+            if (z >= 1.0) {
+                covered = k;
+            }
+        }
     }
     if (layer.index.x == 0u) {
         color[at] = vec4<f32>(c, covered);

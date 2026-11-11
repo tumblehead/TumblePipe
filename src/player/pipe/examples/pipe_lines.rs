@@ -78,6 +78,14 @@ fn answer(request: &Value) -> Result<Value, String> {
         "shot" => serde_json::to_value(discovery::get_shot(&project, &uri(request)?)?).map_err(|e| e.to_string())?,
         "latest_version" => json!(versions::latest_version_path(Path::new(text(request, "path")?)).map(|p| slashed(&p))),
         "next_version" => json!(slashed(&versions::next_version_path(Path::new(text(request, "path")?)))),
+        "workspace" => {
+            let ws = th_pipe::workfiles::department_workspace(&project, &uri(request)?, text(request, "department")?)?;
+            json!({"workfile_uri": ws.workfile_uri.to_string(), "path": slashed(&ws.path)})
+        }
+        "latest_workfile" => {
+            let ws = th_pipe::workfiles::department_workspace(&project, &uri(request)?, text(request, "department")?)?;
+            json!(th_pipe::workfiles::latest_hip(&ws)?.map(|p| slashed(&p)))
+        }
         "folders" => json!(entities::entity_folders(&project, &uri(request)?)?.iter().map(|(_, f)| slashed(f)).collect::<Vec<_>>()),
         "has_files" => json!(entities::has_entity_files(&project, &uri(request)?)?),
         "delete" => {

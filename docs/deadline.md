@@ -232,12 +232,20 @@ on Deadline, and runs in the background as a render node would run it.
   queued and stops by itself once the queue is empty. Closing Houdini does not
   stop it. Low priority means a render waits for your own work: while the
   machine is busy, a task can take up to a minute just to start.
-- **Per task, it does what the HPM plugin does:** it loads the job's env file,
+- **Per task, it does what the HPM plugin does:** it loads the job's env file
+  (then the job entry's own `env`: a farm job run here with *Run on this
+  machine* sets `TH_FARM_BACKEND=local` over its Deadline env file),
   sets `TH_FARM_DATA`, copies the manifest into a scratch dir, runs
   `hpm install` there, then runs `hpm run task -- <context> <first> <last>`.
   Before that it strips the session that started it (Houdini's variables,
   `PYTHONPATH`, `$HFS` on `PATH`, the pipeline's `TH_*`/`TT_*`/`HPM_*`). A
   task sees only this machine's environment plus the job's, as on the farm.
+- **Time limit:** a job's task timeout counts per frame, as on Deadline
+  (TumblePipe submits every job with frame timeouts on). The runner keeps one
+  limit per job, so each task gets the limit times the frames in the job's
+  largest task. A 10-frame render chunk with a 45-minute limit gets
+  7.5 hours. Up to 1.101.0 a local task got the per-frame limit as its whole
+  limit, so long chunks timed out here that the farm would have finished.
 - **hpm:** the runner keeps its own `hpm` (artist machines have none on
   `PATH`). It downloads `$HPM_VERSION` (else the plugin's pinned default)
   from the hpm releases, as the plugin does on a render node.
@@ -382,6 +390,19 @@ Desktop (`python -m tumblepipe.farm.manager`).
   batches. Farm batches are deleted from Deadline; local ones are taken off
   this machine's list. Outputs stay. The farm is read again just before the
   delete, and a batch retried in the meantime is left alone.
+- **Run on this machine:** a farm job that cannot run on the farm (no
+  licence free on the workers that take it, say) can run here instead.
+  Right-click a single farm job ▸ *Run on this machine…*. It is enabled
+  for a failed, queued, pending or suspended job. The job and every farm
+  job waiting on it that has not completed (a notify waiting on an
+  encode, say) go to this machine's queue as one batch named
+  "… (on this machine)". They use the same job files (manifest, env file,
+  data folder), so nothing is exported or rendered again, and what they
+  submit goes to this machine. The dialog lists the jobs and asks whether
+  to suspend the farm copies (the default, so the farm does not run them
+  twice; *Resume* brings them back) or leave them. It is refused for a
+  job that is rendering or completed, for a non-HPM job, and when one of
+  the jobs waits on another unfinished farm job outside that batch.
 - **Right-click menus:** on a job, the same actions plus *Open job folder*,
   *Open output folder*, *Copy job ID* and *Copy name*. On a task, *Open log
   folder*, *Copy log*, *Copy frames*, *Copy error*, and the job actions (they

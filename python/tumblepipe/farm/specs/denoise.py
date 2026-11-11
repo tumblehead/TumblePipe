@@ -2,8 +2,8 @@
 (``workers/denoise.py``).
 
 The job builder consumes the scheduling keys itself and writes only the
-path keys and ``force_cpu`` into the worker's context.json; Deadline
-appends the frame range on the command line. Hence two schemas:
+path keys, ``force_cpu`` and ``step_size`` into the worker's context.json;
+Deadline appends the task's first and last frame on the command line. Hence two schemas:
 ``is_valid_config`` (the builder's) and ``is_valid_context`` (the worker's).
 
 config = {
@@ -28,6 +28,7 @@ from tumblepipe.farm.checks import (
     check_str_dict,
     valid_frame_batches,
     valid_job_header,
+    valid_step,
 )
 
 
@@ -56,6 +57,7 @@ def is_valid_context(config) -> bool:
     """
     if not _valid_paths(config): return False
     if not check_bool(config, 'force_cpu'): return False
+    if not valid_step(config): return False
     return True
 
 

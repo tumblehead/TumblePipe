@@ -171,6 +171,20 @@ def slots(group: groups_mod.Group) -> list[Slot]:
     return sorted(result, key=lambda slot: (slot.start, str(slot.member)))
 
 
+def play_order(members: list[Uri], shared: bool, starts: dict[str, int]) -> list[Uri]:
+    """The order a Multi's members play in (#26): on a shared timeline the
+    placed members by where they sit (``starts``, member URI string ->
+    frame), then any not placed, in member order; without one, member
+    order. Every member plays exactly once."""
+    if not shared:
+        return list(members)
+    placed = sorted(
+        (m for m in members if str(m) in starts),
+        key=lambda m: (starts[str(m)], str(m)),
+    )
+    return placed + [m for m in members if str(m) not in starts]
+
+
 def time_offset(group: groups_mod.Group | None, member_uri: Uri) -> int:
     """How far ``member_uri`` is moved on ``group``'s shared timeline.
 
@@ -189,25 +203,38 @@ def shared_span(group: groups_mod.Group) -> FrameRange | None:
     """The shared timeline from the first member's first frame to the last
     member's last frame, the outermost rolls included. None when nothing is
     placed."""
-    placed = slots(group)
-    if not placed:
+    return span_of([slot.shared_range for slot in slots(group)])
+
+
+def span_of(ranges) -> FrameRange | None:
+    """The range from the earliest start to the latest end of ``ranges``
+    (None entries skipped), the outermost rolls included. None when there
+    is none."""
+    ranges = [frame_range for frame_range in ranges if frame_range is not None]
+    if not ranges:
         return None
-    first = min(placed, key=lambda slot: slot.shared_range.start_frame)
-    last = max(placed, key=lambda slot: slot.shared_range.end_frame)
-    first_range = first.shared_range
-    last_range = last.shared_range
-    first_frame = min(
-        slot.shared_range.full_range().first_frame for slot in placed
-    )
-    last_frame = max(
-        slot.shared_range.full_range().last_frame for slot in placed
-    )
+    first_range = min(ranges, key=lambda frame_range: frame_range.start_frame)
+    last_range = max(ranges, key=lambda frame_range: frame_range.end_frame)
+    first_frame = min(r.full_range().first_frame for r in ranges)
+    last_frame = max(r.full_range().last_frame for r in ranges)
     return FrameRange(
         first_range.start_frame,
         last_range.end_frame,
         first_range.start_frame - first_frame,
         last_frame - last_range.end_frame,
     )
+
+
+def creation_span(group: groups_mod.Group) -> FrameRange | None:
+    """The playbar a new workfile of ``group`` starts with (#39): the shared
+    timeline when it has one, else the span of the members' own ranges (an
+    assets Multi's members all at 1001-1100 open at 1001-1100, not at
+    Houdini's 1-240). None when no member has a range."""
+    if group.shared_timeline:
+        span = shared_span(group)
+        if span is not None:
+            return span
+    return span_of(get_frame_range(member) for member in group.members)
 
 
 def set_timeline(group_uri: Uri, shared: bool, bookmarks: bool):
@@ -254,3 +281,61 @@ def repack(group_uri: Uri):
         group_uri, group.shared_timeline, group.timeline_bookmarks,
         pack(group.members, _member_ranges(group.members)),
     )
+
+
+def overlaps(
+    starts: dict[str, int], ranges: dict[str, FrameRange | None],
+) -> list[tuple[str, str]]:
+    """The placed members whose own frames run into a later member's.
+
+    Each pair is ``(earlier, later)`` by start, ``later`` starting on or
+    before the last frame ``earlier`` reaches (rolls not counted: the rolls
+    of neighbouring shots overlap, as continuous action does). A member
+    without a start or a frame range is not on the timeline.
+    """
+    placed = sorted(
+        (start, key) for key, start in starts.items()
+        if ranges.get(key) is not None
+    )
+    found = []
+    for i, (start, key) in enumerate(placed):
+        frame_range = ranges[key]
+        last = start + frame_range.end_frame - frame_range.start_frame
+        for later_start, later in placed[i + 1:]:
+            if later_start > last:
+                break
+            found.append((key, later))
+    return found
+
+
+def overlapping(group: groups_mod.Group) -> list[tuple[str, str]]:
+    """:func:`overlaps` on a Multi's shared timeline; [] when it is off."""
+    if not group.shared_timeline:
+        return []
+    members = [str(member) for member in group.members]
+    starts = {k: v for k, v in group.timeline_starts.items() if k in members}
+    return overlaps(starts, _member_ranges(group.members))
+
+
+def overlapping_multis() -> dict[str, list[tuple[str, str]]]:
+    """Every shared-timeline shots Multi whose members overlap: its URI
+    string -> the overlapping pairs."""
+    found = {}
+    for group in groups_mod.list_groups('shots'):
+        pairs = overlapping(group)
+        if pairs:
+            found[str(group.uri)] = pairs
+    return found
+
+
+def new_overlaps(
+    before: dict[str, list[tuple[str, str]]],
+    after: dict[str, list[tuple[str, str]]],
+) -> dict[str, list[tuple[str, str]]]:
+    """The Multis of ``after`` with an overlap ``before`` did not have, each
+    with every pair it has now. An edit warns about what it caused, not
+    about overlaps someone already chose to keep."""
+    return {
+        key: pairs for key, pairs in after.items()
+        if set(pairs) - set(before.get(key, ()))
+    }

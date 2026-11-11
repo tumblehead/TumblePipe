@@ -170,11 +170,7 @@ def on_loaded(kwargs):
 def render_var_problems(stage) -> list[str]:
     """Every RenderVar on ``stage`` whose plane the farm cannot read, and
     every pair making one AOV (``pipe.usd.render_vars``)."""
-    from tumblepipe.pipe.usd.render_vars import (
-        AOV_NAME_ATTR,
-        plane_problem,
-        twin_problems,
-    )
+    from tumblepipe.pipe.usd.render_vars import twin_problems, var_problems
 
     paths = []
     problems = []
@@ -183,11 +179,7 @@ def render_var_problems(stage) -> list[str]:
             continue
         path = str(prim.GetPath())
         paths.append(path)
-        attr = prim.GetAttribute(AOV_NAME_ATTR)
-        plane = attr.Get() if attr and attr.HasValue() else None
-        problem = plane_problem(path, plane)
-        if problem is not None:
-            problems.append(problem)
+        problems.extend(var_problems(prim))
     return problems + twin_problems(paths)
 
 

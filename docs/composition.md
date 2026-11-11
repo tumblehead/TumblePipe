@@ -1024,6 +1024,21 @@ because a preview wants one raw colour buffer, not the Karma LPE render vars
 the project's products order. See [Playblast](compositing.md#playblast) and
 `scripts/debug_playblast.py`.
 
+#### The shot's configured camera and resolution
+
+The settings prim itself stays the project's, in `root_default_prims.usda`.
+When the project opts in (`render.apply_config`, see
+[the project config](configuration.md#the-project-config)), each shot's root
+layer (`generate_root_version`) appends an `over` of that prim, at the path
+`find_render_settings_prim_path` finds on the defaults stage, with the shot's
+resolved `resolution` and, only when it names a camera on the defaults stage,
+its `camera` rel. The root layer sublayers the defaults, so the `over` is
+stronger, and everything downstream (collapse, husk, playblast) sees the
+shot's values without knowing about the setting. The root layer's
+`context.json` records the override (`parameters.render_override`);
+`root_layer_is_stale` compares it with what the config now asks for
+(`pipe/usd/render_overrides.py`, issue #52).
+
 Still hardcoded and *not* covered by this: the `asset_thumbnail`,
 `lookdev_studio` and `lpe_tags` HDAs. The render-settings and camera
 validators (`pipe/houdini/validators/`) were in this list until they were

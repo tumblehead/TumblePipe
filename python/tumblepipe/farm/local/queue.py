@@ -113,13 +113,23 @@ def write_json(path: Path, data) -> None:
             time.sleep(0.05)
 
 
+def _write_pending(path: Path) -> bool:
+    """True while a :func:`write_json` of ``path`` has its temp file down."""
+    return any(path.parent.glob(f'.{path.name}.*.tmp'))
+
+
 def read_json(path: Path, default=None):
     """``path`` parsed, or ``default`` when it does not exist."""
+    path = Path(path)
     for attempt in range(20):
         try:
-            return json.loads(Path(path).read_text(encoding='utf-8'))
+            return json.loads(path.read_text(encoding='utf-8'))
         except FileNotFoundError:
-            return default
+            # Windows' replace can leave the name missing for a moment
+            # (seen under load); a write in flight means it is coming back.
+            if attempt == 19 or not (_write_pending(path) or path.exists()):
+                return default
+            time.sleep(0.05)
         except (PermissionError, json.JSONDecodeError):
             # Mid-replace on Windows; our writes are whole-file replaces, so
             # a torn read clears up at once.
@@ -157,6 +167,23 @@ def task_spans(frames: list[int], chunk_size: int) -> list[list[int]]:
         [frames[i], frames[min(i + chunk_size, len(frames)) - 1]]
         for i in range(0, len(frames), chunk_size)
     ]
+
+
+def task_timeout(limit_seconds, frames: list[int], chunk_size: int, per_frame: bool = True) -> int:
+    """The runner's time limit for each task, in seconds (0: none).
+
+    Every job TumblePipe submits to Deadline sets ``EnableFrameTimeouts``:
+    Deadline multiplies the task timeout by the frames in the task. The
+    runner keeps one limit per job, so it takes the largest task's, and a
+    task here gets at least the time it gets on the farm (a 10-frame render
+    chunk with a 45 minute limit ran 45 minutes here, 7.5 hours there).
+    """
+    limit = int(limit_seconds or 0)
+    if limit <= 0:
+        return 0
+    if not per_frame:
+        return limit
+    return limit * max(1, min(int(chunk_size), len(frames)))
 
 
 # ── batches ───────────────────────────────────────────────

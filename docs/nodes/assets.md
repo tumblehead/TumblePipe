@@ -638,7 +638,7 @@ Source: [`otls/cop_th.export_texture.1.0`](../../otls/cop_th.export_texture.1.0/
 |---|---|---|
 | Owner | Asset | Publish into an asset's sets, or the project library |
 | Entity | `from_context` | The asset, when Owner is Asset |
-| Texture Set | *(empty)* | The set's name: letters and digits. A name that differs from an existing set only by case is refused |
+| Texture Set | *(empty)* | The set's name: letters and digits, not a Windows device name (`CON`, `AUX`, `COM1`...). A name that differs from an existing set only by case is refused |
 | Format | OpenEXR | The file format every map is written in (EXR, PNG, TIFF, JPEG) |
 | Status | | The newest published version and which inputs are connected |
 | Publish | | Write the connected inputs and publish them |

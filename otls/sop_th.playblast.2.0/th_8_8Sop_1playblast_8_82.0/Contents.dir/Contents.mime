@@ -2,6 +2,18 @@ MIME-Version: 1.0
 Content-Type: multipart/mixed; boundary="HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY"
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPfallbacks"
+Content-Type: application/external-reference
+
+.OPfallbacks
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename=".OPdummydefs"
+Content-Type: application/external-reference
+
+.OPdummydefs
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="node_type"
 Content-Type: text/plain
 
@@ -22,7 +34,7 @@ sopflags sopflags =
 comment ""
 position 0 0
 connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault off exposed on
+flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
 outputsNamed3
 {
 }
@@ -39,7 +51,7 @@ stat
   author tumblehead@judas-3070
   access 0777
 }
-color UT_Color RGB 0.631373 0.870588 1 
+color UT_Color RGB 0.8 0.8 0.8 
 delscript ""
 exprlanguage hscript
 end
@@ -141,7 +153,7 @@ Content-Type: text/plain
 objflags objflags =  origin off
 pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
 comment ""
-position 0 3.5574
+position 3.9536 5.76436
 connectornextid 0
 flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
 outputsNamed3
@@ -220,997 +232,6 @@ Content-Type: text/plain
 		"value":"___EXTERNAL___"
 	}
 }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera.init"
-Content-Type: text/plain
-
-type = lopimportcam
-matchesdef = 0
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera.def"
-Content-Type: text/plain
-
-objflags objflags =  origin off
-pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
-comment ""
-position -1.63485 3.50291
-connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage python
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera.spareparmdef"
-Content-Type: text/plain
-
-    group {
-        name    "folder0"
-        label   "Main"
-
-        parm {
-            name    "loppath"
-            baseparm
-            label   "LOP Path"
-            export  all
-        }
-        parm {
-            name    "primpath"
-            baseparm
-            label   "Primitive Path"
-            export  all
-        }
-        parm {
-            name    "xformtype"
-            baseparm
-            label   "Transform Type"
-            export  all
-        }
-        parm {
-            name    "use_dcolor"
-            baseparm
-            label   "Set Wireframe Color"
-            export  none
-        }
-        parm {
-            name    "dcolor"
-            baseparm
-            label   "Wireframe Color"
-            export  none
-        }
-        parm {
-            name    "picking"
-            baseparm
-            label   "Viewport Selecting Enabled"
-            export  none
-        }
-        parm {
-            name    "pickscript"
-            baseparm
-            label   "Select Script"
-            export  none
-        }
-        parm {
-            name    "caching"
-            baseparm
-            label   "Cache Object Transform"
-            export  none
-        }
-        parm {
-            name    "xOrd"
-            baseparm
-            label   "Transform Order"
-            invisible
-            joinnext
-            export  none
-        }
-        parm {
-            name    "rOrd"
-            baseparm
-            label   "Rotate Order"
-            nolabel
-            invisible
-            export  none
-        }
-        parm {
-            name    "t"
-            baseparm
-            label   "Translate"
-            invisible
-            export  none
-        }
-        parm {
-            name    "r"
-            baseparm
-            label   "Rotate"
-            invisible
-            export  none
-        }
-        parm {
-            name    "s"
-            baseparm
-            label   "Scale"
-            invisible
-            export  none
-        }
-        parm {
-            name    "p"
-            baseparm
-            label   "Pivot Translate"
-            invisible
-            export  none
-        }
-        parm {
-            name    "pr"
-            baseparm
-            label   "Pivot Rotate"
-            invisible
-            export  none
-        }
-        parm {
-            name    "scale"
-            baseparm
-            label   "Uniform Scale"
-            invisible
-            export  none
-        }
-        parm {
-            name    "pre_xform"
-            baseparm
-            label   "Modify Pre-Transform"
-            invisible
-            export  none
-        }
-        parm {
-            name    "keeppos"
-            baseparm
-            label   "Keep Position When Parenting"
-            invisible
-            export  none
-        }
-        parm {
-            name    "childcomp"
-            baseparm
-            label   "Child Compensation"
-            invisible
-            export  none
-        }
-        parm {
-            name    "constraints_on"
-            baseparm
-            label   "Enable Constraints"
-            export  none
-        }
-        parm {
-            name    "constraints_path"
-            baseparm
-            label   "Constraints"
-            export  none
-        }
-        parm {
-            name    "lookatpath"
-            baseparm
-            label   "Look At"
-            invisible
-            export  none
-        }
-        parm {
-            name    "lookupobjpath"
-            baseparm
-            label   "Look Up Object"
-            invisible
-            export  none
-        }
-        parm {
-            name    "lookup"
-            baseparm
-            label   "Look At Up Vector"
-            invisible
-            export  none
-        }
-        parm {
-            name    "pathobjpath"
-            baseparm
-            label   "Path Object"
-            invisible
-            export  none
-        }
-        parm {
-            name    "roll"
-            baseparm
-            label   "Roll"
-            invisible
-            export  none
-        }
-        parm {
-            name    "pos"
-            baseparm
-            label   "Position"
-            invisible
-            export  none
-        }
-        parm {
-            name    "uparmtype"
-            baseparm
-            label   "Parameterization"
-            invisible
-            export  none
-        }
-        parm {
-            name    "pathorient"
-            baseparm
-            label   "Orient Along Path"
-            invisible
-            export  none
-        }
-        parm {
-            name    "up"
-            baseparm
-            label   "Orient Up Vector"
-            invisible
-            export  none
-        }
-        parm {
-            name    "bank"
-            baseparm
-            label   "Auto-Bank factor"
-            invisible
-            export  none
-        }
-        parm {
-            name    "tdisplay"
-            baseparm
-            label   "Display"
-            invisible
-            joinnext
-            export  none
-        }
-        parm {
-            name    "display"
-            baseparm
-            label   "Display"
-            invisible
-            export  none
-        }
-    }
-
-    group {
-        name    "folder0_1"
-        label   "View"
-
-        parm {
-            name    "iconscale"
-            label   "Icon Scale"
-            type    float
-            default { "1" }
-            range   { 0.001 10 }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "res"
-            label   "Resolution"
-            type    intvector2
-            joinnext
-            size    2
-            default { "1280" "720" }
-            range   { -1 1 }
-            parmtag { "cook_dependent" "1" }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "resMenu"
-            label   "Choose Resolution"
-            type    button
-            nolabel
-            default { "0" }
-            menumini {
-                [ "echo `pythonexprs(\"__import__('toolutils').parseDialogScriptMenu('FBres')\")`" ]
-            }
-            parmtag { "script_callback" "opparm . res ( `arg(\"$script_value\", 0)` `arg(\"$script_value\", 1)` aspect ( `arg(\"$script_value\", 2)` )" }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "aspect"
-            label   "Pixel Aspect Ratio"
-            type    float
-            default { "1" }
-            range   { 0.05 2 }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "projection"
-            label   "Projection"
-            type    ordinal
-            default { "perspective" }
-            menu {
-                "perspective"   "Perspective"
-                "ortho"         "Orthographic"
-                "sphere"        "Polar (panoramic)"
-                "cylinder"      "Cylindrical (panoramic)"
-                "lens"          "Lens Shader"
-            }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "vm_lensshader"
-            label   "Lens Shader"
-            type    oppath
-            default { "" }
-            disablewhen "{ projection != lens }"
-            parmtag { "oprelative" "." }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "focal"
-            label   "Focal Length"
-            type    float
-            joinnext
-            default { "50" }
-            range   { 1 100 }
-        }
-        parm {
-            name    "focalunits"
-            label   "Focal Units"
-            type    string
-            default { "mm" }
-            menu {
-                "mm"    "millimeters"
-                "m"     "meters"
-                "nm"    "nanometers"
-                "in"    "inches"
-                "ft"    "feet"
-            }
-        }
-        parm {
-            name    "aperture"
-            label   "Aperture"
-            type    float
-            default { "41.4214" }
-            range   { 1 100 }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "orthowidth"
-            label   "Ortho Width"
-            type    float
-            default { "2" }
-            disablewhen "{ projection != ortho }"
-            range   { 0.001 10 }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "near"
-            label   "Near Clipping"
-            type    float
-            default { "0.001" }
-            range   { 0 10 }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "far"
-            label   "Far Clipping"
-            type    float
-            default { "10000" }
-            range   { 1 10000 }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "vm_bgenable"
-            label   "Enable Background Image"
-            type    toggle
-            default { "1" }
-            parmtag { "mantra_class" "image" }
-            parmtag { "mantra_name" "bgenable" }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "vm_background"
-            label   "Background Image"
-            type    image
-            default { "" }
-            disablewhen "{ vm_bgenable == 0 }"
-            parmtag { "filechooser_mode" "read" }
-            parmtag { "mantra_class" "image" }
-            parmtag { "mantra_name" "background" }
-            parmtag { "sidefx::allow_video" "1" }
-            parmtag { "spare_category" "View" }
-        }
-        parm {
-            name    "win"
-            label   "Screen Window X/Y"
-            type    vector2
-            size    2
-            default { "0" "0" }
-            disablewhen "{ winmask != \"\" }"
-            range   { -1 1 }
-        }
-        parm {
-            name    "winsize"
-            label   "Screen Window Size"
-            type    vector2
-            size    2
-            default { "1" "1" }
-            disablewhen "{ winmask != \"\" }"
-            range   { 0.01 10 }
-        }
-        parm {
-            name    "winmask"
-            label   "Screen Window Mask"
-            type    oplist
-            default { "" }
-            disablewhen "{ projection != ortho projection != perspective }"
-            parmtag { "opexpand" "1" }
-            parmtag { "opfilter" "!!OBJ/GEOMETRY!!" }
-            parmtag { "oprelative" "/obj" }
-        }
-        parm {
-            name    "cropl"
-            label   "Left Crop"
-            type    float
-            default { "0" }
-            disablewhen "{ cropmask != \"\" }"
-            range   { 0 1 }
-        }
-        parm {
-            name    "cropr"
-            label   "Right Crop"
-            type    float
-            default { "1" }
-            disablewhen "{ cropmask != \"\" }"
-            range   { 0 1 }
-        }
-        parm {
-            name    "cropb"
-            label   "Bottom Crop"
-            type    float
-            default { "0" }
-            disablewhen "{ cropmask != \"\" }"
-            range   { 0 1 }
-        }
-        parm {
-            name    "cropt"
-            label   "Top Crop"
-            type    float
-            default { "1" }
-            disablewhen "{ cropmask != \"\" }"
-            range   { 0 1 }
-        }
-        parm {
-            name    "cropmask"
-            label   "Crop Mask"
-            type    oplist
-            default { "" }
-            disablewhen "{ projection != ortho projection != perspective }"
-            parmtag { "opexpand" "1" }
-            parmtag { "opfilter" "!!OBJ/GEOMETRY!!" }
-            parmtag { "oprelative" "/obj" }
-        }
-    }
-
-    group {
-        name    "folder0_2"
-        label   "Sampling"
-
-        parm {
-            name    "shutter"
-            label   "Shutter Time"
-            type    float
-            default { "0.5" }
-            disablewhen "{ allowmotionblur == 0 }"
-            range   { 0 1 }
-            parmtag { "spare_category" "Sampling" }
-        }
-        parm {
-            name    "focus"
-            label   "Focus Distance"
-            type    float
-            default { "5" }
-            disablewhen "{ vm_dof == 0 }"
-            range   { 0.001 1000 }
-            parmtag { "mantra_class" "camera" }
-            parmtag { "mantra_name" "focus" }
-            parmtag { "spare_category" "Sampling" }
-        }
-        parm {
-            name    "fstop"
-            label   "F-Stop"
-            type    log
-            default { "5.6" }
-            disablewhen "{ vm_dof == 0 }"
-            range   { 1.4 22 }
-            parmtag { "mantra_class" "camera" }
-            parmtag { "mantra_name" "fstop" }
-            parmtag { "spare_category" "Sampling" }
-        }
-        parm {
-            name    "vm_bokeh"
-            label   "Bokeh"
-            type    string
-            default { "radial" }
-            menureplace {
-                "radial"    "Radial Bokeh"
-                "file"      "Image File Bokeh"
-                "box"       "Box Filter Bokeh"
-                "null"      "Disable Bokeh"
-            }
-            parmtag { "spare_category" "Sampling" }
-        }
-        parm {
-            name    "vm_bokehfile"
-            label   "Bokeh Image File"
-            type    image
-            default { "default.pic" }
-            disablewhen "{ vm_bokeh != file }"
-            parmtag { "filechooser_mode" "read" }
-            parmtag { "mantra_class" "bokeh" }
-            parmtag { "mantra_name" "-f" }
-            parmtag { "spare_category" "Sampling" }
-        }
-        parm {
-            name    "vm_bokehrotation"
-            label   "Bokeh Rotation"
-            type    float
-            default { "0" }
-            disablewhen "{ vm_bokeh != file }"
-            range   { 0 360 }
-            parmtag { "mantra_class" "bokeh" }
-            parmtag { "mantra_name" "-r" }
-            parmtag { "spare_category" "Sampling" }
-        }
-    }
-
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera.chn"
-Content-Type: text/plain
-
-{
-    channel resy {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 value = 1 1 expr = "pwd().parm('resx').eval() * __import__('lopcamutils').getAspectRatio(pwd(), 'loppath', 'primpath')" language = python }
-    }
-    channel projection {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = "__import__('lopcamutils').getProjection(pwd(), 'loppath', 'primpath')" language = python }
-    }
-    channel focal {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 value = 50 50 expr = "__import__('lopcamutils').getFocalLength(pwd(), 'loppath', 'primpath')" language = python }
-    }
-    channel aperture {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 value = 41.421399999999998 41.421399999999998 expr = "__import__('lopcamutils').getAperture(pwd(), 'loppath', 'primpath')" language = python }
-    }
-    channel near {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 value = 0.001 0.001 expr = "__import__('lopcamutils').getClippingPlanes(pwd(), 'loppath', 'primpath')[0]" language = python }
-    }
-    channel far {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 value = 10000 10000 expr = "__import__('lopcamutils').getClippingPlanes(pwd(), 'loppath', 'primpath')[1]" language = python }
-    }
-    channel winx {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = "__import__('lopcamutils').getWindowX(pwd(), 'loppath', 'primpath')" language = python }
-    }
-    channel winy {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = "__import__('lopcamutils').getWindowY(pwd(), 'loppath', 'primpath')" language = python }
-    }
-    channel shutter {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 value = 0.5 0.5 expr = "__import__('lopcamutils').getShutterTime(pwd(), 'loppath', 'primpath')" language = python }
-    }
-    channel focus {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 value = 5 5 expr = "__import__('lopcamutils').getFocusDistance(pwd(), 'loppath', 'primpath')" language = python }
-    }
-    channel fstop {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 value = 5.5999999999999996 5.5999999999999996 expr = "__import__('lopcamutils').getFStop(pwd(), 'loppath', 'primpath')" language = python }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-loppath	[ 0	locks=0 ]	(	../../../../IN_stage	)
-primpath	[ 0	locks=0 ]	(	/cameras/shotCam/shotCam	)
-xformtype	[ 0	locks=0 ]	(	localtoworld	)
-use_dcolor	[ 0	locks=0 ]	(	"on"	)
-dcolor	[ 0	locks=0 ]	(	1	1	1	)
-picking	[ 0	locks=0 ]	(	"on"	)
-pickscript	[ 0	locks=0 ]	(	""	)
-caching	[ 0	locks=0 ]	(	"on"	)
-xOrd	[ 0	locks=0 ]	(	"srt"	)
-rOrd	[ 0	locks=0 ]	(	"xyz"	)
-t	[ 0	locks=0 ]	(	0	0	0	)
-r	[ 0	locks=0 ]	(	0	0	0	)
-s	[ 0	locks=0 ]	(	1	1	1	)
-p	[ 0	locks=0 ]	(	0	0	0	)
-pr	[ 0	locks=0 ]	(	0	0	0	)
-scale	[ 0	locks=0 ]	(	1	)
-pre_xform	[ 0	locks=0 ]	(	0	)
-keeppos	[ 0	locks=0 ]	(	"off"	)
-childcomp	[ 0	locks=0 ]	(	"off"	)
-constraints_on	[ 0	locks=0 ]	(	"off"	)
-constraints_path	[ 0	locks=0 ]	(	""	)
-lookatpath	[ 0	locks=0 ]	(	""	)
-lookupobjpath	[ 0	locks=0 ]	(	""	)
-lookup	[ 0	locks=0 ]	(	on	)
-pathobjpath	[ 0	locks=0 ]	(	""	)
-roll	[ 0	locks=0 ]	(	0	)
-pos	[ 0	locks=0 ]	(	0	)
-uparmtype	[ 0	locks=0 ]	(	"arc"	)
-pathorient	[ 0	locks=0 ]	(	1	)
-up	[ 0	locks=0 ]	(	0	1	0	)
-bank	[ 0	locks=0 ]	(	0	)
-tdisplay	[ 0	locks=0 ]	(	"off"	)
-display	[ 0	locks=0 ]	(	1	)
-folder0	[ 0	locks=0 ]	(	0	0	0	)
-iconscale	[ 0	locks=0 ]	(	1	)
-res	[ 0	locks=0 ]	(	1280	[ resy	720 ] 	)
-resMenu	[ 0	locks=0 ]	(	0	)
-aspect	[ 0	locks=0 ]	(	1	)
-projection	[ 0	locks=0 ]	(	[ projection	0 ] 	)
-vm_lensshader	[ 0	locks=0 ]	(	""	)
-focal	[ 0	locks=0 ]	(	[ focal	50 ] 	)
-focalunits	[ 0	locks=0 ]	(	mm	)
-aperture	[ 0	locks=0 ]	(	[ aperture	41.4214 ] 	)
-orthowidth	[ 0	locks=0 ]	(	2	)
-near	[ 0	locks=0 ]	(	[ near	0.001 ] 	)
-far	[ 0	locks=0 ]	(	[ far	10000 ] 	)
-vm_bgenable	[ 0	locks=0 ]	(	"on"	)
-vm_background	[ 0	locks=0 ]	(	""	)
-win	[ 0	locks=0 ]	(	[ winx	0 ] 	[ winy	0 ] 	)
-winsize	[ 0	locks=0 ]	(	1	1	)
-winmask	[ 0	locks=0 ]	(	""	)
-cropl	[ 0	locks=0 ]	(	0	)
-cropr	[ 0	locks=0 ]	(	1	)
-cropb	[ 0	locks=0 ]	(	0	)
-cropt	[ 0	locks=0 ]	(	1	)
-cropmask	[ 0	locks=0 ]	(	""	)
-shutter	[ 0	locks=0 ]	(	[ shutter	0.5 ] 	)
-focus	[ 0	locks=0 ]	(	[ focus	5 ] 	)
-fstop	[ 0	locks=0 ]	(	[ fstop	5.6 ] 	)
-vm_bokeh	[ 0	locks=0 ]	(	radial	)
-vm_bokehfile	[ 0	locks=0 ]	(	default.pic	)
-vm_bokehrotation	[ 0	locks=0 ]	(	0	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/camOrigin.init"
-Content-Type: text/plain
-
-type = add
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/camOrigin.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 2 3
-connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/camOrigin.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-stdswitcher	[ 0	locks=0 ]	(	0	0	0	)
-keep	[ 0	locks=0 ]	(	"off"	)
-points	[ 0	locks=0 ]	(	1	)
-remove	[ 0	locks=0 ]	(	"off"	)
-switcher	[ 0	locks=0 ]	(	0	0	)
-prims	[ 0	locks=0 ]	(	1	)
-group	[ 0	locks=0 ]	(	""	)
-add	[ 0	locks=0 ]	(	"all"	)
-inc	[ 0	locks=0 ]	(	2	)
-attrname	[ 0	locks=0 ]	(	""	)
-closedall	[ 0	locks=0 ]	(	"off"	)
-addparticlesystem	[ 0	locks=0 ]	(	"off"	)
-particlegroup	[ 0	locks=0 ]	(	""	)
-appendunusedtoparticlesystem	[ 0	locks=0 ]	(	"off"	)
-prim0	[ 0	locks=0 ]	(	""	)
-closed0	[ 0	locks=0 ]	(	"off"	)
-usept0	[ 0	locks=0 ]	(	"on"	)
-pt0	[ 0	locks=0 ]	(	0	0	0	)
-weight0	[ 0	locks=0 ]	(	1	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/camOrigin.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/file1.init"
-Content-Type: text/plain
-
-type = file
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/file1.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 0.18 3
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-0 "output1"
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.9 0.8 0.55 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/file1.chn"
-Content-Type: text/plain
-
-{
-    channel index {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = $FF-ch(\"f1\") }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/file1.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-filemode	[ 0	locks=0 ]	(	"read"	)
-file	[ 0	locks=0 ]	(	defcam.bgeo	)
-reload	[ 0	locks=0 ]	(	0	)
-objpattern	[ 0	locks=0 ]	(	*	)
-geodatapath	[ 0	locks=0 ]	(	""	)
-missingframe	[ 0	locks=0 ]	(	"error"	)
-loadtype	[ 0	locks=0 ]	(	"full"	)
-packedviewedit	[ 0	locks=0 ]	(	"unchanged"	)
-viewportlod	[ 0	locks=0 ]	(	"box"	)
-packexpanded	[ 0	locks=0 ]	(	"on"	)
-delayload	[ 0	locks=0 ]	(	"off"	)
-mkpath	[ 0	locks=0 ]	(	"on"	)
-cachesize	[ 0	locks=0 ]	(	0	)
-prefetch	[ 0	locks=0 ]	(	"off"	)
-f	[ 0	locks=0 ]	(	1	24	)
-index	[ 0	locks=0 ]	(	[ index	0 ] 	)
-wrap	[ 0	locks=0 ]	(	"cycle"	)
-retry	[ 0	locks=0 ]	(	0	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/file1.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/xform1.init"
-Content-Type: text/plain
-
-type = xform
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/xform1.def"
-Content-Type: text/plain
-
-sopflags sopflags = 
-comment ""
-position 0.18 1.5
-connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-0 	file1 0 1 "input1"
-}
-inputs
-{
-0 	file1 0 1
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/xform1.chn"
-Content-Type: text/plain
-
-{
-    channel scale {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { length = 0 expr = "property(\"../iconscale\", 1)" }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/xform1.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-group	[ 0	locks=0 ]	(	""	)
-grouptype	[ 0	locks=0 ]	(	"guess"	)
-xOrd	[ 0	locks=0 ]	(	"srt"	)
-rOrd	[ 0	locks=0 ]	(	"xyz"	)
-t	[ 0	locks=0 ]	(	0	0	0	)
-r	[ 0	locks=0 ]	(	0	0	0	)
-s	[ 0	locks=0 ]	(	1	1	1	)
-shear	[ 0	locks=0 ]	(	0	0	0	)
-scale	[ 0	locks=0 ]	(	[ scale	1 ] 	)
-parmgroup_pivotxform	[ 0	locks=0 ]	(	0	)
-p	[ 0	locks=0 ]	(	0	0	0	)
-pr	[ 0	locks=0 ]	(	0	0	0	)
-parmgroup_prexform	[ 0	locks=0 ]	(	0	)
-prexform_xOrd	[ 0	locks=0 ]	(	"srt"	)
-prexform_rOrd	[ 0	locks=0 ]	(	"xyz"	)
-prexform_t	[ 0	locks=0 ]	(	0	0	0	)
-prexform_r	[ 0	locks=0 ]	(	0	0	0	)
-prexform_s	[ 0	locks=0 ]	(	1	1	1	)
-prexform_shear	[ 0	locks=0 ]	(	0	0	0	)
-movecentroid	[ 0	locks=0 ]	(	0	)
-movepivot	[ 0	locks=0 ]	(	0	)
-attribs	[ 0	locks=0 ]	(	*	)
-updatenmls	[ 0	locks=0 ]	(	"off"	)
-updateaffectednmls	[ 0	locks=0 ]	(	"on"	)
-vlength	[ 0	locks=0 ]	(	"on"	)
-invertxform	[ 0	locks=0 ]	(	"off"	)
-addattrib	[ 0	locks=0 ]	(	"off"	)
-outputattrib	[ 0	locks=0 ]	(	xform	)
-outputmerge	[ 0	locks=0 ]	(	"post"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera/xform1.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera.order"
-Content-Type: text/plain
-
-3
-camOrigin
-file1
-xform1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/camera.net"
-Content-Type: text/plain
-
-1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/objects/from_scene.init"
@@ -2307,22 +1328,26 @@ Content-Type: text/plain
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage.init"
+Content-Disposition: attachment; filename="hdaroot/objects.net"
 Content-Type: text/plain
 
-type = geo
+1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage.init"
+Content-Type: text/plain
+
+type = lopnet
 matchesdef = 0
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage.def"
+Content-Disposition: attachment; filename="hdaroot/stage.def"
 Content-Type: text/plain
 
-objflags objflags =  origin off
-pretransform UT_DMatrix4 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1
 comment ""
-position 0.624352 2.93816
+position 3.9536 6.89386
 connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on selectable on
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
 }
@@ -2336,801 +1361,32 @@ stat
 {
   create -1
   modify -1
-  author Tumblehead@TH2301
+  author tumblehead@judas-3070
   access 0777
 }
-color UT_Color RGB 0.8 0.8 0.8 
+color UT_Color RGB 1 0.986 0.65 
 delscript ""
 exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage.spareparmdef"
-Content-Type: text/plain
-
-    group {
-        name    "stdswitcher4"
-        label   "Transform"
-        grouptag { "sidefx::switcher" "stdswitcher" }
-
-        parm {
-            name    "xOrd"
-            baseparm
-            label   "Transform Order"
-            joinnext
-            export  none
-        }
-        parm {
-            name    "rOrd"
-            baseparm
-            label   "Rotate Order"
-            nolabel
-            export  none
-        }
-        parm {
-            name    "t"
-            baseparm
-            label   "Translate"
-            export  all
-        }
-        parm {
-            name    "r"
-            baseparm
-            label   "Rotate"
-            export  all
-        }
-        parm {
-            name    "s"
-            baseparm
-            label   "Scale"
-            export  none
-        }
-        parm {
-            name    "p"
-            baseparm
-            label   "Pivot Translate"
-            export  none
-        }
-        parm {
-            name    "pr"
-            baseparm
-            label   "Pivot Rotate"
-            export  none
-        }
-        parm {
-            name    "scale"
-            baseparm
-            label   "Uniform Scale"
-            export  none
-        }
-        parm {
-            name    "pre_xform"
-            baseparm
-            label   "Modify Pre-Transform"
-            export  none
-        }
-        parm {
-            name    "keeppos"
-            baseparm
-            label   "Keep Position When Parenting"
-            export  none
-        }
-        parm {
-            name    "childcomp"
-            baseparm
-            label   "Child Compensation"
-            export  none
-        }
-        parm {
-            name    "constraints_on"
-            baseparm
-            label   "Enable Constraints"
-            export  none
-        }
-        parm {
-            name    "constraints_path"
-            baseparm
-            label   "Constraints"
-            export  none
-        }
-        parm {
-            name    "lookatpath"
-            baseparm
-            label   "Look At"
-            invisible
-            export  none
-        }
-        parm {
-            name    "lookupobjpath"
-            baseparm
-            label   "Look Up Object"
-            invisible
-            export  none
-        }
-        parm {
-            name    "lookup"
-            baseparm
-            label   "Look At Up Vector"
-            invisible
-            export  none
-        }
-        parm {
-            name    "pathobjpath"
-            baseparm
-            label   "Path Object"
-            invisible
-            export  none
-        }
-        parm {
-            name    "roll"
-            baseparm
-            label   "Roll"
-            invisible
-            export  none
-        }
-        parm {
-            name    "pos"
-            baseparm
-            label   "Position"
-            invisible
-            export  none
-        }
-        parm {
-            name    "uparmtype"
-            baseparm
-            label   "Parameterization"
-            invisible
-            export  none
-        }
-        parm {
-            name    "pathorient"
-            baseparm
-            label   "Orient Along Path"
-            invisible
-            export  none
-        }
-        parm {
-            name    "up"
-            baseparm
-            label   "Orient Up Vector"
-            invisible
-            export  none
-        }
-        parm {
-            name    "bank"
-            baseparm
-            label   "Auto-Bank factor"
-            invisible
-            export  none
-        }
-    }
-
-    group {
-        name    "stdswitcher4_1"
-        label   "Render"
-
-        parm {
-            name    "shop_materialpath"
-            baseparm
-            label   "Material"
-            export  none
-        }
-        parm {
-            name    "shop_materialopts"
-            baseparm
-            label   "Options"
-            invisible
-            export  none
-        }
-        parm {
-            name    "tdisplay"
-            baseparm
-            label   "Display"
-            joinnext
-            export  none
-        }
-        parm {
-            name    "display"
-            baseparm
-            label   "Display"
-            export  none
-        }
-        parm {
-            name    "viewportlod"
-            label   "Display As"
-            type    ordinal
-            default { "full" }
-            help    "Choose how the object's geometry should be rendered in the viewport"
-            menu {
-                "full"      "Full Geometry"
-                "points"    "Point Cloud"
-                "box"       "Bounding Box"
-                "centroid"  "Centroid"
-                "hidden"    "Hidden"
-                "subd"      "Subdivision Surface / Curves"
-            }
-            parmtag { "spare_category" "Render" }
-        }
-        parm {
-            name    "vm_rendervisibility"
-            label   "Render Visibility"
-            type    string
-            default { "*" }
-            menureplace {
-                "*"                             "Visible to all"
-                "primary"                       "Visible only to primary rays"
-                "primary|shadow"                "Visible only to primary and shadow rays"
-                "-primary"                      "Invisible to primary rays (Phantom)"
-                "-diffuse"                      "Invisible to diffuse rays"
-                "-diffuse&-reflect&-refract"    "Invisible to secondary rays"
-                ""                              "Invisible (Unrenderable)"
-            }
-            parmtag { "mantra_class" "object" }
-            parmtag { "mantra_name" "rendervisibility" }
-            parmtag { "spare_category" "Render" }
-        }
-        parm {
-            name    "vm_rendersubd"
-            label   "Render Polygons As Subdivision (Mantra)"
-            type    toggle
-            default { "0" }
-            parmtag { "mantra_class" "object" }
-            parmtag { "mantra_name" "rendersubd" }
-            parmtag { "spare_category" "Geometry" }
-        }
-        parm {
-            name    "vm_subdstyle"
-            label   "Subdivision Style"
-            type    string
-            default { "mantra_catclark" }
-            hidewhen "{ vm_rendersubd == 0 }"
-            menu {
-                "mantra_catclark"   "Mantra Catmull-Clark"
-                "osd_catclark"      "OpenSubdiv Catmull-Clark"
-            }
-            parmtag { "mantra_class" "object" }
-            parmtag { "mantra_name" "subdstyle" }
-            parmtag { "spare_category" "Geometry" }
-        }
-        parm {
-            name    "vm_subdgroup"
-            label   "Subdivision Group"
-            type    string
-            default { "" }
-            hidewhen "{ vm_rendersubd == 0 }"
-            parmtag { "mantra_class" "object" }
-            parmtag { "mantra_name" "subdgroup" }
-            parmtag { "spare_category" "Geometry" }
-        }
-        parm {
-            name    "vm_osd_quality"
-            label   "Open Subdiv Quality"
-            type    float
-            default { "1" }
-            hidewhen "{ vm_rendersubd == 0 vm_subdstyle != osd_catclark }"
-            range   { 0 10 }
-            parmtag { "mantra_class" "object" }
-            parmtag { "mantra_name" "osd_quality" }
-            parmtag { "spare_category" "Geometry" }
-        }
-        parm {
-            name    "vm_osd_vtxinterp"
-            label   "OSD Vtx Interp"
-            type    integer
-            default { "2" }
-            hidewhen "{ vm_rendersubd == 0 vm_subdstyle != osd_catclark }"
-            menu {
-                "0" "No vertex interpolation"
-                "1" "Edges only"
-                "2" "Edges and Corners"
-            }
-            range   { 0 10 }
-            parmtag { "mantra_class" "object" }
-            parmtag { "mantra_name" "osd_vtxinterp" }
-            parmtag { "spare_category" "Geometry" }
-        }
-        parm {
-            name    "vm_osd_fvarinterp"
-            label   "OSD FVar Interp"
-            type    integer
-            default { "4" }
-            hidewhen "{ vm_rendersubd == 0 vm_subdstyle != osd_catclark }"
-            menu {
-                "0" "Smooth everywhere"
-                "1" "Sharpen corners only"
-                "2" "Sharpen edges and corners"
-                "3" "Sharpen edges and propagated corners"
-                "4" "Sharpen all boundaries"
-                "5" "Bilinear interpolation"
-            }
-            range   { 0 10 }
-            parmtag { "mantra_class" "object" }
-            parmtag { "mantra_name" "osd_fvarinterp" }
-            parmtag { "spare_category" "Geometry" }
-        }
-        group {
-            name    "folder0"
-            label   "Shading"
-
-            parm {
-                name    "categories"
-                label   "Categories"
-                type    string
-                default { "" }
-                help    "A list of tags which can be used to select the object"
-                parmtag { "spare_category" "Shading" }
-            }
-            parm {
-                name    "reflectmask"
-                label   "Reflection Mask"
-                type    oplist
-                default { "*" }
-                help    "Objects that will be reflected on this object."
-                parmtag { "opexpand" "1" }
-                parmtag { "opfilter" "!!OBJ/GEOMETRY!!" }
-                parmtag { "oprelative" "/obj" }
-                parmtag { "spare_category" "Shading" }
-            }
-            parm {
-                name    "refractmask"
-                label   "Refraction Mask"
-                type    oplist
-                default { "*" }
-                help    "Objects that will be refracted on this object."
-                parmtag { "opexpand" "1" }
-                parmtag { "opfilter" "!!OBJ/GEOMETRY!!" }
-                parmtag { "oprelative" "/obj" }
-                parmtag { "spare_category" "Shading" }
-            }
-            parm {
-                name    "lightmask"
-                label   "Light Mask"
-                type    oplist
-                default { "*" }
-                help    "Lights that illuminate this object."
-                parmtag { "opexpand" "1" }
-                parmtag { "opfilter" "!!OBJ/LIGHT!!" }
-                parmtag { "oprelative" "/obj" }
-                parmtag { "spare_category" "Shading" }
-            }
-            parm {
-                name    "lightcategories"
-                label   "Light Selection"
-                type    string
-                default { "*" }
-                parmtag { "spare_category" "Shading" }
-            }
-            parm {
-                name    "vm_lpetag"
-                label   "LPE Tag"
-                type    string
-                default { "" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "lpetag" }
-                parmtag { "spare_category" "Shading" }
-            }
-            parm {
-                name    "vm_volumefilter"
-                label   "Volume Filter"
-                type    string
-                default { "box" }
-                menu {
-                    "box"       "Box Filter"
-                    "gaussian"  "Gaussian"
-                    "bartlett"  "Bartlett (triangle)"
-                    "catrom"    "Catmull-Rom"
-                    "hanning"   "Hanning"
-                    "blackman"  "Blackman"
-                    "sinc"      "Sinc (sharpening)"
-                }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "filter" }
-                parmtag { "spare_category" "Shading" }
-            }
-            parm {
-                name    "vm_volumefilterwidth"
-                label   "Volume Filter Width"
-                type    float
-                default { "1" }
-                range   { 0.001 5 }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "filterwidth" }
-                parmtag { "spare_category" "Shading" }
-            }
-            parm {
-                name    "vm_matte"
-                label   "Matte shading"
-                type    toggle
-                default { "0" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "matte" }
-                parmtag { "spare_category" "Shading" }
-            }
-            parm {
-                name    "vm_rayshade"
-                label   "Raytrace Shading"
-                type    toggle
-                default { "0" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "rayshade" }
-                parmtag { "spare_category" "Shading" }
-            }
-        }
-
-        group {
-            name    "folder0_1"
-            label   "Sampling"
-
-            parm {
-                name    "geo_velocityblur"
-                label   "Geometry Velocity Blur"
-                type    ordinal
-                default { "off" }
-                disablewhen "{ allowmotionblur == 0 }"
-                menu {
-                    "off"       "No Velocity Blur"
-                    "on"        "Velocity Blur"
-                    "accelblur" "Acceleration Blur"
-                }
-            }
-            parm {
-                name    "geo_accelattribute"
-                label   "Acceleration Attribute"
-                type    string
-                default { "accel" }
-                hidewhen "{ geo_velocityblur != accelblur }"
-                parmtag { "spare_category" "Sampling" }
-            }
-        }
-
-        group {
-            name    "folder0_2"
-            label   "Dicing"
-
-            parm {
-                name    "vm_shadingquality"
-                label   "Shading Quality"
-                type    float
-                default { "1" }
-                range   { 0 10 }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "shadingquality" }
-                parmtag { "spare_category" "Dicing" }
-            }
-            parm {
-                name    "vm_flatness"
-                label   "Dicing Flatness"
-                type    float
-                default { "0.05" }
-                range   { 0 1 }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "flatness" }
-                parmtag { "spare_category" "Dicing" }
-            }
-            parm {
-                name    "vm_raypredice"
-                label   "Ray Predicing"
-                type    integer
-                default { "0" }
-                menu {
-                    "0" "Disable Predicing"
-                    "1" "Full Predicing"
-                    "2" "Precompute Bounds"
-                }
-                range   { 0 10 }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "raypredice" }
-                parmtag { "spare_category" "Dicing" }
-            }
-            parm {
-                name    "vm_curvesurface"
-                label   "Shade Curves As Surfaces"
-                type    toggle
-                default { "0" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "curvesurface" }
-                parmtag { "spare_category" "Dicing" }
-            }
-        }
-
-        group {
-            name    "folder0_3"
-            label   "Geometry"
-
-            parm {
-                name    "vm_rmbackface"
-                label   "Backface Removal"
-                type    toggle
-                default { "0" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "rmbackface" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "shop_geometrypath"
-                label   "Procedural Shader"
-                type    oppath
-                default { "" }
-                parmtag { "opfilter" "!!SHOP/GEOMETRY!!" }
-                parmtag { "oprelative" "." }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_forcegeometry"
-                label   "Force Procedural Geometry Output"
-                type    toggle
-                default { "1" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_rendersubdcurves"
-                label   "Render Polygon Curves As Subdivision (Mantra)"
-                type    toggle
-                default { "0" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "rendersubdcurves" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_renderpoints"
-                label   "Render As Points (Mantra)"
-                type    integer
-                default { "2" }
-                menu {
-                    "0" "No Point Rendering"
-                    "1" "Render Only Points"
-                    "2" "Render Unconnected Points"
-                }
-                range   { 0 10 }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "renderpoints" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_renderpointsas"
-                label   "Render Points As (Mantra)"
-                type    integer
-                default { "0" }
-                disablewhen "{ vm_renderpoints == 0 }"
-                menu {
-                    "0" "Spheres"
-                    "1" "Circles"
-                }
-                range   { 0 10 }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "renderpointsas" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_usenforpoints"
-                label   "Use N For Point Rendering"
-                type    toggle
-                default { "0" }
-                disablewhen "{ vm_renderpoints == 0 }"
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "usenforpoints" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_pointscale"
-                label   "Point Scale"
-                type    float
-                default { "1" }
-                disablewhen "{ vm_renderpoints == 0 }"
-                range   { 0! 10 }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "pointscale" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_pscalediameter"
-                label   "Treat Point Scale as Diameter Instead of Radius"
-                type    toggle
-                default { "0" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "pscalediameter" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_metavolume"
-                label   "Metaballs as Volume"
-                type    toggle
-                default { "0" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "metavolume" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_coving"
-                label   "Coving"
-                type    integer
-                default { "1" }
-                menu {
-                    "0" "Disable Coving"
-                    "1" "Coving for displacement/sub-d"
-                    "2" "Coving for all primitives"
-                }
-                range   { 0 10 }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "coving" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_materialoverride"
-                label   "Material Override"
-                type    string
-                default { "compact" }
-                menu {
-                    "none"      "Disabled"
-                    "full"      "Evaluate for Each Primitve/Point"
-                    "compact"   "Evaluate Once"
-                }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_overridedetail"
-                label   "Ignore Geometry Attribute Shaders"
-                type    toggle
-                default { "0" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "overridedetail" }
-                parmtag { "spare_category" "Geometry" }
-            }
-            parm {
-                name    "vm_procuseroottransform"
-                label   "Proc Use Root Transform"
-                type    toggle
-                default { "1" }
-                parmtag { "mantra_class" "object" }
-                parmtag { "mantra_name" "procuseroottransform" }
-                parmtag { "spare_category" "Geometry" }
-            }
-        }
-
-    }
-
-    group {
-        name    "stdswitcher4_2"
-        label   "Misc"
-
-        parm {
-            name    "use_dcolor"
-            baseparm
-            label   "Set Wireframe Color"
-            export  none
-        }
-        parm {
-            name    "dcolor"
-            baseparm
-            label   "Wireframe Color"
-            export  none
-        }
-        parm {
-            name    "picking"
-            baseparm
-            label   "Viewport Selecting Enabled"
-            export  none
-        }
-        parm {
-            name    "pickscript"
-            baseparm
-            label   "Select Script"
-            export  none
-        }
-        parm {
-            name    "caching"
-            baseparm
-            label   "Cache Object Transform"
-            export  none
-        }
-        parm {
-            name    "vport_shadeopen"
-            baseparm
-            label   "Shade Open Curves In Viewport"
-            export  none
-        }
-        parm {
-            name    "vport_displayassubdiv"
-            baseparm
-            label   "Display as Subdivision in Viewport"
-            invisible
-            export  none
-        }
-        parm {
-            name    "vport_onionskin"
-            baseparm
-            label   "Onion Skinning"
-            export  none
-        }
-    }
-
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage.parm"
+Content-Disposition: attachment; filename="hdaroot/stage.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-stdswitcher	[ 0	locks=0 ]	(	0	0	0	)
-xOrd	[ 0	locks=0 ]	(	"srt"	)
-rOrd	[ 0	locks=0 ]	(	"xyz"	)
-t	[ 0	locks=0 ]	(	0	0	0	)
-r	[ 0	locks=0 ]	(	0	0	0	)
-s	[ 0	locks=0 ]	(	1	1	1	)
-p	[ 0	locks=0 ]	(	0	0	0	)
-pr	[ 0	locks=0 ]	(	0	0	0	)
-scale	[ 0	locks=0 ]	(	1	)
-pre_xform	[ 0	locks=0 ]	(	0	)
-keeppos	[ 0	locks=0 ]	(	"off"	)
-childcomp	[ 0	locks=0 ]	(	"off"	)
-constraints_on	[ 0	locks=0 ]	(	"off"	)
-constraints_path	[ 0	locks=0 ]	(	""	)
-lookatpath	[ 0	locks=0 ]	(	""	)
-lookupobjpath	[ 0	locks=0 ]	(	""	)
-lookup	[ 0	locks=0 ]	(	on	)
-pathobjpath	[ 0	locks=0 ]	(	""	)
-roll	[ 0	locks=0 ]	(	0	)
-pos	[ 0	locks=0 ]	(	0	)
-uparmtype	[ 0	locks=0 ]	(	"arc"	)
-pathorient	[ 0	locks=0 ]	(	1	)
-up	[ 0	locks=0 ]	(	0	1	0	)
-bank	[ 0	locks=0 ]	(	0	)
-shop_materialpath	[ 0	locks=0 ]	(	""	)
-shop_materialopts	[ 0	locks=0 ]	(	0	)
-tdisplay	[ 0	locks=0 ]	(	"off"	)
-display	[ 0	locks=0 ]	(	1	)
-use_dcolor	[ 0	locks=0 ]	(	"off"	)
-dcolor	[ 0	locks=0 ]	(	1	1	1	)
-picking	[ 0	locks=0 ]	(	"on"	)
-pickscript	[ 0	locks=0 ]	(	""	)
-caching	[ 0	locks=0 ]	(	"on"	)
-vport_shadeopen	[ 0	locks=0 ]	(	"off"	)
-vport_displayassubdiv	[ 0	locks=0 ]	(	"off"	)
-vport_onionskin	[ 0	locks=0 ]	(	"off"	)
-stdswitcher4	[ 0	locks=0 ]	(	0	0	0	)
-viewportlod	[ 0	locks=0 ]	(	"full"	)
-vm_rendervisibility	[ 0	locks=0 ]	(	*	)
-vm_rendersubd	[ 0	locks=0 ]	(	"off"	)
-vm_subdstyle	[ 0	locks=0 ]	(	mantra_catclark	)
-vm_subdgroup	[ 0	locks=0 ]	(	""	)
-vm_osd_quality	[ 0	locks=0 ]	(	1	)
-vm_osd_vtxinterp	[ 0	locks=0 ]	(	2	)
-vm_osd_fvarinterp	[ 0	locks=0 ]	(	4	)
-folder0	[ 0	locks=0 ]	(	0	0	0	0	)
-categories	[ 0	locks=0 ]	(	""	)
-reflectmask	[ 0	locks=0 ]	(	*	)
-refractmask	[ 0	locks=0 ]	(	*	)
-lightmask	[ 0	locks=0 ]	(	*	)
-lightcategories	[ 0	locks=0 ]	(	*	)
-vm_lpetag	[ 0	locks=0 ]	(	""	)
-vm_volumefilter	[ 0	locks=0 ]	(	box	)
-vm_volumefilterwidth	[ 0	locks=0 ]	(	1	)
-vm_matte	[ 0	locks=0 ]	(	"off"	)
-vm_rayshade	[ 0	locks=0 ]	(	"off"	)
-geo_velocityblur	[ 0	locks=0 ]	(	"off"	)
-geo_accelattribute	[ 0	locks=0 ]	(	accel	)
-vm_shadingquality	[ 0	locks=0 ]	(	1	)
-vm_flatness	[ 0	locks=0 ]	(	0.05	)
-vm_raypredice	[ 0	locks=0 ]	(	0	)
-vm_curvesurface	[ 0	locks=0 ]	(	"off"	)
-vm_rmbackface	[ 0	locks=0 ]	(	"off"	)
-shop_geometrypath	[ 0	locks=0 ]	(	""	)
-vm_forcegeometry	[ 0	locks=0 ]	(	"on"	)
-vm_rendersubdcurves	[ 0	locks=0 ]	(	"off"	)
-vm_renderpoints	[ 0	locks=0 ]	(	2	)
-vm_renderpointsas	[ 0	locks=0 ]	(	0	)
-vm_usenforpoints	[ 0	locks=0 ]	(	"off"	)
-vm_pointscale	[ 0	locks=0 ]	(	1	)
-vm_pscalediameter	[ 0	locks=0 ]	(	"off"	)
-vm_metavolume	[ 0	locks=0 ]	(	"off"	)
-vm_coving	[ 0	locks=0 ]	(	1	)
-vm_materialoverride	[ 0	locks=0 ]	(	compact	)
-vm_overridedetail	[ 0	locks=0 ]	(	"off"	)
-vm_procuseroottransform	[ 0	locks=0 ]	(	"on"	)
+expansioneffect	[ 0	locks=0 ]	(	none	)
+modifiedprimcounttostartnewlayer	[ 0	locks=0 ]	(	0	)
+pinnedprims	[ 0	locks=0 ]	(	""	)
+resolvercontextassetpath	[ 0	locks=0 ]	(	""	)
+resolvercontextstringcount	[ 0	locks=0 ]	(	0	)
+variantselectioncount	[ 0	locks=0 ]	(	0	)
+insertionpointdescriptor	[ 0	locks=0 ]	(	""	)
+rendergallerysource	[ 0	locks=0 ]	(	$HIP/galleries/$HIPNAME.$OS/rendergallery.db	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage.userdata"
+Content-Disposition: attachment; filename="hdaroot/stage.userdata"
 Content-Type: text/plain
 
 {
@@ -3141,21 +1397,28 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/scene.init"
+Content-Disposition: attachment; filename="hdaroot/stage.datablocks"
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: base64
+
+AAAAAAAAAAIAFF9fb25sb2FkX18uZXhwYW5zaW9uAAlleHBhbnNpb24AAAAAAAAAGnsKCSJleHBhbmRlZHBhdGhzIjp0cnVlCn0KABRfX29ubG9hZF9fLmxvYWRtYXNrcwAJbG9hZG1hc2tzAAAAAAAAAHp7CgkicG9wdWxhdGU=
+YWxsIjp0cnVlLAoJInBvcHVsYXRlcGF0aHMiOlsKCV0sCgkibXV0ZWxheWVycyI6WwoJXSwKCSJsb2FkYWxsIjp0cnVlLAoJImxvYWRwYXRocyI6WwoJXSwKCSJmYWxsYmFja3MiOnsKCX0KfQo=
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/fetch_stage.init"
 Content-Type: text/plain
 
-type = lopimport::2.0
+type = fetch
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/scene.def"
+Content-Disposition: attachment; filename="hdaroot/stage/fetch_stage.def"
 Content-Type: text/plain
 
-sopflags sopflags = 
 comment ""
-position 2.34133 3.44759
+position 0 4.518
 connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+flags =  lock off model off template off footprint off xray off bypass off display off render on highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
 0 "output1"
@@ -3170,7 +1433,7 @@ stat
 {
   create -1
   modify -1
-  author Tumblehead@TH2301
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -3179,45 +1442,20 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/scene.chn"
-Content-Type: text/plain
-
-{
-    channel importframe {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      start = 41.666666666666664
-      segment { length = 0 expr = $FF }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/scene.parm"
+Content-Disposition: attachment; filename="hdaroot/stage/fetch_stage.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-loppath	[ 0	locks=0 ]	(	../../../../../IN_stage	)
-primpattern	[ 0	locks=0 ]	(	/SET	)
-excludeinactiveprims	[ 0	locks=0 ]	(	"off"	)
-purpose	[ 0	locks=0 ]	(	proxy	)
-importtraversal	[ 0	locks=0 ]	(	none	)
-striplayers	[ 0	locks=0 ]	(	"off"	)
-timesample	[ 0	locks=0 ]	(	"static"	)
-importframe	[ 0	locks=0 ]	(	[ importframe	0 ] 	)
-staticimportframe	[ 0	locks=0 ]	(	1001	)
-sepparm	[ 0	locks=0 ]	(	)
-addpathattrib	[ 0	locks=0 ]	(	"on"	)
-pathattrib	[ 0	locks=0 ]	(	path	)
-addnameattrib	[ 0	locks=0 ]	(	"on"	)
-nameattrib	[ 0	locks=0 ]	(	name	)
-viewportlod	[ 0	locks=0 ]	(	"full"	)
-pivot	[ 0	locks=0 ]	(	"centroid"	)
+loppath	[ 0	locks=0 ]	(	../../../../IN_stage	)
+outputidx	[ 0	locks=0 ]	(	0	)
+erroroninvalidlop	[ 0	locks=0 ]	(	"off"	)
+layerbreak	[ 0	locks=0 ]	(	"off"	)
+popcontextoptions	[ 0	locks=0 ]	(	0	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/scene.userdata"
+Content-Disposition: attachment; filename="hdaroot/stage/fetch_stage.userdata"
 Content-Type: text/plain
 
 {
@@ -3228,38 +1466,190 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/unpack.init"
+Content-Disposition: attachment; filename="hdaroot/stage/live.init"
 Content-Type: text/plain
 
-type = unpackusd::2.0
+type = sopimport
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/unpack.def"
+Content-Disposition: attachment; filename="hdaroot/stage/live.def"
 Content-Type: text/plain
 
-sopflags sopflags = 
 comment ""
-position 2.34133 2.41929
+position 0 2.259
 connectornextid 2
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+0 "output1"
+}
+inputsNamed3
+{
+1 	keep 1 1 "input1"
+}
+inputs
+{
+0 	keep 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/live.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+soppath	[ 0	locks=0 ]	(	../../objects/from_scene/scene	)
+asreference	[ 0	locks=0 ]	(	"off"	)
+copycontents	[ 0	locks=0 ]	(	"on"	)
+ineditblocklabel	[ 0	locks=0 ]	(	"First input is in an Edit Layer Block.  Merging SOP Layer Into First Input's Active Layer."	)
+adjustxformsforinput	[ 0	locks=0 ]	(	"on"	)
+bindmaterials	[ 0	locks=0 ]	(	nobind	)
+reftype	[ 0	locks=0 ]	(	payloadweak	)
+refprim	[ 0	locks=0 ]	(	automaticPrim	)
+refprimpath	[ 0	locks=0 ]	(	""	)
+primpath	[ 0	locks=0 ]	(	/$OS	)
+instanceable	[ 0	locks=0 ]	(	"off"	)
+parentprimkind	[ 0	locks=0 ]	(	group	)
+parentprimtype	[ 0	locks=0 ]	(	UsdGeomXform	)
+separator_config	[ 0	locks=0 ]	(	)
+enable_group	[ 0	locks=0 ]	(	"off"	)
+group	[ 0	locks=0 ]	(	""	)
+enable_grouptype	[ 0	locks=0 ]	(	"off"	)
+grouptype	[ 0	locks=0 ]	(	primitive	)
+enable_pathprefix	[ 0	locks=0 ]	(	"on"	)
+pathprefix	[ 0	locks=0 ]	(	/live	)
+enable_savepath	[ 0	locks=0 ]	(	"off"	)
+savepath	[ 0	locks=0 ]	(	$HIP/usd/$OS.usd	)
+separator_extraconfig	[ 0	locks=0 ]	(	)
+primitivedefinitiongroup	[ 0	locks=0 ]	(	0	)
+enable_packedusdhandling	[ 0	locks=0 ]	(	"off"	)
+packedusdhandling	[ 0	locks=0 ]	(	xformandattribs	)
+enable_otherprimhandling	[ 0	locks=0 ]	(	"off"	)
+otherprimhandling	[ 0	locks=0 ]	(	define	)
+enable_defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
+defineonlyleafprims	[ 0	locks=0 ]	(	"off"	)
+enable_packedhandling	[ 0	locks=0 ]	(	"off"	)
+packedhandling	[ 0	locks=0 ]	(	nativeinstances	)
+enable_agenthandling	[ 0	locks=0 ]	(	"off"	)
+agenthandling	[ 0	locks=0 ]	(	instancedskelroots	)
+enable_nurbscurvehandling	[ 0	locks=0 ]	(	"off"	)
+nurbscurvehandling	[ 0	locks=0 ]	(	basiscurves	)
+enable_nurbssurfhandling	[ 0	locks=0 ]	(	"off"	)
+nurbssurfhandling	[ 0	locks=0 ]	(	meshes	)
+enable_kindschema	[ 0	locks=0 ]	(	"off"	)
+kindschema	[ 0	locks=0 ]	(	component	)
+enable_pathattr	[ 0	locks=0 ]	(	"off"	)
+pathattr	[ 0	locks=0 ]	(	path,name	)
+enable_prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
+prefixabsolutepaths	[ 0	locks=0 ]	(	"off"	)
+enable_heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
+heightfieldconvert	[ 0	locks=0 ]	(	"off"	)
+enable_usexformcommonapi	[ 0	locks=0 ]	(	"off"	)
+usexformcommonapi	[ 0	locks=0 ]	(	"on"	)
+geometryhandlinggroup	[ 0	locks=0 ]	(	0	)
+enable_polygonsassubd	[ 0	locks=0 ]	(	"off"	)
+polygonsassubd	[ 0	locks=0 ]	(	"off"	)
+enable_subdgroup	[ 0	locks=0 ]	(	"off"	)
+subdgroup	[ 0	locks=0 ]	(	""	)
+enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
+reversepolygons	[ 0	locks=0 ]	(	"off"	)
+enable_setmissingwidths	[ 0	locks=0 ]	(	"on"	)
+setmissingwidths	[ 0	locks=0 ]	(	0.01	)
+importdatagroup	[ 0	locks=0 ]	(	0	)
+authortimesamples	[ 0	locks=0 ]	(	auto	)
+enable_setdefaultprim	[ 0	locks=0 ]	(	"off"	)
+setdefaultprim	[ 0	locks=0 ]	(	"on"	)
+enable_topologyhandling	[ 0	locks=0 ]	(	"off"	)
+topologyhandling	[ 0	locks=0 ]	(	animated	)
+enable_attribs	[ 0	locks=0 ]	(	"off"	)
+attribs	[ 0	locks=0 ]	(	"* ^__* ^usd*"	)
+enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
+indexattribs	[ 0	locks=0 ]	(	type:string	)
+enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
+constantattribs	[ 0	locks=0 ]	(	""	)
+enable_scalarconstantattribs	[ 0	locks=0 ]	(	"off"	)
+scalarconstantattribs	[ 0	locks=0 ]	(	""	)
+enable_boolattribs	[ 0	locks=0 ]	(	"off"	)
+boolattribs	[ 0	locks=0 ]	(	""	)
+enable_uintattribs	[ 0	locks=0 ]	(	"off"	)
+uintattribs	[ 0	locks=0 ]	(	""	)
+enable_uint64attribs	[ 0	locks=0 ]	(	"off"	)
+uint64attribs	[ 0	locks=0 ]	(	""	)
+enable_assetpathattribs	[ 0	locks=0 ]	(	"off"	)
+assetpathattribs	[ 0	locks=0 ]	(	""	)
+enable_relationshipattribs	[ 0	locks=0 ]	(	"off"	)
+relationshipattribs	[ 0	locks=0 ]	(	""	)
+enable_staticattribs	[ 0	locks=0 ]	(	"off"	)
+staticattribs	[ 0	locks=0 ]	(	""	)
+enable_partitionattribs	[ 0	locks=0 ]	(	"off"	)
+partitionattribs	[ 0	locks=0 ]	(	""	)
+enable_prefixpartitionsubsets	[ 0	locks=0 ]	(	"off"	)
+prefixpartitionsubsets	[ 0	locks=0 ]	(	"on"	)
+enable_subsetgroups	[ 0	locks=0 ]	(	"off"	)
+subsetgroups	[ 0	locks=0 ]	(	""	)
+enable_customattribs	[ 0	locks=0 ]	(	"off"	)
+customattribs	[ 0	locks=0 ]	(	""	)
+enable_captureweighthandling	[ 0	locks=0 ]	(	"off"	)
+captureweighthandling	[ 0	locks=0 ]	(	usdskel	)
+enable_translateuvtost	[ 0	locks=0 ]	(	"off"	)
+translateuvtost	[ 0	locks=0 ]	(	"on"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/live.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/metadata.init"
+Content-Type: text/plain
+
+type = configurelayer
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/metadata.def"
+Content-Type: text/plain
+
+comment ""
+position 0 1.1295
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
 1 "output1"
 }
 inputsNamed3
 {
-0 	scene 0 1 "input1"
+0 	live 0 1 "input1"
 }
 inputs
 {
-0 	scene 0 1
+0 	live 0 1
 }
 stat
 {
   create -1
   modify -1
-  author Tumblehead@TH2301
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -3268,40 +1658,86 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/unpack.parm"
+Content-Disposition: attachment; filename="hdaroot/stage/metadata.chn"
+Content-Type: text/plain
+
+{
+    channel starttime {
+      lefttype = extend
+      righttype = extend
+      default = 1
+      flags = 0
+      segment { length = 0 value = 1 1 expr = @fstart }
+    }
+    channel endtime {
+      lefttype = extend
+      righttype = extend
+      default = 240
+      flags = 0
+      segment { length = 0 value = 240 240 expr = @fend }
+    }
+    channel timepersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+    channel framespersecond {
+      lefttype = extend
+      righttype = extend
+      default = 24
+      flags = 0
+      segment { length = 0 value = 24 24 expr = $FPS }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/metadata.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-group	[ 0	locks=0 ]	(	""	)
-deleteorig	[ 0	locks=0 ]	(	"on"	)
-unpacktraversal	[ 0	locks=0 ]	(	std:boundables	)
-group_unpack	[ 0	locks=0 ]	(	0	)
-output	[ 0	locks=0 ]	(	"polygons"	)
-limititerations	[ 0	locks=0 ]	(	"on"	)
-iterations	[ 0	locks=0 ]	(	1	)
-pivot	[ 0	locks=0 ]	(	"centroid"	)
-addpathattrib	[ 0	locks=0 ]	(	"on"	)
-pathattrib	[ 0	locks=0 ]	(	path	)
-addnameattrib	[ 0	locks=0 ]	(	"on"	)
-nameattrib	[ 0	locks=0 ]	(	name	)
-addfilepathattrib	[ 0	locks=0 ]	(	"on"	)
-filepathattrib	[ 0	locks=0 ]	(	usdpath	)
-addinstancelevelattrib	[ 0	locks=0 ]	(	"off"	)
-instancelevelattrib	[ 0	locks=0 ]	(	instancelevel	)
-transferattributes	[ 0	locks=0 ]	(	""	)
-transfergroups	[ 0	locks=0 ]	(	""	)
-group_import	[ 0	locks=0 ]	(	0	)
-importprimvars	[ 0	locks=0 ]	(	*	)
-importinheritedprimvars	[ 0	locks=0 ]	(	"off"	)
-importcomputedvisibility	[ 0	locks=0 ]	(	"on"	)
-importattributes	[ 0	locks=0 ]	(	""	)
-nontransformingprimvars	[ 0	locks=0 ]	(	rest	)
-translatesttouv	[ 0	locks=0 ]	(	"on"	)
+setsavepath	[ 0	locks=0 ]	(	"off"	)
+savepath	[ 0	locks=0 ]	(	$HIP/usd/$OS.usd	)
+setdefaultprim	[ 0	locks=0 ]	(	"off"	)
+defaultprim	[ 0	locks=0 ]	(	""	)
+setcomment	[ 0	locks=0 ]	(	"off"	)
+comment	[ 0	locks=0 ]	(	""	)
+setstarttime	[ 0	locks=0 ]	(	"on"	)
+starttime	[ 0	locks=0 ]	(	[ starttime	1 ] 	)
+setendtime	[ 0	locks=0 ]	(	"on"	)
+endtime	[ 0	locks=0 ]	(	[ endtime	240 ] 	)
+settimepersecond	[ 0	locks=0 ]	(	"on"	)
+timepersecond	[ 0	locks=0 ]	(	[ timepersecond	24 ] 	)
+setframespersecond	[ 0	locks=0 ]	(	"on"	)
+framespersecond	[ 0	locks=0 ]	(	[ framespersecond	24 ] 	)
+separator_metrics	[ 0	locks=0 ]	(	)
+setupaxis	[ 0	locks=0 ]	(	"off"	)
+upaxis	[ 0	locks=0 ]	(	z	)
+setmetersperunit	[ 0	locks=0 ]	(	"off"	)
+metersperunit	[ 0	locks=0 ]	(	0.01	)
+separator_colorconfig	[ 0	locks=0 ]	(	)
+setcolorconfig	[ 0	locks=0 ]	(	"off"	)
+colorconfig	[ 0	locks=0 ]	(	""	)
+setcolormanagementsystem	[ 0	locks=0 ]	(	"off"	)
+colormanagementsystem	[ 0	locks=0 ]	(	OpenColorIO	)
+separator_rendersettings	[ 0	locks=0 ]	(	)
+setrendersettings	[ 0	locks=0 ]	(	"off"	)
+rendersettings	[ 0	locks=0 ]	(	""	)
+separator_customdata	[ 0	locks=0 ]	(	)
+customdatacount	[ 0	locks=0 ]	(	0	)
+separator_stagevariables	[ 0	locks=0 ]	(	)
+stagevariablescount	[ 0	locks=0 ]	(	0	)
+separator_newlayer	[ 0	locks=0 ]	(	)
+setstagemetadata	[ 0	locks=0 ]	(	"on"	)
+flattenop	[ 0	locks=0 ]	(	none	)
+startnewlayer	[ 0	locks=0 ]	(	"off"	)
+setinputlayerexplicit	[ 0	locks=0 ]	(	"on"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/unpack.userdata"
+Content-Disposition: attachment; filename="hdaroot/stage/metadata.userdata"
 Content-Type: text/plain
 
 {
@@ -3312,37 +1748,36 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/visibility.init"
+Content-Disposition: attachment; filename="hdaroot/stage/cache.init"
 Content-Type: text/plain
 
-type = blast
+type = filecache
 matchesdef = 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/visibility.def"
+Content-Disposition: attachment; filename="hdaroot/stage/cache.def"
 Content-Type: text/plain
 
-sopflags sopflags = 
 comment ""
-position 2.34133 1.42873
+position 0 5.55112e-17
 connectornextid 1
-flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
+flags =  lock off model off template off footprint off xray off bypass off display on render off highlight off unload off savedata off compress on colordefault on exposed on debug off
 outputsNamed3
 {
 }
 inputsNamed3
 {
-0 	unpack 1 1 "input1"
+0 	metadata 1 1 "input1"
 }
 inputs
 {
-0 	unpack 0 1
+0 	metadata 0 1
 }
 stat
 {
   create -1
   modify -1
-  author Tumblehead@TH2301
+  author tumblehead@judas-3070
   access 0777
 }
 color UT_Color RGB 0.8 0.8 0.8 
@@ -3351,301 +1786,242 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/visibility.parm"
+Content-Disposition: attachment; filename="hdaroot/stage/cache.chn"
+Content-Type: text/plain
+
+{
+    channel f1 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FSTART }
+    }
+    channel f2 {
+      lefttype = extend
+      righttype = extend
+      flags = 0
+      segment { length = 0 expr = $FEND }
+    }
+    channel descriptivelabel {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = ifs(ch(\"filemethod\"),chsraw(\"file\"),chs(\"cachename\")) }
+    }
+    channel lopoutput {
+      lefttype = extend
+      righttype = extend
+      defaultString = \"\"
+      flags = 0
+      segment { length = 0 expr = "{
+    if(ch('filemethod'))
+    {
+        return chs('file');
+    }
+    else
+    {
+        return chs('cachedir') + '/' + chs('cachename');
+    }
+}" }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/cache.parm"
 Content-Type: text/plain
 
 {
 version 0.8
-group	[ 0	locks=0 ]	(	@usdvisibility=invisible	)
-grouptype	[ 0	locks=0 ]	(	"prims"	)
-computenorms	[ 0	locks=0 ]	(	"off"	)
-negate	[ 0	locks=0 ]	(	"off"	)
-fillhole	[ 0	locks=0 ]	(	"off"	)
-removegrp	[ 0	locks=0 ]	(	"off"	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage/visibility.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage.order"
-Content-Type: text/plain
-
-3
-scene
-unpack
-visibility
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects/from_stage.net"
-Content-Type: text/plain
-
-1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects.order"
-Content-Type: text/plain
-
-3
-camera
-from_scene
-from_stage
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/objects.net"
-Content-Type: text/plain
-
-1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/playblast.init"
-Content-Type: text/plain
-
-type = ropnet
-matchesdef = 0
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/playblast.def"
-Content-Type: text/plain
-
-comment ""
-position 0 4.6869
-connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.55 0.3 0.4 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/playblast.parm"
-Content-Type: text/plain
-
-{
-version 0.8
+loadfromdisk	[ 0	locks=0 ]	(	"off"	)
+reload	[ 0	locks=0 ]	(	0	)
+filemethod	[ 0	locks=0 ]	(	"explicit"	)
+basename	[ 0	locks=0 ]	(	$OS	)
+filetype	[ 0	locks=0 ]	(	".usd"	)
+file	[ 0	locks=0 ]	(	$HIP/usd/$OS.usd	)
+openfiledir	[ 0	locks=0 ]	(	0	)
+basedir	[ 0	locks=0 ]	(	$HIP/usd	)
+openbasedir	[ 0	locks=0 ]	(	0	)
+enableversion	[ 0	locks=0 ]	(	"on"	)
+version	[ 0	locks=0 ]	(	1	)
+sepparm6	[ 0	locks=0 ]	(	)
+folder1	[ 0	locks=0 ]	(	0	0	0	0	)
+folder15	[ 0	locks=0 ]	(	1	)
 execute	[ 0	locks=0 ]	(	0	)
-renderdialog	[ 0	locks=0 ]	(	0	)
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/playblast.userdata"
-Content-Type: text/plain
-
-{
-	"___Version___":{
-		"type":"string",
-		"value":"___EXTERNAL___"
-	}
-}
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/playblast/render.init"
-Content-Type: text/plain
-
-type = opengl
-matchesdef = 1
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/playblast/render.def"
-Content-Type: text/plain
-
-comment ""
-position 3.14728 4.71915
-connectornextid 0
-flags =  lock off model off template off footprint off xray off bypass off display on render on highlight off unload off savedata off compress on colordefault on exposed on
-outputsNamed3
-{
-}
-inputsNamed3
-{
-}
-inputs
-{
-}
-stat
-{
-  create -1
-  modify -1
-  author Tumblehead@TH2301
-  access 0777
-}
-color UT_Color RGB 0.8 0.8 0.8 
-delscript ""
-exprlanguage hscript
-end
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/playblast/render.parm"
-Content-Type: text/plain
-
-{
-version 0.8
-execute	[ 0	locks=0 ]	(	0	)
-renderdialog	[ 0	locks=0 ]	(	0	)
-trange	[ 0	locks=0 ]	(	"normal"	)
-f	[ 0	locks=0 ]	(	1001	1033	1	)
-take	[ 0	locks=0 ]	(	_current_	)
-stdswitch	[ 0	locks=0 ]	(	0	0	0	0	0	0	0	)
-opsource	[ 0	locks=0 ]	(	"obj"	)
-camera	[ 0	locks=0 ]	(	../../objects/camera	)
-scenepath	[ 0	locks=0 ]	(	../../objects/	)
-sopsource	[ 0	locks=0 ]	(	"render"	)
-vobjects	[ 0	locks=0 ]	(	*	)
-forceobjects	[ 0	locks=0 ]	(	""	)
-excludeobjects	[ 0	locks=0 ]	(	""	)
-alights	[ 0	locks=0 ]	(	*	)
-forcelights	[ 0	locks=0 ]	(	""	)
-excludelights	[ 0	locks=0 ]	(	""	)
-loppath	[ 0	locks=0 ]	(	""	)
-cameraprim	[ 0	locks=0 ]	(	""	)
-purposerender	[ 0	locks=0 ]	(	"off"	)
-purposeproxy	[ 0	locks=0 ]	(	"on"	)
-purposeguide	[ 0	locks=0 ]	(	"off"	)
-soho_initsim	[ 0	locks=0 ]	(	"off"	)
-soho_viewport_menu	[ 0	locks=0 ]	(	"on"	)
-tres	[ 0	locks=0 ]	(	"off"	)
-res	[ 0	locks=0 ]	(	1280	720	)
-resmenu	[ 0	locks=0 ]	(	0	)
-aspect	[ 0	locks=0 ]	(	1	)
-tsheet	[ 0	locks=0 ]	(	"off"	)
-sheetsize	[ 0	locks=0 ]	(	2	2	)
-bgimage	[ 0	locks=0 ]	(	""	)
-vpcomment	[ 0	locks=0 ]	(	""	)
-picture	[ 0	locks=0 ]	(	$HIP/render/$HIPNAME.$OS.$F4.jpeg	)
+cookoutputnode	[ 0	locks=0 ]	(	0	)
+dirtyall	[ 0	locks=0 ]	(	0	)
+folder3	[ 0	locks=0 ]	(	1	)
+trange	[ 0	locks=0 ]	(	"range"	)
+f	[ 0	locks=0 ]	(	[ f1	0 ] 	[ f2	0 ] 	1	)
+fmenu	[ 0	locks=0 ]	(	"fstartend"	)
+substeps	[ 0	locks=0 ]	(	1	)
+useframeoverride	[ 0	locks=0 ]	(	"off"	)
+frameoverride	[ 0	locks=0 ]	(	1	)
+specificrange	[ 0	locks=0 ]	(	`chs(\"f1\")`-`chs(\"f2\")`:`chs(\"f3\")`	)
+targettopnetwork	[ 0	locks=0 ]	(	topnet1	)
+Local	[ 0	locks=0 ]	(	1	)
+topscheduler	[ 0	locks=0 ]	(	""	)
+folder0	[ 0	locks=0 ]	(	1	)
+savestyle	[ 0	locks=0 ]	(	flattenimplicitlayers	)
+fileperframe	[ 0	locks=0 ]	(	"off"	)
+errorsavingimplicitpaths	[ 0	locks=0 ]	(	"on"	)
+striplayerbreaks	[ 0	locks=0 ]	(	"off"	)
+folder4	[ 0	locks=0 ]	(	0	)
+enableoutputprocessor_simplerelativepaths	[ 0	locks=0 ]	(	"on"	)
+enableoutputprocessor_savetodirectory	[ 0	locks=0 ]	(	"off"	)
+enableoutputprocessor_savepathsrelativetooutput	[ 0	locks=0 ]	(	"off"	)
+enableoutputprocessor_usesearchpaths	[ 0	locks=0 ]	(	"off"	)
+enableoutputprocessor_matchoutputextension	[ 0	locks=0 ]	(	"off"	)
+contextoptions_group2	[ 0	locks=0 ]	(	0	)
+optioncount	[ 0	locks=0 ]	(	0	)
+folder5	[ 0	locks=0 ]	(	0	)
+loadfromdiskonsave	[ 0	locks=0 ]	(	"on"	)
+hardenbasename	[ 0	locks=0 ]	(	"on"	)
+sepparm3	[ 0	locks=0 ]	(	)
 mkpath	[ 0	locks=0 ]	(	"on"	)
+initsim	[ 0	locks=0 ]	(	"off"	)
+alfprogress	[ 0	locks=0 ]	(	"off"	)
+savebackground	[ 0	locks=0 ]	(	"on"	)
 saveretry	[ 0	locks=0 ]	(	0	)
-imagetype	[ 0	locks=0 ]	(	"image2d"	)
-colorcorrect	[ 0	locks=0 ]	(	"lut_gamma"	)
-gamma	[ 0	locks=0 ]	(	2.2	)
-lut	[ 0	locks=0 ]	(	""	)
-ociocolorspace	[ 0	locks=0 ]	(	""	)
-ociolooks	[ 0	locks=0 ]	(	""	)
-vm_image_artist	[ 0	locks=0 ]	(	""	)
-vm_image_comment	[ 0	locks=0 ]	(	""	)
-vm_image_hostname	[ 0	locks=0 ]	(	""	)
-vm_image_mplay_label	[ 0	locks=0 ]	(	""	)
-vm_image_mplay_gamma	[ 0	locks=0 ]	(	1	)
-vm_image_jpeg_quality	[ 0	locks=0 ]	(	100	)
-vm_image_tiff_compression	[ 0	locks=0 ]	(	"LZW"	)
-vm_image_exr_compression	[ 0	locks=0 ]	(	"piz"	)
-aamode	[ 0	locks=0 ]	(	"aa4"	)
-usehdr	[ 0	locks=0 ]	(	"on"	)
-stereo	[ 0	locks=0 ]	(	"leftright"	)
-shadingmode	[ 0	locks=0 ]	(	"smooth"	)
-usetextures	[ 0	locks=0 ]	(	"on"	)
-hqlighting	[ 0	locks=0 ]	(	"on"	)
-lightsamples	[ 0	locks=0 ]	(	8	)
-shadows	[ 0	locks=0 ]	(	"on"	)
-shadowquality	[ 0	locks=0 ]	(	"areaaa"	)
-shadowmap	[ 0	locks=0 ]	(	2048	)
-ambocclusion	[ 0	locks=0 ]	(	"off"	)
-ambquality	[ 0	locks=0 ]	(	2	)
-transparency	[ 0	locks=0 ]	(	"on"	)
-transquality	[ 0	locks=0 ]	(	"high"	)
-motionblur	[ 0	locks=0 ]	(	"off"	)
-motionblurframes	[ 0	locks=0 ]	(	5	)
-displacement	[ 0	locks=0 ]	(	"on"	)
-displacequality	[ 0	locks=0 ]	(	1	)
-reflection	[ 0	locks=0 ]	(	"off"	)
-minreflection	[ 0	locks=0 ]	(	0.05	)
-hdrreflection	[ 0	locks=0 ]	(	"on"	)
-reflectionsize	[ 0	locks=0 ]	(	512	)
-backfacecull	[ 0	locks=0 ]	(	"off"	)
-fognode	[ 0	locks=0 ]	(	""	)
-uniformfog	[ 0	locks=0 ]	(	"off"	)
-fogdensity	[ 0	locks=0 ]	(	0.001	)
-fogopacity	[ 0	locks=0 ]	(	1	)
-fogcolor	[ 0	locks=0 ]	(	0.5	0.5	0.5	)
-fogrange	[ 0	locks=0 ]	(	0	1000	)
-fogclipdistance	[ 0	locks=0 ]	(	1e6	)
-fogheightmode	[ 0	locks=0 ]	(	"off"	)
-fogheight	[ 0	locks=0 ]	(	100	)
-fogheightfalloff	[ 0	locks=0 ]	(	100	)
-fogsunenable	[ 0	locks=0 ]	(	"on"	)
-fogsunbloom	[ 0	locks=0 ]	(	5	)
-fogintensity	[ 0	locks=0 ]	(	1	)
-volumefog	[ 0	locks=0 ]	(	"off"	)
-vfogquality	[ 0	locks=0 ]	(	"volumehigh"	)
-vfogdensity	[ 0	locks=0 ]	(	0.001	)
-vfogopacity	[ 0	locks=0 ]	(	1	)
-vfogcolor	[ 0	locks=0 ]	(	0.5	0.5	0.5	)
-vfogrange	[ 0	locks=0 ]	(	1	200	)
-vfogheightmode	[ 0	locks=0 ]	(	"off"	)
-vfogheight	[ 0	locks=0 ]	(	100	)
-vfogheightfalloff	[ 0	locks=0 ]	(	100	)
-vfogintensity	[ 0	locks=0 ]	(	1	)
-vfogscatter	[ 0	locks=0 ]	(	1	1	)
-bloom	[ 0	locks=0 ]	(	"off"	)
-bloomscale	[ 0	locks=0 ]	(	10	)
-bloomintensity	[ 0	locks=0 ]	(	1	)
-bloomthreshold	[ 0	locks=0 ]	(	0.95	)
-dof	[ 0	locks=0 ]	(	"off"	)
-bokeh	[ 0	locks=0 ]	(	"none"	)
-bokehfile	[ 0	locks=0 ]	(	$HH/pic/bokeh_8.pic	)
-bokehcop	[ 0	locks=0 ]	(	""	)
-bokehaspect	[ 0	locks=0 ]	(	1	)
-bokehboost	[ 0	locks=0 ]	(	1	)
-volumequality	[ 0	locks=0 ]	(	"high"	)
-lod	[ 0	locks=0 ]	(	1	)
-wirewidth	[ 0	locks=0 ]	(	1	)
-wireblend	[ 0	locks=0 ]	(	0.5	)
-particle	[ 0	locks=0 ]	(	"points"	)
-pointsize	[ 0	locks=0 ]	(	3	)
-discsize	[ 0	locks=0 ]	(	0.05	)
-orientton	[ 0	locks=0 ]	(	"off"	)
-usesprites	[ 0	locks=0 ]	(	"on"	)
-usegeocolor	[ 0	locks=0 ]	(	"on"	)
-tex2dlimit	[ 0	locks=0 ]	(	"none"	)
-tex2dres	[ 0	locks=0 ]	(	2048	)
-tex2dformat	[ 0	locks=0 ]	(	"format16fp"	)
-tex3dlimit	[ 0	locks=0 ]	(	"none"	)
-tex3dres	[ 0	locks=0 ]	(	384	)
-tex3dformat	[ 0	locks=0 ]	(	"format16fp"	)
-texmemlimit	[ 0	locks=0 ]	(	512	)
-spritetexmaxres	[ 0	locks=0 ]	(	128	128	)
-instancepercent	[ 0	locks=0 ]	(	100	)
-instancelimit	[ 0	locks=0 ]	(	20	)
-instancestandin	[ 0	locks=0 ]	(	"bbox"	)
-tprerender	[ 0	locks=0 ]	(	"on"	)
+savebackuphip	[ 0	locks=0 ]	(	"off"	)
+savethumbnails	[ 0	locks=0 ]	(	"off"	)
+sepparm2	[ 0	locks=0 ]	(	)
+take	[ 0	locks=0 ]	(	_current_	)
+folder11	[ 0	locks=0 ]	(	0	)
+missingfile	[ 0	locks=0 ]	(	"warn"	)
+loadretry	[ 0	locks=0 ]	(	0	)
+cachesize	[ 0	locks=0 ]	(	0	)
+prefetch	[ 0	locks=0 ]	(	"off"	)
+folder9	[ 0	locks=0 ]	(	0	)
+tprerender	[ 0	locks=0 ]	(	"off"	)
 prerender	[ 0	locks=0 ]	(	""	)
 lprerender	[ 0	locks=0 ]	(	hscript	)
-tpreframe	[ 0	locks=0 ]	(	"on"	)
+tpreframe	[ 0	locks=0 ]	(	"off"	)
 preframe	[ 0	locks=0 ]	(	""	)
 lpreframe	[ 0	locks=0 ]	(	hscript	)
-tpostframe	[ 0	locks=0 ]	(	"on"	)
+tpostframe	[ 0	locks=0 ]	(	"off"	)
 postframe	[ 0	locks=0 ]	(	""	)
 lpostframe	[ 0	locks=0 ]	(	hscript	)
-tpostrender	[ 0	locks=0 ]	(	"on"	)
+tpostrender	[ 0	locks=0 ]	(	"off"	)
 postrender	[ 0	locks=0 ]	(	""	)
 lpostrender	[ 0	locks=0 ]	(	hscript	)
+folder12	[ 0	locks=0 ]	(	0	)
+versionstr	[ 0	locks=0 ]	(	v`chs(\"version\")`	)
+sepparm9	[ 0	locks=0 ]	(	)
+cachedir	[ 0	locks=0 ]	(	"`chs(\"basedir\") + \"/\" + chs(\"basename\")``ifs(ch(\"enableversion\"), \"/\" + chs(\"versionstr\"),\"\")`"	)
+cachename	[ 0	locks=0 ]	(	"`chs(\"basename\")``ifs(ch(\"enableversion\"), \"_\" + chs(\"versionstr\"),\"\")``chs(\"filetype\")`"	)
+descriptivelabel	[ 0	locks=0 ]	(	[ descriptivelabel	ifs(ch(\"filemethod\"),chsraw(\"file\"),chs(\"cachename\")) ] 	)
+lopoutput	[ 0	locks=0 ]	(	[ lopoutput	"{
+    if(ch('filemethod'))
+    {
+        return chs('file');
+    }
+    else
+    {
+        return chs('cachedir') + '/' + chs('cachename');
+    }
+}" ] 	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/playblast/render.userdata"
+Content-Disposition: attachment; filename="hdaroot/stage/cache.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/keep.init"
+Content-Type: text/plain
+
+type = prune
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/keep.def"
+Content-Type: text/plain
+
+comment ""
+position 0 3.3885
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on debug off
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	fetch_stage 0 1 "input1"
+}
+inputs
+{
+0 	fetch_stage 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/keep.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+pruneunselected	[ 0	locks=0 ]	(	"on"	)
+target	[ 0	locks=0 ]	(	0	)
+target_prims	[ 0	locks=0 ]	(	1	)
+num_rules	[ 0	locks=0 ]	(	1	)
+createasovers	[ 0	locks=0 ]	(	"off"	)
+doexclusions	[ 0	locks=0 ]	(	"off"	)
+exclude_prims	[ 0	locks=0 ]	(	1	)
+exclude_rules	[ 0	locks=0 ]	(	1	)
+options	[ 0	locks=0 ]	(	0	)
+method	[ 0	locks=0 ]	(	deactivate	)
+prune	[ 0	locks=0 ]	(	1	)
+prunerestrictions	[ 0	locks=0 ]	(	""	)
+prunepointinstances	[ 0	locks=0 ]	(	"off"	)
+pruneancestors	[ 0	locks=0 ]	(	"off"	)
+pruneclassprims	[ 0	locks=0 ]	(	"off"	)
+collectiongroup	[ 0	locks=0 ]	(	0	)
+createcollection	[ 0	locks=0 ]	(	"off"	)
+collectionprimpath	[ 0	locks=0 ]	(	/collections	)
+collectionname	[ 0	locks=0 ]	(	pruned	)
+enable1	[ 0	locks=0 ]	(	"on"	)
+targetmethod1	[ 0	locks=0 ]	(	primpattern	)
+primpattern1	[ 0	locks=0 ]	(	"/SET /cameras/shotCam/shotCam /Render"	)
+bboxcontainment1	[ 0	locks=0 ]	(	inside	)
+bboxsize1	[ 0	locks=0 ]	(	0	0	0	)
+bboxcenter1	[ 0	locks=0 ]	(	0	0	0	)
+primtype1	[ 0	locks=0 ]	(	UsdGeomMesh	)
+primkind1	[ 0	locks=0 ]	(	""	)
+primpurpose1	[ 0	locks=0 ]	(	default	)
+vexpression1	[ 0	locks=0 ]	(	""	)
+excludeenable1	[ 0	locks=0 ]	(	"on"	)
+excludetargetmethod1	[ 0	locks=0 ]	(	primpattern	)
+excludeprimpattern1	[ 0	locks=0 ]	(	""	)
+excludebboxcontainment1	[ 0	locks=0 ]	(	inside	)
+excludebboxsize1	[ 0	locks=0 ]	(	0	0	0	)
+excludebboxcenter1	[ 0	locks=0 ]	(	0	0	0	)
+excludeprimtype1	[ 0	locks=0 ]	(	UsdGeomMesh	)
+excludeprimkind1	[ 0	locks=0 ]	(	""	)
+excludeprimpurpose1	[ 0	locks=0 ]	(	default	)
+excludevexpression1	[ 0	locks=0 ]	(	""	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage/keep.userdata"
 Content-Type: text/plain
 
 {
@@ -3656,7 +2032,18 @@ Content-Type: text/plain
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/playblast.net"
+Content-Disposition: attachment; filename="hdaroot/stage.order"
+Content-Type: text/plain
+
+5
+fetch_stage
+live
+metadata
+cache
+keep
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/stage.net"
 Content-Type: text/plain
 
 1
@@ -3668,7 +2055,7 @@ Content-Type: text/plain
 3
 IN_scene
 objects
-playblast
+stage
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot.net"

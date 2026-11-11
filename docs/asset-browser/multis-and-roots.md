@@ -60,7 +60,8 @@ Multis subheader, or the **+** card) opens the Entity Editor on its
 **Multis** tab and asks for the new Multi there (**New Multi of shots** or
 **New Multi of assets**):
 
-- **Name**: letters and digits, not taken by another Multi of that context.
+- **Name**: letters and digits (not a Windows device name such as `CON`),
+  not taken by another Multi of that context.
 - **Timeline** (shots only): **Per shot**, **Shared** or **Shared, with
   bookmarks**; see [Shared timeline](#shared-timeline).
 - The departments it covers, every one of the context's pool ticked to
@@ -356,13 +357,25 @@ What to know:
   the hip, and are remade from the configuration whenever the workfile opens
   or the Timeline changes while it is open. Dragging one does not move a
   shot. Bookmarks of your own are never touched.
+- **Repack Timeline…** on the Multi's menu (shown only while its timeline
+  is shared) lays the members out afresh, end to end in member order, after
+  a confirmation that names any shots that currently run into each other.
+  Lengthening a shot never moves the others by itself: when an edit to a
+  shot's range (its **Edit…** form or an Entity Editor Apply) makes it run
+  into the next shot of a shared timeline, the browser says which shots
+  now overlap and offers **Repack**; declining leaves the overlap as it is.
 - Only `import_shot` and `export_layer` read the offset. Other nodes that
   work on one shot's frames (`import_layer`, playblasts, caches) still use
   the shot's own frames; set them by hand inside a shared-timeline Multi.
 - Looking through a camera, the [shot slate](settings.md#the-shot-slate)
   says which shot the playhead is in and where, in that shot's own frames.
 
-### Open Folder, Add Entity and Delete
+### Play, Open Folder, Add Entity and Delete
+
+**Play** leads the menu of a shots Multi that has members (card, list row
+or sidebar row): its shots open back to back in [the editor](play-shots.md)
+as an untitled edit, in the order of its [shared timeline](#shared-timeline)
+when it has one, else in member order.
 
 **Open Folder** on the card or the sidebar row opens
 `<project>/groups/<context>/<name>` in Explorer, when the folder exists.

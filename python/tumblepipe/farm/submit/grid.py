@@ -64,9 +64,11 @@ def publish_key(department: str) -> str:
 def columns_for(context: str, publish_departments: Sequence[str]) -> list[Column]:
     """The step columns for ``context``, publish departments in pool order.
 
-    Playblast is a shots-only preview, as it is on the farm side. Comp,
-    after Render, is shots-only too: a re-comp is a shot's composite
-    workfile over its renders (``batch_submit`` refuses one on an asset).
+    Playblast, Render and Comp are shots-only, as on the farm side
+    (``batch_submit`` refuses them on an asset). An asset's staged build has
+    no render settings, camera or lights (only a shot's root layer brings
+    them), so an asset render could not succeed (#49): asset turntables are
+    rendered from ``th::lookdev_studio`` (:data:`ASSET_RENDER_HINT`).
     """
     columns = [
         Column(publish_key(name), name, PUBLISH, name)
@@ -74,10 +76,16 @@ def columns_for(context: str, publish_departments: Sequence[str]) -> list[Column
     ]
     if context == 'shots':
         columns.append(Column(PLAYBLAST, 'Playblast', PLAYBLAST))
-    columns.append(Column(RENDER, 'Render', RENDER))
-    if context == 'shots':
+        columns.append(Column(RENDER, 'Render', RENDER))
         columns.append(Column(COMP, 'Comp', COMP))
     return columns
+
+
+#: Where an asset render goes instead of the Assets tab.
+ASSET_RENDER_HINT = (
+    "Assets are rendered as turntables: submit them from th::lookdev_studio "
+    "in the asset's lookdev workfile."
+)
 
 
 def publish_state(
@@ -386,10 +394,19 @@ def empty_columns(
     }
 
 
-def untick_sent(ticks: set, sent: set[str]) -> set:
-    """``ticks`` without the cells of the rows that went out: back from a
-    submission, what is left ticked is what was not sent."""
-    return {key for key in ticks if key[0] not in sent}
+#: The comp batch on This machine: larger than any range, so the comp runs
+#: as one task. The local queue runs one task at a time, so splitting buys
+#: nothing there and every task pays ~4 s of hython launch and hip load
+#: (#44). The farm keeps the artist's batch.
+LOCAL_COMP_BATCH = 1_000_000
+
+
+def settings_for_backend(settings: dict, backend: str) -> dict:
+    """A row's ``settings`` as sent to ``backend`` (``farm.backend``): on
+    ``local`` a comp runs its whole range as one task; nothing else changes."""
+    if backend != 'local' or not settings.get('comp'):
+        return settings
+    return dict(settings, comp_batch_size=LOCAL_COMP_BATCH)
 
 
 def stale_ticks(stale: Mapping[str, Sequence[str]]) -> set:
@@ -480,6 +497,17 @@ def tab_seed(
     return [], None, ()
 
 
+def tab_channels(
+    context: str, opened_context: str, channels: Sequence[str] | None,
+) -> tuple[str, ...] | None:
+    """The Render channels the ``context`` tab opens checked with, when the
+    opener named some (th::import_render's Render button); None lets the
+    tab check its usual seed. Only the opened tab, like :func:`tab_seed`."""
+    if context == opened_context and channels:
+        return tuple(channels)
+    return None
+
+
 def ticked_rows(ticks: Iterable[CellKey]) -> int:
     """How many entities have at least one ticked cell."""
     return len({uri for uri, _key in ticks})
@@ -506,6 +534,17 @@ def default_edit_version(published: Sequence[str]) -> str | None:
     version (``published`` oldest first), None when it has none, so its row
     cannot be ticked."""
     return published[-1] if published else None
+
+
+def edit_render_tip(name: str, backend: str) -> str:
+    """The Render Edit cell's tooltip: where the movie lands and where it
+    is made, following the dialog's Run on (``farm`` or ``local``). It
+    said "on the farm" whatever Run on was (#28)."""
+    where = "on this machine" if backend == "local" else "on the render farm"
+    return (
+        f"Render this version into render:/edits/{name}/"
+        f"{name}_edit_vNNNN.mp4 {where}."
+    )
 
 
 def edit_rows(

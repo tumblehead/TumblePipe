@@ -17,11 +17,41 @@ def random_name(
     return ''.join(choice(alphabet) for _ in range(length))
 
 
-def is_valid_entity_name(entity_name: str) -> bool:
+# The device names Windows keeps in every folder, whatever the case: a
+# folder named one of them cannot be made (or opened) there, so an entity
+# named ``con`` or ``Aux`` breaks every Windows machine of the project.
+WINDOWS_RESERVED = frozenset(
+    ['con', 'prn', 'aux', 'nul']
+    + [f'com{i}' for i in range(10)]
+    + [f'lpt{i}' for i in range(10)]
+)
+
+
+def is_name_alphabet(name: str) -> bool:
+    """ASCII letters and digits, non-empty: the entity name alphabet.
+
+    For telling names from other folders when listing what exists; a new
+    name must also pass :func:`is_valid_entity_name`."""
     # ASCII-only: str.isalnum() accepts Unicode letters/digits, but an
     # entity name becomes a URI segment and uri.py's NAME_ALPHABET is
     # ASCII, so a Unicode name would validate here yet fail to address.
-    return entity_name.isascii() and entity_name.isalnum()
+    return name.isascii() and name.isalnum()
+
+
+def entity_name_problem(entity_name: str) -> str | None:
+    """Why *entity_name* cannot name a new entity, finishing a sentence
+    that starts with the name (``"Name 'con' " + problem``); None when it
+    can."""
+    if not is_name_alphabet(entity_name):
+        return 'may only use letters and digits'
+    if entity_name.lower() in WINDOWS_RESERVED:
+        return ('is a device name Windows reserves '
+                '(CON, PRN, AUX, NUL, COM0-9, LPT0-9)')
+    return None
+
+
+def is_valid_entity_name(entity_name: str) -> bool:
+    return entity_name_problem(entity_name) is None
 
 
 def is_valid_version_name(version_name: str) -> bool:

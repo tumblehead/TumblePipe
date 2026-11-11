@@ -62,6 +62,12 @@ Checks:
     composite workfile; a Comp tick shows only the Comp settings and
     resolves ``comp`` with its ``comp_*`` keys; Comp beside a preview-only
     render is blocked.
+22. Enter in a settings field commits the field, it never opens the review;
+    Back to grid keeps the ticks of the submission (#41).
+23. A second Farm Submit replaces the open window where it stood, unless
+    that one is still sending a submission (#41).
+24. Run on This machine shows the comp as one task in place of its Batch
+    field; the render farm shows the batch (#44).
 
 The prefs file is a throwaway one (``HOUDINI_USER_PREF_DIR`` points at a
 temporary folder), so a run never changes what an artist's window remembers.
@@ -460,11 +466,20 @@ def main() -> int:
         asset_dept = asset_renderable[-1] if asset_renderable else None
         tabs_win = mod.SubmitJobsDialog(
             [asset], [asset.segments[-1]], "assets", department=asset_dept,
+            tick_kinds=(grid.PUBLISH,),
         )
+        asset_ticks = {
+            (str(asset), c.key) for c in tabs_win._panes["assets"]._columns
+            if c.kind == grid.PUBLISH and (asset_dept is None or c.department == asset_dept)
+        }
         check("17. opened from an asset, the dialog is on the Assets tab and builds only it",
               tabs_win.current_context() == "assets" and list(tabs_win._panes) == ["assets"]
-              and tabs_win._panes["assets"]._ticks == {(str(asset), grid.RENDER)},
+              and tabs_win._panes["assets"]._ticks == asset_ticks,
               f"{tabs_win.current_context()}, panes {list(tabs_win._panes)}")
+        check("17. the Assets tab has no Render column and says where turntables go (#49)",
+              not any(c.kind in (grid.RENDER, grid.PLAYBLAST, grid.COMP)
+                      for c in tabs_win._panes["assets"]._columns)
+              and grid.ASSET_RENDER_HINT in tabs_win._panes["assets"]._no_settings.text())
         tabs_win._tabs.setCurrentIndex(grid.CONTEXTS.index("shots"))
         app.processEvents()
         shots_pane = tabs_win._panes.get("shots")
@@ -477,8 +492,8 @@ def main() -> int:
               and any(c.kind == grid.PLAYBLAST for c in shots_pane._columns),
               f"{len(shots_pane._uris) if shots_pane else 0} rows")
         check("17. the Assets tab keeps its ticks and says so in its label",
-              tabs_win._panes["assets"]._ticks == {(str(asset), grid.RENDER)}
-              and tabs_win._tabs.tabText(0) == "Assets (1)",
+              tabs_win._panes["assets"]._ticks == asset_ticks
+              and (not asset_ticks or tabs_win._tabs.tabText(0) == "Assets (1)"),
               tabs_win._tabs.tabText(0))
         wait_for_scan(shots_pane)
         target_shot = next(
@@ -662,6 +677,98 @@ def main() -> int:
         # Leave the folder behind only when it explains a failure.
         import shutil
         shutil.rmtree(plan_path.parent, ignore_errors=True)
+
+    # ── 22: Enter in a field, Back to grid (#41) ──────────
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QSpinBox as _Spin
+    enter_win = mod.SubmitJobsDialog([shot], [shot.segments[-1]], "shots", department=open_dept)
+    enter_dlg = enter_win._panes["shots"]
+    wait_for_scan(enter_dlg)
+    enter_win.show()
+    app.processEvents()
+    spins = [s for s in enter_dlg.findChildren(_Spin) if s.isVisible()]
+    if not spins:
+        print("SKIP: 22. no visible settings field")
+    else:
+        spin = spins[0]
+        spin.setFocus()
+        app.processEvents()
+        for key in (Qt.Key_Return, Qt.Key_Enter):
+            QApplication.sendEvent(spin, QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier))
+            app.processEvents()
+        check("22. Enter in a settings field does not open the review",
+              enter_win._overlay.content() is None and enter_win.isVisible())
+    before = set(enter_dlg._ticks)
+    enter_dlg.after_submission({str(shot)})
+    check("22. Back to grid keeps the ticks of the last submission",
+          bool(before) and enter_dlg._ticks == before, f"{before} -> {enter_dlg._ticks}")
+    enter_win.reject()
+
+    # ── 24: Run on This machine shows the comp as one task (#44) ──
+    run_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
+    run_dlg = run_win._panes["shots"]
+    combo = run_win._backend
+    combo.setCurrentIndex(combo.findData("local"))
+    # isHidden, not isVisibleTo: the Comp section itself is hidden until a Comp tick.
+    local_ok = not run_dlg._comp_local_batch.isHidden() and run_dlg._comp_batch.isHidden()
+    combo.setCurrentIndex(combo.findData("farm"))
+    farm_ok = not run_dlg._comp_batch.isHidden() and run_dlg._comp_local_batch.isHidden()
+    check("24. Run on This machine shows the comp as one task, the farm its batch",
+          local_ok and farm_ok, f"local {local_ok}, farm {farm_ok}")
+    run_win.reject()
+
+    # ── 24b: the Render Edit tooltip follows Run on (#28) ──
+    from tumblepipe.pipe import edits as pipe_edits
+    saved = pipe_edits.list_edits, pipe_edits.published_versions
+    pipe_edits.list_edits = lambda *a, **k: ["cut"]
+    pipe_edits.published_versions = lambda *a, **k: ["v0001"]
+    try:
+        edit_win = mod.SubmitJobsDialog([], [], grid.EDITS)
+        edit_pane = edit_win._panes[grid.EDITS]
+        item = next(iter(edit_pane._items.values()))
+        combo = edit_win._backend
+        combo.setCurrentIndex(combo.findData("local"))
+        local_tip = item.toolTip(edit_pane._RENDER)
+        combo.setCurrentIndex(combo.findData("farm"))
+        farm_tip = item.toolTip(edit_pane._RENDER)
+        check("24b. Render Edit's tooltip says this machine on This machine, the farm on the farm",
+              "on this machine" in local_tip and "farm" not in local_tip
+              and "on the render farm" in farm_tip, f"{local_tip!r} / {farm_tip!r}")
+        edit_win.reject()
+    finally:
+        pipe_edits.list_edits, pipe_edits.published_versions = saved
+
+    # ── 23: one Farm Submit window (#41) ──────────────────
+    import types
+    from tumblepipe.asset_browser import scene as scene_mod
+    had_hou = "hou" in sys.modules
+    if not had_hou:
+        sys.modules["hou"] = types.SimpleNamespace(qt=types.SimpleNamespace(mainWindow=lambda: None))
+    try:
+        scene_mod.open_submit_jobs_dialog([shot], [shot.segments[-1]], "shots")
+        first = scene_mod._submit_dialog
+        first.move(first.x() + 37, first.y() + 23)
+        where = first.geometry()
+        scene_mod.open_submit_jobs_dialog([], [], "shots", tick_kinds=())
+        second = scene_mod._submit_dialog
+        app.processEvents()
+        open_windows = [w for w in QApplication.topLevelWidgets()
+                        if isinstance(w, mod.SubmitJobsDialog) and w.isVisible()]
+        check("23. a second Farm Submit replaces the open one, where it stood",
+              second is not first and open_windows == [second] and second.geometry() == where,
+              f"{len(open_windows)} open")
+        second.is_submitting = lambda: True
+        scene_mod.open_submit_jobs_dialog([], [], "shots", tick_kinds=())
+        third = scene_mod._submit_dialog
+        app.processEvents()
+        check("23. one still sending a submission keeps its window",
+              second.isVisible() and third.isVisible() and third is not second)
+        for w in (second, third):
+            w.reject()
+    finally:
+        if not had_hou:
+            sys.modules.pop("hou", None)
 
     failed = results.count(False)
     print(f"\n{len(results) - failed}/{len(results)} checks passed")

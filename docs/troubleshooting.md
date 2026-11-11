@@ -1127,6 +1127,28 @@ Karma's **OCIO** image filter switched on with no output colour space. Karma
 skips the filter and the frame is unchanged; turn it off, since farm renders
 stay scene-linear for the comp.
 
+### Render refused: "names no plane", "is a cryptomatte", "named like a cryptomatte"
+
+`<var> names no plane (driver:parameters:aov:name)` on a `CryptoPrimitives`
+or `CryptoMaterials` var came from Karma's **Karma Cryptomatte** LOP on 1.101
+and older: it names its plane in `driver:parameters:aov:husk:name`, which the
+check did not read. Later versions read it, and the render goes through.
+
+A cryptomatte var must be named `crypto*`, and a var named so must be a
+cryptomatte. The farm, the denoise and the comp know a cryptomatte by that
+name: they keep its rank planes and manifest together in one file and never
+denoise it. So:
+
+- `<var> is a cryptomatte, which the farm keeps whole only when its name
+  starts with 'crypto'`: rename it on the node that makes it (the Karma
+  Cryptomatte LOP's **Name**), e.g. `cryptoObjects`.
+- `<var> is named like a cryptomatte but is not one`: rename that var, or
+  make it a cryptomatte.
+
+The easy route is the **cryptoprimitives** / **cryptomaterials** toggles on
+[`th::render_vars`](nodes/lighting-and-rendering.md#cryptomattes); republish
+the render department after any change.
+
 ## Where to look
 
 - **The status bar.** Success notices (`Saved …`, `Created …`, `Imports

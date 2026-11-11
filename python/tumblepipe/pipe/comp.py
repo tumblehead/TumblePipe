@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence
 
 from tumblepipe import naming
-from tumblepipe.pipe.aovs import is_ramp_aov
+from tumblepipe.pipe.aovs import is_cryptomatte_aov, is_ramp_aov
 
 # The render department a comp writes, and the cross-channel layer of a
 # render department's version (the render chain's slapcomp; the composite
@@ -70,6 +70,7 @@ def aov_included(aov_name: str) -> bool:
     if name.startswith('objid_'): return True
     if name.startswith('holdout_'): return True
     if is_ramp_aov(name): return True
+    if is_cryptomatte_aov(name): return True
     return name in (BEAUTY, 'albedo', 'normal', 'depth', 'uv', 'position')
 
 
@@ -78,10 +79,12 @@ def aov_signature(aov_name: str) -> str:
 
     The beauty is RGBA (its A is the channel's alpha); light groups, albedo,
     normals, depth and position RGB; uv a vector2; mattes, holdouts and
-    ramps one channel.
+    ramps one channel; a cryptomatte's rank planes RGBA (two id/coverage
+    pairs each, see :func:`expand_cryptomattes`).
     """
     name = aov_name.lower()
     if name == BEAUTY: return 'vector4'
+    if is_cryptomatte_aov(name): return 'vector4'
     if name.startswith(LIGHT_GROUP_PREFIX): return 'vector'
     if name.startswith('objid_'): return 'float'
     if name.startswith('holdout_'): return 'float'
@@ -96,6 +99,62 @@ def is_colour_aov(aov_name: str) -> bool:
     the scene's colour space; everything else is data, read raw."""
     name = aov_name.lower()
     return name == BEAUTY or name.startswith(LIGHT_GROUP_PREFIX)
+
+
+@dataclass(frozen=True)
+class CryptomatteRank:
+    """One rank plane of a rendered cryptomatte AOV (``CryptoMaterials01``),
+    which rides import_render's cable as a field of its own.
+
+    A cryptomatte is one file (apps/exr.cryptomattes) holding a preview and
+    its rank planes; COPs' Cryptomatte node takes the ranks on its
+    ``crypto1``, ``crypto2``, ... inputs and the manifest from their
+    metadata, which a cable carries. Stands in for the AOV: same file, a
+    plane of it.
+    """
+    aov: object
+    plane: str
+
+    @property
+    def label(self) -> str:
+        return self.plane.lower()
+
+    def get_frame_range(self):
+        return self.aov.get_frame_range()
+
+    def get_aov_frame_path(self, frame):
+        return self.aov.get_aov_frame_path(frame)
+
+
+def cryptomatte_rank_planes(aov_label: str, channel_names: Iterable[str]) -> list[str]:
+    """The rank planes of the cryptomatte ``aov_label`` among its file's
+    channel names (``CryptoMaterials00.R`` -> ``CryptoMaterials00``), in
+    rank order. Case-blind against the label, the plane keeps its case."""
+    base = aov_label.lower()
+    planes = set()
+    for channel in channel_names:
+        plane = channel.rsplit('.', 1)[0] if '.' in channel else ''
+        suffix = plane[len(base):]
+        if plane.lower().startswith(base) and len(suffix) == 2 and suffix.isdigit():
+            planes.add(plane)
+    return sorted(planes, key=lambda plane: int(plane[-2:]))
+
+
+def expand_cryptomattes(aovs: Mapping, channel_names=None) -> dict:
+    """``aovs`` (``{label: AOV}``) with each cryptomatte replaced by its rank
+    planes, ``{label + NN: CryptomatteRank}``. A cryptomatte whose header
+    can't be read, or has no rank, drops out (nothing to comp from it).
+    ``channel_names`` reads an AOV's EXR channel names (swapped in tests)."""
+    channel_names = channel_names or aov_channel_names
+    expanded = dict()
+    for label, aov in aovs.items():
+        if not is_cryptomatte_aov(label):
+            expanded[label] = aov
+            continue
+        for plane in cryptomatte_rank_planes(label, channel_names(aov) or []):
+            rank = CryptomatteRank(aov, plane)
+            expanded[rank.label] = rank
+    return expanded
 
 
 def cable_fields(aov_labels: Iterable[str]) -> list[str]:
@@ -241,6 +300,7 @@ def aov_plane_name(aov) -> str:
     label for a raw render (``beauty.R``), ``C`` for the denoise's bare
     ``R,G,B(,A)``."""
     from tumblepipe.apps import exr
+    if isinstance(aov, CryptomatteRank): return aov.plane
     return exr.cop_plane_name(aov_channel_names(aov), aov.label)
 
 
@@ -448,10 +508,10 @@ def resolve_render(
             channel = channel,
             department = candidate,
             version = version_name,
-            aovs = {
+            aovs = expand_cryptomattes({
                 label: aov for label, aov in layer.aovs.items()
                 if aov_included(label)
-            },
+            }),
         )
     where = ' or '.join(reversed(candidates)) or 'any render department'
     raise NotRendered(f'channel "{channel}" has no complete render in {where} yet')
@@ -734,6 +794,87 @@ def provenance(plan: Mapping[str, Mapping]) -> dict[str, dict]:
     return reads
 
 
+###############################################################################
+# The frames the reads cover (#43)
+###############################################################################
+def covered_range(ranges: Iterable[Optional[tuple[int, int]]]) -> Optional[tuple[int, int]]:
+    """The frames every read covers: the intersection of their rendered
+    ``(first, last)`` ranges. None when there is no read, one's range is
+    unknown, or they share no frame."""
+    first, last, any_read = None, None, False
+    for frame_range in ranges:
+        if frame_range is None:
+            return None
+        any_read = True
+        first = frame_range[0] if first is None else max(first, frame_range[0])
+        last = frame_range[1] if last is None else min(last, frame_range[1])
+    if not any_read or first > last:
+        return None
+    return first, last
+
+
+def read_ranges(renders: Mapping, reads: Mapping[str, Mapping]) -> dict[str, Optional[tuple[int, int]]]:
+    """``{channel: (first, last)}`` each read covers, from its frame
+    stack's ``context.json`` (None where it is gone or has none).
+
+    ``reads`` is a composite version's record (:func:`provenance`):
+    ``{channel: {department, version}}``; ``renders`` the shot's renders
+    on disk (``RenderContext.renders``)."""
+    ranges: dict[str, Optional[tuple[int, int]]] = dict()
+    for channel, read in reads.items():
+        frame_range = None
+        try:
+            layer = renders[read['department']].layers[channel][read['version']]
+            block = layer.get_frame_range()
+            if block is not None:
+                frame_range = (block.first_frame, block.last_frame)
+        except (KeyError, AttributeError, OSError, ValueError):
+            pass
+        ranges[channel] = frame_range
+    return ranges
+
+
+def best_reads(renders: Mapping, render_department_names: Iterable[str],
+               channels: Iterable[str]) -> dict[str, dict]:
+    """What a default import (``best``, ``latest``) of each channel reads
+    now, as :func:`provenance` records it; a channel with no complete
+    render is left out."""
+    departments = list(render_department_names)
+    reads: dict[str, dict] = dict()
+    for channel in channels:
+        try:
+            resolved = resolve_render(renders, departments, channel)
+        except CompError:
+            continue
+        reads[channel] = dict(department = resolved.department, version = resolved.version)
+    return reads
+
+
+def uncovered_frames(frames: Iterable[int], ranges: Mapping[str, Optional[tuple[int, int]]]) -> dict[str, list[int]]:
+    """``{channel: frames}`` of ``frames`` outside each read's rendered
+    range: the frames a comp would fill with empty (transparent black)
+    input there. A read of unknown range covers nothing it can vouch for,
+    so it is left out rather than reported."""
+    frames = list(frames)
+    uncovered: dict[str, list[int]] = dict()
+    for channel, frame_range in ranges.items():
+        if frame_range is None:
+            continue
+        missing = [f for f in frames if not frame_range[0] <= f <= frame_range[1]]
+        if missing:
+            uncovered[channel] = missing
+    return uncovered
+
+
+def uncovered_message(uncovered: Mapping[str, list[int]], ranges: Mapping) -> list[str]:
+    """One line per channel: how many frames had no render, and what it covers."""
+    return [
+        f'{len(missing)} frames had no render in channel "{channel}" '
+        f'(it covers {ranges[channel][0]}-{ranges[channel][1]})'
+        for channel, missing in uncovered.items()
+    ]
+
+
 def unread_channels(shot_channels: Iterable[str], read_channels: Iterable[str]) -> list[str]:
     """The shot's channels no import reads, in the shot's channel order."""
     read = set(read_channels)
@@ -816,25 +957,33 @@ def next_composite_version(shot_uri, layers: Iterable[str], purpose: str = 'rend
 ###############################################################################
 # The template
 ###############################################################################
-# Network-editor units. One column per channel; a Multi repeats the set per
-# member, MEMBER_GAP further along x. A position is a node's lower-left
-# corner.
+# Network-editor units; a position is a node's lower-left corner, y grows up.
+#
+# COPs is a horizontal stream (Remy, 2026-11-11, #66): the template reads
+# left to right, inputs on the left, the export on the right. One row per
+# channel, top to bottom in channel order, each an import_render then its
+# light_mix; a free column after the mixes for grades; then the over chain,
+# one column per over, each on its front channel's row, so every wire runs
+# rightwards; then the export_comp on the last over's row. A Multi gives
+# each member its own block of rows, members top to bottom (#66), and only
+# the first member carries the sticky notes (#65).
 #
 # A COP node is a tile with its image preview, 1.77 wide and 1.68 to 1.98
 # tall (hou.Node.size() in 22.0.429: export_comp, light_mix, import_render
 # and blend), with its type and name drawn above it. NODE_FOOTPRINT is that
-# tile plus its label: no two may overlap. Rows used to be 1.2 to 1.5 apart,
-# so every import sat on its light mix and the overs on each other (Remy,
-# 2026-11-10).
+# tile plus its label: no two may overlap, nor a note a node (Remy,
+# 2026-11-10: rows 1.2 to 1.5 apart stacked every import on its light mix).
 NODE_FOOTPRINT = (1.8, 2.7)
-ROW = 3.0
-COLUMN_STRIDE = 4.0
-IMPORT_Y = 2 * ROW
-MIX_Y = ROW
-OVER_Y = 0.0
-OVER_STEP_Y = -ROW
-EXPORT_GAP_Y = -ROW
-MEMBER_GAP = 4.0
+ROW = 3.0                   # between channel rows
+COLUMN_STRIDE = 4.0         # between stages along the stream
+NOTE_SIZE = (3.2, 0.6)
+NOTE_LIFT = 0.2             # a note's gap above the node (label) it labels
+NOTE_BAND = NOTE_LIFT + NOTE_SIZE[1] + NOTE_LIFT    # above the first row
+IMPORT_COLUMN = 0
+MIX_COLUMN = 1
+GRADE_COLUMN = 2            # left free: a channel's grade goes here
+OVER_COLUMN = 3             # the first over; each later over one further
+MEMBER_GAP = 1.5            # between a Multi's member blocks
 
 
 @dataclass(frozen=True)
@@ -848,7 +997,8 @@ class NoteSpec:
 class Layout:
     """Where the template puts each node (``name -> (x, y)``), how the over
     chain is wired (``(over node, back input, front input)``, back to front),
-    and its sticky notes."""
+    and its sticky notes. Everything lies inside the block ``x .. x + width``
+    by ``y - height .. y``, ``(x, y)`` its top-left corner."""
     positions: dict
     overs: list
     notes: list
@@ -856,57 +1006,92 @@ class Layout:
     mixes: dict             # light_mix node name -> import node name
     export: str
     width: float
+    height: float = 0.0
 
 
-def template_layout(channels: list[str], suffix: str = '', x: float = 0.0) -> Layout:
-    """The composite template's layout for one shot's channels.
+def template_layout(channels: list[str], suffix: str = '', x: float = 0.0,
+                    y: float = 0.0, notes: bool = True) -> Layout:
+    """The composite template's layout for one shot's channels, its block's
+    top-left corner at ``(x, y)``.
 
-    One column per channel in the shot's channel order: ``import_render``
-    over ``light_mix``. An over chain stacks them back to front, so the last
+    One row per channel in the shot's channel order: ``import_render`` then
+    ``light_mix``. An over chain stacks them back to front, so the last
     channel is on top (the render chain's slapcomp stacks the same way), into
-    one ``export_comp``.
+    one ``export_comp``. ``notes`` False leaves the sticky notes out (a
+    Multi's later members).
+
+    A project's own template from before #66 calls this with ``x`` alone
+    and steps each member ``width + MEMBER_GAP`` along x: its members then
+    sit side by side, still clear of each other.
     """
+    node_width, node_height = NODE_FOOTPRINT
+    first_row_y = y - NOTE_BAND - node_height
+
+    def row_y(row: int) -> float:
+        return first_row_y - row * ROW
+
+    def column_x(column: int) -> float:
+        return x + column * COLUMN_STRIDE
+
     positions: dict = dict()
     imports: dict = dict()
     mixes: dict = dict()
     overs: list = []
     for index, channel in enumerate(channels):
-        column_x = x + index * COLUMN_STRIDE
         import_name = f'import_{channel}{suffix}'
         mix_name = f'light_mix_{channel}{suffix}'
-        positions[import_name] = (column_x, IMPORT_Y)
-        positions[mix_name] = (column_x, MIX_Y)
+        positions[import_name] = (column_x(IMPORT_COLUMN), row_y(index))
+        positions[mix_name] = (column_x(MIX_COLUMN), row_y(index))
         imports[import_name] = channel
         mixes[mix_name] = import_name
     mix_names = list(mixes)
     back = mix_names[0] if mix_names else None
-    chain_x = x + max(len(channels) - 1, 0) * COLUMN_STRIDE
     for index, front in enumerate(mix_names[1:]):
         over_name = f'over_{channels[index + 1]}{suffix}'
-        positions[over_name] = (chain_x, OVER_Y + index * OVER_STEP_Y)
+        positions[over_name] = (column_x(OVER_COLUMN + index), row_y(index + 1))
         overs.append((over_name, back, front))
         back = over_name
+    rows = max(len(channels), 1)
     export_name = f'export_comp{suffix}'
-    last_y = OVER_Y + max(len(overs) - 1, 0) * OVER_STEP_Y if overs else MIX_Y
-    positions[export_name] = (chain_x, last_y + EXPORT_GAP_Y)
-    width = max(len(channels), 1) * COLUMN_STRIDE
-    notes = [
-        NoteSpec('Grade a channel here, after its light mix',
-                 (x - 3.6, MIX_Y - 0.9), (3.2, 0.6)),
+    export_column = OVER_COLUMN + len(overs)    # one past the last over
+    export_position = (column_x(export_column), row_y(rows - 1))
+    positions[export_name] = export_position
+    width = export_column * COLUMN_STRIDE + max(node_width, NOTE_SIZE[0])
+    height = NOTE_BAND + node_height + (rows - 1) * ROW
+    note_y = y - NOTE_LIFT - NOTE_SIZE[1]
+    note_specs = [
         NoteSpec("Use mattes: Cable Unpack the import's aovs output",
-                 (x - 3.6, IMPORT_Y - 0.3), (3.2, 0.6)),
-        NoteSpec('Whole-frame work here, above the export',
-                 (chain_x - 3.6, positions[export_name][1] + 0.5), (3.2, 0.6)),
-    ]
+                 (column_x(IMPORT_COLUMN), note_y), NOTE_SIZE),
+        NoteSpec('Grade a channel here, after its light mix',
+                 (column_x(GRADE_COLUMN), note_y), NOTE_SIZE),
+        NoteSpec('Whole-frame work here, before the export',
+                 (export_position[0], export_position[1] + node_height + NOTE_LIFT),
+                 NOTE_SIZE),
+    ] if notes else []
     return Layout(
         positions = positions,
         overs = overs,
-        notes = notes,
+        notes = note_specs,
         imports = imports,
         mixes = mixes,
         export = export_name,
         width = width,
+        height = height,
     )
+
+
+def multi_layout(members: Sequence[tuple[str, Sequence[str]]],
+                 x: float = 0.0, y: float = 0.0) -> list[Layout]:
+    """A Multi's comp: each member's block (``(suffix, channels)``, in
+    member order) in its own rows, members top to bottom, ``MEMBER_GAP``
+    apart. Only the first member's block has the sticky notes: they say the
+    same thing for every member (#65)."""
+    layouts = []
+    for index, (suffix, channels) in enumerate(members):
+        layout = template_layout(list(channels), suffix, x, y, notes = index == 0)
+        layouts.append(layout)
+        y -= layout.height + MEMBER_GAP
+    return layouts
 
 
 ###############################################################################
@@ -921,3 +1106,36 @@ def merged_comp_layer(layers: Mapping) -> Optional[str]:
         if versions[version_name].is_complete():
             return version_name
     return None
+
+
+###############################################################################
+# Render it again (#68)
+###############################################################################
+@dataclass(frozen=True)
+class RenderSeed:
+    """What Farm Submit opens on from an import's **Render** button: the
+    shot's Render cell ticked on the Shots tab, the import's channel checked
+    (``*``: every channel) and, when the import names a concrete
+    department, that department as the render cut (Up to), which is also
+    the department the render is written under, so the import reads it."""
+    uris: tuple
+    names: tuple[str, ...]
+    context: str
+    department: Optional[str]
+    channels: tuple[str, ...]
+
+
+def render_seed(shot_uri, channel: str, department: str) -> RenderSeed:
+    """:class:`RenderSeed` for an import of ``shot_uri`` set to ``channel``
+    and ``department``. ``best`` (or blank) pins no cut: each shot's own
+    ``submission.render.department`` decides, as from the browser. A blank
+    channel checks the menu's usual seed."""
+    department = (department or '').strip()
+    channel = (channel or '').strip()
+    return RenderSeed(
+        uris=(shot_uri,),
+        names=(shot_uri.segments[-1],),
+        context='shots',
+        department=None if department in ('', BEST) else department,
+        channels=(channel,) if channel else (),
+    )

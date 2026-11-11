@@ -333,6 +333,12 @@ class PipelineMenus:
                 lambda: self._ops.open_edit(asset_id, published=True),
                 tooltip=f"Open the latest published version ({meta['published']}), read-only",
             ))
+            items.append(MenuItem(
+                "Render Edit…",
+                lambda: self._ops.render_edit(asset_id),
+                tooltip="Render a published version into a movie: Farm Submit, "
+                        "on its Edits tab, with this edit ticked",
+            ))
         if meta.get("master"):
             # A label with no action, ticked: picking it does nothing.
             items.append(MenuItem(

@@ -134,6 +134,22 @@ pub enum Step {
     /// kept as `template.py.v24.bak`, since with the HDA gone it can only
     /// fail at New from Template.
     CompositeWithoutBuildComp,
+    /// v25 — v12 again, for the stock templates fixed in the 2026-11 QA pass
+    /// that only new projects had received: blendshape, groom and lookdev,
+    /// and the effects, environment and crowd templates, whose SOP Create
+    /// kept Houdini's default Primitive Path `/$OS`, so a new workfile's
+    /// first publish failed with "Disallowed root prim" (now `/FX/$OS`,
+    /// `/SET/$OS`, `/CROWD/$OS`). A customised template is left alone and
+    /// named in the run's [`Report::templates`].
+    TemplateFixesFromQa,
+    /// v26 — v12 again, for the composite template's layout (#65, #66): the
+    /// stream reads left to right, one row per channel, and a Multi's
+    /// members each get their own rows, top to bottom, with the sticky notes
+    /// on the first member only (it places them with `pipe.comp.multi_layout`).
+    /// The older template set the members side by side, each with its notes.
+    /// A customised template is left alone and named in the run's
+    /// [`Report::templates`].
+    CompTemplateLayout,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -178,7 +194,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 24] = [
+pub const STEPS: [Step; 26] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -203,6 +219,8 @@ pub const STEPS: [Step; 24] = [
     Step::GroupSchemaUnderRoots,
     Step::EditsContext,
     Step::CompositeWithoutBuildComp,
+    Step::TemplateFixesFromQa,
+    Step::CompTemplateLayout,
 ];
 
 impl Step {
@@ -233,6 +251,8 @@ impl Step {
             Step::GroupSchemaUnderRoots => 22,
             Step::EditsContext => 23,
             Step::CompositeWithoutBuildComp => 24,
+            Step::TemplateFixesFromQa => 25,
+            Step::CompTemplateLayout => 26,
         }
     }
 
@@ -304,6 +324,12 @@ impl Step {
             }
             Step::CompositeWithoutBuildComp => {
                 "refresh _config/templates/shots/composite for the comp nodes that replace th::build_comp"
+            }
+            Step::TemplateFixesFromQa => {
+                "refresh the stock _config/templates: the blendshape, groom and lookdev fixes, and effects, environment and crowd publish under /FX, /SET and /CROWD"
+            }
+            Step::CompTemplateLayout => {
+                "refresh the stock _config/templates: the composite reads left to right, a Multi's members in rows, notes on the first only"
             }
         }
     }
@@ -502,7 +528,9 @@ impl Step {
             | Step::AnimationRigsArePublished
             | Step::AnimationCameraReadsItsEdit
             | Step::LayoutInAnimate
-            | Step::AnimationCopiesLayoutKeys => {
+            | Step::AnimationCopiesLayoutKeys
+            | Step::TemplateFixesFromQa
+            | Step::CompTemplateLayout => {
                 let v9_pending = match current_version(project_path) {
                     Ok(at) => at < Step::RefreshTemplatesAgain.version(),
                     Err(why) => return Readiness::Blocked(why),
@@ -1051,6 +1079,10 @@ impl Step {
             Step::LayoutInAnimate => refresh_stock_templates(&cfg, template_dir),
             // Same plan again, for the animation template's layout keys.
             Step::AnimationCopiesLayoutKeys => refresh_stock_templates(&cfg, template_dir),
+            // Same plan again, for the template fixes of the 2026-11 QA pass.
+            Step::TemplateFixesFromQa => refresh_stock_templates(&cfg, template_dir),
+            // Same plan again, for the composite template's rows per member.
+            Step::CompTemplateLayout => refresh_stock_templates(&cfg, template_dir),
             Step::AddGroomDepartment => {
                 // Both halves are planned before either is written. The
                 // template goes down first: a pool naming groom with no
@@ -1202,6 +1234,148 @@ fn refresh_stock_templates(cfg: &Path, template_dir: &Path) -> Result<(), String
             .map_err(|e| format!("could not write {}: {e}", path.display()))?;
     }
     Ok(())
+}
+
+/// What a step did with one of the project's department templates.
+///
+/// A template refresh used to print a bare `applied v18` whether it replaced
+/// every template or left a customised one without that step's fix, and a
+/// replaced one's backup was never mentioned (#33).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TemplateOutcome {
+    /// The project had none; the packaged template was put in place.
+    Installed,
+    /// A stock copy, brought up to the packaged template. No backup: it is
+    /// a version the scaffold shipped.
+    Refreshed,
+    /// The studio's own: left byte for byte as it was, so it did not get
+    /// what the step changed in the packaged template.
+    LeftCustomised,
+    /// Replaced by the packaged template, the original kept at `backup`.
+    Replaced { backup: PathBuf },
+}
+
+/// One template a step looked at and did not find current.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateNote {
+    pub step: Step,
+    /// The project's `template.py`.
+    pub path: PathBuf,
+    pub outcome: TemplateOutcome,
+}
+
+/// Where [`write_preserving_as`] keeps the original of `path`.
+fn backup_path(path: &Path, suffix: &str) -> PathBuf {
+    path.with_file_name(format!(
+        "{}.{suffix}",
+        path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
+    ))
+}
+
+/// Every packaged template, sorted, as (key under `templates/`, the
+/// project's path for it, packaged LF text). Empty when the scaffold cannot
+/// be read: the step itself reports that.
+fn packaged_for(cfg: &Path, template_dir: &Path) -> Vec<(String, PathBuf, String)> {
+    let source = scaffold_templates_dir(template_dir);
+    let target = cfg.join("templates");
+    let mut found = Vec::new();
+    find_files(&source, Some("template.py"), &mut found);
+    found.sort();
+    found
+        .into_iter()
+        .filter_map(|src| {
+            let dst = target.join(src.strip_prefix(&source).ok()?);
+            let text = newlines::normalize(&std::fs::read_to_string(&src).ok()?);
+            Some((template_key(&source, &src), dst, text))
+        })
+        .collect()
+}
+
+/// What a stock refresh ([`refresh_stock_templates`]) is about to do with
+/// each template that is not already the packaged one, read from the
+/// project as it stands. The writes are exactly [`v12_plan`]'s.
+fn stock_refresh_notes(cfg: &Path, template_dir: &Path) -> Vec<(PathBuf, TemplateOutcome)> {
+    let mut notes = Vec::new();
+    for (relative, dst, new_text) in packaged_for(cfg, template_dir) {
+        let outcome = match std::fs::read_to_string(&dst) {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => TemplateOutcome::Installed,
+            Err(_) => continue,
+            Ok(old) if newlines::normalize(&old) == new_text => continue,
+            Ok(old) if templates::is_stock(&relative, &old) => TemplateOutcome::Refreshed,
+            Ok(_) => TemplateOutcome::LeftCustomised,
+        };
+        notes.push((dst, outcome));
+    }
+    notes
+}
+
+/// What v2 / v9 ([`refresh_templates`]) is about to do: every packaged
+/// template that differs is replaced, its original kept as `.<suffix>`.
+fn replace_all_notes(
+    cfg: &Path,
+    template_dir: &Path,
+    suffix: &str,
+) -> Vec<(PathBuf, TemplateOutcome)> {
+    let mut notes = Vec::new();
+    for (_, dst, new_text) in packaged_for(cfg, template_dir) {
+        let outcome = match std::fs::read_to_string(&dst) {
+            Ok(old) if newlines::normalize(&old) == new_text => continue,
+            Ok(_) => TemplateOutcome::Replaced { backup: backup_path(&dst, suffix) },
+            Err(_) => TemplateOutcome::Installed,
+        };
+        notes.push((dst, outcome));
+    }
+    notes
+}
+
+impl Step {
+    /// What this step is about to do with the project's department
+    /// templates, read from the project as it stands (so: asked right
+    /// before [`Step::apply`]). Empty for a step that touches none, and for
+    /// a template that is already the packaged one.
+    fn template_notes(self, cfg: &Path, template_dir: &Path) -> Vec<(PathBuf, TemplateOutcome)> {
+        match self {
+            Step::RefreshTemplates => replace_all_notes(cfg, template_dir, "bak"),
+            Step::RefreshTemplatesAgain => replace_all_notes(cfg, template_dir, "v9.bak"),
+            Step::RefreshStockTemplates
+            | Step::RefreshStockTemplatesAgain
+            | Step::LayoutCameraFollowsResolution
+            | Step::AnimationRigsArePublished
+            | Step::AnimationCameraReadsItsEdit
+            | Step::LayoutInAnimate
+            | Step::AnimationCopiesLayoutKeys
+            | Step::AddGroomDepartment
+            | Step::TemplateFixesFromQa
+            | Step::CompTemplateLayout => stock_refresh_notes(cfg, template_dir),
+            Step::CompositeWithoutBuildComp => {
+                let relative: PathBuf = COMPOSITE.split('/').collect();
+                let path = cfg.join("templates").join(relative).join("template.py");
+                match v24_plan(cfg, template_dir) {
+                    Ok(Some(write)) => {
+                        let outcome = if write.backup {
+                            TemplateOutcome::Replaced { backup: backup_path(&write.path, "v24.bak") }
+                        } else {
+                            TemplateOutcome::Refreshed
+                        };
+                        vec![(write.path, outcome)]
+                    }
+                    // Left alone: say so when it is there and not the
+                    // packaged one (a customised copy without build_comp).
+                    Ok(None) => packaged_for(cfg, template_dir)
+                        .into_iter()
+                        .filter(|(key, _, _)| key == COMPOSITE)
+                        .filter_map(|(_, dst, new_text)| {
+                            let old = std::fs::read_to_string(&dst).ok()?;
+                            (newlines::normalize(&old) != new_text)
+                                .then(|| (path.clone(), TemplateOutcome::LeftCustomised))
+                        })
+                        .collect(),
+                    Err(_) => Vec::new(),
+                }
+            }
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// The one template v24 refreshes, as its directory under `templates/`.
@@ -2050,11 +2224,105 @@ pub struct Report {
     /// Set when the run was refused up front because a pending step could not
     /// run. Nothing was written in that case.
     pub refused: Option<(Step, String)>,
+    /// What the steps that succeeded did with the department templates, in
+    /// step order: installed, refreshed, left alone as customised, or
+    /// replaced with a backup. A template already current is not listed.
+    pub templates: Vec<TemplateNote>,
 }
 
 impl Report {
     pub fn is_ok(&self) -> bool {
         self.refused.is_none() && self.applied.iter().all(|(_, r)| r.is_ok())
+    }
+
+    /// Whether a person has something to do after the run: a customised
+    /// template missed a fix, or one was replaced and its original kept.
+    pub fn templates_need_attention(&self) -> bool {
+        self.templates.iter().any(|note| {
+            matches!(
+                note.outcome,
+                TemplateOutcome::LeftCustomised | TemplateOutcome::Replaced { .. }
+            )
+        })
+    }
+
+    /// The template notes as lines for a log or a window, grouped by what
+    /// happened and then by template, each naming the steps involved:
+    /// a customised template is listed once with every step it sat out.
+    /// One that a later step of the same run replaced (v24 does, keeping
+    /// the original) is no longer the customised one: it is listed as
+    /// replaced only.
+    /// `template_dir` is the packaged scaffold, named so a TD knows what to
+    /// compare a customised template with. Empty when no step touched one.
+    pub fn template_lines(&self, template_dir: &Path) -> Vec<String> {
+        fn versions(steps: &[u32]) -> String {
+            steps.iter().map(|v| format!("v{v}")).collect::<Vec<_>>().join(", ")
+        }
+        // (path, steps) per kind, in first-seen order.
+        let mut installed: Vec<(PathBuf, Vec<u32>)> = Vec::new();
+        let mut refreshed: Vec<(PathBuf, Vec<u32>)> = Vec::new();
+        let mut customised: Vec<(PathBuf, Vec<u32>)> = Vec::new();
+        let mut replaced: Vec<(PathBuf, u32, PathBuf)> = Vec::new();
+        for note in &self.templates {
+            let version = note.step.version();
+            let bucket = match &note.outcome {
+                TemplateOutcome::Installed => &mut installed,
+                TemplateOutcome::Refreshed => &mut refreshed,
+                TemplateOutcome::LeftCustomised => &mut customised,
+                TemplateOutcome::Replaced { backup } => {
+                    replaced.push((note.path.clone(), version, backup.clone()));
+                    continue;
+                }
+            };
+            match bucket.iter_mut().find(|(path, _)| *path == note.path) {
+                Some((_, steps)) => steps.push(version),
+                None => bucket.push((note.path.clone(), vec![version])),
+            }
+        }
+        // What a later step wrote is not a customised template any more.
+        customised.retain(|(path, _)| {
+            let last_left = self.templates.iter().rposition(|n| {
+                n.path == *path && n.outcome == TemplateOutcome::LeftCustomised
+            });
+            let last_written = self.templates.iter().rposition(|n| {
+                n.path == *path && n.outcome != TemplateOutcome::LeftCustomised
+            });
+            last_left > last_written
+        });
+        let mut lines = Vec::new();
+        for (title, bucket) in [
+            ("templates installed (the project had none)", &installed),
+            ("stock templates refreshed", &refreshed),
+        ] {
+            if bucket.is_empty() {
+                continue;
+            }
+            lines.push(format!("{title}:"));
+            for (path, steps) in bucket {
+                lines.push(format!("  {} ({})", path.display(), versions(steps)));
+            }
+        }
+        if !replaced.is_empty() {
+            lines.push("templates replaced, the original kept beside them:".to_string());
+            for (path, version, backup) in &replaced {
+                lines.push(format!(
+                    "  {} (v{version}); original: {}",
+                    path.display(),
+                    backup.display()
+                ));
+            }
+        }
+        if !customised.is_empty() {
+            lines.push(format!(
+                "customised templates left as they are. They did not get what these steps \
+                 changed; compare each with the packaged one under {}:",
+                scaffold_templates_dir(template_dir).display()
+            ));
+            for (path, steps) in &customised {
+                lines.push(format!("  {} (not refreshed by {})", path.display(), versions(steps)));
+            }
+        }
+        lines
     }
 }
 
@@ -2085,6 +2353,7 @@ fn migrate_through(
         to: from,
         applied: Vec::new(),
         refused: None,
+        templates: Vec::new(),
     };
 
     if let Some((step, why)) = first_blocker_through(project_path, template_dir, last)? {
@@ -2094,6 +2363,9 @@ fn migrate_through(
 
     let cfg = config_dir(project_path);
     for step in pending_through(project_path, last)? {
+        // Read before the step writes: afterwards a refreshed template and
+        // one that was current all along look the same.
+        let notes = step.template_notes(&cfg, template_dir);
         let result = step
             .apply(project_path, template_dir)
             .and_then(|()| write_version(&cfg, step.version()));
@@ -2102,6 +2374,11 @@ fn migrate_through(
         if !ok {
             break;
         }
+        report.templates.extend(notes.into_iter().map(|(path, outcome)| TemplateNote {
+            step,
+            path,
+            outcome,
+        }));
         report.to = step.version();
     }
     Ok(report)
@@ -3214,7 +3491,7 @@ mod tests {
         let cfg = dir.path().join("_config");
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
 
         let path = cfg.join(conventions::STORAGE_FILE);
         let table = load_json(&path).unwrap();
@@ -3791,6 +4068,8 @@ mod tests {
             (Step::GroupSchemaUnderRoots, Readiness::Ready),
             (Step::EditsContext, Readiness::Ready),
             (Step::CompositeWithoutBuildComp, Readiness::Ready),
+            (Step::TemplateFixesFromQa, Readiness::Blocked(_)),
+            (Step::CompTemplateLayout, Readiness::Blocked(_)),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -3901,7 +4180,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 24);
+        assert_eq!(latest_version(), 26);
         assert_eq!(current_version(&target).unwrap(), latest_version());
         assert!(pending(&target).unwrap().is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -4047,8 +4326,8 @@ mod tests {
         let dir = project_at_v12_with_variants();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 12);
-        assert_eq!(report.to, 24);
+        assert_eq!(report.applied.len(), (latest_version() - 12) as usize);
+        assert_eq!(report.to, latest_version());
 
         let db = dir.path().join("_config").join("db");
         let schemas = load_json(&db.join("schemas.json")).unwrap();
@@ -4105,7 +4384,7 @@ mod tests {
         let template = scaffold();
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let entity = load_json(&db.join("entity.json")).unwrap();
         assert_eq!(entity["properties"]["channels"], serde_json::json!(["bg"]));
         let config = load_json(&db.join("config.json")).unwrap();
@@ -4123,7 +4402,7 @@ mod tests {
         write_version(&dir.path().join("_config"), 12).unwrap();
         let second = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(second.is_ok(), "{second:?}");
-        assert_eq!(second.to, 24);
+        assert_eq!(second.to, latest_version());
         let again: Vec<String> = names.iter().map(|n| db_text(dir.path(), n)).collect();
         assert_eq!(again, first);
         assert!(v13_plan(&dir.path().join("_config")).unwrap().is_empty());
@@ -4203,7 +4482,7 @@ mod tests {
         }
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let animation =
             std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
         assert_eq!(
@@ -4235,7 +4514,7 @@ mod tests {
         std::fs::write(&path, &shipped_at_v14).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             layout.replace("
@@ -4277,8 +4556,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v15).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 9);
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(report.applied.len(), (latest_version() - 15) as usize);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         // Only rigged assets get a row (since 80def61306: the animatable ones)
@@ -4303,8 +4582,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v17).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 7);
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(report.applied.len(), (latest_version() - 17) as usize);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("anim_camera.parm('loppath').set(camera_edit_node.path())"));
@@ -4326,8 +4605,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v18).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 6);
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(report.applied.len(), (latest_version() - 18) as usize);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let layout = std::fs::read_to_string(&path).unwrap();
         assert_eq!(layout, packaged_text("shots/layout"));
         assert!(layout.contains("layout_rigs.add_layout_animate(scene_node, camera_node, entity_uri)"));
@@ -4349,8 +4628,8 @@ mod tests {
         std::fs::write(&path, &shipped_at_v19).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(report.applied.len(), 5);
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(report.applied.len(), (latest_version() - 19) as usize);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
         assert!(animation.contains("layout_keys_rows.add_to_dive("));
@@ -4431,10 +4710,12 @@ mod tests {
                 (Step::AddGroomDepartment, Ok(())),
                 (Step::GroupSchemaUnderRoots, Ok(())),
                 (Step::EditsContext, Ok(())),
-                (Step::CompositeWithoutBuildComp, Ok(()))
+                (Step::CompositeWithoutBuildComp, Ok(())),
+                (Step::TemplateFixesFromQa, Ok(())),
+                (Step::CompTemplateLayout, Ok(())),
             ]
         );
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         assert_eq!(
             asset_departments(dir.path()),
             ["model", "blendshape", "groom", "lookdev", "rig"]
@@ -4552,10 +4833,12 @@ mod tests {
             vec![
                 (Step::GroupSchemaUnderRoots, Ok(())),
                 (Step::EditsContext, Ok(())),
-                (Step::CompositeWithoutBuildComp, Ok(()))
+                (Step::CompositeWithoutBuildComp, Ok(())),
+                (Step::TemplateFixesFromQa, Ok(())),
+                (Step::CompTemplateLayout, Ok(())),
             ]
         );
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let roots = group_roots(dir.path());
         assert_eq!(roots.as_object().unwrap().keys().collect::<Vec<_>>(), ["shots", "assets"]);
         for root in GROUP_ROOTS {
@@ -4691,9 +4974,14 @@ mod tests {
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(
             report.applied,
-            vec![(Step::EditsContext, Ok(())), (Step::CompositeWithoutBuildComp, Ok(()))]
+            vec![
+                (Step::EditsContext, Ok(())),
+                (Step::CompositeWithoutBuildComp, Ok(())),
+                (Step::TemplateFixesFromQa, Ok(())),
+                (Step::CompTemplateLayout, Ok(())),
+            ]
         );
-        assert_eq!(current_version(dir.path()).unwrap(), 24);
+        assert_eq!(current_version(dir.path()).unwrap(), latest_version());
 
         let packaged = packaged_scaffold().join("_config");
         let storage = load_json(&dir.path().join("_config").join(conventions::STORAGE_FILE)).unwrap();
@@ -4799,7 +5087,7 @@ mod tests {
     #[test]
     fn v24_leaves_a_missing_composite_template_missing() {
         let dir = project(Some(23));
-        let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+        let report = migrate_through(dir.path(), &packaged_scaffold(), 24).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.applied, vec![(Step::CompositeWithoutBuildComp, Ok(()))]);
         assert!(!project_template(dir.path(), COMPOSITE).exists());
@@ -4881,7 +5169,7 @@ mod tests {
                 let fixtures = composite_fixtures();
                 let text = with_style(index.get(&fixtures), crlf);
                 let (dir, path) = project_with(&text);
-                let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+                let report = migrate_through(dir.path(), &packaged_scaffold(), 24).unwrap();
                 prop_assert!(report.is_ok(), "{:?}", report);
                 prop_assert_eq!(current_version(dir.path()).unwrap(), 24);
                 let after = std::fs::read_to_string(&path).unwrap();
@@ -4903,7 +5191,7 @@ mod tests {
                 let text = with_style(&format!("{before}\n{line}\n{after}\n"), crlf);
                 prop_assume!(!templates::is_stock(COMPOSITE, &text));
                 let (dir, path) = project_with(&text);
-                let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+                let report = migrate_through(dir.path(), &packaged_scaffold(), 24).unwrap();
                 prop_assert!(report.is_ok(), "{:?}", report);
                 let now = std::fs::read_to_string(&path).unwrap();
                 prop_assert_eq!(newlines::normalize(&now), packaged_text(COMPOSITE));
@@ -4921,7 +5209,7 @@ mod tests {
                 let text = with_style(&format!("# ours\n{text}\n"), crlf);
                 prop_assume!(!text.contains(BUILD_COMP));
                 let (dir, path) = project_with(&text);
-                let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
+                let report = migrate_through(dir.path(), &packaged_scaffold(), 24).unwrap();
                 prop_assert!(report.is_ok(), "{:?}", report);
                 prop_assert_eq!(current_version(dir.path()).unwrap(), 24);
                 prop_assert_eq!(std::fs::read(&path).unwrap(), text.into_bytes());
@@ -4947,10 +5235,10 @@ mod tests {
                 let text = with_style(&text, crlf);
                 let (dir, path) = project_with(&text);
                 let template = packaged_scaffold();
-                prop_assert!(migrate(dir.path(), &template).unwrap().is_ok());
+                prop_assert!(migrate_through(dir.path(), &template, 24).unwrap().is_ok());
                 let first = snapshot(&path);
                 write_version(&dir.path().join("_config"), 23).unwrap();
-                prop_assert!(migrate(dir.path(), &template).unwrap().is_ok());
+                prop_assert!(migrate_through(dir.path(), &template, 24).unwrap().is_ok());
                 prop_assert_eq!(snapshot(&path), first);
                 prop_assert_eq!(v24_plan(&dir.path().join("_config"), &template).unwrap(), None);
 
@@ -4958,10 +5246,340 @@ mod tests {
                 let (dir, path) = project_with(&with_style(&format!("{own}\n{line}\n"), crlf));
                 let kept = format!("# the earlier original\n{earlier}\n");
                 std::fs::write(backup_of(&path), &kept).unwrap();
-                prop_assert!(migrate(dir.path(), &template).unwrap().is_ok());
+                prop_assert!(migrate_through(dir.path(), &template, 24).unwrap().is_ok());
                 prop_assert_eq!(std::fs::read_to_string(backup_of(&path)).unwrap(), kept);
                 let now = std::fs::read_to_string(&path).unwrap();
                 prop_assert_eq!(newlines::normalize(&now), packaged_text(COMPOSITE));
+            }
+        }
+    }
+
+    // ── v25: the QA pass's template fixes, and what a run says it did ──
+
+    /// The packaged effects, environment and crowd templates publish under
+    /// their own root prim, which is what v25 brings to existing projects.
+    #[test]
+    fn v25_the_packaged_sop_templates_name_their_root_prim() {
+        for (relative, root) in [
+            ("shots/effects", "/FX/$OS"),
+            ("shots/environment", "/SET/$OS"),
+            ("shots/crowd", "/CROWD/$OS"),
+        ] {
+            assert!(packaged_text(relative).contains(root), "{relative} lacks {root}");
+        }
+    }
+
+    /// A customised template sits out every stock refresh of a long run, and
+    /// the report says so once, naming each step; v24's backup is named too.
+    #[test]
+    fn a_run_reports_what_each_step_did_with_the_templates() {
+        let customised = "# studio animation\n";
+        let own_comp = "# ours\ncomp = copnet.createNode('th::build_comp', 'comp')\n";
+        let dir = project(Some(13));
+        for (relative, text) in [("shots/animation", customised), (COMPOSITE, own_comp)] {
+            let path = project_template(dir.path(), relative);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+        }
+        let scaffold = packaged_scaffold();
+        let report = migrate(dir.path(), &scaffold).unwrap();
+        assert!(report.is_ok(), "{report:?}");
+        let animation = project_template(dir.path(), "shots/animation");
+        let composite = project_template(dir.path(), COMPOSITE);
+        let sat_out: Vec<u32> = report
+            .templates
+            .iter()
+            .filter(|n| n.path == animation && n.outcome == TemplateOutcome::LeftCustomised)
+            .map(|n| n.step.version())
+            .collect();
+        assert_eq!(sat_out, vec![14, 15, 16, 18, 19, 20, 21, 25, 26]);
+        assert_eq!(std::fs::read_to_string(&animation).unwrap(), customised);
+        // The composite: left alone by the stock refreshes before v24, then
+        // replaced by v24 with its original kept, and current from then on.
+        let backup = composite.with_file_name("template.py.v24.bak");
+        let composite_notes: Vec<(u32, &TemplateOutcome)> = report
+            .templates
+            .iter()
+            .filter(|n| n.path == composite)
+            .map(|n| (n.step.version(), &n.outcome))
+            .collect();
+        assert_eq!(
+            composite_notes.last(),
+            Some(&(24, &TemplateOutcome::Replaced { backup: backup.clone() }))
+        );
+        assert!(composite_notes[..composite_notes.len() - 1]
+            .iter()
+            .all(|(v, outcome)| *v < 24 && **outcome == TemplateOutcome::LeftCustomised));
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), own_comp);
+        // Everything else the project lacked was installed, once, by v14.
+        let layout = project_template(dir.path(), "shots/layout");
+        let layout_notes: Vec<_> = report.templates.iter().filter(|n| n.path == layout).collect();
+        assert_eq!(layout_notes.len(), 1);
+        assert_eq!(layout_notes[0].step, Step::RefreshStockTemplatesAgain);
+        assert_eq!(layout_notes[0].outcome, TemplateOutcome::Installed);
+
+        assert!(report.templates_need_attention());
+        let lines = report.template_lines(&scaffold);
+        let animation_lines: Vec<&String> = lines
+            .iter()
+            .filter(|line| line.contains(&animation.display().to_string()))
+            .collect();
+        assert_eq!(animation_lines.len(), 1, "{lines:#?}");
+        assert!(
+            animation_lines[0].contains("not refreshed by v14, v15, v16, v18, v19, v20, v21, v25, v26"),
+            "{lines:#?}"
+        );
+        assert!(
+            lines.iter().any(|line| line.contains(&backup.display().to_string())
+                && line.contains("(v24)")),
+            "{lines:#?}"
+        );
+        assert!(lines
+            .iter()
+            .any(|line| line.contains(&scaffold_templates_dir(&scaffold).display().to_string())));
+        // The composite was replaced in the end: it is not also listed as a
+        // customised template left alone.
+        assert!(
+            !lines.iter().any(|line| line.contains("not refreshed by")
+                && line.contains(&composite.display().to_string())),
+            "{lines:#?}"
+        );
+    }
+
+    /// A run that touched no template has nothing to say about them.
+    #[test]
+    fn a_current_project_reports_no_templates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("fresh");
+        crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
+        write_version(&config_dir(&target), 24).unwrap();
+        let report = migrate(&target, &packaged_scaffold()).unwrap();
+        assert!(report.is_ok(), "{report:?}");
+        assert_eq!(
+            report.applied,
+            vec![(Step::TemplateFixesFromQa, Ok(())), (Step::CompTemplateLayout, Ok(()))]
+        );
+        assert_eq!(report.templates, Vec::new());
+        assert!(!report.templates_need_attention());
+        assert_eq!(report.template_lines(&packaged_scaffold()), Vec::<String>::new());
+    }
+
+    // ── v26: the composite template's layout ──
+
+    /// A v25 project's stock composite template, the one that set a Multi's
+    /// members side by side, is brought up to the packaged one, which gives
+    /// each member its own rows; a customised one is left and named.
+    #[test]
+    fn v26_refreshes_the_stock_composite_and_leaves_a_customised_one() {
+        assert!(packaged_text(COMPOSITE).contains("comp.multi_layout("));
+        let previous = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("3b8ef3376f.py"))
+            .unwrap()
+            .2;
+        assert!(!previous.contains("multi_layout"));
+        let scaffold = packaged_scaffold();
+        for (text, expected) in [
+            (previous.replace('\n', "\r\n"), TemplateOutcome::Refreshed),
+            ("# our comp\n".to_string(), TemplateOutcome::LeftCustomised),
+        ] {
+            let dir = project(Some(25));
+            let path = project_template(dir.path(), COMPOSITE);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, &text).unwrap();
+            let report = migrate(dir.path(), &scaffold).unwrap();
+            assert!(report.is_ok(), "{report:?}");
+            assert_eq!(report.applied, vec![(Step::CompTemplateLayout, Ok(()))]);
+            let notes: Vec<_> = report.templates.iter().filter(|n| n.path == path).collect();
+            assert_eq!(notes.len(), 1, "{notes:?}");
+            assert_eq!(notes[0].step, Step::CompTemplateLayout);
+            assert_eq!(notes[0].outcome, expected);
+            let after = std::fs::read_to_string(&path).unwrap();
+            if expected == TemplateOutcome::Refreshed {
+                assert_eq!(newlines::normalize(&after), packaged_text(COMPOSITE));
+                assert_eq!(newlines::style_of(&after), newlines::style_of(&text));
+            } else {
+                assert_eq!(after, text);
+            }
+        }
+    }
+
+    /// The stock refreshes that carry nothing but templates (v25, v26),
+    /// each run on its own from the version before it.
+    mod stock_refresh_props {
+        use super::*;
+        use proptest::prelude::*;
+
+        /// What a project holds for one packaged template.
+        #[derive(Debug, Clone)]
+        enum Held {
+            Missing,
+            Current,
+            /// A version the scaffold shipped, by index among that
+            /// template's fixtures.
+            Stock(prop::sample::Index),
+            Customised(String),
+        }
+
+        fn held() -> impl Strategy<Value = Held> {
+            prop_oneof![
+                Just(Held::Missing),
+                Just(Held::Current),
+                any::<prop::sample::Index>().prop_map(Held::Stock),
+                prop::collection::vec("[ -~]{0,40}", 0..8)
+                    .prop_map(|lines| Held::Customised(format!("# ours\n{}\n", lines.join("\n")))),
+            ]
+        }
+
+        /// Every file under the project's templates, with its bytes.
+        fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+            let mut files = Vec::new();
+            find_files(&dir.join("_config").join("templates"), None, &mut files);
+            files.sort();
+            files
+                .into_iter()
+                .map(|f| {
+                    let bytes = std::fs::read(&f).unwrap();
+                    (f, bytes)
+                })
+                .collect()
+        }
+
+        /// For any mix of missing, current, stock and customised templates
+        /// in a project one version before `step`: migrating through `step`
+        /// leaves every template the packaged one except the customised,
+        /// which stay byte for byte; nothing is backed up; the report names
+        /// exactly what `step` did with each; and a second run changes
+        /// nothing.
+        fn refreshes_stock_and_reports_customised(
+            step: Step,
+            kinds: &[(Held, bool)],
+        ) -> Result<(), TestCaseError> {
+            let to = step.version();
+            let from = to - 1;
+            let packaged = packaged_templates();
+            let shipped = shipped_templates();
+            let dir = project(Some(from));
+            // (path, what it held, the bytes written or None)
+            let mut expected: Vec<(PathBuf, &str, Option<String>)> = Vec::new();
+            for ((relative, new_text), (kind, crlf)) in packaged.iter().zip(kinds.iter().cycle()) {
+                let path = project_template(dir.path(), relative);
+                let style = |text: &str| {
+                    if *crlf { newlines::apply(&newlines::normalize(text), "\r\n") }
+                    else { newlines::normalize(text) }
+                };
+                let (label, text) = match kind {
+                    Held::Missing => ("installed", None),
+                    Held::Current => ("current", Some(style(new_text))),
+                    Held::Stock(index) => {
+                        let versions: Vec<&String> = shipped
+                            .iter()
+                            .filter(|(key, _, _)| key == relative)
+                            .map(|(_, _, text)| text)
+                            .collect();
+                        let text = style(index.get(&versions));
+                        if newlines::normalize(&text) == *new_text {
+                            ("current", Some(text))
+                        } else {
+                            ("refreshed", Some(text))
+                        }
+                    }
+                    Held::Customised(text) => {
+                        let text = style(text);
+                        prop_assume!(!templates::is_stock(relative, &text));
+                        prop_assume!(templates::removed_apis(&text).is_empty());
+                        prop_assume!(newlines::normalize(&text) != *new_text);
+                        ("customised", Some(text))
+                    }
+                };
+                if let Some(text) = &text {
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(&path, text).unwrap();
+                }
+                expected.push((path, label, text));
+            }
+
+            let scaffold = packaged_scaffold();
+            let report = migrate_through(dir.path(), &scaffold, to).unwrap();
+            prop_assert!(report.is_ok(), "{:?}", report);
+            prop_assert_eq!(current_version(dir.path()).unwrap(), to);
+
+            for ((path, label, before), (_, new_text)) in expected.iter().zip(packaged.iter()) {
+                let after = std::fs::read_to_string(path).unwrap();
+                let note: Vec<&TemplateOutcome> = report
+                    .templates
+                    .iter()
+                    .filter(|n| n.path == *path)
+                    .map(|n| {
+                        assert_eq!(n.step, step);
+                        &n.outcome
+                    })
+                    .collect();
+                match *label {
+                    "customised" => {
+                        prop_assert_eq!(Some(&after), before.as_ref(), "a customised template is untouched");
+                        prop_assert_eq!(note, vec![&TemplateOutcome::LeftCustomised]);
+                    }
+                    "current" => {
+                        prop_assert_eq!(Some(&after), before.as_ref(), "a current template is not rewritten");
+                        prop_assert!(note.is_empty());
+                    }
+                    "refreshed" => {
+                        prop_assert_eq!(&newlines::normalize(&after), new_text);
+                        prop_assert_eq!(
+                            newlines::style_of(&after),
+                            newlines::style_of(before.as_ref().unwrap())
+                        );
+                        prop_assert_eq!(note, vec![&TemplateOutcome::Refreshed]);
+                    }
+                    _ => {
+                        prop_assert_eq!(&after, new_text);
+                        prop_assert_eq!(note, vec![&TemplateOutcome::Installed]);
+                    }
+                }
+            }
+            let after_first = snapshot(dir.path());
+            prop_assert!(
+                after_first.iter().all(|(f, _)| f.file_name().unwrap() == "template.py"),
+                "v{} backs nothing up", to
+            );
+            let customised = expected.iter().filter(|(_, label, _)| *label == "customised").count();
+            prop_assert_eq!(report.templates_need_attention(), customised > 0);
+            prop_assert_eq!(
+                report.template_lines(&scaffold).iter().filter(|l| l.contains(&format!("not refreshed by v{to}"))).count(),
+                customised
+            );
+
+            // Again: nothing changes, and only the customised are named.
+            write_version(&dir.path().join("_config"), from).unwrap();
+            let second = migrate_through(dir.path(), &scaffold, to).unwrap();
+            prop_assert!(second.is_ok(), "{:?}", second);
+            prop_assert_eq!(snapshot(dir.path()), after_first);
+            prop_assert_eq!(second.templates.len(), customised);
+            prop_assert!(second
+                .templates
+                .iter()
+                .all(|n| n.outcome == TemplateOutcome::LeftCustomised));
+            Ok(())
+        }
+
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(32))]
+
+            /// v25, from a v24 project.
+            #[test]
+            fn v25_refreshes_stock_and_reports_customised(
+                kinds in prop::collection::vec((held(), any::<bool>()), 20),
+            ) {
+                refreshes_stock_and_reports_customised(Step::TemplateFixesFromQa, &kinds)?;
+            }
+
+            /// v26, from a v25 project.
+            #[test]
+            fn v26_refreshes_stock_and_reports_customised(
+                kinds in prop::collection::vec((held(), any::<bool>()), 20),
+            ) {
+                refreshes_stock_and_reports_customised(Step::CompTemplateLayout, &kinds)?;
             }
         }
     }

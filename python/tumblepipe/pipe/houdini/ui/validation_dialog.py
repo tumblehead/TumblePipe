@@ -25,6 +25,9 @@ from tumblepipe.pipe.houdini.validators.base import (
 # Smaller groups stay expanded so the user sees specifics immediately.
 _COLLAPSE_THRESHOLD = 3
 
+# Whether "Apply this choice to remaining validations" starts ticked (#36).
+REMEMBER_BY_DEFAULT = True
+
 
 class ValidationCancelled(Exception):
     """Raised when user cancels validation via the dialog.
@@ -134,6 +137,13 @@ class ValidationConfirmDialog(QDialog):
             # Remember choice checkbox above buttons
             self._remember_checkbox = QCheckBox(
                 "Apply this choice to remaining validations"
+            )
+            # Ticked by default: a Multi publish asked once per shot, behind
+            # a modal each time (#36). Untick it to answer shot by shot.
+            self._remember_checkbox.setChecked(REMEMBER_BY_DEFAULT)
+            self._remember_checkbox.setToolTip(
+                "Continue Anyway or Cancel Export also answers every later "
+                "validation of this run. Untick to be asked for each one."
             )
             layout.addWidget(self._remember_checkbox)
 

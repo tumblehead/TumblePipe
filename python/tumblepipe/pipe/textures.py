@@ -151,23 +151,28 @@ def portable_path(path) -> str:
 def name_from(text: str) -> str:
     """A valid set name made from *text* (a library asset id like
     ``wood_floor_deck`` becomes ``woodFloorDeck``); ``texture`` when
-    nothing usable is left."""
+    nothing usable is left. A Windows device name (``Prn`` -> ``prn``)
+    gets ``Texture`` appended: it can be no folder on Windows, and the set
+    publish refused it."""
     words = [w for w in re.split(r'[^A-Za-z0-9]+', text) if w]
     words = [''.join(c for c in w if c.isascii()) for w in words]
     words = [w for w in words if w]
     if not words:
         return 'texture'
-    return words[0][0].lower() + words[0][1:] + ''.join(
+    name = words[0][0].lower() + words[0][1:] + ''.join(
         w[0].upper() + w[1:] for w in words[1:])
+    if name.lower() in naming.WINDOWS_RESERVED:
+        name += 'Texture'
+    return name
 
 
 def check_set_name(set_name: str) -> None:
     """Raise unless *set_name* follows the entity name rule (letters and
     digits), the same rule asset and shot names follow."""
-    if not naming.is_valid_entity_name(set_name):
+    problem = naming.entity_name_problem(set_name)
+    if problem:
         raise TextureError(
-            f"{set_name!r} is not a valid texture set name: use letters and "
-            "digits only")
+            f"{set_name!r} is not a valid texture set name: it {problem}")
 
 
 def check_spelling(sets_dir: Path, set_name: str) -> None:
@@ -206,7 +211,7 @@ def list_sets(sets_dir: Path) -> list[str]:
         return []
     return [
         child.name for child in children
-        if naming.is_valid_entity_name(child.name)
+        if naming.is_name_alphabet(child.name)
         and latest_version(child) is not None
     ]
 

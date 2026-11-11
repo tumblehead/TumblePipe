@@ -400,7 +400,7 @@ def human_bytes(n: int) -> str:
         return f"{n} B"
     value = float(n)
     # Step up a unit at 999.5, not 1024: anything from there would round to
-    # four digits ("1000 GB"), so it reads as "0.98 TB" instead.
+    # four digits ("1000 GB"), so it reads as "0.985 TB" instead.
     for unit in ("KB", "MB", "GB", "TB"):
         value /= 1024.0
         if value < 999.5 or unit == "TB":
@@ -409,6 +409,10 @@ def human_bytes(n: int) -> str:
         text = f"{value:.0f}"
     elif value >= 9.995:
         text = f"{value:.1f}"
-    else:
+    elif value >= 0.9995:
         text = f"{value:.2f}"
+    else:
+        # Only just after a step up (999.5/1024, about 0.976, up to 1): two
+        # decimals showed 0.985 TB as "0.98 TB", 0.5% off; keep three figures.
+        text = f"{value:.3f}"
     return f"{text} {unit}"

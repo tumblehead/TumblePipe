@@ -5,7 +5,10 @@ from typing import Callable
 from PySide6 import QtWidgets
 from PySide6.QtCore import Qt, Signal
 
-from .process_task import ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE, ENTITY_URI_ROLE
+from .process_task import (
+    ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE,
+    ENTITY_URI_ROLE, is_queued,
+)
 from .process_executor import ProcessExecutor
 from .helpers import has_staged_export
 from .report import report_failure
@@ -106,6 +109,12 @@ class ProcessDialog(QtWidgets.QDialog):
         self._model.set_mode_filter(is_local=self._local_radio.isChecked())
 
         self._update_status()
+
+    def showEvent(self, event):
+        # The toolbar button that opened the dialog leaves its tooltip up,
+        # over the status line (#36): drop it as the dialog appears.
+        QtWidgets.QToolTip.hideText()
+        super().showEvent(event)
 
     def _create_ui(self):
         """Create the dialog UI"""
@@ -511,12 +520,15 @@ class ProcessDialog(QtWidgets.QDialog):
 
     def _on_task_completed(self, task_id: str):
         """Handle task completed signal"""
-        self._model.update_task_status(task_id, TaskStatus.COMPLETED)
+        task, _ = self._find_task_with_parent(task_id)
+        # On This machine / Render farm a publish row is a job submitted,
+        # not work done: it gets the queued mark, not the tick (#36).
+        queued = task is not None and is_queued(task.task_type, self._is_farm_mode())
+        self._model.update_task_status(task_id, TaskStatus.COMPLETED, queued=queued)
 
         # Show the version this run wrote, so the row stops reporting the
         # version it just superseded. Farm submissions write nothing locally
         # and report no version, so their row keeps showing what's on disk.
-        task, _ = self._find_task_with_parent(task_id)
         if task is not None and task.exported_version:
             self._model.update_task_version(task_id, task.exported_version)
 
@@ -612,6 +624,13 @@ class ProcessDialog(QtWidgets.QDialog):
             explained_skips = self._explained_skips()
             if explained_skips:
                 self._show_skipped_warning(explained_skips)
+
+        # Draw the finished state now. It is set on this thread after the last
+        # task, and in Houdini the dialog can otherwise wait for the next
+        # window event to paint it (Discord 2026-11-10: Done only appeared
+        # after a resize).
+        self.repaint()
+        QtWidgets.QApplication.processEvents()
 
         # Emit results
         self.process_completed.emit({
@@ -870,7 +889,7 @@ class ProcessDialog(QtWidgets.QDialog):
         """Open the latest staged export file in USD viewer."""
         import hou
         from tumblepipe.pipe.paths import get_latest_staged_file_path
-        from .usd_viewer import USDViewerLauncher, USDViewerType
+        from .usd_viewer import launch_usdview
 
         try:
             export_file = get_latest_staged_file_path(
@@ -890,6 +909,6 @@ class ProcessDialog(QtWidgets.QDialog):
             return
 
         try:
-            USDViewerLauncher(self).launch_viewer(export_file, USDViewerType.AUTO)
+            launch_usdview(export_file)
         except Exception as exc:
-            report_failure(f"Opening {export_file.name} in a USD viewer", exc)
+            report_failure(f"Opening {export_file.name} in usdview", exc)

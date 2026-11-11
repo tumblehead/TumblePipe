@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 
 use crate::Project;
 use crate::io::{VERSION_MARKER, store_json};
-use crate::naming::is_valid_entity_name;
+use crate::naming::{entity_name_problem, is_name_alphabet};
 use crate::versions::{is_finished_version, list_version_paths, next_version_path};
 
 /// What an imported file is.
@@ -51,7 +51,7 @@ pub fn list_items(project: &Project) -> Result<Vec<String>, String> {
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|name| is_valid_entity_name(name))
+        .filter(|name| is_name_alphabet(name))
         .collect();
     items.sort();
     Ok(items)
@@ -94,8 +94,8 @@ fn read_version(item: &str, dir: &Path) -> Result<ItemVersion, String> {
 /// Copy `file` into the library as item `item`'s next version, measured as
 /// `measure`, with `note`: the new version.
 pub fn import(project: &Project, file: &Path, item: &str, measure: Measure, note: &str) -> Result<ItemVersion, String> {
-    if !is_valid_entity_name(item) {
-        return Err(format!("{item:?}: an item's name is letters and digits"));
+    if let Some(problem) = entity_name_problem(item) {
+        return Err(format!("{item:?}: an item's name {problem}"));
     }
     if !file.is_file() {
         return Err(format!("{}: not a file", file.display()));

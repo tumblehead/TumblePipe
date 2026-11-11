@@ -59,7 +59,7 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | `th::import_rig` | SOP | Load one published rig |
 | `th::import_rigs` | SOP | Load several rigs, one row each, with per-row version pins |
 | `th::export_rig` | SOP | Publish the rig department |
-| `th::playblast` | SOP | OpenGL flipbook from a SOP context |
+| `th::playblast` | SOP | Playblast a SOP/APEX scene with TumbleView, through the pipeline's playblast folders |
 | `th::import_render` | COP | A shot's finished render into a comp (one channel, or all): the beauty, a cable of its AOVs and a cable of each channel's beauty |
 | `th::import_scene` | COP | The shot's staged geometry and render camera, for a Rasterize Geometry |
 | `th::light_mix` | COP | A channel's light groups mixed back into its beauty |
@@ -110,7 +110,7 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | Node | Category | Purpose |
 |---|---|---|
 | `th::mattes` | LOP | Single-channel matte and distance-ramp AOVs for grading |
-| `th::render_vars` | LOP | Toggle the standard AOV set |
+| `th::render_vars` | LOP | Toggle the standard AOV set, cryptomattes included |
 
 ### `_TumblePipe/comp`
 

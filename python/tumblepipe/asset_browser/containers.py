@@ -148,6 +148,26 @@ def parse(collection_id: str) -> ContainerRef | None:
     return None
 
 
+def refusal(ref: ContainerRef, uri) -> str | None:
+    """Why *ref* refuses the entity *uri* by its kind alone, or None when
+    it takes it: a shots Multi takes shots, an assets Multi assets, a Root
+    either (a shot dropped on a Root sets its scene_ref). The card menu's
+    "Add to" asks this (#28) and the add itself enforces it, so the menu
+    offers exactly the targets the add does not refuse outright."""
+    if uri is None or not uri.segments:
+        return "unknown asset"
+    kind = uri.segments[0]
+    if isinstance(ref, GroupContainer):
+        if ref.context == "shots" and kind != "shots":
+            return "group accepts shots only"
+        if ref.context == "assets" and kind != "assets":
+            return "group accepts assets only"
+        return None
+    if kind not in ("shots", "assets"):
+        return "Root accepts shots and assets only"
+    return None
+
+
 class ContainerManager:
     """Group / Scene (Multi / Root) operations for the Pipeline catalog.
 
@@ -201,6 +221,63 @@ class ContainerManager:
         self._member_groups_cache = None
 
     # ── Filtering ─────────────────────────────────────────
+
+    def shared_timeline(self, collection_id: str):
+        """A shots Multi's ``(Group, overlapping pairs)`` when its timeline
+        is shared, else None (no Repack Timeline… to offer). None while the
+        project is still loading."""
+        ref = parse(collection_id)
+        if not isinstance(ref, GroupContainer) or ref.context != "shots":
+            return None
+        proj = self._registry.get(ref.project_name)
+        if proj is None or not self._clients.is_ready(ref.project_name):
+            return None
+        self._activator.activate(proj)
+        from tumblepipe.config import groups as grp_mod
+        from tumblepipe.config import multi_timeline
+        group = grp_mod.get_group(ref.uri)
+        if group is None or not group.shared_timeline:
+            return None
+        return group, multi_timeline.overlapping(group)
+
+    def play_members(self, collection_id: str) -> list | None:
+        """A shots Multi's member URIs in the order they play (#26,
+        ``multi_timeline.play_order``); None for anything else or while
+        the project is still loading (no Play to offer)."""
+        ref = parse(collection_id)
+        if not isinstance(ref, GroupContainer) or ref.context != "shots":
+            return None
+        proj = self._registry.get(ref.project_name)
+        if proj is None or not self._clients.is_ready(ref.project_name):
+            return None
+        self._activator.activate(proj)
+        from tumblepipe.config import groups as grp_mod
+        from tumblepipe.config import multi_timeline
+        group = grp_mod.get_group(ref.uri)
+        if group is None:
+            return None
+        return multi_timeline.play_order(
+            list(group.members), group.shared_timeline, dict(group.timeline_starts),
+        )
+
+    def repack_timeline(self, collection_id: str) -> None:
+        """Lay a Multi's members out afresh on its shared timeline (#31)."""
+        ref = parse(collection_id)
+        if not isinstance(ref, GroupContainer):
+            raise ValueError(f"{collection_id!r} is not a Multi")
+        proj = self._registry.get(ref.project_name)
+        if proj is None:
+            raise ValueError(f"unknown project {ref.project_name!r}")
+        self._activator.activate(proj)
+        from tumblepipe.config import multi_timeline
+        multi_timeline.repack(ref.uri)
+        self._invalidate_cache()
+        # The Multi's workfile open: lay the session out now.
+        try:
+            from tumblepipe.pipe.houdini import multi_timeline as session
+        except ImportError:
+            return
+        session.apply_if_open(ref.uri)
 
     def filter_by_group(self, items: list, tag: str) -> list:
         """Filter assets to members of a pipeline group.
@@ -972,20 +1049,10 @@ class ContainerManager:
         ref_departments = group.departments if group is not None else []
         for aid in asset_ids:
             uri = self._resolver.uri_for(aid)
-            if uri is None:
+            reason = refusal(ref, uri)
+            if reason is not None:
                 skipped += 1
-                skip_reasons.add("unknown asset")
-                continue
-            uri_str = str(uri)
-            is_shot = uri_str.startswith("entity:/shots/")
-            is_asset = uri_str.startswith("entity:/assets/")
-            if ref.context == "shots" and not is_shot:
-                skipped += 1
-                skip_reasons.add("group accepts shots only")
-                continue
-            if ref.context == "assets" and not is_asset:
-                skipped += 1
-                skip_reasons.add("group accepts assets only")
+                skip_reasons.add(reason)
                 continue
             # A shot already in a Multi covering one of these
             # departments: its workfile would be a guess.
@@ -1022,9 +1089,10 @@ class ContainerManager:
         new_entries = list(existing)
         for aid in asset_ids:
             uri = self._resolver.uri_for(aid)
-            if uri is None:
+            reason = refusal(ref, uri)
+            if reason is not None:
                 skipped += 1
-                skip_reasons.add("unknown asset")
+                skip_reasons.add(reason)
                 continue
             uri_str = str(uri)
             # Shots dropped on a Root set the shot's scene_ref (the

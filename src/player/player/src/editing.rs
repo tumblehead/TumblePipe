@@ -391,6 +391,26 @@ pub fn put(
     ops
 }
 
+/// Where the playhead goes after [`put`]: the end of what it put, as NLEs
+/// do, so Insert after Insert appends in order (#25: three Inserts at a
+/// playhead that stayed put built the cut backwards). None when nothing
+/// was put.
+pub fn put_end(video: Option<&VideoClip<Source>>, audio: Option<&AudioClip<Source>>) -> Option<Frame> {
+    let video = video.map(|v| v.at + v.duration);
+    let audio = audio.map(|a| a.at + a.duration);
+    video.into_iter().chain(audio).max()
+}
+
+/// Why `name` cannot name an edit, for under the Save As field (#25: the
+/// refusal showed in the status bar at the window's foot). None when it can.
+pub fn edit_name_problem(name: &str) -> Option<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Some("Name the edit: letters and digits.".into());
+    }
+    th_pipe::naming::entity_name_problem(name).map(|problem| format!("{name:?}: an edit's name {problem}."))
+}
+
 /// Ops moving every clip of `selection` `delta` frames on its own track:
 /// the latest first when moving later, the earliest first when earlier, so
 /// none lands on another still to move.
@@ -565,6 +585,62 @@ mod tests {
         assert!(!doc.replaceable(), "changed since it opened");
         assert!(doc.undo());
         assert!(doc.replaceable(), "undone back to how it opened");
+    }
+
+    #[test]
+    fn an_edit_name_problem_says_why() {
+        assert_eq!(edit_name_problem(" Main "), None);
+        assert!(edit_name_problem("").unwrap().contains("Name the edit"));
+        assert!(edit_name_problem("sq010 cut!").unwrap().contains("letters and digits"));
+        assert!(edit_name_problem("Con").unwrap().contains("Windows"));
+    }
+
+    proptest! {
+        /// Inserting bin shots one after another at the playhead, the
+        /// playhead moving to [`put_end`] after each, puts them in the order
+        /// picked, end to end from where the playhead started (a cut point:
+        /// the start, a cut, or the end), and leaves the playhead at their
+        /// end (#25). Overlay parks it at the end of the laid clip too.
+        #[test]
+        fn inserts_at_an_advancing_playhead_append_in_order(
+            existing in prop::collection::vec(1i64..30, 0..4),
+            picks in prop::collection::vec(1i64..30, 1..5),
+            start in 0usize..5,
+            overlay in any::<bool>(),
+        ) {
+            let shots: Vec<(String, Frame, Frame)> = existing
+                .iter()
+                .enumerate()
+                .map(|(i, n)| (format!("entity:/shots/S/{:03}", (i + 1) * 10), 1001, 1000 + n))
+                .collect();
+            let mut edit = of_shots(&shots, 24, [1920, 1080]);
+            let points = edit_points(&edit);
+            let mut playhead = points.get(start % points.len().max(1)).copied().unwrap_or(0);
+            let from = playhead;
+            let mut uris = Vec::new();
+            for (i, n) in picks.iter().enumerate() {
+                let uri = format!("entity:/shots/P/{:03}", (i + 1) * 10);
+                let bin = BinShot { uri: uri.clone(), sequence: "P".into(), name: format!("{:03}", (i + 1) * 10), first: 1001, last: 1000 + n };
+                let clip = bin.clip(playhead);
+                let end = put_end(Some(&clip), None).unwrap();
+                prop_assert_eq!(end, playhead + n);
+                edit = apply_all(&edit, &put(&edit, Some(clip), None, 0, overlay));
+                playhead = end;
+                uris.push(uri);
+            }
+            let total: Frame = picks.iter().sum();
+            prop_assert_eq!(playhead, from + total);
+            // Each pick sits where the playhead was when it went in, in order.
+            let mut at = from;
+            for (uri, n) in uris.iter().zip(&picks) {
+                let found = edit.video.iter().flat_map(|t| t.clips.iter()).find(|c| {
+                    matches!(&c.source, Source::Shot { shot, .. } if shot == uri)
+                });
+                let found = found.expect("every pick is in the edit");
+                prop_assert_eq!((found.at, found.duration), (at, *n));
+                at += n;
+            }
+        }
     }
 
     proptest! {

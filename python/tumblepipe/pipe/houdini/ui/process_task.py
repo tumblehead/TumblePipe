@@ -97,6 +97,43 @@ def runs_in_mode(task: ProcessTask, is_local: bool) -> bool:
     return has_callback(task)
 
 
+def version_label(task: ProcessTask) -> str:
+    """The Current column's text for ``task``: the version on disk now.
+
+    A task with a version shows it. A group shows its children's (one when
+    they agree, else each, in order), so a collapsed "Export (model)" row
+    no longer reads ``-`` while the rig's single row shows a version (#36).
+    ``-`` when nothing has been written yet.
+    """
+    if task.current_version:
+        return task.current_version
+    versions = sorted({
+        child.current_version for child in task.children or []
+        if child.current_version
+    })
+    return ', '.join(versions) if versions else '-'
+
+
+#: A finished task whose work was only sent off, not done (#36).
+QUEUED_MARK = '\u2197'      # North-east arrow: sent away
+QUEUED_COLOR = '#f0c05a'    # Amber
+QUEUED_TIP = (
+    'Queued: the job was submitted, it has not run yet. Follow it in the '
+    'Farm Manager.'
+)
+VERSION_TIP = (
+    'The version on disk now. A run writes the next one; the row shows it '
+    'once the task has finished here.'
+)
+
+
+def is_queued(task_type: str, farm_mode: bool) -> bool:
+    """Whether a task that finished without error was only queued: on This
+    machine or the Render farm a publish, build or render row is a job
+    submitted, while a validation still runs here and is done."""
+    return farm_mode and task_type != 'validate'
+
+
 class ProcessTaskTreeModel(QStandardItemModel):
     """Tree model for process tasks grouped by entity URI"""
 
@@ -110,7 +147,9 @@ class ProcessTaskTreeModel(QStandardItemModel):
     COLUMN_STATUS = 6
 
     # Column headers
-    HEADERS = ['Task', 'Department', 'Channel', 'Version', 'First', 'Last', 'Status']
+    # "Current", not "Version": it is the version on disk, not the one the
+    # run will write (a row read v0001 while the run wrote v0002, #36).
+    HEADERS = ['Task', 'Department', 'Channel', 'Current', 'First', 'Last', 'Status']
 
     # Status display mapping
     STATUS_DISPLAY = {
@@ -138,6 +177,7 @@ class ProcessTaskTreeModel(QStandardItemModel):
         self._initial_enabled_task_ids: set[str] | None = None  # Selective enablement
 
         self.setHorizontalHeaderLabels(self.HEADERS)
+        self.horizontalHeaderItem(self.COLUMN_VERSION).setToolTip(VERSION_TIP)
         self.itemChanged.connect(self._on_item_changed)
 
     def set_initial_enabled_task_ids(self, task_ids: set[str] | None):
@@ -159,6 +199,7 @@ class ProcessTaskTreeModel(QStandardItemModel):
         self._updating_checks = True
         self.clear()
         self.setHorizontalHeaderLabels(self.HEADERS)
+        self.horizontalHeaderItem(self.COLUMN_VERSION).setToolTip(VERSION_TIP)
         self._tasks = tasks
         self._entity_items.clear()
         self._task_items.clear()
@@ -236,7 +277,7 @@ class ProcessTaskTreeModel(QStandardItemModel):
         channel_item.setEditable(False)
 
         # Version column
-        version_item = QStandardItem(task.current_version or '-')
+        version_item = QStandardItem(version_label(task))
         version_item.setEditable(False)
 
         # First Frame column
@@ -461,8 +502,16 @@ class ProcessTaskTreeModel(QStandardItemModel):
         finally:
             self._updating_checks = False
 
-    def update_task_status(self, task_id: str, status: TaskStatus, error: str | None = None):
-        """Update status of a specific task by ID (searches main tasks and children)"""
+    def update_task_status(
+        self, task_id: str, status: TaskStatus, error: str | None = None,
+        queued: bool = False,
+    ):
+        """Update status of a specific task by ID (searches main tasks and children).
+
+        ``queued``: the task finished by submitting a job, not by doing the
+        work (``is_queued``); its row gets the queued mark instead of the
+        tick a task finished in this session gets.
+        """
         found = False
         for task in self._tasks:
             if task.id == task_id:
@@ -489,8 +538,14 @@ class ProcessTaskTreeModel(QStandardItemModel):
                 row = task_item.row()
                 status_item = parent.child(row, self.COLUMN_STATUS)
                 if status_item:
-                    status_item.setText(self.STATUS_DISPLAY.get(status, ''))
-                    status_item.setForeground(QBrush(QColor(self.STATUS_COLORS.get(status, '#919191'))))
+                    if queued and status == TaskStatus.COMPLETED:
+                        status_item.setText(QUEUED_MARK)
+                        status_item.setForeground(QBrush(QColor(QUEUED_COLOR)))
+                        status_item.setToolTip(QUEUED_TIP)
+                    else:
+                        status_item.setText(self.STATUS_DISPLAY.get(status, ''))
+                        status_item.setForeground(QBrush(QColor(self.STATUS_COLORS.get(status, '#919191'))))
+                        status_item.setToolTip('')
 
     def update_task_version(self, task_id: str, version: str):
         """Show the version a finished task wrote in its Version column.
@@ -513,6 +568,17 @@ class ProcessTaskTreeModel(QStandardItemModel):
         version_item = parent.child(task_item.row(), self.COLUMN_VERSION)
         if version_item:
             version_item.setText(version)
+        # Its group's row shows its children's versions: keep that current.
+        # Found by its children, not by parent_id, which not every task has.
+        group = next((
+            candidate for candidate in self._tasks
+            if any(child.id == task_id for child in candidate.children or [])
+        ), None)
+        group_item = self._task_items.get(group.id) if group is not None else None
+        if group_item is not None and group_item.parent() is not None:
+            group_version = group_item.parent().child(group_item.row(), self.COLUMN_VERSION)
+            if group_version:
+                group_version.setText(version_label(group))
 
     def reset_all_status(self):
         """Reset all tasks (including children) to pending status"""
@@ -534,6 +600,7 @@ class ProcessTaskTreeModel(QStandardItemModel):
                 if status_item:
                     status_item.setText(self.STATUS_DISPLAY.get(TaskStatus.PENDING, ''))
                     status_item.setForeground(QBrush(QColor(self.STATUS_COLORS.get(TaskStatus.PENDING, '#919191'))))
+                    status_item.setToolTip('')
 
     def set_mode_filter(self, is_local: bool):
         """

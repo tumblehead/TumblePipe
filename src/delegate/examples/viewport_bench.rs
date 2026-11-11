@@ -224,6 +224,7 @@ fn main() {
             points_close: std::ptr::null(),
             transform_keys: std::ptr::null(),
             transform_key_count: 0,
+            transparency: 0.0, cull: 0,
         })
         .collect();
     let tris: usize = meshes.iter().map(|m| m.triangles.len() / 3).sum();
@@ -246,6 +247,7 @@ fn main() {
                 width: w as u32, height: h as u32, world_to_clip, view_to_world, samples, shading: 0, ao,
                 blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64], focal_length: 0.0, f_stop: 0.0,
                 focus_distance: 0.0, alpha: 1, gpu: gpu as u32, linear_depth: 0,
+                lights: std::ptr::null(), light_count: 0, lighting: 0,
             };
             let started = Instant::now();
             let status = unsafe {

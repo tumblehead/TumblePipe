@@ -63,6 +63,22 @@ def resolve_imports(entity_uri: Uri) -> tuple[dict | None, str | None]:
     return comp.freeze_plan(states), None
 
 
+def report_uncovered(entity_uri: Uri, reads: dict, frames) -> list[str]:
+    """Print, and return, a warning line per channel whose render does not
+    cover all of ``frames``."""
+    from tumblepipe.pipe.paths import get_render_context
+    try:
+        renders = get_render_context(entity_uri, purpose='render').renders
+        ranges = comp.read_ranges(renders, reads)
+    except Exception as exc:
+        print(f'WARNING: could not read the rendered ranges: {exc}')
+        return []
+    lines = comp.uncovered_message(comp.uncovered_frames(frames, ranges), ranges)
+    for line in lines:
+        print(f'WARNING: {line}; those frames comp over empty input')
+    return lines
+
+
 def find_export(layer: str, entity_uri: Uri):
     """The shot's export_comp on ``layer``; ``(node, None)`` or ``(None,
     error)``."""
@@ -180,9 +196,13 @@ def main(
         if problem is not None:
             return error(problem)
     try:
-        comp.provenance(plan)
+        reads = comp.provenance(plan)
     except comp.CompError as exc:
         return error(str(exc))
+    # A read's File COPs fill a frame it has no render of with empty
+    # input (import_render.MISSING_EMPTY), so such a frame comps to
+    # transparent black without failing: say so in the log (#43).
+    report_uncovered(entity_uri, reads, render_range)
 
     # Find each export's render node
     renders = []

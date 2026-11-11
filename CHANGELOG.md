@@ -12,6 +12,38 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.101.0 — 2026-11-10
+
+### Fixes
+- fix(comp): th::light_mix takes rgba then aovs, so its wires no longer cross (`2145d07f`)
+- fix(comp): a render with Denoise off is no longer comped from an old denoise (`338b2f33`)
+- fix(export): published lookdev layers point at the COP textures they ship (`b1cd9804`)
+- fix(build): Build USD no longer scans the whole project's dependency graph (`f5ecc5eb`)
+- fix(lpe_tags): Generate LPEs from scene proposes a tag for every light (`1fdcd679`)
+- fix(comp): the composite template's nodes no longer sit on top of each other (`76b5142f`)
+- fix(hdas): th::mattes shows the mattes icon again (`84e5734c`)
+- fix(multi_sync): a copied column's entity labels name the new member (`8214f020`)
+- fix(turntable): bundle the workfile's context; the batched export makes its folders (`fc1e2be0`)
+- fix(editor): its config writes reach the change journal, so open browsers follow (`0ed8b3b0`)
+- fix(editor): a planned shot starts where its sequence's shots start (`e8314c2d`)
+
+### Documentation
+- docs(qa): ledger 85 TT Desktop scripts driven (`23fe185e`)
+- docs: describe today's comp, LPE, Build USD and export fixes; tidy (`44b5d02b`)
+- docs(qa): ledger 84 local turntable passes the stage, waits on the chunks fix (`51b8feec`)
+- docs(qa): QoL scorecard (12b), ledger 83 render camera (#52) (`453a93c6`)
+- docs(qa): ledger 75-79 local encodes, black layers, GUI crash, turntable, builder GUI test (`ebf3aa1c`)
+- docs(qa): ledger 74 asset Render in Farm Submit (#49), SH020 slapcomp done (`11f9bdfc`)
+- docs: regenerate CHANGELOG.md for v1.100.0 (`352c59cb`)
+
+### Tests
+- test: pin the stale-denoise, Denoise-toggle and batched-texture paths (`a53ba98e`)
+- test(editor): the current-row check runs on Houdini's dark base, so it passes offscreen (`da99a32c`)
+- test: late "could not settle" exits use assume() too (`04bcb27b`)
+
+### Chores
+- chore(farm): pin the local runner to hpm v0.36.1, as the farm plugin (`e96e3e40`)
+
 ## v1.100.0 — 2026-11-10
 
 ### Features

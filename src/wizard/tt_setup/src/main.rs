@@ -193,7 +193,12 @@ impl WizardApp {
             template_dir,
             outcome,
             desktop_name,
-            path: String::new(),
+            // A desktop project that already names its folder opens on it
+            // (#35): the field used to start empty, so re-running Configure
+            // meant browsing to the same folder again.
+            path: th_project_core::project_location::configured_project_path()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_default(),
             new_fps: 24,
             error: None,
         }
@@ -339,14 +344,14 @@ impl eframe::App for WizardApp {
 
         egui::CentralPanel::default().show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.add_enabled_ui(!modal_open, |ui| self.ui_page(ui, plan.as_ref()));
+                ui.add_enabled_ui(!modal_open, |ui| self.ui_page(ui));
             });
         });
     }
 }
 
 impl WizardApp {
-    fn ui_page(&mut self, ui: &mut egui::Ui, plan: Option<&Plan>) {
+    fn ui_page(&mut self, ui: &mut egui::Ui) {
         ui.add_space(8.0);
         ui.heading("Where is your TumblePipe project?");
         ui.add_space(4.0);
@@ -376,15 +381,25 @@ impl WizardApp {
                     self.path = chosen.to_string_lossy().into_owned();
                 }
             }
-            ui.add(
+            let edited = ui.add(
                 egui::TextEdit::singleline(&mut self.path)
                     .hint_text(hint)
                     .desired_width(f32::INFINITY),
             );
+            if edited.changed() {
+                // The accept button was drawn from the path as it was before
+                // this keystroke; draw once more so it catches up.
+                ui.ctx().request_repaint();
+            }
         });
 
+        // Planned after the field took this frame's keystroke: planning at
+        // the top of the frame showed the previous text (P:/qabet while the
+        // field held P:/qabeta), and egui draws no further frame until the
+        // next input (#35).
+        let plan = self.plan();
         ui.add_space(12.0);
-        match plan {
+        match plan.as_ref() {
             None => {}
             Some(Plan::Use(path)) => {
                 ui.colored_label(

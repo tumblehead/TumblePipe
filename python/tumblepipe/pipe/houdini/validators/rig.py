@@ -23,6 +23,13 @@ The checks:
   took it to 48 ms). A rest shape without N stays without N through the
   deformers, so the rest shape and the graph decide it without a cook. A
   rig whose graph already has a normals node anywhere is left alone.
+- **The shapes carry a path under the asset** (error). th::animate places a
+  character's geometry by its prims' ``path``: a rig none of whose shapes
+  has one lands at ``/Geometry``, and then every animation publish of every
+  shot fails validation ("Disallowed root prim 'Geometry'"). A path outside
+  the asset prim (``/CHAR/hero``) is no better: the geometry does not
+  compose with the asset. Path-less helper shapes of a rig that has paths
+  are fine, th::animate leaves those out.
 """
 
 from .base import ValidationResult
@@ -35,10 +42,30 @@ NORMALS_SUGGESTION = (
     "normals are computed on the GPU. A shape that brings its own normals in "
     "its mesh needs nothing."
 )
-VIZ_SUGGESTION = (
-    "Turn the viz off on the Main control before publishing: set the rig's "
-    "Main_Viz default to 0."
+PATH_SUGGESTION = (
+    "Give the rig's geometry a path attribute under the asset prim before "
+    "the character is packed (the model import carries one; an Attribute "
+    "Create or Name SOP on the shape can set it), e.g. {example}."
 )
+
+
+def viz_suggestion(joint_nodes=()) -> str:
+    """Where Main_Viz comes from and how to turn it off (#37).
+
+    ``joint_nodes``: paths of the TumbleRig ``th::apex_joints`` nodes
+    upstream of the export, which create the slider.
+    """
+    where = f" ({', '.join(joint_nodes)})" if joint_nodes else ""
+    return (
+        f"{VIZ_PARM} is the Viz slider on the rig's Main control. TumbleRig's "
+        f"th::apex_joints{where} creates it at 1; it is not a parameter on "
+        "that node. Set Viz on the Main control to 0 and store it on the rig "
+        "before th::export_rig (a value stored on the rig wins over the "
+        "slider's default), so shots load the rig with the joints hidden."
+    )
+
+
+VIZ_SUGGESTION = viz_suggestion()
 
 
 def check_shape_normals(
@@ -68,13 +95,16 @@ def check_shape_normals(
     return result
 
 
-def check_viz_off(result: ValidationResult, viz_value) -> ValidationResult:
+def check_viz_off(
+    result: ValidationResult, viz_value, joint_nodes=(),
+) -> ValidationResult:
     """Fail when the Main control's viz channel is on.
 
     Args:
         result: Result to add the error to (returned).
         viz_value: ``Main_Viz``'s effective value, or None for a rig
             without the channel (nothing to check).
+        joint_nodes: The ``th::apex_joints`` nodes the suggestion names.
     """
     if viz_value is None:
         return result
@@ -86,8 +116,52 @@ def check_viz_off(result: ValidationResult, viz_value) -> ValidationResult:
         result.add_error(
             f"{VIZ_PARM} is {value:g}: the rig would publish with its viz on",
             prim_path=VIZ_PARM,
-            suggestion=VIZ_SUGGESTION,
+            suggestion=viz_suggestion(joint_nodes),
         )
+    return result
+
+
+def _under(path: str, asset_prim_path: str) -> bool:
+    return path.startswith(asset_prim_path.rstrip('/') + '/')
+
+
+def check_shape_paths(
+    result: ValidationResult, shape_paths, asset_prim_path: str | None = None,
+) -> ValidationResult:
+    """Fail when th::animate would put the rig's geometry outside the asset.
+
+    Args:
+        result: Result to add errors to (returned).
+        shape_paths: Iterable of ``(name, paths)`` per shape (``*Viz.shp``
+            guides excluded), ``paths`` the shape's ``path`` values.
+        asset_prim_path: The asset prim (``/CHAR/hero``); None skips the
+            "under the asset" half.
+    """
+    shape_paths = [(name, [p for p in paths if p]) for name, paths in shape_paths]
+    if not shape_paths:
+        return result
+    example = f"{asset_prim_path or '/CHAR/hero'}/geo/body"
+    if not any(paths for _, paths in shape_paths):
+        result.add_error(
+            "No shape of the rig has a path attribute: th::animate would put "
+            "its geometry at /Geometry, and every animation publish would "
+            "fail (\"Disallowed root prim 'Geometry'\")",
+            prim_path=shape_paths[0][0],
+            suggestion=PATH_SUGGESTION.format(example=example),
+        )
+        return result
+    if asset_prim_path is None:
+        return result
+    for name, paths in shape_paths:
+        outside = sorted(p for p in set(paths) if not _under(p, asset_prim_path))
+        if outside:
+            shown = ', '.join(outside[:3]) + (' ...' if len(outside) > 3 else '')
+            result.add_error(
+                f"{name} has geometry outside {asset_prim_path} ({shown}): "
+                "in a shot it would not compose with the asset",
+                prim_path=name,
+                suggestion=PATH_SUGGESTION.format(example=example),
+            )
     return result
 
 
@@ -95,6 +169,16 @@ def check_viz_off(result: ValidationResult, viz_value) -> ValidationResult:
 
 def _has_normals(geo) -> bool:
     return geo.findPointAttrib('N') is not None or geo.findVertexAttrib('N') is not None
+
+
+def _paths(geo) -> list[str]:
+    attrib = geo.findPrimAttrib('path')
+    if attrib is None:
+        return []
+    try:
+        return [p for p in attrib.strings() if p]
+    except Exception:
+        return []
 
 
 def _point_count(geo) -> int:
@@ -145,13 +229,14 @@ def read_character(geo):
     """The values the checks need from a packed character stream.
 
     Returns:
-        ``(shapes, has_normals_node, viz_value)``: shapes as
+        ``(shapes, has_normals_node, viz_value, shape_paths)``: shapes as
         ``(name, point_count, has_normals)`` for every ``*.shp`` but the
-        ``*Viz.shp`` guides; ``viz_value`` from the first ``*.rig``.
+        ``*Viz.shp`` guides; ``viz_value`` from the first ``*.rig``;
+        ``shape_paths`` as ``(name, paths)`` for the same shapes.
     """
-    shapes, rigs = [], []
+    shapes, rigs, shape_paths = [], [], []
     if geo is None or geo.findPrimAttrib('name') is None:
-        return shapes, False, None
+        return shapes, False, None, shape_paths
     for prim in geo.prims():
         embedded = getattr(prim, 'getEmbeddedGeometry', None)
         if embedded is None:
@@ -167,21 +252,30 @@ def read_character(geo):
             rigs.append(inner)
         elif name.endswith('.shp') and not name.endswith('Viz.shp'):
             shapes.append((name, _point_count(inner), _has_normals(inner)))
+            shape_paths.append((name, _paths(inner)))
     has_normals_node = any(_graph_has_normals_node(rig) for rig in rigs)
     viz_value = _viz_value(rigs[0]) if rigs else None
-    return shapes, has_normals_node, viz_value
+    return shapes, has_normals_node, viz_value, shape_paths
 
 
-def validate_rig_character(geo) -> ValidationResult:
-    """Run every rig check on a packed character stream (``hou.Geometry``)."""
+def validate_rig_character(
+    geo, asset_prim_path: str | None = None, joint_nodes=(),
+) -> ValidationResult:
+    """Run every rig check on a packed character stream (``hou.Geometry``).
+
+    ``asset_prim_path`` (``/CHAR/hero``) lets the path check say whether
+    the geometry lands under the asset; ``joint_nodes`` are the
+    ``th::apex_joints`` nodes the viz suggestion names.
+    """
     result = ValidationResult()
     if geo is None:
         result.add_warning("No rig geometry to validate")
         return result
-    shapes, has_normals_node, viz_value = read_character(geo)
+    shapes, has_normals_node, viz_value, shape_paths = read_character(geo)
     if not shapes and viz_value is None:
         result.add_warning("No APEX character (*.rig / *.shp) found in the rig export")
         return result
-    check_viz_off(result, viz_value)
+    check_viz_off(result, viz_value, joint_nodes)
+    check_shape_paths(result, shape_paths, asset_prim_path)
     check_shape_normals(result, shapes, has_normals_node)
     return result

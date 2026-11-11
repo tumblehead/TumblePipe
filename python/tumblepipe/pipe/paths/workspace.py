@@ -460,6 +460,32 @@ def release_reserved_version(hip_file_path: Path) -> None:
     for path in (hip_file_path, claim_path):
         path.unlink(missing_ok=True)
 
+
+def release_new_workfile(
+    hip_file_paths, pointer_before: bytes | None,
+) -> None:
+    """Undo a workfile being created from a department template that failed
+    (#39): the reserved version's hip and ``_context`` entry go, and the
+    folder's ``context.json`` pointer is put back as it was (removed when
+    there was none), so the retry gets the same version number and the
+    folder reads as if nothing had been made.
+
+    ``hip_file_paths``: the reserved path and the one Houdini saved into
+    (Education/Apprentice may rewrite the extension), one or both. Unlike a
+    plain save, nothing of the artist's is lost: the scene is the template's
+    half-built network.
+    """
+    paths = list(dict.fromkeys(Path(path) for path in hip_file_paths))
+    for path in paths:
+        release_reserved_version(path)
+    if not paths:
+        return
+    pointer = paths[0].parent / 'context.json'
+    if pointer_before is None:
+        pointer.unlink(missing_ok=True)
+    else:
+        pointer.write_bytes(pointer_before)
+
 @dataclass(frozen=True)
 class Context:
     entity_uri: Uri

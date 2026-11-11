@@ -10,6 +10,7 @@
 
 use crate::blur::{self, Blur};
 use crate::composite::{self, Samples, Shading, View};
+use crate::lights::{Lighting, SceneLights};
 use crate::math::{self, Mat4, Vec3};
 use crate::pool::{self, threads};
 use crate::texture::Texture;
@@ -47,6 +48,91 @@ pub struct Mesh<'a> {
     /// key-major (key k of instance i at `k * transforms.len() + i`);
     /// empty, the instances hold still at `transforms`.
     pub transform_keys: &'a [Mat4],
+    /// How much of what is behind it the surface hides: 1 (or more, or NaN)
+    /// opaque, drawn as before; between 0 and 1 see-through, blended over
+    /// the opaque surfaces ([`Surface::Glass`]); 0 or less not drawn at all.
+    pub opacity: f32,
+    /// Which side of its triangles is not drawn ([`Cull`]).
+    pub cull: Cull,
+}
+
+/// Which side of a mesh's triangles is not drawn: Hydra's cull style as the
+/// shim resolves it (`ThMeshView::cull`). A triangle's front is the side
+/// its corners wind counter-clockwise around (USD's right-handed
+/// orientation; the shim winds a left-handed mesh's triangles the other
+/// way), seen through its instance's transform: a mirroring transform
+/// (negative determinant) keeps the front outside, as Storm does. On
+/// screen (y down) a front-facing triangle's signed area is negative.
+/// A culled triangle writes nothing, the picking ids included.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Cull {
+    /// Both sides drawn (Hydra's DontCare and Nothing).
+    #[default]
+    Nothing,
+    Back,
+    Front,
+}
+
+impl Cull {
+    /// From the ABI's code: 1 back, 2 front, anything else nothing.
+    pub fn from_abi(code: u32) -> Cull {
+        match code {
+            1 => Cull::Back,
+            2 => Cull::Front,
+            _ => Cull::Nothing,
+        }
+    }
+
+    /// The side culled of an instance placed by `xform`: a mirroring one
+    /// swaps front and back.
+    pub fn through(self, xform: &Mat4) -> Cull {
+        match self {
+            Cull::Nothing => Cull::Nothing,
+            _ if math::det3(xform) >= 0.0 => self,
+            Cull::Back => Cull::Front,
+            Cull::Front => Cull::Back,
+        }
+    }
+
+    /// Whether a triangle of screen (y down) signed `area` is culled.
+    fn culls(self, area: f32) -> bool {
+        match self {
+            Cull::Nothing => false,
+            Cull::Back => area > 0.0,
+            Cull::Front => area < 0.0,
+        }
+    }
+}
+
+/// Which of a frame's two kinds of surface a mesh is, by its opacity: the
+/// opaque surfaces first, into the render buffer the post pass lights;
+/// then the see-through ones over them ([`crate::composite`], "See-through
+/// surfaces"), tested against the opaque depth but not writing it, each
+/// lit as it is drawn and added to its samples' weighted blend. A mesh of
+/// opacity 0 or less is in neither.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Surface {
+    Opaque,
+    Glass,
+}
+
+impl Surface {
+    /// The kind `mesh` is drawn as; None for one not drawn.
+    pub fn of(mesh: &Mesh) -> Option<Surface> {
+        let o = mesh.opacity;
+        if o.is_nan() || o >= 1.0 {
+            Some(Surface::Opaque)
+        } else if o > 0.0 {
+            Some(Surface::Glass)
+        } else {
+            None
+        }
+    }
+}
+
+/// Whether any of `meshes` is see-through.
+pub fn any_glass(meshes: &[Mesh]) -> bool {
+    meshes.iter().any(|m| Surface::of(m) == Some(Surface::Glass))
 }
 
 /// A mesh's identity across frames, from the shim: `id` is the Hydra mesh's
@@ -78,6 +164,9 @@ pub struct Frame {
     /// premultiplied by coverage, alpha the coverage. Off: the backdrop
     /// gradient behind everything and alpha 1.
     pub alpha: bool,
+    /// The scene's lights ([`crate::lights`]); none lights the frame with
+    /// the fixed camera rig.
+    pub lights: SceneLights,
 }
 
 pub struct Image {
@@ -284,6 +373,13 @@ struct Band<'a> {
     depth: Vec<&'a mut [f32]>,
     /// The first layer's ids ([`Samples::ids`]), in the pass that draws it.
     ids: Option<&'a mut [[i32; 2]]>,
+    /// Drawing see-through surfaces: per layer, the weighted sums and
+    /// revealage ([`Samples::accum`], [`Samples::reveal`]), and the first
+    /// layer's nearest see-through depth ([`Samples::near`]) in the pass
+    /// that draws it. Empty and None for the opaque surfaces.
+    accum: Vec<&'a mut [[f32; 4]]>,
+    reveal: Vec<&'a mut [f32]>,
+    near: Option<&'a mut [f32]>,
 }
 
 struct Raster<'a> {
@@ -295,6 +391,51 @@ struct Raster<'a> {
     /// and greatest x and y.
     offsets: &'a [(f32, f32)],
     spread: [f32; 4],
+    /// Drawing the see-through surfaces ([`Surface::Glass`]): each sample
+    /// a surface reaches in front of the opaque depth is lit here, as the
+    /// post pass lights an opaque one (without occlusion), and added to
+    /// the sample's blend; depth is tested, not written.
+    glass: Option<Glass>,
+}
+
+/// A screen triangle's edges for an exact, watertight coverage test with a
+/// tie rule: every sample is covered by exactly one of two triangles that
+/// share an edge, whichever ways they wind. Each edge is taken between its
+/// corners in one fixed order (by x, then y) whichever triangle it belongs
+/// to, so both evaluate it with the same operations on the same numbers and
+/// agree on its sign to the bit; a sample on it goes to the triangle on its
+/// left (as ordered), and the other is on its right.
+struct Edges {
+    /// Per edge: its first and last corner as ordered, and +1 when the
+    /// triangle is on its left, -1 on its right.
+    lines: [([f32; 2], [f32; 2], f32); 3],
+}
+
+impl Edges {
+    /// The edges of the triangle at screen positions `s`, of signed `area`
+    /// (as [`Raster::draw`] works it out).
+    fn new(s: &[[f32; 4]; 3], area: f32) -> Edges {
+        let line = |a: [f32; 4], b: [f32; 4]| {
+            let (a, b) = ([a[0], a[1]], [b[0], b[1]]);
+            if (a[0], a[1]) < (b[0], b[1]) { (a, b, area.signum()) } else { (b, a, -area.signum()) }
+        };
+        Edges { lines: [line(s[1], s[2]), line(s[2], s[0]), line(s[0], s[1])] }
+    }
+
+    /// Whether the sample at (`x`, `y`) is the triangle's.
+    fn covers(&self, x: f32, y: f32) -> bool {
+        self.lines.iter().all(|&(p, q, side)| {
+            let e = ((q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0])) * side;
+            e > 0.0 || (e == 0.0 && side > 0.0)
+        })
+    }
+}
+
+/// What lighting a see-through surface as it is drawn needs.
+#[derive(Clone, Copy)]
+struct Glass {
+    shading: Shading,
+    lighting: Lighting,
 }
 
 impl Raster<'_> {
@@ -319,7 +460,7 @@ impl Raster<'_> {
     /// triangle's samples passes the depth test, as most of a dense mesh's
     /// triangles that reach a sample's box cover none or lie behind.
     fn draw(&self, band: &mut Band, mesh: &Mesh, clip: &[[f32; 4]], corner: impl Fn(usize) -> Corner,
-            id: [i32; 2]) {
+            id: [i32; 2], cull: Cull) {
         let rows = band.depth[0].len() / self.width;
         let (w, h) = (self.width as f32, self.height as f32);
         let [ox_lo, ox_hi, oy_lo, oy_hi] = self.spread;
@@ -339,7 +480,7 @@ impl Raster<'_> {
             let s = idx.map(|k| screen[k]);
             let area = (s[1][0] - s[0][0]) * (s[2][1] - s[0][1])
                 - (s[2][0] - s[0][0]) * (s[1][1] - s[0][1]);
-            if area.abs() < 1e-12 || !area.is_finite() {
+            if area.abs() < 1e-12 || !area.is_finite() || cull.culls(area) {
                 continue;
             }
             // The pixels that have a sample inside the triangle's bounds:
@@ -361,6 +502,11 @@ impl Raster<'_> {
             for (step, &(ox, oy)) in steps.iter_mut().zip(self.offsets) {
                 *step = edges.map(|(a, b)| ((b[0] - a[0]) * oy - (b[1] - a[1]) * ox) / area);
             }
+            // See-through surfaces are not depth-tested against each other,
+            // so a sample on an edge two triangles share must be blended
+            // once: they take the exact test. (Opaque ones keep the
+            // weights' test; the depth test settles their shared edges.)
+            let exact = self.glass.map(|_| Edges::new(&s, area));
             for y in min_y as usize..=max_y as usize {
                 let py = y as f32 + 0.5;
                 for x in min_x..=max_x as usize {
@@ -369,7 +515,11 @@ impl Raster<'_> {
                     let at = (y - band.y0) * self.width + x;
                     for (k, step) in steps.iter().take(self.offsets.len()).enumerate() {
                         let (b0, b1, b2) = (centre[0] + step[0], centre[1] + step[1], centre[2] + step[2]);
-                        if b0 < 0.0 || b1 < 0.0 || b2 < 0.0 {
+                        let inside = match &exact {
+                            Some(e) => e.covers(px + self.offsets[k].0, py + self.offsets[k].1),
+                            None => !(b0 < 0.0 || b1 < 0.0 || b2 < 0.0),
+                        };
+                        if !inside {
                             continue;
                         }
                         let z = b0 * s[0][2] + b1 * s[1][2] + b2 * s[2][2];
@@ -402,6 +552,33 @@ impl Raster<'_> {
                             ],
                         };
                         let rgb = self.albedo(mesh, &c);
+                        if let Some(glass) = &self.glass {
+                            // Weighted blended order-independent
+                            // transparency, every weight 1: the sums
+                            // commute, so the order surfaces come in
+                            // changes only rounding.
+                            let nd = self.view.buffer_normal(c.normal, c.world);
+                            let v = self.view.towards_eye(c.world);
+                            let p = self.view.camera_point(c.world);
+                            let lit = composite::light(glass.shading, rgb, [nd[0], nd[1], nd[2]], v, p,
+                                                       &glass.lighting);
+                            let a = mesh.opacity;
+                            let s = &mut band.accum[k][at];
+                            *s = [s[0] + lit[0] * a, s[1] + lit[1] * a, s[2] + lit[2] * a, s[3] + a];
+                            band.reveal[k][at] *= 1.0 - a;
+                            // Picked: the nearest surface, see-through or not.
+                            if k == 0 {
+                                if let Some(near) = band.near.as_deref_mut() {
+                                    if z < near[at] {
+                                        near[at] = z;
+                                        if let Some(ids) = band.ids.as_deref_mut() {
+                                            ids[at] = id;
+                                        }
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                         band.depth[k][at] = z;
                         band.albedo[k][at] = [rgb[0], rgb[1], rgb[2], 1.0];
                         band.normal[k][at] = self.view.buffer_normal(c.normal, c.world);
@@ -416,7 +593,9 @@ impl Raster<'_> {
         }
     }
 
-    fn draw_triangle(&self, band: &mut Band, inst: &Inst, t: usize, id: [i32; 2]) {
+    /// Draw triangle `t` of an instance, `cull` its side not drawn (the
+    /// mesh's, through the instance's transform).
+    fn draw_triangle(&self, band: &mut Band, inst: &Inst, t: usize, id: [i32; 2], cull: Cull) {
         let mesh = &self.meshes[inst.mesh];
         let vi = mesh.triangles[t].map(|i| i as usize);
         let per_corner_normals = mesh.corner_normals.is_some();
@@ -429,13 +608,13 @@ impl Raster<'_> {
         };
         let clip = vi.map(|v| inst.clip[v]);
         if clip.iter().all(|c| c[2] + c[3] >= 0.0) {
-            self.draw(band, mesh, &clip, corner, id);
+            self.draw(band, mesh, &clip, corner, id, cull);
             return;
         }
         let poly = clip_near([corner(0), corner(1), corner(2)]);
         if poly.len >= 3 {
             let clip: [[f32; 4]; 4] = std::array::from_fn(|k| poly.corners[k].clip);
-            self.draw(band, mesh, &clip[..poly.len], |k| poly.corners[k], id);
+            self.draw(band, mesh, &clip[..poly.len], |k| poly.corners[k], id, cull);
         }
     }
 }
@@ -803,7 +982,8 @@ impl Scratch {
     /// Keep `samples` for a later frame, in place of the least recent of
     /// two; not a buffer over [`KEEP_BYTES`].
     fn keep(&mut self, samples: Samples) {
-        let bytes = samples.depth.len() * (16 + 16 + 4) + samples.ids.len() * 8;
+        let bytes = samples.depth.len() * (16 + 16 + 4) + samples.ids.len() * 8
+            + samples.accum.capacity() * 16 + samples.reveal.capacity() * 4 + samples.near.capacity() * 4;
         if bytes > KEEP_BYTES {
             return;
         }
@@ -831,11 +1011,13 @@ fn par_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> 
     done.into_iter().map(|(_, r)| r).collect()
 }
 
-/// Every (mesh, instance) pair, in the order the rasteriser draws them.
-fn jobs(meshes: &[Mesh]) -> Vec<(usize, usize)> {
+/// Every (mesh, instance) pair of the meshes drawn as `surface`, in the
+/// order the rasteriser draws them.
+fn jobs(meshes: &[Mesh], surface: Surface) -> Vec<(usize, usize)> {
     meshes
         .iter()
         .enumerate()
+        .filter(|(_, mesh)| Surface::of(mesh) == Some(surface))
         .flat_map(|(m, mesh)| (0..mesh.transforms.len()).map(move |i| (m, i)))
         .collect()
 }
@@ -903,7 +1085,7 @@ pub(crate) fn render_kept(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec
             view: View::new(&frame.view_to_world),
             time: None,
         };
-        render_passes(frame, meshes, &smooth, &offsets, std::slice::from_ref(&pass), &mut Shared::off(),
+        render_passes(frame, meshes, &smooth, &offsets, std::slice::from_ref(&pass), &mut [Shared::off(), Shared::off()],
                       VERTEX_BUDGET, &mut samples, &mut scratch.arena);
         let image = composite::resolve(frame, &samples);
         scratch.keep(samples);
@@ -932,7 +1114,8 @@ fn blurred(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], share: bo
            scratch: &mut Scratch) -> Image {
     let offsets = composite::sample_offsets(frame.samples);
     let plan = blur::Plan::new(frame, offsets.len());
-    let mut shared = if share { Shared::new(meshes, &plan, budget) } else { Shared::off() };
+    let new_shared = || if share { Shared::new(meshes, &plan, budget) } else { Shared::off() };
+    let mut shared = [new_shared(), new_shared()];
     let images = plan
         .chunks
         .iter()
@@ -996,7 +1179,7 @@ pub(crate) fn render_buffer(frame: &Frame, meshes: &[Mesh]) -> Samples {
     let made = smooth_missing(meshes, &[]);
     let mut samples = Samples::empty(frame.width, frame.height, offsets.clone());
     render_passes(frame, meshes, &smooth_of(meshes, &[], &made), &offsets, std::slice::from_ref(&pass),
-                  &mut Shared::off(), VERTEX_BUDGET, &mut samples, &mut Arena::default());
+                  &mut [Shared::off(), Shared::off()], VERTEX_BUDGET, &mut samples, &mut Arena::default());
     samples
 }
 
@@ -1013,13 +1196,33 @@ pub(crate) struct Pass {
 }
 
 /// Fill `samples` (empty, of the frame's size and `all_offsets`) with
-/// `meshes`, by `passes`, each one pass over the triangles. Instances go in batches of
+/// `meshes`, by `passes`: every pass's opaque surfaces, then, when there
+/// are any, its see-through ones over them ([`Surface`]), each with its own
+/// of `shared` (opaque, glass).
+#[allow(clippy::too_many_arguments)]
+fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all_offsets: &[(f32, f32)],
+                 passes: &[Pass], shared: &mut [Shared; 2], budget: usize, samples: &mut Samples,
+                 arena: &mut Arena) {
+    let glass = any_glass(meshes);
+    samples.glass(glass);
+    let [opaque_shared, glass_shared] = shared;
+    render_surface(frame, meshes, smooth, all_offsets, passes, Surface::Opaque, opaque_shared, budget, samples,
+                   arena);
+    if glass {
+        render_surface(frame, meshes, smooth, all_offsets, passes, Surface::Glass, glass_shared, budget, samples,
+                       arena);
+    }
+}
+
+/// Draw the meshes of one kind of `surface` into `samples`, by `passes`,
+/// each one pass over the triangles. Instances go in batches of
 /// at most `budget` vertices, every pass drawing a batch before the next
 /// batch is made; each layer so takes the batches, and the triangles in
 /// them, in the same order whatever is shared.
 #[allow(clippy::too_many_arguments)]
-fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all_offsets: &[(f32, f32)],
-                 passes: &[Pass], shared: &mut Shared, budget: usize, samples: &mut Samples, arena: &mut Arena) {
+fn render_surface(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all_offsets: &[(f32, f32)],
+                  passes: &[Pass], surface: Surface, shared: &mut Shared, budget: usize, samples: &mut Samples,
+                  arena: &mut Arena) {
     let (w, h) = (frame.width, frame.height);
     if w == 0 || h == 0 {
         return;
@@ -1029,7 +1232,11 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all
     let (mut transforming, mut binning, mut filling) = (zero, zero, zero);
     let band_rows = 16usize.max(h / (threads() * 8)).min(h.max(1));
     let plane = w * h;
-    let jobs = jobs(meshes);
+    let jobs = jobs(meshes, surface);
+    let glass = (surface == Surface::Glass).then(|| Glass {
+        shading: frame.shading,
+        lighting: Lighting::new(&frame.lights, &frame.view_to_world),
+    });
     let every_mesh: Vec<usize> = (0..meshes.len()).collect();
     let bounds = par_map(&every_mesh, |&m| bounds_of(meshes[m].points));
     // A mesh every pass draws at its `points` and `transforms`.
@@ -1100,7 +1307,7 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all
                 offsets.iter().map(|o| o.1).fold(f32::MAX, f32::min),
                 offsets.iter().map(|o| o.1).fold(f32::MIN, f32::max),
             ];
-            let raster = Raster { width: w, height: h, meshes, view: pass.view, offsets, spread };
+            let raster = Raster { width: w, height: h, meshes, view: pass.view, offsets, spread, glass };
 
             // Transform what the pass needs of its own, in parallel, into
             // the arena: everything, or only the clip positions of a still
@@ -1217,6 +1424,14 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all
             let mut depth: Vec<_> = samples.depth.chunks_mut(plane).skip(layers.start).take(layers.len())
                 .map(|l| l.chunks_mut(band_rows * w)).collect();
             let mut ids = (layers.start == 0).then(|| samples.ids.chunks_mut(band_rows * w));
+            // See-through surfaces add to their own sums (and the nearest
+            // depth the ids saw); the opaque ones touch neither.
+            let drawing_glass = raster.glass.is_some();
+            let mut accum: Vec<_> = samples.accum.chunks_mut(plane).skip(layers.start).take(layers.len())
+                .filter(|_| drawing_glass).map(|l| l.chunks_mut(band_rows * w)).collect();
+            let mut reveal: Vec<_> = samples.reveal.chunks_mut(plane).skip(layers.start).take(layers.len())
+                .filter(|_| drawing_glass).map(|l| l.chunks_mut(band_rows * w)).collect();
+            let mut near = (drawing_glass && layers.start == 0).then(|| samples.near.chunks_mut(band_rows * w));
             let bands: Vec<(Band, &[(u32, u32)])> = bins
                 .iter()
                 .enumerate()
@@ -1227,12 +1442,22 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all
                         normal: normal.iter_mut().map(|l| l.next().expect("a band in every layer")).collect(),
                         depth: depth.iter_mut().map(|l| l.next().expect("a band in every layer")).collect(),
                         ids: ids.as_mut().and_then(|l| l.next()),
+                        accum: accum.iter_mut().map(|l| l.next().expect("a band in every layer")).collect(),
+                        reveal: reveal.iter_mut().map(|l| l.next().expect("a band in every layer")).collect(),
+                        near: near.as_mut().and_then(|l| l.next()),
                     };
                     (band, &bin[..])
                 })
                 .collect();
             let queue = Mutex::new(bands);
             let job_ids: Vec<[i32; 2]> = batch.clone().map(|j| [jobs[j].0 as i32, jobs[j].1 as i32]).collect();
+            let job_culls: Vec<Cull> = batch
+                .clone()
+                .map(|j| {
+                    let (m, i) = jobs[j];
+                    meshes[m].cull.through(&meshes[m].transforms[i])
+                })
+                .collect();
             pool::each_thread(&|| loop {
                 if cancel.is_set() {
                     break;
@@ -1240,7 +1465,8 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all
                 let item = queue.lock().unwrap().pop();
                 let Some((mut band, triangles)) = item else { break };
                 for &(inst, t) in triangles {
-                    raster.draw_triangle(&mut band, &instances[inst as usize], t as usize, job_ids[inst as usize]);
+                    let k = inst as usize;
+                    raster.draw_triangle(&mut band, &instances[k], t as usize, job_ids[k], job_culls[k]);
                 }
             });
             transforming += t1 - t0;
@@ -1256,7 +1482,8 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all
     }
     // The C++ shim's TH_PLAYBLAST_TIMING line counts this inside "render".
     if std::env::var_os("TH_PLAYBLAST_TIMING").is_some() {
-        eprintln!("hdThPlayblast: raster {} ms at {} samples a pixel{}: transform {} ms, bin {} ms, fill {} ms",
+        eprintln!("hdThPlayblast: raster{} {} ms at {} samples a pixel{}: transform {} ms, bin {} ms, fill {} ms",
+                  if surface == Surface::Glass { " (see-through)" } else { "" },
                   started.elapsed().as_millis(), all_offsets.len(),
                   if passes.len() > 1 { format!(" in {} passes", passes.len()) } else { String::new() },
                   transforming.as_millis(), binning.as_millis(), filling.as_millis());
@@ -1294,7 +1521,7 @@ mod tests {
     fn frame(size: usize) -> Frame {
         let (world_to_clip, view_to_world) = camera();
         Frame { width: size, height: size, world_to_clip, view_to_world, samples: 1,
-                shading: Shading::Lit, ao: true, blur: Blur::OFF, alpha: false }
+                shading: Shading::Lit, ao: true, blur: Blur::OFF, alpha: false, lights: SceneLights::NONE }
     }
 
     #[test]
@@ -1304,7 +1531,7 @@ mod tests {
         let mesh = Mesh {
             points: &points, triangles: &triangles, corner_normals: None,
             corner_colors: None, corner_uvs: None, base_color: [1.0, 0.0, 0.0],
-            tiles: Vec::new(), transforms: &transforms, key: None, points_close: None, transform_keys: &[],
+            tiles: Vec::new(), transforms: &transforms, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing,
         };
         let img = render(&frame(64), &[mesh]);
         // Quad half-width 1 at distance 5, 90 degree fov: 1/5 of the half
@@ -1330,10 +1557,10 @@ mod tests {
         let meshes = [
             Mesh { points: &points, triangles: &triangles, corner_normals: None,
                    corner_colors: None, corner_uvs: None, base_color: [1.0, 0.0, 0.0],
-                   tiles: Vec::new(), transforms: &red, key: None, points_close: None, transform_keys: &[] },
+                   tiles: Vec::new(), transforms: &red, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing},
             Mesh { points: &points, triangles: &triangles, corner_normals: None,
                    corner_colors: None, corner_uvs: None, base_color: [0.0, 0.0, 1.0],
-                   tiles: Vec::new(), transforms: &other, key: None, points_close: None, transform_keys: &[] },
+                   tiles: Vec::new(), transforms: &other, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing},
         ];
         let img = render(&frame(64), &meshes);
         assert!(img.color[32 * 64 + 32][2] > 0.5, "blue in front");
@@ -1350,7 +1577,7 @@ mod tests {
         let transforms = [math::IDENTITY];
         let mesh = Mesh { points: &points, triangles: &triangles, corner_normals: None,
                           corner_colors: None, corner_uvs: None, base_color: [0.0, 1.0, 0.0],
-                          tiles: Vec::new(), transforms: &transforms, key: None, points_close: None, transform_keys: &[] };
+                          tiles: Vec::new(), transforms: &transforms, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing};
         let img = render(&frame(64), &[mesh]);
         assert!(img.color[60 * 64 + 32][1] > 0.3, "floor visible below the horizon");
         assert_eq!(img.depth[4 * 64 + 32], 1.0, "nothing above it");
@@ -1382,7 +1609,7 @@ mod tests {
         let transforms = [math::IDENTITY];
         let mesh = Mesh { points: &points, triangles: &triangles, corner_normals: None,
                           corner_colors: None, corner_uvs: None, base_color: DEFAULT_ALBEDO,
-                          tiles: Vec::new(), transforms: &transforms, key: None, points_close: None, transform_keys: &[] };
+                          tiles: Vec::new(), transforms: &transforms, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing};
         let mut f = frame(40);
         f.samples = 8;
         let img = render(&f, &[mesh]);
@@ -1393,7 +1620,7 @@ mod tests {
     fn quad_mesh<'a>(points: &'a [Vec3], triangles: &'a [[u32; 3]], transforms: &'a [Mat4]) -> Mesh<'a> {
         Mesh {
             points, triangles, corner_normals: None, corner_colors: None, corner_uvs: None,
-            base_color: [1.0; 3], tiles: Vec::new(), transforms, key: None, points_close: None, transform_keys: &[],
+            base_color: [1.0; 3], tiles: Vec::new(), transforms, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing,
         }
     }
 

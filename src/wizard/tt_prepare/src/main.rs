@@ -130,6 +130,9 @@ fn run_cli(parsed: &Args) -> Result<(), String> {
             Err(why) => return Err(format!("failed at v{}: {why}", step.version())),
         }
     }
+    for line in report.template_lines(&template) {
+        println!("  {line}");
+    }
     println!("now at _config v{}", report.to);
     Ok(())
 }
@@ -194,8 +197,20 @@ fn run(parsed: &Args) -> Result<(), String> {
         return show(plan, Problem::Blocked(step, why));
     }
     match migrate_now(&plan) {
-        Ok(summary) => {
-            eprintln!("tt_prepare: {summary} (anything replaced was backed up alongside as .bak)");
+        Ok(done) => {
+            eprintln!(
+                "tt_prepare: {} (anything replaced was backed up alongside as .bak)",
+                done.summary
+            );
+            for line in &done.template_lines {
+                eprintln!("tt_prepare:   {line}");
+            }
+            // A customised template that missed a fix, or one replaced with
+            // its original kept, is for a person to reconcile: say it once,
+            // on the launch that migrated.
+            if done.needs_attention {
+                return show(plan, Problem::Attention(done.template_lines));
+            }
             Ok(())
         }
         Err(why) => show(plan, Problem::Failed(why)),
@@ -288,59 +303,17 @@ impl eframe::App for Unconfigured {
     }
 }
 
-/// Where the project is.
-///
-/// `TH_PROJECT_PATH` is a required `[runtime]` var, and the first version of
-/// this hook assumed the launch environment would therefore carry it. It does
-/// not: the desktop defers package-declared `[runtime]` keys to Houdini's
-/// package file and hands a hook only the `TT_*` context, so every launch since
-/// the hook shipped logged "TH_PROJECT_PATH is unset — nothing to migrate" and
-/// the migration window never opened for anyone. The value the desktop *does*
-/// hold is in the project's own manifest at `$TT_PROJECT_DIR/hpm.toml`, so
-/// that is read when the variable is absent. The variable still wins when
-/// present — the `--migrate` CLI and a hand-set environment rely on it.
+/// Where the project is: `TH_PROJECT_PATH`, else the value recorded in
+/// `$TT_PROJECT_DIR/hpm.toml` (see [`th_project_core::project_location`]).
+/// The desktop hands a hook only the `TT_*` context, so reading the manifest
+/// is what makes the migration window open at all.
 fn project_path() -> Result<PathBuf, String> {
-    if let Ok(value) = std::env::var("TH_PROJECT_PATH") {
-        if !value.trim().is_empty() {
-            return Ok(PathBuf::from(value));
-        }
-    }
-    if let Ok(dir) = std::env::var("TT_PROJECT_DIR") {
-        if !dir.trim().is_empty() {
-            return project_path_from_manifest(&Path::new(&dir).join("hpm.toml"));
-        }
-    }
-    Err("TH_PROJECT_PATH is unset and TT_PROJECT_DIR names no project — nothing to migrate"
-        .to_string())
+    th_project_core::project_location::configured_project_path()
+        .map_err(|why| format!("{why} — nothing to migrate"))
 }
 
-/// `TH_PROJECT_PATH` as the project's manifest records it, in the
-/// `[runtime]` table the desktop writes: `TH_PROJECT_PATH = { method = "set",
-/// value = "..." }`. Only a literal path is usable here — a value that refers
-/// to another variable would need an expansion this hook cannot do.
-fn project_path_from_manifest(manifest: &Path) -> Result<PathBuf, String> {
-    let text = std::fs::read_to_string(manifest)
-        .map_err(|e| format!("cannot read {}: {e}", manifest.display()))?;
-    let doc: toml::Value = toml::from_str(&text)
-        .map_err(|e| format!("cannot parse {}: {e}", manifest.display()))?;
-    let entry = doc.get("runtime").and_then(|runtime| runtime.get("TH_PROJECT_PATH"));
-    let value = match entry {
-        Some(toml::Value::Table(table)) => table.get("value").and_then(|v| v.as_str()),
-        Some(toml::Value::String(s)) => Some(s.as_str()),
-        _ => None,
-    };
-    match value {
-        Some(v) if !v.trim().is_empty() && !v.contains('$') => Ok(PathBuf::from(v)),
-        Some(v) => Err(format!(
-            "TH_PROJECT_PATH in {} is {v:?}, which this hook cannot expand",
-            manifest.display()
-        )),
-        None => Err(format!(
-            "{} sets no TH_PROJECT_PATH — the project has not been configured",
-            manifest.display()
-        )),
-    }
-}
+#[cfg(test)]
+use th_project_core::project_location::project_path_from_manifest;
 
 /// The command line, parsed once.
 ///
@@ -503,6 +476,9 @@ enum Problem {
     Blocked(Step, String),
     /// The migration ran and stopped; what it had not reached is untouched.
     Failed(String),
+    /// The migration finished, and left templates for a person to
+    /// reconcile: these are its template lines.
+    Attention(Vec<String>),
 }
 
 struct App {
@@ -520,6 +496,7 @@ fn show(plan: Plan, problem: Problem) -> Result<(), String> {
             Ok(())
         }
         Problem::Failed(why) => Err(why.clone()),
+        Problem::Attention(_) => Ok(()),
     };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -536,8 +513,18 @@ fn show(plan: Plan, problem: Problem) -> Result<(), String> {
     result
 }
 
+/// A migration that ran to the end.
+struct Migrated {
+    summary: String,
+    /// What it did with the department templates
+    /// (`Report::template_lines`).
+    template_lines: Vec<String>,
+    /// Whether those lines name something a person should look at.
+    needs_attention: bool,
+}
+
 /// Run the migration under the lock and summarise what happened.
-fn migrate_now(plan: &Plan) -> Result<String, String> {
+fn migrate_now(plan: &Plan) -> Result<Migrated, String> {
     let _lock = Lock::acquire(&plan.project)?;
     let report: Report = migration::migrate(&plan.project, &plan.template)?;
 
@@ -554,10 +541,11 @@ fn migrate_now(plan: &Plan) -> Result<String, String> {
             step.description()
         ));
     }
-    Ok(format!(
-        "migrated _config v{} -> v{}",
-        report.from, report.to
-    ))
+    Ok(Migrated {
+        summary: format!("migrated _config v{} -> v{}", report.from, report.to),
+        template_lines: report.template_lines(&plan.template),
+        needs_attention: report.templates_need_attention(),
+    })
 }
 
 impl eframe::App for App {
@@ -574,6 +562,28 @@ impl eframe::App for App {
 
         egui::CentralPanel::default().show(ui, |ui| {
             ui.add_space(4.0);
+            if let Problem::Attention(lines) = &self.problem {
+                ui.heading("This project was migrated; some templates need a look");
+                ui.add_space(4.0);
+                ui.label(format!("{}", self.plan.project.display()));
+                ui.label(format!(
+                    "_config went from v{} to v{}. The project opens as usual.",
+                    self.plan.from, self.plan.to
+                ));
+                ui.separator();
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for line in lines {
+                        ui.label(egui::RichText::new(line).monospace());
+                    }
+                    ui.add_space(6.0);
+                    ui.label(
+                        "A customised template is the project's own and was not changed, \
+                         so new workfiles from it lack the fixes of the steps named. This \
+                         list is also in the launch log; it is shown this once.",
+                    );
+                });
+                return;
+            }
             ui.heading("This project could not be migrated");
             ui.add_space(4.0);
             ui.label(format!("{}", self.plan.project.display()));
@@ -597,6 +607,7 @@ impl eframe::App for App {
                          menu in TumbleTrove Desktop."
                     ));
                 }
+                Problem::Attention(_) => {}
                 Problem::Failed(why) => {
                     ui.colored_label(STATUS_ERROR, why);
                     ui.add_space(4.0);

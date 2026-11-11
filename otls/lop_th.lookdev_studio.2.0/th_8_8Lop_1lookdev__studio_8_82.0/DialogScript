@@ -899,10 +899,11 @@
         }
         parm {
             name    "farm_frame_settings"
-            label   "Start/End-Frame"
+            label   "Start/End (5 loop lengths)"
             type    intvector2
             size    2
             default { [ "first_frame = hou.parm('asset_turn_framerangemin').eval()\nreturn first_frame" python ] [ "first_frame = hou.parm('asset_turn_framerangemin').eval()\nlast_frame = hou.parm('light_turn_framerangemax').eval()\nframe_count = (last_frame - first_frame) + 1\nreturn first_frame + (frame_count * 5)" python ] }
+            help    "Not the loop: by default the farm renders from the loop start to five loop lengths past it (1001-2011 for a 1001-1202 loop), every Step size frames, as a preview of the whole turntable. Set First/Last to the loop to render just that."
             range   { 1! 999999! }
             parmtag { "script_callback_language" "python" }
         }

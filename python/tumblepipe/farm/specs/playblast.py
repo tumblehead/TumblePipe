@@ -69,13 +69,16 @@ PLAYBLAST_SHADINGS = ('lit', 'clay', 'albedo', 'occlusion')
 DEFAULT_LOOK = {
     'renderer': 'viewport', 'shading': 'lit',
     'light': 'dome', 'samples': 32, 'materials': False,
-    'motion_blur': False, 'dof': False, 'blur_samples': 16,
+    'motion_blur': False, 'dof': True, 'blur_samples': 16,
 }
 
 # The viewport renderer's blurs (hdThPlayblast's blur module): motion blur
 # over the camera's shutter, depth of field from its lens, each averaged
 # over a look's blur_samples images (2 to 64, rounded up to a power of
-# two). A look submitted before the blurs existed has neither.
+# two). A look submitted before the blurs existed has neither. Depth of
+# field is on by default, as in Houdini's viewport: a camera with no F-Stop
+# or Focus Distance draws sharp anyway (Discord, Auguu 2026-11-11: the
+# playblast lost the viewport's defocus).
 BLUR_SAMPLES_RANGE = (2, 64)
 DEFAULT_BLUR_SAMPLES = 16
 

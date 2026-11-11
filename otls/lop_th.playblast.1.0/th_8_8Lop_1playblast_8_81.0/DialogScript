@@ -207,8 +207,8 @@
             name    "depth_of_field"
             label   "Depth of Field"
             type    toggle
-            default { "0" }
-            help    "Defocus by the camera's lens: its F-Stop and Focus Distance. An F-Stop of 0 is sharp throughout."
+            default { "1" }
+            help    "Defocus by the camera's lens: its F-Stop and Focus Distance, as Houdini's viewport does. On by default; a camera with an F-Stop of 0 or no Focus Distance is sharp throughout."
             parmtag { "script_callback_language" "python" }
         }
         parm {

@@ -4,6 +4,7 @@ from typing import Optional
 from pathlib import Path
 import datetime as dt
 import shutil
+import html
 import os
 
 from tumblepipe.api import path_str
@@ -50,6 +51,9 @@ class ImageInfo:
     aspect_ratio: float
     compression: str
     compression_level: int
+    # ``(id, name)`` of each cryptomatte this part's header describes
+    # (``cryptomatte/<id>/name``); Karma writes them all on the first part.
+    cryptomattes: tuple[tuple[str, str], ...] = ()
 
 def _require_suffix(path: Path, suffix: str) -> None:
     if path.suffix.lower() != suffix:
@@ -117,9 +121,14 @@ def get_image_info(input_path: Path) -> list[ImageInfo]:
 
         # Parse the image info
         info = dict()
+        cryptomattes = []
         for part in parts:
             if not _is_entry(part): continue
             key, value = _parse_key_value(part)
+            crypto_id = _cryptomatte_name_key(key)
+            if crypto_id is not None:
+                cryptomattes.append((crypto_id, html.unescape(value)))
+                continue
             match key:
                 case 'oiio:subimagename':
                     info['name'] = value.lower()
@@ -148,7 +157,8 @@ def get_image_info(input_path: Path) -> list[ImageInfo]:
             channels = channel_names,
             aspect_ratio = info.get('aspect_ratio'),
             compression = info.get('compression'),
-            compression_level = info.get('compression_level')
+            compression_level = info.get('compression_level'),
+            cryptomattes = tuple(cryptomattes),
         )
 
     # Query the image info
@@ -162,6 +172,145 @@ def get_image_info(input_path: Path) -> list[ImageInfo]:
         _parse_image_info(raw_info)
         for raw_info in raw_infos
     ]
+
+def _cryptomatte_name_key(key: str) -> Optional[str]:
+    """The ``<id>`` of a ``cryptomatte/<id>/name`` header key, else None."""
+    parts = key.split('/')
+    if len(parts) != 3: return None
+    if parts[0] != 'cryptomatte' or parts[2] != 'name': return None
+    if not parts[1]: return None
+    return parts[1]
+
+@dataclass(frozen=True)
+class Cryptomatte:
+    """One cryptomatte of a rendered frame, as Karma lays it out.
+
+    A cryptomatte var ``X`` renders a 3-channel preview part ``X`` and its
+    rank parts ``X00``, ``X01``, ... (RGBA each, two ranks per part), and its
+    manifest lives only in the header of one part (``cryptomatte/<id>/*``,
+    Karma: the first). A comp reads a cryptomatte from one image holding all
+    of it, so the split publishes it as one single-part file: the preview and
+    the ranks as float channels ``X.R..B``, ``X00.R..A``, ..., and the
+    header of this cryptomatte alone.
+    """
+    name: str                 # as the header names it: the channel prefix
+    crypto_id: str            # its ``cryptomatte/<id>/`` key
+    header_index: int         # 0-based subimage holding its header
+    part_indices: tuple[int, ...]   # preview (when rendered) then ranks, in order
+    other_ids: tuple[str, ...]      # the header's other cryptomattes' ids
+
+    @property
+    def aov_name(self) -> str:
+        return self.name.lower()
+
+def _rank_number(part_name: str, base: str) -> Optional[int]:
+    """``n`` when ``part_name`` is ``base`` + two digits ``nn``, else None."""
+    if not part_name.startswith(base): return None
+    suffix = part_name[len(base):]
+    if len(suffix) != 2 or not suffix.isdigit(): return None
+    return int(suffix)
+
+def cryptomattes(image_infos: list[ImageInfo]) -> list[Cryptomatte]:
+    """The cryptomattes of a frame whose parts are ``image_infos``: each
+    named in a header and with at least one rank part. Part names compare
+    case-blind (``ImageInfo.name`` is lowercased)."""
+    found = []
+    seen = set()
+    for header_index, header in enumerate(image_infos):
+        ids = tuple(crypto_id for crypto_id, _ in header.cryptomattes)
+        for crypto_id, name in header.cryptomattes:
+            base = name.lower()
+            if not base or base in seen: continue
+            preview = [
+                index for index, info in enumerate(image_infos)
+                if info.name == base
+            ]
+            ranks = sorted(
+                (number, index)
+                for index, info in enumerate(image_infos)
+                if info.name is not None
+                for number in [_rank_number(info.name, base)]
+                if number is not None
+            )
+            if not ranks: continue
+            seen.add(base)
+            found.append(Cryptomatte(
+                name = name,
+                crypto_id = crypto_id,
+                header_index = header_index,
+                part_indices = tuple(preview[:1] + [index for _, index in ranks]),
+                other_ids = tuple(other for other in ids if other != crypto_id),
+            ))
+    return found
+
+def _cryptomatte_channel_names(
+    crypto: Cryptomatte, image_infos: list[ImageInfo]
+    ) -> list[str]:
+    """The published channel names of ``crypto``'s parts, in order:
+    ``X.R..``, ``XNN.R..``, named after the part whatever Karma called them."""
+    names = []
+    for index in crypto.part_indices:
+        info = image_infos[index]
+        suffix = info.name[len(crypto.aov_name):]
+        names.extend(
+            _rename_channel(crypto.name + suffix, channel)
+            for channel in info.channels
+        )
+    return names
+
+def cryptomatte_command(
+    input_path: Path,
+    crypto: Cryptomatte,
+    image_infos: list[ImageInfo],
+    output_path: Path,
+    ) -> list[str]:
+    """The oiiotool command that writes ``crypto`` as one file.
+
+    The header part goes first so its metadata is the result's (oiiotool's
+    ``--chappend`` keeps the first image's), then each part of the
+    cryptomatte is appended; the header part's own channels are dropped by
+    position (never by name, see ``_stage_subimage``). The manifest never
+    passes through the command line, where a big one would overflow
+    Windows' 32k limit. ``-d float``: cryptomatte ids are float32 bit
+    patterns, and a half would destroy them.
+    """
+    source = path_str(input_path)
+    command = ['oiiotool', source, '--subimage', str(crypto.header_index)]
+    for index in crypto.part_indices:
+        command += [source, '--subimage', str(index), '--chappend']
+    skip = len(image_infos[crypto.header_index].channels)
+    names = _cryptomatte_channel_names(crypto, image_infos)
+    command += [
+        '--ch', ','.join(str(skip + offset) for offset in range(len(names))),
+        '--chnames', ','.join(names),
+    ]
+    for other in crypto.other_ids:
+        command += ['--eraseattrib', f'cryptomatte/{other}/.*']
+    command += [
+        '--attrib', 'oiio:subimagename', crypto.name,
+        '--attrib', 'name', crypto.name,
+        '--compression', cryptomatte_compression(crypto, image_infos),
+        '-d', 'float',
+        '-o', path_str(output_path),
+    ]
+    return command
+
+# EXR compressions that keep a float32 bit for bit. pxr24 rounds float32 to
+# 24 bits, b44 and dwa are lossy: any of them scrambles cryptomatte ids.
+LOSSLESS_COMPRESSIONS = frozenset({'none', 'rle', 'zips', 'zip', 'piz'})
+
+def cryptomatte_compression(crypto: Cryptomatte, image_infos: list[ImageInfo]) -> str:
+    """The compression ``crypto`` is written with: its first rank's when
+    lossless, else ``zips``. Never the header part's, which is the beauty's
+    and may be DWA."""
+    rank = image_infos[crypto.part_indices[-1]]
+    for index in crypto.part_indices:
+        info = image_infos[index]
+        if info.name != crypto.aov_name:
+            rank = info
+            break
+    compression = (rank.compression or '').split(':', 1)[0].lower()
+    return compression if compression in LOSSLESS_COMPRESSIONS else 'zips'
 
 def _rename_channel(image_name: str, channel: str) -> str:
     # Map common channel suffixes to new names
@@ -201,6 +350,10 @@ def _stage_subimage(temp_path, temp_image_path, image_info, index_name):
     return temp_renamed_path
 
 def split_subimages(input_path, output_path):
+    """Split a rendered multi-part EXR into ``output_path/<aov>/<name>``,
+    one file per part, keyed by the part's lowercased name. A cryptomatte's
+    parts (preview and ranks) become one file holding them and its manifest
+    instead (:func:`cryptomattes`). Returns ``{aov: path}``."""
     _require_suffix(input_path, '.exr')
     if not output_path.is_dir():
         raise NotADirectoryError(f'Split output is not a directory: {output_path}')
@@ -226,9 +379,23 @@ def split_subimages(input_path, output_path):
             path_str(temp_output_path)
         ])
 
-        # Copy each subimage to the output path, renaming channels when needed
+        # Each cryptomatte is one file holding its preview, its ranks and
+        # its header, written from the frame itself: the split parts lost
+        # the header, which only the first part carries.
         output_image_paths = dict()
+        grouped = set()
+        for crypto in cryptomattes(image_infos):
+            grouped.update(crypto.part_indices)
+            output_image_path = output_path / crypto.aov_name / input_path.name
+            output_image_path.parent.mkdir(parents=True, exist_ok=True)
+            _run(cryptomatte_command(
+                input_path, crypto, image_infos, output_image_path
+            ))
+            output_image_paths[crypto.aov_name] = output_image_path
+
+        # Copy each subimage to the output path, renaming channels when needed
         for index, image_info in enumerate(image_infos, 1):
+            if index - 1 in grouped: continue
             image_name = image_info.name
             index_name = str(index).zfill(4)
             temp_image_path = temp_output_path.with_name(f'{index_name}.exr')

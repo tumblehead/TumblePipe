@@ -15,6 +15,10 @@ Submit's dialog gives its grid:
 
 The node's own settings (pool, priority, range, batch) are never touched:
 they come from the node, wherever the work runs.
+
+A node whose work *is* a Farm Submit step (th::import_render's **Render**:
+render the shot it reads again) opens Farm Submit itself, preselected, with
+:func:`open_grid`.
 """
 
 from __future__ import annotations
@@ -131,3 +135,16 @@ def submit(what: str, title: str, fn: Callable[[], object]) -> bool:
     remember_backend(backend)
     show_submitted(backend, what[:1].upper() + what[1:], title)
     return True
+
+
+def open_grid(seed) -> None:
+    """Farm Submit's grid, opened on ``seed`` (``pipe.comp.RenderSeed``):
+    its entities' Render cells ticked, its department as the cut and its
+    channels checked. The same window the toolbar's Render quick action
+    opens (``asset_browser.scene.open_submit_jobs_dialog``), so it replaces
+    an open one. Raises; the caller is the button's boundary."""
+    from tumblepipe.asset_browser.scene import open_submit_jobs_dialog
+    open_submit_jobs_dialog(
+        list(seed.uris), list(seed.names), seed.context,
+        department=seed.department, channels=tuple(seed.channels) or None,
+    )

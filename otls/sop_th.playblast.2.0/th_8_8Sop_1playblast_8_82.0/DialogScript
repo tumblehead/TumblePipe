@@ -118,6 +118,25 @@
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.playblast as th_node; th_node.open_location(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
+        parm {
+            name    "live_playblast"
+            label   "Live"
+            type    button
+            joinnext
+            default { "0" }
+            help    "Playblast in the background (TumbleView, GPU) to this machine's live folder, the current frame first, for the player's Live take. No version and no daily."
+            parmtag { "script_callback" "from tumblepipe.pipe.houdini import live_playblast; live_playblast.start_from_playblast(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "live_playblast_stop"
+            label   "Stop Live"
+            type    button
+            default { "0" }
+            help    "Stop this node's live playblast rendering in the background."
+            parmtag { "script_callback" "from tumblepipe.pipe.houdini import live_playblast; live_playblast.stop_from_playblast(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
     }
 
 }

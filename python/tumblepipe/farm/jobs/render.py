@@ -14,6 +14,8 @@ def build(config, paths, staging_path):
     )
     context = dict(
         tile_count = config['tile_count'],
+        # The farm hands a task only its first and last frame
+        step_size = config['step_size'],
         receipt_path = config['receipt_path'],
         input_path = config['input_path'],
         output_paths = config['output_paths']

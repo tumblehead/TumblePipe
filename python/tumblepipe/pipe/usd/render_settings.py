@@ -137,6 +137,16 @@ PLAYBLAST_SETTINGS_PRIM_PATH = '/Render/tumblepipe_playblast'
 _PLAYBLAST_SCOPE_NAME = 'TumblePipePlayblast'
 
 
+def live_playblast_keep_paths(camera_path: str) -> list[str]:
+    """The shot-stage prims a playblast of live animation keeps, its
+    animated characters coming from the animation itself: /SET, the camera,
+    and the parent of PLAYBLAST_SETTINGS_PRIM_PATH (the wrapper defines its
+    settings there, and a deactivated parent would hide them from husk).
+    The SOP th::playblast prunes everything else (stage/keep)."""
+    settings_parent = PLAYBLAST_SETTINGS_PRIM_PATH.rsplit('/', 1)[0]
+    return ['/SET', camera_path, settings_parent]
+
+
 def generate_playblast_settings_section(camera_prim_path: str) -> str:
     """USDA text defining the RenderSettings a farm playblast renders through.
 
@@ -200,7 +210,8 @@ def generate_playblast_settings_section(camera_prim_path: str) -> str:
 
 
 def generate_playblast_wrapper(
-    sublayer: str, camera_prim_path: str, fps: float, overrides: tuple[str, ...] = ()
+    sublayer: str, camera_prim_path: str, fps: float, overrides: tuple[str, ...] = (),
+    time_offset: int = 0,
     ) -> str:
     """USDA text of a root layer over ``sublayer`` (an asset path, e.g.
     ``./cache.usd``) that renders it through the playblast settings prim
@@ -215,11 +226,18 @@ def generate_playblast_wrapper(
     only, so the playblast's own prim goes in a layer of its own on top. Its
     time codes per second are the cache's (the shot's fps), so the sublayer's
     frames are not rescaled.
+
+    ``time_offset`` is how far the layers' frames sit after the shot's own
+    (a member of a shared-timeline Multi, cached on the session's frames):
+    each sublayer is moved back by it, so the wrapper's frame f shows the
+    layers' frame f + time_offset, and husk renders and names the shot's
+    own frames.
     """
+    offset = f' (offset = {-time_offset})' if time_offset else ''
     return '\n'.join([
         '#usda 1.0',
         '(',
-        '    subLayers = [' + ', '.join(f'@{path}@' for path in (*overrides, sublayer)) + ']',
+        '    subLayers = [' + ', '.join(f'@{path}@{offset}' for path in (*overrides, sublayer)) + ']',
         f'    renderSettingsPrimPath = "{PLAYBLAST_SETTINGS_PRIM_PATH}"',
         f'    timeCodesPerSecond = {fps}',
         f'    framesPerSecond = {fps}',

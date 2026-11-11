@@ -191,7 +191,7 @@ def _composite_job(config, shot, paths, version_name, partial) -> Job:
         pool_name = shot.pool_name,
         first_frame = shot.first_frame,
         last_frame = shot.last_frame,
-        frames = [shot.first_frame, shot.middle_frame, shot.last_frame] if partial else [],
+        frames = list(shot.check_frames) if partial else [],
         step_size = 1 if partial else shot.step_size,
         batch_size = 1 if partial else settings['batch_size'],
         receipt_path = path_str(receipt_path),

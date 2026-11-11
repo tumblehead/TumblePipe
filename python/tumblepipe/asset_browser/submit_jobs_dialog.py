@@ -15,9 +15,11 @@ multi-entity rework: left alone a field is *unpinned* and every entity uses
 its own configured value (``⟨per entity⟩`` when they disagree); touching it
 *pins* it for the whole submission. Samples, Motion blur and DOF are the
 exception: they override the scene's render settings, so unpinned they show
-``⟨from scene⟩`` and send nothing. The read-only Camera row is looked up by
-``tumblepipe.farm.submit.camera``. Resolution order and the rules live in
-``submit_settings``. The grid chooses the *steps*; the form never did.
+``⟨from scene⟩`` and send nothing; once the published layers are read they
+name the scene's value instead (``from scene: 128``, ``varies: 64–256``;
+``farm.submit.settings.scene_placeholder``). The read-only Camera row and
+those scene values are looked up by ``tumblepipe.farm.submit.camera``.
+Resolution order and the rules live in ``submit_settings``. The grid chooses the *steps*; the form never did.
 
 Submit first shows a review over the window (``farm_submit_ui.ReviewSheet``:
 a row per entity, its steps, what to check), then writes a plan and hands it
@@ -108,7 +110,8 @@ PER_ENTITY_TEXT = "⟨per entity⟩"
 FROM_SCENE_TEXT = "⟨from scene⟩"
 
 # Shown by an unset comp frame: nothing is sent, so the comp follows the
-# render's range, else the shot's (``farm.submit.settings.comp_frames``).
+# render's range, else what the renders on disk cover, else the shot's
+# (``batch_submit``; ``farm.submit.settings.comp_frames`` warns on the shot's).
 FULL_RANGE_TEXT = "⟨full range⟩"
 
 # The render_mode the Range checkboxes send, keyed by (preview, full range)
@@ -857,6 +860,8 @@ class _ContextPane(QWidget):
         context: ``'shots'`` or ``'assets'``.
         department: Department to pin the preview cuts to, or ``None``.
         tick_kinds: Step kinds to tick for ``entity_uris``.
+        channels: Render channels to open checked, or ``None`` for the
+            usual seed (``settings.opened_channels``).
     """
 
     def __init__(
@@ -866,6 +871,7 @@ class _ContextPane(QWidget):
         context: str,
         department: str | None = None,
         tick_kinds: Sequence[str] = (grid.RENDER,),
+        channels: Sequence[str] | None = None,
     ) -> None:
         super().__init__(dialog)
         self._dialog = dialog
@@ -873,6 +879,8 @@ class _ContextPane(QWidget):
         self._noun = grid.context_noun(context)
         # Department the dialog was opened from (a loaded workfile), or None.
         self._open_department = department or None
+        # Channels the opener asked for (import_render's Channel), or None.
+        self._open_channels = tuple(channels) if channels else None
 
         # Guards the spin boxes' valueChanged against programmatic seeding
         # (Qt gives QSpinBox no user-only edit signal).
@@ -1880,6 +1888,7 @@ class _ContextPane(QWidget):
         self._no_settings = QLabel(
             "Tick a cell to see its settings.\n\nHover a column's header for "
             "what it does and what its marks mean."
+            + ("" if self._context == "shots" else f"\n\n{grid.ASSET_RENDER_HINT}")
         )
         self._no_settings.setStyleSheet(f"color: {TEXT_SECONDARY};")
         self._no_settings.setAlignment(Qt.AlignCenter)
@@ -1899,7 +1908,10 @@ class _ContextPane(QWidget):
             f"QWidget#farmFormsViewport {{ background-color: {BG_DARKEST}; }}"
         )
         scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # As needed, not off: where the UI font is wider than measured (a
+        # Linux fallback font clipped "Full range", the Channels All button
+        # and the shot count, #46) the rest stays reachable, not cut off.
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         # The widest rows are two spin boxes sized for ⟨per entity⟩ plus a
         # label and a ↺ (about 450px); narrower clips the ↺ buttons.
         # Measured with every section showing and open, so the panel keeps
@@ -2285,12 +2297,21 @@ class _ContextPane(QWidget):
         self._rnd_samples = self._spin('samples', 1, 4096, override=True)
         form.addRow("Samples:", self._row(self._rnd_samples, revert=('samples',)))
         self._rnd_denoise = self._check('denoise', "Denoise")
+        form.addRow("", self._row(self._rnd_denoise, revert=('denoise',)))
         self._rnd_mblur = self._check('mblur', "Motion blur", override=True)
         self._rnd_dof = self._check('dof', "DOF", override=True)
-        form.addRow("", self._row(
-            self._rnd_denoise, self._rnd_mblur, self._rnd_dof,
-            revert=('denoise', 'mblur', 'dof'),
-        ))
+        # A row each: each names the scene's value beside its label
+        # (_show_scene_values, "DOF (varies: off, on, Karma default)"),
+        # which one shared row had no room for in the fixed-width panel.
+        form.addRow("", self._row(self._rnd_mblur, revert=('mblur',)))
+        form.addRow("", self._row(self._rnd_dof, revert=('dof',)))
+        # The scene overrides, their widgets and plain labels, for
+        # _show_scene_values.
+        self._scene_fields = {
+            'samples': (self._rnd_samples, None),
+            'mblur': (self._rnd_mblur, "Motion blur"),
+            'dof': (self._rnd_dof, "DOF"),
+        }
         self._rnd_standalone = QCheckBox("Standalone")
         self._rnd_copy_edit = QCheckBox("Copy to edit")
         form.addRow("", self._row(self._rnd_standalone, self._rnd_copy_edit))
@@ -2326,8 +2347,9 @@ class _ContextPane(QWidget):
         )
         frames_tip = (
             "Leave on ⟨full range⟩ to comp every frame of the render ticked "
-            "beside it, or, with no render, of the shot's range from the "
-            "config (rolls included) — an export_comp's From Config. Type a "
+            "beside it, or, with no render, the frames the shot's renders on "
+            "disk cover (else the shot's range with its rolls) — an "
+            "export_comp's From Context. Type a "
             "frame to comp from or to it instead; with a render it must lie "
             "inside the render's frames."
         )
@@ -2343,8 +2365,17 @@ class _ContextPane(QWidget):
         )
         self._comp_batch = self._spin('comp_batch_size', 1, 1000)
         self._comp_batch.setToolTip("Frames per farm task of the comp.")
+        # On This machine the comp runs as one task (grid.LOCAL_COMP_BATCH):
+        # said here, not applied out of sight.
+        self._comp_local_batch = QLabel("one task on this machine")
+        self._comp_local_batch.setToolTip(
+            "This machine runs tasks one at a time, so the comp runs its "
+            "whole range as one task: each task pays a few seconds of "
+            "Houdini start-up. The batch applies on the render farm."
+        )
+        self._comp_local_batch.setVisible(False)
         form.addRow("Step / Batch:", self._row(
-            self._comp_step, "/", self._comp_batch,
+            self._comp_step, "/", self._comp_batch, self._comp_local_batch,
             revert=('comp_step', 'comp_batch_size'),
         ))
         self._comp_pool = self._pool('comp_pool')
@@ -2462,14 +2493,11 @@ class _ContextPane(QWidget):
 
     def _show_camera(self, keys: list[tuple[str, str, str]]) -> None:
         label = self._rnd_camera
-        if not keys:
-            label.setText("—")
-            label.setToolTip("")
-            return
         known = [self._cameras[k] for k in keys if k in self._cameras]
-        if len(known) < len(keys):
-            label.setText("Reading…")
+        if not keys or len(known) < len(keys):
+            label.setText("Reading…" if keys else "—")
             label.setToolTip("")
+            self._show_scene_values(keys, [])  # back to plain ⟨from scene⟩
             return
         lines = []
         for key, found in zip(keys, known):
@@ -2494,6 +2522,48 @@ class _ContextPane(QWidget):
             "default). The farm renders through the composed stage's "
             "camera.\n\n" + "\n".join(lines)
         )
+        self._show_scene_values(keys, known)
+
+    def _show_scene_values(self, keys, known) -> None:
+        """Say what ``⟨from scene⟩`` means on Samples, Motion blur and DOF.
+
+        The values come from the camera lookup's pass over the published
+        layers (``farm.submit.camera``): one per rendering entity, ``from
+        scene: 128`` when they agree, ``varies: 64–256`` when not
+        (``settings.scene_placeholder``). An entity whose lookup failed is
+        left out and named in the tooltip. Nothing is cooked: the stage the
+        farm composes may differ, which the tooltip says.
+        """
+        complete = bool(keys) and len(known) == len(keys)
+        for key, (widget, label) in self._scene_fields.items():
+            field = resolve.FIELDS_BY_KEY[key]
+            values, lines = [], []
+            for cam_key, found in (zip(keys, known) if complete else ()):
+                name = self._uri_objects[cam_key[0]].segments[-1]
+                if found.error:
+                    lines.append(f"{name}: not read  {found.error}")
+                    continue
+                value, source = found.settings.get(key, (None, ''))
+                values.append(value)
+                shown = resolve.scene_value_text(value, field.kind)
+                lines.append(f"{name}: {shown}  ({source})" if source else f"{name}: {shown}")
+            text = resolve.scene_placeholder(values, field.kind)
+            attribute = render_camera.SCENE_SETTINGS[key]
+            tip = (
+                f"Left unset, nothing is sent and the farm renders with the "
+                f"scene's {attribute}. Read from the latest published layers "
+                f"in the render cut (strongest department first, then the "
+                f"project's root_default_prims.usda); not authored anywhere "
+                f"means {resolve.RENDERER_DEFAULT_TEXT}. A preview: the farm "
+                f"composes the stage. A value here overrides it on the farm."
+            )
+            if lines:
+                tip += "\n\n" + "\n".join(lines)
+            widget.setToolTip(tip)
+            if label is None:
+                widget.setSpecialValueText(text or FROM_SCENE_TEXT)
+            else:
+                widget.setText(f"{label} ({text})" if text else label)
 
     def _on_cut_changed(self) -> None:
         """A preview cut changed: its cells' staleness depends on it.
@@ -2581,7 +2651,10 @@ class _ContextPane(QWidget):
         properties = [self._props.get(u, {}) for u in render_rows]
         names = resolve.channel_union(properties)
         if initial:
-            checked = resolve.channel_intersection(properties)
+            checked = resolve.opened_channels(
+                names, self._open_channels,
+                resolve.channel_intersection(properties),
+            )
         else:
             if names == self._rnd_channels.options():
                 return
@@ -2718,6 +2791,7 @@ class _ContextPane(QWidget):
             )
             for uri, _s, warnings, errors in rows
         ]
+        backend = self._dialog.backend()
         configs = [
             {
                 'entity': {
@@ -2725,7 +2799,8 @@ class _ContextPane(QWidget):
                     'name': self._uri_objects[uri].segments[-1],
                     'context': self._context,
                 },
-                'settings': settings,
+                # The comp batch the form shows for this backend (#44).
+                'settings': grid.settings_for_backend(settings, backend),
             }
             for uri, settings, _w, _e in rows
         ]
@@ -2745,10 +2820,18 @@ class _ContextPane(QWidget):
         self._dialog.close_overlay()
         self._changed()
 
+    def set_backend(self, backend: str) -> None:
+        """Show what Run on changes in the form: the comp batch (shots only)."""
+        if grid.COMP not in self._sections:
+            return
+        local = backend == 'local'
+        self._comp_batch.setVisible(not local)
+        self._comp_local_batch.setVisible(local)
+
     def after_submission(self, sent: set[str]) -> None:
-        """Back from a submission: untick the rows that went out, read the
-        status again (their cells are pending now, not stale)."""
-        self._ticks = grid.untick_sent(self._ticks, sent)
+        """Back from a submission: keep the ticks (re-submitting with one
+        setting changed needs no re-ticking, #41) and read the status again
+        (the sent cells are pending now, not stale)."""
         self._start_scan()
         self._changed()
 
@@ -2760,8 +2843,8 @@ class _EditsPane(QWidget):
 
     A row offers the edit's finished published versions, the latest first
     selected (``grid.default_edit_version``); an edit never published has
-    nothing to render and cannot be ticked. Ticked rows render on the farm
-    into ``render:/edits/<name>/<name>_edit_vNNNN.mp4``
+    nothing to render and cannot be ticked. Ticked rows render, where Run
+    on says, into ``render:/edits/<name>/<name>_edit_vNNNN.mp4``
     (``farm/pipelines/edit_render.py``), with the Pool and Priority beside
     the list.
 
@@ -2825,9 +2908,7 @@ class _EditsPane(QWidget):
                 self._RENDER, Qt.Checked if uri in opened else Qt.Unchecked,
             )
             item.setToolTip(
-                self._RENDER,
-                f"Render this version into render:/edits/{name}/"
-                f"{name}_edit_vNNNN.mp4 on the farm.",
+                self._RENDER, grid.edit_render_tip(name, "farm"),  # set_backend follows Run on
             )
         if not self._items:
             empty = QTreeWidgetItem(["This project has no edits.", "", ""])
@@ -2860,6 +2941,13 @@ class _EditsPane(QWidget):
         holder.setLayout(side)
         holder.setFixedWidth(320)
         root.addWidget(holder)
+
+    def set_backend(self, backend: str) -> None:
+        """Run on changed: the Render Edit tooltips say where it renders."""
+        for uri in self._versions:
+            self._items[uri].setToolTip(
+                self._RENDER, grid.edit_render_tip(self._names[uri], backend),
+            )
 
     @property
     def context(self) -> str:
@@ -2902,11 +2990,7 @@ class _EditsPane(QWidget):
         self._dialog.start(configs, steps, self)
 
     def after_submission(self, sent: set[str]) -> None:
-        """Back from a submission: untick the edits that went out."""
-        for uri in sent:
-            item = self._items.get(uri)
-            if item is not None and uri in self._versions:
-                item.setCheckState(self._RENDER, Qt.Unchecked)
+        """Back from a submission: the ticks stay, as on the grid tabs."""
 
 
 # ── Dialog ────────────────────────────────────────────────
@@ -2938,6 +3022,10 @@ class SubmitJobsDialog(QDialog):
             ``grid.RENDER`` by default, what the Render quick action and
             **Submit Jobs…** open with; ``grid.PUBLISH`` is narrowed to
             ``department``'s column.
+        channels: Render channels to open checked instead of the usual
+            seed (``settings.opened_channels``; ``*`` checks all), on the
+            opened tab only. th::import_render's **Render** passes its
+            Channel. None: the usual seed.
     """
 
     def __init__(
@@ -2948,6 +3036,7 @@ class SubmitJobsDialog(QDialog):
         parent: QWidget | None = None,
         department: str | None = None,
         tick_kinds: Sequence[str] = (grid.RENDER,),
+        channels: Sequence[str] | None = None,
     ) -> None:
         super().__init__(parent)
         if context not in grid.CONTEXTS:
@@ -2961,6 +3050,7 @@ class SubmitJobsDialog(QDialog):
                     "members to it in the browser first."
                 )
         self._opened = (context, list(entity_uris), department, tuple(tick_kinds))
+        self._opened_channels = tuple(channels or ())
         # One pane per context, built the first time its tab is shown and
         # kept until the dialog closes, so switching back finds its ticks.
         self._panes: dict[str, _ContextPane] = {}
@@ -3028,18 +3118,23 @@ class SubmitJobsDialog(QDialog):
             "in the Farm Manager."
         )
         self._backend.setCurrentIndex(max(0, self._backend.findData(_saved_backend())))
+        self._backend.currentIndexChanged.connect(self._on_backend_changed)
         footer.addWidget(self._backend)
         footer.addSpacing(12)
         close_btn = QPushButton("Close")
         close_btn.setAutoDefault(False)
         close_btn.clicked.connect(self.reject)
         self._submit_btn = QPushButton("Submit…")
-        self._submit_btn.setDefault(True)
+        # Not the default button: Enter in a settings field commits that
+        # field, it never opens the review (#41). Submit is a click.
+        self._submit_btn.setAutoDefault(False)
         self._submit_btn.setToolTip("Review what will be sent, then send it")
         self._submit_btn.clicked.connect(self._on_submit)
         footer.addWidget(close_btn)
         footer.addWidget(self._submit_btn)
         root.addLayout(footer)
+
+        self._on_backend_changed()  # panes built before the footer
 
         self._overlay = Overlay(self)
         self._overlay.escape.connect(self._on_overlay_escape)
@@ -3067,9 +3162,14 @@ class SubmitJobsDialog(QDialog):
             else:
                 pane = _ContextPane(
                     self, uris, context, department=department, tick_kinds=kinds,
+                    channels=grid.tab_channels(
+                        context, opened_context, self._opened_channels,
+                    ),
                 )
             self._panes[context] = pane
             self._stack.addWidget(pane)
+            if hasattr(self, '_backend') and hasattr(pane, 'set_backend'):
+                pane.set_backend(self.backend())
         return pane
 
     def _show_context(self, context: str) -> None:
@@ -3158,6 +3258,13 @@ class SubmitJobsDialog(QDialog):
             if event.key() == Qt.Key_Escape:
                 self._on_overlay_escape()
             return
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not isinstance(
+            QApplication.focusWidget(), QPushButton
+        ):
+            # The field already took its value (editingFinished); a QDialog
+            # would go on to press a button with it.
+            event.accept()
+            return
         super().keyPressEvent(event)
 
     # ── Submit ────────────────────────────────────────────
@@ -3165,6 +3272,11 @@ class SubmitJobsDialog(QDialog):
     def backend(self) -> str:
         """Where Submit sends the work: ``farm`` or ``local`` (``farm.backend``)."""
         return self._backend.currentData()
+
+    def _on_backend_changed(self, _index: int = 0) -> None:
+        for pane in self._panes.values():
+            if hasattr(pane, 'set_backend'):
+                pane.set_backend(self.backend())
 
     def where_text(self) -> str:
         """Where the review says the steps go."""
@@ -3215,6 +3327,11 @@ class SubmitJobsDialog(QDialog):
         view.close_requested.connect(self.accept)
         view.retry_requested.connect(lambda retry: self.start(retry, steps, pane))
         self.show_overlay(view, max_width=900)
+
+    def is_submitting(self) -> bool:
+        """A submission is on the overlay and has not finished."""
+        content = self._overlay.content()
+        return isinstance(content, SubmissionView) and not content.is_finished
 
     def _back_to_grid(self, pane, view: SubmissionView) -> None:
         sent = view.sent_uris()

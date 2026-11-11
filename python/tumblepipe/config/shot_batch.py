@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Iterable
 
-from tumblepipe.naming import is_valid_entity_name
+from tumblepipe.naming import entity_name_problem
 from tumblepipe.util.uri import Uri
 
 SHOTS_URI = Uri.parse('entity:/shots')
@@ -301,8 +301,9 @@ def name_problem(kind: str, name: str) -> str:
     """Why ``name`` cannot name a ``kind`` (sequence, shot), or ''."""
     if not name:
         return f'No {kind} name'
-    if not is_valid_entity_name(name):
-        return f"{kind.capitalize()} name '{name}' may only use letters and digits"
+    problem = entity_name_problem(name)
+    if problem:
+        return f"{kind.capitalize()} name '{name}' {problem}"
     return ''
 
 

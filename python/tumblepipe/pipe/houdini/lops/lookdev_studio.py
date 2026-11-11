@@ -15,6 +15,7 @@ from tumblepipe.pipe.houdini import prim_queries
 from tumblepipe.pipe.houdini.farm_node import FarmNode
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
+from tumblepipe.pipe.paths import Context
 
 class LookdevStudio(FrameRangeNode, FarmNode, ns.Node):
 
@@ -158,9 +159,28 @@ def create(scene, name):
 TURNTABLE_CAMERA = '/cameras/turntable_camera'
 
 
+def turntable_prims(context: Context | None) -> str:
+    """Selection > Primitives for a turntable dropped in ``context``.
+
+    An asset's workfile puts its own root prim (``/CHAR/hero``) on the
+    turntable; anything else (a shot, a Multi, no workfile) leaves it empty
+    for the artist to pick. Dropped empty, the turntable's inner network
+    errored ("No input prims assigned.") while the node passed its input
+    through without a badge (#38).
+    """
+    from tumblepipe.pipe.duplicate import prim_path_for
+    entity_uri = entity_in_contexts(context, contexts=('assets',))
+    if entity_uri is None or len(entity_uri.segments) < 2:
+        return ''
+    return prim_path_for(entity_uri)
+
+
 def on_created(raw_node):
     ns.set_node_style(raw_node)
     raw_node.setOutputForViewFlag(1)
+    primpattern = raw_node.parm('primpattern')
+    if not primpattern.eval().strip():
+        primpattern.set(turntable_prims(scene_context()))
 
 
 def _scene_viewer():
@@ -243,7 +263,9 @@ def playblast(kwargs):
     ))
     flipbook_options.frameRange(_turntable_range(raw_node))
     flipbook_options.output("")  # Empty means send to MPlay
-    flipbook_options.appendFramesToCurrent(True)
+    # Appending to the open MPlay sequence renumbered the turntable from
+    # frame 1; a fresh sequence keeps its frame numbers (1001-...) (#38).
+    flipbook_options.appendFramesToCurrent(False)
     flipbook_options.antialias(hou.flipbookAntialias.Good)
     viewport.settings().setLighting(hou.viewportLighting.HighQualityWithShadows)
     scene_viewer.flipbook(viewport, flipbook_options)

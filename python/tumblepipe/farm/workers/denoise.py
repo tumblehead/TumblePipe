@@ -13,9 +13,10 @@ call, then split the planes back out and write them to their published paths
 with the compression each AOV's render input had -- the render department's
 nodes choose it, the denoise keeps it.
 
-Mattes (`objid_*`, `holdout_*`) and distance ramps (`ramp_*`) are not
-denoised: OIDN softens a matte's hard edges and smears a ramp, and neither is
-noisy to begin with. They are published to the denoise output as byte copies
+Mattes (`objid_*`, `holdout_*`), distance ramps (`ramp_*`) and cryptomattes
+(`crypto*`) are not denoised: OIDN softens a matte's hard edges and smears a
+ramp, neither is noisy to begin with, and a cryptomatte's ids are float bit
+patterns with its manifest in the header. They are published to the denoise output as byte copies
 of their render input -- same pixels, same compression, same ACEScg stamp --
 and never enter the combined file, so they cannot change how the other AOVs
 are denoised.
@@ -47,7 +48,7 @@ from tumblepipe.farm.env import print_env
 from tumblepipe.farm.frames import frame_file, frame_of
 from tumblepipe.farm.specs import denoise as denoise_spec
 from tumblepipe.farm.worker import ensure_dir, error, headline
-from tumblepipe.pipe.aovs import is_matte_aov, is_ramp_aov
+from tumblepipe.pipe.aovs import is_cryptomatte_aov, is_matte_aov, is_ramp_aov
 
 # The guide planes OIDN uses to preserve detail. idenoise resolves them by
 # plane name inside the merged frame, and they are denoised in their own right
@@ -60,9 +61,12 @@ GUIDE_AOV_NAMES = ('normal', 'albedo')
 MISSING_AOV_WARNING = "can't find specified AOV"
 
 def _should_pass_through_aov(aov_name):
-    """AOVs published unchanged: the mattes and the distance ramps."""
+    """AOVs published unchanged: the mattes, the distance ramps and the
+    cryptomattes (their ids are float bit patterns and their manifest is in
+    the header: a denoise would destroy both)."""
     if is_matte_aov(aov_name): return True
     if is_ramp_aov(aov_name): return True
+    if is_cryptomatte_aov(aov_name): return True
     return False
 
 def _should_denoise_aov(aov_name):
@@ -411,10 +415,11 @@ def main(
     print('Success')
     return 0
 
-def from_config(config: dict, render_range: BlockRange) -> int:
-    """Denoise ``render_range`` as the job's context.json describes."""
+def from_config(config: dict, frame_span: BlockRange) -> int:
+    """Denoise the stepped frames of ``frame_span`` as the job's
+    context.json describes (``worker.stepped``)."""
     return main(
-        render_range,
+        worker.stepped(frame_span, config),
         Path(config['receipt_path']),
         {
             aov_name: Path(aov_path)

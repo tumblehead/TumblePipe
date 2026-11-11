@@ -9,6 +9,27 @@ class FieldOrigin(Enum):
     REDUNDANT = auto()  # In both, same values
 
 
+#: Stored on this node *and* inherited: drawn bright and bold, like the
+#: Entity Editor's "set here". A stored value equal to the inherited one
+#: (REDUNDANT) used to keep the plain style, so a value pinned on a shot
+#: (SQ020/SH020's frame_start: 1001) read as inherited (#35).
+PINNED = frozenset({FieldOrigin.OVERRIDE, FieldOrigin.REDUNDANT})
+
+
+def field_origin(in_stored: bool, in_inherited: bool,
+                 stored_value=None, inherited_value=None) -> "FieldOrigin | None":
+    """Where a field's value comes from; None when it is in neither."""
+    if in_stored and not in_inherited:
+        return FieldOrigin.LOCAL
+    if in_inherited and not in_stored:
+        return FieldOrigin.INHERITED
+    if not in_stored:
+        return None
+    if stored_value == inherited_value:
+        return FieldOrigin.REDUNDANT
+    return FieldOrigin.OVERRIDE
+
+
 JsonValue = (
     None | str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"]
 )

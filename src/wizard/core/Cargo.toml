@@ -21,6 +21,9 @@ path = "src/lib.rs"
 #                       the float printer.
 serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
 serde = "1"
+# The project path the desktop records in $TT_PROJECT_DIR/hpm.toml
+# (project_location), read by both hook apps.
+toml = "1.2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,22 +1,17 @@
 {
-	"values":["22.0.368"
+	"values":["22.0.429"
 	],
 	"indexes":{
-		"hdaroot/objects/from_scene/invoke.userdata":0,
-		"hdaroot/objects/from_stage/unpack.userdata":0,
-		"hdaroot/objects/camera/camOrigin.userdata":0,
-		"hdaroot/playblast.userdata":0,
-		"hdaroot/objects/from_stage.userdata":0,
-		"hdaroot/objects/from_scene/from_scene.userdata":0,
-		"hdaroot/playblast/render.userdata":0,
-		"hdaroot/objects/camera.userdata":0,
-		"hdaroot/objects/from_scene.userdata":0,
-		"hdaroot/objects/camera/xform1.userdata":0,
-		"hdaroot/objects/from_stage/scene.userdata":0,
-		"hdaroot/objects.userdata":0,
 		"hdaroot/objects/from_scene/scene.userdata":0,
+		"hdaroot/stage/metadata.userdata":0,
+		"hdaroot/stage/fetch_stage.userdata":0,
+		"hdaroot/objects/from_scene/from_scene.userdata":0,
+		"hdaroot/objects.userdata":0,
+		"hdaroot/objects/from_scene.userdata":0,
+		"hdaroot/objects/from_scene/invoke.userdata":0,
 		"hdaroot/IN_scene.userdata":0,
-		"hdaroot/objects/from_stage/visibility.userdata":0,
-		"hdaroot/objects/camera/file1.userdata":0
+		"hdaroot/stage/live.userdata":0,
+		"hdaroot/stage.userdata":0,
+		"hdaroot/stage/keep.userdata":0
 	}
 }

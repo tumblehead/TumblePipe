@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from .types import FieldOrigin, JsonValue, _default_value
+from .types import PINNED, FieldOrigin, JsonValue, _default_value, field_origin
 from .path import JsonPath, _json_path_parts
 from .ops import (
     _change_index_insert, _change_index_update, _change_index_reorder, _change_index_remove,
@@ -297,12 +297,7 @@ def _revert_field_action(item):
     found, original = _original_lookup(item.model(), parent.path() / key)
     inherited = getattr(parent, '_inherited_data', None) or {}
     if found:
-        if key not in inherited:
-            origin = FieldOrigin.LOCAL
-        elif original == inherited[key]:
-            origin = FieldOrigin.REDUNDANT
-        else:
-            origin = FieldOrigin.OVERRIDE
+        origin = field_origin(True, key in inherited, original, inherited.get(key))
         parent._set_field(key, original, origin, inherited.get(key))
     elif key in inherited:
         parent._set_field_to_inherited(key, inherited[key])
@@ -387,12 +382,12 @@ class BooleanItem(QStandardItem):
                 if hasattr(sibling, '_origin'):
                     if sibling._origin == FieldOrigin.INHERITED:
                         return QBrush(INHERITED_FG)
-                    if sibling._origin == FieldOrigin.OVERRIDE:
+                    if sibling._origin in PINNED:
                         return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
                 sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin') and sibling._origin == FieldOrigin.OVERRIDE:
+                if hasattr(sibling, '_origin') and sibling._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font
@@ -436,12 +431,12 @@ class IntegerItem(QStandardItem):
                 if hasattr(sibling, '_origin'):
                     if sibling._origin == FieldOrigin.INHERITED:
                         return QBrush(INHERITED_FG)
-                    if sibling._origin == FieldOrigin.OVERRIDE:
+                    if sibling._origin in PINNED:
                         return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
                 sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin') and sibling._origin == FieldOrigin.OVERRIDE:
+                if hasattr(sibling, '_origin') and sibling._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font
@@ -485,12 +480,12 @@ class FloatItem(QStandardItem):
                 if hasattr(sibling, '_origin'):
                     if sibling._origin == FieldOrigin.INHERITED:
                         return QBrush(INHERITED_FG)
-                    if sibling._origin == FieldOrigin.OVERRIDE:
+                    if sibling._origin in PINNED:
                         return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
                 sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin') and sibling._origin == FieldOrigin.OVERRIDE:
+                if hasattr(sibling, '_origin') and sibling._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font
@@ -534,12 +529,12 @@ class StringItem(QStandardItem):
                 if hasattr(sibling, '_origin'):
                     if sibling._origin == FieldOrigin.INHERITED:
                         return QBrush(INHERITED_FG)
-                    if sibling._origin == FieldOrigin.OVERRIDE:
+                    if sibling._origin in PINNED:
                         return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
                 sibling = _sibling(self, 0)
-                if hasattr(sibling, '_origin') and sibling._origin == FieldOrigin.OVERRIDE:
+                if hasattr(sibling, '_origin') and sibling._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font
@@ -594,11 +589,11 @@ class FieldBasicItem(QStandardItem, QObject):
             case Qt.ForegroundRole:
                 if self._origin == FieldOrigin.INHERITED:
                     return QBrush(INHERITED_FG)
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font
@@ -686,11 +681,11 @@ class FieldObjectItem(QStandardItem, QObject):
             case Qt.ForegroundRole:
                 if self._origin == FieldOrigin.INHERITED:
                     return QBrush(INHERITED_FG)
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font
@@ -873,24 +868,9 @@ class FieldObjectItem(QStandardItem, QObject):
             in_stored = key in values
             in_inherited = key in inherited
 
-            if in_stored and not in_inherited:
-                origin = FieldOrigin.LOCAL
-                value = values[key]
-                inherited_value = None
-            elif in_inherited and not in_stored:
-                origin = FieldOrigin.INHERITED
-                value = inherited[key]
-                inherited_value = inherited[key]
-            else:
-                # Both - compare values
-                stored_val = values[key]
-                inherited_val = inherited[key]
-                if stored_val == inherited_val:
-                    origin = FieldOrigin.REDUNDANT
-                else:
-                    origin = FieldOrigin.OVERRIDE
-                value = stored_val
-                inherited_value = inherited_val
+            inherited_value = inherited.get(key)
+            value = values[key] if in_stored else inherited_value
+            origin = field_origin(in_stored, in_inherited, value, inherited_value)
 
             self._add_field(key, value, origin, inherited_value, notify=False)
 
@@ -961,11 +941,11 @@ class FieldArrayItem(QStandardItem, QObject):
             case Qt.ForegroundRole:
                 if self._origin == FieldOrigin.INHERITED:
                     return QBrush(INHERITED_FG)
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font
@@ -1199,11 +1179,11 @@ class IndexBasicItem(QStandardItem, QObject):
             case Qt.ForegroundRole:
                 if self._origin == FieldOrigin.INHERITED:
                     return QBrush(INHERITED_FG)
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font
@@ -1294,11 +1274,11 @@ class IndexObjectItem(QStandardItem, QObject):
             case Qt.ForegroundRole:
                 if self._origin == FieldOrigin.INHERITED:
                     return QBrush(INHERITED_FG)
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font
@@ -1543,11 +1523,11 @@ class IndexArrayItem(QStandardItem, QObject):
             case Qt.ForegroundRole:
                 if self._origin == FieldOrigin.INHERITED:
                     return QBrush(INHERITED_FG)
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     return QBrush(OVERRIDE_FG)
                 return None
             case Qt.FontRole:
-                if self._origin == FieldOrigin.OVERRIDE:
+                if self._origin in PINNED:
                     font = QFont()
                     font.setBold(True)
                     return font

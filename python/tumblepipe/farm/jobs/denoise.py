@@ -13,10 +13,12 @@ def build(config, paths, staging_path):
         f'Invalid config: {json.dumps(config, indent=4)}'
     )
 
-    # Only the path keys and force_cpu reach the worker; the scheduling keys
-    # are consumed here, and Deadline appends the frame range on the command
-    # line.
+    # Only the path keys, force_cpu and the step reach the worker; the other
+    # scheduling keys are consumed here, and Deadline appends the task's
+    # first and last frame on the command line.
     job = farm_job('denoise', dict(
+        # The farm hands a task only its first and last frame
+        step_size = config['step_size'],
         receipt_path = config['receipt_path'],
         input_paths = config['input_paths'],
         output_paths = config['output_paths'],

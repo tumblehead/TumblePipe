@@ -286,6 +286,21 @@ project-wide default is the Config Editor's **Add Field** on the project
 (then change the field's type to object). `th::playblast`'s **Render Layers** reads it
 ([Layered playblasts](nodes/lighting-and-rendering.md#layered-playblasts)).
 
+`render.camera` and `render.resolution` (project, sequence or shot; the
+Database Editor and tumblepipe-mcp's `set_project_render_camera`,
+`set_shot_camera`, `set_project_resolution` and `set_shot_resolution` write
+them) size the layout camera and playblasts. They reach the **render**
+only when `render.apply_config` is `true` (inherited like the rest of
+`render`): the shot's root layer then authors an `over` of the project's
+RenderSettings prim with the shot's resolution (two positive integers), and
+its camera only when that camera exists in `root_default_prims.usda` (a
+project that keeps its camera under `/scene/cameras` keeps rendering through
+it). New projects have it on (template `schemas.json`); a project made before
+it has no key, which is off, so its renders do not change until its owner
+turns it on. Changing either value, or the flag, makes the shot's root layer
+stale, and the next build writes a new one. See
+[Where the render settings live](composition.md#where-the-render-settings-live).
+
 ### Departments
 
 A project's departments live in `_config/db/departments.json`, one **pool** per
@@ -446,7 +461,9 @@ department row runs the matching module's
 empty hip. By the time `create` runs, the unpinned network editors are
 already at `/stage`. A template that wants the artist to start deeper can
 move them itself: the `rig` and `blendshape` templates open the editor
-inside their SOP network.
+inside their SOP network. A `create` that raises costs nothing: the version
+it was building is taken back out and the scene cleared, so fix the
+template and run New from Template again for the same version number.
 
 Each template splits on the URI it is handed:
 
@@ -510,7 +527,7 @@ left exactly as it was, rather than stamped part-way at the last step that
 happened to succeed.
 
 A migration never replaces a file without preserving the original — the one
-exception is a template a stock refresh (v12, v14–v16, v18–v21, v24) recognises as a version the scaffold shipped, which
+exception is a template a stock refresh (v12, v14–v16, v18–v21, v24–v26) recognises as a version the scaffold shipped, which
 holds nothing of the project's. Which of the two it does depends on how
 load-bearing the file is:
 
@@ -807,6 +824,46 @@ load-bearing the file is:
   template). A customised copy that does not name `build_comp`, and a
   project with no composite template, are left as they are. An existing
   `.v24.bak` is never overwritten, and line endings are kept.
+
+- **The template fixes of the 2026-11 QA pass (v25).** A stock refresh, as
+  v12: the blendshape, groom and lookdev templates, and the effects,
+  environment and crowd templates, whose SOP Create kept Houdini's default
+  Primitive Path `/$OS`, so a new workfile's first publish failed with
+  *Disallowed root prim* (they now author under `/FX`, `/SET` and `/CROWD`).
+  A stock copy is replaced with the packaged one, no backup; a customised
+  copy is left byte for byte and named in the run's output; a template the
+  project lacks is installed.
+
+- **The composite template's layout (v26).** A stock refresh, as v12, for
+  the composite template: its comp reads left to right, one row per
+  channel, and in a Multi each member gets its own rows, top to bottom,
+  with the sticky notes on the first member only (the older template set
+  the members side by side, each with its notes). A stock copy is replaced
+  with the packaged one, no backup; a customised copy is left byte for
+  byte and named in the run's output; a template the project lacks is
+  installed. Comps already built keep their layout: the template only
+  places nodes when a workfile is created.
+
+#### What a run says about the templates
+
+After the `applied vN` lines, a migration lists what it did with the
+department templates, by template, each with the steps involved:
+
+- **templates installed**: the project had none;
+- **stock templates refreshed**: a version the scaffold shipped, brought up
+  to the packaged one;
+- **templates replaced, the original kept beside them**: with the path of
+  the `.bak` (v2, v9 and v24 do this);
+- **customised templates left as they are**: the project's own, untouched.
+  Each is listed once with every step it sat out (`not refreshed by v14,
+  v18, v25`): those steps' fixes are not in it. Compare it with the
+  packaged template of the same department, whose folder the line above
+  the list names, and port what you need.
+
+A template that was already current is not listed. At launch the same lines
+go to the launch log, and when the last two kinds are among them a window
+shows them once, on the launch that migrated, since they are for a person to
+reconcile. The project opens either way.
 
 ### Migrating at launch
 

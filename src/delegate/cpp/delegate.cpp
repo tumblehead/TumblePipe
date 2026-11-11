@@ -8,9 +8,16 @@
 //                 texture coordinates, its transform; skinned points come
 //                 from Hydra's CPU ext computations. Implicit shapes
 //                 arrive as meshes too (_RegisterImplicitSurfacesToMesh).
+//   ThCurves      basis curves and points as authored (vertices, counts,
+//   ThPoints      basis, wrap, widths, display colour); the core draws them
+//                 as camera-facing ribbons and discs (src/curves.rs).
 //   ThInstancer   per-instance transforms, nested instancers included.
-//   ThMaterial    the base colour or base-colour texture, read from a
+//   ThMaterial    the base colour or base-colour texture, and the opacity
+//                 (opacity, transmission, cutout), read from a
 //                 UsdPreviewSurface or MaterialX network.
+//   ThLightPrim   a UsdLux light (distant, sphere, rect, disk, cylinder,
+//                 dome) as authored, which the core lights the frame with
+//                 (src/lights.rs) unless th:lighting asks for the headlight.
 //   ThRenderPass  gathers the visible meshes for the pass's render tags
 //                 (purposes) and the camera, and calls the Rust core
 //                 (th_render) for colour and depth.
@@ -32,6 +39,7 @@
 #include <pxr/base/gf/range3d.h>
 #include <pxr/base/gf/rotation.h>
 #include <pxr/base/gf/vec2f.h>
+#include <pxr/base/gf/vec3d.h>
 #include <pxr/base/gf/vec3f.h>
 #include <pxr/base/gf/vec3i.h>
 #include <pxr/base/gf/vec4d.h>
@@ -41,13 +49,16 @@
 #include <pxr/base/vt/array.h>
 #include <pxr/base/work/loops.h>
 #include <pxr/imaging/hd/aov.h>
+#include <pxr/imaging/hd/basisCurves.h>
 #include <pxr/imaging/hd/camera.h>
 #include <pxr/imaging/hd/changeTracker.h>
 #include <pxr/imaging/hd/extComputation.h>
 #include <pxr/imaging/hd/extComputationUtils.h>
 #include <pxr/imaging/hd/instancer.h>
+#include <pxr/imaging/hd/light.h>
 #include <pxr/imaging/hd/material.h>
 #include <pxr/imaging/hd/mesh.h>
+#include <pxr/imaging/hd/points.h>
 #include <pxr/imaging/hd/renderBuffer.h>
 #include <pxr/imaging/hd/renderDelegate.h>
 #include <pxr/imaging/hd/renderIndex.h>
@@ -85,9 +96,11 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -128,6 +141,18 @@ uint32_t _ShadingNumber(std::string const& name)
     if (n == "albedo") return 2;
     if (n == "occlusion") return 3;
     return 0;
+}
+
+// What lights the frame: "scene" (the scene's own UsdLux lights when it has
+// any, else the fixed camera rig) or "headlight" (the rig always); unset,
+// TH_PLAYBLAST_LIGHTING, else scene.
+TfToken const _tokLighting("th:lighting");
+
+// The core's lighting number (ThFrame::lighting): 0 scene, 1 headlight.
+uint32_t _LightingNumber(std::string const& name)
+{
+    std::string const n = TfStringToLower(TfStringTrim(name));
+    return n == "headlight" ? 1u : 0u;
 }
 
 // Motion blur over the render camera's shutter; unset, TH_PLAYBLAST_MOTION_BLUR
@@ -238,8 +263,17 @@ struct _Job
     std::vector<ThMeshView> views;
     std::vector<std::vector<double>> transforms;  // owned; views point in
     std::vector<std::vector<double>> keys;
-    std::vector<int32_t> primIds;                 // per view: the rprim's
-    std::vector<uint8_t> instanced;               // per view: from an instancer
+    // Basis curves and points, and what they point at.
+    std::vector<ThCurvesView> curves;
+    std::vector<std::vector<double>> curveTransforms;
+    std::vector<std::vector<double>> curveKeys;
+    // Per view, the meshes' then the curves' (the core's ids count curves
+    // view j as views.size() + j): the rprim's id, and from an instancer.
+    std::vector<int32_t> primIds;
+    std::vector<uint8_t> instanced;
+    // The scene's enabled, visible lights, copied (ThFrame::lights points
+    // here when the frame is drawn).
+    std::vector<ThLight> lights;
     // A primId or instanceId buffer is bound (the viewer's picking). Only
     // then are ids asked of the core: the GPU path pays a pass for them.
     bool ids = false;
@@ -291,9 +325,13 @@ static_assert(sizeof(std::atomic<uint32_t>) == sizeof(uint32_t)
 
 // Draw `job` through `frame` into `out` (sized to the frame). The core's
 // status: 0 ok, 3 cancelled.
-int32_t _Draw(_Job const& job, ThFrame const& frame, _Image* out,
+int32_t _Draw(_Job const& job, ThFrame const& asked, _Image* out,
               std::atomic<uint32_t> const* cancel, ThCache const* cache, std::mutex* cacheMutex)
 {
+    // The job's lights, which live as long as it does.
+    ThFrame frame = asked;
+    frame.lights = job.lights.empty() ? nullptr : job.lights.data();
+    frame.light_count = static_cast<uint32_t>(job.lights.size());
     size_t const texels = static_cast<size_t>(frame.width) * frame.height;
     out->width = frame.width;
     out->height = frame.height;
@@ -308,9 +346,10 @@ int32_t _Draw(_Job const& job, ThFrame const& frame, _Image* out,
         // One core call at a time per cache (the GPU path keeps it).
         std::lock_guard<std::mutex> lock(*cacheMutex);
         auto const started = std::chrono::steady_clock::now();
-        status = th_render_ids(&frame, job.views.data(), static_cast<uint32_t>(job.views.size()),
-                               out->color.data(), out->depth.data(), job.ids ? ids.data() : nullptr,
-                               reinterpret_cast<uint32_t const*>(cancel), cache);
+        status = th_render_scene(&frame, job.views.data(), static_cast<uint32_t>(job.views.size()),
+                                 job.curves.data(), static_cast<uint32_t>(job.curves.size()),
+                                 out->color.data(), out->depth.data(), job.ids ? ids.data() : nullptr,
+                                 reinterpret_cast<uint32_t const*>(cancel), cache);
         out->coreMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
     }
     if (status != 0) return status;
@@ -1069,6 +1108,10 @@ public:
         if (*dirtyBits & HdMaterial::DirtyResource) {
             _hasColor = false;
             _usesDisplayColor = false;
+            _hasOpacity = false;
+            _opacityFromDisplay = false;
+            _opacity = 1.0f;
+            _opacityScale = 1.0f;
             _tiles.clear();
             _uvName = TfToken("st");
             VtValue const resource = delegate->GetMaterialResource(GetId());
@@ -1086,8 +1129,89 @@ public:
     std::vector<ThTextureTile> const& Tiles() const { return _tiles; }
     TfToken const& UvName() const { return _uvName; }
 
+    // An opacity of its own (a constant opacity, transmission or cutout),
+    // in [0, 1]. False when the material says nothing about it, or wires it
+    // to something we cannot evaluate (a texture): the surface then keeps
+    // its display opacity.
+    bool HasOpacity() const { return _hasOpacity; }
+    float Opacity() const { return _opacity; }
+    // The material shows the geometry's display opacity (a primvar reader
+    // of displayOpacity), times OpacityScale (what its transmission lets
+    // through).
+    bool OpacityFromDisplay() const { return _opacityFromDisplay; }
+    float OpacityScale() const { return _opacityScale; }
+
 private:
-    // The base-colour input of the surface shader, whichever family it is.
+    // A constant float out of a shader parameter: a float, a double, or the
+    // mean of a colour (MaterialX standard_surface's opacity is a color3).
+    static bool _Scalar(VtValue const& v, float* out)
+    {
+        if (v.IsHolding<float>()) { *out = v.UncheckedGet<float>(); return true; }
+        if (v.IsHolding<double>()) { *out = static_cast<float>(v.UncheckedGet<double>()); return true; }
+        if (v.IsHolding<GfVec3f>()) {
+            GfVec3f const c = v.UncheckedGet<GfVec3f>();
+            *out = (c[0] + c[1] + c[2]) / 3.0f;
+            return true;
+        }
+        if (v.IsHolding<GfVec3d>()) {
+            GfVec3d const c = v.UncheckedGet<GfVec3d>();
+            *out = static_cast<float>((c[0] + c[1] + c[2]) / 3.0);
+            return true;
+        }
+        return false;
+    }
+
+    // How see-through the surface shader is, whichever family it is:
+    // UsdPreviewSurface opacity (and opacityThreshold, a cutout: under it
+    // nothing, at or over it opaque), MaterialX standard_surface opacity and
+    // transmission (Karma's material builder writes these), OpenPBR
+    // geometry_opacity and transmission_weight. Transmission is taken as
+    // see-through: opacity times one minus it, as the viewport shows glass.
+    void _ReadOpacity(HdMaterialNetwork2 const& net, HdMaterialNode2 const& node)
+    {
+        float opacity = 1.0f;
+        bool said = false;
+        for (char const* name : {"opacity", "geometry_opacity"}) {
+            TfToken const input(name);
+            auto conn = node.inputConnections.find(input);
+            if (conn != node.inputConnections.end() && !conn->second.empty()) {
+                std::string file;
+                // Only the display opacity is followed; a texture's alpha
+                // or a procedural we cannot evaluate leaves it opaque.
+                if (_Trace(net, conn->second[0].upstreamNode, 0, &file) == Source::DisplayOpacity) {
+                    _opacityFromDisplay = true;
+                }
+                break;
+            }
+            auto param = node.parameters.find(input);
+            if (param != node.parameters.end() && _Scalar(param->second, &opacity)) {
+                said = true;
+                break;
+            }
+        }
+        for (char const* name : {"transmission", "transmission_weight"}) {
+            auto param = node.parameters.find(TfToken(name));
+            float t = 0.0f;
+            if (param != node.parameters.end() && _Scalar(param->second, &t)) {
+                _opacityScale = 1.0f - std::clamp(t, 0.0f, 1.0f);
+                opacity *= _opacityScale;
+                said = true;
+                break;
+            }
+        }
+        float threshold = 0.0f;
+        auto cutout = node.parameters.find(TfToken("opacityThreshold"));
+        if (said && cutout != node.parameters.end() && _Scalar(cutout->second, &threshold) && threshold > 0.0f) {
+            opacity = opacity >= threshold ? 1.0f : 0.0f;
+        }
+        if (said && !_opacityFromDisplay && std::isfinite(opacity)) {
+            _hasOpacity = true;
+            _opacity = std::clamp(opacity, 0.0f, 1.0f);
+        }
+    }
+
+    // The base-colour input of the surface shader, whichever family it is,
+    // and its opacity (_ReadOpacity).
     void _Read(HdMaterialNetwork2 const& net)
     {
         auto terminal = net.terminals.find(HdMaterialTerminalTokens->surface);
@@ -1095,6 +1219,7 @@ private:
         auto surface = net.nodes.find(terminal->second.upstreamNode);
         if (surface == net.nodes.end()) return;
         HdMaterialNode2 const& node = surface->second;
+        _ReadOpacity(net, node);
 
         static TfToken const inputs[] = {
             TfToken("diffuseColor"), TfToken("base_color"), TfToken("baseColor"),
@@ -1128,7 +1253,7 @@ private:
         }
     }
 
-    enum class Source { Unknown, Texture, DisplayColor };
+    enum class Source { Unknown, Texture, DisplayColor, DisplayOpacity };
 
     // Walk upstream from `path` to what the colour is made of: an image node
     // (a file parameter; its uv primvar is noted too) or the geometry's
@@ -1168,6 +1293,7 @@ private:
             if (p->second.IsHolding<TfToken>()) name = p->second.UncheckedGet<TfToken>().GetString();
             else if (p->second.IsHolding<std::string>()) name = p->second.UncheckedGet<std::string>();
             if (name == _tokDisplayColor.GetString()) return Source::DisplayColor;
+            if (name == HdTokens->displayOpacity.GetString()) return Source::DisplayOpacity;
         }
         for (auto const& conn : node.inputConnections) {
             for (HdMaterialConnection2 const& c : conn.second) {
@@ -1206,6 +1332,10 @@ private:
     TextureCache* _textures;
     bool _hasColor = false;
     bool _usesDisplayColor = false;
+    bool _hasOpacity = false;
+    bool _opacityFromDisplay = false;
+    float _opacity = 1.0f;
+    float _opacityScale = 1.0f;
     GfVec3f _baseColor{0.5f};
     std::vector<ThTextureTile> _tiles;
     TfToken _uvName{"st"};
@@ -1275,6 +1405,12 @@ public:
         if (HdChangeTracker::IsDisplayStyleDirty(*dirtyBits, id)) {
             _refineLevel = GetDisplayStyle(delegate).refineLevel;
         }
+        if (HdChangeTracker::IsCullStyleDirty(*dirtyBits, id)) {
+            _cullStyle = delegate->GetCullStyle(id);
+        }
+        if (HdChangeTracker::IsDoubleSidedDirty(*dirtyBits, id)) {
+            _doubleSided = delegate->GetDoubleSided(id);
+        }
         bool const topologyDirty = HdChangeTracker::IsTopologyDirty(*dirtyBits, id);
         bool const pointsDirty = HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->points);
         if (topologyDirty || pointsDirty || HdChangeTracker::IsAnyPrimvarDirty(*dirtyBits, id)) {
@@ -1292,11 +1428,6 @@ public:
         *dirtyBits &= ~HdChangeTracker::AllSceneDirtyBits;
     }
 
-    // Fill `view` from this mesh; false when it has nothing to draw.
-    // `instancesAt` gives its instances' transforms (none for a mesh not
-    // instanced) at a moment of the shutter, or the frame's for null. With
-    // the shutter open, the view also gets the mesh's points at its opening
-    // and closing, and its transforms at keys across it, when they move.
     // The refine level Houdini asks of this mesh (0 for a polygonal one),
     // and the level it is drawn at (lower where a husk frame needs no more,
     // or refining it that far would pass _kMostRefinedFaces).
@@ -1384,10 +1515,77 @@ public:
         return std::min(level, cap);
     }
 
-    bool View(ThMeshView* view, std::vector<double>* transforms, std::vector<double>* keys,
-              ThMaterial const* material,
-              std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
-              size_t instancerKeys, _Shutter const& shutter) const
+    // Append this mesh's views to `views`: one, or one per part (see
+    // Subsets), each painted by its material (`materialOf` finds a material
+    // by path, null for none). Returns how many; none when it has nothing
+    // to draw. `instancesAt` gives its instances' transforms (none for a
+    // mesh not instanced) at a moment of the shutter, or the frame's for
+    // null. With the shutter open, the views also get the mesh's points at
+    // its opening and closing, and its transforms at keys across it, when
+    // they move.
+    //
+    // Culling, as Storm resolves it: the prim's cull style, or the pass's
+    // (`passCull`) when the prim's is DontCare; the "unless double-sided"
+    // styles cull only a mesh that is not doubleSided. husk's pass says
+    // Nothing and USD prims DontCare, so playblasts cull nothing; the
+    // viewer's pass, and stand-ins such as a draw mode's cards (Back),
+    // can. The core culls by winding (raster::Cull).
+    size_t Views(std::vector<ThMeshView>* views, std::vector<double>* transforms, std::vector<double>* keys,
+                 std::function<ThMaterial const*(SdfPath const&)> const& materialOf,
+                 std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
+                 size_t instancerKeys, _Shutter const& shutter, HdCullStyle passCull) const
+    {
+        ThMeshView view;
+        if (!_View(&view, transforms, keys, instancesAt, instancerKeys, shutter)) return 0;
+        view.cull = _CullCode(passCull);
+        if (_parts.empty()) {
+            _Paint(&view, materialOf(GetMaterialId()), 0);
+            views->push_back(view);
+            return 1;
+        }
+        for (size_t i = 0; i < _parts.size(); ++i) {
+            _Part const& part = _parts[i];
+            ThMeshView v = view;
+            v.triangles = _triangles.data() + size_t(part.first) * 3;
+            v.triangle_count = part.count;
+            v.corner_normals = _normals.empty() ? nullptr : _normals.data() + size_t(part.first) * 9;
+            v.key = i == 0 ? _key : _partKeys[i - 1];
+            _Paint(&v, materialOf(part.material.IsEmpty() ? GetMaterialId() : part.material), part.first);
+            views->push_back(v);
+        }
+        return _parts.size();
+    }
+
+protected:
+    HdDirtyBits _PropagateDirtyBits(HdDirtyBits bits) const override { return bits; }
+    void _InitRepr(TfToken const& reprToken, HdDirtyBits*) override
+    {
+        auto it = std::find_if(_reprs.begin(), _reprs.end(), _ReprComparator(reprToken));
+        if (it == _reprs.end()) {
+            _reprs.emplace_back(reprToken, HdReprSharedPtr());
+        }
+    }
+
+private:
+    // ThMeshView::cull for a pass whose cull style is `passCull` (see
+    // Culling in Views): 0 nothing, 1 back, 2 front.
+    uint32_t _CullCode(HdCullStyle passCull) const
+    {
+        HdCullStyle const style = _cullStyle != HdCullStyleDontCare ? _cullStyle : passCull;
+        switch (style) {
+        case HdCullStyleBack: return 1u;
+        case HdCullStyleFront: return 2u;
+        case HdCullStyleBackUnlessDoubleSided: return _doubleSided ? 0u : 1u;
+        case HdCullStyleFrontUnlessDoubleSided: return _doubleSided ? 0u : 2u;
+        default: return 0u;
+        }
+    }
+
+    // `view`'s geometry, transforms and motion: everything but what its
+    // material paints (_Paint).
+    bool _View(ThMeshView* view, std::vector<double>* transforms, std::vector<double>* keys,
+               std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
+               size_t instancerKeys, _Shutter const& shutter) const
     {
         if (_points.empty() || _triangles.empty()) return false;
         std::vector<GfMatrix4d> const instances = instancesAt(nullptr);
@@ -1414,6 +1612,19 @@ public:
         view->polygonal = _polygonal ? 1u : 0u;
         view->key = _key;
         view->version = _version;
+        view->transforms = transforms->data();
+        view->transform_count = static_cast<uint32_t>(transforms->size() / 16);
+        if (shutter.on) {
+            _Motion(view, keys, instancesAt, instancerKeys, shutter, instances.size());
+        }
+        return true;
+    }
+
+    // Paint `view`, the triangles from `first` on, with `material` (null for
+    // none): its colour, texture and opacity.
+    void _Paint(ThMeshView* view, ThMaterial const* material, uint32_t first) const
+    {
+        size_t const at = first;
         view->base_color[0] = view->base_color[1] = view->base_color[2] = 0.5f;
 
         // The material's colour wins, as in the viewport with materials on;
@@ -1427,33 +1638,27 @@ public:
                 auto uv = _uvs.find(material->UvName());
                 if (uv == _uvs.end()) uv = _uvs.find(TfToken("st"));
                 if (uv != _uvs.end()) {
-                    view->corner_uvs = uv->second.data();
+                    view->corner_uvs = uv->second.data() + at * 6;
                     view->tiles = material->Tiles().data();
                     view->tile_count = static_cast<uint32_t>(material->Tiles().size());
                 }
             }
         } else if (!_colors.empty()) {
-            view->corner_colors = _colors.data();
+            view->corner_colors = _colors.data() + at * 9;
         }
-        view->transforms = transforms->data();
-        view->transform_count = static_cast<uint32_t>(transforms->size() / 16);
-        if (shutter.on) {
-            _Motion(view, keys, instancesAt, instancerKeys, shutter, instances.size());
+        // Opacity likewise: the material's when it has its own (constant,
+        // transmission, cutout), the display opacity otherwise, or when the
+        // material reads it. One value a view: a varying display opacity is
+        // drawn at the mesh's mean.
+        float opacity = _displayOpacity;
+        if (material && material->OpacityFromDisplay()) {
+            opacity = _displayOpacity * material->OpacityScale();
+        } else if (material && material->HasOpacity()) {
+            opacity = material->Opacity();
         }
-        return true;
+        view->transparency = std::isfinite(opacity) ? 1.0f - std::clamp(opacity, 0.0f, 1.0f) : 0.0f;
     }
 
-protected:
-    HdDirtyBits _PropagateDirtyBits(HdDirtyBits bits) const override { return bits; }
-    void _InitRepr(TfToken const& reprToken, HdDirtyBits*) override
-    {
-        auto it = std::find_if(_reprs.begin(), _reprs.end(), _ReprComparator(reprToken));
-        if (it == _reprs.end()) {
-            _reprs.emplace_back(reprToken, HdReprSharedPtr());
-        }
-    }
-
-private:
     // The shutter's motion of this mesh into `view`: its points at the
     // opening and closing (from sampled points, else velocities), and its
     // transforms at keys across it. Neither when it holds still.
@@ -1634,8 +1839,99 @@ private:
         _coarse = points;
         if (!_polygonal) _MeasureCage(points, _cageCounts, _cageIndices, &_cageBox, &_cageEdge);
         _points = _Drawn(points);
+        if (_coreNormals) _MakeCoreNormals();
         _SetMotion(m);
         return true;
+    }
+
+    // The whole mesh's normals as the core would work them out (cusp or
+    // smooth), one per corner, for a mesh drawn in parts (see Subsets).
+    void _MakeCoreNormals()
+    {
+        _normals.assign(_triangles.size() * 3, 0.0f);
+        th_mesh_normals(_points.data(), static_cast<uint32_t>(_points.size() / 3), _triangles.data(),
+                        static_cast<uint32_t>(_triangles.size() / 3), _polygonal ? 1u : 0u, _normals.data());
+        _coreNormals = true;
+    }
+
+    // Subsets: faces bound to materials of their own by GeomSubsets (a
+    // UsdGeomSubset of the materialBind family, which Hydra hands over in
+    // the topology with its material's path) are drawn as parts of the
+    // mesh, a view per material, each painted as a whole mesh is (_Paint):
+    // colour or texture, opacity, display colour where its material has no
+    // colour. Faces in no subset, or in one bound to nothing, keep the
+    // mesh's material. A part is a run of the triangles, which are sorted
+    // by material once every per-corner value is made, so the face each
+    // triangle came from (refined faces carry their cage face's) decides
+    // and holes, triangulation and subdivision change nothing about it.
+    // Every part shares the points; without normals of its own the mesh
+    // gets the whole mesh's from the core (th_mesh_normals), so its parts
+    // meet without the crease that normals worked out per part would make.
+    // A mesh whose subsets bind no material, or whose every face keeps the
+    // mesh's, is one view as before.
+    void _SplitBySubsets(HdMeshTopology const& topology, std::vector<uint32_t> const& faces)
+    {
+        size_t const cage = topology.GetFaceVertexCounts().size();
+        std::vector<SdfPath> materials(1);  // 0: the mesh's own
+        std::vector<uint32_t> groupOf;      // per cage face, into `materials`
+        for (HdGeomSubset const& s : topology.GetGeomSubsets()) {
+            if (s.type != HdGeomSubset::TypeFaceSet || s.materialId.IsEmpty()) continue;
+            if (groupOf.empty()) groupOf.assign(cage, 0);
+            auto const it = std::find(materials.begin(), materials.end(), s.materialId);
+            uint32_t const g = static_cast<uint32_t>(it - materials.begin());
+            if (it == materials.end()) materials.push_back(s.materialId);
+            for (int const f : s.indices) {
+                // Overlapping subsets (invalid USD): the first one's.
+                if (f >= 0 && static_cast<size_t>(f) < cage && groupOf[f] == 0) groupOf[f] = g;
+            }
+        }
+        if (groupOf.empty()) return;
+        // Each triangle's cage face: a refined face's is its parent's at
+        // level 0, carried down the levels as a uniform value.
+        std::vector<uint32_t> cageFace(faces);
+        if (_refiner) {
+            VtDoubleArray ids(cage);
+            for (size_t f = 0; f < cage; ++f) ids[f] = static_cast<double>(f);
+            VtDoubleArray const refined = _Refine(*_refiner, _Rate::Uniform, 0, ids);
+            for (uint32_t& f : cageFace) {
+                f = f < refined.size() ? static_cast<uint32_t>(refined[f]) : UINT32_MAX;
+            }
+        }
+        size_t const n = cageFace.size();
+        std::vector<uint32_t> group(n);
+        std::vector<size_t> sizes(materials.size(), 0);
+        for (size_t t = 0; t < n; ++t) {
+            group[t] = cageFace[t] < cage ? groupOf[cageFace[t]] : 0;
+            ++sizes[group[t]];
+        }
+        if (sizes[0] == n) return;  // every face keeps the mesh's material
+        // Sort the triangles by group (stable), and every per-corner array
+        // with them.
+        std::vector<size_t> start(materials.size(), 0);
+        for (size_t g = 1; g < materials.size(); ++g) start[g] = start[g - 1] + sizes[g - 1];
+        std::vector<size_t> order(n);  // new position -> old triangle
+        {
+            std::vector<size_t> fill = start;
+            for (size_t t = 0; t < n; ++t) order[fill[group[t]]++] = t;
+        }
+        auto permute = [&](auto& values, size_t per) {
+            if (values.size() != n * per) return;
+            std::remove_reference_t<decltype(values)> out(values.size());
+            for (size_t i = 0; i < n; ++i) {
+                std::copy_n(values.begin() + order[i] * per, per, out.begin() + i * per);
+            }
+            values.swap(out);
+        };
+        permute(_triangles, 3);
+        permute(_normals, 9);
+        permute(_colors, 9);
+        for (auto& uv : _uvs) permute(uv.second, 6);
+        for (size_t g = 0; g < materials.size(); ++g) {
+            if (sizes[g] == 0) continue;
+            _parts.push_back({materials[g], static_cast<uint32_t>(start[g]), static_cast<uint32_t>(sizes[g])});
+        }
+        while (_partKeys.size() + 1 < _parts.size()) _partKeys.push_back(g_nextMeshKey.fetch_add(1));
+        if (_parts.size() > 1 && _normals.empty()) _MakeCoreNormals();
     }
 
     // `coarse` (points as authored) as drawn, three floats a point:
@@ -1690,6 +1986,9 @@ private:
         _normals.clear();
         _colors.clear();
         _uvs.clear();
+        _displayOpacity = 1.0f;
+        _parts.clear();
+        _coreNormals = false;
 
         _refiner.reset();
         _fvarChannels.clear();
@@ -1713,15 +2012,41 @@ private:
         TfToken const scheme = topology.GetScheme();
         _polygonal = scheme == _tokNone || scheme == _tokBilinear;
 
-        // The primvars drawn: display colour, normals and uvs.
+        // The primvars drawn: display colour, normals and uvs: those of the
+        // texture coordinate role, `st` or `uv`, and whatever primvar the
+        // mesh's materials (its own and its subsets') read their texture
+        // coordinates from (a draw mode's cards read `cardsUv`, which has
+        // no role).
+        std::set<TfToken> uvNames{TfToken("st"), TfToken("uv")};
+        {
+            HdRenderIndex& index = delegate->GetRenderIndex();
+            auto note = [&](SdfPath const& path) {
+                if (path.IsEmpty()) return;
+                if (auto const* m = dynamic_cast<ThMaterial const*>(index.GetSprim(HdPrimTypeTokens->material, path))) {
+                    uvNames.insert(m->UvName());
+                }
+            };
+            note(GetMaterialId());
+            for (HdGeomSubset const& s : topology.GetGeomSubsets()) note(s.materialId);
+        }
         std::vector<std::pair<HdPrimvarDescriptor, HdInterpolation>> drawnPrimvars;
         for (HdInterpolation interp :
              {HdInterpolationConstant, HdInterpolationUniform, HdInterpolationVarying,
               HdInterpolationVertex, HdInterpolationFaceVarying}) {
             for (HdPrimvarDescriptor const& pv : delegate->GetPrimvarDescriptors(id, interp)) {
+                // The display opacity: one value a mesh, its mean whatever
+                // its interpolation (the core blends a mesh as a whole).
+                if (pv.name == HdTokens->displayOpacity) {
+                    VtFloatArray const values = _FlatValues<float>(delegate, id, pv.name);
+                    if (!values.empty()) {
+                        double sum = 0.0;
+                        for (float const v : values) sum += v;
+                        _displayOpacity = static_cast<float>(sum / static_cast<double>(values.size()));
+                    }
+                    continue;
+                }
                 if (pv.name == _tokDisplayColor || pv.name == HdTokens->normals
-                    || pv.role == HdPrimvarRoleTokens->textureCoordinate
-                    || pv.name == TfToken("st") || pv.name == TfToken("uv")) {
+                    || pv.role == HdPrimvarRoleTokens->textureCoordinate || uvNames.count(pv.name)) {
                     drawnPrimvars.emplace_back(pv, interp);
                 }
             }
@@ -1832,6 +2157,7 @@ private:
                 }
             }
         }
+        _SplitBySubsets(topology, faces);
     }
 
     GfMatrix4d _transform{1.0};
@@ -1850,7 +2176,21 @@ private:
     std::vector<float> _normals;
     std::vector<float> _colors;
     std::map<TfToken, std::vector<float>> _uvs;
+    float _displayOpacity = 1.0f;  // the mean of displayOpacity, 1 when unauthored
     bool _polygonal = false;
+    // A mesh drawn in parts (see Subsets): each a run of the triangles and
+    // the material it is painted with (empty: the mesh's). Empty for one
+    // drawn whole. Part 0 is keyed as the mesh, part i by _partKeys[i - 1];
+    // `_coreNormals`: the normals are the core's, remade with the points.
+    struct _Part
+    {
+        SdfPath material;
+        uint32_t first = 0;
+        uint32_t count = 0;
+    };
+    std::vector<_Part> _parts;
+    std::vector<uint64_t> _partKeys;
+    bool _coreNormals = false;
     // The points as authored (before refining), the refine level Houdini
     // asks for, the level a pass last picked (see Subdivision), and the
     // refiner of a mesh drawn refined (null otherwise) with each
@@ -1858,6 +2198,9 @@ private:
     VtVec3fArray _coarse;
     int _refineLevel = 0;
     int _sizedLevel = 0;
+    // The prim's cull style and doubleSided (see Culling in Views).
+    HdCullStyle _cullStyle = HdCullStyleDontCare;
+    bool _doubleSided = false;
     // A subdivision surface's cage, as ScreenLevel sizes it: its face count,
     // topology (to measure it again when only the points change), bounds and
     // mean edge length, all as authored.
@@ -1871,6 +2214,335 @@ private:
     uint64_t const _key;
     uint64_t _version = 0;
 };
+
+// -----------------------------------------------------------------------------
+// Basis curves and points
+// -----------------------------------------------------------------------------
+//
+// Handed to the core as they are authored (ThCurvesView): vertices, curve
+// vertex counts, basis and wrap, widths and display colour. The core
+// evaluates cubic curves and draws curves as camera-facing ribbons and
+// points as camera-facing discs, never thinner than a pixel or two, so a
+// curve with no width shows as a line as in the GL viewport (src/curves.rs).
+// That geometry depends on the camera, so the core makes it for each frame;
+// nothing of it is kept on the card.
+
+// A model's draw-mode stand-in curves (model:drawMode bounds or origin,
+// with UsdRenderers.json's drawmodesupport on): UsdImaging's box or axes
+// as linear basis curves of width 1, which Storm and Houdini's viewer draw
+// as one-pixel lines whatever their width. Drawn with their width they
+// would be ribbons a scene unit across: a solid block, not a wire box. The
+// draw mode scene index names them `boundsCurves` and `originCurves` under
+// the model; a scene delegate that says what draw mode a prim has
+// (HdSceneDelegate::GetModelDrawMode) is believed too.
+bool _DrawModeStandin(HdSceneDelegate* delegate, SdfPath const& id)
+{
+    static TfToken const bounds("bounds"), origin("origin");
+    static TfToken const boundsCurves("boundsCurves"), originCurves("originCurves");
+    if (id.GetNameToken() == boundsCurves || id.GetNameToken() == originCurves) return true;
+    HdModelDrawMode const m = delegate->GetModelDrawMode(id);
+    return m.applyDrawMode && (m.drawMode == bounds || m.drawMode == origin);
+}
+
+// Hydra's interpolation as ThCurvesView's: 0 constant, 1 uniform, 2
+// varying, 3 vertex (face-varying, which curves have none of, as vertex).
+uint32_t _InterpCode(HdInterpolation interp)
+{
+    switch (interp) {
+    case HdInterpolationUniform: return 1;
+    case HdInterpolationVarying: return 2;
+    case HdInterpolationVertex:
+    case HdInterpolationFaceVarying: return 3;
+    default: return 0;
+    }
+}
+
+// A basis curves (Base = HdBasisCurves) or points (HdPoints) prim.
+template <typename Base>
+class ThStrokes final : public Base
+{
+    static constexpr bool _curves = std::is_same<Base, HdBasisCurves>::value;
+
+public:
+    explicit ThStrokes(SdfPath const& id) : Base(id) {}
+
+    HdDirtyBits GetInitialDirtyBitsMask() const override
+    {
+        return HdChangeTracker::AllSceneDirtyBits;
+    }
+
+    void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits,
+              TfToken const&) override
+    {
+        _SyncTimer timer;
+        _Edited(param);
+        SdfPath const& id = this->GetId();
+        bool const motion = _SamplingMotion(param);
+        if (*dirtyBits & HdChangeTracker::DirtyMaterialId) {
+            this->SetMaterialId(delegate->GetMaterialId(id));
+        }
+        if (HdChangeTracker::IsVisibilityDirty(*dirtyBits, id)) {
+            this->_UpdateVisibility(delegate, dirtyBits);
+        }
+        if (HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
+            _transform = delegate->GetTransform(id);
+            _xformSamples.count = 0;
+            if (motion) {
+                delegate->SampleTransform(id, -_motionWindow, _motionWindow, &_xformSamples);
+            }
+        }
+        this->_UpdateInstancer(delegate, dirtyBits);
+        HdInstancer::_SyncInstancerAndParents(delegate->GetRenderIndex(), this->GetInstancerId());
+        if (HdChangeTracker::IsTopologyDirty(*dirtyBits, id) || HdChangeTracker::IsAnyPrimvarDirty(*dirtyBits, id)
+            || (*dirtyBits & HdChangeTracker::DirtyWidths)) {
+            _Rebuild(delegate, motion);
+        }
+        *dirtyBits &= ~HdChangeTracker::AllSceneDirtyBits;
+    }
+
+    // Fill `view` from this prim, as ThMesh::View does; false when it has
+    // nothing to draw.
+    bool View(ThCurvesView* view, std::vector<double>* transforms, std::vector<double>* keys,
+              ThMaterial const* material,
+              std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
+              size_t instancerKeys, _Shutter const& shutter) const
+    {
+        if (_points.empty() || (_curves && _counts.empty())) return false;
+        std::vector<GfMatrix4d> const instances = instancesAt(nullptr);
+        bool const instanced = !this->GetInstancerId().IsEmpty();
+        transforms->clear();
+        auto push = [](std::vector<double>* out, GfMatrix4d const& m) {
+            double const* d = m.GetArray();
+            out->insert(out->end(), d, d + 16);
+        };
+        if (!instanced) {
+            push(transforms, _transform);
+        } else {
+            for (GfMatrix4d const& inst : instances) push(transforms, _transform * inst);
+        }
+        if (transforms->empty()) return false;
+
+        *view = ThCurvesView{};
+        view->points = _points.data();
+        view->point_count = static_cast<uint32_t>(_points.size() / 3);
+        view->curve_vertex_counts = _counts.empty() ? nullptr : _counts.data();
+        view->curve_count = static_cast<uint32_t>(_counts.size());
+        view->kind = _kind;
+        view->basis = _basis;
+        view->wrap = _wrap;
+        if (!_widths.empty()) {
+            view->widths = _widths.data();
+            view->width_count = static_cast<uint32_t>(_widths.size());
+            view->width_interp = _widthInterp;
+        }
+        view->base_color[0] = view->base_color[1] = view->base_color[2] = 0.5f;
+        if (material && material->HasColor()) {
+            GfVec3f const& c = material->BaseColor();
+            view->base_color[0] = c[0];
+            view->base_color[1] = c[1];
+            view->base_color[2] = c[2];
+        } else if (!_colors.empty()) {
+            view->colors = _colors.data();
+            view->color_count = static_cast<uint32_t>(_colors.size() / 3);
+            view->color_interp = _colorInterp;
+        }
+        view->transforms = transforms->data();
+        view->transform_count = static_cast<uint32_t>(transforms->size() / 16);
+        if (!shutter.on) return true;
+
+        // The points at the shutter's opening and closing.
+        size_t const n = _points.size() / 3;
+        // Refilled only when rebuilt or the shutter changed: a background
+        // frame may still be reading them.
+        if ((_pointSamples.count >= 2 || !_velocities.empty())
+            && !(_motionFor == std::make_tuple(_version, shutter.open, shutter.close, shutter.fps))) {
+            _motionFor = std::make_tuple(_version, shutter.open, shutter.close, shutter.fps);
+            auto fill = [&](std::vector<float>& out, float t) {
+                out.assign(_points.begin(), _points.end());
+                if (_pointSamples.count >= 2) {
+                    VtVec3fArray const p = _Deindexed(_pointSamples.Resample(t));
+                    if (p.size() == n) std::memcpy(out.data(), p.cdata(), n * sizeof(GfVec3f));
+                } else {
+                    float const sec = t / shutter.fps;
+                    for (size_t i = 0; i < n && i < _velocities.size(); ++i) {
+                        GfVec3f const a = i < _accelerations.size() ? _accelerations[i] : GfVec3f(0.0f);
+                        GfVec3f const d = _velocities[i] * sec + a * (0.5f * sec * sec);
+                        for (int k = 0; k < 3; ++k) out[i * 3 + k] += d[k];
+                    }
+                }
+            };
+            fill(_open, shutter.open);
+            fill(_close, shutter.close);
+        }
+        if ((_pointSamples.count >= 2 || !_velocities.empty()) && _open.size() == _points.size() && _open != _close) {
+            view->points = _open.data();
+            view->points_close = _close.data();
+        }
+        // The transforms at keys across it.
+        if (_xformSamples.count < 2 && instancerKeys < 3 && !instanced) return true;
+        size_t const count = std::max(_KeyCount(_xformSamples, shutter), instancerKeys);
+        keys->clear();
+        for (size_t k = 0; k < count; ++k) {
+            float const t = shutter.At(k, count);
+            GfMatrix4d const own = _XformAt(_xformSamples, t, _transform);
+            if (!instanced) {
+                push(keys, own);
+                continue;
+            }
+            std::vector<GfMatrix4d> const at = instancesAt(&t);
+            if (at.size() != instances.size()) {
+                keys->clear();  // instances came and went: drawn still
+                return true;
+            }
+            for (GfMatrix4d const& inst : at) push(keys, own * inst);
+        }
+        size_t const per = keys->size() / count;
+        for (size_t k = 1; k < count; ++k) {
+            if (!std::equal(keys->begin(), keys->begin() + per, keys->begin() + k * per)) {
+                view->transform_keys = keys->data();
+                view->transform_key_count = static_cast<uint32_t>(count);
+                break;
+            }
+        }
+        return true;
+    }
+
+protected:
+    HdDirtyBits _PropagateDirtyBits(HdDirtyBits bits) const override { return bits; }
+    void _InitRepr(TfToken const& reprToken, HdDirtyBits*) override
+    {
+        auto it = std::find_if(this->_reprs.begin(), this->_reprs.end(), HdRprim::_ReprComparator(reprToken));
+        if (it == this->_reprs.end()) {
+            this->_reprs.emplace_back(reprToken, HdReprSharedPtr());
+        }
+    }
+
+private:
+    // Curves with indices: the points they index, one per curve vertex.
+    VtVec3fArray _Deindexed(VtVec3fArray const& points) const
+    {
+        if (_indices.empty()) return points;
+        VtVec3fArray out(_indices.size());
+        for (size_t i = 0; i < _indices.size(); ++i) {
+            int const at = _indices[i];
+            out[i] = at >= 0 && static_cast<size_t>(at) < points.size() ? points[at] : GfVec3f(0.0f);
+        }
+        return out;
+    }
+
+    void _Rebuild(HdSceneDelegate* delegate, bool motion)
+    {
+        SdfPath const& id = this->GetId();
+        ++_version;
+        _points.clear();
+        _counts.clear();
+        _widths.clear();
+        _colors.clear();
+        _indices = VtIntArray();
+        _pointSamples.count = 0;
+        _velocities = VtVec3fArray();
+        _accelerations = VtVec3fArray();
+
+        _kind = 0;
+        if constexpr (_curves) {
+            HdBasisCurvesTopology const topology = this->GetBasisCurvesTopology(delegate);
+            TfToken const basis = topology.GetCurveBasis();
+            TfToken const wrap = topology.GetCurveWrap();
+            _kind = topology.GetCurveType() == HdTokens->linear ? 1u : 2u;
+            _basis = basis == HdTokens->bspline ? 1u
+                : (basis == HdTokens->catmullRom || basis == TfToken("centripetalCatmullRom")) ? 2u : 0u;
+            _wrap = wrap == HdTokens->periodic ? 1u : wrap == HdTokens->pinned ? 2u : 0u;
+            for (int const c : topology.GetCurveVertexCounts()) _counts.push_back(c);
+            if (topology.HasIndices()) _indices = topology.GetCurveIndices();
+        }
+
+        VtVec3fArray const points = _Deindexed(_AsArray<GfVec3f>(delegate->Get(id, HdTokens->points)));
+        if (points.empty()) return;
+        float const* f = reinterpret_cast<float const*>(points.cdata());
+        _points.assign(f, f + points.size() * 3);
+        bool const standin = _curves && _DrawModeStandin(delegate, id);
+
+        // A vertex primvar of indexed curves is per point: read at the
+        // curve vertices, as the points are.
+        auto perVertex = [&](HdInterpolation interp) {
+            return interp == HdInterpolationVertex && !_indices.empty();
+        };
+        for (HdInterpolation interp :
+             {HdInterpolationConstant, HdInterpolationUniform, HdInterpolationVarying, HdInterpolationVertex}) {
+            for (HdPrimvarDescriptor const& pv : delegate->GetPrimvarDescriptors(id, interp)) {
+                if (pv.name == HdTokens->widths) {
+                    if (standin) continue;
+                    VtFloatArray w = _FlatValues<float>(delegate, id, pv.name);
+                    if (w.empty()) {
+                        VtDoubleArray const d = _FlatValues<double>(delegate, id, pv.name);
+                        for (double const v : d) w.push_back(static_cast<float>(v));
+                    }
+                    if (perVertex(interp)) {
+                        VtFloatArray const at = w;
+                        w.resize(_indices.size());
+                        for (size_t i = 0; i < _indices.size(); ++i) {
+                            int const k = _indices[i];
+                            w[i] = k >= 0 && static_cast<size_t>(k) < at.size() ? at[k] : 0.0f;
+                        }
+                    }
+                    _widths.assign(w.begin(), w.end());
+                    _widthInterp = _InterpCode(interp);
+                } else if (pv.name == _tokDisplayColor) {
+                    VtVec3fArray c = _FlatValues<GfVec3f>(delegate, id, pv.name);
+                    if (perVertex(interp)) c = _Deindexed(c);
+                    float const* cf = reinterpret_cast<float const*>(c.cdata());
+                    _colors.assign(cf, cf + c.size() * 3);
+                    _colorInterp = _InterpCode(interp);
+                }
+            }
+        }
+
+        if (!motion) return;
+        HdTimeSampleArray<VtValue, 4> box;
+        box.count = 0;
+        delegate->SamplePrimvar(id, HdTokens->points, -_motionWindow, _motionWindow, &box);
+        HdTimeSampleArray<VtVec3fArray, 4> sampled;
+        bool whole = box.count >= 2 && sampled.UnboxFrom(box);
+        for (size_t i = 0; whole && i < sampled.count; ++i) {
+            whole = _Deindexed(sampled.values[i]).size() == points.size();
+        }
+        if (whole) {
+            _pointSamples = sampled;
+        } else if (_indices.empty()) {
+            VtVec3fArray const v = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->velocities));
+            if (v.size() == points.size()) {
+                _velocities = v;
+                VtVec3fArray const a = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->accelerations));
+                if (a.size() == points.size()) _accelerations = a;
+            }
+        }
+    }
+
+    GfMatrix4d _transform{1.0};
+    _XformSamples _xformSamples;
+    std::vector<float> _points;  // per curve vertex (indices applied), or per point
+    std::vector<int32_t> _counts;
+    VtIntArray _indices;
+    uint32_t _kind = 0;
+    uint32_t _basis = 0;
+    uint32_t _wrap = 0;
+    std::vector<float> _widths;
+    uint32_t _widthInterp = 0;
+    std::vector<float> _colors;
+    uint32_t _colorInterp = 0;
+    HdTimeSampleArray<VtVec3fArray, 4> _pointSamples;
+    VtVec3fArray _velocities;
+    VtVec3fArray _accelerations;
+    // The points at the last drawn shutter's opening and closing, and what
+    // they were made for (version, open, close, fps).
+    mutable std::vector<float> _open;
+    mutable std::vector<float> _close;
+    mutable std::tuple<uint64_t, float, float, float> _motionFor{~uint64_t(0), 0.0f, 0.0f, 0.0f};
+    uint64_t _version = 0;
+};
+
+using ThCurves = ThStrokes<HdBasisCurves>;
+using ThPoints = ThStrokes<HdPoints>;
 
 // -----------------------------------------------------------------------------
 // Render buffer: one AOV image in host memory.
@@ -2069,6 +2741,100 @@ private:
     _XformSamples _samples;
 };
 
+// -----------------------------------------------------------------------------
+// Lights: the scene's UsdLux lights, as authored, for the core to light the
+// frame with (src/lights.rs). No shadows, filters, shaping or textures.
+// -----------------------------------------------------------------------------
+
+// The light sprims synced, and the core's number for each (ThLight::kind).
+std::vector<std::pair<TfToken, uint32_t>> const& _LightKinds()
+{
+    static std::vector<std::pair<TfToken, uint32_t>> const kinds{
+        {HdPrimTypeTokens->distantLight, 0u}, {HdPrimTypeTokens->sphereLight, 1u},
+        {HdPrimTypeTokens->rectLight, 2u},    {HdPrimTypeTokens->diskLight, 3u},
+        {HdPrimTypeTokens->cylinderLight, 4u}, {HdPrimTypeTokens->domeLight, 5u},
+    };
+    return kinds;
+}
+
+TfToken const _tokTreatAsPoint("treatAsPoint");
+
+float _LightFloat(VtValue const& v, float fallback)
+{
+    if (v.IsHolding<float>()) return v.UncheckedGet<float>();
+    if (v.IsHolding<double>()) return static_cast<float>(v.UncheckedGet<double>());
+    if (v.IsHolding<int>()) return static_cast<float>(v.UncheckedGet<int>());
+    if (v.IsHolding<GfHalf>()) return static_cast<float>(v.UncheckedGet<GfHalf>());
+    return fallback;
+}
+
+bool _LightBool(VtValue const& v, bool fallback)
+{
+    if (v.IsHolding<bool>()) return v.UncheckedGet<bool>();
+    if (v.IsHolding<int>()) return v.UncheckedGet<int>() != 0;
+    return fallback;
+}
+
+class ThLightPrim final : public HdLight
+{
+public:
+    ThLightPrim(SdfPath const& id, uint32_t kind) : HdLight(id) { _light.kind = kind; }
+
+    HdDirtyBits GetInitialDirtyBitsMask() const override { return AllDirty; }
+
+    void Sync(HdSceneDelegate* delegate, HdRenderParam* param, HdDirtyBits* dirtyBits) override
+    {
+        SdfPath const& id = GetId();
+        if (delegate && !id.IsEmpty()) {
+            if (*dirtyBits & DirtyTransform) {
+                GfMatrix4d const m = delegate->GetTransform(id);
+                std::copy(m.GetArray(), m.GetArray() + 16, _light.transform);
+            }
+            // DirtyParams covers visibility too (HdLight::DirtyBits).
+            if (*dirtyBits & DirtyParams) {
+                auto get = [&](TfToken const& name) { return delegate->GetLightParamValue(id, name); };
+                _visible = delegate->GetVisible(id);
+                float const intensity = _LightFloat(get(HdLightTokens->intensity), 1.0f);
+                float const exposure = _LightFloat(get(HdLightTokens->exposure), 0.0f);
+                float const diffuse = _LightFloat(get(HdLightTokens->diffuse), 1.0f);
+                _light.intensity = intensity * std::exp2(exposure) * diffuse;
+                VtValue const color = get(HdLightTokens->color);
+                GfVec3f c(1.0f);
+                if (color.IsHolding<GfVec3f>()) c = color.UncheckedGet<GfVec3f>();
+                else if (color.IsHolding<GfVec3d>()) c = GfVec3f(color.UncheckedGet<GfVec3d>());
+                std::copy(c.data(), c.data() + 3, _light.color);
+                bool const tinted = _LightBool(get(HdLightTokens->enableColorTemperature), false);
+                _light.temperature = tinted ? _LightFloat(get(HdLightTokens->colorTemperature), 6500.0f) : 0.0f;
+                _light.normalize = _LightBool(get(HdLightTokens->normalize), false) ? 1u : 0u;
+                _light.point = _LightBool(get(_tokTreatAsPoint), false) ? 1u : 0u;
+                _light.angle = _LightFloat(get(HdLightTokens->angle), 0.53f);
+                _light.radius = _LightFloat(get(HdLightTokens->radius), 0.5f);
+                _light.width = _LightFloat(get(HdLightTokens->width), 1.0f);
+                _light.height = _LightFloat(get(HdLightTokens->height), 1.0f);
+                _light.length = _LightFloat(get(HdLightTokens->length), 1.0f);
+            }
+            _synced = true;
+        }
+        // A frame copies the lights (ThRenderPass::_Gather): draw again.
+        _Changed(param);
+        *dirtyBits = Clean;
+    }
+
+    // The light as the core takes it, or false when it lights nothing
+    // (invisible, or never synced).
+    bool View(ThLight* out) const
+    {
+        if (!_synced || !_visible) return false;
+        *out = _light;
+        return true;
+    }
+
+private:
+    ThLight _light{{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}};
+    bool _visible = true;
+    bool _synced = false;
+};
+
 // What a pass blurs (th:motionBlur, th:depthOfField, th:blurSamples, th:fps).
 struct _BlurSettings
 {
@@ -2085,6 +2851,7 @@ struct _PassSettings
 {
     int samples = _defaultSamples;
     uint32_t shading = 0;
+    uint32_t lighting = 0;  // th:lighting: 0 scene, 1 headlight
     bool ao = true;
     bool alpha = false;
     _BlurSettings blur;
@@ -2102,7 +2869,7 @@ struct _PassSettings
 
     auto Tie() const
     {
-        return std::make_tuple(samples, shading, ao, alpha, blur.motion, blur.dof, blur.samples, blur.fps,
+        return std::make_tuple(samples, shading, lighting, ao, alpha, blur.motion, blur.dof, blur.samples, blur.fps,
                                interactive, screenSized, gpu, linearDepth);
     }
     bool operator==(_PassSettings const& o) const { return Tie() == o.Tie(); }
@@ -2197,7 +2964,7 @@ private:
         _Shutter shutter;
         ThFrame const frame = _MakeFrame(state, settings, buffers.sized->GetWidth(),
                                          buffers.sized->GetHeight(), &shutter);
-        std::shared_ptr<_Job> const job = _Gather(renderTags, shutter, buffers);
+        std::shared_ptr<_Job> const job = _Gather(state, renderTags, shutter, buffers);
         auto const gathered = std::chrono::steady_clock::now();
         _Image image;
         int32_t const status = _Draw(*job, frame, &image, nullptr, _cache, &_workers->cacheMutex);
@@ -2262,7 +3029,7 @@ private:
         bool started = false, published = false;
         GfMatrix4d const worldToView = state->GetWorldToViewMatrix();
         _Key key{width, height, worldToView, state->GetProjectionMatrix(), settings, renderTags,
-                 _workers->edits.load(std::memory_order_relaxed), buffers.identity};
+                 _workers->edits.load(std::memory_order_relaxed), buffers.identity, state->GetCullStyle()};
         if (!_thread) {
             _thread = std::make_unique<ThRenderThread>(_cache, &_workers->cacheMutex);
             _workers->Add(_thread.get());
@@ -2297,7 +3064,7 @@ private:
             }
             frames.push_back(frame);
             auto const t2 = _Clock::now();
-            _started = _Gather(renderTags, shutter, buffers);
+            _started = _Gather(state, renderTags, shutter, buffers);
             gatherMs = ms(t2, _Clock::now());
             _startedSamples = frame.samples;
             _startedShutter = shutter;
@@ -2366,12 +3133,13 @@ private:
         TfTokenVector renderTags;
         uint64_t edits = 0;
         std::vector<std::pair<ThRenderBuffer const*, uint64_t>> buffers;
+        HdCullStyle cull = HdCullStyleDontCare;
 
         bool operator==(_Key const& o) const
         {
             return width == o.width && height == o.height && worldToView == o.worldToView
                 && projection == o.projection && settings == o.settings && renderTags == o.renderTags
-                && edits == o.edits && buffers == o.buffers;
+                && edits == o.edits && buffers == o.buffers && cull == o.cull;
         }
     };
 
@@ -2391,6 +3159,7 @@ private:
         std::copy(viewToWorld.GetArray(), viewToWorld.GetArray() + 16, frame.view_to_world);
         frame.samples = static_cast<uint32_t>(std::max(1, settings.samples));
         frame.shading = settings.shading;
+        frame.lighting = settings.lighting;  // the lights come with the job (_Draw)
         frame.ao = settings.ao ? 1u : 0u;
         frame.alpha = settings.alpha ? 1u : 0u;
         frame.gpu = settings.gpu ? 1u : 0u;
@@ -2471,10 +3240,12 @@ private:
         });
     }
 
-    // The meshes the pass draws (_Draws), with what they point at.
-    std::shared_ptr<_Job> _Gather(TfTokenVector const& renderTags, _Shutter const& shutter,
-                                  _Bindings const& buffers) const
+    // The meshes the pass draws (_Draws), with what they point at, culled
+    // as the pass state says (ThMesh::Views).
+    std::shared_ptr<_Job> _Gather(HdRenderPassStateSharedPtr const& state, TfTokenVector const& renderTags,
+                                  _Shutter const& shutter, _Bindings const& buffers) const
     {
+        HdCullStyle const passCull = state->GetCullStyle();
         auto job = std::make_shared<_Job>();
         job->ids = buffers.primId || buffers.instanceId;
         HdRenderIndex& index = *GetRenderIndex();
@@ -2486,6 +3257,10 @@ private:
         job->views.reserve(meshes.size());
         job->transforms.resize(meshes.size());
         job->keys.resize(meshes.size());
+        auto materialOf = [&index](SdfPath const& path) -> ThMaterial const* {
+            if (path.IsEmpty()) return nullptr;
+            return dynamic_cast<ThMaterial const*>(index.GetSprim(HdPrimTypeTokens->material, path));
+        };
         for (size_t i = 0; i < meshes.size(); ++i) {
             ThMesh const* mesh = meshes[i];
             ThInstancer* instancer = mesh->GetInstancerId().IsEmpty() ? nullptr
@@ -2495,25 +3270,111 @@ private:
                                  : std::vector<GfMatrix4d>{};
             };
             size_t const instancerKeys = instancer && shutter.on ? instancer->KeyCount(shutter) : 0;
-            ThMaterial const* material = nullptr;
-            if (!mesh->GetMaterialId().IsEmpty()) {
-                material = dynamic_cast<ThMaterial const*>(
-                    index.GetSprim(HdPrimTypeTokens->material, mesh->GetMaterialId()));
+            // A mesh drawn in parts (see Subsets) is several views, each
+            // picked as the mesh.
+            size_t const first = job->views.size();
+            if (mesh->Views(&job->views, &job->transforms[i], &job->keys[i], materialOf, instancesAt, instancerKeys,
+                            shutter, passCull) == 0) {
+                continue;
             }
-            ThMeshView view;
-            if (mesh->View(&view, &job->transforms[i], &job->keys[i], material, instancesAt, instancerKeys, shutter)) {
-                job->views.push_back(view);
+            for (size_t k = first; k < job->views.size(); ++k) {
+                ThMeshView const& view = job->views[k];
                 job->triangles += static_cast<size_t>(view.triangle_count) * view.transform_count;
-                job->refineAsked = std::max(job->refineAsked, mesh->RefineAsked());
-                if (int const drawn = mesh->RefineDrawn()) {
-                    ++job->subdivided;
-                    job->refineDrawn = std::max(job->refineDrawn, drawn);
-                }
                 job->primIds.push_back(mesh->GetPrimId());
                 job->instanced.push_back(instancer ? 1 : 0);
             }
+            job->refineAsked = std::max(job->refineAsked, mesh->RefineAsked());
+            if (int const drawn = mesh->RefineDrawn()) {
+                ++job->subdivided;
+                job->refineDrawn = std::max(job->refineDrawn, drawn);
+            }
         }
+        _GatherStrokes(renderTags, shutter, job.get());
+        _GatherLights(job.get());
         return job;
+    }
+
+    // The scene's enabled, visible lights. TH_PLAYBLAST_LIGHTS=1 lists them.
+    // Houdini's own default headlight is not one: husk (and Houdini's USD
+    // layer, libHUSD) adds a distant light named __the_headlight
+    // (/husk_headlight/__the_headlight in husk) to a scene without lights,
+    // and such a scene is lit by the fixed camera rig, as before scene
+    // lights existed.
+    void _GatherLights(_Job* job) const
+    {
+        HdRenderIndex& index = *GetRenderIndex();
+        bool const report = std::getenv("TH_PLAYBLAST_LIGHTS") != nullptr;
+        static TfToken const houdiniHeadlight("__the_headlight");
+        for (auto const& [type, kind] : _LightKinds()) {
+            if (!index.IsSprimTypeSupported(type)) continue;
+            for (SdfPath const& id : index.GetSprimSubtree(type, SdfPath::AbsoluteRootPath())) {
+                auto const* prim = dynamic_cast<ThLightPrim const*>(index.GetSprim(type, id));
+                ThLight light;
+                bool const lit = prim && id.GetNameToken() != houdiniHeadlight && prim->View(&light);
+                if (lit) job->lights.push_back(light);
+                if (report) {
+                    std::fprintf(stderr, "hdThPlayblast: light %s (%s)%s", id.GetText(), type.GetText(),
+                                 lit ? "" : " off\n");
+                    if (lit) {
+                        std::fprintf(stderr, ": intensity %g, colour %g %g %g, %g K, normalize %u, point %u, "
+                                     "angle %g, radius %g, %g x %g, length %g, at %g %g %g\n",
+                                     light.intensity, light.color[0], light.color[1], light.color[2],
+                                     light.temperature, light.normalize, light.point, light.angle, light.radius,
+                                     light.width, light.height, light.length, light.transform[12],
+                                     light.transform[13], light.transform[14]);
+                    }
+                }
+            }
+        }
+    }
+
+    // The basis curves and points the pass draws, after the meshes.
+    void _GatherStrokes(TfTokenVector const& renderTags, _Shutter const& shutter, _Job* job) const
+    {
+        HdRenderIndex& index = *GetRenderIndex();
+        std::vector<HdRprim const*> prims;
+        for (SdfPath const& id : index.GetRprimIds()) {
+            HdRprim const* prim = index.GetRprim(id);
+            if (!dynamic_cast<ThCurves const*>(prim) && !dynamic_cast<ThPoints const*>(prim)) continue;
+            if (!prim->IsVisible()) continue;
+            if (!renderTags.empty()
+                && std::find(renderTags.begin(), renderTags.end(), prim->GetRenderTag()) == renderTags.end()) {
+                continue;
+            }
+            prims.push_back(prim);
+        }
+        job->curves.reserve(prims.size());
+        job->curveTransforms.resize(prims.size());
+        job->curveKeys.resize(prims.size());
+        for (size_t i = 0; i < prims.size(); ++i) {
+            HdRprim const* prim = prims[i];
+            ThInstancer* instancer = prim->GetInstancerId().IsEmpty() ? nullptr
+                : dynamic_cast<ThInstancer*>(index.GetInstancer(prim->GetInstancerId()));
+            auto instancesAt = [&](float const* time) {
+                return instancer ? instancer->ComputeInstanceTransforms(prim->GetId(), time)
+                                 : std::vector<GfMatrix4d>{};
+            };
+            size_t const instancerKeys = instancer && shutter.on ? instancer->KeyCount(shutter) : 0;
+            ThMaterial const* material = nullptr;
+            if (!prim->GetMaterialId().IsEmpty()) {
+                material = dynamic_cast<ThMaterial const*>(
+                    index.GetSprim(HdPrimTypeTokens->material, prim->GetMaterialId()));
+            }
+            ThCurvesView view;
+            bool drawn = false;
+            if (auto const* curves = dynamic_cast<ThCurves const*>(prim)) {
+                drawn = curves->View(&view, &job->curveTransforms[i], &job->curveKeys[i], material, instancesAt,
+                                     instancerKeys, shutter);
+            } else if (auto const* points = dynamic_cast<ThPoints const*>(prim)) {
+                drawn = points->View(&view, &job->curveTransforms[i], &job->curveKeys[i], material, instancesAt,
+                                     instancerKeys, shutter);
+            }
+            if (drawn) {
+                job->curves.push_back(view);
+                job->primIds.push_back(prim->GetPrimId());
+                job->instanced.push_back(instancer ? 1 : 0);
+            }
+        }
     }
 
     // Put a finished frame in the bound buffers.
@@ -2605,13 +3466,18 @@ public:
 
     TfTokenVector const& GetSupportedRprimTypes() const override
     {
-        static TfTokenVector const types{HdPrimTypeTokens->mesh};
+        static TfTokenVector const types{HdPrimTypeTokens->mesh, HdPrimTypeTokens->basisCurves,
+                                         HdPrimTypeTokens->points};
         return types;
     }
     TfTokenVector const& GetSupportedSprimTypes() const override
     {
-        static TfTokenVector const types{HdPrimTypeTokens->camera, HdPrimTypeTokens->material,
-                                         HdPrimTypeTokens->extComputation};
+        static TfTokenVector const types = [] {
+            TfTokenVector t{HdPrimTypeTokens->camera, HdPrimTypeTokens->material,
+                            HdPrimTypeTokens->extComputation};
+            for (auto const& kind : _LightKinds()) t.push_back(kind.first);
+            return t;
+        }();
         return types;
     }
     TfTokenVector const& GetSupportedBprimTypes() const override
@@ -2677,6 +3543,12 @@ public:
         if (typeId == HdPrimTypeTokens->mesh) {
             return new ThMesh(id);
         }
+        if (typeId == HdPrimTypeTokens->basisCurves) {
+            return new ThCurves(id);
+        }
+        if (typeId == HdPrimTypeTokens->points) {
+            return new ThPoints(id);
+        }
         return nullptr;
     }
     void DestroyRprim(HdRprim* rprim) override
@@ -2690,6 +3562,9 @@ public:
         if (typeId == HdPrimTypeTokens->camera) return new ThCamera(id);
         if (typeId == HdPrimTypeTokens->material) return new ThMaterial(id, &_textures);
         if (typeId == HdPrimTypeTokens->extComputation) return new HdExtComputation(id);
+        for (auto const& [type, kind] : _LightKinds()) {
+            if (typeId == type) return new ThLightPrim(id, kind);
+        }
         return nullptr;
     }
     HdSprim* CreateFallbackSprim(TfToken const& typeId) override
@@ -2731,6 +3606,9 @@ private:
         std::string shading = _SettingString(GetRenderSetting(_tokShading));
         if (shading.empty()) shading = _EnvLower("TH_PLAYBLAST_SHADING");
         s.shading = _ShadingNumber(shading);
+        std::string lighting = _SettingString(GetRenderSetting(_tokLighting));
+        if (lighting.empty()) lighting = _EnvLower("TH_PLAYBLAST_LIGHTING");
+        s.lighting = _LightingNumber(lighting);
         VtValue const aoSetting = GetRenderSetting(_tokAo);
         if (aoSetting.IsHolding<bool>()) {
             s.ao = aoSetting.UncheckedGet<bool>();

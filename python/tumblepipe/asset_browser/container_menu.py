@@ -35,6 +35,8 @@ ADD_ENTITY = "add_entity"
 STAGE_AND_BUILD = "stage_and_build"
 EXPORT_ROOT = "export_root"
 REBUILD_SHOTS = "rebuild_shots"
+REPACK_TIMELINE = "repack_timeline"
+PLAY = "play"
 
 
 def _plural(n: int) -> str:
@@ -63,23 +65,35 @@ class ContainerMenu:
     def __init__(
         self, manager: "ContainerManager",
         open_entity_editor: Callable[[str], None],
+        play_shots: Callable[[str, list], None] | None = None,
     ) -> None:
         self._containers = manager
         # A Multi card's Open in Entity Editor (EntityOps), for Add Entity.
         self._open_entity_editor = open_entity_editor
+        # EntityOps.play_shot_uris(project, uris), for a shots Multi's Play.
+        self._play_shots = play_shots
 
     def kind_label(self, kind: str) -> str:
         return KIND_LABELS[kind]
 
     def actions(self, collection_id: str, kind: str) -> list[ContainerAction]:
-        """Open Folder on both kinds; on a Multi, Add Entity (the Entity
-        Editor on that Multi, its members listed, to add more); the Root's
+        """Open Folder on both kinds; on a shots Multi with members, Play
+        first (its shots in the editor, in ``play_members`` order, #26);
+        on a Multi, Add Entity (the Entity
+        Editor on that Multi, its members listed, to add more) and, with a
+        shared timeline, Repack Timeline… (#31); the Root's
         export and rebuilds on a Root. The export is an explicit action
         because ``export_scene_version`` is too heavy to run on every
         membership edit."""
         actions = [ContainerAction(OPEN_LOCATION, "Open Folder")]
         if kind == "group":
+            # A shots Multi with members plays them (#26).
+            if self._play_shots is not None and self._containers.play_members(collection_id):
+                actions.insert(0, ContainerAction(PLAY, "Play"))
             actions.append(ContainerAction(ADD_ENTITY, "Add Entity…"))
+            # Only a shots Multi with a shared timeline has one to repack.
+            if self._containers.shared_timeline(collection_id) is not None:
+                actions.append(ContainerAction(REPACK_TIMELINE, "Repack Timeline…"))
         if kind == "scene":
             actions += [
                 ContainerAction(STAGE_AND_BUILD, "Stage Root && Rebuild Shots…"),
@@ -108,6 +122,14 @@ class ContainerMenu:
                 raise ValueError(f"Add Entity is a Multi's, not {collection_id!r}'s")
             self._open_entity_editor(collection_id)
             return ""
+        if action_id == REPACK_TIMELINE:
+            return self._repack_timeline(collection_id, parent)
+        if action_id == PLAY:
+            members = self._containers.play_members(collection_id)
+            if not members or self._play_shots is None:
+                return f"{label} has no shots to play"
+            self._play_shots(ref.project_name, members)
+            return ""
         if action_id == EXPORT_ROOT:
             if self._containers.export_root_usd(collection_id):
                 return f"Exported Root USD: {label}"
@@ -117,6 +139,19 @@ class ContainerMenu:
         if action_id == STAGE_AND_BUILD:
             return self._stage_and_build(collection_id, label, parent)
         raise ValueError(f"unknown container action {action_id!r}")
+
+    def _repack_timeline(self, collection_id: str, parent) -> str:
+        """Repack the Multi's shared timeline, after saying what it moves."""
+        from .timeline_repack import confirm_repack, overlap_text
+        found = self._containers.shared_timeline(collection_id)
+        if found is None:
+            return "This Multi has no shared timeline"
+        group, pairs = found
+        overlap = overlap_text({str(group.uri): pairs}) if pairs else ""
+        if not confirm_repack(parent, group.name, overlap):
+            return ""
+        self._containers.repack_timeline(collection_id)
+        return f"Repacked the timeline of {group.name}"
 
     def _rebuild_shots(self, collection_id: str, label: str, parent) -> str:
         """Regenerate root layers + rebuild staged USD for every shot

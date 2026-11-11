@@ -234,8 +234,17 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             name    "open_location"
             label   "Open Location"
             type    button
+            joinnext
             default {{ "0" }}
             {_callback('import_render', 'open_location')}
+        }}
+        parm {{
+            name    "render"
+            label   "Render"
+            type    button
+            default {{ "0" }}
+            help    "Open Farm Submit with this shot's Render ticked and this import's channel checked (all channels for *); a concrete Department is the render's Up to."
+            {_callback('import_render', 'render')}
         }}
     }}
 

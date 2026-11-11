@@ -1,11 +1,12 @@
 {
-	"values":["22.0.368","2.0"
+	"values":["22.0.429","2.0"
 	],
 	"indexes":{
 		"hdaroot/diffuse.userdata":1,
 		"hdaroot/output0.userdata":0,
 		"hdaroot/albedo_mse.userdata":1,
 		"hdaroot/specular_indirect.userdata":1,
+		"hdaroot/cryptomaterials.userdata":1,
 		"hdaroot/position.userdata":1,
 		"hdaroot/coat.userdata":1,
 		"hdaroot/specular_direct.userdata":1,
@@ -26,6 +27,7 @@
 		"hdaroot/shadow.userdata":1,
 		"hdaroot/depth.userdata":1,
 		"hdaroot/samples.userdata":1,
+		"hdaroot/cryptoprimitives.userdata":1,
 		"hdaroot/albedo.userdata":1,
 		"hdaroot/ao.userdata":1,
 		"hdaroot/emission.userdata":1,

@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.101.0"
+version = "1.102.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -105,6 +105,8 @@ include = [
     # (docs/index.md is the front page and sidebar).
     "docs/**",
     "radial_menus/**",
+    # Shelf tools (found through the package root on HOUDINI_PATH).
+    "toolbar/**",
     # Stock department radials: TumbleTrove's lowest radial layer. Not under
     # radial_menus/, which is read as the package layer.
     "stock/**",

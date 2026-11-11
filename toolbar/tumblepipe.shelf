@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shelfDocument>
+  <!-- TumblePipe's shelf tools. A tool here has a hotkey symbol
+       (h.tool:<name>); tumblepipe.startup binds the ones that have a
+       default key when the artist has none for them. -->
+  <toolshelf name="tumblepipe" label="TumblePipe">
+    <memberTool name="tumblepipe_live_playblast"/>
+  </toolshelf>
+
+  <tool name="tumblepipe_live_playblast" label="Live Playblast" icon="MISC_python">
+    <helpText><![CDATA[= Live Playblast =
+
+Playblasts the selected th::animate or th::playblast (or the scene's only
+th::animate) in the background, the current frame first, for the player's
+Live take. Houdini is free again once the animation is cached.]]></helpText>
+    <script scriptType="python"><![CDATA[from tumblepipe.pipe.houdini import live_playblast
+live_playblast.start_selected()]]></script>
+  </tool>
+</shelfDocument>

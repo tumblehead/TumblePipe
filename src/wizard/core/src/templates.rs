@@ -26,7 +26,7 @@
 /// `tests/fixtures/templates/`, and the tests fail when the packaged
 /// templates change without a row here, because a project left on that
 /// version would otherwise read as customised to the next refresh.
-pub const STOCK: [(&str, u64); 94] = [
+pub const STOCK: [(&str, u64); 100] = [
     ("assets/blendshape", 0x3e996f0cd9278155), // 886fc6b725
     ("assets/blendshape", 0x479bbf9dd255f96a), // 072f370dc7
     ("assets/blendshape", 0x6b8a6905dffbc0c1), // f631e117d8
@@ -36,8 +36,10 @@ pub const STOCK: [(&str, u64); 94] = [
     ("assets/blendshape", 0xe76b5826a13378a4), // 9be7a5aafe
     ("assets/blendshape", 0xcd06531206b5db8d), // ad76a88205
     ("assets/blendshape", 0x539bb05f156be3a9), // 7b1e9882de
+    ("assets/blendshape", 0x5dd014bbec38a4b6), // 68d047deb7
     ("assets/groom", 0xea5631f706384b7b), // 182b03a573
     ("assets/groom", 0x95c82591b799ad3a), // 5b408566de
+    ("assets/groom", 0x9f379d30132e95aa), // 9354ce1601
     ("assets/lookdev", 0x1b3f29bea006e0a5), // a52ecf9e17
     ("assets/lookdev", 0x5760ea8fa74b4ae6), // 0445abd52a
     ("assets/lookdev", 0x7d544393eea3ca05), // 89fb4b2835
@@ -46,6 +48,7 @@ pub const STOCK: [(&str, u64); 94] = [
     ("assets/lookdev", 0xac8f53b1cff5a4c0), // 93fb8328c1
     ("assets/lookdev", 0xd75145e0ca70ff57), // 4e182c5f3e
     ("assets/lookdev", 0x430b49ac311cbca1), // 230f273409
+    ("assets/lookdev", 0x09a8d68dd71a31ab), // 1d39635b39
     ("assets/model", 0x34d8dae8309f9b10), // f53431d1cc
     ("assets/model", 0x744cd703d57a3f75), // 4f5f9cf926
     ("assets/model", 0x8901f1f6a57ede7d), // 8c37af36a9
@@ -65,6 +68,7 @@ pub const STOCK: [(&str, u64); 94] = [
     ("assets/rig", 0xcbdc5d35d52a6bb4), // ac08bc8141
     ("assets/rig", 0xe656c48d28c37e01), // ca34f0c471
     ("assets/rig", 0xf2911593e5966d02), // 50fc88e3c3
+    ("assets/rig", 0xf03a909166575c14), // 82a88f54d1
     ("shots/animation", 0x4f22585e6eed577c), // cb38ffa938
     ("shots/animation", 0x54003ebb35343d6b), // 865cc7cb4c
     ("shots/animation", 0x62d3572d1ccbe70c), // a57c0e9702
@@ -91,6 +95,8 @@ pub const STOCK: [(&str, u64); 94] = [
     ("shots/composite", 0x4ddb6f31f1714475), // c47e24bc75
     ("shots/composite", 0xb2789ca14695a633), // 5a3e6ef417
     ("shots/composite", 0x502dc2aabf9bb501), // 73daaac492
+    ("shots/composite", 0x1b1944477f44a45e), // 3b8ef3376f
+    ("shots/composite", 0x2ffd159d91a51522), // a8f58297ac
     ("shots/crowd", 0x6179daa29cda4014), // 7367b2fb66
     ("shots/crowd", 0xa48d835191483bd7), // 9bfdf0b4b7
     ("shots/crowd", 0xfc0906730461684f), // 8cb06b64b7

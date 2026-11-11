@@ -7,10 +7,12 @@ from tumblepipe.pipe import comp
 from tumblepipe.pipe.houdini.cops import import_render, light_mix, export_comp
 
 # The comp is built from the shot's channels: per channel an import_render
-# (its finished render) into a light_mix, the columns over-merged back to
-# front into one export_comp (the merged comp). Explicit positions from
+# (its finished render) into a light_mix, the rows over-merged back to
+# front into one export_comp (the merged comp). The stream runs left to
+# right, one row per channel. Explicit positions from
 # pipe.comp.template_layout: nothing here calls layoutChildren(). A Multi
-# repeats the set per member, along x, each import pinned to its member.
+# repeats the set per member, each member in its own rows, top to bottom,
+# each import pinned to its member; only the first member has the notes.
 
 NOTE_TEXT_COLOR = hou.Color((0.8, 0.8, 0.8))
 NOTE_COLOR = hou.Color((0.0, 0.0, 0.0))
@@ -27,9 +29,8 @@ def _sticky_note(parent, note):
     return sticky
 
 
-def _build(copnet, shot_uri: Uri, suffix: str = '', x: float = 0.0, pin: bool = False):
-    """One shot's comp; returns the layout's width."""
-    layout = comp.template_layout(list_channels(shot_uri), suffix, x)
+def _build(copnet, shot_uri: Uri, layout, pin: bool = False):
+    """One shot's comp, placed as ``layout`` (a pipe.comp.Layout) says."""
     nodes = dict()
     for name, channel in layout.imports.items():
         node = import_render.create(copnet, name)
@@ -69,23 +70,24 @@ def _build(copnet, shot_uri: Uri, suffix: str = '', x: float = 0.0, pin: bool = 
         except Exception:
             pass
     export_node.refresh_warning()
-    return layout.width
 
 
 def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     copnet = scene_node.createNode('copnet', 'comp')
-    _build(copnet, entity_uri)
+    _build(copnet, entity_uri, comp.template_layout(list_channels(entity_uri)))
 
 
 def _create_group(scene_node, group_uri: Uri, department_name: str):
     group = get_group(group_uri)
     if group is None: return
     copnet = scene_node.createNode('copnet', 'comp')
-    x = 0.0
-    for member_uri in group.members:
-        member_name = '_'.join(member_uri.segments[1:])
-        width = _build(copnet, member_uri, suffix=f'_{member_name}', x=x, pin=True)
-        x += width + comp.MEMBER_GAP
+    members = list(group.members)
+    layouts = comp.multi_layout([
+        (f"_{'_'.join(member_uri.segments[1:])}", list_channels(member_uri))
+        for member_uri in members
+    ])
+    for member_uri, layout in zip(members, layouts):
+        _build(copnet, member_uri, layout, pin=True)
 
 
 def create(scene_node, entity_uri: Uri, department_name: str):

@@ -98,6 +98,55 @@ pub fn submenus(takes: &[Take], shown: usize, of_kind: impl Fn(Kind) -> Option<u
     ]
 }
 
+/// What a take key steps through (#47): the shown stream's versions (Up /
+/// Down), the departments of the shown kind (Ctrl+Up / Down), or playblast
+/// and render (Shift+Up / Down), the keys the old playlist player had.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TakeAxis {
+    Version,
+    Department,
+    Source,
+}
+
+/// The take a take key moves to from `shown`, `delta` steps along `axis`,
+/// and whether it pins: a version step pins that version (as a Version row
+/// does); a department or source step follows that stream's newest (as
+/// their rows do). Versions run oldest to newest, so +1 is newer;
+/// departments and sources run in playlist order. None at either end, or
+/// when there is nothing to step to. `of_kind` is as for [`submenus`].
+pub fn step(takes: &[Take], shown: usize, axis: TakeAxis, delta: i8, of_kind: impl Fn(Kind) -> Option<usize>) -> Option<(usize, bool)> {
+    let current = takes.get(shown)?;
+    let neighbour = |len: usize, at: usize| at.checked_add_signed(isize::from(delta)).filter(|&j| j < len && j != at);
+    match axis {
+        TakeAxis::Version => {
+            let same: Vec<usize> = (0..takes.len()).filter(|&t| takes[t].stream() == current.stream()).collect();
+            let at = same.iter().position(|&t| t == shown)?;
+            neighbour(same.len(), at).map(|j| (same[j], true))
+        }
+        TakeAxis::Department => {
+            let mut streams: Vec<Stream> = Vec::new();
+            for take in takes.iter().filter(|t| t.kind() == current.kind()) {
+                if !streams.contains(&take.stream()) {
+                    streams.push(take.stream());
+                }
+            }
+            let at = streams.iter().position(|&s| s == current.stream())?;
+            let to = streams[neighbour(streams.len(), at)?];
+            (0..takes.len()).rev().find(|&t| takes[t].stream() == to).map(|t| (t, false))
+        }
+        TakeAxis::Source => {
+            let mut kinds: Vec<Kind> = Vec::new();
+            for take in takes {
+                if !kinds.contains(&take.kind()) {
+                    kinds.push(take.kind());
+                }
+            }
+            let at = kinds.iter().position(|&k| k == current.kind())?;
+            of_kind(kinds[neighbour(kinds.len(), at)?]).map(|t| (t, false))
+        }
+    }
+}
+
 /// The word a menu uses for a take's kind.
 pub fn kind_word(kind: Kind) -> &'static str {
     match kind {
@@ -230,6 +279,43 @@ mod tests {
                 }
             }
             prop_assert_eq!(rule(None, true), Rule::best());
+        }
+
+        /// A take key goes where the menu would (#47): a version step to
+        /// the next newer or older take of the shown stream, pinned; a
+        /// department step to the neighbouring Department row's take; a
+        /// source step to the neighbouring Source row's take, neither
+        /// pinned. Stepping back undoes a step; nothing past either end.
+        #[test]
+        fn a_take_key_steps_to_the_menus_neighbour(
+            takes in prop::collection::vec(arb_take(), 1..30),
+            at in any::<prop::sample::Index>(),
+            axis in prop_oneof![Just(TakeAxis::Version), Just(TakeAxis::Department), Just(TakeAxis::Source)],
+            delta in prop_oneof![Just(-1i8), Just(1i8)],
+        ) {
+            let shown = at.index(takes.len());
+            let menu = submenus(&takes, shown, last_of(&takes));
+            // The menu's rows in step order: versions oldest first, the
+            // rest as listed.
+            let (rows, pins): (Vec<usize>, bool) = match axis {
+                TakeAxis::Version => (menu[2].rows.iter().rev().map(|&(t, _)| t).collect(), true),
+                TakeAxis::Department => (menu[1].rows.iter().map(|&(t, _)| t).collect(), false),
+                TakeAxis::Source => (menu[0].rows.iter().map(|&(t, _)| t).collect(), false),
+            };
+            let same_row = |t: usize| match axis {
+                TakeAxis::Version => t == shown,
+                TakeAxis::Department => takes[t].stream() == takes[shown].stream(),
+                TakeAxis::Source => takes[t].kind() == takes[shown].kind(),
+            };
+            let i = rows.iter().position(|&t| same_row(t)).expect("the shown row");
+            let expected = i.checked_add_signed(isize::from(delta)).and_then(|j| rows.get(j).copied());
+            let got = step(&takes, shown, axis, delta, last_of(&takes));
+            prop_assert_eq!(got, expected.map(|t| (t, pins)));
+            if axis == TakeAxis::Version
+                && let Some((to, _)) = got
+            {
+                prop_assert_eq!(step(&takes, to, axis, -delta, last_of(&takes)), Some((shown, true)));
+            }
         }
     }
 }

@@ -227,7 +227,7 @@ FIELDS: tuple[Field, ...] = (
     Field('pb_motion_blur', 'playblast', 'Motion blur',
           prop='playblast.motion_blur', default=False, kind='bool'),
     Field('pb_dof', 'playblast', 'Depth of field', prop='playblast.dof',
-          default=False, kind='bool'),
+          default=True, kind='bool'),
     Field('pb_blur_samples', 'playblast', 'Blur samples',
           prop='playblast.blur_samples', default=16, kind='int'),
 
@@ -657,6 +657,84 @@ def channel_intersection(properties_list: Sequence[dict]) -> list[str]:
         shared = {DEFAULT_CHANNEL}
     # Ordered by the union so the menu and the seed agree on order.
     return [n for n in channel_union(properties_list) if n in shared]
+
+
+#: A preselected channel meaning every channel (``pipe.comp.ALL_CHANNELS``,
+#: an import_render reading all of them). A local copy, as DEFAULT_CHANNEL.
+ALL_CHANNELS = '*'
+
+
+def opened_channels(
+    names: Sequence[str], wanted: Sequence[str] | None, seed: Sequence[str],
+) -> list[str]:
+    """The channels the menu opens checked with when the opener named some.
+
+    ``names`` is the menu (:func:`channel_union`), ``seed`` what it checks
+    otherwise (:func:`channel_intersection`). ``wanted`` comes from the
+    opener (th::import_render's Render button: its Channel). ``*`` checks
+    every channel; otherwise the wanted ones the menu lists, in menu order.
+    None, or nothing of it in the menu (a channel the shot no longer
+    defines), falls back to ``seed``: a stale pick never opens the menu on
+    nothing.
+    """
+    if not wanted:
+        return list(seed)
+    if ALL_CHANNELS in wanted:
+        return list(names)
+    picked = [name for name in names if name in set(wanted)]
+    return picked or list(seed)
+
+
+# ── what ⟨from scene⟩ means ───────────────────────────────
+
+#: What a scene value no layer authors shows as: the renderer's own default.
+RENDERER_DEFAULT_TEXT = 'Karma default'
+
+
+def scene_value_text(value: Any, kind: str) -> str:
+    """One scene value as the dialog shows it: ``on``/``off`` for a bool
+    field, the number for an int one, :data:`RENDERER_DEFAULT_TEXT` for
+    None (nothing authors it)."""
+    if value is None:
+        return RENDERER_DEFAULT_TEXT
+    if kind == 'bool':
+        return 'on' if value else 'off'
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value)
+
+
+def scene_placeholder(values: Sequence[Any], kind: str) -> str | None:
+    """What an unpinned override field shows for the scene's values.
+
+    ``values`` holds one scene value per entity being submitted (None:
+    nothing authors it). ``from scene: 128`` when they agree;
+    ``varies: 64–256`` when numbers differ (``, Karma default`` added when
+    some entity authors none); otherwise ``varies:`` and the distinct
+    values in first-seen order. None when there is nothing to show yet
+    (no entity read), so the caller keeps its plain ``⟨from scene⟩``.
+    """
+    if not values:
+        return None
+    texts: list[str] = []
+    for value in values:
+        text = scene_value_text(value, kind)
+        if text not in texts:
+            texts.append(text)
+    if len(texts) == 1:
+        return f'from scene: {texts[0]}'
+    numbers = [
+        v for v in values
+        if v is not None and isinstance(v, (int, float)) and not isinstance(v, bool)
+    ]
+    if kind == 'int' and numbers and len(numbers) == len([v for v in values if v is not None]):
+        low = scene_value_text(min(numbers), kind)
+        high = scene_value_text(max(numbers), kind)
+        text = f'varies: {low}–{high}' if low != high else f'varies: {low}'
+        if any(v is None for v in values):
+            text += f', {RENDERER_DEFAULT_TEXT}'
+        return text
+    return 'varies: ' + ', '.join(texts)
 
 
 def entity_warnings(

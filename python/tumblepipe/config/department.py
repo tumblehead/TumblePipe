@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 
 from tumblepipe.api import api
+from tumblepipe.naming import WINDOWS_RESERVED
 from tumblepipe.util.uri import Uri
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,12 @@ def validate_name(name: str):
         raise ValueError(
             f"'{name}' is reserved for a pipeline pseudo-department "
             f"({', '.join(sorted(RESERVED_NAMES))})"
+        )
+    if name.lower() in WINDOWS_RESERVED:
+        # A department is a folder in every workspace and export path.
+        raise ValueError(
+            f"'{name}' is a device name Windows reserves "
+            "(CON, PRN, AUX, NUL, COM0-9, LPT0-9)"
         )
 
 
@@ -136,6 +143,31 @@ def reorder_departments(context: str, names: list[str]):
 def remove_department(context: str, name: str):
     department_uri = DEPARTMENTS_URI / context / name
     api.config.remove_entity(department_uri)
+
+# The flags a department carries besides its name, in the order the pool
+# editor's form shows them; each has a set_<flag> writer below.
+FLAGS = ("independent", "publishable", "renderable", "generated", "enabled", "short")
+
+
+def flag_changes(live, wanted) -> dict:
+    """The flags *wanted* changes on *live* (any objects with :data:`FLAGS`).
+
+    The pool editor's Apply writes only these (#35): writing every flag of
+    every department pinned each schema default onto every department node
+    (``generated: false``, ``enabled: true``, ``short: null``), which made
+    the pool's diffs noisy though the data was right. An empty short and no
+    short are the same.
+    """
+    changes = {}
+    for flag in FLAGS:
+        value = getattr(wanted, flag)
+        current = getattr(live, flag)
+        if flag == "short":
+            value, current = value or None, current or None
+        if value != current:
+            changes[flag] = value
+    return changes
+
 
 def set_independent(context: str, name: str, independent: bool):
     department_uri = DEPARTMENTS_URI / context / name

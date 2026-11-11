@@ -458,6 +458,19 @@ class ImportRender(EntityNode):
             raise self._error(f'{path_str(path)} does not exist yet')
         hou.ui.showInFileBrowser(path_str(path))
 
+    def render_seed(self) -> comp.RenderSeed:
+        """What **Render** opens Farm Submit on: this shot, its channel and,
+        when not ``best``, its department as the cut (#68)."""
+        return comp.render_seed(
+            self.require_entity_uri(),
+            self.get_channel_name(),
+            self.get_department_setting(),
+        )
+
+    def open_farm_submit(self):
+        from tumblepipe.pipe.houdini.ui import farm_submit
+        farm_submit.open_grid(self.render_seed())
+
 
 # Each companion unpack, by the output it reads: (user data mark, name
 # suffix, offset from the import). Plain tuples: the module imports
@@ -676,6 +689,14 @@ def open_location(kwargs):
     node = ImportRender(kwargs['node'])
     with ns.node_errors_as_message('Open Location'):
         node.open_location()
+
+
+def render(kwargs):
+    """Render: open Farm Submit with this shot's Render ticked and this
+    import's channel checked, to render what it reads again."""
+    node = ImportRender(kwargs['node'])
+    with ns.node_errors_as_message('Render'):
+        node.open_farm_submit()
 
 
 def select_entity(kwargs):

@@ -150,6 +150,18 @@ def _note(entry: EditEntry) -> str:
     return ' · '.join(parts)
 
 
+MASTER_BADGE = 'MASTER'
+
+
+def badge_fields(is_master: bool, asset_fields) -> dict:
+    """The master edit's grid mark (#28): ``Asset.badge``, where the
+    installed TumbleTrove's ``Asset`` has that field (*asset_fields*, its
+    field names). An older one has no mark rather than a refused card."""
+    if is_master and 'badge' in asset_fields:
+        return {'badge': MASTER_BADGE}
+    return {}
+
+
 def card_fields(entry: EditEntry, catalog_id: str) -> dict:
     ref = entry.ref
     tags = {f'source:{catalog_id}', TYPE_TAG, f'project:{ref.project}', f'kind:{KIND}'}
@@ -163,6 +175,7 @@ def card_fields(entry: EditEntry, catalog_id: str) -> dict:
         catalog_id = catalog_id,
         kind = KIND,
         icon = ICON,
+        **badge_fields(entry.is_master, Asset.__dataclass_fields__),
         metadata = {
             'project': ref.project,
             'uri': str(ref.uri),

@@ -23,13 +23,17 @@ ocio-rs.workspace = true
 # Render Edit's frames, and its render.json.
 png = "0.18"
 serde_json.workspace = true
+# The board: how long ago a workfile was saved.
+chrono.workspace = true
 # Sound out. On by default; Linux builds need ALSA headers (libasound2-dev)
 # and the binary then links libasound.so.2.
 cpal = { version = "0.18", optional = true }
 
-# Native menus (Primer's `os` feature) on Windows and macOS only: on Linux
-# it would link GTK, which artists' machines would then need installed.
-[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+# The native menu bar (Primer's `os` feature) on macOS only, where it is the
+# global bar at the top of the screen. On Windows the native bar is a white
+# Win32 menu that ignores the theme, and on Linux it would link GTK; without
+# the feature Primer draws the menu inside the window in the player's theme.
+[target.'cfg(target_os = "macos")'.dependencies]
 primer = { workspace = true, features = ["os"] }
 
 [features]

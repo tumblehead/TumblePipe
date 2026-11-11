@@ -9,6 +9,13 @@ toggle writes ``Beauty`` as plane ``C``, and the render failed with beauty
 missing). Two vars of one AOV name render two planes of that name (Karma's
 Albedo toggle beside the project's ``albedo``), and husk keeps one of them.
 
+A cryptomatte var renders more than one plane (a preview ``X``, ranks
+``X00``, ``X01``, ... and its manifest in the header), which the farm keeps
+together only for a var named ``crypto*`` (``pipe.aovs.is_cryptomatte_aov``),
+so a cryptomatte var must be named so and nothing else may be. Karma's own
+Cryptomatte LOP names its plane in ``driver:parameters:aov:husk:name``
+rather than ``driver:parameters:aov:name``: either names the plane.
+
 The farm never repairs either: what renders is what the render department
 published. ``render_var_problems`` lists what is wrong, and
 ``check_render_vars`` refuses with the fix spelled out, at submit (collapse)
@@ -25,18 +32,27 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from tumblepipe.pipe.aovs import pipeline_aov_name
+from tumblepipe.pipe.aovs import (
+    CRYPTOMATTE_AOV_PREFIX,
+    is_cryptomatte_aov,
+    pipeline_aov_name,
+)
 
 if TYPE_CHECKING:
     from pxr import Sdf, Usd
 
 AOV_NAME_ATTR = 'driver:parameters:aov:name'
+HUSK_NAME_ATTR = 'driver:parameters:aov:husk:name'
+PLANE_NAME_ATTRS = (AOV_NAME_ATTR, HUSK_NAME_ATTR)
+CRYPTOMATTE_ATTR = 'driver:parameters:aov:karma:cryptomatte'
 
 FIX = (
     "Karma's own AOV toggles (on Karma Render Properties or Karma Render "
     "Settings) author vars like these: switch them off and tick the AOV on "
     "th::render_vars, which names the var and its plane alike, then publish "
-    "the render department again."
+    "the render department again. A cryptomatte (th::render_vars' "
+    "cryptoprimitives / cryptomaterials, or Karma's Cryptomatte LOP) must be named "
+    f"{CRYPTOMATTE_AOV_PREFIX}*, and only a cryptomatte may be."
 )
 
 
@@ -56,15 +72,59 @@ def _products(stage: Usd.Stage, settings_prim_path: str) -> list[Sdf.Path]:
             if prim.IsA(UsdRender.Product)]
 
 
-def plane_problem(var_path: str, plane) -> str | None:
+def plane_problem(var_path: str, plane, cryptomatte: bool = False) -> str | None:
     """What is wrong with a var at ``var_path`` writing plane ``plane``
-    (None: no plane name), or None. The farm reads planes case-blind."""
-    want = pipeline_aov_name(var_path.rsplit('/', 1)[-1])
+    (None: no plane name), a cryptomatte or not, or None. The farm reads
+    planes case-blind."""
+    name = var_path.rsplit('/', 1)[-1]
+    want = pipeline_aov_name(name)
+    if cryptomatte and not is_cryptomatte_aov(name):
+        return (f'{var_path} is a cryptomatte, which the farm keeps whole only '
+                f'when its name starts with {CRYPTOMATTE_AOV_PREFIX!r}')
+    if not cryptomatte and is_cryptomatte_aov(name):
+        return (f'{var_path} is named like a cryptomatte but is not one '
+                f'({CRYPTOMATTE_ATTR} is off)')
     if not plane:
         return f'{var_path} names no plane ({AOV_NAME_ATTR}); the farm reads {want!r}'
     if str(plane).lower() != want:
         return f'{var_path} writes plane {plane!r}; the farm reads {want!r}'
     return None
+
+
+def _value(prim, name):
+    attr = prim.GetAttribute(name)
+    return attr.Get() if attr and attr.HasValue() else None
+
+
+def var_planes(prim) -> list:
+    """The plane names a RenderVar prim gives (``aov:name``, then
+    ``aov:husk:name``), those it sets. Only an authored ``aov:husk:name``
+    counts: HuskRenderVarAPI's schema falls back to ``$OS`` on every Karma
+    var, which names nothing (hython 22.0.429)."""
+    planes = [_value(prim, AOV_NAME_ATTR)]
+    husk = prim.GetAttribute(HUSK_NAME_ATTR)
+    if husk and husk.HasAuthoredValue():
+        planes.append(husk.Get())
+    return [plane for plane in planes if plane]
+
+
+def is_cryptomatte_var(prim) -> bool:
+    """Whether Karma renders the RenderVar prim as a cryptomatte."""
+    return bool(_value(prim, CRYPTOMATTE_ATTR))
+
+
+def var_problems(prim) -> list[str]:
+    """What is wrong with a RenderVar prim's planes (each it names must be
+    its own), one line each."""
+    path = str(prim.GetPath())
+    cryptomatte = is_cryptomatte_var(prim)
+    planes = var_planes(prim) or [None]
+    problems = []
+    for plane in planes:
+        problem = plane_problem(path, plane, cryptomatte)
+        if problem is not None and problem not in problems:
+            problems.append(problem)
+    return problems
 
 
 def twin_problems(var_paths) -> list[str]:
@@ -93,11 +153,9 @@ def render_var_problems(stage: Usd.Stage, settings_prim_path: str) -> list[str]:
             prim = stage.GetPrimAtPath(target)
             if not prim:
                 continue
-            attr = prim.GetAttribute(AOV_NAME_ATTR)
-            plane = attr.Get() if attr and attr.HasValue() else None
-            problem = plane_problem(str(target), plane)
-            if problem is not None:
-                problems.append(f'{product_path}: {problem}')
+            problems.extend(
+                f'{product_path}: {problem}' for problem in var_problems(prim)
+            )
         problems.extend(f'{product_path}: {twin}' for twin in twin_problems(targets))
     return problems
 

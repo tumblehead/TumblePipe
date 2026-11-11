@@ -362,6 +362,9 @@ class ManagerWindow(QWidget):
         self._reports: list = []
         # Job context.json files by job id ({} when unreadable), and those being read.
         self._contexts: dict[str, dict] = {}
+        # Why a farm job failed (rows.job_failure_text), for its tasks
+        # Deadline failed with it (#46); None while being read.
+        self._job_failures: dict[str, str | None] = {}
         self._contexts_loading: set[str] = set()
         self._detail_layout: list | None = None
         self._detail_items: list[tuple[QTreeWidgetItem, rows.Detail]] = []
@@ -535,10 +538,12 @@ class ManagerWindow(QWidget):
         tree.setItemDelegateForColumn(PROGRESS, ProgressDelegate(tree))
         header = tree.header()
         header.setSectionResizeMode(NAME, QHeaderView.Stretch)
-        for column, width in ((WHERE_COL, 100), (STATUS, 90), (PROGRESS, 140), (TASKS, 70),
-                              (ERRORS, 60), (USER, 110), (SUBMITTED, 100)):
-            header.setSectionResizeMode(column, QHeaderView.Interactive)
-            tree.setColumnWidth(column, width)
+        # The short columns fit their text, whatever the font (#46: fixed
+        # widths clipped "completed" and "Today 14:03" at 1600 px).
+        for column in (WHERE_COL, STATUS, TASKS, ERRORS, USER, SUBMITTED):
+            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(PROGRESS, QHeaderView.Interactive)
+        tree.setColumnWidth(PROGRESS, 140)
         header.setStretchLastSection(False)
         tree.itemSelectionChanged.connect(self._on_job_selection)
         tree.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -761,6 +766,13 @@ class ManagerWindow(QWidget):
             else:
                 self._say(text)
             self._refresh_farm()
+        elif kind == 'run_here':
+            self._confirm_run_here(result)
+        elif kind == 'job_failure':
+            self._job_failures[key[1]] = rows.job_failure_text(result)
+            job = self._current_job
+            if job is not None and job.id == key[1]:
+                self._show_tasks(self._tasks)
         elif kind == 'job_context':
             self._contexts_loading.discard(key[1])
             self._contexts[key[1]] = result
@@ -775,6 +787,16 @@ class ManagerWindow(QWidget):
 
     def _on_future_failed(self, key: tuple, error: Exception) -> None:
         kind = key[0]
+        if kind == 'run_here':
+            self._say('Run on this machine: not possible', error=True)
+            QMessageBox.warning(self, 'Farm Manager', f'It cannot run on this machine:\n\n{error}')
+            return
+        if kind == 'job_failure':
+            self._job_failures[key[1]] = f"failed with its job (its errors could not be read: {error})"
+            job = self._current_job
+            if job is not None and job.id == key[1]:
+                self._show_tasks(self._tasks)
+            return
         if kind == 'job_context':
             self._contexts_loading.discard(key[1])
             self._contexts[key[1]] = {}
@@ -912,15 +934,19 @@ class ManagerWindow(QWidget):
         item.setToolTip(NAME, f'{row.name}\n{row.id}')
         submitted = _when(row.submitted)
         item.setText(SUBMITTED, '' if submitted == batch_submitted else submitted)
+        item.setToolTip(SUBMITTED, row.submitted)
 
     def _fill_batch_item(self, item: QTreeWidgetItem, jobs: list[rows.JobRow]) -> str:
         """The batch row; returns its Submitted text for its jobs to compare with."""
-        status = rows.batch_status([row.status for row in jobs])
+        statuses = [row.status for row in jobs]
+        status = rows.batch_status(statuses)
         done = sum(row.done for row in jobs)
         total = sum(row.total for row in jobs)
         progress = sum(row.progress * row.total for row in jobs) / total if total else 0.0
         errors = sum(row.errors for row in jobs)
         self._fill_state(item, status, progress, f'{done}/{total}', errors)
+        item.setText(STATUS, rows.batch_status_text(statuses))
+        item.setToolTip(STATUS, rows.batch_status_text(statuses))
         bold = item.font(NAME)
         bold.setBold(True)
         item.setFont(NAME, bold)
@@ -928,8 +954,10 @@ class ManagerWindow(QWidget):
         item.setToolTip(NAME, jobs[0].batch)
         item.setText(WHERE_COL, WHERE[jobs[0].source])
         item.setText(USER, jobs[0].user)
-        submitted = _when(min(row.submitted for row in jobs))
+        first_submitted = min(row.submitted for row in jobs)
+        submitted = _when(first_submitted)
         item.setText(SUBMITTED, submitted)
+        item.setToolTip(SUBMITTED, first_submitted)
         return submitted
 
     def _fill_state(self, item: QTreeWidgetItem, status: str, progress: float,
@@ -947,12 +975,14 @@ class ManagerWindow(QWidget):
             item.setForeground(NAME, QColor(DANGER))
         colour = QColor(status_colour(status))
         item.setText(STATUS, status)
+        item.setToolTip(STATUS, status)
         item.setForeground(STATUS, colour)
         item.setText(PROGRESS, f'{progress:.0f}%')
         item.setData(PROGRESS, PROGRESS_ROLE, progress)
         item.setData(PROGRESS, FINISHED_ROLE, finished)
         item.setForeground(PROGRESS, colour)
         item.setText(TASKS, tasks)
+        item.setToolTip(TASKS, f'{tasks} tasks done')
         item.setText(ERRORS, str(errors) if errors else '')
         item.setForeground(ERRORS, QColor(WARNING))
 
@@ -1025,6 +1055,18 @@ class ManagerWindow(QWidget):
         from datetime import datetime
         now = datetime.now()
         self._tasks = tasks
+        job = self._current_job
+        job_status = job.status if job is not None else ''
+        if job is not None and job_status != queue.FAILED:
+            # Requeued: a reason read before would be stale when it fails again.
+            self._job_failures.pop(job.id, None)
+        if (
+            job is not None and job.source != rows.LOCAL
+            and job.id not in self._job_failures
+            and any(rows.failed_with_job(t, job_status) for t in tasks)
+        ):
+            self._job_failures[job.id] = None
+            self._submit(('job_failure', job.id), _fetch_job_errors, job.id)
         tree = self._task_tree
         wanted = {task.index for task in tasks}
         for index in [i for i in self._task_items if i not in wanted]:
@@ -1063,6 +1105,8 @@ class ManagerWindow(QWidget):
             item.setForeground(T_TIME, QColor(STATUS_COLOURS[queue.RENDERING]) if rendering else text)
             item.setToolTip(T_TIME, (f'Rendering for {took}' if rendering else f'Rendered in {took}') if took else '')
             error = task.error or (f'{task.errors} error report(s)' if task.errors else '')
+            if not error and job is not None and rows.failed_with_job(task, job_status):
+                error = self._job_failures.get(job.id) or "failed with its job (reading its job's errors…)"
             item.setText(T_ERROR, error.splitlines()[0] if error else '')
             item.setToolTip(T_ERROR, error)
             # Red for the task that failed, amber for errors a task got past.
@@ -1200,6 +1244,10 @@ class ManagerWindow(QWidget):
         job = self._current_job
         names = {row.id: row.name for row in self._rows_by_id.values()}
         sections = rows.job_details(job, self._tasks, self._contexts.get(job.id), names)
+        failure = self._job_failures.get(job.id)
+        if failure and job.status == queue.FAILED:
+            # Its own section, first: the reason a task shows no error (#46).
+            sections.insert(0, ('Why it failed', [rows.Detail('Reason', failure)]))
         stats = self._machine_stats
         if job.source == rows.LOCAL and job.status == queue.RENDERING and stats is not None:
             load = [rows.Detail(key, value, tip) for key, value, tip in machine.stat_rows(stats)]
@@ -1317,6 +1365,15 @@ class ManagerWindow(QWidget):
             return
         menu = QMenu(self)
         self._add_job_actions(menu)
+        if len(selected) == 1 and selected[0].source == rows.FARM:
+            from tumblepipe.farm.manager.run_here import RUNNABLE
+            action = menu.addAction('Run on this machine…', lambda: self._run_here(selected[0]))
+            action.setEnabled(selected[0].status in RUNNABLE)
+            action.setToolTip(
+                'Queue this job, and the jobs on the farm that wait on it, on '
+                'this machine with the same job files: nothing is exported '
+                'or rendered again.'
+            )
         menu.addSeparator()
         menu.addAction('Open job folder', self._on_open_job_dir).setEnabled(self._open_job_dir.isEnabled())
         menu.addAction('Open output folder', self._on_open_output).setEnabled(self._open_output.isEnabled())
@@ -1386,6 +1443,49 @@ class ManagerWindow(QWidget):
         if farm:
             ids = [row.id for row in farm]
             self._submit(('farm_control', command, len(ids)), _farm_control, command, ids)
+
+    def _run_here(self, row: rows.JobRow) -> None:
+        """Run on this machine (#50): plan off the GUI thread, then ask."""
+        self._say(f'Reading the farm for {row.name}…')
+        self._submit(('run_here', row.id), _plan_run_here, row.id)
+
+    def _confirm_run_here(self, the_plan) -> None:
+        from tumblepipe.farm.manager import run_here
+        names = '\n'.join(f'  {name}' for name in the_plan.names[:12])
+        more = f'\n  … and {len(the_plan.names) - 12} more' if len(the_plan.names) > 12 else ''
+        box = QMessageBox(self)
+        box.setWindowTitle('Farm Manager')
+        box.setIcon(QMessageBox.Question)
+        box.setText(
+            f'Run {_jobs(len(the_plan.names))} on this machine, with the job files '
+            f'already written?\n\n{names}{more}'
+        )
+        box.setInformativeText(
+            'The farm copies can be suspended, so nothing on the farm waits on '
+            'them or runs them twice (Resume brings them back).'
+        )
+        suspend = box.addButton('Run here, suspend the farm copies', QMessageBox.AcceptRole)
+        keep = box.addButton('Run here, leave the farm copies', QMessageBox.AcceptRole)
+        box.addButton(QMessageBox.Cancel)
+        box.setDefaultButton(suspend)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked not in (suspend, keep):
+            return
+        import platform
+        from tumblepipe.api import get_user_name
+        try:
+            document = run_here.batch_document(the_plan, get_user_name(), platform.node())
+            queue.add_batch(self._root, document)
+            runner.ensure_running(self._root)
+        except Exception as error:
+            QMessageBox.warning(self, 'Farm Manager', f'Could not queue it on this machine:\n\n{error}')
+            return
+        self._say(f'{_jobs(len(the_plan.names))} queued on this machine')
+        self._refresh_local()
+        if clicked is suspend:
+            ids = the_plan.ids
+            self._submit(('farm_control', 'suspend', len(ids)), _farm_control, 'suspend', ids)
 
     def _local_action(self, command: str, selected: list[rows.JobRow]) -> None:
         if command == queue.REMOVE:
@@ -1513,6 +1613,16 @@ def _fetch_farm_jobs():
 def _fetch_farm_tasks(job_id: str):
     from tumblepipe.farm.manager import deadline_jobs
     return deadline_jobs.fetch_tasks(job_id)
+
+
+def _plan_run_here(job_id: str):
+    from tumblepipe.farm.manager import deadline_jobs, run_here
+    return run_here.plan(deadline_jobs.fetch_job_docs(), job_id)
+
+
+def _fetch_job_errors(job_id: str):
+    from tumblepipe.farm.manager import deadline_jobs
+    return deadline_jobs.job_errors(job_id)
 
 
 def _fetch_reports(job_id: str, frames: str):

@@ -12,9 +12,9 @@ on the node, and nothing downstream rewrites it. Unknown AOVs count as data:
 an unnecessarily lossless colour pass costs disk, a lossy data pass costs a
 comp.
 
-It also names the mattes and distance ramps, which the farm's denoise
-publishes untouched and ``th::import_render`` carries as masks and mono
-passes in its cable.
+It also names the mattes, distance ramps and cryptomattes, which the farm's
+denoise publishes untouched and ``th::import_render`` carries in its cable
+(masks, mono passes, and a cryptomatte's rank planes).
 """
 
 COLOR_AOV_NAMES = frozenset({
@@ -66,11 +66,35 @@ def is_ramp_aov(aov_name: str) -> bool:
     return aov_name.lower().startswith(RAMP_AOV_PREFIX)
 
 
+# Cryptomattes: ID mattes a comp picks objects from. One var renders a
+# preview plane, rank planes `<name>00`, `<name>01`, ... and a manifest in the
+# EXR header, which the farm keeps together as one file per cryptomatte
+# (apps/exr.cryptomattes) and publishes untouched. Karma's own Cryptomatte
+# LOP names them CryptoPrimitives / CryptoMaterials; th::render_vars names
+# them cryptoprimitives / cryptomaterials.
+CRYPTOMATTE_AOV_PREFIX = 'crypto'
+
+
+def is_cryptomatte_aov(aov_name: str) -> bool:
+    """True for a ``crypto*`` cryptomatte."""
+    return aov_name.lower().startswith(CRYPTOMATTE_AOV_PREFIX)
+
+
 def pipeline_aov_name(render_var_name: str) -> str:
     """The name the pipeline knows a render var's AOV by: its prim name,
     lowercased. The export's ``aov_names``, the farm's output paths and its
     EXR split all use it, so the render's plane must carry it too."""
     return render_var_name.lower()
+
+
+def excluded_render_vars(var_names, aov_names) -> set:
+    """The render var prim names in ``var_names`` the farm prunes for a
+    submission keeping ``aov_names`` (pipeline names): those whose pipeline
+    name is not kept. A var named ``CryptoPrimitives`` is the AOV
+    ``cryptoprimitives``, kept when that is (2026-11-11: compared raw, every
+    var named with a capital was pruned)."""
+    kept = set(aov_names)
+    return {name for name in var_names if pipeline_aov_name(name) not in kept}
 
 
 def is_edit_aov(aov_name: str) -> bool:

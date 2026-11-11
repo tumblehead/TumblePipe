@@ -11,11 +11,13 @@ from tumblepipe.util.io import load_json
 from tumblepipe.pipe.houdini.render_stage import get_render_settings_script as _get_render_settings_script
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.pipe.houdini import playbar, prim_queries
+from tumblepipe.pipe.aovs import excluded_render_vars
 from tumblepipe.pipe.usd.stitch import (
     stitch_usd_directories,
     calculate_chunks,
     flatten_sidecar_directories,
 )
+from tumblepipe.pipe.usd.embedded_assets import localize_embedded_assets
 from tumblepipe.farm import worker
 from tumblepipe.farm.specs import export as export_spec
 from tumblepipe.farm.worker import error, headline
@@ -101,7 +103,7 @@ def main(
         aov_path.rsplit('/', 1)[1]: aov_path
         for aov_path in prim_queries.list_render_vars(root)
     }
-    excluded_aov_names = set(aov_paths.keys()) - included_aov_names
+    excluded_aov_names = excluded_render_vars(aov_paths, included_aov_names)
     prune_aovs_node = scene_node.createNode('prune', '__prune_aovs')
     prune_aovs_node.parm('primpattern1').set(
         ' '.join([
@@ -180,6 +182,14 @@ def main(
         return error(f'Failed to export USD stage: {output_path}')
 
     print(f'Successfully exported USD stage: {output_path}')
+
+    # Files embedded in HDAs (opdef:/oplib:) resolve in Houdini but not in
+    # husk: copy them beside the stage and point the layers at the copies.
+    written, failed = localize_embedded_assets(output_path.parent, hou.readBinaryFile)
+    for path, file_path in written.items():
+        print(f'Embedded file written: {path} -> {file_path}')
+    for path, reason in failed.items():
+        print(f'Warning: embedded file not readable, left as is: {path} ({reason})')
 
     # Done
     return 0

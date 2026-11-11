@@ -40,6 +40,56 @@ struct ThMeshView {
     float const* points_close;
     double const* transform_keys;
     uint32_t transform_key_count;
+    // One minus the surface's opacity, so a zeroed view is opaque: 0 opaque;
+    // between 0 and 1 see-through, blended over the opaque surfaces (lit, no
+    // depth written); 1 or more not drawn.
+    float transparency;
+    // The side of the triangles not drawn: 0 neither, 1 the back, 2 the
+    // front (counter-clockwise is the front, through each instance's
+    // transform; a mirroring one swaps them).
+    uint32_t cull;
+};
+
+// A basis curves or points prim (src/curves.rs): drawn as camera-facing
+// ribbons and discs the core makes for each frame, never thinner than a
+// pixel or two. Interpolations: 0 constant, 1 uniform, 2 varying, 3 vertex.
+struct ThCurvesView {
+    float const* points;        // point_count xyz, object space
+    uint32_t point_count;
+    int32_t const* curve_vertex_counts;  // curve_count; ignored for points
+    uint32_t curve_count;
+    uint32_t kind;              // 0 points, 1 linear curves, 2 cubic curves
+    uint32_t basis;             // cubic: 0 bezier, 1 bspline, 2 catmullRom
+    uint32_t wrap;              // 0 nonperiodic, 1 periodic, 2 pinned
+    float const* widths;        // optional, object space
+    uint32_t width_count;
+    uint32_t width_interp;
+    float const* colors;        // optional, linear rgb
+    uint32_t color_count;
+    uint32_t color_interp;
+    float base_color[3];
+    double const* transforms;   // transform_count x 16, as ThMeshView's
+    uint32_t transform_count;
+    float const* points_close;  // motion blur, optional
+    double const* transform_keys;
+    uint32_t transform_key_count;
+};
+
+// A UsdLux light as authored (src/lights.rs SceneLight): an enabled,
+// visible light sprim.
+struct ThLight {
+    double transform[16];       // light to world, USD row-vector layout
+    uint32_t kind;              // 0 distant, 1 sphere, 2 rect, 3 disk, 4 cylinder, 5 dome
+    uint32_t normalize;         // nonzero: inputs:normalize
+    uint32_t point;             // nonzero: a sphere light's treatAsPoint
+    float color[3];             // inputs:color, linear
+    float intensity;            // inputs:intensity x 2^inputs:exposure x inputs:diffuse
+    float temperature;          // inputs:colorTemperature (K) when enabled, else 0
+    float angle;                // distant, degrees
+    float radius;
+    float width;
+    float height;
+    float length;
 };
 
 struct ThFrame {
@@ -66,6 +116,11 @@ struct ThFrame {
                                 // camera's view axis, FLT_MAX where nothing is
                                 // drawn (Houdini's viewer, depthstyle linear);
                                 // 0: window depth in [0, 1], 1 for nothing
+    ThLight const* lights;      // light_count of them, may be null when 0
+    uint32_t light_count;
+    uint32_t lighting;          // 0: the scene's lights when it has any, else
+                                // the fixed camera rig; 1: the rig always
+                                // (th:lighting "headlight")
 };
 
 // 0 = ok, 1 = bad arguments, 2 = the core panicked. `cache` may be null; one
@@ -82,6 +137,13 @@ int32_t th_render_ids(ThFrame const* frame, ThMeshView const* meshes, uint32_t m
                       float* color, float* depth, int32_t* ids, uint32_t const* cancel,
                       ThCache const* cache);
 
+// th_render_ids with basis curves and points as well. In `ids`, curves
+// view j is mesh_count + j, its instance as a mesh's.
+int32_t th_render_scene(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_count,
+                        ThCurvesView const* curves, uint32_t curves_count,
+                        float* color, float* depth, int32_t* ids, uint32_t const* cancel,
+                        ThCache const* cache);
+
 // Triangles of a polygon mesh: Hydra's fan for a convex face, ear clipping
 // for a concave one (src/triangulate.rs). Per triangle, three `corners`
 // (positions in `indices`, where face-varying values are too) and its face.
@@ -93,6 +155,15 @@ uint32_t th_triangulate(float const* points, uint32_t point_count,
                         int32_t const* indices, uint32_t index_n,
                         int32_t const* holes, uint32_t hole_n, uint32_t left_handed,
                         uint32_t* corners, uint32_t* faces, uint32_t capacity);
+
+// The normals the core draws a mesh with when it has none of its own, one
+// xyz per triangle corner (9 * triangle_count floats): cusp normals for a
+// polygonal mesh, else smooth point normals at each corner (src/ffi.rs).
+// For a mesh drawn as one view per GeomSubset material: each view given the
+// whole mesh's normals meets the next without a crease. 0 ok, 1 null.
+int32_t th_mesh_normals(float const* points, uint32_t point_count,
+                        uint32_t const* triangles, uint32_t triangle_count, uint32_t polygonal,
+                        float* corner_normals);
 
 // One per render delegate; freed with it.
 ThCache* th_cache_create();

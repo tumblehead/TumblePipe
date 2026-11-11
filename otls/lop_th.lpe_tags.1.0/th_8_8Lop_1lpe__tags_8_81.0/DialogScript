@@ -18,10 +18,17 @@
         name    "status"
         label   "Status"
         type    string
-        default { [ "chs(\"validate/message\")" hscript-expr ] }
-        help    "Tags that no light in the stage carries. Each one silently costs its beauty_<tag> AOV."
+        default { [ "ifs(strcmp(chs(\"validate/message\"), \"\"), chs(\"validate/message\"), chs(\"generate_report\"))" hscript-expr ] }
+        help    "Tags that no light in the stage carries (each one silently costs its beauty_<tag> AOV); otherwise what Generate LPEs from scene last did."
         disablewhen "{ tags >= 0 }"
         hidewhen "{ status == \"\" }"
+    }
+    parm {
+        name    "generate_report"
+        label   "Generate Report"
+        type    string
+        invisible
+        default { "" }
     }
     parm {
         name    "generate_lpes"
@@ -61,7 +68,7 @@
             name    "primpattern#"
             label   "Lights"
             type    string
-            default { "`lopinputprims(\".\", 0)`" }
+            default { "" }
             disablewhen "{ enable# == 0 }"
             parmtag { "autoscope" "0000000000000000" }
             parmtag { "script_action" "import loputils\nloputils.selectPrimsInParm(kwargs, True)" }

@@ -86,6 +86,11 @@ def fetch_jobs() -> list[rows.JobRow]:
     return [rows.farm_job_row(doc) for doc in read('GetJobs') or []]
 
 
+def fetch_job_docs() -> list[dict]:
+    """Deadline's job documents, as ``GetJobs`` returns them (manager.run_here)."""
+    return read('GetJobs') or []
+
+
 def fetch_tasks(job_id: str) -> list[rows.TaskRow]:
     result = read('GetJobTasks', job_id) or {}
     return [rows.farm_task_row(doc) for doc in result.get('Tasks') or []]
@@ -162,6 +167,19 @@ def report_text(path: str) -> str:
     with _TEXTS_LOCK:
         _TEXTS[path] = text
     return text
+
+
+def job_errors(job_id: str, limit: int = 40) -> list[tuple[str, str]]:
+    """``(worker, first line)`` of the job's newest ``limit`` error reports."""
+    result = []
+    for kind, path in report_paths(job_id):
+        if kind != ERROR:
+            continue
+        if len(result) >= limit:
+            break
+        report = parse_report(kind, path, report_text(path))
+        result.append((report.worker, report.summary.splitlines()[0] if report.summary else ''))
+    return result
 
 
 def task_reports(job_id: str, frames: str | None, limit: int = 40) -> list[Report]:

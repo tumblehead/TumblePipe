@@ -102,8 +102,9 @@ def _new_name_problem(purpose: str, data: dict, path: list[str]) -> str:
         data = children[step]
         depth += 1
     for name in path[max(depth, 1):]:
-        if not naming.is_valid_entity_name(name):
-            return f"Name '{name}' may only use letters and digits"
+        problem = naming.entity_name_problem(name)
+        if problem:
+            return f"Name '{name}' {problem}"
     return ''
 
 

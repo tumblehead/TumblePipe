@@ -41,12 +41,14 @@ use th_edit::ops::{Op, Refused};
 use th_media::sound::Sound;
 use th_media::{ExrView, Frame, FrameKey, Media, Proxy};
 use th_pipe::Project;
+use th_pipe::desktop::{Desktop, Opened, Session};
 use th_pipe::edits::EditSources;
 use th_pipe::master::{self, Change};
 use th_pipe::{edit_files, media};
 use th_playlist::Take;
 
 use crate::audio::{Placed, Speaker};
+use crate::board::{self, Board};
 use crate::burnin::{self, Burnin};
 use crate::colour::{Colour, Lut};
 use crate::display::{Display, open_media, theme};
@@ -63,6 +65,10 @@ mod menu_bar;
 const BUFFER_BYTES: usize = 4 << 30;
 /// How often a changed, named edit is autosaved.
 const AUTOSAVE: Duration = Duration::from_secs(60);
+/// How often the board asks Desktop which workfiles a Houdini has open.
+const SESSIONS_EVERY: Duration = Duration::from_secs(3);
+/// Why a workfile cannot be opened from here.
+const NO_DESKTOP: &str = "Opening workfiles needs a newer TumbleTrove Desktop, with its Remote Control API on (Settings > General), and this editor started from it";
 /// The bins' width.
 const BINS: f32 = 260.0;
 
@@ -344,6 +350,8 @@ enum Dialog {
     SaveAs {
         name: String,
         note: String,
+        /// Save was pressed: an empty name says so under the field too.
+        tried: bool,
     },
     /// For the master edit, `changes` are the shot changes it offers;
     /// `problem` is why it cannot be published.
@@ -402,7 +410,19 @@ pub enum Message {
     /// A take for the menu's clips: by index of the menu clip's takes, or
     /// None for the best available.
     Take(ClipRef, Option<usize>, bool),
+    /// A take key (#47): step the selected clips (else the clip under the
+    /// playhead) along an axis of the take menu.
+    TakeStep(take_menu::TakeAxis, i8),
     Bins(Result<BinData, String>),
+    /// The middle of the window: 0 the cut (bins and viewer), 1 the board.
+    Mode(usize),
+    Board(Result<Board, String>),
+    PollSessions,
+    Sessions(Result<Vec<Session>, String>),
+    /// Open a shot's (URI) department workfile in Houdini.
+    OpenWorkfile(String, String),
+    /// The workfile's name, and what opening it did.
+    Opened(Result<(String, Opened), String>),
     BinTab(usize),
     BinPick(usize),
     /// Put the bin's pick at the playhead: inserted (rippling), or over what
@@ -471,6 +491,15 @@ pub struct Editor {
     bins: BinData,
     bin_tab: usize,
     bin_pick: Option<usize>,
+    /// 0 the cut, 1 the board.
+    mode: usize,
+    board: Option<Board>,
+    board_loading: bool,
+    /// The project's Houdini sessions, as Desktop last listed them.
+    sessions: Vec<Session>,
+    sessions_polling: bool,
+    /// The Desktop that started this editor; None when nothing links to one.
+    desktop: Option<Desktop>,
     dialog: Option<Dialog>,
     /// The last thing said (a refused op, a save), and whether it is an error.
     status: Option<(String, bool)>,
@@ -526,6 +555,12 @@ impl Editor {
             bins: BinData::default(),
             bin_tab: 0,
             bin_pick: None,
+            mode: 0,
+            board: None,
+            board_loading: false,
+            sessions: Vec::new(),
+            sessions_polling: false,
+            desktop: Desktop::from_env(),
             dialog,
             status: None,
             burnins: true,
@@ -546,6 +581,13 @@ impl Editor {
     /// Positions the playhead can stand on: the edit, and a second past it.
     fn length(&self) -> usize {
         self.doc.edit.length().max(0) as usize + self.fps() as usize
+    }
+
+    /// The cut's end: one past its last frame, where an Insert appends.
+    /// Go to End and a click past the last clip park here (#25: they landed
+    /// on the last frame, so an Insert split the last clip).
+    fn end(&self) -> usize {
+        self.doc.edit.length().max(0) as usize
     }
 
     fn entry_of(&self, source: &Source) -> Option<usize> {
@@ -884,6 +926,23 @@ impl Editor {
     /// department, kind and layer (newest) for other shots; or the best
     /// available for all. Only a Version row (`pin`) pins, and only on the
     /// clicked clip's shot; a source or department row follows the newest.
+    fn take_step(&mut self, axis: take_menu::TakeAxis, delta: i8) -> Command<Message> {
+        let Some(clip) = self.targets().into_iter().find(|&c| matches!(clip_source(&self.doc.edit, c), Some(Source::Shot { .. }))) else {
+            self.status = Some(("Select a shot's clip, or put the playhead over one".into(), true));
+            return Command::none();
+        };
+        let step = clip_source(&self.doc.edit, clip).and_then(|source| self.entry_of(source)).and_then(|i| {
+            let resolved = self.entries[i].resolved()?;
+            let takes = &resolved.takes;
+            let of_kind = |kind| takes.iter().rposition(|t| t.kind() == kind);
+            take_menu::step(takes, resolved.take?, axis, delta, of_kind)
+        });
+        match step {
+            Some((take, pin)) => self.change_take(clip, Some(take), pin),
+            None => Command::none(),
+        }
+    }
+
     fn change_take(&mut self, menu: ClipRef, take: Option<usize>, pin: bool) -> Command<Message> {
         let Some(Source::Shot { shot: menu_shot, .. }) = clip_source(&self.doc.edit, menu).cloned() else { return Command::none() };
         let picked: Option<Take> = take.and_then(|t| {
@@ -921,8 +980,20 @@ impl Editor {
             },
         };
         let track = self.targets().first().map(|c| c.track).filter(|t| t.kind == TrackKind::Video).map_or(0, |t| t.index);
+        let end = editing::put_end(video.as_ref(), audio.as_ref());
         let ops = editing::put(&self.doc.edit, video, audio, track, overlay);
-        self.edit(&ops)
+        self.edit_then_park(&ops, end)
+    }
+
+    /// [`Self::edit`], then, when it was done, the playhead to `end` (the
+    /// end of what an Insert or Overlay put, so the next one appends).
+    fn edit_then_park(&mut self, ops: &[Op<Source>], end: Option<EditFrame>) -> Command<Message> {
+        let command = self.edit(ops);
+        let done = !ops.is_empty() && self.status.is_none();
+        if let Some(end) = end.filter(|_| done) {
+            self.move_to(end.max(0) as usize);
+        }
+        command
     }
 
     fn rows(&self) -> Vec<RowView> {
@@ -1003,19 +1074,35 @@ impl Editor {
                     menu = menu.submenu(submenu.label, rows);
                 }
             }
+            if let Source::Shot { shot, .. } = source
+                && let Some(board) = &self.board
+            {
+                let workfiles = board.workfiles_of(shot);
+                if !workfiles.is_empty() {
+                    let rows = workfiles.into_iter().fold(MenuList::new(), |rows, (department, workfile)| {
+                        let (uri, department) = (shot.clone(), department.to_owned());
+                        rows.item(format!("{department}  {}", workfile.version), move || {
+                            Message::OpenWorkfile(uri.clone(), department.clone())
+                        })
+                    });
+                    menu = menu.submenu("Open in Houdini", rows);
+                }
+            }
         }
         menu.into()
     }
 
     /// The edit's name, then, at the right, the view's switches and the
     /// timecode: the one large thing, in the accent, because it is where the
-    /// playhead is now. The actions are the menu bar's (native on Windows and
-    /// macOS, drawn in the window on Linux) and their keys.
+    /// playhead is now. The actions are the menu bar's (the global one on
+    /// macOS, drawn in the window on Windows and Linux) and their keys.
     fn toolbar(&self) -> Element<Message> {
+        let modes = segmented(Id::new("modes"), self.mode).push("Cut").push("Board").on_select(Message::Mode).focusable(false);
         let mut tools = row()
             .spacing(24.0)
             .align_y(Vertical::Center)
             .push(text(self.doc.title()).font_size(15.0).color(look::text()))
+            .push(modes)
             .push(space(Length::Fill, Length::Shrink));
         if let Origin::Working { name, .. } = &self.doc.origin {
             let is_master = self.bins.master.as_deref() == Some(name.as_str());
@@ -1115,6 +1202,83 @@ impl Editor {
             .into()
     }
 
+    /// The board: a row per shot under its sequence's name, a column per
+    /// shot department, each cell the department's latest workfile. A cell
+    /// opens its workfile in Houdini.
+    fn board_view(&self) -> Element<Message> {
+        const NAME: f32 = 150.0;
+        const CELL: f32 = 138.0;
+        let quiet = |w: String| text(w).font_size(12.0).color(look::quiet());
+        let Some(board) = &self.board else {
+            let words = if self.board_loading { "Reading the shots' workfiles…" } else { "The board has not been read" };
+            return container(quiet(words.into()))
+                .padding(Padding::from([14.0, 14.0]))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .background(look::panel())
+                .into();
+        };
+        let now = chrono::Local::now().naive_local();
+        let mut header = row().spacing(4.0).push(space(Length::fixed(NAME), Length::Shrink));
+        for department in &board.departments {
+            header = header.push(container(quiet(department.clone())).width(Length::fixed(CELL)).padding(Padding::from([0.0, 8.0])));
+        }
+        let mut grid = column().spacing(4.0);
+        for (index, shot) in board.shots.iter().enumerate() {
+            if index == 0 || board.shots[index - 1].sequence != shot.sequence {
+                grid =
+                    grid.push(container(quiet(shot.sequence.clone())).padding(Padding { top: 12.0, right: 0.0, bottom: 2.0, left: 0.0 }));
+            }
+            let mut line = row()
+                .spacing(4.0)
+                .align_y(Vertical::Center)
+                .push(container(text(shot.name.clone()).font_size(13.0).color(look::text())).width(Length::fixed(NAME)));
+            for (department, cell) in board.departments.iter().zip(&shot.cells) {
+                let id = Id::new(format!("board {} {department}", shot.uri));
+                let cell: Element<Message> = match cell {
+                    Some(workfile) => {
+                        let (detail, open) = board::detail(workfile, &self.sessions, now);
+                        let words = column()
+                            .spacing(1.0)
+                            .push(text(workfile.version.clone()).font_size(13.0).color(look::text()))
+                            .push(text(detail).font_size(11.0).color(if open { look::now() } else { look::quiet() }));
+                        let (uri, department) = (shot.uri.clone(), department.clone());
+                        look::button(id, words)
+                            .padding(Padding::from([4.0, 8.0]))
+                            .width(Length::fixed(CELL))
+                            .on_press(move || Message::OpenWorkfile(uri.clone(), department.clone()))
+                            .focusable(false)
+                            .into()
+                    }
+                    None => container(text("–").font_size(13.0).color(look::quiet()))
+                        .padding(Padding::from([4.0, 8.0]))
+                        .width(Length::fixed(CELL))
+                        .into(),
+                };
+                line = line.push(cell);
+            }
+            grid = grid.push(line);
+        }
+        let mut page = column().spacing(8.0).padding(Padding::from([10.0, 14.0]));
+        if self.desktop.is_none() {
+            page = page.push(text(NO_DESKTOP).font_size(12.0).color(look::caution()));
+        }
+        if board.shots.is_empty() {
+            page = page.push(quiet("The project has no shots yet".into()));
+        }
+        let refresh = look::button(Id::new("board refresh"), text("Refresh").font_size(12.0))
+            .padding(Padding::from([3.0, 8.0]))
+            .on_press(|| Message::Mode(1))
+            .focusable(false);
+        let foot = row().spacing(12.0).align_y(Vertical::Center).push(refresh).push(quiet(if self.board_loading {
+            "Reading…".into()
+        } else {
+            "A cell opens the workfile in Houdini, or brings the Houdini that has it open to the front".into()
+        }));
+        page = page.push(header).push(scrollable(Id::new("board"), grid).width(Length::Fill).height(Length::Fill)).push(foot);
+        container(page.height(Length::Fill)).background(look::panel()).width(Length::Fill).height(Length::Fill).into()
+    }
+
     fn display_controls(&self) -> Element<Message> {
         let displays = self.display.colour.displays();
         let views = self.display.colour.views(&self.display.display);
@@ -1170,12 +1334,12 @@ impl Editor {
                 Err(e) => Dialog::OpenEdit { edits: Vec::new(), problem: Some(e) },
             },
             OpenDialog::Save => match &self.doc.origin {
-                Origin::Untitled | Origin::Published { .. } => Dialog::SaveAs { name: String::new(), note: String::new() },
+                Origin::Untitled | Origin::Published { .. } => Dialog::SaveAs { name: String::new(), note: String::new(), tried: false },
                 Origin::Working { name, version } => {
                     Dialog::Save { note: String::new(), warning: self.newer_version(name, version.as_deref()) }
                 }
             },
-            OpenDialog::SaveAs => Dialog::SaveAs { name: String::new(), note: String::new() },
+            OpenDialog::SaveAs => Dialog::SaveAs { name: String::new(), note: String::new(), tried: false },
             OpenDialog::Publish => self.publish_dialog(),
             OpenDialog::Import => Dialog::Import { path: String::new(), item: String::new(), note: String::new() },
             OpenDialog::NewShot => {
@@ -1219,7 +1383,7 @@ impl Editor {
             })?,
             None => Vec::new(),
         };
-        let changes = master::changes(project, &uses, &previous)?;
+        let changes = master::changes(project, &uses, &previous, i64::from(self.fps()))?;
         Ok(changes
             .into_iter()
             .map(|change| ChangeRow { ticked: change.ticked_by_default(), flag: self.coverage(project, &change), change })
@@ -1232,7 +1396,7 @@ impl Editor {
         let (shot, first, last) = match change {
             Change::Create { .. } => return Some("new: nothing made for it yet".into()),
             Change::Range { shot, first, last, .. } => (shot, *first, *last),
-            Change::Retire { .. } => return None,
+            Change::Fps { .. } | Change::Retire { .. } => return None,
         };
         let roll = th_pipe::timeline::get_frame_range(&project.config, shot).ok().flatten().map_or((0, 0), |r| (r.start_roll, r.end_roll));
         let (want_first, want_last) = (first - roll.0, last + roll.1);
@@ -1252,8 +1416,8 @@ impl Editor {
     fn new_shot(&mut self, sequence: &str, name: &str, frames: &str) -> Command<Message> {
         let (sequence, name) = (sequence.trim(), name.trim());
         for (what, value) in [("sequence", sequence), ("shot", name)] {
-            if !th_pipe::naming::is_valid_entity_name(value) {
-                self.status = Some((format!("{value:?}: a {what}'s name is letters and digits"), true));
+            if let Some(problem) = th_pipe::naming::entity_name_problem(value) {
+                self.status = Some((format!("{value:?}: a {what}'s name {problem}"), true));
                 return Command::none();
             }
         }
@@ -1270,8 +1434,10 @@ impl Editor {
         let first = self.bins.shot_start(sequence);
         let planned = BinShot { uri, sequence: sequence.into(), name: name.into(), first, last: first + frames - 1 };
         let track = self.targets().first().map(|c| c.track).filter(|t| t.kind == TrackKind::Video).map_or(0, |t| t.index);
-        let ops = editing::put(&self.doc.edit, Some(planned.clip(self.position as EditFrame)), None, track, false);
-        self.edit(&ops)
+        let clip = planned.clip(self.position as EditFrame);
+        let end = editing::put_end(Some(&clip), None);
+        let ops = editing::put(&self.doc.edit, Some(clip), None, track, false);
+        self.edit_then_park(&ops, end)
     }
 
     /// Make this edit the master (or, `on` false, leave the project without
@@ -1388,6 +1554,46 @@ impl Editor {
         Command::perform_blocking(move || load_bins(&paths, fps), Message::Bins)
     }
 
+    /// Read the board again (every shot's workfiles), unless a read is
+    /// under way.
+    fn refresh_board(&mut self) -> Command<Message> {
+        if self.board_loading {
+            return Command::none();
+        }
+        self.board_loading = true;
+        let paths = self.paths.clone();
+        let shots = self.bins.shots.clone();
+        Command::perform_blocking(move || board::load(&paths.open()?, &shots), Message::Board)
+    }
+
+    /// Ask Desktop for the project's Houdini sessions, unless it is being
+    /// asked already or there is no link to it.
+    fn poll_sessions(&mut self) -> Command<Message> {
+        let Some(desktop) = self.desktop.clone() else { return Command::none() };
+        if self.sessions_polling {
+            return Command::none();
+        }
+        self.sessions_polling = true;
+        Command::perform_blocking(move || desktop.sessions(), Message::Sessions)
+    }
+
+    /// Open `shot`'s `department` workfile in Houdini: Desktop raises the
+    /// session that has it open, else launches one on it.
+    fn open_workfile(&mut self, shot: &str, department: &str) -> Command<Message> {
+        let Some(workfile) = self.board.as_ref().and_then(|b| b.workfile(shot, department)) else {
+            self.status = Some((format!("{department} has no workfile yet: it is made in Houdini, from the Asset Browser"), true));
+            return Command::none();
+        };
+        let Some(desktop) = self.desktop.clone() else {
+            self.status = Some((NO_DESKTOP.into(), true));
+            return Command::none();
+        };
+        let path = workfile.path.clone();
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        self.status = Some((format!("Opening {name}…"), false));
+        Command::perform_blocking(move || desktop.open_workfile(&path).map(|opened| (name, opened)), Message::Opened)
+    }
+
     fn autosave(&mut self) {
         let Origin::Working { name, .. } = &self.doc.origin else { return };
         if !self.doc.dirty() {
@@ -1480,13 +1686,18 @@ fn dialog_element(dialog: &Dialog, title: &str) -> Element<Message> {
             page = page.push(label("Note (what changed)")).push(field("note", note, Field::Note, "optional"));
             buttons = buttons.push(choice("ok", "Save", Message::Confirm)).push(choice("cancel", "Cancel", Message::Dismiss));
         }
-        Dialog::SaveAs { name, note } => {
-            page = page
-                .push(heading("Save as a new edit"))
-                .push(label("Name (letters and digits)"))
-                .push(field("name", name, Field::Name, "Main"))
-                .push(label("Note"))
-                .push(field("note", note, Field::Note, "optional"));
+        Dialog::SaveAs { name, note, tried } => {
+            page = page.push(heading("Save as a new edit")).push(label("Name (letters and digits)")).push(field(
+                "name",
+                name,
+                Field::Name,
+                "Main",
+            ));
+            // Under the field as it is typed, not in the status bar (#25).
+            if let Some(problem) = editing::edit_name_problem(name).filter(|_| *tried || !name.trim().is_empty()) {
+                page = page.push(text(problem).font_size(12.0).color(look::error()));
+            }
+            page = page.push(label("Note")).push(field("note", note, Field::Note, "optional"));
             buttons = buttons.push(choice("ok", "Save", Message::Confirm)).push(choice("cancel", "Cancel", Message::Dismiss));
         }
         Dialog::Publish { note, changes, problem } => {
@@ -1604,15 +1815,16 @@ impl Application for Editor {
                 }
             }
             Message::Seek(position) => {
+                // A click past the last clip, or Go to End: the cut's end.
                 self.set_playing(false);
-                self.move_to(position);
+                self.move_to(position.min(self.end()));
             }
             Message::TogglePlay => self.set_playing(!self.playing),
             Message::Select(clip, additive, position) => match clip {
                 None => {
                     self.selection.clear();
                     self.set_playing(false);
-                    self.move_to(position);
+                    self.move_to(position.min(self.end()));
                 }
                 Some(clip) if additive => {
                     if !self.selection.remove(&clip) {
@@ -1693,10 +1905,46 @@ impl Application for Editor {
             Message::Resolved(index, result) => self.resolved(index, result),
             Message::ClipMenu(clip) => self.menu_clip = Some(clip),
             Message::Take(clip, take, pin) => return self.change_take(clip, take, pin),
+            Message::TakeStep(axis, delta) => return self.take_step(axis, delta),
             Message::Bins(result) => match result {
-                Ok(bins) => self.bins = bins,
+                Ok(bins) => {
+                    self.bins = bins;
+                    return self.refresh_board();
+                }
                 Err(e) => self.status = Some((format!("The bins: {e}"), true)),
             },
+            Message::Mode(mode) => {
+                self.mode = mode;
+                if mode == 1 {
+                    self.set_playing(false);
+                    return Command::batch([self.refresh_bins(), self.poll_sessions()]);
+                }
+            }
+            Message::Board(result) => {
+                self.board_loading = false;
+                match result {
+                    Ok(board) => self.board = Some(board),
+                    Err(e) => self.status = Some((format!("The board: {e}"), true)),
+                }
+            }
+            Message::PollSessions => return self.poll_sessions(),
+            Message::Sessions(result) => {
+                self.sessions_polling = false;
+                // A Desktop that stops answering is said once, by the Open
+                // that needs it, not every few seconds here.
+                if let Ok(sessions) = result {
+                    self.sessions = sessions;
+                }
+            }
+            Message::OpenWorkfile(shot, department) => return self.open_workfile(&shot, &department),
+            Message::Opened(result) => {
+                self.status = Some(match result {
+                    Ok((name, Opened::Raised(_))) => (format!("{name} is open in Houdini: brought to the front"), false),
+                    Ok((name, Opened::Launched(_))) => (format!("Houdini is starting on {name}"), false),
+                    Err(e) => (format!("Not opened: {e}"), true),
+                });
+                return self.poll_sessions();
+            }
             Message::BinTab(tab) => {
                 self.bin_tab = tab;
                 self.bin_pick = None;
@@ -1734,13 +1982,15 @@ impl Application for Editor {
                         return self.save(name, note, false);
                     }
                 }
-                Some(Dialog::SaveAs { name, note }) => {
-                    let name = name.trim().to_owned();
-                    if !th_pipe::naming::is_valid_entity_name(&name) {
-                        self.status = Some((format!("{name:?}: an edit's name is letters and digits"), true));
+                Some(Dialog::SaveAs { name, note, .. }) => {
+                    if editing::edit_name_problem(&name).is_some() {
+                        // The dialog stays and says why, under the field.
+                        if let Some(Dialog::SaveAs { tried, .. }) = &mut self.dialog {
+                            *tried = true;
+                        }
                         return Command::none();
                     }
-                    return self.save(name, note, true);
+                    return self.save(name.trim().to_owned(), note, true);
                 }
                 Some(Dialog::Publish { problem: Some(_), .. }) => {}
                 Some(Dialog::Publish { note, changes, problem: None }) => {
@@ -1750,8 +2000,8 @@ impl Application for Editor {
                 Some(Dialog::NewShot { sequence, name, frames }) => return self.new_shot(&sequence, &name, &frames),
                 Some(Dialog::Import { path, item, note }) => {
                     let item = item.trim().to_owned();
-                    if !th_pipe::naming::is_valid_entity_name(&item) {
-                        self.status = Some((format!("{item:?}: an item's name is letters and digits"), true));
+                    if let Some(problem) = th_pipe::naming::entity_name_problem(&item) {
+                        self.status = Some((format!("{item:?}: an item's name {problem}"), true));
                         return Command::none();
                     }
                     return self.import(path, item, note);
@@ -1927,6 +2177,11 @@ impl Application for Editor {
             futures::future::pending::<()>().await;
         });
         let autosave = time::every(AUTOSAVE, || Message::Autosave);
+        // The board shows which workfiles a Houdini has open: ask while it
+        // is on screen (a local call), not while cutting.
+        if self.mode == 1 && self.desktop.is_some() {
+            return Subscription::batch([engine_events, autosave, time::every(SESSIONS_EVERY, || Message::PollSessions)]);
+        }
         if !self.playing {
             return Subscription::batch([engine_events, autosave]);
         }
@@ -1948,11 +2203,16 @@ impl Application for Editor {
             layers = layers
                 .push(container(words).width(Length::Fill).height(Length::Fill).align_x(Horizontal::Center).align_y(Vertical::Center));
         }
-        let middle = row()
-            .push(self.bins_view())
-            .push(column().push(layers).push(self.display_controls()).width(Length::Fill).height(Length::Fill))
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let middle: Element<Message> = if self.mode == 1 {
+            self.board_view()
+        } else {
+            row()
+                .push(self.bins_view())
+                .push(column().push(layers).push(self.display_controls()).width(Length::Fill).height(Length::Fill))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        };
         let mut page = column().push(self.toolbar()).push(middle).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);
         if let Some((words, error)) = &self.status {
             let colour = if *error { look::error() } else { look::text() };

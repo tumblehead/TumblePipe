@@ -268,6 +268,7 @@ def render_config(
     copy_to_edit: bool,
     task_keys: list[str],
     composite: dict | None = None,
+    cut_range: list[int] | None = None,
 ) -> dict:
     """The ``render/job.py`` config for a direct render of collapsed inputs.
 
@@ -292,6 +293,7 @@ def render_config(
             step_size=1,
             batch_size=batch_size,
             copy_to_edit=copy_to_edit,
+            **({} if cut_range is None else dict(cut_range=list(cut_range))),
         ),
         tasks={
             task_key: dict(

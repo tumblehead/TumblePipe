@@ -29,7 +29,7 @@ from tumblepipe.pipe import comp
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.farm_node import FarmNode
-from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
+from tumblepipe.pipe.houdini.frame_range import FrameRangeNode, FrameRangeSource
 
 TYPE_NAME = 'export_comp'
 
@@ -139,6 +139,9 @@ class ShotSubmit:
     exports: list = field(default_factory=list)     # [{node_path, layer}]
     plan: dict = field(default_factory=dict)        # comp.freeze_plan
     unread: list = field(default_factory=list)
+    # The frames every frozen read covers (comp.covered_range), None when
+    # unknown: what From Context comps (#43).
+    covered: tuple | None = None
 
 
 def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
@@ -178,16 +181,35 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
             )
         submit.plan = comp.freeze_plan(states)
         try:
-            comp.provenance(submit.plan)
+            reads = comp.provenance(submit.plan)
         except comp.CompError as error:
             raise submit.settings._error(str(error)) from None
+        submit.covered = _covered(submit.shot_uri, reads)
     return list(submits.values())
+
+
+def _covered(shot_uri: Uri, reads: dict) -> tuple | None:
+    from tumblepipe.pipe.paths import get_render_context
+    renders = get_render_context(shot_uri, purpose = 'render').renders
+    return comp.covered_range(comp.read_ranges(renders, reads).values())
+
+
+def comp_range(submit: ShotSubmit) -> tuple[int, int]:
+    """The frames ``submit`` comps: with Frame Range From Context, the
+    frames every read covers (the renders' ranges, which can be shorter
+    than the shot's with its roll), else the shot's; any other source as
+    the node says."""
+    node = submit.settings
+    if node.get_frame_range_source() == FrameRangeSource.ENTITY and submit.covered is not None:
+        return submit.covered
+    render_range = node.get_frame_range().full_range()
+    return render_range.first_frame, render_range.last_frame
 
 
 def job_config(submit: ShotSubmit, department: str, input_path: str) -> dict:
     """The composite pipeline's config for one ShotSubmit."""
     node = submit.settings
-    render_range = node.get_frame_range().full_range()
+    first_frame, last_frame = comp_range(submit)
     tasks = dict(full_composite = dict(channel_name = FULL_DISCORD_CHANNEL))
     if node.get_preview_frames():
         tasks['partial_composite'] = dict(channel_name = PREVIEW_DISCORD_CHANNEL)
@@ -199,8 +221,8 @@ def job_config(submit: ShotSubmit, department: str, input_path: str) -> dict:
             priority = node.get_priority(),
             pool_name = node.get_pool_name(),
             input_path = input_path,
-            first_frame = render_range.first_frame,
-            last_frame = render_range.last_frame,
+            first_frame = first_frame,
+            last_frame = last_frame,
             step_size = node.get_step_size(),
             batch_size = node.get_batch_size(),
             copy_to_edit = node.get_copy_to_edit(),
@@ -211,18 +233,46 @@ def job_config(submit: ShotSubmit, department: str, input_path: str) -> dict:
     )
 
 
+def outside_renders(submits: list[ShotSubmit]) -> list[str]:
+    """A line per shot whose comp frames reach past what its reads
+    rendered: those frames comp over empty input (#43)."""
+    lines = []
+    for submit in submits:
+        if submit.covered is None: continue
+        first, last = comp_range(submit)
+        if first < submit.covered[0] or last > submit.covered[1]:
+            lines.append(
+                f'{submit.shot_uri}: the comp is {first}-{last}, the renders '
+                f'it reads cover {submit.covered[0]}-{submit.covered[1]}'
+            )
+    return lines
+
+
 def _confirm_unread(submits: list[ShotSubmit]) -> bool:
     lines = [
         f'{submit.shot_uri}: {", ".join(submit.unread)}'
         for submit in submits if submit.unread
     ]
-    if not lines: return True
+    outside = outside_renders(submits)
+    if not lines and not outside: return True
     if not hou.isUIAvailable(): return True
+    message = ''
+    if lines:
+        message += (
+            'These shot channels are not read by any th::import_render in '
+            'the comp, so they will not be in it:\n\n' + '\n'.join(lines) + '\n\n'
+            'Add an import_render column for each (or make the next version '
+            'from the template), or submit without them.'
+        )
+    if outside:
+        message += ('\n\n' if message else '') + (
+            'These comps reach past the frames their renders cover; those '
+            'frames comp over empty (transparent black) input:\n\n'
+            + '\n'.join(outside) + '\n\n'
+            'Set Frame Range to From Context to comp what was rendered.'
+        )
     choice = hou.ui.displayMessage(
-        'These shot channels are not read by any th::import_render in the '
-        'comp, so they will not be in it:\n\n' + '\n'.join(lines) + '\n\n'
-        'Add an import_render column for each (or make the next version '
-        'from the template), or submit without them.',
+        message,
         buttons = ('Submit anyway', 'Cancel'),
         default_choice = 1, close_choice = 1,
         severity = hou.severityType.Warning,

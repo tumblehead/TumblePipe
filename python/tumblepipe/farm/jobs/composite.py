@@ -7,6 +7,11 @@ import json
 from tumblepipe.farm.deadline import farm_job, run_batched
 from tumblepipe.farm.specs import composite as composite_spec
 
+#: A comp frame's time limit. Deadline counts it per frame (frame
+#: timeouts), and so does the local runner (``queue.task_timeout``), so
+#: one task over a whole range (This machine, #44) gets it for each frame.
+FRAME_MINUTES = 20
+
 
 def build(config, paths, staging_path):
     """The composite job for ``config`` (``specs.composite.is_valid_config``)."""
@@ -25,7 +30,7 @@ def build(config, paths, staging_path):
         pool = config['pool_name'],
         group = 'houdini',
         priority = config['priority'],
-        max_minutes = 20,
+        max_minutes = FRAME_MINUTES,
         paths = paths
     )
     run_batched(

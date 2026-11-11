@@ -34,7 +34,7 @@ stamps **both** (`exr.ACESCG_ATTRIB_ARGS`):
   look). We stamp the AP1 primaries + D60 white point.
 
 The stamp is applied at every publish boundary — `split_subimages` (raw
-render), `exr.encode` (denoise; the mattes and ramps it passes through are
+render), `exr.encode` (denoise; the mattes, ramps and cryptomattes it passes through are
 byte copies that keep the split's stamp), slapcomp's composite writes, and the composite
 worker's copy of every comp frame to the network — never in the render/COP
 nodes themselves, so frames Karma or COPs write directly (an interactive
@@ -63,8 +63,11 @@ files keeps it, and the denoise publish re-encodes each denoised AOV with
 the compression its render input had. Mattes (`objid_*`, `holdout_*`) and
 distance ramps (`ramp_*`) are not denoised at all: OIDN would soften their
 edges, so the denoise publishes them as byte copies of the render input —
-same pixels, same compression. To change a pass's compression, change the
-menu and re-publish the render department.
+same pixels, same compression. Cryptomattes (`crypto*`) are byte copies
+too, and always lossless: the split writes one with its own compression
+when that is lossless and ZIP otherwise, since a lossy codec scrambles its
+ids. To change a pass's compression, change the menu and re-publish the
+render department.
 
 ## Alpha lives in the beauty
 
@@ -109,25 +112,39 @@ DWAB, so every node that adds a data AOV sets its compression.
 
 A shot's comp is built by the **composite** department template: **New
 from Template** on a composite workfile makes a `comp` copnet in `/stage`
-with one column per shot channel, in the shot's channel order:
+that reads left to right, like the COP stream it is: one row per shot
+channel, in the shot's channel order, top to bottom:
 
 ```
-import_render (default)   import_render (chars)   ...
-        |                         |
-   light_mix                 light_mix
-        \________ over __________/
-                   |
-              export_comp   (Layer: comp, display flag on)
+import_render (default) -> light_mix ----------> \
+import_render (chars)   -> light_mix ----------> over -> \
+import_render (fx)      -> light_mix ------------------> over -> export_comp
+                                      (grades)                   (Layer: comp,
+                                                                  display flag on)
 ```
 
-The over chain stacks the channels back to front, so the last channel is on
-top (the render chain's slapcomp stacks the same way). Sticky notes mark
-where to grade a channel (after its light mix), where mattes come from (the
-import's `aovs` output) and where whole-frame work goes (above the export).
-The channels come from the shot config when the workfile is made, so a comp
-can be built before anything is rendered: each import just says it has no
-complete render yet until one lands. In a Multi's composite workfile the
-set repeats per member, side by side, each import pinned to its member.
+Each row is a channel's import then its light mix; the column after the
+mixes is left free for grading a channel. The over chain stacks the channels
+back to front, one over per column, each on its front channel's row, so the
+last channel is on top (the render chain's slapcomp stacks the same way) and
+every wire runs rightwards into the export. Sticky notes above the first row
+mark where mattes come from (the import's `aovs` output) and where to grade a
+channel (after its light mix); one above the export marks where whole-frame
+work goes (before the export). The channels come from the shot config when
+the workfile is made, so a comp can be built before anything is rendered:
+each import just says it has no complete render yet until one lands. In a
+Multi's composite workfile the set repeats per member, each member in its own
+rows, members top to bottom, each import pinned to its member; the sticky
+notes are on the first member's rows only.
+
+The layout is made once, when the workfile is created from the template;
+nothing moves the nodes of an existing comp. A project keeps its own copy of
+the composite template; config layout v26 brings the rows-per-member layout
+to existing projects (run at launch, or `tt_prepare --migrate`), replacing a
+stock copy of the template. A customised copy is left as it is and named in
+the migration's output; it keeps building the earlier layout, whose stream
+reads left to right too, but with a Multi's members side by side, each with
+its notes, until it is reconciled with the packaged template.
 
 Three COP nodes make the comp; their parms are in
 [Compositing nodes](nodes/comp.md). `th::import_scene` adds the shot itself:
@@ -144,13 +161,19 @@ read; one written before that is judged by when it was submitted. A
 concrete department reads only that one. **Version** `latest` is
 its newest complete version, or a `v####` pins one (a pin needs a concrete
 department). It reads **one** department's version at a time: the denoise
-publishes every AOV the comp reads, mattes and ramps as byte copies.
+publishes every AOV the comp reads, mattes, ramps and cryptomattes as byte copies.
 
 Outputs: `rgba`, the beauty; `aovs`, a cable of the other AOVs the
 comp reads, each field named after its AOV: the `beauty_<tag>` light
 groups, `objid_*` / `holdout_*` mattes, `ramp_*`, `albedo`, `normal`,
-`depth`, `uv`, `position` (never a beauty); and `beauties`, a cable of each
-channel's beauty named after the channel.
+`depth`, `uv`, `position`, and each cryptomatte's rank planes (never a
+beauty); and `beauties`, a cable of each channel's beauty named after the
+channel.
+A cryptomatte rides the cable as its rank planes, one RGBA field each named
+after the plane (`cryptomaterials00`, `cryptomaterials01`, ...; the preview
+plane is left out). Wire them in rank order into a Cryptomatte COP's
+`crypto1`, `crypto2`, ... inputs: the manifest travels with the planes, so
+**Populate Selection from Manifest** lists the prims or materials to pick.
 Cable Unpack the `aovs` output to use a matte, or tick **AOV Outputs**: the
 node keeps a Cable Unpack beside it with one output per AOV, in step with
 the cable. Inside, one File COP per AOV, the cable's into a cable pack; they
@@ -178,6 +201,13 @@ one channel (a puzzle matte; re-render it with `th::mattes`).
 Imports follow new renders like every other import: opening the workfile
 re-resolves each one on `latest` (`scene_imports.REFRESH_SPECS`), and
 **Update** does it by hand.
+
+**Render** renders what the import reads again: it opens Farm Submit with
+the shot's Render ticked, the import's channel checked (all of them for
+`*`) and, with a concrete Department, that department as **Up to**
+(`pipe.comp.render_seed`; issue #68). Submit from there as usual; once the
+render lands, the import on `latest` picks it up on **Update** or the next
+open.
 
 ### `th::light_mix`
 
@@ -207,7 +237,7 @@ An `export_comp` on Layer `comp` checks that every shot channel is read by
 an import. A channel no import reads (one added to the shot after the
 workfile was made) shows as a warning on the node, *shot channel `fx` is
 not read by this comp*, and Submit lists it and asks before submitting.
-Nothing edits the graph for you: add a column, or make the next version
+Nothing edits the graph for you: add a row, or make the next version
 from the template.
 
 ## Rendering without a farm
@@ -240,7 +270,9 @@ Submit asks for) runs the same jobs here instead, in the background (see
   name Karma gives the AOV's subimage). `beauty` is required, and must
   be RGBA — its A is the comp's alpha (an RGB beauty is refused);
   `beauty_*` light groups, `objid_*`, `holdout_*`, `ramp_*`, `albedo`, `normal`,
-  `depth`, `uv` and `position` are picked up when present. Use the next
+  `depth`, `uv`, `position` and `crypto*` cryptomattes (one file each: the
+  rank planes `<name>NN` and the manifest in its header) are picked up when
+  present. Use the next
   free `v####` for each new render.
 
 ## The shot camera in comp
@@ -343,9 +375,9 @@ each keeping the name it was written with:
   Houdini's own flipbook (OpenGL ROP), *viewport-accurate*: what you see is
   what you get, hair, curves and volumes included, with its own Shading
   Mode and Lighting. **Motion Blur**, **Depth of Field** and **Blur
-  Samples** (off, off, 16) work with both, from the camera's shutter and
+  Samples** (off, on, 16) work with both, from the camera's shutter and
   lens: TumbleView's blurs, or the flipbook's own. The SOP
-  `th::playblast` always renders through Houdini GL. With the viewport
+  `th::playblast` always renders with TumbleView. With the viewport
   renderer, **Render Layers** also writes a movie per render layer (the
   shot's channels, prims picked by its `channel_prims`), which the sequence
   player stacks: see
@@ -389,10 +421,27 @@ licence for it as for Karma (a worker that has none fails "No licenses could
 be found"), and HideAndReek/010's 6.8 million triangles draw in about 0.34 s a frame
 at 1280 × 720 with eight samples a pixel, the post pass below included. It
 ignores Light, Samples and Materials.
-It draws meshes only, so hair and other curves are left out, and husk does
-not run the stage's Houdini procedurals (hair grooms) for it: they would
-make nothing it draws, and running them before every frame cost
-HideAndReek/010 about 3 s a frame.
+It draws meshes, basis curves (camera-facing ribbons of their width, at
+least a pixel across, so curves with no width show as lines) and points
+(dots at least two pixels across); volumes are left out, and husk does
+not run the stage's Houdini procedurals (hair grooms) for it: running them
+before every frame cost HideAndReek/010 about 3 s a frame, so a groom's
+hair is left out too.
+See-through surfaces show as in the viewport: a mesh whose material has an
+opacity under 1 (UsdPreviewSurface `opacity`, and its `opacityThreshold`
+cut-out; MaterialX/Karma standard surface `opacity`, or `transmission`
+taken as see-through, opacity 1 − transmission; OpenPBR `geometry_opacity`
+and `transmission_weight`), or with no such material a `displayOpacity`
+primvar under 1, is blended over what is behind it, so a character's
+corneas and a window's glass are clear. One opacity per mesh: a varying
+`displayOpacity` is drawn at its mean, and an opacity wired to a texture
+is not read (the surface stays opaque). Details in [Development →
+hdThPlayblast: see-through surfaces](development.md#hdthplayblast-see-through-surfaces).
+Materials bound to some of a mesh's faces (GeomSubsets: a character's eyes,
+teeth and skin in one mesh) show as in the viewport, each face its own
+material's colour, texture and opacity, the rest the mesh's material, with
+no seam in the shading where they meet; see [Development → hdThPlayblast:
+materials on faces](development.md#hdthplayblast-materials-on-faces-geomsubsets).
 
 A subdivision surface (a mesh whose subdivision scheme is Catmull-Clark or
 Loop, which is also what USD makes of a mesh that names no scheme) is drawn
@@ -424,17 +473,27 @@ grows past a pixel on screen. Then it shades as the dialog's **Shading** says:
 
 | Shading | Look |
 |---|---|
-| `lit` (default) | the scene's colours under a key, fill and rim light and a sky/ground ambient, all fixed to the camera so no shot comes out dark |
+| `lit` (default) | the scene's colours under the scene's own lights, or, in a scene without lights, a key, fill and rim light and a sky/ground ambient, all fixed to the camera so no shot comes out dark |
 | `clay` | the same lights on plain grey |
 | `albedo` | the scene's colours, unlit |
 | `occlusion` | white, darkened only by the ambient occlusion |
 
-Every option has the occlusion. There are no shadows, and the scene's own
-lights are not used: it is close to the in-session node's look, not
-identical. Outside the farm (husk by hand), the stage's RenderSettings can
-set `th:shading` (`lit`, `clay`, `albedo`, `occlusion`), `th:ao` (bool) and
+Every option has the occlusion. The scene's lights light it as Houdini's
+GL viewport does with scene lighting: distant, sphere, rect, disk and
+cylinder lights by their intensity, exposure, colour, colour temperature
+and normalize (sphere, rect, disk and cylinder lights as points at their
+centre, falling off with the square of the distance; rect and disk lights
+only on the side they face), dome lights as an even ambient (their
+textures ignored), and as bright as Karma renders them. There are no
+shadows, light linking, light filters or shaping. Houdini's own default
+headlight (the one husk adds to a scene without lights) does not count.
+Outside the farm (husk by hand), the stage's RenderSettings can
+set `th:shading` (`lit`, `clay`, `albedo`, `occlusion`), `th:lighting`
+(`scene`, the default, or `headlight` for the fixed camera lights even in
+a scene with lights), `th:ao` (bool) and
 `th:samples` (samples a pixel: 1, 2, 4, 8 or 16, 1 for no anti-aliasing);
-unset, the delegate reads `TH_PLAYBLAST_SHADING`, `TH_PLAYBLAST_AO`
+unset, the delegate reads `TH_PLAYBLAST_SHADING`, `TH_PLAYBLAST_LIGHTING`,
+`TH_PLAYBLAST_AO`
 (`0`/`off` turns the occlusion off) and `TH_PLAYBLAST_SAMPLES`; the farm
 worker passes the dialog's shading that way and leaves the samples at the
 default, eight. On HideAndReek/010 one sample a pixel takes about 0.14 s a frame,
@@ -464,7 +523,9 @@ only on a few edge pixels (0.04% of 010's). It stays opt-in until it has run
 on the farm.
 A worker whose GPU fails falls back to the CPU and says so in the task
 log. `TH_PLAYBLAST_COMPARE=1` draws every mesh both ways and logs the ones
-that differ, a check for a new GPU or driver. `TH_PLAYBLAST_TIMING=1` logs
+that differ, a check for a new GPU or driver. `TH_PLAYBLAST_LIGHTS=1`
+lists the lights each frame is lit by, as the delegate read them (`off` for
+an invisible one and for Houdini's default headlight). `TH_PLAYBLAST_TIMING=1` logs
 where each frame's time goes: the drawing and post pass step by step (on
 the GPU: the meshes and megabytes sent and kept on the card, the drawing,
 the post pass and the read-back), then how long Hydra spent syncing meshes,
@@ -493,7 +554,7 @@ tool's default **Set Pivot** tumble orbits the point under the mouse, as with
 Storm. Guides and proxies show by default, as the viewer's other GL
 renderers do.
 
-The settings above (`th:shading`, `th:samples`, `th:ao`, the blurs) apply
+The settings above (`th:shading`, `th:lighting`, `th:samples`, `th:ao`, the blurs) apply
 there too, read again for every frame. `th:interactive` (bool, or
 `TH_PLAYBLAST_INTERACTIVE`) turns the background drawing on or off; unset,
 it is on in Houdini's viewer and off elsewhere, so husk and the farm render
@@ -501,9 +562,10 @@ every frame to the end as before. `th:alpha` defaults to on with it.
 
 ### Motion blur and depth of field
 
-TumbleView can blur, both off by default; the dialog's **Blur**
-row turns them on (Motion blur, Depth of field, Blur samples, 16 by
-default). Off, the picture is the one above, to the byte. **Motion blur**
+TumbleView can blur: motion blur is off by default, depth of field on
+(as in Houdini's viewport; a camera with no f-stop or focus distance stays
+sharp). The dialog's **Blur** row sets them (Motion blur, Depth of field,
+Blur samples, 16 by default). Off, the picture is the one above, to the byte. **Motion blur**
 spreads what moves over the render camera's shutter (its Shutter Open and
 Close, e.g. −0.25..0.25 frames): deforming meshes by their points (or their
 velocities when they have no points over time), moving transforms and

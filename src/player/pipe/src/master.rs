@@ -6,9 +6,14 @@
 //! its cut makes, each the user ticks or not ([`changes`]): planned shots
 //! to **create**, shots whose **range** changes to the frames their clip
 //! shows, and shots the previous published master used that this one does
-//! not, offered to **retire**. [`apply`] writes one: a range change pins only
-//! `frame_start` and `frame_end`, on the shot's own properties as they are
-//! on disk, so it keeps inheriting the rest; a created shot goes on the
+//! not, offered to **retire**, and shots that play at another **fps** than
+//! the master (#47: the master never wrote fps, so a shot cut at the edit's
+//! 24 could stay at 25). [`apply`] writes one: a range change pins only
+//! `frame_start` and `frame_end`, an fps change only `fps`, on the shot's
+//! own properties as they are on disk, so it keeps inheriting the rest
+//! (roll included: the cut has no handles to say otherwise, and a created
+//! shot takes the project's default, as the design has it); a created shot
+//! goes on the
 //! shared timelines of the Multis listing its sequence; a retire archives
 //! the shot's folders and takes it out of its Multis, as the Entity Editor
 //! does.
@@ -23,7 +28,7 @@ use th_edit::document::{Edit, Frame};
 use crate::Project;
 use crate::entities::{create_shot, delete_entity};
 use crate::groups::place_new_members;
-use crate::timeline::get_frame_range;
+use crate::timeline::{get_fps, get_frame_range};
 use crate::uri::Uri;
 
 /// Where `master_edit` lives.
@@ -101,6 +106,9 @@ pub enum Change {
     /// A shot whose frames become `first ..= last` (from `from`, when it had
     /// a range).
     Range { shot: Uri, from: Option<(Frame, Frame)>, first: Frame, last: Frame },
+    /// A shot the master shows that plays at another rate (`from`, None when
+    /// none is set) than the master's `fps`.
+    Fps { shot: Uri, from: Option<i64>, fps: i64 },
     /// A shot the previous master used and this one does not.
     Retire { shot: Uri },
 }
@@ -108,7 +116,7 @@ pub enum Change {
 impl Change {
     pub fn shot(&self) -> &Uri {
         match self {
-            Change::Create { shot, .. } | Change::Range { shot, .. } | Change::Retire { shot } => shot,
+            Change::Create { shot, .. } | Change::Range { shot, .. } | Change::Fps { shot, .. } | Change::Retire { shot } => shot,
         }
     }
 
@@ -124,25 +132,54 @@ impl Change {
                 format!("{}: {a}-{b} becomes {first}-{last}", shot_label(shot))
             }
             Change::Range { shot, from: None, first, last } => format!("{}: becomes {first}-{last}", shot_label(shot)),
+            Change::Fps { shot, from: Some(from), fps } => {
+                format!("{}: plays at {from} fps, becomes {fps} (the master's)", shot_label(shot))
+            }
+            Change::Fps { shot, from: None, fps } => format!("{}: plays at {fps} fps (the master's)", shot_label(shot)),
             Change::Retire { shot } => format!("Retire {} (no longer in the master)", shot_label(shot)),
         }
     }
 }
 
-/// What publishing a master that shows `uses` changes, given the previous
-/// published master showed `previous`: creates and range changes in cut
-/// order, then retires (of shots that still exist) in the previous cut's
-/// order.
-pub fn changes(project: &Project, uses: &[ShotUse], previous: &[ShotUse]) -> Result<Vec<Change>, String> {
+/// The fps `shot` plays at: its own or inherited, or for a shot not made
+/// yet what it would inherit from its sequence or `entity:/shots`; else
+/// the project's (`config:/project`), as an entity without one plays at.
+fn rate_of(project: &Project, shot: &Uri) -> Result<Option<i64>, String> {
+    let mut places = vec![shot.clone()];
+    if let [_, sequence, _] = shot.segments.as_slice() {
+        places.push(Uri::parse(&format!("entity:/shots/{sequence}")).map_err(|e| e.to_string())?);
+    }
+    places.push(Uri::parse("entity:/shots").map_err(|e| e.to_string())?);
+    for place in places {
+        if project.config.exists(&place).map_err(|e| e.to_string())? {
+            if let Some(fps) = get_fps(&project.config, &place)? {
+                return Ok(Some(fps));
+            }
+            break;
+        }
+    }
+    get_fps(&project.config, &master_node())
+}
+
+/// What publishing a master that shows `uses` at `fps` changes, given the
+/// previous published master showed `previous`: per shot in cut order its
+/// create or range change, then its fps change when it plays at another
+/// rate; then retires (of shots that still exist) in the previous cut's
+/// order. [`apply`] in this order makes a created shot before its fps.
+pub fn changes(project: &Project, uses: &[ShotUse], previous: &[ShotUse], fps: i64) -> Result<Vec<Change>, String> {
     let mut out = Vec::new();
     for u in uses {
         if !project.config.exists(&u.shot).map_err(|e| e.to_string())? {
             out.push(Change::Create { shot: u.shot.clone(), first: u.first, last: u.last });
-            continue;
+        } else {
+            let from = get_frame_range(&project.config, &u.shot)?.map(|r| (r.start_frame, r.end_frame));
+            if from != Some((u.first, u.last)) {
+                out.push(Change::Range { shot: u.shot.clone(), from, first: u.first, last: u.last });
+            }
         }
-        let from = get_frame_range(&project.config, &u.shot)?.map(|r| (r.start_frame, r.end_frame));
-        if from != Some((u.first, u.last)) {
-            out.push(Change::Range { shot: u.shot.clone(), from, first: u.first, last: u.last });
+        let rate = rate_of(project, &u.shot)?;
+        if rate != Some(fps) {
+            out.push(Change::Fps { shot: u.shot.clone(), from: rate, fps });
         }
     }
     for p in previous {
@@ -197,6 +234,11 @@ pub fn apply(project: &Project, change: &Change, stamp: &str) -> Result<(), Stri
             let mut keys = Map::new();
             keys.insert("frame_start".into(), Value::from(*first));
             keys.insert("frame_end".into(), Value::from(*last));
+            project.config.set_own_keys(shot, keys).map_err(|e| e.to_string())
+        }
+        Change::Fps { shot, fps, .. } => {
+            let mut keys = Map::new();
+            keys.insert("fps".into(), Value::from(*fps));
             project.config.set_own_keys(shot, keys).map_err(|e| e.to_string())
         }
         Change::Retire { shot } => delete_entity(project, shot, stamp).map(|_| ()).map_err(|e| e.to_string()),
@@ -274,7 +316,7 @@ mod tests {
         };
         let now = uses(&[("S/010", 1001, 1010), ("S/020", 1001, 1040), ("S/040", 1001, 1030)]);
         let before = uses(&[("S/010", 1001, 1010), ("S/030", 1001, 1020), ("S/099", 1001, 1002)]);
-        let found = changes(&p, &now, &before).unwrap();
+        let found = changes(&p, &now, &before, 24).unwrap();
         let shot = |s: &str| Uri::parse(&format!("entity:/shots/{s}")).unwrap();
         assert_eq!(
             found,
@@ -294,7 +336,59 @@ mod tests {
         assert_eq!(range("S/020"), Some((1001, 1040)));
         assert_eq!(range("S/040"), Some((1001, 1030)));
         assert!(!p.config.exists(&shot("S/030")).unwrap());
-        assert_eq!(changes(&p, &now, &before).unwrap(), [], "applied, nothing is left to change");
+        assert_eq!(changes(&p, &now, &before, 24).unwrap(), [], "applied, nothing is left to change");
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(16))]
+
+        /// #47: the master writes fps. A shot that plays at another rate
+        /// than the master (its own fps, or the project's 24 it inherits)
+        /// gets one fps change right after its create or range change;
+        /// applying them pins only `fps` on the shot, and then nothing is
+        /// left to change.
+        #[test]
+        fn a_shot_at_another_rate_gets_the_masters_fps(
+            master_fps in proptest::sample::select(vec![24i64, 25, 30]),
+            own in proptest::option::of(proptest::sample::select(vec![24i64, 25, 30])),
+            planned in proptest::bool::ANY,
+        ) {
+            let (_dir, root) = project();
+            let p = open(&root);
+            let uri = Uri::parse("entity:/shots/S/010").unwrap();
+            if !planned {
+                create_shot(&p, "S", "010", 1001, 1010).unwrap();
+                if let Some(fps) = own {
+                    let mut keys = Map::new();
+                    keys.insert("fps".into(), Value::from(fps));
+                    open(&root).config.set_own_keys(&uri, keys).unwrap();
+                }
+            }
+            let p = open(&root);
+            let now = [ShotUse { shot: uri.clone(), first: 1001, last: 1010 }];
+            let found = changes(&p, &now, &[], master_fps).unwrap();
+            let rate = if planned { 24 } else { own.unwrap_or(24) };
+            let fps_changes: Vec<&Change> = found.iter().filter(|c| matches!(c, Change::Fps { .. })).collect();
+            if rate == master_fps {
+                proptest::prop_assert!(fps_changes.is_empty(), "{:?}", found);
+            } else {
+                let expected = Change::Fps { shot: uri.clone(), from: Some(rate), fps: master_fps };
+                proptest::prop_assert_eq!(fps_changes, vec![&expected]);
+                proptest::prop_assert!(matches!(found.last(), Some(Change::Fps { .. })), "after the shot's create or range change");
+            }
+            for change in &found {
+                apply(&open(&root), change, "x").unwrap();
+            }
+            let p = open(&root);
+            proptest::prop_assert_eq!(rate_of(&p, &uri).unwrap(), Some(master_fps));
+            proptest::prop_assert_eq!(changes(&p, &now, &[], master_fps).unwrap(), Vec::<Change>::new());
+            let own_keys = p.config.get_own_properties(&uri).unwrap().unwrap();
+            proptest::prop_assert_eq!(
+                own_keys.contains_key("fps"),
+                rate != master_fps || (!planned && own.is_some()),
+                "fps pinned only by the change (or as it was)"
+            );
+        }
     }
 
     #[test]

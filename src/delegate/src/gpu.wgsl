@@ -19,10 +19,33 @@ struct Globals {
     // layer's moment of the shutter (0 opening, 1 closing), which moving
     // points (vs_moving) are drawn at.
     jitter: vec4<f32>,
+    // What fs_glass lights a see-through surface with, as post.wgsl's light
+    // does an opaque one (lights::Lighting, gpu.rs Lights): the sky ambient
+    // and in w the lamp count; the ground ambient and in w the lamp the
+    // highlight is of; the highlight's strength, SHININESS, 1 = tinted by
+    // that lamp's light; CLAY_ALBEDO; x: the shading (0 lit, 1 clay, 2
+    // albedo, 3 occlusion); the lamps.
+    sky: vec4<f32>,
+    ground: vec4<f32>,
+    spec: vec4<f32>,
+    clay: vec4<f32>,
+    shade: vec4<u32>,
+    lamps: array<Lamp, 16>,
+};
+
+// lights::Lamp: xyz the unit direction towards it (w 0, directional) or its
+// position (w 1 a point, 2 a point lighting the side it faces), camera
+// space; rgb its light (a point's at unit distance), w the least squared
+// distance; xyz the unit direction a facing lamp emits towards.
+struct Lamp {
+    at: vec4<f32>,
+    color: vec4<f32>,
+    axis: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> g: Globals;
 
 struct MeshParams {
+    // rgb: the base colour; a: the opacity (raster::Mesh::opacity).
     base: vec4<f32>,
     // x: 1 = textured (has uvs and tiles); y: 1 = a plain texture in layer 0;
     // z: the mesh's index in the frame's meshes (fs_ids).
@@ -152,4 +175,98 @@ fn fs(in: VsOut) -> Buffer {
 @fragment
 fn fs_ids(in: VsOut) -> @location(0) vec2<i32> {
     return vec2<i32>(m.mode.z, i32(in.instance));
+}
+
+// lights::Lamp::toward: the unit direction towards lamp `i` from camera-space
+// point `p`, and the light it gives there before the surface's cosine.
+struct Toward {
+    l: vec3<f32>,
+    e: vec3<f32>,
+};
+
+fn toward(i: u32, p: vec3<f32>) -> Toward {
+    let lamp = g.lamps[i];
+    var t: Toward;
+    if (lamp.at.w == 0.0) {
+        t.l = lamp.at.xyz;
+        t.e = lamp.color.xyz;
+        return t;
+    }
+    let d = lamp.at.xyz - p;
+    let dd = dot(d, d);
+    t.l = vec3<f32>(0.0, 0.0, 1.0);
+    if (dd > 0.0) {
+        t.l = d * (1.0 / sqrt(dd));
+    }
+    var f = 1.0 / max(dd, lamp.color.w);
+    if (lamp.at.w == 2.0) {
+        f = f * max(-dot(lamp.axis.xyz, t.l), 0.0);
+    }
+    t.e = lamp.color.xyz * f;
+    return t;
+}
+
+// composite::light (post.wgsl's light), with the lighting in `g`.
+fn light(shading: u32, surface: vec3<f32>, n: vec3<f32>, v: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
+    if (shading == 2u) {
+        return surface;
+    }
+    if (shading == 3u) {
+        return vec3<f32>(1.0);
+    }
+    var base = surface;
+    if (shading == 1u) {
+        base = g.clay.xyz;
+    }
+    var k = g.ground.xyz + (g.sky.xyz - g.ground.xyz) * (0.5 + 0.5 * n.y);
+    let count = u32(g.sky.w);
+    for (var i = 0u; i < count; i = i + 1u) {
+        let t = toward(i, p);
+        k = k + t.e * max(dot(n, t.l), 0.0);
+    }
+    var spec = vec3<f32>(0.0);
+    if (count > 0u && g.spec.x > 0.0) {
+        let t = toward(u32(g.ground.w), p);
+        let half_vector = safe_normalize(t.l + v);
+        let nh = max(dot(n, half_vector), 0.0);
+        if (nh > 0.0) {
+            let s = g.spec.x * pow(nh, g.spec.y);
+            if (g.spec.z != 0.0) {
+                spec = t.e * s;
+            } else {
+                spec = vec3<f32>(s);
+            }
+        }
+    }
+    return base * k + spec;
+}
+
+struct Glass {
+    // The weighted sums (raster.rs Band::accum): lit colour times opacity,
+    // and opacity, added up by the target's blend.
+    @location(0) accum: vec4<f32>,
+    // The opacity, one minus which the target's blend multiplies into the
+    // revealage.
+    @location(1) reveal: vec4<f32>,
+};
+
+// A see-through surface (raster::Surface::Glass) in front of the opaque
+// depth, lit where it is drawn, as raster.rs Raster::draw does with `glass`:
+// weighted blended order-independent transparency, every weight 1.
+@fragment
+fn fs_glass(in: VsOut) -> Glass {
+    let to_eye = g.eye.xyz - in.world;
+    var n = safe_normalize(in.normal);
+    if (dot(n, to_eye) < 0.0) {
+        n = -n;
+    }
+    let nc = safe_normalize(vec3<f32>(dot(n, g.right.xyz), dot(n, g.up.xyz), dot(n, g.back.xyz)));
+    let towards = vec3<f32>(dot(to_eye, g.right.xyz), dot(to_eye, g.up.xyz), dot(to_eye, g.back.xyz));
+    let v = safe_normalize(towards);
+    let lit = light(g.shade.x, albedo(in), nc, v, -towards);
+    let a = m.base.w;
+    var out: Glass;
+    out.accum = vec4<f32>(lit * a, a);
+    out.reveal = vec4<f32>(a, a, a, a);
+    return out;
 }

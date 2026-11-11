@@ -74,6 +74,35 @@ def get_default_pool() -> str | None:
     return _get_root_farm().get('default_pool') or None
 
 
+def set_default_pool(name: str) -> None:
+    """Make ``name`` (one of the project's pools) the default pool.
+
+    Farm Submit preselects it. Settings > Project defaults > Farm is the
+    caller (#34); it pins only ``default_pool``.
+    """
+    farm = _edit_root_farm('pools', 'default_pool')
+    if name not in farm.get('pools', []):
+        raise ValueError(f'Pool does not exist: {name}')
+    farm['default_pool'] = name
+    _write_root_farm(farm)
+
+
+def pool_name_problem(name: str) -> str | None:
+    """Why ``name`` cannot be a Deadline pool, or None when it can.
+
+    Deadline keeps pool names as lowercase letters, digits, ``_`` and ``-``
+    (it lower-cases what it is given), so a pool typed any other way would
+    not match the farm's own and jobs would sit in a pool nobody renders.
+    """
+    if not name:
+        return 'A pool needs a name.'
+    if name != name.lower():
+        return f'Deadline pool names are lowercase: use "{name.lower()}".'
+    if not all(c.isascii() and (c.isalnum() or c in '_-') for c in name):
+        return 'Deadline pool names are letters, digits, "_" and "-" only.'
+    return None
+
+
 def add_pool(name: str) -> None:
     """Add a new render pool."""
     farm = _edit_root_farm('pools')

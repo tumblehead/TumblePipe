@@ -171,8 +171,18 @@
             name    "open_location"
             label   "Open Location"
             type    button
+            joinnext
             default { "0" }
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.open_location(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "render"
+            label   "Render"
+            type    button
+            default { "0" }
+            help    "Open Farm Submit with this shot's Render ticked and this import's channel checked (all channels for *); a concrete Department is the render's Up to."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.render(kwargs)" }
         parmtag { "script_callback_language" "python" }
         }
     }

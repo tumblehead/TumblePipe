@@ -133,7 +133,16 @@ the TumblePipe pipeline radial in a network editor, **Alt+R** the recipes and
    path (`v0001` for an empty department), records the workfile's context,
    runs the department's template against `/stage`, runs the import nodes it
    created (so the shot is already loaded), applies the shot's frame
-   range and fps from the project config, and saves again. The status bar
+   range and fps from the project config (a Multi, which has no range of
+   its own, gets its shared timeline or the span of its members' ranges;
+   up to 1.101.0 an assets Multi opened at Houdini's 1-240), frames the
+   stage in every Solaris viewer not looking through a camera, and saves
+   again. If the template (or one of its imports) fails, the new version is
+   not kept: its hip and `_context` entry are removed, the folder's
+   `context.json` is put back, the half-built scene is cleared, and the
+   error says `(<file> was not kept)`, so the retry makes the same version
+   (up to 1.101.0 an empty `v0001` stayed behind and the retry became
+   `v0002`). The status bar
    confirms with `Created <file>`; if the template could not be found it
    appends `(no template)`, and if the timeline did not land it appends
    `(frame range/fps NOT applied — check the log)`.

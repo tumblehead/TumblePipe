@@ -143,6 +143,16 @@ def main():
     check("Generate produces a working setup",
           render_vars(generated),
           ['beauty', 'beauty_fill', 'beauty_side', 'beauty_top'])
+    check("Status says what Generate did (#42)",
+          generated.parm('status').eval(), 'Generated 3 tags from 4 lights.')
+
+    # A new row names no lights until someone picks them (#42): it used to
+    # default to the upstream node's prims (in the render template,
+    # /Render/Products/renderproduct, a light group naming no light).
+    fresh = stage_ctx.createNode('th::lpe_tags::1.0', 'fresh_row')
+    fresh.setInput(0, source)
+    fresh.parm('tags').set(1)
+    check("a new row's Lights is empty", fresh.parm('primpattern0').eval(), '')
 
     # The farm's Denoise is the one denoise (QA 2026-11-10, ledger 59): the
     # node used to switch on Karma's OIDN image filter, so husk denoised the

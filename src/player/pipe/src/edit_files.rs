@@ -23,7 +23,7 @@ use th_edit::document::{FrozenEdit, WorkingEdit};
 
 use crate::Project;
 use crate::io::{VERSION_MARKER, store_json};
-use crate::naming::{is_valid_entity_name, is_valid_version_name, version_key, version_name};
+use crate::naming::{entity_name_problem, is_valid_version_name, version_key, version_name};
 use crate::uri::Uri;
 use crate::versions::{is_finished_version, list_version_paths, next_version_path};
 
@@ -55,8 +55,8 @@ pub fn edit_name(uri: &Uri) -> Result<String, String> {
 /// Create the edit `name`, refusing a name not of letters and digits, one
 /// that exists and a case variant of one that does.
 pub fn create_edit(project: &Project, name: &str) -> Result<Uri, String> {
-    if !is_valid_entity_name(name) {
-        return Err(format!("{name:?}: an edit's name is letters and digits"));
+    if let Some(problem) = entity_name_problem(name) {
+        return Err(format!("{name:?}: an edit's name {problem}"));
     }
     let uri = edit_uri(name);
     project.config.add_entity(&uri, Map::new()).map_err(|e| e.to_string())?;
@@ -151,6 +151,9 @@ pub fn save_working(project: &Project, name: &str, edit: &WorkingEdit, from: Opt
                     "note": note,
                 });
                 store_json(&dir.join(CONTEXT_DIR).join(format!("{version}.json")), &context).map_err(|e| e.to_string())?;
+                // Written last, as a Houdini workfile commit is, so open
+                // Asset Browsers rebuild the edit's card.
+                crate::events::announce(&project.config_path, crate::events::WORKFILE, &edit_uri(name).to_string(), DEPARTMENT);
                 return Ok(version);
             }
             Err(_) if dir.join(working_file(name, &version)).exists() => continue,
@@ -274,6 +277,7 @@ pub fn publish(project: &Project, name: &str, edit: &FrozenEdit, note: &str) -> 
         "note": note,
     });
     store_json(&dir.join(VERSION_MARKER), &context).map_err(|e| e.to_string())?;
+    crate::events::announce(&project.config_path, crate::events::EXPORT, &edit_uri(name).to_string(), DEPARTMENT);
     Ok(version)
 }
 
@@ -505,6 +509,50 @@ mod tests {
             std::fs::write(&movies[gone % count], b"back").unwrap();
             prop_assert_eq!(publish(&project, "Main", &edit, "").unwrap(), "v0002");
             prop_assert_eq!(published_versions(&project, "Main").unwrap(), ["v0002"]);
+        }
+
+        /// Issue #27: a Save or Publish from the editor wrote its files but
+        /// told nobody, so an open Asset Browser kept showing the edit's old
+        /// working and published versions. Every save announces one workfile
+        /// change and every publish one export change of that edit, in the
+        /// order they happened; a failed publish announces nothing.
+        #[test]
+        fn every_save_and_publish_announces_the_edit(steps in prop::collection::vec((any::<bool>(), 0usize..2), 0..6)) {
+            let (dir, root) = make_project();
+            let project = Project::open(&root, &root).unwrap();
+            let movies = make_movies(dir.path(), 1);
+            let journal = dir.path().join("events").join(crate::events::JOURNAL_NAME);
+            crate::events::TEST_JOURNAL.with(|j| *j.borrow_mut() = Some(journal.clone()));
+            let names = ["Main", "Alt"];
+            let mut want = Vec::new();
+            for (save, which) in &steps {
+                let name = names[*which];
+                if *save {
+                    save_working(&project, name, &working(), None, "").unwrap();
+                    want.push(("workfile".to_owned(), edit_uri(name).to_string()));
+                } else {
+                    publish(&project, name, &edit_of(&[(0, 0)], &movies), "").unwrap();
+                    want.push(("export".to_owned(), edit_uri(name).to_string()));
+                }
+            }
+            std::fs::remove_file(&movies[0]).unwrap();
+            prop_assert!(publish(&project, "Main", &edit_of(&[(0, 0)], &movies), "").is_err());
+            crate::events::TEST_JOURNAL.with(|j| *j.borrow_mut() = None);
+            let key = crate::events::project_key(&project.config_path);
+            let got: Vec<(String, String)> = match std::fs::read(&journal) {
+                Err(_) => vec![],
+                Ok(bytes) => bytes
+                    .split(|&b| b == b'\n')
+                    .skip(1)
+                    .filter(|l| !l.is_empty())
+                    .map(|l| {
+                        let v: Value = serde_json::from_slice(l).unwrap();
+                        assert_eq!((v["project"].as_str(), v["detail"].as_str()), (Some(key.as_str()), Some(DEPARTMENT)));
+                        (v["kind"].as_str().unwrap().to_owned(), v["uri"].as_str().unwrap().to_owned())
+                    })
+                    .collect(),
+            };
+            prop_assert_eq!(got, want);
         }
     }
 }

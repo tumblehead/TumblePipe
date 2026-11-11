@@ -92,6 +92,14 @@ def valid_frame_range(config, step: bool = True) -> bool:
     return True
 
 
+def valid_step(config) -> bool:
+    """A worker context's ``step_size``: a positive int (``worker.stepped``).
+    A job's worker runs the package version that wrote its context, so the
+    key is required: without it the worker would quietly step by 1."""
+    if not check_int(config, 'step_size'): return False
+    return config['step_size'] > 0
+
+
 def valid_frame_batches(config) -> bool:
     """A batched frame range: :func:`valid_frame_range` plus the explicit
     ``frames`` list (empty: the whole range) and a positive ``batch_size``."""

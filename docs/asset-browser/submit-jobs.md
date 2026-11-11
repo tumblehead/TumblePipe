@@ -32,6 +32,7 @@ up on this machine* and submits nothing. Working without a farm is covered in
 | The toolbar | **Render** quick action | The scene's context (**Shots** with no workfile loaded) | The loaded scene's entity's **Render** cell — or, in a [Multi](multis-and-roots.md#multis) workfile, every member's. Nothing with no workfile loaded. |
 | A card's right-click menu | **Submit Jobs…** | The card's context | That entity's **Render** cell |
 | A multi-selection's right-click menu | **Submit Jobs for N selected…** | The cards' context | Each selected card's **Render** cell |
+| A [`th::import_render`](../nodes/comp.md#thimport_render-cop) COP | **Render** | **Shots** | Its shot's **Render** cell, with its Channel checked in the Render settings (every channel for **All channels**) and a concrete Department as **Up to** |
 | TumbleTrove Desktop, outside Houdini | the project's Scripts panel → **Farm Submit** | **Shots** | Nothing — see [From TumbleTrove Desktop](#from-tumbletrove-desktop) |
 
 None of these needs a pipeline workfile: the rows are always every entity of
@@ -40,7 +41,11 @@ any cell, on any entity, before submitting.
 
 When the dialog is opened from a workfile, that workfile's department pins
 the **Up to** department of Playblast and Render (when it is renderable), so
-submitting from a lighting workfile previews up to lighting.
+submitting from a lighting workfile previews up to lighting. From
+`th::import_render`'s **Render**, the import's Department does that instead
+(when it is not `best`), and its Channel replaces the channels the menu
+would otherwise open checked (a channel the shot no longer has falls back to
+them).
 
 The dialog is non-modal: Houdini stays usable while it is open. What you
 ask of it before submitting (the review), why it cannot submit yet, and the
@@ -71,7 +76,11 @@ the workfile's, so it is not remembered for the next opening.
 The tabs above the grid switch between assets and shots, whatever workfile
 is open — so from an asset workfile you can still submit shots. Each tab has
 its own grid and settings, because the department columns (and Playblast,
-which is shots only) differ between them.
+Render and Comp, which are shots only) differ between them. Assets are
+rendered as turntables from `th::lookdev_studio` in the asset's lookdev
+workfile: an asset's staged build has no render settings, camera or lights
+(only a shot's root layer brings them), so the Assets tab offers publishes
+only, and says so where the settings would be.
 
 - The dialog opens on the tab in **Opens on** above. Only that tab starts
   with ticks and with the workfile's department pinned; the other tab lists
@@ -115,7 +124,7 @@ category). Columns are the pipeline steps:
 
 - one **publish** column per publishable department, in pipeline (pool)
   order;
-- **Playblast** (shots only), **Render** and **Comp** (shots only, see
+- **Playblast**, **Render** and **Comp** (shots only, see
   [Comp](#comp-shots-only));
 - **Warnings**.
 
@@ -259,8 +268,8 @@ A single entity with nothing to check skips the review and is sent at once.
 ## The settings
 
 The right-hand column holds the settings for the ticked cells, in four
-sections: **Publish**, **Playblast** (shots only), **Render** and **Comp**
-(shots only). A section
+sections: **Publish**, then **Playblast**, **Render** and **Comp** (shots
+only). A section
 shows only while at least one cell of its kind is ticked — tick a Render cell
 and the Render settings appear; with nothing ticked the column says *Tick a
 cell to see its settings.* A pinned field in a hidden section keeps its
@@ -331,7 +340,7 @@ worker could take from the same pools.
 | **Resolution** (W × H) | `playblast.res_x` / `playblast.res_y` | the shot's render resolution (`render.resolution`), else 1280 × 720 |
 | **Renderer** | `playblast.renderer` | `viewport` |
 | **Shading** | `playblast.shading` | `lit` |
-| **Blur**: Motion blur, Depth of field, blur samples | `playblast.motion_blur` / `playblast.dof` / `playblast.blur_samples` | off, off, 16 |
+| **Blur**: Motion blur, Depth of field, blur samples | `playblast.motion_blur` / `playblast.dof` / `playblast.blur_samples` | off, on, 16 |
 | **Light** | `playblast.light` | `dome` |
 | **Samples** | `playblast.samples` | 32 |
 | **Materials**: Scene materials / Clay | `playblast.materials` | Clay |
@@ -363,14 +372,14 @@ Karma XPU, lit and sampled by the fields below, which `viewport` ignores.
 See [Compositing → Playblast](../compositing.md#playblast).
 
 **Shading** is TumbleView's look, all with ambient occlusion:
-`lit` is the scene's colours under lights that follow the camera; `clay` is
-the same lights on plain grey; `albedo` is the scene's colours unlit;
+`lit` is the scene's colours under the shot's own lights (fixed lights that
+follow the camera when the shot has none); `clay` is the same lights on plain grey; `albedo` is the scene's colours unlit;
 `occlusion` is white with only the ambient occlusion. Karma ignores it.
 
 **Blur** is TumbleView's motion blur (over the shot camera's
 shutter) and depth of field (from its f-stop and focus distance; an f-stop
-of 0 stays sharp), averaged over the blur samples (2–64). Both are off by
-default, and off the frames are exactly as without them. Karma ignores it.
+of 0 stays sharp), averaged over the blur samples (2–64). Motion blur is off
+by default and depth of field on; off, the frames are exactly as without them. Karma ignores it.
 See [Compositing → Motion blur and depth of field](../compositing.md#motion-blur-and-depth-of-field).
 
 **Light** picks the Karma look: `dome` switches the scene's lights off and lights
@@ -379,7 +388,7 @@ light on the camera with ambient occlusion, the look before this setting
 existed; `scene` renders with the shot's own lights. **Samples** is Karma's
 pixel samples: more is cleaner and slower.
 
-### Render
+### Render (shots only)
 
 | Field | Per-entity source | Default when unset | Notes |
 |---|---|---|---|
@@ -392,10 +401,10 @@ pixel samples: more is cleaner and slower.
 | **Pool** | `farm.default_pool` | `general` | |
 | **Pri / Tiles** | `farm.priority` / `farm.tile_count` | 50 / 4 | Priority orders full renders among themselves and is capped at 70; see [Farm priorities](#farm-priorities). A preview always runs at 80. |
 | **Batch** | `farm.batch_size` | 10 | Frames per farm task. |
-| **Samples** | — | `⟨from scene⟩` — not sent | Set a value to override `karma:global:pathtracedsamples`; ↺ goes back to the scene's. |
+| **Samples** | — | `⟨from scene⟩` — not sent; shows the scene's value once read (`from scene: 128`, `varies: 64–256`) | Set a value to override `karma:global:pathtracedsamples`; ↺ goes back to the scene's. See [What the scene says](#what-the-scene-says). |
 | **Denoise** | `render.enabledenoising` | on | Adds denoise jobs after each render. |
-| **Motion blur** | — | partly checked — not sent | Checked / unchecked overrides `karma:object:mblur`. |
-| **DOF** | — | partly checked — not sent | Checked / unchecked overrides `karma:global:enable_dof`. |
+| **Motion blur** | — | partly checked — not sent; the label names the scene's value, `Motion blur (from scene: on)` | Checked / unchecked overrides `karma:object:mblur`. |
+| **DOF** | — | partly checked — not sent; `DOF (from scene: off)` | Checked / unchecked overrides `karma:global:enable_dof`. |
 | **Standalone** | — | off | Off = direct render of the collapsed staged file. On = a farm **stage** job builds the render stage first. See [Render staging](../composition.md#render-staging). |
 | **Copy to edit** | — | off | Adds an *edit* job that copies the finished `beauty` (RGBA — the alpha is its A), the `objid_*` / `holdout_*` mattes and the `ramp_*` distance ramps to the edit location (the other AOVs stay with the render). |
 
@@ -413,6 +422,23 @@ by any department layer that authors the render settings prim (typically a
 `render.overscan`, `render.pathtracedsamples`, `render.enablemblur`,
 `render.enabledof`, ray-limit and dicing properties are **not** read at submit;
 setting them in the config changes nothing on the farm.
+
+#### What the scene says
+
+So that `⟨from scene⟩` is not a guess, Samples, Motion blur and DOF show the
+scene's value once it is read: `from scene: 128` when every shot being
+rendered agrees, `varies: 64–256` when the samples differ, `varies: off, on`
+for the toggles. `Karma default` means no layer authors the setting, so
+Karma's own default renders. The value is read with the **Camera** row's
+lookup, in the background, never by cooking the stage: for each attribute,
+the latest published layer of the strongest department in the **Up to** cut
+that authors it on the RenderSettings prim, else the project's
+`root_default_prims.usda`. The tooltip lists each shot's value and the
+department it came from. Like the Camera row it is a preview: a setting
+authored somewhere it does not read (a sublayer of an export, an asset)
+composes on the farm without showing here. The fields read `⟨from scene⟩`
+until the lookup is done, or when nothing is ticked for Render. Up to
+TumblePipe 1.101 they always read `⟨from scene⟩` (#69).
 
 ### Comp (shots only)
 
@@ -450,7 +476,7 @@ dialog's way: a field you leave alone follows each shot.
 | **Range** | — | off | **Preview frames (first / middle / last)**: comp those three frames first and post them to Discord (`previews`); the full comp waits for them. The node's **Preview Frames**. Beside a render, the preview frames still wait for the whole render. |
 | **Frames** | — | `⟨full range⟩` | Left on `⟨full range⟩`, the comp comps every frame of the render ticked beside it (its **Frames** with the rolls), or, ticked alone, the shot's range from the config with its rolls (the node's **From Config**). Type a first and/or last frame to comp from or to it instead (the node's **From Settings**); the other end keeps following. Beside a render the frames must lie inside the render's; past them, or the wrong way round, the row is blocked (see [Warnings](#warnings)). ↺ goes back to `⟨full range⟩`. Not remembered for the next opening. |
 | **Step** | — | 1 | Comp every Nth frame of the range. |
-| **Batch** | — | 5 | Frames per farm task of the comp. |
+| **Batch** | — | 5 | Frames per farm task of the comp. With **Run on: This machine** the field reads *one task on this machine*: the local queue runs one task at a time, so the comp runs its whole range as one task (each task costs a few seconds of Houdini start-up). A comp's time limit is 20 minutes per frame, on the farm and here, so the one local task is not stopped halfway. |
 | **Pool** | `farm.default_pool` | `general` | A dropdown of the project's farm pools, the project default marked `(project default)`, as a `th::` node's **Pool** menu offers them. `⟨per entity⟩` leaves each shot on its own pool. A project that lists no pools gets a text field instead. |
 | **Priority** | `farm.priority` | 50 | |
 | **Copy to edit** | — | off | Adds an *edit* job that syncs the merged comp to the edit as its `comp` layer (mattes and ramps still per channel); see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s). |
@@ -521,9 +547,15 @@ listed with its whole error, which often says how to fix it (select it to
 copy it). **Open log folder**, **Farm Manager**, **Cancel** and **Close
 window** sit below it.
 
-Once it is over, **Back to grid** (or Esc) returns to the grid with the sent
-entities unticked and their status read again, to submit more; **Close**
+Once it is over, **Back to grid** (or Esc) returns to the grid with the same
+cells ticked and their status read again, so a re-submit with one setting
+changed needs no re-ticking; **Close**
 closes the dialog (green after a clean run).
+
+There is one Farm Submit window: opening it again (**Submit Jobs…**, the
+Render quick action, a card's Render, `th::import_render`'s Render) replaces the open one where it stood,
+with the new entities ticked, unless that one is still sending a submission.
+Enter in a settings field only commits the field; **Submit…** is a click.
 
 **Cancel** stops the submission between entities: the entity being submitted
 when you click it finishes (so no entity is left with only some of its jobs on
@@ -682,7 +714,7 @@ Output locations are in [Compositing → Where renders land](../compositing.md#w
 | Family | Triggered by | Chain (job name → group) | Output |
 |---|---|---|---|
 | **render**, Full range | Render cells | per channel: `full_render_<ch>` (`karma`) → `full_denoise_<ch>` (`denoise`, if Denoise) → `layer_mp4_<ch>` (`encode`); then across channels: `edit` (`edit`, if Copy to edit), `slapcomp` (`houdini`) → `slapcomp_mp4` (`encode`) → `slapcomp_notify` (`general`) | `render:/render/<shot>/<dept>/<channel>/vNNNN/<aov>/`, denoised frames under the `denoise` department, slapcomp MP4 + daily. Each channel keeps its own version counter (a new `characters` channel starts at v0001 while `default` may be at v0008); the slapcomp reads each channel at its own version and stacks them in the shot's channel order |
-| **render**, Preview | Render cells | per channel: `partial_render_<ch>` (`karma`) → `partial_denoise_<ch>` (if Denoise) → `partial_notify_<ch>` — three frames, no MP4 | same version folders, three frames only; the notify carries first/middle/last |
+| **render**, Preview | Render cells | per channel: `partial_render_<ch>` (`karma`) → `partial_denoise_<ch>` (if Denoise) → `partial_notify_<ch>` — three frames, no MP4 | same version folders, three frames only; the notify carries first/middle/last of the cut (the range without its pre/post roll: the roll's handles are frames nobody sees) |
 | **render**, Preview + Full range | Render cells | both chains above; each `full_render_<ch>` waits on its `partial_render_<ch>` and renders into the same version | the preview's three frames are posted, then the full range overwrites them in the same version folder |
 | **render**, Standalone | Render cells with **Standalone** | `stage` (`houdini`) → the render chain above | `stage_<channel>.usd` in the job's data dir |
 | **publish** | Publish cells; Farm mode in the process dialog | `publish_<dept>` (`houdini`) per department, chained → `notify` (`general`). A renderable asset publish then queues a **build** | `export/<entity>/<channel>/<dept>/vNNNN/` |

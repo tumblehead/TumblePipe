@@ -260,7 +260,8 @@ favorites, so they cannot drift from what exists — they are gitignored
 and never ship. The directory is registered via
 `radial.add_custom_menu_dir()`. The `network.cop` / `network.vop`
 context menus are built in Python in `tumblepipe.startup` rather than as
-JSON, and bound with `radial.bind()` on Radial's own trigger key.
+JSON, and bound with `radial.bind()`: the COP menu on Radial's own
+trigger key, the VOP menu on Alt+E (`VOP_MENU_KEY`).
 
 ### `stock/`
 

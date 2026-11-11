@@ -8,11 +8,13 @@ from tumblepipe.pipe.houdini.lops import import_layer, export_layer, create_asse
 # --- /stage layout -------------------------------------------------------
 # Explicit positions: this department owns its layout, so nothing here calls
 # layoutChildren(). Group workfiles repeat the arrangement per member,
-# shifted along x by COLUMN_STRIDE.
+# shifted along x by COLUMN_STRIDE: wide enough that a column's sticky note
+# clears the previous column's nodes and their labels (#40;
+# tests/test_template_column_stride.py).
 IMPORT_POS = hou.Vector2(0.0, 0.13)
 LOOKDEV_POS = hou.Vector2(0.0, -1.13)
 EXPORT_POS = hou.Vector2(0.0, -2.44)
-COLUMN_STRIDE = 4.0
+COLUMN_STRIDE = 6.5
 
 STAGE_NOTE = ('Create Lookdev In here -->',
               hou.Vector2(-3.36, -1.28), hou.Vector2(3.03, 0.52))

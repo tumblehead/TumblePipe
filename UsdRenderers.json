@@ -6,7 +6,7 @@
         "depthstyle" : "linear",
         "needsselection" : true,
         "defaultpurposes" : [ "guide", "proxy" ],
-        "drawmodesupport" : false,
+        "drawmodesupport" : true,
         "showhydraprocedurals" : false
     }
 }

@@ -9,12 +9,14 @@ from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 # --- /stage layout -------------------------------------------------------
 # Explicit positions: this department owns its layout, so nothing here calls
 # layoutChildren(). Group workfiles repeat the arrangement per member,
-# shifted along x by COLUMN_STRIDE.
+# shifted along x by COLUMN_STRIDE: wide enough that a column's sticky note
+# clears the previous column's nodes and their labels (#40;
+# tests/test_template_column_stride.py).
 IMPORT_POS = hou.Vector2(0.0, 1.55)
 CREATE_POS = hou.Vector2(0.0, 0.42)
 SCOPE_POS = hou.Vector2(0.0, -0.71)
 EXPORT_POS = hou.Vector2(0.0, -1.84)
-COLUMN_STRIDE = 4.0
+COLUMN_STRIDE = 6.5
 
 STAGE_NOTE = ('Groom in here -->',
               hou.Vector2(-3.4, 0.38), hou.Vector2(2.6, 0.52))

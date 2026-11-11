@@ -8,12 +8,15 @@
 //! decides what a pixel looks like lives on this side of the C ABI.
 //!
 //! The look is Houdini's smooth-shaded viewport: a grey backdrop gradient,
-//! display colours or the material's base colour/texture, lit by lights
-//! fixed to the camera, with three tiers of screen-space ambient occlusion.
+//! display colours or the material's base colour/texture, lit by the
+//! scene's own lights ([`lights`]; lights fixed to the camera in a scene
+//! without any), with three tiers of screen-space ambient occlusion.
 //! It is drawn the way a game engine draws: a rasteriser fills a render
 //! buffer (colour, normal, depth) and a post pass ([`composite`]) occludes,
 //! lights and filters it; [`composite::Shading`] picks lit, clay or flat
-//! colour. Normals are the mesh's own, else smoothed: per point for a subdivision
+//! colour. A see-through mesh (opacity under 1, from its material or its
+//! display opacity) is drawn after the opaque ones and blended over them
+//! ([`raster::Surface`]). Normals are the mesh's own, else smoothed: per point for a subdivision
 //! surface, and with Houdini's 60 degree cusp for a polygonal mesh (the
 //! shim's `polygonal`), so curved surfaces are smooth and a box stays a box.
 //! It runs on the CPU, so a farm node needs no GPU, GL context or display;
@@ -27,9 +30,11 @@
 pub mod blur;
 mod cancel;
 pub mod composite;
+pub mod curves;
 pub mod ffi;
 #[cfg(feature = "gpu")]
 pub mod gpu;
+pub mod lights;
 pub mod math;
 mod normals;
 mod pool;
@@ -39,6 +44,8 @@ pub mod triangulate;
 
 #[cfg(test)]
 mod props;
+#[cfg(test)]
+mod props_curves;
 
 use std::panic::{self, AssertUnwindSafe};
 

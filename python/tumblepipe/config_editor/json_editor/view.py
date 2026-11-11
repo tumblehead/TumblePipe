@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QTreeView,
 )
 
-from .types import FieldOrigin, JsonValue, JsonRoot
+from .types import FieldOrigin, JsonValue, JsonRoot, field_origin
 from .diff import _value_tree, _diff_tree
 from .path import (
     JsonPath, JsonPathRoot, _json_path_contained, _diff_lookup,
@@ -245,24 +245,9 @@ class JsonModel(QStandardItemModel):
             in_stored = key in values
             in_inherited = key in inherited
 
-            if in_stored and not in_inherited:
-                origin = FieldOrigin.LOCAL
-                value = values[key]
-                inherited_value = None
-            elif in_inherited and not in_stored:
-                origin = FieldOrigin.INHERITED
-                value = inherited[key]
-                inherited_value = inherited[key]
-            else:
-                # Both - compare values
-                stored_val = values[key]
-                inherited_val = inherited[key]
-                if stored_val == inherited_val:
-                    origin = FieldOrigin.REDUNDANT
-                else:
-                    origin = FieldOrigin.OVERRIDE
-                value = stored_val
-                inherited_value = inherited_val
+            inherited_value = inherited.get(key)
+            value = values[key] if in_stored else inherited_value
+            origin = field_origin(in_stored, in_inherited, value, inherited_value)
 
             self._add_field(key, value, origin, inherited_value, notify=False)
 

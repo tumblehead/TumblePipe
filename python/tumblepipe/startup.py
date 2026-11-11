@@ -17,8 +17,10 @@ guard below used to swallow that silently, every menu here quietly stopped
 registering. The old Houdini-native ``radialmenu/`` system was purged in
 favour of the radial; the pipeline-specific menus it carried live on here as:
 
-- ``network.cop`` / ``network.vop`` context menus, built in Python and bound
-  to the chord Radial opens its own built-in menus with (see
+- ``network.cop`` / ``network.vop`` context menus, built in Python. The COP
+  menu is bound to the chord Radial opens its own built-in menus with; the
+  VOP (material) menu to :data:`VOP_MENU_KEY`, because over a VOP network
+  that chord (X) is Houdini's Visualize Output (see
   :func:`_bind_context_menus`).
 - ``radial_menus/tumblepipe_pipeline.json`` — static custom menu shipped
   with the package (ASSET / RENDER submenus of pipeline HDAs).
@@ -104,6 +106,16 @@ def _register_tumbletrove() -> None:
     _guarded("scene-load import refresh", load_hook.register)
     _guarded("workfile context provider", workfile_context.register)
     _guarded("shot slate", _start_shot_slate)
+    _guarded("live playblast hotkey", _bind_live_playblast_hotkey)
+
+
+def _bind_live_playblast_hotkey() -> None:
+    """The Live Playblast shelf tool's hotkey (graphical sessions only)."""
+    import hou
+
+    if hou.isUIAvailable():
+        from tumblepipe.pipe.houdini import live_playblast
+        live_playblast.bind_hotkey()
 
 
 def _start_shot_slate() -> None:
@@ -148,7 +160,9 @@ def register_radial(pipeline_path: Path) -> None:
     _register_general_actions(radial)
     context_menus = {
         "network.cop": _build_cop_menu(radial),
-        "network.vop": _build_vop_menu(radial),
+    }
+    keyed_menus = {
+        (VOP_MENU_KEY, "network.vop"): _build_vop_menu(radial),
     }
 
     # Generate the dynamic menus + register the menu directory so Radial's
@@ -160,7 +174,7 @@ def register_radial(pipeline_path: Path) -> None:
     _generate_asset_favorites_radial(radial, menu_dir, key="Alt+F")
     radial.add_custom_menu_dir(menu_dir)
 
-    _bind_context_menus(radial, context_menus)
+    _bind_context_menus(radial, context_menus, keyed_menus)
 
 
 def _defer(fn):
@@ -238,6 +252,22 @@ def _register_general_actions(radial) -> None:
         contexts=("network",),
     )
 
+    # Action: live playblast of the selected (or the scene's only)
+    # th::animate / th::playblast; the animation radial lists it.
+    def _live_playblast():
+        def _do():
+            from tumblepipe.pipe.houdini import live_playblast
+            live_playblast.start_selected()
+        _defer(_do)
+
+    radial.register_action(
+        key="tumblepipe.live_playblast",
+        label="Live playblast",
+        callback=_live_playblast,
+        icon="lucide:play",
+        contexts=(),  # the viewport too, where the animator works
+    )
+
 
 # ── COP (Copernicus) context menu ────────────────────────────────────────────
 #
@@ -259,43 +289,46 @@ def _build_cop_menu(radial):
     act = radial.register_action
     item = radial.item_from_action
 
-    act("cop.convert",       "Convert",   None, "COP_convertnormal")
+    act("cop.convert",       "Convert",   None, "COP2_convert")
     act("cop.convert.mono",  "Mono",  _cop_nodes_call("type_convert", "mono"), "COP2_quantize")
     act("cop.convert.uv",    "UV",    _cop_nodes_call("type_convert", "uv"),   "DATATYPES_uv")
     act("cop.convert.rgb",   "RGB",   _cop_nodes_call("type_convert", "rgb"),  "DATATYPES_rgb")
     act("cop.convert.rgba",  "RGBA",  _cop_nodes_call("type_convert", "rgba"), "DATATYPES_rgba")
     _convert = [item(f"cop.convert.{k}") for k in ("mono", "uv", "rgb", "rgba")]
 
-    act("cop.pattern",           "Pattern",       None,                   "COP_ramp")
-    act("cop.pattern.fractal",   "Fractal Noise", _node("fractalnoise"),  "COP_noise")
-    act("cop.pattern.worley",    "Worley Noise",  _node("worleynoise"),   "COP_worleynoise")
+    act("cop.pattern",           "Pattern",       None,                   "COP2_ramp")
+    act("cop.pattern.fractal",   "Fractal Noise", _node("fractalnoise"),  "COP2_noise")
+    act("cop.pattern.worley",    "Worley Noise",  _node("worleynoise"),   "VOP_worleynoise")
     act("cop.pattern.tile",      "Tile",          _node("tilepattern"),   "COP_tilepattern")
     act("cop.pattern.rasterize", "Rasterize Geo", _node("rasterizegeo"),  "COP_rasterize")
-    act("cop.pattern.sdf",       "SDF Shape",     _node("sdfshape"),      "COP_sdfshape")
+    act("cop.pattern.sdf",       "SDF Shape",     _node("sdfshape"),      "COP_monotosdf")
     act("cop.pattern.stamp",     "Stamp",         _node("stamppoint"),    "COP_stamppoint")
-    act("cop.pattern.ramp",      "Ramp",          _node("ramp"),          "COP_ramp")
+    act("cop.pattern.ramp",      "Ramp",          _node("ramp"),          "COP2_ramp")
     _pattern = [item(f"cop.pattern.{k}") for k in
                 ("fractal", "worley", "tile", "rasterize", "sdf", "stamp", "ramp")]
 
-    act("cop.filter",         "Filter",       None,                  "COP_blur")
-    act("cop.filter.blur",    "Blur",         _node("blur"),         "COP_blur")
-    act("cop.filter.dilate",  "Dilate/Erode", _node("dilateerode"),  "COP_dilateerode")
+    act("cop.filter",         "Filter",       None,                  "COP2_blur")
+    act("cop.filter.blur",    "Blur",         _node("blur"),         "COP2_blur")
+    act("cop.filter.dilate",  "Dilate/Erode", _node("dilateerode"),  "COP2_dilateerode")
     act("cop.filter.distort", "Distort",      _node("distort"),      "COP_distort")
     act("cop.filter.remap",   "Remap",        _node("remap"),        "COP_remap")
     act("cop.filter.feather", "Feather",      _node("feather"),      "COP_feather")
-    act("cop.filter.hsv",     "HSV Adjust",   _node("hsv"),          "COP_hsv")
-    act("cop.filter.invert",  "Invert",       _node("invert"),       "COP_invert")
+    act("cop.filter.hsv",     "HSV Adjust",   _node("hsv"),          "COP2_hsv")
+    act("cop.filter.invert",  "Invert",       _node("invert"),       "COP2_invert")
     _filter = [item(f"cop.filter.{k}") for k in
                ("blur", "dilate", "distort", "remap", "feather", "hsv", "invert")]
 
-    act("cop.comp",          "Composite", None,                                "COP_blend")
+    act("cop.comp",          "Composite", None,                                "COP2_blend")
+    # Houdini 22 has COP icons for over, multiply, add, under and subtract
+    # only; blend and divide borrow the legacy compositor's and VOPs'.
+    comp_icons = {"blend": "COP2_blend", "divide": "VOP_divide"}
     for mode in ("over", "blend", "multiply", "add", "under", "subtract", "divide"):
         act(f"cop.comp.{mode}", mode.capitalize(),
-            _cop_nodes_call("composite", mode), f"COP_{mode}")
+            _cop_nodes_call("composite", mode), comp_icons.get(mode, f"COP_{mode}"))
     _comp = [item(f"cop.comp.{m}") for m in
              ("over", "blend", "multiply", "add", "under", "subtract", "divide")]
 
-    act("cop.file",   "File",   _node("file"),                  "COP_file")
+    act("cop.file",   "File",   _node("file"),                  "COP2_file")
     act("cop.render", "Render", _cop_nodes_call("render_cop"),  "NETWORKS_cop")
 
     return radial.menu([
@@ -310,21 +343,46 @@ def _build_cop_menu(radial):
 
 # ── VOP (MaterialX) context menu ─────────────────────────────────────────────
 #
-# Ported from the native radialmenu/definitions/vop.json, with the broken
-# entries fixed (two malformed node names) and the mislabeled "Math"
-# submenu renamed to what its nodes actually are.
+# First ported from the native radialmenu/definitions/vop.json. Brought up
+# to Radial's own network menus (Discord, Remy 2026-11-11: "looks to be an
+# old version"): it behaves as they do (hold, release over a slice to
+# place it, tap to latch), and its centre places a surface (release:
+# Standard Surface; open it for OpenPBR, Surface Material, Displacement).
+# The old "Image Sequence" slice placed mtlximagesequence, a node Houdini
+# 22 does not have; an image sequence is an Image with <frame> in its file.
+
+#: Every node type the VOP menu places, for tests/test_radial_startup.py.
+VOP_MENU_NODES = (
+    "mtlxstandard_surface", "mtlxopen_pbr_surface", "mtlxsurfacematerial",
+    "mtlxdisplacement",
+    "mtlximage", "mtlxtiledimage", "mtlxtriplanarprojection",
+    "mtlxremap", "mtlxcolorcorrect",
+    "mtlxconstant", "mtlxfractal3d", "mtlxambientocclusion",
+    "kma_voronoinoise3d", "mtlxgeomcolor", "mtlxgeompropvalue", "kma_curvature",
+    "mtlxnormalmap", "mtlxbump", "mtlxmultiply", "mtlxadd", "mtlxsubtract",
+    "mtlxdivide",
+)
+
 
 def _build_vop_menu(radial):
     _node = radial.make_node_callback
     act = radial.register_action
     item = radial.item_from_action
 
+    act("vop.surface",              "Surface",          None,                            "VOP_surfacemodel")
+    act("vop.surface.standard",     "Standard Surface", _node("mtlxstandard_surface"),   "VOP_surfacemodel")
+    act("vop.surface.openpbr",      "OpenPBR",          _node("mtlxopen_pbr_surface"),   "VOP_principled")
+    act("vop.surface.material",     "Surface Material", _node("mtlxsurfacematerial"),    "VOP_kma_mtlx")
+    act("vop.surface.displacement", "Displacement",     _node("mtlxdisplacement"),       "VOP_displace")
+    # Centre slots: top, right, bottom, left.
+    _surface = [item(f"vop.surface.{k}") for k in
+                ("standard", "openpbr", "material", "displacement")]
+
     act("vop.image",           "Image",          None,                              "PARTS_image")
     act("vop.image.image",     "Image",          _node("mtlximage"),                "PARTS_image")
     act("vop.image.tiled",     "Tiled Image",    _node("mtlxtiledimage"),           "CHOP_image")
-    act("vop.image.sequence",  "Image Sequence", _node("mtlximagesequence"),        "NETWORKS_cop2")
     act("vop.image.triplanar", "Triplanar",      _node("mtlxtriplanarprojection"),  "VOP_uvtriplanarproject")
-    _image = [item(f"vop.image.{k}") for k in ("image", "tiled", "sequence", "triplanar")]
+    _image = [item(f"vop.image.{k}") for k in ("image", "tiled", "triplanar")]
 
     act("vop.adjust",         "Adjust",        None,                       "COP_remap")
     act("vop.adjust.remap",   "Remap",         _node("mtlxremap"),         "COP_remap")
@@ -343,8 +401,8 @@ def _build_vop_menu(radial):
             ("constant", "noise", "occlusion", "voronoi", "geocolor", "geoprop", "curvature")]
 
     act("vop.util",           "Utility",    None,                    "VOP_multiply")
-    act("vop.util.normalmap", "Normal Map", _node("mtlxnormalmap"),  "VOP_displacetexture")
-    act("vop.util.bump",      "Bump",       _node("mtlxbump"),       "VOP_bump")
+    act("vop.util.normalmap", "Normal Map", _node("mtlxnormalmap"),  "VOP_displace")
+    act("vop.util.bump",      "Bump",       _node("mtlxbump"),       "COP2_bump")
     act("vop.util.multiply",  "Multiply",   _node("mtlxmultiply"),   "VOP_multiply")
     act("vop.util.add",       "Add",        _node("mtlxadd"),        "VOP_add")
     act("vop.util.subtract",  "Subtract",   _node("mtlxsubtract"),   "VOP_subtract")
@@ -352,12 +410,22 @@ def _build_vop_menu(radial):
     _util = [item(f"vop.util.{k}") for k in
              ("normalmap", "bump", "multiply", "add", "subtract", "divide")]
 
-    return radial.menu([
-        item("vop.image",  children=_image),
-        item("vop.adjust", children=_adjust),
-        item("vop.gen",    children=_gen),
-        item("vop.util",   children=_util),
-    ], label="VOP")
+    return radial.menu(
+        [
+            item("vop.image",  children=_image),
+            item("vop.adjust", children=_adjust),
+            item("vop.gen",    children=_gen),
+            item("vop.util",   children=_util),
+        ],
+        label="Material",
+        center=item("vop.surface", children=_surface,
+                    release_callback=_node("mtlxstandard_surface")),
+        # As Radial's own network menus: hold and release over a slice to
+        # place it, or tap to keep the menu open and click.
+        latch=False,
+        tap_release=True,
+        activate_on_release=True,
+    )
 
 
 # ── Binding the context menus ────────────────────────────────────────────────
@@ -366,14 +434,23 @@ def _build_vop_menu(radial):
 #: exactly these and nothing a user or another package bound.
 _CONTEXT_MENU_SOURCE = "tumblepipe.context_menus"
 
+#: The key the VOP (material) menu opens on. Not Radial's *Open menus with*
+#: key: that is X by default, and over a VOP network holding X and clicking
+#: a node is Houdini's Visualize Output, which the menu took over (Discord,
+#: Remy 2026-11-11). Alt+E is free in Houdini's network editor (Alt+X is
+#: Cut, Alt+V Paste, Alt+M Merge).
+VOP_MENU_KEY = "Alt+E"
 
-def _bind_context_menus(radial, menus: dict) -> None:
-    """Bind the COP and VOP menus on the chord Radial's own menus open with.
 
-    The chord is Radial's *Open menus with* setting (``trigger_key``, Space
-    by default), so these open where the shipped network menu would. When
-    that setting changes the bindings move with it, and an empty setting
-    unbinds them, as it does Radial's own menus.
+def _bind_context_menus(radial, menus: dict, keyed: dict | None = None) -> None:
+    """Bind the network context menus.
+
+    *menus* (context -> menu) bind on the chord Radial's own menus open with:
+    its *Open menus with* setting (``trigger_key``, X by default), so they
+    open where the shipped network menu would. When that setting changes
+    they move with it, and an empty setting unbinds them, as it does
+    Radial's own menus. *keyed* ((chord, context) -> menu) bind on a chord
+    of their own and stay there whatever the setting says.
 
     Binding installs the chord's controller on Houdini's UI event loop. A
     headless session therefore binds nothing, and a GUI session binds once
@@ -385,10 +462,14 @@ def _bind_context_menus(radial, menus: dict) -> None:
 
     from tumbleradial import settings
 
+    keyed = dict(keyed or {})
+
     def _rebind():
         chord = str(settings.get("trigger_key") or "").strip()
         with radial.batch():
             radial.unbind_source(_CONTEXT_MENU_SOURCE)
+            for (own_chord, context), menu in keyed.items():
+                radial.bind(own_chord, context, menu, source=_CONTEXT_MENU_SOURCE)
             if not chord:
                 return
             for context, menu in menus.items():

@@ -67,13 +67,20 @@ pub fn transform_point(p: Vec3, m: &Mat4) -> Vec3 {
     [(h[0] / w) as f32, (h[1] / w) as f32, (h[2] / w) as f32]
 }
 
+/// The determinant of `m`'s upper-left 3x3 block: negative for a transform
+/// that mirrors.
+pub fn det3(m: &Mat4) -> f64 {
+    let a = |r: usize, c: usize| m[r * 4 + c];
+    a(0, 0) * (a(1, 1) * a(2, 2) - a(1, 2) * a(2, 1))
+        - a(0, 1) * (a(1, 0) * a(2, 2) - a(1, 2) * a(2, 0))
+        + a(0, 2) * (a(1, 0) * a(2, 1) - a(1, 1) * a(2, 0))
+}
+
 /// The 3x3 that carries normals through `m`: the inverse transpose of its
 /// upper-left block, laid out so a normal transforms as `n * N` like a point.
 pub fn normal_matrix(m: &Mat4) -> [f32; 9] {
     let a = |r: usize, c: usize| m[r * 4 + c];
-    let det = a(0, 0) * (a(1, 1) * a(2, 2) - a(1, 2) * a(2, 1))
-        - a(0, 1) * (a(1, 0) * a(2, 2) - a(1, 2) * a(2, 0))
-        + a(0, 2) * (a(1, 0) * a(2, 1) - a(1, 1) * a(2, 0));
+    let det = det3(m);
     let inv_det = if det.abs() > 1e-30 { 1.0 / det } else { 0.0 };
     // cofactor(r, c) / det is inverse(c, r); the transpose of the inverse is
     // therefore cofactor(r, c) / det, which is what a row vector needs.

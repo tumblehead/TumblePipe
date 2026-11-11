@@ -16,8 +16,11 @@
 //! separable depth-aware blur that spans the pattern. A tier fades in with
 //! its size on screen.
 //!
-//! The lights are fixed to the camera, so a shot is never dark and every
-//! shot is lit the same way.
+//! The lights are the scene's own UsdLux lights ([`crate::lights`]), as
+//! Houdini's GL viewport lights a scene with them; a scene without any, or
+//! a frame asking for the headlight (`th:lighting`), is lit by lights fixed
+//! to the camera ([`LIGHTS`]), so it is never dark and every such shot is
+//! lit the same way.
 //!
 //! Transparent background ([`Frame::alpha`], `TH_PLAYBLAST_ALPHA`): the
 //! backdrop is left out. A sample that hit nothing adds colour 0 and
@@ -33,7 +36,20 @@
 //! to sRGB and OIIO then divides by alpha, clamped: `min(1, srgb(c) / a)`
 //! with `a` linear, straight alpha in display space (docs/development.md,
 //! "hdThPlayblast: transparent background").
+//!
+//! See-through surfaces ([`crate::raster::Surface::Glass`], a mesh of
+//! opacity under 1) are not in the render buffer the post pass lights: the
+//! rasteriser lights each where it draws it, after the opaque surfaces and
+//! in front of their depth, and adds it to the sample's weighted blended
+//! order-independent sums, every weight 1 ([`Samples::accum`],
+//! [`Samples::reveal`]). Here each sample then becomes `behind * reveal +
+//! accum.rgb / accum.a * (1 - reveal)`, behind being the opaque surface's
+//! lit, occluded colour or the backdrop; a sample nothing opaque covers
+//! counts `1 - reveal` towards the pixel's coverage. A frame without them
+//! has no sums and is resolved bit for bit as before (docs/development.md,
+//! "hdThPlayblast: see-through surfaces").
 
+use crate::lights::Lighting;
 use crate::math::{self, Mat4, Vec3};
 use crate::pool;
 use crate::raster::{srgb_to_linear, Frame, Image};
@@ -41,8 +57,8 @@ use crate::raster::{srgb_to_linear, Frame, Image};
 /// What the post pass makes of the render buffer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Shading {
-    /// Key, fill and rim lights plus a sky/ground ambient on the surface's
-    /// own colour.
+    /// The scene's lights (or the fixed key, fill and rim lights plus a
+    /// sky/ground ambient) on the surface's own colour.
     #[default]
     Lit,
     /// The same lights on a uniform grey.
@@ -80,8 +96,9 @@ impl Shading {
 /// gradient); linearised when drawn, since the image husk receives is linear.
 pub(crate) const BACKDROP_TOP: f32 = 0.70;
 pub(crate) const BACKDROP_BOTTOM: f32 = 0.52;
-/// Camera space (x right, y up, z towards the camera), each pointing from
-/// the surface towards the light, with its intensity.
+/// The fixed rig ([`crate::lights::Lighting::rig`]): camera space (x right,
+/// y up, z towards the camera), each pointing from the surface towards the
+/// light, with its intensity.
 pub(crate) const LIGHTS: [(Vec3, f32); 3] = [
     ([-0.35, 0.35, 1.0], 0.62), // key: above and left of the lens
     ([0.7, -0.15, 0.5], 0.18),  // fill: low on the right
@@ -158,6 +175,17 @@ pub struct Samples {
     /// One per pixel (not per sample): the mesh and instance the first
     /// layer's sample sees, [-1, -1] for none ([`crate::raster::Image::ids`]).
     pub ids: Vec<[i32; 2]>,
+    /// See-through surfaces ([`crate::raster::Surface::Glass`]), per sample
+    /// like `depth`, and empty in a frame with none: the sum of each
+    /// surface's lit colour times its opacity (rgb) and of its opacities
+    /// (w), and the product of one minus its opacities (the revealage, how
+    /// much of what is behind shows; 1 for none).
+    pub accum: Vec<[f32; 4]>,
+    pub reveal: Vec<f32>,
+    /// Per pixel like `ids`: the depth of the nearest see-through surface
+    /// the first layer's sample saw (1 for none), which a nearer one must
+    /// beat to be named in `ids`.
+    pub near: Vec<f32>,
 }
 
 impl Samples {
@@ -171,7 +199,30 @@ impl Samples {
             normal: vec![[0.0; 4]; n],
             depth: vec![1.0; n],
             ids: vec![[-1, -1]; width * height],
+            accum: Vec::new(),
+            reveal: Vec::new(),
+            near: Vec::new(),
         }
+    }
+
+    /// Ready the see-through sums for a frame that has see-through
+    /// surfaces (cleared: nothing added, everything revealed), or empty
+    /// them for one that has none.
+    pub(crate) fn glass(&mut self, on: bool) {
+        let w = self.width.max(1);
+        if !on {
+            self.accum.clear();
+            self.reveal.clear();
+            self.near.clear();
+            return;
+        }
+        let (n, plane) = (self.depth.len(), self.ids.len());
+        self.accum.resize(n, [0.0; 4]);
+        self.reveal.resize(n, 1.0);
+        self.near.resize(plane, 1.0);
+        par_rows(&mut self.accum, w, |_, row| row.fill([0.0; 4]));
+        par_rows(&mut self.reveal, w, |_, row| row.fill(1.0));
+        par_rows(&mut self.near, w, |_, row| row.fill(1.0));
     }
 
     /// Samples per pixel.
@@ -222,6 +273,22 @@ impl View {
         let [r, u, b] = self.axes;
         let v = math::normalize([math::dot(n, r), math::dot(n, u), math::dot(n, b)]);
         [v[0], v[1], v[2], math::dot(to_eye, b)]
+    }
+
+    /// The unit direction from a world position towards the camera, in
+    /// camera space: what [`light`] takes as `v` for a surface lit where
+    /// it is drawn (a see-through one) rather than in the post pass.
+    pub fn towards_eye(&self, world: Vec3) -> Vec3 {
+        let to_eye = math::sub(self.eye, world);
+        let [r, u, b] = self.axes;
+        math::normalize([math::dot(to_eye, r), math::dot(to_eye, u), math::dot(to_eye, b)])
+    }
+
+    /// A world position in camera space: what [`light`] takes as `p`.
+    pub fn camera_point(&self, world: Vec3) -> Vec3 {
+        let v = math::sub(world, self.eye);
+        let [r, u, b] = self.axes;
+        [math::dot(v, r), math::dot(v, u), math::dot(v, b)]
     }
 }
 
@@ -483,22 +550,36 @@ fn blur_pass(ao: &[f32], out: &mut [f32], normal: &[[f32; 4]], distance: &[f32],
     });
 }
 
-/// The colour of a surface with `albedo` and camera-space normal `n`, seen
-/// along `v` (towards the camera).
-fn light(shading: Shading, albedo: Vec3, n: Vec3, v: Vec3, lights: &[(Vec3, f32); 3]) -> Vec3 {
+/// The colour of a surface with `albedo` and camera-space normal `n` at
+/// camera-space point `p`, seen along `v` (towards the camera): the
+/// ambient, each light's colour by Lambert's cosine, and a highlight of one
+/// light ([`Lighting`]). With the fixed rig, per channel exactly the
+/// arithmetic of the grey rig before scene lights existed.
+pub(crate) fn light(shading: Shading, albedo: Vec3, n: Vec3, v: Vec3, p: Vec3, lighting: &Lighting) -> Vec3 {
     let albedo = match shading {
         Shading::Albedo => return albedo,
         Shading::Occlusion => return [1.0; 3],
         Shading::Clay => CLAY_ALBEDO,
         Shading::Lit => albedo,
     };
-    let mut k = GROUND + (SKY - GROUND) * (0.5 + 0.5 * n[1]);
-    for &(l, intensity) in lights {
-        k += intensity * math::dot(n, l).max(0.0);
+    let (sky, ground) = (lighting.sky, lighting.ground);
+    let up = 0.5 + 0.5 * n[1];
+    let mut k = [0, 1, 2].map(|c| ground[c] + (sky[c] - ground[c]) * up);
+    for lamp in &lighting.lamps[..lighting.count] {
+        let (l, e) = lamp.toward(p);
+        let cos = math::dot(n, l).max(0.0);
+        for c in 0..3 {
+            k[c] += e[c] * cos;
+        }
     }
-    let h = math::normalize(math::add(lights[0].0, v));
-    let spec = SPECULAR * math::dot(n, h).max(0.0).powi(SHININESS);
-    [albedo[0] * k + spec, albedo[1] * k + spec, albedo[2] * k + spec]
+    let mut spec = [0.0f32; 3];
+    if lighting.count > 0 && lighting.specular > 0.0 {
+        let (l, e) = lighting.lamps[lighting.shine].toward(p);
+        let h = math::normalize(math::add(l, v));
+        let s = lighting.specular * math::dot(n, h).max(0.0).powi(SHININESS);
+        spec = if lighting.tinted { e.map(|c| s * c) } else { [s; 3] };
+    }
+    [albedo[0] * k[0] + spec[0], albedo[1] * k[1] + spec[1], albedo[2] * k[2] + spec[2]]
 }
 
 fn backdrop(y: usize, h: usize) -> f32 {
@@ -513,7 +594,7 @@ pub fn resolve(frame: &Frame, samples: &Samples) -> Image {
     let plane = w * h;
     let proj = math::mul(&frame.view_to_world, &frame.world_to_clip);
     let unproject = Unproject::new(&proj, w, h);
-    let lights = LIGHTS.map(|(l, i)| (math::normalize(l), i));
+    let lighting = Lighting::new(&frame.lights, &frame.view_to_world);
     // Where sample `k` of pixel (x, y) sits on screen.
     let at_screen = |k: usize, x: usize, y: usize| {
         let (ox, oy) = samples.offsets[k];
@@ -531,29 +612,45 @@ pub fn resolve(frame: &Frame, samples: &Samples) -> Image {
 
     let mut color = vec![[0.0f32; 4]; plane];
     let inv = 1.0 / n as f32;
+    let glass = !samples.reveal.is_empty();
     par_rows(&mut color, w, |y, row| {
         // Transparent: nothing behind the surfaces, and alpha the coverage.
         let g = if frame.alpha { 0.0 } else { backdrop(y, h) };
         for (x, out) in row.iter_mut().enumerate() {
             let mut sum = [0.0f32; 3];
             let mut covered = 0usize;
+            // What see-through surfaces cover of samples nothing opaque does.
+            let mut seen = 0.0f32;
             for k in 0..n {
                 let at = k * plane + y * w + x;
-                let c = if samples.depth[at] < 1.0 {
+                let opaque = samples.depth[at] < 1.0;
+                let mut c = if opaque {
                     covered += 1;
                     let nd = samples.normal[at];
                     let n = [nd[0], nd[1], nd[2]];
                     let (sx, sy) = at_screen(k, x, y);
-                    let v = math::normalize(math::scale(unproject.at(sx, sy, nd[3]), -1.0));
+                    let p = unproject.at(sx, sy, nd[3]);
+                    let v = math::normalize(math::scale(p, -1.0));
                     let a = samples.albedo[at];
-                    let c = light(frame.shading, [a[0], a[1], a[2]], n, v, &lights);
+                    let c = light(frame.shading, [a[0], a[1], a[2]], n, v, p, &lighting);
                     math::scale(c, ao[at])
                 } else {
                     [g, g, g]
                 };
+                if glass {
+                    let s = samples.accum[at];
+                    if s[3] > 0.0 {
+                        let (r, over) = (samples.reveal[at], 1.0 / s[3]);
+                        let k = 1.0 - r;
+                        c = [c[0] * r + s[0] * over * k, c[1] * r + s[1] * over * k, c[2] * r + s[2] * over * k];
+                        if !opaque {
+                            seen += k;
+                        }
+                    }
+                }
                 sum = math::add(sum, c);
             }
-            let a = if frame.alpha { covered as f32 * inv } else { 1.0 };
+            let a = if frame.alpha { (covered as f32 + seen) * inv } else { 1.0 };
             *out = [sum[0] * inv, sum[1] * inv, sum[2] * inv, a];
         }
     });

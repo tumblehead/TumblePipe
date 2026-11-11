@@ -117,13 +117,20 @@ def read_env_file(path: Path) -> dict:
     return env
 
 
-def task_env(base: dict, env_file: str | None, data_dir: str) -> dict:
-    """The environment a task runs in: the clean base, ``TH_FARM_DATA``, the job's env file."""
+def task_env(base: dict, env_file: str | None, data_dir: str, overrides: dict | None = None) -> dict:
+    """The environment a task runs in: the clean base, ``TH_FARM_DATA``, the
+    job's env file, then the job entry's own ``env`` (``overrides``) on top.
+
+    A farm job run here (``manager.run_here``) reuses its Deadline env file,
+    which does not send what it submits to this machine; its entry's
+    ``TH_FARM_BACKEND=local`` must win over the file.
+    """
     env = clean_env(base)
     if data_dir:
         env['TH_FARM_DATA'] = data_dir
     if env_file and Path(env_file).is_file():
         env.update(read_env_file(Path(env_file)))
+    env.update({str(k): str(v) for k, v in (overrides or {}).items()})
     return env
 
 

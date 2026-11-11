@@ -6,6 +6,7 @@
 pub mod beauty_alpha;
 pub mod conventions;
 pub mod migration;
+pub mod project_location;
 pub mod templates;
 
 use std::path::{Path, PathBuf};

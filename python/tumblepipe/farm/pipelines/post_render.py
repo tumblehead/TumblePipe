@@ -52,6 +52,10 @@ class Shot:
     last_frame: int
     step_size: int
     staging_path: Path
+    # The frames in the cut (the range minus its pre/post roll), when the
+    # submitter knows them. The preview's check frames come from it: a
+    # first or last frame on the roll is a handle nobody sees.
+    cut_range: tuple[int, int] | None = None
 
     @property
     def frames(self) -> BlockRange:
@@ -60,6 +64,15 @@ class Shot:
     @property
     def middle_frame(self) -> int:
         return self.frames.frame(0.5)
+
+    @property
+    def check_frames(self) -> tuple[int, int, int]:
+        """The first, middle and last frame of the cut (else of the range):
+        what a preview renders and its notify posts."""
+        if self.cut_range is None:
+            return self.first_frame, self.middle_frame, self.last_frame
+        first, last = self.cut_range
+        return first, BlockRange(first, last, 1).frame(0.5), last
 
 
 def write_framestack_context(
@@ -219,6 +232,7 @@ def frames_notify_job(
             uri, render_department, channel, version_name,
             'beauty', '####', 'exr', shot.purpose
         )
+    first_frame, middle_frame, last_frame = shot.check_frames
     return notify_job.build(dict(
         title = f'notify partial {render_department} {version_name}',
         priority = notify_job.PRIORITY,
@@ -229,9 +243,9 @@ def frames_notify_job(
         command = dict(
             mode = 'partial',
             frame_path = path_str(frame_path),
-            first_frame = shot.first_frame,
-            middle_frame = shot.middle_frame,
-            last_frame = shot.last_frame
+            first_frame = first_frame,
+            middle_frame = middle_frame,
+            last_frame = last_frame
         )
     ), dict(), shot.staging_path)
 

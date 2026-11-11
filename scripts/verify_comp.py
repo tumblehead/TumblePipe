@@ -82,6 +82,7 @@ import hou  # noqa: E402
 
 from tumblepipe.api import api, path_str  # noqa: E402
 from tumblepipe.util.uri import Uri  # noqa: E402
+from tumblepipe.config.channels import list_channels  # noqa: E402
 from tumblepipe.pipe import comp  # noqa: E402
 from tumblepipe.pipe.paths import Context  # noqa: E402
 from tumblepipe.pipe.houdini import entity_node  # noqa: E402
@@ -637,10 +638,13 @@ def check_multi(template, shots):
     hou.hipFile.clear(suppress_save_prompt=True)
     entity_node.scene_context = lambda: None
     copnet = hou.node('/stage').createNode('copnet', 'comp')
-    x = 0.0
-    for shot_uri in shots:
-        member = '_'.join(shot_uri.segments[1:])
-        x += template['_build'](copnet, shot_uri, suffix=f'_{member}', x=x, pin=True) + comp.MEMBER_GAP
+    layouts = comp.multi_layout([
+        (f"_{'_'.join(shot_uri.segments[1:])}", list_channels(shot_uri)) for shot_uri in shots
+    ])
+    for shot_uri, layout in zip(shots, layouts):
+        template['_build'](copnet, shot_uri, layout, pin=True)
+    check('Multi: one set of sticky notes (the first member only)',
+          len(copnet.stickyNotes()) == len(layouts[0].notes), str(len(copnet.stickyNotes())))
     check('Multi: no import left on from_context',
           all(n.parm('entity').eval() != 'from_context' for n in import_render.find_imports()))
     exports = export_comp.find_exports()

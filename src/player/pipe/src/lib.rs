@@ -1,6 +1,7 @@
 //! TumblePipe's pipeline in Rust, for the editor (`th_player`) and
 //! tumblepipe-mcp: URIs, storage, the config database, departments,
-//! versions, review media discovery, and creating and retiring entities.
+//! versions, review media discovery, department workfiles, and creating
+//! and retiring entities.
 //!
 //! The Python package (`python/tumblepipe`) is the specification: each
 //! module names what it ports, and `tests/test_pipe_parity.py` drives both
@@ -9,6 +10,7 @@
 pub mod config;
 pub mod db;
 pub mod departments;
+pub mod desktop;
 pub mod discovery;
 pub mod edit_files;
 pub mod edits;
@@ -26,6 +28,7 @@ pub mod testing;
 pub mod timeline;
 pub mod uri;
 pub mod versions;
+pub mod workfiles;
 
 use std::path::{Path, PathBuf};
 

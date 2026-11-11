@@ -127,7 +127,7 @@ Right-click menus on sidebar rows. Each starts with the creation options the
 | Row | Creation options | Then |
 |---|---|---|
 | **Assets** header, a category | **New Asset...**, **Entity Editor...**, **New Category...**, **New Multi...**, **New Root...** | a category adds **Delete category '*category*'…** |
-| **Shots** header, a sequence | **New Shot...**, **Entity Editor...**, **New Sequence...**, **New Multi...**, **New Root...** | a sequence adds **Delete sequence '*sequence*'…** |
+| **Shots** header, a sequence | **New Shot...**, **Entity Editor...**, **New Sequence...**, **Import Shots from CSV...**, **New Multi...**, **New Root...**; a sequence leads with **Play Sequence** | a sequence adds **Delete sequence '*sequence*'…** |
 | **Multis** subheader, a Multi | **New Multi...** | a Multi adds the Multi card's menu, plus **Add selected to Multi** and **Remove selected from Multi** |
 | **Roots** header | **New Root...** | |
 | a Root | **New Asset...**, **New Shot...**, **Entity Editor...**, **New Recipe...**, **New Multi...**, **New Root...** | the Root card's menu, plus **Add selected to Root** and **Remove selected from Root** |
@@ -345,7 +345,7 @@ them as one list), and TumbleTrove ends with **Refresh Thumbnail** and
 
 A section with nothing in it is left out. A Multi's or Root's card has the
 container menu instead (**Open Multi**, **Open Folder**, …; see
-[Multis and Roots](multis-and-roots.md#open-folder-add-entity-and-delete)).
+[Multis and Roots](multis-and-roots.md#play-open-folder-add-entity-and-delete)).
 A recipe card has its own entries — **Edit Description…**, **Set Icon…**,
 **Share to Library** / **Copy to Project**, **Delete Recipe** — see
 [Recipes](recipes.md#card-menu-and-detail-actions), and TumbleTrove's
@@ -363,8 +363,12 @@ the same place
 and lead to the same small forms (`get_creation_fields`). Under Assets (or a
 category) the list is **New Asset...**, **Entity Editor...**, **New
 Category...**, **New Multi...** and **New Root...**; under Shots (or a sequence) it is **New
-Shot...**, **Entity Editor...**, **New Sequence...**, **New Multi...** and
-**New Root...**. A
+Shot...**, **Entity Editor...**, **New Sequence...**, **Import Shots from
+CSV...** ([the Entity Editor's page](entity-editor.md#apply) describes it),
+**New Multi...** and **New Root...**, led on one sequence by **Play
+Sequence** ([the editor](play-shots.md)). **New Multi...** chosen on a
+category or sequence row offers to start the Multi with that whole category
+or sequence. A
 Multis subheader offers **New Multi...** alone, the Roots header **New
 Root...** alone, the Recipes section **New Recipe...** alone, and anywhere
 unscoped offers **New Asset...**, **New Shot...**, **Entity Editor...**, **New
@@ -385,13 +389,23 @@ registered.
 | **New Recipe** | **Name**; **Description**; **Tags** | Saves the nodes selected in the network editor. See [Recipes](recipes.md#saving-a-recipe). |
 
 Names are written as typed; the new asset or shot is selected in the grid
-once it appears. A new asset, shot, category or sequence is named with
+once it appears. A form says what is wrong with a value under its field as
+you type (a name with other characters, one already taken, a category named
+like a sequence) and keeps **OK** off until it is right; a create that is
+refused all the same reopens the form with what you typed (both need a
+TumbleTrove newer than 0.59.0; on an older one the refusal is a message and
+the form closes). A new asset, shot, category or sequence is named with
 letters and digits only (`SH050`, not `SH_050`): names are joined with `_`
 across the pipeline, so `PROP/old_tree` and `PROP_old/tree` would read the
 same. Every way of creating or renaming one (these forms, **Duplicate…**,
 the [Entity Editor](entity-editor.md), the [Database Editor](config-editor.md),
 CSV import, scripts) refuses anything else with *Asset name 'X' may only
-use letters and digits.* A category or sequence named before this rule
+use letters and digits.* Nor can a name be one of the device names Windows
+keeps in every folder, in any case: `CON`, `PRN`, `AUX`, `NUL`, `COM0` to
+`COM9` and `LPT0` to `LPT9` (*Shot name 'Aux' is a device name Windows
+reserves*), since no Windows machine can make or open a folder of that
+name. `console` or `COM10` is fine. Department and channel names follow the
+same device rule. A category or sequence named before this rule
 (`Seq_0010`) keeps working and takes new, well-named entities. A category and a sequence can never share a name, so every
 form that would create one (including a **New Shot** or **New Asset** whose
 sequence or category does not exist yet) refuses with *'X' is already a

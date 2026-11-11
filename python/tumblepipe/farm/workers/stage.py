@@ -127,7 +127,9 @@ def main(config: dict, _frame_span: BlockRange) -> int:
                 last_frame = last_frame,
                 step_size = step_size,
                 batch_size = batch_size,
-                copy_to_edit = copy_to_edit
+                copy_to_edit = copy_to_edit,
+                **({} if 'cut_range' not in config['settings']
+                   else dict(cut_range = config['settings']['cut_range']))
             ),
             tasks = tasks,
             # The re-comp after the render (Farm Submit's Comp column)

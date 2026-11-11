@@ -33,6 +33,7 @@ config = {
         'batch_size': 'int',
         'denoise': 'bool',
         'copy_to_edit': 'bool',
+        'cut_range': ['int', 'int'],     # optional: specs.render_pipeline.valid_cut_range
         'composite': {...}               # optional: specs.composite.valid_recomp
     },
     'playblast': {                       # optional
@@ -58,7 +59,7 @@ from tumblepipe.farm.checks import (
     valid_channel_names,
 )
 from tumblepipe.farm.specs.playblast import DEFAULT_LOOK, valid_look
-from tumblepipe.farm.specs.render_pipeline import RENDER_TASK_KEYS
+from tumblepipe.farm.specs.render_pipeline import RENDER_TASK_KEYS, valid_cut_range
 
 
 def playblast_look(playblast: dict) -> dict:
@@ -88,6 +89,7 @@ def _valid_render(render):
         if not check_int(render, key): return False
     if not check_bool(render, 'denoise'): return False
     if not check_bool(render, 'copy_to_edit'): return False
+    if not valid_cut_range(render): return False
     if 'composite' in render and not valid_recomp(render['composite']): return False
     return True
 

@@ -29,7 +29,7 @@ serde_json = "1"
 # published to a registry. Without its default `os` feature (native menus
 # and tray icons): on Linux that feature links GTK and libxdo, which artists'
 # machines would then need installed. player/Cargo.toml turns it on for
-# Windows and macOS, where the editor has a native menu bar.
+# macOS only, where the editor's menu is the global menu bar.
 primer = { git = "http://10.100.36.15:3000/soren-n/primer.git", rev = "4933131ee40eef410f6c62a8fc690f07913cc01d", default-features = false }
 exr = "1.74"
 half = { version = "2", features = ["bytemuck"] }

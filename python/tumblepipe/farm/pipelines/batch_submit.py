@@ -137,6 +137,21 @@ def publish_department_names(settings: dict, department_names: list[str]) -> tup
     return department_names_up_to(department_names, pub_department), True
 
 
+def _rendered_range(entity_uri) -> tuple[int, int] | None:
+    """The frames every channel's best render covers now (what a re-comp's
+    default imports read), None when none is rendered or a range is unknown."""
+    from tumblepipe.pipe import comp
+    from tumblepipe.pipe.paths import get_render_context
+    try:
+        renders = get_render_context(entity_uri, purpose='render').renders
+        departments = [d.name for d in list_departments('render')]
+        reads = comp.best_reads(renders, departments, list_channels(entity_uri))
+        return comp.covered_range(comp.read_ranges(renders, reads).values())
+    except Exception:
+        logging.warning(f"Could not read the rendered range of {entity_uri}", exc_info=True)
+        return None
+
+
 def _check_preview_department(kind: str, name, department_names, renderable_names):
     """A render or playblast department must be real and renderable.
 
@@ -351,6 +366,8 @@ def submit_entity_batch(config: dict) -> list[str]:
             raise BatchSubmitError(
                 f"Invalid frame range for {entity_uri}: {e}"
             )
+        # The preview's check frames sit in the cut, not on the roll.
+        cut_range = [first_frame, last_frame]
         first_frame = render_frame_range.first_frame
         last_frame = render_frame_range.last_frame
 
@@ -359,6 +376,13 @@ def submit_entity_batch(config: dict) -> list[str]:
     if do_playblast and entity_context != 'shots':
         raise BatchSubmitError(
             f"Playblast is only supported for shots, not '{entity_context}'"
+        )
+    if do_render and entity_context != 'shots':
+        # An asset's staged build carries no render settings, camera or
+        # lights; only a shot's root layer brings them (#49).
+        from tumblepipe.farm.submit.grid import ASSET_RENDER_HINT
+        raise BatchSubmitError(
+            f"{entity_uri} is not a shot: {ASSET_RENDER_HINT}"
         )
 
     # A comp is a shot's, and follows a render's full range: a preview-only
@@ -375,18 +399,22 @@ def submit_entity_batch(config: dict) -> list[str]:
         )
 
     # The comp's frames: the render's range (rolls included) when it follows
-    # one, else the shot's, each end replaced by a frame the artist set. A
-    # comp after a render may not reach past it: it reads that render.
+    # one, else what the renders on disk cover (#43: the shot's range with
+    # roll comped 248 black frames over an 8-frame render), else the shot's;
+    # each end replaced by a frame the artist set. A comp after a render
+    # may not reach past it: it reads that render.
     comp_range = None
     if do_comp:
         if do_render:
             follows = (first_frame, last_frame)
         else:
-            shot_range = get_frame_range(entity_uri)
-            if shot_range is None:
-                raise BatchSubmitError(f"No frame range for {entity_uri}")
-            full = shot_range.full_range()
-            follows = (full.first_frame, full.last_frame)
+            follows = _rendered_range(entity_uri)
+            if follows is None:
+                shot_range = get_frame_range(entity_uri)
+                if shot_range is None:
+                    raise BatchSubmitError(f"No frame range for {entity_uri}")
+                full = shot_range.full_range()
+                follows = (full.first_frame, full.last_frame)
         try:
             comp_range = composite_pipeline.recomp_range(
                 comp_block, *follows, inside=do_render,
@@ -564,6 +592,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         batch_size=batch_size,
                         denoise=denoise,
                         copy_to_edit=copy_to_edit,
+                        cut_range=cut_range,
                     )
                     if comp_block is not None:
                         collapse_config['render']['composite'] = comp_block
@@ -596,6 +625,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         copy_to_edit=copy_to_edit,
                         task_keys=list(render_task_keys),
                         composite=comp_block,
+                        cut_range=cut_range,
                     )
                     try:
                         render_pipeline.build(
@@ -634,7 +664,8 @@ def submit_entity_batch(config: dict) -> list[str]:
                         last_frame=last_frame,
                         step_size=1,  # Default
                         batch_size=batch_size,
-                        copy_to_edit=copy_to_edit
+                        copy_to_edit=copy_to_edit,
+                        cut_range=cut_range,
                     ),
                     **({} if comp_block is None else {'composite': comp_block}),
                     tasks={

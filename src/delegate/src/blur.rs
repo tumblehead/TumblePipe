@@ -467,7 +467,7 @@ mod tests {
         let mesh = Mesh {
             points: &points, triangles: &triangles, corner_normals: None, corner_colors: None, corner_uvs: None,
             base_color: [1.0; 3], tiles: Vec::new(), transforms: &transforms, key: None,
-            points_close: None, transform_keys: &keys,
+            points_close: None, transform_keys: &keys, opacity: 1.0, cull: crate::raster::Cull::Nothing,
         };
         for (s, x) in [(0.0f32, 0.0), (0.25, 0.5), (0.5, 1.0), (0.75, 3.0), (1.0, 5.0)] {
             assert!((transform_at(&mesh, 0, s)[12] - x).abs() < 1e-9, "at {s}: {}", transform_at(&mesh, 0, s)[12]);
