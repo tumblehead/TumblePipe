@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from tumblepipe.farm import stamp
-from tumblepipe.farm.local import queue
+from tumblepipe.farm.local import previews, queue
 
 LOCAL = 'local'
 FARM = 'farm'
@@ -83,6 +83,12 @@ class JobRow:
     # or failed its queued, pending and suspended ones too (Deadline runs
     # nothing more of a completed or failed job).
     live_tasks: int = 0
+    # Local, a partial notify job whose preview frames are done (#75,
+    # farm.local.previews): when, what (010/0100 denoise v0003: 3 frames)
+    # and the folder they are in. '' for every other job.
+    preview_ready: str = ''
+    preview_summary: str = ''
+    preview_folder: str = ''
 
 
 @dataclass(frozen=True)
@@ -150,9 +156,12 @@ _LOCAL_LIVE = (queue.QUEUED, queue.RENDERING, queue.SUSPENDED)
 
 def local_job_rows(folder: Path, batch: dict, state: dict) -> list[JobRow]:
     statuses = queue.job_statuses(batch, state)
+    ready = previews.recorded(state)
     rows = []
     for job in batch['jobs']:
         index = job['index']
+        preview_entry = ready.get(str(index))
+        preview = previews.entry_preview(preview_entry)
         tasks = state['jobs'][str(index)]['tasks']
         task_states = [t['status'] for t in tasks]
         starts = [t['started'] for t in tasks if t.get('started')]
@@ -191,8 +200,18 @@ def local_job_rows(folder: Path, batch: dict, state: dict) -> list[JobRow]:
             project=project,
             entity=entity,
             live_tasks=sum(1 for s in task_states if s in _LOCAL_LIVE),
+            preview_ready=str(preview_entry.get('ready') or '') if preview else '',
+            preview_summary=previews.summary(preview) if preview else '',
+            preview_folder=preview.folder if preview else '',
         ))
     return rows
+
+
+def new_previews(job_rows: list[JobRow], seen: set[str]) -> list[JobRow]:
+    """The rows whose preview frames became ready since ``seen`` (the ids
+    already told about), oldest first: what the window's notice announces."""
+    fresh = [row for row in job_rows if row.preview_ready and row.id not in seen]
+    return sorted(fresh, key=lambda row: (row.preview_ready, row.id))
 
 
 def local_rows(root_path: Path) -> tuple[list[JobRow], list[str]]:
@@ -705,7 +724,7 @@ def renderer_details(kind: str, context: dict | None) -> list[Detail]:
         return [Detail('Runs', 'ffmpeg, encoding a video')]
     if kind == 'edit_render':
         result = [
-            Detail('Renderer', 'TumblePipe editor (th_player --render), then ffmpeg'),
+            Detail('Renderer', 'TumblePipe editor (cinedex --render), then ffmpeg'),
             Detail('Engine', 'CPU only, no licence'),
         ]
         if isinstance(context.get('edit_uri'), str) and isinstance(context.get('version'), str):

@@ -1,5 +1,6 @@
 """Post a farm job's result to a project Discord channel: a message, a
-render's first/middle/last frames as one panorama, or a review mp4."""
+render's preview frames (first/middle/last, or the Preview Frames List, up
+to ``MAX_PANORAMA_FRAMES``) as one panorama, or a review mp4."""
 
 from tempfile import TemporaryDirectory
 from io import BytesIO, TextIOWrapper
@@ -48,9 +49,27 @@ class CommandFull(Command):
 @dataclass
 class CommandPartial(Command):
     frame_path: Path
-    first_frame: int
-    middle_frame: int
-    last_frame: int
+    frames: list[int]       # the preview frames, in order (#74: any number)
+
+#: The most preview frames one panorama shows. A Preview Frames List can name
+#: any number; past this many the panorama shows the first ones and the
+#: message says how many more were rendered. A row of eight is already a
+#: wide image at Discord's preview size.
+MAX_PANORAMA_FRAMES = 8
+
+
+def panorama_frames(frames: list[int]) -> tuple[list[int], int]:
+    """The frames a partial's panorama shows (the first
+    :data:`MAX_PANORAMA_FRAMES`, in order) and how many it leaves out."""
+    shown = list(frames[:MAX_PANORAMA_FRAMES])
+    return shown, len(frames) - len(shown)
+
+
+def panorama_scale(count: int) -> float:
+    """How far each frame is scaled in a panorama of ``count``: half size
+    for up to three (as the first/middle/last one always was), smaller for
+    more, so the row stays about one and a half frames wide."""
+    return min(0.5, 1.5 / max(1, count))
 
 def _post(
     user_name: str,
@@ -374,7 +393,9 @@ def _post_panorama(
         panorama_exr_path = temp_path / 'panorama.exr'
 
         # Create panorama EXR using oiiotool
-        _create_panorama_exr(image_paths, panorama_exr_path, scale=0.5)
+        _create_panorama_exr(
+            image_paths, panorama_exr_path, scale=panorama_scale(len(image_paths))
+        )
 
         # Check that panorama was created
         if not panorama_exr_path.exists():
@@ -428,24 +449,26 @@ def _partial(
     channel_name: str,
     message: str,
     frame_path: Path,
-    first_frame: int,
-    middle_frame: int,
-    last_frame: int
+    frames: list[int]
     ) -> int:
-    
-    # Check the frame numbers
-    first_frame_path = frame_file(frame_path, first_frame)
-    middle_frame_path = frame_file(frame_path, middle_frame)
-    last_frame_path = frame_file(frame_path, last_frame)
-    if not first_frame_path.exists():
-        return error(f'First frame not found: {path_str(first_frame_path)}')
-    if not middle_frame_path.exists():
-        return error(f'Middle frame not found: {path_str(middle_frame_path)}')
-    if not last_frame_path.exists():
-        return error(f'Last frame not found: {path_str(last_frame_path)}')
-    
+
+    # The frames the panorama shows, each of which must be on disk
+    shown, left_out = panorama_frames(frames)
+    image_paths = []
+    for frame in shown:
+        image_path = frame_file(frame_path, frame)
+        if not image_path.exists():
+            return error(f'Preview frame {frame} not found: {path_str(image_path)}')
+        image_paths.append(image_path)
+    if left_out:
+        note = (
+            f'showing the first {len(shown)} of {len(frames)} preview frames '
+            f'({left_out} more rendered)'
+        )
+        print(f'The panorama is {note}.')
+        message = f'{message} - {note}'
+
     # Post panorama to discord
-    image_paths = [first_frame_path, middle_frame_path, last_frame_path]
     return _post_panorama(
         user_name,
         channel_name,
@@ -489,22 +512,23 @@ def main(
                 message,
                 video_path
             )
-        case CommandPartial(
-            frame_path,
-            first_frame,
-            middle_frame,
-            last_frame
-            ):
+        case CommandPartial(frame_path, frames):
             return _partial(
                 user_name,
                 channel_name,
                 message,
                 frame_path,
-                first_frame,
-                middle_frame,
-                last_frame
+                frames
             )
         case _: raise ValueError(f'Unknown command: {command}')
+
+def partial_frames(command: dict) -> list[int]:
+    """A partial command's preview frames: its ``frames`` (since #74), else
+    the first, middle and last frame a job queued before names."""
+    if 'frames' in command:
+        return list(command['frames'])
+    return [command['first_frame'], command['middle_frame'], command['last_frame']]
+
 
 def _command(command: dict) -> Command:
     match command['mode']:
@@ -513,12 +537,7 @@ def _command(command: dict) -> Command:
         case Mode.Full:
             return CommandFull(video_path = Path(command['video_path']))
         case Mode.Partial:
-            return CommandPartial(
-                Path(command['frame_path']),
-                command['first_frame'],
-                command['middle_frame'],
-                command['last_frame']
-            )
+            return CommandPartial(Path(command['frame_path']), partial_frames(command))
     raise ValueError(f'Unknown notify mode: {command["mode"]}')
 
 def from_config(config: dict, _frame_span: BlockRange) -> int:

@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5ca070163548620312ef87f9e98b759dbe248d53703dd6a963e0a3e8b013e0a9 # shrinks to steps = [Quit, Serve]
+cc d61260bbb3b4cb9583ebd84acc64be7405d1853ffec10f5ff6c70e081ed542b1 # shrinks to steps = [Serve, Serve]
+cc 2c99246a827996813ce2fc1c8c293434a317bb4e34a80329701e61f65e30eff9 # shrinks to program = Some("th_player"), own = None

@@ -29,7 +29,8 @@ def main(
     input_path: Path,
     exports: list[dict],
     imports: dict,
-    entity_json: dict
+    entity_json: dict,
+    renders: list | None = None
     ) -> int:
 
     # Check that OCIO has been set
@@ -74,7 +75,8 @@ def main(
             receipt_path = path_str(receipt_path),
             input_path = path_str(input_path),
             exports = exports,
-            imports = imports
+            imports = imports,
+            **({} if renders is None else dict(renders = renders))
         ))
 
         # Run script in hython
@@ -114,7 +116,8 @@ def from_config(config: dict, frame_span: BlockRange) -> int:
         job_data_dir() / config['input_path'],
         config['exports'],
         config['imports'],
-        config['entity']
+        config['entity'],
+        config.get('renders'),
     )
 
 

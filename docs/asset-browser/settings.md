@@ -53,6 +53,7 @@ Each checkbox is saved the moment you click it — no Apply needed.
 | **Ask for a version note on save** | on | `prompt_note_on_save` | The **Save** quick action, and **Save new version** when switching scenes, ask for a note that shows in the browser's Note column; Cancel aborts the save without burning a version (and, when switching, the switch). Off saves with a blank note. Autosave-on-scene-change and the emergency save never prompt. |
 | **Show the shot in the camera view** | on | `shot_slate` | The [shot slate](#the-shot-slate). Off hides it in every Scene Viewer at once. |
 | **Hide departments with no workfile** | off | `hide_unused_departments` | An asset, shot or Multi card's department deck, and its hover, show only the departments with a workfile (a member's department covered by a Multi's workfile counts). The detail panel still lists every department, so start a department's first workfile there. |
+| **Notify when preview frames are ready** | on | `notify_preview_ready` | When a render or comp run on **This machine** has rendered its preview frames, a desktop notification says so (shot, department, version, frame count, folder), so a mistake is caught before the full range renders. The local runner reads it each time, so the change reaches a render already running. Off, the Farm Manager still shows its notice. See [Running farm jobs on this machine](../deadline.md#running-farm-jobs-on-this-machine). |
 
 A failed write shows `Failed to persist … preference — see Houdini console`
 but keeps the checkbox as clicked.
@@ -202,6 +203,10 @@ Unticking is scoping only: it hides the department from the entity's menus
 and task lists; existing workfiles and exports stay, keep composing, and
 keep showing (flagged). It can never change a render — see
 [Per-entity assignment](../configuration.md#per-entity-assignment).
+To keep a department out of a shot's build, turn it off instead (the Entity
+Editor's **Departments off** column, or **Disable department on this shot**
+on the department's right-click menu); see
+[Departments turned off on a shot](entity-editor.md#departments-turned-off-on-a-shot).
 
 On a **Multi** card the same menu item opens the coverage editor instead —
 which departments the Multi's workfile overrides for its members. See

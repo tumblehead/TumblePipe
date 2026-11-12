@@ -561,6 +561,7 @@ def select(kwargs):
         api=api,
         include_from_context=True,
         current_selection=raw_node.parm('entity').eval(),
+        from_context_uri=wrap(raw_node)._from_context_entity_uri(),
         title="Select Entity",
         parent=hou.qt.mainWindow()
     )

@@ -197,7 +197,8 @@ class EntityNode(ns.Node):
         ) -> bool:
         """The Entity button: let the artist pick one of the entities this
         node addresses (narrowed to ``contexts`` when given), or
-        'from_context'. True when a pick was made."""
+        'from_context'. True when a pick was made. The picker shows what
+        'from_context' resolves to in this workfile."""
         from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
 
         entity_filter = {
@@ -208,6 +209,7 @@ class EntityNode(ns.Node):
             entity_filter=entity_filter,
             include_from_context=True,
             current_selection=self.parm(self.ENTITY_PARM).eval(),
+            from_context_uri=self._from_context_entity_uri(),
             title=title,
             parent=hou.qt.mainWindow()
         )

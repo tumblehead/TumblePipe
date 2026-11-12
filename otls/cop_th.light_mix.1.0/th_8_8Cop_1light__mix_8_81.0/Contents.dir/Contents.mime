@@ -222,7 +222,7 @@ inputlabel1	[ 0	locks=0 ]	(	rgba	)
 inputtype1	[ 0	locks=0 ]	(	"vector4"	)
 outputlabel1	[ 0	locks=0 ]	(	rgba	)
 outputtype1	[ 0	locks=0 ]	(	"vector4"	)
-inputlabel2	[ 0	locks=0 ]	(	aovs	)
+inputlabel2	[ 0	locks=0 ]	(	lpe	)
 inputtype2	[ 0	locks=0 ]	(	"cable"	)
 }
 

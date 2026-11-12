@@ -118,7 +118,14 @@ Editing rules learned the hard way:
 - **An entity-addressing parm defaults to `from_context`.** Any HDA that
   binds to a pipeline entity uses one idiom: an invisible `entity` (or
   `shot`/`asset`) string parm defaulting to the literal `from_context`,
-  beside an `entity_select` button and a visible `entity_label`. The
+  beside the picker buttons and a visible `entity_label`. The picker is
+  two buttons on one row, both running the same callback with the same
+  hide/disable conditions: `entity_select` (the row label, and the jade
+  `$TH_PIPELINE_PATH/resources/EntityBrowse.svg` icon) and right after it
+  `entity_browse` ("Browse..."). Houdini's parameter pane cannot colour a
+  button or show an icon and text on one (`button_icon` replaces the
+  label, which becomes the row label), hence two;
+  `tests/test_entity_picker_buttons.py` holds every HDA to it. The
   sentinel resolves against the workfile the node lives in, every
   evaluation. Two things that look harmless but are not:
   - **Never default it to `""`.** `EntityNode.get_entity_uri()` resolves

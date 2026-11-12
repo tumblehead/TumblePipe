@@ -50,11 +50,17 @@ class PipelinePrefs:
     # Cards and hovers leave out the departments an entity has no workfile
     # in (the detail panel still lists them all, to start one from).
     hide_unused_departments: bool = False
+    # A desktop notification when a render's preview frames are done on
+    # this machine (farm.local.previews, #75). The local runner reads it.
+    notify_preview_ready: bool = True
     # What the Farm Submit window remembers between openings: per project
     # and tab, the pinned settings, batch choices and collapsed columns;
     # window-wide, collapsed sections, column and clean-up choices, size.
     # Shaped and checked by tumblepipe.farm.submit.remembered.
     farm_submit: dict = field(default_factory=dict)
+    # The entity picker's recent picks: project path -> entity URIs, most
+    # recent first (pipe.entity_picker.push_recent shapes each list).
+    entity_picker_recent: dict = field(default_factory=dict)
     prefs_version: int = _PREFS_VERSION
 
 
@@ -100,8 +106,13 @@ def load_prefs() -> PipelinePrefs:
         hide_unused_departments=bool(
             data.get("hide_unused_departments", False)
         ),
+        notify_preview_ready=bool(data.get("notify_preview_ready", True)),
         farm_submit=(
             data["farm_submit"] if isinstance(data.get("farm_submit"), dict) else {}
+        ),
+        entity_picker_recent=(
+            data["entity_picker_recent"]
+            if isinstance(data.get("entity_picker_recent"), dict) else {}
         ),
     )
 

@@ -3,7 +3,8 @@
 from pathlib import Path
 import json
 
-from tumblepipe.farm.deadline import farm_job, run_batched
+from tumblepipe.farm.deadline import farm_job, schedule_frames
+from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import render as render_spec
 
 
@@ -22,6 +23,10 @@ def build(config, paths, staging_path):
     )
     if 'render_pass' in config:
         context['render_pass'] = config['render_pass']
+    if 'slap_comp' in config:
+        context['slap_comp'] = config['slap_comp']
+    # A multi-range render's tasks are its blocks (#84)
+    context.update(frame_ranges.context_entry(config))
     job = farm_job('render', context, staging_path,
         name = config['title'],
         pool = config['pool_name'],
@@ -30,10 +35,6 @@ def build(config, paths, staging_path):
         max_minutes = 45,
         paths = paths
     )
-    run_batched(
-        job,
-        config['first_frame'], config['last_frame'],
-        config['step_size'], config['batch_size'], config['frames']
-    )
+    schedule_frames(job, config)
     job.output_paths.append(Path(config['receipt_path']))
     return job

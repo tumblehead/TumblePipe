@@ -89,10 +89,20 @@ def archive_entity_folders(
     that way, with the full copy already in ``_deleted/``. The archive sits
     in the same storage root, so a rename always suffices.
     """
+    return archive_folders(entity_folders(entity_uri), stamp)
+
+
+def archive_folders(
+    folders: list[tuple[Path, Path]], stamp: str | None = None,
+) -> list[tuple[Path, Path]]:
+    """Move each ``(storage root, folder)`` to ``<root>/_deleted/<stamp>/<same
+    path>``, all or nothing, as :func:`archive_entity_folders` does for an
+    entity's folders (it is that function's body, for folders found some
+    other way: an edit's, ``pipe.edits.edit_folders``)."""
     if stamp is None:
         stamp = dt.datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')
     moved: list[tuple[Path, Path]] = []
-    for root, folder in entity_folders(entity_uri):
+    for root, folder in folders:
         target = root / ARCHIVE_DIR / stamp / folder.relative_to(root)
         n = 1
         while target.exists():

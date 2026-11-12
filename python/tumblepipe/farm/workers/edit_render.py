@@ -1,6 +1,6 @@
 """Render a published edit version into a movie (Render Edit).
 
-The editor renders it headless, ``th_player --render``: every frame
+The editor renders it headless, ``cinedex --render``: every frame
 composited and shown through the project's OCIO config as a PNG, the sound
 mixed into one WAV, and ``render.json`` saying what it wrote. Houdini's
 hffmpeg encodes them (``apps.mp4.from_edit_frames``) into

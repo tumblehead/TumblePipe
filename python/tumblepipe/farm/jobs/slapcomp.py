@@ -18,7 +18,10 @@ def build(config, paths, staging_path):
         step_size = config['step_size'],
         input_paths = config['input_paths'],
         receipt_path = config['receipt_path'],
-        output_path = config['output_path']
+        output_path = config['output_path'],
+        # A multi-range render's frames only (#84)
+        **({} if 'frame_ranges' not in config
+           else dict(frame_ranges = config['frame_ranges']))
     ), staging_path,
         name = config['title'],
         pool = config['pool_name'],

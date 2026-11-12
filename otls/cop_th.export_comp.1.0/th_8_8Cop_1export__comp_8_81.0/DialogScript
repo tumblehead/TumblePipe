@@ -23,9 +23,19 @@
             type    button
             joinnext
             default { "0" }
-            parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+            parmtag { "button_icon" "$TH_PIPELINE_PATH/resources/EntityBrowse.svg" }
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.export_comp as th_node; th_node.select_entity(kwargs)" }
         parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity_browse"
+            label   "Browse..."
+            type    button
+            joinnext
+            default { "0" }
+            help    "Open the entity picker to search for and pick the entity this node addresses."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.export_comp as th_node; th_node.select_entity(kwargs)" }
+            parmtag { "script_callback_language" "python" }
         }
         parm {
             name    "entity"
@@ -77,8 +87,21 @@
             name    "preview_frames"
             label   "Preview Frames"
             type    toggle
+            joinnext
             default { "0" }
-            help    "Also render the first, middle and last frames as a quick task before the full range."
+            help    "Also render the first, middle and last frames (or the List beside it) as a quick task before the full range."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.export_comp as th_node; th_node.refresh(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "preview_frame_list"
+            label   "List"
+            type    string
+            default { "" }
+            disablewhen "{ preview_frames == 0 }"
+            help    "The Preview Frames List: frames to render first as the preview, space separated, in this order (key poses, say). Empty: the first, middle and last frame. A frame outside the comp's frames or off the Step is dropped, with a warning."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.export_comp as th_node; th_node.refresh(kwargs)" }
+        parmtag { "script_callback_language" "python" }
         }
         parm {
             name    "frame_range"

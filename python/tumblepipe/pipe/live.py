@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import queue
 import re
 import signal
 import subprocess
@@ -92,6 +93,20 @@ def live_folder(root: Path, project_path: str, uri_segments, department: str) ->
 
 def frame_file(folder: Path, frame: int) -> Path:
     return Path(folder) / FRAME_PATTERN.replace('$F4', f'{frame:04d}')
+
+
+#: Where each running player of a project says how to reach it, under the
+#: live root (beside the projects' live folders, not in one):
+#: ``players/<project key>/<pid>.json`` (th_pipe::live::players_dir).
+PLAYERS_DIR = 'players'
+#: The JSON-RPC version the players' endpoint speaks.
+PLAYER_PROTOCOL = 1
+
+
+def players_dir(root: Path, project_path: str) -> Path:
+    """Where the players of the project at ``project_path`` say how to
+    reach them (pipe.live_view, Live view)."""
+    return Path(root) / PLAYERS_DIR / project_key(project_path)
 
 
 # ── what order ──────────────────────────────────────────────
@@ -159,6 +174,15 @@ def done_frames(folder: Path, order: list[int], since: float) -> list[int]:
 def _program(command: list[str]) -> str:
     """How live.json names the program: ``husk`` for .../bin/husk.exe."""
     return Path(command[0]).stem.lower()
+
+
+def tool_beside(program_path: str, tool: str) -> str | None:
+    """Houdini's ``tool`` (``hffmpeg``) beside the program at
+    ``program_path`` (husk, in Houdini's bin), with its suffix; None when
+    there is none."""
+    program = Path(program_path)
+    beside = program.with_name(tool + program.suffix)
+    return str(beside) if beside.is_file() else None
 
 
 def _windows_process(pid: int, access: int):
@@ -293,8 +317,45 @@ class LiveRun:
 _RUNS: dict[str, LiveRun] = {}
 _RUNS_LOCK = threading.Lock()
 
+#: How often a run's follower looks whether husk has ended while it waits
+#: for output; and, once it has, how long it takes the output still in the
+#: pipe: until none came for _DRAIN_QUIET, at most _DRAIN_FOR.
+_POLL = 0.1
+_DRAIN_QUIET = 0.2
+_DRAIN_FOR = 2.0
+
 #: husk's progress lines at --verbose 'a': "ALF_PROGRESS 42%".
 _PROGRESS = re.compile(r'ALF_PROGRESS\s+\d+%')
+
+
+def pump_output(get, exited, take, now, poll: float = _POLL, quiet: float = _DRAIN_QUIET,
+                drain_for: float = _DRAIN_FOR) -> None:
+    """Hand husk's output lines to ``take``, in order, until husk has ended
+    and what it wrote is taken: never until its output ends, which a process
+    holding the pipe can put off for good. ``get(timeout)`` is the next line
+    (None at the output's end; ``queue.Empty`` when none came within
+    ``timeout``), ``exited()`` whether husk has ended, ``now()`` a monotonic
+    clock. Once husk has ended, lines are taken while they keep coming (none
+    for ``quiet`` ends it), for ``drain_for`` at most."""
+    while True:
+        try:
+            line = get(poll)
+        except queue.Empty:
+            if exited():
+                break
+            continue
+        if line is None:
+            return
+        take(line)
+    deadline = now() + drain_for
+    while now() < deadline:
+        try:
+            line = get(quiet)
+        except queue.Empty:
+            return
+        if line is None:
+            return
+        take(line)
 
 
 def _key(folder: Path) -> str:
@@ -363,6 +424,11 @@ def start(folder: Path, command: list[str], env: dict | None, order: list[int],
         'state': RENDERING,
         'program': _program(command),
     }
+    # What Cinedex's Keep as playblast encodes the frames with (its own
+    # FFmpeg has no encoder): Houdini's hffmpeg, beside husk.
+    hffmpeg = tool_beside(command[0], 'hffmpeg') if command else None
+    if hffmpeg is not None:
+        state['hffmpeg'] = hffmpeg
     # Open for the render's whole life: follow() writes husk's output to it
     # from its thread and closes it when husk ends.
     log = open(folder / LOG_FILE, 'w', encoding='utf-8', errors='replace')  # noqa: SIM115
@@ -383,16 +449,37 @@ def start(folder: Path, command: list[str], env: dict | None, order: list[int],
     state['pid'] = process.pid
     write_state(folder, state)
     cancelled = threading.Event()
+    # husk's output, a line at a time; None at its end. Read on a thread of
+    # its own: the end of the output is not the end of husk. Any process
+    # holding the pipe's write end (a helper husk started, or a program
+    # another of Houdini's threads started at that moment, which inherited
+    # it) keeps it open after husk is gone, and a run that waited for it
+    # stayed "rendering" with husk.log open, its cancel timing out.
+    lines: queue.SimpleQueue = queue.SimpleQueue()
 
-    def follow():
-        last_write = 0.0
+    def read():
         try:
             for line in process.stdout:
-                log.write(line)
-                if _PROGRESS.search(line) and time.monotonic() - last_write > 0.2:
-                    state['done'] = done_frames(folder, order, started)
-                    write_state(folder, state)
-                    last_write = time.monotonic()
+                lines.put(line)
+        except (OSError, ValueError):
+            pass
+        finally:
+            lines.put(None)
+
+    def take(line):
+        nonlocal last_write
+        log.write(line)
+        if _PROGRESS.search(line) and time.monotonic() - last_write > 0.2:
+            state['done'] = done_frames(folder, order, started)
+            write_state(folder, state)
+            last_write = time.monotonic()
+
+    last_write = 0.0
+
+    def follow():
+        try:
+            pump_output(lambda timeout: lines.get(timeout=timeout),
+                        lambda: process.poll() is not None, take, time.monotonic)
             process.wait()
         finally:
             log.close()
@@ -415,6 +502,7 @@ def start(folder: Path, command: list[str], env: dict | None, order: list[int],
                     pass
 
     thread = threading.Thread(target=follow, name=f'live-playblast-{run}', daemon=True)
+    threading.Thread(target=read, name=f'live-playblast-{run}-output', daemon=True).start()
     live_run = LiveRun(folder, run, process, thread, cancelled)
     with _RUNS_LOCK:
         _RUNS[_key(folder)] = live_run

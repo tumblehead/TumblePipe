@@ -46,6 +46,48 @@ ENTITY_EDITOR = "entity_editor"
 IMPORT_SHOTS_CSV = "import_shots_csv"
 PLAY_SEQUENCE = "play_sequence"
 
+
+def stage_roots_after_apply() -> str:
+    """The Entity Editor's ``stage_roots`` after an Apply: the trigger the
+    Database Editor's saves go through too (``pipe.root_staging.
+    sync_after_edit``), for every shot whose Root or render settings the
+    Apply changed. Failures are logged; returns the footer's summary."""
+    from tumblepipe.pipe.root_staging import sync_after_edit
+    result = sync_after_edit()
+    for uri, why in result.failures:
+        log.warning("Staging Roots: %s: %s", uri, why)
+    return result.summary()
+
+
+# The edit card's Rename and Delete ask through these (#62); the tests
+# replace them, so the flows run headless.
+
+def ask_text(title: str, label: str, text: str = "") -> str | None:
+    """A line of text from the artist, None on Cancel."""
+    import hou
+    from PySide6.QtWidgets import QInputDialog
+    value, ok = QInputDialog.getText(hou.qt.mainWindow(), title, label, text=text)
+    return value if ok else None
+
+
+def confirm(title: str, text: str) -> bool:
+    """Whether the artist confirms a destructive step (Cancel is the
+    default button)."""
+    import hou
+    from PySide6.QtWidgets import QMessageBox
+    answer = QMessageBox.question(
+        hou.qt.mainWindow(), title, text,
+        QMessageBox.Yes | QMessageBox.Cancel, QMessageBox.Cancel,
+    )
+    return answer == QMessageBox.Yes
+
+
+def tell(text: str) -> None:
+    """Why something was refused."""
+    import hou
+    hou.ui.displayMessage(text, severity=hou.severityType.Warning)
+
+
 if TYPE_CHECKING:
     from .projects import PipelineProjectRegistry
     from .clients import ClientPool
@@ -84,9 +126,9 @@ def sequence_shots(entity_uris, sequence: str) -> list:
 
 def creation_scope(tags) -> str:
     """What a browser scope creates: ``assets``, ``shots``, ``group``,
-    ``scene``, ``recipes``, ``nodes`` or ``edits`` (which create nothing:
-    nodes ship with the package, edits are made in the editor), or ``""``
-    when it is not narrowed to one.
+    ``scene``, ``recipes``, ``nodes`` (which creates nothing: nodes ship
+    with the package) or ``edits``, or ``""`` when it is not narrowed to
+    one.
 
     *tags* are the browser's filter atoms: the active view's merged tags,
     or a sidebar node's own tag split on ``+``. The browser offers the
@@ -204,6 +246,7 @@ class EntityOps:
             IMPORT_SHOTS_CSV, "Import Shots from CSV...", "file-input",
         )
         recipe = CreationOption(recipes.CREATE_OPTION, "New Recipe...", "puzzle")
+        edit = CreationOption(edits.CREATE_OPTION, "New Edit...", edits.ICON)
         scope = creation_scope(tags)
         if scope == "group":
             return [multi]
@@ -211,9 +254,11 @@ class EntityOps:
             return [root]
         if scope == "recipes":
             return [recipe]
-        if scope in ("nodes", "edits"):
-            # Nodes ship with the package; an edit is made in the editor.
+        if scope == "nodes":
+            # Nodes ship with the package.
             return []
+        if scope == "edits":
+            return [edit]
         if scope == "assets":
             return [asset, editor, category, multi, root]
         if scope == "shots":
@@ -224,7 +269,10 @@ class EntityOps:
             if any(t.startswith("sequence:") for t in tags):
                 options.insert(0, CreationOption(PLAY_SEQUENCE, "Play Sequence", "play"))
             return options
-        return [asset, shot, editor, recipe, multi, root]
+        # Unscoped (a project's own row, the catalog's root): New Edit...
+        # too, or a project's first edit (the Edits section is there only
+        # once it has one) could be made only in the editor.
+        return [asset, shot, editor, recipe, edit, multi, root]
 
     def node_drop_creation_option(self, tags=frozenset()):
         """Nodes dragged from a network editor onto the grid save a recipe.
@@ -261,6 +309,17 @@ class EntityOps:
                  if t.startswith(f"{LIBRARY_TAG_KEY}:")), "")
             return self._recipes.creation_fields(
                 default_proj, projects, default_library)
+
+        if option_id == edits.CREATE_OPTION:
+            fields = [CreationField("name", "Name", required=True)]
+            if len(projects) > 1:
+                fields.append(CreationField(
+                    "project", "Project",
+                    field_type="dropdown",
+                    choices=tuple(projects),
+                    default=default_proj,
+                ))
+            return fields
 
         if option_id == PLAY_SEQUENCE:
             # No form: the editor opens on the sequence's shots.
@@ -472,7 +531,10 @@ class EntityOps:
         :meth:`create` refuses by. A project not loaded yet finds nothing:
         :meth:`create` still has the last word.
         """
-        if option_id != "new_scene" and option_id not in creation_check.OPTIONS:
+        if (
+            option_id not in ("new_scene", edits.CREATE_OPTION)
+            and option_id not in creation_check.OPTIONS
+        ):
             return {}
         proj_name = str(fields.get("project") or "")
         if not proj_name:
@@ -480,6 +542,16 @@ class EntityOps:
             proj_name = projects[0].name if len(projects) == 1 else ""
         if not proj_name or not self._clients.is_ready(proj_name):
             return {}
+        if option_id == edits.CREATE_OPTION:
+            # New Edit: the rule create_edit refuses by.
+            from tumblepipe.pipe import edits as pipe_edits
+            name = str(fields.get("name") or "").strip()
+            if not name:
+                return {}
+            problem = pipe_edits.name_problem(
+                name, pipe_edits.list_edits(self._clients.get(proj_name)),
+            )
+            return {"name": problem} if problem else {}
         if option_id == "new_scene":
             # New Root: the one refusal its create has, a Root of that name.
             name = str(fields.get("name") or "").strip()
@@ -530,6 +602,9 @@ class EntityOps:
         except CatalogInitError as err:
             hou.ui.displayMessage(str(err))
             return None
+
+        if option_id == edits.CREATE_OPTION:
+            return self._create_edit(proj_name, client, fields)
 
         # The dialog asks validate_creation as the artist types (#29);
         # this refuses by the same rule (creation_check), so the two
@@ -740,13 +815,6 @@ class EntityOps:
 
         on_applied = self.editor_applied
 
-        def stage_roots() -> str:
-            from tumblepipe.pipe.root_staging import sync_roots
-            result = sync_roots()
-            for uri, why in result.failures:
-                log.warning("Staging Roots: %s: %s", uri, why)
-            return result.summary()
-
         def place(written) -> None:
             place_new_members(written)
             # A Multi whose workfile is open, its Timeline just applied:
@@ -838,7 +906,7 @@ class EntityOps:
                 rename=on_project(entity_files.rename_entity),
                 rename_blocker=on_project(rename_blocker),
                 on_applied=on_applied,
-                stage_roots=on_project(stage_roots),
+                stage_roots=on_project(stage_roots_after_apply),
                 rigged=on_project(has_published_rig),
                 multi_rename_blocker=on_project(multi_rename_blocker),
                 place=on_project(place),
@@ -1576,6 +1644,102 @@ class EntityOps:
             _work, _done,
         )
 
+    def show_edit_on_timeline(self, asset_id: str) -> None:
+        """Show the edit on Houdini's timeline (#61,
+        ``pipe.houdini.edit_timeline``): the playbar spans it and each clip
+        gets a bookmark. Its newest document is read off the main thread,
+        in its own project; the playbar is set on the main thread."""
+        from tumblepipe.pipe import edit_timeline
+
+        ref, _proj = self._edit_project(asset_id)
+
+        def _work():
+            return edit_timeline.read_edit(ref.name, self._clients.get(ref.project))
+
+        def _done(edit) -> None:
+            import hou
+            from tumblepipe.pipe.houdini import edit_timeline as session
+            summary = session.show_document(edit)
+            hou.ui.setStatusMessage(
+                summary.split("\n", 1)[0], severity=hou.severityType.Message,
+            )
+            if "\n" in summary:
+                tell(summary)
+
+        run_in_background("Show on Houdini Timeline", _work, _done)
+
+    def _edits_changed(self) -> None:
+        """An edit was made, renamed or deleted: the Edits section (its
+        count, whether it is there at all), the grids and the detail
+        panels follow."""
+        self._invalidate_cache()
+        self._refresh.sidebar()
+        self._refresh.grid()
+        self._refresh.detail()
+
+    def _create_edit(self, proj_name: str, client, fields) -> str | None:
+        """New Edit...: the edit, with nothing saved yet (the editor opens it
+        empty, for its first Save); its card's id, or None when refused."""
+        from tumblepipe.pipe import edits as pipe_edits
+
+        name = str(fields.get("name") or "").strip()
+        problem = pipe_edits.name_problem(name, pipe_edits.list_edits(client))
+        if problem:
+            tell(problem)
+            return None
+        pipe_edits.create_edit(name, client)
+        # The browser re-populates the sidebar and re-queries after a
+        # create; the edit scan must not answer from before it.
+        self._invalidate_cache()
+        return edits.EditRef(proj_name, name).asset_id
+
+    def rename_edit(self, asset_id: str) -> None:
+        """Rename Edit...: ask for the new name and rename it
+        (``pipe.edits.rename_edit``), the master edit staying master. A
+        refusal (the name rule, a name taken, an edit with files on disk)
+        says why."""
+        from tumblepipe.pipe import edits as pipe_edits
+
+        ref, _proj = self._edit_project(asset_id)
+        new = ask_text("Rename Edit", f"New name for the edit {ref.name}:", ref.name)
+        new = (new or "").strip()
+        if not new or new == ref.name:
+            return
+        try:
+            pipe_edits.rename_edit(ref.name, new, self._clients.get(ref.project))
+        except ValueError as exc:
+            tell(str(exc))
+            return
+        self._edits_changed()
+
+    def delete_edit(self, asset_id: str) -> None:
+        """Delete Edit...: refused for the master edit; otherwise, once
+        confirmed, the edit goes and its folders move to ``_deleted/``
+        (``pipe.edits.delete_edit``), as an asset's or shot's do."""
+        from tumblepipe.pipe import edits as pipe_edits
+        from tumblepipe.pipe.entity_files import ARCHIVE_DIR, ArchiveError
+
+        ref, _proj = self._edit_project(asset_id)
+        client = self._clients.get(ref.project)
+        problem = pipe_edits.delete_problem(ref.name, pipe_edits.master_edit(client))
+        if problem:
+            tell(problem)
+            return
+        if not confirm(
+            "Delete Edit",
+            f"Delete the edit '{ref.name}'?\n\n"
+            "Its saved and published versions and rendered movies are not "
+            f"erased: they move to the {ARCHIVE_DIR} folder of their storage "
+            "roots, where they can be recovered.",
+        ):
+            return
+        try:
+            pipe_edits.delete_edit(ref.name, client)
+        except (ValueError, ArchiveError) as exc:
+            tell(str(exc))
+            return
+        self._edits_changed()
+
     def edit_departments(self, asset_id: str) -> None:
         """Choose which departments this shot or asset uses."""
         from .departments import EntityDepartmentsDialog
@@ -1585,6 +1749,40 @@ class EntityOps:
             index=self._index, refresh=self._refresh,
             invalidate_cache=self._invalidate_cache,
         ).exec()
+
+    def department_turned_off(self, asset_id: str, dept: str) -> bool | None:
+        """Whether ``dept`` is turned off on the shot ``asset_id`` (#64);
+        None when the switch does not apply (not a shot of a project)."""
+        proj = self._resolver.project_for(asset_id)
+        entity_uri = self._resolver.uri_for(asset_id)
+        if proj is None or entity_uri is None:
+            return None
+        if entity_uri.purpose != "entity" or entity_uri.segments[:1] != ["shots"]:
+            return None
+        self._activator.activate(proj)
+        from tumblepipe.config.department import is_department_disabled
+        return is_department_disabled(entity_uri, dept)
+
+    def set_department_off(self, asset_id: str, dept: str, off: bool) -> None:
+        """Turn ``dept`` off on the shot ``asset_id`` (``off``), or back on.
+
+        Reversible and file-safe: the department's workfiles and exports
+        stay where they are. Its layers leave (or rejoin) the shot's staged
+        build at the next build; import_shot in an open scene follows on
+        its next cook.
+        """
+        proj = self._resolver.project_for(asset_id)
+        # A write path: never write onto an entity the config does not hold.
+        entity_uri = self._resolver.registered_uri_for(asset_id)
+        if proj is None or entity_uri is None:
+            return
+        self._activator.activate(proj)
+        from tumblepipe.config.department import set_department_disabled
+        if not set_department_disabled(entity_uri, dept, off):
+            return
+        self._invalidate_cache()
+        self._refresh.card(asset_id)
+        self._refresh.detail()
 
     def open_database_editor(self, asset_id: str) -> None:
         """Open the pipeline DatabaseWindow with the entity pre-selected.

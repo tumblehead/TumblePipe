@@ -14,7 +14,9 @@ from tumblepipe.config.timeline import get_export_frame_range
 from tumblepipe.pipe.paths import latest_export_path, current_staged_path
 
 from .process_task import ProcessTask, TaskStatus
+from . import task_range
 from .process_executor import ValidationSession, _validation_session
+from . import validation_preflight as preflight
 from .helpers import get_entity_type
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,54 @@ def _uri_name(uri: Uri) -> str:
     return str(uri)
 
 
+def _unseen_issues(issues: list, entity_uri: Uri, department: str) -> list:
+    """The ``issues`` the up-front dialog did not already accept (#56)."""
+    return preflight.unseen_issues(
+        issues, _validation_session.accepted, str(entity_uri), department,
+    )
+
+
+def _validate_in_place(
+    issues: list, entity_uri: Uri, department: str, ask_on_warnings: bool,
+):
+    """A validation run in place, during the run: ask about the issues the
+    up-front dialog did not show (ones this run's upstream exports brought
+    in), if they are worth a prompt (``preflight.asks``)."""
+    unseen = _unseen_issues(issues, entity_uri, department)
+    if preflight.asks(unseen, ask_on_warnings):
+        _ask_to_continue(unseen, entity_uri, department)
+
+
+def _ask_to_continue(issues: list, entity_uri: Uri, department: str):
+    """Show ``issues`` in the validation prompt; raise ValidationCancelled
+    unless the artist continues (or remembered Continue this run)."""
+    from tumblepipe.pipe.houdini.validators.base import ValidationResult
+    from .validation_dialog import ValidationConfirmDialog, ValidationCancelled
+    import hou
+
+    # Check if user already made a remembered choice
+    if _validation_session.has_remembered_choice():
+        if _validation_session.get_remembered_choice() == ValidationSession.CONTINUE:
+            return  # Continue without prompting
+        raise ValidationCancelled("Export cancelled by user")
+
+    dialog = ValidationConfirmDialog(
+        validation_result=ValidationResult(
+            passed=not preflight.has_error(issues), issues=list(issues),
+        ),
+        department=department,
+        entity_name=_uri_name(entity_uri),
+        parent=hou.qt.mainWindow()
+    )
+    dialog.exec_()
+
+    if dialog.remember_choice:
+        _validation_session.set_remembered_choice(dialog.user_choice)
+
+    if dialog.user_choice != ValidationConfirmDialog.CONTINUE:
+        raise ValidationCancelled("Export cancelled by user")
+
+
 def _create_validation_task(
     entity_uri: Uri,
     department: str,
@@ -82,8 +132,12 @@ def _create_validation_task(
     Runs stage validation on all export nodes before they are executed.
     The validation checks for issues like RenderVar name mismatches.
 
-    When validation fails, shows an interactive dialog allowing
-    the user to continue or cancel the export.
+    The process dialog runs it once up front, before anything exports
+    (``collect_issues``, #56), and asks about every shot's issues in one
+    dialog. It runs again in place, where a downstream department may see
+    what an upstream export of the run wrote: an issue the artist accepted
+    up front passes, and only a new error shows the prompt, allowing the
+    user to continue or cancel the export.
 
     Args:
         entity_uri: The entity URI
@@ -99,11 +153,11 @@ def _create_validation_task(
     entity_context = _entity_context_from_uri(entity_uri)
     validation_ctx = {'entity_uri': str(entity_uri)} if entity_uri is not None else {}
 
-    def validate_local_fn():
+    def collect_issues_fn() -> list:
+        """The issues the prompt would show: every issue of a failed
+        validation, none when it passed."""
         from tumblepipe.pipe.houdini.validators import validate_stage_for_department
         from tumblepipe.pipe.houdini.validators.base import ValidationResult
-        from .validation_dialog import ValidationConfirmDialog, ValidationCancelled
-        import hou
 
         # Collect all validation results
         combined_result = ValidationResult()
@@ -137,51 +191,23 @@ def _create_validation_task(
                     entity_context, department,
                     combined_result.format_message(),
                 )
-            return
+            return []
+        return list(combined_result.issues)
 
-        # Check if user already made a remembered choice
-        if _validation_session.has_remembered_choice():
-            if _validation_session.get_remembered_choice() == ValidationSession.CONTINUE:
-                return  # Continue without prompting
-            else:
-                raise ValidationCancelled("Export cancelled by user")
-
-        # Show dialog and get user choice
-        entity_name = _uri_name(entity_uri)
-        dialog = ValidationConfirmDialog(
-            validation_result=combined_result,
-            department=department,
-            entity_name=entity_name,
-            parent=hou.qt.mainWindow()
-        )
-        dialog.exec_()
-
-        # Handle user choice
-        if dialog.remember_choice:
-            _validation_session.set_remembered_choice(dialog.user_choice)
-
-        if dialog.user_choice == ValidationConfirmDialog.CONTINUE:
-            return  # Task passes, exports will run
-        else:
-            raise ValidationCancelled("Export cancelled by user")
+    def validate_local_fn():
+        # Only an error the run brought in asks; a warning alongside it
+        # shows in the same prompt, as before.
+        _validate_in_place(
+            collect_issues_fn(), entity_uri, department, ask_on_warnings=False)
 
     def validate_farm_fn():
-        # Farm execution: no UI available, use original blocking behavior
-        from tumblepipe.pipe.houdini.validators import validate_stage_for_department
-        for export_node in export_nodes:
-            native = export_node.native()
-            stage_node = native.node('IN_stage')
-            if stage_node is None:
-                continue
-            stage = stage_node.stage()
-            if stage is None:
-                continue
-            root = stage.GetPseudoRoot()
-            result = validate_stage_for_department(
-                root, entity_context, department, validation_ctx
-            )
-            if not result.passed:
-                raise RuntimeError(f"Validation failed:\n{result.format_message()}")
+        # Submitting to a farm: nothing exported here changed the stage, so
+        # an issue is new only if the up-front dialog did not show it.
+        from tumblepipe.pipe.houdini.validators.base import ValidationResult
+        issues = _unseen_issues(collect_issues_fn(), entity_uri, department)
+        if preflight.has_error(issues):
+            result = ValidationResult(passed=False, issues=issues)
+            raise RuntimeError(f"Validation failed:\n{result.format_message()}")
 
     return ProcessTask(
         id=str(uuid.uuid4()),
@@ -191,6 +217,7 @@ def _create_validation_task(
         description=f"Validate ({department})",
         execute_local=validate_local_fn,
         execute_farm=validate_farm_fn,
+        collect_issues=collect_issues_fn,
         channel=channel,
         channels=None if channel else [
             node.get_channel_name() for node in export_nodes
@@ -219,13 +246,11 @@ def _create_rig_validation_task(asset_uri: Uri, export_node, channel: str) -> Pr
     dialog for warnings too: both checks are about what every shot that loads
     the rig gets, and a logged warning nobody reads changes nothing. The
     artist can still Continue past it. export_rig is local-only, so there is
-    no farm path.
+    no farm path. Like the stage validation it runs up front too (#56), and
+    an issue accepted there does not ask again.
     """
-    def validate_local_fn():
+    def collect_issues_fn() -> list:
         from tumblepipe.pipe.houdini.validators import validate_rig_character
-        from .validation_dialog import ValidationConfirmDialog, ValidationCancelled
-        import hou
-
         from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
 
         source = export_node.native().input(0)
@@ -239,29 +264,16 @@ def _create_rig_validation_task(asset_uri: Uri, export_node, channel: str) -> Pr
             asset_prim_path=uri_to_prim_path(asset_uri),
             joint_nodes=joint_nodes,
         )
-        if not result.issues:
-            return
-        logger.warning(
-            "Rig validation for %s (%s):\n%s",
-            _uri_name(asset_uri), channel, result.format_message(),
-        )
+        if result.issues:
+            logger.warning(
+                "Rig validation for %s (%s):\n%s",
+                _uri_name(asset_uri), channel, result.format_message(),
+            )
+        return list(result.issues)
 
-        if _validation_session.has_remembered_choice():
-            if _validation_session.get_remembered_choice() == ValidationSession.CONTINUE:
-                return
-            raise ValidationCancelled("Export cancelled by user")
-
-        dialog = ValidationConfirmDialog(
-            validation_result=result,
-            department='rig',
-            entity_name=_uri_name(asset_uri),
-            parent=hou.qt.mainWindow()
-        )
-        dialog.exec_()
-        if dialog.remember_choice:
-            _validation_session.set_remembered_choice(dialog.user_choice)
-        if dialog.user_choice != ValidationConfirmDialog.CONTINUE:
-            raise ValidationCancelled("Export cancelled by user")
+    def validate_local_fn():
+        _validate_in_place(
+            collect_issues_fn(), asset_uri, 'rig', ask_on_warnings=True)
 
     return ProcessTask(
         id=str(uuid.uuid4()),
@@ -271,9 +283,46 @@ def _create_rig_validation_task(asset_uri: Uri, export_node, channel: str) -> Pr
         description=f"Validate rig: {_uri_name(asset_uri)}",
         execute_local=validate_local_fn,
         execute_farm=None,  # export_rig is local-only
+        collect_issues=collect_issues_fn,
         channel=channel,
         status=TaskStatus.PENDING,
     )
+
+
+def _run_range(task: ProcessTask):
+    """The BlockRange an export node runs over for ``task``: the range the
+    artist set for this submit (#76), or None, and the node reads its own
+    Frame Range parms as always. The node's parms are never changed."""
+    return task_range.block_range(task_range.run_range(task))
+
+
+def _wire_export(task: ProcessTask, node) -> None:
+    """An export_layer row's callbacks: in this session, and a publish job
+    (This machine or the Render farm). Each reads the row's range when it
+    runs, so an edit made after the task was built still counts."""
+    task.execute_local = lambda: node.execute(
+        force_local=True, render_range=_run_range(task))
+    task.execute_farm = lambda: node._export_farm(
+        render_range=_run_range(task))
+    task.execute_farm_with_builds = lambda build: node._export_farm(
+        build=build, render_range=_run_range(task))
+
+
+def _wire_shared_export(task: ProcessTask, node) -> None:
+    """A layer_split row's callbacks: it exports here in every mode."""
+    task.execute_local = lambda: node.execute(
+        force_local=True, render_range=_run_range(task))
+    task.execute_farm = task.execute_local
+
+
+def _wire_build(task: ProcessTask) -> None:
+    """A Build USD row's callbacks, over the row's range this submit."""
+    def span():
+        return task_range.effective_range(task) or (None, None)
+    task.execute_local = lambda: _execute_build_local(
+        task.uri, task.channel, *span())
+    task.execute_farm = lambda: _execute_build_farm(
+        task.uri, task.channel, *span())
 
 
 def _create_export_group_task(
@@ -314,11 +363,10 @@ def _create_export_group_task(
             description="Export Shared",
             node_path=split_node.path(),
             parent_id=parent_id,
-            execute_local=lambda n=node_ref: n.execute(force_local=True),
-            execute_farm=lambda n=node_ref: n.execute(force_local=True),  # Farm script handles this
             first_frame=first_frame,
             last_frame=last_frame,
         )
+        _wire_shared_export(child, node_ref)
         children.append(child)
 
     # Add export_layer children
@@ -338,12 +386,10 @@ def _create_export_group_task(
             node_path=export_node.path(),
             parent_id=parent_id,
             current_version=version,
-            execute_local=lambda n=node_ref: n.execute(force_local=True),
-            execute_farm=lambda n=node_ref: n._export_farm(),
-            execute_farm_with_builds=lambda build, n=node_ref: n._export_farm(build=build),
             first_frame=first_frame,
             last_frame=last_frame,
         )
+        _wire_export(child, node_ref)
         children.append(child)
 
     # Create parent task
@@ -405,11 +451,10 @@ def _create_build_group_task(
             description=f"Build USD ({channel_name})",
             parent_id=parent_id,
             current_version=version,
-            execute_local=lambda uri=entity_uri, v=channel_name, ff=first_frame, lf=last_frame: _execute_build_local(uri, v, ff, lf),
-            execute_farm=lambda uri=entity_uri, v=channel_name, ff=first_frame, lf=last_frame: _execute_build_farm(uri, v, ff, lf),
             first_frame=first_frame,
             last_frame=last_frame,
         )
+        _wire_build(child)
         children.append(child)
 
     # Create parent task

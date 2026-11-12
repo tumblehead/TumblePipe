@@ -3,7 +3,8 @@
 from pathlib import Path
 import json
 
-from tumblepipe.farm.deadline import farm_job, run_batched
+from tumblepipe.farm.deadline import farm_job, schedule_frames
+from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import denoise as denoise_spec
 
 
@@ -24,7 +25,9 @@ def build(config, paths, staging_path):
         output_paths = config['output_paths'],
         # CPU unless the config says otherwise: see
         # specs.denoise.DEFAULT_FORCE_CPU for why the GPU is not used.
-        force_cpu = config.get('force_cpu', denoise_spec.DEFAULT_FORCE_CPU)
+        force_cpu = config.get('force_cpu', denoise_spec.DEFAULT_FORCE_CPU),
+        # A multi-range denoise's tasks are its blocks (#84)
+        **frame_ranges.context_entry(config)
     ), staging_path,
         name = config['title'],
         pool = config['pool_name'],
@@ -33,10 +36,6 @@ def build(config, paths, staging_path):
         max_minutes = 20,
         paths = paths
     )
-    run_batched(
-        job,
-        config['first_frame'], config['last_frame'],
-        config['step_size'], config['batch_size'], config['frames']
-    )
+    schedule_frames(job, config)
     job.output_paths.append(Path(config['receipt_path']))
     return job

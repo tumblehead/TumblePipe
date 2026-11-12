@@ -211,6 +211,7 @@ order.
 | dark, no version | no workfile yet |
 | **ⓜ** with an orange tint | the department is covered by a Multi; the tooltip names it |
 | a no-entry cursor when dragged | the department is published from SOPs (rig), so there is no USD layer to drop into a LOP network (TumbleTrove 0.50+) |
+| *(off)* after the label, greyed | the department is [turned off on this shot](entity-editor.md#departments-turned-off-on-a-shot): its workfiles still open, nothing new is made for it |
 
 Labels are the department's `short` from the pool when it has one,
 otherwise `Anim`, `Blend`, `Comp`, `Enviro` or the title-cased name.
@@ -231,6 +232,7 @@ version from the department template instead. Right-click one for:
 | **Remove from *Multi*** (only on a ⓜ item) | |
 | **New from Template** | |
 | **New from Current** | |
+| **Disable department on this shot** / **Enable department** (shots) | **Disable department on this shot** / **Enable department** (shots) |
 
 The item an artist almost always wants comes first: creating the first
 version on an empty item, opening the latest on one that has versions. What
@@ -240,6 +242,14 @@ members, each opening that member's export (see
 [Multis and Roots](multis-and-roots.md#the-multis-workfiles)), and the open
 one adds **Sync with Multi** (see
 [Keeping the workfile and the Multi in step](multis-and-roots.md#keeping-the-workfile-and-the-multi-in-step)).
+
+**Disable department on this shot** turns the department off on that shot
+(the same switch as the Entity Editor's **Departments off** column, see
+[Departments turned off on a shot](entity-editor.md#departments-turned-off-on-a-shot)):
+its layers leave the shot's staged build at the next build, Farm Submit and
+the publish leave it alone, and **New from Template** / **New from Current**
+on it are refused with a message. Nothing is deleted; **Enable department**
+turns it back on.
 
 ### List view columns
 
@@ -255,6 +265,19 @@ one adds **Sync with Multi** (see
 
 Sort options: **Name A-Z**, **Name Z-A**, **Latest Update**, **Oldest
 Update**.
+
+The **Edits** section has columns of its own, since an edit has no category
+or departments (on a TumbleTrove newer than 0.59.0, which asks a catalog for
+each section's columns; an older one shows the columns above everywhere):
+
+| Column | Edit row |
+|---|---|
+| **Name** | edit name |
+| **Published** | latest published version |
+| **Working** | newest working version |
+| **Master** | ✓ for the project's master edit |
+| **User** | who saved or published it last |
+| **Edited** | when, as `2h ago` |
 
 ## The detail panel
 
@@ -281,6 +304,8 @@ For a pipeline card the panel shows
   creates `v0001` from the template when there is none). Right-click a row
   for the same menu as a deck item, with **Open vNNNN** for the version the
   dropdown shows.
+  A department turned off on the shot reads *(off)*, greyed, and its play
+  button cannot create a first version.
 - **Tasks**: the todo list with an **Add task…** field and a clear menu
   (**Clear completed** / **Clear all**).
 - A bottom action bar: **Import to Scene** (assets only; creates a
@@ -370,9 +395,11 @@ Sequence** ([the editor](play-shots.md)). **New Multi...** chosen on a
 category or sequence row offers to start the Multi with that whole category
 or sequence. A
 Multis subheader offers **New Multi...** alone, the Roots header **New
-Root...** alone, the Recipes section **New Recipe...** alone, and anywhere
-unscoped offers **New Asset...**, **New Shot...**, **Entity Editor...**, **New
-Recipe...**, **New Multi...** and **New Root...**. Dragging selected nodes from a network editor
+Root...** alone, the Recipes section **New Recipe...** alone, the Edits
+section **New Edit...** alone, and anywhere unscoped offers **New Asset...**,
+**New Shot...**, **Entity Editor...**, **New Recipe...**, **New Edit...**,
+**New Multi...** and **New Root...** (a project's Edits section is there only
+once it has an edit, so its first one is made from here or in the editor). Dragging selected nodes from a network editor
 onto the grid also opens **New Recipe**. A
 **Project** dropdown is added to every form when more than one project is
 registered.
@@ -387,6 +414,7 @@ registered.
 | **New Multi** | a window, not a form | The [Entity Editor](entity-editor.md#multis)'s Multis tab, asking for a **Name**, a shots Multi's **Timeline** and the departments, in the context it was chosen from (`shots` elsewhere). See [Multis and Roots](multis-and-roots.md#creating-a-multi). |
 | **New Root** | **Name** | See [Multis and Roots](multis-and-roots.md#creating-a-root). |
 | **New Recipe** | **Name**; **Description**; **Tags** | Saves the nodes selected in the network editor. See [Recipes](recipes.md#saving-a-recipe). |
+| **New Edit** | **Name** | An edit with nothing saved yet: **Open in Editor** on its card opens it empty, for its first **Save**. Refuses a name the project has, in any case (*There is already an edit 'X'.*). See [Playing shots in the editor](play-shots.md). |
 
 Names are written as typed; the new asset or shot is selected in the grid
 once it appears. A form says what is wrong with a value under its field as
@@ -441,6 +469,51 @@ If a folder can't be moved (a file open in another program), nothing is
 moved and nothing is deleted. **Delete category '…'…**
 and **Delete sequence '…'…** refuse while the bucket still holds entities
 (*Category 'X' still contains 3 assets.*) and confirm when it is empty.
+
+An edit card's menu ends with **Rename Edit…** and **Delete Edit…**.
+**Rename Edit…** asks for the new name (letters and digits, not one the
+project has in any case); the master edit stays the master edit under its
+new name. An edit that has saved or published versions on disk is refused,
+as an asset with files is: its files are named after it, so the renamed edit
+would come up empty. Open it in the editor and **Save As** under the new
+name, then delete the old one. **Delete Edit…** refuses the master edit
+(**Clear Master Edit**, or set another, first) and otherwise asks first; its
+saved and published versions and rendered movies move to
+`_deleted/<date-time>/` under their storage roots (`edits:/`, `export:/`,
+`render:/`), as an entity's folders do, so they can still be recovered.
+The Edits section, its count and the grid follow at once.
+
+An edit card's thumbnail is the thumbnail of the shot its first clip plays
+(the earliest shot clip on any video track of its newest saved, else latest
+published, version); an edit with no shot clip, or whose shot has no
+thumbnail, shows the film icon. **Refresh Thumbnail** picks up a changed cut.
+
+### An edit on Houdini's timeline
+
+**Show on Houdini Timeline** (an edit card's menu, inside Houdini, once the
+edit has a saved or published version) and the TumblePipe shelf's **Import
+Edit to Timeline** (which asks for the edit, the master edit first) lay the
+edit's cut on the playbar, to check its ranges against the shots. Nothing is
+written to the project.
+
+- The global and playback range span the edit: its first frame sits at the
+  edit's start frame (`frame_start`, inherited from the project: 1001 unless
+  configured) and its last is the end of its last clip, video or audio.
+- Each video clip gets a playbar bookmark spanning its cut-in to cut-out on
+  the edit's timeline, named after its shot (`SQ010/SH030`) or, for a media
+  clip, its library item. Slugs and gaps get none; clips on stacked tracks
+  (a dissolve) overlap, and so do their bookmarks. A bookmark's comment
+  names the track, the edit frames and the clip's source frames.
+  Double-click a bookmark to zoom the playbar to that clip.
+- It reads the edit's newest version: its newest saved working version,
+  else its latest published one; the message names which.
+- An edit cut at another fps than the scene's is converted to the scene's
+  rate (frames scaled and rounded to the nearest frame, every clip at least
+  one frame long), with a warning naming both rates.
+- Running it again, for this or another edit, replaces the bookmarks it
+  made; your own bookmarks and a Multi's shot bookmarks are left alone.
+  Like a Multi's, the bookmarks are temporary: Houdini does not save them
+  in the hip, so run it again after reopening the scene.
 
 ## Dragging into Houdini
 

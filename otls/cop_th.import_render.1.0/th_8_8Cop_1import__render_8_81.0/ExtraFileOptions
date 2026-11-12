@@ -2,5 +2,9 @@
 	"OnCreated/IsPython":{
 		"type":"bool",
 		"value":true
+	},
+	"OnLoaded/IsPython":{
+		"type":"bool",
+		"value":true
 	}
 }

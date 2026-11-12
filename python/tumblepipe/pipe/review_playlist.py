@@ -1,7 +1,7 @@
 """Shots' review media (their *takes*), and starting the editor on shots
 or an edit.
 
-The editor (``src/player/``, shipped as ``bin/<platform>/th_player``) finds
+The editor, Cinedex (``src/cinedex/``, shipped as ``bin/<platform>/cinedex``), finds
 a shot's takes itself, in Rust (``th_pipe::discovery``); this module is the
 specification it ports, which ``tests/test_pipe_parity.py`` holds it to. A
 shot's takes are its playblasts and its renders, each by department in
@@ -317,11 +317,16 @@ def _platform() -> str:
     if sys.platform == 'linux': return 'linux-x86_64'
     raise OSError(f'The editor is not built for {sys.platform}')
 
+#: The variables that name a dev build of the editor, first set wins.
+PLAYER_OVERRIDES = ('TH_CINEDEX', 'TH_PLAYER')
+
 def find_player() -> Path:
-    """The editor: ``$TH_PLAYER`` when set (a dev build), else the package's
-    ``bin/<platform>/th_player``. Raises when it is not there."""
-    exe = 'th_player.exe' if sys.platform == 'win32' else 'th_player'
-    override = os.environ.get('TH_PLAYER', '').strip()
+    """The editor: ``$TH_CINEDEX`` when set (a dev build), else
+    ``$TH_PLAYER`` (its name before Cinedex), else the package's
+    ``bin/<platform>/cinedex``. Raises when it is not there."""
+    exe = 'cinedex.exe' if sys.platform == 'win32' else 'cinedex'
+    overrides = (os.environ.get(name, '').strip() for name in PLAYER_OVERRIDES)
+    override = next((value for value in overrides if value), '')
     if override:
         player = Path(override)
     else:
@@ -334,7 +339,7 @@ def find_player() -> Path:
     return player
 
 #: What the last editor started printed (each start replaces it).
-PLAYER_LOG = Path(tempfile.gettempdir()) / 'th_player.log'
+PLAYER_LOG = Path(tempfile.gettempdir()) / 'cinedex.log'
 
 def editor_arguments(player: Path, project: str, ocio: str, entity_uris: list[Uri]) -> list[str]:
     """The command line that opens ``entity_uris`` in the editor, in order,
@@ -368,6 +373,20 @@ def render_arguments(player: Path, project: str, ocio: str, edit_uri: Uri, versi
         '--render', f'{edit_uri}@{version}', '--out', str(out_dir),
     ]
 
+def frames_arguments(player: Path, ocio: str, folder: Path) -> list[str]:
+    """The command line that opens the preview frames of the local farm
+    batch in ``folder`` (``farm.local.previews.batch_previews``), or the
+    frames in any other folder, as stills (#75). No project: only the OCIO
+    config they are shown through."""
+    return [str(player), '--ocio', ocio, '--frames', str(folder)]
+
+def open_preview_frames(folder: Path) -> None:
+    """Start the editor on the preview frames of the local farm batch in
+    ``folder`` (the Farm Manager's "Open in player"). Raises when there is
+    no player or no OCIO config."""
+    player = find_player()
+    _start(player, frames_arguments(player, project_ocio(), Path(folder)))
+
 def _current_project() -> str:
     project = os.environ.get('TH_PROJECT_PATH', '').strip()
     if not project:
@@ -390,12 +409,32 @@ def open_edit(edit_uri: Uri, version: str | None = None) -> None:
     player = find_player()
     _start(player, edit_arguments(player, _current_project(), project_ocio(), edit_uri, version))
 
+def view_arguments(player: Path, project: str, ocio: str, edit_uri: Uri, shot: str, frame: int | None) -> list[str]:
+    """The command line that opens the edit ``edit_uri`` showing ``shot``
+    as Live view does: its clip looping with the shots around it, the
+    playhead on shot frame ``frame``."""
+    view = ['--view', shot] + ([] if frame is None else ['--at', str(int(frame))])
+    return edit_arguments(player, project, ocio, edit_uri) + view
+
+def view_on_master(shot: str, frame: int | None) -> None:
+    """Start the editor on the current project's master edit showing
+    ``shot`` (Live view, when no open editor is on it). Raises when the
+    project has no master edit, or there is no player, OCIO config or
+    project."""
+    from tumblepipe.pipe.edits import master_edit
+    master = master_edit()
+    if master is None:
+        raise ValueError('the project has no master edit: tick Master edit on one in the editor to use Live view')
+    player = find_player()
+    edit_uri = Uri.parse(f'entity:/edits/{master}')
+    _start(player, view_arguments(player, _current_project(), project_ocio(), edit_uri, shot, frame))
+
 def _start(player: Path, arguments: list[str]) -> None:
     """Start the editor with ``arguments``, its output to ``PLAYER_LOG``."""
     # The editor outlives Houdini, so it must not hold Houdini's output: when
     # that is a pipe (TumbleTrove Desktop reads it), whoever reads it would
     # wait on the editor too. Its own log keeps what it prints, a panic
-    # included; errors it shows in its window. th_player is a console
+    # included; errors it shows in its window. Cinedex is a console
     # program (``--render`` prints to it), and Houdini has no console, so on
     # Windows it would get a new, empty console window of its own beside the
     # editor's (QA 2026-11-10): ask for none.

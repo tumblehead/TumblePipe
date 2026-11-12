@@ -57,7 +57,13 @@ does not define, so that path still fails loudly on the farm side.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Collection, Sequence
+
+from tumblepipe.config.department_off import read_disabled_departments
+# Pure as this module (no pipeline imports): the Preview Frames List and
+# Frame List readings.
+from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import preview_frames
 
 # Sentinel: this field has no fallback constant. When it resolves to
 # neither an exception, a pinned form value, nor an entity property, the
@@ -167,6 +173,16 @@ FIELDS: tuple[Field, ...] = (
           kind='bool'),
     Field('copy_to_edit', 'render', 'Copy to edit', prop=None, default=False,
           kind='bool'),
+    # The Preview Frames List beside the Preview box (farm.specs.preview_frames):
+    # empty previews first/middle/last. A batch field: key poses differ per
+    # shot, but the grid has no per-row settings to hold one per shot.
+    Field('preview_frame_list', 'render', 'Preview frames list', prop=None,
+          default='', kind='str'),
+    # The Frame List (farm.specs.frame_ranges, #84): empty renders First..
+    # Last; else only the ranges typed, inside each row's rolled range. A
+    # batch field, as the Preview Frames List.
+    Field('frame_list', 'render', 'Frame list', prop=None, default='',
+          kind='str'),
     # Entity fields. The four frame keys are REQUIRED: this is the fix.
     Field('first_frame', 'render', 'First', prop='frame_start',
           default=REQUIRED, kind='int', preflight=True),
@@ -255,6 +271,8 @@ FIELDS: tuple[Field, ...] = (
           default=False, kind='bool'),
     Field('comp_preview', 'comp', 'Preview frames', prop=None,
           default=False, kind='bool'),
+    Field('comp_preview_frame_list', 'comp', 'Preview frames list', prop=None,
+          default='', kind='str'),
     Field('comp_step', 'comp', 'Step', prop=None, default=1, kind='int'),
     Field('comp_first_frame', 'comp', 'First', kind='int', override=True),
     Field('comp_last_frame', 'comp', 'Last', kind='int', override=True),
@@ -358,8 +376,11 @@ def entity_value(
 
     Falls back to ``fallbacks[field.key]`` (context-derived defaults the
     caller looks up — e.g. the last renderable department, which this pure
-    module can't know), then to ``field.default``. Returns :data:`REQUIRED`
-    when the field has no fallback constant and the entity carries no value.
+    module can't know), then to ``field.default``. A fallback may be a
+    callable taking the entity's properties, for a default that differs per
+    entity (the Up to skips a department turned off on that shot, #64).
+    Returns :data:`REQUIRED` when the field has no fallback constant and the
+    entity carries no value.
     """
     raw = nested(properties, field.prop) if field.prop else None
     if raw is not None:
@@ -368,8 +389,11 @@ def entity_value(
         derived = field.derive(properties)
         if derived is not None:
             return coerce(derived, field)
-    if fallbacks and fallbacks.get(field.key) is not None:
-        return coerce(fallbacks[field.key], field)
+    fallback = fallbacks.get(field.key) if fallbacks else None
+    if callable(fallback):
+        fallback = fallback(properties)
+    if fallback is not None:
+        return coerce(fallback, field)
     return coerce(field.default, field)
 
 
@@ -750,6 +774,8 @@ def entity_warnings(
     *,
     departments: Sequence[str] | None = None,
     requested: Sequence[str] | None = None,
+    staged: Collection[str] | None = None,
+    turntable: bool = False,
 ) -> list[str]:
     """Per-entity problems worth flagging *before* the submit loop fires.
 
@@ -766,13 +792,21 @@ def entity_warnings(
             skip that check.
         requested: The channels checked for the batch, or ``None`` to skip
             the skipped-channel warning.
+        staged: The entity's channels that have a staged build
+            (``status.RowStatus.staged``), or ``None`` (not read yet) to
+            skip :func:`unstaged_warnings`.
+        turntable: The render is an asset's turntable (#53), on the
+            studio's frames rather than a frame range of its own.
     """
     warnings: list[str] = []
 
     if resolved.get('render'):
-        if 'first_frame' not in resolved or 'last_frame' not in resolved:
+        if not turntable and (
+            'first_frame' not in resolved or 'last_frame' not in resolved
+        ):
             warnings.append("no frame range configured")
         submitted = channel_list(resolved)
+        warnings.extend(unstaged_warnings(resolved, staged))
         skipped = skipped_channels(requested or (), properties)
         # With nothing left to submit, entity_errors says so instead.
         if skipped and submitted:
@@ -816,12 +850,179 @@ def entity_warnings(
                     f"made is missing from the comp"
                 )
 
+    warnings.extend(frame_list_warnings(resolved))
+    warnings.extend(preview_frame_warnings(properties, resolved))
     return warnings
+
+
+def rendered_range(resolved: dict) -> tuple[int, int] | None:
+    """The frames a row's render covers, rolls included (what
+    ``batch_submit`` renders without a Frame List), None without a range."""
+    first, last = _int(resolved.get('first_frame')), _int(resolved.get('last_frame'))
+    if first is None or last is None:
+        return None
+    return (
+        first - (_int(resolved.get('pre_roll')) or 0),
+        last + (_int(resolved.get('post_roll')) or 0),
+    )
+
+
+def frame_list(resolved: dict) -> tuple[tuple[tuple[int, int], ...], str | None]:
+    """``(ranges, error)`` of a row's Frame List (#84), read as
+    ``batch_submit`` reads it (``frame_ranges.read`` against the rolled
+    range): the normalised ranges, empty when none is typed or the render
+    is off; ``error`` the reason the submit would refuse it, else None."""
+    text = resolved.get('frame_list')
+    if not resolved.get('render') or not isinstance(text, str) or not text.strip():
+        return (), None
+    span = rendered_range(resolved)
+    if span is None:
+        return (), None     # entity_warnings says there is no range
+    try:
+        return frame_ranges.read(text, *span), None
+    except frame_ranges.FrameListError as e:
+        return (), str(e)
+
+
+def frame_list_note(text: str | None) -> str:
+    """The line under Farm Submit's Frame List field: what the typed list
+    renders, and whether it is published. The rows' Warnings column checks
+    it against each shot's range (:func:`frame_list`)."""
+    try:
+        ranges = frame_ranges.normalise(frame_ranges.parse(text))
+    except frame_ranges.FrameListError as e:
+        return str(e)
+    if not ranges:
+        return f"Empty: every frame, First → Last. Several ranges: {frame_ranges.NOT_PUBLISHED}."
+    if not frame_ranges.is_multi(ranges):
+        return (
+            f"{frame_ranges.summary(ranges)}: renders and publishes as "
+            f"First → Last {frame_ranges.format_ranges(ranges)}"
+        )
+    return (
+        f"{frame_ranges.summary(ranges)}: {frame_ranges.NOT_PUBLISHED} "
+        "(no daily, no Copy to edit, no Comp); the frames stay on disk to view"
+    )
+
+
+#: The Render settings a multi-range render ignores (``batch_submit`` drops
+#: them), which Farm Submit turns off while such a list is typed.
+MULTI_RANGE_IGNORED = ('copy_to_edit',)
+
+
+def frame_list_disabled(text: str | None) -> dict[str, str]:
+    """``{setting key: why}`` for the Render settings a Frame List of
+    ``text`` makes the submit ignore: none for no list, one range or text
+    that cannot be read (the row's errors say that), else the ones a
+    multi-range render ignores (:data:`MULTI_RANGE_IGNORED`), so the dialog
+    shows them off with the reason instead of dropping them silently."""
+    try:
+        ranges = frame_ranges.normalise(frame_ranges.parse(text))
+    except frame_ranges.FrameListError:
+        return {}
+    if not frame_ranges.is_multi(ranges):
+        return {}
+    why = f"Off while the frame list has several ranges: {frame_ranges.NOT_PUBLISHED}."
+    return {key: why for key in MULTI_RANGE_IGNORED}
+
+
+def frame_list_warnings(resolved: dict) -> list[str]:
+    """The Warnings-column line of a multi-range render: what it renders
+    and that it is not published (and so skips Copy to edit)."""
+    ranges, _error = frame_list(resolved)
+    if not frame_ranges.is_multi(ranges):
+        return []
+    text = (
+        f"{frame_ranges.summary(ranges)} "
+        f"({frame_ranges.format_ranges(ranges)}): "
+        f"{frame_ranges.NOT_PUBLISHED}, no daily"
+    )
+    if resolved.get('copy_to_edit'):
+        text += ', Copy to edit skipped'
+    return [text]
+
+
+def unstaged_channels(
+    resolved: dict,
+    staged: Collection[str] | None,
+) -> list[str]:
+    """The channels a row renders that have no staged build to render.
+
+    Empty when nothing renders, when the row also publishes (the submit
+    builds the stage after the publish, so the render reads that build),
+    or when the staged builds are not read yet (``staged`` is None).
+    """
+    if not resolved.get('render') or resolved.get('publish') or staged is None:
+        return []
+    have = set(staged)
+    return [name for name in channel_list(resolved) if name not in have]
+
+
+def unstaged_warnings(resolved: dict, staged: Collection[str] | None) -> list[str]:
+    """The Warnings-column line for :func:`unstaged_channels`.
+
+    ``batch_submit`` refuses the same render (#53: an asset whose channel
+    was never staged failed only after Submit, #49 ``muddy``), so the row
+    says so first.
+    """
+    missing = unstaged_channels(resolved, staged)
+    if not missing:
+        return []
+    plural = 's' if len(missing) > 1 else ''
+    return [
+        f"channel{plural} {_channel_list_text(missing)} "
+        f"{'have' if plural else 'has'} no staged build to render: publish "
+        f"first, or tick a publish on this row; the farm will refuse "
+        f"{'them' if plural else 'it'}"
+    ]
 
 
 #: The render modes that render the full range (``batch_submit`` builds a
 #: ``full_render`` for them), the ones a Comp can follow.
 FULL_RENDER_MODES = frozenset({'full', 'preview_then_full'})
+
+#: The render modes that render a preview first (a ``partial_render``).
+PREVIEW_RENDER_MODES = frozenset({'first_middle_last', 'preview_then_full'})
+
+
+def preview_frame_warnings(properties: dict, resolved: dict) -> list[str]:
+    """What a row's Preview Frames Lists drop (``farm.specs.preview_frames.parse``),
+    read as ``batch_submit`` reads them: the render's against its frames,
+    rolls included; the comp's against :func:`comp_frames` on its step. A
+    list only counts where its preview runs (Preview ticked). Without a
+    render the comp's frames here are the shot's, and the submit reads them
+    against what the renders on disk cover, so it may drop a little more or
+    less; it logs what it drops."""
+    warnings: list[str] = []
+    text = resolved.get('preview_frame_list')
+    if (
+        resolved.get('render') and isinstance(text, str) and text.strip()
+        and resolved.get('render_mode') in PREVIEW_RENDER_MODES
+    ):
+        span = rendered_range(resolved)
+        if span is not None and span[0] <= span[1]:
+            # A Frame List narrows the frames to its span, and the frames
+            # between its ranges are never rendered (#84).
+            ranges, _error = frame_list(resolved)
+            if ranges:
+                span = frame_ranges.span(ranges)
+            preview = preview_frames.parse(text, *span)
+            if frame_ranges.is_multi(ranges):
+                preview = preview_frames.inside_ranges(preview, ranges)
+            warnings.extend(f"render {warning}" for warning in preview.warnings)
+    text = resolved.get('comp_preview_frame_list')
+    if (
+        resolved.get('comp') and resolved.get('comp_preview')
+        and isinstance(text, str) and text.strip()
+    ):
+        frames = comp_frames(properties, resolved)
+        if frames is not None and frames[0][0] <= frames[0][1]:
+            step = _int(resolved.get('comp_step')) or 1
+            warnings.extend(
+                f"comp {warning}"
+                for warning in preview_frames.parse(text, *frames[0], step).warnings
+            )
+    return warnings
 
 
 def _int(value: Any) -> int | None:
@@ -876,6 +1077,18 @@ def entity_errors(
         requested: The channels checked for the batch.
     """
     errors: list[str] = []
+    errors.extend(turned_off_errors(properties, resolved))
+    # batch_submit refuses a Frame List it cannot read, or one reaching
+    # past the render's range; a multi-range render is not published, so
+    # no comp may follow it (#84).
+    ranges, frame_list_error = frame_list(resolved)
+    if frame_list_error is not None:
+        errors.append(frame_list_error)
+    if frame_ranges.is_multi(ranges) and resolved.get('comp'):
+        errors.append(
+            f"Comp follows a published render, and "
+            f"{frame_ranges.NOT_PUBLISHED}: untick Comp, or render one range"
+        )
     if resolved.get('comp') and resolved.get('render') and (
         resolved.get('render_mode') not in FULL_RENDER_MODES
     ):
@@ -913,6 +1126,34 @@ def entity_errors(
                 )
             else:
                 errors.append("no channel checked to render")
+    return errors
+
+
+def turned_off_errors(properties: dict, resolved: dict) -> list[str]:
+    """A step aimed at a department turned off on the entity (#64).
+
+    ``batch_submit`` refuses each of them; the grid never offers an off
+    department's publish cell, so these are what is left: a Render or
+    Playblast cut, or a ``pub_departments`` from another caller.
+    """
+    off = read_disabled_departments(properties)
+    if not off:
+        return []
+    errors = []
+    for section, key, what in (
+        ('render', 'render_department', 'Render'),
+        ('playblast', 'pb_department', 'Playblast'),
+    ):
+        name = resolved.get(key)
+        if resolved.get(section) and name in off:
+            errors.append(
+                f"the {what} cut, {name}, is turned off on this shot: pick "
+                f"another department, or turn it back on"
+            )
+    if resolved.get('publish'):
+        for name in resolved.get('pub_departments') or ():
+            if name in off:
+                errors.append(f"{name} is turned off on this shot: not published")
     return errors
 
 

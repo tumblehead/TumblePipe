@@ -1,13 +1,25 @@
-"""th::render_settings: the shot's Karma settings, and the one place its
-AOVs are chosen.
+"""th::render_settings: the shot's Karma settings (quality and camera).
 
-The AOVs are th::render_vars' toggles, promoted onto this node: each var is
-named as the pipeline reads it, its plane alike (``pipe.usd.render_vars``).
+AOVs are chosen on th::render_vars only (issue #72). Up to 1.103 this node
+had an AOVs section copying th::render_vars' toggles and Compression menus;
+those parms are still on the node, in a hidden folder (``OLD_AOVS``), and
+still drive the embedded render_vars inside, so a scene that ticked AOVs
+there renders exactly as before. Houdini drops the saved values of parms an
+HDA no longer defines, so removing them would have silently dropped those
+AOVs from old shots. A node with any ticked says so in its comment
+(``old_aovs_note``, on load and after a preset load) and shows **Drop Old
+AOVs** (``drop_old_aovs``) to clear them once they are ticked on
+th::render_vars. (A warning from the inner check LOP would stay on that
+LOP: an HDA does not show its children's warnings.) A fresh node leaves
+them all off: its embedded render_vars then renders only the fallback
+beauty, when nothing upstream has one.
+
 The Karma Render Properties inside keeps its own AOV toggles, which name
 vars Karma's way (Beauty as plane ``C``, ``Albedo``, ``N``...) and collide
 with ours, so they stay off: ``lock_karma_aovs`` switches off any a saved
-scene has on when it loads, ticking ours instead and saying so on the node,
-and ``check_render_vars`` makes the node error while one is on.
+scene has on when it loads, ticking the old AOV of the same name instead
+(so the render keeps the AOV) and saying so on the node, and
+``check_render_vars`` makes the node error while one is on.
 """
 
 
@@ -45,6 +57,8 @@ class RenderSettings(ns.Node):
         if not preset_path.exists(): return
         self.native().setParmsFromData(load_json(preset_path))
         self.set_save_lock(True)
+        # A preset saved up to 1.103 may tick the old AOVs.
+        old_aovs_note(self.native())
 
     def save(self):
         preset_name = self.get_preset_name()
@@ -114,6 +128,99 @@ KARMA_AOV_TOGGLES = {
 KARMA_NODE = 'settings'
 
 
+# The old AOVs section (up to 1.103), frozen: toggle -> its Compression
+# menu. Hidden on the node; each still drives the embedded render_vars'
+# parm of the same name. New AOVs go on th::render_vars only.
+OLD_AOVS = {
+    'beauty': 'beauty_compression',
+    'beauty_mse': 'beauty_mse_compression',
+    'sample_count': 'samples_compression',
+    'albedo': 'albedo_compression',
+    'albedo_mse': 'albedo_mse_compression',
+    'normal': 'normal_compression',
+    'normal_mse': 'normal_mse_compression',
+    'uv': 'uv_compression',
+    'position': 'position_compression',
+    'depth': 'depth_compression',
+    'diffuse': 'diffuse_compression',
+    'specular': 'specular_compression',
+    'emission': 'emission_compression',
+    'volume': 'volume_compression',
+    'diffuse_direct': 'diffuse_direct_compression',
+    'diffuse_indirect': 'diffuse_indirect_compression',
+    'specular_direct': 'specular_direct_compression',
+    'specular_indirect': 'specular_indirect_compression',
+    'transmission': 'transmission_compression',
+    'sss': 'sss_compression',
+    'coat': 'coat_compression',
+    'unshadowed': 'unshadowed_compression',
+    'shadow': 'shadow_compression',
+    'ao': 'ao_compression',
+    'motionvectors': 'motionvectors_compression',
+    'velocity': 'velocity_compression',
+    'cryptoprimitives': 'cryptoprimitives_compression',
+    'cryptomaterials': 'cryptomaterials_compression',
+}
+
+# The fallback beauty (rendered when nothing upstream has one) reads the
+# old beauty menu even unticked; DWA-B is its default.
+OLD_BEAUTY_COMPRESSION_DEFAULT = 1
+
+OLD_AOVS_NOTE = "AOVs ticked on this node's old AOVs section still render"
+
+
+def old_aovs(node) -> list[str]:
+    """What the hidden old AOVs section still renders on ``node``: the
+    ticked toggles, plus ``beauty_compression`` when the fallback beauty's
+    menu was changed. Empty on a fresh node."""
+    ticked = []
+    for name in OLD_AOVS:
+        parm = node.parm(name)
+        if parm is not None and parm.eval():
+            ticked.append(name)
+    menu = node.parm('beauty_compression')
+    if (menu is not None and 'beauty' not in ticked
+            and menu.eval() != OLD_BEAUTY_COMPRESSION_DEFAULT):
+        ticked.append('beauty_compression')
+    return ticked
+
+
+def old_aovs_message(ticked) -> str:
+    return (f"{OLD_AOVS_NOTE}: {', '.join(ticked)}. Tick them on "
+            "th::render_vars, then press Drop Old AOVs.")
+
+
+def old_aovs_note(node) -> list[str]:
+    """Keep ``node``'s comment saying which old AOVs still render: one line,
+    replaced when they change, gone when none are left. Returns them."""
+    import hou
+
+    ticked = old_aovs(node)
+    comment = node.comment()
+    lines = [line for line in (comment.split('\n') if comment else [])
+             if not line.startswith(OLD_AOVS_NOTE)]
+    if ticked:
+        lines.append(old_aovs_message(ticked))
+    new = '\n'.join(lines)
+    if new != comment:
+        node.setComment(new)
+    if ticked:
+        node.setGenericFlag(hou.nodeFlag.DisplayComment, True)
+    return ticked
+
+
+def drop_old_aovs(kwargs) -> None:
+    """Drop Old AOVs: every old AOV parm back to its default, so the
+    embedded render_vars renders only the fallback beauty again."""
+    node = kwargs['node']
+    for toggle, menu in OLD_AOVS.items():
+        for name in (toggle, menu):
+            parm = node.parm(name)
+            if parm is not None:
+                parm.revertToDefaults()
+    old_aovs_note(node)
+
+
 def karma_aovs_on(karma) -> list[str]:
     """The Karma AOV toggles switched on on ``karma`` (Karma Render
     Properties), by parm name."""
@@ -150,7 +257,9 @@ def lock_karma_aovs(node) -> list[str]:
     lines = ["Karma's own AOV toggles were on inside this node; switched off "
              "(they name planes Karma's way: Beauty as C)."]
     if ticked:
-        lines.append('Ticked here instead: ' + ', '.join(ticked) + '.')
+        lines.append("Ticked on this node's old AOVs instead, so they still "
+                     "render (move them to th::render_vars): "
+                     + ', '.join(ticked) + '.')
     if without:
         lines.append('No TumblePipe AOV for: ' + ', '.join(without) + '.')
     message = '\n'.join(lines)
@@ -163,8 +272,12 @@ def lock_karma_aovs(node) -> list[str]:
 
 def on_loaded(kwargs):
     """OnLoaded: a scene saved with Karma's own AOV toggles on loads with
-    them off and ours on (``lock_karma_aovs``)."""
-    lock_karma_aovs(kwargs['node'])
+    them off and the old AOVs of the same name on (``lock_karma_aovs``),
+    and a node whose old AOVs section still renders says so
+    (``old_aovs_note``). Parm and comment edits only, no network edits."""
+    node = kwargs['node']
+    lock_karma_aovs(node)
+    old_aovs_note(node)
 
 
 def render_var_problems(stage) -> list[str]:
@@ -194,14 +307,14 @@ def check_render_vars(lop) -> None:
     if on:
         labels = ', '.join(
             f"{karma.parm(name).parmTemplate().label()}"
-            + (f" (tick '{KARMA_AOV_TOGGLES[name]}' in the AOVs section)"
+            + (f" (tick '{KARMA_AOV_TOGGLES[name]}' on th::render_vars)"
                if KARMA_AOV_TOGGLES[name] else '')
             for name in on
         )
         raise hou.NodeError(
             f"Karma's own AOV toggles are on inside this node: {labels}. "
             "They name planes Karma's way (Beauty as C) and the farm refuses "
-            "them: switch them off and use the AOVs section."
+            "them: switch them off and tick the AOVs on th::render_vars."
         )
     stage = lop.inputs()[0].stage() if lop.inputs() and lop.inputs()[0] else None
     if stage is None:

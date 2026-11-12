@@ -3,7 +3,9 @@
 Rows are the entities of one context (shots, or assets), grouped by sequence
 or category; columns are pipeline steps — one publish column per department
 in pool order, then Playblast (shots only), Render and Comp (shots only: a
-re-comp of the shot's newest composite workfile). A ticked cell means
+re-comp of the shot's newest composite workfile, or of the open workfile's
+comp of the shot when no th::import_render feeds it, #80, which reads the
+Render beside it: ``pipe.houdini.cops.slap_comp``). A ticked cell means
 "do this step for this entity", and each cell shows how up to date that step
 is: never done, stale, current, or nothing to do. Every row, column and
 sequence carries a tri-state checkbox. The policy behind all of it — states,
@@ -82,6 +84,7 @@ from tumbletrove.asset_browser.core.theme import (
     TEXT_PRIMARY, TEXT_SECONDARY,
 )
 
+from tumblepipe.config.department_off import applied_departments, read_disabled_departments
 from tumblepipe.farm.submit import grid as grid
 from tumblepipe.farm.submit import remembered
 from tumblepipe.farm.submit import review as submit_review
@@ -90,6 +93,7 @@ from tumblepipe.farm.submit import camera as render_camera
 from tumblepipe.farm.submit import settings as resolve
 from tumblepipe.pipe.houdini.ui.report import report_failure
 from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
+from tumblepipe.pipe import turntable
 from tumblepipe.farm.specs.playblast import (
     PLAYBLAST_CULLS,
     PLAYBLAST_LIGHTINGS,
@@ -156,7 +160,10 @@ _COLUMN_TIPS = {
     grid.COMP: (
         "Re-comp the shot's newest composite workfile on the farm, over the "
         "renders on disk. With Render ticked too, it waits for that render's "
-        "full range (after its denoise) and comps the new frames."
+        "full range (after its denoise) and comps the new frames. A shot the "
+        "open workfile comps without a th::import_render (a slap comp in the "
+        "render scene) comps that workfile instead, reading the Render ticked "
+        "beside it, which it needs."
     ),
 }
 _STATE_LINES = {
@@ -166,6 +173,7 @@ _STATE_LINES = {
         (grid.NEVER, "never exported"),
         (grid.UNCLAIMED, "(dim) only a Multi's workfile, which never exported it"),
         (grid.NONE, "no workfile: nothing to publish"),
+        (grid.OFF, "turned off on this shot: not published"),
     ),
     'preview': (
         (grid.CURRENT, "newer than every publish it shows"),
@@ -191,11 +199,13 @@ def _tip_kind(kind: str) -> str:
 GLYPHS = {
     grid.NONE: "·", grid.NEVER: "○", grid.UNCLAIMED: "○", grid.STALE: "●",
     grid.CURRENT: "✓", grid.PENDING: "…",
+    grid.OFF: "×",
 }
 GLYPH_COLOURS = {
     grid.NONE: DIM_COLOUR, grid.NEVER: NEVER_COLOUR, grid.UNCLAIMED: DIM_COLOUR,
     grid.STALE: STALE_COLOUR,
     grid.CURRENT: CURRENT_COLOUR, grid.PENDING: DIM_COLOUR,
+    grid.OFF: DIM_COLOUR,
 }
 TIPS = {
     grid.PUBLISH: {
@@ -208,6 +218,10 @@ TIPS = {
         grid.STALE: "the workfile was saved after the last export",
         grid.CURRENT: "exported since the last workfile save",
         grid.PENDING: "reading status…",
+        grid.OFF: (
+            "turned off on this shot: not offered. Turn it back on in "
+            "the Entity Editor or the browser's department menu"
+        ),
     },
     'preview': {
         grid.NONE: "not available: no frame range configured",
@@ -886,6 +900,9 @@ class _ContextPane(QWidget):
         self._open_department = department or None
         # Channels the opener asked for (import_render's Channel), or None.
         self._open_channels = tuple(channels) if channels else None
+        # The open workfile's comps without a th::import_render, by shot
+        # (#80): their Comp comps the Render ticked beside it.
+        self._scene_comps = _scene_comps() if context == 'shots' else {}
 
         # Guards the spin boxes' valueChanged against programmatic seeding
         # (Qt gives QSpinBox no user-only edit signal).
@@ -912,7 +929,8 @@ class _ContextPane(QWidget):
         self._renderable_departments = _list_dept_names(
             context, only_publishable=False, only_renderable=True,
         )
-        self._fallbacks['render_department'] = grid.default_preview_department(
+        # Per row: the last renderable department not turned off on it (#64).
+        self._fallbacks['render_department'] = grid.preview_department_fallback(
             self._renderable_departments
         )
         self._fallbacks['pb_department'] = self._fallbacks['render_department']
@@ -1776,6 +1794,8 @@ class _ContextPane(QWidget):
                             ),
                             render_department=self._cut(uri, 'render_department'),
                             comp=self._context == 'shots',
+                            # For the unstaged-channel warning (#53).
+                            channels=resolve.channel_names(self._props.get(uri, {})),
                         )
                         self._pending[self._executor.submit(farm_status.scan, probe)] = (
                             uri, self._preview_only,
@@ -1807,6 +1827,7 @@ class _ContextPane(QWidget):
                 old.render_mtime = status.render_mtime
                 old.comp_workfile = status.comp_workfile
                 old.comp_mtime = status.comp_mtime
+                old.staged = status.staged
             else:
                 self._statuses[uri] = status
             self._apply_status(uri)
@@ -1827,15 +1848,22 @@ class _ContextPane(QWidget):
         if status is None:
             return
         props = self._props.get(uri, {})
-        has_range = (
+        # An asset renders its turntable on the studio's frames (#53).
+        has_range = self._context == 'assets' or (
             resolve.nested(props, 'frame_start') is not None
             and resolve.nested(props, 'frame_end') is not None
         )
+        # Departments turned off on this entity (#64): not offered, and not
+        # part of what its previews compose.
+        off = read_disabled_departments(props)
         departments = self._publish_departments
         for column in self._columns:
             key = (uri, column.key)
             if status.error:
                 self._states[key] = grid.PENDING
+                continue
+            if column.kind == grid.PUBLISH and column.department in off:
+                self._states[key] = grid.OFF
                 continue
             if column.kind == grid.PUBLISH:
                 self._states[key] = grid.publish_state(
@@ -1849,10 +1877,13 @@ class _ContextPane(QWidget):
                 # newest version), so a new render shows the comp stale.
                 self._states[key] = grid.comp_state(
                     status.comp_workfile, status.comp_mtime, status.render_mtime,
+                    scene=uri in self._scene_comps,
                 )
                 continue
             field_key = 'pb_department' if column.kind == grid.PLAYBLAST else 'render_department'
-            cut = grid.preview_cut(departments, self._cut(uri, field_key))
+            cut = applied_departments(
+                grid.preview_cut(departments, self._cut(uri, field_key)), off,
+            )
             preview = (
                 status.playblast_mtime if column.kind == grid.PLAYBLAST
                 else status.render_mtime
@@ -2300,17 +2331,54 @@ class _ContextPane(QWidget):
         self._rnd_full = QCheckBox("Full range")
         self._rnd_full.setChecked(True)
         form.addRow("Range:", self._row(self._rnd_preview, self._rnd_full))
+        self._rnd_preview_list = self._preview_list_field(self._rnd_preview, "render")
+        form.addRow("Preview frames:", self._rnd_preview_list)
 
         self._rnd_first = self._spin('first_frame', -1_000_000, 1_000_000)
         self._rnd_last = self._spin('last_frame', -1_000_000, 1_000_000)
-        form.addRow("Frames:", self._row(
+        frames_row = self._row(
             self._rnd_first, "→", self._rnd_last, revert=('first_frame', 'last_frame'),
-        ))
+        )
+        form.addRow("Frames:", frames_row)
+        # The Frame List (#84): only some ranges of each shot. Two or more
+        # are a multi-range render, which is not published; the note says
+        # so under the field, and each row's Warnings column again.
+        self._rnd_frame_list = QLineEdit()
+        self._rnd_frame_list.setPlaceholderText(
+            "First → Last — or e.g. 1001-1030 1040-1055 1100-1200"
+        )
+        self._rnd_frame_list.setClearButtonEnabled(True)
+        self._rnd_frame_list.setToolTip(
+            "Render only these frames: ranges and single frames, space "
+            "separated. Overlapping ranges merge. Each must lie inside the "
+            "shot's frames, rolls included. One range renders and publishes "
+            "as First → Last would. Several ranges render only their frames; "
+            "the mp4 plays them back to back with the frame number burnt in. "
+            "Multi-range renders are not published: no daily, no Copy to "
+            "edit, no Comp, and the version is not the shot's render. The "
+            "frames stay on disk to view. The same list goes to every "
+            "ticked shot."
+        )
+        self._rnd_frame_list_note = QLabel(resolve.frame_list_note(''))
+        self._rnd_frame_list_note.setWordWrap(True)
+        self._rnd_frame_list_note.setStyleSheet(f"color: {TEXT_SECONDARY};")
+
+        def _frame_list_edited(*_a):
+            self._rnd_frame_list_note.setText(
+                resolve.frame_list_note(self._rnd_frame_list.text())
+            )
+            self._apply_frame_list_disabled()
+            self._changed()
+
+        self._rnd_frame_list.textChanged.connect(_frame_list_edited)
+        form.addRow("Frame list:", self._rnd_frame_list)
+        form.addRow("", self._rnd_frame_list_note)
         self._rnd_pre = self._spin('pre_roll', 0, 1000)
         self._rnd_post = self._spin('post_roll', 0, 1000)
-        form.addRow("Pre / Post roll:", self._row(
+        rolls_row = self._row(
             self._rnd_pre, "/", self._rnd_post, revert=('pre_roll', 'post_roll'),
-        ))
+        )
+        form.addRow("Pre / Post roll:", rolls_row)
         self._rnd_pool = self._line('render_pool', 'general')
         form.addRow("Pool:", self._rnd_pool)
         self._rnd_priority = self._spin('render_priority', 0, 100)
@@ -2324,7 +2392,8 @@ class _ContextPane(QWidget):
         self._rnd_samples = self._spin('samples', 1, 4096, override=True)
         form.addRow("Samples:", self._row(self._rnd_samples, revert=('samples',)))
         self._rnd_denoise = self._check('denoise', "Denoise")
-        form.addRow("", self._row(self._rnd_denoise, revert=('denoise',)))
+        denoise_row = self._row(self._rnd_denoise, revert=('denoise',))
+        form.addRow("", denoise_row)
         self._rnd_mblur = self._check('mblur', "Motion blur", override=True)
         self._rnd_dof = self._check('dof', "DOF", override=True)
         # A row each: each names the scene's value beside its label
@@ -2341,7 +2410,30 @@ class _ContextPane(QWidget):
         }
         self._rnd_standalone = QCheckBox("Standalone")
         self._rnd_copy_edit = QCheckBox("Copy to edit")
-        form.addRow("", self._row(self._rnd_standalone, self._rnd_copy_edit))
+        modes_row = self._row(self._rnd_standalone, self._rnd_copy_edit)
+        form.addRow("", modes_row)
+        # What a multi-range Frame List turns off (#84), with each widget's
+        # own tooltip to give back when the list no longer does.
+        self._frame_list_targets = {
+            'copy_to_edit': (self._rnd_copy_edit, self._rnd_copy_edit.toolTip()),
+        }
+        if self._context == "assets":
+            # An asset's render is its turntable (#53): the studio's camera
+            # and frames, built on the farm, never denoised or synced to an
+            # edit (as the studio's own farm render).
+            for row in (
+                self._rnd_camera, frames_row, self._rnd_frame_list,
+                self._rnd_frame_list_note, rolls_row, denoise_row, modes_row,
+            ):
+                form.setRowVisible(row, False)
+            frames = turntable.farm_frames()
+            turntable_frames = QLabel(
+                f"{frames.first} → {frames.last}, every {frames.step}th "
+                "(th::lookdev_studio's turntable)"
+            )
+            turntable_frames.setStyleSheet(f"color: {TEXT_SECONDARY};")
+            turntable_frames.setToolTip(grid.ASSET_RENDER_HINT)
+            form.insertRow(form.getWidgetPosition(frames_row)[0], "Frames:", turntable_frames)
         return box
 
     def _build_recomp_section(self) -> Section:
@@ -2364,6 +2456,8 @@ class _ContextPane(QWidget):
             "Preview Frames."
         )
         form.addRow("Range:", self._row(self._comp_preview))
+        self._comp_preview_list = self._preview_list_field(self._comp_preview, "comp")
+        form.addRow("Preview frames:", self._comp_preview_list)
         self._comp_first = self._spin(
             'comp_first_frame', -1_000_000, 1_000_000,
             override=True, unset_text=FULL_RANGE_TEXT,
@@ -2416,6 +2510,29 @@ class _ContextPane(QWidget):
         )
         form.addRow("", self._row(self._comp_copy_edit))
         return box
+
+    def _preview_list_field(self, toggle: QCheckBox, what: str) -> QLineEdit:
+        """The Preview Frames List beside a Preview box (#74): empty previews
+        the first, middle and last frame; otherwise the frames typed,
+        space separated, in that order. A batch field, enabled while its box
+        is ticked; what it drops shows in the Warnings column
+        (``submit_settings.preview_frame_warnings``)."""
+        from tumblepipe.farm.specs.preview_frames import PLACEHOLDER
+        edit = QLineEdit()
+        edit.setPlaceholderText(f"{PLACEHOLDER} — or e.g. 1012 1040 1077")
+        edit.setClearButtonEnabled(True)
+        edit.setToolTip(
+            f"Frames to {what} first as the preview, space separated, in the "
+            "order given (key poses, say); the rest of the range follows as "
+            "usual. Empty: the first, middle and last frame. A frame outside "
+            "the range, or off the step, is dropped and named in the Warnings "
+            "column. The same frames go to every ticked shot."
+        )
+        edit.setEnabled(toggle.isChecked())
+        toggle.toggled.connect(edit.setEnabled)
+        toggle.toggled.connect(lambda *_a: self._changed())
+        edit.textEdited.connect(lambda *_a: self._changed())
+        return edit
 
     def _pool(self, key: str) -> QWidget:
         """A Pool field as the project's pools in a dropdown, the way a th::
@@ -2477,6 +2594,8 @@ class _ContextPane(QWidget):
         """Start lookups for unseen rows and show what is known."""
         if grid.RENDER not in grid.ticked_kinds(self._columns, self._ticks):
             return  # the Render section is hidden; nothing to show
+        if self._context == "assets":
+            return  # a turntable renders the studio's camera (#53)
         keys = self._camera_keys()
         waiting = set(self._camera_pending.values())
         missing = [k for k in keys if k not in self._cameras and k not in waiting]
@@ -2702,12 +2821,30 @@ class _ContextPane(QWidget):
             resolve.CHANNEL_LIST_KEY: self._rnd_channels.checked_items(),
             'render_mode': self._render_mode() or 'full',
             'standalone': self._rnd_standalone.isChecked(),
-            'copy_to_edit': self._rnd_copy_edit.isChecked(),
+            # Off (not sent) while a multi-range Frame List disables it;
+            # the tick itself is kept for when the list is cleared.
+            'copy_to_edit': self._rnd_copy_edit.isChecked() and self._rnd_copy_edit.isEnabled(),
+            'preview_frame_list': self._rnd_preview_list.text(),
+            # An asset's turntable renders the studio's frames (hidden there)
+            'frame_list': '' if self._context == 'assets' else self._rnd_frame_list.text(),
         })
         if self._comp_copy_edit is not None:
             values['comp_copy_to_edit'] = self._comp_copy_edit.isChecked()
             values['comp_preview'] = self._comp_preview.isChecked()
+            values['comp_preview_frame_list'] = self._comp_preview_list.text()
         return values
+
+    def _apply_frame_list_disabled(self) -> None:
+        """Disable what a multi-range Frame List makes the submit ignore
+        (``resolve.frame_list_disabled``), its tooltip saying why; give
+        each back as it was (tick and tooltip) once the list is cleared or
+        is one range. No silent override: the artist sees the box off."""
+        targets = getattr(self, '_frame_list_targets', {})
+        disabled = resolve.frame_list_disabled(self._rnd_frame_list.text())
+        for key, (widget, tooltip) in targets.items():
+            why = disabled.get(key)
+            widget.setEnabled(why is None)
+            widget.setToolTip(tooltip if why is None else why)
 
     def _render_mode(self) -> str | None:
         """The render_mode the Range checkboxes ask for; None with neither ticked."""
@@ -2742,10 +2879,19 @@ class _ContextPane(QWidget):
             )
             assigned = list(properties.get('departments') or []) or None
             requested = form[resolve.CHANNEL_LIST_KEY]
+            status = self._statuses.get(uri)
             warnings = resolve.entity_warnings(
                 properties, settings, departments=assigned, requested=requested,
+                staged=None if status is None or status.error else status.staged,
+                turntable=self._context == 'assets',
             )
             errors = resolve.entity_errors(properties, settings, requested=requested)
+            # The open workfile comps this shot without a th::import_render
+            # (#80): the Comp comps that workfile, reading the Render beside it.
+            scene = self._scene_comps.get(uri)
+            if scene is not None and settings.get('comp'):
+                settings['comp_scene'] = scene.settings()
+                errors = errors + grid.scene_comp_errors(settings, scene.aovs)
             missing = self._stale_upstream(uri, settings)
             if missing:
                 warnings.insert(0, f"{', '.join(missing)} stale and not ticked")
@@ -3420,6 +3566,31 @@ def _houdini_version() -> str | None:
         return None
 
 
+def _scene_comps() -> dict:
+    """``{shot uri: pipe.comp.SceneComp}``: the open workfile's comps
+    without a th::import_render (#80, a slap comp in the render scene).
+    None outside Houdini (TumbleTrove Desktop's Farm Submit)."""
+    import sys
+    if 'hou' not in sys.modules:
+        return {}
+    try:
+        from tumblepipe.pipe.houdini.cops import slap_comp
+        return slap_comp.scene_comps()
+    except Exception:
+        log.warning("Could not read the open workfile's comps", exc_info=True)
+        return {}
+
+
+def _snapshot_scene_comps(configs: list[dict], directory: Path) -> list[dict]:
+    """``configs`` with each scene comp's workfile saved and copied into
+    the submission's ``directory`` (``cops.slap_comp.snapshot``); as they
+    are when no row comps one."""
+    if not any(c.get('settings', {}).get('comp_scene') is not None for c in configs):
+        return configs
+    from tumblepipe.pipe.houdini.cops import slap_comp
+    return slap_comp.snapshot(configs, directory)
+
+
 def start_submission(
     configs: list[dict], backend: str = "farm", cleanup: bool = False,
     ) -> tuple[Path, Any]:
@@ -3442,6 +3613,7 @@ def start_submission(
     directory = Path(api.storage.resolve(
         Uri.parse('temp:/farm_submissions')
     )) / f'{stamp}_{uuid.uuid4().hex[:6]}'
+    configs = _snapshot_scene_comps(configs, directory)
     plan = submit_plan.make_plan(
         configs, env=dict(os.environ), houdini_version=_houdini_version(),
         backend=backend, cleanup=cleanup,

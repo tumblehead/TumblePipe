@@ -10,6 +10,7 @@ import uuid
 
 from tumblepipe.config.groups import get_group, list_groups
 from tumblepipe.config.department import (
+    get_disabled_departments,
     list_departments,
     list_entity_departments,
 )
@@ -304,12 +305,18 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
 
 
 def _publishes(node, owned: set[Uri], departments: list[str]) -> bool:
-    """The predicate every collected node passes: live, owned, in scope."""
+    """The predicate every collected node passes: live, owned, in scope,
+    and not into a department turned off on its entity (#64): a Multi's
+    workfile skips that member, a shot's workfile that department."""
     if node.native().isBypassed():
         return False
-    if node.get_entity_uri() not in owned:
+    entity_uri = node.get_entity_uri()
+    if entity_uri not in owned:
         return False
-    return node.get_department_name() in departments
+    department = node.get_department_name()
+    if department not in departments:
+        return False
+    return department not in get_disabled_departments(entity_uri)
 
 
 # The node kinds a publish collects: (wrapper module, node type name,
@@ -423,14 +430,29 @@ def _collect_layer_publish_tasks(
         build_first, build_last = _get_frame_range_values(
             entity_uri, all_entity_exports[0]
         )
-        tasks.append(_create_build_group_task(
+        build_task = _create_build_group_task(
             entity_uri,
             sorted({node.get_channel_name() for node in all_entity_exports}),
             depends_on=export_task_ids,
             first_frame=build_first,
             last_frame=build_last,
-        ))
+        )
+        follow_exports(build_task, [
+            task for task in tasks if task.id in export_task_ids
+        ])
+        tasks.append(build_task)
     return tasks
+
+
+def follow_exports(build_task: ProcessTask, export_groups: list[ProcessTask]) -> None:
+    """Let the Build USD rows follow a First/Last the artist changes on the
+    entity's export rows for this submit (#76, ``task_range``)."""
+    sources = [
+        child for group in export_groups for child in group.children or []
+        if child.task_type in ('export', 'export_shared')
+    ]
+    for child in build_task.children or []:
+        child.range_follows = list(sources)
 
 
 def _collect_rig_publish_tasks(owned_uris: set[Uri]) -> list[ProcessTask]:

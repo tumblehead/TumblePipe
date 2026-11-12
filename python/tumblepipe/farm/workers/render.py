@@ -17,6 +17,7 @@ from tumblepipe.config.timeline import BlockRange
 from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Husk, ITileStitch
 from tumblepipe.apps import exr
+from tumblepipe.pipe import review_events, slap_comp
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import get_base_env, ocio_value, print_env, job_data_dir
 from tumblepipe.farm.frames import frame_file, with_frame_token, HOUDINI_FRAME_TOKEN
@@ -44,7 +45,8 @@ def main(
     input_path: Path,
     receipt_path: Path,
     output_paths: dict[str, Path],
-    render_pass: str | None = None
+    render_pass: str | None = None,
+    slap_comp_path: Path | None = None
     ) -> int:
 
     # Check that OCIO has been set
@@ -111,6 +113,14 @@ def main(
         # above and hides the layers below (pipe.usd.render_passes).
         if render_pass is not None:
             base_args += ['--pass', render_pass]
+        # The entity's published Copernicus slap comp (pipe.slap_comp): husk
+        # runs it on each frame, its outputs replacing the AOVs they name.
+        if slap_comp_path is not None:
+            if tile_count != 1:
+                return error('A slap comp renders whole frames: the job must have 1 tile')
+            if not slap_comp_path.exists():
+                return error(f'Slap comp program not found: {slap_comp_path}')
+            base_args += slap_comp.husk_args([slap_comp_path])
 
         # Render tiles
         if tile_count == 1:
@@ -246,6 +256,7 @@ def main(
     for receipt_path in receipt_paths:
         if receipt_path.exists(): continue
         return error(f'Output receipt not found: {receipt_path}')
+    review_events.announce_written(output_paths.values())
 
     # Done
     print('Success')
@@ -283,7 +294,8 @@ def from_config(config: dict, frame_span: BlockRange) -> int:
             aov_name: Path(aov_path)
             for aov_name, aov_path in config['output_paths'].items()
         },
-        config.get('render_pass')
+        config.get('render_pass'),
+        None if 'slap_comp' not in config else job_data_dir() / config['slap_comp']
     )
 
 if __name__ == '__main__':

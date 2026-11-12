@@ -16,7 +16,11 @@ config = {
     },
     'tasks': {
         'publish': {
-            'downstream_departments': ['string']    # optional
+            'downstream_departments': ['string'],   # optional
+            'frame_range': {            # optional: the publish window's
+                'first_frame': 'int',   # First/Last for this submit (#76),
+                'last_frame': 'int'     # rolls included; every export of
+            }                           # the job writes these frames
         },
         'build': {                      # optional: the run owns the build
             'channels': ['string'],     # builds chained after the publish
@@ -48,6 +52,10 @@ def _valid_publish(publish) -> bool:
     if not isinstance(publish, dict): return False
     if 'downstream_departments' in publish:
         if not check_str_list(publish, 'downstream_departments'): return False
+    if 'frame_range' in publish:
+        span = publish['frame_range']
+        if not valid_frame_range(span, step=False): return False
+        if span['first_frame'] > span['last_frame']: return False
     return True
 
 
@@ -80,6 +88,16 @@ def downstream_departments(config) -> list[str]:
     """The departments published after the config's own, in order."""
     # Optional: a plain publish names none.
     return config['tasks']['publish'].get('downstream_departments', [])
+
+
+def frame_range(config) -> tuple[int, int] | None:
+    """The frames the job's exports write instead of their nodes' Frame
+    Range (the publish window's edit for this submit, #76), or None: each
+    export node reads its own range."""
+    span = config['tasks']['publish'].get('frame_range')
+    if span is None:
+        return None
+    return (span['first_frame'], span['last_frame'])
 
 
 def build_task(config) -> dict | None:

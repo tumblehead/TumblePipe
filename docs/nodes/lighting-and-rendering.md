@@ -14,24 +14,36 @@ None of these HDAs carries built-in help text, so this page is the reference.
 
 ## `th::render_settings` (LOP)
 
-Karma render settings for the shot, with named presets, and the place its
-AOVs are chosen. Tab menu `_TumblePipe/pipeline`; drop it in the shot's
-`/stage` after the lights. Inside it is a Karma Render Properties node driven
-by the parms below, and an embedded `th::render_vars` driven by the **AOVs**
-section: the same toggles and Compression menus as
-[`th::render_vars`](#thrender_vars-lop), each var named as the pipeline
-reads it. Its beauty renders whether ticked or not when nothing upstream has
-authored a `beauty` RenderVar, so a shot always renders at least the RGBA
-beauty. Light groups and mattes come from [`th::lpe_tags`](#thlpe_tags-lop)
-and [`th::mattes`](#thmattes-lop) downstream.
+Karma render settings for the shot, with named presets: render quality and
+camera. Tab menu `_TumblePipe/pipeline`; drop it in the shot's `/stage`
+after the lights. AOVs are not chosen here: tick them on
+[`th::render_vars`](#thrender_vars-lop), the one place a shot's AOVs are
+listed (the render template puts one after this node). Inside is a Karma
+Render Properties node driven by the parms below, and an embedded
+`th::render_vars` whose beauty renders when nothing upstream has authored a
+`beauty` RenderVar, so a shot always renders at least the RGBA beauty. Light
+groups and mattes come from [`th::lpe_tags`](#thlpe_tags-lop) and
+[`th::mattes`](#thmattes-lop) downstream.
+
+**Old AOVs section.** Up to 1.103 this node had an **AOVs** section with
+the same toggles and Compression menus as `th::render_vars`. Its parms are
+still on the node, hidden, and still drive the embedded `th::render_vars`,
+so a scene that ticked AOVs there renders exactly what it did (Houdini drops
+the saved values of parms an HDA no longer has, so removing them would have
+silently dropped those AOVs). When such a scene loads, the node's comment
+says which old AOVs still render, and a **Drop Old AOVs** button appears
+below Settings: tick those AOVs on `th::render_vars`, then press it to stop
+rendering them from here. The same note follows loading a preset saved with
+old AOVs ticked. A new node has none ticked and shows no button.
 
 The Karma Render Properties node inside keeps **its own AOV toggles off**.
 They author Karma's names (its **Beauty** writes a var `Beauty` as a plane
 named `C`, its **Albedo** an `Albedo` beside the project's `albedo`), which the
 farm cannot read. While one is on the node errors, naming the toggle and the
-AOVs-tab toggle to use instead. A scene saved with one on has it switched
-off when it loads, the matching AOVs-tab toggle ticked, and a comment on the
-node saying which (`render_settings.lock_karma_aovs`). The check also errors
+`th::render_vars` toggle to tick instead. A scene saved with one on has it
+switched off when it loads, the matching old AOV ticked so the render keeps
+it, and a comment on the node saying which, to move to `th::render_vars`
+(`render_settings.lock_karma_aovs`). The check also errors
 on any render var on the stage whose plane name is not its prim name, and on
 two vars of one AOV name (`check_render_vars` inside the node).
 Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.0/th_8_8Lop_1render__settings_8_81.0/DialogScript),
@@ -49,30 +61,31 @@ Source: [`otls/lop_th.render_settings.1.0`](../../otls/lop_th.render_settings.1.
 | Diffuse / Reflection / Refraction / Volume / SSS Limit | `2 / 4 / 4 / 0 / 1` | Karma ray limits |
 | Enable Depth of Field, Enable Motion Blur | on, on | |
 | Dicing Camera | off | Dice displacement from a copy of the camera at **Source Frame** (`1001`), optionally with **Add Focal Length**; **Quality Scale** `0.5` |
-| AOVs | all off | The [`th::render_vars`](#thrender_vars-lop) toggles and Compression menus. The beauty renders unticked when nothing upstream has one |
+| Drop Old AOVs | | Shown only while the hidden old AOVs section (up to 1.103) has an AOV ticked or its beauty menu changed; sets them all back to off, leaving the fallback beauty |
 
 Gotchas:
 
 - These values are what the farm renders. The Farm Submit dialog's Samples,
   Motion blur and DOF send nothing unless you set them there, and its
   **Camera** row shows the camera this node's published layer names — see
-  [Submit Jobs → Render](../asset-browser/submit-jobs.md#render-shots-only).
+  [Submit Jobs → Render](../asset-browser/submit-jobs.md#render).
 - The prim these settings are written to is project-owned (`/Render/…` or
   `/scene/Render/…`); the submit dialog's overrides find it by asking the
   stage — see
   [Where the render settings live](../composition.md#where-the-render-settings-live).
-- A preset is a snapshot of the whole node, the AOVs section included. Loading
-  one overwrites the camera path too. A preset saved before the node had its
-  AOVs (1.93 and older) holds no AOV toggles, so loading it leaves them as they are.
+- A preset is a snapshot of the whole node, the hidden old AOVs included.
+  Loading one overwrites the camera path too. A preset saved from 1.94 to
+  1.103 can tick old AOVs: they render, and the node says so as above.
 
 ## `th::render_vars` (LOP)
 
 Tick the AOVs a render should write. Tab menu `_TumblePipe/rendering`; put
 it after `render_settings`. Every toggle is a RenderVar prim under
 `/Render/Products/Vars`, and **every toggle is off by default** — a fresh
-node adds nothing until you tick something. `th::render_settings` carries the
-same toggles in its **AOVs** section, which is the usual place to tick them; this
-node is for AOVs added further down the graph.
+node adds nothing until you tick something. This is the one place a shot's
+AOVs are chosen: the render template builds one after `th::render_settings`.
+(`th::render_settings` had the same toggles in an **AOVs** section up to
+1.103; see [Old AOVs section](#thrender_settings-lop).)
 Source: [`otls/lop_th.render_vars.1.1`](../../otls/lop_th.render_vars.1.1/th_8_8Lop_1render__vars_8_81.1/DialogScript),
 [`pipe/houdini/aov.py`](../../python/tumblepipe/pipe/houdini/aov.py).
 
@@ -149,6 +162,19 @@ that name is how the farm, the denoise and the comp know one
 (`pipe/aovs.py` `is_cryptomatte_aov`), and a render breaking either rule is
 refused at submit like any other var naming problem.
 
+A cryptomatte works from a **rendered** EXR only, not in the Solaris
+viewport. Karma's interactive render (the viewport, a Live Render, and so a
+Copernicus slap comp block) delivers just the 3-channel preview plane `X`:
+no `X00`... rank planes and no manifest, which only husk writes into the
+EXR. A slap comp block asking for `cryptomaterials00` therefore fails with
+"Input layer cryptomaterials00 not produced by the renderer", and a
+Cryptomatte COP fed from it warns "No manifest found" (Houdini 22.0.429,
+checked 2026-11-12; SideFX's Cryptomatte COP help says the same of slap
+comp). Neither is a render settings problem: pull the matte in a comp from
+[`th::import_render`](../compositing.md#thimport_render) on a farm or disk
+render instead, or [publish a slap comp for the farm](#slap-comps), which
+husk runs on the rendered frame with every plane in it.
+
 Each AOV is one row: its toggle, its name, and its **Compression** menu, the
 EXR compression that AOV is written with, greyed out while the toggle is off
 (on `th::render_settings` the beauty's menu stays live, since the beauty
@@ -158,6 +184,73 @@ Data AOVs (`normal`, `depth`, `position`, `uv`, `samples`, `ao`,
 default to lossless **ZIP**, colour
 AOVs to **DWAB**. The farm writes exactly what is set here; see
 [Compositing → Compression](../compositing.md#compression).
+
+## Slap comps
+
+A Copernicus slap comp is a COP block (Block Begin to Block End) run on
+every rendered image: in the Solaris viewport while you light, and, once
+published, by husk on the farm. It is not the render chain's *slapcomp* job,
+the oiiotool stack of a shot's channels
+([Compositing → Farm submission](../compositing.md#farm-submission-and-mp4s)).
+
+**Put one down with the Tab menu tool *TumblePipe Slap Comp*** (in any COP
+network, under `_TumblePipe/pipeline`). It is Houdini's own Slap Comp Block
+(a Slap Comp Import, a Block Begin and a Block End, wired, the Block End
+registered as a slap comp block) with every slap comp AOV named `beauty`.
+Houdini's stock block names its layer `C`, Karma's colour AOV, and
+TumblePipe's render settings name that AOV `beauty`, so the stock block finds
+nothing until the AOV is renamed on all three nodes. The preset does that;
+the render settings keep `beauty`. Put your COPs between Block Begin and
+Block End, then pick the block from the viewport's slap comp button.
+To pull another AOV in, add a row with the same name (the AOV's name in the
+render settings) on all three nodes. The viewport's interactive render
+delivers no cryptomatte ranks (see [Cryptomattes](#cryptomattes)); husk's
+farm render does.
+Source: [`pipe/slap_comp.py`](../../python/tumblepipe/pipe/slap_comp.py),
+[`cops/slap_comp_preset.py`](../../python/tumblepipe/pipe/houdini/cops/slap_comp_preset.py),
+the tool in [`toolbar/tumblepipe.shelf`](../../toolbar/tumblepipe.shelf).
+
+**Farm renders apply it once it is published.** A farm render does not open
+your workfile: it renders the shot's published stage, so the block has to be
+published too. The preset's Block End carries a **TumblePipe** folder:
+
+| Label | Default | What it does |
+|---|---|---|
+| Entity | `from_context` | The shot or asset whose farm renders apply the slap comp: an entity URI, or `from_context` for the workfile's own |
+| Use on Farm Renders | on | Off: Publish to Farm writes a version without a program, which stops farm renders applying one |
+| Publish to Farm | | Compiles the block into the entity's next version of `export:/<entity>/_slapcomp/v####/` (`<entity>_slapcomp_v####.bgeo.sc`, plus `context.json` naming the block, the hip and the AOVs it reads and writes), and warns when the block names an AOV the entity's exports do not render |
+| Published | | The version this node last published |
+
+The compiled program is what husk's `--slap-comp` reads: the Block to
+Geometry COP's output, a geometry file holding the block as an APEX graph.
+Houdini's USD Render ROP writes the same file for a Slap Comp whose Source is
+COP Network (`<usd>_slapcomp_<n>.bgeo.sc` beside the USD it renders), and
+that is how this was found (Houdini 22.0.429: `husk --help`, the ROP's
+**Husk › Slap Comp** tab, help `/copernicus/slap_comp#husk`).
+
+Every farm render of the entity submitted afterwards (Farm Submit's Render,
+preview and full, every channel, a direct or Standalone render, a turntable)
+bundles the newest published program into its render jobs and runs husk
+with `--slap-comp <program>`; the job title says `+ slap comp v####`. The
+program is copied into a render job when the job is made (at Submit, or on
+the farm by the collapse or stage job that makes it), so a later publish
+changes only renders made after it. What that means:
+
+- **The beauty on disk is the slap comped one.** husk replaces each AOV a
+  slap comp outputs, so the published `beauty` (and everything downstream:
+  denoise, the slapcomp stack, MP4s, comps) carries the slap comp. Keep the
+  untouched beauty by writing to another AOV, which must already be one the
+  render writes.
+- **Each channel's render runs it.** With several channels the slap comp runs
+  on each layer before the slapcomp stacks them. An effect that scales colour
+  (a vignette, a grade) stacks to the same result; one that adds light (a
+  glow) comes out once per layer.
+- **Tiles must be 1.** husk runs a slap comp on whatever it renders, so in a
+  tiled render on each tile: Farm Submit refuses a render of an entity with a
+  published slap comp unless **Tiles** is 1 (its default is 4).
+- **A wrong AOV name fails the frame.** husk exits with "Error running
+  slapcomp/image filters" and writes nothing when the block reads or writes
+  an AOV the render does not have, and the render task fails. No SOPs inside the block (SideFX: husk cannot run them).
 
 ## `th::lpe_tags` (LOP)
 
@@ -321,7 +414,7 @@ would refuse.
 
 Farm Submit's **Channels** menu opens with every layer of such a shot
 checked, `default` (the remainder) included, so the slapcomp is whole
-(see [Farm Submit: Render](../asset-browser/submit-jobs.md#render-shots-only)).
+(see [Farm Submit: Render](../asset-browser/submit-jobs.md#render)).
 
 ### Render layers from branches
 
@@ -418,6 +511,12 @@ Gotchas:
 - **Step size** is honoured on the farm: a task renders only its stepped
   frames (step 10, batch 5: 1001, 1011 … 1041). Up to 1.101.0 the render
   worker dropped the step and rendered every frame of the range.
+- Farm Submit can render an asset's turntable without this workfile: the
+  Assets tab's **Render** column builds a studio around the asset's staged
+  build on the farm, with these defaults (see
+  [An asset's turntable](../asset-browser/submit-jobs.md#an-assets-turntable)).
+  It writes to the same `turntable:/render/<asset>/render/main` as this
+  node's **Submit Render To Farm** for the `default` channel.
 
 ## `th::light_blocker` (LOP)
 

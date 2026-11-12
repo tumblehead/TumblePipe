@@ -52,7 +52,7 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | `th::sop_modify` | LOP | Pull prims into an editable SOP network and cache the result back as clips |
 | `th::lpe_tags` | LOP | Seed LPE tag rows from the lights in the stage |
 | `th::playblast` | LOP | Playblast the stage (TumbleView, our viewport renderer, or Houdini GL) through the pipeline's playblast folders |
-| `th::render_settings` | LOP | Karma render settings with load/save presets; its **AOVs** section is `th::render_vars`; Karma's own AOV toggles locked off |
+| `th::render_settings` | LOP | Karma render settings (quality, camera) with load/save presets; AOVs are chosen on `th::render_vars`; Karma's own AOV toggles locked off |
 | `th::cache` | SOP | Versioned `.bgeo.sc` cache in the workfile's cache folder |
 | `th::import_asset` | SOP | The LOP `import_asset` wrapped for SOPs; optionally unpacked to polygons |
 | `th::import_model` | SOP | Pull a published model's geometry into SOPs, one USD variant at a time |
@@ -209,10 +209,23 @@ department. Note that on an *export* that is what you want, but on an
 
 ### The Entity button and label
 
-The Entity row is a button with a tree icon, followed by a read-only label.
-The button opens the **Select Entity / Select Asset / Select Shot** dialog: a
-tree of the project's entities with a `from_context` row at the top. The
-label shows what the parm currently resolves to — `from_context: <uri>` when
+The Entity row (labelled Entity, Shot or Asset) has two buttons side by
+side, a green magnifier and **Browse...**, followed by a read-only label.
+Both buttons open the **Select Entity / Select Asset / Select Shot** window,
+which looks like the asset browser:
+
+- a **search box** with the focus: type to filter (`010 sh02` or `010/sh02`
+  both work), the arrow keys move through the results, **Enter** picks the
+  selected one (after a search, the best match), **Esc** cancels;
+- a **From context** row saying what `from_context` resolves to in this
+  workfile, e.g. *From context (010/sh020)* (the shot or asset folder
+  below `shots`/`assets`), or *nothing in this scene*;
+- a sidebar of **Recent** picks (per project), **All**, and each context
+  with its sequences or categories and how many entities each holds;
+- the entities as **cards** with their thumbnails (the `thumbnail.png` the
+  asset browser shows); double-click picks one.
+
+The label shows what the parm currently resolves to — `from_context: <uri>` when
 following the workfile, the bare URI when pinned, or `from_context: none`
 when nothing resolves. The URI itself lives in a hidden string parm named
 `entity`, which is what scripts set.

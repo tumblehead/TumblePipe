@@ -18,6 +18,7 @@ from tumblepipe.util.errors import TaskSkipped
 from tumblepipe.util.progress import progress_reporter
 
 from .process_task import ProcessTask, TaskStatus
+from . import task_range
 
 
 class _SilentStream:
@@ -186,10 +187,15 @@ class ValidationSession:
 
     def __init__(self):
         self.remembered_choice: int | None = None
+        # Issues the artist accepted in the up-front dialog (#56): a
+        # validation in place does not ask about these again.
+        self.accepted: frozenset = frozenset()
 
-    def reset(self):
-        """Reset session state for new execution."""
+    def reset(self, accepted: frozenset = frozenset()):
+        """Reset session state for new execution, keeping the issues the
+        up-front dialog accepted for it."""
         self.remembered_choice = None
+        self.accepted = frozenset(accepted)
 
     def has_remembered_choice(self) -> bool:
         return self.remembered_choice is not None
@@ -282,8 +288,13 @@ class ProcessExecutor(QObject):
                 return False, f"Dependency '{dep_task.description}' not yet executed"
         return True, None
 
-    def execute(self):
-        """Start executing enabled tasks"""
+    def execute(self, accepted: frozenset = frozenset()):
+        """Start executing enabled tasks.
+
+        ``accepted`` holds the issues the up-front validation dialog
+        accepted (``validation_preflight.Outcome.accepted``): the
+        validations in place pass them without asking again.
+        """
         self._is_running = True
         self._current_index = 0
         self._executed_split_paths.clear()  # Reset deduplication tracking
@@ -293,7 +304,7 @@ class ProcessExecutor(QObject):
             self._build_carriers, self._build_members = farm_build_plan(self._tasks)
         else:
             self._build_carriers, self._build_members = {}, {}
-        _validation_session.reset()  # Reset validation choices for new run
+        _validation_session.reset(accepted)  # Reset validation choices for new run
         # Use QTimer to allow UI updates between tasks
         QTimer.singleShot(0, self._execute_next_task)
 
@@ -436,10 +447,17 @@ class ProcessExecutor(QObject):
             dep = next((task for task in self._tasks if task.id == dep_id), None)
             if dep is not None and dep.enabled and dep.status != TaskStatus.COMPLETED:
                 return {'channels': []}
-        build = {'channels': [c.channel or 'default' for c in _enabled_children(group)]}
-        if group.first_frame is not None and group.last_frame is not None:
-            build['first_frame'] = group.first_frame
-            build['last_frame'] = group.last_frame
+        children = _enabled_children(group)
+        # One range for every carried build: the rows' range this submit
+        # (#76). Build rows edited apart run on their own submission, each
+        # over its own range.
+        spans = {task_range.effective_range(c) for c in children}
+        if len(spans) > 1:
+            return {'channels': []}
+        build = {'channels': [c.channel or 'default' for c in children]}
+        span = next(iter(spans), None) or task_range.node_range(group)
+        if span is not None:
+            build['first_frame'], build['last_frame'] = span
         return build
 
     def _report_carried_builds(self, parent_task: ProcessTask):

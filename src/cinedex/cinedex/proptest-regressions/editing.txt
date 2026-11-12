@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1fadd49deafa29f3f0fb6d4af935a3d62bfa1f6550046df3515021aadef714d5 # shrinks to taken = [("SQ010", "sh90"), ("SQ010", "SH00")], sequence = "SQ010"
+cc d41f7aad4e3ada346fe3c80e3ce155a6c6016adba6ed7abfdf58f512a378ce6a # shrinks to taken = [("SQ010", "SH20000000000000000000")], sequence = "SQ010"
+cc 52992f8a8fa3c1bfd0e04c7f84ebd9c1666059fef6cb10706f85fe55c7db96aa # shrinks to steps = [Name(""), Sequence("C:/m/animatic.mov")]
+cc 8afa598a0b41345b9238c3d77330aca09d7e2a5dfa2f3527a2934e7dc952cc59 # shrinks to taken = [], steps = [Name(""), Sequence("SQ010")]

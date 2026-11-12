@@ -24,9 +24,9 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 from PySide6.QtCore import QRect, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QHBoxLayout, QHeaderView,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QStyle,
     QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
@@ -38,7 +38,7 @@ from tumbletrove.asset_browser.core.theme import (
 )
 
 from tumblepipe.farm.local import queue, runner
-from tumblepipe.farm.manager import cleanup, machine, rows
+from tumblepipe.farm.manager import cleanup, frames_preview, machine, rows
 from tumblepipe.util import desktop
 
 log = logging.getLogger(__name__)
@@ -210,6 +210,18 @@ QMenu::separator {{ height: 1px; background: {BORDER}; margin: 4px 8px; }}
 # as the Entity Editor's Retire is.
 _DANGER_BUTTON_STYLE = f'QPushButton:hover {{ color: {DANGER}; border-color: {DANGER}; }}'
 _MESSAGE_STYLE = f'color: {TEXT_PRIMARY};'
+# The preview-frames notice (#75): a band above the jobs in the accent's
+# colour, and the job it is about tinted with it until looked at.
+_NOTICE_STYLE = f"""
+QFrame#previewNotice {{
+    background-color: {BG_LIGHT};
+    border: 1px solid {ACCENT};
+    border-radius: 4px;
+}}
+QFrame#previewNotice QLabel {{ background: transparent; }}
+"""
+_HIGHLIGHT = QColor(ACCENT)
+_HIGHLIGHT.setAlpha(60)
 _ERROR_MESSAGE_STYLE = f'color: {DANGER};'
 _PANE_LABEL_STYLE = f'color: {TEXT_SECONDARY};'
 # What an empty pane asks for.
@@ -372,6 +384,13 @@ class ManagerWindow(QWidget):
         self._machine_stats: machine.MachineStats | None = None
         self._machine_loading = False
         self._runner_working = False
+        # Preview frames ready (#75): the ids already told about (None until
+        # the first read, which only takes note: what was ready before the
+        # window opened is not news), the notices not yet dismissed, oldest
+        # first, and the jobs tinted until looked at.
+        self._seen_previews: set[str] | None = None
+        self._notices: list[rows.JobRow] = []
+        self._highlighted: set[str] = set()
 
         self._user, self._project = _identity()
 
@@ -379,6 +398,7 @@ class ManagerWindow(QWidget):
         root.setContentsMargins(12, 12, 12, 10)
         root.setSpacing(8)
         root.addLayout(self._build_filters(source))
+        root.addWidget(self._build_notice())
 
         splitter = QSplitter(Qt.Vertical)
         splitter.setChildrenCollapsible(False)
@@ -484,6 +504,36 @@ class ManagerWindow(QWidget):
         bar.addWidget(refresh)
         bar.addWidget(self._build_cleanup())
         return bar
+
+    def _build_notice(self) -> QFrame:
+        """The preview-frames notice: hidden until a local job's preview
+        frames are done. Non-modal; it stays until dismissed."""
+        frame = QFrame()
+        frame.setObjectName('previewNotice')
+        frame.setStyleSheet(_NOTICE_STYLE)
+        bar = QHBoxLayout(frame)
+        bar.setContentsMargins(10, 6, 6, 6)
+        bar.setSpacing(8)
+        self._notice_label = QLabel()
+        self._notice_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        bar.addWidget(self._notice_label, 1)
+        self._notice_play = QPushButton('Open in player')
+        self._notice_play.setToolTip('Show the preview frames in Cinedex')
+        self._notice_play.clicked.connect(self._on_notice_play)
+        bar.addWidget(self._notice_play)
+        self._notice_open = QPushButton('Open folder')
+        self._notice_open.clicked.connect(self._on_notice_open)
+        bar.addWidget(self._notice_open)
+        self._notice_show = QPushButton('Show job')
+        self._notice_show.setToolTip('Select the job in the list')
+        self._notice_show.clicked.connect(self._on_notice_show)
+        bar.addWidget(self._notice_show)
+        self._notice_dismiss = QPushButton('Dismiss')
+        self._notice_dismiss.clicked.connect(self._on_notice_dismiss)
+        bar.addWidget(self._notice_dismiss)
+        frame.hide()
+        self._notice = frame
+        return frame
 
     def _build_legend(self) -> QHBoxLayout:
         """What the dots before the rows' names mean, so the list reads at
@@ -681,6 +731,7 @@ class ManagerWindow(QWidget):
             self._local_rows, self._local_problems = rows.local_rows(self._root)
         except Exception as error:
             self._local_rows, self._local_problems = [], [str(error)]
+        self._take_previews()
         self._sync_jobs()
         job = self._current_job
         if job is not None and job.source == rows.LOCAL:
@@ -692,6 +743,113 @@ class ManagerWindow(QWidget):
         self._follow_local_log()
         self._update_status()
         self._update_details()
+
+    # ── preview frames ready (#75) ───────────────────────
+
+    def _take_previews(self) -> None:
+        """Queue a notice for every local job whose preview frames became
+        ready since the last read, and tint it."""
+        if self._seen_previews is None:
+            self._seen_previews = {row.id for row in self._local_rows if row.preview_ready}
+            return
+        fresh = rows.new_previews(self._local_rows, self._seen_previews)
+        if not fresh:
+            return
+        self._seen_previews |= {row.id for row in fresh}
+        self._notices.extend(fresh)
+        self._highlighted |= {row.id for row in fresh}
+        self._show_notice()
+
+    def _show_notice(self) -> None:
+        """Show the newest notice (the others wait behind it), or hide the band."""
+        if not self._notices:
+            self._notice.hide()
+            return
+        row = self._notices[-1]
+        more = len(self._notices) - 1
+        text = f'<b>Preview frames ready</b>&nbsp;&nbsp;{_html(row.preview_summary)}'
+        if more:
+            text += f'&nbsp;&nbsp;<span style="color:{TEXT_SECONDARY}">(+{more} more)</span>'
+        self._notice_label.setText(text)
+        self._notice_label.setToolTip(f'{row.batch}\n{row.preview_folder}')
+        self._notice_play.setEnabled(bool(row.folder))
+        self._notice_open.setEnabled(bool(row.preview_folder))
+        self._notice_open.setToolTip(row.preview_folder or 'No folder is known for these frames')
+        self._notice.show()
+
+    def _on_notice_play(self) -> None:
+        """Open the notice's batch's preview frames in Cinedex (``--frames``)."""
+        if not self._notices:
+            return
+        folder = self._notices[-1].folder
+        try:
+            from tumblepipe.pipe import review_playlist
+            review_playlist.open_preview_frames(Path(folder))
+        except Exception as error:
+            self._say(f'Cannot open the preview frames in the player: {error}', error=True)
+
+    def _on_notice_open(self) -> None:
+        if not self._notices:
+            return
+        folder = self._notices[-1].preview_folder
+        try:
+            desktop.open_in_file_browser(Path(folder))
+        except Exception as error:
+            self._say(f'Cannot open {folder}: {error}', error=True)
+
+    def _on_notice_show(self) -> None:
+        """Select the notice's job, bringing it into the list if a filter hid it."""
+        if not self._notices:
+            return
+        row = self._notices[-1]
+        if row.id not in self._job_items:
+            # A notify job is done within seconds: Hide finished or a
+            # search would keep it out of the list.
+            widgets = (self._hide_finished, self._search, self._source)
+            for widget in widgets:
+                widget.blockSignals(True)
+            self._hide_finished.setChecked(False)
+            self._search.clear()
+            if self._source.currentData() == rows.FARM:
+                self._source.setCurrentIndex(max(0, self._source.findData(None)))
+            for widget in widgets:
+                widget.blockSignals(False)
+            self._sync_jobs()
+        item = self._job_items.get(row.id)
+        if item is None:
+            self._say("That job is no longer on this machine's list", error=True)
+            return
+        if item.parent() is not None:
+            item.parent().setExpanded(True)
+        self._jobs.clearSelection()
+        item.setSelected(True)
+        self._jobs.setCurrentItem(item)
+        self._jobs.scrollToItem(item)
+
+    def _on_notice_dismiss(self) -> None:
+        if self._notices:
+            self._unhighlight(self._notices.pop().id)
+        self._show_notice()
+
+    def _unhighlight(self, job_id: str) -> None:
+        if job_id not in self._highlighted:
+            return
+        self._highlighted.discard(job_id)
+        item = self._job_items.get(job_id)
+        if item is not None:
+            self._paint_highlight(item, False)
+
+    def _paint_highlight(self, item: QTreeWidgetItem, on: bool) -> None:
+        brush = QBrush(_HIGHLIGHT) if on else QBrush()
+        for column in range(len(JOB_HEADERS)):
+            item.setBackground(column, brush)
+
+    def preview_notices(self) -> list[rows.JobRow]:
+        """The preview notices not yet dismissed, oldest first."""
+        return list(self._notices)
+
+    def is_highlighted(self, job_id: str) -> bool:
+        return job_id in self._highlighted
 
     def _refresh_machine(self) -> None:
         """Sample the machine's load on a worker thread, while the local runner works."""
@@ -935,6 +1093,12 @@ class ManagerWindow(QWidget):
         submitted = _when(row.submitted)
         item.setText(SUBMITTED, '' if submitted == batch_submitted else submitted)
         item.setToolTip(SUBMITTED, row.submitted)
+        if row.preview_ready:
+            item.setToolTip(
+                NAME, f'{row.name}\n{row.id}\nPreview frames ready: '
+                f'{row.preview_summary}\n{row.preview_folder}'
+            )
+        self._paint_highlight(item, row.id in self._highlighted)
 
     def _fill_batch_item(self, item: QTreeWidgetItem, jobs: list[rows.JobRow]) -> str:
         """The batch row; returns its Submitted text for its jobs to compare with."""
@@ -1009,6 +1173,9 @@ class ManagerWindow(QWidget):
             if item.parent() is None and item.childCount():
                 key = item.child(0).data(NAME, KEY_ROLE)
             job = self._rows_by_id.get(key)
+        if job is not None and job.id in self._highlighted:
+            # Looked at: the tint has done its work.
+            self._unhighlight(job.id)
         changed = (job is None) != (self._current_job is None) or (
             job is not None and self._current_job is not None and job.id != self._current_job.id
         )
@@ -1364,6 +1531,7 @@ class ManagerWindow(QWidget):
         if not selected:
             return
         menu = QMenu(self)
+        menu.setToolTipsVisible(True)
         self._add_job_actions(menu)
         if len(selected) == 1 and selected[0].source == rows.FARM:
             from tumblepipe.farm.manager.run_here import RUNNABLE
@@ -1377,12 +1545,41 @@ class ManagerWindow(QWidget):
         menu.addSeparator()
         menu.addAction('Open job folder', self._on_open_job_dir).setEnabled(self._open_job_dir.isEnabled())
         menu.addAction('Open output folder', self._on_open_output).setEnabled(self._open_output.isEnabled())
+        self._add_preview_action(menu, selected)
         menu.addSeparator()
         menu.addAction('Copy job ID' if len(selected) == 1 else 'Copy job IDs',
                        lambda: _copy('\n'.join(row.id for row in selected)))
         menu.addAction('Copy name' if len(selected) == 1 else 'Copy names',
                        lambda: _copy('\n'.join(row.name for row in selected)))
         menu.exec(self._jobs.viewport().mapToGlobal(position))
+
+    def _add_preview_action(self, menu: QMenu, selected: list[rows.JobRow]):
+        """*Preview in Cinedex* (#85): the selected job's frames, or a batch's
+        best (``frames_preview``), enabled only when there are frames to show
+        and otherwise saying why."""
+        target = frames_preview.best_target(selected)
+        action = menu.addAction(frames_preview.LABEL, lambda: self._preview_in_cinedex(target))
+        action.setEnabled(target.enabled)
+        if target.enabled:
+            action.setToolTip(f'Show the frames of {target.row.name} in Cinedex\n{target.folder}')
+        else:
+            action.setToolTip(target.reason)
+        return action
+
+    def _preview_in_cinedex(self, target: frames_preview.Target) -> None:
+        """Open ``target``'s frames in Cinedex (``cinedex --frames``); a
+        missing player or ``$OCIO`` is said in a message box."""
+        if not target.enabled:
+            return
+        try:
+            from tumblepipe.pipe import review_playlist
+            review_playlist.open_preview_frames(target.folder)
+        except Exception as error:
+            log.warning('Cannot preview %s in Cinedex', target.folder, exc_info=True)
+            QMessageBox.warning(
+                self, 'Farm Manager',
+                f'Cannot show the frames in Cinedex:\n\n{error}\n\n{target.folder}',
+            )
 
     def _on_task_menu(self, position) -> None:
         task = self._selected_task()
@@ -1649,9 +1846,15 @@ def _farm_cleanup(chosen: list[cleanup.Removal], kind: str) -> tuple[cleanup.Cle
 
 
 def _open_folder_of(path: str) -> None:
-    """Open the folder an output is written to (an image sequence's ``####`` pattern included)."""
-    target = Path(path)
-    desktop.open_in_file_browser(target if target.is_dir() else target.parent)
+    """Open the folder an output is written to (an image sequence's ``####``
+    pattern included): ``frames_preview.output_folder``, where *Preview in
+    Cinedex* looks for the frames too."""
+    desktop.open_in_file_browser(frames_preview.output_folder(path))
+
+
+def _html(text: str) -> str:
+    from html import escape
+    return escape(text or '')
 
 
 def _copy(text: str) -> None:

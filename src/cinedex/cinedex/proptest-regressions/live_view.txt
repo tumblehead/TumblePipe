@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 86ec8bce7e18b4848f7b899fa210fab8f063194892c1509611ef4ede455dfe87 # shrinks to clips = [(2, 0, 900), (2, 0, 900)], which = Index(0), changes = [(2, Index(9223372036854775808), 0, Index(9223372036854775808)), (0, Index(0), 0, Index(0)), (1, Index(9223372036854775808), 1, Index(9223372036854775808))]
+cc 567c370eaf312903dd3b42e379c76d3d602d6c7209e092f8579369b1c4e15616 # shrinks to clips = [(22, 0, 900), (2, 0, 900)], which = Index(0), changes = [(2, Index(0), 0, Index(10900348770828371410)), (5, Index(0), 3, Index(0)), (1, Index(0), -11, Index(9223372036854775808))]
+cc 2d779dc3f02209fd44b9cdd550cccefec8137a4ccf56a4e3f94d452082e1f53c # shrinks to clips = [("C", 1, 0), ("C", 1, 0), ("A", 1, 0)], want = "A", frame = None
+cc 0f282b327c8865f04ab61d36002f8895250199b6e1e035b5523f0ce9658fad16 # shrinks to clips = [(2, 0, 900), (2, 0, 900), (4, 0, 900), (2, 0, 900)], which = Index(4611686018427387904), changes = [(2, Index(9223372036854775808), 0, Index(4611686018427387904)), (1, Index(7378697629483820647), 3, Index(9223372036854775808))]

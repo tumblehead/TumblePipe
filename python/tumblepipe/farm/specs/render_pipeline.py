@@ -21,8 +21,16 @@ config = {
         'step_size': 'int',
         'batch_size': 'int',
         'copy_to_edit': 'bool',
-        'cut_range': ['int', 'int']  # optional: the range minus its roll,
-                                     # where the preview's check frames sit
+        'cut_range': ['int', 'int'],  # optional: the range minus its roll,
+                                      # where the preview's check frames sit
+        'preview_frame_list': ['int'],  # optional: the preview's frames, in
+                                       # order, inside the range and on the
+                                       # step (farm.specs.preview_frames); absent:
+                                       # first, middle and last of the cut
+        'frame_ranges': [['int', 'int']]  # optional (#84): a multi-range
+                                       # render, only these frames of
+                                       # first..last (farm.specs.frame_ranges);
+                                       # never published, never comped
     },
     'tasks': {                  # either or both
         'partial_render': {'priority': 'int', 'denoise': 'bool', 'channel_name': 'string'},
@@ -34,6 +42,7 @@ config = {
                   'copy_to_edit': 'bool', 'channel_name': 'string',
                   # optional: specs.composite.valid_recomp
                   'step_size': 'int', 'preview_frames': 'bool',
+                  'preview_frame_list': ['int'],
                   'first_frame': 'int', 'last_frame': 'int'}
 }
 
@@ -47,6 +56,11 @@ from tumblepipe.farm.checks import (
     is_str_dict,
     valid_channel_names,
     valid_entity,
+)
+from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs.preview_frames import (
+    CONFIG_KEY as PREVIEW_FRAMES_KEY,
+    valid_frame_list,
 )
 
 RENDER_TASK_KEYS = ('partial_render', 'full_render')
@@ -84,7 +98,20 @@ def valid_render_settings(settings) -> bool:
     if not check_int(settings, 'step_size'): return False
     if not check_int(settings, 'batch_size'): return False
     if not valid_cut_range(settings): return False
+    if not valid_preview_frame_list(settings, settings['step_size']): return False
+    if not frame_ranges.valid_entry(settings): return False
     return True
+
+
+def valid_preview_frame_list(block, step: int = 1) -> bool:
+    """An optional ``preview_frame_list`` inside ``block``'s first_frame..
+    last_frame, on ``step`` (``farm.specs.preview_frames.valid_frame_list``): the
+    frames a preview renders, in order, instead of first, middle and last
+    (#74). Absent is the default."""
+    if PREVIEW_FRAMES_KEY not in block: return True
+    return valid_frame_list(
+        block[PREVIEW_FRAMES_KEY], block['first_frame'], block['last_frame'], step
+    )
 
 
 def valid_cut_range(block) -> bool:
@@ -113,6 +140,8 @@ def is_valid_config(config) -> bool:
         if not valid_recomp(config['composite']): return False
         # The re-comp follows the full render; a preview-only render has none.
         if 'full_render' not in config['tasks']: return False
+        # A multi-range render is not published: no comp follows it (#84).
+        if frame_ranges.CONFIG_KEY in settings: return False
         # It comps the frames this render makes, so its own frames (when it
         # names any) lie inside the render's.
         block = config['composite']

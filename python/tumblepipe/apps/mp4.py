@@ -10,6 +10,7 @@ from tumblepipe.api import (
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.apps import houdini
+from tumblepipe.farm.specs import frame_ranges as frame_list
 
 # Houdini's hffmpeg ships libopenh264 (not libx264); its quality rate-control
 # mode keeps the notify "shrink to fit Discord" path shrinking with resolution.
@@ -21,6 +22,12 @@ _H264_ENCODE = ['-c:v', 'libopenh264', '-rc_mode', 'quality', '-q:v', '22']
 #: shot frame. Read back by th_media (`MovieIndex::start_frame`) and written
 #: into older playblasts by scripts/fix_playblast_start_frames.py.
 START_FRAME_KEY = 'start_frame'
+
+#: The movie metadata key a back-to-back movie (a multi-range render's,
+#: #84) lists the frames it shows under, as Frame List text
+#: (``1001-1030 1040-1055 1100``): its pictures are those frames in order,
+#: so the listed frame count is the movie's. Read by Cinedex (#86).
+FRAME_RANGES_KEY = frame_list.CONFIG_KEY
 
 
 def frame_timecode(frame: int, framerate: int) -> str:
@@ -44,6 +51,12 @@ def start_frame_args(first_frame: int, framerate: int) -> list[str]:
         '-timecode', frame_timecode(first_frame, framerate),
     ]
 
+#: How a playblast's JPG frames are encoded: H.264, sizes padded even.
+#: Cinedex's Keep as playblast passes the same (th_pipe::live::keep_args,
+#: tests/test_live_parity.py).
+JPG_ENCODE_ARGS = ['-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2', *_H264_ENCODE, '-pix_fmt', 'yuv420p']
+
+
 def from_jpg(
     framestack_path: Path,
     frame_range: BlockRange,
@@ -54,8 +67,7 @@ def from_jpg(
     """Encode a JPG sequence (``name.$F4.jpg``) as an H.264 mp4."""
     _encode_sequence(
         framestack_path, ('jpg', 'jpeg'), frame_range, framerate,
-        output_mp4_path, repeat_missing_frames,
-        ['-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2', *_H264_ENCODE, '-pix_fmt', 'yuv420p'],
+        output_mp4_path, repeat_missing_frames, JPG_ENCODE_ARGS,
     )
 
 
@@ -93,7 +105,7 @@ def edit_movie_args(
     start_timecode: str,
     output_path: Path
     ) -> list[str]:
-    """hffmpeg's arguments that encode an edit ``th_player --render`` wrote
+    """hffmpeg's arguments that encode an edit ``cinedex --render`` wrote
     (``farm/workers/edit_render.py``): ``frames_pattern`` (``edit.%04d.png``,
     numbered from 0) as H.264, with ``audio_path`` (``edit.wav``) as AAC
     when the edit has sound, and a timecode track starting at the edit's
@@ -135,6 +147,95 @@ def from_edit_frames(
     ))
 
 
+def frame_ranges_args(frames) -> list[str]:
+    """The FFmpeg output arguments that list ``frames``, a back-to-back
+    movie's, under :data:`FRAME_RANGES_KEY`; none when they run on without a
+    gap (the movie is then numbered as its frames are)."""
+    ranges = frame_list.of_frames(frames)
+    if not frame_list.is_multi(ranges):
+        return []
+    return ['-metadata', f'{FRAME_RANGES_KEY}={frame_list.format_ranges(ranges)}']
+
+
+def back_to_back_plan(frames) -> list[tuple[int, int]]:
+    """The frames of a movie of only ``frames`` (a multi-range render's,
+    #84), played back to back: ``(movie frame, frame it shows)``, the movie
+    numbered on from the first listed frame with no gaps."""
+    frames = list(frames)
+    if not frames:
+        return []
+    return [(frames[0] + index, frame) for index, frame in enumerate(frames)]
+
+
+def from_jpg_frames(
+    framestack_path: Path,
+    frames,
+    framerate: int,
+    output_mp4_path: Path
+    ):
+    """Encode only ``frames`` of a JPG sequence (``name.####.jpg``) back
+    to back as an H.264 mp4 (:func:`back_to_back_plan`), listing them
+    (:func:`frame_ranges_args`). Every frame must exist: nothing is filled
+    in."""
+    frames = list(frames)
+    plan = back_to_back_plan(frames)
+    if not plan:
+        raise ValueError(f'No frames to encode: {framestack_path}')
+    name, _, suffix = framestack_path.name.split('.')
+    base_temp_path = api.storage.resolve(Uri.parse('temp:/'))
+    base_temp_path.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
+        temp_dir_path = Path(temp_dir)
+        for movie_frame, frame in plan:
+            shutil.copyfile(
+                framestack_path.parent / f'{name}.{frame:04d}.{suffix}',
+                temp_dir_path / f'frame.{movie_frame:04d}.{suffix}',
+            )
+        temp_output_path = temp_dir_path / f'output{output_mp4_path.suffix}'
+        houdini.FFmpeg().run(sequence_args(
+            path_str(temp_dir_path / f'frame.%04d.{suffix}'),
+            plan[0][0], plan[-1][0], framerate,
+            [*JPG_ENCODE_ARGS, *frame_ranges_args(frames)], path_str(temp_output_path),
+        ))
+        output_mp4_path.parent.mkdir(exist_ok=True, parents=True)
+        shutil.copyfile(temp_output_path, output_mp4_path)
+
+
+def fill_plan(first_frame: int, last_frame: int, available) -> list[tuple[int, int]]:
+    """The frames a movie of ``first_frame..last_frame`` is made of, from
+    the rendered frames ``available``: for each frame, the one it shows, the
+    nearest rendered at or before it, else the first rendered. Empty when
+    nothing is rendered."""
+    rendered = sorted(set(available))
+    if not rendered:
+        return []
+    plan = []
+    at = 0
+    for frame in range(first_frame, last_frame + 1):
+        while at < len(rendered) and rendered[at] <= frame:
+            at += 1
+        plan.append((frame, rendered[at - 1] if at else rendered[0]))
+    return plan
+
+
+def sequence_args(pattern: str, first_frame: int, last_frame: int, framerate: int,
+                  encode_args: list[str], output: str) -> list[str]:
+    """hffmpeg's arguments that encode the frames ``pattern`` names
+    (``frame.%04d.<suffix>``), one per frame of ``first_frame..last_frame``,
+    at ``framerate`` into ``output``, recording the first frame."""
+    return [
+        '-y',
+        '-framerate', str(framerate),
+        '-pattern_type', 'sequence',
+        '-start_number', str(first_frame),
+        '-i', pattern,
+        '-frames:v', str(last_frame - first_frame + 1),
+        *encode_args,
+        *start_frame_args(first_frame, framerate),
+        output,
+    ]
+
+
 def _encode_sequence(
     framestack_path: Path,
     suffixes: tuple[str, ...],
@@ -158,83 +259,47 @@ def _encode_sequence(
         f'{framestack_name}.*.{framestack_suffix}'
     )))
 
-    # Find missing frames
-    # frame_count is the number of *rendered* frames (step-aware) and is only
-    # used for the missing-frame check below. The gap-fill logic further down
-    # expands the frames into a contiguous 1-per-frame sequence spanning
-    # first_frame..last_frame, so the encoder must be told to emit the full
-    # contiguous span, not the stepped count (otherwise a step>1 render yields
-    # an mp4 truncated to the front 1/step_size of the range).
+    # Find missing frames: frame_count is the number of *rendered* frames
+    # (step-aware), only for the check; the movie spans every frame of
+    # first..last, each missing one filled (fill_plan).
     frame_count = len(frame_range)
-    span_frame_count = frame_range.last_frame - frame_range.first_frame + 1
     available_frame_indices = {
         int(frame.name.split('.')[-2])
         for frame in input_frames
     }
-    first_available_frame_index = min(available_frame_indices)
     if (not repeat_missing_frames and
         len(available_frame_indices) != frame_count):
         missing_frame_indices = list(sorted(set(frame_range) - available_frame_indices))
         raise ValueError(f'Missing frames: {missing_frame_indices}')
+    input_by_index = {
+        int(frame.name.split('.')[-2]): frame
+        for frame in input_frames
+    }
 
     # Open temporary workspace
     base_temp_path = api.storage.resolve(Uri.parse('temp:/'))
     base_temp_path.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(dir=path_str(base_temp_path)) as temp_dir:
         temp_dir_path = Path(temp_dir)
-        
-        # Copy over framestack
-        for input_frame in input_frames:
-            frame_index = int(input_frame.name.split('.')[-2])
+
+        # Each frame of the movie, a rendered frame or the one filling in
+        plan = fill_plan(frame_range.first_frame, frame_range.last_frame, available_frame_indices)
+        if not plan:
+            raise ValueError(f'No frames to encode: {framestack_path}')
+        for frame_index, source_index in plan:
             temp_frame_path = temp_dir_path / f'frame.{frame_index:04d}.{framestack_suffix}'
-            logging.info(f'Copying to {temp_frame_path}')
-            shutil.copyfile(input_frame, temp_frame_path)
-        
-        # Pre-fill in missing frames using next frame as fill in
-        first_available_frame = (
-            temp_dir_path /
-            f'frame.{first_available_frame_index:04d}.{framestack_suffix}'
-        )
-        previous_frame = first_available_frame
-        for frame_index in range(frame_range.first_frame, first_available_frame_index):
-            temp_frame_path = temp_dir_path / f'frame.{frame_index:04d}.{framestack_suffix}'
-            logging.info(f'Prefilling in {temp_frame_path}')
-            shutil.copyfile(previous_frame, temp_frame_path)
-        
-        # Post-fill in missing frames using the previous frame as fill in
-        for frame_index in range(
-            first_available_frame_index + 1,
-            frame_range.last_frame + 1):
-            temp_frame_path = temp_dir_path / f'frame.{frame_index:04d}.{framestack_suffix}'
-            if frame_index in available_frame_indices:
-                previous_frame = temp_frame_path
-            else:
-                logging.info(f'Postfilling in {temp_frame_path}')
-                shutil.copyfile(previous_frame, temp_frame_path)
-        
-        # Verify that all frames are present
-        for frame_index in frame_range:
-            temp_frame_path = temp_dir_path / f'frame.{frame_index:04d}.{framestack_suffix}'
-            if temp_frame_path.exists(): continue
-            raise RuntimeError(
-                'Failed to fill in missing frame: '
-                f'{temp_frame_path}'
-            )
-        
+            if frame_index != source_index:
+                logging.info(f'Filling in {temp_frame_path} with frame {source_index}')
+            shutil.copyfile(input_by_index[source_index], temp_frame_path)
+
         # Combine the frames into a movie
         temp_framestack_path = temp_dir_path / f'frame.%04d.{framestack_suffix}'
         temp_output_path = temp_dir_path / f'output{output_path.suffix}'
-        houdini.FFmpeg().run([
-            '-y',
-            '-framerate', str(framerate),
-            '-pattern_type', 'sequence',
-            '-start_number', str(frame_range.first_frame),
-            '-i', path_str(temp_framestack_path),
-            '-frames:v', str(span_frame_count),
-            *encode_args,
-            *start_frame_args(frame_range.first_frame, framerate),
-            path_str(temp_output_path)
-        ])
+        houdini.FFmpeg().run(sequence_args(
+            path_str(temp_framestack_path),
+            frame_range.first_frame, frame_range.last_frame, framerate,
+            encode_args, path_str(temp_output_path),
+        ))
         output_path.parent.mkdir(exist_ok=True, parents=True)
         shutil.copyfile(temp_output_path, output_path)
 

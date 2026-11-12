@@ -7,6 +7,11 @@ When the same submission publishes the entity *and* previews it (render or
 playblast), the preview's input is snapshotted on the farm after the publish
 chain and a fresh staged build, by a ``collapse`` job — see
 ``farm/pipelines/preview.py`` for why it cannot be taken at submit time.
+
+An asset's render is its turntable (#53), always through a collapse job: the
+job builds a ``th::lookdev_studio`` workfile around the asset on the farm
+(``pipe.turntable``), so the frames are the studio's turntable frames, not
+the dialog's.
 """
 
 from tempfile import TemporaryDirectory
@@ -24,7 +29,10 @@ from tumblepipe.config.channels import (
     list_channels,
     read_channel_names,
 )
-from tumblepipe.config.department import list_departments, department_names_up_to
+from tumblepipe.config.department import (
+    applied_departments, department_names_up_to, get_disabled_departments,
+    list_departments,
+)
 from tumblepipe.farm.backend import get_farm
 from tumblepipe.config.timeline import FrameRange, get_frame_range
 from tumblepipe.farm.jobs import stage as stage_job
@@ -37,7 +45,12 @@ from tumblepipe.farm.pipelines import edit_render as edit_render_pipeline
 from tumblepipe.farm.pipelines import composite as composite_pipeline
 from tumblepipe.farm.specs import composite as composite_spec
 from tumblepipe.farm.pipelines import preview
+from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import preview_frames
+from tumblepipe.pipe import comp
 from tumblepipe.pipe import render_layers
+from tumblepipe.pipe import slap_comp
+from tumblepipe.pipe import turntable
 from tumblepipe.farm.pipelines import publish as publish_pipeline
 from tumblepipe.farm.pipelines._batch import batch_title, new_batch
 
@@ -109,7 +122,9 @@ def _build_render_overrides(settings: dict) -> dict:
     return overrides
 
 
-def publish_department_names(settings: dict, department_names: list[str]) -> tuple[list[str], bool]:
+def publish_department_names(
+    settings: dict, department_names: list[str], disabled=(),
+) -> tuple[list[str], bool]:
     """``(departments to publish in pool order, whether to skip an up-to-date prefix)``.
 
     Two spellings, from two eras of the dialog:
@@ -119,6 +134,9 @@ def publish_department_names(settings: dict, department_names: list[str]) -> tup
       nothing is skipped behind their back.
     * ``pub_department`` — the old form's: every department up to this one,
       skipping the up-to-date ones at the front of the chain.
+
+    ``disabled`` are the departments turned off on the entity (#64): one
+    named explicitly is refused, and the "up to" chain walks past them.
     """
     chosen = settings.get('pub_departments')
     if chosen is not None:
@@ -127,6 +145,13 @@ def publish_department_names(settings: dict, department_names: list[str]) -> tup
             raise BatchSubmitError(
                 f"Invalid publish department(s): {', '.join(unknown)}"
             )
+        off = [name for name in department_names if name in set(chosen) & set(disabled)]
+        if off:
+            raise BatchSubmitError(
+                f"{', '.join(off)} {'is' if len(off) == 1 else 'are'} turned "
+                f"off on this entity: turn {'it' if len(off) == 1 else 'them'} "
+                f"back on before publishing"
+            )
         wanted = set(chosen)
         return [name for name in department_names if name in wanted], False
     pub_department = settings.get('pub_department')
@@ -134,7 +159,34 @@ def publish_department_names(settings: dict, department_names: list[str]) -> tup
         raise BatchSubmitError("Publish department not specified")
     if pub_department not in department_names:
         raise BatchSubmitError(f"Invalid publish department: {pub_department}")
-    return department_names_up_to(department_names, pub_department), True
+    return applied_departments(
+        department_names_up_to(department_names, pub_department), disabled,
+    ), True
+
+
+def _log_preview_warnings(entity_uri, kind: str, preview) -> None:
+    """Put what a Preview Frames List dropped in the submit log."""
+    for warning in preview.warnings:
+        logging.warning(f"{entity_uri} {kind}: {warning}")
+
+
+def _read_frame_list(entity_uri, text, first_frame: int, last_frame: int, turntable: bool):
+    """The normalised ranges of a render's Frame List (#84) inside its
+    ``first_frame``..``last_frame`` (rolls included), empty when none was
+    typed; BatchSubmitError for text that cannot be read, a range past the
+    shot, or a list on an asset's turntable (it renders the studio's
+    frames)."""
+    if not text or not text.strip():
+        return ()
+    if turntable:
+        raise BatchSubmitError(
+            f"{entity_uri}: an asset's turntable renders the studio's frames; "
+            "clear the frame list"
+        )
+    try:
+        return frame_ranges.read(text, first_frame, last_frame)
+    except frame_ranges.FrameListError as e:
+        raise BatchSubmitError(f"{entity_uri}: {e}") from e
 
 
 def _rendered_range(entity_uri) -> tuple[int, int] | None:
@@ -152,17 +204,23 @@ def _rendered_range(entity_uri) -> tuple[int, int] | None:
         return None
 
 
-def _check_preview_department(kind: str, name, department_names, renderable_names):
+def _check_preview_department(kind: str, name, department_names, renderable_names, disabled=()):
     """A render or playblast department must be real and renderable.
 
     The preview composes the pool prefix ending at this department, so a
     non-renderable pick has no layer to end on, and silently composing the
-    whole pool is the bug this prevents.
+    whole pool is the bug this prevents. A department turned off on the
+    entity (#64) has no layer in its build either.
     """
     if name is None:
         raise BatchSubmitError(f"{kind} department not specified")
     if name not in department_names:
         raise BatchSubmitError(f"Invalid {kind.lower()} department: {name}")
+    if name in disabled:
+        raise BatchSubmitError(
+            f"{kind} department '{name}' is turned off on this entity: pick "
+            f"another, or turn it back on"
+        )
     if name not in renderable_names:
         raise BatchSubmitError(
             f"{kind} department '{name}' is not renderable. "
@@ -203,17 +261,34 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   Every channel must be one the entity
                                   defines (``list_channels``); an
                                   undefined one raises before any job is
-                                  created.
+                                  created. Optional preview_frame_list
+                                  (str, the Preview Frames List,
+                                  ``farm.specs.preview_frames``): the preview's
+                                  frames instead of the 3 check frames;
+                                  empty or omitted keeps the 3. Optional
+                                  frame_list (str, the Frame List,
+                                  ``farm.specs.frame_ranges``, #84): only
+                                  these ranges of the rolled range; one
+                                  range renders as First..Last would, two
+                                  or more are a multi-range render, never
+                                  published (no daily, no Copy to edit, no
+                                  Comp). Shots only.
                 - Playblast section: pb_department, pb_pool, pb_priority,
                                      pb_res, pb_look
                                      (specs.playblast.valid_look)
                 - comp: bool (optional, shots) - re-comp the shot's newest
                         composite workfile; with render it waits for the
                         full render's denoise, else the render
+                - comp_scene: dict (optional, #80) - comp this workfile
+                        instead (one with no th::import_render, saved with
+                        the submission): {path, exports, aovs}; it reads the
+                        render beside it, so needs render with the full range
                 - Comp section: comp_pool, comp_priority, comp_batch_size,
                                 comp_copy_to_edit; optional comp_step
                                 (default 1), comp_preview (default False:
                                 comp first/middle/last first),
+                                comp_preview_frame_list (str, default '':
+                                those frames instead of first/middle/last),
                                 comp_first_frame / comp_last_frame (default:
                                 the render's range, else the shot's; with a
                                 render, inside the render's)
@@ -269,6 +344,10 @@ def submit_entity_batch(config: dict) -> list[str]:
         render_pool = settings['render_pool']
         render_priority = settings['render_priority']
         tile_count = settings['tile_count']
+        # Refused now, not when the render jobs are built on the farm.
+        slap_comp_problem = slap_comp.tiles_problem(entity_uri, tile_count)
+        if slap_comp_problem is not None:
+            raise BatchSubmitError(slap_comp_problem)
         first_frame = settings.get('first_frame')
         last_frame = settings.get('last_frame')
         pre_roll = settings['pre_roll']
@@ -309,6 +388,11 @@ def submit_entity_batch(config: dict) -> list[str]:
         for key in ('first_frame', 'last_frame'):
             if settings.get(f'comp_{key}') is not None:
                 comp_block[key] = settings[f'comp_{key}']
+        # A workfile comp with no th::import_render (#80, a slap comp in the
+        # render scene): Farm Submit saved the workfile with the submission
+        # (``comp_scene``), and it comps the render beside it.
+        if settings.get('comp_scene') is not None:
+            comp_block['scene'] = dict(settings['comp_scene'])
 
     if do_playblast:
         pb_department = settings.get('pb_department')
@@ -343,6 +427,15 @@ def submit_entity_batch(config: dict) -> list[str]:
                 f"entity, or add the channel to it first."
             )
 
+    # An asset renders as a turntable, on the studio's frames: the dialog's
+    # range and rolls are a shot's (an asset has none).
+    asset_turntable = do_render and entity_context == 'assets'
+    turntable_frames = None
+    if asset_turntable:
+        turntable_frames = turntable.farm_frames()
+        first_frame, last_frame = turntable_frames.first, turntable_frames.last
+        pre_roll = post_roll = 0
+
     if do_render and (first_frame is None or last_frame is None):
         raise BatchSubmitError(
             f"No frame range for {entity_uri}: submit 'first_frame' and "
@@ -370,6 +463,47 @@ def submit_entity_batch(config: dict) -> list[str]:
         cut_range = [first_frame, last_frame]
         first_frame = render_frame_range.first_frame
         last_frame = render_frame_range.last_frame
+        # The Frame List (#84): only these frames of the range (rolls
+        # included). One range is an ordinary render of it; two or more
+        # are a multi-range render, which is never published.
+        listed = _read_frame_list(
+            entity_uri, settings.get('frame_list', ''), first_frame, last_frame,
+            asset_turntable,
+        )
+        frame_ranges_entry = frame_ranges.config_entry(listed)
+        if listed:
+            first_frame, last_frame = frame_ranges.span(listed)
+            cut_range = [first_frame, last_frame]
+        if frame_ranges_entry:
+            logging.info(
+                f"{entity_uri}: rendering {frame_ranges.format_ranges(listed)} "
+                f"({frame_ranges.summary(listed)}); {frame_ranges.NOT_PUBLISHED}"
+            )
+            if copy_to_edit:
+                logging.warning(
+                    f"{entity_uri}: Copy to edit skipped: "
+                    f"{frame_ranges.NOT_PUBLISHED}"
+                )
+                copy_to_edit = False
+            if do_comp:
+                raise BatchSubmitError(
+                    f"{entity_uri}: Comp follows a published render, and "
+                    f"{frame_ranges.NOT_PUBLISHED}: untick Comp, or render "
+                    "one range"
+                )
+        # The Preview Frames List, read against the frames this render
+        # makes (rolls included, every frame); the dialog's Warnings column
+        # showed the same drops (submit_settings.preview_frame_warnings).
+        preview_entry = {}
+        if 'partial_render' in render_task_keys:
+            render_preview = preview_frames.parse(
+                settings.get('preview_frame_list', ''), first_frame, last_frame,
+                *((turntable_frames.step,) if turntable_frames else ()),
+            )
+            if frame_ranges_entry:
+                render_preview = preview_frames.inside_ranges(render_preview, listed)
+            _log_preview_warnings(entity_uri, 'render', render_preview)
+            preview_entry = preview_frames.config_entry(render_preview)
 
     # Playblast is a shots-only preview (mirrors the shot playblast HDAs). The
     # dialog only offers the column for the shots context, but guard here too.
@@ -377,12 +511,9 @@ def submit_entity_batch(config: dict) -> list[str]:
         raise BatchSubmitError(
             f"Playblast is only supported for shots, not '{entity_context}'"
         )
-    if do_render and entity_context != 'shots':
-        # An asset's staged build carries no render settings, camera or
-        # lights; only a shot's root layer brings them (#49).
-        from tumblepipe.farm.submit.grid import ASSET_RENDER_HINT
+    if do_render and entity_context not in ('shots', 'assets'):
         raise BatchSubmitError(
-            f"{entity_uri} is not a shot: {ASSET_RENDER_HINT}"
+            f"Render is only supported for shots and assets, not '{entity_context}'"
         )
 
     # A comp is a shot's, and follows a render's full range: a preview-only
@@ -391,6 +522,21 @@ def submit_entity_batch(config: dict) -> list[str]:
         raise BatchSubmitError(
             f"Comp is only supported for shots, not '{entity_context}'"
         )
+    if comp_block is not None and 'scene' in comp_block:
+        scene = comp_block['scene']
+        problems = comp.scene_comp_problems(
+            do_render,
+            do_render and 'full_render' in render_task_keys,
+            channels if do_render else [],
+            scene.get('aovs') or [],
+        )
+        if problems:
+            raise BatchSubmitError(f"{entity_uri}: {'; '.join(problems)}")
+        if not scene.get('path'):
+            raise BatchSubmitError(
+                f"{entity_uri}: the comp's workfile was not saved with the "
+                "submission; submit it from Farm Submit in that workfile"
+            )
     if do_comp and do_render and 'full_render' not in render_task_keys:
         raise BatchSubmitError(
             f"Comp follows the full render, and {entity_uri}'s render submits "
@@ -421,6 +567,13 @@ def submit_entity_batch(config: dict) -> list[str]:
             )
         except composite_pipeline.RecompError as e:
             raise BatchSubmitError(f"{entity_uri}: {e}") from e
+        if comp_block['preview_frames']:
+            comp_preview = preview_frames.parse(
+                settings.get('comp_preview_frame_list', ''), *comp_range,
+                comp_block['step_size'],
+            )
+            _log_preview_warnings(entity_uri, 'comp', comp_preview)
+            comp_block.update(preview_frames.config_entry(comp_preview))
         if not composite_spec.valid_recomp(comp_block):
             raise BatchSubmitError(
                 f"Invalid comp settings for {entity_uri}: the step and batch "
@@ -432,19 +585,38 @@ def submit_entity_batch(config: dict) -> list[str]:
     department_names = [d.name for d in departments]
     renderable_names = [d.name for d in departments if d.renderable]
 
+    # Departments turned off on the entity (#64): never published, never a cut.
+    disabled = get_disabled_departments(entity_uri)
+
     pub_dept_names, skip_up_to_date = [], False
     if do_publish:
         pub_dept_names, skip_up_to_date = publish_department_names(
-            settings, department_names
+            settings, department_names, disabled
         )
     if do_render:
         _check_preview_department(
-            'Render', render_department, department_names, renderable_names
+            'Render', render_department, department_names, renderable_names,
+            disabled,
         )
     if do_playblast:
         _check_preview_department(
-            'Playblast', pb_department, department_names, renderable_names
+            'Playblast', pb_department, department_names, renderable_names,
+            disabled,
         )
+
+    # A turntable with nothing published before it renders the staged builds
+    # on disk: refused here, before the farm is contacted, when one is
+    # missing (the dialog's Warnings column said so before Submit). With a
+    # publish, the stage is built after it.
+    if asset_turntable and not do_publish:
+        missing = preview.unstaged_channels(entity_uri, channels)
+        if missing:
+            raise BatchSubmitError(
+                f"{entity_uri} has no staged build of channel"
+                f"{'s' if len(missing) > 1 else ''} {', '.join(missing)} "
+                "to put on the turntable: publish the asset first, or "
+                "tick a publish beside the render."
+            )
 
     # Deadline, or this machine's local farm (farm.backend)
     farm = get_farm()
@@ -557,9 +729,13 @@ def submit_entity_batch(config: dict) -> list[str]:
                 build_names.append(job_name)
             preview_deps = build_names
 
-        # Farm-side snapshot for the direct render and/or the playblast.
+        # Farm-side snapshot for the direct render and/or the playblast. A
+        # turntable always snapshots on the farm: its workfile is built in
+        # hython there.
         collapse_config = None
-        if preview_after_publish and ((do_render and not standalone) or do_playblast):
+        if asset_turntable or (
+            preview_after_publish and ((do_render and not standalone) or do_playblast)
+        ):
             collapse_config = dict(
                 entity=dict(
                     uri=str(entity_uri),
@@ -567,13 +743,34 @@ def submit_entity_batch(config: dict) -> list[str]:
                 ),
                 settings=dict(
                     user_name=user_name,
-                    pool_name=pub_pool,
+                    # A turntable with no publish has no publish pool.
+                    pool_name=pub_pool if do_publish else render_pool,
                     priority=chain_priority,
                 ),
             )
 
         # Add stage + render jobs
-        if do_render:
+        if asset_turntable:
+            collapse_config['render'] = dict(
+                department=render_department,
+                channel_names=list(channels),
+                overrides=render_overrides,
+                task_keys=list(render_task_keys),
+                pool_name=render_pool,
+                priority=render_priority,
+                tile_count=tile_count,
+                first_frame=first_frame,
+                last_frame=last_frame,
+                step_size=turntable_frames.step,
+                batch_size=batch_size,
+                # As the studio's own farm render: no denoise, no edit.
+                denoise=False,
+                copy_to_edit=False,
+                cut_range=cut_range,
+                turntable=True,
+                **preview_entry,
+            )
+        elif do_render:
             if not standalone:
                 # === DIRECT RENDER MODE (standalone=False) ===
                 # Render a collapsed snapshot of the staged file, with the
@@ -593,6 +790,8 @@ def submit_entity_batch(config: dict) -> list[str]:
                         denoise=denoise,
                         copy_to_edit=copy_to_edit,
                         cut_range=cut_range,
+                        **preview_entry,
+                        **frame_ranges_entry,
                     )
                     if comp_block is not None:
                         collapse_config['render']['composite'] = comp_block
@@ -626,6 +825,8 @@ def submit_entity_batch(config: dict) -> list[str]:
                         task_keys=list(render_task_keys),
                         composite=comp_block,
                         cut_range=cut_range,
+                        preview_frame_list=preview_entry.get(preview_frames.CONFIG_KEY),
+                        frame_ranges=frame_ranges_entry.get(frame_ranges.CONFIG_KEY),
                     )
                     try:
                         render_pipeline.build(
@@ -666,6 +867,8 @@ def submit_entity_batch(config: dict) -> list[str]:
                         batch_size=batch_size,
                         copy_to_edit=copy_to_edit,
                         cut_range=cut_range,
+                        **preview_entry,
+                        **frame_ranges_entry,
                     ),
                     **({} if comp_block is None else {'composite': comp_block}),
                     tasks={

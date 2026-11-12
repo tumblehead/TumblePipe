@@ -290,6 +290,24 @@ class PipelineSettingsWidget(QWidget):
         )
         outer.addWidget(self._hide_unused_checkbox)
 
+        self._preview_notify_checkbox = QCheckBox(
+            "Notify when preview frames are ready"
+        )
+        self._preview_notify_checkbox.setToolTip(
+            "When a render or comp submitted to This machine has rendered "
+            "its preview frames, show a desktop notification with the shot, "
+            "department, version and folder, so a mistake is caught before "
+            "the full range renders. The Farm Manager shows a notice either "
+            "way. Farm (Deadline) jobs still post to Discord only."
+        )
+        self._preview_notify_checkbox.setChecked(
+            self._catalog._prefs.notify_preview_ready
+        )
+        self._preview_notify_checkbox.toggled.connect(
+            self._on_preview_notify_toggled
+        )
+        outer.addWidget(self._preview_notify_checkbox)
+
         # ── Project defaults: the selected project's shared configuration ──
         outer.addWidget(section_header(
             "Project defaults",
@@ -393,6 +411,11 @@ class PipelineSettingsWidget(QWidget):
         like the toggles here, and the cards rebuild at once."""
         self._save_pref("Saving the hide-departments preference", hide_unused_departments=bool(checked))
         self._catalog._refresh.grid()
+
+    def _on_preview_notify_toggled(self, checked: bool) -> None:
+        """The preview-frames desktop notification on / off: saved on every
+        click; the local runner reads it each time previews are ready."""
+        self._save_pref("Saving the preview notification preference", notify_preview_ready=bool(checked))
 
     def _on_shot_slate_toggled(self, checked: bool) -> None:
         """The shot slate on / off: saved on every click like the toggles

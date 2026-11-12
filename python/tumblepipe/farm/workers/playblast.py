@@ -19,6 +19,7 @@ from tumblepipe.apps.app import CommandFailed
 from tumblepipe.apps.houdini import HOUDINI_VERSION_ENV, Husk
 from tumblepipe.apps import mp4
 from tumblepipe.apps.viewport_renderer import VIEWPORT_DELEGATE, viewport_args, viewport_env
+from tumblepipe.pipe import review_events
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import get_base_env, print_env, job_data_dir
 from tumblepipe.farm.frames import frame_file, HOUDINI_FRAME_TOKEN
@@ -259,6 +260,9 @@ def main(
         # The versioned movie is there: its submit-time reservation goes.
         for output_path in output_paths:
             release_playblast(output_path)
+        # This machine's player resolves the shot again (a farm worker's
+        # journal has no reader).
+        review_events.announce_written(output_paths)
 
     print('Success')
     return 0

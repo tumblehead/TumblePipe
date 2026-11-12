@@ -193,7 +193,7 @@ uv run --no-project python .ci/preflight.py
 ```
 
 Stages: `lint` (ruff E9,F), `hdas`, `hdapy`, `hdapaths`, `reports`, `tests`,
-`rust`, `harness`.
+`rust`, `delegate`, `harness`.
 
 `rust` runs `cargo test --locked` in `src/resolver`, `src/wizard` and
 `src/delegate` (on Windows inside vcvars64's environment), then
@@ -204,6 +204,16 @@ checkout builds FFmpeg into `build-ffmpeg-<platform>/`, which takes a while;
 a worktree can junction (or symlink) that folder from the main checkout. It
 is the local half of `.ci/test.sh`, which the CI workers run on a manual
 `RUN=tests` pipeline.
+
+`delegate` builds the playblast delegate (`.ci/build_delegate.py`, into
+`plugins/houdini<major>/`) and renders `.ci/smoke_delegate.py`'s stages
+through it with husk: culling (left-handed, mirrored and subdivided meshes
+included), subdivision, lights, motion, curves and points, on the CPU and,
+on Windows, the GPU. The C++ shim compiles only against a real Houdini and
+no `cargo test` reaches it, so work that touches `src/delegate/` needs
+`preflight.py --only delegate` too. Majors come from `$HPM_HOUDINI_MAJORS`,
+else 22; on a machine with no Houdini (husk) installed the stage prints
+SKIPPED and passes. It takes a few minutes.
 
 `hdapy` runs `.ci/quality_gates/check_hda_python.py`: the `PythonModule` and
 event-script sections of every expanded HDA under `otls/` are extensionless,
@@ -252,7 +262,12 @@ widget stacks involved are pure PySide6:
   (running-child status label, progress breadcrumbs, the
   cancel-leaves-steps-unrun warning, exported-version reporting, the
   skip-vs-fail split described below, and the footer states: a styled
-  Execute, a green Done after a clean run, Close plus retry otherwise).
+  Execute, a green Done after a clean run, Close plus retry otherwise),
+  and the up-front validation dialog (#56): its shot / department / issue
+  tree, per-shot ticks, and a run that skips an unticked shot, starts
+  nothing on Cancel Export and shows no dialog when clean. Offscreen, with
+  Houdini's python313 (`QT_QPA_PLATFORM=offscreen`, Houdini's `bin` added
+  as a DLL directory); `PREFLIGHT_SCREENSHOT=<png>` saves the dialog.
 - `verify_submit_playblast_section.py` — the Farm Submit dialog's
   Playblast settings, offscreen: Materials is a `⟨per entity⟩` / Scene
   materials / Clay menu (not a tri-state box that reads as checked) that
@@ -507,15 +522,17 @@ The size constants in `vram/sizes.py` were measured in a live viewport;
 `src/vram/calibration/README.md` has the protocol and the scripts to measure
 them again.
 
-## Sequence player
+## Cinedex, the editor
 
-`src/player/` is a stand-alone Rust app (no Houdini): TumblePipe's editor.
+`src/cinedex/` is a stand-alone Rust app (no Houdini): Cinedex, TumblePipe's
+editor (called `th_player` up to TumblePipe 1.103).
 It edits *edits*, versioned and published pipeline entities
 (`designs/edit-entity.md`), and plays them frame-accurately: playblasts and
 other movies through FFmpeg, and EXR sequences shown through OCIO. Artists
 start it from a shot card's **Play** entry ([Playing shots](asset-browser/play-shots.md)):
 `tumblepipe.pipe.review_playlist.play_shots` starts
-`bin/<platform>/th_player` (or `$TH_PLAYER`, a dev build) with
+`bin/<platform>/cinedex` (or a dev build named by `$TH_CINEDEX`, else by
+the former `$TH_PLAYER`) with
 `--project <root> --ocio <config> --shots <uri>...`, and the editor finds
 each shot's takes itself (`th_pipe::discovery`). It is its own cargo
 workspace:
@@ -560,7 +577,7 @@ workspace:
   all movies or all EXRs of one frame range, never nested
   (`Media::problem`); its stream is `(kind, department, Some("layers"))`,
   right after the department's plain takes of that kind.
-- `player`: the editor's window, built on the in-house Primer UI crate.
+- `cinedex`: the editor's window, built on the in-house Primer UI crate.
   `main.rs` reads the arguments and opens the OCIO config; when it fails,
   or the edit does not open, the window says why. `display.rs` is the
   display and view the picture shows through, and opens a take's media off
@@ -588,12 +605,29 @@ workspace:
   `colour.rs` bakes the chosen display/view into a 3D LUT through `ocio-rs` (which
   builds OpenColorIO from source); every render frame is drawn through it.
   `take_menu.rs` builds a shot clip's Source, Department and Version
-  submenus from the take shown. `render.rs` is Render Edit's renderer
+  submenus from the take shown, its Layer submenu (#58: sets only the
+  rule's `layer`, Best available by default) and the clip name's layer
+  note (`SH030 · chars (+2)`). `layer_view.rs` is the viewer's AOV
+  dropdown and stack layer toggles: they set the entry's `ExrView` and
+  `Content::hidden`, view only (never in the edit), kept by name when the
+  take resolves again. `render.rs` is Render Edit's renderer
   (`--render <edit>@vNNNN --out <dir>`, no window): each frame's layers
   (`th_edit::picture`) decoded and blended through `composite::dissolve`
   on the CPU, a render through the config's default display and view, as
   `edit.NNNN.png`, the mix as `edit.wav` and `render.json`; the farm worker
-  encodes the movie with Houdini's hffmpeg. `burnin.rs` writes the burn-ins over the
+  encodes the movie with Houdini's hffmpeg. `export.rs` is File > Export
+  Movie… (#61), on a thread of its own: the same sources, pictures
+  (`render::picture`, through the display and view the viewer shows) and
+  mix, each frame streamed as raw RGB into hffmpeg's stdin
+  (`th_pipe::movie::edit_export_args`, the farm's encode from `-frames:v`
+  on), written under `movie::partial_path` and renamed over the movie when
+  done; a cancel or failure kills hffmpeg and deletes the partial file.
+  `movie::find_hffmpeg` picks `$TH_HFFMPEG`, `$HFS/bin`, else the newest
+  SideFX install. `editor/export_dialog.rs` is its dialog (path, Browse…,
+  progress bar, Cancel, Play, Show in Folder); `save_dialog.rs` the system
+  Save dialog (Windows' `GetSaveFileNameW` called directly, `osascript` on
+  macOS, zenity or kdialog on Linux: no crate, so no GTK link).
+  `burnin.rs` writes the burn-ins over the
   picture, placed by the same fit `video.wgsl` gives the frame. The
   controls are built `.focusable(false)`, so the player's keys keep working
   after a click on one.
@@ -607,11 +641,11 @@ credentials, so the studio network is all a build needs; CI needs no key.
 `build-ffmpeg-<platform>/install/`. On Windows it needs MSYS2 and Visual
 Studio; the Windows build worker has MSYS2 in `C:\msys64`. The player's
 build looks for FFmpeg there, or in `TH_FFMPEG_DIR`. Because FFmpeg is LGPL, it ships as
-separate shared libraries beside `th_player`, never linked statically.
+separate shared libraries beside `cinedex`, never linked statically.
 
 **Packaging.** `.ci/build_player.py --platform <platform>` runs as the
 `build-player` prepack script. It builds FFmpeg when there is none, then
-`th_player` in release, and copies the exe and FFmpeg's shared libraries into
+`cinedex` in release, and copies the exe and FFmpeg's shared libraries into
 `bin/<platform>/`.
 
 - The Linux and macOS binaries carry an rpath of `$ORIGIN` or
@@ -635,13 +669,13 @@ OpenColorIO build (cmake) takes its own Visual Studio generator. VS 18's
 vcvars mixed with that generator's compiler fails with `STL1001`.
 `build_player.py` picks VS 2022 and names its generator for you.
 
-From `src/player/`:
+From `src/cinedex/`:
 
 ```bat
 set PATH=%CD%\..\..\build-ffmpeg-windows-x86_64\install\bin;%PATH%
 cargo test --workspace
-cargo run --release -p th_player -- --project P:/show --ocio %OCIO%
-cargo run --release -p th_player -- --project P:/show --ocio %OCIO% --shots entity:/shots/A/010 entity:/shots/A/020
+cargo run --release -p cinedex -- --project P:/show --ocio %OCIO%
+cargo run --release -p cinedex -- --project P:/show --ocio %OCIO% --shots entity:/shots/A/010 entity:/shots/A/020
 ```
 
 The tests:
@@ -663,7 +697,7 @@ The tests:
   shared across threads, describes itself while a decode runs, and that an
   EXR without a colour space does not open.
 - `media/tests/buffer_props.rs` covers the buffer. The tests in
-  `player/src/engine.rs` cover decode scheduling: a state machine of
+  `cinedex/src/engine.rs` cover decode scheduling: a state machine of
   playhead moves, view and hidden-layer changes, takes replaced and jobs finishing in any
   order shows that the job limits hold, that no stale frame is ever stored,
   and that a decode stopped for it is no failure; a decode that panics is
@@ -678,18 +712,46 @@ The tests:
   bounds, its shape kept, centred. `take_menu.rs` checks that each submenu
   lists its choices once (every kind, every stream of the shown kind going
   to its newest version, the shown stream's versions newest first) and
-  marks only what is shown. `editing.rs` checks timecodes, edit points,
+  marks only what is shown, that the Layer submenu lists each layer of the
+  shown kind once (a chosen layer not there as not ready) and its rows
+  change only the layer, and the clip name's layer note; `layer_view.rs`
+  that an AOV row shows its layer, a toggle changes one layer only and a
+  resolve keeps both by name. `editing.rs` checks timecodes, edit points,
   inserting and overlaying a bin item (a movie with its sound), moving a
   selection and back, that a published document refuses changes and that
   undoing to what was opened is clean, and (a proptest) that every clip
   plays its own source's frames; `render.rs` that a frame written reads
-  back as RGB and the mix's WAV reads back through `th_media`; `tracks.rs` checks row order, which
+  back as RGB and the mix's WAV reads back through `th_media`; `export.rs`
+  that an export is a movie of the edit's every frame at its rate and size
+  (hffprobe), that a cancel leaves nothing and a file already there as it
+  was, and that a missing encoder or an empty edit is an error (the movie
+  ones only where an hffmpeg is installed), plus the offered name and
+  folder; `th_pipe::movie` the encode arguments, the hffmpeg search order
+  and movie paths; `save_dialog.rs` the macOS script's quoting, the Linux
+  dialogs' arguments and reading back the path chosen;
+  `editor/export_dialog.rs` when Export may start and that a running
+  export holds the window; `tracks.rs` checks row order, which
   part of a clip a point grabs, the selection's runs and the ruler's ticks.
-- `player`'s editor: `main.rs` opens it (`th_player [--project <root>]
-  [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] | --shots
-  <uri>...]`; `--project` defaults to `$TH_PROJECT_PATH`, `--ocio` to
-  `$OCIO`; neither `--edit` nor `--shots`, an untitled edit of every shot,
-  `editing::project_fill`, as is an edit never saved).
+- `cinedex`'s editor: `main.rs` opens it (`cinedex [--project <root>]
+  [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot>
+  [--at <frame>]] | --shots <uri>...]`; `--project` defaults to
+  `$TH_PROJECT_PATH`, `--ocio` to `$OCIO`; neither `--edit` nor `--shots`,
+  an untitled edit of every shot, `editing::project_fill`, as is an edit
+  never saved; `--view` opens the edit as Live view shows a shot).
+  Preview frames (#75): `th_pipe::previews` reads the local farm's
+  batches as `tumblepipe.farm.local.previews` writes them (each batch's
+  `state.json` `previews` entries, the farm folder as `queue.root` finds
+  it), held to the Python by `test_previews_parity` through `pipe_lines`
+  (change the reading rules on both sides, in its module docs);
+  `cinedex/src/previews.rs` is what the editor makes of them;
+  `cinedex --frames <path>` opens
+  `frames_view.rs`, a window of stills (a batch's ready previews, a
+  folder's frames, or one frame) that reuses `video.rs` and `colour.rs`
+  and opens no project. The editor reads the batches every 5 s off the UI
+  thread (`Message::PollPreviews`) and `tracks.rs` draws the **Preview
+  ready** badge on a shot clip while one of its previews is of a
+  department and version it has no take of. The Farm Manager's **Open in
+  player** starts it through `review_playlist.open_preview_frames`.
   `editor.rs` is the
   window: the tracks, a Shots bin and the media library, Save (the next
   working version, with a note), Save As, Publish, Import and autosave,
@@ -697,10 +759,21 @@ The tests:
   published version opens read-only. `editing.rs` is its document (every
   change a `th_edit` op through its history, one user action one step) and
   the pure helpers; `tracks.rs` draws the rows and turns drags into ops
-  (move, trim, Alt for slip and roll, the top band for fades). `look.rs`
+  (move, trim, Alt for slip and roll, the top band for fades);
+  `editor/clip_fields.rs` is the strip of the selected clip's fades and
+  opacity as typed numbers (#60), its proptests that a typed fade or
+  opacity makes exactly the op that sets it and shows back as typed, and
+  that anything else is refused. `look.rs`
   holds every colour the window draws with (untinted greys, amber only for
   the present moment, a muted hue per department for clips); draw with its
-  tokens, not colour literals, and its tests keep text readable on them.
+  tokens, not colour literals, and its tests keep text readable on them;
+  its `tick_box` is the window's checkbox (Primer's draws its tick in
+  the theme's primary grey, too faint to tell from unticked). `reveal.rs`
+  finds a take's folder and opens the file manager on it (Explorer takes
+  only backslashes; given `C:/a/b` it opens Documents). A dialog field
+  that offers a value until the user types one (New shot's name, Import's
+  item) is an `editing::Offered`: it remembers that the user typed, rather
+  than comparing the text with the offer.
   `editor/menu_bar.rs` declares the menu bar (`Application::menu`)
   and the window's key map (`on_key`), both read from one small `State` so
   its property tests hold them to each other: a shown shortcut is the key
@@ -718,6 +791,51 @@ The tests:
   takes a key before the window sees it. Each distinct
   source of the edit is resolved off the UI thread to the take its rule
   picks today and played by the engine as one source.
+  Live playblasts ([Live playblasts](asset-browser/play-shots.md#live-playblasts),
+  `designs/shot-dashboard-live-playblast.md` §5): `live.rs` (`LiveWatch`)
+  polls the live.json of the live render a shot plays (one local stat) and
+  plays it over the clip's rule, never saved, published or exported, a frame not
+  rendered yet showing the take under it (`th_media::Under`); **Keep as
+  playblast** is `th_pipe::live::keep`, which runs the rendering Houdini's
+  hffmpeg (the player's FFmpeg has no encoder). Live view: the editor
+  serves `th_pipe::player_rpc` (one line of JSON-RPC on 127.0.0.1, port
+  and token in `<live root>/players/<project key>/<pid>.json`), and
+  `live_view.rs` turns a `view_shot` into the loop around the shot's
+  first clip and raises the window without focus (Windows only). Houdini's
+  side is `pipe/live_view.py`; `test_live_parity` drives it against the
+  real endpoint through the `rpc_stand_in` example.
+  New takes without looking (`journal.rs`, design §5.4, phase 6): the
+  editor follows this machine's change journal (`th_pipe::events::
+  JournalReader`, one local stat every 500 ms). A `playblast`, `render` or
+  `live` line about a shot resolves that shot's entries again, playing on
+  meanwhile (an entry being resolved is resolved again after); another
+  process's `config` line reads the bins and board again, and of the
+  `entity` purpose resolves every shot; a `workfile` line reads the board;
+  a journal that may have lost lines does all of it. `journal::plan` is the
+  pure part, property-tested. The writers are `pipe.review_events` in
+  Python (the Houdini playblast nodes, Live, and the farm workers that
+  write playblasts, review movies and render frames, which read the shot
+  and department back out of the path) and `th_pipe::live::keep`.
+  Playblasts and renders made on other machines (the farm) arrive through
+  the project's shared journal, `<config>/journal/` (`util.shared_journal`
+  writes one file per change, renamed into place; `th_pipe::shared_journal`
+  reads it off the UI thread every 3 s; the same id on both journals is
+  acted on once, #78). Anything else made elsewhere: **View > Refresh**.
+  Agent commands (design §8, phase 7): `agent.rs` is the catalog (each
+  command a JSON-RPC method with a JSON schema, listed by `tools/list` in
+  MCP's shape; `edit`'s ops are `th_edit::ops::Op`'s serde form, tagged
+  by `op`), `editor/agent.rs` answers them on the UI thread (the same
+  `Document` and undo history as the user's; `list_takes` and `save`
+  answer when their work is done, through `Message::Answer` and
+  `agent_save`), and every edit, save, publish, resolved take and view is
+  pushed to the endpoint's `Events`. `edit` with `dry_run` applies the ops
+  to a copy and answers `th_edit::diff`; `publish` is a preview only.
+  `mcp.rs` is `cinedex --mcp`: a stdio MCP server that finds the
+  players through their endpoint files and relays each tool call
+  (`player` picks one by pid, `list_players` lists them). Its proptests
+  check that a call reaches a stand-in player exactly as made; `agent.rs`'s
+  that the `edit` schema accepts every op serde writes, and rejects one
+  with a field missing or added.
 - `edit` (`th_edit`): the sequence editor's document, pure (no window, no
   decoding, no files). `document` is the edit as JSON (a working edit's
   take rules float; a frozen one, as a publish holds it, cannot hold a
@@ -725,11 +843,30 @@ The tests:
   and refused, never clamped, when the result breaks the document's
   invariants or shows source frames its source has not (`Sources`); ripples
   move every track and the markers; `history` is undo/redo (a run of ops as
-  one step, all or none); `picture` is
+  one step, all or none); `diff` is what changed between two versions of
+  an edit, clip by clip per track (property: it rebuilds the later one);
+  `picture` is
   what is on screen and in the mix at a frame (top-most playable clip,
-  blended through its fades); `takes` picks a take for a rule; `freeze`
+  blended through its opacity times its fades, a clip at no opacity
+  transparent; a proptest, and `editing.rs`'s proptest that the engine's
+  layers are its layers to the bit, so the editor and Render Edit blend
+  alike); a video clip's `opacity` (#60) is written only when it is not 1
+  and read as 1 when missing (`document`'s proptest: an edit at full
+  opacity is byte for byte what it was; `serde_json`'s `float_roundtrip`
+  so a number reads back as written), set by `SetOpacity` (0 to 1, video
+  only, a proptest), and a join of clips at two opacities is refused;
+  `takes` picks a take for a rule (a named
+  layer no take fits falls back to the rule with its layer open, a
+  proptest; `document`'s proptest round-trips a rule with and without a
+  layer); `freeze`
   resolves rules (`Resolver`); `otio` writes OpenTimelineIO (plain
-  dissolves as transitions, other fades as markers) and names each movie
+  dissolves as transitions; a fade with nothing below it, from or to
+  black, as an `SMPTE_Dissolve` between the clip and a gap, a gap of no
+  frames where the clip touches the track's start or the next clip, so
+  every transition has an item each side; other fades and opacities as
+  markers; a proptest checks exactly the fades over nothing become
+  transitions at their clips' edges and every track stays well formed
+  OTIO) and names each movie
   for the publish to link (`movie_links`, `relink`: Resolve takes
   same-named movies for one). Its properties: every movie gets one name no
   other has in any case, plain characters with its extension, the same
@@ -754,6 +891,16 @@ The tests:
   linked into `media/` and `context.json` last: properties on real files
   check that the OTIO opens each clip's own movie and nothing else is in
   `media/`, and that a publish that cannot link a movie is not finished) and `media` the media library (`export:/media/<item>/vNNNN/`).
+  `live` is the live playblast folder (live root per platform, the
+  project's hashed folder, live.json and whether its husk still runs) and
+  Keep as playblast, `player_rpc` the editor's endpoint for other
+  programs (Live view's `view_shot`; `events`, a long poll on its
+  `Events` log of the last 256; every other method handed to the editor
+  as an agent command); Python parity in
+  `tests/test_live_parity.py`. `events` writes the change journal as
+  `util/events.py` does (every `Config` write, edit saves and publishes, a
+  kept live render) and reads it (`JournalReader`, Python's reader poll for
+  poll: `tests/test_journal_parity.py`).
   `db`, `uri` and `project` came from
   tumblepipe-mcp (mtime-guarded writes, the layout range). A `Project`
   holds a snapshot of the config: make a new one (`refresh`) to see later
@@ -777,7 +924,7 @@ The tests:
   whole workspace through `.ci/build_player.py --test` (`cargo fmt
   --check`, `clippy -D warnings`, then `cargo test`), with the release
   build's FFmpeg, toolchain and OpenColorIO. Formatting follows
-  `src/player/rustfmt.toml`, so run `cargo fmt` before committing.
+  `src/cinedex/rustfmt.toml`, so run `cargo fmt` before committing.
 
 Commit any new seeds proptest writes under `proptest-regressions/`.
 
@@ -1232,6 +1379,22 @@ The child hython runs with `HOUDINI_PACKAGE_SKIP=1` and this checkout's
 shadow it. Run it with hython (e.g. TumbleTrove Desktop's `run_hython`);
 `VERIFY_DEBUG=1` prints the traceback of a failing resolve.
 
+## Slap comp harness
+
+`scripts/verify_slap_comp.py` drives the *TumblePipe Slap Comp* preset
+([Slap comps](nodes/lighting-and-rendering.md#slap-comps)) in real Houdini:
+it builds the preset in a COP network under `/stage` and `/obj`, reads back
+`beauty` on every slap comp AOV row of the three stock nodes, the wiring,
+the Block Path and the TumblePipe folder, puts a second preset beside the
+first (numbered names that still find each other), cooks the block on a
+fallback plate and compiles it to a program with `compile_program`. With
+`--husk` (a Karma licence) it renders a 32x32 frame whose colour AOV is named
+`beauty` without and with `--slap-comp` of a preset holding an Invert COP and
+checks the slap comped beauty is one minus the plain one: husk ran the
+compiled program on the `beauty` AOV. No project needed:
+
+    HOUDINI_PACKAGE_DIR= PYTHONPATH=<repo>/python hython scripts/verify_slap_comp.py --husk
+
 ## Project HDA harness
 
 `scripts/verify_project_hda.py` drives **TumblePipe ▸ Create Project
@@ -1399,6 +1562,23 @@ the source cannot tell the two apart. Then diff the serialized surface against
 the previous commit: every `dict()` keyword, dict-literal key, subscript key
 and `.get()`/`.setdefault()`/`.pop()` key should be unchanged. `ruff` with
 `F821` over the whole tree is the backstop for the identifiers themselves.
+
+### OnLoaded must not create or destroy nodes
+
+An HDA's OnLoaded runs while Houdini is still loading the hip. Creating or
+destroying nodes there crashes Houdini once the load finishes its last
+pass over the loaded nodes (signal 11 in
+`OP_Node::syncNodeVersionIfNeeded`): `th::light_mix` rebuilt its `mix`
+network in OnLoaded in 1.101, and every comp with an older mix crashed on
+open (Remy, 2026-11-11). Setting parms, comments and flags is fine.
+Anything that builds or tears down nodes goes through
+`pipe/houdini/after_load.py`: `after_load.run(fn)` runs `fn` at once
+outside a load, else on the hipFile AfterLoad/AfterMerge event. Find the
+node again by session id inside `fn` (it may be gone by then), as
+`light_mix.on_loaded` does. `tests/test_onloaded_node_edits.py` checks
+every OnLoaded statically: from the handler, following calls within its
+module, nothing may reach `createNode`, `destroy` and the like except
+inside a function handed to `after_load.run`.
 
 ## Editing an HDA definition
 
@@ -1577,7 +1757,7 @@ machine's GPU, which the build workers do not run;
 husk, synchronously and through the viewer's background path), into `plugins/houdini<major>/`; `build-wizard` cargo-builds both hook apps
 (`tt_setup` and `tt_prepare`) into `bin/<platform>/`; `build-player` builds the
 sequence player and its FFmpeg into the same place ([Sequence
-player](#sequence-player)); `compile-hdas` collapses the
+player](#cinedex-the-editor)); `compile-hdas` collapses the
 expanded `otls/<name>/` sources into binary `.hda` files) and stages the
 tree per `[stage].include`/`exclude`. Requirements: cmake, rustup (every
 crate builds with the toolchain the root `rust-toolchain.toml` pins; CI

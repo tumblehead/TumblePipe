@@ -11,9 +11,11 @@ from tumblepipe.api import path_str
 from tumblepipe.util.io import store_json
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.apps import exr
+from tumblepipe.pipe import review_events
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import print_env
 from tumblepipe.farm.frames import frame_file
+from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import slapcomp as slapcomp_spec
 from tumblepipe.farm.worker import ensure_dir, error, headline
 
@@ -235,18 +237,28 @@ def main(
             slapcomp = path_str(current_output_path)
         ))
 
+    review_events.announce_written([output_path])
+
     # Done
     print('Success')
     return 0
 
+def comp_frames(config: dict):
+    """The frames a slapcomp comps: its range by its step, or only a
+    multi-range render's frames (``farm.specs.frame_ranges``, #84)."""
+    ranges = frame_ranges.from_config(config)
+    if ranges is not None:
+        return frame_ranges.frames(ranges, config['step_size'])
+    return BlockRange(
+        config['first_frame'],
+        config['last_frame'],
+        config['step_size']
+    )
+
 def from_config(config: dict, _frame_span: BlockRange) -> int:
-    """Comp the configured range (the one Deadline task spans it)."""
+    """Comp the configured frames (the one Deadline task spans them)."""
     return main(
-        BlockRange(
-            config['first_frame'],
-            config['last_frame'],
-            config['step_size']
-        ),
+        comp_frames(config),
         {
             layer_name: {
                 aov_name: Path(aov_path)

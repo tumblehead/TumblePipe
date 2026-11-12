@@ -56,6 +56,9 @@ class RowProbe:
     is_version: Callable[[str], bool] = field(compare=False, repr=False)
     version_code: Callable[[str], int] = field(compare=False, repr=False)
     comp: CompProbe | None = None  # shots only
+    # (channel, export:/<entity>/_staged/<the channel it renders>) per
+    # channel the entity defines, for the unstaged-channel warning (#53).
+    staged: tuple[tuple[str, Path], ...] = ()
 
 
 @dataclass
@@ -68,6 +71,7 @@ class RowStatus:
     render_mtime: float | None = None
     comp_workfile: bool = False        # the shot has a composite workfile
     comp_mtime: float | None = None    # newest merged comp version folder
+    staged: set[str] = field(default_factory=set)  # channels with a staged build
     error: str | None = None
 
 
@@ -80,6 +84,7 @@ def plan_probe(
     playblast_department: str | None,
     render_department: str | None,
     comp: bool = False,
+    channels: Sequence[str] = (),
 ) -> RowProbe:
     """Resolve every folder the status of ``entity_uri`` needs.
 
@@ -91,6 +96,11 @@ def plan_probe(
     (resolved like a publish department's, so a Multi's workfile counts, as
     ``latest_complete_hip_file_path`` finds it for the re-comp) and the
     merged comp's ``composite/slapcomp`` versions.
+
+    An asset's Render column measures its turntable (#53), where a
+    studio's farm render writes: ``turntable:/render/<asset>/render/main``
+    (``pipe.turntable``), whatever the render cut. ``channels`` adds each
+    one's staged-build folder, for the row's unstaged-channel warning.
     """
     from tumblepipe.api import api
     from tumblepipe import naming
@@ -117,11 +127,29 @@ def plan_probe(
             / playblast_department
         ))
     render_dir = None
-    if render_department:
+    if render_department and list(entity_uri.segments[:1]) == ['assets']:
+        from tumblepipe.pipe import turntable
+        render_dir = Path(api.storage.resolve(
+            Uri.parse(f'{turntable.RENDER_PURPOSE}:/render') / entity_uri.segments
+            / turntable.RENDER_DEPARTMENT / turntable.render_layer('default')
+        ))
+    elif render_department:
         render_dir = Path(api.storage.resolve(
             Uri.parse('render:/render') / entity_uri.segments
             / render_department / 'default'
         ))
+
+    staged = ()
+    if channels:
+        from tumblepipe.pipe import render_layers
+        from tumblepipe.pipe.paths import get_staged_base_path
+        layers = render_layers.layer_names(entity_uri)
+        staged = tuple(
+            (channel, Path(get_staged_base_path(
+                entity_uri, render_layers.stage_channel(entity_uri, channel, layers),
+            )))
+            for channel in channels
+        )
 
     comp_probe = None
     if comp:
@@ -142,6 +170,7 @@ def plan_probe(
         playblast_dir=playblast_dir,
         render_dir=render_dir,
         comp=comp_probe,
+        staged=staged,
         is_version=naming.is_valid_version_name,
         version_code=naming.get_version_code,
     )
@@ -233,6 +262,9 @@ def scan(probe: RowProbe) -> RowStatus:
             status.comp_workfile = _latest_hip(probe, probe.comp) is not None
             comp = _latest_version_dir(probe, probe.comp.slapcomp_dir)
             status.comp_mtime = None if comp is None else _mtime(comp)
+        for channel, staged_dir in probe.staged:
+            if _latest_version_dir(probe, staged_dir) is not None:
+                status.staged.add(channel)
     except Exception as error:  # a scan failure greys one row, not the grid
         status.error = str(error)
     return status

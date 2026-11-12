@@ -229,6 +229,12 @@ TumblePipe 1.47.1 the browser created the workfile anyway, under a shot that
 existed nowhere else. Create the shot or asset first; for a Multi use the
 Multi's own rows.
 
+A department [turned off on the shot](entity-editor.md#departments-turned-off-on-a-shot)
+gets no new workfile, from here or from **New from Current**: a warning says
+so and how to turn it back on (**Enable department** on its right-click
+menu, or the Entity Editor's **Departments off** column), and nothing is
+reserved or saved. Its existing workfiles still open.
+
 ## New from Current
 
 **New from Current** saves the scene you have open **as the next version of the

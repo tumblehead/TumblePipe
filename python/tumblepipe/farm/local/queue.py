@@ -72,15 +72,18 @@ _TRANSITIONS = {
 }
 
 
-def root(environ=None) -> Path:
-    """The local farm's folder on this machine (``$TH_LOCAL_FARM_DIR`` wins)."""
+def root(environ=None, platform: str | None = None) -> Path:
+    """The local farm's folder on this machine (``$TH_LOCAL_FARM_DIR`` wins);
+    ``platform`` is ``sys.platform`` unless given. Cinedex finds it the same
+    way (``th_pipe::previews::farm_root``, test_previews_parity)."""
     environ = os.environ if environ is None else environ
+    platform = sys.platform if platform is None else platform
     if environ.get(ROOT_ENV):
         return Path(environ[ROOT_ENV])
-    if sys.platform == 'win32':
+    if platform == 'win32':
         base = environ.get('LOCALAPPDATA') or str(Path.home() / 'AppData' / 'Local')
         return Path(base) / 'TumblePipe' / 'local_farm'
-    if sys.platform == 'darwin':
+    if platform == 'darwin':
         return Path.home() / 'Library' / 'Application Support' / 'TumblePipe' / 'local_farm'
     base = environ.get('XDG_DATA_HOME') or str(Path.home() / '.local' / 'share')
     return Path(base) / 'tumblepipe' / 'local_farm'
@@ -219,7 +222,10 @@ def read_batch(folder: Path) -> dict:
     batch = read_json(Path(folder) / BATCH_NAME)
     if batch is None:
         raise FileNotFoundError(f'No {BATCH_NAME} in {folder}')
-    if batch.get('version') != BATCH_VERSION:
+    # Its version is the whole number itself (not True, not 1.0), as
+    # Cinedex reads a batch (``th_pipe::previews``, test_previews_parity).
+    version = batch.get('version')
+    if type(version) is not int or version != BATCH_VERSION:
         raise ValueError(
             f"{folder} is a version {batch.get('version')!r} batch; this "
             f'runner reads version {BATCH_VERSION}'

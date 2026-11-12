@@ -12,6 +12,8 @@ from tumblepipe.config.groups import Group, get_group, is_group_uri
 from tumblepipe.config.multi_timeline import shift_block_range
 from tumblepipe.config.timeline import get_fps
 from tumblepipe.apps import mp4
+from tumblepipe.pipe import review_events
+from tumblepipe.util import events
 from tumblepipe.pipe.houdini import prim_queries
 from tumblepipe.pipe.houdini import nodes as ns
 from tumblepipe.pipe.houdini import render_camera
@@ -255,6 +257,7 @@ class Playblast(FrameRangeNode, TimeOffsetNode, EntityNode):
                 shutil.copyfile(temp_mov_path, output_mov_path)
             shutil.copyfile(temp_playblast_path, output_playblast_path)
             shutil.copyfile(temp_playblast_path, output_daily_path)
+        review_events.announce(events.PLAYBLAST, shot_uri, department_name)
 
     def _render_layers(self, shot_uri, renderer) -> list[tuple[str, str | None]]:
         """The render layers to playblast, bottom to top; [] when Render

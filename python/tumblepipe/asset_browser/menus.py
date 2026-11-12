@@ -38,6 +38,13 @@ def _sync_with_multi() -> None:
     multi_sync.sync_with_multi()
 
 
+def _in_houdini() -> bool:
+    """Whether the browser runs inside a Houdini session: ``hou`` is
+    loaded (never imported here, which would start one)."""
+    import sys
+    return "hou" in sys.modules
+
+
 def note_tooltip_html(version: str, user: str, note: str) -> str:
     """Hover text for a noted version in the Open Version menu.
 
@@ -339,6 +346,14 @@ class PipelineMenus:
                 tooltip="Render a published version into a movie: Farm Submit, "
                         "on its Edits tab, with this edit ticked",
             ))
+        if (meta.get("working") or meta.get("published")) and _in_houdini():
+            items.append(MenuItem(
+                "Show on Houdini Timeline",
+                lambda: self._ops.show_edit_on_timeline(asset_id),
+                tooltip="Set the playbar to the edit's length with a bookmark "
+                        "per clip, to check its ranges against the shots "
+                        "(the newest version; nothing is saved)",
+            ))
         if meta.get("master"):
             # A label with no action, ticked: picking it does nothing.
             items.append(MenuItem(
@@ -356,6 +371,25 @@ class PipelineMenus:
                 lambda: self._ops.set_master_edit(asset_id, True),
                 tooltip="Make this the cut the shots' frame ranges follow",
             ))
+        # Rename and delete (#62): each asks, and refuses with the reason.
+        items.append(SEPARATOR)
+        items.append(MenuItem(
+            "Rename Edit…",
+            lambda: self._ops.rename_edit(asset_id),
+            tooltip=(
+                "Rename this edit; one with saved or published versions "
+                "can't be (Save As under the new name in the editor)"
+            ),
+        ))
+        items.append(MenuItem(
+            "Delete Edit…",
+            lambda: self._ops.delete_edit(asset_id),
+            tooltip=(
+                "The master edit can't be deleted: Clear Master Edit first"
+                if meta.get("master") else
+                "Delete this edit; its files move to the _deleted folder"
+            ),
+        ))
         return items
 
     def deck_item_items(self, asset: Asset, deck_item_key: str) -> list:
@@ -513,4 +547,17 @@ class PipelineMenus:
             items.append(("__separator__", None))
             items.append(new_tmpl)
             items.append(new_cur)
+
+        # Turn the department off on this shot, or back on (#64). Its
+        # workfiles and exports stay; only the shot's build, Farm Submit,
+        # the publish and new workfiles leave it out.
+        off = None if is_group else self._ops.department_turned_off(asset_id, dept)
+        if off is not None:
+            items.append(("__separator__", None))
+            items.append((
+                "Enable department" if off
+                else "Disable department on this shot",
+                lambda aid=asset_id, dn=dept, now=not off:
+                    self._ops.set_department_off(aid, dn, now),
+            ))
         return items

@@ -1114,13 +1114,14 @@ beside the pipeline's:
   and `uv`.
 
 After 1.93 these Karma toggles are switched off when the scene loads, the
-matching toggle on `th::render_settings`' **AOVs** section ticked instead, and a
-comment on the node says which; republish the render department and
-resubmit. Ticking one again makes `th::render_settings` error. A stage that
+matching AOV ticked on `th::render_settings`' hidden old AOVs instead (so it
+still renders), and a comment on the node says which, to move to
+`th::render_vars`; republish the render department and resubmit. Ticking one
+again makes `th::render_settings` error. A stage that
 still has such vars (published before, or authored by another node) is
 refused at submit with `the render vars would render planes the farm cannot
-read`, naming each var; the farm never renames them. Choose AOVs on the
-**AOVs** section of [`th::render_settings`](nodes/lighting-and-rendering.md#thrender_settings-lop):
+read`, naming each var; the farm never renames them. Choose AOVs on
+[`th::render_vars`](nodes/lighting-and-rendering.md#thrender_vars-lop):
 a project made from the template already renders `beauty`, `albedo` and
 `normal` (its `root_default_prims.usda`). `ocio plugin: unable to find color space ''` in the same log is
 Karma's **OCIO** image filter switched on with no output colour space. Karma
@@ -1148,6 +1149,23 @@ denoise it. So:
 The easy route is the **cryptoprimitives** / **cryptomaterials** toggles on
 [`th::render_vars`](nodes/lighting-and-rendering.md#cryptomattes); republish
 the render department after any change.
+
+### Cryptomatte mask: jagged edges, dark seams, empty `01`/`02`, "No manifest found"
+
+- **Stair-stepped edges and dark lines where selected pieces meet**: the
+  comp is at **Proxy 1:2**. Copernicus resamples the cryptomatte planes
+  like any image and the blended ids match nothing. Pull mattes at Proxy
+  1:1; the farm's comp render is full resolution and exact.
+- **`cryptomaterials01` / `02` look empty**: normal in a simple shot; they
+  carry the third to sixth object of a pixel. Feed all of them: wire
+  import_render's `cryptomaterials` (or `cryptoprimitives`) output whole
+  into the Cryptomatte COP's `crypto1`
+  ([Compositing → Cryptomattes](compositing.md#cryptomattes)).
+- **"Input layer cryptomaterials00 not produced by the renderer"** in a
+  Solaris slap comp, or **"No manifest found"** on a Cryptomatte COP fed by
+  one: Karma's viewport render has no cryptomatte rank planes or manifest
+  (only a rendered EXR does). A Houdini limit, not the render settings; see
+  [Cryptomattes](nodes/lighting-and-rendering.md#cryptomattes).
 
 ## Where to look
 

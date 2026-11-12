@@ -20,7 +20,9 @@ its own Root, the Root dialog's shared-Root warning, the Multis tab
 coverage refused, a shots Multi's Timeline, the selected Multi's workfiles
 opened or made one at a time, the browser's New Multi…), the Layers
 cell's dialog (a shot's and a sequence's, Use Selection, match counts, an
-exported channel kept, Inherit) and a Layers value typed, New Sequence…,
+exported channel kept, Inherit) and a Layers value typed, the Shots tab's
+Render settings section (a shot's value and its source, Project defaults,
+a sequence's row, a tick, a refused value, Inherit, mixed shots), New Sequence…,
 problems blocking Apply, Apply of every tab through the
 real ``pipe.entity_files``, and the database afterwards. Prints OK/FAIL per check; exits 1 on any FAIL.
 """
@@ -889,6 +891,94 @@ check("Inherit puts a shot's layers back to its sequence's",
       and shots.sheet.state(shots.sheet.row(r020.id), es.LAYERS) == es.INHERITED,
       (seen, shots.index_of(r020.id, es.LAYERS).data()))
 
+# ── Render settings (#70) ──────────────────────────────────────────────────
+
+rs = shots.render_settings
+check('the Shots tab has a Render settings section, the Assets tab none',
+      rs is not None and assets.render_settings is None)
+res_edit, cam_edit = rs.editors[es.RENDER_RESOLUTION], rs.editors[es.RENDER_CAMERA]
+apply_box = rs.editors[es.RENDER_APPLY]
+
+
+def _type(editor, text):
+    editor.setText(text)
+    editor.editingFinished.emit()
+    app.processEvents()
+
+
+r_sh010 = next(r for r in shots.sheet.rows if r.group == 'sq010' and r.name == 'SH010')
+r_sh020 = next(r for r in shots.sheet.rows if r.group == 'sq010' and r.name == 'SH020')
+NAME_COLUMN = shots.columns.index(es.NAME)
+shots.select_cells([(r_sh020.id, NAME_COLUMN)])
+app.processEvents()
+check('a shot shows its resolution and where it comes from',
+      res_edit.text() == '1920 x 1080' and rs.origins[es.RENDER_RESOLUTION].text() == 'from all shots',
+      (res_edit.text(), rs.origins[es.RENDER_RESOLUTION].text()))
+check('an inherited value is grey', ee._INHERITED.color().name() in res_edit.styleSheet(),
+      res_edit.styleSheet())
+
+rs.project_button.setChecked(True)
+app.processEvents()
+check('Project defaults edits all shots', rs.target.text().startswith('All shots'), rs.target.text())
+_type(res_edit, '2048x858')
+check('a project default is pending on all shots',
+      shots.sheet.everyone_value(es.RENDER_RESOLUTION) == [2048, 858]
+      and rs.origins[es.RENDER_RESOLUTION].text() == 'set here, waiting for Apply',
+      rs.origins[es.RENDER_RESOLUTION].text())
+rs.project_button.setChecked(False)
+app.processEvents()
+check('a shot follows the pending project default',
+      res_edit.text() == '2048 x 858' and rs.origins[es.RENDER_RESOLUTION].text() == 'from all shots',
+      (res_edit.text(), rs.origins[es.RENDER_RESOLUTION].text()))
+check('the footer counts the project default',
+      'all shots render defaults changed' in window._summary.text(), window._summary.text())
+
+shots.select_cells([(SQ010, NAME_COLUMN)])
+app.processEvents()
+check("a sequence's own row edits the sequence", rs.target.text().startswith('Sequence sq010'),
+      rs.target.text())
+_type(cam_edit, '/cameras/seq_cam')
+shots.select_cells([(r_sh020.id, NAME_COLUMN)])
+app.processEvents()
+check("a shot inherits the sequence's camera",
+      cam_edit.text() == '/cameras/seq_cam'
+      and rs.origins[es.RENDER_CAMERA].text() == 'from sequence sq010',
+      (cam_edit.text(), rs.origins[es.RENDER_CAMERA].text()))
+
+shots.select_cells([(r_sh010.id, NAME_COLUMN)])
+app.processEvents()
+was = apply_box.isChecked()
+apply_box.click()
+app.processEvents()
+check('ticking pins Apply to render on the shot',
+      shots.sheet.value(shots.sheet.row(r_sh010.id), es.RENDER_APPLY) is (not was)
+      and shots.sheet.state(shots.sheet.row(r_sh010.id), es.RENDER_APPLY) == es.SET)
+_type(res_edit, 'nonsense')
+check('a refused value says why and changes nothing',
+      'width x height' in window._summary.text()
+      and res_edit.text() == '2048 x 858', (window._summary.text(), res_edit.text()))
+_type(res_edit, '1280 x 720')
+check('typing pins a resolution on the shot', rs.inherit_buttons[es.RENDER_RESOLUTION].isEnabled()
+      and shots.sheet.value(shots.sheet.row(r_sh010.id), es.RENDER_RESOLUTION) == [1280, 720])
+rs.inherit_buttons[es.RENDER_RESOLUTION].click()
+app.processEvents()
+check('Inherit takes the pin away', res_edit.text() == '2048 x 858'
+      and shots.sheet.state(shots.sheet.row(r_sh010.id), es.RENDER_RESOLUTION) == es.INHERITED,
+      res_edit.text())
+
+shots.select_cells([(r_sh010.id, NAME_COLUMN), (r_sh020.id, NAME_COLUMN)])
+app.processEvents()
+check('two shots that differ show mixed', apply_box.checkState() == Qt.PartiallyChecked
+      and rs.origins[es.RENDER_APPLY].text() == 'differs between them',
+      rs.origins[es.RENDER_APPLY].text())
+check('they share the inherited camera', cam_edit.text() == '/cameras/seq_cam')
+if len(sys.argv) > 1:
+    rs.grab().save(str(Path(sys.argv[1]).with_name('render_settings.png')))
+shots.table.clearSelection()
+app.processEvents()
+check('with nothing selected the section asks for a selection',
+      not res_edit.isEnabled() and 'Select shots' in rs.target.text(), rs.target.text())
+
 # ── Apply ──────────────────────────────────────────────────────────────────
 
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
@@ -971,6 +1061,19 @@ layers = list_channel_layers(SHOTS / 'sq010' / 'SH010')
 check('the farm reads the layers the column showed', layers == [
     ('default', None), ('fx', '/FX/*'), ('characters', '/CHAR/ryan /CHAR/kate'),
 ], layers)
+shots_render = config.get_own_properties(SHOTS).get('render', {})
+check('the project render default written on all shots, its other keys kept',
+      shots_render.get('resolution') == [2048, 858] and 'overscan' in shots_render, shots_render)
+check("the sequence's camera written on the sequence",
+      sq010.get('render') == {'camera': '/cameras/seq_cam'}, sq010.get('render'))
+check("the shot's Apply to render written, its Inherit left nothing",
+      sh010.get('render') == {'apply_config': not was}, sh010.get('render'))
+check('an inheriting shot writes no render settings', 'render' not in sh020, sh020)
+from tumblepipe.config.renderer import get_entity_render_settings  # noqa: E402
+resolved = get_entity_render_settings(SHOTS / 'sq010' / 'SH020')
+check('what the root layer reads is what the section showed',
+      resolved.get('resolution') == [2048, 858] and resolved.get('camera') == '/cameras/seq_cam',
+      resolved)
 check('they resolve the sequence\'s Root', all(
     config.get_properties(SHOTS / 'sq020' / s).get('scene') == 'scenes:/town' for s in ('SH010', 'SH020')
 ))

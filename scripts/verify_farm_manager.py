@@ -18,6 +18,14 @@ real farm (read only: no farm command is sent). Checks:
      nothing, a "Yes" removes local batches with a request and deletes farm
      ones in one call, and a farm batch requeued while the question was
      open is left alone
+  7. a failed batch still working says both
+  8. preview frames ready: the notice, Open in player (#75)
+  9. Preview in Cinedex (#85): the job menu offers it after Open output
+     folder, enabled for a render/denoise/composite/slapcomp job with frames
+     and greyed out with a reason otherwise (an mp4, no frames yet); a batch
+     row opens its best frames (full before partial: a full render over a
+     partial slapcomp; then composite over denoise over render); it starts Cinedex on
+     the folder under Open output folder's; a failed launch is a message box
 
 Run (no Houdini licence: Houdini's bundled Python, not hython; see
 ``headless-qt-verify`` in the repo notes):
@@ -60,13 +68,17 @@ def check(name: str, condition: bool, detail: str = '') -> None:
     print(f"  [{'PASS' if condition else 'FAIL'}] {name}" + (f' — {detail}' if detail and not condition else ''))
 
 
-def make_batch(root: Path, name: str, statuses: list[list[str]], deps: list[list[int]]) -> Path:
+def make_batch(
+    root: Path, name: str, statuses: list[list[str]], deps: list[list[int]],
+    overrides: list[dict] | None = None,
+    ) -> Path:
     jobs = [
         {'index': i, 'name': f'job {i}', 'deps': deps[i],
          'tasks': [[1001 + 10 * t, 1010 + 10 * t] for t in range(len(tasks))],
          'package': 'tumblepipe@1.0.0', 'script': 'python/x.py', 'arguments': 'ctx.json',
          'data_dir': 'J:/jobs/x/data', 'env_file': None, 'manifest': 'J:/jobs/x/00_hpm.toml',
-         'timeout': 0, 'outputs': [str(TEMP / 'out' / 'receipt.json')]}
+         'timeout': 0, 'outputs': [str(TEMP / 'out' / 'receipt.json')],
+         **(overrides[i] if overrides else {})}
         for i, tasks in enumerate(statuses)
     ]
     batch = {
@@ -256,6 +268,258 @@ def verify_cleanup(app: QApplication, win, root: Path, project: str, done: Path,
          deadline_jobs._command, QMessageBox.question) = saved
 
 
+def verify_preview_notice(app: QApplication, win, root: Path, project: str) -> None:
+    """A local preview's frames get done (the runner records them): the band
+    shows, the notify job is tinted, Show job finds it through Hide finished,
+    Open folder opens the frames' folder, Dismiss closes the band; a preview
+    ready before a window opened is not news to it."""
+    from tumblepipe.farm.local import previews
+    from tumblepipe.farm.manager import window as mw
+
+    frames_dir = TEMP / 'renders' / 'sh040' / 'v0003' / 'beauty'
+    frames_dir.mkdir(parents=True)
+    folder = make_batch(
+        root, f'{project} render entity:/shots/sq010/sh040 tester',
+        [[queue.COMPLETED], [queue.COMPLETED], [queue.QUEUED]], [[], [0], [0]],
+    )
+    batch_id = f'local:{folder.name}'
+    win._mine.setChecked(False)
+    win._this_project.setChecked(False)
+    win._hide_finished.setChecked(True)
+    win._refresh_local()
+    pump(app, 0.3)
+    check('no notice before the runner records a preview', not win._notice.isVisible())
+
+    batch = queue.read_batch(folder)
+    state = queue.read_state(folder, batch)
+    preview = previews.Preview(
+        'entity:/shots/sq010/sh040', 'denoise', 'v0003',
+        str(frames_dir / 'beauty.####.exr').replace('\\', '/'), (1001, 1050, 1100),
+    )
+    previews.record(state, 1, preview, queue.now(), notified=True)
+    queue.write_state(folder, state)
+    win._refresh_local()
+    pump(app, 1.2)
+    text = win._notice_label.text()
+    check('the notice shows, non-modal, above the jobs', win._notice.isVisible() and not win.isModal())
+    check('it says preview frames ready, shot, department, version and count',
+          'Preview frames ready' in text and 'sq010/sh040 denoise v0003: 3 frames' in text, text)
+    check("it is the notify job's notice", [r.id for r in win.preview_notices()] == [f'{batch_id}/1'])
+    check('the job is tinted', win.is_highlighted(f'{batch_id}/1'))
+    check('Hide finished keeps the completed notify job out of the list', f'{batch_id}/1' not in win._job_items)
+    if len(sys.argv) > 1:
+        shot = Path(sys.argv[1])
+        shot = shot.with_name(f'{shot.stem}_notice{shot.suffix}')
+        win.resize(1500, 900)
+        pump(app, 0.5)
+        win.grab().save(str(shot))
+        print(f'  screenshot of the notice: {shot}')
+
+    opened = []
+    saved = mw.desktop.open_in_file_browser
+    mw.desktop.open_in_file_browser = lambda path: opened.append(Path(path))
+    try:
+        win._notice_open.click()
+    finally:
+        mw.desktop.open_in_file_browser = saved
+    check('Open folder opens the frames\' folder', opened == [frames_dir], str(opened))
+
+    from tumblepipe.pipe import review_playlist
+    started = []
+    saved = (review_playlist.find_player, review_playlist.project_ocio, review_playlist._start)
+    review_playlist.find_player = lambda: Path('cinedex')
+    review_playlist.project_ocio = lambda: 'config.ocio'
+    review_playlist._start = lambda player, argv: started.append(argv)
+    try:
+        check('Open in player is offered for a local batch', win._notice_play.isEnabled())
+        win._notice_play.click()
+    finally:
+        (review_playlist.find_player, review_playlist.project_ocio, review_playlist._start) = saved
+    check('Open in player starts Cinedex on the batch folder (--frames)',
+          started == [['cinedex', '--ocio', 'config.ocio', '--frames', str(folder)]], str(started))
+
+    win._notice_show.click()
+    pump(app, 0.3)
+    item = win._job_items.get(f'{batch_id}/1')
+    check('Show job brings it back and selects it',
+          item is not None and item.isSelected() and not win._hide_finished.isChecked())
+    check('selecting the job takes the tint off', not win.is_highlighted(f'{batch_id}/1'))
+    check('the tinted cells are plain again',
+          item is not None and item.background(mw.NAME).style() == mw.Qt.NoBrush)
+    win._notice_dismiss.click()
+    pump(app, 0.2)
+    check('Dismiss closes the notice', not win._notice.isVisible() and not win.preview_notices())
+    win._refresh_local()
+    pump(app, 0.3)
+    check('a preview is announced once', not win._notice.isVisible())
+
+    other = mw.ManagerWindow()
+    other.show()
+    pump(app, 1.2)
+    check('a preview ready before the window opened is not announced',
+          not other.preview_notices() and not other._notice.isVisible())
+    other.close()
+    pump(app, 0.2)
+
+
+def verify_preview_in_cinedex(app: QApplication, win, root: Path, project: str) -> None:
+    """Right-click a job ▸ Preview in Cinedex (#85)."""
+    from PySide6.QtCore import QPoint
+    from tumblepipe.farm.manager import frames_preview
+    from tumblepipe.farm.manager import window as mw
+    from tumblepipe.pipe import review_playlist
+
+    shot = TEMP / 'render' / 'shots' / 'sq010' / 'sh050'
+    render_v = shot / 'render' / 'main' / 'v0002'
+    denoise_v = shot / 'denoise' / 'main' / 'v0002'
+    slap_v = shot / 'render' / 'slapcomp' / 'v0001'
+    partial_slap_v = shot / 'render' / 'slapcomp' / 'v0003'
+    comp_v = shot / 'composite' / 'comp' / 'v0001'  # a merged comp: frames in the version folder
+    partial_slap_v.mkdir(parents=True)
+    (partial_slap_v / 'sh050_slapcomp_v0003.1001.exr').write_bytes(b'')
+    (render_v / 'beauty').mkdir(parents=True)
+    for frame in (1001, 1050, 1100):
+        (render_v / 'beauty' / f'sh050_main_beauty_v0002.{frame}.exr').write_bytes(b'')
+    (render_v / 'sh050_main_v0002.1001.json').write_bytes(b'{}')
+    denoise_v.mkdir(parents=True)
+    workers = 'python/tumblepipe/farm/workers'
+    jobs = [
+        ('partial render main v0002', 'render', render_v / 'sh050_main_v0002.####.json'),
+        ('full render main v0002', 'render', render_v / 'sh050_main_v0002.####.json'),
+        ('full denoise main v0002', 'denoise', denoise_v / 'sh050_main_v0002.####.json'),
+        ('mp4 layer render main v0002', 'mp4', shot / 'playblast' / 'sh050_main_v0002.mp4'),
+        ('slapcomp render v0001', 'slapcomp', slap_v / 'sh050_slapcomp_v0001.####.exr'),
+        ('publish render', 'publish', shot / 'publish'),
+        ('partial slapcomp render v0003', 'slapcomp', partial_slap_v / 'sh050_slapcomp_v0003.####.exr'),
+        ('full composite v0001', 'composite', comp_v / 'sh050_comp_v0001.####.json'),
+    ]
+    folder = make_batch(
+        root, f'{project} render entity:/shots/sq010/sh050 tester',
+        [[queue.COMPLETED]] * len(jobs), [[]] * len(jobs),
+        [{'name': name, 'script': f'{workers}/{kind}.py', 'outputs': [str(out)]} for name, kind, out in jobs],
+    )
+    batch_id = f'local:{folder.name}'
+    win._mine.setChecked(False)
+    win._this_project.setChecked(False)
+    win._hide_finished.setChecked(False)
+    win._search.setText('')
+    win._refresh_local()
+    deadline = time.monotonic() + 10
+    while f'{batch_id}/{len(jobs) - 1}' not in win._job_items and time.monotonic() < deadline:
+        pump(app, 0.3)
+
+    menus = []
+
+    class Menu(mw.QMenu):
+        """A job menu that is kept, not shown (exec would block offscreen)."""
+        def exec(self, *args):
+            menus.append(self)
+
+    saved_menu = mw.QMenu
+    mw.QMenu = Menu
+
+    def menu_for(*keys):
+        win._jobs.clearSelection()
+        for key in keys:
+            item = win._batch_items.get(key) or win._job_items.get(key)
+            item.setSelected(True)
+        pump(app, 0.1)
+        menus.clear()
+        win._on_job_menu(QPoint(0, 0))
+        menu = menus[-1]
+        actions = [a for a in menu.actions() if not a.isSeparator()]
+        texts = [a.text() for a in actions]
+        preview = next((a for a in actions if a.text() == frames_preview.LABEL), None)
+        return texts, preview
+
+    started = []
+    saved = (review_playlist.find_player, review_playlist.project_ocio, review_playlist._start)
+    review_playlist.find_player = lambda: Path('cinedex')
+    review_playlist.project_ocio = lambda: 'config.ocio'
+    review_playlist._start = lambda player, argv: started.append(argv)
+    try:
+        texts, preview = menu_for(f'{batch_id}/1')
+        check('the job menu has Preview in Cinedex right after Open output folder',
+              frames_preview.LABEL in texts
+              and texts.index(frames_preview.LABEL) == texts.index('Open output folder') + 1, str(texts))
+        check('a full render with frames: enabled', preview is not None and preview.isEnabled())
+        check('the menu shows tooltips', menus[-1].toolTipsVisible())
+        opened = []
+        saved_open = mw.desktop.open_in_file_browser
+        mw.desktop.open_in_file_browser = lambda path: opened.append(Path(path))
+        try:
+            win._on_open_output()
+        finally:
+            mw.desktop.open_in_file_browser = saved_open
+        preview.trigger()
+        check('it starts Cinedex on the beauty frames, under the folder Open output folder opens',
+              started == [['cinedex', '--ocio', 'config.ocio', '--frames', str(render_v / 'beauty')]]
+              and opened == [render_v], f'{started} / {opened}')
+
+        _, preview = menu_for(f'{batch_id}/3')
+        check('an mp4 job: disabled, the tooltip says why',
+              preview is not None and not preview.isEnabled() and 'movie' in preview.toolTip(), preview.toolTip())
+        _, preview = menu_for(f'{batch_id}/2')
+        check('a denoise with no frames yet: disabled, the tooltip says why',
+              preview is not None and not preview.isEnabled() and 'No frames' in preview.toolTip(), preview.toolTip())
+        _, preview = menu_for(f'{batch_id}/4')
+        check('a slapcomp whose folder is not there: disabled',
+              preview is not None and not preview.isEnabled() and 'not there' in preview.toolTip(), preview.toolTip())
+        _, preview = menu_for(f'{batch_id}/5')
+        check('a publish job: disabled', preview is not None and not preview.isEnabled(), preview.toolTip())
+        _, preview = menu_for(f'{batch_id}/6')
+        check('a partial slapcomp with frames: enabled', preview is not None and preview.isEnabled(), preview.toolTip())
+        _, preview = menu_for(f'{batch_id}/7')
+        check('a composite whose folder is not there: disabled',
+              preview is not None and not preview.isEnabled() and 'not there' in preview.toolTip(), preview.toolTip())
+
+        started.clear()
+        _, preview = menu_for(batch_id)
+        preview.trigger()
+        check('the batch row opens the full render over the partial slapcomp',
+              preview.isEnabled() and started and started[-1][-1] == str(render_v / 'beauty'), str(started))
+        (denoise_v / 'beauty').mkdir()
+        (denoise_v / 'beauty' / 'sh050_main_beauty_v0002.1001.exr').write_bytes(b'')
+        started.clear()
+        _, preview = menu_for(batch_id)
+        preview.trigger()
+        check('once denoised frames land, the batch row opens the denoise',
+              started and started[-1][-1] == str(denoise_v / 'beauty'), str(started))
+        comp_v.mkdir(parents=True)
+        (comp_v / 'sh050_comp_v0001.1001.exr').write_bytes(b'')
+        _, preview = menu_for(f'{batch_id}/7')
+        check('a merged composite with frames: enabled', preview is not None and preview.isEnabled(), preview.toolTip())
+        started.clear()
+        _, preview = menu_for(batch_id)
+        preview.trigger()
+        check('once composited frames land, the batch row opens the composite',
+              started and started[-1][-1] == str(comp_v), str(started))
+
+        warnings = []
+
+        class Box(mw.QMessageBox):
+            """Keeps the warning instead of showing it (modal: it would block)."""
+            @staticmethod
+            def warning(*args, **kwargs):
+                warnings.append(args)
+
+        saved_box = mw.QMessageBox
+        mw.QMessageBox = Box
+
+        def no_ocio():
+            raise ValueError('$OCIO is not set')
+        review_playlist.project_ocio = no_ocio
+        try:
+            _, preview = menu_for(f'{batch_id}/1')
+            preview.trigger()
+        finally:
+            mw.QMessageBox = saved_box
+        check('no $OCIO: a message box says so', len(warnings) == 1 and '$OCIO' in warnings[0][2], str(warnings))
+    finally:
+        (review_playlist.find_player, review_playlist.project_ocio, review_playlist._start) = saved
+        mw.QMenu = saved_menu
+
+
 def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     root = queue.root()
@@ -409,6 +673,12 @@ def main() -> int:
               for c in (mw.STATUS, mw.SUBMITTED, mw.WHERE_COL, mw.TASKS, mw.USER, mw.ERRORS)))
     check('the Submitted cell carries its full time as a tooltip',
           item is not None and item.toolTip(mw.SUBMITTED) != '')
+
+    print('8. preview frames ready: the notice, the tinted job, Open folder (#75)')
+    verify_preview_notice(app, win, root, project)
+
+    print('9. Preview in Cinedex on the job menu (#85)')
+    verify_preview_in_cinedex(app, win, root, project)
 
     if len(sys.argv) > 1:
         win.resize(1500, 900)

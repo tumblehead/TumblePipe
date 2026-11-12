@@ -5,13 +5,25 @@
     script	th::import_render::1.0
     label	"th import render"
 
-    output	rgba	rgba
-    output	aovs	aovs
-    output	beauties	beauties
-    signature	default	Default	{ }	{ RGBA Cable Cable }
+    output	rgba	"rgba"
+    output	rgba2	"rgba 2"
+    output	rgba3	"rgba 3"
+    output	rgba4	"rgba 4"
+    output	rgba5	"rgba 5"
+    output	rgba6	"rgba 6"
+    output	rgba7	"rgba 7"
+    output	rgba8	"rgba 8"
+    output	lpe	"lpe"
+    output	aov	"aov"
+    output	matte	"matte"
+    output	cryptomaterials	"cryptomaterials"
+    output	cryptoprimitives	"cryptoprimitives"
+    output	geometry	"geometry"
+    output	camera	"camera"
+    signature	default	Default	{ }	{ RGBA RGBA RGBA RGBA RGBA RGBA RGBA RGBA Cable Cable Cable Cable Cable Geometry Metadata }
 
     help {
-	"A shot's finished render: the beauty (rgba), a cable of the other AOVs the comp reads (aovs) and a cable of each channel's beauty (beauties). Channel * reads every channel: rgba is them laid over each other, Channel Outputs keeps one output per channel beside the node."
+	"A shot's finished render, top to bottom: each channel's beauty (rgba; with Channel * every channel on an output of its own, rgba to rgba 8, named on Reads), cables of the light groups (lpe, a light mix's), the other AOVs (aov), the mattes, ramps and holdouts (matte) and each cryptomatte's rank planes, whole, for a Cryptomatte COP's crypto1 (cryptomaterials, cryptoprimitives), then the staged geometry (geometry) and the shot's render camera (camera) for a Rasterize Geometry."
     }
 
     groupsimple {
@@ -24,9 +36,19 @@
             type    button
             joinnext
             default { "0" }
-            parmtag { "button_icon" "hicon:/SVGIcons.index?BUTTONS_tree_full.svg" }
+            parmtag { "button_icon" "$TH_PIPELINE_PATH/resources/EntityBrowse.svg" }
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.select_entity(kwargs)" }
         parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "entity_browse"
+            label   "Browse..."
+            type    button
+            joinnext
+            default { "0" }
+            help    "Open the entity picker to search for and pick the entity this node addresses."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.select_entity(kwargs)" }
+            parmtag { "script_callback_language" "python" }
         }
         parm {
             name    "entity"
@@ -160,6 +182,154 @@
             default { "" }
             help    "Set by the composite worker: an all-channels import's frozen version per channel."
         }
+        parm {
+            name    "outputs_layout"
+            label   "Outputs Layout"
+            type    integer
+            invisible
+            default { "0" }
+            help    "Which outputs the node was made with: 0 before #67 gave each channel an output and split the AOVs into lpe, aov and matte (its wires move on load), 1 since; set at creation."
+        }
+        parm {
+            name    "channel_outputs"
+            label   "Channel Outputs"
+            type    string
+            invisible
+            default { "" }
+            help    "The channel on each of rgba .. rgba 8 (- where none), kept so a wire stays on its channel."
+        }
+    }
+
+    groupcollapsible {
+        name    "cache_group"
+        label   "Cache"
+
+        parm {
+            name    "cache"
+            label   "Cache"
+            type    toggle
+            default { "1" }
+            help    "Keeps each frame read in memory, so playing it again does not read the network; the cache empties itself when the read changes. Caches the beauties (rgba .. rgba 8). Memory grows with every frame played, up to Max Frames per read."
+        }
+        parm {
+            name    "cache_aovs"
+            label   "Cache AOVs Too"
+            type    toggle
+            default { "0" }
+            disablewhen "{ cache == 0 }"
+            help    "Caches lpe, aov and matte as well: every AOV of every frame, far more memory than the beauty alone."
+        }
+        parm {
+            name    "cache_frames"
+            label   "Max Frames"
+            type    integer
+            default { "250" }
+            range   { 1! 2000 }
+            help    "How many frames each cached read keeps."
+        }
+        parm {
+            name    "clear_cache"
+            label   "Clear Cache"
+            type    button
+            default { "0" }
+            help    "Empties the cache: the next play reads every frame from disk again."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.clear_cache(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
+    }
+
+    groupcollapsible {
+        name    "scene_group"
+        label   "Scene"
+
+        parm {
+            name    "scene_department"
+            label   "Department"
+            type    string
+            default { "from_context" }
+            help    "The staged shot the geometry and camera outputs read (th::import_scene inside the node); its shot and channel are this node's (default for All channels)."
+            menu {
+                [ "opmenu -l -a scene/lopnet/import_shot department" ]
+            }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.scene_changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "scene_version"
+            label   "Version"
+            type    string
+            default { "latest" }
+            menu {
+                [ "opmenu -l -a scene/lopnet/import_shot version" ]
+            }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.scene_changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "scene_label"
+            label   "Reads"
+            type    label
+            default { "not imported: press Update" }
+            help    "Update imports the scene; a refresh does only while geometry or camera is wired. geometry and camera stay empty until it has imported."
+        }
+        parm {
+            name    "scene_ready"
+            label   "Scene Ready"
+            type    toggle
+            invisible
+            default { "0" }
+        }
+        parm {
+            name    "camera_ready"
+            label   "Camera Ready"
+            type    toggle
+            invisible
+            default { "0" }
+        }
+        parm {
+            name    "camera_prim"
+            label   "Camera"
+            type    string
+            default { "/cameras/render_camera" }
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.scene_changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "primpattern"
+            label   "Primitives"
+            type    string
+            default { "/*" }
+            help    "The prims the geometry output imports; anything that is not geometry (cameras, lights) adds nothing."
+        }
+        parm {
+            name    "purpose"
+            label   "Purpose"
+            type    string
+            default { "render" }
+            menu {
+                "render"    "Render"
+                "proxy"     "Proxy"
+                "guide"     "Guide"
+            }
+        }
+        parm {
+            name    "timesample"
+            label   "Time Sample"
+            type    ordinal
+            default { "1" }
+            help    "Animated imports the current frame and recooks every frame; Static imports one frame."
+            menu {
+                "static"    "Static"
+                "animated"  "Animated"
+            }
+        }
+        parm {
+            name    "staticimportframe"
+            label   "Static Frame"
+            type    float
+            default { "$FSTART" }
+            hidewhen "{ timesample == 1 }"
+        }
     }
 
     groupsimple {
@@ -167,20 +337,11 @@
         label   "Outputs"
 
         parm {
-            name    "beauty_outputs"
-            label   "Channel Outputs"
-            type    toggle
-            default { "1" }
-            help    "All channels: keep a Cable Unpack beside the node with one output per channel's beauty, kept in step with the channels read."
-            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.unpack_changed(kwargs)" }
-        parmtag { "script_callback_language" "python" }
-        }
-        parm {
             name    "unpack_outputs"
             label   "AOV Outputs"
             type    toggle
             default { "0" }
-            help    "Keep a Cable Unpack beside the node with one output per AOV in the cable, kept in step with it."
+            help    "Keep a Cable Unpack beside the node for each AOV cable, with one output per AOV in the cable, kept in step with it."
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.unpack_changed(kwargs)" }
         parmtag { "script_callback_language" "python" }
         }
@@ -196,6 +357,7 @@
             type    button
             joinnext
             default { "0" }
+            help    "Resolve the render again and import the scene."
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.execute(kwargs)" }
         parmtag { "script_callback_language" "python" }
         }

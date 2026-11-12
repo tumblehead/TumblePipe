@@ -75,12 +75,10 @@ the workfile's, so it is not remembered for the next opening.
 
 The tabs above the grid switch between assets and shots, whatever workfile
 is open — so from an asset workfile you can still submit shots. Each tab has
-its own grid and settings, because the department columns (and Playblast,
-Render and Comp, which are shots only) differ between them. Assets are
-rendered as turntables from `th::lookdev_studio` in the asset's lookdev
-workfile: an asset's staged build has no render settings, camera or lights
-(only a shot's root layer brings them), so the Assets tab offers publishes
-only, and says so where the settings would be.
+its own grid and settings, because the department columns (and Playblast
+and Comp, which are shots only) differ between them. On the Assets tab the
+**Render** column renders the asset's turntable, without opening its lookdev
+workfile: see [An asset's turntable](#an-assets-turntable).
 
 - The dialog opens on the tab in **Opens on** above. Only that tab starts
   with ticks and with the workfile's department pinned; the other tab lists
@@ -124,8 +122,9 @@ category). Columns are the pipeline steps:
 
 - one **publish** column per publishable department, in pipeline (pool)
   order;
-- **Playblast**, **Render** and **Comp** (shots only, see
-  [Comp](#comp-shots-only));
+- **Playblast**, **Render** and **Comp** on shots (see
+  [Comp](#comp-shots-only)); **Render** alone on assets, the
+  [turntable](#an-assets-turntable);
 - **Warnings**.
 
 Each kind of step has a colour: blue for publishes, violet for Playblast,
@@ -143,7 +142,8 @@ A column can collapse to a thin sliver, to keep the grid to the columns you
 are working with:
 
 - **By itself**: once the status is read, a column with nothing to do on any
-  row (a department no entity has a workfile in) collapses, unless a cell in
+  row (a department no entity has a workfile in, or one turned off on every
+  row) collapses, unless a cell in
   it is ticked. It opens again by itself when a later **Refresh** finds work
   in it. **Columns ▸ Collapse empty columns by themselves** turns this off.
 - **By hand**: hover a header and click the **‹** beside its checkbox,
@@ -165,6 +165,7 @@ a click on the sliver does nothing.
 | `○` dim | the only workfile is a [Multi](multis-and-roots.md#multis)'s, and it has never exported this entity — Select stale skips it, but you can tick it | — | — |
 | `●` amber | the workfile was saved after its latest export | older than the newest publish it composes | a render landed after the newest comp |
 | `✓` green | exported since the last workfile save | newer than every publish it composes | newer than the newest render |
+| `×` dim | the department is [turned off on this shot](entity-editor.md#departments-turned-off-on-a-shot) — not offered, cannot be ticked | — | — |
 | `…` | status not read yet | status not read yet | status not read yet |
 | filled in the kind's colour | **will be submitted** | **will be submitted** | **will be submitted** |
 
@@ -188,7 +189,7 @@ checks everything again when it runs.
 
 ### Ticking
 
-- Click a cell to tick or untick it. A `·` cell cannot be ticked.
+- Click a cell to tick or untick it. A `·` or `×` cell cannot be ticked.
 - Every **shot row**, **column header** and **sequence row** carries a
   checkbox showing whether all (✓), some (–) or none of the cells it covers
   are ticked. Clicking it ticks them all, or clears them when all are
@@ -221,7 +222,14 @@ The Warnings column says, per row, what the submission would run into:
   ticked for publishing. It does not block the submit: previewing what is
   published is sometimes the point.
 - `no frame range configured` — the entity has no `frame_start` /
-  `frame_end` and you pinned none.
+  `frame_end` and you pinned none. Never on an asset: its
+  [turntable](#an-assets-turntable) renders on the studio's frames.
+- `channel(s) … has no staged build to render: publish first, or tick a
+  publish on this row; the farm will refuse it` — a ticked Render, with no
+  publish on the row, of a channel that was never built (`_staged/<channel>`
+  is empty). Read with the cell status. It does not block in the dialog, but
+  `batch_submit` refuses an asset's turntable for it before anything is
+  submitted (`… has no staged build of channel(s) … to put on the turntable`).
 - `channel(s) … will be skipped (not defined on this entity)` — a checked
   render channel this entity does not define. The entity renders the checked
   channels it does define and leaves this one out; it does not render
@@ -233,10 +241,24 @@ The Warnings column says, per row, what the submission would run into:
   cell.
 - `department '<x>' is not assigned to this entity` — the pool still
   composes it, so this is a warning, not a block.
+- `the Render cut, <x>, is turned off on this shot: …` (or the Playblast
+  cut) — the **Up to** department is [turned off](entity-editor.md#departments-turned-off-on-a-shot)
+  on the shot, so its build has no layer to end on. **Blocks**: pick another
+  department, or turn it back on. `batch_submit` refuses the same, and a
+  publish of an off department.
 - `Comp waits for the full render: …` — Comp and Render are ticked on the
   row, but the Render **Range** is Preview only, which makes no frames to
   comp. This one **blocks** the submit: tick **Full range**, or untick
   Render to comp the renders already on disk.
+- `the comp has no th::import_render, so it reads the render of the same
+  submit, and none is ticked: …` (or `… which renders only its check
+  frames: …`) — the open workfile comps this shot without a
+  `th::import_render` ([a comp in the render scene](#a-comp-in-the-render-scene))
+  and Render is not ticked beside its Comp, or is Preview only. **Blocks**.
+- `Slap Comp Import AOV "<aov>" is read from a render of <n> channels …` —
+  the same comp reads an AOV other than the beauty while several channels
+  are checked. **Blocks**: check one channel, or comp with
+  `th::import_render`.
 - `the comp frames <a>-<b> end before they start` — the Comp **Frames** you
   typed are the wrong way round. **Blocks**.
 - `the comp frames <a>-<b> reach outside the render's <c>-<d>: …` — Comp and
@@ -247,6 +269,22 @@ The Warnings column says, per row, what the submission would run into:
   ticked alone, over frames past the shot's range from the config (rolls
   included). A warning, not a block: the renders on disk may run past it,
   but a frame no render made is missing from the comp.
+- `frame list: … is not a frame or a range …`, `… runs backwards`, or
+  `… is outside the shot's <a>-<b>` — the Render **Frame list** cannot be
+  read, or reaches past the rendered range (**Frames** with the rolls).
+  **Blocks**: correct the list, or clear it to render every frame.
+- `<n> frames in <k> ranges (…): multi-range renders are not published, no
+  daily` (`…, Copy to edit skipped` with **Copy to edit** ticked) — a
+  [multi-range render](#multi-range-renders). A warning, not a block.
+- `Comp follows a published render, and multi-range renders are not
+  published: …` — Comp is ticked beside a multi-range render. **Blocks**:
+  untick Comp, or render one range.
+- `render preview frames: …, dropped` / `comp preview frames: …, dropped`
+  — the **Preview frames** list names a word that is not a frame number, a
+  frame outside the range (the render's with its rolls; the comp's
+  **Frames**), or a comp frame off its **Step**. Those are left out; the
+  preview renders the rest in order. `… none usable, previewing first,
+  middle and last` when nothing is left. A warning, not a block.
 
 ### Before it submits
 
@@ -336,10 +374,12 @@ worker could take from the same pools.
 
 | Field | Per-entity source | Default when unset |
 |---|---|---|
-| **Up to** | `submission.render.department` | last renderable department (the whole shot) |
+| **Up to** | `submission.render.department` | last renderable department not turned off on the shot (the whole shot) |
 | **Resolution** (W × H) | `playblast.res_x` / `playblast.res_y` | the shot's render resolution (`render.resolution`), else 1280 × 720 |
 | **Renderer** | `playblast.renderer` | `viewport` |
 | **Shading** | `playblast.shading` | `lit` |
+| **Lighting**: `scene` (the scene's own lights, else the camera lights) / `headlight` (the camera lights always) | `playblast.lighting` | `scene` |
+| **Culling**: `off` / `back` (every mesh's back faces left out) | `playblast.cull` | `off` |
 | **Blur**: Motion blur, Depth of field, blur samples | `playblast.motion_blur` / `playblast.dof` / `playblast.blur_samples` | off, on, 16 |
 | **Light** | `playblast.light` | `dome` |
 | **Samples** | `playblast.samples` | 32 |
@@ -347,7 +387,7 @@ worker could take from the same pools.
 | **Pool** | `farm.default_pool` | `general` |
 | **Priority** | `farm.priority` | 50 |
 
-Shading and Blur apply to TumbleView, Light, Samples and
+Shading, Lighting, Culling and Blur apply to TumbleView, Light, Samples and
 Materials to Karma, and only the chosen **Renderer**'s rows show. While
 Renderer is left `⟨per entity⟩` (the shots disagree), both sets show, each
 label naming its renderer (`Shading (viewport)`, `Materials (Karma)`), under
@@ -388,18 +428,20 @@ light on the camera with ambient occlusion, the look before this setting
 existed; `scene` renders with the shot's own lights. **Samples** is Karma's
 pixel samples: more is cleaner and slower.
 
-### Render (shots only)
+### Render
 
 | Field | Per-entity source | Default when unset | Notes |
 |---|---|---|---|
-| **Up to** | `submission.render.department` | last renderable department (the whole shot) | Renders every department up to and including this one; departments after it are left out. Also names the render output. |
+| **Up to** | `submission.render.department` | last renderable department not turned off on the shot (the whole shot) | Renders every department up to and including this one; departments after it are left out. Also names the render output. |
 | **Camera** | — | read-only | The camera the render looks through: the `camera` of the RenderSettings prim in the latest published layer of the strongest department in the **Up to** cut that sets one, else the project's `root_default_prims.usda`. Read from the first checked channel; the tooltip names the department per entity, and `⟨per entity⟩` means the ticked entities disagree. A preview — the farm still asks the composed stage. |
 | **Channels** | — | the entities' own channel lists | A dropdown of checkboxes (`(none — check at least one)` when nothing is checked) with **All**; click it to pick, it takes no typing. Lists the *union* of the rendering entities' channels, `default` first. Opens with the channels *every* rendering entity starts with checked: its own channels, plus `default` only when it has no others or `default` is one of its [render layers](../nodes/lighting-and-rendering.md#render-layers-from-channel_prims-render-passes) (the remainder, under the slapcomp). So a shot split into `heart`, `background` and `bubbles` by export branches does not also render its whole unsplit scene; check `default` to. When the entities share nothing it opens with `default` if one of them renders unsplit, else with nothing checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the review list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
 | **Range** | — | Full range ticked | Two checkboxes. **Full range** renders everything and chains slapcomp + MP4; **Preview (first / middle / last)** renders three check frames and posts them to Discord. Tick both to get the preview first, with the full range queued behind it. One of the two must be ticked. |
+| **Preview frames** | — | empty: first / middle / last | The Preview Frames List, beside **Preview** (enabled while it is ticked). Empty, the preview is the first, middle and last frame of the cut, as before. Otherwise type the frames to preview, separated by spaces, e.g. `1012 1040 1077` for key poses: any number, rendered first and in that order, and posted to Discord (the panorama shows the first 8; the message says how many more were rendered). The rest of the range follows as usual. Whole frame numbers only; a repeat counts once. A frame outside the rendered range (rolls included) or not a number is dropped and named in the [Warnings](#warnings) column (and the submit log); when none is left the preview falls back to first / middle / last, with a warning. One list for the whole submission: the grid has no per-shot settings, so different key poses per shot mean one submission per shot. Not remembered for the next opening. |
 | **Frames** (first → last) | `frame_start` / `frame_end` | *required* — omitted, and the entity fails with "no frame range configured" | |
+| **Frame list** | — | empty: every frame, first → last | Render only some stretches of the shot: ranges and single frames, separated by spaces, e.g. `1001-1030 1040-1055 1100-1200` (commas are taken too). Each must lie inside the rendered range (**Frames** with the rolls). Ranges are sorted, and ranges that overlap or touch merge (`1001-1030 1031-1040` is `1001-1040`); the note under the field shows the frame count. **One range** renders exactly as **Frames** set to it, with no rolls added, and publishes as usual. **Two or more** make a [multi-range render](#multi-range-renders). A word that is not a frame or a range, a range written backwards (`1030-1001`) or one past the shot **blocks** the row (see [Warnings](#warnings)). One list for the whole submission, as the Preview frames list. Hidden on the Assets tab: a turntable renders the studio's frames. Not remembered for the next opening. |
 | **Pre / Post roll** | `roll_start` / `roll_end` | 0 / 0 | **Extends** the rendered range: `first - pre … last + post`. |
 | **Pool** | `farm.default_pool` | `general` | |
-| **Pri / Tiles** | `farm.priority` / `farm.tile_count` | 50 / 4 | Priority orders full renders among themselves and is capped at 70; see [Farm priorities](#farm-priorities). A preview always runs at 80. |
+| **Pri / Tiles** | `farm.priority` / `farm.tile_count` | 50 / 4 | Priority orders full renders among themselves and is capped at 70; see [Farm priorities](#farm-priorities). A preview always runs at 80. An entity with a [published slap comp](../nodes/lighting-and-rendering.md#slap-comps) renders only with Tiles 1: husk would run it on each tile, so Submit refuses that entity otherwise. |
 | **Batch** | `farm.batch_size` | 10 | Frames per farm task. |
 | **Samples** | — | `⟨from scene⟩` — not sent; shows the scene's value once read (`from scene: 128`, `varies: 64–256`) | Set a value to override `karma:global:pathtracedsamples`; ↺ goes back to the scene's. See [What the scene says](#what-the-scene-says). |
 | **Denoise** | `render.enabledenoising` | on | Adds denoise jobs after each render. |
@@ -408,7 +450,79 @@ pixel samples: more is cleaner and slower.
 | **Standalone** | — | off | Off = direct render of the collapsed staged file. On = a farm **stage** job builds the render stage first. See [Render staging](../composition.md#render-staging). |
 | **Copy to edit** | — | off | Adds an *edit* job that copies the finished `beauty` (RGBA — the alpha is its A), the `objid_*` / `holdout_*` mattes and the `ramp_*` distance ramps to the edit location (the other AOVs stay with the render). |
 
-There is no step field: farm renders always submit `step_size = 1`.
+There is no step field: a shot's farm render always submits
+`step_size = 1`.
+
+#### Multi-range renders
+
+A **Frame list** of two or more ranges renders only those frames (#84):
+
+- The render and denoise jobs run in farm tasks of up to **Batch** frames
+  that never span a gap, so no frame between two ranges is rendered. Each
+  task shows on the farm under its first frame; its time limit covers all
+  its frames.
+- The slapcomp comps the listed frames; the review mp4s (each channel's
+  and the slapcomp's) play them back to back, each frame's number burnt
+  into its top left corner so the jumps show. Each such mp4 lists the
+  frames it shows in its `frame_ranges` metadata tag (`1001-1030
+  1040-1055 1100`, one entry per picture), beside its `start_frame`. The
+  editor shows such an mp4 only when its version is chosen in a clip's take
+  menu, each picture at its own shot frame (see
+  [Renders of a frame list](play-shots.md#renders-of-a-frame-list)).
+- A **Preview** renders the first, middle and last *listed* frame, and the
+  **Preview frames** list drops a frame between two ranges, with a warning.
+- **Multi-range renders are not published**, like a preview: the frames
+  stay in their render version on disk, to view, but that version never
+  counts as the shot's render (it is not complete over its span, so a comp
+  and `th::import_render`'s `latest` pass over it), no daily is written
+  (only the versioned review mp4s), **Copy to edit** is skipped (the box
+  is greyed out while such a list is typed, its tooltip saying why, and
+  comes back with its tick when the list is cleared or is one range) and a
+  **Comp** beside it is refused (the row is blocked). The
+  version's `context.json` lists the ranges under `frame_ranges`, as
+  `[[first, last], ...]` (inclusive, sorted, a gap between each two).
+
+#### An asset's turntable
+
+On the Assets tab, **Render** renders the asset as a `th::lookdev_studio`
+turntable, without opening its lookdev workfile (#53). The asset's staged
+build has no camera, lights or render settings of its own, so the farm
+builds a studio around it:
+
+1. A **collapse** job (`houdini` group; after the row's publish and build
+   when a publish is ticked too, else straight away) snapshots each checked
+   channel's staged build, cut at **Up to**, into `turntable_<channel>/asset.usda`.
+2. It saves a small workfile, `turntable_<channel>.hip`: a sublayer of the
+   snapshot under a `th::lookdev_studio` node with **Primitives** set to the
+   asset's prim and the batch render on. Everything the studio does comes
+   with it — the camera framed to the asset's bounds, the light rigs (the
+   batch render swaps the rig once per loop, so five loops are five
+   lightings), podium, backdrop, mattes and AOVs. One studio, one look: the
+   farm cooks the HDA itself.
+3. It exports the studio as a studio's own **Submit Render To Farm** export
+   job does (the overrides on its render settings, the AOVs pruned to the
+   studio's, the HDRI and backdrop copied into `embedded/`), and submits the
+   render chain over it.
+
+What differs from a shot's render:
+
+- **Frames** are the studio's Farm tab defaults, shown read-only:
+  1001 → 2011, every 10th (101 frames): the 1001-1101 asset turn, then the
+  light turn, five loops. **Pre / Post roll**, **Camera**, **Denoise**,
+  **Standalone** and **Copy to edit** are hidden: none applies.
+- The **Preview frames** list takes frames on that step (1001, 1011 …); a
+  frame off it is dropped with a warning.
+- Output is where a studio's own farm render writes:
+  `turntable:/render/<asset>/render/main/vNNNN/` for the `default` channel
+  (so the two are versions of one turntable), `…/render/<channel>/` for any
+  other (a channel itself named `main` writes `channel_main`). Notifications
+  go to the *previews* channel. The Render cell's status reads that folder.
+- **Samples**, **Motion blur** and **DOF** override the studio's render
+  settings when set. They show `⟨from scene⟩`: an asset has no scene to
+  read them from.
+- A channel with no staged build is refused before anything is submitted,
+  unless the row publishes too (then the build runs first). The Warnings
+  column says so ahead of **Submit**.
 
 Samples, Motion blur and DOF are the only render settings the dialog can
 override, and only when you set them: left alone they send nothing, and the
@@ -459,13 +573,48 @@ and a pinned import stays pinned.
   Preview only, the row is blocked (see [Warnings](#warnings)).
 
 The cell is `·` (it cannot be ticked) when the shot has no composite
-workfile: make one from the composite template first. Otherwise it is `○`
+workfile: make one from the composite template first, or comp it from the
+open workfile (below). Otherwise it is `○`
 until the shot has a merged comp, and `●` stale when a render landed after
 the newest comp: the render the Render column measures, the newest version of
 the Render **Up to** department's `default` channel, so changing that cut
 re-reads it. A comp is not a preview of the publishes: a stale department
 does not make it stale, and ticking Comp alone raises no
 `stale and not ticked` warning (Render beside it still does).
+
+#### A comp in the render scene
+
+A comp need not live in the composite department. A Copernicus network in
+the workfile you open Farm Submit from, ending in a `th::export_comp` of the
+shot with no `th::import_render` of it (a slap comp in the render scene:
+Slap Comp Import → Block Begin → … → Block End → `th::export_comp`), is
+comped from that workfile instead of the composite workfile. It comps the
+render of the same submit:
+
+- tick the shot's **Render** and **Comp** (the export_comp's own
+  **Submit** refuses, saying so, and offers **Open Farm Submit** with both
+  ticked);
+- the Comp cell can be ticked even when the shot has no composite workfile;
+- on **Submit…** the workfile is saved, and a copy goes with the submission
+  (into its folder under `temp:/farm_submissions/`), so the farm comps it
+  as it was when you submitted;
+- the comp waits for the full render (its denoise, without Denoise the
+  render) and each Slap Comp Import reads the frames that render wrote:
+  each of its AOVs as a File COP of that AOV, wired where the Slap Comp
+  Import's output was. Karma's `C` reads TumblePipe's `beauty`. With one
+  channel checked every AOV comes from it; with several, the beauty is the
+  channels laid over each other in channel order (as the render's slapcomp
+  stacks them), and any other AOV blocks the row (render one channel for
+  such a comp, or comp the renders with `th::import_render`);
+- it publishes as a normal composite version of the shot,
+  `render:/render/<shot>/composite/slapcomp/v####/` for Layer `comp`, so the
+  player, the daily and Resolve see it as the comp. The version's
+  `context.json` records the render versions it read.
+
+There is no fallback to renders already on disk: without Render ticked
+beside it, or with a Preview-only render, the row is blocked (see
+[Warnings](#warnings)). A workfile with a `th::import_render` of the shot
+is not one of these; its shot comps its composite workfile as above.
 
 The section offers what an `export_comp`'s own **Jobs** and **Farm** parms
 do for its Submit (see [Compositing nodes](../nodes/comp.md)), in the
@@ -474,6 +623,7 @@ dialog's way: a field you leave alone follows each shot.
 | Field | Per-entity source | Default when unset | Notes |
 |---|---|---|---|
 | **Range** | — | off | **Preview frames (first / middle / last)**: comp those three frames first and post them to Discord (`previews`); the full comp waits for them. The node's **Preview Frames**. Beside a render, the preview frames still wait for the whole render. |
+| **Preview frames** | — | empty: first / middle / last | The comp's Preview Frames List, as the Render's (above) and the node's **Preview Frames › List**: frames to comp first, space separated, in that order. Read against the comp's frames on its **Step**: a frame outside them or off the step is dropped with a warning. Without a render beside it, the Warnings column checks against the shot's range and the submit against what the renders on disk cover, so the submit log has the final word. |
 | **Frames** | — | `⟨full range⟩` | Left on `⟨full range⟩`, the comp comps every frame of the render ticked beside it (its **Frames** with the rolls), or, ticked alone, the shot's range from the config with its rolls (the node's **From Config**). Type a first and/or last frame to comp from or to it instead (the node's **From Settings**); the other end keeps following. Beside a render the frames must lie inside the render's; past them, or the wrong way round, the row is blocked (see [Warnings](#warnings)). ↺ goes back to `⟨full range⟩`. Not remembered for the next opening. |
 | **Step** | — | 1 | Comp every Nth frame of the range. |
 | **Batch** | — | 5 | Frames per farm task of the comp. With **Run on: This machine** the field reads *one task on this machine*: the local queue runs one task at a time, so the comp runs its whole range as one task (each task costs a few seconds of Houdini start-up). A comp's time limit is 20 minutes per frame, on the farm and here, so the one local task is not stopped halfway. |
@@ -616,6 +766,13 @@ newest installed Houdini that satisfies both the project's and TumblePipe's
 Houdini version range (or `$HFS`, when set), builds the environment a Houdini
 session would have for the project from its package files, and opens the
 dialog in that Houdini's bundled Python. Submitting works exactly as above.
+That Python is not Houdini, so the launcher adds what Houdini would find on
+its own: PySide6 from Houdini's `site-packages-forced` folder
+(`python313/lib` on Windows, `lib/python3.13` beside `bin/` on macOS and
+Linux), and on macOS the app's `Frameworks` folder on
+`DYLD_FALLBACK_FRAMEWORK_PATH`, so USD plugins built against Houdini
+(tumbleResolver) load. The submission runner started from a Houdini session
+gets the same macOS setting.
 
 Until TumbleTrove Desktop passes the user's name to scripts, submissions made
 from Desktop carry **no user name** in their batch names and notifications.
@@ -679,6 +836,12 @@ workfile to comp; make one from the composite template first`. Without a
 render on the row the composite jobs (named `comp_…`) run at once; with one,
 they are part of the render chain and start after its full-range denoise.
 Comp on an asset, or beside a render without the full range, is refused.
+A [comp in the render scene](#a-comp-in-the-render-scene) bundles the
+workfile copy saved with the submission instead, names its export_comps by
+node path, and passes the render versions the chain writes (`renders`) to
+the composite worker; without a full render beside it, with an AOV its
+channels cannot give, or with no saved copy, it is refused before the farm
+is contacted.
 
 Either way the render department must be renderable (`Render department
 '<x>' is not renderable. Renderable departments: …` otherwise), the
@@ -709,21 +872,39 @@ no `channel_id` is a real misconfiguration and fails the notify job with
 `Channel not found in discord config: <name> (configured channels: …)`.
 Both behaviours are from **1.52.2**; before it, every notify on an
 unconfigured project failed, and with it every render and playblast batch.
+
+With **Run on: This machine**, a render's or comp's preview frames are
+announced on this machine as well, as soon as they are done: a desktop
+notification (*Preview frames ready*, the shot, department, version, frame
+count and folder) and a notice in the Farm Manager with **Open in player**
+(the frames as stills in the editor) and **Open folder**; the editor's
+clips of the shot show a [Preview ready](play-shots.md#preview-frames-ready)
+badge until the full range is rendered.
+It comes whether or not Discord is set up. Turn the desktop notification
+off with **Notify when preview frames are ready** on the Settings page. See
+[Running farm jobs on this machine](../deadline.md#running-farm-jobs-on-this-machine).
 Output locations are in [Compositing → Where renders land](../compositing.md#where-renders-land).
 
 | Family | Triggered by | Chain (job name → group) | Output |
 |---|---|---|---|
 | **render**, Full range | Render cells | per channel: `full_render_<ch>` (`karma`) → `full_denoise_<ch>` (`denoise`, if Denoise) → `layer_mp4_<ch>` (`encode`); then across channels: `edit` (`edit`, if Copy to edit), `slapcomp` (`houdini`) → `slapcomp_mp4` (`encode`) → `slapcomp_notify` (`general`) | `render:/render/<shot>/<dept>/<channel>/vNNNN/<aov>/`, denoised frames under the `denoise` department, slapcomp MP4 + daily. Each channel keeps its own version counter (a new `characters` channel starts at v0001 while `default` may be at v0008); the slapcomp reads each channel at its own version and stacks them in the shot's channel order |
-| **render**, Preview | Render cells | per channel: `partial_render_<ch>` (`karma`) → `partial_denoise_<ch>` (if Denoise) → `partial_notify_<ch>` — three frames, no MP4 | same version folders, three frames only; the notify carries first/middle/last of the cut (the range without its pre/post roll: the roll's handles are frames nobody sees) |
+| **render**, Preview | Render cells | per channel: `partial_render_<ch>` (`karma`) → `partial_denoise_<ch>` (if Denoise) → `partial_notify_<ch>` — three frames (or the **Preview frames** list), no MP4 | same version folders, the preview frames only; the notify carries first/middle/last of the cut (the range without its pre/post roll: the roll's handles are frames nobody sees), or the listed frames in their order (a panorama of up to 8) |
 | **render**, Preview + Full range | Render cells | both chains above; each `full_render_<ch>` waits on its `partial_render_<ch>` and renders into the same version | the preview's three frames are posted, then the full range overwrites them in the same version folder |
 | **render**, Standalone | Render cells with **Standalone** | `stage` (`houdini`) → the render chain above | `stage_<channel>.usd` in the job's data dir |
 | **publish** | Publish cells; Farm mode in the process dialog | `publish_<dept>` (`houdini`) per department, chained → `notify` (`general`). A renderable asset publish then queues a **build** | `export/<entity>/<channel>/<dept>/vNNNN/` |
 | **build** | after a farm publish (in its batch when the publish dialog's Build USD rides along); Build USD in Farm mode; before the previews of a row that also publishes | `build` / `build_<channel>` (`general`) | `_staged/<channel>/vNNNN/` |
-| **collapse** | Playblast or (non-Standalone) Render cells on a row that also publishes | `collapse` (`houdini`), after the row's builds; it then submits the playblast and render families above with the fresh snapshot | nothing of its own; the previews' batches |
+| **collapse** | Playblast or (non-Standalone) Render cells on a row that also publishes; every asset Render cell | `collapse` (`houdini`), after the row's builds; it then submits the playblast and render families above with the fresh snapshot. For an asset it also builds and exports a `th::lookdev_studio` turntable per channel first ([An asset's turntable](#an-assets-turntable)) | nothing of its own; the previews' batches |
 | **playblast** | Playblast cells | `playblast` (`playblast`) → `playblast_notify` (`general`) | `render:/playblast/<shot>/<dept>/<sequence>_<shot>_<dept>_vNNNN.mp4` + the daily |
 | **composite** | the `th::export_comp` node's **Submit**; [Comp](#comp-shots-only) cells (jobs prefixed `comp_`: `comp_full_composite` → `comp_slapcomp_mp4` → `comp_slapcomp_notify`, and `comp_sync` with Copy to edit; after the render's denoise when Render is ticked too) | see [Compositing → Farm submission and MP4s](../compositing.md#farm-submission-and-mp4s) | `render:/render/<shot>/composite/…`; a Comp cell writes the merged comp, `composite/slapcomp/vNNNN/` |
 | **export_render** | the `th::lookdev_studio` HDA | `export` (`houdini`) → `notify` | lookdev turntable renders |
 | **edit_render** | the Edits tab's **Render Edit** | `edit_render` (`encode`), one task, no notify | `render:/edits/<name>/<name>_edit_vNNNN.mp4` |
+
+Every render job (`partial_render_<ch>`, `full_render_<ch>`, whichever
+family submits it) of an entity with a
+[published slap comp](../nodes/lighting-and-rendering.md#slap-comps)
+bundles the newest program into its data dir as it is when the render job
+is made (at Submit, or when a farm collapse or stage job makes it), runs husk
+with `--slap-comp`, and says `+ slap comp vNNNN` in its title.
 
 Job priorities come from the settings, inside the
 [Farm priorities](#farm-priorities) bands; every notify job runs at 100,

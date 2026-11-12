@@ -61,7 +61,48 @@ def _submit_render(config, result, output_dir) -> None:
         task_keys=render['task_keys'],
         composite=render.get('composite'),
         cut_range=render.get('cut_range'),
+        preview_frame_list=render.get('preview_frame_list'),
+        frame_ranges=render.get('frame_ranges'),
     ), paths)
+
+
+def _submit_turntables(config, result, output_dir) -> None:
+    """Submit each channel's turntable render over its exported stage (#53).
+
+    As the export worker does after exporting a studio's own Submit Render
+    To Farm: the exported folder (stage, asset snapshot, the studio's
+    embedded files) travels whole into the render's data dir.
+    """
+    from tumblepipe.pipe import turntable
+
+    entity_uri = Uri.parse(config['entity']['uri'])
+    render = config['render']
+    frames = turntable.TurntableFrames(
+        render['first_frame'], render['last_frame'],
+        render.get('step_size', turntable.FARM_STEP),
+    )
+    for channel_name, built in result['turntables'].items():
+        settings_path = output_dir / built['render_settings']
+        render_pipeline.submit(preview.turntable_render_config(
+            entity_uri,
+            channel=channel_name,
+            department=render['department'],
+            stage_path=built['stage'],
+            render_settings_path=path_str(settings_path),
+            user_name=config['settings']['user_name'],
+            pool_name=render['pool_name'],
+            priority=render['priority'],
+            tile_count=render['tile_count'],
+            batch_size=render['batch_size'],
+            denoise=render['denoise'],
+            task_keys=render['task_keys'],
+            frames=frames,
+            cut_range=render.get('cut_range'),
+            preview_frame_list=render.get('preview_frame_list'),
+        ), {
+            settings_path: Path(built['render_settings']),
+            output_dir / built['folder']: Path(built['folder']),
+        })
 
 
 def _submit_playblast(config, result, output_dir) -> None:
@@ -103,7 +144,10 @@ def main(config: dict, _frame_span: BlockRange) -> int:
         # Submit the previews with the snapshots bundled. Both are attempted
         # even if the first fails, so one bad preview does not cost the other.
         failed = []
-        for kind, submit in (('render', _submit_render), ('playblast', _submit_playblast)):
+        render_submit = (
+            _submit_turntables if 'turntables' in result else _submit_render
+        )
+        for kind, submit in (('render', render_submit), ('playblast', _submit_playblast)):
             if kind not in config:
                 continue
             try:

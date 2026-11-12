@@ -1,3 +1,4 @@
+import logging
 from copy import deepcopy
 
 from tumblepipe.util.io import load_json
@@ -15,10 +16,19 @@ class DatabaseAdapter:
     ``store.write_root()``. It never reaches into the store's private cache —
     that cache is kept coherent for *read* consumers and is not the editor's
     scratch space.
+
+    ``on_saved(uri)`` hears of every write, with the node written (the
+    purpose root for a whole-tree save), after it is on disk. The editor
+    passes ``pipe.root_staging.stage_after_database_save``: the trigger
+    the Entity Editor's Apply also goes through, so an edit of ``render``
+    on the project, all shots, a sequence or a shot reaches the shots'
+    root layers (Remy, 2026-11-12: a Database Editor edit reached none).
+    A hook that raises is logged; the save stands.
     """
 
-    def __init__(self, api):
+    def __init__(self, api, on_saved=None):
         self._api = api
+        self._on_saved = on_saved
         self._config = api.config            # JsonConfigStore
         self._working: dict[str, dict] = {}  # purpose -> editable working copy
         self._file_mtimes: dict[str, float] = {}    # purpose -> last-seen external mtime
@@ -44,12 +54,21 @@ class DatabaseAdapter:
         self._file_mtimes[purpose] = self._mtime(purpose)
         self._base_snapshots[purpose] = deepcopy(snapshot)
 
-    def _commit(self, purpose: str, data: dict) -> None:
-        """Persist a purpose's full tree through the store and re-baseline."""
+    def _commit(self, purpose: str, data: dict, uri: Uri | None = None) -> None:
+        """Persist a purpose's full tree through the store and re-baseline,
+        then tell ``on_saved`` which node changed (``uri``, else the
+        purpose root)."""
         self._working[purpose] = data
         self._config.write_root(purpose, data)
         self._file_mtimes[purpose] = self._mtime(purpose)
         self._base_snapshots[purpose] = deepcopy(data)
+        if self._on_saved is None:
+            return
+        try:
+            self._on_saved(uri if uri is not None else Uri.parse(f'{purpose}:/'))
+        except Exception:  # noqa: BLE001 - the save itself succeeded
+            logging.getLogger(__name__).exception(
+                "After saving %s", uri if uri is not None else purpose)
 
     def list_purposes(self) -> list[str]:
         """List all available purposes from disk."""
@@ -132,7 +151,7 @@ class DatabaseAdapter:
 
             children[final_segment] = merged
 
-        self._commit(purpose, cache_data)
+        self._commit(purpose, cache_data, uri)
 
     def save_root(self, purpose: str, data: dict) -> None:
         """Save changes to a purpose root"""

@@ -5,6 +5,7 @@
        default key when the artist has none for them. -->
   <toolshelf name="tumblepipe" label="TumblePipe">
     <memberTool name="tumblepipe_live_playblast"/>
+    <memberTool name="tumblepipe_import_edit"/>
   </toolshelf>
 
   <tool name="tumblepipe_live_playblast" label="Live Playblast" icon="MISC_python">
@@ -15,5 +16,38 @@ th::animate) in the background, the current frame first, for the player's
 Live take. Houdini is free again once the animation is cached.]]></helpText>
     <script scriptType="python"><![CDATA[from tumblepipe.pipe.houdini import live_playblast
 live_playblast.start_selected()]]></script>
+  </tool>
+
+  <tool name="tumblepipe_import_edit" label="Import Edit to Timeline" icon="MISC_python">
+    <helpText><![CDATA[= Import Edit to Timeline =
+
+Asks which of the project's edits to show (the master edit first), then
+sets the playbar to the edit's length, from the project's start frame, with
+one bookmark per clip named after its shot, spanning the clip's cut-in to
+cut-out. For checking a cut's ranges against the shots: nothing is written
+to the project. A re-run replaces the bookmarks it made and keeps your own.]]></helpText>
+    <script scriptType="python"><![CDATA[from tumblepipe.pipe.houdini import edit_timeline
+edit_timeline.import_edit_dialog()]]></script>
+  </tool>
+
+  <!-- Tab menu only (COP networks): not on the shelf, since it needs the
+       network editor it is chosen in. -->
+  <tool name="tumblepipe_slap_comp" label="TumblePipe Slap Comp" icon="COP_block_begin">
+    <helpText><![CDATA[= TumblePipe Slap Comp =
+
+Houdini's Slap Comp Block (Slap Comp Import, Block Begin, Block End) with
+every slap comp AOV named beauty, the colour AOV TumblePipe's render
+settings write, instead of Karma's C. Put your COPs between Block Begin and
+Block End. The Block End's TumblePipe folder publishes the block for the
+shot's farm renders (Publish to Farm), which apply it with husk.]]></helpText>
+    <toolMenuContext name="viewer">
+      <contextNetType>COP</contextNetType>
+    </toolMenuContext>
+    <toolMenuContext name="network">
+      <contextNetType>COP</contextNetType>
+    </toolMenuContext>
+    <toolSubmenu>_TumblePipe/pipeline</toolSubmenu>
+    <script scriptType="python"><![CDATA[from tumblepipe.pipe.houdini.cops import slap_comp_preset
+slap_comp_preset.tool(kwargs)]]></script>
   </tool>
 </shelfDocument>

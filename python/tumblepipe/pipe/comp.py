@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence
 
 from tumblepipe import naming
-from tumblepipe.pipe.aovs import is_cryptomatte_aov, is_ramp_aov
+from tumblepipe.pipe.aovs import is_cryptomatte_aov, is_matte_aov, is_ramp_aov
 
 # The render department a comp writes, and the cross-channel layer of a
 # render department's version (the render chain's slapcomp; the composite
@@ -213,6 +213,47 @@ def light_groups(fields: Iterable[str]) -> list[str]:
         if field.lower().startswith(LIGHT_GROUP_PREFIX)
         and len(field) > len(LIGHT_GROUP_PREFIX)
     ]
+
+
+# The cables an import_render splits its AOVs over (#67, Remy): the light
+# groups a light mix grades, the mattes a grade keys on, the rest, and a
+# cable per cryptomatte th::render_vars renders. A Cryptomatte COP reads
+# every field of the cable on its crypto1 and needs all of one var's rank
+# planes (each holds two ranks: only the first plane gave a mask off by up
+# to 0.44, H22.0.429), and Houdini refuses nested cables: so each var's
+# planes ride a cable of their own, whole, ready for crypto1.
+LPES = 'lpes'
+MATTES = 'mattes'
+AOVS = 'aovs'
+CRYPTOMATERIALS = 'cryptomaterials'
+CRYPTOPRIMITIVES = 'cryptoprimitives'
+CRYPTO_CABLES = (CRYPTOMATERIALS, CRYPTOPRIMITIVES)
+AOV_CABLES = (LPES, MATTES, AOVS) + CRYPTO_CABLES
+
+
+def aov_cable(aov_name: str) -> str:
+    """Which of import_render's cables an AOV it reads rides.
+
+    ``lpes``: a light group, ``beauty_<tag>`` (th::lpe_tags names an LPE
+    tag's AOV so; what :func:`light_groups` finds and a light mix grades).
+    ``cryptomaterials`` / ``cryptoprimitives``: the rank planes of that
+    cryptomatte (``cryptomaterials00``, ``01``, ...). ``mattes``: what
+    th::mattes renders (``objid_*`` mattes, ``ramp_*`` distance ramps),
+    ``holdout_*`` holdouts and any other cryptomatte's planes. ``aovs``:
+    everything else (albedo, normal, depth, uv, position). The beauty rides
+    none: it is on the channel's output.
+    """
+    name = aov_name.lower()
+    if name.startswith(LIGHT_GROUP_PREFIX) and len(name) > len(LIGHT_GROUP_PREFIX):
+        return LPES
+    if is_cryptomatte_aov(name):
+        var = name.rstrip('0123456789')
+        if var in CRYPTO_CABLES:
+            return var
+        return MATTES
+    if is_matte_aov(name) or is_ramp_aov(name):
+        return MATTES
+    return AOVS
 
 
 ###############################################################################
@@ -587,6 +628,12 @@ class DivePlan:
     def aov_of(self, name: str) -> str:
         return next(read.aov for read in self.files if read.name == name)
 
+    def cable_fields(self, cable: str) -> tuple:
+        """The fields of one of the AOV cables (:data:`AOV_CABLES`): those
+        of :attr:`fields` whose AOV rides it (:func:`aov_cable`), in order.
+        The three together are :attr:`fields`, each field in exactly one."""
+        return tuple(f for f in self.fields if aov_cable(self.aov_of(f)) == cable)
+
     @property
     def signatures(self) -> dict[str, str]:
         """Each cable field's COP type (a Cable Unpack ``fieldtype`` token)."""
@@ -637,14 +684,26 @@ def follow_fields(old: Sequence[str], new: Sequence[str],
     lost it (a beauty that moved from ``aovs`` to ``beauties``), None when
     the field is gone. A Cable Unpack's outputs are by position, so without
     this a wire stays on whatever field takes its slot."""
-    targets: list[Optional[tuple[bool, int]]] = []
+    return [
+        None if target is None else (target[0] is not None, target[1])
+        for target in follow_fields_among(old, new, [rehome])
+    ]
+
+
+def follow_fields_among(old: Sequence[str], new: Sequence[str],
+                        rehomes: Sequence[Sequence[str]] = ()
+                        ) -> list[Optional[tuple[Optional[int], int]]]:
+    """:func:`follow_fields` over several other unpacks: ``(None, i)`` the
+    same field at its new place on this unpack, ``(k, i)`` output ``i`` of
+    ``rehomes[k]``, the first that has the field (an AOV that moved from
+    ``aovs`` to ``lpes`` or ``mattes``, #67), None when no unpack has it."""
+    targets: list[Optional[tuple[Optional[int], int]]] = []
     for field in old:
         if field in new:
-            targets.append((False, list(new).index(field)))
-        elif field in rehome:
-            targets.append((True, list(rehome).index(field)))
-        else:
-            targets.append(None)
+            targets.append((None, list(new).index(field)))
+            continue
+        home = next((k for k, fields in enumerate(rehomes) if field in fields), None)
+        targets.append(None if home is None else (home, list(rehomes[home]).index(field)))
     return targets
 
 
@@ -1060,7 +1119,7 @@ def template_layout(channels: list[str], suffix: str = '', x: float = 0.0,
     height = NOTE_BAND + node_height + (rows - 1) * ROW
     note_y = y - NOTE_LIFT - NOTE_SIZE[1]
     note_specs = [
-        NoteSpec("Use mattes: Cable Unpack the import's aovs output",
+        NoteSpec("Use mattes: Cable Unpack the import's mattes output",
                  (column_x(IMPORT_COLUMN), note_y), NOTE_SIZE),
         NoteSpec('Grade a channel here, after its light mix',
                  (column_x(GRADE_COLUMN), note_y), NOTE_SIZE),
@@ -1092,6 +1151,132 @@ def multi_layout(members: Sequence[tuple[str, Sequence[str]]],
         layouts.append(layout)
         y -= layout.height + MEMBER_GAP
     return layouts
+
+
+###############################################################################
+# A comp of the render it is submitted with (#80)
+###############################################################################
+# A th::export_comp outside the composite template (a slap comp in the
+# render scene: Slap Comp Import -> Block Begin -> ... -> export_comp) has no
+# th::import_render. It comps the render of the same Farm Submit: the comp
+# job waits for that render and its Slap Comp Import nodes read its frames
+# (Soren, 2026-11-12: no fallback to the last published render). It
+# publishes as a composite version, like any comp.
+
+# Karma's name for the beauty, which Houdini's own slap comp setup reads;
+# TumblePipe renders it as ``beauty`` (#81).
+SLAP_BEAUTY_ALIASES = ('C',)
+
+
+@dataclass(frozen=True)
+class SceneComp:
+    """What a workfile's comp of one shot without a th::import_render
+    submits: its export_comps (``{node_path, layer}``) and the AOVs its
+    Slap Comp Import nodes read, as named on them."""
+    exports: tuple
+    aovs: tuple = ()
+
+    def settings(self, path: str = '') -> dict:
+        """The ``comp_scene`` entry of a Farm Submit row: ``path`` is the
+        workfile copy submitted with it (empty until it is saved)."""
+        entry = dict(
+            exports = [dict(export) for export in self.exports],
+            aovs = list(self.aovs),
+        )
+        if path:
+            entry['path'] = path
+        return entry
+
+
+def slap_aov(aov_name: str) -> str:
+    """The rendered AOV a Slap Comp Import AOV reads: Karma's ``C`` is
+    TumblePipe's ``beauty``; any other name as it is."""
+    name = aov_name.strip()
+    return BEAUTY if name in SLAP_BEAUTY_ALIASES else name
+
+
+def slap_reads(aov_names: Iterable[str], channels: Sequence[str]) -> dict[str, list[str]]:
+    """``{AOV as named: [channels, back to front]}``: which of the render's
+    channels each Slap Comp Import AOV reads.
+
+    The viewport a slap comp was built on renders the whole shot; the farm
+    renders it channel by channel (``channels``, in the render's order).
+    One channel: every AOV is read from it. Several: the beauty is the
+    channels laid over each other, back to front (as the render chain's
+    slapcomp stacks them); any other AOV has no alpha to lay it by and is
+    refused. Raises :class:`CompError`, saying what to change.
+    """
+    channels = list(channels)
+    if not channels:
+        raise CompError('the comp reads the render of its submit, and it renders no channel')
+    reads: dict[str, list[str]] = dict()
+    for aov_name in aov_names:
+        aov = slap_aov(aov_name)
+        if not aov:
+            raise CompError('a Slap Comp Import names no AOV: name the AOV it reads')
+        if len(channels) > 1 and aov != BEAUTY:
+            raise CompError(
+                f'Slap Comp Import AOV "{aov_name}" is read from a render of '
+                f'{len(channels)} channels ({", ".join(channels)}): only the '
+                f'{BEAUTY} is laid over across channels. Render one channel '
+                'for this comp, or comp the renders with th::import_render'
+            )
+        reads[aov_name] = list(channels)
+    return reads
+
+
+def scene_comp_problems(render: bool, full_range: bool, channels: Sequence[str],
+                        aovs: Iterable[str] = ()) -> list[str]:
+    """What stops a Farm Submit row comping a workfile's comp without a
+    th::import_render (:class:`SceneComp`): it needs the shot's full render
+    in the same submit, of channels its Slap Comp Imports can read
+    (:func:`slap_reads`). Empty when nothing does."""
+    if not render:
+        return [
+            'the comp has no th::import_render, so it reads the render of '
+            'the same submit, and none is ticked: tick the shot\'s Render '
+            'beside its Comp'
+        ]
+    if not full_range:
+        return [
+            'the comp has no th::import_render and reads the render of the '
+            'same submit, which renders only its check frames: choose a '
+            'render mode with the full range'
+        ]
+    try:
+        slap_reads(aovs, channels)
+    except CompError as error:
+        return [str(error)]
+    return []
+
+
+def no_render_message(shot_uri) -> str:
+    """export_comp's Submit of a shot no th::import_render reads: it has
+    nothing to comp on its own (#80)."""
+    return (
+        f'no th::import_render reads {shot_uri}, so this comp reads the '
+        'render of the same Farm Submit, and its own Submit renders '
+        'nothing. Open Farm Submit from this workfile and tick the shot\'s '
+        'Render and Comp: the comp waits for that render and comps its frames.'
+    )
+
+
+#: export_comp's note when no th::import_render reads its shot.
+SCENE_COMP_NOTE = (
+    'no th::import_render: this comp reads the render of its Farm Submit '
+    '(tick the shot\'s Render and Comp)'
+)
+
+
+def render_reads(renders: Iterable[Mapping]) -> dict[str, dict]:
+    """A comp of its submit's render, recorded as :func:`provenance` records
+    a comp's reads: ``{channel: {department, version}}``. ``renders`` is
+    the composite config's ``renders`` (``[{channel, department,
+    version}]``, in the render's channel order)."""
+    return {
+        render['channel']: dict(department = render['department'], version = render['version'])
+        for render in renders
+    }
 
 
 ###############################################################################

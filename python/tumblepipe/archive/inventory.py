@@ -30,6 +30,7 @@ from tumblepipe import naming
 from tumblepipe.archive.longpath import long_path
 from tumblepipe.archive.roots import ProjectRoots, Root, WORKFILE_PURPOSES
 from tumblepipe.pipe import cache_context
+from tumblepipe.util import shared_journal
 from tumblepipe.util.io import load_json_if_exists
 
 
@@ -335,6 +336,10 @@ def scan(roots: ProjectRoots, purposes: tuple[str, ...] | None = None) -> Invent
         if not root.path.is_dir():
             continue
         skip = {path for path in all_paths if path != root.path}
+        if root.purpose == 'config':
+            # The shared journal (#78): short-lived hints about review
+            # media, not config; restored, they would only be pruned.
+            skip.add(shared_journal.shared_dir(root.path))
         for parts, size in _walk(root.path, skip, inventory.errors):
             inventory.items.append(classifier.classify(root, parts, size))
     return inventory

@@ -13,6 +13,7 @@ from tumblepipe.farm.env import job_data_dir
 from tumblepipe.farm.specs import publish as publish_spec
 from tumblepipe.farm.worker import error, headline
 from tumblepipe.util.uri import Uri
+from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.groups import get_group
 from tumblepipe.pipe.paths import (
     get_workfile_context,
@@ -101,12 +102,14 @@ def _update():
         scene_imports.execute(native, spec)
         print(f'Updated {native.path()}')
 
-def _publish_entity(entity_uri: Uri, department_name: str):
+def _publish_entity(entity_uri: Uri, department_name: str, render_range=None):
     """Publish one shot or asset's department from the loaded workfile: its
     shared layers first, then its layer.
 
     Every node runs here, headless (``force_local``): without it a node's
     ``execute`` opens the export window, which hython has no UI for.
+    ``render_range`` (a ``BlockRange``) is the publish window's range for
+    this submit (#76), or None for each node's own Frame Range.
     """
 
     def _is_for_entity(node) -> bool:
@@ -119,7 +122,7 @@ def _publish_entity(entity_uri: Uri, department_name: str):
         layer_split.LayerSplit, ns.list_by_node_type('layer_split', 'Lop')
     ))
     for split_node in split_nodes:
-        split_node.execute(force_local=True)
+        split_node.execute(force_local=True, render_range=render_range)
         print(f'Exported shared layer: {split_node.path()}')
 
     export_nodes = list(filter(_is_for_entity, map(
@@ -132,10 +135,10 @@ def _publish_entity(entity_uri: Uri, department_name: str):
         raise _no_export_node(entity_uri, department_name, _get_workfile_group())
 
     export_node = export_nodes[0]
-    export_node.execute(force_local=True)
+    export_node.execute(force_local=True, render_range=render_range)
     print(f'Published {export_node.path()}')
 
-def _publish(entity_uri: Uri, department_name: str):
+def _publish(entity_uri: Uri, department_name: str, render_range=None):
     """Publish the department of a shot, an asset, or each member of a
     Multi. Failures raise so main()'s per-department handler records them
     and the task exits non-zero."""
@@ -147,7 +150,7 @@ def _publish(entity_uri: Uri, department_name: str):
         return uri
 
     if entity_uri.purpose != 'groups':
-        _publish_entity(_require_entity(entity_uri), department_name)
+        _publish_entity(_require_entity(entity_uri), department_name, render_range)
         return
 
     group = get_group(entity_uri)
@@ -158,7 +161,7 @@ def _publish(entity_uri: Uri, department_name: str):
     skipped = []
     for member_uri in group.members:
         try:
-            _publish_entity(_require_entity(member_uri), department_name)
+            _publish_entity(_require_entity(member_uri), department_name, render_range)
         except NothingToPublish as e:
             print(f'WARNING: {e}')
             skipped.append(member_uri)
@@ -204,6 +207,12 @@ def main(config) -> int:
     # Get downstream departments from config
     downstream_departments = publish_spec.downstream_departments(config)
 
+    # The publish window's First/Last for this submit (#76): every export
+    # of the job, downstream ones too, writes these frames. None: each node
+    # reads its own Frame Range.
+    span = publish_spec.frame_range(config)
+    render_range = BlockRange(*span) if span is not None else None
+
     # Build list of all entity URIs + department names to process (main + downstream)
     downstream_entity_pairs = [(entity_uri, department_name)]
 
@@ -239,7 +248,7 @@ def main(config) -> int:
             # had loaded - which could land on top of an artist's newer save,
             # and a submission could bundle one of them half-written.
             headline('Publishing')
-            _publish(curr_entity_uri, curr_dept_name)
+            _publish(curr_entity_uri, curr_dept_name, render_range)
 
         except NothingToPublish as e:
             print(f'WARNING: {e} — skipping department {curr_dept_name}')

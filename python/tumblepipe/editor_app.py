@@ -4,7 +4,7 @@
 
 Run by ``scripts/farm_launcher.py --app edits``, which replays the
 project's package files first, so ``$TH_PROJECT_PATH`` and ``$OCIO`` are a
-Houdini session's. It starts ``th_player`` (``pipe.review_playlist.find_player``)
+Houdini session's. It starts ``cinedex`` (``pipe.review_playlist.find_player``)
 on the project: the edit named, else the project's master edit (the whole
 film's cut, ``pipe.edits.master_edit``), else an untitled edit of every
 shot; and waits for it, so the Desktop shows it running until the window

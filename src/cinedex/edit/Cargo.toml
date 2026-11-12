@@ -1,0 +1,18 @@
+[package]
+name = "th_edit"
+description = "An edit, the sequence editor's document: stacked tracks of clips from shots, library media and slugs, the operations on it and their laws, freezing for publish, and OTIO"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+th_playlist.workspace = true
+serde.workspace = true
+# float_roundtrip: a clip's opacity and an audio clip's level read back as
+# the very number written (as th_pipe has it).
+serde_json = { workspace = true, features = ["float_roundtrip"] }
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

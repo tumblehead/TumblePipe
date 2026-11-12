@@ -22,7 +22,7 @@ from tumblepipe.config.scene import (
     get_inherited_scene_ref,
 )
 from tumblepipe.config.timeline import get_frame_range, require_fps
-from tumblepipe.config.renderer import get_entity_render_settings
+from tumblepipe.config.renderer import get_entity_render_settings, get_pinned_render_settings
 from tumblepipe.pipe.usd import render_overrides
 from tumblepipe.pipe.usd.render_overrides import RenderOverride
 from tumblepipe.pipe.context import root_input
@@ -122,7 +122,16 @@ def planned_render_override(shot_uri: Uri) -> RenderOverride | None:
     defaults_path = _root_defaults_path()
     if not defaults_path.exists():
         return None
-    return render_overrides.plan_for_defaults(render, defaults_path)
+    # The Karma settings (samples, ray limits, ...) come only from what an
+    # entity level pins: one only the schema holds keeps the defaults
+    # layer's value, which the project always rendered with.
+    pinned = get_pinned_render_settings(shot_uri, render_overrides.KARMA_SETTINGS)
+    return render_overrides.plan_for_defaults(render, defaults_path, pinned)
+
+
+#: The root layer version's layer of the shot's render settings override,
+#: sublayered first by the root layer (``generate_root_version``).
+RENDER_SETTINGS_LAYER = 'render_settings.usda'
 
 
 def shot_render_override(shot_uri: Uri) -> RenderOverride | None:
@@ -137,13 +146,19 @@ def shot_render_override(shot_uri: Uri) -> RenderOverride | None:
 def root_layer_is_stale(shot_uri: Uri) -> bool:
     """True when the shot has no root layer, or its newest one names
     another Root than the shot (or its sequence) now points at, or carries
-    another render override than its config now asks for."""
-    if latest_root_version_path(shot_uri) is None:
+    another render override than its config now asks for, or carries its
+    override inline (written before the override had a layer of its own,
+    where the farm's collapse dropped it)."""
+    version_path = latest_root_version_path(shot_uri)
+    if version_path is None:
         return True
     scene_ref, _ = get_inherited_scene_ref(shot_uri)
     if shot_root(shot_uri) != scene_ref:
         return True
-    return shot_render_override(shot_uri) != planned_render_override(shot_uri)
+    planned = planned_render_override(shot_uri)
+    if shot_render_override(shot_uri) != planned:
+        return True
+    return planned is not None and not (version_path / RENDER_SETTINGS_LAYER).is_file()
 
 
 def export_scene_version(scene_uri: Uri) -> Path:
@@ -255,8 +270,21 @@ def generate_root_version(shot_uri: Uri) -> Path:
     # The root layer's timing is the shot's: its own fps, else the project's
     fps = require_fps(shot_uri)
 
+    # Get next version path for root (shot-level, not channel-specific)
+    version_path = get_next_version_path(get_root_export_path(shot_uri))
+    version_name = version_path.name
+
     # Collect sublayer references
     layer_refs = []
+
+    # The shot's configured render settings, when the project opted in
+    # (#52): an over of the defaults' settings prim, in a layer of its own
+    # sublayered first (strongest of the root layer's). Not inline in the
+    # root layer: the farm's collapse keeps only leaf layers, so the
+    # opinions of a layer that has sublayers never reached a farm render.
+    override = planned_render_override(shot_uri)
+    if override is not None:
+        layer_refs.append(version_path / RENDER_SETTINGS_LAYER)
 
     # Scene layer (if assigned) - use entity URI for dynamic resolution
     if scene_ref is not None:
@@ -270,10 +298,6 @@ def generate_root_version(shot_uri: Uri) -> Path:
     root_defaults_path = api.storage.resolve(root_defaults_uri)
     if root_defaults_path.exists():
         layer_refs.append(root_defaults_path)
-
-    # Get next version path for root (shot-level, not channel-specific)
-    version_path = get_next_version_path(get_root_export_path(shot_uri))
-    version_name = version_path.name
 
     # Generate output path (no channel in filename for shot-level root)
     layer_file_name = get_root_layer_file_name(shot_uri, version_name)
@@ -291,14 +315,13 @@ def generate_root_version(shot_uri: Uri) -> Path:
         end_frame=full_range.last_frame
     )
 
-    # The shot's configured camera and resolution, when the project opted
-    # in (#52): an over of the defaults' settings prim, stronger than them.
-    override = planned_render_override(shot_uri)
-    if override is not None:
-        usda_content += '\n\n' + render_overrides.override_usda(override) + '\n'
-
     # Write files
     version_path.mkdir(parents=True, exist_ok=True)
+    if override is not None:
+        store_text(
+            version_path / RENDER_SETTINGS_LAYER,
+            '#usda 1.0\n\n' + render_overrides.override_usda(override) + '\n',
+        )
     store_text(output_path, usda_content)
 
     # Write context.json

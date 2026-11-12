@@ -83,7 +83,7 @@ Source: [`otls/lop_th.import_assets.2.0`](../../otls/lop_th.import_assets.2.0/th
 
 | Label | Default | What it does |
 |---|---|---|
-| *(Entity button)* + label | *(empty)* | The row's asset. There is no `from_context` row here — every row is a concrete asset. The picker hides assets already used on other rows |
+| *(Entity button)* + label | *(empty)* | The row's asset. There is no `from_context` row here — every row is a concrete asset. The picker lists every asset; an asset another row already imports is not refused there, but the row then errors ("already imported by another row"): remove one row or raise its Instances |
 | Channel | `default` | Per row |
 | Version | `latest` | Per row |
 | Variant | *As published* | A USD variant for the row's asset prim — every variantSet/variant the imported asset carries, as `set: variant` when it has more than one set. Replaces a Set Variant LOP after the node. Applied to every copy, and published |
@@ -160,7 +160,12 @@ After an import, a **Layer Stack** folder appears listing every sublayer the
 node loaded, weakest first. Each row is a checkbox named after the layer
 (`Root`, a shot department such as `Animation`, or `Asset: <name>`) — untick
 it to drop that layer from the stage in this session — followed by the
-version that actually composed. Asset rows also carry a **`...`** button
+version that actually composed. Every row has an **Inspect** button that
+shows that layer's `.usda` in the file browser, selected where the system
+allows (Explorer and Finder select the file; on Linux the file's folder
+opens). It shows the file the row composes: the latest one while Version is
+`latest`, the pinned one otherwise. A row whose file is not on disk shows a
+message instead. Asset rows also carry a **`...`** button
 that opens a read-only *Layers — <asset>* breakdown: the asset's department
 layers with the version each one contributed and a status (*newer export not
 composing*, *exported after this build*, *never exported*, *not a render
@@ -688,10 +693,13 @@ Source: [`otls/lop_th.animate.2.0`](../../otls/lop_th.animate.2.0/th_8_8Lop_1ani
 from the current frame to the end and then from the start, into a folder on
 this machine (`%LOCALAPPDATA%/tumblepipe/live/` on Windows,
 `~/.local/state/tumblepipe/live/` on Linux,
-`~/Library/Application Support/tumblepipe/live/` on macOS). The player
-will show those frames as they land (not yet: it is being built). There is
+`~/Library/Application Support/tumblepipe/live/` on macOS). The editor
+plays them in the shot's clip as they land (see
+[Live playblasts](../asset-browser/play-shots.md#live-playblasts)). There is
 no movie, no version and no daily: use **Playblast** on the `th::playblast`
-for that.
+for that. Each **Live** also shows the shot in the editor, on the master
+edit, looping the shots around it (see
+[Live view](../asset-browser/play-shots.md#live-view)).
 
 Houdini is busy only while the animation is written to the cache (every
 frame of the shot is evaluated, as for any playblast; Esc cancels it). The

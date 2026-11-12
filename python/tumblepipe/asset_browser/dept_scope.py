@@ -22,6 +22,12 @@ if TYPE_CHECKING:
     from .resolver import AssetResolver
 
 
+def off_label(label: str, off: bool) -> str:
+    """A department's label as the browser shows it: ``"Fx (off)"`` when
+    the department is turned off on the entity (#64)."""
+    return f"{label} (off)" if off and label else label
+
+
 class DepartmentScope:
     """Department lists for the active project, and per entity."""
 
@@ -89,6 +95,17 @@ class DepartmentScope:
         # A department dropped from the pool can still have work on disk.
         ordered += [name for name in worked if name not in pool]
         return ordered, set(assigned)
+
+    def turned_off(self, asset_id: str) -> set[str]:
+        """The departments turned off on one shot or asset (#64): still
+        listed, greyed with "(off)", since their work stays on disk."""
+        proj = self._resolver.project_for(asset_id)
+        entity_uri = self._resolver.uri_for(asset_id)
+        if proj is None or entity_uri is None:
+            return set()
+        self._activator.activate(proj)
+        from tumblepipe.config.department import get_disabled_departments
+        return set(get_disabled_departments(entity_uri))
 
     def shorts(self, context: str) -> dict[str, str]:
         """``{department: short label}``: the department's own ``short``,

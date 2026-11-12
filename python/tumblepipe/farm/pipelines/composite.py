@@ -5,7 +5,8 @@ One submit is one composite version of one shot. Every export_comp of the
 shot writes into it: Layer ``comp`` (the merged comp) as the version's
 cross-channel layer, ``composite/slapcomp/v####``, and a channel layer into
 that channel's folder. With preview frames, a *partial* composite does the
-first, middle and last frames first and posts them; the *full* composite
+first, middle and last frames (or the Preview Frames List,
+``settings.preview_frame_list``) first and posts them; the *full* composite
 does the whole range, then each per-channel layer gets its review mp4, and
 the merged comp is the department's mp4, daily and notify. There is no
 oiiotool slapcomp: the merged comp is the cross-channel layer.
@@ -27,6 +28,15 @@ first or last frame; the block also carries the step and whether to comp
 the preview frames first, as an export_comp's Submit does
 (``specs.composite.valid_recomp``).
 
+A **comp of the submit's render** (#80, :func:`scene_config`) is a re-comp
+whose block names a ``scene``: a workfile comp with no ``th::import_render``
+(a slap comp in the render scene), saved with the Farm Submit. It comps that
+workfile instead of the newest composite workfile, its exports by node
+path, and ``renders`` names the frames the render beside it writes (each
+channel's denoise, else render, version): the worker points the workfile's
+Slap Comp Import nodes at them (``pipe.comp.slap_reads``) and records them
+as what it read. It publishes as a composite version like any comp.
+
 config = {
     'entity': {'uri': 'entity:/shots/sequence/shot', 'department': 'string'},
     'settings': {
@@ -39,7 +49,11 @@ config = {
         'last_frame': 'int',
         'step_size': 'int',
         'batch_size': 'int',
-        'copy_to_edit': 'bool'
+        'copy_to_edit': 'bool',
+        'preview_frame_list': ['int']   # optional: the partial's frames, in
+                                        # order, inside the range and on the
+                                        # step (farm.specs.preview_frames); absent:
+                                        # first, middle and last
     },
     'exports': [{'node_path': '/stage/comp/export_comp', 'layer': 'comp'}],
     # A node path '' (a re-comp): the shot's export_comp on that layer.
@@ -48,6 +62,9 @@ config = {
             'channel': 'chars', 'department': 'denoise', 'version': 'v0004'
         }
     },
+    'renders': [      # optional (#80): the render of the same submit
+        {'channel': 'chars', 'department': 'denoise', 'version': 'v0004'}
+    ],
     'tasks': {
         'full_composite': {'channel_name': 'string'},
         'partial_composite': {'channel_name': 'string'}     # preview frames, optional
@@ -71,7 +88,11 @@ from tumblepipe.farm.checks import (
 )
 from tumblepipe.farm.jobs import composite as composite_job
 from tumblepipe.farm.specs.composite import valid_recomp  # noqa: F401  (the render config's block)
+from tumblepipe.farm.specs.composite import valid_renders
+from tumblepipe.farm.specs.render_pipeline import valid_preview_frame_list
 from tumblepipe.farm.pipelines import post_render
+from tumblepipe.farm.specs.preview_frames import CONFIG_KEY as PREVIEW_FRAMES_KEY
+from tumblepipe.farm.specs.preview_frames import valid_frame_list
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.pipe import comp
 from tumblepipe.pipe.paths import get_frame_path
@@ -93,6 +114,7 @@ def _valid_settings(settings) -> bool:
     if not check_str(settings, 'input_path'): return False
     if not check_int(settings, 'batch_size'): return False
     if not check_bool(settings, 'copy_to_edit'): return False
+    if not valid_preview_frame_list(settings, settings['step_size']): return False
     return True
 
 
@@ -137,6 +159,9 @@ def is_valid_config(config) -> bool:
     if not _valid_settings(config.get('settings')): return False
     if not valid_exports(config.get('exports')): return False
     if not valid_imports(config.get('imports')): return False
+    if 'renders' in config:
+        if not valid_renders(config['renders']): return False
+        if config['imports']: return False
     if not _valid_tasks(config.get('tasks')): return False
     return True
 
@@ -152,7 +177,8 @@ def _shot(config: dict, staging_path: Path) -> post_render.Shot:
         first_frame = settings['first_frame'],
         last_frame = settings['last_frame'],
         step_size = settings['step_size'],
-        staging_path = staging_path
+        staging_path = staging_path,
+        preview_frames = tuple(settings.get(PREVIEW_FRAMES_KEY) or ()) or None,
     )
 
 
@@ -174,7 +200,7 @@ def _receipt_folder(layers: list[str]) -> str:
 
 
 def _composite_job(config, shot, paths, version_name, partial) -> Job:
-    """The composite of every export (partial: three frames) into
+    """The composite of every export (partial: the preview frames) into
     ``version_name``."""
     settings = config['settings']
     exports = config['exports']
@@ -205,13 +231,20 @@ def _composite_job(config, shot, paths, version_name, partial) -> Job:
             for export in exports
         ],
         imports = config['imports'],
+        **({} if 'renders' not in config else dict(renders = config['renders'])),
     ), paths, shot.staging_path)
 
 
 def _write_contexts(config, shot, version_name):
     """Each written layer's context.json, recording what the comp read
-    (a re-comp's worker records it once it has resolved)."""
-    reads = comp.provenance(config['imports']) if config['imports'] else None
+    (a re-comp's worker records it once it has resolved; a comp of its
+    submit's render reads that render)."""
+    if config['imports']:
+        reads = comp.provenance(config['imports'])
+    elif config.get('renders'):
+        reads = comp.render_reads(config['renders'])
+    else:
+        reads = None
     for export in config['exports']:
         folder = comp.output_folder(export['layer'])
         post_render.write_framestack_context(
@@ -352,6 +385,25 @@ def recomp_range(
     return first, last
 
 
+def recomp_preview_frames(block: dict, first_frame: int, last_frame: int) -> list[int] | None:
+    """The block's Preview Frames List (``preview_frame_list``, checked by the
+    submitter against the comp's frames) if it still fits the
+    ``first_frame``..``last_frame`` the comp makes on the block's step, else
+    None: the first, middle and last frame. The submitter checked it on the
+    same rule (``batch_submit``), so a list that no longer fits is a stale
+    block, logged, never a reason to refuse the comp."""
+    frames = block.get(PREVIEW_FRAMES_KEY)
+    if not frames:
+        return None
+    if not valid_frame_list(frames, first_frame, last_frame, block.get('step_size', 1)):
+        logging.warning(
+            f'The comp preview frames {frames} do not fit {first_frame}-'
+            f'{last_frame}; previewing the first, middle and last frame'
+        )
+        return None
+    return list(frames)
+
+
 def recomp_config(
     shot_uri: Uri,
     block: dict,
@@ -374,14 +426,80 @@ def recomp_config(
     (:func:`recomp_range`), as an export_comp's Frame Range, Step and
     Preview Frames do for its own Submit."""
     from tumblepipe.pipe.paths import latest_complete_hip_file_path
-    import shutil
-    first_frame, last_frame = recomp_range(block, first_frame, last_frame)
     workfile = latest_complete_hip_file_path(shot_uri, COMPOSITE_DEPARTMENT)
     if workfile is None or not workfile.exists():
         raise RecompError(
             f'{shot_uri} has no composite workfile to comp; make one from the '
             'composite template first'
         )
+    return _chained_config(
+        shot_uri, block, workfile, [dict(node_path = '', layer = comp.MERGED_LAYER)],
+        user_name = user_name, purpose = purpose,
+        first_frame = first_frame, last_frame = last_frame,
+        temp_path = temp_path, paths = paths,
+    )
+
+
+def scene_config(
+    shot_uri: Uri,
+    block: dict,
+    renders: list[dict],
+    *,
+    user_name: str,
+    purpose: str,
+    first_frame: int,
+    last_frame: int,
+    temp_path: Path,
+    paths: dict[Path, Path],
+    ) -> dict:
+    """The composite config of a comp of the render it was submitted with
+    (#80): the block's ``scene`` workfile (saved with the Farm Submit) and
+    its exports, reading ``renders`` (``[{channel, department, version}]``,
+    the frames the render writes, in its channel order). Scheduled as
+    :func:`recomp_config` is. Raises :class:`RecompError` when the
+    workfile is gone, or the block's frames make no range."""
+    scene = block['scene']
+    workfile = Path(scene['path'])
+    if not workfile.exists():
+        raise RecompError(
+            f'the comp workfile saved with the submit of {shot_uri} is gone: '
+            f'{path_str(workfile)}'
+        )
+    config = _chained_config(
+        shot_uri, block, workfile,
+        [dict(node_path = export['node_path'], layer = export['layer']) for export in scene['exports']],
+        user_name = user_name, purpose = purpose,
+        first_frame = first_frame, last_frame = last_frame,
+        temp_path = temp_path, paths = paths,
+    )
+    config['renders'] = [
+        dict(channel = r['channel'], department = r['department'], version = r['version'])
+        for r in renders
+    ]
+    return config
+
+
+def chained_config(
+    shot_uri: Uri,
+    block: dict,
+    renders: list[dict],
+    **kwargs,
+    ) -> dict:
+    """The comp a render carries (its config's ``composite`` block): a comp
+    of this render (:func:`scene_config`) when the block names a ``scene``,
+    else a re-comp of the shot's newest composite workfile
+    (:func:`recomp_config`), which reads the renders on its own."""
+    if block.get('scene') is not None:
+        return scene_config(shot_uri, block, renders, **kwargs)
+    return recomp_config(shot_uri, block, **kwargs)
+
+
+def _chained_config(shot_uri, block, workfile: Path, exports: list[dict], *,
+                    user_name, purpose, first_frame, last_frame, temp_path, paths) -> dict:
+    """A re-comp's config of ``workfile`` (bundled with the job as it is
+    now) and ``exports``, scheduled as ``block`` says."""
+    import shutil
+    first_frame, last_frame = recomp_range(block, first_frame, last_frame)
     shot_name = '_'.join(shot_uri.segments[1:])
     input_path = Path(RECOMP_INPUT) / f'{shot_name}{workfile.suffix}'
     staged = temp_path / input_path
@@ -389,8 +507,11 @@ def recomp_config(
     shutil.copyfile(workfile, staged)
     paths[staged] = input_path
     tasks = dict(full_composite = dict(channel_name = block['channel_name']))
+    step_size = block.get('step_size', 1)
+    preview_frame_list = None
     if block.get('preview_frames', False):
         tasks['partial_composite'] = dict(channel_name = RECOMP_PREVIEW_CHANNEL)
+        preview_frame_list = recomp_preview_frames(block, first_frame, last_frame)
     return dict(
         entity = dict(uri = str(shot_uri), department = COMPOSITE_DEPARTMENT),
         settings = dict(
@@ -401,11 +522,13 @@ def recomp_config(
             input_path = path_str(input_path),
             first_frame = first_frame,
             last_frame = last_frame,
-            step_size = block.get('step_size', 1),
+            step_size = step_size,
             batch_size = block['batch_size'],
             copy_to_edit = block['copy_to_edit'],
+            **({} if preview_frame_list is None
+               else {PREVIEW_FRAMES_KEY: preview_frame_list}),
         ),
-        exports = [dict(node_path = '', layer = comp.MERGED_LAYER)],
+        exports = exports,
         imports = dict(),
         tasks = tasks,
     )

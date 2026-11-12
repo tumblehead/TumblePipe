@@ -35,6 +35,15 @@ than the one it superseded:
      validation prompt's "Apply this choice to remaining validations"
      starts ticked
 
+...and that a run validates every shot before it exports any (#56):
+
+  9. every ticked validation runs up front, and one dialog lists the issues
+     grouped by shot then department, each shot ticked, with Continue
+     Anyway and Cancel Export (the default); an unticked shot exports
+     nothing and its rows untick, the kept shots' issues are accepted for
+     the run, Cancel Export starts nothing, and a clean pass shows no
+     dialog. PREFLIGHT_SCREENSHOT=<png> grabs the dialog to an image.
+
   7. Execute is a fully styled (bordered, filled) button, so Houdini's style
      paints it rather than dropping it to bare text; a clean run collapses
      the footer to one green Done button that accepts the dialog, while a
@@ -46,6 +55,7 @@ Run:
 """
 
 from pathlib import Path
+import os
 import sys
 import time
 
@@ -111,6 +121,134 @@ def run_dialog(tasks: list[ProcessTask]) -> ProcessDialog:
     if not done:
         raise RuntimeError('executor did not complete within 10s')
     return dialog
+
+
+def check_up_front_validation():
+    """Case 9 (#56): every ticked validation runs before anything exports,
+    and one dialog, grouped by shot and department, asks about them all."""
+    import uuid
+    from tumblepipe.pipe.houdini.validators.base import ValidationIssue, ValidationSeverity
+    from tumblepipe.pipe.houdini.ui import validation_dialog, validation_preflight
+
+    shots = [Uri.parse('entity:/shots/000/sh010'), Uri.parse('entity:/shots/000/sh020'),
+             Uri.parse('entity:/shots/000/sh030')]
+    error = ValidationIssue('No render camera', '/cameras', ValidationSeverity.ERROR)
+    warning = ValidationIssue('Mesh missing rest', '/geo/hero', ValidationSeverity.WARNING)
+    other = ValidationIssue('Unbound material', '/geo/rock', ValidationSeverity.ERROR)
+    issues_of = {str(shots[0]): [error, warning], str(shots[1]): [other], str(shots[2]): []}
+
+    def build(log):
+        tasks = []
+        for shot in shots:
+            for department in ('layout', 'lighting'):
+                key = str(shot)
+                validate = ProcessTask(
+                    id=str(uuid.uuid4()), uri=shot, department=department,
+                    task_type='validate', description=f'Validate ({department})',
+                    execute_local=lambda s=key, d=department: log.append(('validate', s, d)),
+                    collect_issues=(lambda s=key, d=department:
+                                    (log.append(('collect', s, d)) or
+                                     (issues_of[s] if d == 'lighting' else []))),
+                )
+                export = ProcessTask(
+                    id=str(uuid.uuid4()), uri=shot, department=department,
+                    task_type='export', description=f'Export ({department})',
+                    execute_local=lambda s=key, d=department: log.append(('export', s, d)),
+                    depends_on=[validate.id],
+                )
+                tasks += [validate, export]
+        return tasks
+
+    grouped = validation_preflight.group_findings(
+        validation_preflight.collect_findings(build([]), True))
+    dialog = validation_dialog.PreflightValidationDialog(grouped)
+    tree = dialog._tree
+    check('up front: one row per shot with issues, the clean shot left out',
+          tree.topLevelItemCount() == 2, str(tree.topLevelItemCount()))
+    first = tree.topLevelItem(0)
+    check('up front: a shot row names the shot and its issue count, ticked',
+          first.text(0).startswith('000/sh010') and '2 issues' in first.text(0)
+          and first.checkState(0) == validation_dialog.Qt.Checked, first.text(0))
+    check('up front: under the shot, its department, then its issues',
+          first.childCount() == 1 and first.child(0).text(0) == 'lighting'
+          and first.child(0).childCount() == 2
+          and 'No render camera' in first.child(0).child(0).text(0)
+          and first.child(0).child(1).text(0).startswith('[WARNING]'),
+          first.child(0).text(0))
+    check('up front: the header counts issues and shots',
+          dialog._header.text().startswith('Validation found 3 issues in 2 shots'),
+          dialog._header.text())
+    check('up front: Continue Anyway and Cancel Export, Cancel the default',
+          dialog._continue_btn.text() == 'Continue Anyway'
+          and dialog._cancel_btn.text() == 'Cancel Export'
+          and dialog._cancel_btn.isDefault())
+    dialog.set_entity_kept(str(shots[1]), False)
+    check('up front: an unticked shot leaves the kept list',
+          dialog.kept_entities() == [str(shots[0])], str(dialog.kept_entities()))
+    shot_path = os.environ.get('PREFLIGHT_SCREENSHOT')
+    if shot_path:
+        dialog.resize(760, 480)
+        dialog.grab().save(shot_path)
+
+    def run(answer):
+        """A real ProcessDialog run with the up-front dialog answered by
+        ``answer(dialog)``; returns (process dialog, log, shown)."""
+        log, shown = [], []
+        saved = validation_dialog.PreflightValidationDialog.exec
+
+        def fake_exec(self):
+            shown.append(len([e for e in log if e[0] == 'export']))
+            answer(self)
+            return 0
+        validation_dialog.PreflightValidationDialog.exec = fake_exec
+        try:
+            process = ProcessDialog('Publish', build(log))
+            done = []
+            process._executor.all_completed.connect(lambda: done.append(True))
+            process._on_execute_clicked()
+            deadline = time.monotonic() + 10.0
+            while process._is_executing and not done and time.monotonic() < deadline:
+                QtWidgets.QApplication.processEvents()
+                time.sleep(0.01)
+        finally:
+            validation_dialog.PreflightValidationDialog.exec = saved
+        return process, log, shown
+
+    def skip_second(d):
+        d.set_entity_kept(str(shots[1]), False)
+        d._on_continue()
+
+    process, log, shown = run(skip_second)
+    exported = {(s, d) for kind, s, d in log if kind == 'export'}
+    check('run: the up-front dialog showed once, before any export',
+          shown == [0], str(shown))
+    check('run: every validation ran up front before the first export',
+          [e for e in log[:6] if e[0] == 'collect'] == log[:6], str(log[:7]))
+    check('run: the unticked shot exported nothing, the others everything',
+          exported == {(str(s), d) for s in (shots[0], shots[2]) for d in ('layout', 'lighting')},
+          str(sorted(exported)))
+    check("run: the unticked shot's rows are unticked",
+          not any(t.enabled for t in process._model.get_tasks() if t.uri == shots[1]))
+    check('run: validations still ran in place for the kept shots',
+          ('validate', str(shots[0]), 'lighting') in log
+          and ('validate', str(shots[1]), 'lighting') not in log)
+    from tumblepipe.pipe.houdini.ui.process_executor import _validation_session
+    check('run: the kept shot\'s issues were accepted for the run, the skipped one\'s not',
+          any(a[0] == str(shots[0]) for a in _validation_session.accepted)
+          and not any(a[0] == str(shots[1]) for a in _validation_session.accepted))
+
+    process, log, shown = run(lambda d: d._on_cancel())
+    check('cancel: nothing exported, the run never started',
+          not [e for e in log if e[0] in ('export', 'validate')]
+          and not process._is_executing and shown == [0], str(log))
+    check('cancel: the status says so and Execute stays available',
+          'cancelled at validation' in process._status_label.text()
+          and process._execute_button.isEnabled(), process._status_label.text())
+
+    issues_of[str(shots[0])], issues_of[str(shots[1])] = [], []
+    process, log, shown = run(lambda d: d._on_cancel())
+    check('clean: no issues, no dialog, the run goes ahead',
+          shown == [] and len([e for e in log if e[0] == 'export']) == 6, str(shown))
 
 
 def main() -> int:
@@ -443,6 +581,8 @@ def main() -> int:
           prompt._remember_checkbox.isChecked())
     prompt._on_cancel()
     check('and the choice is then remembered', prompt.remember_choice is True)
+
+    check_up_front_validation()
 
     failed = [name for name, ok, _ in _checks if not ok]
     print()

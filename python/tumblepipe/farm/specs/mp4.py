@@ -13,13 +13,17 @@ config = {
     'output_paths': [
         'path/to/output1.mp4',
         'path/to/output2.mp4'
-    ]
+    ],
+    'frame_ranges': [[1, 30], [60, 100]]    # optional (#84): encode only
+                    # these frames, back to back, each frame's number burnt
+                    # in (farm.specs.frame_ranges)
 }
 
 The worker encodes the configured range itself, so its context is the
 config without the job header.
 """
 
+from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.checks import (
     check_int,
     check_str,
@@ -36,6 +40,7 @@ def is_valid_context(config) -> bool:
     if not check_str_list(config, 'output_paths'): return False
     # With no outputs the worker encoded nothing and exited 0.
     if len(config['output_paths']) == 0: return False
+    if not frame_ranges.valid_entry(config): return False
     return True
 
 

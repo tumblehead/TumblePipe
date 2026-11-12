@@ -327,11 +327,15 @@ frame lands on. sh010 (1001-1050) and sh020 (1001-1040) become 1001-1050 and
   samples back to 1001-1040, so what is published is an ordinary sh020
   layer. Nothing downstream knows the shared timeline existed. The
   published `context.json` records the offset (`parameters.time_offset`).
+- `th::import_render` reads sh020's renders (on its own 1001-1040) at
+  1051-1090, so a comp on the shared timeline shows every member on its
+  frames. A farm comp still writes each shot's own frames
+  ([Compositing → `th::import_render`](../compositing.md#thimport_render)).
 - The playbar spans every shot. With bookmarks, each shot has a bookmark
   named after it (`sq010_sh020`) on its shared frames: **double-click** one
   to zoom the playbar to that shot, double-click again to zoom back out.
 
-Both nodes read the offset through their **Time Offset** parm, which
+These nodes read the offset through their **Time Offset** parm, which
 defaults to **From Multi**. Set it to **None** to keep one node on its
 shot's own frames, or **Manual** for an offset of your own
 ([Import and export nodes](../nodes/import-and-export.md#thimport_shot-lop)).

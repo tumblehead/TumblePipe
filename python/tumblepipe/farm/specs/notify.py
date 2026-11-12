@@ -13,6 +13,10 @@ config = {
     } | {
         'mode': 'partial',
         'frame_path': 'path/to/frame.####.exr',
+        'frames': [1, 50, 100]      # the preview frames, any number, in order
+    } | {
+        'mode': 'partial',          # as queued before #74: exactly three
+        'frame_path': 'path/to/frame.####.exr',
         'first_frame': 1,
         'middle_frame': 50,
         'last_frame': 100
@@ -25,7 +29,7 @@ config = {
 The worker's context is the config without the job header.
 """
 
-from tumblepipe.farm.checks import check_int, check_str, valid_job_header
+from tumblepipe.farm.checks import check_int, check_int_list, check_str, valid_job_header
 
 
 def is_valid_command(command) -> bool:
@@ -35,6 +39,12 @@ def is_valid_command(command) -> bool:
         case 'notify': return True
         case 'partial':
             if not check_str(command, 'frame_path'): return False
+            # Since #74 a partial names its frames, any number of them (the
+            # Preview Frames List); one queued before names three.
+            if 'frames' in command:
+                if not check_int_list(command, 'frames'): return False
+                if not command['frames']: return False
+                return True
             if not check_int(command, 'first_frame'): return False
             if not check_int(command, 'middle_frame'): return False
             if not check_int(command, 'last_frame'): return False

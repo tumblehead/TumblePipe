@@ -1,7 +1,8 @@
 """th::import_shot's Layer Stack: one spare-parm row per loaded sublayer.
 
 Each row is a toggle that drives its sublayer's enable, the version that
-composed, and for an asset row a '...' button that opens the asset's
+composed, an Inspect button that shows the layer's file in the OS file
+browser, and for an asset row a '...' button that opens the asset's
 department layers (the AssetLayerDialog).
 """
 
@@ -17,6 +18,7 @@ from tumblepipe.pipe.houdini.lops.shot_sublayers import (
     layer_display_version,
 )
 from tumblepipe.pipe.usd.sublayer_refs import parse_entity_sublayer_uri
+from tumblepipe.util import desktop
 
 
 def update_layer_stack(native, layers_to_load: list[dict]):
@@ -57,9 +59,24 @@ def update_layer_stack(native, layers_to_load: list[dict]):
         # Asset rows get a third column: an asset is a composed blob, and
         # this is the only way to see the department layers inside it.
         inspectable = layer_info['type'] == 'asset'
-        if inspectable:
-            version_parm.setJoinWithNext(True)
+        version_parm.setJoinWithNext(True)
         layer_folder.addParmTemplate(version_parm)
+
+        # Every row: show the layer's file in the OS file browser. The
+        # ref is re-read from the node, not baked into the callback.
+        reveal_parm = hou.ButtonParmTemplate(
+            f'{safe_name}_reveal',
+            'Inspect',
+            script_callback=(
+                'import tumblepipe.pipe.houdini.lops.import_shot as '
+                f'th_node; th_node.reveal_layer(kwargs, {i})'
+            ),
+            script_callback_language=hou.scriptLanguage.Python,
+        )
+        reveal_parm.setHelp("Show this layer's file in the file browser")
+        if inspectable:
+            reveal_parm.setJoinWithNext(True)
+        layer_folder.addParmTemplate(reveal_parm)
 
         if inspectable:
             inspect_parm = hou.ButtonParmTemplate(
@@ -89,6 +106,31 @@ def update_layer_stack(native, layers_to_load: list[dict]):
     # The sublayer enables read the row toggles
     for i in range(len(layers_to_load)):
         import_node.parm(f'enable{i+1}').setExpression(f'ch("../layer_{i}_enable")')
+
+
+def resolve_row_file(ref: str, pinned: bool) -> Path | None:
+    """The file a Layer Stack row's ref composes (its own ref, in the node's
+    latest/pinned mode), or None if it resolves to no file on disk."""
+    with resolver.latest_mode(not pinned):
+        resolved = resolver.try_resolve_entity_uri(ref)
+    if not resolved:
+        return None
+    path = Path(resolved)
+    return path if path.exists() else None
+
+
+def reveal_layer(native, index: int, pinned: bool):
+    """A Layer Stack row's Inspect button: show that row's layer file in the
+    OS file browser, or say why there is nothing to show."""
+    ref = native.node('import').parm(f'filepath{index + 1}').eval()
+    path = resolve_row_file(ref, pinned)
+    if path is None:
+        hou.ui.displayMessage(
+            f"{ref} has no file on disk to show.",
+            severity=hou.severityType.Warning,
+        )
+        return
+    desktop.reveal_in_file_browser(path)
 
 
 def inspect_asset_layer(native, index: int, pinned: bool):

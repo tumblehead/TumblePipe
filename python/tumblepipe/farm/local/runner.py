@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Callable
 
 from tumblepipe.farm.local import hpm as hpm_tool
+from tumblepipe.farm.local import previews
 from tumblepipe.farm.local import queue
 from tumblepipe.farm.local import task as local_task
 
@@ -105,8 +106,17 @@ class Runner:
         idle_seconds: float = IDLE_SECONDS,
         poll_seconds: float = POLL_SECONDS,
         log: Callable[[str], None] = print,
+        notifier: Callable[[str, str, str], str] | None = None,
+        notify_enabled: Callable[[], bool] | None = None,
     ) -> None:
         self._root = Path(root_path)
+        # Preview frames ready (#75): how the artist is told (title, body,
+        # folder -> '' or why it did not show), and whether they want to be.
+        self._notifier = notifier or _desktop_notify
+        self._notify_enabled = notify_enabled or notify_preview_ready
+        # The preview a notify job posts, by (batch folder, job index); None
+        # for a notify job that posts something else. Read once per job.
+        self._previews: dict[tuple[Path, int], previews.Preview | None] = {}
         self._hpm_command = hpm_command
         self._environ = dict(os.environ if environ is None else environ)
         self._idle_seconds = idle_seconds
@@ -161,6 +171,7 @@ class Runner:
                 continue
             if picked is not None:
                 self.run_task(folder, batch, state, *picked)
+                self.announce_previews(folder, batch, state)
                 self._finish_removals()
                 return True
         return False
@@ -233,6 +244,61 @@ class Runner:
             self._remove_after.discard(folder)
             shutil.rmtree(folder, ignore_errors=True)
             self._log(f'Removed batch {folder.name}')
+
+    # ── preview frames ready (#75) ──
+
+    def _preview(self, folder: Path, job: dict) -> previews.Preview | None:
+        key = (folder, job['index'])
+        if key not in self._previews:
+            if not previews.may_be_preview(job):
+                self._previews[key] = None
+            else:
+                context = previews.read_context(job)
+                if not context:
+                    # Unreadable for now (the share, say): asked again after
+                    # the next task rather than lost.
+                    return None
+                self._previews[key] = previews.preview_of(context)
+        return self._previews[key]
+
+    def announce_previews(self, folder: Path, batch: dict, state: dict) -> None:
+        """Tell the artist about every preview of the batch whose frames are
+        now done, once each, and record it in the batch's state.
+
+        Never fails the runner: a notifier that is missing or breaks is
+        logged and recorded, and the queue goes on.
+        """
+        try:
+            candidates = [
+                job['index'] for job in batch['jobs']
+                if str(job['index']) not in previews.recorded(state)
+                and previews.may_be_preview(job)
+            ]
+            ready = previews.ready_jobs(batch, state, candidates)
+            jobs = {job['index']: job for job in batch['jobs']}
+            changed = False
+            for index in ready:
+                preview = self._preview(folder, jobs[index])
+                if preview is None:
+                    continue
+                title, body = previews.notice_text(preview)
+                try:
+                    if self._notify_enabled():
+                        error = self._notifier(title, body, preview.folder) or ''
+                    else:
+                        error = 'notifications are off (Notify when preview frames are ready)'
+                except Exception as failure:
+                    error = f'{type(failure).__name__}: {failure}'
+                previews.record(state, index, preview, queue.now(), notified=not error, error=error)
+                changed = True
+                self._log(
+                    f"{folder.name}: preview frames ready ({previews.summary(preview)})"
+                    + (f'; not notified: {error}' if error else '; notified')
+                )
+            if changed:
+                queue.write_state(folder, state)
+        except Exception as error:
+            self._log(f'{folder.name}: could not announce preview frames: {type(error).__name__}: {error}')
 
     # ── one task ──
 
@@ -335,6 +401,24 @@ class Runner:
                 reported = process.progress
                 task['progress'] = reported
                 queue.write_state(folder, state)
+
+
+# ── telling the artist ────────────────────────────────────
+
+def _desktop_notify(title: str, body: str, folder: str) -> str:
+    from tumblepipe.util import desktop_notify
+    return desktop_notify.notify(title, body, folder)
+
+
+def notify_preview_ready() -> bool:
+    """The artist's "Notify when preview frames are ready" pref (on unless
+    turned off; ``asset_browser.prefs``). Read per announcement, so turning
+    it off reaches a runner already working."""
+    try:
+        from tumblepipe.asset_browser.prefs import load_prefs
+        return bool(load_prefs().notify_preview_ready)
+    except Exception:
+        return True
 
 
 # ── starting it ───────────────────────────────────────────

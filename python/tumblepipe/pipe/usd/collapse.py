@@ -340,6 +340,53 @@ def _open_staged(staged_file_path: Path):
     return stage
 
 
+def collapse_asset_references(
+    staged_file_path: Path,
+    excluded_refs: set[str] | None = None,
+) -> str:
+    """An asset's staged build as one resolver-free .usda, for a turntable.
+
+    The same leaf layers and instance copies :func:`collapse_latest_references`
+    collects, and nothing a render adds: an asset's staged build carries no
+    RenderSettings, camera or lights (#53). The farm turntable sublayers this
+    under ``th::lookdev_studio``, which brings all three
+    (``pipe.houdini.turntable_workfile``).
+
+    Raises:
+        ValueError: If the staged file does not exist
+        LayerCollectionError: If a layer the build records is missing, the
+                              build collapses to no layers, or it does not
+                              compose
+    """
+    if not staged_file_path.exists():
+        raise ValueError(f"Staged file does not exist: {staged_file_path}")
+    with open(staged_file_path, 'r', encoding='utf-8') as f:
+        metadata = parse_usda_metadata(f.read())
+    leaf_layers, instances_by_asset = _collect_leaf_layers_and_instances(
+        str(staged_file_path), excluded_refs=excluded_refs
+    )
+    if not leaf_layers:
+        raise LayerCollectionError(
+            f"staged build collapsed to no layers at all: {staged_file_path}\n"
+            f"There is nothing to put on the turntable. Check that a "
+            f"renderable department of the asset has published."
+        )
+    stage = _open_staged(staged_file_path)
+    usda_content = generate_usda_content(
+        layer_paths=leaf_layers,
+        fps=metadata['fps'],
+        start_frame=metadata['start_frame'],
+        end_frame=metadata['end_frame'],
+    )
+    instance_prims = generate_instance_prim_definitions(
+        instances_by_asset,
+        composed_placement_orders(stage, instances_by_asset),
+    )
+    if instance_prims:
+        usda_content = usda_content + '\n' + instance_prims
+    return usda_content
+
+
 def collapse_latest_references(
     staged_file_path: Path,
     render_overrides: dict | None = None,

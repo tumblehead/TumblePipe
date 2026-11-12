@@ -28,14 +28,25 @@ the config the job passes. Then it checks:
   each channel's beauty; a channel not rendered yet is left out and named;
   the freeze pins each channel, and the worker renders the comp from those
   pins;
-- Channel Outputs (on by default) keeps a Cable Unpack with one output per
-  channel's beauty (Remy, 2026-11-10); AOV Outputs keeps one with one typed
-  output per cable field, and removes it when turned off;
+- AOV Outputs keeps a Cable Unpack per cable with one typed output per
+  field, and removes it when turned off;
 - an all-channels import built before the beauties left the cable (a dive
   with two outputs, an AOV Outputs unpack with the beauties, a wire on one)
-  rebuilds, and the wire moves to the Channel Outputs unpack;
+  rebuilds, and the wire moves to the channel's output on the node;
+- import_render's outputs are rgba .. rgba 8 (a beauty per channel), lpe,
+  aov, matte, geometry, camera (#67, Remy's mockup of 2026-11-12): each
+  channel on an output of its own in channel order, named on Reads, empty
+  outputs cooking; the light groups ride lpe (a light mix's cable, moved
+  there from aov for you), the matte matte, depth aov; an import saved on
+  the old outputs (rgba, aovs, beauties) opens with its wires moved (a
+  beauties unpack's to the channel outputs, an all-channels rgba onto an
+  over chain giving the same picture) and rebuilds; the dive inside is
+  laid out left to right with nothing overlapping;
 - th::import_scene hands COPs the staged shot's geometry and camera, with
-  the output types a Rasterize Geometry takes;
+  the output types a Rasterize Geometry takes, and import_render does the
+  same through an embedded one: imported on Update, or on a refresh while
+  wired; camera stays shut while its camera cannot cook, so the renders
+  still cook;
 - each channel's light mix at defaults equals its beauty (never beauty plus
   its groups), a muted group drops out, exposure scales by 2^e, and the alpha
   is the beauty's A;
@@ -51,6 +62,11 @@ the config the job passes. Then it checks:
   (frame F reads the render's F - offset), a member at offset 0 keeps plain
   frames, and an import set to None (as the worker sets them) reads the
   shot's own frames (Remy, 2026-11-11);
+- a comp in the render scene (#80: a Slap Comp Import into an
+  export_comp, no import_render) rides its own render: the worker swaps the
+  Slap Comp Import for File COPs of the renders the chain passes
+  (``renders``), merges them in channel order and records them as its
+  reads;
 - the worker's output has no "Render failed".
 
 Shot SH010 stores its channels without ``default`` (``["chars"]``), SH020
@@ -212,6 +228,13 @@ def render_average(native, output=0):
 ###############################################################################
 # The checks
 ###############################################################################
+def pack_fields(node, cable):
+    """The fields of an import's ``cable`` (lpes, mattes, aovs) as built."""
+    pack = node.native().node(f'{import_render.DIVE}/{import_render.CABLE_PACKS[cable]}')
+    if pack is None: return None
+    return [pack.parm(f'fieldname{i}').eval() for i in range(1, pack.parm('fields').eval() + 1)]
+
+
 def load_template():
     path = REPO / 'scripts' / 'project_template' / '_config' / 'templates' / 'shots' / 'composite' / 'template.py'
     namespace = {}
@@ -249,9 +272,23 @@ def check_single(template, shot_uri, label):
     check(f'{label}: chars resolves to render v0001 (no denoise)',
           imports['chars'].get_resolved() == ('render', 'v0001'),
           imports['chars'].parm('version_label').eval())
-    check(f'{label}: the chars cable carries exactly the comp AOVs, no beauty',
+    check(f'{label}: the chars cables carry exactly the comp AOVs, no beauty',
           imports['chars'].get_fields() == ['beauty_key', 'beauty_rim', 'depth', 'objid_hero'],
           str(imports['chars'].get_fields()))
+    want_labels = (['rgba'] + [f'rgba {i}' for i in range(2, import_render.CHANNEL_OUTPUTS + 1)]
+                   + ['lpe', 'aov', 'matte', 'cryptomaterials', 'cryptoprimitives', 'geometry', 'camera'])
+    check(f'{label}: the outputs are rgba .. rgba 8, lpe, aov, matte, geometry, camera (#67)',
+          list(imports['chars'].native().outputLabels()) == want_labels,
+          str(imports['chars'].native().outputLabels()))
+    want_cables = {comp.LPES: ['beauty_key', 'beauty_rim'], comp.MATTES: ['objid_hero'],
+                   comp.AOVS: ['depth']}
+    got_cables = {cable: pack_fields(imports['chars'], cable) for cable in want_cables}
+    check(f'{label}: light groups ride lpe, the matte matte, depth aov',
+          got_cables == want_cables, str(got_cables))
+    check(f'{label}: a one-channel import holds rgba only',
+          imports['chars'].get_channel_outputs()[:2] == ('chars', None),
+          str(imports['chars'].get_channel_outputs()))
+    check_dive_layout(imports['chars'], label)
     close(f'{label}: import rgba is the beauty', render_average(imports['chars'].native(), 0), CHARS_BEAUTY)
 
     mixes = {m.native().name(): m for m in light_mix.find_mixes()}
@@ -267,9 +304,9 @@ def check_single(template, shot_uri, label):
     for channel in ('default', 'chars'):
         wires = sorted((c.inputIndex(), c.outputIndex())
                        for c in mixes[f'light_mix_{channel}'].native().inputConnections())
-        check(f'{label}: the {channel} mix takes rgba then aovs, so the wires do not cross',
+        check(f'{label}: the {channel} mix takes rgba then lpe, so the wires do not cross',
               wires == [(light_mix.BEAUTY_INPUT, import_render.RGBA_OUTPUT),
-                        (light_mix.CABLE_INPUT, import_render.AOVS_OUTPUT)], str(wires))
+                        (light_mix.CABLE_INPUT, import_render.LPES_OUTPUT)], str(wires))
         mix_native = mixes[f'light_mix_{channel}'].native()
         mix_native.cook(force=True)
         problems = list(mix_native.warnings()) + list(mix_native.errors())
@@ -292,9 +329,9 @@ def check_single(template, shot_uri, label):
     inner.parm('inputtype2').set('vector4')
     light_mix.on_loaded(native)
     wires = sorted((c.inputIndex(), c.outputIndex()) for c in native.inputConnections())
-    check(f'{label}: an old cable-first mix is rewired rgba then aovs on load',
+    check(f'{label}: an old cable-first mix is rewired rgba then lpe on load',
           wires == [(light_mix.BEAUTY_INPUT, import_render.RGBA_OUTPUT),
-                    (light_mix.CABLE_INPUT, import_render.AOVS_OUTPUT)], str(wires))
+                    (light_mix.CABLE_INPUT, import_render.LPES_OUTPUT)], str(wires))
     close(f'{label}: the rewired old mix at defaults equals its beauty',
           render_average(native), CHARS_BEAUTY)
     native.parm('mute1').set(1)
@@ -355,11 +392,63 @@ def check_load_cable_first(label):
     hou.hipFile.load(path_str(hip), suppress_save_prompt=True, ignore_load_warnings=True)
     native = hou.node('/stage/comp/light_mix_chars')
     wires = sorted((c.inputIndex(), c.outputIndex()) for c in native.inputConnections())
-    check(f'{label}: a saved cable-first mix opens without a crash, rewired rgba then aovs',
+    check(f'{label}: a saved cable-first mix opens without a crash, rewired rgba then lpe',
           wires == [(light_mix.BEAUTY_INPUT, import_render.RGBA_OUTPUT),
-                    (light_mix.CABLE_INPUT, import_render.AOVS_OUTPUT)], str(wires))
+                    (light_mix.CABLE_INPUT, import_render.LPES_OUTPUT)], str(wires))
     close(f'{label}: the reopened mix at defaults equals its beauty',
           render_average(native), CHARS_BEAUTY)
+
+
+def check_load_old_layout(label):
+    """A workfile saved before #67 (TumblePipe 1.103): the import on the
+    old outputs (rgba, aovs, beauties) and its three-output dive, the mix's
+    cable on aovs, a Cable Unpack on beauties with a reader on its chars
+    field. Opened, the mix's cable moves to lpe, the reader to the chars
+    output (rgba), the unpack goes, and the import rebuilds, once the load
+    has finished."""
+    copnet = hou.node('/stage/comp')
+    native = copnet.node('import_chars')
+    mix = copnet.node('light_mix_chars')
+    dive = native.node(import_render.DIVE)
+    for pack in ('lpes', 'mattes'):
+        dive.node(pack).destroy()
+    dive.parm('outputs').set(3)
+    native.parm(import_render.OUTPUTS_LAYOUT_PARM).set(0)
+    native.parm(import_render.CHANNEL_OUTPUTS_PARM).set('')
+    # The old indices: aovs was output 1, beauties output 2.
+    mix.setInput(light_mix.CABLE_INPUT, native, 1)
+    unpack = copnet.createNode('cableunpack', 'beauties_unpack')
+    unpack.setInput(0, native, 2)
+    unpack.parm('fields').set(1)
+    unpack.parm('fieldname1').set('chars')
+    reader = copnet.createNode('null', 'reads_beauties')
+    reader.setInput(0, unpack, 0)
+    hip = TEMP_ROOT / f'{label.split()[0]}_old_layout.hip'
+    hou.hipFile.save(path_str(hip))
+    hou.hipFile.load(path_str(hip), suppress_save_prompt=True, ignore_load_warnings=True)
+    native = hou.node('/stage/comp/import_chars')
+    mix = hou.node('/stage/comp/light_mix_chars')
+    reader = hou.node('/stage/comp/reads_beauties')
+    check(f'{label}: an import saved before #67 is on the new outputs once opened',
+          native.parm(import_render.OUTPUTS_LAYOUT_PARM).eval() == import_render.OUTPUTS_LAYOUT)
+    wires = sorted((c.inputIndex(), c.outputIndex()) for c in mix.inputConnections())
+    check(f'{label}: its light mix cable moved from aovs to lpe',
+          wires == [(light_mix.BEAUTY_INPUT, import_render.RGBA_OUTPUT),
+                    (light_mix.CABLE_INPUT, import_render.LPES_OUTPUT)], str(wires))
+    wired = reader.inputConnections()
+    check(f'{label}: a wire on the old beauties chars field is on the chars output',
+          len(wired) == 1 and wired[0].inputNode().path() == native.path()
+          and wired[0].outputIndex() == import_render.RGBA_OUTPUT,
+          str([(c.inputNode().path(), c.outputIndex()) for c in wired]))
+    check(f'{label}: the emptied beauties unpack is gone',
+          hou.node('/stage/comp/beauties_unpack') is None)
+    check(f'{label}: the old import rebuilt its lpes and mattes cables',
+          pack_fields(import_render.ImportRender(native), 'lpes') == ['beauty_key', 'beauty_rim']
+          and pack_fields(import_render.ImportRender(native), 'mattes') == ['objid_hero'],
+          str(pack_fields(import_render.ImportRender(native), 'lpes')))
+    close(f'{label}: the reopened old mix at defaults equals its beauty',
+          render_average(mix), CHARS_BEAUTY)
+    reader.destroy()
 
 
 def check_channel_switch(shot_uri, label):
@@ -386,15 +475,19 @@ def check_channel_switch(shot_uri, label):
 
 def check_old_all_channels(node, label, want_fields):
     """An all-channels import as v1.99.0 left it: a dive with two outputs and
-    no beauties pack, an AOV Outputs unpack whose fields start with the
-    beauties, a null wired to its chars output. Update rebuilds the dive,
-    and the null's wire moves to the Channel Outputs unpack's chars."""
+    no lpes or mattes pack, an AOV Outputs unpack whose fields start with
+    the beauties, a null wired to its chars output. Update rebuilds the
+    dive, the null's wire moves to the node's chars output, and wires on
+    AOVs that #67 moved to lpe or matte move to those unpacks."""
     native = node.native()
-    beauties = node.find_unpack(import_render.BEAUTIES_OUTPUT)
-    if beauties is not None:
-        beauties.destroy()
+    for output in (import_render.LPES_OUTPUT, import_render.MATTES_OUTPUT):
+        companion = node.find_unpack(output)
+        if companion is not None:
+            companion.destroy()
     dive = native.node(import_render.DIVE)
-    dive.node(import_render.BEAUTIES_PACK).destroy()
+    for pack in (import_render.BEAUTIES_PACK, 'lpes', 'mattes'):
+        if dive.node(pack) is not None:
+            dive.node(pack).destroy()
     dive.parm('outputs').set(2)
     old_fields = ['default', 'chars'] + want_fields
     unpack = native.parent().createNode('cableunpack', f'{native.name()}_aovs')
@@ -407,31 +500,231 @@ def check_old_all_channels(node, label, want_fields):
     reader.setInput(0, unpack, 1)
     depth = native.parent().createNode('null', 'reads_depth')
     depth.setInput(0, unpack, old_fields.index('chars_depth'))
+    matte = native.parent().createNode('null', 'reads_matte')
+    matte.setInput(0, unpack, old_fields.index('chars_objid_hero'))
     node.parm(import_render.UNPACK_PARM).set(1)
     node.execute()  # as opening the workfile does
-    beauties = node.find_unpack(import_render.BEAUTIES_OUTPUT)
-    check(f'{label}: an old import gets its beauties pack back',
-          dive.node(import_render.BEAUTIES_PACK) is not None)
-    check(f'{label}: an old import gets a Channel Outputs unpack', beauties is not None)
-    check(f'{label}: the old unpack drops the beauties',
-          list(unpack.outputLabels()) == want_fields, str(unpack.outputLabels()))
+    mattes = node.find_unpack(import_render.MATTES_OUTPUT)
+    check(f'{label}: an old import gets its lpes and mattes packs back', node.has_packs())
+    check(f'{label}: the old unpack keeps only the other AOVs',
+          list(unpack.outputLabels()) == ['chars_depth'], str(unpack.outputLabels()))
     wired = reader.inputConnections()
-    check(f'{label}: a wire on the old chars output moves to Channel Outputs',
-          beauties is not None and len(wired) == 1
-          and wired[0].inputNode().path() == beauties.path()
-          and wired[0].outputIndex() == 1,
+    chars_output = node.channel_output('chars')
+    check(f'{label}: a wire on the old chars output moves to the chars output',
+          chars_output is not None and len(wired) == 1
+          and wired[0].inputNode().path() == native.path()
+          and wired[0].outputIndex() == chars_output,
           str([(c.inputNode().path(), c.outputIndex()) for c in wired]))
     wired = depth.inputConnections()
     check(f'{label}: a wire on an AOV follows its field',
           len(wired) == 1 and wired[0].inputNode().path() == unpack.path()
-          and wired[0].outputIndex() == want_fields.index('chars_depth'),
+          and wired[0].outputIndex() == 0,
           str([(c.inputNode().path(), c.outputIndex()) for c in wired]))
-    if beauties is not None:
-        close(f'{label}: the moved wire reads the chars beauty', render_average(reader, 0), CHARS_BEAUTY)
-    for extra in (reader, depth, unpack):
+    wired = matte.inputConnections()
+    check(f'{label}: a wire on a matte moves to the mattes unpack',
+          mattes is not None and len(wired) == 1
+          and wired[0].inputNode().path() == mattes.path()
+          and wired[0].outputIndex() == 0,
+          str([(c.inputNode().path(), c.outputIndex()) for c in wired]))
+    close(f'{label}: the moved wire reads the chars beauty', render_average(reader, 0), CHARS_BEAUTY)
+    for extra in (reader, depth, matte):
         extra.destroy()
     node.parm(import_render.UNPACK_PARM).set(0)
     node.execute()
+
+
+def check_dive_layout(node, label):
+    """The dive reads left to right with nothing on anything else (Remy,
+    2026-11-12: the File COPs sat in one row under overlapping file names,
+    the packs and outputs stacked): every node's tile plus the label band
+    above it (comp.NODE_FOOTPRINT tall, plus a line for a File COP's file
+    name) is clear of every other's, and every wire runs rightwards."""
+    dive = node.native().node(import_render.DIVE)
+    nodes = [c for c in dive.children() if c.name() != 'inputs']
+    boxes = []
+    for child in nodes:
+        x, y = child.position()
+        w, h = child.size()
+        top = comp.NODE_FOOTPRINT[1] + (0.9 if child.type().name() == 'file' else 0.0)
+        boxes.append((child.name(), x, y, x + max(w, comp.NODE_FOOTPRINT[0]), y + top))
+    overlaps = [(a[0], b[0]) for i, a in enumerate(boxes) for b in boxes[i + 1:]
+                if a[1] < b[3] and b[1] < a[3] and a[2] < b[4] and b[2] < a[4]]
+    check(f'{label}: no node of the dive overlaps another (labels included)',
+          not overlaps, str(overlaps[:4]))
+    leftward = [(c.inputNode().name(), c.outputNode().name()) for child in nodes
+                for c in child.inputConnections()
+                if c.inputNode().position()[0] >= c.outputNode().position()[0]]
+    check(f'{label}: every wire in the dive runs rightwards', not leftward, str(leftward[:4]))
+
+
+def check_old_all_channels_rgba(node, label, over):
+    """An all-channels import made before #67 (TumblePipe 1.103): a reader
+    on its rgba (the channels laid over each other) and its Channel Outputs
+    unpack on beauties, a reader on its chars. Upgraded, the rgba reader is
+    on an over chain of the channel outputs (the same picture), the chars
+    reader on the chars output, the unpack gone."""
+    native = node.native()
+    copnet = native.parent()
+    native.parm(import_render.OUTPUTS_LAYOUT_PARM).set(0)
+    native.parm(import_render.CHANNEL_OUTPUTS_PARM).set('')
+    reads_rgba = copnet.createNode('null', 'reads_old_rgba')
+    reads_rgba.setInput(0, native, 0)
+    unpack = copnet.createNode('cableunpack', f'{native.name()}_beauties')
+    unpack.setUserData(import_render.BEAUTY_UNPACK_MARK, native.name())
+    unpack.setInput(0, native, 2)
+    unpack.parm('fields').set(2)
+    unpack.parm('fieldname1').set('default')
+    unpack.parm('fieldname2').set('chars')
+    reads_chars = copnet.createNode('null', 'reads_old_chars')
+    reads_chars.setInput(0, unpack, 1)
+    node.execute()  # upgrades first, as opening the workfile does
+    wired = reads_rgba.inputConnections()
+    over_node = wired[0].inputNode() if wired else None
+    check(f'{label}: an old all-channels rgba reader is on an over chain of the channel outputs',
+          over_node is not None and over_node.userData(import_render.OVER_MARK) is not None,
+          str(over_node and over_node.path()))
+    if over_node is not None:
+        close(f'{label}: the over chain is the old picture, chars over default',
+              render_average(reads_rgba), over)
+    wired = reads_chars.inputConnections()
+    check(f'{label}: an old Channel Outputs chars reader is on the chars output',
+          len(wired) == 1 and wired[0].inputNode().path() == native.path()
+          and wired[0].outputIndex() == node.channel_output('chars'),
+          str([(c.inputNode().path(), c.outputIndex()) for c in wired]))
+    check(f'{label}: the old Channel Outputs unpack is gone',
+          copnet.node(f'{native.name()}_beauties') is None)
+    for extra in [reads_rgba, reads_chars] + [n for n in copnet.children()
+                                              if n.userData(import_render.OVER_MARK)]:
+        extra.destroy()
+
+
+def check_crypto(shot_uri):
+    """Each cryptomatte th::render_vars renders on a cable of its own, all
+    its rank planes and nothing else, so it goes whole into a Cryptomatte
+    COP's crypto1 (it reads every field of that cable, and needs every
+    plane); any other cryptomatte on matte."""
+    print('--- SH040: the cryptomatte cables')
+    stage(shot_uri, 'render', 'default', 'v0001', True, {'beauty': DEFAULT_BEAUTY})
+    root = api.storage.resolve(
+        Uri.parse('render:/render') / shot_uri.segments / 'render' / 'default' / 'v0001'
+    )
+    stem = '_'.join(shot_uri.segments[1:])
+    for var in ('cryptomaterials', 'cryptoprimitives', 'cryptoobject'):
+        names = [f'{plane}.{c}' for plane in (var, f'{var}00', f'{var}01') for c in 'RGBA']
+        (root / var).mkdir(parents=True, exist_ok=True)
+        for frame in range(FIRST, LAST + 1):
+            out = root / var / f'{stem}_default_{var}_v0001.{frame}.exr'
+            oiiotool('--pattern', 'constant:color=' + ','.join(['0.5'] * 12), '32x16', 12,
+                     '--chnames', ','.join(names), *CHROMA, '-d', 'float', '-o', out)
+    hou.hipFile.clear(suppress_save_prompt=True)
+    hou.playbar.setFrameRange(FIRST, LAST)
+    hou.setFrame(FIRST)
+    use_context(shot_uri)
+    copnet = hou.node('/stage').createNode('copnet', 'comp')
+    node = import_render.create(copnet, 'import_default')
+    node.execute()
+    got = {cable: pack_fields(node, cable) for cable in comp.CRYPTO_CABLES + (comp.MATTES,)}
+    check('SH040: each render_vars cryptomatte rides its own cable, every rank plane, nothing else',
+          got == {comp.CRYPTOMATERIALS: ['cryptomaterials00', 'cryptomaterials01'],
+                  comp.CRYPTOPRIMITIVES: ['cryptoprimitives00', 'cryptoprimitives01'],
+                  comp.MATTES: ['cryptoobject00', 'cryptoobject01']}, str(got))
+    native = node.native()
+    # outputDataTypes reports what a cable carries once cooked (its fields'
+    # type), not the connector: check the dive output and its source instead
+    dive = native.node(import_render.DIVE)
+    wiring = {}
+    for cable in comp.CRYPTO_CABLES:
+        index = import_render.DIVE_INDEX[cable]
+        source = dive.node('outputs').input(index)
+        wiring[cable] = (dive.parm(f'outputtype{index + 1}').evalAsString(),
+                         source.name() if source else None)
+    check('SH040: the cryptomatte outputs are cables, each its own Cable Pack',
+          wiring == {c: ('cable', import_render.CABLE_PACKS[c]) for c in comp.CRYPTO_CABLES},
+          str(wiring))
+    native.cook(force=True)
+    check('SH040: the import cooks with its cryptomatte cables', not native.errors(),
+          str(native.errors()))
+    check_dive_layout(node, 'SH040')
+
+
+def check_cache(label):
+    """The frame cache (#73): Cache on serves a frame played twice from
+    memory (its File COPs cook once), Cache AOVs Too adds the AOV cables,
+    Cache off reads the disk every time, Clear Cache empties it."""
+    print(f'--- {label}: the frame cache')
+    copnet = hou.node('/stage/comp')
+    node = import_render.ImportRender(copnet.node('import_chars'))
+    native = node.native()
+    parm = lambda name: native.parm(name)
+    check(f'{label}: Cache on, Cache AOVs Too off, 250 frames by default',
+          (parm(import_render.CACHE_PARM).eval(), parm(import_render.CACHE_AOVS_PARM).eval(),
+           parm(import_render.CACHE_FRAMES_PARM).eval()) == (1, 0, 250))
+
+    dive = native.node(import_render.DIVE)
+    files = [c for c in dive.children() if c.type().name() == 'file']
+    beauty = 'beauty'  # a single channel's beauty read, named after its AOV
+
+    def picks():
+        """Each read's switch: 1 while it reads its cache."""
+        return {f.name(): dive.node(import_render.cache_switch_name(f.name())).parm('input').eval()
+                for f in files}
+
+    want = {f.name(): int(f.name() == beauty) for f in files}
+    check(f'{label}: by default the beauty read comes from its cache, the AOV reads raw',
+          picks() == want and 1 in want.values() and 0 in want.values(), str(picks()))
+    check(f'{label}: so the channel outputs are cached, as cached_outputs says',
+          node.cached_outputs() == set(import_render.CHANNEL_OUTPUT_NAMES), str(node.cached_outputs()))
+    parm(import_render.CACHE_AOVS_PARM).set(1)
+    check(f'{label}: Cache AOVs Too caches every read', set(picks().values()) == {1}, str(picks()))
+    parm(import_render.CACHE_PARM).set(0)
+    check(f'{label}: Cache off reads every read raw, Cache AOVs Too or not',
+          set(picks().values()) == {0}, str(picks()))
+    parm(import_render.CACHE_AOVS_PARM).set(0)
+    parm(import_render.CACHE_PARM).set(1)
+    frames_parm = dive.node(import_render.cache_node_name(beauty)).parm('maxframes')
+    parm(import_render.CACHE_FRAMES_PARM).set(40)
+    check(f'{label}: Max Frames drives the Cache COPs', frames_parm.eval() == 40, str(frames_parm.eval()))
+    parm(import_render.CACHE_FRAMES_PARM).set(250)
+    probe = copnet.createNode('null', 'reads_rgba')
+    probe.setInput(0, native, import_render.RGBA_OUTPUT)
+
+    def play():
+        """(beauty, AOV) File COP cooks over one play of the shot's frames."""
+        before = {f.name(): f.cookCount() for f in files}
+        for frame in range(FIRST, LAST + 1):
+            hou.setFrame(frame)
+            probe.cook(force=False)
+        cooks = {f.name(): f.cookCount() - before[f.name()] for f in files}
+        return (sum(n for k, n in cooks.items() if k == beauty),
+                sum(n for k, n in cooks.items() if k != beauty))
+
+    try:
+        import_render.clear_cache(dict(node=native))
+        first = play()
+        second = play()
+        check(f'{label}: with Cache on a second play reads no beauty from disk, the AOVs still',
+              first[0] > 0 and second[0] == 0 and second[1] > 0, f'first {first}, second {second}')
+        parm(import_render.CACHE_AOVS_PARM).set(1)
+        play()
+        second = play()
+        check(f'{label}: with Cache AOVs Too a second play reads nothing from disk',
+              second == (0, 0), f'{second}')
+        parm(import_render.CACHE_AOVS_PARM).set(0)
+        check(f'{label}: Clear Cache empties every Cache COP of the dive',
+              node.clear_cache() == len(files), str(len(files)))
+        check(f'{label}: after Clear Cache the next play reads from disk again',
+              play()[0] > 0)
+        parm(import_render.CACHE_PARM).set(0)
+        play()
+        again = play()
+        check(f'{label}: with Cache off every play reads from disk', again[0] > 0, f'{again}')
+        parm(import_render.CACHE_PARM).set(1)
+        hou.setFrame(FIRST)
+        close(f'{label}: the cached rgba is the beauty',
+              render_average(native, import_render.RGBA_OUTPUT), CHARS_BEAUTY)
+    finally:
+        probe.destroy()
+        parm(import_render.CACHE_PARM).set(1)
 
 
 def check_all_channels(shot_uri, label):
@@ -457,27 +750,27 @@ def check_all_channels(shot_uri, label):
           node.get_fields() == want_fields, str(node.get_fields()))
     a = CHARS_BEAUTY[3]
     over = tuple(f + b * (1 - a) for f, b in zip(CHARS_BEAUTY, DEFAULT_BEAUTY))
-    close(f'{label}: all-channels rgba is chars over default', render_average(node.native(), 0), over)
 
-    # Channel Outputs (on by default)
-    check(f'{label}: the node has rgba, aovs and beauties outputs',
-          list(node.native().outputLabels()) == ['rgba', 'aovs', 'beauties'],
-          str(node.native().outputLabels()))
-    beauties = node.find_unpack(import_render.BEAUTIES_OUTPUT)
-    check(f'{label}: Channel Outputs keeps a Cable Unpack beside the node', beauties is not None)
-    if beauties is not None:
-        check(f'{label}: one output per channel, named after it',
-              list(beauties.outputLabels()) == ['default', 'chars'], str(beauties.outputLabels()))
-        check(f'{label}: the channel outputs are RGBA',
-              list(beauties.outputDataTypes()) == ['RGBA', 'RGBA'], str(beauties.outputDataTypes()))
-        close(f'{label}: the default output is the default beauty', render_average(beauties, 0), DEFAULT_BEAUTY)
-        close(f'{label}: the chars output is the chars beauty', render_average(beauties, 1), CHARS_BEAUTY)
-    node.parm(import_render.BEAUTY_UNPACK_PARM).set(0)
-    node.execute()  # as the Channel Outputs callback does
-    check(f'{label}: Channel Outputs off removes the unread unpack',
-          node.find_unpack(import_render.BEAUTIES_OUTPUT) is None)
-    node.parm(import_render.BEAUTY_UNPACK_PARM).set(1)
-    node.execute()
+    # A beauty output per channel (#67), in channel order
+    native = node.native()
+    check(f'{label}: each channel is on an output of its own, in channel order',
+          node.get_channel_outputs()[:3] == ('default', 'chars', None),
+          str(node.get_channel_outputs()))
+    check(f'{label}: the channel outputs are RGBA',
+          list(native.outputDataTypes())[:2] == ['RGBA', 'RGBA'], str(native.outputDataTypes()))
+    close(f'{label}: rgba is the default beauty', render_average(native, 0), DEFAULT_BEAUTY)
+    close(f'{label}: rgba 2 is the chars beauty', render_average(native, 1), CHARS_BEAUTY)
+    empty = render_average(native, 2)
+    check(f'{label}: an output no channel holds is empty, and cooks',
+          empty is None or max(abs(c) for c in empty) < 1e-6, str(empty))
+    native.cook(force=True)
+    check(f'{label}: the node cooks with no error beside its empty outputs',
+          not native.errors(), str(native.errors()))
+    check(f'{label}: Reads names which channel is on which output',
+          'outputs: rgba default, rgba 2 chars' in node.parm('version_label').eval(),
+          node.parm('version_label').eval())
+    check_dive_layout(node, label)
+    check_old_all_channels_rgba(node, label, over)
 
     mix = light_mix.create(copnet, 'mix_all')
     mix.native().setInput(0, node.native(), import_render.AOVS_OUTPUT)
@@ -492,22 +785,36 @@ def check_all_channels(shot_uri, label):
     # AOV Outputs
     node.parm(import_render.UNPACK_PARM).set(1)
     node.execute()  # as the AOV Outputs callback does
-    unpack = node.find_unpack()
-    check(f'{label}: AOV Outputs adds a Cable Unpack beside the node', unpack is not None)
-    if unpack is not None:
-        check(f'{label}: the unpack has one output per cable field',
-              list(unpack.outputLabels()) == want_fields, str(unpack.outputLabels()))
-        check(f'{label}: the unpack outputs are typed (light groups and depth RGB, matte Mono)',
-              list(unpack.outputDataTypes()) == ['RGB', 'RGB', 'RGB', 'Mono'],
-              str(unpack.outputDataTypes()))
+    want_unpacks = {
+        import_render.LPES_OUTPUT: (['chars_beauty_key', 'chars_beauty_rim'], ['RGB', 'RGB']),
+        import_render.MATTES_OUTPUT: (['chars_objid_hero'], ['Mono']),
+        import_render.AOVS_OUTPUT: (['chars_depth'], ['RGB']),
+    }
+    for output, (fields, types) in want_unpacks.items():
+        name = import_render.OUTPUTS[output]
+        unpack = node.find_unpack(output)
+        check(f'{label}: AOV Outputs adds a Cable Unpack on {name}', unpack is not None)
+        if unpack is None: continue
+        check(f'{label}: the {name} unpack has one output per field',
+              list(unpack.outputLabels()) == fields, str(unpack.outputLabels()))
+        check(f'{label}: the {name} unpack outputs are typed',
+              list(unpack.outputDataTypes()) == types, str(unpack.outputDataTypes()))
     node.parm(import_render.UNPACK_PARM).set(0)
     node.execute()  # as the AOV Outputs callback does
-    check(f'{label}: AOV Outputs off removes the unread unpack', node.find_unpack() is None)
+    check(f'{label}: AOV Outputs off removes the unread unpacks',
+          all(node.find_unpack(output) is None for output in want_unpacks))
 
     check_old_all_channels(node, label, want_fields)
 
+    # The comp: chars over default, from the channel outputs
+    stack = copnet.createNode('blend', 'over_chars')
+    stack.parm('mode').set('over')
+    stack.setInput(0, node.native(), node.channel_output('default'))
+    stack.setInput(1, node.native(), node.channel_output('chars'))
+    close(f'{label}: the channel outputs laid over each other are chars over default',
+          render_average(stack), over)
     export = export_comp.create(copnet, 'export_comp')
-    export.native().setInput(0, node.native(), import_render.RGBA_OUTPUT)
+    export.native().setInput(0, stack, 0)
     check(f'{label}: no unread warning while all channels are read',
           export.refresh_warning() == '', export.parm('warning').eval())
 
@@ -520,6 +827,9 @@ def check_all_channels(shot_uri, label):
           node.read_channels() == ['default', 'chars'], str(node.read_channels()))
     check(f'{label}: the Reads label names it',
           'not rendered: fx' in node.parm('version_label').eval(), node.parm('version_label').eval())
+    check(f'{label}: the rendered channels keep their outputs',
+          node.get_channel_outputs()[:3] == ('default', 'chars', None),
+          str(node.get_channel_outputs()))
     check(f'{label}: export_comp warns it is unread',
           export.refresh_warning() == comp.unread_warning(['fx']), export.parm('warning').eval())
     api.config.set_own_properties(shot_uri, dict(own, channels=channels))
@@ -609,10 +919,71 @@ def check_scene(shot_uri):
           layer is not None and layer.bufferResolution()[0] == 1600,
           str(layer and layer.bufferResolution()))
 
+    # import_render's camera and scene outputs (#67): the same import_scene,
+    # embedded, following the node's shot and channel.
+    render = import_render.create(copnet, 'import_render')
+    render_native = render.native()
+    types = list(render_native.outputDataTypes())
+    check('import_render: camera and scene typed Metadata and Geometry',
+          types[import_render.CAMERA_OUTPUT] == 'Metadata'
+          and types[import_render.GEOMETRY_OUTPUT] == 'Geometry', str(types))
+    imported = []
+    saved = import_render.ImportRender.import_scene
+    import_render.ImportRender.import_scene = lambda self: (imported.append(1), saved(self))
+    try:
+        render.execute()
+        check('import_render: a refresh with camera and scene unwired imports no scene',
+              not imported)
+        render.execute(scene=True)  # Update
+        check('import_render: Update imports the scene', len(imported) == 1)
+        probe = copnet.createNode('null', 'reads_camera')
+        probe.setInput(0, render_native, import_render.CAMERA_OUTPUT)
+        render.execute()
+        check('import_render: a refresh imports the scene while camera is wired',
+              len(imported) == 2)
+        probe.destroy()
+    finally:
+        import_render.ImportRender.import_scene = saved
+    inner_scene = render_native.node(import_render.SCENE)
+    check('import_render: the embedded scene follows the shot and reads default for *',
+          inner_scene is not None and inner_scene.parm('entity').eval() == 'from_context'
+          and (render.set_channel_name(comp.ALL_CHANNELS) or True)
+          and inner_scene.parm('channel').eval() == 'default',
+          str(inner_scene and inner_scene.parm('channel').eval()))
+    render.set_channel_name('default')
+    inner = render_native.node(f'{import_render.SCENE}/{import_scene.IMPORT_NODE}')
+    sublayer = inner.node('import') if inner is not None else None
+    if sublayer is not None:
+        sublayer.parm('num_files').set(1)
+        sublayer.parm('filepath1').set(path_str(staged))
+    check('import_render: camera stays shut while its camera cannot cook',
+          render_native.parm(import_render.CAMERA_READY_PARM).eval() == 0)
+    close('import_render: rgba still cooks beside a scene without a camera',
+          render_average(render_native, import_render.RGBA_OUTPUT), DEFAULT_BEAUTY)
+    render.open_scene_outputs()
+    check('import_render: camera and scene open once the camera cooks',
+          render_native.parm(import_render.CAMERA_READY_PARM).eval() == 1
+          and render_native.parm(import_render.SCENE_READY_PARM).eval() == 1,
+          render_native.parm(import_render.SCENE_LABEL_PARM).eval())
+    raster = copnet.createNode('rasterizegeo', 'raster_render')
+    raster.setInput(0, render_native, import_render.CAMERA_OUTPUT)
+    raster.setInput(1, render_native, import_render.GEOMETRY_OUTPUT)
+    try:
+        raster.cook(force=True)
+        errors = raster.errors()
+    except hou.OperationFailed as error:
+        errors = [str(error)]
+    layer = None if errors else raster.layer(0)
+    check('import_render: Rasterize Geometry on camera and scene renders at the render width',
+          layer is not None and layer.bufferResolution()[0] == 1600,
+          str(errors or (layer and layer.bufferResolution())))
 
-def run_worker(shot_uri, submit, label, recomp=False, want_merged=None):
+
+def run_worker(shot_uri, submit, label, recomp=False, want_merged=None, renders=None):
     """The hython half on the config the job would pass. A re-comp (Farm
-    Submit's Comp column) freezes nothing and names only the comp layer."""
+    Submit's Comp column) freezes nothing and names only the comp layer; a
+    comp of its submit's render (#80) freezes nothing and reads
+    ``renders``."""
     hip = TEMP_ROOT / f'{label}.hip'
     hou.hipFile.save(path_str(hip))
     wanted = [dict(node_path='', layer=comp.MERGED_LAYER)] if recomp else submit.exports
@@ -629,7 +1000,8 @@ def run_worker(shot_uri, submit, label, recomp=False, want_merged=None):
         entity=dict(uri=str(shot_uri), department='composite'),
         first_frame=FIRST, last_frame=LAST, frames=list(range(FIRST, LAST + 1)),
         receipt_path=path_str(receipt), input_path=path_str(hip),
-        exports=exports, imports={} if recomp else submit.plan,
+        exports=exports, imports={} if recomp or renders else submit.plan,
+        **({} if renders is None else dict(renders=renders)),
     )
     config_path = TEMP_ROOT / f'{label}.json'
     config_path.write_text(json.dumps(config))
@@ -639,10 +1011,12 @@ def run_worker(shot_uri, submit, label, recomp=False, want_merged=None):
     # startup, over these; the worker needs no package but the HDAs.
     env['HOUDINI_PACKAGE_SKIP'] = '1'
     env['HOUDINI_OTLSCAN_PATH'] = os.pathsep.join([str(REPO / 'otls'), '&'])
+    # From TEMP_ROOT: hython scans <cwd>/otls first, and a checkout's
+    # gitignored compiled *.hda there (stale ones) would win over the hip's.
     result = subprocess.run(
         [str(HYTHON), str(REPO / 'python' / 'tumblepipe' / 'farm' / 'workers' / 'composite_houdini.py'),
          str(config_path)],
-        capture_output=True, text=True, env=env, timeout=600,
+        capture_output=True, text=True, env=env, timeout=600, cwd=str(TEMP_ROOT),
     )
     output = result.stdout + result.stderr
     check(f'{label}: the worker exits 0', result.returncode == 0, output[-2000:])
@@ -664,9 +1038,51 @@ def run_worker(shot_uri, submit, label, recomp=False, want_merged=None):
     ))
     context_path = frame.parent / 'context.json'
     reads = json.loads(context_path.read_text()).get('reads') if context_path.exists() else None
+    want_reads = comp.render_reads(renders) if renders else comp.provenance(submit.plan)
     check(f'{label}: the version records what it read',
-          reads == comp.provenance(submit.plan), json.dumps(reads))
+          reads == want_reads, json.dumps(reads))
     return version
+
+
+def check_scene_comp(shot_uri):
+    """#80: a slap comp in the render scene (Slap Comp Import -> ... ->
+    export_comp, no th::import_render) is a scene comp, its
+    own Submit sends the artist to Farm Submit, and the worker comps the
+    render of its submit through the Slap Comp Import."""
+    print('--- Scene comp: a slap comp with no th::import_render (#80)')
+    from tumblepipe.pipe.houdini.cops import slap_comp
+    hou.hipFile.clear(suppress_save_prompt=True)
+    hou.playbar.setFrameRange(FIRST, LAST)
+    hou.setFrame(FIRST)
+    entity_node.scene_context = lambda: Context(shot_uri, 'light')
+    copnet = hou.node('/stage').createNode('copnet', 'slapcomp')
+    slap = copnet.createNode('slapcompimport', 'slap_comp_import')
+    slap.parm('aovs').set(1)
+    slap.parm('aov1').set('C')
+    slap.parm('type1').set('vector4')
+    # The block a slap comp runs (Block Begin/End) is the artist's; what
+    # the farm changes is what feeds it, so a grade stands in for it.
+    grade = copnet.createNode('null', 'slapcomp_block')
+    grade.setInput(0, slap, 0)
+    node = export_comp.create(copnet, 'export_comp')
+    node.native().setInput(0, grade, 0)
+    found = slap_comp.find_scene_comp(shot_uri)
+    check('Scene comp: found, with its export and the AOV its Slap Comp Import reads',
+          found is not None and [e['layer'] for e in found.exports] == [comp.MERGED_LAYER]
+          and list(found.aovs) == ['C'], str(found))
+    check('Scene comp: export_comp notes it reads the render of its Farm Submit',
+          node.refresh_warning() == comp.SCENE_COMP_NOTE, node.refresh_warning())
+    try:
+        export_comp.plan_submits(node)
+        refused = ''
+    except export_comp.NoRenderToComp as error:
+        refused = str(error)
+    check("Scene comp: its own Submit refuses, naming Farm Submit's Render and Comp",
+          'Farm Submit' in refused and 'Render and Comp' in refused, refused)
+    submit = export_comp.ShotSubmit(shot_uri, node, exports=list(found.exports))
+    renders = [dict(channel='default', department='denoise', version='v0001'),
+               dict(channel='chars', department='render', version='v0001')]
+    run_worker(shot_uri, submit, 'SCENE', renders=renders)
 
 
 def check_multi(template, shots):
@@ -754,7 +1170,9 @@ def main():
     for shot_uri, label in ((sh010, 'SH010 ["chars"]'), (sh020, 'SH020 ["default","chars"]')):
         _, submit = check_single(template, shot_uri, label)
         check_load_cable_first(label)
+        check_load_old_layout(label)
         check_channel_switch(shot_uri, label)
+        check_cache(label)
         version = run_worker(shot_uri, submit, label.split()[0])
         check(f'{label}: first composite version is v0001', version == 'v0001', version)
         version = run_worker(shot_uri, submit, label.split()[0] + '_recomp', recomp=True)
@@ -766,6 +1184,10 @@ def main():
     version = run_worker(sh030, submit, 'SH030_all', want_merged=over)
     check('SH030 all channels: the worker comps from the per-channel pins', version == 'v0001', version)
     check_scene(sh030)
+    sh050 = add_shot('SH050', ['default', 'chars'])
+    stage_shot(sh050)
+    check_scene_comp(sh050)
+    check_crypto(add_shot('SH040', ['default']))
     print()
     print(f'{len(_failures)} failure(s)' if _failures else 'all checks passed')
     shutil.rmtree(TEMP_ROOT, ignore_errors=True)

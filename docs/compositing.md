@@ -45,8 +45,7 @@ oiiotool publish step, splice `ACESCG_ATTRIB_ARGS` into its final write.
 ## Compression
 
 Each AOV's EXR compression is set **on the node that adds it**, in the render
-department: every AOV of [`th::render_vars`](nodes/lighting-and-rendering.md#thrender_vars-lop)
-(and of `th::render_settings`' **AOVs** section, the same menus) and every [`th::mattes`](nodes/lighting-and-rendering.md#thmattes-lop) row
+department: every AOV of [`th::render_vars`](nodes/lighting-and-rendering.md#thrender_vars-lop) and every [`th::mattes`](nodes/lighting-and-rendering.md#thmattes-lop) row
 has a **Compression** menu. They default to lossless **ZIP** for data
 and lossy **DWAB** for colour. Colour is `beauty`, its `beauty_<tag>` light
 groups and their variance, `albedo` and the LPE splits (`diffuse`, `specular`,
@@ -128,7 +127,7 @@ mixes is left free for grading a channel. The over chain stacks the channels
 back to front, one over per column, each on its front channel's row, so the
 last channel is on top (the render chain's slapcomp stacks the same way) and
 every wire runs rightwards into the export. Sticky notes above the first row
-mark where mattes come from (the import's `aovs` output) and where to grade a
+mark where mattes come from (the import's `matte` output) and where to grade a
 channel (after its light mix); one above the export marks where whole-frame
 work goes (before the export). The channels come from the shot config when
 the workfile is made, so a comp can be built before anything is rendered:
@@ -163,34 +162,107 @@ its newest complete version, or a `v####` pins one (a pin needs a concrete
 department). It reads **one** department's version at a time: the denoise
 publishes every AOV the comp reads, mattes, ramps and cryptomattes as byte copies.
 
-Outputs: `rgba`, the beauty; `aovs`, a cable of the other AOVs the
-comp reads, each field named after its AOV: the `beauty_<tag>` light
-groups, `objid_*` / `holdout_*` mattes, `ramp_*`, `albedo`, `normal`,
-`depth`, `uv`, `position`, and each cryptomatte's rank planes (never a
-beauty); and `beauties`, a cable of each channel's beauty named after the
-channel.
-A cryptomatte rides the cable as its rank planes, one RGBA field each named
-after the plane (`cryptomaterials00`, `cryptomaterials01`, ...; the preview
-plane is left out). Wire them in rank order into a Cryptomatte COP's
-`crypto1`, `crypto2`, ... inputs: the manifest travels with the planes, so
-**Populate Selection from Manifest** lists the prims or materials to pick.
-Cable Unpack the `aovs` output to use a matte, or tick **AOV Outputs**: the
-node keeps a Cable Unpack beside it with one output per AOV, in step with
-the cable. Inside, one File COP per AOV, the cable's into a cable pack; they
-are rebuilt when the shot, channel, department or version read changes,
-never on a plain cook.
+Outputs, top to bottom (#67, after Remy's mockup): `rgba`, `rgba 2` ..
+`rgba 8`, a beauty per channel read (a one-channel import's is `rgba`);
+then a cable per kind of AOV, each field named after its AOV (never a
+beauty): `lpe`, the `beauty_<tag>` light groups (a light mix's input);
+`aov`, the data AOVs (`albedo`, `normal`, `depth`, `uv`, `position`);
+`matte`, the `objid_*` mattes and `ramp_*` ramps (`th::mattes`),
+`holdout_*` holdouts and any cryptomatte without a cable of its own;
+`cryptomaterials` and `cryptoprimitives`, one cable per cryptomatte
+`th::render_vars` renders; and last `geometry` and `camera`, the shot's
+staged geometry and render camera for a Rasterize Geometry (an embedded
+`th::import_scene`). Which cable an AOV rides is `pipe.comp.aov_cable`.
+`geometry` and `camera` are empty until the scene imports: **Update**
+imports it, a workfile open only while one of them is wired, and `camera`
+opens once its camera cooks, so a missing camera prim never stops the
+renders cooking.
+
+The eight `rgba` outputs are fixed: a digital asset's outputs come from its
+type, and an instance can neither add outputs nor relabel them (Houdini
+22.0.429), so **Reads** names the channel on each (`outputs: rgba default,
+rgba 2 chars`). A channel keeps its output through every Update; one added
+later takes a free output, and a ninth has none (read it with an import of
+its own).
+
+Tick **AOV Outputs** for a Cable Unpack beside the node per AOV cable, with
+one output per AOV, kept in step with the cable; or Cable Unpack an output
+yourself. Inside (the `dive` subnet), one File COP per AOV, beauties first,
+each with its frame cache, into the cable pack of its cable, laid out left
+to right; they are rebuilt when the shot, channel, department or version
+read changes, never on a plain cook.
+
+An import saved before #67 (outputs `rgba`, `aovs` with every AOV,
+`beauties`) is rewired when the workfile opens and rebuilt: `aovs` wires
+move to `aov` (a light mix's to `lpe`), a wire on an old AOV Outputs field
+to the unpack of the cable its AOV now rides, a beauty taken from
+`beauties` through a Cable Unpack to its channel's output; `rgba` stays
+`rgba`, except on an import of several channels, where it moves to an over
+chain of the channel outputs beside the node, so the picture is the same.
+
+#### Cryptomattes
+
+A Cryptomatte COP reads every field of the cable on its `crypto1` input
+and needs all rank planes of one cryptomatte there (`cryptomaterials00`,
+`01`, `02`, two ranks per plane; Houdini 22.0.429), and Houdini refuses a
+cable inside a cable. So each cryptomatte `th::render_vars` renders has an
+output of its own carrying exactly its rank planes (the preview plane is
+left out): wire `cryptomaterials` (or `cryptoprimitives`) whole into a
+Cryptomatte COP's `crypto1`. The manifest travels with the planes, so
+**Populate Selection from Manifest** lists the materials or prims to pick.
+A cryptomatte of another name rides `matte`: Cable Split its planes out
+first. On **All channels** the crypto cable carries every channel's planes
+(`default_cryptomaterials00`, `chars_cryptomaterials00`, ...); a Cryptomatte
+COP fed two cryptomattes on one cable is untested, so read the channel with
+an import of its own (or Cable Split one channel's planes) to pick mattes.
+
+Each rank plane holds two ranks (an id and its coverage, twice), and the
+Cryptomatte COP needs **all** of them: `00` holds the two objects covering
+most of a pixel, `01` and `02` the rest where three or more meet (fine
+detail, hair, motion blur, depth of field). In a simple shot `01` and `02`
+look black almost everywhere; that is normal, not lost data, and leaving
+them out costs coverage exactly where pieces meet (checked 2026-11-12 in
+22.0.429: a cable, the three planes and a hand-decoded mask agree to the
+pixel).
+
+Pull cryptomatte masks at **Proxy 1:1**. At Proxy 1:2 Copernicus resamples
+every layer the File COPs read, cryptomatte planes too, and blending two
+ids makes an id that matches nothing: the mask comes out stair-stepped with
+dark seams where selected pieces meet (Houdini's behaviour, not the render;
+dilating the mask only hides it). Full resolution, and the farm's comp
+render, are exact.
 
 Channel **All channels** (`*`) reads every channel of the shot in one node:
-`rgba` is the channels over each other (last on top, as the template stacks
-them), `beauties` carries each channel's beauty, named after the channel,
-and `aovs` only the AOVs, as `<channel>_<aov>`. **Channel Outputs** (on by
-default) keeps a Cable Unpack beside the node with one output per channel,
-so a simple comp takes each channel's beauty without unpacking the AOVs. A
+each channel's beauty on its own `rgba` output (lay them over each other,
+last on top, as the template stacks them), and the cables only the AOVs,
+as `<channel>_<aov>`. A
 channel with nothing rendered yet is
 left out and named on **Reads**. Its Version stays `latest`, and Submit
 freezes each channel it read (plan keys `<node path>#<channel>`). Each File COP asks for
 the plane its file has: a raw render names its channels `<aov>.R…`, the
 denoise publishes bare `R,G,B(,A)`, which a File COP only finds as `C`.
+
+**Time Offset** (From Multi by default, as on `th::import_shot`) puts the
+renders where the shot sits in this scene. In a Multi on a
+[shared timeline](asset-browser/multis-and-roots.md#shared-timeline) a
+member's renders are on its own frames and the scene's playbar is on the
+shared ones: frame F reads the render's frame F minus the shot's offset.
+The node keeps the offset in an invisible `applied_offset` parm, and once
+it is not zero its File COPs read
+`` `padzero(4, $F-ch("../../applied_offset"))` `` instead of `$F4`, so
+editing the timeline moves them without a rebuild (laying out the timeline
+re-syncs every import). The farm composite worker sets every import to
+**None** before it cooks, so a farm comp writes each shot's own frames.
+
+**Cache** (on by default, issue #73) keeps the frames the beauty reads
+cook in memory, so a frame played once plays again without reading the
+network; **Cache AOVs Too** (off) adds the AOV reads, **Max Frames** (250)
+bounds each read, **Clear Cache** empties them. Each File COP has its own
+Cache COP and switch inside the node (Copernicus cooks every output of a
+node together, so a cache on the outputs alone was read past). A cache
+empties itself when its read changes. The farm worker turns Cache off. A
+local copy of the frames is not available yet. See
+[the frame cache](nodes/comp.md#the-frame-cache) for memory figures.
 
 The **Reads** label shows what resolved (`denoise v0004, 11 AOVs`), and
 from what when it moved (`denoise v0005 (was v0004)`). A render that cannot
@@ -211,8 +283,11 @@ open.
 
 ### `th::light_mix`
 
-Beauty and cable in (in the order the import puts them out), RGBA out: a
-channel's light groups mixed back into its beauty. The beauty input is wired from the import for you on a sync.
+Beauty and light groups in (`rgba` and `lpe`, in the order the import puts them out), RGBA out: a
+channel's light groups mixed back into its beauty. The beauty input is wired from the import for you on a sync,
+and a cable wired from the import's `aov` (`aovs` before #67, when the light
+groups rode there; the stock composite template still wires `aov`) moves to
+`lpe`.
 One row per `beauty_<tag>` group, each with **Mute**, **Exposure** (stops)
 and **Tint**, plus a **Rest** row for the lights in no group (the beauty
 minus the groups). The mix is the graded groups plus Rest, never the beauty
@@ -232,6 +307,8 @@ merged comp; a channel name writes a per-channel output (add a second
 `export_comp` for that). **Submit** asks where to run (Render farm or This
 machine) and submits *every* `export_comp` of the shot in the workfile as
 one composite version (see [Farm submission and MP4s](#farm-submission-and-mp4s)).
+Its input passes through unchanged to its `comp` output, so with the
+display flag on it shows what it exports.
 
 An `export_comp` on Layer `comp` checks that every shot channel is read by
 an import. A channel no import reads (one added to the shot after the
@@ -239,6 +316,14 @@ workfile was made) shows as a warning on the node, *shot channel `fx` is
 not read by this comp*, and Submit lists it and asks before submitting.
 Nothing edits the graph for you: add a row, or make the next version
 from the template.
+
+An `export_comp` whose shot no `th::import_render` reads (a slap comp
+built in the render scene: Slap Comp Import → … → `th::export_comp`)
+comps the render of the same Farm Submit instead (#80). Its node notes
+*no th::import_render: this comp reads the render of its Farm Submit*,
+and its own **Submit** refuses, saying so, and offers **Open Farm
+Submit** with the shot's Render and Comp ticked. See
+[A comp of the render it is submitted with](#a-comp-of-the-render-it-is-submitted-with).
 
 ## Rendering without a farm
 
@@ -330,9 +415,36 @@ unless you type your own), **Step**, **Batch**, **Pool**, **Priority** and
 **Copy to edit**. See
 [Submitting to the farm → Comp](asset-browser/submit-jobs.md#comp-shots-only).
 
+### A comp of the render it is submitted with
+
+A Copernicus network outside the composite department, ending in a
+`th::export_comp` of the shot and reading no `th::import_render` of it
+(Remy's slap comp in the render scene), is comped by ticking the shot's
+**Render** and **Comp** in Farm Submit opened from that workfile. The
+workfile is saved, a copy goes with the submission, and the comp waits
+for the render's denoise (without Denoise, the render) and reads the frames
+that render wrote. There is no fallback to renders already on disk.
+
+On the farm each Slap Comp Import in the network is swapped for File COPs
+reading the render's frames, one per AOV, wired where its outputs were:
+
+- with one channel checked, every AOV is read from that channel;
+- with several, only the beauty can be read: the channels' beauties laid
+  over each other in channel order, the last on top, as the render's
+  slapcomp stacks them. Any other AOV refuses the row; render one channel
+  for such a comp, or comp the renders with `th::import_render`;
+- Karma's `C` reads TumblePipe's `beauty`.
+
+The comp publishes as a normal composite version of the shot (Layer `comp`
+to `composite/slapcomp/v####`, a channel Layer to its channel's folder),
+followed by the MP4, daily and notify below, and its `context.json` records
+the render versions it read. A workfile with a `th::import_render` of the
+shot is not one of these: Farm Submit comps its composite workfile.
+
 The job chains on Deadline, or in the same order on this machine:
 
-1. *partial composite* — first, middle and last frame, posted to Discord,
+1. *partial composite* — first, middle and last frame (or the frames in
+   the **Preview Frames** list, in their order), posted to Discord,
    only when **Preview Frames** is on (off by default: most of a comp task
    is Houdini loading the workfile),
 2. *full composite* — the whole range, every `export_comp`,
@@ -355,6 +467,11 @@ any composite workfile exists. When a render has several channels, the
 slapcomp stacks them bottom-up in the shot's channel order: the first
 (`default`, which every channel list starts with) at the bottom, the last on
 top — so list `background` before `characters` before `feathers`.
+That oiiotool *slapcomp* is not a Copernicus slap comp. A Copernicus slap
+comp (a COP block, put down with the *TumblePipe Slap Comp* Tab tool) runs
+in husk on each channel's render, before this stack, once it is published
+for the shot: see
+[Lighting and rendering → Slap comps](nodes/lighting-and-rendering.md#slap-comps).
 
 ## Playblast
 

@@ -10,7 +10,9 @@ every open browser reads the new lines and rebuilds those cards.
 The journal is on local disk, per user (``journal_path``), so following it
 costs a local ``stat()`` per poll, not a round trip to the share, and it
 works the same on Windows, macOS and Linux with no file watcher. Writes from
-other machines are not in it; those still need the browser's Refresh.
+other machines are not in it; those still need the browser's Refresh, except
+review media (playblasts, renders), which also go to the project's shared
+journal (``util.shared_journal``) that Cinedex follows (#78).
 
 It is a hint, never the source of truth: :func:`announce` never raises, and
 a reader that may have missed lines (the journal was rotated or removed)
@@ -25,6 +27,7 @@ write is a seek and a write, which two processes can interleave.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -50,6 +53,9 @@ DIR_ENV = 'TH_EVENTS_DIR'
 WORKFILE = 'workfile'   # a workfile version was committed
 EXPORT = 'export'       # an export version was finished
 CONFIG = 'config'       # a config db file was written
+PLAYBLAST = 'playblast' # a playblast movie was written (versioned, or a render's review movie)
+RENDER = 'render'       # render frames were written
+LIVE = 'live'           # a live playblast run started (pipe.live)
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,16 @@ class Change:
     ``uri`` is the entity (``entity:/...``) or Multi (``groups:/...``)
     that changed, '' for a config write; ``detail`` its department, or the
     config purpose. ``pid`` is the writing process.
+
+    Readers: the Asset Browser (``asset_browser.change_feed``) and Cinedex
+    (``th_pipe::events::JournalReader``), which resolves a shot again on a
+    playblast, render or live change of it, and reads the project's config
+    again on a config change.
+
+    ``id`` names the change across journals: review media announced here
+    and on the project's shared journal (``util.shared_journal``) carry the
+    same id, so a reader following both acts on it once. '' (no key on the
+    line) for a change written to this journal alone.
     """
     project: str
     kind: str
@@ -67,6 +83,7 @@ class Change:
     detail: str
     pid: int
     time: float
+    id: str = ''
 
 
 def journal_dir() -> Path:
@@ -131,10 +148,13 @@ def append(change: Change, path: Path | None = None) -> None:
     that must not."""
     path = journal_path() if path is None else path
     path.parent.mkdir(parents=True, exist_ok=True)
-    line = (json.dumps({
+    record = {
         'project': change.project, 'kind': change.kind, 'uri': change.uri,
         'detail': change.detail, 'pid': change.pid, 'time': change.time,
-    }) + '\n').encode('utf-8')
+    }
+    if change.id:
+        record['id'] = change.id
+    line = (json.dumps(record) + '\n').encode('utf-8')
     with _writer_lock(path.parent):
         size, whole, open_line = _inspect(path)
         if not whole or size + len(line) > MAX_BYTES:
@@ -167,14 +187,15 @@ def _inspect(path: Path) -> tuple[int, bool, bool]:
         return 0, False, False
 
 
-def announce(config_path, kind: str, uri='', detail: str = '') -> None:
+def announce(config_path, kind: str, uri='', detail: str = '', id: str = '') -> None:
     """Tell this machine's other sessions that ``uri`` in the project at
     ``config_path`` changed. Never raises: a change that cannot be
-    announced only means the other browsers refresh when asked, as before."""
+    announced only means the other browsers refresh when asked, as before.
+    ``id``: the change's id when it goes to the shared journal too."""
     try:
         append(Change(
             project=project_key(config_path), kind=kind, uri=str(uri),
-            detail=detail, pid=os.getpid(), time=time.time(),
+            detail=detail, pid=os.getpid(), time=time.time(), id=id,
         ))
     except Exception as exc:  # noqa: BLE001 - a hint must never break a write
         logger.warning("Could not announce a %s change of %s: %s", kind, uri, exc)
@@ -183,11 +204,16 @@ def announce(config_path, kind: str, uri='', detail: str = '') -> None:
 def _parse(raw: bytes) -> Change | None:
     try:
         data = json.loads(raw)
-        return Change(
+        change = Change(
             project=str(data['project']), kind=str(data['kind']),
             uri=str(data['uri']), detail=str(data['detail']),
             pid=int(data['pid']), time=float(data['time']),
         )
+        # Optional: only changes on the shared journal too carry one.
+        change_id = data.get('id', '')
+        if isinstance(change_id, str) and change_id:
+            change = dataclasses.replace(change, id=change_id)
+        return change
     except (ValueError, KeyError, TypeError):
         return None
 

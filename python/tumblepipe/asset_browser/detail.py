@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, Callable
 from tumblepipe.pipe.houdini.ui.report import reporting
 from tumblepipe.farm.submit.settings import channel_list
 
+from .dept_scope import off_label
+
 if TYPE_CHECKING:
     from tumbletrove.asset_browser.api.types import DetailContext
     from .projects import PipelineProjectRegistry
@@ -766,6 +768,11 @@ class DetailSectionBuilder:
             all_depts, assigned_depts = self._dept_scope.for_entity(
                 asset_id, ent_ctx, with_work=dept_info.keys(),
             )
+        # Departments turned off on this shot or asset (#64): listed, greyed
+        # with "(off)"; their workfiles still open, nothing new is made.
+        off_depts: set[str] = (
+            set() if is_multi else self._dept_scope.turned_off(asset_id)
+        )
         dept_shorts = self._dept_scope.shorts(ent_ctx)
         overrides = self._dept_versions.get(asset_id)
         scene_dv = self._scene.get_scene_dept_version(asset_id)
@@ -867,16 +874,27 @@ class DetailSectionBuilder:
                 short_padding=scaled(4),
                 sizehint_padding=scaled(2),
             )
+            is_off = dept_name in off_depts
             if is_active:
                 name_lbl.setStyleSheet(active_name_style)
+            elif is_off:
+                name_lbl.setStyleSheet(missing_style)
             else:
                 name_lbl.setStyleSheet(name_style if available else missing_style)
             short_name = dept_shorts.get(dept_name, "")
             name_lbl.setFullText(
-                dept_name.title(),
-                short=short_name.title() if short_name else "",
+                off_label(dept_name.title(), is_off),
+                short=off_label(short_name.title(), is_off) if short_name else "",
             )
-            if not is_multi and dept_name not in assigned_depts:
+            if is_off:
+                name_lbl.setToolTip(
+                    f"{dept_name.title()} is turned off on this "
+                    f"{'shot' if is_shot else 'asset'}: its layers stay out "
+                    "of the staged build and nothing new is made for it. "
+                    "Its workfiles and exports are kept. Right-click > "
+                    "Enable department turns it back on."
+                )
+            elif not is_multi and dept_name not in assigned_depts:
                 # Shown because it has work, not because it is assigned. Say
                 # so — the row is not a mistake, and neither the workfile nor
                 # its exports are affected by the scoping.
@@ -1058,6 +1076,13 @@ class DetailSectionBuilder:
                     aid=asset_id, rd=ctx.refresh_detail:
                         self._workfiles.new_from_template(aid, dn, rd)
                 )
+                if is_off:
+                    # Nothing new is made for a department turned off here.
+                    create_btn.setEnabled(False)
+                    create_btn.setToolTip(
+                        f"{dept_name.title()} is turned off here: enable "
+                        "it first (right-click > Enable department)."
+                    )
                 row_layout.addWidget(create_btn)
 
             # ── Row-wide right-click context menu ──

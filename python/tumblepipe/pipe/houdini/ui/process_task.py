@@ -2,10 +2,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QStandardItemModel, QStandardItem
 
 from tumblepipe.util.uri import Uri
+
+from . import task_range
 
 
 # Custom data roles for tree items
@@ -40,12 +42,22 @@ class ProcessTask:
     # called with the publish config's tasks.build (specs.publish) instead
     # of execute_farm when the run's Build USD task rides with it.
     execute_farm_with_builds: Callable[[dict], object] | None = None
+    # A validation task: the issues its prompt would show, run against the
+    # stage as it is now, without prompting. The up-front pass (#56,
+    # validation_preflight) calls it before anything exports.
+    collect_issues: Callable[[], list] | None = None
     current_version: str | None = None              # Current export version (if known)
     exported_version: str | None = None             # Version this run wrote (set on completion)
     channel: str | None = None                      # Publish channel name (for build tasks)
     channels: list[str] | None = None               # Channels a channel-less task covers (validation)
     first_frame: int | None = None                  # First frame (with roll)
     last_frame: int | None = None                   # Last frame (with roll)
+    # The artist's First/Last for this submit only (#76, ``task_range``);
+    # first_frame/last_frame stay the node's. None: the node's range.
+    range_override: tuple[int, int] | None = None
+    # A Build USD row: the export rows whose edited range it follows.
+    range_follows: list['ProcessTask'] = field(
+        default_factory=list, repr=False, compare=False)
     # Hierarchy support for grouped tasks
     children: list['ProcessTask'] | None = None     # Child tasks (for parent/group tasks)
     parent_id: str | None = None                    # Reference to parent task ID
@@ -134,8 +146,16 @@ def is_queued(task_type: str, farm_mode: bool) -> bool:
     return farm_mode and task_type != 'validate'
 
 
+#: A First/Last cell changed for this submit (#76): amber, as queued rows.
+RANGE_EDITED_COLOR = '#f0c05a'
+
+
 class ProcessTaskTreeModel(QStandardItemModel):
     """Tree model for process tasks grouped by entity URI"""
+
+    # A First/Last edit was refused (the reason), or one went in.
+    range_edit_rejected = Signal(str)
+    ranges_changed = Signal()
 
     # Column indices
     COLUMN_TASK = 0
@@ -280,13 +300,10 @@ class ProcessTaskTreeModel(QStandardItemModel):
         version_item = QStandardItem(version_label(task))
         version_item.setEditable(False)
 
-        # First Frame column
-        first_frame_item = QStandardItem(str(task.first_frame) if task.first_frame is not None else '-')
-        first_frame_item.setEditable(False)
-
-        # Last Frame column
-        last_frame_item = QStandardItem(str(task.last_frame) if task.last_frame is not None else '-')
-        last_frame_item.setEditable(False)
+        # First / Last Frame columns: editable for this submit (#76)
+        first_frame_item = QStandardItem()
+        last_frame_item = QStandardItem()
+        self._fill_range_items(task, first_frame_item, last_frame_item)
 
         # Status column
         status_item = QStandardItem(self.STATUS_DISPLAY.get(task.status, ''))
@@ -295,9 +312,141 @@ class ProcessTaskTreeModel(QStandardItemModel):
 
         return [task_item, dept_item, channel_item, version_item, first_frame_item, last_frame_item, status_item]
 
+    # -- First / Last for this submit (#76, task_range) ---------------------
+
+    def _range_text(self, task: ProcessTask, bound: str):
+        """A range cell's value: an int (the editor is then a spin box), or
+        '-' / 'varies' text."""
+        shown = task_range.display_bound(task, bound)
+        return '-' if shown is None else shown
+
+    def _range_tip(self, task: ProcessTask) -> str:
+        if not task_range.is_range_editable(task):
+            return ''
+        node = task_range.node_range(task)
+        node_text = f'{node[0]}-{node[1]}' if node else 'none'
+        if task_range.row_is_edited(task):
+            leaves = task.children or [task]
+            if not any(task_range.is_edited(leaf) for leaf in leaves):
+                return (
+                    'Follows the edited export range for this submit '
+                    f'(its own: {node_text}). Edit it to set its own.'
+                )
+            return (
+                f'Changed for this submit only; the node keeps {node_text}. '
+                'Right-click > Reset Frame Range to go back.'
+            )
+        return (
+            f'The node\'s range ({node_text}). Double-click to change it for '
+            'this submit only; the node is not changed.'
+        )
+
+    def _fill_range_items(
+        self, task: ProcessTask, first_item: QStandardItem,
+        last_item: QStandardItem, can_run: bool = True,
+    ):
+        """Show ``task``'s range in its First/Last cells: editable where a
+        run uses it, marked (italic, amber) when changed for this submit."""
+        editable = task_range.is_range_editable(task)
+        edited = task_range.row_is_edited(task)
+        tip = self._range_tip(task)
+        for item, bound in ((first_item, task_range.FIRST), (last_item, task_range.LAST)):
+            item.setData(self._range_text(task, bound), Qt.DisplayRole)
+            item.setEditable(editable)
+            item.setToolTip(tip)
+            font = item.font()
+            font.setItalic(edited)
+            item.setFont(font)
+            if edited and can_run:
+                item.setForeground(QBrush(QColor(RANGE_EDITED_COLOR)))
+
+    def _range_cells(self, task_id: str):
+        """The First and Last items of a task's row, or None."""
+        task_item = self._task_items.get(task_id)
+        if task_item is None or task_item.parent() is None:
+            return None
+        parent, row = task_item.parent(), task_item.row()
+        first = parent.child(row, self.COLUMN_FIRST_FRAME)
+        last = parent.child(row, self.COLUMN_LAST_FRAME)
+        if first is None or last is None:
+            return None
+        return first, last
+
+    def refresh_ranges(self):
+        """Redraw every First/Last cell (an edit moves its group's cells and
+        the Build USD rows that follow it)."""
+        was_updating = self._updating_checks
+        self._updating_checks = True
+        try:
+            for task_id, task_item in self._task_items.items():
+                task = task_item.data(TASK_ROLE)
+                cells = self._range_cells(task_id)
+                if task is None or cells is None:
+                    continue
+                self._fill_range_items(task, *cells, can_run=self._can_task_run(task))
+        finally:
+            self._updating_checks = was_updating
+        # Edited cells keep their colour; the rest follow can-run styling.
+        self._update_dependency_styling()
+
+    def _on_range_edited(self, item: QStandardItem):
+        """A First or Last cell was edited: apply it to the task (never the
+        node), or refuse it and put the cell back."""
+        parent = item.parent()
+        task_item = parent.child(item.row(), 0) if parent is not None else None
+        task = task_item.data(TASK_ROLE) if task_item is not None else None
+        if task is None:
+            return
+        bound = (
+            task_range.FIRST if item.column() == self.COLUMN_FIRST_FRAME
+            else task_range.LAST
+        )
+        value = item.data(Qt.DisplayRole)
+        if value == self._range_text(task, bound):
+            return  # Redrawn, not edited
+        try:
+            task_range.set_bound(task, bound, value)
+        except ValueError as error:
+            self.refresh_ranges()  # Puts the cell back
+            self.range_edit_rejected.emit(str(error))
+            return
+        self.refresh_ranges()
+        self.ranges_changed.emit()
+
+    def set_task_range(self, task: ProcessTask, first, last):
+        """Set ``task``'s range for this submit (ValueError, changing
+        nothing, for a bad range)."""
+        task_range.set_range(task, first, last)
+        self.refresh_ranges()
+        self.ranges_changed.emit()
+
+    def reset_task_range(self, task: ProcessTask):
+        """Back to the node's range for ``task`` (and its children)."""
+        task_range.reset_range(task)
+        self.refresh_ranges()
+        self.ranges_changed.emit()
+
+    def reset_all_ranges(self):
+        """Every task back to its node's range."""
+        for task in self._tasks:
+            task_range.reset_range(task)
+        self.refresh_ranges()
+        self.ranges_changed.emit()
+
+    def has_range_edits(self) -> bool:
+        return task_range.has_edits(self._tasks)
+
     def _on_item_changed(self, item: QStandardItem):
         """Handle checkbox changes with parent/child sync (supports 3 levels)"""
         if self._updating_checks:
+            return
+
+        if item.column() in (self.COLUMN_FIRST_FRAME, self.COLUMN_LAST_FRAME):
+            self._updating_checks = True
+            try:
+                self._on_range_edited(item)
+            finally:
+                self._updating_checks = False
             return
 
         self._updating_checks = True
@@ -412,7 +561,18 @@ class ProcessTaskTreeModel(QStandardItemModel):
         return True
 
     def _update_dependency_styling(self):
-        """Update visual styling for tasks based on dependency status."""
+        """Update visual styling for tasks based on dependency status.
+
+        Guarded: a colour change is an itemChanged too, and a First/Last
+        cell's change would otherwise come back here, without end."""
+        was_updating = self._updating_checks
+        self._updating_checks = True
+        try:
+            self._style_dependencies()
+        finally:
+            self._updating_checks = was_updating
+
+    def _style_dependencies(self):
         blocked_color = QColor('#666666')  # Grey for blocked tasks
         normal_color = QColor('#ffffff')   # White for normal tasks
 
@@ -437,6 +597,12 @@ class ProcessTaskTreeModel(QStandardItemModel):
                 col_item = parent.child(row, col)
                 if col_item:
                     col_item.setForeground(QBrush(color))
+            # A range changed for this submit stays marked while it can run
+            if can_run and task_range.row_is_edited(task):
+                for col in (self.COLUMN_FIRST_FRAME, self.COLUMN_LAST_FRAME):
+                    col_item = parent.child(row, col)
+                    if col_item:
+                        col_item.setForeground(QBrush(QColor(RANGE_EDITED_COLOR)))
 
     def get_tasks(self) -> list[ProcessTask]:
         """Get the top-level tasks (children stay nested in task.children)"""
@@ -472,6 +638,13 @@ class ProcessTaskTreeModel(QStandardItemModel):
             if task.enabled:
                 enabled_uris.add(str(task.uri))
         return enabled_uris
+
+    def set_entity_enabled(self, uri_str: str, enabled: bool):
+        """Tick or untick every task of one entity, as its checkbox would
+        (the up-front validation dialog's skipped shots, #56)."""
+        item = self._entity_items.get(uri_str)
+        if item is not None:
+            item.setCheckState(Qt.Checked if enabled else Qt.Unchecked)
 
     def set_all_enabled(self, enabled: bool):
         """Enable or disable all tasks (including children)"""

@@ -2,6 +2,12 @@ import logging
 from dataclasses import dataclass
 
 from tumblepipe.api import api
+from tumblepipe.config.department_off import (  # noqa: F401  (re-exported)
+    DISABLED_DEPARTMENTS,
+    applied_departments,
+    read_disabled_departments,
+    toggled_disabled_departments,
+)
 from tumblepipe.naming import WINDOWS_RESERVED
 from tumblepipe.util.uri import Uri
 
@@ -379,3 +385,62 @@ def set_entity_departments(entity_uri: Uri, names: list[str]):
     own['departments'] = [name for name in pool if name in set(names)]
     api.config.set_own_properties(entity_uri, own)
 
+
+# --------------------------------------------------------------------------- #
+# Departments turned off on an entity (#64)
+# --------------------------------------------------------------------------- #
+# Scoping (``departments`` above) states what an entity is *expected* to
+# have and never touches composition. Turning a department off is the
+# stronger, reversible switch an artist reaches for when a shot does not
+# need it at all: the department's layers stay out of the shot's staged
+# build, no new workfile is made for it, and Farm Submit and the publish
+# leave it alone for that shot. Its workfiles and exports stay on disk, so
+# turning it back on brings everything back.
+#
+# The decisions are pure and live in ``config.department_off``; these are
+# the store reads and writes.
+
+
+def get_disabled_departments(entity_uri: Uri) -> list[str]:
+    """The departments turned off on ``entity_uri`` (resolved, so a
+    sequence's list reaches its shots); [] for an unknown entity."""
+    return read_disabled_departments(api.config.get_properties(entity_uri))
+
+
+def is_department_disabled(entity_uri: Uri, name: str) -> bool:
+    return name in get_disabled_departments(entity_uri)
+
+
+def set_department_disabled(entity_uri: Uri, name: str, off: bool) -> bool:
+    """Turn department ``name`` off (``off``) or back on for ``entity_uri``.
+
+    Returns False when nothing changed. Only the entity's own
+    ``disabled_departments`` is written, so nothing else it inherits gets
+    pinned. Turning off a department the pool does not have is refused.
+    """
+    context = entity_context(entity_uri)
+    properties = api.config.get_properties(entity_uri)
+    if properties is None:
+        raise ValueError(f'Entity not found: {entity_uri}')
+    pool = list_department_names(context)
+    if off and name not in pool:
+        raise ValueError(f"'{name}' is not a department of the {context} pool")
+    current = read_disabled_departments(properties)
+    wanted = toggled_disabled_departments(pool, current, name, off)
+    if wanted == current:
+        return False
+    own = api.config.get_own_properties(entity_uri) or {}
+    own[DISABLED_DEPARTMENTS] = wanted
+    api.config.set_own_properties(entity_uri, own)
+    return True
+
+
+def disabled_message(entity_uri: Uri, name: str) -> str:
+    """Why an action on department ``name`` of ``entity_uri`` is refused."""
+    label = '/'.join(entity_uri.segments[1:]) or str(entity_uri)
+    return (
+        f"{name} is turned off on {label}. Its workfiles and exports are "
+        f"kept, but nothing new is made for it. Turn it back on with "
+        f"Enable department (right-click the department in the browser) "
+        f"or in the Entity Editor's Departments off column."
+    )

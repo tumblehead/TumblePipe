@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from tumbletrove.asset_browser.api.types import Asset, DeckItem
 
 from . import containers as containers_mod
+from .dept_scope import off_label
 from .types import DEPT_ICONS, DEPT_SHORT_NAMES, SHOT_DEPT_ICONS
 
 if TYPE_CHECKING:
@@ -30,6 +31,13 @@ if TYPE_CHECKING:
 _MISSING_DEPT_TOOLTIP = (
     "{short} — no workfile yet\n"
     "Double-click to create the first version from the template"
+)
+
+# A department turned off on the shot (#64): kept on the deck, greyed with
+# "(off)", but nothing new is made for it.
+_OFF_DEPT_TOOLTIP = (
+    "{short} — turned off on this entity: its layers stay out of the build\n"
+    "Right-click > Enable department to turn it back on"
 )
 
 # TumbleTrove 0.50 added ``DeckItem.draggable``; an older build rejects
@@ -178,8 +186,13 @@ class DeckBuilder:
                 return {"draggable": False}
             return {}
 
+        # Departments turned off on the entity (#64), labelled "(off)".
+        off_depts = self._dept_scope.turned_off(asset.id)
+
         for dept_name in all_depts:
             short = DEPT_SHORT_NAMES.get(dept_name, dept_name.title())
+            is_off = dept_name in off_depts
+            short = off_label(short, is_off)
             version = depts.get(dept_name)
             group_info = dept_groups.get(dept_name)
             if group_info:
@@ -255,7 +268,9 @@ class DeckBuilder:
                     icon=_icon_for(dept_name),
                     action_id=f"new_from_template:{dept_name}",
                     dismiss_on_click=True,
-                    tooltip=_MISSING_DEPT_TOOLTIP.format(short=short),
+                    tooltip=(
+                        _OFF_DEPT_TOOLTIP if is_off else _MISSING_DEPT_TOOLTIP
+                    ).format(short=short),
                 ))
 
         return cards

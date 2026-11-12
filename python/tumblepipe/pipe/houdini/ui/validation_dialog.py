@@ -2,6 +2,7 @@
 Dialog for showing validation failures and asking user to continue or cancel export.
 """
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -19,6 +20,8 @@ from tumblepipe.pipe.houdini.validators.base import (
     ValidationResult,
     ValidationSeverity,
 )
+
+from . import validation_preflight
 
 
 # Toggle: collapse groups of this size or larger by default in the dialog.
@@ -177,30 +180,7 @@ class ValidationConfirmDialog(QDialog):
                 QTreeWidgetItem(tree, [line])
             return
 
-        for severity, message, prim_paths, suggestion in result.grouped_issues():
-            prefix = "ERROR" if severity == ValidationSeverity.ERROR else "WARNING"
-            bulb = " \U0001f4a1" if suggestion else ""
-
-            if len(prim_paths) <= 1:
-                # Single occurrence — render inline; no expansion needed
-                path = prim_paths[0] if prim_paths else None
-                label = f"[{prefix}] {path}: {message}{bulb}" if path else f"[{prefix}] {message}{bulb}"
-                item = QTreeWidgetItem(tree, [label])
-                _style_severity(item, severity)
-                if suggestion:
-                    item.setToolTip(0, f"Suggestion: {suggestion}")
-                continue
-
-            # Multiple occurrences — summary parent + children for each path
-            summary = f"[{prefix}] {message}  —  {len(prim_paths)} prims{bulb}"
-            parent = QTreeWidgetItem(tree, [summary])
-            _style_severity(parent, severity)
-            if suggestion:
-                parent.setToolTip(0, f"Suggestion: {suggestion}")
-            for path in prim_paths:
-                child = QTreeWidgetItem(parent, [path])
-                child.setForeground(0, QColor("#aaaaaa"))
-            parent.setExpanded(len(prim_paths) < _COLLAPSE_THRESHOLD)
+        _add_issue_items(tree, result)
 
     def _on_continue(self):
         self._user_choice = self.CONTINUE
@@ -221,6 +201,177 @@ class ValidationConfirmDialog(QDialog):
     def remember_choice(self) -> bool:
         """Return whether the user wants to remember this choice."""
         return self._remember_choice
+
+
+def _add_issue_items(parent, result: ValidationResult):
+    """Add ``result``'s issues under ``parent`` (a tree or an item),
+    grouped by (severity, message): one row per group, its prims below."""
+    for severity, message, prim_paths, suggestion in result.grouped_issues():
+        prefix = "ERROR" if severity == ValidationSeverity.ERROR else "WARNING"
+        bulb = " \U0001f4a1" if suggestion else ""
+
+        if len(prim_paths) <= 1:
+            # Single occurrence — render inline; no expansion needed
+            path = prim_paths[0] if prim_paths else None
+            label = f"[{prefix}] {path}: {message}{bulb}" if path else f"[{prefix}] {message}{bulb}"
+            item = QTreeWidgetItem(parent, [label])
+            _style_severity(item, severity)
+            if suggestion:
+                item.setToolTip(0, f"Suggestion: {suggestion}")
+            continue
+
+        # Multiple occurrences — summary parent + children for each path
+        summary = f"[{prefix}] {message}  —  {len(prim_paths)} prims{bulb}"
+        group = QTreeWidgetItem(parent, [summary])
+        _style_severity(group, severity)
+        if suggestion:
+            group.setToolTip(0, f"Suggestion: {suggestion}")
+        for path in prim_paths:
+            child = QTreeWidgetItem(group, [path])
+            child.setForeground(0, QColor("#aaaaaa"))
+        group.setExpanded(len(prim_paths) < _COLLAPSE_THRESHOLD)
+
+
+def _entity_label(entity: str) -> str:
+    """A shot or asset's name for the dialog, from its URI string."""
+    from tumblepipe.util.uri import Uri
+    try:
+        return Uri.parse(entity).display_name()
+    except Exception:
+        return entity
+
+
+def _entities_phrase(entities: list[str]) -> str:
+    """"2 shots", "1 asset", "3 shots and assets"."""
+    shots = all(entity.startswith('entity:/shots/') for entity in entities)
+    assets = all(entity.startswith('entity:/assets/') for entity in entities)
+    count = len(entities)
+    if shots:
+        noun = 'shot' if count == 1 else 'shots'
+    elif assets:
+        noun = 'asset' if count == 1 else 'assets'
+    else:
+        noun = 'shots and assets'
+    return f"{count} {noun}"
+
+
+class PreflightValidationDialog(QDialog):
+    """The up-front validation dialog of a publish run (#56).
+
+    Lists every issue the run's validations found before anything
+    exported, grouped by shot (or asset) and department. Each shot has a
+    checkbox: Continue Anyway runs the ticked shots and skips the
+    unticked ones' exports, Cancel Export runs nothing.
+
+    ``grouped`` is ``validation_preflight.group_findings``' result.
+    """
+
+    CONTINUE = validation_preflight.CONTINUE
+    CANCEL = validation_preflight.CANCEL
+
+    def __init__(self, grouped: list, parent=None):
+        super().__init__(parent)
+        issue_count = validation_preflight.issue_count
+
+        self._user_choice = self.CANCEL
+        self._entity_items: dict[str, QTreeWidgetItem] = {}
+
+        self.setWindowTitle("Validation Issues")
+        self.setModal(True)
+        self.setMinimumWidth(760)
+        self.setMinimumHeight(480)
+
+        layout = QVBoxLayout(self)
+        count = issue_count(grouped)
+        self._header = QLabel(
+            f"Validation found {count} issue{'s' if count != 1 else ''} in "
+            f"{_entities_phrase([entity for entity, _ in grouped])}, "
+            "before anything exported"
+        )
+        self._header.setStyleSheet("font-weight: bold; color: #ff6b6b; font-size: 14px;")
+        layout.addWidget(self._header)
+        note = QLabel(
+            "Untick a shot to skip its exports. Continue Anyway runs the "
+            "ticked ones; an issue listed here does not ask again during "
+            "the run, only one the run itself brings in."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        issues_box = QGroupBox("Validation Issues")
+        issues_layout = QVBoxLayout(issues_box)
+        self._tree = QTreeWidget()
+        self._tree.setHeaderHidden(True)
+        self._tree.setRootIsDecorated(True)
+        self._tree.setUniformRowHeights(True)
+        self._tree.setSelectionMode(QTreeWidget.ExtendedSelection)
+        self._populate(grouped)
+        issues_layout.addWidget(self._tree)
+        layout.addWidget(issues_box)
+
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        self._continue_btn = QPushButton("Continue Anyway")
+        self._continue_btn.setToolTip(
+            "Export the ticked shots despite these issues")
+        self._continue_btn.clicked.connect(self._on_continue)
+        self._cancel_btn = QPushButton("Cancel Export")
+        self._cancel_btn.setToolTip("Export nothing")
+        self._cancel_btn.setDefault(True)
+        self._cancel_btn.clicked.connect(self._on_cancel)
+        button_layout.addWidget(self._continue_btn)
+        button_layout.addWidget(self._cancel_btn)
+        layout.addLayout(button_layout)
+
+    def _populate(self, grouped: list):
+        for entity, departments in grouped:
+            count = sum(len(issues) for _, issues in departments)
+            entity_item = QTreeWidgetItem(
+                self._tree,
+                [f"{_entity_label(entity)}  —  {count} issue{'s' if count != 1 else ''}"],
+            )
+            entity_item.setFlags(entity_item.flags() | Qt.ItemIsUserCheckable)
+            entity_item.setCheckState(0, Qt.Checked)
+            entity_item.setToolTip(0, "Untick to skip this shot's exports")
+            self._entity_items[entity] = entity_item
+            for department, issues in departments:
+                errors = any(i.severity == ValidationSeverity.ERROR for i in issues)
+                department_item = QTreeWidgetItem(entity_item, [department])
+                _style_severity(
+                    department_item,
+                    ValidationSeverity.ERROR if errors else ValidationSeverity.WARNING,
+                )
+                _add_issue_items(
+                    department_item,
+                    ValidationResult(passed=not errors, issues=list(issues)),
+                )
+                department_item.setExpanded(True)
+            entity_item.setExpanded(True)
+
+    def _on_continue(self):
+        self._user_choice = self.CONTINUE
+        self.accept()
+
+    def _on_cancel(self):
+        self._user_choice = self.CANCEL
+        self.reject()
+
+    @property
+    def user_choice(self) -> str:
+        """CONTINUE or CANCEL (``validation_preflight``'s values)."""
+        return self._user_choice
+
+    def kept_entities(self) -> list[str]:
+        """The entity URI strings still ticked."""
+        return [
+            entity for entity, item in self._entity_items.items()
+            if item.checkState(0) == Qt.Checked
+        ]
+
+    def set_entity_kept(self, entity: str, kept: bool):
+        """Tick or untick a shot, as the artist would."""
+        self._entity_items[entity].setCheckState(
+            0, Qt.Checked if kept else Qt.Unchecked)
 
 
 def _style_severity(item: QTreeWidgetItem, severity: ValidationSeverity):

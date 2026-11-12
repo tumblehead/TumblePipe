@@ -148,3 +148,17 @@ def open_grid(seed) -> None:
         list(seed.uris), list(seed.names), seed.context,
         department=seed.department, channels=tuple(seed.channels) or None,
     )
+
+
+def open_comp_grid(shot_uri, department: str | None = None) -> None:
+    """Farm Submit's grid with ``shot_uri``'s Render and Comp ticked: a
+    th::export_comp no th::import_render feeds comps the render of the
+    same submit (#80), so its own Submit sends the artist here.
+    ``department`` (the open workfile's) is the render cut, as from the
+    toolbar. Raises; the caller is the button's boundary."""
+    from tumblepipe.asset_browser.scene import open_submit_jobs_dialog
+    from tumblepipe.farm.submit import grid
+    open_submit_jobs_dialog(
+        [shot_uri], [shot_uri.segments[-1]], 'shots',
+        department=department, tick_kinds=(grid.RENDER, grid.COMP),
+    )

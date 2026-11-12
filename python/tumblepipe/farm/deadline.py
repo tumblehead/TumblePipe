@@ -401,3 +401,47 @@ def run_batched(
         job.end_frame = last_frame
     job.step_size = step_size
     job.chunk_size = batch_size
+
+
+def run_blocks(job: Job, blocks, step_size: int = 1) -> None:
+    """Schedule ``job`` as one Deadline task per block (``(first, last)``,
+    ``farm.specs.frame_ranges.blocks``), each named by its first frame.
+
+    The farm chunks a frame list without regard to gaps: ``1001-1030,
+    1040-1055`` in chunks of 10 makes a task 1021-1040, and the worker,
+    handed only a task's first and last frame, would render the gap. So a
+    multi-range job's tasks are its blocks, one "frame" each, and the
+    worker looks the block up in its context (``worker.stepped``).
+
+    The farm multiplies a task's time limit by its frames
+    (``EnableFrameTimeouts``), and each task is one "frame" here: the
+    limit is raised to the largest block's frame count, the time the same
+    frames get in an ordinary job."""
+    blocks = list(blocks)
+    job.frames.extend(first for first, _last in blocks)
+    job.step_size = 1
+    job.chunk_size = 1
+    if job.max_frame_time and blocks:
+        most = max((last - first) // max(1, step_size) + 1 for first, last in blocks)
+        job.max_frame_time = job.max_frame_time * most
+
+
+def schedule_frames(job: Job, config: dict) -> None:
+    """Schedule a batched job (render, denoise) from its ``config``: in
+    blocks when it carries ``frame_ranges`` (its worker's context then
+    carries the same blocks, ``frame_ranges.context_entry``), else as
+    :func:`run_batched`."""
+    from tumblepipe.farm.specs import frame_ranges
+    ranges = frame_ranges.from_config(config)
+    if ranges is None:
+        run_batched(
+            job,
+            config['first_frame'], config['last_frame'],
+            config['step_size'], config['batch_size'], config['frames']
+        )
+        return
+    run_blocks(
+        job,
+        frame_ranges.blocks(ranges, config['batch_size'], config['step_size']),
+        config['step_size'],
+    )

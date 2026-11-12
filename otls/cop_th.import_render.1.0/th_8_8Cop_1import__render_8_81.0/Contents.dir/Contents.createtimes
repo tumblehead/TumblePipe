@@ -1,8 +1,20 @@
 {
-	"hdaroot/dive/inputs.def":1794416850,
-	"hdaroot/inputs.def":1794416850,
-	"hdaroot/dive.def":1794416850,
-	"hdaroot.def":1794416850,
-	"hdaroot/dive/outputs.def":1794416850,
-	"hdaroot/outputs.def":1794416850
+	"hdaroot/scene/lopnet/import_shot.def":1794478204,
+	"hdaroot/scene/lopnet/import_shot/duplicates.def":1765186348,
+	"hdaroot/scene/lopnet/import_shot/procedurals.def":1762960467,
+	"hdaroot/scene/lopnet/import_shot/procedurals/preview_procedurals.def":1791185891,
+	"hdaroot/scene.def":1794478205,
+	"hdaroot/scene/lopnet/import_shot/import.def":1765146799,
+	"hdaroot/scene/lopnet/import_shot/procedurals/enable.def":1791185891,
+	"hdaroot/dive.def":1794478205,
+	"hdaroot/scene/lopnet/import_shot/metadata.def":1763373682,
+	"hdaroot/dive/outputs.def":1794478205,
+	"hdaroot/scene/lopnet/import_shot/duplicates/output0.def":1765186348,
+	"hdaroot/dive/inputs.def":1794478205,
+	"hdaroot/scene/lopnet/import_shot/procedurals/output0.def":1762960467,
+	"hdaroot/inputs.def":1794478205,
+	"hdaroot/camera_out.def":1794478205,
+	"hdaroot/geometry_out.def":1794478205,
+	"hdaroot/outputs.def":1794478205,
+	"hdaroot.def":1794478205
 }

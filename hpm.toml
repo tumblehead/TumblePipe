@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.103.0"
+version = "1.104.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -89,7 +89,7 @@ tomli-w = ">=1.0"
 #   build-resolver — tumbleResolver USD plugin -> resolver/houdini<major>/
 #   build-delegate — hdThPlayblast render delegate -> plugins/houdini<major>/
 #   build-wizard   — tt_setup + tt_prepare hook apps -> bin/<platform>/
-#   build-player   — th_player sequence player + its FFmpeg -> bin/<platform>/
+#   build-player   — cinedex sequence player + its FFmpeg -> bin/<platform>/
 #   build-vramhook — VRAM Inspector hook DSO -> dso/<major>.<minor>/
 #   compile-hdas   — expanded otls/<name>/ -> otls/<name>.hda
 prepack = ["build-resolver", "build-delegate", "build-wizard", "build-player", "build-vramhook", "compile-hdas"]
@@ -265,7 +265,7 @@ python = "3.11"
 label = "Prune Old Exports"
 description = "Delete old export versions of shots and assets, keeping the newest few and anything a staged build or latest workfile still loads"
 
-# edits: the editor (th_player) on the whole film: the project's master edit,
+# edits: the editor (cinedex) on the whole film: the project's master edit,
 # or with none set an untitled edit of every shot. Open… and the asset
 # browser's Edits section open the other edits. Started like
 # Farm Submit, so $OCIO and $TH_PROJECT_PATH are a Houdini session's.

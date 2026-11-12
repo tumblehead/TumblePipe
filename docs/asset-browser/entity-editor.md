@@ -47,6 +47,7 @@ name, and the title, gain a `*` while there are edits not applied.
 | **Root** | Shots | The shot's [Root](multis-and-roots.md), picked from a dropdown. **Inherit** puts it back to the sequence's, set on the [sequence's row](#sequence-and-category-rows). |
 | **Multis** | both | The Multis the entity belongs to. Double-click to change them; see [Multis](#multis). |
 | **Layers** | Shots | The shot's render layers, bottom to top: `characters: /CHAR/*; fx: /FX/*`. Double-click to edit them; see [Render layers](#render-layers). |
+| **Departments off** | Shots | The departments turned off on the shot (`disabled_departments`): `effects, cfx`. Empty means every department of the pool is on. Double-click to tick them; see [Departments turned off on a shot](#departments-turned-off-on-a-shot). |
 | **Assets** | Shots | What the shot imports: its Root's assets, then the Root's parents'. Empty for a shot with no Root. See [Which assets a shot imports](#which-assets-a-shot-imports). |
 
 The dropdown above the sheet shows one category or sequence, or all of
@@ -198,6 +199,94 @@ from what the shot inherits: a shot that adds `characters` to its
 sequence's `fx` stores the `characters` pattern alone. The shot's detail
 panel shows the same layers on its **Layers** row, marked *(inherited)*
 when they come from the sequence or project.
+
+## Departments turned off on a shot
+
+A shot that does not need a department at all (no effects, no crowd) can
+turn it off. Double-click the **Departments off** cell for **Departments
+of `<shot>`**: one tick box per department of the shot pool, ticked while
+it is on. Untick one and press OK, then Apply. A department turned off:
+
+- stays out of the shot's staged build, so every department after it sees
+  the shot without it (`th::import_shot` leaves its layer out too, even
+  from a stage built before it was turned off);
+- gets no new workfile: **New from Template** and **New from Current** on
+  it are refused with a message saying how to turn it back on;
+- is not offered by [Farm Submit](submit-jobs.md) for that shot (its cell
+  shows `×`), and the publish collects no export into it for that shot (a
+  Multi's workfile still publishes its other members).
+
+Nothing is deleted. Its workfiles and exports stay on disk and its existing
+workfiles still open, so ticking it again brings it all back. The browser
+lists it greyed with *(off)*, and its right-click menu has **Disable
+department on this shot** / **Enable department** for the same switch on
+one shot.
+
+- **On a sequence's row** the list is what its shots inherit.
+- **On a selection** OK sets the same list on every selected shot.
+- **Inherit** puts a shot's list back to what its sequence gives it.
+- The cell takes typed or pasted names too: `effects, cfx`. `none` turns
+  every department on for a shot whose sequence turns some off. A name the
+  shot pool does not have is refused.
+
+Apply writes the list, in pool order, to the shot's own
+`disabled_departments` ([Configuration](../configuration.md#departments-turned-off-on-a-shot)).
+
+## Render settings
+
+Below the Shots table, the **Render settings** section shows the render
+settings a shot's root layer applies, and changes them without the Database
+Editor. It edits what is selected:
+
+- **shots** (one or more rows): the shots themselves;
+- **a sequence's row**: what its shots inherit;
+- **Project defaults** (the button at its right, pressed): all shots
+  (`entity:/shots`), what every sequence and shot inherits.
+
+With nothing selected and Project defaults not pressed, it asks for a
+selection. The settings are exactly the ones the root layer applies
+([Configuration → render settings](../configuration.md#render-settings-in-the-root-layer)):
+
+| Setting | What it does |
+| --- | --- |
+| **Apply to render** | Whether the shot's root layer authors the two below, and the Karma samples and ray limits pinned in the Database Editor, on the project's RenderSettings prim (`render.apply_config`). Off, or not set anywhere: renders use the RenderSettings the scene carries. |
+| **Resolution** | Width x height, typed as `1920x1080` or `1920 x 1080` (`render.resolution`). It also sizes the layout camera's frame and playblasts, applied to the render or not. |
+| **Camera** | The camera prim the render looks through, e.g. `/cameras/render_camera` (`render.camera`). Authored only when that camera exists in the project's `root_default_prims.usda`; otherwise the scene's camera renders. |
+
+Each setting shows its value and, beside it, where it comes from: *set
+here*, *from sequence sq010*, *from all shots*, *from the project*, *from
+the project's defaults*, or *not set anywhere*. Inherited values are grey,
+as in the sheet. Several selected shots that differ show *(mixed)* (Apply
+to render a half-ticked box) and *differs between them*.
+
+- **Type or tick** to set a value on every target. Typing what a target
+  already inherits pins nothing, as in the sheet. A value the root layer
+  could not use (`0 x 5`, a camera without a leading `/`) is refused, and
+  the footer says why.
+- **Inherit** takes the value set here away, so the target follows its
+  sequence, all shots or the project again. Clearing a field does the same.
+- The line under the settings says what the shot renders with: *"The root
+  layer renders at 2048 x 858 and through /cameras/render_camera when
+  root_default_prims.usda has that camera."*, or *"Not applied: renders use
+  the RenderSettings in the scene."* For a sequence or all shots it is what
+  a shot that inherits all three gets.
+
+The edits are pending like the sheet's (tinted, counted in the footer as
+*all shots render defaults changed*, *1 sequence changed*, *2 shots
+changed*, undone with Undo) and written by Apply, which writes only the one
+key of `render` each setting is, leaving the rest of `render` (samples,
+overscan, ...) as stored. A changed setting makes the shot's root layer
+stale; Apply's staging brings it up to date (a shot with a Root gets a new
+root layer at once; any other at its next build).
+
+**Order.** A shot takes each setting from the first of: the shot, its
+sequence, all shots, the project (`entity:/`), the project's defaults
+(`schemas.json`). A [Farm Submit](submit-jobs.md) override (samples, motion
+blur, depth of field, ray limits) is a separate, stronger layer on the
+same RenderSettings prim: it wins for that one submission, and changes
+nothing here. Farm Submit has no render resolution or camera override, so
+for those two the order ends at the shot (its playblast width and height
+start from the shot's resolution).
 
 ## Multis
 

@@ -91,7 +91,21 @@ def stepped(frame_span: BlockRange, config: dict) -> BlockRange:
     Workers get only a task's first and last frame. A stepped full render
     (step 10, batch 5: task 1001-1041) dropped the step and rendered all 41
     frames of the span, every frame of the shot (QA 2026-11-10); the
-    composite worker had already been fixed the same way."""
+    composite worker had already been fixed the same way.
+
+    A multi-range render's job (``farm.specs.frame_ranges``, #84) names its
+    tasks by their blocks' first frames and lists the blocks in the
+    context's ``blocks``: the task's frames are the block that starts at
+    its span's first frame, which never spans a gap between two ranges."""
+    from tumblepipe.farm.specs import frame_ranges
+    block_list = config.get(frame_ranges.BLOCKS_KEY)
+    if block_list:
+        block = frame_ranges.block_at(block_list, frame_span.first_frame)
+        if block is None:
+            raise WorkerConfigError(
+                f'No block of this job starts at frame {frame_span.first_frame}'
+            )
+        return BlockRange(block[0], block[1], config['step_size'])
     return BlockRange(
         frame_span.first_frame,
         frame_span.last_frame,

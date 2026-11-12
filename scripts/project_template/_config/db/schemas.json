@@ -19,8 +19,8 @@
                         0.0,
                         0.0
                     ],
-                    "pathtracedsamples": 64,
-                    "diffuselimit": 2,
+                    "pathtracedsamples": 32,
+                    "diffuselimit": 1,
                     "reflectionlimit": 4,
                     "refractionlimit": 4,
                     "volumelimit": 0,

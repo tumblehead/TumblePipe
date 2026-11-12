@@ -1287,6 +1287,52 @@ proptest! {
         covers(&tris, &q, area, |p| inside(p, &outer) && !inside(p, &inner))?;
     }
 
+    /// `flip` (a left-handed mesh) gives exactly the triangles it gives
+    /// without, each wound the other way: the same faces, corners
+    /// `[a, c, b]` for `[a, b, c]`, so the same coverage with every signed
+    /// area negated (a face's triangles sum to its area unflipped, minus it
+    /// flipped). The shim leans on this: it flips an unrefined left-handed
+    /// mesh only, a refined one being right-handed already (8cdb3434).
+    #[test]
+    fn flip_reverses_every_triangle_and_nothing_else(
+        faces in prop::collection::vec(prop_oneof![star(3..20, 0.3, 2.0), star(3..20, 0.999, 1.0)], 1..6),
+        holes in prop::collection::vec(0i32..6, 0..3),
+        at in plane(),
+    ) {
+        let mut points = Vec::new();
+        let mut counts = Vec::new();
+        for q in &faces {
+            counts.push(q.len() as i32);
+            points.extend(lay(q, at).into_iter().map(|p| p.unwrap()));
+        }
+        let indices: Vec<i32> = (0..points.len() as i32).collect();
+        let (plain, plain_faces) = triangulate::triangulate(&points, &counts, &indices, &holes, false).unwrap();
+        let (flipped, flipped_faces) = triangulate::triangulate(&points, &counts, &indices, &holes, true).unwrap();
+        prop_assert_eq!(&plain_faces, &flipped_faces);
+        let wound: Vec<[u32; 3]> = plain.iter().map(|&[a, b, c]| [a, c, b]).collect();
+        prop_assert_eq!(&flipped, &wound);
+        // In each face's own 2D coordinates: corner k of the mesh is
+        // corner k - start of its face.
+        let flat: Vec<[f64; 2]> = faces.iter().flatten().copied().collect();
+        let twice = |t: &[u32; 3]| {
+            let [a, b, c] = t.map(|i| flat[i as usize]);
+            (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+        };
+        for (f, q) in faces.iter().enumerate() {
+            if holes.contains(&(f as i32)) {
+                prop_assert!(!plain_faces.contains(&(f as u32)));
+                continue;
+            }
+            let area = signed_area(q);
+            let sum = |tris: &[[u32; 3]]| -> f64 {
+                tris.iter().zip(&plain_faces).filter(|(_, &g)| g == f as u32).map(|(t, _)| twice(t) / 2.0).sum()
+            };
+            let eps = 1e-6 * q.len() as f64 + area.abs() * 1e-6;
+            prop_assert!((sum(&plain) - area).abs() <= eps, "face {}: {} unflipped vs area {}", f, sum(&plain), area);
+            prop_assert!((sum(&flipped) + area).abs() <= eps, "face {}: {} flipped vs area {}", f, sum(&flipped), area);
+        }
+    }
+
     /// A convex face (and a triangle) is fanned from corner 0, exactly as
     /// Hydra fans it, so a convex mesh draws as it did.
     #[test]

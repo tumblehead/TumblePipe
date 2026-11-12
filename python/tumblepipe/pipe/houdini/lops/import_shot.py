@@ -6,6 +6,7 @@ from tumblepipe.util.io import load_json
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import get_frame_range, get_fps
 from tumblepipe.config.department import (
+    get_disabled_departments,
     list_departments,
     list_entity_departments,
 )
@@ -470,6 +471,11 @@ class ImportShot(TimeOffsetNode, EntityNode):
             self.get_strictly_downstream_department_names()
         )
 
+        # A department turned off on the shot (#64) stays out, as the
+        # staged build leaves it out: a stage built before it was turned
+        # off still lists its layer.
+        departments_to_exclude.update(get_disabled_departments(shot_uri))
+
         # Assets introduced by an excluded department stay out: their layers
         # are not loaded, and they get no metadata or copies below.
         # This prevents import_shot from loading assets that import_assets will handle
@@ -791,5 +797,12 @@ def inspect_asset_layer(kwargs, index: int):
     """A Layer Stack row's '...' button."""
     native = kwargs['node']
     layer_stack.inspect_asset_layer(
+        native, index, pinned=ImportShot(native).get_version_name() != 'latest'
+    )
+
+def reveal_layer(kwargs, index: int):
+    """A Layer Stack row's Inspect button."""
+    native = kwargs['node']
+    layer_stack.reveal_layer(
         native, index, pinned=ImportShot(native).get_version_name() != 'latest'
     )

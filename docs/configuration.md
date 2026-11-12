@@ -297,9 +297,90 @@ its camera only when that camera exists in `root_default_prims.usda` (a
 project that keeps its camera under `/scene/cameras` keeps rendering through
 it). New projects have it on (template `schemas.json`); a project made before
 it has no key, which is off, so its renders do not change until its owner
-turns it on. Changing either value, or the flag, makes the shot's root layer
-stale, and the next build writes a new one. See
+turns it on. Changing either value, the flag, or any Karma setting below,
+makes the shot's root layer stale. Saving in the Entity Editor (Apply) or the
+Database Editor (Save) then writes a new root layer, and a new staged build,
+for every built shot the edit reaches (`pipe/root_staging.py`'s
+`sync_after_edit`); a shot never built reads the configuration at its first
+build. See
 [Where the render settings live](composition.md#where-the-render-settings-live).
+
+#### Render settings in the root layer
+
+Those three keys of `render` (and the Karma settings below) are what config reaches a
+render with, and the Entity Editor edits the three without the Database Editor:
+the Shots tab's **Render settings** section, for the selected shots, a
+sequence's row, or **Project defaults**
+([The Entity Editor → Render settings](asset-browser/entity-editor.md#render-settings)).
+Each key is inherited on its own, as `get_properties` merges `render` key
+by key; a shot takes each from the first level that holds it:
+
+1. the shot,
+2. its sequence,
+3. all shots (`entity:/shots`; the section's **Project defaults**, where the
+   template keeps the resolution),
+4. the project (`entity:/`, where `set_project_render_camera` writes),
+5. the project's defaults (`schemas.json`, `entity` → `render`).
+
+With `apply_config` on, the root layer also authors these Karma settings,
+under the attribute names Houdini 22.0's Karma Render Settings LOP authors
+(`pipe/usd/render_overrides.py`, `KARMA_SETTINGS`):
+
+| `render` key | Karma attribute |
+|---|---|
+| `pathtracedsamples` | `karma:global:pathtracedsamples` |
+| `diffuselimit` | `karma:object:diffuselimit` |
+| `reflectionlimit` | `karma:object:reflectlimit` |
+| `refractionlimit` | `karma:object:refractlimit` |
+| `volumelimit` | `karma:object:volumelimit` |
+| `ssslimit` | `karma:object:ssslimit` |
+| `dicingqualityscale` | `karma:global:dicingqualityscale` |
+| `enabledof` | `karma:global:enable_dof` |
+| `enablemblur` | `karma:object:mblur` |
+
+Each is authored only when one of levels 1-4 above pins it, and only when
+the value has the attribute's type (samples a whole number above 0; limits
+and quality a number not below 0; the two toggles true or false). A key
+only the project's defaults (level 5) hold is **not** authored: the
+project's `root_default_prims.usda` keeps supplying it, as it always did, so
+a project that pins none of them renders exactly as before. The rest of
+`render` (`overscan`, `usedicingcamera`, `dicingframe`,
+`dicingfocallength`, `enabledenoising`) is not authored on the stage. The
+Entity Editor offers only the first three keys; edit the Karma settings in
+the Database Editor.
+
+**Known gap, existing projects.** The shipped `schemas.json` said
+`pathtracedsamples` 64 and `diffuselimit` 2, where the template's
+`root_default_prims.usda` says 32 and 1. New projects get a `schemas.json`
+matching the template. A project made before keeps the old schema values,
+and the Database Editor shows them greyed as the inherited value, while its
+renders actually use the value in its `root_default_prims.usda` (32 and 1 for
+a template one). Pinning a value on the project, all shots, a sequence or a
+shot makes the two agree.
+
+Precedence on the RenderSettings prim, weakest first:
+
+1. the project's `root_default_prims.usda`;
+2. the shot's root layer (the keys above);
+3. the shot's department layers: a Karma Render Settings or
+   `th::render_settings` node in a workfile authors on the same prim in its
+   export, which the staged build stacks above the root layer, so a value
+   set on a node wins;
+4. a Farm Submit override (samples, motion blur, depth of field, ray
+   limits), written into that one submission's collapsed render layer as its
+   own opinion. Its motion blur and depth of field author the same
+   attributes as `enablemblur` and `enabledof`, so it wins over them too.
+   It never changes the configuration, and it has no resolution or camera
+   of its own.
+
+The editors' writes touch only the key edited and keep the others as
+stored.
+
+`config/render_config.py` holds the rule (pure: the cascade with each
+value's source, setting and clearing one key, what a value must be) and
+`config/entity_sheet.py` edits it like the sheet's other values, pending
+until Apply. A missing key is inherited, and a missing `apply_config`
+everywhere is off, so nothing needs a layout migration.
 
 ### Departments
 
@@ -368,6 +449,41 @@ That boundary is about the *checkbox*. It is not a claim that composition
 ignores departments generally — a submission's explicitly chosen render (or
 playblast) department does cut the composed stack, up to and including
 itself; see [Composition → The department cut](composition.md#the-department-cut).
+
+#### Departments turned off on a shot
+
+Scoping never changes a render. When a shot does not need a department at
+all, turn the department **off** instead: the `disabled_departments`
+property on the entity, a list of department names (pool order). Set it in
+the Entity Editor's **Departments off** column or from the department's
+right-click menu in the browser (**Disable department on this shot** /
+**Enable department**); see
+[The Entity Editor](asset-browser/entity-editor.md#departments-turned-off-on-a-shot).
+
+A department turned off on a shot:
+
+- is left out of the shot's staged build (`pipe/staged_build.py`), so the
+  departments after it see the shot without it; `th::import_shot` also
+  leaves its layer out of a stage built before it was turned off;
+- gets no new workfile from the browser (**New from Template**, **New from
+  Current**);
+- is not offered by Farm Submit for the shot, and `batch_submit` refuses a
+  publish of it or a Render / Playblast cut at it (an old "up to" publish
+  walks past it);
+- collects no export node in a publish (a Multi's workfile still publishes
+  its other members).
+
+Nothing is deleted: its workfiles and exports stay on disk and its existing
+workfiles still open, so turning it back on restores everything at the next
+build. The browser lists it greyed with *(off)*.
+
+A missing key is *none off*, which is how every shot from before the
+property behaves, so it needs no layout migration. It inherits like any
+other entity property (`entity:/shots` → sequence → shot). The rule every
+consumer follows is `config/department_off.py` (pure: the pool minus what
+is off, in pool order); `config/department.py` reads and writes it
+(`get_disabled_departments`, `set_department_disabled`). It is a shot
+property: the controls and the staged build read it on shots only.
 The distinction is intent: a scoping checkbox is a statement about what an
 entity has, and must not silently black out a render; a department picked in
 the submission dialog is a direct instruction about what to render.

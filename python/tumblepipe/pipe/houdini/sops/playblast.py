@@ -8,6 +8,8 @@ import hou
 
 from tumblepipe.api import api, path_str
 from tumblepipe.apps import mp4
+from tumblepipe.pipe import review_events
+from tumblepipe.util import events
 from tumblepipe.config.multi_timeline import shift_block_range
 from tumblepipe.config.timeline import BlockRange, get_fps, get_frame_range
 from tumblepipe.pipe.houdini import nodes as ns
@@ -185,6 +187,7 @@ class Playblast(TimeOffsetNode, EntityNode):
             output_daily_path.parent.mkdir(exist_ok=True, parents=True)
             shutil.copyfile(movie_path, output_playblast_path)
             shutil.copyfile(movie_path, output_daily_path)
+        review_events.announce(events.PLAYBLAST, entity_uri, department_name)
 
     def cache_stage(self, cache_path, camera_path, render_range, fps):
         """Write what the playblast shows to ``cache_path`` over

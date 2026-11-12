@@ -138,6 +138,33 @@ def _stage_shot_roots(entity_uri) -> None:
         log.warning("Staging %s's Root before the template: %s", uri, why)
 
 
+def _turned_off(entity_uri, dept: str, refresh_cb=None) -> bool:
+    """Whether ``dept`` is turned off on ``entity_uri`` (#64); if so, say
+    why nothing is made, as a warning rather than a failure.
+
+    Nothing new is made for a department turned off on a shot: its
+    existing workfiles stay on disk and still open, but a new version
+    would publish into a layer the shot's build leaves out.
+    """
+    from tumblepipe.config.department import disabled_message, is_department_disabled
+    if not is_department_disabled(entity_uri, dept):
+        return False
+    message = disabled_message(entity_uri, dept)
+    log.info("%s", message)
+
+    def _show() -> None:
+        try:
+            import hou
+            hou.ui.displayMessage(message, severity=hou.severityType.Warning)
+        except Exception:
+            log.exception("Failed to show the turned-off department warning")
+
+    run_on_main_thread(_show)
+    if callable(refresh_cb):
+        refresh_cb()
+    return True
+
+
 def _action(label: str):
     """Make an ``(asset_id, dept, ...)`` action method its own boundary.
 
@@ -778,6 +805,8 @@ class WorkfileManager:
         entity_uri = self._resolver.registered_uri_for(asset_id)
         if entity_uri is None:
             return
+        if _turned_off(entity_uri, dept, refresh_cb):
+            return
         # A department a Multi covers belongs to the Multi: its workfile is
         # the Multi's (department_workspace routes the save there), so the
         # template must build the Multi's scene, not the member's.
@@ -843,6 +872,8 @@ class WorkfileManager:
             # entity the config does not hold (see EntityNotRegistered).
             entity_uri = self._resolver.registered_uri_for(asset_id)
             if entity_uri is None:
+                return
+            if _turned_off(entity_uri, dept, refresh_cb):
                 return
 
         def _do_save() -> None:

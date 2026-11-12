@@ -13,6 +13,11 @@ import_render on ``latest`` is pinned, in the job, to the version it resolved
 here, so the farm renders what the artist saw; the workfile itself is not
 changed. Before it submits, it lists the shot channels no import reads and
 asks.
+
+A shot no import_render reads (a slap comp in the render scene) has
+nothing to comp on its own: it comps the render of the same Farm Submit
+(#80), so Submit refuses with :class:`NoRenderToComp` and offers to open
+Farm Submit with the shot's Render and Comp ticked.
 """
 
 from dataclasses import dataclass, field
@@ -24,6 +29,7 @@ import hou
 
 from tumblepipe.api import path_str, get_user_name, api
 from tumblepipe.config.channels import list_channels
+from tumblepipe.farm.specs import preview_frames
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe import comp
 import tumblepipe.pipe.houdini.nodes as ns
@@ -71,31 +77,74 @@ class ExportComp(FrameRangeNode, FarmNode, EntityNode):
     def get_preview_frames(self) -> bool:
         return bool(self.parm('preview_frames').eval())
 
+    def get_preview_frame_list(self) -> str:
+        """The Preview Frames List text (empty: first, middle and last). A
+        node made before the parm existed has none."""
+        parm = self.parm('preview_frame_list')
+        return '' if parm is None else parm.eval()
+
+    def preview_for(self, first_frame: int, last_frame: int) -> preview_frames.PreviewFrames:
+        """What the Preview Frames List asks for over the comp's frames, on
+        the node's step (``farm.specs.preview_frames.parse``)."""
+        return preview_frames.parse(
+            self.get_preview_frame_list(), first_frame, last_frame, self.get_step_size()
+        )
+
+    def preview_warnings(self) -> list[str]:
+        """What the Preview Frames List drops over the node's Frame Range
+        (a Submit reads it against the frames it comps: with From Config,
+        what the renders cover); none while Preview Frames is off."""
+        if not self.get_preview_frames(): return []
+        try:
+            frames = self.get_frame_range().full_range()
+        except Exception:
+            # No shot or range yet (a fresh node, an unset entity): nothing
+            # to check against. Submit checks again over its real frames.
+            return []
+        return list(self.preview_for(frames.first_frame, frames.last_frame).warnings)
+
     def get_copy_to_edit(self) -> bool:
         return bool(self.parm('copy_to_edit').eval())
 
     def render_node(self):
         return self.native().node(RENDER_NODE)
 
+    def reads_imports(self) -> bool:
+        """Whether a th::import_render reads the node's shot. Without one
+        (a slap comp in the render scene, #80) the comp reads the render
+        of its Farm Submit instead."""
+        from tumblepipe.pipe.houdini.cops.import_render import find_imports
+        shot_uri = self.get_entity_uri()
+        return shot_uri is None or bool(find_imports(shot_uri))
+
     def unread_channels(self) -> list[str]:
         """The shot's channels no import_render of the shot reads; only a
-        merged comp (Layer ``comp``) checks."""
+        merged comp (Layer ``comp``) checks, and only one that reads
+        imports at all: a comp of its Farm Submit's render reads the
+        channels that render renders (#80)."""
         from tumblepipe.pipe.houdini.cops.import_render import find_imports
         if self.parm('layer').eval() != comp.MERGED_LAYER: return []
         shot_uri = self.get_entity_uri()
         if shot_uri is None: return []
+        imports = find_imports(shot_uri)
+        if not imports: return []
         read = [
-            channel for node in find_imports(shot_uri)
+            channel for node in imports
             for channel in node.read_channels()
         ]
         return comp.unread_channels(list_channels(shot_uri), read)
 
     def refresh_warning(self) -> str:
-        """Show the unread-channel warning on the node (empty when none)."""
+        """Show the unread-channel and Preview Frames List warnings on the
+        node (empty when none), or the note that it comps its Farm
+        Submit's render when no import reads its shot."""
         try:
             warning = comp.unread_warning(self.unread_channels())
+            if not self.reads_imports():
+                warning = comp.SCENE_COMP_NOTE
         except ns.NodeError:
             warning = ''
+        warning = '\n'.join(line for line in [warning, *self.preview_warnings()] if line)
         self.parm('warning').set(warning)
         native = self.native()
         if warning:
@@ -131,6 +180,15 @@ def refresh_warnings():
 ###############################################################################
 # Submit
 ###############################################################################
+class NoRenderToComp(ns.NodeError):
+    """A Submit of a shot no th::import_render reads: such a comp reads the
+    render of the same Farm Submit (#80), and this Submit renders none."""
+
+    def __init__(self, message: str, shot_uri: Uri):
+        super().__init__(message)
+        self.shot_uri = shot_uri
+
+
 @dataclass
 class ShotSubmit:
     """One composite version: a shot's export_comps and its frozen imports."""
@@ -175,9 +233,11 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
         for node in find_imports(submit.shot_uri):
             states += node.import_states()
         if not states:
-            raise submit.settings._error(
-                f'no th::import_render reads {submit.shot_uri}: there is '
-                'nothing to comp'
+            # A comp with no import reads the render of its Farm Submit
+            # (#80); this Submit renders nothing.
+            raise NoRenderToComp(
+                f'{submit.settings.path()}: {comp.no_render_message(submit.shot_uri)}',
+                submit.shot_uri,
             )
         submit.plan = comp.freeze_plan(states)
         try:
@@ -211,8 +271,10 @@ def job_config(submit: ShotSubmit, department: str, input_path: str) -> dict:
     node = submit.settings
     first_frame, last_frame = comp_range(submit)
     tasks = dict(full_composite = dict(channel_name = FULL_DISCORD_CHANNEL))
+    preview_entry = {}
     if node.get_preview_frames():
         tasks['partial_composite'] = dict(channel_name = PREVIEW_DISCORD_CHANNEL)
+        preview_entry = preview_frames.config_entry(node.preview_for(first_frame, last_frame))
     return dict(
         entity = dict(uri = str(submit.shot_uri), department = department),
         settings = dict(
@@ -226,6 +288,7 @@ def job_config(submit: ShotSubmit, department: str, input_path: str) -> dict:
             step_size = node.get_step_size(),
             batch_size = node.get_batch_size(),
             copy_to_edit = node.get_copy_to_edit(),
+            **preview_entry,
         ),
         exports = submit.exports,
         imports = submit.plan,
@@ -248,13 +311,26 @@ def outside_renders(submits: list[ShotSubmit]) -> list[str]:
     return lines
 
 
+def preview_drops(submits: list[ShotSubmit]) -> list[str]:
+    """A line per Preview Frames List warning of each shot, read against
+    the frames the shot comps (``comp_range``)."""
+    lines = []
+    for submit in submits:
+        node = submit.settings
+        if not node.get_preview_frames(): continue
+        preview = node.preview_for(*comp_range(submit))
+        lines += [f'{submit.shot_uri}: {warning}' for warning in preview.warnings]
+    return lines
+
+
 def _confirm_unread(submits: list[ShotSubmit]) -> bool:
     lines = [
         f'{submit.shot_uri}: {", ".join(submit.unread)}'
         for submit in submits if submit.unread
     ]
     outside = outside_renders(submits)
-    if not lines and not outside: return True
+    drops = preview_drops(submits)
+    if not lines and not outside and not drops: return True
     if not hou.isUIAvailable(): return True
     message = ''
     if lines:
@@ -270,6 +346,13 @@ def _confirm_unread(submits: list[ShotSubmit]) -> bool:
             'frames comp over empty (transparent black) input:\n\n'
             + '\n'.join(outside) + '\n\n'
             'Set Frame Range to From Context to comp what was rendered.'
+        )
+    if drops:
+        message += ('\n\n' if message else '') + (
+            'The Preview Frames List drops these frames:\n\n'
+            + '\n'.join(drops) + '\n\n'
+            'Previews use the frames that are left (first, middle and last '
+            'when none are).'
         )
     choice = hou.ui.displayMessage(
         message,
@@ -329,7 +412,12 @@ def submit_kwargs(kwargs):
     from tumblepipe.pipe.houdini.ui import farm_submit
     node = ExportComp(kwargs['node'])
     with ns.node_errors_as_message('Submit Composite'):
-        submits = plan_submits(node)
+        try:
+            submits = plan_submits(node)
+        except NoRenderToComp as error:
+            if not hou.isUIAvailable(): raise
+            _offer_farm_submit(error)
+            return
         if not _confirm_unread(submits): return
         shots = len(submits)
         farm_submit.submit(
@@ -337,6 +425,26 @@ def submit_kwargs(kwargs):
             'Submit Composite',
             lambda: submit(node, submits),
         )
+
+
+def _offer_farm_submit(error: NoRenderToComp):
+    """Say why the Submit has nothing to comp, and offer Farm Submit with
+    the shot's Render and Comp ticked: there the comp reads that render."""
+    from tumblepipe.pipe.houdini.ui import farm_submit
+    from tumblepipe.pipe.houdini.scene_context import scene_context
+    choice = hou.ui.displayMessage(
+        str(error),
+        buttons = ('Open Farm Submit', 'Cancel'),
+        default_choice = 0, close_choice = 1,
+        severity = hou.severityType.Warning,
+        title = 'Submit Composite',
+    )
+    if choice != 0: return
+    context = scene_context()
+    farm_submit.open_comp_grid(
+        error.shot_uri,
+        department = context.department_name if context is not None else None,
+    )
 
 
 def open_location(kwargs):

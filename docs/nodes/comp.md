@@ -12,15 +12,36 @@ None of these HDAs carries built-in help text, so this page is the reference.
 ## `th::import_render` (COP)
 
 A shot's finished render into a comp. Tab menu `_TumblePipe/pipeline`;
-the composite template makes one per shot channel. Outputs **rgba** (the
-beauty; its A is the channel's alpha), **aovs** (a cable of the channel's
-other AOVs the comp reads, each field named after its AOV; never a beauty)
-and **beauties** (a cable of each channel's beauty, named after the
-channel). What it resolves and refuses is
+the composite template makes one per shot channel. Outputs, top to bottom
+(issue #67, after Remy's mockup of 2026-11-12):
+
+| Output | Type | What it is |
+|---|---|---|
+| **rgba**, **rgba 2** .. **rgba 8** | RGBA | Each channel's beauty, one output per channel read (its A is the channel's alpha). A one-channel import's beauty is **rgba**; an all-channels import puts each channel on an output of its own, in channel order, and **Reads** names which (`outputs: rgba default, rgba 2 chars`). An output no channel holds is empty |
+| **lpe** | Cable | The light groups (`beauty_<tag>`, the LPE tags' AOVs): a light mix's input |
+| **aov** | Cable | Every other AOV the comp reads: `albedo`, `normal`, `depth`, `uv`, `position` |
+| **matte** | Cable | The `objid_*` mattes and `ramp_*` distance ramps (`th::mattes`), `holdout_*` holdouts, and any cryptomatte other than the two below |
+| **cryptomaterials** | Cable | Every rank plane of the `cryptomaterials` cryptomatte (`cryptomaterials00`, `01`, `02`), whole: wire it straight into a Cryptomatte COP's **crypto1** |
+| **cryptoprimitives** | Cable | The same for `cryptoprimitives` |
+| **geometry** | Geometry | The shot's staged geometry, for a Rasterize Geometry's `geometry` (the Scene folder, below) |
+| **camera** | Metadata | The shot's render camera, for a Rasterize Geometry's `camera_ref` |
+
+Each cable field is named after its AOV; no cable carries a beauty.
+Which cable an AOV rides is `pipe.comp.aov_cable`. What it resolves and
+refuses is
 in [Compositing → `th::import_render`](../compositing.md#thimport_render).
 Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th_8_8Cop_1import__render_8_81.0/DialogScript),
 [`cops/import_render.py`](../../python/tumblepipe/pipe/houdini/cops/import_render.py),
 [`pipe/comp.py`](../../python/tumblepipe/pipe/comp.py).
+
+Why eight fixed **rgba** outputs and not one per channel, named after it:
+a digital asset's outputs are fixed by its type. In Houdini 22.0.429 an
+instance can neither add outputs nor relabel them (tried through the
+subnet's own output parms), so the node has eight, and the channel on each
+is on **Reads**. A channel keeps its output: one added to the shot later
+takes a free output, one not rendered yet keeps its output (empty) until it
+is, so a wire stays on its channel through every Update. A ninth channel
+has no output (**Reads** names it): read it with an import of its own.
 
 | Label | Default | What it does |
 |---|---|---|
@@ -28,14 +49,20 @@ Source: [`otls/cop_th.import_render.1.0`](../../otls/cop_th.import_render.1.0/th
 | Channel | `default` | A menu of the shot's channels, then **All channels** (`*`): every channel in this one node (below) |
 | Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render), unless the denoise was made from an older render than the newest one (a render with Denoise off); or one department |
 | Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department) |
-| Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did |
+| Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did; for All channels, which channel is on which output |
 | Time Offset | From Multi | Moves the shot's renders to where the shot sits in this scene: frame F reads the render's frame F minus the offset. **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** keeps the render on its own frames; **Manual** uses **Offset Frames**. The farm always comps each shot on its own frames, whatever this says |
 | Offset Frames | `0` | Manual only |
-| Outputs › Channel Outputs | on | All channels only: keeps a Cable Unpack named `<node>_beauties` beside the node, wired to **beauties**, with one RGBA output per channel read (`default`, `heart`, ...), in step with the channels. Turning it off removes the unpack unless something reads it |
-| Outputs › AOV Outputs | off | Keeps a Cable Unpack named `<node>_aovs` beside the node, wired to **aovs**, with one typed output per field, and keeps its fields in step when the version changes. Turning it off removes the unpack unless something reads it |
+| Scene › Department, Version | `from_context`, `latest` | The staged shot **geometry** and **camera** read, through a [`th::import_scene`](#thimport_scene-cop) inside the node; its shot and channel are this node's (`default` for All channels) |
+| Scene › Reads | | What the scene imported, or why **geometry** / **camera** are still empty |
+| Scene › Camera, Primitives, Purpose, Time Sample, Static Frame | `/cameras/render_camera`, `/*`, Render, Animated | As on `th::import_scene` |
+| Cache › Cache | on | Keeps each frame a beauty read cooks in memory, so the playbar plays a frame it has read once without reading the network again (the **rgba** outputs); see [the frame cache](#the-frame-cache) |
+| Cache › Cache AOVs Too | off | Caches the AOV reads as well (the cables): far more memory, every AOV of every frame played |
+| Cache › Max Frames | `250` | How many frames each read keeps |
+| Cache › Clear Cache | | Empties every cache of the node: the next play reads from disk again |
+| Outputs › AOV Outputs | off | Keeps a Cable Unpack beside the node for each cable that has fields (`<node>_lpe`, `<node>_aov`, `<node>_matte`, `<node>_cryptomaterials`, `<node>_cryptoprimitives`), with one typed output per field, and keeps its fields in step when the version changes. Turning it off removes the unpacks unless something reads them |
 
 Buttons: **Update** re-resolves (opening the workfile does it too, for an
-import on `latest`); **Open Location** opens the resolved version's folder;
+import on `latest`) and imports the scene; **Open Location** opens the resolved version's folder;
 **Render** opens [Farm Submit](../asset-browser/submit-jobs.md) on the
 Shots tab with this shot's Render cell ticked and this import's Channel
 checked in the Render settings (every channel for **All channels**). A
@@ -49,33 +76,82 @@ COPs inside are rebuilt whenever the shot, channel, department or version
 read changes (a copied import switched to another channel reads the new
 channel even when both resolve to the same version).
 
-**All channels** (`*`): **rgba** is the channels laid over each other in the
-shot's channel order, the last on top (as the template stacks them),
-**beauties** carries each channel's beauty, named after the channel (Channel
-Outputs gives one output per channel, so a simple comp needs no unpacking),
-and **aovs** carries only the AOVs, as `<channel>_<aov>`; turn on AOV Outputs
-for one output per AOV. An import made with TumblePipe 1.99 carried the beauties in
-**aovs**: its first Update moves a wire on an old AOV Outputs beauty to the
-same channel on Channel Outputs. A
-channel not rendered yet is left out and named on **Reads** (and
-`export_comp` warns it is unread). Version stays `latest`: to pin a version,
-read that channel with an import of its own. A light mix grades one
-channel's light groups, so it refuses an all-channels cable. Submit freezes
-each channel it read.
+Inside (dive into the node, then its `dive` subnet) the network reads left
+to right: a row per File COP, the beauties first, then the AOVs by cable in
+output order, each with its Cache COP and switch beside it; then the cable
+packs, each beside its first read; then the outputs. Rows leave room for a
+File COP's file name above its tile, so nothing overlaps.
 
-Why the per-channel and per-AOV outputs are on companion nodes: a digital
-asset's output count is fixed by its type, so only a built-in node (Cable
-Unpack, Rasterize Geometry) can grow outputs with its fields. A companion's
-wires follow their field when its fields change.
+**All channels** (`*`): each channel's beauty is on an output of its own
+(lay them over each other with Blend COPs in Over mode, the last channel on
+top, as the template stacks them), and the cables carry only the AOVs, as
+`<channel>_<aov>`; turn on AOV Outputs for one output per AOV. An import
+made with TumblePipe 1.99 carried the beauties in **aov**: its first Update
+moves a wire on an old AOV Outputs beauty to the channel's output. A channel
+not rendered yet is left out and named on **Reads** (and `export_comp` warns
+it is unread). Version stays `latest`: to pin a version, read that channel
+with an import of its own. A light mix grades one channel's light groups, so
+it refuses an all-channels cable. Submit freezes each channel it read.
+An all-channels **cryptomaterials** cable carries every channel's planes
+(`default_cryptomaterials00`, `chars_cryptomaterials00`, ...), which is
+several cryptomattes on one cable, untested in a Cryptomatte COP: for picking
+mattes, read the channel with an import of its own.
+
+**geometry** and **camera** stay empty until the scene has imported:
+**Update** imports it, and opening the workfile does too while either output
+is wired (a staged shot composed with payloads is a big read most comps never
+need). **camera** opens only once its camera cooks, so a scene without the
+camera prim never stops the renders cooking; **Reads** says why. Changing a
+Scene Department, Version or Camera imports it again.
+
+An import made before #67 (TumblePipe 1.103 and older) had three outputs:
+**rgba** (for All channels, the channels laid over each other), **aovs**
+(every AOV) and **beauties** (a cable of each channel's beauty). Opening such
+a workfile moves its wires and rebuilds the import: a wire on **aovs** to
+**aov** (a light mix's cable on to **lpe**); a wire on **rgba** stays on
+**rgba**, or, for an import of several channels, moves to an over chain of
+its channel outputs kept beside the node (`<node>_over1`, ...), so the
+picture is the same; a wire taken from **beauties** through a Cable Unpack
+(the old Channel Outputs, or one of your own) moves to its channel's output,
+and the emptied unpack goes. A wire on an old AOV Outputs field moves to
+the unpack of the cable its AOV rides now. A hand-made Cable Unpack on
+**aov** keeps only the fields still there: rewire it to the other cables
+for the rest. The over chain is not kept in step if channels are added
+later.
+
+### The frame cache
+
+A File COP reads at the speed of the network (about half a second for a
+1080p frame from the server), so a comp played only in real time behind a
+Cache COP added by hand (#73). Each read inside the node now passes through
+a Cache COP of its own, picked by a switch while its toggles are on: a beauty
+read needs **Cache**, an AOV read **Cache** and **Cache AOVs Too**. The cache
+sits on each read rather than on the outputs because Copernicus cooks every
+output of a node together: an uncached **aov** would read every file again
+anyway. A cache empties itself when its read changes (a new version, another
+channel). Memory: a float 1080p RGBA frame is about 33 MB, so 250 frames of
+one beauty can take 8 GB; lower **Max Frames** or turn **Cache** off for long
+shots or many channels. The farm composite worker turns **Cache** off on every
+import before it cooks (each frame is cooked once there; the cache never
+changes a pixel). A local copy of a version's frames (to beat the network on
+the first play too) is not available yet.
+
+Why the per-AOV outputs are on companion nodes: a digital asset's output
+count is fixed by its type, so only a built-in node (Cable Unpack, Rasterize
+Geometry) can grow outputs with its fields. A companion's wires follow their
+field when its fields change.
 
 ## `th::light_mix` (COP)
 
 A channel's light groups mixed back into its beauty. Tab menu
 `_TumblePipe/pipeline`; the template puts one under each import. Inputs
 **rgba** (an import's beauty, wired from that import for you when it is
-empty) and **aovs** (its cable), in the order of the import's outputs so
-the wires do not cross; output **rgba**. A mix saved cable first (in an
-older workfile) is rewired in this order when the workfile opens. A cable that still carries a
+empty) and **lpe** (its light groups cable), in the order of the import's
+outputs so the wires do not cross; output **rgba**. A mix saved cable first (in an
+older workfile) is rewired in this order when the workfile opens, and a
+cable taken from the import's **aov** (**aovs** before #67; the stock
+composite template still wires **aov**) moves to **lpe** on the first sync or
+open. A cable that still carries a
 `beauty` field (built before 1.99) is read when **rgba** is empty. The mix is the graded groups
 plus **Rest** (the beauty minus the groups), so at defaults it is the beauty
 exactly; see [Compositing → `th::light_mix`](../compositing.md#thlight_mix).
@@ -106,8 +182,9 @@ Source: [`otls/cop_th.export_comp.1.0`](../../otls/cop_th.export_comp.1.0/th_8_8
 |---|---|---|
 | Shot | `from_context` | Shots only |
 | Layer | `comp` | `comp` = the merged comp, written as the version's `slapcomp` layer; or a channel, for a per-channel output |
-| Warning | | Shot channels no import reads (Layer `comp` only) |
+| Warning | | Shot channels no import reads (Layer `comp` only), and frames the Preview Frames List drops |
 | Jobs › Preview Frames | off | Also render first, middle and last frame as a quick task, posted before the full range |
+| Jobs › Preview Frames › List | empty | Beside the toggle (enabled while it is on). Empty: first, middle and last. Otherwise the frames to preview, space separated, in that order (key poses, say), any number; the panorama posted to Discord shows the first 8. A frame outside the comp's frames or off **Step**, or a word that is not a whole number, is dropped and named in **Warning** (checked against the node's Frame Range) and again by Submit (against the frames it comps); with none left the preview is first, middle and last |
 | Jobs › Frame Range | From Config | The menu shows the frames From Config gives, e.g. `From Config (1001-1100)`. The frames every import's render covers (each frozen read's `context.json` range, intersected), else the shot's range plus roll; or From Settings (**Start/End-Frame**, **Pre/Post-Roll**). Submit warns when a range reaches past the renders: those frames comp over empty input. The farm log also has a `WARNING:` line per channel for any frame its render does not cover |
 | Jobs › Step, Batch Size | `1`, `5` | |
 | Jobs › Copy to Edit | off | Sync the comp into the edit when it is done |

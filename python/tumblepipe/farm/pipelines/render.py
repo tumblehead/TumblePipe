@@ -1,7 +1,8 @@
 """The render pipeline: render a shot's channels, denoise them, and end in
 the review chain (``post_render``).
 
-Per channel, a *partial* render does the first, middle and last frames
+Per channel, a *partial* render does the preview frames (first, middle and
+last, or the Preview Frames List, ``farm.specs.preview_frames``)
 (-> denoise -> a notify posting them), a *full* render the whole range
 (-> denoise -> the channel's review mp4); a full render then adds the
 cross-channel chain: sync to the edit, slapcomp, its mp4 and notify.
@@ -19,7 +20,9 @@ from tumblepipe.farm.jobs import denoise as denoise_job
 from tumblepipe.farm.jobs import render as render_job
 from tumblepipe.farm.pipelines import post_render
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
-from tumblepipe.pipe import render_layers
+from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs.preview_frames import CONFIG_KEY as PREVIEW_FRAMES_KEY
+from tumblepipe.pipe import render_layers, slap_comp
 from tumblepipe.pipe.paths import (
     get_aov_frame_path,
     get_frame_path,
@@ -33,7 +36,7 @@ FULL_DENOISE_BATCH_SIZE = 20
 
 # Farm priority bands: notify (jobs.notify.PRIORITY, 100) > publish
 # (jobs.publish.PRIORITY, 90) > preview > render. The preview chain
-# (first/middle/last frames and their denoise) runs at PREVIEW_PRIORITY
+# (the preview frames and their denoise) runs at PREVIEW_PRIORITY
 # whatever the submission asked for, so it jumps other shots' full renders.
 # The full-range chain keeps the artist's priority for ordering renders among
 # themselves, capped at RENDER_PRIORITY_MAX so it never outranks a preview or
@@ -69,13 +72,22 @@ def _shot(config: dict, staging_path: Path) -> post_render.Shot:
         last_frame = settings['last_frame'],
         step_size = settings['step_size'],
         staging_path = staging_path,
-        cut_range = _cut_range(settings)
+        cut_range = _cut_range(settings),
+        preview_frames = _preview_frames(settings),
+        frame_ranges = frame_ranges.from_config(settings)
     )
 
 
 def _cut_range(settings: dict) -> tuple[int, int] | None:
     cut_range = settings.get('cut_range')
     return None if cut_range is None else (cut_range[0], cut_range[1])
+
+
+def _preview_frames(settings: dict) -> tuple[int, ...] | None:
+    """The Preview Frames List the submitter checked (``farm.specs.preview_frames``),
+    None for the default first, middle and last frame."""
+    frames = settings.get(PREVIEW_FRAMES_KEY)
+    return tuple(frames) if frames else None
 
 
 def _aov_paths(shot, render_department, channel, version_name, aov_names) -> dict[str, Path]:
@@ -103,7 +115,7 @@ def _receipt_path(shot, render_department, channel, version_name=None) -> Path:
 def _render_job(
     config, shot, paths, channel, aov_names, task_key, version_name=None
     ) -> tuple[Job, str]:
-    """A channel's render (partial: three frames) and the version it writes."""
+    """A channel's render (partial: the preview frames) and the version it writes."""
     settings = config['settings']
     render_department = settings['render_department_name']
     receipt_path = _receipt_path(shot, render_department, channel, version_name)
@@ -129,11 +141,26 @@ def _render_job(
             for aov_name, aov_path in _aov_paths(
                 shot, render_department, channel, version_name, aov_names
             ).items()
-        }
+        },
+        # A multi-range full render: only its ranges, in blocks (#84)
+        **({} if partial else shot.frame_ranges_entry)
     )
     if render_pass is not None:
         job_config['render_pass'] = render_pass
-    job = render_job.build(job_config, paths, shot.staging_path)
+    job_paths = paths
+    # The entity's newest published Copernicus slap comp, bundled into the
+    # job as it is now (pipe.slap_comp): a later publish changes later
+    # submits only.
+    published = slap_comp.farm_program(shot.entity_uri)
+    if published is not None:
+        problem = slap_comp.tiles_problem(shot.entity_uri, job_config['tile_count'])
+        if problem is not None:
+            raise ValueError(problem)
+        bundled = slap_comp.bundle_path(published)
+        job_paths = {**paths, published.program_path: bundled}
+        job_config['slap_comp'] = path_str(bundled)
+        job_config['title'] += f' + slap comp {published.version_name}'
+    job = render_job.build(job_config, job_paths, shot.staging_path)
     post_render.write_framestack_context(
         shot, receipt_path, render_department, channel, version_name
     )
@@ -174,7 +201,9 @@ def _denoise_job(
             for aov_name, aov_path in _aov_paths(
                 shot, DENOISE_DEPARTMENT, channel, version_name, aov_names
             ).items()
-        }
+        },
+        # The frames the render rendered (#84)
+        **({} if partial else shot.frame_ranges_entry)
     ), dict(), shot.staging_path)
     # What it denoises, so a comp's "best" can tell this version from a
     # stale one once a newer render lands (pipe.comp.is_stale)
@@ -215,7 +244,7 @@ def build(
     denoise_versions = {}
     terminal_jobs = []
 
-    # Partial: first, middle and last frames of each channel, posted
+    # Partial: the preview frames of each channel, posted
     if 'partial_render' in tasks:
         partial = tasks['partial_render']
         for channel in channel_names:
@@ -300,11 +329,18 @@ def build(
         # Farm Submit's Comp column: re-comp the shot once the frames the
         # comp reads (this submit's denoise, else its render: the imports'
         # best passes over an older denoise, pipe.comp.is_stale) are on disk.
+        # A workfile comp with no th::import_render (#80) reads exactly
+        # those frames: ``renders``, each channel's version this submit writes.
         if config.get('composite') is not None:
             from tumblepipe.farm.pipelines import composite as composite_pipeline
             terminal_jobs = terminal_jobs + composite_pipeline.build(
-                composite_pipeline.recomp_config(
+                composite_pipeline.chained_config(
                     shot.entity_uri, config['composite'],
+                    [
+                        dict(channel = channel, department = review_department,
+                             version = review_versions[channel])
+                        for channel in slapcomp_channels
+                    ],
                     user_name = settings['user_name'],
                     purpose = settings['purpose'],
                     first_frame = settings['first_frame'],

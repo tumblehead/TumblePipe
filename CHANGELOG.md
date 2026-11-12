@@ -12,6 +12,23 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.103.0 — 2026-11-11
+
+### Features
+- feat(tumbleview): backface culling and Scene Lights/Headlight on playblasts (`95252e28`)
+- feat(comp): import_render follows a Multi's shared timeline; export_comp shows its input (`b6911fff`)
+- feat(houdini): Frame Range menus show the frames they give (`e30a20fa`)
+
+### Fixes
+- fix(farm): Farm Submit and the Render Manager run on macOS (`46791818`)
+- fix(comp): opening a comp with old light mixes no longer crashes Houdini (`5a0ba39e`)
+
+### Documentation
+- docs(changelog): v1.102.0 (`4455655f`)
+
+### Tests
+- test(farm): the Farm Submit playblast check covers Lighting and Culling (`694a6afa`)
+
 ## v1.102.0 — 2026-11-11
 
 ### Features

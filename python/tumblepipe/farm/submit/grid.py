@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping, Sequence
 
+from tumblepipe.pipe import turntable
+
 # ── cell states ───────────────────────────────────────────
 
 NONE = '-'      # nothing to do: no workfile / no frame range
@@ -28,7 +30,10 @@ UNCLAIMED = 'u' # only a Multi's workfile, and it has never exported this entity
 STALE = 's'     # older than what it is made from
 CURRENT = 'k'   # up to date
 PENDING = '?'   # status not read yet
+OFF = 'x'       # the department is turned off on this entity (#64)
 
+# OFF is neither: the department is not offered for that entity, so its cell
+# can never be ticked, and a column of nothing but OFF and NONE is empty.
 # UNCLAIMED is tickable (a Multi's first farm publish starts there) but never
 # needs work: Select stale and the upstream warnings leave it alone.
 TICKABLE = frozenset({NEVER, UNCLAIMED, STALE, CURRENT, PENDING})
@@ -64,11 +69,10 @@ def publish_key(department: str) -> str:
 def columns_for(context: str, publish_departments: Sequence[str]) -> list[Column]:
     """The step columns for ``context``, publish departments in pool order.
 
-    Playblast, Render and Comp are shots-only, as on the farm side
-    (``batch_submit`` refuses them on an asset). An asset's staged build has
-    no render settings, camera or lights (only a shot's root layer brings
-    them), so an asset render could not succeed (#49): asset turntables are
-    rendered from ``th::lookdev_studio`` (:data:`ASSET_RENDER_HINT`).
+    Playblast and Comp are shots-only, as on the farm side (``batch_submit``
+    refuses them on an asset). Render is on both: an asset's render is its
+    turntable, a ``th::lookdev_studio`` the farm builds around its staged
+    build (#53, :data:`ASSET_RENDER_HINT`).
     """
     columns = [
         Column(publish_key(name), name, PUBLISH, name)
@@ -76,15 +80,21 @@ def columns_for(context: str, publish_departments: Sequence[str]) -> list[Column
     ]
     if context == 'shots':
         columns.append(Column(PLAYBLAST, 'Playblast', PLAYBLAST))
+    if context in ('shots', 'assets'):
         columns.append(Column(RENDER, 'Render', RENDER))
+    if context == 'shots':
         columns.append(Column(COMP, 'Comp', COMP))
     return columns
 
 
-#: Where an asset render goes instead of the Assets tab.
+_TURNTABLE = turntable.farm_frames()
+
+#: What an asset's Render does, shown on the Assets tab.
 ASSET_RENDER_HINT = (
-    "Assets are rendered as turntables: submit them from th::lookdev_studio "
-    "in the asset's lookdev workfile."
+    "An asset's Render is its turntable: th::lookdev_studio around the "
+    f"asset's staged build, on the studio's frames ({_TURNTABLE.first}-"
+    f"{_TURNTABLE.last}, every {_TURNTABLE.step}th), without opening its "
+    "lookdev workfile."
 )
 
 
@@ -139,14 +149,40 @@ def comp_state(
     has_workfile: bool,
     comp_mtime: float | None,
     render_mtime: float | None,
+    scene: bool = False,
 ) -> str:
     """A shot's Comp cell.
 
     Nothing to do without a composite workfile (the farm would refuse the
-    re-comp); otherwise :func:`preview_state` with the render as the one
-    upstream: stale when a render landed after the newest comp.
+    re-comp), unless the open workfile comps the shot without a
+    th::import_render (``scene``, #80: a slap comp in the render scene,
+    which comps the Render ticked beside it); otherwise
+    :func:`preview_state` with the render as the one upstream: stale when a
+    render landed after the newest comp.
     """
-    return preview_state(comp_mtime, [render_mtime], available=has_workfile)
+    return preview_state(comp_mtime, [render_mtime], available=has_workfile or scene)
+
+
+#: The Render modes that render the full range, which a comp can follow
+#: (``batch_submit.RENDER_TASK_KEYS``: those with ``full_render``).
+FULL_RANGE_MODES = ('full', 'preview_then_full')
+
+
+def scene_comp_errors(settings: dict, aovs: Sequence[str]) -> list[str]:
+    """Why a row cannot comp the open workfile's comp of its shot, which
+    has no th::import_render and reads the Render of the same submit (#80):
+    no Render ticked, one without the full range, or channels its Slap
+    Comp Imports' ``aovs`` cannot be read from (``pipe.comp.
+    scene_comp_problems``). ``settings`` are the row's resolved ones."""
+    from tumblepipe.config.channels import read_channel_names
+    from tumblepipe.pipe import comp
+    render = bool(settings.get('render'))
+    return comp.scene_comp_problems(
+        render,
+        render and settings.get('render_mode') in FULL_RANGE_MODES,
+        read_channel_names(settings) if render else [],
+        aovs,
+    )
 
 
 # ── ticks ─────────────────────────────────────────────────
@@ -251,6 +287,26 @@ def default_preview_department(renderable: Sequence[str]) -> str | None:
     Submit) then silently left out animation.
     """
     return renderable[-1] if renderable else None
+
+
+def preview_department_fallback(renderable: Sequence[str]):
+    """The Up to default for one entity: :func:`default_preview_department`
+    over the renderable departments *not turned off* on it (#64).
+
+    Returns a callable of the entity's properties, the form
+    ``settings.entity_value`` takes for a per-entity fallback. Without it a
+    shot whose last renderable department is off defaulted its Render and
+    Playblast cut to that department, and Farm Submit then refused the cut.
+    """
+    from tumblepipe.config.department_off import read_disabled_departments
+
+    names = list(renderable)
+
+    def fallback(properties: dict) -> str | None:
+        off = set(read_disabled_departments(properties or {}))
+        return default_preview_department([n for n in names if n not in off])
+
+    return fallback
 
 
 def preview_cut(departments: Sequence[str], cut: str | None) -> list[str]:
@@ -390,7 +446,7 @@ def empty_columns(
         return set()
     return {
         column.key for column in columns
-        if all(states.get((uri, column.key)) == NONE for uri in uris)
+        if all(states.get((uri, column.key)) in (NONE, OFF) for uri in uris)
     }
 
 

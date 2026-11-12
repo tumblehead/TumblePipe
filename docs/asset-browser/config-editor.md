@@ -154,6 +154,16 @@ on disk since the editor loaded it and the change conflicts with yours, a
 external edit), *Discard* reloads from disk and drops yours. Any other
 write error reports **Save Error** — `Failed to save: …`.
 
+A save that changes what a shot's root layer carries (render settings at
+the project, all shots, a sequence or a shot; a schema; a Root) then
+restages every built shot it affects: a new root layer and staged build,
+the same step the Entity Editor's Apply runs. The status bar names what
+was restaged. Shots not built yet pick it up at their first build. Saving
+an asset, `departments:/` or `groups:/` restages nothing. On a large
+project an edit of all shots can take a few seconds per built shot. See
+[the shot's configured render settings](../configuration.md) for which
+render keys reach the render.
+
 Saving a **schema** (`schemas:/…`) whose fields you added or removed first
 opens **Schema Migration** — *Schema changes detected for: <schema uri>*:
 

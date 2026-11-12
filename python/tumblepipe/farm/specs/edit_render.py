@@ -1,6 +1,6 @@
 """Config schemas of the Render Edit job (``jobs/edit_render.py``) and its
 worker (``workers/edit_render.py``), which renders a published edit version
-with ``th_player --render`` and encodes it into one mp4.
+with ``cinedex --render`` and encodes it into one mp4.
 
 config = {
     'title': 'render edit Main v0004',
@@ -14,7 +14,7 @@ config = {
 The worker renders the whole edit itself, so its context is the config
 without the job header.
 
-What ``th_player --render`` writes beside its frames, ``render.json``:
+What ``cinedex --render`` writes beside its frames, ``render.json``:
 
 render_info = {
     'fps': 24,

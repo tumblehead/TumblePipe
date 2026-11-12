@@ -34,7 +34,12 @@ config = {
         'denoise': 'bool',
         'copy_to_edit': 'bool',
         'cut_range': ['int', 'int'],     # optional: specs.render_pipeline.valid_cut_range
-        'composite': {...}               # optional: specs.composite.valid_recomp
+        'preview_frame_list': ['int'],  # optional: specs.render_pipeline.valid_preview_frame_list
+        'frame_ranges': [['int', 'int']],  # optional, shots only: a multi-range
+                                         # render (farm.specs.frame_ranges, #84)
+        'composite': {...},              # optional: specs.composite.valid_recomp
+        'turntable': 'bool',             # optional: an asset's turntable (#53)
+        'step_size': 'int'               # optional, turntables only (default 1)
     },
     'playblast': {                       # optional
         'department': 'string',
@@ -46,8 +51,15 @@ config = {
 }
 
 At least one of ``render`` / ``playblast`` must be present.
+
+A ``turntable`` render is an asset's (#53): the worker snapshots the asset
+and builds a ``th::lookdev_studio`` workfile per channel, exports it as the
+export job exports a studio's (``export_houdini``), then submits the render
+a studio's Submit Render To Farm does, on its ``step_size``. Its preview
+frames sit on that step, and it carries no composite.
 """
 
+from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs.composite import valid_recomp
 from tumblepipe.farm.checks import (
     valid_entity,
@@ -59,7 +71,11 @@ from tumblepipe.farm.checks import (
     valid_channel_names,
 )
 from tumblepipe.farm.specs.playblast import DEFAULT_LOOK, valid_look
-from tumblepipe.farm.specs.render_pipeline import RENDER_TASK_KEYS, valid_cut_range
+from tumblepipe.farm.specs.render_pipeline import (
+    RENDER_TASK_KEYS,
+    valid_cut_range,
+    valid_preview_frame_list,
+)
 
 
 def playblast_look(playblast: dict) -> dict:
@@ -90,7 +106,24 @@ def _valid_render(render):
     if not check_bool(render, 'denoise'): return False
     if not check_bool(render, 'copy_to_edit'): return False
     if not valid_cut_range(render): return False
-    if 'composite' in render and not valid_recomp(render['composite']): return False
+    if not frame_ranges.valid_entry(render): return False
+    if 'turntable' in render and not check_bool(render, 'turntable'): return False
+    if render.get('turntable'):
+        # A turntable renders the studio's frames, never a frame list.
+        if frame_ranges.CONFIG_KEY in render: return False
+        if 'step_size' in render and not check_int(render, 'step_size'): return False
+        step = render.get('step_size', 1)
+        if step < 1: return False
+        if not valid_preview_frame_list(render, step): return False
+        # A turntable is an asset's: no shot comp follows it.
+        return 'composite' not in render
+    if 'step_size' in render: return False
+    # The direct render it submits renders every frame (step 1).
+    if not valid_preview_frame_list(render): return False
+    if 'composite' in render:
+        if not valid_recomp(render['composite']): return False
+        # A multi-range render is not published: no comp follows it.
+        if frame_ranges.CONFIG_KEY in render: return False
     return True
 
 

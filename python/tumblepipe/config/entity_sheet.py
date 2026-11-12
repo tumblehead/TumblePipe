@@ -4,8 +4,11 @@ The Entity Editor (``asset_browser/entity_editor``) has an Assets tab and a
 Shots tab. Each shows every entity of its kind as a row: its group (category
 or sequence), its name, and its timing (frame range, pre/post roll, fps),
 plus ``animatable`` for assets and the Root (and so the assets it imports)
-for shots. This module is all of it but the widgets, so it runs and is
-tested without Qt:
+for shots. Shots also carry the render settings their root layer applies
+(``render.apply_config``, ``render.resolution``, ``render.camera``; #70),
+dotted fields that write one key of ``render`` each, and the only values
+the kind's root (all shots) can be given here. This module is all of it
+but the widgets, so it runs and is tested without Qt:
 
 - :func:`load` reads one :class:`Kind` as stored: each entity's *own*
   values, what each field inherits from its group, the kind's root, the
@@ -56,6 +59,8 @@ from tumblepipe.config.channels import (
     CHANNEL_PRIMS_PROPERTY, CHANNEL_PROPERTY, channel_name_problem,
     prim_pattern_problem, read_channel_names, read_channel_prims,
 )
+from tumblepipe.config.department_off import DISABLED_DEPARTMENTS
+from tumblepipe.config import render_config as rc
 from tumblepipe.config.shot_batch import (
     ASSETS_URI, SHOTS_URI, name_problem, same_but_case,
 )
@@ -81,6 +86,22 @@ MULTIS = 'multis'
 #: order and each one's prim pattern (``channels`` + ``channel_prims``), its
 #: render layers (:class:`Layers`).
 LAYERS = 'layers'
+#: Shots only: the departments turned off on the shot (#64), a list of
+#: names in pool order (``config.department_off``). Empty or unset: every
+#: department of the pool applies.
+DEPARTMENTS_OFF = DISABLED_DEPARTMENTS
+#: Shots only: the render settings a shot's root layer applies (#70), each a
+#: key of the ``render`` object addressed as a dotted field
+#: (``config.render_config``). Inherited key by key, as the store merges
+#: ``render``; edited in the Shots tab's Render settings section, not as
+#: columns. Unlike the other values they can be set on all shots too
+#: (:meth:`Sheet.set_everyone_value`), the project's level for shots.
+RENDER_APPLY = rc.APPLY
+RENDER_RESOLUTION = rc.RESOLUTION
+RENDER_CAMERA = rc.CAMERA
+RENDER_FIELDS = rc.FIELDS
+#: The values a kind's root (all shots) can be given in the sheet.
+EVERYONE_FIELDS = frozenset(RENDER_FIELDS)
 
 SCENES_URI = Uri.parse('scenes:/')
 GROUPS_URI = Uri.parse('groups:/')
@@ -93,7 +114,8 @@ _LABELS = {
     FRAME_START: 'Start', FRAME_END: 'End', LENGTH: 'Length',
     ROLL_START: 'Pre-roll', ROLL_END: 'Post-roll', FPS: 'FPS', ROOT: 'Root',
     ANIMATABLE: 'Animatable', ASSETS: 'Assets', MULTIS: 'Multis',
-    LAYERS: 'Layers',
+    LAYERS: 'Layers', DEPARTMENTS_OFF: 'Departments off',
+    **rc.LABELS,
 }
 
 _INT_FIELDS = frozenset({FRAME_START, FRAME_END, ROLL_START, ROLL_END, LENGTH})
@@ -148,7 +170,8 @@ class Kind:
 
 _TIMING = (FRAME_START, FRAME_END, ROLL_START, ROLL_END, FPS)
 SHOTS_KIND = Kind(
-    'shots', SHOTS_URI, 'sequence', 'shot', (*_TIMING, ROOT),
+    'shots', SHOTS_URI, 'sequence', 'shot',
+    (*_TIMING, ROOT, DEPARTMENTS_OFF, *RENDER_FIELDS),
     'all shots', ASSETS_URI, 'an asset category', layered=True,
 )
 ASSETS_KIND = Kind(
@@ -327,6 +350,28 @@ def _layers_of(state: LayerState) -> Layers:
     return Layers(tuple((name, _pattern(prims.get(name))) for name in names))
 
 
+_NONE_WORDS = frozenset({'none', '-', 'all on'})
+_SEPARATORS = re.compile(r'[\s,;]+')
+
+
+def _departments_off(value) -> list[str]:
+    """A Departments off value as the sheet holds it and the database
+    stores it: a list of names, duplicates dropped. Takes a list, a tuple,
+    or typed text (names split on commas or spaces; ``none`` is none)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if text.casefold() in _NONE_WORDS:
+            return []
+        names = [part for part in _SEPARATORS.split(text) if part]
+    elif isinstance(value, (list, tuple)):
+        names = [str(part).strip() for part in value if str(part).strip()]
+    else:
+        raise ValueError(f'Departments off takes department names, not "{value}"')
+    return list(dict.fromkeys(names))
+
+
 def parse_value(name: str, value) -> object:
     """``value`` (typed text or a number) as field ``name`` stores it.
 
@@ -337,6 +382,10 @@ def parse_value(name: str, value) -> object:
     label = _LABELS.get(name, name)
     if name == LAYERS:
         return value if isinstance(value, Layers) else Layers.parse(value)
+    if name == DEPARTMENTS_OFF:
+        return _departments_off(value)
+    if name in RENDER_FIELDS:
+        return rc.parse(name, value)
     if name == ROOT:
         text = str(value).strip()
         if not text:
@@ -380,6 +429,14 @@ def format_value(name: str, value) -> str:
         return ''
     if name == LAYERS:
         return value.text() if isinstance(value, Layers) else ''
+    if name == DEPARTMENTS_OFF:
+        # None off shows empty; typing "none" pins it (a shot whose
+        # sequence turns departments off).
+        if not isinstance(value, (list, tuple)):
+            return str(value)
+        return ', '.join(_departments_off(value))
+    if name in RENDER_FIELDS:
+        return rc.format_value(name, value)
     if name == ROOT:
         return root_path(value) if isinstance(value, str) else '(old asset list)'
     if isinstance(value, bool):
@@ -493,23 +550,30 @@ class Base:
     pool: tuple[str, ...] = ()
     #: Each stored group's own values of the kind's fields.
     group_own: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    #: The kind root's (all shots') own values of :data:`EVERYONE_FIELDS`,
+    #: and what it inherits from the project and the project's defaults.
+    everyone_own: Mapping[str, object] = field(default_factory=dict)
+    for_everyone: Inherited = field(default_factory=lambda: Inherited({}, {}))
 
     def inherited(self, group: str) -> Inherited:
         return self.by_group.get(group, self.for_new_group)
 
 
-def _inherited(config, kind: Kind, group: str | None) -> Inherited:
+def _inherited(config, kind: Kind, group: str | None, everyone: bool = True) -> Inherited:
     """What an entity in ``group`` (None: a group not created yet)
     inherits: ``get_properties`` without the entity's own layer, which is
-    ``get_inherited_properties`` for an entity that need not exist yet."""
+    ``get_inherited_properties`` for an entity that need not exist yet.
+    ``everyone`` False leaves the kind's root out too: what the root
+    itself (all shots) inherits from the project and its defaults."""
     # A schema is found by position alone, so any name will do.
     schema = config.get_entity_schema(kind.root / (group or 'new') / 'new')
     values: dict[str, object] = {}
     sources: dict[str, str] = {}
     if schema is not None:
+        defaults = {name: field.default for name, field in schema.fields.items()}
         for name in kind.fields:
-            if name in schema.fields:
-                values[name] = schema.fields[name].default
+            if rc.has_field(defaults, name):
+                values[name] = rc.read_field(defaults, name)
                 sources[name] = "the project's defaults"
     layer_state = _NO_LAYERS
     if kind.layered:
@@ -518,15 +582,21 @@ def _inherited(config, kind: Kind, group: str | None) -> Inherited:
                 layer_state, {CHANNEL_PROPERTY: schema.fields[CHANNEL_PROPERTY].default},
             )
         sources[LAYERS] = "the project's defaults"
-    chain = [(_PROJECT, 'the project'), (kind.root, kind.everyone)]
+    chain = [(_PROJECT, 'the project')]
+    if everyone:
+        chain.append((kind.root, kind.everyone))
     if group is not None:
         chain.append((kind.root / group, f'{kind.group} {group}'))
     for uri, label in chain:
         own = config.get_own_properties(uri) or {}
         for name in kind.fields:
-            if name in own:
-                values[name] = own[name]
+            if rc.has_field(own, name):
+                values[name] = rc.read_field(own, name)
                 sources[name] = label
+            elif rc.wipes(own, name):
+                # A ``render`` that is not an object replaces the merge.
+                values.pop(name, None)
+                sources.pop(name, None)
         if kind.layered and _has_layers(own):
             layer_state = _layer_state(layer_state, own)
             sources[LAYERS] = label
@@ -628,6 +698,12 @@ def load(config, kind: Kind = SHOTS_KIND) -> Base:
             group_own={
                 g: _own_fields(config, kind, kind.root / g, for_new_group) for g in groups
             },
+            everyone_own={
+                name: value
+                for name, value in _own_fields(config, kind, kind.root, for_new_group).items()
+                if name in EVERYONE_FIELDS
+            },
+            for_everyone=_inherited(config, kind, None, everyone=False),
         )
 
 
@@ -635,7 +711,12 @@ def _own_fields(config, kind: Kind, uri: Uri, inherited: Inherited) -> dict[str,
     """``uri``'s own values of the kind's fields. Layers count as its own
     when it stores either key, and are what its keys make of ``inherited``'s."""
     own = config.get_own_properties(uri) or {}
-    values = {name: own[name] for name in kind.fields if name in own}
+    values = {
+        name: rc.read_field(own, name, None) for name in kind.fields
+        # A ``render`` that is not an object holds none of its keys, and
+        # hides what the levels above hold (it reads as None).
+        if rc.has_field(own, name) or rc.wipes(own, name)
+    }
     if kind.layered and _has_layers(own):
         values[LAYERS] = _layers_of(_layer_state(inherited.layer_state, own))
     return values
@@ -749,12 +830,15 @@ class Changes:
     multis_update: tuple[tuple[Uri, Mapping[str, object]], ...] = ()  # URI after any rename
     #: Groups' own values, written after the groups and Roots they need.
     group_update: tuple[tuple[Uri, Mapping[str, object]], ...] = ()
+    #: The kind root's (all shots') own values, written before the groups'.
+    everyone_update: tuple[tuple[Uri, Mapping[str, object]], ...] = ()
 
     def __bool__(self) -> bool:
         return any((
             self.retire, self.rename, self.groups, self.roots,
             self.create, self.update, self.multis_retire, self.multis_rename,
             self.multis_create, self.multis_update, self.group_update,
+            self.everyone_update,
         ))
 
 
@@ -772,6 +856,8 @@ class Summary:
     multis_changed: int = 0
     multis_retired: int = 0
     groups_changed: int = 0
+    #: Whether the kind's root (all shots) has values pending.
+    everyone_changed: bool = False
 
 
 class Sheet:
@@ -809,6 +895,9 @@ class Sheet:
         self._new_groups: list[str] = []
         # Pending values (or RESET) of groups, stored and new, by group.
         self._group_edits: dict[str, dict[str, object]] = {}
+        # Pending values (or RESET) of the kind's root, all shots: only
+        # EVERYONE_FIELDS, the project level of the render settings.
+        self._everyone_edits: dict[str, object] = {}
         by_uri = {str(row.origin.uri): row.id for row in self._rows}
         self._multis: list[Multi] = []
         for i, record in enumerate(base.multis):
@@ -924,6 +1013,7 @@ class Sheet:
             or bool(self._root_edits) or bool(self._used_new_roots())
             or any(self._multi_pending(multi) for multi in self._multis)
             or bool(self._new_groups) or bool(self._live_group_edits())
+            or bool(self._everyone_edits)
         )
 
     def _multi_pending(self, multi: Multi) -> bool:
@@ -961,6 +1051,7 @@ class Sheet:
             ),
             multis_retired=sum(m.retire for m in self._multis),
             groups_changed=len(self._live_group_edits()),
+            everyone_changed=bool(self._everyone_edits),
         )
 
     # ── Roots (shots) ────────────────────────────────────
@@ -1089,6 +1180,110 @@ class Sheet:
         del self._root_edits[uri]
         return True
 
+    # ── The kind's root (all shots) ──────────────────────
+    #
+    # The project level of the render settings (#70): ``entity:/shots``,
+    # which every sequence and shot inherits from unless it pins its own.
+    # Only EVERYONE_FIELDS are edited here.
+
+    def everyone_own(self) -> dict[str, object]:
+        """All shots' own values, as they will be once applied."""
+        own = dict(self.base.everyone_own)
+        for name, value in self._everyone_edits.items():
+            if value is RESET:
+                own.pop(name, None)
+            else:
+                own[name] = value
+        return own
+
+    def new_group_inherited(self) -> Inherited:
+        """What a group (and an entity in a group with nothing of its own)
+        inherits once applied: all shots' pending values included."""
+        base = self.base.for_new_group
+        if not self._everyone_edits:
+            return base
+        values, sources = dict(base.values), dict(base.sources)
+        for name, value in self._everyone_edits.items():
+            if value is RESET:
+                # Back to what all shots inherits from the project.
+                if name in self.base.for_everyone.values:
+                    values[name] = self.base.for_everyone.values[name]
+                    sources[name] = self.base.for_everyone.sources.get(name, '')
+                else:
+                    values.pop(name, None)
+                    sources.pop(name, None)
+            else:
+                values[name] = value
+                sources[name] = self.kind.everyone
+        return Inherited(values, sources, base.layer_state)
+
+    def everyone_value(self, name: str) -> object:
+        """What all shots hold for ``name`` once applied (None: nothing)."""
+        own = self.everyone_own()
+        if name in own:
+            return own[name]
+        return self.base.for_everyone.values.get(name)
+
+    def everyone_state(self, name: str) -> str:
+        """:meth:`state` for all shots' value."""
+        edit = self._everyone_edits.get(name, _MISSING)
+        if edit is RESET:
+            return CLEARED
+        if edit is not _MISSING:
+            return SET
+        return OWN if name in self.base.everyone_own else INHERITED
+
+    def everyone_source(self, name: str) -> str:
+        """Where all shots' inherited value of ``name`` comes from: the
+        project, or the project's defaults ('' when nothing holds it)."""
+        return self.base.for_everyone.sources.get(name, '')
+
+    def set_everyone_value(self, name: str, value) -> bool:
+        """Set all shots' value of ``name``, which every sequence and shot
+        inherits unless it pins its own; False when that changes nothing.
+        Raises ValueError as :meth:`set_value` does."""
+        if name not in EVERYONE_FIELDS or name not in self.kind.fields:
+            raise ValueError(f'{self.kind.everyone.capitalize()} have no {self.kind.label(name)}')
+        value = self._parse(name, value, self.everyone_value(name))
+        if value == self.everyone_value(name):
+            return False
+        stored = self.base.everyone_own
+        self._changing()
+        if name in stored:
+            if value == stored[name]:
+                self._everyone_edits.pop(name, None)
+            else:
+                self._everyone_edits[name] = value
+        elif value == self.base.for_everyone.values.get(name, _MISSING):
+            self._everyone_edits.pop(name, None)   # what it inherits: nothing to pin
+        else:
+            self._everyone_edits[name] = value
+        return True
+
+    def reset_everyone(self, name: str) -> bool:
+        """Put all shots' value of ``name`` back to what the project says."""
+        if name not in EVERYONE_FIELDS:
+            return False
+        if name in self.base.everyone_own:
+            if self._everyone_edits.get(name, _MISSING) is RESET:
+                return False
+            self._changing()
+            self._everyone_edits[name] = RESET
+            return True
+        if name not in self._everyone_edits:
+            return False
+        self._changing()
+        del self._everyone_edits[name]
+        return True
+
+    def revert_everyone(self) -> bool:
+        """Drop all shots' pending values."""
+        if not self._everyone_edits:
+            return False
+        self._changing()
+        self._everyone_edits.clear()
+        return True
+
     # ── Group values ─────────────────────────────────────
 
     def group_own(self, group: str) -> dict[str, object]:
@@ -1105,9 +1300,10 @@ class Sheet:
         """What an entity in ``group`` inherits once applied: the group's
         pending values included."""
         edits = self._group_edits.get(group)
-        if not edits:
+        if not edits and not self._everyone_edits:
             return self.base.inherited(group)
-        base = self.base.for_new_group
+        edits = edits or {}
+        base = self.new_group_inherited()
         values, sources = dict(base.values), dict(base.sources)
         for name, value in self.group_own(group).items():
             values[name] = value
@@ -1130,7 +1326,7 @@ class Sheet:
         own = self.group_own(group)
         if name in own:
             return own[name]
-        return self.base.for_new_group.values.get(name)
+        return self.new_group_inherited().values.get(name)
 
     def group_state(self, group: str, name: str) -> str:
         """:meth:`state` for a group's value."""
@@ -1148,7 +1344,7 @@ class Sheet:
 
     def group_source(self, group: str, name: str) -> str:
         """Where a group's inherited value of ``name`` comes from."""
-        return self.base.for_new_group.sources.get(name, '')
+        return self.new_group_inherited().sources.get(name, '')
 
     def group_pending(self, group: str) -> bool:
         return bool(self._group_edits.get(group))
@@ -1188,7 +1384,7 @@ class Sheet:
                 edits.pop(name, None)
             else:
                 edits[name] = value
-        elif value == self.base.for_new_group.values.get(name, _MISSING):
+        elif value == self.new_group_inherited().values.get(name, _MISSING):
             edits.pop(name, None)         # what it inherits: nothing to pin
         else:
             edits[name] = value
@@ -1694,12 +1890,13 @@ class Sheet:
             [replace(multi, members=list(multi.members)) for multi in self._multis],
             self._next_multi_id, list(self._new_groups),
             {group: dict(edits) for group, edits in self._group_edits.items()},
+            dict(self._everyone_edits),
         )
 
     def _restore(self, state: tuple) -> None:
         (self._rows, self._next_id, self._root_edits, self._new_roots,
          self._multis, self._next_multi_id, self._new_groups,
-         self._group_edits) = state
+         self._group_edits, self._everyone_edits) = state
         self._by_id = {row.id: row for row in self._rows}
         self._problems = None
         self._multi_problems = None
@@ -1896,12 +2093,14 @@ class Sheet:
     def revert_all(self) -> bool:
         with self.batch():
             changed = self.revert([row.id for row in self._rows])
-            if self._root_edits or self._new_roots or self._new_groups or self._group_edits:
+            if (self._root_edits or self._new_roots or self._new_groups
+                    or self._group_edits or self._everyone_edits):
                 self._changing()
                 self._root_edits.clear()
                 self._new_roots.clear()
                 self._new_groups.clear()
                 self._group_edits.clear()
+                self._everyone_edits.clear()
                 changed = True
             changed |= self.revert_multis([m.id for m in self._multis])
         return changed
@@ -2056,7 +2255,30 @@ class Sheet:
             if isinstance(value, Layers):
                 return Layers.make(value.entries, current if isinstance(current, Layers) else None)
             return Layers.parse(value, current if isinstance(current, Layers) else None)
+        if name == DEPARTMENTS_OFF:
+            return self._departments_off(parse_value(name, value), current)
         return parse_value(name, value)
+
+    def _departments_off(self, names: list[str], current) -> list[str] | None:
+        """Departments off in pool order. A name the pool lacks is refused,
+        unless the cell already held it (a department since dropped from
+        the pool, kept as stored rather than lost on the next edit).
+
+        None off where nothing is held (no key stored or inherited) is
+        None, the same as what the cell holds: OK with every box ticked on
+        such a shot changes nothing rather than pinning an empty list."""
+        pool = self.base.pool
+        held = set(current) if isinstance(current, (list, tuple)) else set()
+        unknown = [n for n in names if n not in pool and n not in held]
+        if unknown:
+            raise ValueError(
+                f'Not {"a department" if len(unknown) == 1 else "departments"} '
+                f'of the shot pool: {", ".join(unknown)}'
+                + (f' (the pool: {", ".join(pool)})' if pool else '')
+            )
+        if not names and current is None:
+            return None
+        return [n for n in pool if n in names] + [n for n in names if n not in pool]
 
     @staticmethod
     def _values_problem(value: Callable[[str], object]) -> str:
@@ -2121,10 +2343,13 @@ class Sheet:
             if name not in known and uri not in groups:
                 groups.append(uri)      # a new group whose rows have problems
             group_update.append((uri, dict(edits)))
+        everyone_update = (
+            ((kind.root, dict(self._everyone_edits)),) if self._everyone_edits else ()
+        )
         return Changes(
             tuple(retire), tuple(rename), tuple(groups), tuple(roots),
             tuple(create), tuple(update), *self._multi_changes(problems),
-            group_update=tuple(group_update),
+            group_update=tuple(group_update), everyone_update=everyone_update,
         )
 
     def _member_uris(self, problems: Mapping[int, str]) -> dict[int, str]:
@@ -2273,7 +2498,19 @@ class Sheet:
             _carry(target, old.edits)
         sheet._carry_multis(self._multis, moved, notes, self._live_member)
         sheet._carry_group_edits(self._live_group_edits(), notes)
+        sheet._carry_everyone_edits(self._everyone_edits)
         return sheet, notes
+
+    def _carry_everyone_edits(self, old: Mapping[str, object]) -> None:
+        """:meth:`rebase` for all shots' values: an edit already stored
+        falls away."""
+        stored = self.base.everyone_own
+        for name, value in old.items():
+            if value is RESET:
+                if name in stored:
+                    self._everyone_edits[name] = RESET
+            elif stored.get(name, _MISSING) != value:
+                self._everyone_edits[name] = value
 
     def _carry_group_edits(self, old: Mapping[str, Mapping[str, object]], notes: list[str]) -> None:
         """:meth:`rebase` for group values: an edit already stored falls
@@ -2412,6 +2649,13 @@ def _scenes(uri: str) -> Uri:
     return path
 
 
+def _stored(name: str, value) -> object:
+    """A sheet value as the database stores it: Departments off as a list."""
+    if name == DEPARTMENTS_OFF and isinstance(value, tuple):
+        return list(value)
+    return value
+
+
 def _update(config, uri: Uri, edits: Mapping[str, object]) -> None:
     # The entity's OWN values, read now: another field changed since the
     # sheet was loaded is kept, and nothing inherited gets pinned.
@@ -2426,9 +2670,10 @@ def _update(config, uri: Uri, edits: Mapping[str, object]) -> None:
             else:
                 _pin_layers(own, config.get_inherited_properties(uri) or {}, value)
         elif value is RESET:
-            own.pop(name, None)
+            # A render setting is one key of ``render``; the rest stay.
+            rc.clear_field(own, name)
         else:
-            own[name] = value
+            rc.write_field(own, name, _stored(name, value))
     config.set_own_properties(uri, own)
 
 
@@ -2465,9 +2710,9 @@ def _pin_layers(own: dict, inherited: Mapping, layers: Layers) -> None:
 def _create(config, uri: Uri, own: Mapping[str, object]) -> None:
     """A new entity with ``own`` values; its Layers, if set, as
     :func:`_update` writes them (two keys, against what it inherits)."""
-    values = dict(own)
+    values = {name: _stored(name, value) for name, value in own.items()}
     layers = values.pop(LAYERS, None)
-    config.add_entity(uri, values)
+    config.add_entity(uri, rc.nest(values))
     if isinstance(layers, Layers):
         _update(config, uri, {LAYERS: layers})
 
@@ -2513,6 +2758,8 @@ def apply(
     for uri, assets, new in changes.roots:
         what = 'Creating Root' if new else 'Updating the assets of Root'
         step(f'{what} {root_path(uri)}', _write_root, config, uri, assets, new)
+    for uri, edits in changes.everyone_update:
+        step(f'Updating {_label(uri) or "all " + uri.segments[0]}', _update, config, uri, edits)
     for uri, edits in changes.group_update:
         step(f'Updating {_label(uri)}', _update, config, uri, edits)
     for uri, own in changes.create:

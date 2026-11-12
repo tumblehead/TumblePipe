@@ -15,7 +15,9 @@ from tumblepipe.api import (
     api
 )
 from tumblepipe.config.channels import DEFAULT_CHANNEL, read_published_channel
-from tumblepipe.config.department import list_departments
+from tumblepipe.config.department import (
+    applied_departments, get_disabled_departments, list_departments,
+)
 from tumblepipe.config.entities import get_entity_type as _get_entity_type
 from tumblepipe.config.timeline import BlockRange, require_fps
 from tumblepipe.pipe import build as pipe_build
@@ -376,6 +378,13 @@ def _build_shot(
     shot_departments = [d.name for d in list_departments('shots')]
     asset_departments = [d.name for d in list_departments('assets')]
     print(f'Shot departments configured: {shot_departments}')
+    # A department turned off on the shot (#64) stays out of its stack:
+    # its exports are kept on disk, but the build composes as if it had
+    # none, so every department after it sees the shot without it.
+    disabled = get_disabled_departments(shot_uri)
+    if disabled:
+        shot_departments = applied_departments(shot_departments, disabled)
+        print(f'Departments turned off on the shot: {disabled}')
     print(f'Asset departments configured: {asset_departments}')
 
     # A root layer that is missing, or that names another Root than the

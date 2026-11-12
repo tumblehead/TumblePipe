@@ -21,6 +21,7 @@ hotkey), which find the node from the selection (``pick``).
 from __future__ import annotations
 
 import atexit
+import threading
 from pathlib import Path
 
 import hou
@@ -28,10 +29,12 @@ import hou
 from tumblepipe.api import api, get_user_name, path_str
 from tumblepipe.config.groups import is_group_uri
 from tumblepipe.pipe import live
+from tumblepipe.pipe import review_events
 from tumblepipe.pipe.houdini import nodes as ns
 from tumblepipe.pipe.houdini import tumbleview
 from tumblepipe.pipe.houdini.scene_context import scene_context
 from tumblepipe.pipe.houdini.sops import playblast as sop_playblast
+from tumblepipe.util import events
 
 CACHE_FILE = 'cache.usd'
 WRAPPER_FILE = 'live.usda'
@@ -294,10 +297,41 @@ def start(native) -> live.LiveRun | None:
                          on_end=_announce(name, len(order)))
     except OSError as error:
         raise LivePlayblastError(f'{TITLE}: husk did not start ({error})') from None
+    # This machine's player resolves the shot again and plays the new run.
+    review_events.announce(events.LIVE, plan.entity_uri, plan.department_name)
     _status(
         f'{TITLE} of {name}: rendering {len(order)} frames in the background'
     )
+    if hou.isUIAvailable():
+        show_live_view(str(plan.entity_uri), shot_frame(hou.frame(), plan.time_offset))
     return run
+
+
+def show_live_view(shot: str, frame: int) -> None:
+    """Live view: the editor shows ``shot`` on the master edit, looping the
+    shots around it, at ``frame``: an open editor on the master edit comes to
+    the front (keeping Houdini's keyboard), else one starts on it. Off
+    Houdini's thread (a call may wait on the editor); the outcome goes to the
+    status bar."""
+    from tumblepipe.pipe import live_view, review_playlist
+    folder = live_view.players_folder(path_str(api.PROJECT_PATH))
+
+    def run():
+        try:
+            outcome = live_view.show(folder, shot, frame, review_playlist.view_on_master)
+            text, severity = f'Live view: {outcome}', hou.severityType.Message
+        except live_view.LiveViewError as error:
+            text, severity = f'Live view: {error}', hou.severityType.Warning
+
+        def say():
+            _status(text, severity)
+        try:
+            import hdefereval
+            hdefereval.executeDeferred(say)
+        except Exception:
+            pass
+
+    threading.Thread(target=run, name='tumblepipe live view', daemon=True).start()
 
 
 def stop(native) -> bool:

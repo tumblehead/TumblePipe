@@ -6,12 +6,12 @@
     label	"th light mix"
 
     input	rgba	rgba
-    input	aovs	aovs
+    input	lpe	lpe
     output	rgba	rgba
     signature	default	Default	{ RGBA Cable }	{ RGBA }
 
     help {
-	"A channel's light groups mixed back into its beauty: the graded groups plus Rest (the beauty minus the groups). Inputs: the import's rgba beauty (wired for you on sync) and its aovs cable, in the order of the import's outputs."
+	"A channel's light groups mixed back into its beauty: the graded groups plus Rest (the beauty minus the groups). Inputs: the import's rgba beauty (wired for you on sync) and its lpe cable (the light groups), in the order of the import's outputs; a cable wired from the import's aov moves to lpe on sync."
     }
 
     parm {

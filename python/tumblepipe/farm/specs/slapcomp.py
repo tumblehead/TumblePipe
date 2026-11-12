@@ -14,13 +14,16 @@ config = {
         'characters': {'beauty': 'path/to/beauty.####.exr'}
     },
     'receipt_path': 'path/to/receipt.####.json',
-    'output_path': 'path/to/output.####.exr'
+    'output_path': 'path/to/output.####.exr',
+    'frame_ranges': [[1, 30], [60, 100]]    # optional (#84): comp only these
+                                            # frames (farm.specs.frame_ranges)
 }
 
 The worker comps the configured range itself, so its context is the config
 without the job header.
 """
 
+from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.checks import (
     check_str,
     is_str_dict,
@@ -37,6 +40,7 @@ def is_valid_context(config) -> bool:
         if not is_str_dict(layer): return False
     if not check_str(config, 'receipt_path'): return False
     if not check_str(config, 'output_path'): return False
+    if not frame_ranges.valid_entry(config): return False
     return True
 
 

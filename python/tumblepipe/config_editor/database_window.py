@@ -39,8 +39,10 @@ class DatabaseWindow(QMainWindow):
 
         self._api = api
         # The adapter snapshots from the coherent store, so it opens on current
-        # disk state with no explicit refresh.
-        self._adapter = DatabaseAdapter(api)
+        # disk state with no explicit refresh. Every save goes through the
+        # same root staging as the Entity Editor's Apply, so an edited render
+        # setting reaches the root layers of the shots it changes.
+        self._adapter = DatabaseAdapter(api, on_saved=self._stage_after_save)
         self._uri = None
         self._original_properties = None
         self._inherited_properties = {}
@@ -51,6 +53,15 @@ class DatabaseWindow(QMainWindow):
     def client(self):
         """The project client this window edits."""
         return self._api
+
+    def _stage_after_save(self, uri: Uri) -> None:
+        """Bring the shots ``uri``'s edit reaches up to date
+        (``pipe.root_staging.stage_after_database_save``); say what changed
+        in the status bar."""
+        from tumblepipe.pipe.root_staging import stage_after_database_save
+        summary = stage_after_database_save(uri)
+        if summary:
+            self.statusBar().showMessage(f"Saved {uri}; {summary}", 15000)
 
     def _build_ui(self):
         central_widget = QSplitter(Qt.Horizontal, self)

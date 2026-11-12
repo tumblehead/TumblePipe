@@ -21,13 +21,13 @@ TumblePipe/
 │   ├── pythonrc.py
 │   └── uiready.py
 ├── python3.13libs/              # Houdini 22 startup stubs (byte-identical to 3.11)
-├── bin/                         # Pre-built apps (tt_setup, tt_prepare, th_player + its FFmpeg; per-platform)
+├── bin/                         # Pre-built apps (tt_setup, tt_prepare, cinedex + its FFmpeg; per-platform)
 ├── resolver/                    # Pre-built USD asset resolver (native, per Houdini major)
 ├── dso/                         # Pre-built VRAM Inspector viewport hook (per Houdini major.minor)
 ├── src/                         # Native (Rust/C++) sources — built, not shipped as source
 │   ├── resolver/                #   `entity://` USD resolver (Rust core + C++ ArResolver shim)
 │   ├── wizard/                  #   hook apps: core + tt_setup + tt_prepare (Rust/egui)
-│   ├── player/                  #   th_player, the editor of edits: FFmpeg, EXR, OCIO, sound; th_pipe, th_edit (Rust/Primer)
+│   ├── cinedex/                 #   Cinedex, the editor of edits: FFmpeg, EXR, OCIO, sound; th_pipe, th_edit (Rust/Primer)
 │   └── vram/                    #   VRAM Inspector: viewport hook DSO (C++) + size-model calibration (dev-only)
 ├── resources/                   # Icons, UI resources, templates
 ├── scripts/                     # TumbleTrove hooks, node event scripts, maintenance CLIs

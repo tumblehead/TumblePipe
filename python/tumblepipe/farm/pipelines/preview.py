@@ -203,6 +203,133 @@ def collapse_render_inputs(
     return input_paths
 
 
+def unstaged_channels(entity_uri: Uri, channels: list[str]) -> list[str]:
+    """The ``channels`` with no staged build to render (none built yet).
+
+    A pass-only render layer renders its source channel's stage
+    (``render_layers.stage_channel``), so that is the build looked for.
+    """
+    layer_names = [name for name, _ in list_channel_layers(entity_uri)]
+    missing = []
+    for channel_name in channels:
+        source = render_layers.stage_channel(entity_uri, channel_name, layer_names)
+        staged_path = get_latest_staged_file_path(entity_uri, source)
+        if staged_path is None or not staged_path.exists():
+            missing.append(channel_name)
+    return missing
+
+
+def collapse_turntable_inputs(
+    entity_uri: Uri,
+    channels: list[str],
+    department: str,
+    temp_path: Path,
+    paths: dict,
+) -> dict[str, str]:
+    """Collapse an asset's staged build per channel for its farm turntable (#53).
+
+    Returns ``{channel: relative snapshot path}`` and registers each file in
+    ``paths``. Each snapshot is written into its channel's turntable folder
+    (``turntable.folder_name``), where the exported stage will sit beside it.
+    It holds the asset only (``collapse_asset_references``):
+    the turntable workfile built from it brings the studio's camera, lights,
+    backdrop and render settings (``pipe.houdini.turntable_workfile``).
+    """
+    from tumblepipe.pipe import turntable
+    from tumblepipe.pipe.usd.collapse import collapse_asset_references
+
+    cut, pool = department_cut(entity_context(entity_uri), department)
+    layer_names = [name for name, _ in list_channel_layers(entity_uri)]
+    input_paths = {}
+    for channel_name in channels:
+        source_channel = render_layers.stage_channel(entity_uri, channel_name, layer_names)
+        staged_path = get_latest_staged_file_path(entity_uri, source_channel)
+        if staged_path is None or not staged_path.exists():
+            raise PreviewError(
+                f"No staged build of {entity_uri} channel '{source_channel}' "
+                f"to put on the turntable. Publish the asset first."
+            )
+        excluded = excluded_staged_refs(staged_path, cut, pool)
+        try:
+            content = collapse_asset_references(staged_path, excluded_refs=excluded)
+        except LayerCollectionError as error:
+            raise PreviewError(
+                f"Cannot collapse the staged build of {entity_uri} channel "
+                f"'{channel_name}' for its turntable: {error}"
+            ) from error
+        collapsed_path = temp_path / turntable.asset_input_name(channel_name)
+        store_text(collapsed_path, content)
+        relative = collapsed_path.relative_to(temp_path)
+        paths[collapsed_path] = relative
+        input_paths[channel_name] = path_str(relative)
+    return input_paths
+
+
+def turntable_render_config(
+    entity_uri: Uri,
+    *,
+    channel: str,
+    department: str,
+    stage_path: str,
+    render_settings_path: str,
+    user_name: str,
+    pool_name: str,
+    priority: int,
+    tile_count: int,
+    batch_size: int,
+    denoise: bool,
+    task_keys: list[str],
+    frames,
+    cut_range: list[int] | None = None,
+    preview_frame_list: list[int] | None = None,
+) -> dict:
+    """The ``render/job.py`` config (``specs.render_pipeline``) of an asset
+    channel's exported turntable (#53).
+
+    What the export worker submits after exporting a studio's own Submit
+    Render To Farm, so the frames land where a studio's do: purpose
+    ``turntable``, render department ``render``, the channel's render layer
+    (``turntable.render_layer``), on the turntable's step, never copied to an
+    edit. ``stage_path`` is relative to the job's data dir;
+    ``render_settings_path`` is local (the job builder reads it); ``frames``
+    is a ``turntable.TurntableFrames``.
+    """
+    from tumblepipe.pipe import turntable
+
+    layer = turntable.render_layer(channel)
+    settings = dict(
+        user_name=user_name,
+        purpose=turntable.RENDER_PURPOSE,
+        pool_name=pool_name,
+        channel_names=[layer],
+        render_department_name=turntable.RENDER_DEPARTMENT,
+        render_settings_path=render_settings_path,
+        input_paths={layer: stage_path},
+        tile_count=tile_count,
+        first_frame=frames.first,
+        last_frame=frames.last,
+        step_size=frames.step,
+        batch_size=batch_size,
+        copy_to_edit=False,
+    )
+    if cut_range is not None:
+        settings['cut_range'] = list(cut_range)
+    if preview_frame_list:
+        settings['preview_frame_list'] = list(preview_frame_list)
+    return dict(
+        entity=dict(uri=str(entity_uri), department=department),
+        settings=settings,
+        tasks={
+            task_key: dict(
+                priority=priority,
+                denoise=denoise,
+                channel_name=turntable.RENDER_NOTIFY_CHANNEL,
+            )
+            for task_key in task_keys
+        },
+    )
+
+
 def collapse_playblast_input(
     entity_uri: Uri,
     department: str,
@@ -269,8 +396,13 @@ def render_config(
     task_keys: list[str],
     composite: dict | None = None,
     cut_range: list[int] | None = None,
+    preview_frame_list: list[int] | None = None,
+    frame_ranges: list[list[int]] | None = None,
 ) -> dict:
     """The ``render/job.py`` config for a direct render of collapsed inputs.
+
+    ``frame_ranges`` (``farm.specs.frame_ranges``, #84) makes it a
+    multi-range render of only those frames; None renders first..last.
 
     ``render_settings_path`` is absolute: the job builder reads it locally.
     ``input_paths`` are relative, resolved in the job data dir on the farm.
@@ -294,6 +426,10 @@ def render_config(
             batch_size=batch_size,
             copy_to_edit=copy_to_edit,
             **({} if cut_range is None else dict(cut_range=list(cut_range))),
+            **({} if not preview_frame_list
+               else dict(preview_frame_list=list(preview_frame_list))),
+            **({} if not frame_ranges
+               else dict(frame_ranges=[list(pair) for pair in frame_ranges])),
         ),
         tasks={
             task_key: dict(

@@ -713,7 +713,21 @@ def dwab_encode(input_path, output_path):
 DISPLAY_ARGS = ['--iscolorspace', 'acescg', '--ociodisplay', 'sRGB - Display', '']
 
 
-def to_display_args(input_path, output_path, channel_names=None) -> list[str]:
+def burn_in_args(text: str, width: int, height: int) -> list[str]:
+    """oiiotool arguments that write ``text`` into the top left corner of
+    a ``width`` x ``height`` image, white with a dark shadow so it reads on
+    any picture, sized to the image: a multi-range review mp4's frame
+    number (#84). Whole pixels: oiiotool reads a fractional ``{TOP.height
+    *0.05}`` as no value and falls back to its defaults."""
+    size = max(12, height // 20)
+    margin = max(4, min(width, height) // 40)
+    return [
+        f'--text:x={margin}:y={margin + size}:size={size}:color=1,1,1:shadow=2',
+        text,
+    ]
+
+
+def to_display_args(input_path, output_path, channel_names=None, burn_in=None) -> list[str]:
     """oiiotool arguments (no program name) that write ``input_path`` (an
     EXR) as an 8-bit display image at ``output_path``.
 
@@ -723,7 +737,8 @@ def to_display_args(input_path, output_path, channel_names=None) -> list[str]:
     the same (16-bit outputs agree to 3/65535); ``--dither`` matches
     iconvert's dithering at 8 bits. The first three channels are taken by
     index (a raw split names them ``beauty.R``, a denoise ``R``), a mono AOV
-    is repeated to grey.
+    is repeated to grey. ``burn_in`` (:func:`burn_in_args`) is drawn on
+    the display image.
     """
     channel_count = len(channel_names) if channel_names else 3
     selector = _channel_selector(channel_count) or '0,0,0'
@@ -731,17 +746,20 @@ def to_display_args(input_path, output_path, channel_names=None) -> list[str]:
         path_str(input_path),
         '--ch', selector,
         *DISPLAY_ARGS,
+        *(burn_in or []),
         '--dither',
         '-d', 'uint8',
         '-o', path_str(output_path),
     ]
 
 
-def to_jpeg(input_path, output_path):
+def to_jpeg(input_path, output_path, burn_in=None):
     _require_suffix(input_path, '.exr')
     _require_suffix(output_path, '.jpg')
     _oiiotool().run(
-        to_display_args(input_path, output_path, read_channel_names(input_path)),
+        to_display_args(
+            input_path, output_path, read_channel_names(input_path), burn_in,
+        ),
         env = dict(
             OCIO = path_str(Path(os.environ['OCIO'])),
         )

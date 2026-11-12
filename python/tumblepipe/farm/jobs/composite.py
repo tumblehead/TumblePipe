@@ -24,7 +24,9 @@ def build(config, paths, staging_path):
         receipt_path = config['receipt_path'],
         input_path = config['input_path'],
         exports = config['exports'],
-        imports = config['imports']
+        imports = config['imports'],
+        # A comp of its submit's render (#80) reads it, not imports.
+        **({} if 'renders' not in config else dict(renders = config['renders']))
     ), staging_path,
         name = config['title'],
         pool = config['pool_name'],

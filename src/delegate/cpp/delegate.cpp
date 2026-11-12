@@ -2122,6 +2122,14 @@ private:
         // fills a concave face's notch and a keyhole face's opening (a wall's
         // window). th_triangulate keeps the fan for a convex face and
         // ear-clips a concave one, wound as HdMeshUtil winds it.
+        //
+        // A left-handed mesh is wound the other way, except a refined one:
+        // PxOsdRefinerFactory already reverses a left-handed cage's faces,
+        // so the refined faces are right-handed, and flipping them again
+        // turned every subdivided left-handed mesh (Houdini's own winding,
+        // what SOP Import writes) inside out, which Backface Culling then
+        // showed as its inside.
+        bool const leftHanded = topology.GetOrientation() != HdTokens->rightHanded && !_refiner;
         size_t capacity = 0;
         for (int const c : counts) {
             if (c > 2) capacity += static_cast<size_t>(c - 2);
@@ -2135,7 +2143,7 @@ private:
             counts.cdata(), static_cast<uint32_t>(counts.size()),
             fvi.cdata(), static_cast<uint32_t>(fvi.size()),
             holes.cdata(), static_cast<uint32_t>(holes.size()),
-            topology.GetOrientation() != HdTokens->rightHanded ? 1u : 0u,
+            leftHanded ? 1u : 0u,
             corners.data(), faces.data(), static_cast<uint32_t>(capacity));
         if (count == UINT32_MAX || count == 0) return;
         corners.resize(static_cast<size_t>(count) * 3);

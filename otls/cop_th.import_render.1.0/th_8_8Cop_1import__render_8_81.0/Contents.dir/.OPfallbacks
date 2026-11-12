@@ -1,0 +1,4 @@
+Lop/houdinipreviewprocedurals C:/PROGRA~1/SIDEEF~1/HOUDIN~1.429/houdini/otls/OPlibLop.hda
+Lop/houdinipreviewprocedurals otls/OPlibLop.hda
+th::Cop/import_scene::1.0 otls/cop_th.import_scene.1.0.hda
+th::Lop/import_shot::1.0 otls/lop_th.import_shot.1.0.hda

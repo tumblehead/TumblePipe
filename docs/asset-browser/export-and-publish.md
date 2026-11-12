@@ -99,6 +99,46 @@ Bypassed nodes, nodes addressing another entity, and `layer_split` nodes not
 wired into an export node are left out. Ticking a parent ticks its children;
 a task whose parent is unchecked is drawn grey.
 
+### Changing First / Last for one submit
+
+*First* and *Last* open on the range the export node gives, rolls included.
+Double-click a cell (or select it and press F2) to change it for this submit
+only: a quick preview of a few frames, or an export over another range. The
+node is not changed: its Frame Range parms stay as they are, and the next
+publish window shows the node's range again
+([`task_range.py`](../../python/tumblepipe/pipe/houdini/ui/task_range.py)).
+
+- Export rows (`Export (<channel>)`, `Export Shared`) and `Build USD
+  (<channel>)` rows can be changed. Editing a group row (`Export (<dept>)`,
+  `Build USD`) changes each of its children; a group cell whose children differ
+  on that frame reads `varies`. Validation and `Export rig` rows use no range and stay
+  read-only.
+- Changing *First* keeps the row's *Last*, and the other way round. A whole
+  frame number only; an edit that would put *First* after *Last* is refused,
+  the cell goes back, and the status line says why.
+- A changed cell is drawn amber and in italics, and its tooltip gives the
+  node's range. Right-click a row for **Reset Frame Range** (that row, or a
+  group and its children) or **Reset All Frame Ranges**. Typing back the range
+  the row would run unchanged (the node's, or for a build row the exports'
+  span it follows) also counts as a reset. The status line adds *(frame range
+  changed for this submit)* while any row is changed.
+- `Build USD` follows its entity's exports: when an export row is changed and
+  the build row is not, the build covers the span of the entity's export
+  rows (lowest *First* to highest *Last*), so a preview export of 1001-1010
+  stages 1001-1010. Its cells read amber and italic too, with a tooltip
+  saying it follows. Change the build row itself to give it its own range;
+  reset it to follow again.
+
+The changed range reaches every mode. *In this session* the export and build
+run over it. On *This machine* and the *Render farm* the publish job carries
+it (`tasks.publish.frame_range` in the job's config, and the job's own
+frames): the worker exports those frames, with every export of the job,
+*Downstream Exports* included, and a carried build runs over the build rows'
+range. Build rows changed to different ranges from each other are not
+carried by the publish: they submit their own build batch, each over its own
+range. Up to TumblePipe 1.103.0 the columns were read-only: a preview meant
+changing the node's Frame Range and changing it back.
+
 ### Why a node is left out
 
 Which export nodes a workfile runs is decided by the workfile's own entity,
@@ -283,14 +323,39 @@ A department with no entry runs nothing.
 | shots / composite | none |
 
 **Errors** stop the export unless you continue; **warnings** never block
-(they are logged). When a validation row is ticked and errors are found,
-the **Validation Issues - `<dept>`** dialog opens ("Validation failed for
-`<entity>` (`<dept>`)") listing each issue with its suggestion, a checkbox
-**Apply this choice to remaining validations** (ticked by default, so a
-Multi publish asks once instead of once per shot; untick it to answer shot
-by shot — up to 1.101.0 it started unticked), and **Continue Anyway** /
-**Cancel Export** (the default). Cancelling marks the department's tasks
-skipped without an error report. The export node's own **Validate** button
+(they are logged).
+
+**Validated up front.** When you press Execute, every ticked validation
+row of the run (every shot of a Multi publish, every department) runs
+first, against the stage as it is before anything exports, and before the
+pre-run save. If any finds errors (or the rig check finds anything), one
+**Validation Issues** dialog opens ("Validation found `<n>` issues in
+`<m>` shots, before anything exported") listing the issues grouped by
+shot (or asset), then department, each with its suggestion as a tooltip.
+Each shot has a checkbox, ticked: untick one to skip all of that shot's
+rows for this run (they come back unticked in the publish dialog).
+**Continue Anyway** runs the ticked shots; **Cancel Export** (the default)
+runs nothing and leaves the dialog ready to Execute again. A run whose
+validations find nothing shows no dialog. This is the same for a
+single-shot publish. On This machine / Render farm the up-front dialog is
+the only one: up to 1.103.0 a failing validation there failed its row with
+no way to continue.
+
+**During the run** the validations still run in their place, because a
+downstream department's validation (lookdev in the model workfile) sees
+what an upstream export of the same run just wrote. An issue you already
+accepted up front, for the same shot and department, passes silently
+there; only an issue the run itself brought in opens the per-department
+**Validation Issues - `<dept>`** dialog ("Validation failed for
+`<entity>` (`<dept>`)"), listing just the new issues, with a checkbox
+**Apply this choice to remaining validations** (ticked by default, so it
+asks once rather than once per shot; untick it to answer shot by shot —
+up to 1.101.0 it started unticked), and **Continue Anyway** / **Cancel
+Export** (the default). Cancelling marks the department's tasks skipped
+without an error report. Up to 1.103.0 there was no up-front pass: each
+shot validated when the run reached it, so a failure on shot 1 of 4 sat
+behind a modal and later shots' issues showed only after it was answered
+(#56). The export node's own **Validate** button
 runs the same set read-only and answers **Validation Passed**, **Validation
 Passed With Warnings**, or the issue list with a **Close** button.
 
@@ -306,7 +371,7 @@ Passed With Warnings**, or the issue list with a **Close** button.
 | `render_settings` | `the stage carries no UsdRender.Settings prim …` (or several — exactly one is required); `RenderSettings missing 'camera' relationship`, `… has no target`, `RenderSettings camera target does not exist: <path>`. Warnings when `products` is missing or empty. |
 | `render_products` | `No RenderProduct prims found on the stage`; `RenderProduct renders through no camera, and the RenderSettings names none to inherit` / `RenderProduct camera target does not exist: <path>`. Warnings for a missing or empty `productName`. |
 | `render_var_names` | `Prim name '<prim>' does not match aov:name '<aov>'` — rename one to match. Warnings for a missing or empty `driver:parameters:aov:name`. |
-| `render_var_twins` | `<var> and <var> are both the AOV '<name>'`: two RenderVars whose names differ only in case (Karma's own **Albedo** toggle beside the project's `albedo`). Switch Karma's toggle off and use the **AOVs** section of [`th::render_settings`](../nodes/lighting-and-rendering.md#thrender_settings-lop); the farm refuses such a render too. |
+| `render_var_twins` | `<var> and <var> are both the AOV '<name>'`: two RenderVars whose names differ only in case (Karma's own **Albedo** toggle beside the project's `albedo`). Switch Karma's toggle off and tick the AOV on [`th::render_vars`](../nodes/lighting-and-rendering.md#thrender_vars-lop); the farm refuses such a render too. |
 | `ordered_vars` | `orderedVars references non-existent RenderVar: <path>`; `RenderVar not in orderedVars: <path>`. Warnings when `orderedVars` is missing or empty. |
 
 A validator name in a project's `validators.py` that is not registered is

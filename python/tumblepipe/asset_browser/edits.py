@@ -1,16 +1,23 @@
 """Edits as cards of the pipeline catalog.
 
 An edit (``entity:/edits/<name>``, ``tumblepipe.pipe.edits``) is a cut the
-editor (``th_player``) makes, saves and publishes. Each edit a project has
+editor (``cinedex``) makes, saves and publishes. Each edit a project has
 is a card tagged ``type:edit``, in the sidebar's Edits section, named after
 the edit, showing its latest published version and its newest working
-version, and whether it is the project's master edit. A publish writes no
-thumbnail, so the card shows the ``film`` icon.
+version, and whether it is the project's master edit. Its thumbnail is the
+thumbnail of the shot its first clip plays (its newest saved or published
+document's); with none, the ``film`` icon.
+
+In the list view the Edits section has columns of its own (#55,
+:func:`list_columns_for`): Name, Published, Working, Master, User, Edited,
+not the shots' Category and Depts, which an edit never fills.
 
 Its menu opens it in the editor (the newest working version), plays its
-latest published version read-only, opens its working folder, and makes it
-the master edit or the project none. Edits are made in the editor (Save
-As), not here: the browser creates, renames and deletes none.
+latest published version read-only, opens its working folder, makes it the
+master edit or the project none, and renames or deletes it (#62). New
+Edit... (the Edits section's and the project's creation menus) makes one,
+empty, for its first Save in the editor. The rules are
+``pipe.edits``' ``name_problem``, ``rename_problem`` and ``delete_problem``.
 
 Ids are ``edit:<project>:<name>``. The names come from the project's
 config (a cached tree, safe on the GUI thread, which the sidebar's count
@@ -27,7 +34,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from tumbletrove.asset_browser.api.errors import AssetDiscoveryError, CatalogError
-from tumbletrove.asset_browser.api.types import Asset, AssetAction, AssetDetail
+from tumbletrove.asset_browser.api.types import (
+    Asset, AssetAction, AssetDetail, ListColumn,
+)
 
 from .library_kinds import LibraryKind
 
@@ -44,6 +53,32 @@ ID_PREFIX = 'edit:'
 TYPE_TAG = 'type:edit'
 KIND = 'edit'
 ICON = 'film'
+#: The creation option New Edit... (``EntityOps.create``).
+CREATE_OPTION = 'new_edit'
+#: The Master column's mark for the master edit.
+MASTER_MARK = '\u2713'
+
+
+def edit_list_columns() -> list[ListColumn]:
+    """The Edits section's list columns (#55). ``master_mark`` is a tick
+    for the master edit; User and Edited are the newest save's or
+    publish's, as on the shots' rows."""
+    return [
+        ListColumn(key='name', label='Name'),
+        ListColumn(key='published', label='Published', width=80, align='center'),
+        ListColumn(key='working', label='Working', width=80, align='center'),
+        ListColumn(key='master_mark', label='Master', width=60, align='center'),
+        ListColumn(key='last_user', label='User', width=110),
+        ListColumn(key='latest_update', label='Edited', width=90,
+                   fmt='reltime', align='right'),
+    ]
+
+
+def list_columns_for(tags, default: list) -> list:
+    """The list columns for the scope ``tags``
+    (``Catalog.get_list_columns_for``): the edit columns in the Edits scope
+    (``type:edit``), else ``default`` (the catalog's own)."""
+    return edit_list_columns() if TYPE_TAG in frozenset(tags) else default
 
 
 @dataclass(frozen=True)
@@ -183,6 +218,7 @@ def card_fields(entry: EditEntry, catalog_id: str) -> dict:
             'published': entry.latest_published or '',
             'working': entry.latest_working or '',
             'master': entry.is_master,
+            'master_mark': MASTER_MARK if entry.is_master else '',
             'last_note': _note(entry),
             'latest_update': entry.updated,
             'last_user': entry.user,
@@ -208,8 +244,11 @@ class EditManager(LibraryKind):
     catalog's per-project clients: a library kind (``library_kinds.py``),
     though owned by a project, not a library. Its card menu and Open in
     Editor are the catalog's (``menus.edit_items``, ``EntityOps.open_edit``),
-    passed in; its Open Folder is the working folder (``asset_folder``), no drop,
-    no edit fields and no delete (the editor manages edits)."""
+    passed in; its Open Folder is the working folder (``asset_folder``), no drop
+    and no edit fields. Rename and delete are its card menu's own entries
+    (``menus.edit_items``), not the browser's generic Delete: a delete must
+    say where the files go and refuse the master edit. Its thumbnail is
+    ``shot_thumbnail(project, shot_uri)`` of its first clip's shot."""
 
     kind = KIND
     id_prefix = ID_PREFIX
@@ -219,8 +258,10 @@ class EditManager(LibraryKind):
         self, catalog_id: str, *, clients: 'ClientPool',
         menu_items: Optional[Callable[[Asset], list]] = None,
         open_edit: Optional[Callable[..., None]] = None,
+        shot_thumbnail: Optional[Callable[[str, Uri], object]] = None,
     ) -> None:
         self._catalog_id = catalog_id
+        self._shot_thumbnail = shot_thumbnail
         self._clients = clients
         self._menu_items = menu_items
         self._open_edit = open_edit
@@ -300,8 +341,27 @@ class EditManager(LibraryKind):
         return build_detail(entry, self._catalog_id)
 
     def get_thumbnail(self, asset: Asset):
+        """The thumbnail of the shot the edit's first clip plays, read from
+        its newest document (worker thread); the ``film`` icon when there
+        is none (never saved, no shot clip, the shot has no thumbnail)."""
+        found = self.shot_thumbnail_for(asset)
+        if found:
+            return found
         from tumbletrove.asset_browser.core.thumbnail import IconThumbnail
         return IconThumbnail(ICON, 128)
+
+    def shot_thumbnail_for(self, asset: Asset):
+        """The thumbnail of the shot the edit's first clip plays
+        (``pipe.edits.first_shot_uri``), None when there is none."""
+        ref = parse_id(asset.id)
+        if ref is None or self._shot_thumbnail is None:
+            return None
+        try:
+            shot = pipe_edits.first_shot_uri(ref.name, self._clients.get(ref.project))
+            return None if shot is None else (self._shot_thumbnail(ref.project, shot) or None)
+        except Exception:  # noqa: BLE001 - a thumbnail falls back, never fails the card
+            log.debug('no shot thumbnail for %s', asset.id, exc_info=True)
+            return None
 
     def asset_folder(self, asset: Asset) -> Optional[Path]:
         """The browser's Open Folder: the edit's working folder, where its

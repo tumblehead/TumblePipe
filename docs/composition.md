@@ -1024,17 +1024,27 @@ because a preview wants one raw colour buffer, not the Karma LPE render vars
 the project's products order. See [Playblast](compositing.md#playblast) and
 `scripts/debug_playblast.py`.
 
-#### The shot's configured camera and resolution
+#### The shot's configured render settings
 
 The settings prim itself stays the project's, in `root_default_prims.usda`.
 When the project opts in (`render.apply_config`, see
 [the project config](configuration.md#the-project-config)), each shot's root
-layer (`generate_root_version`) appends an `over` of that prim, at the path
+layer version (`generate_root_version`) gets an `over` of that prim, at the path
 `find_render_settings_prim_path` finds on the defaults stage, with the shot's
-resolved `resolution` and, only when it names a camera on the defaults stage,
-its `camera` rel. The root layer sublayers the defaults, so the `over` is
-stronger, and everything downstream (collapse, husk, playblast) sees the
-shot's values without knowing about the setting. The root layer's
+resolved `resolution`, only when it names a camera on the defaults stage,
+its `camera` rel, and the Karma settings (samples, ray limits, dicing
+quality, depth of field, motion blur) an entity level pins
+([Render settings in the root layer](configuration.md#render-settings-in-the-root-layer)).
+The `over` is a layer of its own, `render_settings.usda` beside the root
+layer, which the root layer sublayers first: stronger than the Root and the
+defaults, and a leaf layer, so the farm's collapse (which keeps only leaf
+layers, `_collect_leaf_layers_and_instances`) carries it into the render.
+Until 2026-11-12 the `over` sat inline in the root layer, which has
+sublayers, so the collapse dropped it and farm renders never got the
+configured settings; a root layer of that form reads as stale and is
+written again at the next sync or build. Everything downstream (collapse,
+husk, playblast) sees the shot's values without knowing about the setting.
+The root layer's
 `context.json` records the override (`parameters.render_override`);
 `root_layer_is_stale` compares it with what the config now asks for
 (`pipe/usd/render_overrides.py`, issue #52).

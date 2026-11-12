@@ -21,7 +21,9 @@ config = {
         'step_size': 'int',
         'batch_size': 'int',
         'copy_to_edit': 'bool',
-        'cut_range': ['int', 'int']             # optional (specs.render_pipeline)
+        'cut_range': ['int', 'int'],            # optional (specs.render_pipeline)
+        'preview_frame_list': ['int'],          # optional (specs.render_pipeline)
+        'frame_ranges': [['int', 'int']]        # optional (specs.render_pipeline, #84)
     },
     'composite': {...},     # optional: the re-comp after the render (specs.composite.valid_recomp)
     'tasks': {
@@ -43,6 +45,7 @@ houdini_config = {
 }
 """
 
+from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs.composite import valid_recomp
 from tumblepipe.farm.checks import (
     check_bool,
@@ -77,7 +80,10 @@ def is_valid_config(config) -> bool:
     tasks = config.get('tasks')
     if not valid_render_tasks(tasks): return False
     if not _valid_stage(tasks.get('stage')): return False
-    if 'composite' in config and not valid_recomp(config['composite']): return False
+    if 'composite' in config:
+        if not valid_recomp(config['composite']): return False
+        # A multi-range render is not published: no comp follows it (#84).
+        if frame_ranges.CONFIG_KEY in settings: return False
     return True
 
 

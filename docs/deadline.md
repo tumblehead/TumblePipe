@@ -106,7 +106,7 @@ Each worker needs the same environment as an artist workstation:
 
   **Render Edit** (`edit_render`, in the `encode` group) takes no licence
   either. It renders a published edit with the editor TumblePipe ships,
-  `bin/<platform>/th_player`, run headless as `th_player --render`: on the
+  `bin/<platform>/cinedex`, run headless as `cinedex --render`: on the
   CPU, with no window, display or GPU. The editor's own FFmpeg libraries are
   beside it in the package. Houdini's `hffmpeg` then encodes the frames and
   the mixed sound into `render:/edits/<name>/<name>_edit_vNNNN.mp4`, so the
@@ -271,6 +271,27 @@ on Deadline, and runs in the background as a render node would run it.
   overrides it. Each batch has a `batch.json`, the runner's `state.json`, and
   a log per task under `logs/`.
 
+- **Preview frames ready:** when a render or comp with Preview Frames runs
+  here, the runner tells you as soon as the preview frames are done, before
+  the full range starts: a desktop notification titled *Preview frames
+  ready*, saying `<shot> <department> <version>: N frames` and the folder
+  the frames are in (a Windows toast, a macOS Notification Center banner, or
+  a Linux `notify-send` bubble; Linux without libnotify's `notify-send`
+  shows none). On Windows, clicking the toast opens the folder. The
+  [Farm Manager](#the-farm-manager) shows a notice too, with **Open in
+  player**, and the editor's clips of the shot show a **Preview ready**
+  badge until the full range is rendered. The frames count as
+  done when every job the preview's notify waits on (the partial render,
+  its denoise, or the partial comp) has completed, so the notice comes even
+  when the Discord post fails or the project has no Discord. Each preview
+  is announced once, and the runner records it in the batch's `state.json`
+  under `previews`. Turn the desktop notification off with **Notify when
+  preview frames are ready** on the Asset Browser's Settings page
+  (`notify_preview_ready` in `pipeline_prefs.json`); the Farm Manager's
+  notice stays. A notification that cannot be shown is written to
+  `runner.log` and never fails the job. Farm (Deadline) jobs still post to
+  Discord only.
+
 A local render takes this machine's licences: a `hython` beside the open
 Houdini, and `husk` a Karma licence. It also shares the GPU with the
 viewport.
@@ -324,6 +345,18 @@ Desktop (`python -m tumblepipe.farm.manager`).
 
 - **Filters:** *Show* (all, this machine, the farm), *Only mine*, *Only
   <project>*, *Hide finished*, and a name filter.
+- **Preview frames ready:** when a local job's preview frames are done (see
+  [Running farm jobs on this machine](#running-farm-jobs-on-this-machine)), a band above the list says
+  *Preview frames ready* with the shot, department, version and frame
+  count, and the job (its `notify partial …` job) is tinted until you
+  select it. **Open in player** shows the batch's preview frames in the
+  editor, as stills ([Preview frames ready](asset-browser/play-shots.md#preview-frames-ready),
+  `cinedex --frames <batch folder>`; it needs `$OCIO`, as Play does),
+  **Open folder** opens the frames' folder, **Show job** selects
+  the job (clearing *Hide finished* and the name filter if they hid it),
+  **Dismiss** closes the notice. Several at once wait behind each other
+  (*+N more*). The band does not interrupt anything, and previews that were
+  ready before the window opened are not announced.
 - **Layout:** drag the grey lines between the panes (the job list and its
   details, the tasks and the log, and the top and bottom halves) to resize
   them; a line lights up under the mouse.
@@ -404,9 +437,24 @@ Desktop (`python -m tumblepipe.farm.manager`).
   job that is rendering or completed, for a non-HPM job, and when one of
   the jobs waits on another unfinished farm job outside that batch.
 - **Right-click menus:** on a job, the same actions plus *Open job folder*,
-  *Open output folder*, *Copy job ID* and *Copy name*. On a task, *Open log
-  folder*, *Copy log*, *Copy frames*, *Copy error*, and the job actions (they
-  act on the whole job, as on Deadline).
+  *Open output folder*, *Preview in Cinedex*, *Copy job ID* and *Copy name*.
+  On a task, *Open log folder*, *Copy log*, *Copy frames*, *Copy error*, and
+  the job actions (they act on the whole job, as on Deadline).
+- **Preview in Cinedex:** right-click a job ▸ *Preview in Cinedex* shows its
+  rendered frames in the editor as stills (`cinedex --frames <folder>`; it
+  needs `$OCIO`, as Play does). It looks where *Open output folder* goes:
+  a slapcomp's or a merged comp's frames are in that folder, a render's, a
+  denoise's or a channel comp's in the `beauty` AOV folder under it. It is
+  offered for render, denoise, composite and slapcomp jobs (partial or full)
+  once a frame is on disk, local or on the farm; for any other job, or
+  before a frame has landed, it is greyed out and its tooltip says why. An
+  mp4 job is not offered (its output is a movie): preview the job whose
+  frames it encodes. On a batch row, or with several jobs selected, it opens
+  the best frames there are: a full job before any partial one (the preview
+  frames only), then the slapcomp, else the composite, else the denoise,
+  else the render, then the newest version. So a finished full render wins
+  over a partial slapcomp. If the editor cannot start (no `$OCIO`, no player
+  installed) a message box says so.
 
 The farm is read with `deadlinecommand -Json` (`GetJobs`, `GetJobTasks`, the
 report listings) on a worker thread every few seconds. A job's

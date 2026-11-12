@@ -1,12 +1,14 @@
 """th::light_mix: a channel's light groups mixed back into its beauty.
 
-Two inputs, RGBA out: an import_render's beauty (``rgba``) and its cable
-(``aovs``), in the order the import's outputs come in, so the two wires do
-not cross (Remy, 2026-11-10; the cable used to come first). A sync wires the
-beauty from that import when its input is empty (the cable no longer
-carries the beauty; a cable that does is read when the beauty input is
-empty), and puts a mix wired the old way round back in order
-(:func:`swapped_inputs`). One row per light group
+Two inputs, RGBA out: an import_render's beauty (``rgba``) and its light
+groups cable (``lpe``), in the order the import's outputs come in, so the
+two wires do not cross (Remy, 2026-11-10; the cable used to come first). A
+sync wires the beauty from that import when its input is empty (the cable
+no longer carries the beauty; a cable that does is read when the beauty
+input is empty), puts a mix wired the old way round back in order
+(:func:`swapped_inputs`), and moves a cable taken from the import's
+``aov`` output to ``lpe`` (before #67 ``aovs`` carried the light groups;
+the stock composite template still wires ``aov``). One row per light group
 (``beauty_<tag>``): Mute, Exposure (stops) and Tint. The mix is the graded
 groups plus **Rest**, the beauty minus the groups (the lights in no group),
 which has a row of its own. So at defaults the output is the beauty
@@ -33,24 +35,42 @@ TYPE_NAME = 'light_mix'
 
 MIX = 'mix'
 ROWS_PARM = 'groups'
-# The inputs: the import's beauty, and its cable (import_render's outputs'
-# order: rgba, then aovs).
+# The inputs: the import's beauty, and its light groups cable
+# (import_render's outputs' order: rgba, then lpe).
 BEAUTY_INPUT = 0
 CABLE_INPUT = 1
 # The mix subnet's inputs, in the HDA's order
-MIX_IO = (('rgba', 'vector4'), ('aovs', 'cable'))
+MIX_IO = (('rgba', 'vector4'), ('lpe', 'cable'))
 
 
 def swapped_inputs(sources: dict) -> bool:
     """Whether a mix's inputs are the old way round: ``sources`` maps an
     input index to the import output index reaching it (None when the
-    input reaches no import). The cable on the beauty input, or the beauty
-    on the cable input, is a mix wired before the inputs swapped."""
-    from tumblepipe.pipe.houdini.cops.import_render import AOVS_OUTPUT, RGBA_OUTPUT
+    input reaches no import). A cable (``lpe``, or ``aov``, ``aovs`` before
+    #67) on the beauty input, or the beauty on the cable input, is a mix
+    wired before the inputs swapped."""
+    from tumblepipe.pipe.houdini.cops.import_render import (
+        AOVS_OUTPUT, LPES_OUTPUT, RGBA_OUTPUT,
+    )
+    cables = (AOVS_OUTPUT, LPES_OUTPUT)
     beauty, cable = sources.get(BEAUTY_INPUT), sources.get(CABLE_INPUT)
-    return (beauty == AOVS_OUTPUT and cable != AOVS_OUTPUT) or (
+    return (beauty in cables and cable not in cables) or (
         cable == RGBA_OUTPUT and beauty != RGBA_OUTPUT
     )
+
+
+def cable_target(output_index: int, import_layout: int) -> int | None:
+    """Where a cable wired straight from an import_render's output
+    ``output_index`` belongs, None when it stays: from ``aov`` of an
+    import on today's outputs it moves to ``lpe``, where the light groups
+    ride since #67 (an import still on the old layout moves it itself when
+    it upgrades)."""
+    from tumblepipe.pipe.houdini.cops.import_render import (
+        AOVS_OUTPUT, LPES_OUTPUT, OUTPUTS_LAYOUT,
+    )
+    if import_layout >= OUTPUTS_LAYOUT and output_index == AOVS_OUTPUT:
+        return LPES_OUTPUT
+    return None
 
 
 class LightMix(ns.Node):
@@ -95,11 +115,29 @@ class LightMix(ns.Node):
                 native.setInput(index, *wires[other])
         return True
 
+    def rewire_cable(self) -> bool:
+        """Move a cable taken straight from an import_render's ``aov`` to
+        its ``lpe`` (:func:`cable_target`); whether it did."""
+        from tumblepipe.pipe.houdini.cops.import_render import _is_import_render, outputs_layout
+        native = self.native()
+        connection = next(
+            (c for c in native.inputConnections() if c.inputIndex() == CABLE_INPUT), None
+        )
+        if connection is None: return False
+        source = connection.inputNode()
+        if not _is_import_render(source): return False
+        target = cable_target(connection.outputIndex(), outputs_layout(source))
+        if target is None: return False
+        native.setInput(CABLE_INPUT, source, target)
+        return True
+
     def cable_import(self):
         """The import_render whose cable reaches the cable input (inputs
-        put in order first), None when there is none."""
+        put in order and the cable on ``lpe`` first), None when there is
+        none."""
         from tumblepipe.pipe.houdini.cops.import_render import upstream_import
         self.order_inputs()
+        self.rewire_cable()
         return upstream_import(self.native(), input_index=CABLE_INPUT)
 
     def upstream(self):
@@ -109,8 +147,8 @@ class LightMix(ns.Node):
         source = self.cable_import()
         if source is None:
             raise self._error(
-                "the aovs input is not a th::import_render's aovs cable; wire "
-                "the import's aovs output into the mix's aovs input"
+                "the lpe input is not a th::import_render's lpe cable; wire "
+                "the import's lpe output into the mix's lpe input"
             )
         if source.is_all_channels():
             raise self._error(
@@ -279,11 +317,20 @@ def on_loaded(raw_node):
 
 
 def repair_loaded(raw_node):
-    """:func:`on_loaded`'s work, on a scene that has finished loading."""
+    """:func:`on_loaded`'s work, on a scene that has finished loading. An
+    import feeding the mix that was saved before #67 moves onto its new
+    outputs first (whichever of the two loads first), then the cable moves
+    from ``aov`` to ``lpe``."""
+    from tumblepipe.pipe.houdini.cops.import_render import ImportRender, _is_import_render
+    for connection in raw_node.inputConnections():
+        if _is_import_render(connection.inputNode()):
+            ImportRender(connection.inputNode()).upgrade()
     node = LightMix(raw_node)
     mix = raw_node.node(MIX)
     old_io = mix is not None and mix.parm('inputlabel1').eval() != MIX_IO[0][0]
-    if not node.order_inputs() and not old_io: return
+    swapped = node.order_inputs()
+    moved = node.rewire_cable()
+    if not swapped and not moved and not old_io: return
     try:
         node.sync_rows()
     except Exception:

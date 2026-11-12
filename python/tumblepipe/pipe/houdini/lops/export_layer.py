@@ -299,23 +299,28 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
         """Initialize node and update labels to show resolved values."""
         self._update_labels()
 
-    def execute(self, force_local: bool = False):
+    def execute(self, force_local: bool = False, render_range=None):
         """
         Execute export.
 
         If force_local=True, exports here and now: the publish dialog's
         *In this session*, and the farm's publish worker. Otherwise, opens
         the ProcessDialog for task selection and execution.
+
+        ``render_range`` (a ``BlockRange``, rolls included) exports those
+        frames instead of the node's Frame Range: the publish window's
+        First/Last changed for one submit (#76). The node's parms are not
+        changed. None reads them, as always.
         """
         if force_local:
-            return self._execute()
+            return self._execute(render_range)
         # Open ProcessDialog
         from tumblepipe.pipe.houdini.ui.dialog_launcher import (
             open_process_dialog_for_node
         )
         open_process_dialog_for_node(self, dialog_title="Export Layer")
 
-    def _execute(self):
+    def _execute(self, render_range=None):
         """The export itself, in this process.
 
         Always local, whatever the node's **Type** parm says. Where an
@@ -331,20 +336,23 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
         interactive export/publish flow), so entity-derived values resolved
         here are read from fresh on-disk config.
         """
-        return self._export_local()
+        return self._export_local(render_range)
 
-    def _export_local(self):
+    def _export_local(self, render_range=None):
         native = self.native()
 
         # Get parameters (each raises when it does not resolve)
         entity_uri = self.require_entity_uri()
         department_name = self.require_department_name()
         channel_name = self.get_channel_name()
-        frame_range = self.get_frame_range()
+        # A range set for this submit (#76) stands in for the node's own
+        if render_range is None:
+            render_range = self.get_frame_range().full_range()
 
         logger.info(
             f"Starting local export: uri={entity_uri}, dept={department_name}, "
-            f"channel={channel_name}"
+            f"channel={channel_name}, frames={render_range.first_frame}-"
+            f"{render_range.last_frame}"
         )
 
         # The render step is deliberately dropped: a published stage cache
@@ -355,7 +363,6 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
         # off-grid whenever batch_size was not a multiple of step. Exporting
         # on 1s (export_f3) matches the farm exporter, which has always
         # discarded step (see the farm submit path and export_houdini).
-        render_range = frame_range.full_range()
         # On a Multi's shared timeline the shot's frames are cooked where
         # the shot sits there, then written back on the shot's own frames.
         time_offset = self.get_time_offset()
@@ -587,18 +594,25 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             )
         return workfile_path, context.department_name
 
-    def _export_farm(self, build: dict | None = None):
+    def _export_farm(self, build: dict | None = None, render_range=None):
         """Submit the publish of this node's department to the farm.
 
         ``build`` is the publish dialog's Build USD task riding along
         (``specs.publish`` tasks.build): its builds chain after the publish
         job in the same batch, and the worker queues none of its own.
+
+        ``render_range`` is a range set in the publish window for this
+        submit only (#76): the job carries it (tasks.publish.frame_range)
+        and the worker exports those frames; the node is not changed.
         """
         # Each getter raises when its parm does not resolve
         entity_uri = self.require_entity_uri()
         department_name = self.require_department_name()
         channel_name = self.get_channel_name()
-        frame_range = self.get_frame_range()
+        job_range = (
+            render_range if render_range is not None
+            else self.get_frame_range().full_range()
+        )
         downstream_deps = self.get_downstream_department_names()
         pool_name = self.get_pool_name()
         priority = self.get_priority()
@@ -617,8 +631,8 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             'settings': {
                 'priority': priority,
                 'pool_name': pool_name,
-                'first_frame': frame_range.full_range().first_frame,
-                'last_frame': frame_range.full_range().last_frame
+                'first_frame': job_range.first_frame,
+                'last_frame': job_range.last_frame
             },
             'tasks': {
                 'publish': {
@@ -627,6 +641,11 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             },
             'workfile_path': path_str(workfile_dest)
         }
+        if render_range is not None:
+            config['tasks']['publish']['frame_range'] = {
+                'first_frame': render_range.first_frame,
+                'last_frame': render_range.last_frame,
+            }
         if build is not None:
             config['tasks']['build'] = build
 

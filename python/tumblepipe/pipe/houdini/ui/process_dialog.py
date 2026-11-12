@@ -3,13 +3,14 @@
 from typing import Callable
 
 from PySide6 import QtWidgets
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 
 from .process_task import (
     ProcessTask, ProcessTaskTreeModel, TaskStatus, TASK_ROLE, IS_ENTITY_ROLE,
     ENTITY_URI_ROLE, is_queued,
 )
 from .process_executor import ProcessExecutor
+from . import task_range
 from .helpers import has_staged_export
 from .report import report_failure
 from . import farm_submit
@@ -130,6 +131,11 @@ class ProcessDialog(QtWidgets.QDialog):
         self._tree_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self._tree_view.setAlternatingRowColors(True)
         self._tree_view.setExpandsOnDoubleClick(True)
+        # First/Last edit for this submit (#76): double-click or F2
+        self._tree_view.setEditTriggers(
+            QtWidgets.QAbstractItemView.DoubleClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
         self._expand_enabled_entities()  # Expand only enabled entities (or all if no selective enablement)
 
         # Enable context menu for "Open Location"
@@ -280,6 +286,10 @@ class ProcessDialog(QtWidgets.QDialog):
         # Auto-expand/collapse based on checkbox state
         self._model.itemChanged.connect(self._on_item_changed)
 
+        # First/Last changed for this submit (#76): a refused edit says why
+        self._model.range_edit_rejected.connect(self._on_range_rejected)
+        self._model.ranges_changed.connect(self._update_status)
+
         # Connect mode radio buttons to filter tasks. The tasks a mode allows
         # differ only between this session and a farm, so only the session
         # radio refilters; moving between the two farms keeps the ticks.
@@ -343,8 +353,21 @@ class ProcessDialog(QtWidgets.QDialog):
                 self._status_label.setText(f"Ready to execute {enabled_count} task(s) {mode}")
             else:
                 self._status_label.setText(f"Ready to execute {enabled_count} task(s)")
+            if self._model.has_range_edits():
+                self._status_label.setText(
+                    self._status_label.text()
+                    + " (frame range changed for this submit)"
+                )
             self._status_label.setStyleSheet("color: green; font-weight: bold;")
             self._execute_button.setEnabled(True)
+
+    def _on_range_rejected(self, reason: str):
+        """A First/Last edit was refused: say why where the artist looks.
+        After the edit's other handlers, which redraw the status line."""
+        def show():
+            self._status_label.setText(f"Frame range not changed: {reason}")
+            self._status_label.setStyleSheet("color: orange; font-weight: bold;")
+        QTimer.singleShot(0, show)
 
     def _get_available_modes(self) -> tuple[bool, bool]:
         """Check which execution modes are available based on task callbacks.
@@ -418,6 +441,12 @@ class ProcessDialog(QtWidgets.QDialog):
                 return
             farm_submit.remember_backend(self._backend())
 
+        # Every ticked validation runs now, before anything is saved or
+        # exported, and one dialog asks about all of their issues (#56).
+        accepted = self._validate_up_front()
+        if accepted is None or not self._model.get_enabled_tasks():
+            return
+
         # Run pre-execute callback (e.g., save scene) before starting tasks
         if self._pre_execute_callback is not None:
             try:
@@ -446,7 +475,49 @@ class ProcessDialog(QtWidgets.QDialog):
         # Start execution
         self._status_label.setText("Executing...")
         self._status_label.setStyleSheet("color: #4A90E2; font-weight: bold;")
-        self._executor.execute()
+        self._executor.execute(accepted)
+
+    def _validate_up_front(self) -> frozenset | None:
+        """Run the run's validations against the stage as it is and ask
+        about every issue in one dialog, grouped by shot and department.
+
+        Returns the issues accepted (empty when there were none), after
+        unticking the shots the artist chose to skip; None when the artist
+        cancelled the export. The validations still run in place during
+        the run, where an accepted issue passes and only one the run's own
+        exports brought in asks again.
+        """
+        from . import validation_preflight as preflight
+
+        tasks = self._model.get_tasks()
+        is_local = not self._is_farm_mode()
+        if not preflight.validation_tasks(tasks, is_local):
+            return frozenset()
+        self._status_label.setText("Validating...")
+        self._status_label.setStyleSheet("color: #4A90E2; font-weight: bold;")
+        QtWidgets.QApplication.processEvents()
+        grouped = preflight.group_findings(preflight.collect_findings(tasks, is_local))
+        if not grouped:
+            self._update_status()
+            return frozenset()
+        choice, kept = self._ask_up_front(grouped)
+        decided = preflight.outcome(choice, grouped, kept)
+        if not decided.proceed:
+            self._update_status()
+            self._status_label.setText("Export cancelled at validation: nothing ran")
+            self._status_label.setStyleSheet("color: orange; font-weight: bold;")
+            return None
+        for entity in decided.skip:
+            self._model.set_entity_enabled(entity, False)
+        self._update_status()
+        return decided.accepted
+
+    def _ask_up_front(self, grouped: list) -> tuple[str, list[str]]:
+        """Show the up-front validation dialog: (choice, ticked entities)."""
+        from .validation_dialog import PreflightValidationDialog
+        dialog = PreflightValidationDialog(grouped, parent=self)
+        dialog.exec()
+        return dialog.user_choice, dialog.kept_entities()
 
     def _set_ui_executing(self, executing: bool):
         """Enable/disable UI elements during execution"""
@@ -844,16 +915,33 @@ class ProcessDialog(QtWidgets.QDialog):
         if task is None:
             return
 
-        # Only show "Open Location" for completed tasks
-        if task.status != TaskStatus.COMPLETED:
-            return
-
         menu = QtWidgets.QMenu(self)
-        open_location_action = menu.addAction("Open Location")
+        open_location_action = None
+        # Only show "Open Location" for completed tasks
+        if task.status == TaskStatus.COMPLETED:
+            open_location_action = menu.addAction("Open Location")
 
+        # First/Last changed for this submit (#76): back to the node's
+        reset_range_action = reset_all_action = None
+        if not self._is_executing and task_range.is_range_editable(task):
+            if open_location_action is not None:
+                menu.addSeparator()
+            reset_range_action = menu.addAction("Reset Frame Range")
+            reset_range_action.setEnabled(task_range.row_is_edited(task))
+            reset_all_action = menu.addAction("Reset All Frame Ranges")
+            reset_all_action.setEnabled(self._model.has_range_edits())
+
+        if menu.isEmpty():
+            return
         selected_action = menu.exec_(self._tree_view.mapToGlobal(position))
+        if selected_action is None:
+            return
         if selected_action == open_location_action:
             self._open_task_location(task)
+        elif selected_action == reset_range_action:
+            self._model.reset_task_range(task)
+        elif selected_action == reset_all_action:
+            self._model.reset_all_ranges()
 
     def _open_task_location(self, task: ProcessTask):
         """Open the output location for a completed task"""

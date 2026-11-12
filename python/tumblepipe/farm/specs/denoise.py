@@ -13,6 +13,9 @@ config = {
     'first_frame': 'int',
     'last_frame': 'int',
     'frames': ['int'],          # empty => the whole first..last range
+    'frame_ranges': [['int', 'int']],   # optional (#84): only these ranges,
+                                # in blocks (farm.specs.frame_ranges); the
+                                # context then carries them as 'blocks'
     'step_size': 'int',
     'batch_size': 'int',
     'force_cpu': 'bool',        # optional; OIDN on a CPU device (default: DEFAULT_FORCE_CPU)
@@ -22,6 +25,7 @@ config = {
 }
 """
 
+from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.checks import (
     check_bool,
     check_str,
@@ -58,6 +62,7 @@ def is_valid_context(config) -> bool:
     if not _valid_paths(config): return False
     if not check_bool(config, 'force_cpu'): return False
     if not valid_step(config): return False
+    if not frame_ranges.valid_context_entry(config): return False
     return True
 
 
@@ -65,6 +70,7 @@ def is_valid_config(config) -> bool:
     """The schema the job builder is handed."""
     if not valid_job_header(config): return False
     if not valid_frame_batches(config): return False
+    if not frame_ranges.valid_entry(config, explicit_frames=True): return False
     # Optional here: absent means DEFAULT_FORCE_CPU.
     if 'force_cpu' in config and not isinstance(config['force_cpu'], bool): return False
     return _valid_paths(config)

@@ -10,6 +10,11 @@ A re-comp (Farm Submit's Comp column) froze nothing: ``imports`` is empty,
 so every import of the shot resolves on its own settings now, and its
 export has no node path, so the shot's export_comp on that layer is found.
 Either way each written layer's ``context.json`` records what was read.
+
+A comp of its submit's render (#80: a workfile comp with no
+th::import_render, ``renders`` set) points the Slap Comp Import nodes its
+exports read at the frames that render wrote (``cops.slap_comp``), and
+records those as what it read.
 """
 
 from tempfile import TemporaryDirectory
@@ -49,6 +54,19 @@ def _own_frames(native):
     parm = native.parm('time_offset_mode')
     if parm is not None:
         parm.set(TimeOffsetSource.NONE)
+
+
+def no_frame_cache():
+    """Turn every import's frame cache off (#73): the worker cooks each
+    frame once, so the Cache COPs would only hold frames (up to Max
+    Frames per read, gigabytes at 1080p) that are never asked for again.
+    The cache never changes a pixel."""
+    from tumblepipe.pipe.houdini.cops import import_render
+    import tumblepipe.pipe.houdini.nodes as ns
+    for native in ns.list_by_node_type(import_render.TYPE_NAME, 'Cop'):
+        parm = native.parm(import_render.CACHE_PARM)
+        if parm is not None:
+            parm.set(0)
 
 
 def resolve_imports(entity_uri: Uri) -> tuple[dict | None, str | None]:
@@ -112,11 +130,11 @@ def find_export(layer: str, entity_uri: Uri):
     return found[0], None
 
 
-def record_reads(exports: list[dict], plan: dict):
-    """Write what the comp read into each written layer's context.json
-    (the version folder: the merged comp's frames sit in it, a channel's
-    in its ``beauty`` folder)."""
-    reads = comp.provenance(plan)
+def record_reads(exports: list[dict], reads: dict):
+    """Write what the comp read (``{channel: {department, version}}``,
+    ``comp.provenance``) into each written layer's context.json (the
+    version folder: the merged comp's frames sit in it, a channel's in its
+    ``beauty`` folder)."""
     for export in exports:
         context_path = comp.layer_context_dir(export['output_path'], export['layer']) / 'context.json'
         context = load_json_if_exists(context_path) or dict()
@@ -175,7 +193,8 @@ def main(
     input_path: Path,
     exports: list[dict],
     imports: dict,
-    entity_json: dict
+    entity_json: dict,
+    renders: list | None = None
     ) -> int:
 
     # Check that OCIO has been set
@@ -194,30 +213,10 @@ def main(
     entity_uri = Uri.parse(entity_json['uri'])
     playbar.set_fps(require_fps(entity_uri))
     playbar.set_block_range(render_range)
-
-    # Pin the imports to what the submit froze; a re-comp resolves them now
-    if imports:
-        headline('Pinning imports')
-        problem = pin_imports(imports, entity_uri)
-        if problem is not None:
-            return error(problem)
-        plan = imports
-    else:
-        headline('Resolving imports')
-        plan, problem = resolve_imports(entity_uri)
-        if problem is not None:
-            return error(problem)
-    try:
-        reads = comp.provenance(plan)
-    except comp.CompError as exc:
-        return error(str(exc))
-    # A read's File COPs fill a frame it has no render of with empty
-    # input (import_render.MISSING_EMPTY), so such a frame comps to
-    # transparent black without failing: say so in the log (#43).
-    report_uncovered(entity_uri, reads, render_range)
+    no_frame_cache()
 
     # Find each export's render node
-    renders = []
+    targets = []
     for export in exports:
         if export['node_path']:
             export_node = hou.node(export['node_path'])
@@ -230,7 +229,42 @@ def main(
         render_node = export_node.node('render')
         if render_node is None:
             return error(f'{export_node.path()} has no render node')
-        renders.append((export, export_node, render_node))
+        targets.append((export, export_node, render_node))
+
+    # A comp of its submit's render reads that render through its Slap
+    # Comp Imports (#80); otherwise pin the imports to what the submit
+    # froze, or (a re-comp) resolve them now.
+    if renders:
+        headline('Reading the render of this submit')
+        from tumblepipe.pipe.houdini.cops import slap_comp
+        try:
+            for line in slap_comp.swap_imports(
+                entity_uri, renders, [node for _, node, _ in targets]
+            ):
+                print(f'  {line}')
+        except (slap_comp.SceneCompError, comp.CompError) as exc:
+            return error(str(exc))
+        reads = comp.render_reads(renders)
+    else:
+        if imports:
+            headline('Pinning imports')
+            problem = pin_imports(imports, entity_uri)
+            if problem is not None:
+                return error(problem)
+            plan = imports
+        else:
+            headline('Resolving imports')
+            plan, problem = resolve_imports(entity_uri)
+            if problem is not None:
+                return error(problem)
+        try:
+            reads = comp.provenance(plan)
+        except comp.CompError as exc:
+            return error(str(exc))
+    # A read's File COPs fill a frame it has no render of with empty
+    # input (import_render.MISSING_EMPTY), so such a frame comps to
+    # transparent black without failing: say so in the log (#43).
+    report_uncovered(entity_uri, reads, render_range)
 
     root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
     root_temp_path.mkdir(parents=True, exist_ok=True)
@@ -239,7 +273,7 @@ def main(
 
         # {frame: {layer: (temp frame, output frame)}}
         written = {}
-        for export, export_node, render_node in renders:
+        for export, export_node, render_node in targets:
             layer = export['layer']
             headline(f'Rendering layer: {layer}')
             temp_frames_path = temp_path / layer / f'composite.{HOUDINI_FRAME_TOKEN}.exr'
@@ -273,7 +307,7 @@ def main(
 
         # What the comp read, then the receipts: a frame is done when every
         # layer of it is written
-        record_reads(exports, plan)
+        record_reads(exports, reads)
         headline('Creating output receipts')
         for frame_index, layers in written.items():
             current_receipt_path = frame_file(receipt_path, frame_index)
@@ -298,7 +332,8 @@ def from_config(config: dict) -> int:
         Path(config['input_path']),
         config['exports'],
         config['imports'],
-        config['entity']
+        config['entity'],
+        config.get('renders'),
     )
 
 

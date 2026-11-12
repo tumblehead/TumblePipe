@@ -48,22 +48,25 @@ class LayerSplit(FrameRangeNode, EntityNode):
         pin the node to whichever entity it was born in."""
         self._update_labels()
 
-    def execute(self, force_local: bool = False):
+    def execute(self, force_local: bool = False, render_range=None):
         """
         Execute export.
 
         If force_local=True, executes directly (used by ProcessDialog callbacks).
         Otherwise, opens the ProcessDialog for task selection and execution.
+        ``render_range`` (a ``BlockRange``, rolls included) exports those
+        frames instead of the node's Frame Range, for one submit (#76); the
+        node's parms are not changed.
         """
         if force_local:
-            return self._execute()
+            return self._execute(render_range)
         # Open ProcessDialog
         from tumblepipe.pipe.houdini.ui.dialog_launcher import (
             open_process_dialog_for_node
         )
         open_process_dialog_for_node(self, dialog_title="Export Shared Layer")
 
-    def _execute(self):
+    def _execute(self, render_range=None):
         """Internal execution - export the shared layer to _shared path."""
         self._update_labels()
         entity_uri = self.require_entity_uri()
@@ -71,8 +74,11 @@ class LayerSplit(FrameRangeNode, EntityNode):
         frame_range = self.get_frame_range()
         frame_step = frame_range.step_size
 
-        # Get full range (including roll)
-        full_range = frame_range.full_range()
+        # Get full range (including roll), or the one set for this submit
+        full_range = (
+            render_range if render_range is not None
+            else frame_range.full_range()
+        )
 
         logger.info(
             f"Starting shared layer export: uri={entity_uri}, dept={department_name}, "

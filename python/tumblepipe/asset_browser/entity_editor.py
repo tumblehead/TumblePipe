@@ -41,14 +41,15 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QPen, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QComboBox, QDialog, QFormLayout, QFrame,
-    QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QFormLayout,
+    QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
     QMenu, QMessageBox, QPushButton, QSpinBox, QStackedWidget, QStyle,
     QStyledItemDelegate, QStyleOptionViewItem, QTabBar, QTableView,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from tumblepipe.config import entity_sheet as es
+from tumblepipe.config import render_config
 from tumblepipe.config import shot_batch
 from tumblepipe.config.multi_timeline import (
     TIMELINE_CHOICES, new_overlaps, timeline_choice, timeline_settings,
@@ -71,13 +72,16 @@ _TIMING = (es.FRAME_START, es.FRAME_END, es.LENGTH, es.ROLL_START, es.ROLL_END, 
 # width.
 COLUMNS = {
     'assets': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ANIMATABLE, es.MULTIS),
-    'shots': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ROOT, es.MULTIS, es.LAYERS, es.ASSETS),
+    'shots': (
+        es.GROUP, es.NAME, STATUS, *_TIMING, es.ROOT, es.MULTIS, es.LAYERS,
+        es.DEPARTMENTS_OFF, es.ASSETS,
+    ),
 }
 _WIDTHS = {
     es.GROUP: 100, es.NAME: 110, STATUS: 150, es.FRAME_START: 64,
     es.FRAME_END: 64, es.LENGTH: 64, es.ROLL_START: 70, es.ROLL_END: 70,
     es.FPS: 56, es.ANIMATABLE: 90, es.ROOT: 120, es.MULTIS: 150, es.ASSETS: 220,
-    es.LAYERS: 200,
+    es.LAYERS: 200, es.DEPARTMENTS_OFF: 130,
 }
 #: Edited through a dialog, never typed or pasted into.
 _DIALOG_COLUMNS = frozenset({es.ASSETS, es.MULTIS})
@@ -175,6 +179,14 @@ _LAYERS_TIP = (
     'every prim no other layer names. Double-click to edit; Paste takes '
     '"characters: /CHAR/*; fx: /FX/*".'
 )
+_DEPARTMENTS_OFF_TIP = (
+    'Departments turned off on the shot: their layers stay out of its '
+    'staged build, no new workfile is made for them, and Farm Submit and '
+    'the publish leave them alone. Their workfiles and exports are kept. '
+    'Empty: every department is on. Double-click to tick them; Paste takes '
+    '"fx, lighting" ("none" turns every department on here).'
+)
+_COLUMN_TIPS = {es.LAYERS: _LAYERS_TIP, es.DEPARTMENTS_OFF: _DEPARTMENTS_OFF_TIP}
 
 
 def _font(bold: bool = False, italic: bool = False, strike: bool = False) -> QFont:
@@ -686,7 +698,8 @@ class _SheetModel(QAbstractTableModel):
             return Qt.Checked if sheet.group_value(group, column) else Qt.Unchecked
         if role == Qt.ToolTipRole:
             tooltip = self._group_tooltip(group, column)
-            return f'{tooltip}\n\n{_LAYERS_TIP}' if column == es.LAYERS else tooltip
+            extra = _COLUMN_TIPS.get(column)
+            return f'{tooltip}\n\n{extra}' if extra else tooltip
         if column == STATUS:
             return self.group_status(group)[1] if role == Qt.ForegroundRole else None
         valued = column in self._pane.values_columns
@@ -832,8 +845,8 @@ class _SheetModel(QAbstractTableModel):
             return int(Qt.AlignRight | Qt.AlignVCenter)
         if role == Qt.ToolTipRole:
             tooltip = self._tooltip(row, column)
-            if column == es.LAYERS:
-                tooltip = f'{tooltip}\n\n{_LAYERS_TIP}'
+            if column in _COLUMN_TIPS:
+                tooltip = f'{tooltip}\n\n{_COLUMN_TIPS[column]}'
             if self._rig_note(row, column):
                 tooltip = (
                     'Has a rig published, so a shot\'s copies of it are plain '
@@ -1019,6 +1032,11 @@ class _Delegate(QStyledItemDelegate):
             # Its own editor (a list, a prim picker); typed and pasted text
             # still reaches the cell through the pane.
             QTimer.singleShot(0, lambda i=QModelIndex(index): self._pane.edit_layers(i))
+            return None
+        if column == es.DEPARTMENTS_OFF:
+            # Ticks over the shot pool; typed and pasted names still reach
+            # the cell through the pane.
+            QTimer.singleShot(0, lambda i=QModelIndex(index): self._pane.edit_departments_off(i))
             return None
         if column == es.ROOT:
             combo = QComboBox(parent)
@@ -1288,6 +1306,79 @@ class RootAssetsDialog(QDialog):
 
     def _on_own(self) -> None:
         self.action = ('own', self._own_name.text().strip(), self.picker.own())
+        self.accept()
+
+
+class DepartmentsOffDialog(QDialog):
+    """The Departments off cell's editor: the shot pool, one tick per
+    department, ticked while it is on.
+
+    A department turned off (#64) stays out of the shot's staged build, gets
+    no new workfile and is not offered by Farm Submit or the publish for the
+    shot; its workfiles and exports stay on disk, so ticking it again brings
+    it all back. After OK, ``value`` is the departments turned off, or
+    ``inherit`` is True to put the cell back to what the shot inherits.
+    """
+
+    def __init__(
+        self, pane: '_SheetPane', targets: list[str], current: tuple[str, ...], *,
+        pool: tuple[str, ...], inherited: tuple[str, ...], inherited_from: str,
+        own: bool,
+    ) -> None:
+        super().__init__(pane)
+        current = tuple(current or ())
+        # Names the pool no longer has are kept as they were, unseen.
+        self._kept = tuple(name for name in current if name not in pool)
+        self.value: tuple[str, ...] = current
+        self.inherit = False
+        title = targets[0] if len(targets) == 1 else f'{targets[0]} and {len(targets) - 1} more'
+        self.setWindowTitle(f'Departments of {title}')
+        layout = QVBoxLayout(self)
+        layout.addWidget(_hint(
+            'Untick a department to turn it off: its layers stay out of the '
+            'shot\'s staged build, no new workfile is made for it, and Farm '
+            'Submit and the publish leave it alone. Its workfiles and exports '
+            'are kept, so ticking it again brings it back.'
+        ))
+        if len(targets) > 1:
+            layout.addWidget(_hint(f'OK sets these on {_short(targets)}.'))
+        if not own:
+            layout.addWidget(_hint(f'Inherited from {inherited_from}; OK sets them here.'))
+        self.boxes: dict[str, QCheckBox] = {}
+        for name in pool:
+            box = QCheckBox(name)
+            box.setChecked(name not in current)
+            layout.addWidget(box)
+            self.boxes[name] = box
+        if not pool:
+            layout.addWidget(_hint('The project has no shot departments.'))
+        buttons = QHBoxLayout()
+        self._inherit = _button(
+            'Inherit', self._on_inherit,
+            tip=f'Back to what it inherits from {inherited_from}: '
+                f'{", ".join(inherited) + " off" if inherited else "every department on"}.',
+        )
+        self._inherit.setVisible(own)
+        buttons.addWidget(self._inherit)
+        buttons.addStretch()
+        buttons.addWidget(_button('Cancel', self.reject))
+        ok = _button('OK', self._on_ok, primary=True)
+        ok.setDefault(True)
+        buttons.addWidget(ok)
+        layout.addLayout(buttons)
+
+    def off(self) -> tuple[str, ...]:
+        """The departments unticked, in pool order, then any kept name."""
+        return tuple(
+            name for name, box in self.boxes.items() if not box.isChecked()
+        ) + self._kept
+
+    def _on_inherit(self) -> None:
+        self.inherit = True
+        self.accept()
+
+    def _on_ok(self) -> None:
+        self.value = self.off()
         self.accept()
 
 
@@ -1779,6 +1870,304 @@ class AddAssetsDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
+# The Shots tab's Render settings section
+# ---------------------------------------------------------------------------
+
+_RENDER_TIPS = {
+    es.RENDER_APPLY: (
+        'Whether the shot\'s root layer authors the resolution and camera '
+        'below on the project\'s RenderSettings prim. Off (or not set '
+        'anywhere): renders use the RenderSettings the scene carries.'
+    ),
+    es.RENDER_RESOLUTION: (
+        'Width x height. Also sizes the layout camera\'s frame and '
+        'playblasts, applied to the render or not.'
+    ),
+    es.RENDER_CAMERA: (
+        'The camera prim the render looks through. Authored only when that '
+        'camera exists in the project\'s root_default_prims.usda; otherwise '
+        'the scene\'s camera renders.'
+    ),
+}
+_RENDER_ORDER_NOTE = (
+    'Shots inherit each setting from their sequence, then all shots, then '
+    'the project. A Farm Submit override (samples, motion blur, DOF, ray '
+    'limits) still wins for that one submission. Apply brings the shots\' '
+    'root layers up to date.'
+)
+_MIXED = '(mixed)'
+_UNPIN = object()   # the Inherit button: take the pin away
+
+
+def render_origin(state: str, source: str) -> str:
+    """Where a render setting's value comes from, for the section."""
+    if state == es.OWN:
+        return 'set here'
+    if state == es.SET:
+        return 'set here, waiting for Apply'
+    if state == es.CLEARED:
+        return f'inherits from {source or "nothing"} on Apply'
+    return f'from {source}' if source else 'not set anywhere'
+
+
+class _RenderSettings(QWidget):
+    """Below the Shots table: the render settings a shot's root layer
+    applies (#70), for the selected shots, the selected sequences (a
+    sequence's own row), or with Project defaults pressed, all shots.
+
+    Each setting shows its value and where it comes from; typing or
+    ticking pins it on the targets, Inherit takes the pin away. The edits
+    are pending like the sheet's and written by Apply."""
+
+    def __init__(self, pane: '_SheetPane') -> None:
+        super().__init__(pane)
+        self._pane = pane
+        self._filling = False
+        self._shown: dict[str, str] = {}
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, scaled(4), 0, 0)
+        layout.setSpacing(scaled(4))
+        top = QHBoxLayout()
+        self.title = QLabel('Render settings')
+        self.title.setFont(_BOLD)
+        top.addWidget(self.title)
+        top.addSpacing(scaled(8))
+        self.target = _hint()
+        self.target.setWordWrap(False)
+        top.addWidget(self.target, 1)
+        self.project_button = QPushButton('Project defaults')
+        self.project_button.setCheckable(True)
+        self.project_button.setAutoDefault(False)
+        self.project_button.setStyleSheet(BUTTON_GHOST_STYLE + (
+            f'QPushButton:checked {{ color: {ACCENT_HOVER}; border-color: {ACCENT}; }}'
+        ))
+        self.project_button.setToolTip(
+            'Edit what every sequence and shot inherits (all shots, '
+            'entity:/shots) instead of the selection.'
+        )
+        self.project_button.toggled.connect(lambda _on: self.fill())
+        top.addWidget(self.project_button)
+        layout.addLayout(top)
+
+        host = QWidget()
+        grid = QGridLayout(host)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(scaled(12))
+        grid.setVerticalSpacing(scaled(2))
+        self.editors: dict[str, QWidget] = {}
+        self.origins: dict[str, QLabel] = {}
+        self.inherit_buttons: dict[str, QPushButton] = {}
+        for row, name in enumerate(es.RENDER_FIELDS):
+            label = QLabel(es.SHOTS_KIND.label(name))
+            label.setToolTip(_RENDER_TIPS[name])
+            grid.addWidget(label, row, 0)
+            if name == es.RENDER_APPLY:
+                editor = QCheckBox('Author resolution and camera in the root layer')
+                editor.clicked.connect(lambda _c, n=name: self._on_ticked(n))
+            else:
+                editor = QLineEdit()
+                editor.setPlaceholderText(
+                    '1920 x 1080' if name == es.RENDER_RESOLUTION else '/cameras/render_camera'
+                )
+                editor.setMinimumWidth(scaled(220))
+                editor.editingFinished.connect(lambda n=name: self._on_typed(n))
+            editor.setToolTip(_RENDER_TIPS[name])
+            grid.addWidget(editor, row, 1)
+            origin = _hint()
+            origin.setWordWrap(False)
+            grid.addWidget(origin, row, 2)
+            inherit = _button(
+                'Inherit', lambda n=name: self._on_inherit(n),
+                tip='Take the value set here away: it inherits again.',
+            )
+            grid.addWidget(inherit, row, 3)
+            self.editors[name] = editor
+            self.origins[name] = origin
+            self.inherit_buttons[name] = inherit
+        grid.setColumnStretch(2, 1)
+        layout.addWidget(host)
+        self.effect = _hint()
+        layout.addWidget(self.effect)
+        note = _hint(_RENDER_ORDER_NOTE)
+        layout.addWidget(note)
+
+    # ── What it edits ────────────────────────────────────
+
+    def targets(self) -> tuple[str, list]:
+        """``('project', [None])``, ``('rows', ids)``, ``('groups', names)``
+        or ``('none', [])``."""
+        pane = self._pane
+        if self.project_button.isChecked():
+            return 'project', [None]
+        sheet = pane.sheet
+        rows = [i for i in pane.selected_row_ids() if not sheet.row(i).retire]
+        if rows:
+            return 'rows', rows
+        groups = pane.selected_groups()
+        if groups:
+            return 'groups', groups
+        return 'none', []
+
+    def _read(self, mode: str, target, name: str) -> tuple[object, str, str]:
+        """(value, state, source) of ``name`` on one target."""
+        sheet = self._pane.sheet
+        if mode == 'project':
+            return sheet.everyone_value(name), sheet.everyone_state(name), sheet.everyone_source(name)
+        if mode == 'groups':
+            return (
+                sheet.group_value(target, name), sheet.group_state(target, name),
+                sheet.group_source(target, name),
+            )
+        row = sheet.row(target)
+        return sheet.value(row, name), sheet.state(row, name), sheet.source(row, name)
+
+    def _target_text(self, mode: str, targets: list) -> str:
+        if mode == 'project':
+            return 'All shots: what every sequence and shot inherits'
+        if mode == 'groups':
+            if len(targets) == 1:
+                return f'Sequence {targets[0]}: what its shots inherit'
+            return f'{len(targets)} sequences: what their shots inherit'
+        if mode == 'rows':
+            sheet = self._pane.sheet
+            if len(targets) == 1:
+                row = sheet.row(targets[0])
+                return f'Shot {row.group}/{row.name}'
+            return f'{len(targets)} shots'
+        return 'Select shots or a sequence\'s row, or press Project defaults.'
+
+    # ── Showing ──────────────────────────────────────────
+
+    def fill(self) -> None:
+        mode, targets = self.targets()
+        self._filling = True
+        try:
+            self.target.setText(self._target_text(mode, targets))
+            effects = set()
+            for name in es.RENDER_FIELDS:
+                self._fill_field(name, mode, targets)
+            for target in targets:
+                values = {
+                    name: self._read(mode, target, name)[0] for name in es.RENDER_FIELDS
+                }
+                effects.add(render_config.effect(values))
+            if not targets:
+                self.effect.setText('')
+            elif len(effects) == 1:
+                text = effects.pop()
+                if mode != 'rows':
+                    text = f'A shot that inherits all three: {text}'
+                self.effect.setText(text)
+            else:
+                self.effect.setText(
+                    'The selected shots render differently; select one to see how.'
+                )
+        finally:
+            self._filling = False
+
+    def _fill_field(self, name: str, mode: str, targets: list) -> None:
+        editor = self.editors[name]
+        origin = self.origins[name]
+        inherit = self.inherit_buttons[name]
+        enabled = bool(targets)
+        editor.setEnabled(enabled)
+        if not targets:
+            self._show(name, None, mixed=False)
+            origin.setText('')
+            inherit.setEnabled(False)
+            return
+        found = [self._read(mode, target, name) for target in targets]
+        values = [value for value, _state, _source in found]
+        mixed = any(value != values[0] for value in values[1:])
+        self._show(name, None if mixed else values[0], mixed)
+        origins = {render_origin(state, source) for _value, state, source in found}
+        text = origins.pop() if len(origins) == 1 else 'differs between them'
+        if name == es.RENDER_APPLY and not mixed and values[0] is None:
+            text += ' (off)'
+        origin.setText(text)
+        pending = any(state in (es.SET, es.CLEARED) for _v, state, _s in found)
+        origin.setStyleSheet(
+            _HINT_STYLE.replace(TEXT_DIM, WARNING) if pending else _HINT_STYLE
+        )
+        # Inherited values read as the sheet's inherited cells do.
+        inherited = all(state in (es.INHERITED, es.CLEARED) for _v, state, _s in found)
+        editor.setStyleSheet(f'color: {_INHERITED.color().name()};' if inherited else '')
+        inherit.setEnabled(any(state in (es.OWN, es.SET) for _v, state, _s in found))
+
+    def _show(self, name: str, value, mixed: bool) -> None:
+        editor = self.editors[name]
+        if isinstance(editor, QCheckBox):
+            editor.setTristate(mixed)
+            editor.setCheckState(
+                Qt.PartiallyChecked if mixed else Qt.Checked if value is True else Qt.Unchecked
+            )
+            return
+        text = '' if mixed or value is None else es.format_value(name, value)
+        editor.setPlaceholderText(
+            _MIXED if mixed else
+            '1920 x 1080' if name == es.RENDER_RESOLUTION else '/cameras/render_camera'
+        )
+        if editor.text() != text:
+            editor.setText(text)
+        self._shown[name] = text
+
+    # ── Editing ──────────────────────────────────────────
+
+    def _write(self, name: str, value=_UNPIN) -> None:
+        """Set ``value`` on every target (_UNPIN: take the pin away), as
+        one undo step."""
+        mode, targets = self.targets()
+        if not targets:
+            return
+        pane = self._pane
+        sheet = pane.sheet
+
+        def change():
+            for target in targets:
+                try:
+                    if mode == 'project':
+                        if value is _UNPIN:
+                            sheet.reset_everyone(name)
+                        else:
+                            sheet.set_everyone_value(name, value)
+                    elif mode == 'groups':
+                        if value is _UNPIN:
+                            sheet.reset_group(target, name)
+                        else:
+                            sheet.set_group_value(target, name, value)
+                    elif value is _UNPIN:
+                        sheet.reset(target, name)
+                    else:
+                        sheet.set_value(target, name, value)
+                except ValueError as exc:
+                    pane._errors.append(str(exc))
+                    return
+        pane.edit(change)
+        # pane.edit refreshes the sheet, which fills this; a refused value
+        # is put back to what the targets hold.
+        self.fill()
+
+    def _on_ticked(self, name: str) -> None:
+        if self._filling:
+            return
+        editor = self.editors[name]
+        value = editor.checkState() != Qt.Unchecked
+        editor.setTristate(False)
+        self._write(name, value)
+
+    def _on_typed(self, name: str) -> None:
+        if self._filling:
+            return
+        text = self.editors[name].text().strip()
+        if text == self._shown.get(name, ''):
+            return
+        self._write(name, _UNPIN if not text else text)
+
+    def _on_inherit(self, name: str) -> None:
+        self._write(name, _UNPIN)
+
+
+# ---------------------------------------------------------------------------
 # One tab: a kind's sheet
 # ---------------------------------------------------------------------------
 
@@ -1912,7 +2301,19 @@ class _SheetPane(QWidget):
         self.redo_button = _button('Redo', self.redo)
         actions.addWidget(self.undo_button)
         actions.addWidget(self.redo_button)
+        # Shots: the render settings of the selection (#70), below the
+        # table and above the row actions, as the Multis tab shows a
+        # Multi's workfiles (the actions stay put across tabs).
+        self.render_settings: _RenderSettings | None = None
+        if kind is es.SHOTS_KIND:
+            self.render_settings = _RenderSettings(self)
+            outer.addWidget(self.render_settings)
         outer.addLayout(actions)
+        if self.render_settings is not None:
+            table.selectionModel().selectionChanged.connect(
+                lambda *_a: self.render_settings.fill()
+            )
+            self.render_settings.fill()
         table.selectionModel().selectionChanged.connect(
             lambda *_a: self.window_.update_footer()
         )
@@ -1972,6 +2373,8 @@ class _SheetPane(QWidget):
                 self.select_cells(selection, current)
         self.table.verticalScrollBar().setValue(scroll)
         self._fill_group_filter()
+        if getattr(self, 'render_settings', None) is not None:
+            self.render_settings.fill()
         # The Multis tab shows this sheet's Multis too.
         multis = getattr(self.window_, 'multis_pane', None)
         if multis is not None and multis.key == self.kind.key:
@@ -2419,6 +2822,62 @@ class _SheetPane(QWidget):
                         sheet.reset(row_id, es.LAYERS)
                     else:
                         sheet.set_value(row_id, es.LAYERS, dialog.value)
+                except ValueError as exc:
+                    row = sheet.row(row_id)
+                    self._errors.append(f'{row.group}/{row.name}: {exc}')
+        self.edit(change)
+
+    def edit_departments_off(self, index) -> None:
+        """The Departments off cell: the shot pool with a tick per
+        department, for the selected shots or, on a sequence's own row, the
+        selected sequences (what their shots inherit). Opens on the clicked
+        cell's value; OK sets it on every target."""
+        if not index.isValid():
+            return
+        groups = self._target_groups(index)
+        ids = [] if groups else self._target_rows(index)
+        if not ids and not groups:
+            return
+        sheet = self.sheet
+        name = es.DEPARTMENTS_OFF
+        key = self._row_id(index)
+        if groups:
+            group = key.name
+            current = sheet.group_value(group, name)
+            inherited = sheet.base.for_new_group.values.get(name)
+            state = sheet.group_state(group, name)
+            origin = sheet.group_source(group, name) or 'the project'
+            targets = [f'{self.kind.group} {g}' for g in groups]
+        else:
+            row = sheet.row(key if key in ids else ids[0])
+            current = sheet.value(row, name)
+            inherited = sheet.inherited(row).values.get(name)
+            state = sheet.state(row, name)
+            origin = sheet.source(row, name) or 'the project'
+            targets = [f'{r.group}/{r.name}' for r in (sheet.row(i) for i in ids)]
+        dialog = DepartmentsOffDialog(
+            self, targets, tuple(current or ()), pool=sheet.base.pool,
+            inherited=tuple(inherited or ()), inherited_from=origin,
+            own=state in (es.OWN, es.SET),
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        def change():
+            for group in groups:
+                try:
+                    if dialog.inherit:
+                        sheet.reset_group(group, name)
+                    else:
+                        sheet.set_group_value(group, name, dialog.value)
+                except ValueError as exc:
+                    self._errors.append(f'{self.kind.group} {group}: {exc}')
+            for row_id in ids:
+                try:
+                    if dialog.inherit:
+                        sheet.reset(row_id, name)
+                    else:
+                        sheet.set_value(row_id, name, dialog.value)
                 except ValueError as exc:
                     row = sheet.row(row_id)
                     self._errors.append(f'{row.group}/{row.name}: {exc}')
@@ -3830,6 +4289,8 @@ class EntityEditorWindow(QDialog):
                 bits.append(text)
             elif summary.new_groups:
                 bits.append(_plural(len(summary.new_groups), f'new {kind.group}'))
+            if summary.everyone_changed:
+                bits.append(f'{kind.everyone} render defaults changed')
             if summary.groups_changed:
                 bits.append(f'{_plural(summary.groups_changed, kind.group)} changed')
             if summary.changed:

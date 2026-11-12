@@ -43,6 +43,7 @@ from tumblepipe.apps.app import CommandFailed
 from tumblepipe.apps.houdini import IDenoise
 from tumblepipe.apps.deadline import log_progress
 from tumblepipe.apps import exr
+from tumblepipe.pipe import review_events
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import print_env
 from tumblepipe.farm.frames import frame_file, frame_of
@@ -409,6 +410,7 @@ def main(
     for current_receipt_path in missing_receipt_paths:
         if current_receipt_path.exists(): continue
         return error(f'Output receipt not found: {current_receipt_path}')
+    review_events.announce_written(output_paths.values())
 
     # Done
     headline('Done')

@@ -56,6 +56,7 @@ from . import edits as edits
 from . import nodes as nodes
 from . import recipes as recipes
 from . import texture_sets as texture_sets
+from . import uris as uris
 from .clients import ClientPool
 from .container_menu import ContainerMenu
 from .containers import ContainerManager
@@ -247,13 +248,15 @@ class PipelineCatalog(Catalog):
         )
         # The card kinds that are files rather than entities, routed by id
         # prefix (see library_kinds.py).
-        # Each project's edits, made in the editor (see edits.py). Its menu
-        # and Open in Editor are the catalog's, built below.
+        # Each project's edits (see edits.py). Its menu and Open in Editor
+        # are the catalog's, built below; its thumbnail is its first
+        # clip's shot's.
         self._edits = edits.EditManager(
             self.id, clients=self._clients,
             menu_items=lambda asset: self._menus.edit_items(asset),
             open_edit=lambda asset_id, published: self._ops.open_edit(
                 asset_id, published=published),
+            shot_thumbnail=self._shot_thumbnail,
         )
         self._kinds = LibraryKinds([self._recipes, self._textures, self._edits])
         self._thumbnails = ThumbnailManager(
@@ -573,6 +576,12 @@ class PipelineCatalog(Catalog):
             ),
         ]
         return sections
+
+    def _shot_thumbnail(self, project: str, shot_uri) -> Path | None:
+        """The ``thumbnail.png`` of shot ``shot_uri`` of ``project`` when it
+        has one (an edit card's thumbnail); None otherwise."""
+        path = self._thumbnails.thumbnail_path(uris.asset_id_for(project, shot_uri))
+        return path if path is not None and path.exists() else None
 
     def get_thumbnail(self, asset: Asset):
         kind = self._kinds.for_id(asset.id)
@@ -1115,8 +1124,9 @@ class PipelineCatalog(Catalog):
         return containers.refusal(ref, self._resolver.uri_for(asset.id)) is None
 
     def can_refresh_thumbnail(self, asset: Asset) -> bool:
-        """An edit card has no thumbnail to refresh (#28)."""
-        return not edits.is_edit_id(asset.id)
+        """Every card may re-fetch its thumbnail: an edit's follows its
+        first clip's shot (#62), so it changes when the cut does."""
+        return True
 
     def delete_entity(self, asset_id):
         if containers.parse(asset_id) is not None:
@@ -1371,6 +1381,14 @@ class PipelineCatalog(Catalog):
                 fmt="reltime", align="right", deck_edited=True,
             ),
         ]
+
+    def get_list_columns_for(self, tags) -> list[ListColumn]:
+        """The list columns for the scope ``tags`` (TumbleTrove with the
+        hook asks on every collection change): the Edits section's own
+        (#55, ``edits.list_columns_for``), else :meth:`get_list_columns`.
+        An older TumbleTrove never asks, and shows :meth:`get_list_columns`
+        everywhere, as before."""
+        return edits.list_columns_for(tags, self.get_list_columns())
 
     # ── Cache invalidation ────────────────────────────────
 
