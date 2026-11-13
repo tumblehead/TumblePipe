@@ -180,8 +180,11 @@ renders cooking.
 
 The eight `rgba` outputs are fixed: a digital asset's outputs come from its
 type, and an instance can neither add outputs nor relabel them (Houdini
-22.0.429), so **Reads** names the channel on each (`outputs: rgba default,
-rgba 2 chars`). A channel keeps its output through every Update; one added
+22.0.429; the Composite View's layer menu lists those labels too), so the
+node writes the channel on each in its comment, shown under it in the
+network editor (`rgba: default`, `rgba 2: chars`), and **Reads** names
+them as well (`outputs: rgba default, rgba 2 chars`). A comment you type
+yourself is left alone. A channel keeps its output through every Update; one added
 later takes a free output, and a ninth has none (read it with an import of
 its own).
 
@@ -609,15 +612,19 @@ set `th:shading` (`lit`, `clay`, `albedo`, `occlusion`), `th:lighting`
 (`scene`, the default, or `headlight` for the fixed camera lights even in
 a scene with lights), `th:cull` (`off`, the default: only what Hydra's
 cull styles ask, which under husk is nothing; or `back`: every mesh's back
-faces left out, whatever Hydra asks or the mesh's `doubleSided`), `th:ao`
+faces left out, whatever Hydra asks or the mesh's `doubleSided`),
+`th:transparency` (`on`, the default: a see-through material or
+`displayOpacity` blends over what is behind it; or `off`: every mesh drawn
+opaque, whatever its opacity), `th:ao`
 (bool) and
 `th:samples` (samples a pixel: 1, 2, 4, 8 or 16, 1 for no anti-aliasing);
 unset, the delegate reads `TH_PLAYBLAST_SHADING`, `TH_PLAYBLAST_LIGHTING`,
-`TH_PLAYBLAST_CULL`, `TH_PLAYBLAST_AO`
+`TH_PLAYBLAST_CULL`, `TH_PLAYBLAST_TRANSPARENCY`, `TH_PLAYBLAST_AO`
 (`0`/`off` turns the occlusion off) and `TH_PLAYBLAST_SAMPLES`; the farm
-worker passes the dialog's shading, lighting and culling that way (the
-playblast's **Shading**, **Lighting** and **Culling**, and the
-th::playblast nodes' **Shading**, **Lighting** and **Backface Culling**)
+worker passes the dialog's shading, lighting, culling and transparency
+that way (the playblast's **Shading**, **Lighting**, **Culling** and
+**Transparency**, and the th::playblast nodes' **Shading**, **Lighting**,
+**Backface Culling** and **Transparency**)
 and leaves the samples at the default, eight. On HideAndReek/010 one sample a pixel takes about 0.14 s a frame,
 four 0.27 s, eight 0.34 s and sixteen 0.56 s.
 
@@ -676,7 +683,7 @@ tool's default **Set Pivot** tumble orbits the point under the mouse, as with
 Storm. Guides and proxies show by default, as the viewer's other GL
 renderers do.
 
-The settings above (`th:shading`, `th:lighting`, `th:cull`, `th:samples`, `th:ao`, the blurs) apply
+The settings above (`th:shading`, `th:lighting`, `th:cull`, `th:transparency`, `th:samples`, `th:ao`, the blurs) apply
 there too, read again for every frame. `th:interactive` (bool, or
 `TH_PLAYBLAST_INTERACTIVE`) turns the background drawing on or off; unset,
 it is on in Houdini's viewer and off elsewhere, so husk and the farm render

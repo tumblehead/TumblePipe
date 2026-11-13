@@ -25,7 +25,14 @@ failed: retrying or removing the job takes the badge away.
 It reads only while someone asks (:meth:`FarmActivity.touch`): a browser
 that is closed or hidden stops asking, and ten seconds later the thread
 stops reading until it is asked again, so an idle session puts no load on
-the farm's database.
+the farm's database. The one exception: while a batch the artist submitted
+in this Houdini session is still running, it keeps reading, so the end of
+that batch is noticed even with the browser closed.
+
+From the same reads it feeds :class:`finished.SessionWatch`: the batches of
+this session that ended, for the Jobs popover, the Farm Manager button's dot
+and pulse, the status line and the OS notification. A batch that ends is
+passed once to the ``on_finished`` callback, on this thread.
 
 No Qt: the thread reads files and runs ``deadlinecommand``, nothing else
 (*Qt and threads* in docs/development.md). It is a daemon, so it never
@@ -46,7 +53,7 @@ from pathlib import Path
 from typing import Callable
 
 from tumblepipe.farm.local import queue
-from tumblepipe.farm.manager import rows
+from tumblepipe.farm.manager import finished, rows
 
 log = logging.getLogger(__name__)
 
@@ -318,6 +325,8 @@ class FarmActivity:
         clock: Callable[[], float] = time.monotonic,
         wall: Callable[[], dt.datetime] = dt.datetime.now,
         recent_hours: float = RECENT_HOURS,
+        session: 'finished.SessionWatch | None' = None,
+        on_finished: Callable[[list], None] | None = None,
         ) -> None:
         self._local_rows = local_rows
         self._farm_rows = farm_rows
@@ -337,6 +346,8 @@ class FarmActivity:
         self._count = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._session = session if session is not None else finished.SessionWatch()
+        self._on_finished = on_finished
 
     @property
     def count(self) -> int:
@@ -361,6 +372,16 @@ class FarmActivity:
         return self._recent_hours
 
     @property
+    def session(self) -> 'finished.SessionWatch':
+        """The batches of this Houdini session that ended (the Jobs popover)."""
+        return self._session
+
+    def set_on_finished(self, callback: Callable[[list], None] | None) -> None:
+        """Call ``callback(reports)`` (on this watcher's thread) with the
+        batches that ended at each read; each batch once."""
+        self._on_finished = callback
+
+    @property
     def running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
@@ -383,7 +404,10 @@ class FarmActivity:
         self._asked = self._clock()
 
     def idle(self) -> bool:
-        """Whether nobody has asked for a while (or ever): the thread does not read."""
+        """Whether nobody has asked for a while (or ever), and no batch of
+        this session is still running: the thread does not read."""
+        if self._session.watching:
+            return False
         return self._asked is None or self._clock() - self._asked > self._idle_after
 
     def poll(self) -> int:
@@ -408,6 +432,16 @@ class FarmActivity:
         )
         # One assignment: a reader on another thread sees the old summary or the new.
         self._summary = summarize(recent, now)
+        try:
+            ended = self._session.update(job_rows, now, user=user, project=project)
+        except Exception:
+            log.debug('Farm activity: the session watch failed', exc_info=True)
+            ended = []
+        if ended and self._on_finished is not None:
+            try:
+                self._on_finished(ended)
+            except Exception:
+                log.debug('Farm activity: announcing finished jobs failed', exc_info=True)
         return self._count
 
     def _run(self) -> None:

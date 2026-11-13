@@ -702,6 +702,9 @@ def renderer_details(kind: str, context: dict | None) -> list[Detail]:
                 result.append(Detail('Lighting', str(look['lighting'])))
             if look.get('cull'):
                 result.append(Detail('Culling', str(look['cull'])))
+            if look.get('transparency'):
+                result.append(
+                    Detail('Transparency', str(look['transparency'])))
         else:
             result = [
                 Detail('Renderer', 'Karma preview (husk)'),

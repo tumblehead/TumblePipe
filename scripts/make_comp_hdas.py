@@ -78,10 +78,11 @@ def _menu(module, cls, method):
             }}"""
 
 
-# The entity picker's buttons, the same on every entity-aware HDA (see
-# tests/test_entity_picker_buttons.py): a jade icon button carrying the row
-# label, then a "Browse..." text button, both opening the picker.
-ENTITY_BROWSE_ICON = '$TH_PIPELINE_PATH/resources/EntityBrowse.svg'
+# The entity picker's button, the same on every entity-aware HDA (see
+# tests/test_entity_picker_buttons.py): one "Browse..." text button opening
+# the picker. Before it, `entity_select`, the jade icon button of 1.104.0,
+# stays as an invisible carrier: saved scenes hold the button, and Houdini
+# warns about every parm a scene holds that the HDA no longer has.
 ENTITY_BROWSE_HELP = (
     'Open the entity picker to search for and pick the entity this node addresses.'
 )
@@ -92,9 +93,9 @@ def _entity_parms(module):
             name    "entity_select"
             label   "Shot"
             type    button
+            invisible
             joinnext
             default {{ "0" }}
-            parmtag {{ "button_icon" "{ENTITY_BROWSE_ICON}" }}
             {_callback(module, 'select_entity')}
         }}
         parm {{
@@ -409,6 +410,14 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
         name    "outputs_group"
         label   "Outputs"
 
+        parm {{
+            name    "beauty_outputs"
+            label   "Channel Outputs"
+            type    toggle
+            invisible
+            default {{ "1" }}
+            help    "Retired in 1.104.0, when #67 gave every channel its own beauty output; kept invisible so scenes saved with 1.103 load without a Skipping unrecognized parameter warning."
+        }}
         parm {{
             name    "unpack_outputs"
             label   "AOV Outputs"

@@ -559,10 +559,21 @@ def shapes_to_leave_out(shapes) -> list[int]:
             if not has_path and points_only]
 
 
-def unplaced_message(left_out: dict, pathless: list) -> str:
+def unplaced_message(left_out: dict, pathless: list, unpicked: dict | None = None,
+                     pattern: str = '') -> str:
     """The warning for `placed_shapes`: `left_out` is character -> the
-    shapes left out, `pathless` the characters with no path at all."""
+    shapes left out, `pathless` the characters with no path at all,
+    `unpicked` character -> the shapes th::animate's Shapes (`pattern`)
+    does not pick, which a Scene Invoke in the dive output anyway."""
     parts = []
+    if unpicked:
+        named = '; '.join(f'{character}: {", ".join(shapes)}'
+                          for character, shapes in sorted(unpicked.items()))
+        parts.append(
+            f"th::animate left out rig shapes its Shapes ({pattern or 'empty'}) "
+            f'does not pick ({named}): the Scene Invoke in anim_dive outputs '
+            "them. Set its Shapes to the same, or delete it and let "
+            'th::animate invoke the scene.')
     if left_out:
         named = '; '.join(f'{character}: {", ".join(shapes)}'
                           for character, shapes in sorted(left_out.items()))
@@ -591,13 +602,19 @@ def _has_path(geo) -> bool:
 
 def placed_shapes(sop_node) -> None:
     """The `placed` Python SOP after `scene`: the dive's packed folders
-    without the shapes `shapes_to_leave_out` names, a warning on this node
+    without the shapes th::animate's Shapes does not pick
+    (`animate_invoke.unpicked_shapes`: a Scene Invoke in the dive can output
+    any shape, the node's own outputs only those) and then without the
+    shapes `shapes_to_leave_out` names, a warning on this node
     naming them, and one status-bar message per change. Geometry that is
     not packed folders passes through as it is."""
+    from tumblepipe.pipe.houdini.lops import animate_invoke
     geo = sop_node.geometry()
     if not _has_packed(geo):
         return
-    left_out, pathless = {}, []
+    animate_node = sop_node.parent().parent() if sop_node.parent() else None
+    pattern = animate_invoke.shapes_pattern(animate_node)
+    left_out, pathless, unpicked = {}, [], {}
     for folder in geo.prims():
         if folder.type() != hou.primType.PackedGeometry:
             continue
@@ -614,26 +631,32 @@ def placed_shapes(sop_node) -> None:
                            non_point_prim_count(shape_geo) == 0))
             entries.append(shape.number())
         character = _name(folder) or f'folder {folder.number()}'
-        if shapes and not any(has_path for _, has_path, _ in shapes):
-            if any(points_only for _, _, points_only in shapes):
+        # What Shapes does not pick goes first; the helper rule reads the rest.
+        not_picked = animate_invoke.unpicked_shapes([s[0] for s in shapes], pattern)
+        rest = [i for i in range(len(shapes)) if i not in not_picked]
+        rest_shapes = [shapes[i] for i in rest]
+        helpers = []
+        if rest_shapes and not any(has_path for _, has_path, _ in rest_shapes):
+            if any(points_only for _, _, points_only in rest_shapes):
                 pathless.append(character)
-            continue
-        drop = shapes_to_leave_out(shapes)
-        if not drop:
+        else:
+            helpers = [rest[i] for i in shapes_to_leave_out(rest_shapes)]
+        if not not_picked and not helpers:
             continue
         inner = inner.freeze()
-        doomed = [inner.prim(entries[i]) for i in drop]
+        doomed = [inner.prim(entries[i]) for i in sorted(not_picked + helpers)]
         # Two folders can share a name: the warning names what both lost.
-        left_out.setdefault(character, []).extend(
-            shapes[i][0] or f'shape {entries[i]}' for i in drop)
+        for drop, into in ((not_picked, unpicked), (helpers, left_out)):
+            if drop:
+                into.setdefault(character, []).extend(
+                    shapes[i][0] or f'shape {entries[i]}' for i in drop)
         inner.deletePrims(doomed)
         folder.setEmbeddedGeometry(inner)
-    message = unplaced_message(left_out, pathless)
+    message = unplaced_message(left_out, pathless, unpicked, pattern or '')
     if message:
         add_warning = getattr(sop_node, 'addWarning', None)
         if add_warning is not None:
             add_warning(message)
-    animate_node = sop_node.parent().parent() if sop_node.parent() else None
     key = animate_node.path() if animate_node is not None else sop_node.path()
     if _announced.get(key) != message:
         _announced[key] = message

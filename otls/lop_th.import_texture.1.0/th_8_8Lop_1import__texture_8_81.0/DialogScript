@@ -36,14 +36,26 @@
         parmtag { "script_callback_language" "python" }
     }
     parm {
-        name    "entity_select"
+        name    "select"
         label   "Entity"
         type    button
+        invisible
         joinnext
         default { "0" }
         help    "Pick the asset whose texture sets to list."
         hidewhen "{ owner == library }"
-        parmtag { "button_icon" "$TH_PIPELINE_PATH/resources/EntityBrowse.svg" }
+        parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_texture as th_node; th_node.select(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+    }
+    parm {
+        name    "entity_select"
+        label   "Entity"
+        type    button
+        invisible
+        joinnext
+        default { "0" }
+        help    "Pick the asset whose texture sets to list."
+        hidewhen "{ owner == library }"
         parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.import_texture as th_node; th_node.select(kwargs)" }
         parmtag { "script_callback_language" "python" }
     }

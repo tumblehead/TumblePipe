@@ -290,7 +290,7 @@ starts empty and Houdini displays an empty menu parm as its first entry.
 Pick the camera from the menu once and the playblast runs. From 1.83 an
 empty Camera means the camera the menu shows.
 
-### Playblast in a Multi's animation workfile: "Pick one of its members with the Entity button"
+### Playblast in a Multi's animation workfile: "Pick one of its members with the Browse... button"
 
 Pressing **Playblast** on a `th::playblast` in a Multi's animation workfile
 pops a traceback ending in
@@ -298,12 +298,12 @@ pops a traceback ending in
 ```
 EntityNodeError: .../playblast: entity is 'from_context', but this workfile
 belongs to groups:/shots/<Multi>, a group, not an entity. Pick one of its
-members with the Entity button.
+members with the Browse... button.
 ```
 
 The node is not broken. A Multi's workfile holds several shots and a
 playblast writes one shot's MP4, so Entity left on `from_context` resolves
-nothing. Click **Entity** on the node and pick the shot. Department can stay
+nothing. Click **Browse...** on the node and pick the shot. Department can stay
 on `from_context`.
 
 From 1.83 this kind of error is a warning dialog, not a traceback. A new
@@ -387,7 +387,22 @@ Shapes to `Base`: on an old dive's own Scene Invoke (a dive from before
 1.92), or in `th::animate`'s Characters folder. After 1.93 `th::animate`
 leaves those shapes out and warns about it. A character whose shapes all
 lack a path is a rig not built for the pipeline: it lands at `/Geometry`
-whatever the pattern.
+whatever the pattern. Up to 1.104 joint viz drawn as spheres (TumbleRig's
+example rigs) still got through an own Scene Invoke on `*`; `th::animate`
+now also leaves out every shape its own Shapes does not pick, whichever
+Scene Invoke made it.
+
+### A ball, cubes and circles instead of my character after `th::animate`, and nothing moves
+
+Up to 1.104, when `th::animate`'s dive ended in its Scene Animate (no Scene
+Invoke, as the template and a new node build it) and the Scene Animate had
+keys, the stage showed the rig's control shapes (a white ball, wire cubes and
+circles) and the character did not move. Keys put an `animation` folder in
+the scene beside the characters, and `th::animate` took the scene for one
+already invoked. Adding a Scene Invoke to the dive hid it. Update TumblePipe:
+both dives now give the same result, and you can delete that Scene Invoke
+again (see [`th::animate` → What the dive must
+contain](nodes/import-and-export.md#what-the-dive-must-contain)).
 
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
@@ -559,7 +574,7 @@ have permission* and the browser shows *A catalog could not be read …
 [WinError 5] Access is denied*. The entity also stays in the project. Close
 Houdini and any Explorer window showing it, and the folder disappears. Then
 **Delete** the entity again. Nothing is lost: the copy in `_deleted/` is
-complete. From the next release a held folder cancels the delete with nothing
+complete. Since TumblePipe 1.82.2 a held folder cancels the delete with nothing
 moved, and a folder the browser can't read no longer hides the entity: its
 card stays, with the folder and the reason in its Note.
 
@@ -570,7 +585,7 @@ Up to TumblePipe 1.88.1, Apply could stop with *Apply stopped at: Updating …:
 open session re-reads the database when it changes, and on Windows a file
 being read cannot be replaced, so a write that landed mid-read failed.
 Nothing is lost: the edits not yet written stay in the sheets, and **Apply**
-again finishes them. From the next release the write waits for the read
+again finishes them. Since TumblePipe 1.89.0 the write waits for the read
 instead. If the message names a folder and says *Close any scene or viewer
 using its files*, that is a retire with files held open: see
 [A deleted shot or asset left a folder you can't open](#a-deleted-shot-or-asset-left-a-folder-you-cant-open).

@@ -166,14 +166,14 @@ class ImportRigs(ns.Node):
             )
         raise self._error(
             f'row {index}: {asset_uri} is not an asset in the project. '
-            "Pick one with the row's Entity button."
+            "Pick one with the row's Browse... button."
         )
 
     def require_entity_uri(self, index: int) -> Uri:
         asset_uri = self.get_entity_uri(index)
         if asset_uri is None:
             raise self._error(
-                f"row {index} has no asset. Pick one with the row's Entity "
+                f"row {index} has no asset. Pick one with the row's Browse... "
                 'button, or remove the row.'
             )
         return asset_uri

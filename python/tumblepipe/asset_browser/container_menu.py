@@ -89,7 +89,7 @@ class ContainerMenu:
         if kind == "group":
             # A shots Multi with members plays them (#26).
             if self._play_shots is not None and self._containers.play_members(collection_id):
-                actions.insert(0, ContainerAction(PLAY, "Play"))
+                actions.insert(0, ContainerAction(PLAY, "Play in Cinedex"))
             actions.append(ContainerAction(ADD_ENTITY, "Add Entity…"))
             # Only a shots Multi with a shared timeline has one to repack.
             if self._containers.shared_timeline(collection_id) is not None:

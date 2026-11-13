@@ -399,7 +399,7 @@ fn abi_frame(width: u32, height: u32, samples: u32) -> ThFrame {
     ThFrame { width, height, world_to_clip, view_to_world, samples, shading: 0, ao: 0,
               blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
               focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0 }
+            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0 }
 }
 
 fn curves_view(kind: u32, points: &[Vec3], counts: &[i32], transforms: &[Mat4]) -> ThCurvesView {

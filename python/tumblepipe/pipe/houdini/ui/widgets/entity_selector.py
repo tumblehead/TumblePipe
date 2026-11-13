@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Callable
 
 from PySide6 import QtWidgets
-from PySide6.QtCore import QEvent, QModelIndex, QRect, QSize, Qt
+from PySide6.QtCore import QEvent, QItemSelectionModel, QModelIndex, QRect, QSize, Qt
 from PySide6.QtGui import (
     QColor, QIcon, QPainter, QPen, QPixmap, QStandardItem, QStandardItemModel,
 )
@@ -224,6 +224,12 @@ class EntitySelectorDialog(QtWidgets.QDialog):
     ``entity_uris``, ``thumbnail_path`` and ``recent`` stand in for the
     project (tests and offscreen renders); left out, they come from
     ``api`` and the artist's prefs.
+
+    ``multi_select=True`` picks several (th::import_assets' top
+    Browse...): Ctrl-click and Shift-click add to the pick, Select all in
+    view picks every card shown, picks survive a new search, and
+    ``get_selected_uris()`` returns them in the picker's order. From
+    context is not offered then.
     """
 
     def __init__(
@@ -238,12 +244,15 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         entity_uris=None,
         thumbnail_path: Callable[[str], Path | None] | None = None,
         recent: list[str] | None = None,
+        multi_select: bool = False,
     ):
         super().__init__(parent)
         self._api = api
-        self._include_from_context = include_from_context
+        self._multi = multi_select
+        self._include_from_context = include_from_context and not multi_select
         self._from_context_uri = str(from_context_uri) if from_context_uri else None
         self._selected_uri: str | None = None
+        self._selected_uris: list[str] | None = None
         self._remember = recent is None
         uris = entity_uris if entity_uris is not None else _list_entity_uris(api, entity_filter)
         self._entries = ep.entries_from_uris(uris)
@@ -253,6 +262,7 @@ class EntitySelectorDialog(QtWidgets.QDialog):
             include_from_context=include_from_context,
             recent=recent if recent is not None else ep.load_recent(_project_path()),
             current=current_selection,
+            multi=multi_select,
         )
         self._recent = self._state.recent
         self._syncing = False
@@ -317,6 +327,8 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         self._search = QtWidgets.QLineEdit()
         self._search.setStyleSheet(SEARCH_STYLE)
         self._search.setPlaceholderText(
+            f'Search {self._noun}: type to filter, Ctrl/Shift-click to pick several'
+            if self._multi else
             f'Search {self._noun}: type to filter, Enter to pick'
         )
         self._search.addAction(
@@ -376,7 +388,10 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         self._grid.setMovement(QtWidgets.QListView.Static)
         self._grid.setResizeMode(QtWidgets.QListView.Adjust)
         self._grid.setUniformItemSizes(True)
-        self._grid.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._grid.setSelectionMode(
+            QtWidgets.QAbstractItemView.ExtendedSelection if self._multi
+            else QtWidgets.QAbstractItemView.SingleSelection
+        )
         self._grid.setMouseTracking(True)
         self._grid.setWrapping(True)
         self._delegate = _CardDelegate(self)
@@ -393,6 +408,8 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         self._model = QStandardItemModel(self)
         self._grid.setModel(self._model)
         self._grid.selectionModel().currentChanged.connect(self._on_card_changed)
+        if self._multi:
+            self._grid.selectionModel().selectionChanged.connect(self._on_picks_changed)
 
         self._empty = QtWidgets.QLabel('')
         self._empty.setAlignment(Qt.AlignCenter)
@@ -413,6 +430,18 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         self._status = QtWidgets.QLabel('')
         self._status.setStyleSheet(f'color: {TEXT_SECONDARY}; font-size: {FONT_SMALL}px;')
         footer.addWidget(self._status, 1)
+        self._select_all = None
+        if self._multi:
+            self._select_all = QtWidgets.QPushButton('Select all in view')
+            self._select_all.setToolTip(
+                'Pick every card shown: narrow with the search or the sidebar first.'
+            )
+            self._select_all.setStyleSheet(BUTTON_GHOST_STYLE + f"""
+                QPushButton {{ padding: {scaled(5)}px {scaled(14)}px; }}
+            """)
+            self._select_all.setAutoDefault(False)
+            self._select_all.clicked.connect(self._pick_all_visible)
+            footer.addWidget(self._select_all)
         cancel = QtWidgets.QPushButton('Cancel')
         cancel.setStyleSheet(BUTTON_GHOST_STYLE + f"""
             QPushButton {{ padding: {scaled(5)}px {scaled(14)}px; }}
@@ -471,13 +500,19 @@ class EntitySelectorDialog(QtWidgets.QDialog):
 
     def _show(self):
         visible = self._state.visible
-        self._model.clear()
-        for entry in visible:
-            item = QStandardItem(entry.name)
-            item.setEditable(False)
-            item.setData(entry.uri, EntityUriRole)
-            item.setToolTip(entry.uri)
-            self._model.appendRow(item)
+        # Rebuilding the model clears the grid's selection; that is not the
+        # artist unpicking anything, so the handlers ignore it.
+        self._syncing = True
+        try:
+            self._model.clear()
+            for entry in visible:
+                item = QStandardItem(entry.name)
+                item.setEditable(False)
+                item.setData(entry.uri, EntityUriRole)
+                item.setToolTip(entry.uri)
+                self._model.appendRow(item)
+        finally:
+            self._syncing = False
         if visible:
             self._stack.setCurrentWidget(self._grid)
         else:
@@ -494,7 +529,9 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         row = self._state.current_row
         self._syncing = True
         try:
-            if row is None:
+            if self._multi:
+                self._show_picks(row)
+            elif row is None:
                 self._grid.selectionModel().clearSelection()
                 self._grid.setCurrentIndex(QModelIndex())
             else:
@@ -503,10 +540,55 @@ class EntitySelectorDialog(QtWidgets.QDialog):
                 self._grid.scrollTo(index)
         finally:
             self._syncing = False
+        self._sync_footer()
+
+    def _show_picks(self, row):
+        """Multi mode: the picked cards shown selected (the cursor card
+        when nothing is picked), the cursor as the grid's current card."""
+        selection = self._grid.selectionModel()
+        selection.clearSelection()
+        uris = self._state.visible_uris()
+        picked = set(self._state.picked)
+        rows = [i for i, uri in enumerate(uris) if uri in picked]
+        if not picked and row is not None:
+            rows = [row]
+        for i in rows:
+            selection.select(self._model.index(i, 0), QItemSelectionModel.Select)
+        if row is None:
+            selection.setCurrentIndex(QModelIndex(), QItemSelectionModel.NoUpdate)
+        else:
+            index = self._model.index(row, 0)
+            selection.setCurrentIndex(index, QItemSelectionModel.NoUpdate)
+            self._grid.scrollTo(index)
+
+    def _sync_footer(self):
         uri = self._state.selected
+        if self._multi:
+            self._ok_button.setEnabled(bool(self._state.accept_many()))
+            if self._state.picked:
+                self._status.setText(ep.picks_text(len(self._state.picked), self._noun))
+            else:
+                self._status.setText(ep.selection_text(uri, self._from_context_uri))
+            return
         self._ok_button.setEnabled(self._state.accept() is not None)
         self._from_context.setChecked(uri == ep.FROM_CONTEXT)
         self._status.setText(ep.selection_text(uri, self._from_context_uri))
+
+    def _on_picks_changed(self, *_):
+        """Multi mode: the grid's selection after a click, Ctrl-click,
+        Shift-click, arrow or Ctrl+A becomes the visible picks."""
+        if self._syncing:
+            return
+        uris = [
+            index.data(EntityUriRole)
+            for index in self._grid.selectionModel().selectedIndexes()
+        ]
+        self._state.set_visible_picks(uris)
+        self._sync_footer()
+
+    def _pick_all_visible(self, *_):
+        self._state.select_all_visible()
+        self._sync_selection()
 
     def _pick_from_context(self, *_):
         self._state.pick_from_context()
@@ -516,6 +598,10 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         if self._syncing or not current.isValid():
             return
         self._state.select_uri(current.data(EntityUriRole))
+        if self._multi:
+            # The grid keeps its own selection; only the cursor moved.
+            self._sync_footer()
+            return
         self._sync_selection()
 
     def _on_scope_changed(self, item, _previous):
@@ -539,10 +625,22 @@ class EntitySelectorDialog(QtWidgets.QDialog):
     # Accepting
 
     def _accept_index(self, index: QModelIndex):
-        self._state.select_uri(index.data(EntityUriRole))
+        uri = index.data(EntityUriRole)
+        self._state.select_uri(uri)
+        if self._multi and uri not in self._state.picked:
+            self._state.toggle(uri)
         self._on_accept()
 
     def _on_accept(self):
+        if self._multi:
+            uris = self._state.accept_many()
+            if not uris:
+                return
+            self._selected_uris = uris
+            if self._remember:
+                ep.remember_all(_project_path(), uris)
+            self.accept()
+            return
         uri = self._state.accept()
         if uri is None:
             return
@@ -576,3 +674,13 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         """The pick: an entity URI or 'from_context'; None for none. Only
         ever an entry on offer and visible when picked (PickerState)."""
         return self._selected_uri if self._selected_uri else self._state.accept()
+
+    def get_selected_uris(self) -> list[str]:
+        """The picks, in the picker's order: several in multi mode, else
+        the one pick as a list. Only ever entries on offer."""
+        if self._selected_uris is not None:
+            return list(self._selected_uris)
+        if self._multi:
+            return self._state.accept_many()
+        uri = self.get_selected_uri()
+        return [uri] if uri else []

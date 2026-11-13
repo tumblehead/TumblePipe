@@ -17,7 +17,7 @@ the composite template makes one per shot channel. Outputs, top to bottom
 
 | Output | Type | What it is |
 |---|---|---|
-| **rgba**, **rgba 2** .. **rgba 8** | RGBA | Each channel's beauty, one output per channel read (its A is the channel's alpha). A one-channel import's beauty is **rgba**; an all-channels import puts each channel on an output of its own, in channel order, and **Reads** names which (`outputs: rgba default, rgba 2 chars`). An output no channel holds is empty |
+| **rgba**, **rgba 2** .. **rgba 8** | RGBA | Each channel's beauty, one output per channel read (its A is the channel's alpha). A one-channel import's beauty is **rgba**; an all-channels import puts each channel on an output of its own, in channel order. The layer on each output is written under the node in the network editor (`rgba: chars`, `rgba 2: bg`) and on **Reads**. An output no channel holds is empty |
 | **lpe** | Cable | The light groups (`beauty_<tag>`, the LPE tags' AOVs): a light mix's input |
 | **aov** | Cable | Every other AOV the comp reads: `albedo`, `normal`, `depth`, `uv`, `position` |
 | **matte** | Cable | The `objid_*` mattes and `ramp_*` distance ramps (`th::mattes`), `holdout_*` holdouts, and any cryptomatte other than the two below |
@@ -38,10 +38,33 @@ Why eight fixed **rgba** outputs and not one per channel, named after it:
 a digital asset's outputs are fixed by its type. In Houdini 22.0.429 an
 instance can neither add outputs nor relabel them (tried through the
 subnet's own output parms), so the node has eight, and the channel on each
-is on **Reads**. A channel keeps its output: one added to the shot later
+is written in the node's comment, shown under it in the network editor:
+
+```
+rgba: chars
+rgba 2: bg
+rgba 3: fx
+```
+
+(a one-channel import: `rgba: chars`), and on **Reads**. The comment follows
+every Update and channel change; a comment you type yourself replaces it
+and is left alone from then on (clear it to get the names back). A channel keeps its output: one added to the shot later
 takes a free output, one not rendered yet keeps its output (empty) until it
 is, so a wire stays on its channel through every Update. A ninth channel
 has no output (**Reads** names it): read it with an import of its own.
+
+**Previewing an output.** The Composite View shows the node with its
+display flag. Its layer menu (top left of the view, `C` at first) lists
+**C**, the node's first output (**rgba**), then every output that holds
+something, by its label: **rgba 2**, **lpe**, **aov**, **camera** and so
+on; an empty output (a free **rgba 4**, a cable with no fields) is not
+listed. Pick one to see it; pick a cable to see its fields. Checked in the
+Houdini 22.0.429 GUI on a three-layer shot. A view that stays black while
+**aov** shows pixels, with a checkerboard thumbnail on the node, means the
+beauty itself is transparent at that frame: the frame is missing from the
+render (a missing frame reads as empty rather than failing, so pre-rolls
+cook), or the render's beauty is empty. Open the frame from **Open
+Location** in MPlay to tell which.
 
 | Label | Default | What it does |
 |---|---|---|
@@ -49,7 +72,7 @@ has no output (**Reads** names it): read it with an import of its own.
 | Channel | `default` | A menu of the shot's channels, then **All channels** (`*`): every channel in this one node (below) |
 | Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render), unless the denoise was made from an older render than the newest one (a render with Denoise off); or one department |
 | Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department) |
-| Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did; for All channels, which channel is on which output |
+| Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did; for All channels, which channel is on which output (also under the node, its comment) |
 | Time Offset | From Multi | Moves the shot's renders to where the shot sits in this scene: frame F reads the render's frame F minus the offset. **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** keeps the render on its own frames; **Manual** uses **Offset Frames**. The farm always comps each shot on its own frames, whatever this says |
 | Offset Frames | `0` | Manual only |
 | Scene › Department, Version | `from_context`, `latest` | The staged shot **geometry** and **camera** read, through a [`th::import_scene`](#thimport_scene-cop) inside the node; its shot and channel are this node's (`default` for All channels) |

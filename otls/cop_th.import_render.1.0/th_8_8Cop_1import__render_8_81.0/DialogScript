@@ -34,9 +34,9 @@
             name    "entity_select"
             label   "Shot"
             type    button
+            invisible
             joinnext
             default { "0" }
-            parmtag { "button_icon" "$TH_PIPELINE_PATH/resources/EntityBrowse.svg" }
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.select_entity(kwargs)" }
         parmtag { "script_callback_language" "python" }
         }
@@ -336,6 +336,14 @@
         name    "outputs_group"
         label   "Outputs"
 
+        parm {
+            name    "beauty_outputs"
+            label   "Channel Outputs"
+            type    toggle
+            invisible
+            default { "1" }
+            help    "Retired in 1.104.0, when #67 gave every channel its own beauty output; kept invisible so scenes saved with 1.103 load without a Skipping unrecognized parameter warning."
+        }
         parm {
             name    "unpack_outputs"
             label   "AOV Outputs"

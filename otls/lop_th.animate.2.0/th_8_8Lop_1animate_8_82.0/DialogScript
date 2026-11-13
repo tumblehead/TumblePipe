@@ -32,7 +32,7 @@
             label   "Shapes"
             type    string
             default { "Base" }
-            help    "The character shapes to output (the Scene Invoke Shapes pattern). Used when anim_dive ends in its Scene Animate; a dive with its own Scene Invoke is used as it is."
+            help    "The character shapes to output (the Scene Invoke Shapes pattern). th::animate's own Scene Invoke outputs these; a Scene Invoke in anim_dive is held to them too: shapes it outputs that this does not pick are left out, with a warning."
         }
         parm {
             name    "discover_characters"

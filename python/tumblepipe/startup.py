@@ -79,10 +79,17 @@ def bootstrap() -> None:
         # jobs keep reading the disk every time.
         from tumblepipe.config.store import set_stamp_ttl
         set_stamp_ttl(GUI_STAMP_TTL)
+        # The Jobs popover lists the farm jobs submitted since now.
+        _guarded("farm session start", _mark_farm_session_start)
         import hdefereval
         hdefereval.executeDeferred(_register_tumbletrove)
     else:
         _register_tumbletrove()
+
+
+def _mark_farm_session_start() -> None:
+    from tumblepipe.farm.manager.finished import mark_session_start
+    mark_session_start()
 
 
 def select_desktop() -> None:

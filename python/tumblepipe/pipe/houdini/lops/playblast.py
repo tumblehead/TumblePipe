@@ -326,7 +326,7 @@ class Playblast(FrameRangeNode, TimeOffsetNode, EntityNode):
         when a frame is missing."""
         look = tumbleview.Look(
             shading=self.parm('shading').evalAsString(),
-            **tumbleview.node_lighting_and_cull(self.native()),
+            **tumbleview.node_look_settings(self.native()),
             motion_blur=bool(self.parm('motion_blur').eval()),
             depth_of_field=bool(self.parm('depth_of_field').eval()),
             blur_samples=int(self.parm('blur_samples').eval()),

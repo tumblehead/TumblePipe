@@ -166,6 +166,18 @@ bool _CullBack(std::string const& name)
     return TfStringToLower(TfStringTrim(name)) == "back";
 }
 
+// Whether see-through surfaces show what is behind them: "on" (a material's
+// opacity or transmission, or the display opacity, under 1 blends the mesh
+// over what is behind it) or "off" (every mesh drawn opaque, whatever its
+// opacity); unset, TH_PLAYBLAST_TRANSPARENCY, else on.
+TfToken const _tokTransparency("th:transparency");
+
+// Whether th:transparency asks for every mesh drawn opaque.
+bool _TransparencyOff(std::string const& name)
+{
+    return TfStringToLower(TfStringTrim(name)) == "off";
+}
+
 // Motion blur over the render camera's shutter; unset, TH_PLAYBLAST_MOTION_BLUR
 // (1/true/on), else off.
 TfToken const _tokMotionBlur("th:motionBlur");
@@ -2874,6 +2886,7 @@ struct _PassSettings
     uint32_t shading = 0;
     uint32_t lighting = 0;  // th:lighting: 0 scene, 1 headlight
     bool cullBack = false;  // th:cull "back": every mesh's back faces culled
+    bool opaque = false;    // th:transparency "off": every mesh drawn opaque
     bool ao = true;
     bool alpha = false;
     _BlurSettings blur;
@@ -2891,7 +2904,7 @@ struct _PassSettings
 
     auto Tie() const
     {
-        return std::make_tuple(samples, shading, lighting, cullBack, ao, alpha, blur.motion, blur.dof, blur.samples, blur.fps,
+        return std::make_tuple(samples, shading, lighting, cullBack, opaque, ao, alpha, blur.motion, blur.dof, blur.samples, blur.fps,
                                interactive, screenSized, gpu, linearDepth);
     }
     bool operator==(_PassSettings const& o) const { return Tie() == o.Tie(); }
@@ -3182,6 +3195,7 @@ private:
         frame.samples = static_cast<uint32_t>(std::max(1, settings.samples));
         frame.shading = settings.shading;
         frame.lighting = settings.lighting;  // the lights come with the job (_Draw)
+        frame.opaque = settings.opaque ? 1u : 0u;
         frame.ao = settings.ao ? 1u : 0u;
         frame.alpha = settings.alpha ? 1u : 0u;
         frame.gpu = settings.gpu ? 1u : 0u;
@@ -3635,6 +3649,9 @@ private:
         std::string cull = _SettingString(GetRenderSetting(_tokCull));
         if (cull.empty()) cull = _EnvLower("TH_PLAYBLAST_CULL");
         s.cullBack = _CullBack(cull);
+        std::string transparency = _SettingString(GetRenderSetting(_tokTransparency));
+        if (transparency.empty()) transparency = _EnvLower("TH_PLAYBLAST_TRANSPARENCY");
+        s.opaque = _TransparencyOff(transparency);
         VtValue const aoSetting = GetRenderSetting(_tokAo);
         if (aoSetting.IsHolding<bool>()) {
             s.ao = aoSetting.UncheckedGet<bool>();

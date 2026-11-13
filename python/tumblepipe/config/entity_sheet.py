@@ -5,7 +5,8 @@ Shots tab. Each shows every entity of its kind as a row: its group (category
 or sequence), its name, and its timing (frame range, pre/post roll, fps),
 plus ``animatable`` for assets and the Root (and so the assets it imports)
 for shots. Shots also carry the render settings their root layer applies
-(``render.apply_config``, ``render.resolution``, ``render.camera``; #70),
+(``render.apply_config``, ``render.resolution``, ``render.camera`` and the
+Karma samples, ray limits, dicing, depth of field and motion blur; #70),
 dotted fields that write one key of ``render`` each, and the only values
 the kind's root (all shots) can be given here. This module is all of it
 but the widgets, so it runs and is tested without Qt:
@@ -93,15 +94,20 @@ DEPARTMENTS_OFF = DISABLED_DEPARTMENTS
 #: Shots only: the render settings a shot's root layer applies (#70), each a
 #: key of the ``render`` object addressed as a dotted field
 #: (``config.render_config``). Inherited key by key, as the store merges
-#: ``render``; edited in the Shots tab's Render settings section, not as
+#: ``render``; edited in the Shots tab's Render settings panel, not as
 #: columns. Unlike the other values they can be set on all shots too
-#: (:meth:`Sheet.set_everyone_value`), the project's level for shots.
+#: (:meth:`Sheet.set_everyone_value`), the weakest level the editor edits.
+#: A Karma setting only the pipeline defaults hold reaches no render
+#: (``render_config.unset_default``): typing that value pins it.
 RENDER_APPLY = rc.APPLY
 RENDER_RESOLUTION = rc.RESOLUTION
 RENDER_CAMERA = rc.CAMERA
 RENDER_FIELDS = rc.FIELDS
 #: The values a kind's root (all shots) can be given in the sheet.
 EVERYONE_FIELDS = frozenset(RENDER_FIELDS)
+#: Shots only, not stored: the render settings a row pins itself
+#: (:meth:`Sheet.render_pins`), the Shots table's Render column.
+RENDER_PINS = 'render_pins'
 
 SCENES_URI = Uri.parse('scenes:/')
 GROUPS_URI = Uri.parse('groups:/')
@@ -114,7 +120,7 @@ _LABELS = {
     FRAME_START: 'Start', FRAME_END: 'End', LENGTH: 'Length',
     ROLL_START: 'Pre-roll', ROLL_END: 'Post-roll', FPS: 'FPS', ROOT: 'Root',
     ANIMATABLE: 'Animatable', ASSETS: 'Assets', MULTIS: 'Multis',
-    LAYERS: 'Layers', DEPARTMENTS_OFF: 'Departments off',
+    LAYERS: 'Layers', DEPARTMENTS_OFF: 'Departments off', RENDER_PINS: 'Render',
     **rc.LABELS,
 }
 
@@ -522,7 +528,7 @@ class MultiRecord:
 @dataclass(frozen=True)
 class Inherited:
     """What an entity in one group inherits: each field's value, and where
-    it comes from ("sequence sq010", "the project's defaults", ...)."""
+    it comes from ("sequence sq010", "the pipeline defaults", ...)."""
     values: Mapping[str, object]
     sources: Mapping[str, str]
     #: A layered kind's ``channels`` and ``channel_prims`` as merged down to
@@ -551,7 +557,7 @@ class Base:
     #: Each stored group's own values of the kind's fields.
     group_own: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
     #: The kind root's (all shots') own values of :data:`EVERYONE_FIELDS`,
-    #: and what it inherits from the project and the project's defaults.
+    #: and what it inherits from the project and the pipeline defaults.
     everyone_own: Mapping[str, object] = field(default_factory=dict)
     for_everyone: Inherited = field(default_factory=lambda: Inherited({}, {}))
 
@@ -574,15 +580,15 @@ def _inherited(config, kind: Kind, group: str | None, everyone: bool = True) -> 
         for name in kind.fields:
             if rc.has_field(defaults, name):
                 values[name] = rc.read_field(defaults, name)
-                sources[name] = "the project's defaults"
+                sources[name] = rc.DEFAULTS_LEVEL
     layer_state = _NO_LAYERS
     if kind.layered:
         if schema is not None and CHANNEL_PROPERTY in schema.fields:
             layer_state = _layer_state(
                 layer_state, {CHANNEL_PROPERTY: schema.fields[CHANNEL_PROPERTY].default},
             )
-        sources[LAYERS] = "the project's defaults"
-    chain = [(_PROJECT, 'the project')]
+        sources[LAYERS] = rc.DEFAULTS_LEVEL
+    chain = [(_PROJECT, rc.PROJECT_LEVEL)]
     if everyone:
         chain.append((kind.root, kind.everyone))
     if group is not None:
@@ -1235,7 +1241,7 @@ class Sheet:
 
     def everyone_source(self, name: str) -> str:
         """Where all shots' inherited value of ``name`` comes from: the
-        project, or the project's defaults ('' when nothing holds it)."""
+        project, or the pipeline defaults ('' when nothing holds it)."""
         return self.base.for_everyone.sources.get(name, '')
 
     def set_everyone_value(self, name: str, value) -> bool:
@@ -1245,7 +1251,13 @@ class Sheet:
         if name not in EVERYONE_FIELDS or name not in self.kind.fields:
             raise ValueError(f'{self.kind.everyone.capitalize()} have no {self.kind.label(name)}')
         value = self._parse(name, value, self.everyone_value(name))
-        if value == self.everyone_value(name):
+        current = self.everyone_value(name)
+        inherited = self.base.for_everyone.values.get(name, _MISSING)
+        if rc.unset_default(name, self.everyone_source(name)):
+            inherited = _MISSING        # see set_value
+            if self.everyone_state(name) in (INHERITED, CLEARED):
+                current = _MISSING
+        if value == current:
             return False
         stored = self.base.everyone_own
         self._changing()
@@ -1254,7 +1266,7 @@ class Sheet:
                 self._everyone_edits.pop(name, None)
             else:
                 self._everyone_edits[name] = value
-        elif value == self.base.for_everyone.values.get(name, _MISSING):
+        elif value == inherited:
             self._everyone_edits.pop(name, None)   # what it inherits: nothing to pin
         else:
             self._everyone_edits[name] = value
@@ -1275,6 +1287,33 @@ class Sheet:
         self._changing()
         del self._everyone_edits[name]
         return True
+
+    # ── Which render settings a level pins (the Render column) ─────
+
+    def _render_fields(self) -> tuple[str, ...]:
+        return tuple(name for name in RENDER_FIELDS if name in self.kind.fields)
+
+    def render_pins(self, row: Row) -> tuple[str, ...]:
+        """The render settings the entity pins itself once applied (own
+        or pending), in panel order; empty for a kind without them."""
+        return tuple(n for n in self._render_fields() if self.state(row, n) in (OWN, SET))
+
+    def group_render_pins(self, group: str) -> tuple[str, ...]:
+        """:meth:`render_pins` of a group's own values."""
+        return tuple(
+            n for n in self._render_fields() if self.group_state(group, n) in (OWN, SET)
+        )
+
+    def everyone_render_pins(self) -> tuple[str, ...]:
+        """:meth:`render_pins` of all shots."""
+        return tuple(n for n in self._render_fields() if self.everyone_state(n) in (OWN, SET))
+
+    def render_pending(self, row: Row) -> bool:
+        """Whether a render setting of the entity changes on Apply."""
+        return any(self.state(row, n) in (SET, CLEARED) for n in self._render_fields())
+
+    def group_render_pending(self, group: str) -> bool:
+        return any(self.group_state(group, n) in (SET, CLEARED) for n in self._render_fields())
 
     def revert_everyone(self) -> bool:
         """Drop all shots' pending values."""
@@ -1374,7 +1413,13 @@ class Sheet:
         value = self._parse(name, value, self.group_value(group, name))
         if name == ROOT and not self.root_exists(value):
             raise ValueError(f"No Root named '{root_path(value)}'")
-        if value == self.group_value(group, name):
+        current = self.group_value(group, name)
+        inherited = self.new_group_inherited().values.get(name, _MISSING)
+        if rc.unset_default(name, self.group_source(group, name)):
+            inherited = _MISSING        # see set_value
+            if self.group_state(group, name) in (INHERITED, CLEARED):
+                current = _MISSING
+        if value == current:
             return False
         stored = self.base.group_own.get(group, {})
         self._changing()
@@ -1384,7 +1429,7 @@ class Sheet:
                 edits.pop(name, None)
             else:
                 edits[name] = value
-        elif value == self.new_group_inherited().values.get(name, _MISSING):
+        elif value == inherited:
             edits.pop(name, None)         # what it inherits: nothing to pin
         else:
             edits[name] = value
@@ -1977,7 +2022,15 @@ class Sheet:
         value = self._parse(name, value, self.value(row, name))
         if name == ROOT and not self.root_exists(value):
             raise ValueError(f"No Root named '{root_path(value)}'")
-        if value == self.value(row, name):
+        current = self.value(row, name)
+        inherited = self.inherited(row).values.get(name, _MISSING)
+        if rc.unset_default(name, self.source(row, name)):
+            # Only the pipeline defaults hold it, which no render uses:
+            # typing that value is setting it, not inheriting it.
+            inherited = _MISSING
+            if self.state(row, name) in (INHERITED, CLEARED):
+                current = _MISSING
+        if value == current:
             return False
         own = row.origin.own.get(name, _MISSING) if row.origin else _MISSING
         self._changing()
@@ -1988,7 +2041,7 @@ class Sheet:
                 row.edits.pop(name, None)        # back to what is stored
             else:
                 row.edits[name] = value
-        elif value == self.inherited(row).values.get(name, _MISSING):
+        elif value == inherited:
             row.edits.pop(name, None)            # still inheriting: no copy pinned
         else:
             row.edits[name] = value

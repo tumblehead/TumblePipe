@@ -654,13 +654,14 @@ Source: [`otls/lop_th.playblast.1.0`](../../otls/lop_th.playblast.1.0/th_8_8Lop_
 
 | Label | Default | What it does |
 |---|---|---|
-| Entity | `from_context` | The shot — the shared Entity button (shots only, *Select Shot*), as on `th::import_shot`; the label beside it shows what `from_context` resolved to |
+| Entity | `from_context` | The shot — the shared Browse... button (shots only, *Select Shot*), as on `th::import_shot`; the label beside it shows what `from_context` resolved to |
 | Department | `from_context` | `from_context` (the workfile's department) or one of the shot's **renderable** departments |
 | Camera | first camera | The cameras in the input stage: under `/cameras` or `/scene/cameras`, else anywhere on the stage. Left empty it is the first one, the camera the menu shows |
 | Renderer | TumbleView | **TumbleView**: the farm playblast's renderer (hdThPlayblast) run with husk, the same look as a farm playblast, with a progress bar that stops husk when cancelled. **Houdini GL**: Houdini's flipbook, exactly as the viewport draws (hair, curves and volumes too). Existing nodes take the default, TumbleView |
 | Shading | Lit | TumbleView only: Lit, Clay, Albedo or Occlusion, as in the farm dialog |
 | Lighting (TumbleView) | Scene Lights | TumbleView only: what lights Lit and Clay. **Scene Lights**: the scene's own lights, or the camera lights when it has none. **Headlight**: key, fill and rim lights that follow the camera, always. Parm `viewport_lighting`, the render setting `th:lighting` |
 | Backface Culling | Off | TumbleView only. **Off**: both sides of every face are drawn. **Back Faces**: every mesh's back faces are left out, so a single-sided wall seen from behind is see-through. Parm `cull`, the render setting `th:cull` |
+| Transparency | On | TumbleView only. **On**: see-through surfaces (opacity, transmission or `displayOpacity` under 1) show what is behind them. **Off**: every surface is drawn solid, e.g. eyes whose corneas you do not need. Parm `transparency`, the render setting `th:transparency` |
 | Shading Mode, Lighting | Smooth Shaded, Headlight Only | Houdini GL only: viewport look of the flipbook |
 | Frame Range | From Config | The shot's configured range plus roll, or From Settings (**First/Last-Frame**, **Pre/Post-Roll**). The menu names the frames From Config gives, e.g. `From Config (1001-1100)` |
 | Resolution | the shot's render resolution | An expression: the shot's `render.resolution`, so the playblast has the render's frame; `1280 720` while no shot resolves. Type over it for your own size; Revert to Defaults brings the shot's back. A node made before 1.85 keeps the size it had |
@@ -681,8 +682,13 @@ Gotchas:
 - TumbleView draws a see-through material (opacity, transmission or an
   opacity cut-out under 1) or a `displayOpacity` under 1 blended over what
   is behind it, one opacity per mesh; an opacity map (a texture) is not
-  read and leaves the surface opaque. See [Compositing →
-  Playblast](../compositing.md#playblast).
+  read and leaves the surface opaque. **Transparency** = Off (the render
+  setting `th:transparency` = `off`, or `TH_PLAYBLAST_TRANSPARENCY`) draws
+  every surface solid instead, whatever its opacity: corneas, glasses and
+  windows hide what is behind them, as an opaque surface does. The SOP
+  `th::playblast` (and its Live playblast) has the same **Transparency**
+  parm, and the farm dialog's playblast has **Transparency**. See
+  [Compositing → Playblast](../compositing.md#playblast).
 - TumbleView draws materials bound to some of a mesh's faces (GeomSubsets)
   on those faces, the rest in the mesh's own material, as the viewport does.
 - TumbleView's Lit and Clay shading use the scene's own lights (distant,
@@ -731,7 +737,7 @@ Gotchas:
 - Nodes saved before 1.52.3 carried an *Entity* menu (From context / From
   settings) and a *Shot* menu. Those parms are gone: an old node opens on
   `from_context`, so one that had a shot picked under From settings needs it
-  picked again with the Entity button.
+  picked again with the Browse... button.
 - A stage with no camera at all fails the button with *there is no camera on
   the stage: the shot has no camera published*.
 - A new node's Camera is empty, which Houdini shows as the menu's first
@@ -782,7 +788,7 @@ renderer. The farm playblast does not make layers.
 
 The same publish path from a SOP context, rendered with TumbleView (our
 viewport renderer, hdThPlayblast, through husk) like the LOP's default.
-Tab menu `_TumblePipe/pipeline`. It carries the shared Entity button (shots
+Tab menu `_TumblePipe/pipeline`. It carries the shared Browse... button (shots
 only, *Select Shot*) and writes the same versioned MP4 and daily as the LOP.
 Source: [`otls/sop_th.playblast.2.0`](../../otls/sop_th.playblast.2.0/th_8_8Sop_1playblast_8_82.0/DialogScript),
 [`sops/playblast.py`](../../python/tumblepipe/pipe/houdini/sops/playblast.py).

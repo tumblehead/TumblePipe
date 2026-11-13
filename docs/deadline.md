@@ -137,7 +137,7 @@ For the **HPM** plugin specifically — **no per-node setup is required**:
 
 - The `hpm` CLI is **self-bootstrapped** under `~/.deadline/hpm` on the first
   job (version from `HpmVersion` → `HPM_VERSION` env → the plugin's pinned
-  default, `v0.36.1`). No manual install needed. The studio pins one hpm for CI,
+  default, `v0.40.1`). No manual install needed. The studio pins one hpm for CI,
   submitters and the farm with the Infisical `HPM_VERSION` knob (prod); bump the
   plugin's `DEFAULT_HPM_VERSION` and `farm/local/hpm.py`'s `DEFAULT_VERSION`
   with it, so a worker without the env var runs the same hpm.
@@ -339,7 +339,9 @@ red, and so is its batch's; finished jobs are dimmed so the ones that need
 you stand out. A batch is listed under its project, kind and entity (hover it for the
 full Deadline batch name). To open it, use
 **TumbleTrove ▸ TumblePipe ▸ Farm Manager** in Houdini's menu bar, the
-browser's **Farm Manager** quick action, the **Farm Manager** button of a
+browser's **Farm Manager** quick action (a double-click, or **Open Jobs** in
+the popover a single click opens; see [When your jobs end](#when-your-jobs-end)),
+the **Farm Manager** button of a
 submission's progress in the Farm Submit dialog, or the **Farm Manager** script in TumbleTrove
 Desktop (`python -m tumblepipe.farm.manager`).
 
@@ -477,7 +479,8 @@ on the farm, the asset browser's **Farm Manager** quick action shows a ring
 turning around its button. A background thread keeps the count: it reads
 the local queue every two seconds and the farm every 20 seconds (the farm
 only when this machine has a Deadline Client), and it stops reading while
-the browser is hidden or closed. The ring needs a TumbleTrove with the
+the browser is hidden or closed, unless a batch you submitted in this
+Houdini session is still running (so its end is noticed). The ring needs a TumbleTrove with the
 `get_quick_action_busy` hook; an older one shows the button without it.
 
 Hover the **Farm Manager** button for a summary of your jobs in this
@@ -493,6 +496,52 @@ corner (on the **⋯** button when the toolbar is too narrow for it). The dot
 goes once you retry or remove the failed jobs in the Farm Manager, or a day
 after they were submitted. The dot needs a TumbleTrove with the
 `get_quick_action_alert` hook; an older one shows the hover without it.
+
+### When your jobs end
+
+When a batch you submitted in this Houdini session ends, on the farm or on
+this machine, TumblePipe tells you without getting in your way:
+
+- **The status bar.** One line at the bottom of Houdini's window, such as
+  `SQ010/SH020 render done: 48 frames, 3 passes · 12 min on the farm`, or,
+  as a warning, `SQ010/SH030 render failed: Frames 1009–1012 failed on
+  rn04: out of GPU memory. 8 of 12 written.` Several ending at once say
+  the most urgent one and `(and 2 more)`.
+- **A desktop notification**, with the same line, only when Houdini is not
+  the application in front (you are in another program). It has no
+  buttons: switch to Houdini to act on it.
+- **A pulse and a dot on the Farm Manager button.** The button pulses once,
+  and a small dot sits at its bottom-right corner until you look: accent
+  for finished, red for failed (on the **⋯** button when the toolbar is too
+  narrow). The pulse is skipped while the browser is hidden or minimised,
+  while Houdini is cooking or playing back, and when motion is reduced (the
+  browser's *Reduce motion* setting, or Windows' *Animation effects* off);
+  the dot is shown either way.
+
+A click on the **Farm Manager** button then opens the **Jobs popover**,
+*Finished since you looked*: this session's ended batches, failures first,
+then the newest, at most ten. Each row says what it was for, when it ended
+and one line of what happened, with its buttons:
+
+- a finished batch that wrote frames: **Preview in Cinedex** (opens its
+  frames in Cinedex, as the Farm Manager's *Preview in Cinedex* does) and
+  **Show in Jobs**; one that wrote none (a publish): **Show in Jobs**;
+- a failed batch: **Show in Jobs**, which opens the Farm Manager with the
+  failed job selected and its failed task's log in view, and **Preview N
+  Frames in Cinedex** when it wrote some frames before failing.
+
+Opening the popover marks every row seen: the dot goes. A batch you retry
+that ends again comes back as unseen. **Open Jobs** in the popover's header,
+or a double-click on the button, opens the Farm Manager. A press of Esc or a
+click outside closes the popover. Cancelled batches are not reported.
+
+Only batches submitted since this Houdini session started count, by you in
+this project, and their end is noticed only once the asset browser has
+been opened in the session (it starts the background reading). The status
+line and the desktop notification work with any TumbleTrove; the popover,
+dot and pulse need TumbleTrove 0.60.0 (its `get_quick_action_dot`,
+`get_quick_action_popover` and `request_quick_action_pulse` hooks). With an
+older one a click on the button opens the Farm Manager as before.
 
 ## Further reading
 

@@ -29,8 +29,12 @@ import's beauty is always ``rgba``. An all-channels import gives each
 channel an output of its own and keeps it there (``channel_outputs``,
 :func:`assign_channel_outputs`): a channel added later takes a free output,
 one not rendered yet keeps its output for when it is, so a wire stays on
-its channel through Updates. The Reads label names which channel is on
-which output.
+its channel through Updates. Which layer (channel) is on which output is
+written under the node in the network editor, its comment (``rgba: chars``,
+``rgba 2: bg``; :func:`output_names_comment`), and on the Reads label: the
+outputs' own labels cannot change per node, and the Composite View's layer
+menu lists them (C, the first output, then each output that holds
+something, by label).
 
 Channel ``*`` (*All channels*) reads every channel of the shot in one node:
 the cables carry every channel's AOVs (``<channel>_<aov>``). A channel with
@@ -224,6 +228,59 @@ def channel_outputs_label(slots, reads, overflow) -> str:
     if overflow:
         text += f'; no output for: {", ".join(overflow)}'
     return text
+
+
+# Which layer (channel) each beauty output carries, written on the node in
+# the network editor (Remy, 2026-11-13: "the outputs should be named by the
+# layer name, not rgba"). A digital asset's output labels are its type's
+# (verified in 22.0.429: an instance has no parm or call that relabels them,
+# and the Composite View's layer menu lists those labels), so the names go
+# in the node's comment, shown under it. The comment is the node's own only
+# while it still reads as it was last written (user data
+# OUTPUT_NAMES_COMMENT_KEY): a comment someone typed is never replaced.
+OUTPUT_NAMES_COMMENT_KEY = 'th_import_render_output_names'
+
+
+def channel_output_names(slots, reads=None) -> tuple:
+    """What each beauty output carries, by name, in output order: the layer
+    (channel) it holds, else its own label (``rgba 4``) when it holds none
+    or holds a channel not read now (``reads``; None reads every held
+    channel). Always :data:`CHANNEL_OUTPUTS` long, and no two names alike:
+    a channel name that is another output's label (a channel called
+    ``rgba 2``) keeps its output's label beside it."""
+    slots = parse_channel_outputs(format_channel_outputs(slots))
+    labels = [output_label(name) for name in CHANNEL_OUTPUT_NAMES]
+    names = []
+    for label, channel in zip(labels, slots):
+        held = channel is not None and (reads is None or channel in reads)
+        names.append(channel if held else label)
+    counts = {name: names.count(name) for name in names}
+    return tuple(
+        f'{name} ({label})' if counts[name] > 1 and name != label else name
+        for name, label in zip(names, labels)
+    )
+
+
+def output_names_comment(slots, reads=None, overflow=()) -> str:
+    """The node's comment: one line per beauty output that holds a layer
+    read now, ``<output label>: <layer>``, in output order; then the layers
+    read that found no output. Empty when no output holds one."""
+    names = channel_output_names(slots, reads)
+    lines = [f'{output_label(CHANNEL_OUTPUT_NAMES[i])}: {name}'
+             for i, name in enumerate(names)
+             if name != output_label(CHANNEL_OUTPUT_NAMES[i])]
+    if overflow:
+        lines.append(f'no output: {", ".join(overflow)}')
+    return '\n'.join(lines)
+
+
+def next_comment(current: str, last_written: str | None, wanted: str) -> str | None:
+    """The comment to set, None to leave the node's alone: the node's own
+    comment (empty, or as last written) follows ``wanted``; one someone
+    typed stays."""
+    if current == wanted: return None
+    if current and current != (last_written or ''): return None
+    return wanted
 
 
 # Inside the dive, left to right (#67, Remy 2026-11-12: the File COPs sat in
@@ -552,6 +609,18 @@ class ImportRender(TimeOffsetNode, EntityNode):
         slots = self.get_channel_outputs()
         return slots.index(channel) if channel in slots else None
 
+    def show_output_names(self, slots, reads, overflow=()):
+        """Write which layer each beauty output carries in the node's
+        comment, shown under it in the network editor
+        (:func:`output_names_comment`); a comment someone typed stays."""
+        native = self.native()
+        wanted = output_names_comment(slots, reads, overflow)
+        comment = next_comment(native.comment(), native.userData(OUTPUT_NAMES_COMMENT_KEY), wanted)
+        if comment is None: return
+        native.setComment(comment)
+        native.setUserData(OUTPUT_NAMES_COMMENT_KEY, comment)
+        native.setGenericFlag(hou.nodeFlag.DisplayComment, bool(comment))
+
     def _drop_moved_wires(self, previous, slots):
         """Unwire each channel output an all-channels read gave to another
         channel (it ran out of outputs): its wires were on the channel that
@@ -823,6 +892,7 @@ class ImportRender(TimeOffsetNode, EntityNode):
         if self.is_all_channels():
             label += channel_outputs_label(slots, reads, overflow)
         self._update_labels(label)
+        self.show_output_names(slots, list(reads), overflow)
         if rebuilt:
             _sync_downstream_mixes(self.native())
         self.sync_unpacks(plan)

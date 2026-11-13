@@ -38,6 +38,59 @@ GEOMETRY = 'geometry'
 SKELETON = 'skeleton'
 
 
+SHAPES = 'shapes'
+SHAPE_SUFFIX = '.shp'
+OUTPUT_INFIX = '_output_'
+
+
+# --- which shapes come out ---------------------------------------------------
+#
+# The node's Shapes parm (default `Base`) is the one rule for which rig
+# shapes reach the stage. The node's own Scene Invoke takes it as its Shapes
+# pattern; a dive with its own Scene Invoke is held to it after the fact
+# (`animate_points.placed_shapes`), so an old dive whose invoke keeps
+# Houdini's default `*` does not send the rig's joint and spline viz (which
+# can be spheres, not points) to /Geometry.
+
+
+def shape_stem(name: str) -> str:
+    """The rig shape a Scene Invoke output is: `Base` for `Base.shp` and
+    for `<rig>_output_Base.shp`."""
+    stem = name[:-len(SHAPE_SUFFIX)] if name.endswith(SHAPE_SUFFIX) else name
+    return stem.split(OUTPUT_INFIX, 1)[1] if OUTPUT_INFIX in stem else stem
+
+
+def pattern_picks(pattern: str, stem: str) -> bool:
+    """Houdini's name pattern, as a Scene Invoke's Shapes reads it:
+    space-separated globs, a `^glob` takes away what it matches, later
+    entries win."""
+    from fnmatch import fnmatchcase
+    picked = False
+    for token in pattern.split():
+        if token.startswith('^'):
+            if fnmatchcase(stem, token[1:]):
+                picked = False
+        elif fnmatchcase(stem, token):
+            picked = True
+    return picked
+
+
+def unpicked_shapes(names, pattern) -> list[int]:
+    """Which of one character's outputs (`names`) the Shapes `pattern` does
+    not pick: shapes (`*.shp`) only; a skeleton or anything else stays.
+    None for `pattern` (no th::animate to read it from) picks everything."""
+    if pattern is None:
+        return []
+    return [i for i, name in enumerate(names)
+            if name.endswith(SHAPE_SUFFIX) and not pattern_picks(pattern, shape_stem(name))]
+
+
+def shapes_pattern(animate_node) -> str | None:
+    """th::animate's Shapes, None when there is no such parm."""
+    parm = animate_node.parm(SHAPES) if animate_node is not None and hasattr(animate_node, 'parm') else None
+    return parm.evalAsString() if parm is not None else None
+
+
 def _animate_node(node):
     """The th::animate holding `node` (a node inside its `points_sops`)."""
     while node is not None and not node.type().name().startswith('th::animate'):
@@ -58,13 +111,23 @@ def scene_characters(geo) -> list[str]:
     in order; empty when `geo` is not an APEX scene (`is_scene`)."""
     if not is_scene(geo):
         return []
-    return [_name(prim)[:-len(SCENE_SUFFIX)] for prim in geo.prims()]
+    return [
+        name[:-len(SCENE_SUFFIX)] for name in map(_name, geo.prims())
+        if name.endswith(SCENE_SUFFIX)
+    ]
 
 
 def is_scene(geo) -> bool:
     """True when `geo` is an APEX scene still to be invoked: packed
-    `<name>.char` folders, one of them holding a rig. An invoked scene in
-    packed folders has the same folders, but only shapes in them."""
+    folders, a `<name>.char` one holding a rig. An invoked scene in packed
+    folders has the same `.char` folders, but only shapes in them.
+
+    A scene also holds folders that are not characters: once its Scene
+    Animate has keys, the clip is a root `animation` folder
+    (`/animation/default.clip/...`). Reading those as "invoked already"
+    let every keyed scene through un-invoked, and the stage got the rigs'
+    control shapes instead of the characters (Remy, tumblepipe__bugs
+    2026-11-13); a fresh, unkeyed scene has no such folder."""
     if geo is None:
         return False
     prims = geo.prims()
@@ -74,9 +137,7 @@ def is_scene(geo) -> bool:
     for prim in prims:
         if prim.type() != hou.primType.PackedGeometry:
             return False
-        if not _name(prim).endswith(SCENE_SUFFIX):
-            return False
-        if has_rig:
+        if has_rig or not _name(prim).endswith(SCENE_SUFFIX):
             continue
         inner = prim.getEmbeddedGeometry()
         if inner is None or inner.findPrimAttrib('name') is None:

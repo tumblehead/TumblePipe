@@ -74,7 +74,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView, QAbstractSpinBox, QApplication, QCheckBox, QComboBox,
-    QDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton,
+    QDialog, QFormLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu, QPushButton,
     QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QStyledItemDelegate,
     QToolButton, QToolTip, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -99,12 +99,15 @@ from tumblepipe.farm.specs.playblast import (
     PLAYBLAST_LIGHTINGS,
     PLAYBLAST_RENDERERS,
     PLAYBLAST_SHADINGS,
+    PLAYBLAST_TRANSPARENCIES,
 )
 
 from .farm_submit_ui import (
     EDIT_KIND, KIND_COLOURS, KIND_FILLS, FolderTabBar, NoticeCard, Overlay,
     ReviewSheet, Section, SubmissionView,
 )
+from .frame_timeline import FrameTimeline
+from tumblepipe.farm.submit import frame_selection
 from tumblepipe.farm.submit.review import ReviewRow
 
 log = logging.getLogger(__name__)
@@ -2202,6 +2205,18 @@ class _ContextPane(QWidget):
         )
         cull_row = self._row(self._pb_cull, revert=('pb_cull',))
         form.addRow("Culling:", cull_row)
+        self._pb_transparency = self._combo(
+            'pb_transparency', PLAYBLAST_TRANSPARENCIES)
+        self._pb_transparency.setToolTip(
+            "TumbleView only. Whether see-through surfaces show what is "
+            "behind them.\n"
+            "on: glass, corneas and other surfaces with opacity or "
+            "transmission are see-through.\n"
+            "off: every surface is drawn solid."
+        )
+        transparency_row = self._row(
+            self._pb_transparency, revert=('pb_transparency',))
+        form.addRow("Transparency:", transparency_row)
         self._pb_motion_blur = self._check('pb_motion_blur', "Motion blur")
         self._pb_motion_blur.setToolTip(
             "TumbleView only. Blur what moves while the shot camera's shutter "
@@ -2253,7 +2268,8 @@ class _ContextPane(QWidget):
             for renderer, rows in (
                 ('viewport', (
                     (shading_row, "Shading"), (lighting_row, "Lighting"),
-                    (cull_row, "Culling"), (blur_row, "Blur"),
+                    (cull_row, "Culling"),
+                    (transparency_row, "Transparency"), (blur_row, "Blur"),
                 )),
                 ('karma', (
                     (light_row, "Light"), (samples_row, "Samples"),
@@ -2331,8 +2347,9 @@ class _ContextPane(QWidget):
         self._rnd_full = QCheckBox("Full range")
         self._rnd_full.setChecked(True)
         form.addRow("Range:", self._row(self._rnd_preview, self._rnd_full))
-        self._rnd_preview_list = self._preview_list_field(self._rnd_preview, "render")
-        form.addRow("Preview frames:", self._rnd_preview_list)
+        self._rnd_preview_list, self._rnd_preview_timeline = self._preview_list_row(
+            form, self._rnd_preview, "render", grid.RENDER,
+        )
 
         self._rnd_first = self._spin('first_frame', -1_000_000, 1_000_000)
         self._rnd_last = self._spin('last_frame', -1_000_000, 1_000_000)
@@ -2372,6 +2389,12 @@ class _ContextPane(QWidget):
 
         self._rnd_frame_list.textChanged.connect(_frame_list_edited)
         form.addRow("Frame list:", self._rnd_frame_list)
+        # Pick the ranges on a timeline too (Remy, 2026-11-13): it writes
+        # the field, and typing there redraws it.
+        self._rnd_frame_timeline = self._frame_timeline(
+            self._rnd_frame_list, frame_selection.RANGES, grid.RENDER, "every frame",
+        )
+        form.addRow("", self._rnd_frame_timeline)
         form.addRow("", self._rnd_frame_list_note)
         self._rnd_pre = self._spin('pre_roll', 0, 1000)
         self._rnd_post = self._spin('post_roll', 0, 1000)
@@ -2423,6 +2446,7 @@ class _ContextPane(QWidget):
             # edit (as the studio's own farm render).
             for row in (
                 self._rnd_camera, frames_row, self._rnd_frame_list,
+                self._rnd_frame_timeline,
                 self._rnd_frame_list_note, rolls_row, denoise_row, modes_row,
             ):
                 form.setRowVisible(row, False)
@@ -2456,8 +2480,9 @@ class _ContextPane(QWidget):
             "Preview Frames."
         )
         form.addRow("Range:", self._row(self._comp_preview))
-        self._comp_preview_list = self._preview_list_field(self._comp_preview, "comp")
-        form.addRow("Preview frames:", self._comp_preview_list)
+        self._comp_preview_list, self._comp_preview_timeline = self._preview_list_row(
+            form, self._comp_preview, "comp", grid.COMP,
+        )
         self._comp_first = self._spin(
             'comp_first_frame', -1_000_000, 1_000_000,
             override=True, unset_text=FULL_RANGE_TEXT,
@@ -2514,8 +2539,9 @@ class _ContextPane(QWidget):
     def _preview_list_field(self, toggle: QCheckBox, what: str) -> QLineEdit:
         """The Preview Frames List beside a Preview box (#74): empty previews
         the first, middle and last frame; otherwise the frames typed,
-        space separated, in that order. A batch field, enabled while its box
-        is ticked; what it drops shows in the Warnings column
+        space separated, in that order. A batch field, shown
+        (:meth:`_preview_list_row`) and enabled while its box is ticked;
+        what it drops shows in the Warnings column
         (``submit_settings.preview_frame_warnings``)."""
         from tumblepipe.farm.specs.preview_frames import PLACEHOLDER
         edit = QLineEdit()
@@ -2533,6 +2559,98 @@ class _ContextPane(QWidget):
         toggle.toggled.connect(lambda *_a: self._changed())
         edit.textEdited.connect(lambda *_a: self._changed())
         return edit
+
+    def _preview_list_row(
+        self, form: QFormLayout, toggle: QCheckBox, what: str, kind: str,
+    ) -> tuple[QLineEdit, FrameTimeline]:
+        """The "Preview frames:" row: the field with its timeline under it,
+        shown only while ``toggle`` is ticked (Remy, 2026-11-13: an
+        uneditable field read as if it applied). Hiding the whole form row
+        takes its spacing too, so the rows below close up without a gap,
+        and a remembered Preview box shows the row as it is set back."""
+        edit = self._preview_list_field(toggle, what)
+        timeline = self._frame_timeline(
+            edit, frame_selection.FRAMES, kind, "first / middle / last",
+        )
+        holder = QWidget()
+        stack = QVBoxLayout(holder)
+        stack.setContentsMargins(0, 0, 0, 0)
+        stack.setSpacing(3)
+        stack.addWidget(edit)
+        stack.addWidget(timeline)
+        form.addRow("Preview frames:", holder)
+
+        def _show(on: bool) -> None:
+            form.setRowVisible(holder, on)
+
+        _show(toggle.isChecked())
+        toggle.toggled.connect(_show)
+        return edit, timeline
+
+    def _frame_timeline(
+        self, edit: QLineEdit, mode: str, kind: str, empty_hint: str,
+    ) -> FrameTimeline:
+        """A :class:`FrameTimeline` two-way bound to ``edit``: typing
+        redraws it, a click or drag on it writes the field (through
+        ``farm.submit.frame_selection``, the same parse and format the
+        submit reads). Its frames follow the ticked rows
+        (:meth:`_update_timelines`)."""
+        timeline = FrameTimeline(mode, colour=KIND_COLOURS[kind], empty_hint=empty_hint)
+        timeline.set_text(edit.text())
+        edit.textChanged.connect(timeline.set_text)
+
+        def _edited(text: str) -> None:
+            edit.setText(text)      # textChanged redraws the timeline
+            self._changed()
+
+        timeline.edited.connect(_edited)
+        return timeline
+
+    def _update_timelines(self, rows) -> None:
+        """Show each timeline the frames of the rows its field applies to:
+        the render's frames (rolls included, as the Frame list and the
+        render's Preview frames are read), the comp's frames on its step.
+        With rows of different ranges a timeline shows their union and
+        says so; each row still reads the text against its own range (the
+        Warnings column names what it drops)."""
+        timelines = (
+            getattr(self, '_rnd_preview_timeline', None),
+            getattr(self, '_rnd_frame_timeline', None),
+        )
+        noun = getattr(self, '_noun', ('shot', 'shots'))[1]
+        if self._context == 'assets':
+            frames = turntable.farm_frames()
+            view = frame_selection.View(
+                frames.first, frames.last, "the turntable's frames",
+            )
+            render_step = frames.step
+        else:
+            spans = [resolve.rendered_range(s) for _u, s, _w, _e in rows if s.get('render')]
+            view = frame_selection.view(spans, noun)
+            render_step = 1
+        for timeline in timelines:
+            if timeline is not None:
+                timeline.set_view(view, render_step)
+        if timelines[0] is not None:
+            context = frame_selection.read(
+                getattr(self, '_rnd_frame_list', None) and self._rnd_frame_list.text(),
+                frame_selection.RANGES,
+            ).ranges
+            timelines[0].set_context(context if self._context != 'assets' else ())
+        comp_timeline = getattr(self, '_comp_preview_timeline', None)
+        if comp_timeline is None:
+            return
+        spans, steps = [], set()
+        for uri, settings, _w, _e in rows:
+            if not settings.get('comp'):
+                continue
+            frames = resolve.comp_frames(self._props.get(uri, {}), settings)
+            spans.append(None if frames is None else frames[0])
+            step = settings.get('comp_step')
+            steps.add(step if isinstance(step, int) and step > 0 else 1)
+        comp_timeline.set_view(
+            frame_selection.view(spans, noun), steps.pop() if len(steps) == 1 else 1,
+        )
 
     def _pool(self, key: str) -> QWidget:
         """A Pool field as the project's pools in a dropdown, the way a th::
@@ -2910,9 +3028,10 @@ class _ContextPane(QWidget):
 
     def _recompute_warnings(self) -> None:
         # Blocking errors first, so an elided cell still shows them.
-        self._warnings = {
-            uri: e + w for uri, _s, w, e in self._resolved_rows() if e or w
-        }
+        rows = self._resolved_rows()
+        self._warnings = {uri: e + w for uri, _s, w, e in rows if e or w}
+        # The timelines show the frames of the same rows the warnings read.
+        self._update_timelines(rows)
 
     # ── Submit ────────────────────────────────────────────
 

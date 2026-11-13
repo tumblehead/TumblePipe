@@ -84,6 +84,15 @@ from .workfiles import WorkfileManager
 log = logging.getLogger(__name__)
 
 
+def quick_action_fields(quick_action_cls, base: dict, extra: dict) -> dict:
+    """``base`` plus those of ``extra`` the SDK's ``QuickAction`` has as
+    fields (``primary``, ``enabled``, ``disabled_reason`` came with
+    TumbleTrove 0.60.0; an older one would refuse them)."""
+    import dataclasses
+    known = {f.name for f in dataclasses.fields(quick_action_cls)}
+    return {**base, **{k: v for k, v in extra.items() if k in known}}
+
+
 class PipelineCatalog(Catalog):
     """Browse assets and shots from the Tumblehead pipeline."""
 
@@ -262,6 +271,7 @@ class PipelineCatalog(Catalog):
         self._thumbnails = ThumbnailManager(
             entity_dir=self._resolver.entity_dir, refresh=self._refresh,
         )
+        self._selected_asset_id: str | None = None
         self._ops = EntityOps(
             self.id,
             registry=self._registry, clients=self._clients,
@@ -500,6 +510,10 @@ class PipelineCatalog(Catalog):
     # ── Detail ────────────────────────────────────────────
 
     def get_detail(self, asset_id: str, version: str | None = None) -> AssetDetail:
+        # The pane follows the grid selection: Open Timeline plays the
+        # sequence of the shot it shows (the catalog is told of no other
+        # selection).
+        self._selected_asset_id = asset_id
         if containers.parse(asset_id) is not None:
             return self._containers.detail(asset_id)
         kind = self._kinds.for_id(asset_id)
@@ -765,6 +779,12 @@ class PipelineCatalog(Catalog):
         proj = self._resolver.project_for_path(Path(hou.hipFile.path()))
         return None if proj is None else proj.name
 
+    def _session_project_name_safe(self) -> str | None:
+        try:
+            return self._session_project_name()
+        except Exception:  # noqa: BLE001 - no scene to name a project: the caller falls back
+            return None
+
     def _texture_export_roots(self) -> dict:
         """Each ready project's export folder, for the texture set
         scan (worker thread; a project not ready yet is skipped)."""
@@ -839,7 +859,18 @@ class PipelineCatalog(Catalog):
 
     def get_quick_actions(self):
         from tumbletrove.asset_browser.api.catalog import QuickAction
+        ok, why = self._timeline_availability()
         return [
+            QuickAction(**quick_action_fields(
+                QuickAction,
+                dict(
+                    id="open_timeline", label="Open Timeline", icon="film",
+                    tooltip="Play the selected shot's sequence in Cinedex, or "
+                            "the sequence you are viewing; with neither, the "
+                            "project's master edit, else every shot",
+                ),
+                dict(primary=True, enabled=ok, disabled_reason=why),
+            )),
             QuickAction(id="save", label="Save", icon="save-all", tooltip="Save current scene"),
             QuickAction(id="publish", label="Publish", icon="send", tooltip="Publish exports"),
             QuickAction(
@@ -869,6 +900,32 @@ class PipelineCatalog(Catalog):
             QuickAction(id="reload", label="Reload", icon="file-input", tooltip="Reload current scene"),
         ]
 
+    #: How long Open Timeline's availability is trusted before Cinedex is
+    #: looked for again (the install can change while Houdini runs).
+    _TIMELINE_CHECK_S = 30.0
+
+    def _timeline_availability(self) -> tuple[bool, str]:
+        """Whether Cinedex can open, and why not. Cached: the bar asks on the
+        GUI thread, so the lookup (a file check) is not repeated per ask; when
+        it changes the bar is asked to draw again."""
+        import time
+        now = time.monotonic()
+        cached = getattr(self, "_timeline_state", None)
+        if cached is not None and now - cached[0] < self._TIMELINE_CHECK_S:
+            return cached[1], cached[2]
+        from tumblepipe.pipe.review_playlist import find_player
+        try:
+            find_player()
+            ok, why = True, ""
+        except (OSError, ValueError) as error:
+            ok, why = False, f"Cinedex cannot open: {error}"
+        self._timeline_state = (now, ok, why)
+        if cached is not None and (cached[1], cached[2]) != (ok, why):
+            refresh = getattr(self, "request_quick_actions_refresh", None)
+            if callable(refresh):
+                refresh()
+        return ok, why
+
     def get_quick_actions_label(self) -> str:
         import hou
         if not hou.hipFile.isNewFile():
@@ -876,7 +933,12 @@ class PipelineCatalog(Catalog):
         return ""
 
     def execute_quick_action(self, action_id: str, done_cb=None) -> None:
-        if action_id == "save":
+        if action_id == "open_timeline":
+            self._ops.open_timeline(
+                self._selected_asset_id, self._session_project_name_safe(), done_cb,
+                self._index.last_query_tags,
+            )
+        elif action_id == "save":
             self._scene.save_current_scene(done_cb)
         elif action_id == "publish":
             self._scene.publish_current_scene(done_cb)
@@ -975,6 +1037,39 @@ class PipelineCatalog(Catalog):
             return False
         return _watch_farm(self).alert
 
+    def get_quick_action_dot(self, action_id: str) -> str:
+        """The dot at the Farm Manager button's foot: ``danger`` while a batch
+        of this session failed and the Jobs popover has not been opened since,
+        ``accent`` while one finished, ``""`` once seen (``farm_jobs``). Read
+        from the farm watcher's thread, never waiting on it; TumbleTrove
+        0.60.0 asks, an older one never does."""
+        if action_id != "farm_manager":
+            return ""
+        return _watch_farm(self).session.dot()
+
+    def get_quick_action_popover(self, action_id: str):
+        """The Jobs popover a click on the Farm Manager button opens:
+        "Finished since you looked", this session's ended batches. A
+        double-click or its Open Jobs link opens the Farm Manager."""
+        if action_id != "farm_manager":
+            return None
+        from . import farm_jobs
+        return farm_jobs.popover(_watch_farm(self).session)
+
+    def quick_action_popover_opened(self, action_id: str) -> None:
+        """Opening the Jobs popover marks every row seen: the dot goes."""
+        if action_id == "farm_manager":
+            _watch_farm(self).session.mark_seen()
+
+    def execute_quick_action_popover_button(
+        self, action_id: str, row_id: str, button_id: str,
+    ) -> None:
+        """A Jobs popover row's Preview in Cinedex or Show in Jobs."""
+        if action_id != "farm_manager":
+            return
+        from . import farm_jobs
+        farm_jobs.run_button(self._scene, _watch_farm(self).session, row_id, button_id)
+
     def cleanup(self) -> None:
         """Browser shutdown: stop counting farm jobs."""
         activity = getattr(self, "_farm_activity", None)
@@ -1003,6 +1098,15 @@ class PipelineCatalog(Catalog):
         the button falls back to its regular QToolTip.
         """
         from tumbletrove.asset_browser.core.hover_html import format_age_html
+
+        if action_id == "open_timeline":
+            # The button cannot be greyed from here (the SDK's quick actions
+            # have no enabled state), so the hover says why a click will fail.
+            # An older TumbleTrove draws the button enabled: say why a
+            # click will fail.
+            import html
+            ok, why = self._timeline_availability()
+            return None if ok else html.escape(why)
 
         if action_id == "save":
             import hou
@@ -1478,7 +1582,11 @@ def _watch_farm(catalog):
     activity = getattr(catalog, "_farm_activity", None)
     if activity is None:
         from tumblepipe.farm.manager.activity import FarmActivity
-        activity = catalog._farm_activity = FarmActivity()
+
+        from .farm_jobs import announcer
+        activity = catalog._farm_activity = FarmActivity(
+            on_finished=announcer(catalog),
+        )
         activity.start()
     activity.touch()
     return activity

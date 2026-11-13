@@ -35,12 +35,14 @@ class TumbleViewError(Exception):
 @dataclass(frozen=True)
 class Look:
     """How the frames look: ``shading`` (specs.playblast.PLAYBLAST_SHADINGS),
-    ``lighting`` (PLAYBLAST_LIGHTINGS), ``cull`` (PLAYBLAST_CULLS), motion
-    blur, depth of field, blur samples, a transparent background, and the
-    GPU (None: the delegate's own default, the CPU under husk)."""
+    ``lighting`` (PLAYBLAST_LIGHTINGS), ``cull`` (PLAYBLAST_CULLS),
+    ``transparency`` (PLAYBLAST_TRANSPARENCIES), motion blur, depth of
+    field, blur samples, a transparent background, and the GPU (None: the
+    delegate's own default, the CPU under husk)."""
     shading: str = 'lit'
     lighting: str = 'scene'
     cull: str = 'off'
+    transparency: str = 'on'
     motion_blur: bool = False
     depth_of_field: bool = False
     blur_samples: int = 16
@@ -114,18 +116,28 @@ def husk_env(fps: float, look: Look) -> dict:
         dict(os.environ), Path(api.PIPELINE_PATH), hou.applicationVersion()[0],
         look.shading, (look.motion_blur, look.depth_of_field, look.blur_samples),
         fps, alpha=look.alpha, lighting=look.lighting, cull=look.cull,
+        transparency=look.transparency,
     )
     if look.gpu is not None:
         env['TH_PLAYBLAST_GPU'] = '1' if look.gpu else '0'
     return env
 
 
-def node_lighting_and_cull(node) -> dict:
+#: A th::playblast node's TumbleView parms and the ``Look`` keywords they
+#: become: Lighting, Backface Culling, Transparency.
+NODE_LOOK_PARMS = (
+    ('viewport_lighting', 'lighting'), ('cull', 'cull'),
+    ('transparency', 'transparency'),
+)
+
+
+def node_look_settings(node) -> dict:
     """The ``Look`` keywords of a th::playblast node's (LOP or SOP)
-    TumbleView Lighting and Culling parms (``viewport_lighting``, ``cull``).
-    A node whose HDA has neither parm keeps the defaults."""
+    TumbleView Lighting, Backface Culling and Transparency parms
+    (``NODE_LOOK_PARMS``). A parm the node's HDA lacks (a scene from before
+    it) keeps the ``Look``'s default."""
     out = {}
-    for parm_name, key in (('viewport_lighting', 'lighting'), ('cull', 'cull')):
+    for parm_name, key in NODE_LOOK_PARMS:
         parm = node.parm(parm_name)
         if parm is not None:
             out[key] = parm.evalAsString()

@@ -207,12 +207,12 @@ department. Note that on an *export* that is what you want, but on an
 *import* it is usually not (you import the department upstream of yours) —
 `th::import_layer` warns about exactly this.
 
-### The Entity button and label
+### The Browse... button and label
 
-The Entity row (labelled Entity, Shot or Asset) has two buttons side by
-side, a green magnifier and **Browse...**, followed by a read-only label.
-Both buttons open the **Select Entity / Select Asset / Select Shot** window,
-which looks like the asset browser:
+The Entity row is a **Browse...** button followed by a read-only label (the
+entity it addresses). It is the first row of the node's Selection section.
+**Browse...** opens the **Select Entity / Select Asset / Select Shot**
+window, which looks like the asset browser:
 
 - a **search box** with the focus: type to filter (`010 sh02` or `010/sh02`
   both work), the arrow keys move through the results, **Enter** picks the
@@ -229,6 +229,17 @@ The label shows what the parm currently resolves to — `from_context: <uri>` wh
 following the workfile, the bare URI when pinned, or `from_context: none`
 when nothing resolves. The URI itself lives in a hidden string parm named
 `entity`, which is what scripts set.
+
+TumblePipe 1.104.0 had a second button on this row, a green magnifier,
+doing the same as **Browse...**; it is gone. Its parm (`entity_select`)
+stays on the nodes, hidden, so scenes saved with it open without warnings.
+A `th::import_shot` placed before 1.104.0 shows **Browse...** at the bottom,
+under Actions, until its next Import (or the import refresh on scene open)
+puts it back on the Entity row.
+
+`th::import_assets` (and `th::import_rigs`) have a **Browse...** per row, which
+re-picks that row; `th::import_assets` also has one above the rows that picks
+several assets at once: see [`th::import_assets`](import-and-export.md#thimport_assets-lop).
 
 ### `effective_primpath`
 

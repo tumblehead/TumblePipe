@@ -121,6 +121,10 @@ struct ThFrame {
     uint32_t lighting;          // 0: the scene's lights when it has any, else
                                 // the fixed camera rig; 1: the rig always
                                 // (th:lighting "headlight")
+    uint32_t opaque;            // nonzero: every mesh drawn opaque, its
+                                // transparency ignored (th:transparency
+                                // "off"); 0: see-through meshes blended
+                                // over the opaque ones, as before
 };
 
 // 0 = ok, 1 = bad arguments, 2 = the core panicked. `cache` may be null; one

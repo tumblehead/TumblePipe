@@ -643,13 +643,14 @@ class SceneManager:
         if dialog is None:
             _settle()
 
-    def open_farm_manager(self, refresh_cb=None) -> None:
-        """Open the Farm Manager: local and farm jobs, their tasks and logs."""
+    def open_farm_manager(self, refresh_cb=None, select: str = "") -> None:
+        """Open the Farm Manager: local and farm jobs, their tasks and logs;
+        with ``select``, that job selected (the Jobs popover's Show in Jobs)."""
         def _open():
             try:
                 import hou
                 from tumblepipe.farm.manager.window import show_manager
-                show_manager(parent=hou.qt.mainWindow())
+                show_manager(parent=hou.qt.mainWindow(), select=select)
             except Exception as exc:
                 report_failure("Opening the Farm Manager", exc)
             finally:

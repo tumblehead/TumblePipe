@@ -380,6 +380,7 @@ worker could take from the same pools.
 | **Shading** | `playblast.shading` | `lit` |
 | **Lighting**: `scene` (the scene's own lights, else the camera lights) / `headlight` (the camera lights always) | `playblast.lighting` | `scene` |
 | **Culling**: `off` / `back` (every mesh's back faces left out) | `playblast.cull` | `off` |
+| **Transparency**: `on` (see-through surfaces show what is behind them) / `off` (every surface drawn solid) | `playblast.transparency` | `on` |
 | **Blur**: Motion blur, Depth of field, blur samples | `playblast.motion_blur` / `playblast.dof` / `playblast.blur_samples` | off, on, 16 |
 | **Light** | `playblast.light` | `dome` |
 | **Samples** | `playblast.samples` | 32 |
@@ -387,7 +388,7 @@ worker could take from the same pools.
 | **Pool** | `farm.default_pool` | `general` |
 | **Priority** | `farm.priority` | 50 |
 
-Shading, Lighting, Culling and Blur apply to TumbleView, Light, Samples and
+Shading, Lighting, Culling, Transparency and Blur apply to TumbleView, Light, Samples and
 Materials to Karma, and only the chosen **Renderer**'s rows show. While
 Renderer is left `⟨per entity⟩` (the shots disagree), both sets show, each
 label naming its renderer (`Shading (viewport)`, `Materials (Karma)`), under
@@ -436,9 +437,9 @@ pixel samples: more is cleaner and slower.
 | **Camera** | — | read-only | The camera the render looks through: the `camera` of the RenderSettings prim in the latest published layer of the strongest department in the **Up to** cut that sets one, else the project's `root_default_prims.usda`. Read from the first checked channel; the tooltip names the department per entity, and `⟨per entity⟩` means the ticked entities disagree. A preview — the farm still asks the composed stage. |
 | **Channels** | — | the entities' own channel lists | A dropdown of checkboxes (`(none — check at least one)` when nothing is checked) with **All**; click it to pick, it takes no typing. Lists the *union* of the rendering entities' channels, `default` first. Opens with the channels *every* rendering entity starts with checked: its own channels, plus `default` only when it has no others or `default` is one of its [render layers](../nodes/lighting-and-rendering.md#render-layers-from-channel_prims-render-passes) (the remainder, under the slapcomp). So a shot split into `heart`, `background` and `bubbles` by export branches does not also render its whole unsplit scene; check `default` to. When the entities share nothing it opens with `default` if one of them renders unsplit, else with nothing checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the review list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
 | **Range** | — | Full range ticked | Two checkboxes. **Full range** renders everything and chains slapcomp + MP4; **Preview (first / middle / last)** renders three check frames and posts them to Discord. Tick both to get the preview first, with the full range queued behind it. One of the two must be ticked. |
-| **Preview frames** | — | empty: first / middle / last | The Preview Frames List, beside **Preview** (enabled while it is ticked). Empty, the preview is the first, middle and last frame of the cut, as before. Otherwise type the frames to preview, separated by spaces, e.g. `1012 1040 1077` for key poses: any number, rendered first and in that order, and posted to Discord (the panorama shows the first 8; the message says how many more were rendered). The rest of the range follows as usual. Whole frame numbers only; a repeat counts once. A frame outside the rendered range (rolls included) or not a number is dropped and named in the [Warnings](#warnings) column (and the submit log); when none is left the preview falls back to first / middle / last, with a warning. One list for the whole submission: the grid has no per-shot settings, so different key poses per shot mean one submission per shot. Not remembered for the next opening. |
+| **Preview frames** | — | empty: first / middle / last | The Preview Frames List, shown under **Range** only while **Preview** is ticked, with a [frame timeline](#frame-timelines) under it. Empty, the preview is the first, middle and last frame of the cut, as before. Otherwise type the frames to preview, separated by spaces, e.g. `1012 1040 1077` for key poses: any number, rendered first and in that order, and posted to Discord (the panorama shows the first 8; the message says how many more were rendered). The rest of the range follows as usual. Whole frame numbers only; a repeat counts once. A frame outside the rendered range (rolls included) or not a number is dropped and named in the [Warnings](#warnings) column (and the submit log); when none is left the preview falls back to first / middle / last, with a warning. One list for the whole submission: the grid has no per-shot settings, so different key poses per shot mean one submission per shot. Not remembered for the next opening. |
 | **Frames** (first → last) | `frame_start` / `frame_end` | *required* — omitted, and the entity fails with "no frame range configured" | |
-| **Frame list** | — | empty: every frame, first → last | Render only some stretches of the shot: ranges and single frames, separated by spaces, e.g. `1001-1030 1040-1055 1100-1200` (commas are taken too). Each must lie inside the rendered range (**Frames** with the rolls). Ranges are sorted, and ranges that overlap or touch merge (`1001-1030 1031-1040` is `1001-1040`); the note under the field shows the frame count. **One range** renders exactly as **Frames** set to it, with no rolls added, and publishes as usual. **Two or more** make a [multi-range render](#multi-range-renders). A word that is not a frame or a range, a range written backwards (`1030-1001`) or one past the shot **blocks** the row (see [Warnings](#warnings)). One list for the whole submission, as the Preview frames list. Hidden on the Assets tab: a turntable renders the studio's frames. Not remembered for the next opening. |
+| **Frame list** | — | empty: every frame, first → last | Render only some stretches of the shot: ranges and single frames, separated by spaces, e.g. `1001-1030 1040-1055 1100-1200` (commas are taken too). A [frame timeline](#frame-timelines) under the field picks them with the mouse. Each must lie inside the rendered range (**Frames** with the rolls). Ranges are sorted, and ranges that overlap or touch merge (`1001-1030 1031-1040` is `1001-1040`); the note under the field shows the frame count. **One range** renders exactly as **Frames** set to it, with no rolls added, and publishes as usual. **Two or more** make a [multi-range render](#multi-range-renders). A word that is not a frame or a range, a range written backwards (`1030-1001`) or one past the shot **blocks** the row (see [Warnings](#warnings)). One list for the whole submission, as the Preview frames list. Hidden on the Assets tab: a turntable renders the studio's frames. Not remembered for the next opening. |
 | **Pre / Post roll** | `roll_start` / `roll_end` | 0 / 0 | **Extends** the rendered range: `first - pre … last + post`. |
 | **Pool** | `farm.default_pool` | `general` | |
 | **Pri / Tiles** | `farm.priority` / `farm.tile_count` | 50 / 4 | Priority orders full renders among themselves and is capped at 70; see [Farm priorities](#farm-priorities). A preview always runs at 80. An entity with a [published slap comp](../nodes/lighting-and-rendering.md#slap-comps) renders only with Tiles 1: husk would run it on each tile, so Submit refuses that entity otherwise. |
@@ -452,6 +453,39 @@ pixel samples: more is cleaner and slower.
 
 There is no step field: a shot's farm render always submits
 `step_size = 1`.
+
+#### Frame timelines
+
+Under the **Frame list** field, and under each **Preview frames** field
+(Render and Comp) while its Preview box is ticked, a one-row timeline shows
+the frames and what the field selects, in the section's colour. The text
+field is what is sent: the timeline writes it, and typing in the field
+redraws the timeline, so the two always agree.
+
+- **Click** a frame to add it, or remove it if it is already selected.
+- **Drag** to add a stretch of frames.
+- **Shift- or Ctrl-drag**, or drag with the **right** button, to remove a
+  stretch (a click with them removes one frame).
+- With the timeline focused (Tab or a click): **Left / Right** move a frame
+  cursor (**Shift**: 10 frames), **Home / End** jump to the ends, **Space**
+  or **Enter** toggles the cursor's frame, **Delete** removes it.
+
+On the Frame list timeline a drag adds a range (ranges that touch merge),
+and an empty list shows every frame filled faintly: removing a stretch from
+it leaves the rest, e.g. right-dragging over 1040-1050 of 1001-1100 writes
+`1001-1039 1051-1100`. On a Preview frames timeline every frame is its own
+mark and new frames go to the end of the list, so the order you click is
+the order they render; an empty list shows the first, middle and last frame
+faintly. A comp's timeline picks only frames on its **Step**. The Render's
+Preview frames timeline hatches the frames a Frame list leaves out (they are
+never rendered).
+
+The timeline shows the rendered range of the ticked shots, rolls included
+(for the comp, its frames). When the ticked shots' ranges differ it shows
+their union and says so under it and in its tooltip; each shot still reads
+the list against its own range, and the [Warnings](#warnings) column names
+what it drops. Text the field cannot read (a word that is not a frame) is
+hatched across, and the timeline leaves it alone until it is fixed.
 
 #### Multi-range renders
 
@@ -623,7 +657,7 @@ dialog's way: a field you leave alone follows each shot.
 | Field | Per-entity source | Default when unset | Notes |
 |---|---|---|---|
 | **Range** | — | off | **Preview frames (first / middle / last)**: comp those three frames first and post them to Discord (`previews`); the full comp waits for them. The node's **Preview Frames**. Beside a render, the preview frames still wait for the whole render. |
-| **Preview frames** | — | empty: first / middle / last | The comp's Preview Frames List, as the Render's (above) and the node's **Preview Frames › List**: frames to comp first, space separated, in that order. Read against the comp's frames on its **Step**: a frame outside them or off the step is dropped with a warning. Without a render beside it, the Warnings column checks against the shot's range and the submit against what the renders on disk cover, so the submit log has the final word. |
+| **Preview frames** | — | empty: first / middle / last | The comp's Preview Frames List, as the Render's (above) and the node's **Preview Frames › List**: shown only while its **Range** box is ticked, with a [frame timeline](#frame-timelines) under it; frames to comp first, space separated, in that order. Read against the comp's frames on its **Step**: a frame outside them or off the step is dropped with a warning. Without a render beside it, the Warnings column checks against the shot's range and the submit against what the renders on disk cover, so the submit log has the final word. |
 | **Frames** | — | `⟨full range⟩` | Left on `⟨full range⟩`, the comp comps every frame of the render ticked beside it (its **Frames** with the rolls), or, ticked alone, the shot's range from the config with its rolls (the node's **From Config**). Type a first and/or last frame to comp from or to it instead (the node's **From Settings**); the other end keeps following. Beside a render the frames must lie inside the render's; past them, or the wrong way round, the row is blocked (see [Warnings](#warnings)). ↺ goes back to `⟨full range⟩`. Not remembered for the next opening. |
 | **Step** | — | 1 | Comp every Nth frame of the range. |
 | **Batch** | — | 5 | Frames per farm task of the comp. With **Run on: This machine** the field reads *one task on this machine*: the local queue runs one task at a time, so the comp runs its whole range as one task (each task costs a few seconds of Houdini start-up). A comp's time limit is 20 minutes per frame, on the farm and here, so the one local task is not stopped halfway. |

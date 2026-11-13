@@ -344,7 +344,7 @@ class ImportAssets(EntityNode):
         if asset_uri not in asset_set:
             raise self._error(
                 f'row {index}: {asset_uri} is not an asset in the project. '
-                "Pick one with the row's Entity button."
+                "Pick one with the row's Browse... button."
             )
         if imported[asset_uri] > 1:
             raise self._error(
@@ -358,7 +358,7 @@ class ImportAssets(EntityNode):
         asset_uri = self.get_entity_uri(index)
         if asset_uri is None:
             raise self._error(
-                f"row {index} has no asset. Pick one with the row's Entity "
+                f"row {index} has no asset. Pick one with the row's Browse... "
                 'button, or remove the row.'
             )
         return asset_uri
@@ -507,6 +507,26 @@ class ImportAssets(EntityNode):
         self.parm(f'version{new_index}').set(version)
         self.parm(f'instances{new_index}').set(instances)
         return new_index
+
+    def add_picked_assets(self, picked) -> str:
+        """Append a row for each of ``picked`` (asset URIs, the picker's
+        order) that no row holds yet; return the status line saying how
+        many were added and skipped. Rows already there are not touched."""
+        from tumblepipe.pipe import entity_picker as ep
+
+        count = self.parm('asset_imports').eval()
+        existing = [self.parm(f'entity{i}').eval() for i in range(1, count + 1)]
+        added, skipped = ep.plan_rows(existing, picked)
+        new_rows = [self.add_asset_entry(Uri.parse(uri)) for uri in added]
+        # The rows are written; their labels (the version 'latest' is now)
+        # read every row once, after all of them exist.
+        with self._rows_read_once():
+            for index in new_rows:
+                self._update_labels(index)
+        message = ep.rows_added_text(len(added), len(skipped))
+        if added:
+            message += ' Press Import to load them.'
+        return f"{self.path().rsplit('/', 1)[-1]}: {message}"
 
     def set_instances(self, index, instances):
         self.parm(f'instances{index}').set(instances)
@@ -724,8 +744,31 @@ def execute(kwargs):
     node = ImportAssets(raw_node)
     node.execute()
 
+def browse(kwargs):
+    """The top Browse... button: pick several assets in the picker and add
+    a row for each. Assets already in a row are skipped; the status line
+    says how many were added and skipped."""
+    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    node = ImportAssets(kwargs['node'])
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter='assets',
+        include_from_context=False,
+        title="Add Assets",
+        parent=hou.qt.mainWindow(),
+        multi_select=True,
+    )
+    if not dialog.exec_():
+        return
+    # One undo step for all the rows added.
+    with hou.undos.group(f'Add assets to {node.path()}'):
+        message = node.add_picked_assets(dialog.get_selected_uris())
+    hou.ui.setStatusMessage(message, severity=hou.severityType.Message)
+
+
 def select(kwargs):
-    """A row's Entity button: pick that row's asset."""
+    """A row's Browse... button: pick that row's asset."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
 
     index = kwargs['parm'].multiParmInstanceIndices()[0]

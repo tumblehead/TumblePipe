@@ -43,6 +43,7 @@ name, and the title, gain a `*` while there are edits not applied.
 | **Length** | both | Frames from start to end. Typing a length moves the end frame. |
 | **Pre-roll**, **Post-roll** | both | `roll_start`, `roll_end`: frames added before the start and after the end when rendering. |
 | **FPS** | both | `fps`. Whole numbers are kept whole; `23.976` is fine. |
+| **Render** | Shots | Which render settings the shot (or, on its row, the sequence) sets itself, a word each: `res, samples, dof`. Empty: it inherits them all. Bold when it sets any, tinted while a change waits for Apply; the tooltip lists each with its value. Not typed into: select the row and change them in [Render settings](#render-settings). |
 | **Animatable** | Assets | `animatable`, as a tick box. Typing `yes` or `no` works too. A shot's copies of an animatable asset, or of one with a rig published, are plain references rather than USD instances, so each copy can carry its own animation. An unticked asset with a rig reads **No, rigged**: its copies already animate, and ticking it also makes its own exports write every frame instead of the first. Copy leaves the note out. The import nodes stamp the answer (ticked, or a rig published) on the asset's prims as `animatable`, which Import Rigs' **Discover** reads ([`th::import_rigs`](../nodes/assets.md#thimport_rigs-sop)); a change shows up on a prim when its import node imports again. |
 | **Root** | Shots | The shot's [Root](multis-and-roots.md), picked from a dropdown. **Inherit** puts it back to the sequence's, set on the [sequence's row](#sequence-and-category-rows). |
 | **Multis** | both | The Multis the entity belongs to. Double-click to change them; see [Multis](#multis). |
@@ -50,8 +51,24 @@ name, and the title, gain a `*` while there are edits not applied.
 | **Departments off** | Shots | The departments turned off on the shot (`disabled_departments`): `effects, cfx`. Empty means every department of the pool is on. Double-click to tick them; see [Departments turned off on a shot](#departments-turned-off-on-a-shot). |
 | **Assets** | Shots | What the shot imports: its Root's assets, then the Root's parents'. Empty for a shot with no Root. See [Which assets a shot imports](#which-assets-a-shot-imports). |
 
-The dropdown above the sheet shows one category or sequence, or all of
-them. **Filter** narrows the rows to names that contain the text.
+One row across the top holds the tabs, then the tab's dropdown (one
+category or sequence, or all of them) and **Filter** (rows whose names
+contain the text), then **Reload** and **Details**, as the asset browser
+lays them out.
+
+**Columns.** Drag a column's header to move it, and right-click any header
+for a tick per column to show or hide it, and **Reset Columns** (every
+column back, in its first order and width). The category or sequence and
+the name always stay first and shown. Copy and a pasted block follow the
+columns as you arranged them, hidden ones left out. Each tab keeps its own
+arrangement, and the editor remembers it, with the side panel's width and
+whether Details is on, for the next time it opens.
+
+**Side panel.** On the Shots tab, [Render settings](#render-settings) sit
+right of the table; on the Multis tab, the selected Multi's workfiles. Drag
+the edge between table and panel to make either wider; **Details** hides
+the panel (and shows it again) so the table takes the whole width. The
+Assets tab has no side panel.
 
 The first two columns (the category or sequence, and the name) stay in view
 while the others scroll sideways. **Shift+wheel** scrolls a table sideways,
@@ -87,7 +104,8 @@ shots.
 
 Values read the way the Database Editor shows them. An entity inherits
 every value it does not set itself, from its category or sequence, then
-**Assets** or **Shots**, then the project, then the project's defaults.
+**Assets** or **Shots**, then the project, then the pipeline defaults (the
+project's `schemas.json`).
 
 - **Grey** values are inherited. The tooltip says where from (*"5,
   inherited from sequence sq010"*).
@@ -234,59 +252,86 @@ Apply writes the list, in pool order, to the shot's own
 
 ## Render settings
 
-Below the Shots table, the **Render settings** section shows the render
-settings a shot's root layer applies, and changes them without the Database
-Editor. It edits what is selected:
+Right of the Shots table, in the side panel, **Render settings** shows the
+render settings a shot's root layer applies, and changes them without the
+Database Editor. It edits what is selected:
 
 - **shots** (one or more rows): the shots themselves;
 - **a sequence's row**: what its shots inherit;
-- **Project defaults** (the button at its right, pressed): all shots
-  (`entity:/shots`), what every sequence and shot inherits.
+- **All shots** (the button at its top, pressed): all shots
+  (`entity:/shots`), what every sequence and shot inherits unless it sets
+  its own.
 
-With nothing selected and Project defaults not pressed, it asks for a
-selection. The settings are exactly the ones the root layer applies
-([Configuration → render settings](../configuration.md#render-settings-in-the-root-layer)):
+With nothing selected and All shots not pressed, it asks for a selection.
+The **Render** column of the Shots table shows, without clicking, which
+shots and sequences set any of these themselves.
 
-| Setting | What it does |
-| --- | --- |
-| **Apply to render** | Whether the shot's root layer authors the two below, and the Karma samples and ray limits pinned in the Database Editor, on the project's RenderSettings prim (`render.apply_config`). Off, or not set anywhere: renders use the RenderSettings the scene carries. |
-| **Resolution** | Width x height, typed as `1920x1080` or `1920 x 1080` (`render.resolution`). It also sizes the layout camera's frame and playblasts, applied to the render or not. |
-| **Camera** | The camera prim the render looks through, e.g. `/cameras/render_camera` (`render.camera`). Authored only when that camera exists in the project's `root_default_prims.usda`; otherwise the scene's camera renders. |
+**Levels.** A shot takes each setting from the first of these that sets
+it, and the panel uses the same names everywhere:
 
-Each setting shows its value and, beside it, where it comes from: *set
+1. the shot,
+2. its sequence,
+3. **all shots** (`entity:/shots`),
+4. **the project** (`entity:/`),
+5. **the pipeline defaults** (the project's `schemas.json`).
+
+All shots is the weakest level the panel edits, and it still inherits:
+from the project, then the pipeline defaults. That is what its **Inherit**
+falls back to.
+
+The settings are the ones the root layer applies
+([Configuration → render settings](../configuration.md#render-settings-in-the-root-layer)),
+in four groups:
+
+| Group | Setting | What it does |
+| --- | --- | --- |
+| Image | **Apply to render** | Whether the shot's root layer authors the settings below on the project's RenderSettings prim (`render.apply_config`). Off, or not set anywhere: renders use the RenderSettings the scene carries. |
+| Image | **Resolution** | Width and height, two whole-number fields as on the usdrender ROP (`render.resolution`). **Presets** picks the project's resolution (first), HD 1080, HD 720, UHD 4K, 2K DCI, 2K Scope or Square 1080. It also sizes the layout camera's frame and playblasts, applied to the render or not. |
+| Image | **Camera** | The camera prim the render looks through, e.g. `/cameras/render_camera` (`render.camera`). Authored only when that camera exists in the project's `root_default_prims.usda`; otherwise the scene's camera renders. |
+| Quality | **Samples** | Karma's path traced samples (`render.pathtracedsamples`), a whole number above 0. |
+| Quality | **Dicing quality** | Karma's dicing quality scale (`render.dicingqualityscale`). |
+| Ray limits | **Diffuse**, **Reflection**, **Refraction**, **Volume**, **SSS limit** | Karma's bounce limits (`render.diffuselimit`, ...), numbers of 0 or more. |
+| Effects | **Depth of field**, **Motion blur** | On or off (`render.enabledof`, `render.enablemblur`). |
+
+Each setting shows its value and, under it, where it comes from: *set
 here*, *from sequence sq010*, *from all shots*, *from the project*, *from
-the project's defaults*, or *not set anywhere*. Inherited values are grey,
-as in the sheet. Several selected shots that differ show *(mixed)* (Apply
-to render a half-ticked box) and *differs between them*.
+the pipeline defaults*, or *not set anywhere*. Inherited values are grey, as
+in the sheet. Several selected shots that differ show *(mixed)* (Apply to
+render a half-ticked box) and *differs between them*.
 
-- **Type or tick** to set a value on every target. Typing what a target
-  already inherits pins nothing, as in the sheet. A value the root layer
-  could not use (`0 x 5`, a camera without a leading `/`) is refused, and
-  the footer says why.
-- **Inherit** takes the value set here away, so the target follows its
-  sequence, all shots or the project again. Clearing a field does the same.
+A Karma setting (samples, dicing, ray limits, depth of field, motion blur)
+that only the pipeline defaults hold shows as *not set: the project's
+render defaults decide*: the root layer does not author it, and the
+project's `root_default_prims.usda` supplies it, as it always did. Typing a
+value there sets it, even the same number the pipeline defaults hold.
+
+- **Change** a field (type and press Enter, step it, tick, pick On or Off,
+  or pick a preset) to set it on every target. Typing what a target already
+  inherits pins nothing, as in the sheet. A value the root layer could not
+  use (a camera without a leading `/`) is refused, and the footer says why.
+- **Inherit** takes the value set here away, so the target follows the
+  levels below it again (its tooltip names them). Emptying a field, or
+  picking *not set* / *Inherit* in an On/Off list, does the same.
 - The line under the settings says what the shot renders with: *"The root
   layer renders at 2048 x 858 and through /cameras/render_camera when
-  root_default_prims.usda has that camera."*, or *"Not applied: renders use
-  the RenderSettings in the scene."* For a sequence or all shots it is what
-  a shot that inherits all three gets.
+  root_default_prims.usda has that camera. It also sets samples 128."*, or
+  *"Not applied: renders use the RenderSettings in the scene."* For a
+  sequence or all shots it is what a shot that inherits all of them gets.
 
 The edits are pending like the sheet's (tinted, counted in the footer as
-*all shots render defaults changed*, *1 sequence changed*, *2 shots
+*all shots render settings changed*, *1 sequence changed*, *2 shots
 changed*, undone with Undo) and written by Apply, which writes only the one
-key of `render` each setting is, leaving the rest of `render` (samples,
-overscan, ...) as stored. A changed setting makes the shot's root layer
-stale; Apply's staging brings it up to date (a shot with a Root gets a new
-root layer at once; any other at its next build).
+key of `render` each setting is, leaving the rest of `render` (overscan,
+...) as stored. A changed setting makes the shot's root layer stale;
+Apply's staging brings it up to date (a shot with a Root gets a new root
+layer at once; any other at its next build).
 
-**Order.** A shot takes each setting from the first of: the shot, its
-sequence, all shots, the project (`entity:/`), the project's defaults
-(`schemas.json`). A [Farm Submit](submit-jobs.md) override (samples, motion
-blur, depth of field, ray limits) is a separate, stronger layer on the
-same RenderSettings prim: it wins for that one submission, and changes
-nothing here. Farm Submit has no render resolution or camera override, so
-for those two the order ends at the shot (its playblast width and height
-start from the shot's resolution).
+A department's render settings node and a [Farm Submit](submit-jobs.md)
+override (samples, motion blur, depth of field, ray limits) are separate,
+stronger layers on the same RenderSettings prim: they win (Farm Submit for
+that one submission), and change nothing here. Farm Submit has no render
+resolution or camera override, so for those two the order ends at the shot
+(its playblast width and height start from the shot's resolution).
 
 ## Multis
 
@@ -327,7 +372,7 @@ Assets or Shots tab. **Retire**, **Revert**, **Undo** and **Redo** work as on
 the other tabs. The Multis tab shares its kind's undo history: an undo on
 the Shots tab can undo a shot Multi's edit, and the other way round.
 
-**Workfiles.** Under the table, **Workfiles of *name*** lists the selected
+**Workfiles.** In the side panel right of the table, **Workfiles of *name*** lists the selected
 Multi's workfile in each department it covers: its latest version and
 **Open**, or *none* and **New from Template**, which makes the first version
 from the department template with a graph per member. Either replaces the

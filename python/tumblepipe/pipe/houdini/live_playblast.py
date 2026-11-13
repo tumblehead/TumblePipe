@@ -290,7 +290,8 @@ def start(native) -> live.LiveRun | None:
         wrapper_path, folder / live.FRAME_PATTERN, plan.res, order
     )
     env = tumbleview.husk_env(plan.fps, tumbleview.Look(
-        gpu=True, lighting=plan.lighting, cull=plan.cull))
+        gpu=True, lighting=plan.lighting, cull=plan.cull,
+        transparency=plan.transparency))
     info = live_info(plan, get_user_name(), hou.hipFile.path())
     try:
         run = live.start(folder, command, env, order, info,

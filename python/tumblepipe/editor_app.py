@@ -17,24 +17,35 @@ import argparse
 import os
 import subprocess
 import sys
+from pathlib import Path
 
-from tumblepipe.pipe.review_playlist import find_player, project_ocio
+from tumblepipe.pipe.review_playlist import edit_arguments, find_player, project_ocio, timeline_arguments
+from tumblepipe.util.uri import Uri
 
 
-def editor_command(player: str, project: str, ocio: str, edit: str | None = None) -> list[str]:
+def editor_command(player: Path, project: str, ocio: str, edit: str | None = None, master: str | None = None) -> list[str]:
     """The command line that opens the editor on ``project``: ``edit``
-    (``entity:/edits/<name>[@vNNNN]``) when given, else an untitled edit
-    of every shot of the project."""
-    command = [player, '--project', project, '--ocio', ocio]
+    (``entity:/edits/<name>[@vNNNN]``) when given, else what the asset
+    browser's Open Timeline opens with nothing selected
+    (``review_playlist.timeline_arguments``): the master edit ``master``
+    (its name), else every shot of the project."""
     if edit:
-        command += ['--edit', edit]
-    return command
+        return edit_arguments(player, project, ocio, Uri.parse(edit))
+    return timeline_arguments(player, project, ocio, [], master)
 
 
-def default_edit(master: str | None) -> str | None:
-    """The edit opened when none is named: the master edit ``master`` (its
-    name; None when the project has none, which opens every shot)."""
-    return None if master is None else f'entity:/edits/{master}'
+def report(message: str) -> None:
+    """Tell the artist what failed: a dialog (a Scripts-panel run has no
+    console they watch), and stderr for the Desktop's log. A missing
+    PySide leaves the log line alone."""
+    print(message, file=sys.stderr)
+    try:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        app = QApplication.instance() or QApplication(sys.argv[:1])
+        QMessageBox.critical(None, 'Open Cinedex', message)
+        del app
+    except Exception:  # no PySide / no display: the stderr line stands
+        pass
 
 
 def _master_edit() -> str | None:
@@ -54,13 +65,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     project = os.environ.get('TH_PROJECT_PATH', '').strip()
     if not project:
-        print('$TH_PROJECT_PATH is not set: run this from the TumbleTrove Desktop Scripts panel', file=sys.stderr)
+        report('$TH_PROJECT_PATH is not set: run Open Cinedex from the project\'s menu in TumbleTrove Desktop')
         return 2
-    edit = args.edit or default_edit(_master_edit())
     try:
-        command = editor_command(str(find_player()), project, project_ocio(), edit)
+        command = editor_command(find_player(), project, project_ocio(), args.edit, _master_edit())
     except (OSError, ValueError) as error:
-        print(error, file=sys.stderr)
+        report(str(error))
         return 2
     return subprocess.call(command, stdin=subprocess.DEVNULL)
 

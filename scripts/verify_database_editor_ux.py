@@ -51,7 +51,7 @@ from PySide6.QtWidgets import QApplication, QLineEdit, QVBoxLayout, QWidget
 from tumblepipe.config_editor.database_uri_view import (
     DatabaseUriView,
     EntityOpUpdate,
-    UriChangeEntity,
+    EntityChange,
 )
 from tumblepipe.config_editor.json_editor.items import (
     FieldOrigin,
@@ -276,9 +276,9 @@ def run_uri_cases(app):
     QTest.keyClick(editor, Qt.Key_Return)
     app.processEvents()
     renames = [
-        change.change.op for change in changes
-        if isinstance(change, UriChangeEntity)
-        and isinstance(change.change.op, EntityOpUpdate)
+        change.op for change in changes
+        if isinstance(change, EntityChange)
+        and isinstance(change.op, EntityOpUpdate)
     ]
     items = _char_item(view)._items
     check("N enter rename: single change, registry rekeyed",

@@ -124,6 +124,23 @@ def sequence_shots(entity_uris, sequence: str) -> list:
     )
 
 
+def timeline_sequence(selected_uri, view_tags) -> str | None:
+    """The sequence Open Timeline plays: the selected card's when it is a
+    shot (``entity:/shots/<sequence>/<shot>``), else the sequence the view
+    is narrowed to (its ``sequence:<name>`` tag, a sequence's sidebar row),
+    else ``None`` (the master edit, else every shot)."""
+    if (
+        selected_uri is not None and len(selected_uri.segments) == 3
+        and selected_uri.segments[0] == "shots"
+    ):
+        return selected_uri.segments[1]
+    return next(
+        (t.partition(":")[2] for t in view_tags or ()
+         if t.startswith("sequence:") and t.partition(":")[2]),
+        None,
+    )
+
+
 def creation_scope(tags) -> str:
     """What a browser scope creates: ``assets``, ``shots``, ``group``,
     ``scene``, ``recipes``, ``nodes`` (which creates nothing: nodes ship
@@ -267,7 +284,7 @@ class EntityOps:
             # it): play its shots in the editor (#26). An action, not a
             # creation, so it leads the list.
             if any(t.startswith("sequence:") for t in tags):
-                options.insert(0, CreationOption(PLAY_SEQUENCE, "Play Sequence", "play"))
+                options.insert(0, CreationOption(PLAY_SEQUENCE, "Play in Cinedex", "play"))
             return options
         # Unscoped (a project's own row, the catalog's root): New Edit...
         # too, or a project's first edit (the Edits section is there only
@@ -899,6 +916,14 @@ class EntityOps:
 
             self._workfiles.new_group_from_template(multi_id(uri), department, made)
 
+        def load_layout() -> dict:
+            from .prefs import load_prefs
+            return load_prefs().entity_editor
+
+        def save_layout(data: dict) -> None:
+            from .prefs import update_prefs
+            update_prefs(entity_editor=data)
+
         window = EntityEditorWindow(
             EntityEditorSource(
                 project=project_name, config=client.config,
@@ -918,6 +943,8 @@ class EntityOps:
                 count_prims=on_project(count_prims),
                 overlaps=on_project(self._overlaps),
                 repack=on_project(self.repack_timeline),
+                load_layout=load_layout,
+                save_layout=save_layout,
             ),
             parent=hou.qt.mainWindow(),
             kind=kind,
@@ -1544,7 +1571,7 @@ class EntityOps:
 
     def play_sequence(self, project_name: str, sequence: str) -> None:
         """Open every shot of *sequence* in the editor, in name order (the
-        sequence row's Play Sequence, #26). A sequence with no shot says so."""
+        sequence row's Play in Cinedex, #26). A sequence with no shot says so."""
         from tumblepipe.pipe import review_playlist
 
         proj = self._registry.get(project_name)
@@ -1552,10 +1579,7 @@ class EntityOps:
             raise ValueError(f"{project_name} is not a registered project")
 
         def _work() -> int:
-            client = self._clients.get(project_name)  # it blocks
-            shots = sequence_shots(
-                client.config.list_entity_uris(None, closure=True), sequence,
-            )
+            shots = self._sequence_shots(project_name, sequence)
             if shots:
                 self._activator.activate(proj)
                 review_playlist.play_shots(shots)
@@ -1570,6 +1594,88 @@ class EntityOps:
                 )
 
         run_in_background("Play Sequence", _work, _done)
+
+    def _sequence_shots(self, project_name: str, sequence: str) -> list:
+        """The shots of *sequence* in *project_name*, in name order: what
+        Play in Cinedex on a sequence and Open Timeline play. Blocks while
+        the project's Client builds."""
+        client = self._clients.get(project_name)
+        return sequence_shots(
+            client.config.list_entity_uris(None, closure=True), sequence,
+        )
+
+    def open_timeline(
+        self, selected_id: str | None, session_project: str | None,
+        done_cb: Callable[[], None] | None = None,
+        view_tags=frozenset(),
+    ) -> None:
+        """The toolbar's Open Timeline: play a whole sequence in the editor,
+        the sequence of the shot the browser has selected (its pane's card),
+        else the sequence the view is narrowed to (*view_tags*, a sequence's
+        sidebar row), with exactly the shots the sequence's Play in Cinedex
+        plays (``timeline_sequence``, ``_sequence_shots``); with neither,
+        the project's master edit, else every shot of the project
+        (``pipe.review_playlist.timeline_arguments``). The project is the
+        selected card's, else the view's, else the open scene's, else the
+        only registered one. The outcome goes to Houdini's status line, a
+        failure too (no message box, the button has no other place to say
+        it)."""
+        from tumblepipe.pipe import review_playlist
+
+        def _say(text: str, error: bool = False, warning: bool = False) -> None:
+            def _show() -> None:
+                import hou
+                hou.ui.setStatusMessage(
+                    text,
+                    severity=hou.severityType.Error if error
+                    else hou.severityType.Warning if warning
+                    else hou.severityType.Message,
+                )
+            run_on_main_thread(_show)
+
+        def _work() -> None:
+            try:
+                proj = None if selected_id is None else self._resolver.project_for(selected_id)
+                uri = None if proj is None else self._resolver.uri_for_ready(selected_id)
+                if proj is None:
+                    view_project = next(
+                        (t.partition(":")[2] for t in view_tags or ()
+                         if t.startswith("project:")), "",
+                    )
+                    proj = self._registry.get(view_project) if view_project else None
+                if proj is None and session_project:
+                    proj = self._registry.get(session_project)
+                if proj is None:
+                    every = list(self._registry.all())
+                    if len(every) != 1:
+                        raise ValueError(
+                            "select a shot or open a scene to say which project"
+                        )
+                    proj = every[0]
+                self._clients.get(proj.name)  # it blocks: the Client builds
+                sequence = timeline_sequence(uri, view_tags)
+                shots: list = []
+                if sequence is not None:
+                    shots = self._sequence_shots(proj.name, sequence)
+                    if not shots:
+                        # As the sequence's own Play in Cinedex says it.
+                        _say(f"Sequence {sequence} has no shots to play", warning=True)
+                        return
+                self._activator.activate(proj)
+                review_playlist.open_timeline(shots)
+                _say(
+                    f"Opened Cinedex on sequence {sequence}" if shots
+                    else "Opened Cinedex on the project's timeline"
+                )
+            except Exception as exc:  # noqa: BLE001 - reported on the status line
+                log.exception("Open Timeline failed")
+                _say(f"Open Timeline failed: {exc}", error=True)
+            finally:
+                if callable(done_cb):
+                    run_on_main_thread(done_cb)
+
+        import threading
+        threading.Thread(target=_work, name="th-bg: Open Timeline", daemon=True).start()
 
     # ── Edits (see edits.py) ─────────────────────────────
 

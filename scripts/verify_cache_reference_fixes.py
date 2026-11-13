@@ -274,7 +274,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Exit 1 on a failure: preflight's qt stage reads the exit status.
+    raise SystemExit(0 if main()["passed"] else 1)
 else:
     # When fed to sessions_exec_python the trailing expression is captured.
     _result = main()

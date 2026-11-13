@@ -39,13 +39,15 @@ def viewport_args() -> list[str]:
 def viewport_env(env: dict, pipeline_path: Path, houdini_major: int,
                  shading: str = 'lit', blur: tuple[bool, bool, int] = (False, False, 16),
                  fps: int = 24, alpha: bool = False, lighting: str = 'scene',
-                 cull: str = 'off') -> dict:
+                 cull: str = 'off', transparency: str = 'on') -> dict:
     """``env`` with the viewport delegate registered for USD, ahead of the
     resolver, and told how to shade (``specs.playblast.PLAYBLAST_SHADINGS``)
     and blur (``specs.playblast.look_blur``: motion blur, depth of field,
     blur samples) at the shot's ``fps``, what lights it (``lighting``,
     ``specs.playblast.PLAYBLAST_LIGHTINGS``), which faces it culls
-    (``cull``, ``specs.playblast.PLAYBLAST_CULLS``), and whether to leave the background
+    (``cull``, ``specs.playblast.PLAYBLAST_CULLS``), whether see-through
+    surfaces show what is behind them (``transparency``,
+    ``specs.playblast.PLAYBLAST_TRANSPARENCIES``), and whether to leave the background
     transparent (``alpha``): no grey backdrop, the colour premultiplied by
     coverage and alpha the coverage. husk writes that to an EXR as it is,
     premultiplied linear; to a PNG as straight alpha in display space (the
@@ -71,6 +73,7 @@ def viewport_env(env: dict, pipeline_path: Path, houdini_major: int,
         'TH_PLAYBLAST_SHADING': shading,
         'TH_PLAYBLAST_LIGHTING': lighting,
         'TH_PLAYBLAST_CULL': cull,
+        'TH_PLAYBLAST_TRANSPARENCY': transparency,
         'TH_PLAYBLAST_MOTION_BLUR': '1' if motion_blur else '0',
         'TH_PLAYBLAST_DOF': '1' if dof else '0',
         'TH_PLAYBLAST_BLUR_SAMPLES': str(blur_samples),

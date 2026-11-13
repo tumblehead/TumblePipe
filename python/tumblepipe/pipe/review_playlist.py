@@ -409,6 +409,36 @@ def open_edit(edit_uri: Uri, version: str | None = None) -> None:
     player = find_player()
     _start(player, edit_arguments(player, _current_project(), project_ocio(), edit_uri, version))
 
+def project_arguments(player: Path, project: str, ocio: str) -> list[str]:
+    """The command line that opens the editor on ``project`` with no edit
+    named: an untitled edit of every shot (what ``editor_app`` starts)."""
+    return [str(player), '--project', project, '--ocio', ocio]
+
+def timeline_arguments(
+    player: Path, project: str, ocio: str, shots: list[Uri], master: str | None,
+) -> list[str]:
+    """The command line of the asset browser's Open Timeline: the ``shots``
+    when any are given (an untitled edit of them, as Play), else the master
+    edit ``master`` (its name), else every shot of the project."""
+    if shots:
+        return editor_arguments(player, project, ocio, shots)
+    if master is not None:
+        return edit_arguments(player, project, ocio, Uri.parse(f'entity:/edits/{master}'))
+    return project_arguments(player, project, ocio)
+
+def open_timeline(shots: list[Uri]) -> None:
+    """Start the editor as Open Timeline does (``timeline_arguments``) on
+    the current project (``$TH_PROJECT_PATH``). Raises when there is no
+    player, no OCIO config or no project."""
+    player = find_player()
+    ocio = project_ocio()
+    project = _current_project()
+    master = None
+    if not shots:
+        from tumblepipe.pipe.edits import master_edit
+        master = master_edit()
+    _start(player, timeline_arguments(player, project, ocio, shots, master))
+
 def view_arguments(player: Path, project: str, ocio: str, edit_uri: Uri, shot: str, frame: int | None) -> list[str]:
     """The command line that opens the edit ``edit_uri`` showing ``shot``
     as Live view does: its clip looping with the shots around it, the

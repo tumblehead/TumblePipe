@@ -308,19 +308,19 @@ build. See
 #### Render settings in the root layer
 
 Those three keys of `render` (and the Karma settings below) are what config reaches a
-render with, and the Entity Editor edits the three without the Database Editor:
-the Shots tab's **Render settings** section, for the selected shots, a
-sequence's row, or **Project defaults**
+render with, and the Entity Editor edits all of them without the Database Editor:
+the Shots tab's **Render settings** panel, for the selected shots, a
+sequence's row, or **All shots**
 ([The Entity Editor → Render settings](asset-browser/entity-editor.md#render-settings)).
 Each key is inherited on its own, as `get_properties` merges `render` key
 by key; a shot takes each from the first level that holds it:
 
 1. the shot,
 2. its sequence,
-3. all shots (`entity:/shots`; the section's **Project defaults**, where the
+3. all shots (`entity:/shots`; the panel's **All shots** button, where the
    template keeps the resolution),
 4. the project (`entity:/`, where `set_project_render_camera` writes),
-5. the project's defaults (`schemas.json`, `entity` → `render`).
+5. the pipeline defaults (`schemas.json`, `entity` → `render`).
 
 With `apply_config` on, the root layer also authors these Karma settings,
 under the attribute names Houdini 22.0's Karma Render Settings LOP authors
@@ -341,13 +341,13 @@ under the attribute names Houdini 22.0's Karma Render Settings LOP authors
 Each is authored only when one of levels 1-4 above pins it, and only when
 the value has the attribute's type (samples a whole number above 0; limits
 and quality a number not below 0; the two toggles true or false). A key
-only the project's defaults (level 5) hold is **not** authored: the
+only the pipeline defaults (level 5) hold is **not** authored: the
 project's `root_default_prims.usda` keeps supplying it, as it always did, so
 a project that pins none of them renders exactly as before. The rest of
 `render` (`overscan`, `usedicingcamera`, `dicingframe`,
 `dicingfocallength`, `enabledenoising`) is not authored on the stage. The
-Entity Editor offers only the first three keys; edit the Karma settings in
-the Database Editor.
+Entity Editor shows a Karma setting only the pipeline defaults hold as *not
+set*, and typing that same value there pins it.
 
 **Known gap, existing projects.** The shipped `schemas.json` said
 `pathtracedsamples` 64 and `diffuselimit` 2, where the template's

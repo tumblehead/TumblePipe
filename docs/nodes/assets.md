@@ -383,7 +383,7 @@ character is found with the box off and a prop needs the box and a rig.
 
 | Label | Default | What it does |
 |---|---|---|
-| *(Entity button)* + label | *(empty)* | The row's asset. No `from_context` here. The picker lists every asset; an asset another row already imports is not refused there, but the row then errors ("already imported by another row"): remove one row or raise its Instances |
+| **Browse...** + label | *(empty)* | The row's asset: **Browse...** re-picks it. No `from_context` here. The picker lists every asset; an asset another row already imports is not refused there, but the row then errors ("already imported by another row"): remove one row or raise its Instances |
 | Channel | `default` | Per row; an invalid value snaps to the first channel |
 | Version | `latest` | Per row, `latest` or `v####`; the label shows what resolved |
 | Instances | `1` | Copies of that rig (1–10) |

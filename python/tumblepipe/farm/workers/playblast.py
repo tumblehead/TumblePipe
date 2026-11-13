@@ -201,12 +201,15 @@ def main(
             blur = playblast_spec.look_blur(look)
             lighting = playblast_spec.look_lighting(look)
             cull = playblast_spec.look_cull(look)
+            transparency = playblast_spec.look_transparency(look)
             print(f'Shading: {shading}')
             print(f'Lighting: {lighting}')
             print(f'Culling: {cull}')
+            print(f'Transparency: {transparency}')
             print('Blur: motion {}, depth of field {}, {} samples'.format(*blur))
             env = viewport_env(env, Path(api.PIPELINE_PATH), houdini_major, shading,
-                               blur, fps, lighting=lighting, cull=cull)
+                               blur, fps, lighting=lighting, cull=cull,
+                               transparency=transparency)
         renderer_args = husk_renderer_args(look)
         # husk can exit 0 having written nothing ("All AOVs bypassed"), and
         # non-zero having written part of the range: render_problem checks

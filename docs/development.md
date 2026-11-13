@@ -113,7 +113,7 @@ thumbnails during their v0.28.1 refactor. `delete_bucket`,
 `list_root_assigned_shots` and `rebuild_root_assigned_shots` were called
 but undeclared, two of them behind `hasattr` probes that convert a
 drifted name into a no-op by design; they are declared on their base
-class as of tumbletrove 4292713, unreleased at the time of writing.
+class since tumbletrove 0.29.0.
 Worst, `_entity_uri_for` and `_project_for_asset_id` left this catalog
 in the 2026-05-26 DropRouter and AssetResolver extractions while their
 deck-item drop path went on calling them, so dragging a department deck
@@ -172,8 +172,15 @@ to a linted one. `git commit --no-verify` bypasses it for a single commit.
 No hook runs the tests: a pre-push hook used to, and it was removed because
 it ran on every push, branch deletions included, and blocked pushes whenever
 the shell lacked the test environment. Run the preflight below (its `tests`
-stage is the minigun property suite, `rust` the Rust crates' own tests, and
-`hdas` the binary-HDA check) before pushing work.
+stage is the minigun property suite, `rust` the Rust crates' own tests,
+`hdas` the binary-HDA check, `qt` the Qt widget harnesses offscreen, and
+`hython` the Houdini-side harnesses under hython) before pushing work. Work
+that touches a window or dialog (anything under `asset_browser/`,
+`config_editor/`, `farm/manager/` or `pipe/houdini/ui/`) needs at least
+`preflight.py --only qt`, about 25 seconds. Work that touches an HDA
+(`otls/`) or anything Houdini-side (`pipe/houdini/`, the templates, an HDA's
+Python) needs `preflight.py --only hython` too, about 75 seconds with a
+Houdini licence. `--only` takes several stages: `--only lint qt hython`.
 
 The minigun suite runs no crate's `cargo test`, so a green suite says
 nothing about the wizard, the resolver, the delegate or the player. Work
@@ -193,7 +200,7 @@ uv run --no-project python .ci/preflight.py
 ```
 
 Stages: `lint` (ruff E9,F), `hdas`, `hdapy`, `hdapaths`, `reports`, `tests`,
-`rust`, `delegate`, `harness`.
+`rust`, `delegate`, `harness`, `qt`, `hython`.
 
 `rust` runs `cargo test --locked` in `src/resolver`, `src/wizard` and
 `src/delegate` (on Windows inside vcvars64's environment), then
@@ -208,7 +215,7 @@ is the local half of `.ci/test.sh`, which the CI workers run on a manual
 `delegate` builds the playblast delegate (`.ci/build_delegate.py`, into
 `plugins/houdini<major>/`) and renders `.ci/smoke_delegate.py`'s stages
 through it with husk: culling (left-handed, mirrored and subdivided meshes
-included), subdivision, lights, motion, curves and points, on the CPU and,
+included), the transparency switch, subdivision, lights, motion, curves and points, on the CPU and,
 on Windows, the GPU. The C++ shim compiles only against a real Houdini and
 no `cargo test` reaches it, so work that touches `src/delegate/` needs
 `preflight.py --only delegate` too. Majors come from `$HPM_HOUDINI_MAJORS`,
@@ -236,7 +243,16 @@ that name an entity, and the `th_temp` root; `op:/`, `opdef:`, `$HIP` and
 `$HFS` forms pass. Findings that need an asset change rather than a string
 edit (the paint COPs' textures) sit in `KNOWN_OPEN` and are printed
 without failing the gate.
-`--list` prints them, `--only <stage>` runs one.
+`--list` prints them, `--only <stage> [<stage> ...]` runs those.
+
+Every `scripts/verify_*.py` is in exactly one list in `.ci/preflight.py`:
+`HEADLESS_HARNESSES` (the `harness` stage), `QT_HARNESSES` (`qt`),
+`HYTHON_HARNESSES` (`hython`) or `EXCLUDED`, which says why no stage runs
+it (a live Houdini session, arguments naming a live project, a live
+project's published asset, real shots). `tests/test_qt_harness_lists.py`
+fails when a harness is in none or in two, and when one that imports `hou`
+is put in the `qt` or `harness` stage, so a new harness is run or excluded
+on purpose.
 
 `harness` runs only the two `scripts/verify_*.py` harnesses that work with
 no arguments (`verify_entity_from_context`, `verify_hda_callbacks`). The
@@ -244,6 +260,59 @@ rest need Houdini, a Qt display, or a live `<project_path>` — including
 `verify_entity_casing` and `verify_tracked_asset_counts`, which look
 headless from their imports but argparse-require a project. Preflight says
 how many it skipped rather than implying full coverage.
+
+`qt` runs the `scripts/verify_*.py` harnesses that drive real PySide6
+widgets offscreen with no Houdini (`QT_HARNESSES` in `.ci/preflight.py`, 20
+of 63), four at a time, and prints ok or FAILED per script with the tail of a
+failure's output. Each runs as
+`uv run --no-project --python 3.12 --with pyside6 --with usd-core python scripts/<name>`
+with `QT_QPA_PLATFORM=offscreen`, this checkout's `python/` and
+TumbleTrove's on `PYTHONPATH`, and `TH_PROJECT_PATH` at a fresh copy of
+`scripts/project_template`, in its own temp dir (screenshots land there).
+TumbleTrove is `TUMBLETROVE_PYTHON`, else the newest
+`~/.hpm/packages/tumbletrove@X.Y.Z/python` (or fetched one). Without uv,
+PySide6 or TumbleTrove the stage prints SKIPPED and why, and passes. It
+takes about 25 seconds, most of it `verify_farm_manager`. A harness only
+counts if it exits non-zero on a failure: `verify_cache_reference_fixes`
+printed "ALL CHECKS PASSED" with every check skipped (no `hou`) and exited
+0 whatever happened, so it now exits 1 on a failure (the `hython` stage
+runs it).
+
+`hython` runs the harnesses that import `hou` and need no arguments
+(`HYTHON_HARNESSES`, 32 of 63) under the newest installed Houdini's hython
+(22.x, or `$HPM_HOUDINI_MAJORS`; found as `delegate` finds husk), three at a
+time since each takes a licence, and prints ok, FAILED (with the tail of
+its output) or SKIPPED per script. It first compiles every expanded HDA
+under `otls/` into a temp folder with `hotl` (the checkout is left alone;
+a stale `otls/*.hda` there no longer matters) and runs one licence probe:
+no Houdini, or no licence, prints SKIPPED and passes, and a harness that
+fails on a licence message is SKIPPED, not FAILED. Each harness runs in its
+own temp dir with a clean environment:
+
+- its own `HOUDINI_USER_PREF_DIR` (named with `__HVER__`, or Houdini
+  ignores it): the user's prefs dir carries packages, a stale tumblepipe
+  that sets `TH_PROJECT_PATH=P:/growth` and a tumblerig-repro that loads
+  TumbleRig twice (its CUDA SOPs then crash hython), which an empty
+  `HOUDINI_PACKAGE_DIR` does not keep out;
+- `HOUDINI_USE_HFS_OCL=0`: with a fresh prefs dir Houdini's bundled CPU
+  OpenCL fails every Copernicus cook with "invalid string position" (the
+  user's `houdini.env` sets it, which is why their prefs worked);
+- `HOUDINI_PACKAGE_DIR` holding only the newest TumbleRig hpm installed
+  (`~/.hpm/packages/tumblerig@X.Y.Z`), whose example rigs the animate and
+  playblast harnesses stand published rigs in with; never
+  `HOUDINI_PACKAGE_SKIP=1`, which also drops SideFX's APEX nodes;
+- the compiled HDAs first on `HOUDINI_OTLSCAN_PATH`, this checkout on
+  `HOUDINI_PATH` (its startup and OnCreated scripts run, as in a session),
+  its `python/` and TumbleTrove's on `PYTHONPATH`, nothing inherited from a
+  Houdini or pipeline session (`HOUDINI_*`, `TH_*`, `PXR_*`);
+- `TH_PROJECT_PATH` at a fresh copy of `scripts/project_template`.
+
+The three harnesses that resolve `entity:` URIs through USD
+(`RESOLVER_HARNESSES`) also get the checkout's built tumbleResolver
+(`resolver/houdini<major>/`, `.ci/build_resolver.py`), and are SKIPPED
+without one. `PREFLIGHT_HYTHON="verify_a.py verify_b.py"` runs only those.
+The stage takes about 75 seconds (the HDA compile 3 s, the slowest harness
+`verify_comp` 30 s).
 
 `check_binary_hdas.py` asks `git ls-files`, not the filesystem: `hpm build`
 collapses every expanded HDA into a gitignored binary `otls/*.hda` beside
@@ -282,11 +351,15 @@ widget stacks involved are pure PySide6:
   PySide6, takes no licence):
   `PYTHONPATH="$HFS/python313/lib/site-packages-forced" "$HFS/python313/python.exe" scripts/verify_archive_app.py`.
 
-The other two need a desktop session and PySide6:
+All of these, and the other Qt harnesses that need no Houdini, run
+offscreen in one go with `uv run --no-project python .ci/preflight.py --only qt`
+(*Preflight* above). To run one alone the same way (on Windows separate the
+`PYTHONPATH` entries with `;`; harnesses that read a project also want
+`TH_PROJECT_PATH` at a copy of `scripts/project_template`):
 
 ```bash
-cd scripts
-uv run --python 3.12 --with pyside6 python verify_process_dialog_ux.py
+PYTHONUTF8=1 QT_QPA_PLATFORM=offscreen PYTHONPATH="python:$TUMBLETROVE_PYTHON" \
+    uv run --no-project --python 3.12 --with pyside6 --with usd-core python scripts/verify_process_dialog_ux.py
 ```
 
 ## Skipping a task instead of failing it
@@ -529,7 +602,7 @@ editor (called `th_player` up to TumblePipe 1.103).
 It edits *edits*, versioned and published pipeline entities
 (`designs/edit-entity.md`), and plays them frame-accurately: playblasts and
 other movies through FFmpeg, and EXR sequences shown through OCIO. Artists
-start it from a shot card's **Play** entry ([Playing shots](asset-browser/play-shots.md)):
+start it from a shot card's **Play in Cinedex** entry ([Playing shots](asset-browser/play-shots.md)):
 `tumblepipe.pipe.review_playlist.play_shots` starts
 `bin/<platform>/cinedex` (or a dev build named by `$TH_CINEDEX`, else by
 the former `$TH_PLAYER`) with
@@ -947,7 +1020,13 @@ spare-ifies the definition's container folders under renamed names
 (`selection` → `selection2`), so folder-name anchor lookups go stale
 after the first rebuild. Code that inserts spare UI into an HDA
 instance must anchor on definition *parm* names (never renamed) via
-`ParmTemplateGroup.containingFolder()`, not on folder names. Run it
+`ParmTemplateGroup.containingFolder()`, not on folder names. And it must
+start from the *definition's* group, not the instance's: once
+`setParmTemplateGroup()` has run on a node, the node keeps that interface
+and an HDA update no longer reaches it (a parm the HDA gains is appended
+at the bottom, a parm it hides stays shown). `layer_stack._base_group`
+takes the definition's group and carries over only the artist's own spare
+parms (`tests/test_layer_stack_spares.py`). Run it
 under any project hython (e.g. TumbleTrove Desktop's run_hython with
 dev overrides); it drives the UI rebuild with synthetic layers and
 touches no project data.
@@ -1304,6 +1383,20 @@ can only be rendered once its tag exists. Regenerate and commit
 next release. This is why `--check` is not a CI gate: it would
 false-fail on the commit immediately after every tag.
 
+In the same commit, refresh the record of what the release's HDAs shipped:
+
+```bash
+uv run --no-project python scripts/snapshot_hda_parms.py   # merges the newest v* tag
+```
+
+It adds the new tag's HDAs and parms to `tests/data/hda_parms_released.json`
+(read from git, so the working tree does not matter), which
+`tests/test_hda_parms_kept.py` holds every later DialogScript to (*Editing an
+HDA definition*). Until it is refreshed the test reads the newest tag from
+git itself, prints that the snapshot is behind, and still passes or fails on
+the parms, so a forgotten refresh never breaks the suite and never opens a
+gap; it only stops the record growing once a newer tag is cut.
+
 ### Superseded commits
 
 A subject records what a commit *intended*; occasionally the release
@@ -1378,6 +1471,15 @@ The child hython runs with `HOUDINI_PACKAGE_SKIP=1` and this checkout's
 `otls/` on `HOUDINI_OTLSCAN_PATH`, so an installed tumblepipe package cannot
 shadow it. Run it with hython (e.g. TumbleTrove Desktop's `run_hython`);
 `VERIFY_DEBUG=1` prints the traceback of a failing resolve.
+
+`scripts/verify_import_render_outputs.py` uses its staging for a shot with
+three layers (a denoise read from the `C` plane, two raw renders) and cooks
+every output of an all-channels `th::import_render` and of one import per
+layer: each held beauty has its layer's pixels, every free `rgba` output is
+empty and cooks, the `lpe`, `aov` and `matte` cables carry each layer's
+fields by name with pixels, and the node's comment names the layer on each
+output (`rgba: chars`, `rgba 2: bg`, `rgba 3: fx`) without replacing one
+someone typed. Run it the same way (compile the HDAs first).
 
 ## Slap comp harness
 
@@ -1541,7 +1643,11 @@ knowing before any similar sweep:
     value whose parm is gone before any script runs. Keep an invisible
     carrier parm under the old name, bump the definition's Version, and move
     the value in its `SyncNodeVersion` handler
-    (`pipe/houdini/node_version.py`).
+    (`pipe/houdini/node_version.py`). A *button* has no value to move but
+    is saved all the same: removing one makes every scene saved with it
+    warn "Skipping unrecognized parameter" on open (hython 22.0.429), so a
+    retired button stays as an invisible parm (`entity_select`, see
+    `otls/README.md`).
   - *Published data* is immutable and is never rewritten. Its readers accept
     the old spelling forever — in one function per language, with the reason
     beside it — and writers emit only the new one.
@@ -1586,6 +1692,16 @@ Reach for this when a fix lives inside an HDA rather than in `python/`. The
 tracked source of truth is the expanded `otls/<name>/` directory; the `.hda`
 beside it is a gitignored build artifact.
 
+- **Never delete a parm, hide it.** A scene saves every parm of every node,
+  buttons and folders included, and a scene loaded with an HDA that lacks
+  one warns "Skipping unrecognized parameter" and drops the value. Make a
+  retired parm `invisible` and keep its name (a rename is a delete). An HDA
+  type is never removed either. `tests/test_hda_parms_kept.py` holds every
+  HDA to the parms in `tests/data/hda_parms_released.json` (what the
+  recorded releases shipped) and in the newest `v*` tag, and names the HDA
+  and parm it misses; a removal that really is fine goes in its `ALLOWED`
+  with the reason. The snapshot is refreshed after each release tag (see
+  *Changelog*).
 - **Expand with `hotl -t`, never `hotl -x`.** `-t` writes the uncompressed
   `Contents.dir/Contents.mime` the repo tracks and round-trips **losslessly**
   (zero diff), so an HDA edit produces a reviewable diff of just the change.
@@ -1792,7 +1908,7 @@ The delegate normally writes opaque frames: every pixel over the grey
 backdrop gradient, alpha 1. `TH_PLAYBLAST_ALPHA` (`1`/`true`/`on`; unset,
 `0`, `false` or `off` is off, the default), or the render setting
 `th:alpha` (a bool or int on the render settings, which wins over the
-variable, as `th:samples`, `th:shading`, `th:lighting`, `th:cull` and the
+variable, as `th:samples`, `th:shading`, `th:lighting`, `th:cull`, `th:transparency` and the
 blur settings do), leaves
 the background transparent. `viewport_env(..., alpha=True)`
 (`apps/viewport_renderer.py`) sets the variable for husk.
@@ -1960,6 +2076,31 @@ choice:
 - A mesh's front and back faces both blend (unless its cull style culls
   one, see backface culling below), so a closed see-through shell shows
   twice its opacity's worth.
+
+**`th:transparency`** (a string render setting; unset,
+`TH_PLAYBLAST_TRANSPARENCY`, read as `th:shading` is): `off` draws every
+mesh opaque, whatever its material's opacity or transmission or its
+`displayOpacity` (`_PassSettings::opaque`, handed to the core as
+`ThFrame::opaque`; `ffi::opacity_of` then gives every view opacity 1, so
+an opacity-0 view is drawn too); anything else, `on` by default, is the
+blending above. A zeroed `ThFrame` is `on`, so the ABI's old callers draw
+as before. It is part of the pass settings, so the viewer's frame key
+changes with it. Artists set it as **Transparency** in the farm dialog's
+playblast (the look's `transparency`,
+`specs.playblast.PLAYBLAST_TRANSPARENCIES`, entity property
+`playblast.transparency`) and on the LOP and SOP th::playblast (parm
+`transparency`, read with Lighting and Backface Culling by
+`tumbleview.node_look_settings`); `viewport_env(..., transparency=)`
+passes it to husk. A look or node from before it existed reads `on`
+(Discord, Martin 2026-11-12: the corneas are not needed once back faces
+are culled). `props.rs`
+(`the_abi_opaque_switch_draws_every_view_opaque`) holds `off` to the
+picture of an opaque pane for any transparency (NaN, infinite and out of
+range included) and `on` to the old `1 - transparency`;
+`.ci/smoke_delegate.py` (`_check_transparency`) renders a display-opacity
+and a material-opacity pane over a wall on the CPU and the GPU: see-through
+by default and with `on`, the opaque pane's picture to the pixel with
+`off`.
 
 Alpha (`th:alpha`, a transparent background): a sample nothing opaque
 covers gets coverage `1 - reveal`, so see-through surfaces add partial

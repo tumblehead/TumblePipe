@@ -14,6 +14,15 @@ edit the script and regenerate rather than editing their directories.
 
 Editing rules learned the hard way:
 
+- **Never delete or rename a parm, hide it.** Saved scenes hold every
+  parm (buttons and folders too), and Houdini warns "Skipping
+  unrecognized parameter" for each one an HDA lost. 1.104.0 renamed the
+  texture HDAs' `select` and dropped th::import_render's
+  `beauty_outputs`, and every 1.103 scene with those nodes warned.
+  `tests/test_hda_parms_kept.py` checks every HDA against the parms the
+  releases shipped (`tests/data/hda_parms_released.json`, refreshed
+  after each tag by `scripts/snapshot_hda_parms.py`).
+
 - **Never put whitespace in a `.chn` channel expression.** The channel
   segment parser inside `Contents.mime` tokenizes on whitespace, so
   `expr = ch(\"../a\") * (ch(\"../b\") == 0)` fails to parse
@@ -118,13 +127,14 @@ Editing rules learned the hard way:
 - **An entity-addressing parm defaults to `from_context`.** Any HDA that
   binds to a pipeline entity uses one idiom: an invisible `entity` (or
   `shot`/`asset`) string parm defaulting to the literal `from_context`,
-  beside the picker buttons and a visible `entity_label`. The picker is
-  two buttons on one row, both running the same callback with the same
-  hide/disable conditions: `entity_select` (the row label, and the jade
-  `$TH_PIPELINE_PATH/resources/EntityBrowse.svg` icon) and right after it
-  `entity_browse` ("Browse..."). Houdini's parameter pane cannot colour a
-  button or show an icon and text on one (`button_icon` replaces the
-  label, which becomes the row label), hence two;
+  beside the picker button and a visible `entity_label`. The picker is one
+  text button, `entity_browse` ("Browse..."), first on the row. Right
+  before it sits `entity_select`, the jade icon button 1.104.0 shipped
+  beside it, now an *invisible* carrier with the same callback and
+  hide/disable conditions and no icon: a saved scene holds every button
+  parm, and Houdini warns "Skipping unrecognized parameter" on load for a
+  parm the HDA no longer has, so a retired button is hidden, never removed
+  (`select` on th::export_texture / th::import_texture likewise).
   `tests/test_entity_picker_buttons.py` holds every HDA to it. The
   sentinel resolves against the workfile the node lives in, every
   evaluation. Two things that look harmless but are not:

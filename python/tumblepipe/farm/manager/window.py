@@ -391,6 +391,9 @@ class ManagerWindow(QWidget):
         self._seen_previews: set[str] | None = None
         self._notices: list[rows.JobRow] = []
         self._highlighted: set[str] = set()
+        # A job asked for (select_job) before its row has been read: chosen
+        # as soon as a refresh brings it in.
+        self._pending_select: str | None = None
 
         self._user, self._project = _identity()
 
@@ -801,30 +804,53 @@ class ManagerWindow(QWidget):
         """Select the notice's job, bringing it into the list if a filter hid it."""
         if not self._notices:
             return
-        row = self._notices[-1]
-        if row.id not in self._job_items:
-            # A notify job is done within seconds: Hide finished or a
-            # search would keep it out of the list.
+        if not self._select_now(self._notices[-1].id):
+            self._say("That job is no longer on this machine's list", error=True)
+
+    def select_job(self, job_id: str) -> None:
+        """Select the job ``job_id`` (the Jobs popover's *Show in Jobs*),
+        bringing it into the list if a filter hid it. A failed job opens at
+        its error: its tasks load with the last failed one selected, and
+        that task's log or reports below. A farm job not read yet is
+        selected when the next read brings it in."""
+        if not job_id:
+            return
+        self._pending_select = None
+        if not self._select_now(job_id):
+            self._pending_select = job_id
+            if job_id not in self._rows_by_id and not job_id.startswith('local:'):
+                self._refresh_farm()
+
+    def _select_now(self, job_id: str) -> bool:
+        """Select ``job_id``'s row now; ``False`` when it is not on the list."""
+        if job_id not in self._job_items:
+            # Hide finished, a search or the source would keep a finished
+            # job out of the list.
             widgets = (self._hide_finished, self._search, self._source)
             for widget in widgets:
                 widget.blockSignals(True)
             self._hide_finished.setChecked(False)
             self._search.clear()
-            if self._source.currentData() == rows.FARM:
+            wanted = rows.LOCAL if job_id.startswith('local:') else rows.FARM
+            if self._source.currentData() not in (None, wanted):
                 self._source.setCurrentIndex(max(0, self._source.findData(None)))
             for widget in widgets:
                 widget.blockSignals(False)
             self._sync_jobs()
-        item = self._job_items.get(row.id)
+        item = self._job_items.get(job_id)
         if item is None:
-            self._say("That job is no longer on this machine's list", error=True)
-            return
+            return False
         if item.parent() is not None:
             item.parent().setExpanded(True)
         self._jobs.clearSelection()
         item.setSelected(True)
         self._jobs.setCurrentItem(item)
         self._jobs.scrollToItem(item)
+        return True
+
+    def selected_job_id(self) -> str:
+        """The selected job's id ('' for none): what the verify scripts read."""
+        return self._current_job.id if self._current_job is not None else ''
 
     def _on_notice_dismiss(self) -> None:
         if self._notices:
@@ -1083,6 +1109,10 @@ class ManagerWindow(QWidget):
         if job is not None and job.id in self._rows_by_id:
             self._current_job = self._rows_by_id[job.id]
         self._update_actions()
+        pending = self._pending_select
+        if pending is not None and pending in self._job_items:
+            self._pending_select = None
+            self._select_now(pending)
 
     def _fill_job_item(self, item: QTreeWidgetItem, row: rows.JobRow, batch_submitted: str) -> None:
         """A job under its batch row: where and who are the batch's, so its
@@ -1882,8 +1912,11 @@ def _identity() -> tuple[str, str]:
 _WINDOW: ManagerWindow | None = None
 
 
-def show_manager(parent: QWidget | None = None, source: str | None = None) -> ManagerWindow:
-    """Show the Farm Manager, raising the open one instead of opening a second."""
+def show_manager(
+    parent: QWidget | None = None, source: str | None = None, select: str = '',
+    ) -> ManagerWindow:
+    """Show the Farm Manager, raising the open one instead of opening a
+    second; with ``select``, that job selected (:meth:`ManagerWindow.select_job`)."""
     global _WINDOW
     if _WINDOW is not None:
         try:
@@ -1892,6 +1925,8 @@ def show_manager(parent: QWidget | None = None, source: str | None = None) -> Ma
             _WINDOW.show()
             _WINDOW.raise_()
             _WINDOW.activateWindow()
+            if select:
+                _WINDOW.select_job(select)
             return _WINDOW
         except RuntimeError:
             _WINDOW = None  # Its C++ side was deleted on close.
@@ -1900,6 +1935,8 @@ def show_manager(parent: QWidget | None = None, source: str | None = None) -> Ma
     _WINDOW = window
     window.show()
     window.raise_()
+    if select:
+        window.select_job(select)
     return window
 
 

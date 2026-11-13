@@ -1,6 +1,6 @@
 """What the entity picker shows: entries, scopes, search, From context.
 
-The Entity button on every entity-aware th:: node opens the picker window
+The Browse... button on every entity-aware th:: node opens the picker window
 (``pipe.houdini.ui.widgets.entity_selector``). Everything the window decides
 that is not drawing lives here, without Qt or ``hou``, so it can be tested:
 which entries there are, how they are ordered, which sidebar scopes they
@@ -318,6 +318,22 @@ def remember(project_path, uri: str) -> None:
         log.warning('Could not remember the entity pick', exc_info=True)
 
 
+def remember_all(project_path, uris) -> None:
+    """Remember several picks at once (multi mode), the first of them
+    most recent; one prefs write. Never raises."""
+    uris = [u for u in uris if entry_for(u) is not None]
+    if not uris:
+        return
+    try:
+        from tumblepipe.asset_browser.prefs import load_prefs, update_prefs
+        stored = load_prefs().entity_picker_recent
+        for uri in reversed(uris):
+            stored = with_recent(stored, project_path, uri)
+        update_prefs(entity_picker_recent=stored)
+    except Exception:
+        log.warning('Could not remember the entity picks', exc_info=True)
+
+
 # The window's state
 
 class PickerState:
@@ -327,19 +343,31 @@ class PickerState:
 
     ``accept()`` only ever returns an entry that is visible (so offered and
     matching the search) or 'from_context' when that is offered, else None.
+
+    With ``multi`` (th::import_assets' top Browse...), the artist picks
+    several cards: ``picked`` is the set (Ctrl/Shift-click, Select all in
+    view), ``selected`` stays the keyboard cursor. Picks survive a search
+    or a scope change, so 'chair', pick, 'table', pick gives both.
+    ``accept_many()`` returns the picks in the picker's order, only ever
+    entries on offer; with nothing picked, the highlighted card. From
+    context is never offered in multi mode.
     """
 
     def __init__(self, entries, include_from_context: bool = True,
-                 recent=None, current: str | None = None):
+                 recent=None, current: str | None = None,
+                 multi: bool = False):
         self.entries = list(entries)
-        self.include_from_context = include_from_context
+        self.multi = multi
+        self.include_from_context = include_from_context and not multi
         self.recent = clean_recent(recent)
         self.scope = ALL_SCOPE
         self.query = ''
         self.visible: list[PickerEntry] = []
         self.selected: str | None = None
+        self._order = {e.uri: i for i, e in enumerate(self.entries)}
+        self.picked: list[str] = []
         self._refresh()
-        if current == FROM_CONTEXT and include_from_context:
+        if current == FROM_CONTEXT and self.include_from_context:
             self.selected = FROM_CONTEXT
         else:
             entry = entry_for(current) if isinstance(current, str) else None
@@ -407,3 +435,101 @@ class PickerState:
         if self.selected in self.visible_uris():
             return self.selected
         return None
+
+    # Several picks (multi)
+
+    def _sorted_picks(self, uris) -> list[str]:
+        """``uris`` that are on offer, each once, in the picker's order."""
+        kept = {u for u in uris if u in self._order}
+        return sorted(kept, key=self._order.__getitem__)
+
+    def set_visible_picks(self, uris):
+        """The cards picked among those shown, as the grid's selection
+        has them after a click, Ctrl-click or Shift-click. Picks hidden by
+        the search or scope are kept; anything not shown is ignored."""
+        if not self.multi:
+            return
+        visible = set(self.visible_uris())
+        hidden = [u for u in self.picked if u not in visible]
+        shown = [u for u in uris if u in visible]
+        self.picked = self._sorted_picks(hidden + shown)
+
+    def toggle(self, uri):
+        """Ctrl-click: pick a shown card, or unpick it; it becomes the
+        cursor."""
+        if not self.multi or uri not in self.visible_uris():
+            return
+        self.selected = uri
+        if uri in self.picked:
+            self.picked = [u for u in self.picked if u != uri]
+        else:
+            self.picked = self._sorted_picks(self.picked + [uri])
+
+    def select_all_visible(self):
+        """Select all in view: pick every card shown, keeping the others."""
+        if self.multi:
+            self.picked = self._sorted_picks(self.picked + self.visible_uris())
+
+    def clear_picks(self):
+        self.picked = []
+
+    def accept_many(self) -> list[str]:
+        """What Select returns in multi mode: the picks in the picker's
+        order, or the highlighted card when nothing is picked, or none.
+        Single mode: ``accept()`` as a list ('from_context' included)."""
+        if not self.multi:
+            uri = self.accept()
+            return [] if uri is None else [uri]
+        if self.picked:
+            return self._sorted_picks(self.picked)
+        if self.selected in self.visible_uris():
+            return [self.selected]
+        return []
+
+
+def picks_text(count: int, noun: str = 'entities') -> str:
+    """The footer line in multi mode: '3 assets selected'."""
+    if count == 0:
+        return 'Nothing selected'
+    if count == 1:
+        return f'1 {noun[:-1] if noun.endswith("s") else noun} selected'
+    return f'{count} {noun} selected'
+
+
+# Adding picks as rows (th::import_assets' top Browse...)
+
+def plan_rows(existing, picked) -> tuple[list[str], list[str]]:
+    """(the picks to add as new rows, the picks skipped) for a node whose
+    rows already hold ``existing`` URIs. A pick already in a row, or
+    repeated in ``picked``, is skipped; anything that is not an entity URI
+    is neither. Both lists keep ``picked``'s order."""
+    have = {e.uri for e in (entry_for(str(u)) for u in existing if u) if e is not None}
+    added: list[str] = []
+    skipped: list[str] = []
+    for uri in picked:
+        entry = entry_for(str(uri)) if uri else None
+        if entry is None:
+            continue
+        if entry.uri in have:
+            skipped.append(entry.uri)
+            continue
+        have.add(entry.uri)
+        added.append(entry.uri)
+    return added, skipped
+
+
+def rows_added_text(added: int, skipped: int, noun: str = 'asset') -> str:
+    """The status line after adding rows: 'Added 3 assets, skipped 1
+    already in the list.'"""
+    def count(n):
+        return f'{n} {noun}' + ('' if n == 1 else 's')
+    if added == 0 and skipped == 0:
+        return f'No {noun}s picked.'
+    if skipped == 0:
+        return f'Added {count(added)}.'
+    already = 'already in the list'
+    if added == 0:
+        if skipped == 1:
+            return f'Added nothing: that {noun} is {already}.'
+        return f'Added nothing: all {count(skipped)} are {already}.'
+    return f'Added {count(added)}, skipped {skipped} {already}.'

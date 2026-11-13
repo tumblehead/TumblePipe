@@ -73,9 +73,11 @@ pub struct ThMeshView {
     pub cull: u32,
 }
 
-/// A view's opacity from its transparency, in [0, 1]; NaN opaque.
-pub(crate) fn opacity_of(transparency: f32) -> f32 {
-    if transparency.is_nan() { 1.0 } else { (1.0 - transparency).clamp(0.0, 1.0) }
+/// A view's opacity from its transparency, in [0, 1]; NaN opaque. With
+/// `opaque` (the frame's [`ThFrame::opaque`], th:transparency "off") every
+/// view is opaque, whatever its transparency.
+pub(crate) fn opacity_of(transparency: f32, opaque: bool) -> f32 {
+    if opaque || transparency.is_nan() { 1.0 } else { (1.0 - transparency).clamp(0.0, 1.0) }
 }
 
 /// Borrowed geometry of one basis curves or points prim and every instance
@@ -185,6 +187,10 @@ pub struct ThFrame {
     /// 0: the scene's lights when it has any; 1: the headlight (the fixed
     /// camera rig) always (`th:lighting`).
     pub lighting: u32,
+    /// Nonzero: every mesh drawn opaque, its transparency (opacity,
+    /// transmission, display opacity) ignored (`th:transparency` "off");
+    /// 0: see-through meshes blended over the opaque ones, as before.
+    pub opaque: u32,
 }
 
 /// A UsdLux light as authored (`crate::lights::SceneLight`), the shim's
@@ -631,7 +637,7 @@ unsafe fn render_into(
                     slice::from_raw_parts(v.transform_keys as *const Mat4,
                                           v.transform_key_count as usize * v.transform_count as usize)
                 },
-                opacity: opacity_of(v.transparency),
+                opacity: opacity_of(v.transparency, f.opaque != 0),
                 cull: raster::Cull::from_abi(v.cull),
             });
         }
@@ -697,7 +703,7 @@ mod tests {
             samples: 1, shading: 0, ao: 1,
             blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0,
+            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0,
         };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         let mut depth = vec![0.0f32; 8 * 4];
@@ -717,7 +723,7 @@ mod tests {
             samples: 1, shading: 0, ao: 1,
             blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
             focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0,
+            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0,
         };
         let mut color = vec![0.0f32; 8 * 4 * 4];
         unsafe {

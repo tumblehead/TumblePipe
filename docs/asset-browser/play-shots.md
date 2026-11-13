@@ -5,14 +5,20 @@ film on tracks, saved as versions and published like any other export. It
 opens in its own window, outside Houdini, and plays every frame as made: a
 playblast as it is, a render through the project's OCIO config.
 
-Right-click a shot card and choose **Play**, or select several shots and
-choose **Play N Shots**, to open them back to back in the editor as an
+Right-click a shot card and choose **Play in Cinedex** (the menu's first
+catalog entry), or select several shots and choose **Play N Shots in
+Cinedex**, to open them back to back in the editor as an
 untitled edit. Nothing in the project changes until you save it, and
 Resolve is not involved.
 
+The toolbar's **Open Timeline** button plays the whole sequence of the
+selected shot (or of the sequence you are viewing); with neither, the
+project's master edit, else every shot. See the
+[toolbar table](index.md#quick-actions).
+
 To play more than a hand-picked selection: right-click a **sequence** in
 the sidebar (or the empty space of a view narrowed to one sequence) and
-choose **Play Sequence** for all its shots in name order, or choose **Play**
+choose **Play in Cinedex** for all its shots in name order, or choose **Play in Cinedex**
 on a **shots Multi** for its members in [timeline order](multis-and-roots.md#play-open-folder-add-entity-and-delete).
 
 An edit with nothing in it yet starts as the whole film: the editor
@@ -425,8 +431,9 @@ An edit is an entity of the project, `entity:/edits/<name>`. **Open…** lists
 the project's edits, each with its newest working version and newest
 published one; the edit chosen opens in a window of its own (an untitled
 window it was chosen from closes when it holds nothing of yours: empty, or
-the project's shots unchanged since it opened). **Edits** in TumbleTrove
-Desktop's Scripts panel starts the editor on the whole film: the project's
+the project's shots unchanged since it opened). **Open Cinedex** in
+TumbleTrove Desktop's Scripts panel (the project card's right-click menu,
+under tumblepipe; called **Edits** up to 1.104) starts the editor on the whole film: the project's
 [master edit](#the-master-edit), or when the project has none, an untitled
 edit of every shot.
 **Save** writes
@@ -518,7 +525,7 @@ the movie.
 ### The master edit
 
 One edit can be the project's **master edit** (the toolbar's checkbox): the
-cut the shots' frame ranges follow, and the one **Edits** in TumbleTrove
+cut the shots' frame ranges follow, and the one **Open Cinedex** in TumbleTrove
 Desktop opens. Publishing it lists the shot changes its
 cut makes, each with a tick box:
 

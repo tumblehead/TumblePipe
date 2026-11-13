@@ -237,7 +237,8 @@ class PipelineMenus:
             # the sequence player.
             shots = [a for a in submit_targets if "type:shot" in (a.tags or ())] or [asset]
             play.append((
-                "Play" if len(shots) <= 1 else f"Play {len(shots)} Shots",
+                "Play in Cinedex" if len(shots) <= 1
+                else f"Play {len(shots)} Shots in Cinedex",
                 lambda targets=shots: self._play_shots(targets),
             ))
         work: list = [

@@ -61,6 +61,10 @@ class PipelinePrefs:
     # The entity picker's recent picks: project path -> entity URIs, most
     # recent first (pipe.entity_picker.push_recent shapes each list).
     entity_picker_recent: dict = field(default_factory=dict)
+    # The Entity Editor's layout: its side panel shown, the splitter widths
+    # and each tab's column order and hidden columns. Shaped and checked by
+    # tumblepipe.asset_browser.entity_editor_layout.
+    entity_editor: dict = field(default_factory=dict)
     prefs_version: int = _PREFS_VERSION
 
 
@@ -113,6 +117,10 @@ def load_prefs() -> PipelinePrefs:
         entity_picker_recent=(
             data["entity_picker_recent"]
             if isinstance(data.get("entity_picker_recent"), dict) else {}
+        ),
+        entity_editor=(
+            data["entity_editor"]
+            if isinstance(data.get("entity_editor"), dict) else {}
         ),
     )
 

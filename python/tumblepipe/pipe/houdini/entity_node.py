@@ -94,18 +94,18 @@ class EntityNode(ns.Node):
         if context is None:
             return (
                 f'the open scene ({hou.hipFile.path()}) is not a pipeline '
-                'workfile. Pick the entity with the Entity button.'
+                'workfile. Pick the entity with the Browse... button.'
             )
         if context.entity_uri.purpose != 'entity':
             return (
                 f'this workfile belongs to {context.entity_uri}, a group, '
-                'not an entity. Pick one of its members with the Entity '
+                'not an entity. Pick one of its members with the Browse... '
                 'button.'
             )
         return (
             f"this workfile's entity {context.entity_uri} is not one of "
             f"the {' or '.join(self.ENTITY_CONTEXTS or ())} this node "
-            'addresses. Pick the entity with the Entity button.'
+            'addresses. Pick the entity with the Browse... button.'
         )
 
     # Entity listing
@@ -164,7 +164,7 @@ class EntityNode(ns.Node):
         if not self._addresses(entity_uri_raw):
             raise self._error(
                 f"entity '{entity_uri_raw}' is not an entity this node can "
-                'address. Pick one with the Entity button.'
+                'address. Pick one with the Browse... button.'
             )
         return Uri.parse(entity_uri_raw)
 

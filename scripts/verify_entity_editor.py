@@ -21,8 +21,14 @@ coverage refused, a shots Multi's Timeline, the selected Multi's workfiles
 opened or made one at a time, the browser's New Multi…), the Layers
 cell's dialog (a shot's and a sequence's, Use Selection, match counts, an
 exported channel kept, Inherit) and a Layers value typed, the Shots tab's
-Render settings section (a shot's value and its source, Project defaults,
-a sequence's row, a tick, a refused value, Inherit, mixed shots), New Sequence…,
+Render settings side panel (a shot's value and its source, All shots and
+the levels it names, resolution presets and the two fields, the Karma
+samples, ray limits and depth of field, a Karma setting only the pipeline
+defaults hold shown as not set, the Render column, a sequence's row, a
+tick, a refused value, Inherit, mixed shots), the layout (the filters in
+the top row, the side panels and Details, the header menu, dragged and
+hidden columns kept through a reset and in Copy, Reset Columns, a layout
+remembered, junk or unreadable), New Sequence…,
 problems blocking Apply, Apply of every tab through the
 real ``pipe.entity_files``, and the database afterwards. Prints OK/FAIL per check; exits 1 on any FAIL.
 """
@@ -893,11 +899,25 @@ check("Inherit puts a shot's layers back to its sequence's",
 
 # ── Render settings (#70) ──────────────────────────────────────────────────
 
+import dataclasses  # noqa: E402
+from tumblepipe.config import render_config as rc  # noqa: E402
+
 rs = shots.render_settings
-check('the Shots tab has a Render settings section, the Assets tab none',
+check('the Shots tab has a Render settings panel, the Assets tab none',
       rs is not None and assets.render_settings is None)
-res_edit, cam_edit = rs.editors[es.RENDER_RESOLUTION], rs.editors[es.RENDER_CAMERA]
-apply_box = rs.editors[es.RENDER_APPLY]
+check('it has an editor, an origin and an Inherit for every render setting, in four sections',
+      set(rs.editors) == set(es.RENDER_FIELDS) and set(rs.origins) == set(es.RENDER_FIELDS)
+      and list(rs.section_titles) == ['Image', 'Quality', 'Ray limits', 'Effects'],
+      (list(rs.editors), list(rs.section_titles)))
+res = rs.editors[es.RENDER_RESOLUTION]
+cam_edit = rs.editors[es.RENDER_CAMERA].edit
+apply_box = rs.editors[es.RENDER_APPLY].box
+samples = rs.editors[rc.SAMPLES].spin
+diffuse = rs.editors[rc.DIFFUSE_LIMIT].spin
+dof = rs.editors[rc.DOF].combo
+check('resolution is two whole-number fields and a Presets menu',
+      isinstance(res.width_spin, ee.QSpinBox) and isinstance(res.height_spin, ee.QSpinBox)
+      and res.presets_button.text() == 'Presets')
 
 
 def _type(editor, text):
@@ -906,44 +926,113 @@ def _type(editor, text):
     app.processEvents()
 
 
+def _set_res(w, h):
+    res.width_spin.setValue(w)
+    app.processEvents()
+    res.height_spin.setValue(h)
+    app.processEvents()
+
+
+def _res_shown():
+    return (res.width_spin.value(), res.height_spin.value())
+
+
+def _render_cell(row_id):
+    index = shots.index_of(row_id, es.RENDER_PINS)
+    return index.data(), index.data(Qt.ToolTipRole) or ''
+
+
 r_sh010 = next(r for r in shots.sheet.rows if r.group == 'sq010' and r.name == 'SH010')
 r_sh020 = next(r for r in shots.sheet.rows if r.group == 'sq010' and r.name == 'SH020')
+r_sh030 = next(r for r in shots.sheet.rows if r.group == 'sq010' and r.name == 'SH030')
 NAME_COLUMN = shots.columns.index(es.NAME)
 shots.select_cells([(r_sh020.id, NAME_COLUMN)])
 app.processEvents()
 check('a shot shows its resolution and where it comes from',
-      res_edit.text() == '1920 x 1080' and rs.origins[es.RENDER_RESOLUTION].text() == 'from all shots',
-      (res_edit.text(), rs.origins[es.RENDER_RESOLUTION].text()))
-check('an inherited value is grey', ee._INHERITED.color().name() in res_edit.styleSheet(),
-      res_edit.styleSheet())
+      _res_shown() == (1920, 1080) and rs.origins[es.RENDER_RESOLUTION].text() == 'from all shots',
+      (_res_shown(), rs.origins[es.RENDER_RESOLUTION].text()))
+check('an inherited value is grey', ee._INHERITED.color().name() in res.styleSheet(),
+      res.styleSheet())
+check('the Render column shows a shot that pins nothing as empty, saying so',
+      _render_cell(r_sh020.id)[0] == '' and 'sets no render setting' in _render_cell(r_sh020.id)[1],
+      _render_cell(r_sh020.id))
+check('the Render column is not typed into',
+      not (shots.index_of(r_sh020.id, es.RENDER_PINS).flags() & Qt.ItemIsEditable))
+# A Karma setting only the pipeline defaults hold reaches no render: not set.
+defaults_samples = shots.sheet.base.for_everyone.values.get(rc.SAMPLES)
+check('samples only the pipeline defaults hold show as not set, the render defaults deciding',
+      samples.value() == samples.minimum()
+      and rs.origins[rc.SAMPLES].text() == ee._RENDER_DEFAULTS
+      and shots.sheet.base.for_everyone.sources.get(rc.SAMPLES) == rc.DEFAULTS_LEVEL,
+      (samples.value(), rs.origins[rc.SAMPLES].text(), defaults_samples))
 
-rs.project_button.setChecked(True)
+rs.all_shots_button.setChecked(True)
 app.processEvents()
-check('Project defaults edits all shots', rs.target.text().startswith('All shots'), rs.target.text())
-_type(res_edit, '2048x858')
-check('a project default is pending on all shots',
+check('the level button is called All shots and edits all shots',
+      rs.all_shots_button.text() == 'All shots' and rs.target.text().startswith('All shots'),
+      rs.target.text())
+check('All shots says what it inherits from: the project, then the pipeline defaults',
+      'the project, then the pipeline defaults' in rs.target.text()
+      and 'the project, then the pipeline defaults' in rs.inherit_buttons[es.RENDER_RESOLUTION].toolTip(),
+      rs.inherit_buttons[es.RENDER_RESOLUTION].toolTip())
+presets = rs.presets()
+check('the presets start with the project\'s resolution, each size once',
+      presets[0][1] == (1920, 1080) and presets[0][0].startswith('Project')
+      and len({size for _l, size in presets}) == len(presets), presets)
+res.pick((2048, 858))
+app.processEvents()
+check('a preset is pending on all shots',
       shots.sheet.everyone_value(es.RENDER_RESOLUTION) == [2048, 858]
-      and rs.origins[es.RENDER_RESOLUTION].text() == 'set here, waiting for Apply',
-      rs.origins[es.RENDER_RESOLUTION].text())
-rs.project_button.setChecked(False)
+      and rs.origins[es.RENDER_RESOLUTION].text() == 'set here, waiting for Apply'
+      and _res_shown() == (2048, 858),
+      (rs.origins[es.RENDER_RESOLUTION].text(), _res_shown()))
+rs.all_shots_button.setChecked(False)
 app.processEvents()
-check('a shot follows the pending project default',
-      res_edit.text() == '2048 x 858' and rs.origins[es.RENDER_RESOLUTION].text() == 'from all shots',
-      (res_edit.text(), rs.origins[es.RENDER_RESOLUTION].text()))
-check('the footer counts the project default',
-      'all shots render defaults changed' in window._summary.text(), window._summary.text())
+check('a shot follows the pending all-shots value',
+      _res_shown() == (2048, 858) and rs.origins[es.RENDER_RESOLUTION].text() == 'from all shots',
+      (_res_shown(), rs.origins[es.RENDER_RESOLUTION].text()))
+check('the footer counts the all-shots change',
+      'all shots render settings changed' in window._summary.text(), window._summary.text())
 
 shots.select_cells([(SQ010, NAME_COLUMN)])
 app.processEvents()
 check("a sequence's own row edits the sequence", rs.target.text().startswith('Sequence sq010'),
       rs.target.text())
 _type(cam_edit, '/cameras/seq_cam')
+samples.setValue(128)
+app.processEvents()
+check('samples set on the sequence', shots.sheet.group_value('sq010', rc.SAMPLES) == 128
+      and shots.sheet.group_state('sq010', rc.SAMPLES) == es.SET)
+check("the sequence's Render cell lists what it pins, tinted while pending",
+      _render_cell(SQ010)[0] == 'cam, samples'
+      and shots.index_of(SQ010, es.RENDER_PINS).data(Qt.BackgroundRole) == ee._PENDING
+      and 'Samples: 128' in _render_cell(SQ010)[1], _render_cell(SQ010))
 shots.select_cells([(r_sh020.id, NAME_COLUMN)])
 app.processEvents()
-check("a shot inherits the sequence's camera",
+check("a shot inherits the sequence's camera and samples",
       cam_edit.text() == '/cameras/seq_cam'
-      and rs.origins[es.RENDER_CAMERA].text() == 'from sequence sq010',
-      (cam_edit.text(), rs.origins[es.RENDER_CAMERA].text()))
+      and rs.origins[es.RENDER_CAMERA].text() == 'from sequence sq010'
+      and samples.value() == 128 and rs.origins[rc.SAMPLES].text() == 'from sequence sq010',
+      (cam_edit.text(), rs.origins[es.RENDER_CAMERA].text(), samples.value()))
+check('the effect line names the Karma settings the shot gets',
+      'samples 128' in rs.effect.text(), rs.effect.text())
+
+shots.select_cells([(r_sh030.id, NAME_COLUMN)])
+app.processEvents()
+dof.activated.emit(dof.findData(True))
+app.processEvents()
+check('depth of field turned on for one shot',
+      shots.sheet.value(shots.sheet.row(r_sh030.id), rc.DOF) is True
+      and dof.currentText() == 'On')
+check("the shot's Render cell lists it", _render_cell(r_sh030.id)[0] == 'dof'
+      and 'Depth of field: on' in _render_cell(r_sh030.id)[1], _render_cell(r_sh030.id))
+diffuse.setValue(3.5)
+app.processEvents()
+check('a ray limit takes a decimal', shots.sheet.value(shots.sheet.row(r_sh030.id), rc.DIFFUSE_LIMIT) == 3.5)
+diffuse.setValue(diffuse.minimum())
+app.processEvents()
+check('emptying a number field takes the pin away',
+      shots.sheet.state(shots.sheet.row(r_sh030.id), rc.DIFFUSE_LIMIT) == es.INHERITED)
 
 shots.select_cells([(r_sh010.id, NAME_COLUMN)])
 app.processEvents()
@@ -953,18 +1042,21 @@ app.processEvents()
 check('ticking pins Apply to render on the shot',
       shots.sheet.value(shots.sheet.row(r_sh010.id), es.RENDER_APPLY) is (not was)
       and shots.sheet.state(shots.sheet.row(r_sh010.id), es.RENDER_APPLY) == es.SET)
-_type(res_edit, 'nonsense')
+_type(cam_edit, 'no slash')
 check('a refused value says why and changes nothing',
-      'width x height' in window._summary.text()
-      and res_edit.text() == '2048 x 858', (window._summary.text(), res_edit.text()))
-_type(res_edit, '1280 x 720')
-check('typing pins a resolution on the shot', rs.inherit_buttons[es.RENDER_RESOLUTION].isEnabled()
+      'prim path' in window._summary.text()
+      and cam_edit.text() == '/cameras/seq_cam', (window._summary.text(), cam_edit.text()))
+_set_res(1280, 720)
+check('the two fields pin a resolution on the shot', rs.inherit_buttons[es.RENDER_RESOLUTION].isEnabled()
       and shots.sheet.value(shots.sheet.row(r_sh010.id), es.RENDER_RESOLUTION) == [1280, 720])
 rs.inherit_buttons[es.RENDER_RESOLUTION].click()
 app.processEvents()
-check('Inherit takes the pin away', res_edit.text() == '2048 x 858'
+check('Inherit takes the pin away', _res_shown() == (2048, 858)
       and shots.sheet.state(shots.sheet.row(r_sh010.id), es.RENDER_RESOLUTION) == es.INHERITED,
-      res_edit.text())
+      _res_shown())
+check('a shot\'s Inherit says it falls back to its sequence first',
+      rs.inherit_buttons[es.RENDER_RESOLUTION].toolTip().count('its sequence') == 1,
+      rs.inherit_buttons[es.RENDER_RESOLUTION].toolTip())
 
 shots.select_cells([(r_sh010.id, NAME_COLUMN), (r_sh020.id, NAME_COLUMN)])
 app.processEvents()
@@ -974,10 +1066,121 @@ check('two shots that differ show mixed', apply_box.checkState() == Qt.Partially
 check('they share the inherited camera', cam_edit.text() == '/cameras/seq_cam')
 if len(sys.argv) > 1:
     rs.grab().save(str(Path(sys.argv[1]).with_name('render_settings.png')))
+    window.grab().save(str(Path(sys.argv[1]).with_name('entity_editor_window.png')))
 shots.table.clearSelection()
 app.processEvents()
-check('with nothing selected the section asks for a selection',
-      not res_edit.isEnabled() and 'Select shots' in rs.target.text(), rs.target.text())
+check('with nothing selected the panel asks for a selection',
+      not res.isEnabled() and 'Select shots' in rs.target.text(), rs.target.text())
+
+# ── Layout: top row, side panel, columns (remembered) ──────────────────────
+
+saved_layouts = []
+window.source = dataclasses.replace(window.source, save_layout=saved_layouts.append)
+check('the sequence picker and search sit in the top row with the tabs',
+      window._filters.currentWidget() is shots.filter_bar
+      and shots.filter_bar.parent() is window._filters
+      and shots._search.parent() is shots.filter_bar)
+window.show_kind('multis')
+check('the Multis tab swaps its own picker in', window._filters.currentWidget() is window.multis_pane.filter_bar)
+check("the Multis tab's workfiles are in its side panel",
+      window.multis_pane.side.widget() is window.multis_pane.workfiles
+      and window.multis_pane.splitter.indexOf(window.multis_pane.side) == 1)
+window.show_kind('assets')
+check('the Assets tab has no side panel, so Details is off there',
+      assets.side is None and not window._details.isEnabled())
+window.show_kind('shots')
+app.processEvents()
+# The offscreen platform draws every glyph as a wide box, so text widths
+# here are no guide; the widest field's own width must leave room.
+check('the widest render field leaves room in the side panel for its label and Inherit',
+      res.minimumSizeHint().width() <= ee.scaled(ee._SIDE_WIDTH) * 0.7
+      and not rs.editors[es.RENDER_APPLY].box.text(),
+      (res.minimumSizeHint().width(), ee.scaled(ee._SIDE_WIDTH)))
+check('the Shots side panel sits right of the table in a splitter, Details on',
+      shots.splitter.indexOf(shots.side) == 1 and shots.side.widget() is rs
+      and window._details.isEnabled() and window._details.isChecked() and shots.side.isVisible())
+window._details.click()
+app.processEvents()
+check('Details hides every side panel and is remembered',
+      shots.side.isHidden() and window.multis_pane.side.isHidden()
+      and saved_layouts and saved_layouts[-1].get('details') is False, saved_layouts[-1:])
+window._details.click()
+app.processEvents()
+check('and shows them again', shots.side.isVisible() and saved_layouts[-1].get('details') is True)
+
+header = shots.table.horizontalHeader()
+menu = shots.header_menu()
+entries = {a.data(): a for a in menu.actions() if a.data()}
+check('the header menu ticks every column, the frozen group and shot locked on',
+      set(entries) == set(shots.columns)
+      and not entries[es.GROUP].isEnabled() and not entries[es.NAME].isEnabled()
+      and all(a.isChecked() for a in entries.values())
+      and any(a.text() == 'Reset Columns' for a in menu.actions()))
+entries[es.ROLL_START].setChecked(False)
+app.processEvents()
+roll_col = shots.columns.index(es.ROLL_START)
+check('unticking hides the column, remembered for the Shots tab',
+      header.isSectionHidden(roll_col)
+      and es.ROLL_START in saved_layouts[-1]['columns']['shots']['hidden'], saved_layouts[-1:])
+fps_col = shots.columns.index(es.FPS)
+header.moveSection(header.visualIndex(fps_col), 2)
+app.processEvents()
+check('a column dragged to the front lands after the frozen group and shot',
+      header.visualIndex(fps_col) == 2 and header.visualIndex(0) == 0 and header.visualIndex(1) == 1
+      and saved_layouts[-1]['columns']['shots']['order'][:3] == [es.GROUP, es.NAME, es.FPS],
+      saved_layouts[-1]['columns']['shots']['order'][:4])
+header.moveSection(header.visualIndex(0), 6)
+app.processEvents()
+check('the frozen group cannot be dragged away', header.visualIndex(0) == 0 and header.visualIndex(1) == 1)
+shots.model.set_sheet(shots.sheet)    # a reset of the rows, as an Add does
+app.processEvents()
+check('a reset of the rows keeps the arrangement',
+      header.visualIndex(fps_col) == 2 and header.isSectionHidden(roll_col))
+start_col = shots.columns.index(es.FRAME_START)
+shots.select_cells([(r_sh020.id, start_col), (r_sh020.id, fps_col)])
+QApplication.clipboard().setText('')
+shots._copy()
+copied = QApplication.clipboard().text().split('\t')
+check('Copy follows the arranged order', copied[0] == shots.index_of(r_sh020.id, es.FPS).data(ee._PLAIN_ROLE)
+      and copied[1] == shots.index_of(r_sh020.id, es.FRAME_START).data(ee._PLAIN_ROLE), copied)
+layout_now = saved_layouts[-1]
+shots.reset_columns()
+app.processEvents()
+check('Reset Columns puts every column back and shown, and forgets the arrangement',
+      shots.column_layout() == (list(shots.columns), set())
+      and 'shots' not in saved_layouts[-1].get('columns', {}), saved_layouts[-1:])
+
+# A new window opens the way the last one was left.
+second = ee.EntityEditorWindow(dataclasses.replace(
+    source, load_layout=lambda: {**layout_now, 'details': False, 'splitter': {'shots': [700, 300]}},
+), kind='shots')
+second.show()
+app.processEvents()
+second_shots = second.panes['shots']
+check('a new window restores columns, Details and the panel width',
+      second_shots.column_layout()[0][:3] == [es.GROUP, es.NAME, es.FPS]
+      and es.ROLL_START in second_shots.column_layout()[1]
+      and not second._details.isChecked() and second_shots.side.isHidden(),
+      second_shots.column_layout())
+second.close()
+junk = ee.EntityEditorWindow(dataclasses.replace(
+    source, load_layout=lambda: {'columns': 5, 'splitter': 'x', 'details': 'no'},
+), kind='shots')
+check('a junk layout opens with the defaults',
+      junk.panes['shots'].column_layout() == (list(junk.panes['shots'].columns), set())
+      and junk._details.isChecked())
+junk.close()
+
+
+def _broken():
+    raise ValueError('torn file')
+
+
+broken = ee.EntityEditorWindow(dataclasses.replace(source, load_layout=_broken), kind='shots')
+check('a layout that will not read opens with the defaults and says so',
+      'Could not read the remembered layout' in broken._summary.text(), broken._summary.text())
+broken.close()
+app.processEvents()
 
 # ── Apply ──────────────────────────────────────────────────────────────────
 
@@ -1064,16 +1267,23 @@ check('the farm reads the layers the column showed', layers == [
 shots_render = config.get_own_properties(SHOTS).get('render', {})
 check('the project render default written on all shots, its other keys kept',
       shots_render.get('resolution') == [2048, 858] and 'overscan' in shots_render, shots_render)
-check("the sequence's camera written on the sequence",
-      sq010.get('render') == {'camera': '/cameras/seq_cam'}, sq010.get('render'))
+check("the sequence's camera and samples written on the sequence",
+      sq010.get('render') == {'camera': '/cameras/seq_cam', 'pathtracedsamples': 128},
+      sq010.get('render'))
 check("the shot's Apply to render written, its Inherit left nothing",
       sh010.get('render') == {'apply_config': not was}, sh010.get('render'))
+check("a shot's depth of field written alone, the emptied ray limit not at all",
+      sh030.get('render') == {'enabledof': True}, sh030.get('render'))
 check('an inheriting shot writes no render settings', 'render' not in sh020, sh020)
-from tumblepipe.config.renderer import get_entity_render_settings  # noqa: E402
+from tumblepipe.config.renderer import get_entity_render_settings, get_pinned_render_settings  # noqa: E402
+from tumblepipe.pipe.usd.render_overrides import KARMA_SETTINGS  # noqa: E402
 resolved = get_entity_render_settings(SHOTS / 'sq010' / 'SH020')
-check('what the root layer reads is what the section showed',
+check('what the root layer reads is what the panel showed',
       resolved.get('resolution') == [2048, 858] and resolved.get('camera') == '/cameras/seq_cam',
       resolved)
+pinned = get_pinned_render_settings(SHOTS / 'sq010' / 'SH030', KARMA_SETTINGS)
+check('the root layer authors the Karma settings the panel set',
+      pinned == {'pathtracedsamples': 128, 'enabledof': True}, pinned)
 check('they resolve the sequence\'s Root', all(
     config.get_properties(SHOTS / 'sq020' / s).get('scene') == 'scenes:/town' for s in ('SH010', 'SH020')
 ))

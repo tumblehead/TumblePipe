@@ -123,6 +123,12 @@ def parse(text: str | None, first_frame: int, last_frame: int, step: int = 1) ->
     return PreviewFrames(tuple(frames), tuple(warnings))
 
 
+def format_frames(frames) -> str:
+    """``frames`` as Preview Frames List text, in their order: ``1012 1040``.
+    :func:`parse` reads it back to the same frames (those in range)."""
+    return ' '.join(str(int(frame)) for frame in frames)
+
+
 def inside_ranges(preview: PreviewFrames, ranges) -> PreviewFrames:
     """``preview`` (parsed against the span of a multi-range render, #84)
     without the frames that fall between its ``ranges``, which are never

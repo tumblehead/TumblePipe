@@ -376,7 +376,7 @@ What to know:
 
 ### Play, Open Folder, Add Entity and Delete
 
-**Play** leads the menu of a shots Multi that has members (card, list row
+**Play in Cinedex** leads the menu of a shots Multi that has members (card, list row
 or sidebar row): its shots open back to back in [the editor](play-shots.md)
 as an untitled edit, in the order of its [shared timeline](#shared-timeline)
 when it has one, else in member order.

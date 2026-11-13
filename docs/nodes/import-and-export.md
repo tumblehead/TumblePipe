@@ -79,11 +79,24 @@ Use it in a shot, or in a set-style asset's workfile to dress it.
 Source: [`otls/lop_th.import_assets.2.0`](../../otls/lop_th.import_assets.2.0/th_8_8Lop_1import__assets_8_82.0/DialogScript),
 [`lops/import_assets.py`](../../python/tumblepipe/pipe/houdini/lops/import_assets.py).
 
+**Browse...**, above the rows, adds several assets at once. It opens the
+asset picker (titled *Add Assets*) in multi-select mode: click a card,
+**Ctrl-click** to add or remove more, **Shift-click** for a run of cards,
+or **Select all in view** for every card shown (narrow it with the search
+or a category first). Picks stay picked when you search again, so you can
+search `chair`, pick, search `table`, pick. **Select** (or Enter) adds one
+row per picked asset, in the picker's order, with Channel `default` and
+Version `latest`; with nothing picked, Enter takes the highlighted card.
+Assets already in a row are skipped, and the Houdini status bar says how
+many were added and skipped, e.g. *import_assets1: Added 3 assets, skipped
+1 already in the list. Press Import to load them.* Rows already there are
+left as they are, and nothing is imported until you press **Import**.
+
 **Asset Imports** is a multiparm; each row has:
 
 | Label | Default | What it does |
 |---|---|---|
-| *(Entity button)* + label | *(empty)* | The row's asset. There is no `from_context` row here — every row is a concrete asset. The picker lists every asset; an asset another row already imports is not refused there, but the row then errors ("already imported by another row"): remove one row or raise its Instances |
+| **Browse...** + label | *(empty)* | The row's asset: the row's **Browse...** re-picks it (one asset). There is no `from_context` row here — every row is a concrete asset. The picker lists every asset; an asset another row already imports is not refused there, but the row then errors ("already imported by another row"): remove one row or raise its Instances |
 | Channel | `default` | Per row |
 | Version | `latest` | Per row |
 | Variant | *As published* | A USD variant for the row's asset prim — every variantSet/variant the imported asset carries, as `set: variant` when it has more than one set. Replaces a Set Variant LOP after the node. Applied to every copy, and published |
@@ -578,6 +591,31 @@ no Scene Invoke in the dive: `th::animate` invokes the scene itself (see
 dive, and the template ended the dive in a Scene Invoke (Packed Folders,
 Shapes `Base`). Scenes saved like that keep working as they are.
 
+### What the dive must contain
+
+The dive needs one thing: its output (`output0`) is either the APEX scene
+or geometry already invoked from it.
+
+- **The scene** (the default, and what the template builds):
+  `th::import_rigs` → Scene Animate → `output0`. Do not add a Scene Invoke;
+  `th::animate` invokes the scene itself, with the **Characters** settings
+  below. Anything you add to the scene before the Scene Animate (more
+  characters, a camera rig, `th::layout_keys`) is invoked with it.
+- **Invoked geometry**: your own Scene Invoke feeding `output0`, perhaps with
+  SOPs after it. Use this only when SOPs must change the posed geometry (a
+  Camera Lattice, say). `th::animate` then uses the output as it is, except
+  that **Shapes** still decides which rig shapes reach the stage; the
+  Characters list does nothing.
+
+Both give the same animation, keys or no keys: adding a Scene Invoke to the
+default dive, or bypassing one, changes nothing on the stage. Up to 1.104 a
+dive with no Scene Invoke broke as soon as the Scene Animate had keys: the
+keys add an `animation` folder beside the characters in the scene, which
+`th::animate` took for an invoked scene, so the stage got the rigs' control
+shapes (a ball, cubes, circles) and nothing moved. A Scene Invoke in the
+dive hid it. `th::playblast` had the same problem with a scene wired into
+it.
+
 ### Characters
 
 When the dive ends in its Scene Animate (it outputs the APEX scene), the
@@ -597,18 +635,29 @@ would reach USD frozen at the first frame, since the node copies only
 points after it. Turning a skeleton on or off re-imports the characters once.
 
 A dive with its own Scene Invoke (every dive from before 1.92, perhaps with
-SOPs after it) is used as it is, and the Characters folder does nothing.
+SOPs after it) is used as it is, held to **Shapes**, and the Characters
+list does nothing.
 To switch an old dive over, wire its Scene Animate into `output0` and delete
 the Scene Invoke. Keep it if SOPs after it change the geometry (a Camera
 Lattice, say). `th::playblast` (SOP) invokes an APEX scene wired into it the
 same way (Shapes `Base`), so a playblast in the dive can read the Scene
 Animate.
 
-Keep Shapes at `Base`, in the folder or in an old dive's own Scene Invoke.
-A wider pattern (`*`, Houdini's default, or `* Base`) also outputs the rig's
-helper shapes: joint and spline viz, the face board, the skeleton display.
-They have no `path`, so they would land at a root-level `/Geometry`, outside
-every character, and be published with the animation. `th::animate` leaves
+**Shapes** is the one rule for which rig shapes reach the stage, whichever
+Scene Invoke ran. A Scene Invoke in the dive (on Houdini's default Shapes
+`*`, say) outputs every shape of the rig; `th::animate` leaves out the
+shapes its own Shapes does not pick (matched by the rig shape each came
+from: `Base_output_jointViz.shp` is `jointViz`), and names them in a warning
+on the node and on the status bar. Set the Scene Invoke's Shapes to the
+same, or delete it, to clear the warning. Skeletons are not shapes and are
+never left out this way. Up to 1.104 an own Scene Invoke on `*` sent the
+joint and spline viz of TumbleRig rigs to `/Geometry`.
+
+Keep Shapes at `Base`. A wider pattern (`*`, Houdini's default, or `* Base`)
+also outputs the rig's helper shapes: joint and spline viz, the face board,
+the skeleton display. They have no `path`, so they would land at a
+root-level `/Geometry`, outside every character, and be published with the
+animation. `th::animate` leaves
 out a character's path-less shapes when the character has geometry with
 paths, and says so in a warning on the node and on the status bar. A
 character with no path at all (a rig not built for the pipeline) is kept,

@@ -9,13 +9,20 @@ the way a spreadsheet does: select cells and type to set them all, copy and
 paste blocks, fill down, shift frame ranges, add rows from a name pattern or
 a pasted list, add empty sequences and categories, rename, retire, undo. A third tab, **Multis**, sets Multis
 up: their members, a tick box per department they cover, a shots Multi's
-Timeline, and below the table the selected Multi's workfile per covered
+Timeline, and in the side panel the selected Multi's workfile per covered
 department, to open or to make from the department template.
 
 Each sequence or category has a row of its own above its entities, which
 are nested under it: its values are what they inherit unless they set their
 own, so a sequence's Root gives its assets to every shot in it with no Root
 of its own. Clicking a group's name folds its entities away.
+
+The tabs, the tab's sequence or category picker and its search share the
+top row, as in the asset browser. The Shots and Multis tabs have a side
+panel right of the table (Render settings; a Multi's workfiles), resized
+by dragging its edge and hidden with **Details**. Columns drag to a new
+place and hide from the header's right-click menu. The window remembers
+all of that (``entity_editor_layout``).
 
 Values look the way the Database Editor shows them: inherited values are
 grey, values set on the entity itself are bright and bold, and edits not
@@ -35,17 +42,19 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 
 from PySide6.QtCore import (
-    QAbstractTableModel, QItemSelectionModel, QModelIndex, QPersistentModelIndex,
-    QSortFilterProxyModel,
-    Qt, QTimer,
+    QAbstractTableModel, QEvent, QItemSelectionModel, QModelIndex, QObject,
+    QPersistentModelIndex, QSortFilterProxyModel,
+    Qt, QTimer, Signal,
 )
 from PySide6.QtGui import QBrush, QColor, QFont, QKeySequence, QPen, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QFormLayout,
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog,
+    QDoubleSpinBox, QFormLayout,
     QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
-    QMenu, QMessageBox, QPushButton, QSpinBox, QStackedWidget, QStyle,
+    QMenu, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter,
+    QStackedWidget, QStyle,
     QStyledItemDelegate, QStyleOptionViewItem, QTabBar, QTableView,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
 from tumblepipe.config import entity_sheet as es
@@ -56,6 +65,7 @@ from tumblepipe.config.multi_timeline import (
 )
 from tumblepipe.util.uri import Uri
 
+from . import entity_editor_layout as layout_prefs
 from .table_scroll import (
     FROZEN_COLUMNS, hidden_under_frozen, horizontal_wheel_steps,
     keep_view_on_click, scrolls_sideways,
@@ -73,7 +83,7 @@ _TIMING = (es.FRAME_START, es.FRAME_END, es.LENGTH, es.ROLL_START, es.ROLL_END, 
 COLUMNS = {
     'assets': (es.GROUP, es.NAME, STATUS, *_TIMING, es.ANIMATABLE, es.MULTIS),
     'shots': (
-        es.GROUP, es.NAME, STATUS, *_TIMING, es.ROOT, es.MULTIS, es.LAYERS,
+        es.GROUP, es.NAME, STATUS, *_TIMING, es.RENDER_PINS, es.ROOT, es.MULTIS, es.LAYERS,
         es.DEPARTMENTS_OFF, es.ASSETS,
     ),
 }
@@ -81,7 +91,7 @@ _WIDTHS = {
     es.GROUP: 100, es.NAME: 110, STATUS: 150, es.FRAME_START: 64,
     es.FRAME_END: 64, es.LENGTH: 64, es.ROLL_START: 70, es.ROLL_END: 70,
     es.FPS: 56, es.ANIMATABLE: 90, es.ROOT: 120, es.MULTIS: 150, es.ASSETS: 220,
-    es.LAYERS: 200, es.DEPARTMENTS_OFF: 130,
+    es.LAYERS: 200, es.DEPARTMENTS_OFF: 130, es.RENDER_PINS: 90,
 }
 #: Edited through a dialog, never typed or pasted into.
 _DIALOG_COLUMNS = frozenset({es.ASSETS, es.MULTIS})
@@ -239,6 +249,11 @@ class EntityEditorSource:
     members overlap to the pairs (``config.multi_timeline.
     overlapping_multis`` on this project), read before and after an Apply;
     ``repack`` lays one out afresh, when the artist asks.
+
+    The window's layout (the side panel shown, its width, each tab's
+    columns): ``load_layout`` reads what was remembered and ``save_layout``
+    keeps it (``PipelinePrefs.entity_editor``, shaped by
+    ``entity_editor_layout``).
     """
     project: str
     config: object
@@ -260,6 +275,8 @@ class EntityEditorSource:
     count_prims: Callable[[Uri, str], int | None] = lambda uri, pattern: None
     overlaps: Callable[[], dict] = dict
     repack: Callable[[Uri], object] = lambda uri: None
+    load_layout: Callable[[], dict] = dict
+    save_layout: Callable[[dict], None] = lambda data: None
 
 
 def _hint(text: str = '') -> QLabel:
@@ -618,6 +635,8 @@ class _SheetModel(QAbstractTableModel):
         return None
 
     def editable(self, row: es.Row | GroupKey, column: str) -> bool:
+        if column == es.RENDER_PINS:
+            return False    # a summary: the Render settings panel edits them
         if isinstance(row, GroupKey):
             # A group's values, and the Multis listing it whole; its name
             # and entities are edited elsewhere.
@@ -674,9 +693,43 @@ class _SheetModel(QAbstractTableModel):
     def _members(self, group: str) -> list[es.Row]:
         return [r for r in self.sheet.rows if r.group == group and not r.retire]
 
+    def _render_cell(self, what: str, pins, value_of, pending: bool, role):
+        """The Render column: the render settings a row pins itself, in a
+        word each, and in full in its tooltip."""
+        if role in (Qt.DisplayRole, Qt.EditRole, _PLAIN_ROLE):
+            return render_config.pins_text(pins)
+        if role == Qt.ToolTipRole:
+            if not pins:
+                text = f'{what.capitalize()} sets no render setting of its own: it inherits them all.'
+            else:
+                lines = [
+                    f'  {render_config.LABELS[name]}: {es.format_value(name, value_of(name))}'
+                    for name in pins
+                ]
+                text = f'Set on {what}:\n' + '\n'.join(lines) + '\nThe rest it inherits.'
+            if pending:
+                text += '\nChanged; saved on Apply.'
+            return text + '\nSelect the row to see or change them in Render settings.'
+        if role == Qt.ForegroundRole:
+            return _OVERRIDE if pins else _INHERITED
+        if role == Qt.FontRole:
+            return _BOLD if pins else None
+        if role == Qt.BackgroundRole and pending:
+            return _PENDING
+        return None
+
     def _group_data(self, group: str, column: str, role):
         sheet = self.sheet
         kind = sheet.kind
+        if column == es.RENDER_PINS:
+            value = self._render_cell(
+                f'{kind.group} {group}', sheet.group_render_pins(group),
+                lambda name: sheet.group_value(group, name),
+                sheet.group_render_pending(group), role,
+            )
+            if value is None and role == Qt.BackgroundRole:
+                return _GROUP_FILL
+            return value
         if role in (Qt.DisplayRole, Qt.EditRole, _PLAIN_ROLE):
             if column == STATUS:
                 return self.group_status(group)[0]
@@ -792,6 +845,14 @@ class _SheetModel(QAbstractTableModel):
         if isinstance(row, GroupKey):
             return self._group_data(row.name, column, role)
         sheet = self.sheet
+        if column == es.RENDER_PINS:
+            if row.retire and role not in (Qt.DisplayRole, Qt.EditRole, _PLAIN_ROLE):
+                return _STRUCK if role == Qt.FontRole else (
+                    _INHERITED if role == Qt.ForegroundRole else None)
+            return self._render_cell(
+                f'{row.group}/{row.name}', sheet.render_pins(row),
+                lambda name: sheet.value(row, name), sheet.render_pending(row), role,
+            )
         if role in (Qt.DisplayRole, Qt.EditRole, _PLAIN_ROLE):
             if column == STATUS:
                 return self.status(row)[0]
@@ -1870,135 +1931,387 @@ class AddAssetsDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
-# The Shots tab's Render settings section
+# The Shots tab's Render settings panel
 # ---------------------------------------------------------------------------
 
 _RENDER_TIPS = {
     es.RENDER_APPLY: (
-        'Whether the shot\'s root layer authors the resolution and camera '
-        'below on the project\'s RenderSettings prim. Off (or not set '
-        'anywhere): renders use the RenderSettings the scene carries.'
+        'Whether the shot\'s root layer authors the settings below on the '
+        'project\'s RenderSettings prim. Off (or not set anywhere): renders '
+        'use the RenderSettings the scene carries.'
     ),
     es.RENDER_RESOLUTION: (
-        'Width x height. Also sizes the layout camera\'s frame and '
-        'playblasts, applied to the render or not.'
+        'Width and height in pixels; Presets picks a common size or the '
+        'project\'s. Also sizes the layout camera\'s frame and playblasts, '
+        'applied to the render or not.'
     ),
     es.RENDER_CAMERA: (
         'The camera prim the render looks through. Authored only when that '
         'camera exists in the project\'s root_default_prims.usda; otherwise '
         'the scene\'s camera renders.'
     ),
+    render_config.SAMPLES: 'Karma\'s path traced samples per pixel.',
+    render_config.DICING: 'Karma\'s dicing quality scale: lower dices geometry coarser and faster.',
+    render_config.DIFFUSE_LIMIT: 'How many diffuse bounces a ray takes.',
+    render_config.REFLECTION_LIMIT: 'How many reflection bounces a ray takes.',
+    render_config.REFRACTION_LIMIT: 'How many refraction bounces a ray takes.',
+    render_config.VOLUME_LIMIT: 'How many volume bounces a ray takes.',
+    render_config.SSS_LIMIT: 'How many subsurface scattering bounces a ray takes.',
+    render_config.DOF: 'Whether Karma renders depth of field.',
+    render_config.MBLUR: 'Whether Karma renders motion blur.',
 }
 _RENDER_ORDER_NOTE = (
-    'Shots inherit each setting from their sequence, then all shots, then '
-    'the project. A Farm Submit override (samples, motion blur, DOF, ray '
-    'limits) still wins for that one submission. Apply brings the shots\' '
-    'root layers up to date.'
+    'Each setting comes from the strongest level that sets it: the shot, '
+    'its sequence, all shots, the project, then the pipeline defaults. '
+    'Samples, ray limits, dicing, depth of field and motion blur that no '
+    'level sets keep the project\'s render defaults. A department\'s render '
+    'settings node and a Farm Submit override still win. Apply brings the '
+    'shots\' root layers up to date.'
 )
 _MIXED = '(mixed)'
-_UNPIN = object()   # the Inherit button: take the pin away
+_NOT_SET = 'not set'
+_UNPIN = object()   # the Inherit button, or a field emptied: take the pin away
+_RENDER_DEFAULTS = "not set: the project's render defaults decide"
 
 
-def render_origin(state: str, source: str) -> str:
-    """Where a render setting's value comes from, for the section."""
+def render_origin(state: str, source: str, name: str = '') -> str:
+    """Where a render setting's value comes from, for the panel. ``name``
+    tells a Karma setting only the pipeline defaults hold, which no render
+    uses (``render_config.unset_default``)."""
+    unset = render_config.unset_default(name, source)
     if state == es.OWN:
         return 'set here'
     if state == es.SET:
         return 'set here, waiting for Apply'
     if state == es.CLEARED:
+        if unset:
+            return "back to the project's render defaults on Apply"
         return f'inherits from {source or "nothing"} on Apply'
+    if unset:
+        return _RENDER_DEFAULTS
     return f'from {source}' if source else 'not set anywhere'
 
 
-class _RenderSettings(QWidget):
-    """Below the Shots table: the render settings a shot's root layer
-    applies (#70), for the selected shots, the selected sequences (a
-    sequence's own row), or with Project defaults pressed, all shots.
+class _NoWheel(QObject):
+    """Keeps the wheel from changing a field the pointer only passes over
+    while the panel scrolls: a field takes it once it has focus."""
 
-    Each setting shows its value and where it comes from; typing or
-    ticking pins it on the targets, Inherit takes the pin away. The edits
-    are pending like the sheet's and written by Apply."""
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt)
+        if event.type() == QEvent.Wheel and not obj.hasFocus():
+            event.ignore()
+            return True
+        return False
+
+
+class _Double(QDoubleSpinBox):
+    """Numbers as the database holds them: ``2``, ``0.25``, not ``2.000``."""
+
+    def textFromValue(self, value: float) -> str:  # noqa: N802 (Qt)
+        return render_config.format_number(round(value, self.decimals()))
+
+
+def _blankable(spin, low, high, no_wheel: _NoWheel):
+    """``spin`` whose lowest value (below every value it takes) shows as a
+    text instead (nothing set, or mixed). Commits on Enter, focus out or an
+    arrow step, not on each key."""
+    spin.setRange(low, high)
+    spin.setKeyboardTracking(False)
+    spin.setFocusPolicy(Qt.StrongFocus)
+    spin.setSpecialValueText(_NOT_SET)
+    spin.installEventFilter(no_wheel)
+    return spin
+
+
+class _Field(QWidget):
+    """One render setting's editor. :meth:`show_value` shows a value
+    (None: nothing, ``mixed``: the targets differ); :attr:`committed`
+    carries what the artist set: a value, or :data:`_UNPIN` when they
+    emptied it."""
+    committed = Signal(object)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._filling = False
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(scaled(4))
+
+    def show_value(self, value, mixed: bool, unset: str = _NOT_SET) -> None:
+        self._filling = True
+        try:
+            self._show(value, mixed, unset)
+        finally:
+            self._filling = False
+
+    def _show(self, value, mixed: bool, unset: str) -> None:
+        raise NotImplementedError
+
+    def _emit(self, value) -> None:
+        if not self._filling:
+            self.committed.emit(value)
+
+
+class _CheckField(_Field):
+    def __init__(self, text: str, parent=None) -> None:
+        super().__init__(parent)
+        self.box = QCheckBox(text)
+        self._layout.addWidget(self.box)
+        self.box.clicked.connect(self._on_clicked)
+
+    def _show(self, value, mixed, unset) -> None:
+        self.box.setTristate(mixed)
+        self.box.setCheckState(
+            Qt.PartiallyChecked if mixed else Qt.Checked if value is True else Qt.Unchecked
+        )
+
+    def _on_clicked(self, _checked=False) -> None:
+        value = self.box.checkState() != Qt.Unchecked
+        self.box.setTristate(False)
+        self._emit(value)
+
+
+class _TextField(_Field):
+    def __init__(self, placeholder: str, parent=None) -> None:
+        super().__init__(parent)
+        self.edit = QLineEdit()
+        self._placeholder = placeholder
+        self.edit.setPlaceholderText(placeholder)
+        self._layout.addWidget(self.edit)
+        self._shown = ''
+        self.edit.editingFinished.connect(self._on_finished)
+
+    def _show(self, value, mixed, unset) -> None:
+        text = '' if mixed or value is None else str(value)
+        self.edit.setPlaceholderText(_MIXED if mixed else self._placeholder)
+        if self.edit.text() != text:
+            self.edit.setText(text)
+        self._shown = text
+
+    def _on_finished(self) -> None:
+        text = self.edit.text().strip()
+        if text != self._shown:
+            self._emit(text or _UNPIN)
+
+
+class _NumberField(_Field):
+    """A whole number above 0 (``int``) or a number of 0 or more."""
+
+    def __init__(self, kind: str, no_wheel: _NoWheel, parent=None) -> None:
+        super().__init__(parent)
+        if kind == 'int':
+            self.spin = _blankable(QSpinBox(), 0, 1_000_000, no_wheel)
+        else:
+            self.spin = _blankable(_Double(), -1.0, 100_000.0, no_wheel)
+            self.spin.setDecimals(3)
+        self.spin.setMinimumWidth(scaled(80))
+        self._layout.addWidget(self.spin)
+        self._layout.addStretch()
+        self.spin.valueChanged.connect(self._on_changed)
+
+    def _show(self, value, mixed, unset) -> None:
+        self.spin.setSpecialValueText(_MIXED if mixed else unset)
+        if mixed or isinstance(value, bool) or not isinstance(value, (int, float)) \
+                or value != value:
+            self.spin.setValue(self.spin.minimum())
+        elif isinstance(self.spin, QSpinBox):
+            self.spin.setValue(max(int(value), self.spin.minimum()))
+        else:
+            self.spin.setValue(max(float(value), self.spin.minimum()))
+
+    def _on_changed(self, value) -> None:
+        if value <= self.spin.minimum():
+            self._emit(_UNPIN)
+        else:
+            self._emit(int(value) if isinstance(self.spin, QSpinBox) else float(value))
+
+
+class _ChoiceField(_Field):
+    """On or off, or nothing set: the first entry shows that state, and
+    picking it takes the pin away."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.combo = QComboBox()
+        self.combo.setStyleSheet(COMBO_STYLE)
+        self.combo.addItem(_NOT_SET, _UNPIN)
+        self.combo.addItem('On', True)
+        self.combo.addItem('Off', False)
+        self.combo.setMinimumWidth(scaled(80))
+        self._layout.addWidget(self.combo)
+        self._layout.addStretch()
+        self.combo.activated.connect(lambda i: self._emit(self.combo.itemData(i)))
+
+    def _show(self, value, mixed, unset) -> None:
+        index = 0 if mixed or not isinstance(value, bool) else (1 if value else 2)
+        self.combo.setItemText(0, _MIXED if mixed else unset if index == 0 else 'Inherit')
+        self.combo.setCurrentIndex(index)
+
+
+class _ResolutionField(_Field):
+    """Width and height as two whole numbers, as the usdrender ROP has
+    them, and a Presets menu. Both emptied takes the pin away; a change to
+    one pins both."""
+
+    def __init__(self, presets: Callable[[], list], no_wheel: _NoWheel, parent=None) -> None:
+        super().__init__(parent)
+        self._presets = presets
+        self.width_spin = _blankable(QSpinBox(), 0, 65_536, no_wheel)
+        self.height_spin = _blankable(QSpinBox(), 0, 65_536, no_wheel)
+        self.width_spin.setToolTip('Width in pixels')
+        self.height_spin.setToolTip('Height in pixels')
+        for spin in (self.width_spin, self.height_spin):
+            spin.setMinimumWidth(scaled(60))
+            spin.valueChanged.connect(self._on_changed)
+        self._layout.addWidget(self.width_spin)
+        times = QLabel('x')
+        times.setStyleSheet(_HINT_STYLE)
+        self._layout.addWidget(times)
+        self._layout.addWidget(self.height_spin)
+        self.presets_button = QToolButton()
+        self.presets_button.setText('Presets')
+        self.presets_button.setToolTip('Common resolutions, the project\'s first.')
+        self.presets_button.setPopupMode(QToolButton.InstantPopup)
+        self.presets_button.setStyleSheet(BUTTON_GHOST_STYLE.replace('QPushButton', 'QToolButton'))
+        menu = QMenu(self.presets_button)
+        menu.aboutToShow.connect(lambda m=menu: self._fill_menu(m))
+        self.presets_button.setMenu(menu)
+        self._layout.addWidget(self.presets_button)
+        self._layout.addStretch()
+
+    def _fill_menu(self, menu: QMenu) -> None:
+        menu.clear()
+        for label, size in self._presets():
+            action = menu.addAction(render_config.preset_text(label, size))
+            action.triggered.connect(lambda _c=False, s=size: self.pick(s))
+
+    def pick(self, size) -> None:
+        """A preset chosen."""
+        self._emit([int(size[0]), int(size[1])])
+
+    def _show(self, value, mixed, unset) -> None:
+        found = None if mixed else render_config.valid_resolution(value)
+        for spin, part in ((self.width_spin, 0), (self.height_spin, 1)):
+            spin.setSpecialValueText(_MIXED if mixed else unset)
+            spin.setValue(found[part] if found else 0)
+
+    def _on_changed(self, _value) -> None:
+        w, h = self.width_spin.value(), self.height_spin.value()
+        if w > 0 and h > 0:
+            self._emit([w, h])
+        elif w == 0 and h == 0:
+            self._emit(_UNPIN)
+        # One of the two still empty: wait for the other.
+
+
+class _RenderSettings(QWidget):
+    """The Shots tab's side panel: the render settings a shot's root layer
+    applies (#70), for the selected shots, the selected sequences (a
+    sequence's own row), or with **All shots** pressed, all shots
+    (``entity:/shots``), what every sequence and shot inherits.
+
+    Each setting shows its value and where it comes from; changing it pins
+    it on the targets, Inherit takes the pin away. The edits are pending
+    like the sheet's and written by Apply."""
 
     def __init__(self, pane: '_SheetPane') -> None:
         super().__init__(pane)
         self._pane = pane
         self._filling = False
-        self._shown: dict[str, str] = {}
+        self._no_wheel = _NoWheel(self)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, scaled(4), 0, 0)
+        layout.setContentsMargins(scaled(4), scaled(2), scaled(4), scaled(4))
         layout.setSpacing(scaled(4))
         top = QHBoxLayout()
         self.title = QLabel('Render settings')
         self.title.setFont(_BOLD)
-        top.addWidget(self.title)
-        top.addSpacing(scaled(8))
-        self.target = _hint()
-        self.target.setWordWrap(False)
-        top.addWidget(self.target, 1)
-        self.project_button = QPushButton('Project defaults')
-        self.project_button.setCheckable(True)
-        self.project_button.setAutoDefault(False)
-        self.project_button.setStyleSheet(BUTTON_GHOST_STYLE + (
+        top.addWidget(self.title, 1)
+        self.all_shots_button = QPushButton('All shots')
+        self.all_shots_button.setCheckable(True)
+        self.all_shots_button.setAutoDefault(False)
+        self.all_shots_button.setStyleSheet(BUTTON_GHOST_STYLE + (
             f'QPushButton:checked {{ color: {ACCENT_HOVER}; border-color: {ACCENT}; }}'
         ))
-        self.project_button.setToolTip(
-            'Edit what every sequence and shot inherits (all shots, '
-            'entity:/shots) instead of the selection.'
+        self.all_shots_button.setToolTip(
+            'Edit all shots (entity:/shots), what every sequence and shot '
+            'inherits unless it sets its own, instead of the selection. All '
+            'shots itself inherits from the project, then the pipeline defaults.'
         )
-        self.project_button.toggled.connect(lambda _on: self.fill())
-        top.addWidget(self.project_button)
+        self.all_shots_button.toggled.connect(lambda _on: self.fill())
+        top.addWidget(self.all_shots_button)
         layout.addLayout(top)
+        self.target = _hint()
+        layout.addWidget(self.target)
 
         host = QWidget()
         grid = QGridLayout(host)
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(scaled(12))
-        grid.setVerticalSpacing(scaled(2))
-        self.editors: dict[str, QWidget] = {}
+        grid.setHorizontalSpacing(scaled(8))
+        grid.setVerticalSpacing(scaled(1))
+        self.editors: dict[str, _Field] = {}
         self.origins: dict[str, QLabel] = {}
         self.inherit_buttons: dict[str, QPushButton] = {}
-        for row, name in enumerate(es.RENDER_FIELDS):
-            label = QLabel(es.SHOTS_KIND.label(name))
-            label.setToolTip(_RENDER_TIPS[name])
-            grid.addWidget(label, row, 0)
-            if name == es.RENDER_APPLY:
-                editor = QCheckBox('Author resolution and camera in the root layer')
-                editor.clicked.connect(lambda _c, n=name: self._on_ticked(n))
-            else:
-                editor = QLineEdit()
-                editor.setPlaceholderText(
-                    '1920 x 1080' if name == es.RENDER_RESOLUTION else '/cameras/render_camera'
-                )
-                editor.setMinimumWidth(scaled(220))
-                editor.editingFinished.connect(lambda n=name: self._on_typed(n))
-            editor.setToolTip(_RENDER_TIPS[name])
-            grid.addWidget(editor, row, 1)
-            origin = _hint()
-            origin.setWordWrap(False)
-            grid.addWidget(origin, row, 2)
-            inherit = _button(
-                'Inherit', lambda n=name: self._on_inherit(n),
-                tip='Take the value set here away: it inherits again.',
+        self.section_titles: dict[str, QLabel] = {}
+        row = 0
+        for section, names in render_config.SECTIONS:
+            heading = QLabel(section)
+            heading.setStyleSheet(
+                f'font-family: "{FONT_FAMILY}"; font-size: {FONT_SMALL}px; '
+                f'color: {TEXT_DIM}; font-weight: bold; padding-top: {scaled(6)}px;'
             )
-            grid.addWidget(inherit, row, 3)
-            self.editors[name] = editor
-            self.origins[name] = origin
-            self.inherit_buttons[name] = inherit
-        grid.setColumnStretch(2, 1)
+            self.section_titles[section] = heading
+            grid.addWidget(heading, row, 0, 1, 3)
+            row += 1
+            for name in names:
+                label = QLabel(es.SHOTS_KIND.label(name))
+                label.setToolTip(_RENDER_TIPS[name])
+                grid.addWidget(label, row, 0)
+                editor = self._make_editor(name)
+                editor.setToolTip(_RENDER_TIPS[name])
+                editor.committed.connect(lambda value, n=name: self._on_committed(n, value))
+                grid.addWidget(editor, row, 1)
+                inherit = _button('Inherit', lambda n=name: self._on_inherit(n))
+                grid.addWidget(inherit, row, 2)
+                origin = _hint()
+                grid.addWidget(origin, row + 1, 1, 1, 2)
+                self.editors[name] = editor
+                self.origins[name] = origin
+                self.inherit_buttons[name] = inherit
+                row += 2
+        grid.setColumnStretch(1, 1)
         layout.addWidget(host)
         self.effect = _hint()
         layout.addWidget(self.effect)
-        note = _hint(_RENDER_ORDER_NOTE)
-        layout.addWidget(note)
+        layout.addWidget(_hint(_RENDER_ORDER_NOTE))
+        layout.addStretch()
+
+    def _make_editor(self, name: str) -> _Field:
+        if name == es.RENDER_APPLY:
+            return _CheckField('')
+        if name == es.RENDER_RESOLUTION:
+            return _ResolutionField(self.presets, self._no_wheel)
+        if name == es.RENDER_CAMERA:
+            return _TextField('/cameras/render_camera')
+        kind = render_config.KARMA[render_config.split(name)[1]]
+        if kind == 'bool':
+            return _ChoiceField()
+        return _NumberField(kind, self._no_wheel)
+
+    def presets(self) -> list:
+        """The resolution presets, the project's resolution first (what
+        all shots inherits from the project, or the pipeline defaults)."""
+        sheet = self._pane.sheet
+        return render_config.resolution_presets(
+            sheet.base.for_everyone.values.get(es.RENDER_RESOLUTION)
+        )
 
     # ── What it edits ────────────────────────────────────
 
     def targets(self) -> tuple[str, list]:
-        """``('project', [None])``, ``('rows', ids)``, ``('groups', names)``
-        or ``('none', [])``."""
+        """``('everyone', [None])`` (all shots), ``('rows', ids)``,
+        ``('groups', names)`` or ``('none', [])``."""
         pane = self._pane
-        if self.project_button.isChecked():
-            return 'project', [None]
+        if self.all_shots_button.isChecked():
+            return 'everyone', [None]
         sheet = pane.sheet
         rows = [i for i in pane.selected_row_ids() if not sheet.row(i).retire]
         if rows:
@@ -2011,7 +2324,7 @@ class _RenderSettings(QWidget):
     def _read(self, mode: str, target, name: str) -> tuple[object, str, str]:
         """(value, state, source) of ``name`` on one target."""
         sheet = self._pane.sheet
-        if mode == 'project':
+        if mode == 'everyone':
             return sheet.everyone_value(name), sheet.everyone_state(name), sheet.everyone_source(name)
         if mode == 'groups':
             return (
@@ -2021,9 +2334,25 @@ class _RenderSettings(QWidget):
         row = sheet.row(target)
         return sheet.value(row, name), sheet.state(row, name), sheet.source(row, name)
 
+    def _renders(self, mode: str, target, name: str):
+        """The value of ``name`` a render of the target gets from the root
+        layer: None for a Karma setting only the pipeline defaults hold."""
+        value, state, source = self._read(mode, target, name)
+        if state in (es.INHERITED, es.CLEARED) and render_config.unset_default(name, source):
+            return None
+        return value
+
+    @staticmethod
+    def _level(mode: str) -> str:
+        return {'everyone': render_config.ALL_SHOTS_LEVEL, 'groups': 'sequence'}.get(mode, 'shot')
+
     def _target_text(self, mode: str, targets: list) -> str:
-        if mode == 'project':
-            return 'All shots: what every sequence and shot inherits'
+        if mode == 'everyone':
+            return (
+                'All shots: what every sequence and shot inherits unless it '
+                'sets its own. It inherits from the project, then the '
+                'pipeline defaults.'
+            )
         if mode == 'groups':
             if len(targets) == 1:
                 return f'Sequence {targets[0]}: what its shots inherit'
@@ -2034,7 +2363,7 @@ class _RenderSettings(QWidget):
                 row = sheet.row(targets[0])
                 return f'Shot {row.group}/{row.name}'
             return f'{len(targets)} shots'
-        return 'Select shots or a sequence\'s row, or press Project defaults.'
+        return 'Select shots or a sequence\'s row, or press All shots.'
 
     # ── Showing ──────────────────────────────────────────
 
@@ -2043,20 +2372,31 @@ class _RenderSettings(QWidget):
         self._filling = True
         try:
             self.target.setText(self._target_text(mode, targets))
-            effects = set()
+            level = self._level(mode)
+            tip = (
+                f'Take the value set here away: it inherits from '
+                f'{render_config.weaker_levels(level)} again.'
+            )
             for name in es.RENDER_FIELDS:
+                self.inherit_buttons[name].setToolTip(tip)
                 self._fill_field(name, mode, targets)
+            effects = set()
             for target in targets:
                 values = {
-                    name: self._read(mode, target, name)[0] for name in es.RENDER_FIELDS
+                    name: self._read(mode, target, name)[0]
+                    for name in render_config.IMAGE_FIELDS
                 }
-                effects.add(render_config.effect(values))
+                karma = {
+                    name: value for name in render_config.KARMA_FIELDS
+                    if (value := self._renders(mode, target, name)) is not None
+                }
+                effects.add(render_config.effect(values, karma))
             if not targets:
                 self.effect.setText('')
             elif len(effects) == 1:
                 text = effects.pop()
                 if mode != 'rows':
-                    text = f'A shot that inherits all three: {text}'
+                    text = f'A shot that inherits all of these: {text}'
                 self.effect.setText(text)
             else:
                 self.effect.setText(
@@ -2069,18 +2409,19 @@ class _RenderSettings(QWidget):
         editor = self.editors[name]
         origin = self.origins[name]
         inherit = self.inherit_buttons[name]
-        enabled = bool(targets)
-        editor.setEnabled(enabled)
+        editor.setEnabled(bool(targets))
         if not targets:
-            self._show(name, None, mixed=False)
+            editor.show_value(None, mixed=False)
+            editor.setStyleSheet('')
             origin.setText('')
             inherit.setEnabled(False)
             return
         found = [self._read(mode, target, name) for target in targets]
-        values = [value for value, _state, _source in found]
+        values = [self._renders(mode, target, name) for target in targets]
         mixed = any(value != values[0] for value in values[1:])
-        self._show(name, None if mixed else values[0], mixed)
-        origins = {render_origin(state, source) for _value, state, source in found}
+        unset = _NOT_SET
+        editor.show_value(None if mixed else values[0], mixed, unset)
+        origins = {render_origin(state, source, name) for _value, state, source in found}
         text = origins.pop() if len(origins) == 1 else 'differs between them'
         if name == es.RENDER_APPLY and not mixed and values[0] is None:
             text += ' (off)'
@@ -2093,23 +2434,6 @@ class _RenderSettings(QWidget):
         inherited = all(state in (es.INHERITED, es.CLEARED) for _v, state, _s in found)
         editor.setStyleSheet(f'color: {_INHERITED.color().name()};' if inherited else '')
         inherit.setEnabled(any(state in (es.OWN, es.SET) for _v, state, _s in found))
-
-    def _show(self, name: str, value, mixed: bool) -> None:
-        editor = self.editors[name]
-        if isinstance(editor, QCheckBox):
-            editor.setTristate(mixed)
-            editor.setCheckState(
-                Qt.PartiallyChecked if mixed else Qt.Checked if value is True else Qt.Unchecked
-            )
-            return
-        text = '' if mixed or value is None else es.format_value(name, value)
-        editor.setPlaceholderText(
-            _MIXED if mixed else
-            '1920 x 1080' if name == es.RENDER_RESOLUTION else '/cameras/render_camera'
-        )
-        if editor.text() != text:
-            editor.setText(text)
-        self._shown[name] = text
 
     # ── Editing ──────────────────────────────────────────
 
@@ -2125,7 +2449,7 @@ class _RenderSettings(QWidget):
         def change():
             for target in targets:
                 try:
-                    if mode == 'project':
+                    if mode == 'everyone':
                         if value is _UNPIN:
                             sheet.reset_everyone(name)
                         else:
@@ -2147,24 +2471,30 @@ class _RenderSettings(QWidget):
         # is put back to what the targets hold.
         self.fill()
 
-    def _on_ticked(self, name: str) -> None:
+    def _on_committed(self, name: str, value) -> None:
         if self._filling:
             return
-        editor = self.editors[name]
-        value = editor.checkState() != Qt.Unchecked
-        editor.setTristate(False)
         self._write(name, value)
-
-    def _on_typed(self, name: str) -> None:
-        if self._filling:
-            return
-        text = self.editors[name].text().strip()
-        if text == self._shown.get(name, ''):
-            return
-        self._write(name, _UNPIN if not text else text)
 
     def _on_inherit(self, name: str) -> None:
         self._write(name, _UNPIN)
+
+
+#: The side panel's width when nothing is remembered.
+_SIDE_WIDTH = 420
+
+
+def _side_panel(content: QWidget) -> QScrollArea:
+    """A tab's side panel, right of its table as the asset browser's detail
+    panel is: ``content`` in a scroll area, so a short window still reaches
+    all of it. The window's Details button hides it."""
+    area = QScrollArea()
+    area.setObjectName('side_panel')
+    area.setWidgetResizable(True)
+    area.setFrameShape(QFrame.NoFrame)
+    area.setWidget(content)
+    area.setMinimumWidth(scaled(240))
+    return area
 
 
 # ---------------------------------------------------------------------------
@@ -2208,11 +2538,16 @@ class _SheetPane(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(scaled(6))
 
-        top = QHBoxLayout()
-        top.addWidget(QLabel(kind.label(es.GROUP)))
+        # The group picker and search sit in the window's top row, beside
+        # the tabs, as the asset browser lays them out (the window places
+        # this bar there).
+        self.filter_bar = QWidget()
+        top = QHBoxLayout(self.filter_bar)
+        top.setContentsMargins(0, 0, 0, 0)
         self._group_filter = QComboBox()
         self._group_filter.setStyleSheet(COMBO_STYLE)
-        self._group_filter.setMinimumWidth(scaled(160))
+        self._group_filter.setMinimumWidth(scaled(150))
+        self._group_filter.setToolTip(f'Show one {kind.group}, or all of them.')
         self._group_filter.currentIndexChanged.connect(self._apply_filter)
         top.addWidget(self._group_filter)
         self._search = QLineEdit()
@@ -2220,12 +2555,20 @@ class _SheetPane(QWidget):
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self._apply_filter)
         top.addWidget(self._search, 1)
-        outer.addLayout(top)
+
+        # The table on the left, the side panel (Shots: Render settings)
+        # on the right, in a splitter: resizable, and hidden with Details.
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(scaled(6))
         legend = _hint(_legend(kind))
         legend.setWordWrap(False)
         legend.setToolTip(_LEGEND_TIP.format(group=kind.group, item=kind.item))
         self.legend = legend
-        outer.addWidget(legend)
+        left_layout.addWidget(legend)
 
         self.model = _SheetModel(self)
         self.proxy = _Filter()
@@ -2244,16 +2587,28 @@ class _SheetPane(QWidget):
         header = table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Interactive)
         header.setStretchLastSection(True)
-        for i, column in enumerate(self.columns):
-            if column in _WIDTHS:
-                table.setColumnWidth(i, scaled(_WIDTHS[column]))
+        self._default_widths()
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(self._context_menu)
         table.clicked.connect(self._on_clicked)
         # The group and name stay in view while the columns to their
         # right scroll (#40).
         table.freeze_columns(FROZEN_COLUMNS)
-        outer.addWidget(table, 1)
+        # Columns drag to a new place and hide from the header's menu,
+        # remembered per tab; the frozen group and name stay first.
+        self._arranging = False
+        header.setSectionsMovable(True)
+        header.sectionMoved.connect(self._on_section_moved)
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(
+            lambda pos: self._header_menu(header.mapToGlobal(pos)))
+        frozen_header = table.frozen_view().horizontalHeader()
+        frozen_header.setContextMenuPolicy(Qt.CustomContextMenu)
+        frozen_header.customContextMenuRequested.connect(
+            lambda pos: self._header_menu(frozen_header.mapToGlobal(pos)))
+        left_layout.addWidget(table, 1)
+        self.splitter.addWidget(left)
+        outer.addWidget(self.splitter, 1)
         for keys, slot in (
             (QKeySequence.Copy, self._copy),
             (QKeySequence.Paste, self._paste),
@@ -2301,13 +2656,17 @@ class _SheetPane(QWidget):
         self.redo_button = _button('Redo', self.redo)
         actions.addWidget(self.undo_button)
         actions.addWidget(self.redo_button)
-        # Shots: the render settings of the selection (#70), below the
-        # table and above the row actions, as the Multis tab shows a
-        # Multi's workfiles (the actions stay put across tabs).
+        # Shots: the render settings of the selection (#70) in the side
+        # panel, as the asset browser shows an entity's details; the
+        # Multis tab shows a Multi's workfiles there. Assets have none.
         self.render_settings: _RenderSettings | None = None
+        self.side: QScrollArea | None = None
         if kind is es.SHOTS_KIND:
             self.render_settings = _RenderSettings(self)
-            outer.addWidget(self.render_settings)
+            self.side = _side_panel(self.render_settings)
+            self.splitter.addWidget(self.side)
+            self.splitter.setStretchFactor(0, 1)
+            self.splitter.setStretchFactor(1, 0)
         outer.addLayout(actions)
         if self.render_settings is not None:
             table.selectionModel().selectionChanged.connect(
@@ -2322,6 +2681,119 @@ class _SheetPane(QWidget):
         table.selectionModel().currentRowChanged.connect(
             lambda *_a: table.viewport().update()
         )
+        # A reset of the rows (one added or gone) must not undo the
+        # artist's column order or hidden columns.
+        self._column_state: tuple[list[str], set[str]] | None = None
+        self.proxy.modelReset.connect(self._keep_columns)
+
+    # ── Columns: order, shown, remembered ─────────────────
+
+    def _default_widths(self) -> None:
+        for i, column in enumerate(self.columns):
+            if column in _WIDTHS:
+                self.table.setColumnWidth(i, scaled(_WIDTHS[column]))
+
+    @property
+    def locked_columns(self) -> tuple[str, ...]:
+        """The frozen group and name: always first, never hidden."""
+        return tuple(self.columns[:FROZEN_COLUMNS])
+
+    def column_layout(self) -> tuple[list[str], set[str]]:
+        """The columns as the header shows them, left to right, and the
+        hidden ones."""
+        header = self.table.horizontalHeader()
+        order = [self.columns[header.logicalIndex(v)] for v in range(header.count())]
+        hidden = {c for i, c in enumerate(self.columns) if header.isSectionHidden(i)}
+        return order, hidden
+
+    def set_column_layout(self, order: list[str], hidden: set[str]) -> None:
+        header = self.table.horizontalHeader()
+        self._arranging = True
+        try:
+            for visual, name in enumerate(order):
+                current = header.visualIndex(self.columns.index(name))
+                if current != visual:
+                    header.moveSection(current, visual)
+            for i, name in enumerate(self.columns):
+                header.setSectionHidden(i, name in hidden)
+        finally:
+            self._arranging = False
+        self._column_state = (list(order), set(hidden))
+        self.table._place_frozen()
+
+    def restore_columns(self, data) -> None:
+        """The order and hidden columns ``data`` (the remembered layout)
+        holds for this tab; the defaults for anything it lacks."""
+        self.set_column_layout(*layout_prefs.column_layout(
+            self.columns, data, self.kind.key, self.locked_columns,
+        ))
+
+    def _keep_columns(self) -> None:
+        if self._column_state is not None and self.column_layout() != self._column_state:
+            self.set_column_layout(*self._column_state)
+
+    def _visible_order(self) -> list[int]:
+        """The shown columns' indexes, left to right as the header has them."""
+        header = self.table.horizontalHeader()
+        found = [header.logicalIndex(v) for v in range(header.count())]
+        return [i for i in found if not header.isSectionHidden(i)]
+
+    def _on_section_moved(self, *_args) -> None:
+        if self._arranging:
+            return
+        # The frozen columns stay first: one dragged out of place, or a
+        # column dragged in front of them, goes back.
+        header = self.table.horizontalHeader()
+        self._arranging = True
+        try:
+            for i in range(FROZEN_COLUMNS):
+                if header.visualIndex(i) != i:
+                    header.moveSection(header.visualIndex(i), i)
+        finally:
+            self._arranging = False
+        self._column_state = self.column_layout()
+        self.table._place_frozen()
+        self.window_.remember_columns(self)
+
+    def _header_menu(self, global_pos) -> None:
+        menu = self.header_menu()
+        menu.exec(global_pos)
+
+    def header_menu(self) -> QMenu:
+        """The header's right-click menu: a tick per column (the frozen
+        group and name always shown), then Reset Columns."""
+        menu = QMenu(self)
+        order, hidden = self.column_layout()
+        for name in order:
+            action = menu.addAction(self.model.headerData(
+                self.columns.index(name), Qt.Horizontal, Qt.DisplayRole))
+            action.setCheckable(True)
+            action.setChecked(name not in hidden)
+            action.setEnabled(name not in self.locked_columns)
+            action.setData(name)
+            action.toggled.connect(lambda on, n=name: self.set_column_shown(n, on))
+        menu.addSeparator()
+        reset = menu.addAction('Reset Columns')
+        reset.setToolTip('Every column shown, in the order and widths it started with.')
+        reset.triggered.connect(self.reset_columns)
+        return menu
+
+    def set_column_shown(self, name: str, shown: bool) -> None:
+        if name in self.locked_columns:
+            return
+        order, hidden = self.column_layout()
+        hidden = hidden - {name} if shown else hidden | {name}
+        if hidden >= set(self.columns) - set(self.locked_columns):
+            self.say('Keep at least one column besides the names.', warn=True)
+            return
+        self.set_column_layout(order, hidden)
+        self.window_.remember_columns(self)
+
+    def reset_columns(self) -> None:
+        self.set_column_layout(list(self.columns), set())
+        self._default_widths()
+        self.window_.remember_columns(self, reset=True)
+        self.say('Columns back to their first order and widths, all shown.')
 
     # ── Refresh ──────────────────────────────────────────
 
@@ -2513,7 +2985,9 @@ class _SheetPane(QWidget):
         if not cells:
             return
         rows = sorted({i.row() for i in cells})
-        columns = sorted({i.column() for i in cells})
+        # Left to right as the artist arranged them; hidden ones left out.
+        picked = {i.column() for i in cells}
+        columns = [c for c in self._visible_order() if c in picked]
         chosen = {(i.row(), i.column()) for i in cells}
         QApplication.clipboard().setText('\n'.join(
             '\t'.join(
@@ -2540,7 +3014,12 @@ class _SheetPane(QWidget):
             ])
             return
         top = min(i.row() for i in cells)
-        left = min(i.column() for i in cells)
+        # A block's columns run left to right as the header shows them.
+        shown = self._visible_order()
+        lefts = [shown.index(i.column()) for i in cells if i.column() in shown]
+        if not lefts:
+            return
+        left = min(lefts)
         # A block runs down the entity rows: a group's row below the first
         # line is passed over, not pasted into (it is not one of them).
         rows = [
@@ -2548,9 +3027,9 @@ class _SheetPane(QWidget):
             if not isinstance(key := self._row_id(self.proxy.index(p, 0)), GroupKey) or p == top
         ]
         targets = [
-            (rows[r], self.columns[left + c], value)
+            (rows[r], self.columns[shown[left + c]], value)
             for r, line in enumerate(lines) if r < len(rows)
-            for c, value in enumerate(line) if left + c < len(self.columns)
+            for c, value in enumerate(line) if left + c < len(shown)
         ]
         missed = max(0, len(lines) - len(rows))
         self.edit(lambda: [self._set_cell(*target) for target in targets])
@@ -3674,8 +4153,9 @@ class _MultiDelegate(_Delegate):
 
 
 class _MultiWorkfiles(QWidget):
-    """Below the Multis table: the selected Multi's workfile in each
-    department it covers. One that has one shows its latest version and
+    """Beside the Multis table, in the side panel: the selected Multi's
+    workfile in each department it covers. One that has one shows its
+    latest version and
     opens; one that has none can be made from the department template.
     Either replaces the open scene, so one at a time, and only for a Multi
     as stored (a new or changed one is applied first)."""
@@ -3701,6 +4181,7 @@ class _MultiWorkfiles(QWidget):
         layout.addWidget(host)
         self.note = _hint()
         layout.addWidget(self.note)
+        layout.addStretch()
 
     @property
     def source(self) -> EntityEditorSource:
@@ -3842,7 +4323,10 @@ class _MultiPane(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(scaled(6))
-        top = QHBoxLayout()
+        # In the window's top row, beside the tabs (as the sheet tabs' bar).
+        self.filter_bar = QWidget()
+        top = QHBoxLayout(self.filter_bar)
+        top.setContentsMargins(0, 0, 0, 0)
         top.addWidget(QLabel('Multis of'))
         self._context = QComboBox()
         self._context.setStyleSheet(COMBO_STYLE)
@@ -3857,8 +4341,13 @@ class _MultiPane(QWidget):
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(lambda text: self.proxy.set_text(text))
         top.addWidget(self._search, 1)
-        outer.addLayout(top)
-        outer.addWidget(_hint(
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(scaled(6))
+        left_layout.addWidget(_hint(
             'A Multi is one workfile for several shots or assets. Tick the '
             'departments it covers: for those, every member\'s workfile is '
             'the Multi\'s. Double-click Members to choose them, and a shots '
@@ -3880,9 +4369,15 @@ class _MultiPane(QWidget):
         header.setSectionResizeMode(QHeaderView.Interactive)
         table.setContextMenuPolicy(Qt.CustomContextMenu)
         table.customContextMenuRequested.connect(self._context_menu)
-        outer.addWidget(table, 1)
+        left_layout.addWidget(table, 1)
+        self.splitter.addWidget(left)
+        # The selected Multi's workfiles, in the side panel.
         self.workfiles = _MultiWorkfiles(self)
-        outer.addWidget(self.workfiles)
+        self.side = _side_panel(self.workfiles)
+        self.splitter.addWidget(self.side)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
+        outer.addWidget(self.splitter, 1)
 
         actions = QHBoxLayout()
         actions.addWidget(_button(
@@ -3916,7 +4411,7 @@ class _MultiPane(QWidget):
         self.refresh()
 
     def current_multi(self) -> es.Multi | None:
-        """The Multi the workfiles below the table are for: the current
+        """The Multi the side panel shows the workfiles of: the current
         cell's, else the first selected."""
         index = self.table.currentIndex()
         ids = self.selected_ids()
@@ -4149,8 +4644,18 @@ class EntityEditorWindow(QDialog):
         self.resize(scaled(1180), scaled(700))
         self.panes: dict[str, _SheetPane] = {}
         self.multis_pane: _MultiPane | None = None
+        # The remembered layout (side panel, its width, columns); a prefs
+        # file that will not read starts from the defaults, and says so.
+        layout_problem = ''
+        try:
+            self._layout = dict(source.load_layout() or {})
+        except Exception as exc:
+            self._layout = {}
+            layout_problem = f'Could not read the remembered layout, using the defaults: {exc}'
         self._build_ui()
         self.show_kind(kind)
+        if layout_problem:
+            self.say(layout_problem, warn=True)
         self.update_footer()
 
     # ── UI ───────────────────────────────────────────────
@@ -4158,16 +4663,34 @@ class EntityEditorWindow(QDialog):
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
         outer.setSpacing(scaled(8))
+        # One top row, as the asset browser has it: the tabs, the tab's
+        # sequence or category and search, then Reload and Details.
         top = QHBoxLayout()
         self._tabs = QTabBar()
         self._tabs.setDrawBase(False)
         self._tabs.setExpanding(False)
         top.addWidget(self._tabs)
-        top.addStretch()
+        top.addSpacing(scaled(8))
+        self._filters = QStackedWidget()
+        top.addWidget(self._filters, 1)
         top.addWidget(_button(
             'Reload', self._reload,
             tip='Read the assets and shots again, keeping the edits not applied yet.',
         ))
+        self._details = QPushButton('Details')
+        self._details.setCheckable(True)
+        self._details.setAutoDefault(False)
+        self._details.setStyleSheet(BUTTON_GHOST_STYLE + (
+            f'QPushButton:checked {{ color: {ACCENT_HOVER}; border-color: {ACCENT}; }}'
+        ))
+        self._details.setToolTip(
+            'Show or hide the side panel: Render settings on the Shots tab, '
+            'the selected Multi\'s workfiles on the Multis tab. Drag its edge '
+            'to make it wider.'
+        )
+        self._details.setChecked(layout_prefs.details_shown(self._layout))
+        self._details.toggled.connect(self.set_details_shown)
+        top.addWidget(self._details)
         outer.addLayout(top)
         self._stack = QStackedWidget()
         outer.addWidget(self._stack, 1)
@@ -4175,12 +4698,23 @@ class EntityEditorWindow(QDialog):
             pane = _SheetPane(self, kind)
             self.panes[kind.key] = pane
             self._stack.addWidget(pane)
+            self._filters.addWidget(pane.filter_bar)
             index = self._tabs.addTab(f'{kind.key.capitalize()}')
             self._tabs.setTabData(index, kind.key)
         self.multis_pane = _MultiPane(self)
         self._stack.addWidget(self.multis_pane)
+        self._filters.addWidget(self.multis_pane.filter_bar)
         index = self._tabs.addTab('Multis')
         self._tabs.setTabData(index, 'multis')
+        for key, pane in self._all_panes().items():
+            if isinstance(pane, _SheetPane):
+                pane.restore_columns(self._layout)
+            if pane.side is not None:
+                sizes = layout_prefs.splitter_sizes(self._layout, key)
+                pane.splitter.setSizes(sizes or [
+                    max(self.width() - scaled(_SIDE_WIDTH), scaled(300)), scaled(_SIDE_WIDTH),
+                ])
+                pane.side.setVisible(self._details.isChecked())
         for pane in self.panes.values():
             pane.refresh()
         self._tabs.currentChanged.connect(
@@ -4222,10 +4756,61 @@ class EntityEditorWindow(QDialog):
         """Show the ``assets``, ``shots`` or ``multis`` tab."""
         pane = self.multis_pane if key == 'multis' else self.panes[key]
         self._stack.setCurrentWidget(pane)
+        self._filters.setCurrentWidget(pane.filter_bar)
         index = next(i for i in range(self._tabs.count()) if self._tabs.tabData(i) == key)
         if self._tabs.currentIndex() != index:
             self._tabs.setCurrentIndex(index)
+        # The Assets tab has no side panel to show.
+        self._details.setEnabled(pane.side is not None)
         self.update_footer()
+
+    # ── The remembered layout ────────────────────────────
+
+    def _all_panes(self) -> dict:
+        """Every tab by key: ``assets``, ``shots``, ``multis``."""
+        found = dict(self.panes)
+        if self.multis_pane is not None:
+            found['multis'] = self.multis_pane
+        return found
+
+    def set_details_shown(self, shown: bool) -> None:
+        """Show or hide every tab's side panel (Details), remembered."""
+        if self._details.isChecked() != shown:
+            self._details.setChecked(shown)     # comes back here through toggled
+            return
+        for pane in self._all_panes().values():
+            if pane.side is not None:
+                pane.side.setVisible(shown)
+        self._remember(details=shown)
+
+    def remember_columns(self, pane: '_SheetPane', reset: bool = False) -> None:
+        """Keep ``pane``'s column order and hidden columns for next time."""
+        if reset:
+            self._remember(reset_columns=pane.kind.key)
+        else:
+            self._remember(columns=(pane.kind.key, *pane.column_layout()))
+
+    def remember_splitters(self) -> None:
+        """Keep each side panel's width (as the artist dragged it)."""
+        changed = False
+        for key, pane in self._all_panes().items():
+            # isHidden, not isVisible: a tab behind the front one is not
+            # visible, though its panel is shown.
+            if pane.side is not None and not pane.side.isHidden():
+                sizes = pane.splitter.sizes()
+                if len(sizes) == 2 and min(sizes) > 0 \
+                        and sizes != layout_prefs.splitter_sizes(self._layout, key):
+                    self._layout = layout_prefs.remember(self._layout, splitter=(key, sizes))
+                    changed = True
+        if changed:
+            self._remember()
+
+    def _remember(self, **changes) -> None:
+        self._layout = layout_prefs.remember(self._layout, **changes)
+        try:
+            self.source.save_layout(self._layout)
+        except Exception as exc:
+            self.say(f'Could not remember the layout: {exc}', warn=True)
 
     @property
     def dirty(self) -> bool:
@@ -4290,7 +4875,7 @@ class EntityEditorWindow(QDialog):
             elif summary.new_groups:
                 bits.append(_plural(len(summary.new_groups), f'new {kind.group}'))
             if summary.everyone_changed:
-                bits.append(f'{kind.everyone} render defaults changed')
+                bits.append(f'{kind.everyone} render settings changed')
             if summary.groups_changed:
                 bits.append(f'{_plural(summary.groups_changed, kind.group)} changed')
             if summary.changed:
@@ -4525,4 +5110,5 @@ class EntityEditorWindow(QDialog):
             ):
                 event.ignore()
                 return
+        self.remember_splitters()
         event.accept()

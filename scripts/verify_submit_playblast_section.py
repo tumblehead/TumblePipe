@@ -16,8 +16,9 @@ a bare pane (only what the section builder touches) and pins:
      line saying why (greyed-out rows read as locked, 2026-11).
   5. The viewport renderer shows as TumbleView and reads back as
      ``viewport``, the name looks and jobs keep.
-  6. Lighting and Culling (Martin, 2026-11-11) are TumbleView rows whose
-     menus offer the spec's values and read back as the look's tokens.
+  6. Lighting and Culling (Martin, 2026-11-11) and Transparency (Martin,
+     2026-11-12) are TumbleView rows whose menus offer the spec's values
+     and read back as the look's tokens.
 
 Run (no Houdini, no project):
     QT_QPA_PLATFORM=offscreen TUMBLETROVE_PYTHON=<tumbletrove>/python \\
@@ -152,11 +153,16 @@ def main() -> int:
           renderer.widget.currentText() == 'TumbleView' and renderer.value() == 'viewport',
           f"{renderer.widget.currentText()!r} -> {renderer.value()!r}")
 
-    # 6. Lighting and Culling (Martin, 2026-11-11): TumbleView rows, menus
-    # of the spec's values, read back as the look's tokens
-    from tumblepipe.farm.specs.playblast import PLAYBLAST_CULLS, PLAYBLAST_LIGHTINGS
+    # 6. Lighting, Culling and Transparency (Martin, 2026-11-11/12):
+    # TumbleView rows, menus of the spec's values, read back as the look's
+    # tokens
+    from tumblepipe.farm.specs.playblast import (
+        PLAYBLAST_CULLS, PLAYBLAST_LIGHTINGS, PLAYBLAST_TRANSPARENCIES,
+    )
     for key, label, values in (('pb_lighting', 'Lighting', PLAYBLAST_LIGHTINGS),
-                               ('pb_cull', 'Culling', PLAYBLAST_CULLS)):
+                               ('pb_cull', 'Culling', PLAYBLAST_CULLS),
+                               ('pb_transparency', 'Transparency',
+                                PLAYBLAST_TRANSPARENCIES)):
         field = pane._fields[key]
         widget = field.widget
         items = [widget.itemText(i) for i in range(widget.count())]
@@ -179,7 +185,7 @@ def main() -> int:
             pane._scope_playblast_look()
             box.grab().save(shot.replace('.png', f'_{chosen}.png'))
 
-    total = 1 + 3 + 3 + 6 + 1 + 2 * 4
+    total = 1 + 3 + 3 + 6 + 1 + 3 * 4
     print(f"\n{total - len(FAILED)}/{total} checks passed")
     return 1 if FAILED else 0
 

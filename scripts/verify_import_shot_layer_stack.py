@@ -159,8 +159,27 @@ check(
     callable(getattr(import_shot, "inspect_asset_layer", None)),
 )
 check(
-    "ImportShot implements inspect_asset_layer",
-    callable(getattr(import_shot.ImportShot, "inspect_asset_layer", None)),
+    "ui.layer_stack implements inspect_asset_layer",
+    callable(getattr(layer_stack, "inspect_asset_layer", None)),
+)
+
+# A spare parm the artist added survives the rebuild, which starts from the
+# HDA definition's interface (a node's own interface stops following HDA
+# updates once setParmTemplateGroup has run on it: Remy, 2026-11-13).
+group = raw.parmTemplateGroup()
+group.append(hou.StringParmTemplate("my_spare", "My Spare", 1))
+raw.setParmTemplateGroup(group)
+raw.parm("my_spare").set("artist value")
+layer_stack.update_layer_stack(raw, LAYERS)
+check(
+    "an artist's spare parm survives a re-update",
+    raw.parm("my_spare") is not None and raw.parm("my_spare").eval() == "artist value",
+)
+group = raw.parmTemplateGroup()
+check(
+    "Browse... stays on the Entity row (the definition's place for it)",
+    group.containingFolder("entity_browse").name()
+    == group.containingFolder("entity").name(),
 )
 
 print()

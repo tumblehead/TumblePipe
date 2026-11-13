@@ -21,6 +21,7 @@ config = {
         'shading': 'lit' | 'clay' | 'albedo' | 'occlusion',  # viewport only; optional, absent = 'lit'
         'lighting': 'scene' | 'headlight',  # viewport only; optional, absent = 'scene'
         'cull': 'off' | 'back',    # viewport only; optional, absent = 'off'
+        'transparency': 'on' | 'off',  # viewport only; optional, absent = 'on'
         'light': 'dome' | 'headlight' | 'scene',   # karma only
         'samples': 'int',          # karma only
         'materials': 'bool',       # karma only: scene materials, not clay
@@ -82,11 +83,22 @@ PLAYBLAST_LIGHTINGS = ('scene', 'headlight')
 #           behind is see-through (Discord, Martin 2026-11-11).
 PLAYBLAST_CULLS = ('off', 'back')
 
+# Whether the viewport renderer shows through see-through surfaces
+# (hdThPlayblast's th:transparency, TH_PLAYBLAST_TRANSPARENCY):
+#   on  -- a surface whose material's opacity or transmission, or whose
+#          display opacity, is under 1 is blended over what is behind it.
+#          The default.
+#   off -- every surface drawn opaque, whatever its opacity: eyes behind a
+#          cornea, a room behind a window, drawn as solid surfaces
+#          (Discord, Martin 2026-11-12).
+PLAYBLAST_TRANSPARENCIES = ('on', 'off')
+
 # The look a playblast gets when its submission names none: a collapse job
 # submitted before the look existed. The dialog's defaults
 # (farm.submit.settings) match it; tests/test_submit_settings.py pins that.
 DEFAULT_LOOK = {
     'renderer': 'viewport', 'shading': 'lit', 'lighting': 'scene', 'cull': 'off',
+    'transparency': 'on',
     'light': 'dome', 'samples': 32, 'materials': False,
     'motion_blur': False, 'dof': True, 'blur_samples': 16,
 }
@@ -127,6 +139,13 @@ def look_cull(look: dict) -> str:
     return look.get('cull', 'off')
 
 
+def look_transparency(look: dict) -> str:
+    """Whether a valid look's viewport frame shows through see-through
+    surfaces. A look submitted before the switch existed does, which is
+    what it was drawn with."""
+    return look.get('transparency', 'on')
+
+
 def look_blur(look: dict) -> tuple[bool, bool, int]:
     """A valid look's viewport blurs: motion blur, depth of field, and blur
     samples. A look submitted before the blurs existed is drawn sharp."""
@@ -139,13 +158,14 @@ def look_blur(look: dict) -> tuple[bool, bool, int]:
 
 def valid_look(look) -> bool:
     """A playblast look: its renderer, the viewport's shading, lighting,
-    culling and blurs, how Karma lights it, its samples, clay or
-    materials."""
+    culling, transparency and blurs, how Karma lights it, its samples, clay
+    or materials."""
     if not isinstance(look, dict): return False
     if look_renderer(look) not in PLAYBLAST_RENDERERS: return False
     if look_shading(look) not in PLAYBLAST_SHADINGS: return False
     if look_lighting(look) not in PLAYBLAST_LIGHTINGS: return False
     if look_cull(look) not in PLAYBLAST_CULLS: return False
+    if look_transparency(look) not in PLAYBLAST_TRANSPARENCIES: return False
     if not check_str(look, 'light'): return False
     if look['light'] not in PLAYBLAST_LIGHTS: return False
     if not check_int(look, 'samples'): return False

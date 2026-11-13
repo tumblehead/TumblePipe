@@ -10,7 +10,10 @@ writes picker.png, picker_search.png and picker_assets.png to <out_dir>.
 It also breaks TumbleTrove's card renderer (gone, then a changed paint()
 signature) and checks the picker still lists, paints and picks, and fuzzes
 random entity sets and key sequences (--seed, --rounds): every pick must be
-an entity on offer and visible, or from_context where offered.
+an entity on offer and visible, or from_context where offered. Multi-select
+(th::import_assets' top Browse...) is driven with real Ctrl-, Shift- and
+plain clicks, searches and Select all in view, writes picker_multi.png, and
+is fuzzed: what it returns is entities on offer, once each, in picker order.
 """
 
 import os
@@ -119,7 +122,9 @@ def main(out: Path, seed: int = 0, rounds: int = 60) -> int:
     dialog.reject()
 
     _check_fallback(app, picker, check, out)
+    _check_multi(app, picker, check, out)
     _fuzz(app, picker, check, seed, rounds)
+    _fuzz_multi(app, picker, check, seed, max(10, rounds // 3))
 
     print(f'images in {out}')
     return 1 if failures else 0
@@ -157,6 +162,127 @@ def _check_fallback(app, picker, check, out: Path):
         finally:
             sys.modules[name] = saved_module
             card_renderer.GridCardRenderer.paint = saved_paint
+
+
+def _click(app, dialog, uri, modifier=Qt.NoModifier):
+    """Click the card of ``uri`` (shown) with ``modifier`` held."""
+    row = dialog._state.visible_uris().index(uri)
+    index = dialog._model.index(row, 0)
+    rect = dialog._grid.visualRect(index)
+    QTest.mouseClick(dialog._grid.viewport(), Qt.LeftButton, modifier, rect.center())
+    app.processEvents()
+
+
+def _search(app, dialog, text):
+    dialog._search.clear()
+    if text:
+        QTest.keyClicks(dialog._search, text)
+    app.processEvents()
+
+
+def _check_multi(app, picker, check, out: Path):
+    """th::import_assets' top Browse...: Ctrl-click and Shift-click pick
+    several, picks survive a search, Select all in view adds what is
+    shown, and the picks come back in the picker's order."""
+    order = [
+        'entity:/assets/CHAR/magnus', 'entity:/assets/CHAR/remy',
+        'entity:/assets/PROP/lantern', 'entity:/assets/SET/forest',
+    ]
+    dialog = picker(ASSETS, include_from_context=True, title='Add Assets', multi_select=True)
+    check(not dialog._from_context.isVisible(), 'multi: no From context row')
+    check(dialog._select_all is not None and dialog._select_all.isVisible(),
+          'multi: a Select all in view button')
+    _click(app, dialog, 'entity:/assets/SET/forest')
+    _click(app, dialog, 'entity:/assets/CHAR/remy', Qt.ControlModifier)
+    check(dialog._state.picked == ['entity:/assets/CHAR/remy', 'entity:/assets/SET/forest'],
+          f'multi: click then Ctrl-click picks two ({dialog._state.picked})')
+    _search(app, dialog, 'lantern')
+    _click(app, dialog, 'entity:/assets/PROP/lantern', Qt.ControlModifier)
+    _search(app, dialog, '')
+    check(dialog._state.picked == order[1:],
+          f'multi: a pick made in a search keeps the others ({dialog._state.picked})')
+    check(dialog._status.text() == '3 assets selected', f'multi: footer reads {dialog._status.text()!r}')
+    selected = {i.data(Qt.UserRole + 1) for i in dialog._grid.selectionModel().selectedIndexes()}
+    check(selected == set(order[1:]), 'multi: the grid shows the picks selected')
+    dialog.grab().save(str(out / 'picker_multi.png'))
+    _click(app, dialog, 'entity:/assets/PROP/lantern', Qt.ControlModifier)
+    check(dialog._state.picked == [order[1], order[3]], 'multi: Ctrl-click again unpicks')
+    _search(app, dialog, 'CHAR')
+    dialog._select_all.click()
+    app.processEvents()
+    _search(app, dialog, '')
+    check(dialog._state.picked == [order[0], order[1], order[3]],
+          f'multi: Select all in view adds the shown cards ({dialog._state.picked})')
+    dialog._ok_button.click()
+    app.processEvents()
+    check(dialog.result() == 1 and dialog.get_selected_uris() == [order[0], order[1], order[3]],
+          f'multi: Select returns the picks in picker order ({dialog.get_selected_uris()})')
+
+    dialog = picker(ASSETS, title='Add Assets', multi_select=True)
+    _click(app, dialog, order[0])
+    _click(app, dialog, order[2], Qt.ShiftModifier)
+    check(dialog._state.picked == order[:3], f'multi: Shift-click picks a range ({dialog._state.picked})')
+    dialog.reject()
+
+    dialog = picker(ASSETS, title='Add Assets', multi_select=True)
+    _search(app, dialog, 'forest')
+    QTest.keyClick(dialog._search, Qt.Key_Return)
+    app.processEvents()
+    check(dialog.result() == 1 and dialog.get_selected_uris() == ['entity:/assets/SET/forest'],
+          'multi: with nothing picked, Enter takes the best match')
+
+    dialog = picker(ASSETS, title='Select Asset', current_selection=order[1])
+    check(dialog._select_all is None, 'single: no Select all in view')
+    _click(app, dialog, order[2], Qt.ControlModifier)
+    check(dialog.get_selected_uris() == [order[2]], 'single: Ctrl-click still picks one')
+    dialog.reject()
+
+
+def _fuzz_multi(app, picker, check, seed: int, rounds: int):
+    """Random clicks with and without Ctrl/Shift, searches, scopes, Select
+    all and Enter on the multi window: what it returns is entities on
+    offer, each once, in the picker's order."""
+    import random
+
+    from tumblepipe.pipe import entity_picker as ep
+
+    rng = random.Random(seed ^ 0x5EED)
+    pool = SHOTS + ASSETS
+    modifiers = [Qt.NoModifier, Qt.ControlModifier, Qt.ShiftModifier]
+    bad = []
+    picks = 0
+    for round_ in range(rounds):
+        uris = rng.sample(pool, rng.randint(0, len(pool)))
+        entries = ep.entries_from_uris(uris)
+        order = [e.uri for e in entries]
+        dialog = picker(uris, multi_select=True)
+        for _ in range(rng.randint(1, 20)):
+            action = rng.random()
+            visible = dialog._state.visible_uris()
+            if action < 0.45 and visible:
+                _click(app, dialog, rng.choice(visible), rng.choice(modifiers))
+            elif action < 0.6:
+                _search(app, dialog, rng.choice(['', 's', 'sh0', '010', 'CHAR', 'remy', 'x']))
+            elif action < 0.7:
+                rows = dialog._sidebar.topLevelItemCount()
+                if rows:
+                    dialog._sidebar.setCurrentItem(dialog._sidebar.topLevelItem(rng.randrange(rows)))
+            elif action < 0.8:
+                dialog._select_all.click()
+            elif action < 0.9:
+                QTest.keyClick(dialog._search, rng.choice([Qt.Key_Right, Qt.Key_Down, Qt.Key_Left]))
+            else:
+                QTest.keyClick(dialog._search, Qt.Key_Return)
+                app.processEvents()
+                if dialog.result() == 1:
+                    got = dialog.get_selected_uris()
+                    picks += 1
+                    if not got or got != [u for u in order if u in set(got)] or len(set(got)) != len(got):
+                        bad.append((seed, round_, got))
+                    break
+        dialog.reject()
+    check(not bad and picks > 0,
+          f'multi fuzz seed {seed}, {rounds} rounds, {picks} picks: on offer, once, in order {bad[:3]}')
 
 
 def _fuzz(app, picker, check, seed: int, rounds: int):

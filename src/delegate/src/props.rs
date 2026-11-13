@@ -277,7 +277,7 @@ proptest! {
         let frame = ThFrame { width: 24, height: 16, world_to_clip, view_to_world, samples: 1, shading: 0, ao: 1,
                              blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
                              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0 };
+            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0 };
         let view = |polygonal: u32, normals: *const f32| ThMeshView {
             points: points.as_ptr() as *const f32,
             point_count: points.len() as u32,
@@ -985,7 +985,7 @@ fn the_abi_carries_motion_and_the_lens() {
             width: 32, height: 24, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
             blur_samples, motion, camera_keys: 0, cameras: [0.0; 64],
             focal_length: 0.5, f_stop, focus_distance: 20.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0,
+            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0,
         };
         let view = ThMeshView {
             points: points.as_ptr() as *const f32, point_count: 4,
@@ -1528,7 +1528,7 @@ fn the_abi_alpha_switch_reaches_the_post_pass() {
     let mut frame = ThFrame { width: 8, height: 6, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
                               blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
                               focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 1, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0 };
+            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0 };
     let mut color = vec![0.5f32; 8 * 6 * 4];
     let status = unsafe {
         th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null())
@@ -1574,7 +1574,7 @@ fn abi_frame(width: u32, height: u32, samples: u32) -> ThFrame {
     ThFrame { width, height, world_to_clip, view_to_world, samples, shading: 0, ao: 0,
               blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
               focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0 }
+            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0 }
 }
 
 proptest! {
@@ -2304,12 +2304,12 @@ proptest! {
 #[test]
 fn the_abi_transparency_is_one_minus_the_opacity() {
     use crate::ffi::opacity_of;
-    assert_eq!(opacity_of(0.0), 1.0);
-    assert_eq!(opacity_of(1.0), 0.0);
-    assert_eq!(opacity_of(0.25), 0.75);
-    assert_eq!(opacity_of(f32::NAN), 1.0);
-    assert_eq!(opacity_of(-3.0), 1.0);
-    assert_eq!(opacity_of(5.0), 0.0);
+    assert_eq!(opacity_of(0.0, false), 1.0);
+    assert_eq!(opacity_of(1.0, false), 0.0);
+    assert_eq!(opacity_of(0.25, false), 0.75);
+    assert_eq!(opacity_of(f32::NAN, false), 1.0);
+    assert_eq!(opacity_of(-3.0, false), 1.0);
+    assert_eq!(opacity_of(5.0, false), 0.0);
 
     let (points, at) = pane_at(4.0);
     let mut frame = abi_frame(8, 6, 4);
@@ -2333,6 +2333,50 @@ fn the_abi_transparency_is_one_minus_the_opacity() {
         }
     }
     assert!(draw(0.0).chunks(4).all(|p| p[0] == 1.0), "opaque white");
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// th:transparency "off" (`ThFrame::opaque`): any transparency at all,
+    /// NaN and out of range included, is drawn opaque, the picture of a
+    /// zeroed one, in front of an opaque mesh it would otherwise show; and
+    /// "on" (opaque 0, a frame zeroed before the switch existed) is the old
+    /// one minus the transparency, clamped, NaN opaque.
+    #[test]
+    fn the_abi_opaque_switch_draws_every_view_opaque(
+        transparency in prop_oneof![
+            -2.0f32..3.0, Just(0.5f32), Just(1.0f32), Just(f32::NAN), Just(f32::INFINITY),
+            proptest::num::f32::ANY,
+        ],
+    ) {
+        use crate::ffi::opacity_of;
+        prop_assert_eq!(opacity_of(transparency, true), 1.0);
+        let on = opacity_of(transparency, false);
+        let old = if transparency.is_nan() { 1.0 } else { (1.0 - transparency).clamp(0.0, 1.0) };
+        prop_assert!(on == old, "on: {} for {}, not {}", on, transparency, old);
+
+        let (front, at) = pane_at(4.0);
+        let (back, behind) = pane_at(1.0);
+        let draw = |opaque: u32, transparency: f32| {
+            let mut frame = abi_frame(8, 6, 4);
+            frame.shading = Shading::Albedo.abi();
+            frame.opaque = opaque;
+            let views = [
+                ThMeshView { base_color: [0.1, 0.8, 0.2], ..view_of(&back, &QUAD, &behind) },
+                ThMeshView { base_color: [1.0, 1.0, 1.0], transparency, ..view_of(&front, &QUAD, &at) },
+            ];
+            let mut color = vec![0.0f32; 8 * 6 * 4];
+            assert_eq!(unsafe { th_render(&frame, views.as_ptr(), 2, color.as_mut_ptr(), std::ptr::null_mut(),
+                                          std::ptr::null()) }, TH_OK);
+            color
+        };
+        let solid = draw(0, 0.0);
+        prop_assert!(draw(1, transparency) == solid, "opaque frame: transparency {} shows through", transparency);
+        if on < 1.0 {
+            prop_assert!(draw(0, transparency) != solid, "transparency {} no longer shows through", transparency);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

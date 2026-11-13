@@ -6,7 +6,7 @@ what refuses to.
 
 ## The quick actions
 
-The Asset Browser's toolbar carries these quick actions; all but **Entity Editor** act on
+The Asset Browser's toolbar carries these quick actions (the **Open Timeline** button, which plays the selected shot's sequence in Cinedex, is described in the [toolbar table](index.md#quick-actions)); all but **Entity Editor** act on
 the **currently loaded** `.hip`. The toolbar label is the loaded hip's filename; every action
 first resolves the scene's pipeline context (entity, department, version) and
 tells you when there is none.

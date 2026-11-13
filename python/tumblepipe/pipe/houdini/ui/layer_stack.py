@@ -6,6 +6,7 @@ browser, and for an asset row a '...' button that opens the asset's
 department layers (the AssetLayerDialog).
 """
 
+import re
 from pathlib import Path
 
 import hou
@@ -21,11 +22,58 @@ from tumblepipe.pipe.usd.sublayer_refs import parse_entity_sublayer_uri
 from tumblepipe.util import desktop
 
 
+_LAYER_ROW_PARM = re.compile(r'^layer_\d+_(enable|version|reveal|inspect)$')
+
+
+def artist_spare_names(instance_names, defined_names) -> list[str]:
+    """The node's own parms to carry over when the Layer Stack is rebuilt
+    on the definition's interface: every parm the instance has that the
+    definition does not, except the Layer Stack rows (rebuilt anyway).
+    In the instance's order, each once."""
+    defined = set(defined_names)
+    kept: list[str] = []
+    for name in instance_names:
+        if name in defined or _LAYER_ROW_PARM.match(name) or name in kept:
+            continue
+        kept.append(name)
+    return kept
+
+
+def _leaf_templates(group_or_folder):
+    """Every non-folder parm template under ``group_or_folder``, in order."""
+    for template in group_or_folder.parmTemplates():
+        if template.type() == hou.parmTemplateType.Folder:
+            yield from _leaf_templates(template)
+        elif template.type() != hou.parmTemplateType.FolderSet:
+            yield template
+
+
+def _base_group(native):
+    """The interface the Layer Stack is inserted into: the HDA
+    definition's, as it is now, plus any spare parm the artist added.
+
+    Not the instance's own group: once setParmTemplateGroup has run, the
+    node keeps that group, and an HDA update no longer reaches it. A parm
+    the definition gained later (1.104.0's Browse...) was appended at the
+    bottom, under Actions, and one it hid (the jade icon button) stayed
+    visible (Remy, 2026-11-13).
+    """
+    definition = native.type().definition()
+    if definition is None:
+        return native.parmTemplateGroup()
+    group = definition.parmTemplateGroup()
+    instance = {t.name(): t for t in _leaf_templates(native.parmTemplateGroup())}
+    defined = [t.name() for t in _leaf_templates(group)]
+    for name in artist_spare_names(instance, defined):
+        group.append(instance[name])
+    return group
+
+
 def update_layer_stack(native, layers_to_load: list[dict]):
     """Rebuild the import_shot ``native``'s Layer Stack folder for
     ``layers_to_load`` (parsed sublayers, in the Sublayer LOP's order)."""
     import_node = native.node('import')
-    parm_group = native.parmTemplateGroup()
+    parm_group = _base_group(native)
 
     # Rebuilt on every import
     if parm_group.find('layer_stack'):

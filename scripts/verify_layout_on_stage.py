@@ -153,6 +153,16 @@ def main(tmp: Path):
     rop.setInput(0, graft)
     layer = tmp / 'layout.usd'
     rop.parm('lopoutput').set(str(layer).replace('\\', '/'))
+    # As th::export_layer's USD ROP: implicit layers flattened. The lamp's
+    # SOP Create sits on another layer, so its SOP layer is written beside
+    # the output (stage/lamp/sopnet/OUT.usd) and sublayered. The export ROP
+    # reports that as an error yet writes it (its Save button does not
+    # raise); render() raises, so this ROP does not treat it as one. With
+    # TumblePipe's SOP Create OnCreated script (the checkout on
+    # HOUDINI_PATH, as in a session) the layer has no save path of its own;
+    # without it the layer went to $HIP/usd/ and this never showed.
+    rop.parm('savestyle').set('flattenimplicitlayers')
+    rop.parm('errorsavingimplicitpaths').set(False)
     rop.parm('trange').set('normal')
     rop.parmTuple('f').set((1, 24, 1))
     rop.render()
