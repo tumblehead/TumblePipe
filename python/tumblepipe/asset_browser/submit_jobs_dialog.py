@@ -94,6 +94,7 @@ from tumblepipe.farm.submit import settings as resolve
 from tumblepipe.pipe.houdini.ui.report import report_failure
 from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
 from tumblepipe.pipe import turntable
+from tumblepipe.util import value_ladder_qt
 from tumblepipe.farm.specs.playblast import (
     PLAYBLAST_CULLS,
     PLAYBLAST_LIGHTINGS,
@@ -2041,6 +2042,9 @@ class _ContextPane(QWidget):
                 "configured value."
             )
         self._register(key, box, 'spin')
+        # Middle-drag steps it, as in Houdini; Ctrl + middle-click is the
+        # row's ↺: back to each entity's own value.
+        value_ladder_qt.install(box, on_reset=lambda k=key: self._unpin((k,)))
         return box
 
     def _check(
@@ -3218,6 +3222,7 @@ class _EditsPane(QWidget):
         self._priority.setRange(0, 100)
         self._priority.setValue(farm_config.get_default_priority())
         self._priority.setButtonSymbols(QAbstractSpinBox.NoButtons)
+        value_ladder_qt.install(self._priority, default=farm_config.get_default_priority)
         form.addRow("Priority:", self._priority)
         note = QLabel(
             "Renders the published version with the editor, sound included, "

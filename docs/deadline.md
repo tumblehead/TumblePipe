@@ -277,7 +277,8 @@ on Deadline, and runs in the background as a render node would run it.
   ready*, saying `<shot> <department> <version>: N frames` and the folder
   the frames are in (a Windows toast, a macOS Notification Center banner, or
   a Linux `notify-send` bubble; Linux without libnotify's `notify-send`
-  shows none). On Windows, clicking the toast opens the folder. The
+  shows none). On Windows, clicking the toast opens the folder (on macOS
+  and Linux a click opens nothing). The
   [Farm Manager](#the-farm-manager) shows a notice too, with **Open in
   player**, and the editor's clips of the shot show a **Preview ready**
   badge until the full range is rendered. The frames count as
@@ -508,8 +509,20 @@ this machine, TumblePipe tells you without getting in your way:
   rn04: out of GPU memory. 8 of 12 written.` Several ending at once say
   the most urgent one and `(and 2 more)`.
 - **A desktop notification**, with the same line, only when Houdini is not
-  the application in front (you are in another program). It has no
-  buttons: switch to Houdini to act on it.
+  the application in front (you are in another program). On Windows,
+  **clicking it opens the folder** of the job the line is about: a render's
+  or comp's frames (the folder *Preview in Cinedex* opens), or for a
+  playblast the department's daily folder
+  (`render/daily/shots/<department>`, where every shot's latest playblast
+  is), or the playblast's own version folder when there is no daily yet.
+  A **Render Edit** opens the edit's movie folder (`render/edits/<edit>`).
+  Jobs that write nothing to look at (publish, export, build, stage,
+  collapse, sync, Discord notify) open nothing on their own. A
+  failed batch opens its frames when it wrote some; one that wrote none
+  opens nothing (use **Show in Jobs** in Houdini to see why). The
+  notification says it comes from **TumblePipe**. On macOS and Linux it is
+  words only: clicking it opens nothing, as the notifiers those systems
+  ship cannot open a folder. Switch to Houdini for the buttons.
 - **A pulse and a dot on the Farm Manager button.** The button pulses once,
   and a small dot sits at its bottom-right corner until you look: accent
   for finished, red for failed (on the **⋯** button when the toolbar is too

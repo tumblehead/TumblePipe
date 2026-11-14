@@ -540,36 +540,75 @@ class WorkfileManager:
 
         def _do_load() -> None:
             try:
-                import hou
-                from tumblepipe.pipe.houdini import playbar
-                decision = self._scene.prepare_scene_swap()
-                if decision is None:
-                    return  # user cancelled the save prompt
-                self._activator.activate(proj)
-                # Manual update mode so neither the load, the
-                # hou.setFrame() in apply_scene_timeline, nor load_hook's
-                # import re-execute triggers a live full-graph cook.
-                with playbar.update_mode(hou.updateMode.Manual):
-                    try:
-                        hou.hipFile.load(
-                            path.as_posix(), suppress_save_prompt=decision,
-                        )
-                    except hou.LoadWarning as warning:
-                        # The scene IS open, with warnings (a missing HDA,
-                        # say); the open carries on and says so.
-                        hou.ui.setStatusMessage(
-                            f"Opened {path.name} with warnings: {warning}",
-                            severity=hou.severityType.Warning,
-                        )
-                    log.info("Opened workfile: %s", path)
-                    self._scene.apply_scene_timeline(asset_id)
-                if callable(refresh_cb):
-                    refresh_cb()
-                self._refresh.detail()
+                self._load_now(path, proj, asset_id, refresh_cb)
             except Exception as exc:
                 report_failure(f"Opening {path}", exc)
 
         run_on_main_thread(_do_load)
+
+    def _load_now(self, path: Path, proj, asset_id: str, refresh_cb=None) -> bool:
+        """Swap this session to the workfile at ``path``: the unsaved-
+        changes prompt, the project, the load, the entity's timeline. On
+        the main thread. False when the artist cancelled the prompt (nothing
+        was loaded); a failure raises."""
+        import hou
+        from tumblepipe.pipe.houdini import playbar
+        decision = self._scene.prepare_scene_swap()
+        if decision is None:
+            return False  # user cancelled the save prompt
+        self._activator.activate(proj)
+        # Manual update mode so neither the load, the
+        # hou.setFrame() in apply_scene_timeline, nor load_hook's
+        # import re-execute triggers a live full-graph cook.
+        with playbar.update_mode(hou.updateMode.Manual):
+            try:
+                hou.hipFile.load(
+                    path.as_posix(), suppress_save_prompt=decision,
+                )
+            except hou.LoadWarning as warning:
+                # The scene IS open, with warnings (a missing HDA,
+                # say); the open carries on and says so.
+                hou.ui.setStatusMessage(
+                    f"Opened {path.name} with warnings: {warning}",
+                    severity=hou.severityType.Warning,
+                )
+            log.info("Opened workfile: %s", path)
+            self._scene.apply_scene_timeline(asset_id)
+        if callable(refresh_cb):
+            refresh_cb()
+        self._refresh.detail()
+        return True
+
+    def open_for_editor(self, path: Path, entity: str, dept: str) -> str:
+        """Open Cinedex's Open in Houdini here: the workfile at ``path``,
+        ``entity``'s (a shot URI) ``dept`` workfile, as :meth:`open_workfile`
+        opens one (:meth:`_load_now`), after bringing this Houdini to the
+        front so its save prompt is seen. On the main thread; answers
+        ``pipe.houdini_link``'s outcome. Raises ``houdini_link.NotHere``
+        when the workfile is no project's this session has (the editor then
+        opens it in a new Houdini)."""
+        import hou
+        from tumblepipe.pipe import houdini_link
+        from tumblepipe.pipe.houdini.ui.raise_window import raise_main_window
+        from tumblepipe.util.uri import Uri
+
+        raise_main_window()
+        current = hou.hipFile.path()
+        if current and houdini_link.same_file(current, str(path)):
+            return houdini_link.ALREADY_OPEN
+        proj = self._resolver.project_for_path(path)
+        if proj is None:
+            raise houdini_link.NotHere(f"{path.name} is in no project this Houdini has")
+        asset_id = uris.asset_id_for(proj.name, Uri.parse(entity))
+        if not self._load_now(path, proj, asset_id):
+            hou.ui.setStatusMessage(
+                f"{path.name} not opened", severity=hou.severityType.Message,
+            )
+            return houdini_link.CANCELLED
+        hou.ui.setStatusMessage(
+            f"Opened {path.name} from Cinedex", severity=hou.severityType.Message,
+        )
+        return houdini_link.OPENED
 
     @_action("Opening a workfile version")
     def open_version_now(

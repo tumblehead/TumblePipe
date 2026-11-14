@@ -132,6 +132,8 @@ def create_catalog():
         return None
     catalog = PipelineCatalog(registry)
     _follow_local_changes(catalog)
+    from . import editor_requests
+    editor_requests.remember(catalog)
     return catalog
 
 

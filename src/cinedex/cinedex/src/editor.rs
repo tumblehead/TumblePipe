@@ -44,6 +44,7 @@ use th_media::{ExrView, Frame, FrameKey, Media, Proxy};
 use th_pipe::Project;
 use th_pipe::desktop::{Desktop, Opened, Session};
 use th_pipe::edits::EditSources;
+use th_pipe::houdini_link::HoudiniLink;
 use th_pipe::master::{self, Change};
 use th_pipe::{edit_files, media};
 use th_playlist::Take;
@@ -56,6 +57,7 @@ use crate::display::{Display, open_live_over, open_media, theme};
 use crate::editing::{self, BinShot, Bound, Document, Origin};
 use crate::engine::{Content, Engine, Layer, Timeline};
 use crate::layer_view;
+use crate::layout_prefs;
 use crate::live::{Change as LiveChange, LiveWatch};
 use crate::look;
 use crate::rpc::{self, Refusal};
@@ -67,6 +69,7 @@ mod agent;
 mod clip_fields;
 mod export_dialog;
 mod menu_bar;
+mod panels;
 
 /// Decoded frames kept in memory (see `th_media::FrameBuffer`).
 const BUFFER_BYTES: usize = 4 << 30;
@@ -89,8 +92,6 @@ const PREVIEWS_EVERY: Duration = Duration::from_secs(5);
 const LIVE_HUSK_POLLS: u64 = 4;
 /// Why a workfile cannot be opened from here.
 const NO_DESKTOP: &str = "Opening workfiles needs a newer TumbleTrove Desktop, with its Remote Control API on (Settings > General), and this editor started from it";
-/// The bins' width.
-const BINS: f32 = 260.0;
 
 /// Where the project is: what a worker thread opens it from.
 #[derive(Debug, Clone)]
@@ -615,6 +616,10 @@ pub enum Message {
     View(usize),
     Exposure(f32),
     Burnins(bool),
+    /// The bins panel or the timeline was resized, folded or restored
+    /// (remembered for this user, `layout_prefs`).
+    BinsPanel(SplitChange),
+    TimelinePanel(SplitChange),
     /// Play live playblasts over the shots' takes, or not.
     ShowLive(bool),
     /// View > Show (#57): every shot as its render or playblast, or (None)
@@ -686,6 +691,9 @@ pub struct Editor {
     sessions_polling: bool,
     /// The Desktop that started this editor; None when nothing links to one.
     desktop: Option<Desktop>,
+    /// The Houdini that started this editor (Open Timeline, Play in
+    /// Cinedex, Live view); None when nothing did, or it is too old to say.
+    houdini: Option<HoudiniLink>,
     dialog: Option<Dialog>,
     /// The last thing said (a refused op, a save), and whether it is an error.
     status: Option<(String, bool)>,
@@ -735,6 +743,10 @@ pub struct Editor {
     agent_save: Option<rpc::Call>,
     /// The shots with preview frames ready on this machine (#75).
     previews: crate::previews::Ready,
+    /// The panel sizes, remembered for this user between sessions.
+    layout: layout_prefs::Layout,
+    /// Where they are saved; None keeps them for this session only.
+    layout_path: Option<PathBuf>,
 }
 
 fn waker(slot: &Arc<Mutex<Option<Sender<Message>>>>) -> impl Fn() + Send + 'static {
@@ -751,6 +763,7 @@ impl Editor {
     /// `recovered` is an autosave newer than it, offered back at start.
     pub fn new(paths: ProjectPaths, ocio: String, doc: Document, colour: Colour, recovered: Option<WorkingEdit>) -> Self {
         let (display, view) = colour.default();
+        let layout_path = layout_prefs::path();
         let journal_key = th_pipe::events::project_key(&paths.config);
         let shared_journal = crate::journal::Shared::new(&paths.config, journal_key.clone());
         let engine = Engine::start(vec![Content::none()], Timeline::new(Vec::new()), BUFFER_BYTES);
@@ -786,6 +799,7 @@ impl Editor {
             sessions: Vec::new(),
             sessions_polling: false,
             desktop: Desktop::from_env(),
+            houdini: HoudiniLink::from_env(),
             dialog,
             status: None,
             burnins: true,
@@ -814,7 +828,27 @@ impl Editor {
             endpoint: rpc::EndpointSlot::default(),
             agent_save: None,
             previews: Default::default(),
+            layout: layout_prefs::load(&layout_path),
+            layout_path: Some(layout_path),
         }
+    }
+
+    /// Remember a panel's new size for this user. A file that cannot be
+    /// written only loses the size for the next session, so it is said on
+    /// stderr, not in the window.
+    fn set_layout(&mut self, layout: layout_prefs::Layout) {
+        self.layout = layout;
+        if let Some(path) = &self.layout_path
+            && let Err(e) = layout_prefs::save(path, layout)
+        {
+            eprintln!("cinedex: the panel sizes were not saved to {}: {e}", path.display());
+        }
+    }
+
+    /// The timeline's height: the user's, else enough for the clip fields
+    /// and every track.
+    fn timeline_height(&self) -> f32 {
+        self.layout.timeline_height.unwrap_or_else(|| panels::fitted_timeline_height(self.doc.edit.video.len() + self.doc.edit.audio.len()))
     }
 
     fn fps(&self) -> u32 {
@@ -1386,6 +1420,8 @@ impl Editor {
         };
         let height = program.height().max(tracks::RULER + tracks::ROW);
         let canvas = interactive_canvas(Id::new("edit tracks"), program).width(Length::Fill).height(Length::fixed(height));
+        // A timeline dragged lower than its tracks scrolls them.
+        let canvas = scrollable(Id::new("tracks scroll"), canvas).width(Length::Fill).height(Length::Fill);
         let mut menu = context_menu(Id::new("clip menu"), canvas);
         if let Some(clip) = self.menu_clip
             && let Some(source @ Source::Shot { .. }) = clip_source(&self.doc.edit, clip)
@@ -1573,7 +1609,7 @@ impl Editor {
         }
         container(page.push(list).push(actions).height(Length::Fill))
             .background(look::panel())
-            .width(Length::fixed(BINS))
+            .width(Length::Fill)
             .height(Length::Fill)
             .into()
     }
@@ -1636,7 +1672,7 @@ impl Editor {
             grid = grid.push(line);
         }
         let mut page = column().spacing(8.0).padding(Padding::from([10.0, 14.0]));
-        if self.desktop.is_none() {
+        if self.desktop.is_none() && self.houdini.is_none() {
             page = page.push(text(NO_DESKTOP).font_size(12.0).color(look::caution()));
         }
         if board.shots.is_empty() {
@@ -2111,20 +2147,30 @@ impl Editor {
     }
 
     /// Open `shot`'s `department` workfile in Houdini: Desktop raises the
-    /// session that has it open, else launches one on it.
+    /// session that has it open, else the Houdini that started this editor
+    /// loads it, else Desktop launches one on it
+    /// (`th_pipe::houdini_link::open_workfile`).
     fn open_workfile(&mut self, shot: &str, department: &str) -> Command<Message> {
         let Some(workfile) = self.board.as_ref().and_then(|b| b.workfile(shot, department)) else {
             self.status = Some((format!("{department} has no workfile yet: it is made in Houdini, from the Asset Browser"), true));
             return Command::none();
         };
-        let Some(desktop) = self.desktop.clone() else {
+        if self.desktop.is_none() && self.houdini.is_none() {
             self.status = Some((NO_DESKTOP.into(), true));
             return Command::none();
-        };
+        }
+        let (desktop, houdini) = (self.desktop.clone(), self.houdini.clone());
+        let (shot, department) = (shot.to_string(), department.to_string());
         let path = workfile.path.clone();
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         self.status = Some((format!("Opening {name}…"), false));
-        Command::perform_blocking(move || desktop.open_workfile(&path).map(|opened| (name, opened)), Message::Opened)
+        Command::perform_blocking(
+            move || {
+                th_pipe::houdini_link::open_workfile(desktop.as_ref(), houdini.as_ref(), &path, &shot, &department)
+                    .map(|opened| (name, opened))
+            },
+            Message::Opened,
+        )
     }
 
     /// Show `shot` as Houdini's Live view asks (see `live_view`): its first
@@ -2397,7 +2443,19 @@ fn dialog_element(dialog: &Dialog, title: &str) -> Element<Message> {
                 .push(label("Shot"))
                 .push(field("name", &name.text, Field::Name, "SH010"))
                 .push(label("Frames"))
-                .push(field("frames", frames, Field::Frames, "48"));
+                .push(crate::ladder::ladder(
+                    Id::new("frames ladder"),
+                    field("frames", frames, Field::Frames, "48"),
+                    crate::ladder::Number {
+                        value: frames.trim().parse().unwrap_or(48.0),
+                        min: 1.0,
+                        max: 1_000_000.0,
+                        decimals: 0,
+                        default: 48.0,
+                    },
+                    |v| Message::Text(Field::Frames, format!("{}", v.round() as i64)),
+                    None,
+                ));
             buttons = buttons.push(choice("ok", "Insert", Message::Confirm)).push(choice("cancel", "Cancel", Message::Dismiss));
         }
         Dialog::Import { path, item, note } => {
@@ -2646,6 +2704,9 @@ impl Application for Editor {
                 self.status = Some(match result {
                     Ok((name, Opened::Raised(_))) => (format!("{name} is open in Houdini: brought to the front"), false),
                     Ok((name, Opened::Launched(_))) => (format!("Houdini is starting on {name}"), false),
+                    Ok((name, Opened::Loaded)) => (format!("Opened {name} in your Houdini"), false),
+                    Ok((name, Opened::AlreadyHere)) => (format!("{name} is open in your Houdini: brought to the front"), false),
+                    Ok((name, Opened::Cancelled)) => (format!("{name} not opened: you cancelled in Houdini"), false),
                     Err(e) => (format!("Not opened: {e}"), true),
                 });
                 return self.poll_sessions();
@@ -2876,6 +2937,26 @@ impl Application for Editor {
             }
             Message::Exposure(stops) => self.display.exposure = stops,
             Message::Burnins(on) => self.burnins = on,
+            Message::BinsPanel(change) => {
+                let mut layout = self.layout;
+                if let SplitSize::First(width) = change.size {
+                    layout.bins_width = width;
+                }
+                layout.bins_collapsed = change.collapsed;
+                self.set_layout(layout);
+            }
+            Message::TimelinePanel(change) => {
+                let mut layout = self.layout;
+                // A fold leaves an unset height unset, so it still fits the
+                // tracks.
+                if let SplitSize::Second(height) = change.size
+                    && height != self.timeline_height()
+                {
+                    layout.timeline_height = Some(height);
+                }
+                layout.timeline_collapsed = change.collapsed;
+                self.set_layout(layout);
+            }
             Message::ShowLive(on) => {
                 self.show_live = on;
                 return self.re_resolve_shots();
@@ -2993,23 +3074,19 @@ impl Application for Editor {
             layers = layers
                 .push(container(words).width(Length::Fill).height(Length::Fill).align_x(Horizontal::Center).align_y(Vertical::Center));
         }
+        // The panels resize (`editor/panels.rs`): drag a handle, double-
+        // click it to fold the panel to a strip, click the strip to bring it
+        // back. The handles stay out of keyboard focus, so the player's keys
+        // keep working after a drag. The sizes are remembered for this user.
         let middle: Element<Message> = if self.mode == 1 {
             self.board_view()
         } else {
-            row()
-                .push(self.bins_view())
-                .push(column().push(layers).push(self.display_controls()).width(Length::Fill).height(Length::Fill))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+            let viewer = column().push(layers).push(self.display_controls()).width(Length::Fill).height(Length::Fill);
+            panels::bins_split(self.bins_view(), viewer, &self.layout, Message::BinsPanel).into()
         };
-        let mut page = column()
-            .push(self.toolbar())
-            .push(middle)
-            .push(self.clip_fields())
-            .push(self.tracks_view())
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let timeline = column().push(self.clip_fields()).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);
+        let body = panels::timeline_split(middle, timeline, self.timeline_height(), self.layout.timeline_collapsed, Message::TimelinePanel);
+        let mut page = column().push(self.toolbar()).push(body).width(Length::Fill).height(Length::Fill);
         if let Some((words, error)) = &self.status {
             let colour = if *error { look::error() } else { look::text() };
             page = page.push(

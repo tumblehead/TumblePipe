@@ -17,6 +17,7 @@ pub mod edits;
 pub mod entities;
 pub mod events;
 pub mod groups;
+pub mod houdini_link;
 pub mod io;
 pub mod live;
 pub mod master;

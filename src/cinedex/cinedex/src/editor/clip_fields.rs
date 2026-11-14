@@ -10,6 +10,7 @@ use th_edit::document::{Clip, ClipRef, Frame, Source, TrackKind, WorkingEdit};
 use th_edit::ops::Op;
 
 use super::{Editor, Message};
+use crate::ladder::{Number, ladder};
 use crate::look;
 
 /// A clip field.
@@ -59,6 +60,27 @@ pub(crate) fn field_op(edit: &WorkingEdit, clip: ClipRef, field: ClipField, text
             let new = number / 100.0;
             Ok((percent(new) != percent(opacity)).then_some(Op::SetOpacity { clip, opacity: new }))
         }
+    }
+}
+
+/// `field` as a ladder number: its value is what the field shows (`typed`,
+/// else the clip's own `shown`), its limits and default those of a fade
+/// (whole frames, 0 or more, default 0) or an opacity (0 to 100 %, to a
+/// tenth, default 100).
+pub(crate) fn field_number(field: ClipField, typed: &str, shown: &str) -> Number {
+    let parse = |t: &str| t.trim().strip_suffix('%').unwrap_or(t.trim()).trim().parse::<f64>().ok();
+    let value = parse(typed).or_else(|| parse(shown)).unwrap_or(0.0);
+    match field {
+        ClipField::FadeIn | ClipField::FadeOut => Number { value, min: 0.0, max: 1_000_000.0, decimals: 0, default: 0.0 },
+        ClipField::Opacity => Number { value, min: 0.0, max: 100.0, decimals: 1, default: 100.0 },
+    }
+}
+
+/// A ladder value as `field`'s text.
+pub(crate) fn field_value_text(field: ClipField, value: f64) -> String {
+    match field {
+        ClipField::FadeIn | ClipField::FadeOut => format!("{}", value.round() as Frame),
+        ClipField::Opacity => percent(value / 100.0),
     }
 }
 
@@ -120,11 +142,21 @@ impl Editor {
                         Some((c, f, typed)) if *c == clip && *f == which => typed.clone(),
                         _ => field_text(&self.doc.edit, clip, which).unwrap_or_default(),
                     };
-                    text_input(Id::new(id), value)
+                    let shown = field_text(&self.doc.edit, clip, which).unwrap_or_default();
+                    let input = text_input(Id::new(id), value.clone())
                         .on_input(move |s| Message::ClipField(which, s))
                         .on_submit(move || Message::ClipFieldSet(which))
                         .font_size(12.0)
-                        .width(Length::fixed(56.0))
+                        .width(Length::fixed(56.0));
+                    // Middle-drag: Houdini's value ladder; release sets it.
+                    let number = field_number(which, &value, &shown);
+                    ladder(
+                        Id::new(format!("{id} ladder")),
+                        input,
+                        number,
+                        move |v| Message::ClipField(which, field_value_text(which, v)),
+                        Some(Message::ClipFieldSet(which)),
+                    )
                 };
                 fields = fields
                     .push(label("Fade in"))
@@ -139,7 +171,7 @@ impl Editor {
                         .push(field("opacity field", ClipField::Opacity))
                         .push(label("%"));
                 }
-                fields = fields.push(space(Length::fixed(12.0), Length::Shrink)).push(label("Enter sets a field"));
+                fields = fields.push(space(Length::fixed(12.0), Length::Shrink)).push(label("Enter sets a field, middle-drag steps it"));
             }
         }
         container(fields).padding(Padding::from([3.0, 14.0])).width(Length::Fill).background(look::panel()).into()
@@ -213,6 +245,33 @@ mod tests {
             for bad in ["", "x", "1.5", "3f", "--2"] {
                 prop_assert!(field_op(&edit, clip, field, bad).is_err(), "{:?} taken", bad);
             }
+        }
+
+        /// Whatever the value ladder makes of a clip field, from any drag, is
+        /// text the field takes (`field_op` never refuses it as no value of
+        /// that field), and the ladder reads the field's text back as that
+        /// value; Ctrl + middle-click's reset is the clip default (no fade,
+        /// full opacity).
+        #[test]
+        fn a_ladder_value_is_text_the_field_takes(
+            start in prop::sample::select(vec!["0", "12", "100", "37.5", "", "junk"]),
+            field in prop::sample::select(vec![ClipField::FadeIn, ClipField::FadeOut, ClipField::Opacity]),
+            path in prop::collection::vec((-400f32..400.0, -80f32..80.0), 1..8),
+        ) {
+            let edit = edit(400, (0, 0), 0.5);
+            let clip = ClipRef { track: TrackRef::video(0), index: 0 };
+            let shown = field_text(&edit, clip, field).unwrap();
+            let number = field_number(field, start, &shown);
+            let press = primer::Point::new(100.0, 100.0);
+            let mut grip = crate::ladder::Grip::new(&number, press);
+            for (dx, dy) in path {
+                let value = grip.moved(&number, primer::Point::new(press.x + dx, press.y + dy));
+                let text = field_value_text(field, value);
+                prop_assert!(field_op(&edit, clip, field, &text).is_ok(), "{:?} refused", text);
+                prop_assert_eq!(field_number(field, &text, &shown).value, value);
+            }
+            let reset = field_value_text(field, number.reset());
+            prop_assert_eq!(reset, if field == ClipField::Opacity { "100" } else { "0" });
         }
 
         /// An opacity typed as a percentage, with or without `%`, sets the

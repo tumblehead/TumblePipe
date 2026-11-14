@@ -29,6 +29,7 @@ catalog turns it into the browser's popover.
 from __future__ import annotations
 
 import datetime as dt
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Iterable
@@ -54,6 +55,27 @@ FRAME_KINDS = ('render', 'denoise', 'composite', 'slapcomp', 'playblast')
 HEADLINE_KINDS = (
     'render', 'playblast', 'composite', 'slapcomp', 'denoise', 'edit_render',
     'publish', 'export', 'stage', 'collapse', 'build', 'mp4',
+)
+#: The farm workers that write a review movie, best first for a batch: a
+#: click on a finished batch's OS notification opens the movie's folder
+#: when the batch has no frames (:func:`movie_folder`). Render Edit writes
+#: the edit's movie (``render:/edits/<name>/<name>_edit_v0003.mp4``).
+MOVIE_KINDS = ('playblast', 'mp4', 'edit_render')
+#: The farm workers whose jobs leave nothing for a click on the OS
+#: notification to open: the folder rule (:func:`notify_folder`) is the
+#: frames of ``frames_preview.FRAME_KINDS``, else the movie of
+#: :data:`MOVIE_KINDS`, and every kind TumblePipe submits
+#: (``farm_job('<kind>', ...)`` in ``farm/jobs``) is in one of the three
+#: (``tests/test_farm_finished.py``). A new kind that writes something to
+#: look at belongs with the frames or the movies, not here.
+NO_FOLDER_KINDS = (
+    'publish',   # writes the workfile's exports: seen in the browser, not a folder
+    'export',    # the same, from a farm export
+    'build',     # writes the entity's staged USD, a step of a chain
+    'stage',     # builds a shot's render stage for the render after it
+    'collapse',  # snapshots a stage for the render it submits
+    'sync',      # copies a render's AOVs to the edit: the render's frames open
+    'notify',    # posts to Discord; its outputs are the post's files
 )
 # A job waiting on others: what a failed job leaves its dependents in.
 _BLOCKED = (queue.PENDING, queue.SUSPENDED)
@@ -308,6 +330,7 @@ class Detail:
     line: str = ''
     written: int = 0                 # frames written (failed: by the failed job)
     preview_folder: str = ''         # the frames Preview in Cinedex opens; '' for none
+    folder: str = ''                 # what a click on the OS notification opens; '' for none
 
 
 @dataclass(frozen=True)
@@ -322,6 +345,10 @@ class Report:
     written: int = 0
     preview_folder: str = ''
     job_ids: tuple[str, ...] = field(default=(), compare=False)
+    # The folder a click on the OS notification opens (notify_folder): the
+    # frames (preview_folder), else a playblast's daily movie folder; ''
+    # for none (a failed batch with no frames).
+    folder: str = ''
 
     @property
     def failed(self) -> bool:
@@ -384,6 +411,46 @@ def no_detail(batch: list[rows.JobRow], state: str) -> Detail:
     return Detail()
 
 
+def movie_folder(batch: list[rows.JobRow], is_dir: Callable[[str], bool] = os.path.isdir) -> str:
+    """The folder of ``batch``'s review movie, for a click on the OS
+    notification; '' when it has none on disk.
+
+    A playblast's (else an mp4 job's) outputs are its versioned movie
+    (``render:/playblast/<entity>/<dept>/<shot>_v0003.mp4``) and then, when
+    it is published, the daily (``render:/daily/<kind>/<dept>/<shot>.mp4``):
+    the daily folder holds every shot's current movie of that department,
+    "the daily animation folder" an animator looks in, so it is preferred;
+    the versioned movie's folder when there is no daily on disk. A Render
+    Edit's output is the edit's movie, in ``render:/edits/<name>``.
+    """
+    from pathlib import Path
+    ordered = _order(batch)
+    for kind in MOVIE_KINDS:
+        for row in ordered:
+            if row.kind != kind:
+                continue
+            for output in reversed(row.outputs):
+                if not output:
+                    continue
+                folder = str(Path(output).parent)
+                if is_dir(folder):
+                    return folder
+    return ''
+
+
+def notify_folder(state: str, preview_folder: str, movie: str) -> str:
+    """What a click on the OS notification opens for an ended batch: its
+    frames (what Preview in Cinedex opens: a render's beauty AOV, a
+    slapcomp's or comp's EXRs), else its review movie's folder (a
+    playblast's daily). A failed batch opens its frames when it wrote some,
+    else nothing: why it failed is in Jobs (Show in Jobs), which a
+    notification cannot open, and an empty or half-written movie folder
+    would only mislead."""
+    if preview_folder:
+        return preview_folder
+    return '' if state == FAILED else movie
+
+
 def read_detail(batch: list[rows.JobRow], state: str) -> Detail:
     """Read what the tasks and the output folder say about an ended batch.
 
@@ -419,13 +486,20 @@ def read_detail(batch: list[rows.JobRow], state: str) -> Detail:
             except Exception:
                 folder = ''
         line = failure_line(job.kind, tasks, errors, rows.frame_count(job.frames))
-        return Detail(line=line, written=written, preview_folder=folder)
+        return Detail(line=line, written=written, preview_folder=folder,
+                      folder=notify_folder(state, folder, ''))
     try:
         target = frames_preview.best_target([r for r in batch if r.kind in frames_preview.FRAME_KINDS])
         folder = str(target.folder) if target.enabled else ''
     except Exception:
         folder = ''
-    return Detail(preview_folder=folder)
+    movie = ''
+    if not folder:
+        try:
+            movie = movie_folder(batch)
+        except Exception:
+            movie = ''
+    return Detail(preview_folder=folder, folder=notify_folder(state, folder, movie))
 
 
 def make_report(
@@ -441,6 +515,7 @@ def make_report(
         key=key, state=state, title=title(batch, state), ended=ended, line=line,
         select_id=lead.id, written=detail.written, preview_folder=detail.preview_folder,
         job_ids=tuple(r.id for r in _order(batch)),
+        folder=detail.folder or notify_folder(state, detail.preview_folder, ''),
     )
 
 
@@ -588,10 +663,13 @@ def popover_spec(reports: Iterable[Report]) -> PopoverSpec:
 @dataclass(frozen=True)
 class Announcement:
     """What one read's ended batches say: the status-bar line, and the OS
-    notification's title and body (the same line)."""
+    notification's title and body (the same line), and the folder a click
+    on the notification opens: the folder of the report the line is about
+    ('' for none)."""
     line: str
     title: str
     failed: bool
+    folder: str = ''
 
 
 def announcement(reports: Iterable[Report]) -> Announcement | None:
@@ -607,4 +685,4 @@ def announcement(reports: Iterable[Report]) -> Announcement | None:
     failed = any(r.failed for r in ordered)
     plural = len(ordered) > 1
     title = ('Farm jobs' if plural else 'Farm job') + (' failed' if failed else ' finished')
-    return Announcement(line=line, title=title, failed=failed)
+    return Announcement(line=line, title=title, failed=failed, folder=first.folder)

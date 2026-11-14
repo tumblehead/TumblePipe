@@ -126,8 +126,10 @@ A changed field is prefixed `*`. Editing:
 - Double-click a value to edit it; **Enter**, **Tab** or clicking anywhere
   else (another row, another widget, or the pane's empty background) commits,
   **Escape** cancels. Integer and float fields only accept numbers; an
-  incomplete entry (empty, or a lone `-`) keeps the old value. Booleans edit
-  as a checkbox.
+  incomplete entry (empty, or a lone `-`) keeps the old value. While one is
+  open, middle-drag it to step it as in Houdini (move up or down to pick a
+  step, then left or right), and Ctrl + middle-click puts back the value it
+  opened with. Booleans edit as a checkbox.
 - Double-click a key to rename it; the same commit rules apply, and a key
   already present on the same object is rejected.
 - Right-click a field for **Change Type** (null, boolean, integer, float,

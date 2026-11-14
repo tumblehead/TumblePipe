@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.105.1 — 2026-11-13
+
+### Fixes
+- fix(release): find each build under hpm v0.40's slug archive name too (`410b4a09`)
+
+### Documentation
+- docs: regenerate CHANGELOG.md for v1.105.0, and the released-parm snapshot (`ca117518`)
+
 ## v1.105.0 — 2026-11-13
 
 ### Features

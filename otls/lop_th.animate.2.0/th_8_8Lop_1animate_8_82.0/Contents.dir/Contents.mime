@@ -1006,7 +1006,7 @@ matchesdef = 1
 Content-Disposition: attachment; filename="hdaroot/no_default_values.def"
 Content-Type: text/plain
 
-comment "Modified: subdivisionScheme"
+comment ""
 position 0.74814 8.02518
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on displaycomment on debug off
@@ -1290,7 +1290,7 @@ computeextents	[ 0	locks=0 ]	(	"on"	)
 sample_group2	[ 0	locks=0 ]	(	0	)
 sample_subframegroup2	[ 0	locks=0 ]	(	0	)
 createprimsgroup2	[ 0	locks=0 ]	(	1	)
-subdivisionScheme_control	[ 0	locks=0 ]	(	block	)
+subdivisionScheme_control	[ 0	locks=0 ]	(	none	)
 subdivisionScheme	[ 0	locks=0 ]	(	none	)
 }
 

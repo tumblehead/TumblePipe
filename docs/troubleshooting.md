@@ -93,6 +93,23 @@ Both come from the `tt_prepare` hook, which runs on every launch:
 - **TumblePipe — project not configured** — see the previous entry;
   **Launch anyway** opens Houdini without a pipeline.
 
+### Cinedex's Open in Houdini starts a new Houdini instead of using mine
+
+Cinedex opens the workfile in your Houdini only when that Houdini started
+Cinedex (**Open Timeline**, **Play in Cinedex** or **Live**) and is still
+open. A new Houdini starts when:
+
+- Cinedex was opened from TumbleTrove Desktop (**Open Cinedex**), or from a
+  Houdini you have since closed. Open it again from the Houdini you want to
+  use.
+- Your Houdini has a different project loaded than the workfile's.
+- Cinedex was started by a TumblePipe from before this feature (1.105.1 or
+  older). Update, then open Cinedex again from Houdini.
+
+If you cancel Houdini's save prompt, nothing opens and nothing new starts.
+Cinedex's status line says which of these happened. See
+[Playing shots](asset-browser/play-shots.md).
+
 ### The radial menus are missing (Alt+T does nothing)
 
 Radial registration failed at startup: Houdini's console carries
@@ -873,6 +890,25 @@ is nothing to export. The other members still publish. Add the shot's column to
 the Multi workfile if that department should cover it. A single-shot workfile
 with no export nodes at all reports the same way. Up to 1.63.1 both cases
 failed the task instead.
+
+### Clicking the "Farm job finished" notification opens nothing
+
+The click opens the folder of the job the notification names (see
+[When your jobs end](deadline.md#when-your-jobs-end)). Nothing opens when:
+
+- You're on macOS or Linux: their notifications can't open anything on
+  click. Use **Preview in Cinedex** in the Farm Manager button's popover.
+- The job failed before it wrote any frames: there is no folder to show.
+  **Show in Jobs** in the popover has the error.
+- The folder isn't there (yet) on this machine, for example a share that
+  isn't connected.
+- The batch only published, exported or built: those jobs write nothing
+  to look at in a folder.
+
+If the notification's header says **Windows PowerShell** instead of
+**TumblePipe**, Windows didn't accept TumblePipe's name for its
+notifications (it needs Windows 10 version 1903 or newer). The
+notification still works, and clicking it still opens the folder.
 
 ### Farm job failed: `First frame not found: …/denoise/renders/…`
 

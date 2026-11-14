@@ -43,6 +43,7 @@ def build_window():
         QComboBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPlainTextEdit,
         QPushButton, QSpinBox, QVBoxLayout, QWidget,
     )
+    from tumblepipe.util import value_ladder_qt
 
     class Worker(QObject):
         finished = Signal(object)
@@ -84,6 +85,7 @@ def build_window():
             self.keep_spin.setRange(1, 50)
             self.keep_spin.setValue(prune_exports.DEFAULT_KEEP)
             self.keep_spin.valueChanged.connect(self._stale)
+            value_ladder_qt.install(self.keep_spin, default=prune_exports.DEFAULT_KEEP)
             row.addWidget(self.keep_spin)
             row.addWidget(QLabel('finished versions of'))
             self.context_combo = QComboBox()

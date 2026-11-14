@@ -63,6 +63,7 @@ from tumblepipe.config import shot_batch
 from tumblepipe.config.multi_timeline import (
     TIMELINE_CHOICES, new_overlaps, timeline_choice, timeline_settings,
 )
+from tumblepipe.util import value_ladder_qt
 from tumblepipe.util.uri import Uri
 
 from . import entity_editor_layout as layout_prefs
@@ -306,6 +307,8 @@ def _spin(value: int, low: int = 0, high: int = 999_999) -> QSpinBox:
     spin = QSpinBox()
     spin.setRange(low, high)
     spin.setValue(value)
+    # Middle-drag steps it, Ctrl + middle-click resets it, as in Houdini.
+    value_ladder_qt.install(spin, default=value)
     return spin
 
 
@@ -2019,6 +2022,8 @@ def _blankable(spin, low, high, no_wheel: _NoWheel):
     spin.setFocusPolicy(Qt.StrongFocus)
     spin.setSpecialValueText(_NOT_SET)
     spin.installEventFilter(no_wheel)
+    # Middle-drag steps it; Ctrl + middle-click empties it (the default).
+    value_ladder_qt.install(spin)
     return spin
 
 

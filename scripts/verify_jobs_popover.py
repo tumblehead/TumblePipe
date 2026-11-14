@@ -191,7 +191,7 @@ def main() -> int:
     statuses, notified, pulses = [], [], []
     sent = threading.Event()
 
-    def notify(title: str, body: str) -> None:
+    def notify(title: str, body: str, folder: str = '') -> None:
         notified.append((title, body))
         sent.set()
 

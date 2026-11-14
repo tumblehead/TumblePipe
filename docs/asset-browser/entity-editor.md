@@ -306,7 +306,12 @@ project's `root_default_prims.usda` supplies it, as it always did. Typing a
 value there sets it, even the same number the pipeline defaults hold.
 
 - **Change** a field (type and press Enter, step it, tick, pick On or Off,
-  or pick a preset) to set it on every target. Typing what a target already
+  or pick a preset) to set it on every target. A number field also steps
+  as in Houdini: middle-drag it, move up or down to pick a step (100, 10,
+  1, 0.1, 0.01; whole numbers stop at 1), then left or right; letting go
+  sets it. Ctrl + middle-click empties it, the same as **Inherit**. The
+  number fields of the Entity Editor's dialogs (frames, counts) step the
+  same way, and Ctrl + middle-click puts back the number they opened with. Typing what a target already
   inherits pins nothing, as in the sheet. A value the root layer could not
   use (a camera without a leading `/`) is refused, and the footer says why.
 - **Inherit** takes the value set here away, so the target follows the

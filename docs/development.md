@@ -651,6 +651,10 @@ workspace:
   (`Media::problem`); its stream is `(kind, department, Some("layers"))`,
   right after the department's plain takes of that kind.
 - `cinedex`: the editor's window, built on the in-house Primer UI crate.
+  `ladder.rs` is Houdini's middle-mouse value ladder for number fields
+  (`ladder(...)` wraps any field); its row height, notch and finest step
+  are the Qt helper's (`util/value_ladder.py`, `value_ladder_qt.install`),
+  checked by `tests/test_value_ladder.py`.
   `main.rs` reads the arguments and opens the OCIO config; when it fails,
   or the edit does not open, the window says why. `display.rs` is the
   display and view the picture shows through, and opens a take's media off
@@ -704,6 +708,15 @@ workspace:
   picture, placed by the same fit `video.wgsl` gives the frame. The
   controls are built `.focusable(false)`, so the player's keys keep working
   after a click on one.
+  The bins and the timeline sit in Primer `Split`s (0.15.0 and newer): a
+  fixed `First` width beside the viewer and a fixed `Second` height under
+  it, each collapsible to a strip, with `on_resize` handing every change to
+  `Message::BinsPanel`/`TimelinePanel`. `layout_prefs.rs` keeps the sizes per
+  user in `<LOCALAPPDATA | XDG_CONFIG_HOME | ~/Library/Application
+  Support>/tumblepipe/cinedex/layout.json` (written whole, renamed over);
+  the split clamps them to the window when it lays out, so they are saved
+  as the user left them. Its tests round-trip any layout and load any JSON
+  as sizes within reason.
 
 Primer is a git dependency that cargo fetches from 3db Gitea
 over plain HTTP (`http://10.100.36.15:3000/...`). It is readable without
@@ -970,7 +983,18 @@ The tests:
   programs (Live view's `view_shot`; `events`, a long poll on its
   `Events` log of the last 256; every other method handed to the editor
   as an agent command); Python parity in
-  `tests/test_live_parity.py`. `events` writes the change journal as
+  `tests/test_live_parity.py`. `desktop` calls TumbleTrove Desktop's
+  remote control API with the editor's app token (`TT_APP_TOKEN`, which
+  reaches only `sessions_list`, `sessions_focus` and `launch_project`), and
+  `houdini_link` is the editor's line back to the Houdini that started it:
+  that Houdini listens on 127.0.0.1 (`pipe/houdini_link.py`, registered in
+  `startup.py` for GUI sessions) and hands the editor `TH_HOUDINI_ENDPOINT`
+  and `TH_HOUDINI_TOKEN` through `review_playlist._start`. Open in
+  Houdini's choice (raise the session that has the file, else ask the
+  calling Houdini, else launch) is `houdini_link::next_step`; the calling
+  Houdini runs `WorkfileManager.open_for_editor`
+  (`asset_browser/editor_requests.py`). The method, keys, outcomes and env
+  names are checked against the Python in `tests/`. `events` writes the change journal as
   `util/events.py` does (every `Config` write, edit saves and publishes, a
   kept live render) and reads it (`JournalReader`, Python's reader poll for
   poll: `tests/test_journal_parity.py`).

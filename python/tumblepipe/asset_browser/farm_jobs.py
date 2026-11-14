@@ -6,8 +6,10 @@ When a batch the artist submitted in this Houdini session ends
 - one line goes to Houdini's status bar, ``SQ010/SH020 render done: 48
   frames, 3 passes · 12 min on the farm`` (a warning when something failed);
 - when Houdini is not the application in front, the same line goes to the
-  OS as a desktop notification (``util.desktop_notify``: a line only, it
-  has no buttons);
+  OS as a desktop notification (``util.desktop_notify``: a line, no
+  buttons); on Windows a click on it opens the folder of the job the line
+  is about (``Announcement.folder``: its frames, else a playblast's daily
+  folder; nothing for a failure without frames);
 - the Farm Manager button asks TumbleTrove for one pulse, which TumbleTrove
   plays or refuses (hidden browser, reduced motion, Houdini cooking or
   playing back), and shows a dot at its foot, accent for finished, danger
@@ -28,6 +30,7 @@ OS notification still go out.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -89,9 +92,18 @@ def houdini_in_front() -> bool:
         return True
 
 
-def _notify_os(title: str, body: str) -> None:
+def notify_folder(folder: str, is_dir=os.path.isdir) -> str:
+    """The folder the OS notification opens on a click: ``folder`` when it
+    is on disk, else '' (a click then only dismisses it)."""
+    try:
+        return folder if folder and is_dir(folder) else ""
+    except Exception:
+        return ""
+
+
+def _notify_os(title: str, body: str, folder: str = "") -> None:
     from tumblepipe.util import desktop_notify
-    why = desktop_notify.notify(title, body)
+    why = desktop_notify.notify(title, body, notify_folder(folder))
     if why:
         log.info("Farm jobs: no desktop notification (%s)", why)
 
@@ -111,7 +123,7 @@ def announce(catalog, reports: list, *, in_front=houdini_in_front,
         log.debug("Farm jobs: the status line failed", exc_info=True)
     if not in_front():
         threading.Thread(
-            target=notify, args=(said.title, said.line),
+            target=notify, args=(said.title, said.line, said.folder),
             name="tumblepipe-farm-notify", daemon=True,
         ).start()
     request = getattr(catalog, "request_quick_action_pulse", None)

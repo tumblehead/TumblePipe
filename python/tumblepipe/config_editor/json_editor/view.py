@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
     QTreeView,
 )
 
+from tumblepipe.util import value_ladder_qt
+
 from .types import FieldOrigin, JsonValue, JsonRoot, field_origin
 from .diff import _value_tree, _diff_tree
 from .path import (
@@ -334,10 +336,12 @@ class JsonItemDelegate(QStyledItemDelegate):
         if isinstance(item, IntegerItem):
             editor = QLineEdit(parent)
             editor.setValidator(QIntValidator(editor))
+            value_ladder_qt.install(editor)
             return editor
         if isinstance(item, FloatItem):
             editor = QLineEdit(parent)
             editor.setValidator(FloatValidator(editor))
+            value_ladder_qt.install(editor, decimals=3)
             return editor
         if isinstance(item, (
             StringItem, FieldBasicItem, FieldObjectItem, FieldArrayItem,

@@ -602,6 +602,62 @@ mod tests {
         assert_eq!(reader.poll(), vec![]);
     }
 
+    /// A change another program holds open with no sharing (a virus scan,
+    /// a backup, a sync client) cannot be read: a real poll passes over it
+    /// without marking it read or gone, polls again pass over it while it
+    /// is held, and the first poll after it is let go returns it whole,
+    /// once. The Python reader's test (tests/test_shared_journal.py)
+    /// leans on this. Windows only: share mode none is how a file is held
+    /// there; elsewhere nothing holds a file against reading, and the
+    /// model above (`Step::Held`) covers the reader's side.
+    #[cfg(windows)]
+    #[test]
+    fn a_held_change_is_read_whole_once_it_is_let_go() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let mut reader = SharedReader::new(dir.path().to_path_buf(), 0);
+        assert_eq!(reader.poll(), vec![]);
+        let (held_event, free_event) = (event(1, events::RENDER), event(2, events::PLAYBLAST));
+        let held_path = write(dir.path(), &held_event, 1_000).unwrap();
+        let held = std::fs::OpenOptions::new().read(true).share_mode(0).open(&held_path).unwrap();
+        let refused = std::fs::read(&held_path).unwrap_err();
+        assert_ne!(refused.kind(), std::io::ErrorKind::NotFound, "a held file reads as gone: {refused}");
+        let held_name = held_path.file_name().unwrap().to_str().unwrap().to_owned();
+        assert_eq!(reader.poll(), vec![], "a held change was returned");
+        assert!(!reader.seen.contains(&held_name), "a held change was marked read or gone");
+        // A change written meanwhile is not held up by it.
+        write(dir.path(), &free_event, 1_001).unwrap();
+        assert_eq!(reader.poll(), vec![free_event]);
+        assert!(!reader.seen.contains(&held_name));
+        drop(held);
+        assert_eq!(reader.poll(), vec![held_event], "the change let go was not read on the next poll");
+        assert_eq!(reader.poll(), vec![]);
+    }
+
+    /// A change pruned between the listing and the read is gone: marked so,
+    /// not read again even when a slow share lists it once more, and not
+    /// kept once no listing has it.
+    #[test]
+    fn a_change_pruned_after_the_listing_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut reader = SharedReader::new(dir.path().to_path_buf(), 0);
+        assert_eq!(reader.poll(), vec![]);
+        let path = write(dir.path(), &event(1, events::RENDER), 1_000).unwrap();
+        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+        let stale = listing(dir.path());
+        std::fs::remove_file(&path).unwrap();
+        let mut reads = 0;
+        let got = reader.step(Some(stale.clone()), |n| {
+            reads += 1;
+            std::fs::read(dir.path().join(n))
+        });
+        assert_eq!((got, reads), (vec![], 1));
+        assert!(reader.seen.contains(&name), "a gone change was not marked gone");
+        assert_eq!(reader.step(Some(stale), |n| panic!("read {n} again after it was gone")), vec![]);
+        assert_eq!(reader.poll(), vec![]);
+        assert!(reader.seen.is_empty(), "a change no listing has is still remembered");
+    }
+
     fn listing(dir: &Path) -> Vec<String> {
         let mut names: Vec<String> = std::fs::read_dir(dir).unwrap().filter_map(|e| e.ok()?.file_name().into_string().ok()).collect();
         names.sort();

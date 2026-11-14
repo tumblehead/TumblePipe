@@ -64,7 +64,20 @@ many others the Layer submenu offers: `SH030 · chars (+2)`, and
 `SH030 · chars (+2) · default not ready` while a chosen layer waits. **Reveal
 folder** opens the folder of the take on screen in Explorer, Finder or the
 desktop's file manager, and **Open in Houdini** opens a department's
-workfile of the shot through TumbleTrove Desktop.
+workfile of the shot:
+
+- If a Houdini of the project already has that workfile open, that Houdini
+  comes to the front.
+- Otherwise, if you opened the editor from Houdini (**Open Timeline**,
+  **Play in Cinedex** or **Live**) and that Houdini is still open, the
+  workfile opens there, just as the Asset Browser's Open does: Houdini comes
+  to the front, asks what to do with unsaved changes, and sets the shot's
+  frame range. If you cancel, nothing opens, and the editor's status line
+  says so.
+- Otherwise (you opened the editor from TumbleTrove Desktop, or that Houdini
+  has closed), TumbleTrove Desktop starts a new Houdini on the workfile.
+
+The editor's status line says which happened.
 
 A shot with no take its rule picks (a planned shot, or one with nothing
 made yet) plays as an empty clip saying so; it still has its length in the
@@ -371,6 +384,12 @@ clip being dragged.
   100% shows the tracks below through it, as inside a fade; at 0% it is not
   seen at all. The edit file writes `opacity` only for a clip under 100%,
   so an edit at full opacity reads in an editor from before it.
+- Middle-drag one of these fields to step it, as in Houdini: a column of
+  steps (100, 10, 1, and 0.1 for the opacity) opens at the pointer. Move up
+  or down to pick a step, then left or right to change the value one step
+  at a time. Letting go sets it, as one step of undo. Ctrl + middle-click
+  puts the field back to its default: no fade, 100% opacity. The
+  **Frames** field of **New shot…** steps the same way (its default is 48).
 
 Every change is one step of undo, however many clips it moves.
 
@@ -424,6 +443,28 @@ colour space from the EXR (ACEScg for TumblePipe renders; a render that
 does not name one cannot play) and starts on the config's default display
 and view. The window around the image is neutral grey, so it does not shift
 how the image's colours read.
+
+### Making room
+
+The bins and the timeline can be resized to make room for the picture:
+
+- Drag the line between the bins and the picture to make the bins wider or
+  narrower, and the line above the timeline to make it taller or shorter.
+  The pointer turns into a resize arrow over the line. The picture takes
+  whatever is left.
+- Double-click the line to fold the bins (or the timeline) away to a thin
+  strip with three dots. Click the strip to bring them back at the size
+  they had.
+- A timeline lower than its tracks scrolls them.
+
+The sizes are remembered for you: the next Cinedex you open, in any project,
+opens with them. A window smaller than when you set them squeezes the panels
+to fit, and they are back at your size when the window is large again. On
+the board (**Board** in the toolbar) the line above the timeline works the
+same way. The sizes are kept in `layout.json` in a `tumblepipe/cinedex`
+folder of your own (`%LOCALAPPDATA%` on Windows, `~/.config` on Linux,
+`~/Library/Application Support` on macOS); delete it to start from the
+default sizes again.
 
 ## Saving and publishing
 
@@ -576,6 +617,11 @@ While it runs, it listens on a port of 127.0.0.1 for Houdini's Live view
 calls and agents' commands; the port and a token it checks are in
 `players/<project key>/<pid>.json` under the live folder, and the file is
 removed when it quits.
+
+Started from Houdini, it is told how to reach that Houdini in its
+environment: `TH_HOUDINI_ENDPOINT` (a port of 127.0.0.1 the Houdini listens
+on) and `TH_HOUDINI_TOKEN`. **Open in Houdini** asks that Houdini to open
+the workfile there.
 
 It is built for Windows, Linux and macOS. See
 [Contributing and development](../development.md#cinedex-the-editor) for how it

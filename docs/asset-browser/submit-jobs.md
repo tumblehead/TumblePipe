@@ -330,7 +330,10 @@ Every field with a per-entity source is **tri-state**:
 "The entities" are the rows with at least one tick (every visible row while
 nothing is ticked). Editing a field pins it. The mouse wheel only changes a
 field you have clicked into; over any other field it scrolls the settings,
-so scrolling past a number cannot pin it by accident. To unpin, click the
+so scrolling past a number cannot pin it by accident. A number field also
+steps as in Houdini: middle-drag it, move up or down to pick a step (100,
+10 or 1), then left or right; letting go pins the value. Ctrl +
+middle-click is the row's **↺**. To unpin, click the
 row's **↺** ("Use each entity's own configured value"; it shows only while a
 field in its row is pinned), pick the
 `⟨per entity⟩` row of a combo, or click a checkbox round to partially

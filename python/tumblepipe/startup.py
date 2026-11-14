@@ -114,6 +114,17 @@ def _register_tumbletrove() -> None:
     _guarded("workfile context provider", workfile_context.register)
     _guarded("shot slate", _start_shot_slate)
     _guarded("live playblast hotkey", _bind_live_playblast_hotkey)
+    _guarded("editor link", _register_editor_link)
+
+
+def _register_editor_link() -> None:
+    """Let Cinedex, started from this session, open workfiles here
+    (graphical sessions only; ``pipe.houdini_link``)."""
+    import hou
+
+    if hou.isUIAvailable():
+        from tumblepipe.asset_browser import editor_requests
+        editor_requests.register()
 
 
 def _bind_live_playblast_hotkey() -> None:

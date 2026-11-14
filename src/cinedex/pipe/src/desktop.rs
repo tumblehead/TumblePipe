@@ -61,6 +61,13 @@ pub enum Opened {
     Raised(String),
     /// A new Houdini was launched on it.
     Launched(String),
+    /// The Houdini that started the editor loaded it, and came to the front.
+    Loaded,
+    /// The Houdini that started the editor had it open, and came to the front.
+    AlreadyHere,
+    /// The artist cancelled that Houdini's unsaved-changes prompt: nothing
+    /// was opened (and no new Houdini launched).
+    Cancelled,
 }
 
 /// A path as two programs on one machine may spell it: forward slashes,
@@ -196,14 +203,10 @@ impl Desktop {
     }
 
     /// Open `hip` in Houdini: raise the session that has it open, else
-    /// launch a new one on it.
+    /// launch a new one on it (`houdini_link::open_workfile` with no
+    /// calling Houdini).
     pub fn open_workfile(&self, hip: &Path) -> Result<Opened, String> {
-        let sessions = self.sessions()?;
-        if let Some(session) = session_with(&sessions, hip) {
-            self.focus(&session.id)?;
-            return Ok(Opened::Raised(session.id.clone()));
-        }
-        self.launch(hip).map(Opened::Launched)
+        crate::houdini_link::open_workfile(Some(self), None, hip, "", "")
     }
 }
 
@@ -212,7 +215,7 @@ impl Desktop {
 /// the foreground on; without this Desktop's raise of Houdini only flashes
 /// its taskbar button.
 #[cfg(windows)]
-fn allow_foreground() {
+pub(crate) fn allow_foreground() {
     #[link(name = "user32")]
     unsafe extern "system" {
         fn AllowSetForegroundWindow(process_id: u32) -> i32;
@@ -226,7 +229,7 @@ fn allow_foreground() {
 }
 
 #[cfg(not(windows))]
-fn allow_foreground() {}
+pub(crate) fn allow_foreground() {}
 
 #[cfg(test)]
 mod tests {

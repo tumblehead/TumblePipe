@@ -459,8 +459,20 @@ def view_on_master(shot: str, frame: int | None) -> None:
     edit_uri = Uri.parse(f'entity:/edits/{master}')
     _start(player, view_arguments(player, _current_project(), project_ocio(), edit_uri, shot, frame))
 
+def editor_env() -> dict[str, str] | None:
+    """The environment an editor started from here runs in: this process's,
+    plus how to reach this Houdini session when it listens for the editor
+    (``pipe.houdini_link``: Open in Houdini then loads the workfile here).
+    None (inherit as is) when it does not."""
+    from tumblepipe.pipe import houdini_link
+    link = houdini_link.child_env()
+    if not link:
+        return None
+    return {**os.environ, **link}
+
 def _start(player: Path, arguments: list[str]) -> None:
-    """Start the editor with ``arguments``, its output to ``PLAYER_LOG``."""
+    """Start the editor with ``arguments``, its output to ``PLAYER_LOG``,
+    in :func:`editor_env`."""
     # The editor outlives Houdini, so it must not hold Houdini's output: when
     # that is a pipe (TumbleTrove Desktop reads it), whoever reads it would
     # wait on the editor too. Its own log keeps what it prints, a panic
@@ -475,6 +487,7 @@ def _start(player: Path, arguments: list[str]) -> None:
             stdout = log,
             stderr = log,
             cwd = str(player.parent),
+            env = editor_env(),
             **_no_console()
         )
 
