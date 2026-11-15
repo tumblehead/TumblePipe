@@ -1273,10 +1273,8 @@ an import-based check reports healthy HDAs as broken.
 
 Pre-existing gaps live in `KNOWN_GAPS` with the reason they are not
 regressions, so the audit stays green and any *new* break stands out.
-`sop_th.mesh_blender.1.0` is the only entry: it has never had a `PythonModule`
-(it shipped without one in 52df04b), so its Rename/Reset buttons have never
-worked for anyone. Repairing it means reconstructing an attribute-paint module
-from its internal network — a feature task, not a forwarder fix.
+It is empty: its one entry, `sop_th.mesh_blender.1.0` (no `PythonModule` since
+52df04b), moved to hModel with the other modelling SOPs.
 
 ## Department pool audit
 

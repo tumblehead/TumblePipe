@@ -70,8 +70,6 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | Node | Category | Purpose |
 |---|---|---|
 | `th::create_asset_model` | LOP | Model department body: USD variants, each a SOP network, grafted under the asset |
-| `th::mesh_blender` | SOP | Brush-based mesh blending |
-| `th::mesh_lasso` | SOP | Stroke/lasso extrusion tool |
 
 ### `_TumblePipe/lookdev`
 
@@ -93,7 +91,6 @@ under **Other**; `tests/test_catalog_nodes.py` fails until it has one.
 | `th::paint_scatter` | COP | Procedural brush-stroke texture generator |
 | `th::tileable_texture` | COP | Make a texture tile |
 | `th::maps_baker` | SOP | Bake high-to-low normal and diffuse maps (project-specific, see Building assets) |
-| `th::mesh_carver` | SOP | Stroke-driven carving |
 | `th::triplanar_projection` | VOP | MaterialX triplanar projection |
 
 ### `_TumblePipe/lighting`

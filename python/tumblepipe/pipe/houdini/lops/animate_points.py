@@ -31,6 +31,18 @@ are imported every frame, by `remainder_import`. If a frame's point count
 is not the first frame's, the rigs changed topology, and `full_import`
 imports that frame the slow way instead.
 
+Normals follow the same way, whichever kind the rig puts out. Point N
+reaches the stage per point (`vertex` interpolation) and is copied with the
+points. Vertex N (a Normal SOP's default, and what some rigs' graphs put
+out) reaches it per face-vertex (`faceVarying`): `rest_gate` stamps each
+vertex's number (`__th_vtx`) when the first frame has vertex N, the static
+import carries it like `__th_pt`, and `apply` copies each frame's vertex N in
+that order. Before, only point N was copied, and vertex normals stayed as
+they were at the first frame while the points moved: shading turned with
+the world, not the character, once the meshes stopped being subdivided
+(v1.106.0; a subdivision surface ignores authored normals). Normals of any
+other kind (per primitive, per detail) cannot follow; the node warns.
+
 Only shapes with somewhere to go reach the imports (`points_sops/placed`,
 `placed_shapes`). A Scene Invoke whose Shapes pattern is wider than
 `Base` (Houdini's own default is `*`) also outputs a rig's helper shapes,
@@ -51,6 +63,10 @@ import numpy as np
 STAMP = '__th_pt'
 COUNT = '__th_count'
 STAMP_PRIMVAR = f'primvars:{STAMP}'
+# Each vertex's number, stamped only when the first frame has vertex N.
+VERTEX_STAMP = '__th_vtx'
+VERTEX_COUNT = '__th_vcount'
+VERTEX_STAMP_PRIMVAR = f'primvars:{VERTEX_STAMP}'
 POINTS_SOPS = 'points_sops'
 REST = 'REST'
 CURRENT = 'CURRENT'
@@ -130,30 +146,60 @@ def _float3(geo, name):
     ).reshape(count, 3)
 
 
-def read_points(geo, unpacked_node=None) -> dict:
-    """{'P': (n, 3) float32, 'N': (n, 3) or None} for `geo` as two Unpack
-    SOPs would lay it out. Packed shapes are read where they are; anything
-    else is read from `unpacked_node`'s cook (points_sops/CURRENT)."""
+def _vertex_float3(geo, name):
+    """`geo`'s vertex attribute `name` as (vertices, 3) float32, in the
+    order HOM lists vertices (each primitive's, primitive by primitive);
+    None when there is no such 3-float attribute."""
+    attrib = geo.findVertexAttrib(name)
+    if attrib is None or attrib.size() != 3:
+        return None
+    return np.frombuffer(
+        geo.vertexFloatAttribValuesAsString(name), dtype=np.float32
+    ).reshape(-1, 3)
+
+
+def _concat_or_none(leaves, counts, read):
+    """Each leaf's `read(leaf)` one after another (zeros for a leaf without
+    it); None when no leaf has it."""
+    parts = [read(leaf) for leaf in leaves]
+    if all(part is None for part in parts):
+        return None
+    return np.concatenate([
+        part if part is not None else np.zeros((count, 3), np.float32)
+        for part, count in zip(parts, counts)
+    ]) if parts else None
+
+
+def read_points(geo, unpacked_node=None, vertex_normals=False) -> dict:
+    """{'P': (n, 3) float32, 'N': (n, 3) or None, 'vN': (vertices, 3) or
+    None} for `geo` as two Unpack SOPs would lay it out. 'vN' (vertex N) is
+    read only when `vertex_normals` asks for it. Packed shapes are read
+    where they are; anything else is read from `unpacked_node`'s cook
+    (points_sops/CURRENT)."""
+    def flat(source):
+        return {
+            'P': _float3(source, 'P'), 'N': _float3(source, 'N'),
+            'vN': _vertex_float3(source, 'N') if vertex_normals else None,
+        }
     if not _has_packed(geo):
-        return {'P': _float3(geo, 'P'), 'N': _float3(geo, 'N')}
+        return flat(geo)
     leaves = _packed_leaves(geo)
     if leaves is None:
         if unpacked_node is None:
             raise hou.NodeError('th::animate: no unpacked copy of the dive to read.')
-        unpacked = unpacked_node.geometry()
-        return {'P': _float3(unpacked, 'P'), 'N': _float3(unpacked, 'N')}
+        return flat(unpacked_node.geometry())
     points = [_float3(leaf, 'P') for leaf in leaves]
-    has_normals = any(leaf.findPointAttrib('N') is not None for leaf in leaves)
-    normals = None
-    if has_normals:
-        normals = [
-            n if n is not None else np.zeros((len(p), 3), np.float32)
-            for leaf, p in zip(leaves, points)
-            for n in [_float3(leaf, 'N')]
-        ]
+    normals = _concat_or_none(leaves, [len(p) for p in points], lambda leaf: _float3(leaf, 'N'))
+    vertex = None
+    if vertex_normals:
+        vertex = _concat_or_none(
+            leaves, [leaf.intrinsicValue('vertexcount') for leaf in leaves],
+            lambda leaf: _vertex_float3(leaf, 'N'),
+        )
     return {
         'P': np.concatenate(points) if points else np.zeros((0, 3), np.float32),
-        'N': np.concatenate(normals) if normals else None,
+        'N': normals,
+        'vN': vertex,
     }
 
 
@@ -170,30 +216,62 @@ def point_count(geo) -> int:
 # --- the point map ---------------------------------------------------------
 
 
+def _stamp_numbers(prim, name):
+    """The int64 numbers a stamp primvar `name` holds on `prim`, its
+    `:indices` applied; None when it has none."""
+    stamp = prim.GetAttribute(name)
+    numbers = stamp.Get() if stamp else None
+    if numbers is None:
+        return None
+    numbers = np.asarray(numbers, dtype=np.int64)
+    indices = prim.GetAttribute(f'{name}:indices')
+    if indices and indices.Get() is not None:
+        numbers = numbers[np.asarray(indices.Get(), dtype=np.int64)]
+    return numbers
+
+
+def normals_kind(interpolation, has_vertex_stamp: bool) -> str:
+    """What `apply` copies onto authored normals of `interpolation`:
+    'point' (per point: the points' N), 'vertex' (per face-vertex, and the
+    prim carries the vertex stamp: the vertices' N) or 'frozen' (per
+    primitive or detail, or per face-vertex without the stamp: nothing to
+    copy them from, so they keep the first frame's)."""
+    if interpolation in ('vertex', 'varying'):
+        return 'point'
+    if interpolation == 'faceVarying' and has_vertex_stamp:
+        return 'vertex'
+    return 'frozen'
+
+
 def point_map(stage) -> dict:
     """What the static import made, for `apply`: every point-based prim
-    carrying the stamp, its points' numbers in the dive's geometry, and
-    which of points/normals it authors.
+    carrying the stamp, its points' numbers in the dive's geometry, its
+    vertices' numbers when it carries the vertex stamp, and which normals
+    it authors.
 
     {'paths': [Sdf.Path], 'index': int64 array (all prims' point numbers,
     concatenated), 'bounds': start of each prim's run (len(paths) + 1),
-    'normals': [bool], 'widths': [VtArray or None], 'kinds': [str]}"""
+    'vindex' / 'vbounds': the same for vertex numbers (a prim without the
+    vertex stamp has an empty run), 'normals': [None (none authored) or
+    `normals_kind`], 'frozen': [Sdf.Path] (the prims whose normals are
+    'frozen'), 'widths': [VtArray or None], 'kinds': [str]}"""
     from pxr import UsdGeom
-    paths, runs, normals, widths, kinds = [], [], [], [], []
+    paths, runs, vruns, normals, widths, kinds = [], [], [], [], [], []
     for prim in stage.Traverse():
         if not prim.IsA(UsdGeom.PointBased): continue
-        stamp = prim.GetAttribute(STAMP_PRIMVAR)
-        if not stamp: continue
-        numbers = stamp.Get()
+        numbers = _stamp_numbers(prim, STAMP_PRIMVAR)
         if numbers is None: continue
-        indices = prim.GetAttribute(f'{STAMP_PRIMVAR}:indices')
-        numbers = np.asarray(numbers, dtype=np.int64)
-        if indices and indices.Get() is not None:
-            numbers = numbers[np.asarray(indices.Get(), dtype=np.int64)]
+        vertex_numbers = _stamp_numbers(prim, VERTEX_STAMP_PRIMVAR)
         point_based = UsdGeom.PointBased(prim)
         paths.append(prim.GetPath())
         runs.append(numbers)
-        normals.append(point_based.GetNormalsAttr().HasAuthoredValue())
+        vruns.append(vertex_numbers if vertex_numbers is not None else np.zeros(0, np.int64))
+        if point_based.GetNormalsAttr().HasAuthoredValue():
+            normals.append(normals_kind(
+                point_based.GetNormalsInterpolation(), vertex_numbers is not None,
+            ))
+        else:
+            normals.append(None)
         if prim.IsA(UsdGeom.Mesh):
             kinds.append('mesh')
             widths.append(None)
@@ -202,14 +280,23 @@ def point_map(stage) -> dict:
             width_attr = prim.GetAttribute('widths')
             widths.append(width_attr.Get() if width_attr else None)
     index = np.concatenate(runs) if runs else np.zeros(0, np.int64)
+    vindex = np.concatenate(vruns) if vruns else np.zeros(0, np.int64)
     return {
         'paths': paths,
         'index': index,
         'bounds': np.cumsum([0] + [len(run) for run in runs]),
+        'vindex': vindex,
+        'vbounds': np.cumsum([0] + [len(run) for run in vruns]),
         'normals': normals,
+        'frozen': [path for path, kind in zip(paths, normals) if kind == 'frozen'],
         'widths': widths,
         'kinds': kinds,
     }
+
+
+def needs_vertex_normals(mapping) -> bool:
+    """Whether any mapped prim's normals are copied per vertex."""
+    return 'vertex' in mapping['normals']
 
 
 def _extent(kind, points, widths):
@@ -227,10 +314,14 @@ def _extent(kind, points, widths):
     return compute(vt_points, widths)
 
 
-def author_frame(layer, mapping, points, normals, frame, expected_count) -> None:
+def author_frame(layer, mapping, points, normals, frame, expected_count,
+                 vertex_normals=None, expected_vertices=None) -> None:
     """Write every mapped prim's points, extent and (where the static
-    import authored them) normals at `frame` into `layer`. TopologyChanged
-    when `points` is not `expected_count` long (the first frame's count)."""
+    import authored them) normals at `frame` into `layer`: per point from
+    `normals` (point N), per face-vertex from `vertex_normals` (vertex N),
+    as `point_map` says for each prim. TopologyChanged when `points` is not
+    `expected_count` long (the first frame's count), or `vertex_normals`
+    not `expected_vertices`."""
     from pxr import Sdf, Vt
 
     def attribute(spec, name, type_name):
@@ -238,12 +329,22 @@ def author_frame(layer, mapping, points, normals, frame, expected_count) -> None
         if attr: return attr
         return Sdf.AttributeSpec(spec, name, type_name)
 
+    def normals_sample(spec, values):
+        layer.SetTimeSample(
+            attribute(spec, 'normals', Sdf.ValueTypeNames.Normal3fArray).path,
+            frame, Vt.Vec3fArray.FromNumpy(np.ascontiguousarray(values)),
+        )
+
     index = mapping['index']
     if expected_count is not None and len(points) != expected_count:
         raise TopologyChanged()
+    per_vertex = vertex_normals is not None and needs_vertex_normals(mapping)
+    if per_vertex and expected_vertices is not None and len(vertex_normals) != expected_vertices:
+        raise TopologyChanged()
     posed = points[index]
     posed_normals = normals[index] if normals is not None else None
-    bounds = mapping['bounds']
+    posed_vertex = vertex_normals[mapping['vindex']] if per_vertex else None
+    bounds, vbounds = mapping['bounds'], mapping['vbounds']
     with Sdf.ChangeBlock():
         for i, path in enumerate(mapping['paths']):
             start, end = int(bounds[i]), int(bounds[i + 1])
@@ -257,27 +358,39 @@ def author_frame(layer, mapping, points, normals, frame, expected_count) -> None
                 attribute(spec, 'extent', Sdf.ValueTypeNames.Float3Array).path,
                 frame, _extent(mapping['kinds'][i], run, mapping['widths'][i]),
             )
-            if posed_normals is not None and mapping['normals'][i]:
-                layer.SetTimeSample(
-                    attribute(spec, 'normals', Sdf.ValueTypeNames.Normal3fArray).path,
-                    frame, Vt.Vec3fArray.FromNumpy(
-                        np.ascontiguousarray(posed_normals[start:end])
-                    ),
-                )
+            kind = mapping['normals'][i]
+            if kind == 'point' and posed_normals is not None:
+                normals_sample(spec, posed_normals[start:end])
+            elif kind == 'vertex' and posed_vertex is not None:
+                normals_sample(spec, posed_vertex[int(vbounds[i]):int(vbounds[i + 1])])
 
 
 def remove_stamp(layer, mapping) -> None:
-    """Take the stamp primvar back out, so the output has the prims and
+    """Take the stamp primvars back out, so the output has the prims and
     attributes a plain SOP Import makes."""
     from pxr import Sdf
+    names = (STAMP_PRIMVAR, f'{STAMP_PRIMVAR}:indices',
+             VERTEX_STAMP_PRIMVAR, f'{VERTEX_STAMP_PRIMVAR}:indices')
     with Sdf.ChangeBlock():
         for path in mapping['paths']:
             spec = layer.GetPrimAtPath(path)
             if spec is None: continue
-            for name in (STAMP_PRIMVAR, f'{STAMP_PRIMVAR}:indices'):
+            for name in names:
                 prop = spec.properties.get(name)
                 if prop is not None:
                     spec.RemoveProperty(prop)
+
+
+def frozen_message(paths) -> str:
+    """The warning for prims whose normals cannot follow the animation."""
+    shown = ', '.join(str(path) for path in paths[:5])
+    more = f' and {len(paths) - 5} more' if len(paths) > 5 else ''
+    return (
+        f'th::animate: the normals of {shown}{more} are not per point or per '
+        'vertex (per primitive, say), so they stay as they were at the first '
+        'frame while the points move. Put N on the points or vertices (a '
+        'Normal SOP), or remove it.'
+    )
 
 
 # --- the HDA's Python nodes ------------------------------------------------
@@ -349,9 +462,15 @@ def apply(lop_node) -> None:
     remove_stamp(layer, mapping)
     if len(mapping['paths']) == 0:
         return
-    read = read_points(geo, sops.node(CURRENT))
+    if mapping['frozen']:
+        add_warning = getattr(lop_node, 'addWarning', None)
+        if add_warning is not None:
+            add_warning(frozen_message(mapping['frozen']))
+    per_vertex = needs_vertex_normals(mapping)
+    read = read_points(geo, sops.node(CURRENT), vertex_normals=per_vertex)
     try:
-        author_frame(layer, mapping, read['P'], read['N'], hou.frame(), expected)
+        author_frame(layer, mapping, read['P'], read['N'], hou.frame(), expected,
+                     read['vN'], rest_vertex_count(sops) if per_vertex else None)
     except TopologyChanged:
         raise hou.NodeError(
             'th::animate: the rigs output a different number of points than '
@@ -367,6 +486,37 @@ def rest_point_count(sops) -> int | None:
     if rest_geo is None or rest_geo.findGlobalAttrib(COUNT) is None:
         return None
     return rest_geo.attribValue(COUNT)
+
+
+def rest_vertex_count(sops) -> int | None:
+    """The dive's vertex count at the first frame, as `stamp_vertices`
+    stamped it; None when it stamped none (no vertex N)."""
+    rest = sops.node(REST)
+    rest_geo = None if rest is None else rest.geometry()
+    if rest_geo is None or rest_geo.findGlobalAttrib(VERTEX_COUNT) is None:
+        return None
+    return rest_geo.attribValue(VERTEX_COUNT)
+
+
+def stamp_vertices(geo) -> bool:
+    """Stamp each vertex's number (`__th_vtx`, in the order `read_points`
+    reads vertex N) and the vertex count on the static import's geometry
+    when it has vertex N, as `points_sops/stamp` stamps the points: the
+    static import carries the numbers to the stage (faceVarying), so
+    `apply` copies each frame's vertex N in the SOP Import's own order.
+    Geometry without vertex N is left as it is. True when stamped."""
+    if geo.findVertexAttrib('N') is None:
+        return False
+    count = len(geo.vertexFloatAttribValuesAsString('N')) // 12
+    if geo.findVertexAttrib(VERTEX_STAMP) is None:
+        geo.addAttrib(hou.attribType.Vertex, VERTEX_STAMP, 0)
+    geo.setVertexIntAttribValuesFromString(
+        VERTEX_STAMP, np.arange(count, dtype=np.int32).tobytes(),
+    )
+    if geo.findGlobalAttrib(VERTEX_COUNT) is None:
+        geo.addAttrib(hou.attribType.Global, VERTEX_COUNT, 0)
+    geo.setGlobalAttribValue(VERTEX_COUNT, count)
+    return True
 
 
 def topology_changed(lop_node) -> int:
@@ -497,7 +647,9 @@ def rest_gate(sop_node) -> None:
         rest = build.geometry()
         if rest is None:
             raise hou.NodeError('\n'.join(build.errors()) or 'th::animate: no rest geometry.')
-        cached = _rest_cache[key] = (signature, rest.freeze())
+        rest = rest.freeze()
+        stamp_vertices(rest)
+        cached = _rest_cache[key] = (signature, rest)
     geo.clear()
     geo.merge(cached[1])
 

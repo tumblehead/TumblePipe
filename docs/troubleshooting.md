@@ -110,6 +110,17 @@ If you cancel Houdini's save prompt, nothing opens and nothing new starts.
 Cinedex's status line says which of these happened. See
 [Playing shots](asset-browser/play-shots.md).
 
+### Mesh Lasso, Mesh Carver or Mesh Blender is missing
+
+These three modelling SOPs (`th::mesh_lasso`, `th::mesh_carver`,
+`th::mesh_blender`) moved from TumblePipe to hModel (`tumblehead/hmodel`)
+under the same type names, after 1.106. TumblePipe depends on hModel, so
+updating TumblePipe installs it and scenes holding the nodes load as before;
+they are now in the Tab menu under hModel, where Mesh Lasso 1.1 also is. If
+a scene still says the node type is unknown, check that hModel is in the
+project's packages in TumbleTrove Desktop (a package switched off there is
+left out of the session).
+
 ### The radial menus are missing (Alt+T does nothing)
 
 Radial registration failed at startup: Houdini's console carries
@@ -420,6 +431,18 @@ already invoked. Adding a Scene Invoke to the dive hid it. Update TumblePipe:
 both dives now give the same result, and you can delete that Scene Invoke
 again (see [`th::animate` → What the dive must
 contain](nodes/import-and-export.md#what-the-dive-must-contain)).
+
+### A character's shading turns with the world after `th::animate`, not with the character
+
+The character moves, but it is lit from the side it faced at the shot's
+first frame, or goes dark where it turns or bends. Up to 1.106 `th::animate`
+copied only point normals each frame. A rig that puts its normals on the
+vertices (a Normal SOP's default; some rigs' graphs do) kept the first
+frame's normals while its points moved. Before 1.106 every mesh
+`th::animate` made was also subdivided, and a subdivision surface ignores
+authored normals, which hid it. Update TumblePipe: vertex normals follow
+now. If the node warns that normals "stay as they were at the first frame",
+the rig puts N on its primitives: put it on the points or vertices instead.
 
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 

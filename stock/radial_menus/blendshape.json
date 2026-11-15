@@ -50,16 +50,6 @@
       "action": "",
       "submenu": "",
       "release_action": "",
-      "node_type": "Sop/th::mesh_blender::1.0",
-      "label_override": "Mesh Blender",
-      "icon_override": null,
-      "hidden": false,
-      "close_on_select": false
-    },
-    {
-      "action": "",
-      "submenu": "",
-      "release_action": "",
       "node_type": "Sop/blast",
       "label_override": "Blast",
       "icon_override": "SOP_blast",

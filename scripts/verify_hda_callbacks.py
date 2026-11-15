@@ -57,19 +57,8 @@ PACKAGE = REPO_ROOT / 'python'
 
 # HDAs with a known, pre-existing dangling callback, and why they are not a
 # regression. Anything NOT listed here is a new break and fails the audit.
-KNOWN_GAPS = {
-    # Has no PythonModule section at all (confirmed via Sections.list) and has
-    # never had one — it shipped this way in the initial commit 52df04b, so
-    # these buttons have never worked for anyone. renameattrib/resetattrib/
-    # updateattrib exist nowhere in the repo, and its DialogScript also calls
-    # hdaViewerStateModule().updateattribute with no ViewerStateModule section.
-    # Repairing it means reconstructing an attribute-paint UI from its internal
-    # network, not reconnecting a forwarder — a feature task, not a fix.
-    'sop_th.mesh_blender.1.0': (
-        'no PythonModule since 52df04b; buttons never worked. '
-        'Needs the attribute-paint module reconstructed, not a forwarder.'
-    ),
-}
+# sop_th.mesh_blender.1.0, the one entry, moved to hModel (2026-11-13).
+KNOWN_GAPS: dict[str, str] = {}
 
 # Every idiom used to reach an HDA's PythonModule from a callback or a menu.
 # A parm *expression* says `phm()` / `hm()` bare (`hou` is implicit there),

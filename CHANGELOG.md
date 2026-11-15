@@ -12,6 +12,30 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.106.0 — 2026-11-14
+
+### Features
+- feat(cinedex): resizable bins and timeline, remembered per user (`6db0ec5b`)
+- feat: clicking the job-finished notification opens its folder; it says TumblePipe (`14d0ad1e`)
+- feat(cinedex): Open in Houdini loads the workfile in the Houdini that opened Cinedex (`dc451c68`)
+- feat: Houdini's value ladder on number fields (Cinedex and Qt) (`4d7bccff`)
+
+### Fixes
+- fix(farm): a finished Render Edit's notification opens its movie folder; every job kind has a folder rule (`8d9ea41a`)
+- fix(animate): th::animate no longer blocks every mesh's subdivisionScheme (`0e2feaec`)
+
+### Documentation
+- docs(troubleshooting): when clicking the job-finished notification opens nothing (`6527f127`)
+- docs: the Houdini link and value ladder for developers, and why Open in Houdini may start a new Houdini (`301b9545`)
+- docs: regenerate CHANGELOG.md for v1.105.1, and the released-parm snapshot (`4851daa3`)
+
+### Tests
+- test(shared journal): a held change is read whole once let go; a pruned one is gone (`ab3be402`)
+- test(cinedex): the panel handles never take the keyboard; saved sizes always lay out sanely (`ef314e91`)
+- test(value ladder): TumbleTrove's copy runs TumblePipe's rules, when the TumbleTrove in use has one (`1f9b7b65`)
+- test(journal): a change another program holds must read whole a little later, kept or pruned (`f3b23dfb`)
+- test: regression guards for the value ladder, the Houdini link and HDA blocks (`1633ae45`)
+
 ## v1.105.1 — 2026-11-13
 
 ### Fixes

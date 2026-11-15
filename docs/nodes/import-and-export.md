@@ -680,6 +680,12 @@ of the dive on every frame, prim for prim and value for value. In hython,
 six production characters and a camera cook in about 200 ms a frame
 instead of 530 ms.
 
+Normals follow whether the rig puts them on the points (TumbleRig's Apex
+Normals) or on the vertices (a Normal SOP's default). Up to 1.106 only point
+normals were copied, and vertex normals stayed as they were at the first
+frame. Normals on primitives or on the detail cannot follow: the node warns
+and names the prims. Put N on the points or vertices instead.
+
 - **Packed Folders.** The node unpacks the Scene Invoke's packed folders
   itself, and reads only the points from them on each frame. That is much
   cheaper than the Scene Invoke unpacking every character on every frame. A

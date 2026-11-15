@@ -182,7 +182,7 @@ Radial.
 | Department | Network | Ring |
 |---|---|---|
 | model | SOP | File, Color, Blast, Cache, Match Size, Transform, Group |
-| blendshape | SOP | File, Sculpt, Edit, Mesh Blender, Blast |
+| blendshape | SOP | File, Sculpt, Edit, Blast |
 | groom | SOP | Guide Groom, Guide Process, Hair Generate, Hair Clump, Guide Deform, Cache |
 | lookdev | LOP | Material, Material Assigner, Lookdev Studio, COP Material Library, Material Library, Assign Material, Export Layer |
 | rig | SOP | Import Model, Skeleton, Capture, Pack Folder, Rig Doctor, Export Rig |
