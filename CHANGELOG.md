@@ -12,6 +12,24 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.107.0 — 2026-11-15
+
+### Fixes
+- fix(animate): vertex normals follow the animation, not the first frame (`cbac03c7`)
+
+### Refactors
+- refactor(otls): move Mesh Lasso, Mesh Carver and Mesh Blender to hModel (`3c83ef16`)
+
+### Documentation
+- docs: where the mesh SOPs went, and what the new guards pin (`ed4acb46`)
+- docs: regenerate CHANGELOG.md for v1.106.0, and the released-parm snapshot (`762e93d1`)
+
+### Tests
+- test: moved HDAs come with a dependency; vertex N is read only when needed (`8bdd20b3`)
+
+### Other Changes
+- Merge PR #87: move Mesh Lasso, Mesh Carver and Mesh Blender to hModel (`1ce09b47`)
+
 ## v1.106.0 — 2026-11-14
 
 ### Features

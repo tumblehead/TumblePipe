@@ -89,6 +89,28 @@ def columns_for(context: str, publish_departments: Sequence[str]) -> list[Column
 
 _TURNTABLE = turntable.farm_frames()
 
+#: The settings panel is never narrower than this, in pixels.
+FORMS_MIN_WIDTH = 500
+#: Room beside the widest section for the panel's own edges.
+FORMS_PADDING = 4
+
+
+def forms_width(section_widths: Iterable[int], scrollbar: int, current: int = 0) -> int:
+    """The settings panel's width: the widest section's minimum width plus
+    the vertical scroll bar (which takes its room from the sections when the
+    panel scrolls), never under :data:`FORMS_MIN_WIDTH`, and never narrower
+    than ``current``, so the panel keeps one width as sections come, go and
+    collapse instead of jumping.
+
+    The minimums must be the polished ones: measured when the panel is built,
+    before the window's stylesheet reaches the fields, Playblast read 493px
+    and came out 553px on screen, so 36px of it hid behind a horizontal
+    scroll bar.
+    """
+    widest = max((int(w) for w in section_widths), default=0)
+    return max(FORMS_MIN_WIDTH, int(current), widest + max(0, int(scrollbar)) + FORMS_PADDING)
+
+
 #: What an asset's Render does, shown on the Assets tab.
 ASSET_RENDER_HINT = (
     "An asset's Render is its turntable: th::lookdev_studio around the "

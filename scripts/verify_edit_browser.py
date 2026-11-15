@@ -190,4 +190,9 @@ check('Delete Edit… confirmed in the real message box removes the edit',
       pipe_edits.list_edits(client) == ['cutA'], pipe_edits.list_edits(client))
 
 print('FAILED: ' + ', '.join(failures) if failures else 'ALL OK')
-sys.exit(1 if failures else 0)
+# Out without the interpreter's teardown: destroying the live AssetGrid
+# there crashed the process (0xC0000005) in about 1 run of 4 after every
+# check had passed, failing preflight's qt stage at random (2026-11-15).
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(1 if failures else 0)

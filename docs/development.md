@@ -250,9 +250,28 @@ Every `scripts/verify_*.py` is in exactly one list in `.ci/preflight.py`:
 `HYTHON_HARNESSES` (`hython`) or `EXCLUDED`, which says why no stage runs
 it (a live Houdini session, arguments naming a live project, a live
 project's published asset, real shots). `tests/test_qt_harness_lists.py`
-fails when a harness is in none or in two, and when one that imports `hou`
-is put in the `qt` or `harness` stage, so a new harness is run or excluded
-on purpose.
+fails when a harness is in none or in two, and when one that imports
+Houdini's `hou` is put in the `qt` or `harness` stage, so a new harness is
+run or excluded on purpose. A harness that imports the tests' headless `hou`
+(after `_harness.use_stubs()`, as `verify_edit_browser` does) belongs in
+`qt`.
+
+How a harness ends matters too. One that builds TumbleTrove's `AssetGrid`
+must leave by `os._exit` once its checks have run: destroying the grid in
+the interpreter's teardown crashed `verify_edit_browser` (0xC0000005) in
+about one run in four after everything passed, failing the `qt` stage at
+random. Flush stdout first (`sys.stdout.flush()`), or the result lines the
+stage prints for a failure are lost in the pipe. The same test pins both;
+`verify_value_ladder` and `verify_edit_browser` show the ending. A harness
+that fails only sometimes is worth running in a loop before blaming the
+code it checks: an exit code of 3221225477 after its "ALL OK" is a
+teardown crash, not a failed check.
+
+Write escapes, never the raw byte: `tests/test_source_control_chars.py`
+fails on any control character other than tab, newline and carriage return
+in a Python or Rust source. A regex `\b` written into a test as a backspace
+byte once matched nothing, and the check it belonged to passed for two days
+without looking. `file` reports such a file as "with overstriking".
 
 `harness` runs only the two `scripts/verify_*.py` harnesses that work with
 no arguments (`verify_entity_from_context`, `verify_hda_callbacks`). The
@@ -355,7 +374,10 @@ All of these, and the other Qt harnesses that need no Houdini, run
 offscreen in one go with `uv run --no-project python .ci/preflight.py --only qt`
 (*Preflight* above). To run one alone the same way (on Windows separate the
 `PYTHONPATH` entries with `;`; harnesses that read a project also want
-`TH_PROJECT_PATH` at a copy of `scripts/project_template`):
+`TH_PROJECT_PATH` at a copy of `scripts/project_template`, with
+`TH_CONFIG_PATH` at its `_config` and `TH_PIPELINE_PATH` at this checkout,
+as the preflight sets them; without `TH_PIPELINE_PATH` the first config
+read fails with "TH_PIPELINE_PATH environment variable not set"):
 
 ```bash
 PYTHONUTF8=1 QT_QPA_PLATFORM=offscreen PYTHONPATH="python:$TUMBLETROVE_PYTHON" \

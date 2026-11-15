@@ -1242,7 +1242,27 @@ class _ContextPane(QWidget):
             visible = [u for u in uris if u not in self._hidden]
             self._zebra.update(visible[1::2])
 
+    def _fit_forms(self) -> None:
+        """Widen the settings panel to its widest section, polished.
+
+        Every section counts, shown or hidden, so the panel keeps one width
+        as sections come and go; it only ever grows (``grid.forms_width``).
+        """
+        scroll = self._forms_scroll
+        self._forms_column.ensurePolished()
+        width = grid.forms_width(
+            [section.minimumSizeHint().width() for section in self._sections.values()],
+            scroll.verticalScrollBar().sizeHint().width(),
+            current=scroll.width(),
+        )
+        if width != scroll.width():
+            scroll.setFixedWidth(width)
+
     def eventFilter(self, obj, event):
+        if obj is getattr(self, '_forms_column', None):
+            if event.type() in (QEvent.LayoutRequest, QEvent.Show):
+                self._fit_forms()
+            return False
         if (
             event.type() == QEvent.Wheel
             and isinstance(obj, (QAbstractSpinBox, QComboBox))
@@ -1956,7 +1976,14 @@ class _ContextPane(QWidget):
         # label and a ↺ (about 450px); narrower clips the ↺ buttons.
         # Measured with every section showing and open, so the panel keeps
         # one width as sections come, go and collapse.
-        scroll.setFixedWidth(max(500, column.minimumSizeHint().width() + 24))
+        # Fitted again once the window's stylesheet has polished the fields
+        # (``_fit_forms``, on the column's layout requests): measured here
+        # they read narrower than they draw.
+        self._forms_column = column
+        scroll.setFixedWidth(grid.forms_width(
+            [column.minimumSizeHint().width()], scroll.verticalScrollBar().sizeHint().width(),
+        ))
+        column.installEventFilter(self)
         collapsed = set(self._dialog.ui['collapsed_sections'])
         for kind, section in self._sections.items():
             section.set_expanded(kind not in collapsed)

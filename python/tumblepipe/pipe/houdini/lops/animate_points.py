@@ -158,15 +158,59 @@ def _vertex_float3(geo, name):
     ).reshape(-1, 3)
 
 
-def _concat_or_none(leaves, counts, read):
-    """Each leaf's `read(leaf)` one after another (zeros for a leaf without
-    it); None when no leaf has it."""
+def _computed_normals(geo, per_vertex: bool):
+    """Normals for `geo`, which has none of the kind asked for: per vertex,
+    its own point N copied to each vertex when it has point N, else what a
+    Normal SOP with its defaults computes; per point, the Normal SOP's.
+
+    A shot can mix rigs with point N, vertex N and none at all. The static
+    import merges them, so every mesh gets the kind one of them has (vertex
+    N wins), and `apply` then asks every rig for it. Zeros in its place
+    (what this replaces) render as a flat cut-out in Karma."""
+    if per_vertex and geo.findPointAttrib('N') is not None:
+        source = geo.freeze()
+        vertex_n = source.findVertexAttrib('N')
+        if vertex_n is not None:
+            vertex_n.destroy()
+        promote = hou.sopNodeTypeCategory().nodeVerb('attribpromote')
+        promote.setParms({'inname': 'N', 'inclass': 2, 'outclass': 3, 'deletein': 0})
+        out = hou.Geometry()
+        promote.execute(out, [source])
+        promoted = _vertex_float3(out, 'N')
+        if promoted is not None:
+            return promoted
+    verb = hou.sopNodeTypeCategory().nodeVerb('normal')
+    verb.setParms({'type': 1 if per_vertex else 0})
+    out = hou.Geometry()
+    verb.execute(out, [geo])
+    return _vertex_float3(out, 'N') if per_vertex else _float3(out, 'N')
+
+
+def _filled(values, geo, per_vertex: bool):
+    """`values` (N per vertex or per point, or None) with every zero-length
+    normal replaced by a computed one (`_computed_normals`), all of them
+    when there are none. Geometry merged from shapes with and without N
+    has zeros where it had none (a Merge or Unpack fills a missing
+    attribute with zeros)."""
+    if values is None:
+        return _computed_normals(geo, per_vertex)
+    zero = np.einsum('ij,ij->i', values, values) < 1e-20
+    if not zero.any():
+        return values
+    values = values.copy()
+    values[zero] = _computed_normals(geo, per_vertex)[zero]
+    return values
+
+
+def _concat_or_none(leaves, read, per_vertex: bool):
+    """Each leaf's `read(leaf)` one after another, a leaf without it (or
+    with zero normals in it) given computed ones (`_filled`); None when no
+    leaf has it."""
     parts = [read(leaf) for leaf in leaves]
     if all(part is None for part in parts):
         return None
     return np.concatenate([
-        part if part is not None else np.zeros((count, 3), np.float32)
-        for part, count in zip(parts, counts)
+        _filled(part, leaf, per_vertex) for part, leaf in zip(parts, leaves)
     ]) if parts else None
 
 
@@ -177,9 +221,12 @@ def read_points(geo, unpacked_node=None, vertex_normals=False) -> dict:
     where they are; anything else is read from `unpacked_node`'s cook
     (points_sops/CURRENT)."""
     def flat(source):
+        normals = _float3(source, 'N')
+        vertex = _vertex_float3(source, 'N') if vertex_normals else None
         return {
-            'P': _float3(source, 'P'), 'N': _float3(source, 'N'),
-            'vN': _vertex_float3(source, 'N') if vertex_normals else None,
+            'P': _float3(source, 'P'),
+            'N': None if normals is None else _filled(normals, source, False),
+            'vN': None if vertex is None else _filled(vertex, source, True),
         }
     if not _has_packed(geo):
         return flat(geo)
@@ -189,13 +236,10 @@ def read_points(geo, unpacked_node=None, vertex_normals=False) -> dict:
             raise hou.NodeError('th::animate: no unpacked copy of the dive to read.')
         return flat(unpacked_node.geometry())
     points = [_float3(leaf, 'P') for leaf in leaves]
-    normals = _concat_or_none(leaves, [len(p) for p in points], lambda leaf: _float3(leaf, 'N'))
+    normals = _concat_or_none(leaves, lambda leaf: _float3(leaf, 'N'), False)
     vertex = None
     if vertex_normals:
-        vertex = _concat_or_none(
-            leaves, [leaf.intrinsicValue('vertexcount') for leaf in leaves],
-            lambda leaf: _vertex_float3(leaf, 'N'),
-        )
+        vertex = _concat_or_none(leaves, lambda leaf: _vertex_float3(leaf, 'N'), True)
     return {
         'P': np.concatenate(points) if points else np.zeros((0, 3), np.float32),
         'N': normals,

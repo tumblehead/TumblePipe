@@ -869,7 +869,9 @@ class PipelineCatalog(Catalog):
                             "the sequence you are viewing; with neither, the "
                             "project's master edit, else every shot",
                 ),
-                dict(primary=True, enabled=ok, disabled_reason=why),
+                # Not primary: a solid jade pill outshouted the row
+                # (Magnus, 2026-11-15); an icon like its neighbours, first.
+                dict(enabled=ok, disabled_reason=why),
             )),
             QuickAction(id="save", label="Save", icon="save-all", tooltip="Save current scene"),
             QuickAction(id="publish", label="Publish", icon="send", tooltip="Publish exports"),
