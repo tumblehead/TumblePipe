@@ -663,7 +663,11 @@ paths, and says so in a warning on the node and on the status bar. A
 character with no path at all (a rig not built for the pipeline) is kept,
 lands at `/Geometry`, and is named in the warning. A skeleton turned on in
 the Characters list is not a helper shape: it has its path (`skel/Base`)
-and stays. Up to 1.93 the helper shapes went through.
+and stays. Up to 1.93 the helper shapes went through. When SOPs after the
+Scene Invoke put out unpacked geometry, nothing is left out, but shapes
+with no `path` are named in the same kind of warning, since they too land
+at `/Geometry` (up to 1.108 they did so silently). Give them a path under
+the character, or leave them out of the dive's output.
 
 The node reads the dive's output the way Houdini does for a SOP network:
 the Output SOP whose **Output Index** is 0, whatever it is called, or the
@@ -686,6 +690,13 @@ normals were copied, and vertex normals stayed as they were at the first
 frame. Normals on primitives or on the detail cannot follow: the node warns
 and names the prims. Put N on the points or vertices instead.
 
+A shot can mix rigs with point normals, vertex normals and none. If any rig
+has vertex normals, every mesh in the shot is imported with vertex normals.
+A rig that has none of its own gets them computed: its point normals copied
+to each vertex, or else what a Normal SOP with its defaults gives. Up to
+1.107 those rigs got zero normals, and Karma drew them as a flat cut-out
+(XPU) or flat black (CPU).
+
 - **Packed Folders.** The node unpacks the Scene Invoke's packed folders
   itself, and reads only the points from them on each frame. That is much
   cheaper than the Scene Invoke unpacking every character on every frame. A
@@ -704,8 +715,19 @@ and names the prims. Put N on the points or vertices instead.
 - **After an edit** to the rigs or the animation, the first frame re-imports
   the characters (about 1.4 s for that shot). If an edit only moves points,
   as key edits do, the import is not rebuilt.
-- **A rig that changes its point count** on some frame is imported in full
-  on that frame, which is slower but correct.
+- **A rig that changes its point count** on some frame (a cut, a boolean
+  or a remesh as it poses) is imported in full on that frame, which is
+  slower but correct, and lands in the same layer as every other frame.
+  Every frame also records the mesh topology, so the frames before a change
+  keep theirs; the file of a shot without a change stays the same size,
+  since the same topology is stored once. On such a frame a shape keeps
+  only the attributes it had at the first frame, and one of those that the
+  frame lacks (normals, say) is left empty there rather than given the first
+  frame's. A shape that first appears on such a frame is visible before it
+  too, holding its first pose. Up to 1.108 that frame got a layer of its
+  own, which an export over a range across the change dropped: the shot held
+  the last pose before the change (see
+  [Troubleshooting](../troubleshooting.md#a-render-holds-the-first-pose-to-the-end-but-rendered-from-a-later-frame-it-moves)).
 
 Up to 1.88, the node had a **Mode** parameter, with a *Fast (APEX bake)*
 option that Houdini's Bake APEX Scene ran. It was not faster in practice and

@@ -444,6 +444,17 @@ authored normals, which hid it. Update TumblePipe: vertex normals follow
 now. If the node warns that normals "stay as they were at the first frame",
 the rig puts N on its primitives: put it on the points or vertices instead.
 
+### A render holds the first pose to the end, but rendered from a later frame it moves
+
+Some rigs change their own mesh as they pose: a cut, a boolean or a remesh
+adds or removes points partway through the shot (shot 010's lilGuy does it
+from frame 1151). `th::animate` imports a frame like that whole. Up to 1.108
+that frame went into a layer of its own, and the export over a frame range
+across the change dropped every frame from the change on, so the render
+held the last pose before it. A render or export starting after the change
+looked right. Update TumblePipe and publish the shot again: every frame now
+keeps its own pose and topology.
+
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
 Each is a deliberate guard in `th::export_layer`, and the dialog names the

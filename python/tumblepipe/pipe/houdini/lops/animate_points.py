@@ -27,9 +27,24 @@ Which point lands where is not worked out here: the static import carries
 each point's number (`__th_pt`, stamped in `points_sops`) as a primvar, so
 the SOP Import's own point order is read back from the stage, then the
 primvar is removed. Prims with no points (cameras, lights, packed prims)
-are imported every frame, by `remainder_import`. If a frame's point count
-is not the first frame's, the rigs changed topology, and `full_import`
-imports that frame the slow way instead.
+are imported every frame, by `remainder_import`.
+
+If a frame's point count is not the first frame's, the rigs changed
+topology (a rig that cuts its mesh as it poses: shot 010's lilGuy from
+frame 1151), and `full_import` imports that frame whole. `apply` copies what
+it made into its own layer at that frame (`author_full_frame`), not a layer
+of its own: a USD ROP saving a frame range composes every frame's layers
+into one file, and the full import's layer, stronger than `apply`'s, hid
+`apply`'s samples (or, chosen by a switch from that frame on, was dropped
+whole); the export held the first pose from the change on. Every frame
+also samples the static import's other varying attributes (topology,
+displayColor, visibility: `sample_defaults`), as a SOP Import with animated
+topology does, so frames before a change keep their own topology once
+later frames sample theirs. On a changed frame a prim the first frame had
+takes only the attributes it had then, and those of them the full import
+lacks are blocked there, never left at the first frame's (sized for its
+points). A prim that first appears on such a frame is visible before it too
+(it holds its first sample).
 
 Normals follow the same way, whichever kind the rig puts out. Point N
 reaches the stage per point (`vertex` interpolation) and is copied with the
@@ -167,15 +182,13 @@ def _computed_normals(geo, per_vertex: bool):
     import merges them, so every mesh gets the kind one of them has (vertex
     N wins), and `apply` then asks every rig for it. Zeros in its place
     (what this replaces) render as a flat cut-out in Karma."""
+    # Houdini keeps one N per name: a shape with point N has no vertex N to
+    # clear first, and the verb leaves `geo` as it was.
     if per_vertex and geo.findPointAttrib('N') is not None:
-        source = geo.freeze()
-        vertex_n = source.findVertexAttrib('N')
-        if vertex_n is not None:
-            vertex_n.destroy()
         promote = hou.sopNodeTypeCategory().nodeVerb('attribpromote')
         promote.setParms({'inname': 'N', 'inclass': 2, 'outclass': 3, 'deletein': 0})
         out = hou.Geometry()
-        promote.execute(out, [source])
+        promote.execute(out, [geo])
         promoted = _vertex_float3(out, 'N')
         if promoted is not None:
             return promoted
@@ -498,7 +511,10 @@ def apply(lop_node) -> None:
             del _mapping_cache[stale]
         mapping = _mapping_cache[key] = point_map(static_node.stage())
     sops = _sops(lop_node)
-    expected = rest_point_count(sops)  # before this frame: see topology_changed
+    # The first frame's count before this frame's geometry: the dive's SOPs
+    # keep one frame's cook, so reading this frame first would cook the rigs
+    # again for the static import.
+    expected = rest_point_count(sops)
     geo = output.geometry()
     if geo is None:
         raise hou.NodeError('\n'.join(output.errors()) or f'anim_dive: {output.name()} has no geometry.')
@@ -512,14 +528,141 @@ def apply(lop_node) -> None:
             add_warning(frozen_message(mapping['frozen']))
     per_vertex = needs_vertex_normals(mapping)
     read = read_points(geo, sops.node(CURRENT), vertex_normals=per_vertex)
+    frame = hou.frame()
+    paths = list(mapping['paths'])
     try:
-        author_frame(layer, mapping, read['P'], read['N'], hou.frame(), expected,
+        author_frame(layer, mapping, read['P'], read['N'], frame, expected,
                      read['vN'], rest_vertex_count(sops) if per_vertex else None)
     except TopologyChanged:
+        paths += author_full_frame(layer, _full_layer(lop_node), paths, frame)
+    sample_defaults(layer, paths, frame)
+
+
+def _full_layer(lop_node):
+    """`full_import`'s layer at this frame: the dive's geometry imported
+    whole, with its own topology."""
+    full = lop_node.node('../full_import')
+    try:
+        full.cook()
+    except hou.OperationFailed:
+        pass
+    layer = full.activeLayer() if not full.errors() else None
+    if layer is None:
         raise hou.NodeError(
-            'th::animate: the rigs output a different number of points than '
-            'at the first frame; this frame is imported in full instead.'
+            'th::animate: the rigs changed topology since the first frame and '
+            'importing this frame in full failed:\n' + '\n'.join(full.errors())
         )
+    return layer
+
+
+def _sample_at(layer, path, frame):
+    """`layer`'s value for the attribute at `path` at `frame`: its time
+    sample nearest `frame`, else its default; None when it has neither."""
+    times = layer.ListTimeSamplesForPath(path)
+    if times:
+        nearest = min(times, key=lambda time: abs(time - frame))
+        return layer.QueryTimeSample(path, nearest)
+    attr = layer.GetAttributeAtPath(path)
+    return attr.default if attr is not None and attr.HasInfo('default') else None
+
+
+#: What `author_frame` writes on every frame whatever the first frame had.
+ALWAYS_AUTHORED = frozenset({'points', 'extent'})
+
+
+def author_full_frame(layer, source, mapped_paths, frame) -> list:
+    """A frame whose topology is not the first frame's: every point-based
+    prim of `source` (`full_import`'s layer) written into `layer` at
+    `frame`, each varying attribute as a time sample (a uniform one, which
+    cannot change over time, only where `layer` has none yet); prims missing
+    from the layer are made. Mapped prims `source` does not have are made
+    invisible at `frame`. All in `layer`, never a layer over it: see the
+    module docstring. Returns the prims made.
+
+    Every frame of the range must read its own values. So a prim the first
+    frame had takes only the attributes it had then (one sampled on a few
+    frames only would be read on all of them), and those of them `source`
+    lacks are blocked at `frame` (normals sized for the first frame's
+    points do not fit this frame's)."""
+    from pxr import Sdf
+    found, made = [], []
+
+    def visit(path):
+        if path.IsPrimPath():
+            spec = source.GetPrimAtPath(path)
+            if spec is not None and 'points' in spec.properties:
+                found.append(spec)
+
+    source.Traverse(Sdf.Path.absoluteRootPath, visit)
+    with Sdf.ChangeBlock():
+        for src in found:
+            path = src.path
+            dest = layer.GetPrimAtPath(path)
+            first_frame = None  # a prim the first frame had: only its attributes
+            if dest is None:
+                parent = Sdf.CreatePrimInLayer(layer, path.GetParentPath())
+                dest = Sdf.PrimSpec(parent, path.name, Sdf.SpecifierDef, src.typeName)
+                made.append(path)
+            else:  # and what `author_frame` writes every other frame
+                first_frame = set(dest.attributes.keys()) | ALWAYS_AUTHORED
+            for attr in src.attributes:
+                if first_frame is not None and attr.name not in first_frame:
+                    # sampled on this frame only, every other frame would read it
+                    continue
+                value = _sample_at(source, attr.path, frame)
+                target = layer.GetAttributeAtPath(attr.path)
+                if target is None:
+                    target = Sdf.AttributeSpec(dest, attr.name, attr.typeName, attr.variability)
+                    for key in attr.ListInfoKeys():
+                        if key not in ('default', 'timeSamples', 'typeName', 'variability'):
+                            target.SetInfo(key, attr.GetInfo(key))
+                elif attr.HasInfo('interpolation'):
+                    target.SetInfo('interpolation', attr.GetInfo('interpolation'))
+                if value is None:
+                    continue
+                if attr.variability == Sdf.VariabilityUniform:
+                    if not target.HasInfo('default'):
+                        target.default = value
+                    continue
+                layer.SetTimeSample(target.path, frame, value)
+            # What the first frame had and this frame does not (normals,
+            # widths, a primvar's indices): sized for the first frame's
+            # points, so blocked here rather than sampled (`sample_defaults`).
+            authored = set(src.attributes.keys())
+            for attr in dest.attributes:
+                if attr.name in authored or attr.variability != Sdf.VariabilityVarying:
+                    continue
+                layer.SetTimeSample(attr.path, frame, Sdf.ValueBlock())
+        imported = {src.path for src in found}
+        for path in mapped_paths:
+            if path in imported: continue
+            spec = layer.GetPrimAtPath(path)
+            if spec is None: continue
+            visibility = layer.GetAttributeAtPath(path.AppendProperty('visibility')) or Sdf.AttributeSpec(
+                spec, 'visibility', Sdf.ValueTypeNames.Token, Sdf.VariabilityVarying,
+            )
+            layer.SetTimeSample(visibility.path, frame, 'invisible')
+    return made
+
+
+def sample_defaults(layer, paths, frame) -> None:
+    """Every varying attribute of the prims at `paths` in `layer` that has
+    a default and no time sample (the static import's topology,
+    displayColor, visibility, frozen normals, ...) sampled at `frame` with
+    its default. A frame whose topology changed samples them
+    (`author_full_frame`); once one does, every frame must, or USD reads the
+    frames before it with that frame's topology (time samples hide a
+    default)."""
+    from pxr import Sdf
+    with Sdf.ChangeBlock():
+        for path in paths:
+            spec = layer.GetPrimAtPath(path)
+            if spec is None: continue
+            for attr in spec.attributes:
+                if attr.variability != Sdf.VariabilityVarying: continue
+                if not attr.HasInfo('default'): continue
+                if layer.GetNumTimeSamplesForPath(attr.path): continue
+                layer.SetTimeSample(attr.path, frame, attr.default)
 
 
 def rest_point_count(sops) -> int | None:
@@ -564,24 +707,12 @@ def stamp_vertices(geo) -> bool:
 
 
 def topology_changed(lop_node) -> int:
-    """The `topology_switch` expression: 1 when this frame's point count is
-    not the first frame's (the full, per-frame import then runs)."""
-    sops = _sops(lop_node)
-    output = _placed(lop_node) if _dive_output(lop_node) is not None else None
-    if output is None or sops is None:
-        return 0
-    # The first frame before this one: the dive's SOPs keep one frame's
-    # cook, so reading this frame first would cook the rigs once for the
-    # count, again for the static import, and again for `apply`.
-    expected = rest_point_count(sops)
-    geo = output.geometry()
-    if geo is None or expected is None:
-        return 0
-    count = point_count(geo)
-    if count < 0:
-        sops_current = sops.node(CURRENT)
-        count = sops_current.geometry().intrinsicValue('pointcount')
-    return int(count != expected)
+    """0: `apply` imports a frame whose topology changed itself
+    (`author_full_frame`), so `topology_switch` stays on it. Was the
+    switch's expression, sending such frames to `full_import`'s own layer,
+    which a USD ROP saving a range dropped; kept for th::animate nodes whose
+    contents were unlocked and still call it."""
+    return 0
 
 
 _MOVING = ('P', 'N')
@@ -786,6 +917,73 @@ def unplaced_message(left_out: dict, pathless: list, unpicked: dict | None = Non
     return '\n'.join(parts)
 
 
+def loose_shapes(paths, names, points_only) -> list[str]:
+    """The shapes of unpacked dive output that would land at /Geometry:
+    the `name` (or '' when unnamed) of every prim with no `path` (`paths`
+    and `names` per prim; `names` None without the attribute), once each,
+    in prim order, if `points_only(prim index)` (asked once per name) says
+    the prim is made of points (cameras and packed prims go elsewhere)."""
+    seen, loose = set(), []
+    for index, path in enumerate(paths):
+        if path:
+            continue
+        name = names[index] if names is not None else ''
+        if name in seen:
+            continue
+        seen.add(name)
+        if points_only(index):
+            loose.append(name)
+    return loose
+
+
+def loose_message(shapes) -> str:
+    """The warning for `loose_shapes`: '' when there are none."""
+    if not shapes:
+        return ''
+    named = [shape for shape in shapes if shape]
+    shown = ', '.join(named[:5]) + (f' and {len(named) - 5} more' if len(named) > 5 else '')
+    if len(named) < len(shapes):
+        shown = (shown + ' and ' if shown else '') + 'geometry with no name'
+    one = len(shapes) == 1
+    return (
+        f'th::animate: {shown} in anim_dive {"has" if one else "have"} no path '
+        f'attribute, so {"it lands" if one else "they land"} at /Geometry, '
+        'outside the characters, and {} published with the animation. Give '
+        '{} a path under the character, or leave {} out of the dive\'s output.'
+    ).format(*(('is', 'it', 'it') if one else ('are', 'them', 'them')))
+
+
+def _loose_in(geo) -> list[str]:
+    """`loose_shapes` of unpacked geometry `geo`."""
+    count = geo.intrinsicValue('primitivecount')
+    if count == 0:
+        return []
+    paths = (geo.primStringAttribValues('path')
+             if geo.findPrimAttrib('path') is not None else ('',) * count)
+    names = (geo.primStringAttribValues('name')
+             if geo.findPrimAttrib('name') is not None else None)
+    kinds = tuple(getattr(hou, kind) for kind in ('Face', 'Surface')
+                  if isinstance(getattr(hou, kind, None), type))
+    prims = geo.prims()
+    return loose_shapes(paths, names,
+                        lambda index: (isinstance(prims[index], kinds) if kinds
+                                       else prims[index].type() == hou.primType.Polygon))
+
+
+def _warn(sop_node, animate_node, message) -> None:
+    """`message` as a warning on `sop_node`, and on the status bar once
+    per change for th::animate `animate_node`."""
+    if message:
+        add_warning = getattr(sop_node, 'addWarning', None)
+        if add_warning is not None:
+            add_warning(message)
+    key = animate_node.path() if animate_node is not None else sop_node.path()
+    if _announced.get(key) != message:
+        _announced[key] = message
+        if message:
+            announce(message)
+
+
 def _has_path(geo) -> bool:
     attrib = geo.findPrimAttrib('path')
     if attrib is None:
@@ -803,12 +1001,14 @@ def placed_shapes(sop_node) -> None:
     any shape, the node's own outputs only those) and then without the
     shapes `shapes_to_leave_out` names, a warning on this node
     naming them, and one status-bar message per change. Geometry that is
-    not packed folders passes through as it is."""
+    not packed folders (SOPs after the Scene Invoke) passes through as it
+    is, with a warning naming its shapes with no path (`loose_shapes`)."""
     from tumblepipe.pipe.houdini.lops import animate_invoke
     geo = sop_node.geometry()
-    if not _has_packed(geo):
-        return
     animate_node = sop_node.parent().parent() if sop_node.parent() else None
+    if not _has_packed(geo):
+        _warn(sop_node, animate_node, loose_message(_loose_in(geo)))
+        return
     pattern = animate_invoke.shapes_pattern(animate_node)
     left_out, pathless, unpicked = {}, [], {}
     for folder in geo.prims():
@@ -848,16 +1048,7 @@ def placed_shapes(sop_node) -> None:
                     shapes[i][0] or f'shape {entries[i]}' for i in drop)
         inner.deletePrims(doomed)
         folder.setEmbeddedGeometry(inner)
-    message = unplaced_message(left_out, pathless, unpicked, pattern or '')
-    if message:
-        add_warning = getattr(sop_node, 'addWarning', None)
-        if add_warning is not None:
-            add_warning(message)
-    key = animate_node.path() if animate_node is not None else sop_node.path()
-    if _announced.get(key) != message:
-        _announced[key] = message
-        if message:
-            announce(message)
+    _warn(sop_node, animate_node, unplaced_message(left_out, pathless, unpicked, pattern or ''))
 
 
 def _name(prim) -> str:

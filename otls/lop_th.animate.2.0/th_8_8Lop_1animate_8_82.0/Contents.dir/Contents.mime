@@ -4886,29 +4886,13 @@ Content-Type: text/plain
 ]
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
-Content-Disposition: attachment; filename="hdaroot/topology_switch.chn"
-Content-Type: text/plain
-
-{
-    channel input {
-      lefttype = extend
-      righttype = extend
-      flags = 0
-      segment { options = {	 untie  iv ov is os ia oa }
-
-	 length = 0 expr = "from tumblepipe.pipe.houdini.lops import animate_points
-return animate_points.topology_changed(hou.pwd())" language = python }
-    }
-  }
-
---HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/topology_switch.parm"
 Content-Type: text/plain
 
 {
 version 0.8
 chooseinputbyname	[ 0	locks=0 ]	(	"off"	)
-input	[ 0	locks=0 ]	(	[ input	0 ] 	)
+input	[ 0	locks=0 ]	(	0	)
 selectinputname	[ 0	locks=0 ]	(	""	)
 selectinputvalue	[ 0	locks=0 ]	(	""	)
 config_separator	[ 0	locks=0 ]	(	)
