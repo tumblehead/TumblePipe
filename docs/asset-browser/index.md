@@ -334,7 +334,9 @@ them is the open `.hip`'s filename.
 Hover **Save** for *Last saved* and **Publish** for *Last published* ages.
 Right-click **Save** for **Emergency Save (off-thread)**: a save that runs
 inline instead of waiting for Houdini's event loop, for when Houdini is
-sitting in its crash-report dialog. It never prompts for a note.
+sitting in its crash-report dialog. It never prompts for a note. The same
+menu sets **Autosave** and **Warn When Unsaved**; see
+[Workfiles → Autosave and the unsaved warning](workfiles.md#autosave-and-the-unsaved-warning).
 
 Save, Publish and Render each refuse with a dialog when the open scene has no
 pipeline context (an untitled or off-pipeline hip): *Save: the current scene

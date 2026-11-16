@@ -412,6 +412,21 @@ class SceneManager:
         """
         self._save_scene(refresh_cb, prompt_note=False, report_failures=False)
 
+    def autosave_current_scene(self) -> None:
+        """Write the next workfile version noted "Autosave", inline.
+
+        The Save menu's Autosave timer (:mod:`.save_timer`) calls this on the
+        main thread, only for a pipeline workfile with unsaved changes and
+        nothing modal open. Like the emergency save it never prompts for a
+        note and never opens a dialog: a failure every few minutes goes to
+        the status bar.
+        """
+        from .save_timer import AUTOSAVE_NOTE
+        self._save_scene(
+            prompt_note=False, report_failures=False,
+            note=AUTOSAVE_NOTE, failure_label="Autosave",
+        )
+
     def _prompt_version_note(self, prev_ctx) -> str | None:
         """Ask for this save's version note. ``None`` means "cancel the save".
 
@@ -466,7 +481,8 @@ class SceneManager:
 
     def _save_scene(
         self, refresh_cb=None, prompt_note: bool = False,
-        report_failures: bool = True,
+        report_failures: bool = True, note: str = "",
+        failure_label: str = "Emergency save",
     ) -> None:
         """Write the next workfile version of the loaded scene's context,
         and report what went wrong.
@@ -477,10 +493,12 @@ class SceneManager:
 
         ``prompt_note`` defaults to False so a caller that forgets it saves
         silently rather than blocking on an unexpected modal — the prompt is
-        opt-in, and the one caller that wants it says so.
+        opt-in, and the one caller that wants it says so. ``note`` is the
+        version note when not prompting; ``failure_label`` names the save in
+        the status-bar line a quiet (``report_failures=False``) failure gets.
         """
         try:
-            self._commit_scene_version(prompt_note)
+            self._commit_scene_version(prompt_note, note)
         except NoSceneContext as exc:
             # A dialog, not a status line: a Save that saved nothing must
             # not look like a Save that worked.
@@ -493,17 +511,19 @@ class SceneManager:
             if report_failures:
                 report_failure("Save", exc)
             else:
-                log.exception("Emergency save failed")
+                log.exception("%s failed", failure_label)
                 import hou
                 hou.ui.setStatusMessage(
-                    f"Emergency save failed: {type(exc).__name__}: {exc}",
+                    f"{failure_label} failed: {type(exc).__name__}: {exc}",
                     severity=hou.severityType.Error,
                 )
         finally:
             if callable(refresh_cb):
                 refresh_cb()
 
-    def _commit_scene_version(self, prompt_note: bool) -> Path | None:
+    def _commit_scene_version(
+        self, prompt_note: bool, note: str = "",
+    ) -> Path | None:
         """Write the next workfile version of the loaded scene's context, on
         the calling thread, and return its path; ``None`` when the artist
         cancelled the version note. Raises :class:`NoSceneContext` for a
@@ -525,7 +545,6 @@ class SceneManager:
         # Ask for the note before touching anything: cancelling here
         # must leave the session exactly as it was, which it only does
         # while no version has been reserved and no project activated.
-        note = ""
         if prompt_note:
             note = self._prompt_version_note(prev_ctx)
             if note is None:

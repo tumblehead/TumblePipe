@@ -130,52 +130,85 @@ impl Editor {
     }
 
     /// The selected clip's fades and opacity, as fields; with no one clip
-    /// selected, what selecting one shows.
+    /// selected, the same fields greyed and the hint to select one.
     pub(super) fn clip_fields(&self) -> Element<Message> {
-        let label = |w: &str| text(w.to_owned()).font_size(12.0).color(look::quiet());
-        let mut fields = row().spacing(8.0).align_y(Vertical::Center);
-        match self.field_clip() {
-            None => fields = fields.push(label("Select one clip to type its fades and opacity")),
-            Some(clip) => {
-                let field = |id: &'static str, which: ClipField| {
-                    let value = match &self.clip_draft {
-                        Some((c, f, typed)) if *c == clip && *f == which => typed.clone(),
-                        _ => field_text(&self.doc.edit, clip, which).unwrap_or_default(),
-                    };
-                    let shown = field_text(&self.doc.edit, clip, which).unwrap_or_default();
-                    let input = text_input(Id::new(id), value.clone())
-                        .on_input(move |s| Message::ClipField(which, s))
-                        .on_submit(move || Message::ClipFieldSet(which))
-                        .font_size(12.0)
-                        .width(Length::fixed(56.0));
-                    // Middle-drag: Houdini's value ladder; release sets it.
-                    let number = field_number(which, &value, &shown);
-                    ladder(
-                        Id::new(format!("{id} ladder")),
-                        input,
-                        number,
-                        move |v| Message::ClipField(which, field_value_text(which, v)),
-                        Some(Message::ClipFieldSet(which)),
-                    )
-                };
-                fields = fields
-                    .push(label("Fade in"))
-                    .push(field("fade in field", ClipField::FadeIn))
-                    .push(label("Fade out"))
-                    .push(field("fade out field", ClipField::FadeOut))
-                    .push(label("frames"));
-                if clip.track.kind == TrackKind::Video {
-                    fields = fields
-                        .push(space(Length::fixed(12.0), Length::Shrink))
-                        .push(label("Opacity"))
-                        .push(field("opacity field", ClipField::Opacity))
-                        .push(label("%"));
-                }
-                fields = fields.push(space(Length::fixed(12.0), Length::Shrink)).push(label("Enter sets a field, middle-drag steps it"));
-            }
-        }
-        container(fields).padding(Padding::from([3.0, 14.0])).width(Length::Fill).background(look::panel()).into()
+        let clip = self.field_clip();
+        let shown = |which: ClipField| -> FieldShown {
+            let Some(clip) = clip else { return FieldShown::default() };
+            let own = field_text(&self.doc.edit, clip, which).unwrap_or_default();
+            let value = match &self.clip_draft {
+                Some((c, f, typed)) if *c == clip && *f == which => typed.clone(),
+                _ => own.clone(),
+            };
+            // An audio clip has no opacity: its field stays, greyed.
+            let enabled = which != ClipField::Opacity || clip.track.kind == TrackKind::Video;
+            FieldShown { value, shown: own, enabled }
+        };
+        let hint = if clip.is_some() { HINT_SELECTED } else { HINT_NONE };
+        fields_row([shown(ClipField::FadeIn), shown(ClipField::FadeOut), shown(ClipField::Opacity)], hint)
     }
+}
+
+/// The hint at the row's end with one clip selected, and with none (or
+/// several).
+pub(crate) const HINT_SELECTED: &str = "Enter sets a field, middle-drag steps it";
+pub(crate) const HINT_NONE: &str = "Select one clip to type its fades and opacity";
+
+/// One clip field as the row shows it: the text in it (typed, else the
+/// clip's), the clip's own value, and whether it takes typing.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct FieldShown {
+    pub value: String,
+    pub shown: String,
+    pub enabled: bool,
+}
+
+/// The fields row: fade in, fade out and opacity, always the same widgets
+/// in the same places at [`CLIP_FIELDS_HEIGHT`](super::panels::CLIP_FIELDS_HEIGHT),
+/// so selecting a clip, clearing the selection or dragging never moves the
+/// tracks under it (2026-11-16: the row was swapped for a shorter line with
+/// nothing selected, and the tracks jumped). A field that takes no typing
+/// is greyed, with no value ladder.
+pub(crate) fn fields_row(fields: [FieldShown; 3], hint: &str) -> Element<Message> {
+    let label = |w: &str| text(w.to_owned()).font_size(12.0).color(look::quiet());
+    let [fade_in, fade_out, opacity] = fields;
+    let field = |id: &'static str, which: ClipField, f: FieldShown| -> Element<Message> {
+        let input = text_input(Id::new(id), f.value.clone()).font_size(12.0).width(Length::fixed(56.0));
+        if !f.enabled {
+            return input.disabled(true).into();
+        }
+        let input = input.on_input(move |s| Message::ClipField(which, s)).on_submit(move || Message::ClipFieldSet(which));
+        // Middle-drag: Houdini's value ladder; release sets it.
+        let number = field_number(which, &f.value, &f.shown);
+        ladder(
+            Id::new(format!("{id} ladder")),
+            input,
+            number,
+            move |v| Message::ClipField(which, field_value_text(which, v)),
+            Some(Message::ClipFieldSet(which)),
+        )
+    };
+    let fields = row()
+        .spacing(8.0)
+        .align_y(Vertical::Center)
+        .push(label("Fade in"))
+        .push(field("fade in field", ClipField::FadeIn, fade_in))
+        .push(label("Fade out"))
+        .push(field("fade out field", ClipField::FadeOut, fade_out))
+        .push(label("frames"))
+        .push(space(Length::fixed(12.0), Length::Shrink))
+        .push(label("Opacity"))
+        .push(field("opacity field", ClipField::Opacity, opacity))
+        .push(label("%"))
+        .push(space(Length::fixed(12.0), Length::Shrink))
+        .push(label(hint));
+    container(fields)
+        .padding(Padding::from([3.0, 14.0]))
+        .width(Length::Fill)
+        .height(Length::fixed(super::panels::CLIP_FIELDS_HEIGHT))
+        .align_y(Vertical::Center)
+        .background(look::panel())
+        .into()
 }
 
 #[cfg(test)]
@@ -203,7 +236,70 @@ mod tests {
         edit
     }
 
+    /// A fixed-advance measurer: half the font size a character, one line.
+    struct Mono;
+
+    impl primer::core::measure::TextMeasurer for Mono {
+        fn measure_text(&self, content: &str, size: f32, max_width: Option<f32>) -> Size {
+            self.layout_text(content, size, max_width).size
+        }
+        fn measure_styled(&self, content: &str, _: &[primer::core::render::TextSpan], size: f32, max_width: Option<f32>) -> Size {
+            self.measure_text(content, size, max_width)
+        }
+        fn layout_text(&self, content: &str, size: f32, _: Option<f32>) -> primer::core::measure::TextLayout {
+            use primer::core::measure::{TextLayout, TextLine, VisualLines, line_height};
+            let n = content.chars().count();
+            let carets: Vec<f32> = (0..=n).map(|i| i as f32 * size * 0.5).collect();
+            let width = carets[n];
+            TextLayout {
+                lines: VisualLines::new(vec![TextLine { start: 0, end: n, width, carets }]),
+                size: Size::new(width, line_height(size)),
+            }
+        }
+    }
+
+    /// The height the fields row lays out at, in a window `width` wide, and
+    /// the height its widgets ask for inside it.
+    fn row_heights(fields: [FieldShown; 3], hint: &str, width: f32) -> (f32, f32) {
+        use primer::widget::custom::{LayoutCtx, Limits, StateStore, Widget};
+        let element = fields_row(fields, hint);
+        let (theme, store) = (Theme::dark(), StateStore::new());
+        let node =
+            element.layout(&Limits::new(Size::ZERO, Size::new(width, 1000.0)), LayoutCtx { measurer: &Mono, store: &store, theme: &theme });
+        let inner = node.children().first().map_or(0.0, |c| c.bounds().height);
+        (node.bounds().height, inner)
+    }
+
+    fn shown(value: &str, enabled: bool) -> FieldShown {
+        FieldShown { value: value.into(), shown: value.into(), enabled }
+    }
+
     proptest! {
+        /// The fields row is one height whatever is selected: one video clip,
+        /// one audio clip (opacity greyed), none or several (all greyed, the
+        /// hint to select one), whatever the values and the window's width;
+        /// and what it holds fits inside it, so nothing is cut off.
+        #[test]
+        fn the_fields_row_never_changes_height(
+            values in prop::collection::vec("[0-9]{0,6}", 3),
+            selected in 0usize..3,
+            width in 200f32..4000.0,
+        ) {
+            let fields = |enabled: [bool; 3]| -> [FieldShown; 3] {
+                [shown(&values[0], enabled[0]), shown(&values[1], enabled[1]), shown(&values[2], enabled[2])]
+            };
+            let (none, none_inner) = row_heights([FieldShown::default(), FieldShown::default(), FieldShown::default()], HINT_NONE, width);
+            let (h, inner) = match selected {
+                0 => row_heights(fields([true; 3]), HINT_SELECTED, width),
+                1 => row_heights(fields([true, true, false]), HINT_SELECTED, width),
+                _ => row_heights(fields([false; 3]), HINT_NONE, width),
+            };
+            prop_assert_eq!(h, super::super::panels::CLIP_FIELDS_HEIGHT);
+            prop_assert_eq!(none, h);
+            prop_assert_eq!(none_inner, inner, "the widgets inside differ in height");
+            prop_assert!(inner > 0.0 && inner <= h - 6.0, "the widgets ({}) overflow the row ({})", inner, h);
+        }
+
         /// A fade typed as frames (#60) sets that fade and keeps the other;
         /// it is set exactly when it fits the clip with the other fade, and
         /// the field then shows what was typed. The clip's own value makes

@@ -491,11 +491,13 @@ artists report as "the node is broken" (Magnus on `th::playblast`). Any
 other exception keeps its traceback, and without a UI the `NodeError` raises
 too. The playblast LOP and SOP use it so far.
 
-The one deliberate opt-out is the crash-time emergency save
-(`_save_scene(..., report_failures=False)`): its whole premise is that
-Houdini's event loop is wedged behind the crash-report dialog, so putting a
-modal in front of it is exactly the wrong move. It logs and takes the status
-bar instead.
+The deliberate opt-outs are the crash-time emergency save and the timed
+Autosave (`_save_scene(..., report_failures=False)`). The emergency save's
+whole premise is that Houdini's event loop is wedged behind the crash-report
+dialog, so putting a modal in front of it is exactly the wrong move. The
+Autosave (`asset_browser/save_timer.py`) runs unasked every few minutes, so a
+failure dialog each time would be worse than the failure. Both log and take
+the status bar instead.
 
 ### Where the logs are
 

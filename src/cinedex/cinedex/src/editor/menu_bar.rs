@@ -170,6 +170,10 @@ fn view_menu(s: &State) -> Vec<Entry> {
         ),
         item("&Next Show (Cut / Renders / Playblasts)", Message::Show(next_show(s.show)), s.free, letter('v', NONE)),
         Entry::Separator,
+        // The only thing that rescales the tracks besides opening an edit
+        // (`timeline_view`): drags, trims and retimes leave the scale alone.
+        item("&Fit Timeline", Message::FitTimeline, s.free, letter('f', NONE)),
+        Entry::Separator,
         item("&Refresh", Message::Refresh, s.free, letter('r', COMMAND)),
     ]
 }
@@ -223,6 +227,7 @@ pub(super) fn key_message(state: &State, key: Key, modifiers: Modifiers) -> Opti
         Key::Character('m' | 'M') if bare => Some(Message::Marker),
         Key::Character('b' | 'B') if bare => Some(Message::Burnins(!state.burnins)),
         Key::Character('v' | 'V') if bare => Some(Message::Show(next_show(state.show))),
+        Key::Character('f' | 'F') if bare => Some(Message::FitTimeline),
         _ => None,
     }
 }

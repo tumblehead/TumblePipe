@@ -12,6 +12,34 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.110.0 — 2026-11-16
+
+### Features
+- feat(cinedex): Preview in Cinedex plays the frames (`8dc788ef`)
+- feat(cinedex): an app icon (`063d580c`)
+- feat(farm): flash Houdini's taskbar button when a job ends and Houdini is not in front (`7e66733e`)
+
+### Fixes
+- fix(animate): keep vertex widths per vertex and read width before pscale (`c13c07c3`)
+- fix(cinedex): --expect frame lists read alike in the Farm Manager and Cinedex (`dd51534d`)
+- fix(animate): carry curve and point widths through th::animate (`2eacafb5`)
+
+### Documentation
+- docs(tests): test_expect_parity and test_cinedex_icon (`6fdfb945`)
+- docs(deadline): the two-line Jobs popover rows ship in TumbleTrove 0.64.0 (`0fd4f222`)
+- docs(cinedex): the preview window plays, the icon (`dc322047`)
+- docs(animate): widths through th::animate, troubleshooting and tests README (`d44316e5`)
+- docs(deadline): the taskbar flash and the two-line Jobs popover rows (`21f81d25`)
+- docs: regenerate CHANGELOG.md for v1.108.0 and v1.109.0, and the released-parm snapshot (`808025e3`)
+
+### Tests
+- test(guards): scan Markdown for raw control bytes too; fix tests/README.md (`778d5804`)
+- test(animate): pin vertex-class curve widths against the real HDA (`39385f20`)
+- test(cinedex): the committed icon files are what cinedex_icon.py draws (`1d09ca6b`)
+
+### Other Changes
+- style(cinedex): rustfmt the --expect line (`6f630aac`)
+
 ## v1.109.0 — 2026-11-16
 
 ### Fixes

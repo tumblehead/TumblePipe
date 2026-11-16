@@ -167,6 +167,26 @@ save without waiting for Houdini's event loop, for use while Houdini is
 showing its crash-report dialog. It never prompts, and reports failure on the
 status bar only.
 
+### Autosave and the unsaved warning
+
+The Save button's right-click menu has two more submenus. Both are off by
+default and remember your choice between sessions.
+
+- **Autosave** (*Off*, *Every 5 / 10 / 15 / 30 min*): writes the next
+  version of the open workfile, with the note *Autosave*, once that long has
+  passed since the last save while the scene has unsaved changes. It waits
+  while a dialog or menu is open or the timeline is playing, and does nothing
+  in an untitled or off-pipeline scene. It never prompts. A failed autosave
+  is reported on the status bar and tried again after the next interval.
+- **Warn When Unsaved** (*Off*, *After 15 min / 30 min / 1 hour*): the Save
+  button shows its warning badge once the scene has had unsaved changes for
+  that long. Saving clears it.
+
+Both count from the last save, load or new scene in this session. A scene
+you open is not counted from when its file was last written. Hover **Save**
+to see how long the scene has been unsaved and the autosave interval. The
+timer runs while the asset browser is open.
+
 ### The version note
 
 With **Ask for a version note on save** enabled (the default), Save first
@@ -178,8 +198,9 @@ in the list view's **Note** column: on the department row for its own
 version, and on the entity row for the newest version across departments.
 
 The switch prompt's **Save new version** asks too, and cancelling the note
-cancels the switch. Saves you did not ask for — the autosave-on-switch path
-and the emergency save — never prompt and store a blank note.
+cancels the switch. Saves you did not ask for never prompt: the
+autosave-on-switch path and the emergency save store a blank note, and the
+timed Autosave stores *Autosave*.
 
 ### User and Edited
 

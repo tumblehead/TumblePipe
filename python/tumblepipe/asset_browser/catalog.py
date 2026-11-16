@@ -40,6 +40,7 @@ from tumbletrove.asset_browser.api.types import (
     DeckItem,
     DetailSection,
     ListColumn,
+    MenuItem,
     SortOption,
 )
 from .projects import (
@@ -1004,12 +1005,44 @@ class PipelineCatalog(Catalog):
         never lands. The menu entry runs the save directly from the context-
         menu handler so it still completes during a crash. See
         :meth:`SceneManager.emergency_save_current_scene`.
+
+        Then the Autosave interval and the unsaved-time warning
+        (:mod:`.save_timer`, Remy 2026-11-11), each a submenu of ticked
+        choices like the Refresh button's auto-refresh.
         """
         if action_id == "save":
-            return reporting_menu(
-                [("Emergency Save (off-thread)", self._emergency_save)],
-            )
+            from . import save_timer
+            autosave = self._prefs.autosave_minutes
+            warning = self._prefs.unsaved_warning_minutes
+            return reporting_menu([
+                ("Emergency Save (off-thread)", self._emergency_save),
+                ("__separator__", None),
+                ("Autosave", [
+                    _choice_item(
+                        save_timer.autosave_label(m),
+                        lambda m=m: self._set_save_pref("autosave_minutes", m),
+                        m == autosave,
+                    )
+                    for m in save_timer.AUTOSAVE_CHOICES
+                ]),
+                ("Warn When Unsaved", [
+                    _choice_item(
+                        save_timer.warning_label(m),
+                        lambda m=m: self._set_save_pref("unsaved_warning_minutes", m),
+                        m == warning,
+                    )
+                    for m in save_timer.WARNING_CHOICES
+                ]),
+            ])
         return []
+
+    def _set_save_pref(self, name: str, minutes: int) -> None:
+        """Save one of the Save menu's minutes prefs, and use it now."""
+        from . import save_timer
+        from .prefs import update_prefs
+        setattr(self._prefs, name, minutes)
+        update_prefs(**{name: minutes})
+        save_timer.poll(self)
 
     def get_quick_action_busy(self, action_id: str) -> bool:
         """Whether the quick action's button shows its busy outline.
@@ -1035,6 +1068,11 @@ class PipelineCatalog(Catalog):
         it. A TumbleTrove without the hook never asks: the method is then
         simply unused.
         """
+        if action_id == "save":
+            # Asked every second on the GUI thread: also where the
+            # autosave timer starts, since the browser is open by then.
+            from . import save_timer
+            return save_timer.poll(self)
         if action_id != "farm_manager":
             return False
         return _watch_farm(self).alert
@@ -1073,10 +1111,13 @@ class PipelineCatalog(Catalog):
         farm_jobs.run_button(self._scene, _watch_farm(self).session, row_id, button_id)
 
     def cleanup(self) -> None:
-        """Browser shutdown: stop counting farm jobs."""
+        """Browser shutdown: stop counting farm jobs and the autosave
+        timer (the next browser's first ask starts it again)."""
         activity = getattr(self, "_farm_activity", None)
         if activity is not None:
             activity.stop()
+        from . import save_timer
+        save_timer.stop()
 
     def _emergency_save(self) -> None:
         # Intentionally NOT wrapped in run_catalog_op / gui_dispatch: deferring
@@ -1112,11 +1153,19 @@ class PipelineCatalog(Catalog):
 
         if action_id == "save":
             import hou
+            from . import save_timer
             if hou.hipFile.isNewFile():
-                return format_age_html("Last saved", None)
-            return format_age_html(
-                "Last saved", Path(hou.hipFile.path()).stat().st_mtime,
-            )
+                text = format_age_html("Last saved", None)
+            else:
+                text = format_age_html(
+                    "Last saved", Path(hou.hipFile.path()).stat().st_mtime,
+                )
+            unsaved = save_timer.unsaved_minutes()
+            if unsaved is not None:
+                text += f"<br>Unsaved changes for {unsaved} min"
+            if self._prefs.autosave_minutes:
+                text += f"<br>Autosave every {self._prefs.autosave_minutes} min"
+            return text
 
         if action_id == "publish":
             scene_ctx = self._scene.get_loaded_scene_context()
@@ -1576,6 +1625,16 @@ class PipelineCatalog(Catalog):
         self._clients.clear()
         self._activator.reset()
         self.invalidate_cache()
+
+
+def _choice_item(label: str, action, checked: bool):
+    """One ticked-or-not choice in a quick-action submenu. A TumbleTrove
+    before ``MenuItem.checked`` (0.65.0) cannot draw the tick, so the
+    chosen entry says so in its label."""
+    import dataclasses
+    if "checked" in {f.name for f in dataclasses.fields(MenuItem)}:
+        return MenuItem(label, action, checked=checked)
+    return (("✓ " if checked else "") + label, action)
 
 
 def _watch_farm(catalog):

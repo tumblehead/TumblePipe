@@ -408,9 +408,20 @@ clip being dragged.
 - Drag along a clip's top band to fade it in (left half) or out (right
   half). Where a clip on a higher track fades over one below, the two
   dissolve; over nothing, it fades from or to black.
-- With one clip selected, the strip above the tracks shows its **Fade in**
-  and **Fade out** in frames and, for a video clip, its **Opacity** in
-  percent: type a number and press Enter to set it (a fade that does not fit
+- The timeline keeps its scale while you work: moving, trimming, slipping,
+  rolling or fading a clip, and undo, never rescale the ruler, so a clip
+  stays the size it was under the pointer. The tracks are fitted to the cut
+  (and a second past it) when the edit opens and when the first clip goes
+  into an empty edit; a change that makes the cut longer than the tracks
+  show widens them once, when you let go; a shorter cut leaves them as they
+  are. **View > Fit Timeline** (F) fits them to the cut again (up to
+  1.110.0 the tracks refitted after every change, so a trim rescaled the
+  whole ruler).
+- The strip above the tracks shows the selected clip's **Fade in** and
+  **Fade out** in frames and, for a video clip, its **Opacity** in
+  percent. With no clip, or several, selected, the same fields stay there
+  greyed (the strip and the tracks never move when the selection changes).
+  Type a number and press Enter to set it (a fade that does not fit
   the clip is refused, and the status line says why). A clip at less than
   100% shows the tracks below through it, as inside a fade; at 0% it is not
   seen at all. The edit file writes `opacity` only for a clip under 100%,
@@ -445,6 +456,7 @@ Every change is one step of undo, however many clips it moves.
 | Escape | clear the selection |
 | B | show / hide the burn-ins |
 | V | View > Show: the cut, renders, playblasts, round (view only, never saved) |
+| F | View > Fit Timeline: the tracks span the cut and a second past it again |
 
 On macOS, use Cmd for Ctrl.
 

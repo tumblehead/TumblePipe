@@ -22,7 +22,11 @@ tells you when there is none.
 
 Right-clicking **Save** offers **Emergency Save (off-thread)**: an inline
 save for when Houdini is wedged behind its crash-report dialog and the
-normal queued save never lands. It never prompts for a note.
+normal queued save never lands. It never prompts for a note. The same menu
+holds **Autosave** (a new version every few minutes while the scene has
+unsaved changes) and **Warn When Unsaved** (the button's warning badge after
+a time without saving); see
+[Workfiles → Autosave and the unsaved warning](workfiles.md#autosave-and-the-unsaved-warning).
 
 **Publish** opens its window over the browser you clicked in — an undocked
 browser included — kept on screen. The window is modal, but the browser

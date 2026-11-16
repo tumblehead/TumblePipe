@@ -50,6 +50,11 @@ class PipelinePrefs:
     # Cards and hovers leave out the departments an entity has no workfile
     # in (the detail panel still lists them all, to start one from).
     hide_unused_departments: bool = False
+    # The Save quick action's right-click choices (save_timer): write the
+    # next version every N minutes while the scene has unsaved changes,
+    # and badge the button after N minutes unsaved. 0 is off for both.
+    autosave_minutes: int = 0
+    unsaved_warning_minutes: int = 0
     # A desktop notification when a render's preview frames are done on
     # this machine (farm.local.previews, #75). The local runner reads it.
     notify_preview_ready: bool = True
@@ -66,6 +71,13 @@ class PipelinePrefs:
     # tumblepipe.asset_browser.entity_editor_layout.
     entity_editor: dict = field(default_factory=dict)
     prefs_version: int = _PREFS_VERSION
+
+
+def _minutes(value) -> int:
+    """A saved minutes pref, 0 (off) for anything not a positive int."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
 
 
 def load_prefs() -> PipelinePrefs:
@@ -111,6 +123,8 @@ def load_prefs() -> PipelinePrefs:
             data.get("hide_unused_departments", False)
         ),
         notify_preview_ready=bool(data.get("notify_preview_ready", True)),
+        autosave_minutes=_minutes(data.get("autosave_minutes")),
+        unsaved_warning_minutes=_minutes(data.get("unsaved_warning_minutes")),
         farm_submit=(
             data["farm_submit"] if isinstance(data.get("farm_submit"), dict) else {}
         ),

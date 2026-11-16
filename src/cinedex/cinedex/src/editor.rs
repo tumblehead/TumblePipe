@@ -70,6 +70,11 @@ mod clip_fields;
 mod export_dialog;
 mod menu_bar;
 mod panels;
+mod timeline_view;
+
+/// The status line's height under everything: a 13 px line and its padding,
+/// as it was laid out when it came and went.
+const STATUS_HEIGHT: f32 = 29.0;
 
 /// Decoded frames kept in memory (see `th_media::FrameBuffer`).
 const BUFFER_BYTES: usize = 4 << 30;
@@ -616,6 +621,9 @@ pub enum Message {
     View(usize),
     Exposure(f32),
     Burnins(bool),
+    /// View > Fit Timeline (F): the tracks span the cut and a second past
+    /// it again (`timeline_view`).
+    FitTimeline,
     /// The bins panel or the timeline was resized, folded or restored
     /// (remembered for this user, `layout_prefs`).
     BinsPanel(SplitChange),
@@ -747,6 +755,9 @@ pub struct Editor {
     layout: layout_prefs::Layout,
     /// Where they are saved; None keeps them for this session only.
     layout_path: Option<PathBuf>,
+    /// The edit frames the tracks' width spans: fitted to the cut when it
+    /// opens and on View > Fit Timeline, never by an edit (`timeline_view`).
+    timeline_view: timeline_view::TimelineView,
 }
 
 fn waker(slot: &Arc<Mutex<Option<Sender<Message>>>>) -> impl Fn() + Send + 'static {
@@ -770,6 +781,7 @@ impl Editor {
         let wake_slot: Arc<Mutex<Option<Sender<Message>>>> = Arc::new(Mutex::new(None));
         engine.set_notifier(waker(&wake_slot));
         let timeline = engine.timeline();
+        let timeline_view = timeline_view::TimelineView::fitted(doc.edit.length(), doc.edit.fps.max(1) as usize);
         let dialog = recovered.as_ref().and_then(|_| match &doc.origin {
             Origin::Working { name, .. } => Some(Dialog::Recover { name: name.clone() }),
             _ => None,
@@ -830,6 +842,7 @@ impl Editor {
             previews: Default::default(),
             layout: layout_prefs::load(&layout_path),
             layout_path: Some(layout_path),
+            timeline_view,
         }
     }
 
@@ -853,6 +866,11 @@ impl Editor {
 
     fn fps(&self) -> u32 {
         self.doc.edit.fps.max(1)
+    }
+
+    /// The tracks span the cut and a second past it again.
+    fn fit_timeline(&mut self) {
+        self.timeline_view = timeline_view::TimelineView::fitted(self.doc.edit.length(), self.fps() as usize);
     }
 
     /// Positions the playhead can stand on: the edit, and a second past it.
@@ -1003,6 +1021,8 @@ impl Editor {
         if self.live_loop.as_mut().is_some_and(|l| !l.follow(&self.doc.edit)) {
             self.live_loop = None;
         }
+        // The tracks keep their scale: wider only if the cut outgrew it.
+        self.timeline_view = self.timeline_view.changed(self.doc.edit.length(), self.fps() as usize);
         let command = self.resolve_new();
         self.timeline = self.engine.set_timeline(self.engine_timeline());
         self.engine.set_playhead(self.position);
@@ -1409,7 +1429,9 @@ impl Editor {
         let program = Tracks {
             rows: self.rows(),
             markers: self.doc.edit.markers.iter().map(|m| m.at).collect(),
-            total: self.length(),
+            // Not the cut's length: the span only an explicit fit sets, so
+            // a drag, trim or retime never rescales the clips under it.
+            total: self.timeline_view.span(),
             playhead: self.position,
             buffered: tracks::ranges(&self.engine.buffered_positions()),
             on_seek: Message::Seek,
@@ -2786,6 +2808,8 @@ impl Application for Editor {
                     if let Some(edit) = self.recovered.take() {
                         self.doc.edit = edit;
                         self.dialog = None;
+                        // Another cut opened in this window: fit it.
+                        self.fit_timeline();
                         return self.changed();
                     }
                     self.dialog = None;
@@ -2913,6 +2937,7 @@ impl Application for Editor {
             }
             Message::Exposure(stops) => self.display.exposure = stops,
             Message::Burnins(on) => self.burnins = on,
+            Message::FitTimeline => self.fit_timeline(),
             Message::BinsPanel(change) => {
                 let mut layout = self.layout;
                 if let SplitSize::First(width) = change.size {
@@ -3062,16 +3087,18 @@ impl Application for Editor {
         };
         let timeline = column().push(self.clip_fields()).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);
         let body = panels::timeline_split(middle, timeline, self.timeline_height(), self.layout.timeline_collapsed, Message::TimelinePanel);
-        let mut page = column().push(self.toolbar()).push(body).width(Length::Fill).height(Length::Fill);
-        if let Some((words, error)) = &self.status {
-            let colour = if *error { look::error() } else { look::text() };
-            page = page.push(
-                container(text(words.clone()).font_size(13.0).color(colour))
-                    .padding(Padding::from([6.0, 14.0]))
-                    .width(Length::Fill)
-                    .background(look::panel()),
-            );
-        }
+        // The status line is always there, empty when there is nothing to
+        // say: a refused drag putting it up (and the next edit taking it
+        // down) used to move the whole timeline up and down.
+        let (words, error) = self.status.clone().unwrap_or_default();
+        let colour = if error { look::error() } else { look::text() };
+        let status = container(text(words).font_size(13.0).color(colour))
+            .padding(Padding::from([0.0, 14.0]))
+            .width(Length::Fill)
+            .height(Length::fixed(STATUS_HEIGHT))
+            .align_y(Vertical::Center)
+            .background(look::panel());
+        let page = column().push(self.toolbar()).push(body).push(status).width(Length::Fill).height(Length::Fill);
         let mut root = modal(page);
         if let Some(view) = self.dialog_view() {
             root = root.dialog(Id::new("dialog"), view).on_dismiss(|| Message::Dismiss);
