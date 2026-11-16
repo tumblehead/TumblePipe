@@ -45,6 +45,10 @@ pub(crate) struct Still {
 pub(crate) struct Stills {
     pub(crate) title: String,
     pub(crate) frames: Vec<Still>,
+    /// The frames are all there is (a batch's preview frames, first /
+    /// middle / last, or one frame): no frames between them are missing.
+    /// A folder's frames are a range, its gaps frames still to render.
+    pub(crate) exact: bool,
 }
 
 /// The stills of a batch's `previews`, job by job.
@@ -101,7 +105,7 @@ pub(crate) fn open_frames(path: &Path) -> Result<Stills, String> {
             [one] => one.summary(),
             _ => format!("{} previews of {}", previews.len(), file_name(path)),
         };
-        return Ok(Stills { title, frames });
+        return Ok(Stills { title, frames, exact: true });
     }
     if path.is_dir() {
         let names: Vec<String> = std::fs::read_dir(path)
@@ -116,12 +120,12 @@ pub(crate) fn open_frames(path: &Path) -> Result<Stills, String> {
         if frames.is_empty() {
             return Err(format!("no EXR or JPG frames in {}", path.display()));
         }
-        return Ok(Stills { title: group, frames });
+        return Ok(Stills { title: group, frames, exact: false });
     }
     if path.is_file() && is_frame_file(&file_name(path)) {
         let name = file_name(path);
         let number = trailing_number(name.rsplit_once('.').map_or(name.as_str(), |(stem, _)| stem));
-        return Ok(Stills { title: name.clone(), frames: vec![Still { group: name, number, path: path.to_path_buf() }] });
+        return Ok(Stills { title: name.clone(), frames: vec![Still { group: name, number, path: path.to_path_buf() }], exact: true });
     }
     Err(format!("{} is not a batch folder, a folder of frames or an EXR or JPG frame", path.display()))
 }

@@ -352,8 +352,8 @@ Desktop (`python -m tumblepipe.farm.manager`).
   [Running farm jobs on this machine](#running-farm-jobs-on-this-machine)), a band above the list says
   *Preview frames ready* with the shot, department, version and frame
   count, and the job (its `notify partial …` job) is tinted until you
-  select it. **Open in player** shows the batch's preview frames in the
-  editor, as stills ([Preview frames ready](asset-browser/play-shots.md#preview-frames-ready),
+  select it. **Open in player** shows the batch's preview frames in
+  Cinedex's preview window ([Preview frames ready](asset-browser/play-shots.md#preview-frames-ready),
   `cinedex --frames <batch folder>`; it needs `$OCIO`, as Play does),
   **Open folder** opens the frames' folder, **Show job** selects
   the job (clearing *Hide finished* and the name filter if they hid it),
@@ -443,9 +443,13 @@ Desktop (`python -m tumblepipe.farm.manager`).
   *Open output folder*, *Preview in Cinedex*, *Copy job ID* and *Copy name*.
   On a task, *Open log folder*, *Copy log*, *Copy frames*, *Copy error*, and
   the job actions (they act on the whole job, as on Deadline).
-- **Preview in Cinedex:** right-click a job ▸ *Preview in Cinedex* shows its
-  rendered frames in the editor as stills (`cinedex --frames <folder>`; it
-  needs `$OCIO`, as Play does). It looks where *Open output folder* goes:
+- **Preview in Cinedex:** right-click a job ▸ *Preview in Cinedex* plays its
+  rendered frames in Cinedex's [preview window](asset-browser/play-shots.md#the-preview-window)
+  (`cinedex --frames <folder>`; it needs `$OCIO`, as Play does): Play and
+  Loop, frame stepping, a timeline, at the shot's fps (`--fps`, from the
+  project config; 24 when the job names no shot). The job's frames not
+  rendered yet are gaps on that timeline (`--expect`, the job's frame
+  list), which fill in as frames land while the window is open. It looks where *Open output folder* goes:
   a slapcomp's or a merged comp's frames are in that folder, a render's, a
   denoise's or a channel comp's in the `beauty` AOV folder under it. It is
   offered for render, denoise, composite and slapcomp jobs (partial or full)
@@ -523,6 +527,13 @@ this machine, TumblePipe tells you without getting in your way:
   notification says it comes from **TumblePipe**. On macOS and Linux it is
   words only: clicking it opens nothing, as the notifiers those systems
   ship cannot open a folder. Switch to Houdini for the buttons.
+- **A flashing taskbar button**, also only when Houdini is not in front.
+  Windows shows its notifications on the main display only, so with
+  several screens it can appear where you are not looking. Houdini's
+  taskbar button (the dock icon bounces on macOS) flashes on the screen
+  Houdini is on, and keeps flashing until you switch to Houdini. It is
+  skipped when motion is reduced (the browser's *Reduce motion* setting, or
+  Windows' *Animation effects* off); the notification still goes out.
 - **A pulse and a dot on the Farm Manager button.** The button pulses once,
   and a small dot sits at its bottom-right corner until you look: accent
   for finished, red for failed (on the **⋯** button when the toolbar is too
@@ -533,15 +544,22 @@ this machine, TumblePipe tells you without getting in your way:
 
 A click on the **Farm Manager** button then opens the **Jobs popover**,
 *Finished since you looked*: this session's ended batches, failures first,
-then the newest, at most ten. Each row says what it was for, when it ended
-and one line of what happened, with its buttons:
+then the newest, at most ten. A row is two lines, so a long list stays
+short: what it was for, when it ended and one small button on the first
+line, and the one line of what happened under the name (cut with an
+ellipsis when it is long; hover for all of it). The popover grows to 60 % of
+the screen's height and then scrolls. The button is the row's main action;
+**right-click a row** for the menu of all of them, and **double-click a
+row** to run the main one:
 
 - a finished batch that wrote frames: **Preview in Cinedex** (opens its
-  frames in Cinedex, as the Farm Manager's *Preview in Cinedex* does) and
-  **Show in Jobs**; one that wrote none (a publish): **Show in Jobs**;
-- a failed batch: **Show in Jobs**, which opens the Farm Manager with the
-  failed job selected and its failed task's log in view, and **Preview N
-  Frames in Cinedex** when it wrote some frames before failing.
+  frames in Cinedex, as the Farm Manager's *Preview in Cinedex* does) is
+  the main action, **Show in Jobs** is in the menu; one that wrote none (a
+  publish): **Show in Jobs**;
+- a failed batch: **Show in Jobs** is the main action, which opens the Farm
+  Manager with the failed job selected and its failed task's log in view;
+  **Preview N Frames in Cinedex** is in the menu when it wrote some frames
+  before failing.
 
 Opening the popover marks every row seen: the dot goes. A batch you retry
 that ends again comes back as unseen. **Open Jobs** in the popover's header,
@@ -553,8 +571,11 @@ this project, and their end is noticed only once the asset browser has
 been opened in the session (it starts the background reading). The status
 line and the desktop notification work with any TumbleTrove; the popover,
 dot and pulse need TumbleTrove 0.60.0 (its `get_quick_action_dot`,
-`get_quick_action_popover` and `request_quick_action_pulse` hooks). With an
-older one a click on the button opens the Farm Manager as before.
+`get_quick_action_popover` and `request_quick_action_pulse` hooks), and the
+two-line rows, the right-click menu, the double-click and the scrolling need
+TumbleTrove 0.64.0 (an older one draws each row in three lines, with all of
+its buttons under the text). With a TumbleTrove older than 0.60.0 a click on
+the button opens the Farm Manager as before. The taskbar flash needs none.
 
 ## Further reading
 

@@ -27,6 +27,7 @@
 
 use std::path::PathBuf;
 
+pub mod frame_list;
 pub mod frame_ranges;
 pub use frame_ranges::{FRAME_RANGES_KEY, FrameRanges, Run};
 

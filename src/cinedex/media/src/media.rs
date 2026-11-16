@@ -61,7 +61,14 @@ impl Media {
     /// The EXR `sequence`, played at `rate`. Its frames must say what colour
     /// space they are in: a render that does not cannot be shown right.
     pub fn exr(sequence: ExrSequence, rate: (i32, i32)) -> Result<Self> {
-        let header = sequence.header()?;
+        Self::exr_from(sequence, rate, 0)
+    }
+
+    /// [`Self::exr`], its layers and colour space read from frame `index`:
+    /// a sequence still rendering (Cinedex's preview frames) may not have
+    /// its first frame yet.
+    pub fn exr_from(sequence: ExrSequence, rate: (i32, i32), index: usize) -> Result<Self> {
+        let header = sequence.header_of(index)?;
         let colour_space = header.colour_space.clone().ok_or_else(|| Error::Open {
             path: sequence.describe(),
             message: "the frames do not say their colour space (oiio:ColorSpace)".into(),

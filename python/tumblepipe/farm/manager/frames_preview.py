@@ -20,6 +20,13 @@ too, a channel's comp into that version's ``beauty`` AOV
 given (``previews.rs``, ``open_frames``), so the folder handed over is the
 one holding the frames.
 
+Cinedex plays the frames (the editor's transport and timeline) at the
+shot's fps and shows the job's frames not on disk yet as gaps that fill in
+as they land: :func:`launch_options` gives it the rate (``--fps``, the job's
+entity's, as the project config says) and the frame list the job renders
+(``--expect``, the job's ``frames``). Either is left out when it is not
+known, or the frame list is not one Cinedex reads (:func:`expected_frames`).
+
 An mp4 job is not offered: its output is a movie, and the frames it encodes
 are another job's output, a row of their own in the same batch. A batch row
 (or several jobs) opens the best output among its jobs: a full job before
@@ -33,12 +40,13 @@ Qt-free: the window asks, the tests pin it.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
 from tumblepipe import naming
-from tumblepipe.farm.manager.rows import JobRow
+from tumblepipe.farm.manager.rows import JobRow, row_entity
 
 #: The menu item.
 LABEL = 'Preview in Cinedex'
@@ -181,3 +189,67 @@ def best_target(selected: Iterable[JobRow]) -> Target:
     if not ready:
         return Target(reason='No render, denoise or slapcomp job here has frames on disk yet')
     return max(ready, key=lambda target: rank(target.row))
+
+
+# ── how Cinedex plays them ────────────────────────────────
+
+#: One word of a frame list Cinedex's ``--expect`` reads
+#: (``th_playlist::frame_list::parse_frame_list``): a frame, or a range,
+#: with a step (``x``, ``:`` or ``by``, as Deadline writes it). ASCII digits
+#: only: Rust reads no others (``\d`` alone would take ``١`` or ``１``).
+_FRAME_WORD = re.compile(r'(-?\d+)(?:-(-?\d+))?(?:(?:x|:|by)([1-9]\d*))?', re.ASCII)
+
+#: Frame numbers and steps Cinedex reads: 64-bit signed integers.
+_I64 = range(-2**63, 2**63)
+
+#: The longest frame list handed over: Cinedex refuses more than a million
+#: frames, and a list that long is no render's.
+MAX_EXPECTED = 100_000
+
+
+def expected_frames(frames: str) -> str:
+    """``frames`` (a job's frame list: ``1001-1100``, ``1001,1050,1100``,
+    ``1-99x2``) normalised for ``cinedex --expect``: its words joined by
+    commas; '' when it is empty, has a word Cinedex does not read (a frame
+    or step past 64 bits among them), or spans more than
+    :data:`MAX_EXPECTED` frames. Cinedex refuses its whole command line on a
+    list it cannot read, so one is left out rather than handed over
+    (``tests/test_expect_parity.py``)."""
+    words = [word for word in re.split(r'[,\s]+', frames or '') if word]
+    matches = [_FRAME_WORD.fullmatch(word) for word in words]
+    if not words or not all(matches):
+        return ''
+    total = 0
+    for match in matches:
+        numbers = [int(group) for group in match.groups() if group is not None]
+        if not all(number in _I64 for number in numbers):
+            return ''
+        first = int(match.group(1))
+        last = int(match.group(2)) if match.group(2) is not None else first
+        total += abs(last - first) + 1
+    return ','.join(words) if total <= MAX_EXPECTED else ''
+
+
+def row_fps(row: JobRow) -> int | None:
+    """The fps ``row``'s frames play at: its entity's (a shot's own, else
+    the project's), None when the job names no entity or the config says
+    none (Cinedex then plays at 24)."""
+    entity = row_entity(row)
+    if not entity:
+        return None
+    try:
+        from tumblepipe.config.timeline import get_fps
+        from tumblepipe.util.uri import Uri
+        fps = get_fps(Uri.parse(entity))
+    except Exception:
+        return None
+    return fps if fps and 1 <= fps <= 240 else None
+
+
+def launch_options(row: JobRow | None, fps=None) -> tuple[int | None, str]:
+    """What Cinedex is told about ``row``'s frames: the rate they play at
+    (``fps(row)``, :func:`row_fps` by default) and the frames the job
+    renders (:func:`expected_frames`); None / '' for what is not known."""
+    if row is None:
+        return None, ''
+    return (fps or row_fps)(row), expected_frames(row.frames)

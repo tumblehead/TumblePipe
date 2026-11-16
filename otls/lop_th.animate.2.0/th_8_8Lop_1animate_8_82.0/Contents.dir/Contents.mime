@@ -2272,11 +2272,11 @@ outputsNamed3
 }
 inputsNamed3
 {
-0 	current_config 1 1 "input1"
+0 	current_widths 1 1 "input1"
 }
 inputs
 {
-0 	current_config 0 1
+0 	current_widths 0 1
 }
 stat
 {
@@ -2543,6 +2543,69 @@ Content-Type: text/plain
 	"___Version___":{
 		"type":"string",
 		"value":""
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_widths.init"
+Content-Type: text/plain
+
+type = python
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_widths.def"
+Content-Type: text/plain
+
+sopflags sopflags = 
+comment ""
+position 7.4 -6.2122
+connectornextid 2
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on
+outputsNamed3
+{
+1 "output1"
+}
+inputsNamed3
+{
+0 	current_config 1 1 "input1"
+}
+inputs
+{
+0 	current_config 0 1
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_widths.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+python	[ 0	locks=0 ]	(	"from tumblepipe.pipe.houdini.lops import animate_points
+animate_points.current_widths(hou.pwd())
+"	)
+maintainstate	[ 0	locks=0 ]	(	"off"	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/points_sops/current_widths.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
 	}
 }
 
@@ -4287,7 +4350,7 @@ Content-Type: text/plain
 Content-Disposition: attachment; filename="hdaroot/points_sops.order"
 Content-Type: text/plain
 
-27
+28
 dive
 at_start
 rest_folders
@@ -4301,6 +4364,7 @@ CURRENT
 current_folders
 current_shapes
 current_config
+current_widths
 no_points_unpacked
 remainder_shapes
 remainder_folders
@@ -4429,7 +4493,7 @@ setdefaultprim	[ 0	locks=0 ]	(	"on"	)
 enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
 topologyhandling	[ 0	locks=0 ]	(	static	)
 enable_attribs	[ 0	locks=0 ]	(	"on"	)
-attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform __th_pt __th_vtx"	)
+attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform width pscale __th_pt __th_vtx"	)
 enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
 indexattribs	[ 0	locks=0 ]	(	""	)
 enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
@@ -4642,7 +4706,7 @@ setdefaultprim	[ 0	locks=0 ]	(	"on"	)
 enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
 topologyhandling	[ 0	locks=0 ]	(	animated	)
 enable_attribs	[ 0	locks=0 ]	(	"on"	)
-attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform"	)
+attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform width pscale"	)
 enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
 indexattribs	[ 0	locks=0 ]	(	""	)
 enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
@@ -4791,7 +4855,7 @@ setdefaultprim	[ 0	locks=0 ]	(	"on"	)
 enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
 topologyhandling	[ 0	locks=0 ]	(	animated	)
 enable_attribs	[ 0	locks=0 ]	(	"on"	)
-attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform"	)
+attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform width pscale"	)
 enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
 indexattribs	[ 0	locks=0 ]	(	""	)
 enable_constantattribs	[ 0	locks=0 ]	(	"off"	)

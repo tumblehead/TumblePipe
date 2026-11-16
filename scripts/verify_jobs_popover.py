@@ -17,8 +17,9 @@ one that fails. Checks:
      in Jobs reaches the scene with the failed job; opening it clears the
      dot. With an older TumbleTrove the popover hook answers None (the click
      opens the Farm Manager as before)
-  5. the announcement: one status line, an OS notification only when
-     Houdini is not in front, a pulse asked only of a catalog that takes one
+  5. the announcement: one status line, an OS notification and a flash of
+     Houdini's taskbar button only when Houdini is not in front, a pulse
+     asked only of a catalog that takes one
   6. the Farm Manager's select_job selects a finished job that "Hide
      finished" would keep out, and holds an unknown one until a read brings
      it in
@@ -171,6 +172,17 @@ def main() -> int:
         panel = QuickActionPopoverPanel(model, lambda: None, on_button, lambda: None)
         panel.show()
         pump(app, 0.2)
+        if hasattr(panel, 'menu_labels'):
+            # TumbleTrove with two-line rows (the popover of the Farm Manager
+            # button with ten jobs must not fill the screen).
+            heights = [w.height() for w in panel._row_widgets]
+            check('each row is two lines, not a button under its text',
+                  bool(heights) and max(heights) <= 54, str(heights))
+            check('a row shows its one main button and lists every action in its menu',
+                  failed is not None
+                  and panel.menu_labels(failed.key)[0] == finished.SHOW_LABEL
+                  and len(panel.menu_labels(failed.key)) == len(finished.buttons(failed)),
+                  str(panel.menu_labels(failed.key if failed else '')))
         show = panel._buttons.get((failed.key, finished.SHOW)) if failed else None
         check('the failed row has Show in Jobs', show is not None and show.text() == finished.SHOW_LABEL,
               str(sorted(panel._buttons)))
@@ -188,7 +200,7 @@ def main() -> int:
     check('opening the popover clears the dot', PipelineCatalog.get_quick_action_dot(host, 'farm_manager') == '')
 
     print('5. the announcement')
-    statuses, notified, pulses = [], [], []
+    statuses, notified, pulses, flashes = [], [], [], []
     sent = threading.Event()
 
     def notify(title: str, body: str, folder: str = '') -> None:
@@ -197,16 +209,49 @@ def main() -> int:
 
     catalog = SimpleNamespace(request_quick_action_pulse=pulses.append)
     said = farm_jobs.announce(catalog, ended, in_front=lambda: False, notify=notify,
-                              status=lambda text, bad: statuses.append((text, bad)))
+                              status=lambda text, bad: statuses.append((text, bad)),
+                              flash=lambda: flashes.append(1) or '')
     sent.wait(2.0)
     check('one status line, a warning for the failure', len(statuses) == 1 and statuses[0][1], str(statuses))
     check('the OS hears it when Houdini is not in front', notified == [(said.title, said.line)], str(notified))
     check('one pulse is asked for', pulses == ['farm_manager'], str(pulses))
+    check("Houdini's taskbar button is flashed when it is not in front", flashes == [1], str(flashes))
     notified.clear()
+    flashes.clear()
     farm_jobs.announce(SimpleNamespace(), ended, in_front=lambda: True, notify=notify,
-                       status=lambda text, bad: None)
+                       status=lambda text, bad: None,
+                       flash=lambda: flashes.append(1) or '')
     time.sleep(0.2)
-    check('no OS notification while Houdini is in front, no pulse without the hook', notified == [])
+    check('no OS notification and no flash while Houdini is in front, no pulse without the hook',
+          notified == [] and flashes == [], f'{notified} {flashes}')
+    # The real flash, in a Qt application whose "Houdini main window" is a
+    # widget of ours: alert() is asked for it, on the main thread.
+    from PySide6.QtWidgets import QWidget
+    window = QWidget()
+    window.show()
+    alerted = []
+    why = farm_jobs.flash_taskbar(reduced=lambda: False, window=lambda: window,
+                                  alert=alerted.append)
+    check("the taskbar flash is asked of Houdini's window on the main thread",
+          why == '' and alerted == [window], f'{why!r} {alerted}')
+    why = farm_jobs.flash_taskbar(reduced=lambda: False, window=lambda: window)
+    pump(app, 0.1)
+    check('the real QApplication.alert call runs without error', why == '', repr(why))
+    check('Reduce motion keeps the flash back', farm_jobs.flash_taskbar(
+        reduced=lambda: True, window=lambda: window, alert=alerted.append) != '' and alerted == [window])
+    seen_threads = []
+    done = threading.Event()
+
+    def from_worker():
+        farm_jobs.flash_taskbar(
+            reduced=lambda: False, window=lambda: window,
+            alert=lambda w: seen_threads.append(threading.current_thread()),
+            hop=lambda f: (seen_threads.append('hopped'), done.set()))
+    threading.Thread(target=from_worker).start()
+    done.wait(2.0)
+    check("a flash asked from a worker thread is handed to the main thread, not called there",
+          seen_threads == ['hopped'], str(seen_threads))
+    window.close()
 
     print('6. the Farm Manager selects the job')
     from tumblepipe.farm.manager.window import ManagerWindow

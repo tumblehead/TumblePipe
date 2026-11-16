@@ -46,6 +46,10 @@ objc2 = "0.5.2"
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 x11rb = "0.13"
 
+# The Windows executable's icon resource (`build.rs`).
+[build-dependencies]
+embed-resource = "3"
+
 [features]
 default = ["sound"]
 sound = ["dep:cpal"]

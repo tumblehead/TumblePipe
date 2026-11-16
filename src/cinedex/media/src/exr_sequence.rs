@@ -148,7 +148,13 @@ impl ExrSequence {
 
     /// Its first frame's header.
     pub fn header(&self) -> Result<ExrHeader> {
-        let path = self.frames.first().ok_or_else(|| Error::Open { path: String::new(), message: "no frames".into() })?;
+        self.header_of(0)
+    }
+
+    /// Frame `index`'s header: of a sequence still rendering, whose first
+    /// frame may not be written yet, one that is.
+    pub fn header_of(&self, index: usize) -> Result<ExrHeader> {
+        let path = self.frames.get(index).ok_or_else(|| Error::Open { path: self.describe(), message: format!("no frame {index}") })?;
         let meta = exr::meta::MetaData::read_from_file(path, false)
             .map_err(|e| Error::Open { path: path.display().to_string(), message: e.to_string() })?;
         let mut layers: Vec<ExrLayer> = Vec::new();

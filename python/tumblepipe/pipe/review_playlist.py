@@ -373,19 +373,31 @@ def render_arguments(player: Path, project: str, ocio: str, edit_uri: Uri, versi
         '--render', f'{edit_uri}@{version}', '--out', str(out_dir),
     ]
 
-def frames_arguments(player: Path, ocio: str, folder: Path) -> list[str]:
+def frames_arguments(
+    player: Path, ocio: str, folder: Path, fps: int | None = None, expect: str = '',
+) -> list[str]:
     """The command line that opens the preview frames of the local farm
     batch in ``folder`` (``farm.local.previews.batch_previews``), or the
-    frames in any other folder, as stills (#75). No project: only the OCIO
-    config they are shown through."""
-    return [str(player), '--ocio', ocio, '--frames', str(folder)]
+    frames in any other folder, played as Cinedex plays a cut (#75). No
+    project: only the OCIO config they are shown through. ``fps`` is the
+    rate they play at (Cinedex's 24 without); ``expect`` the frame list the
+    render writes, whose frames not on disk yet show as gaps
+    (``farm.manager.frames_preview.expected_frames``)."""
+    arguments = [str(player), '--ocio', ocio, '--frames', str(folder)]
+    if fps:
+        arguments += ['--fps', str(int(fps))]
+    if expect:
+        arguments += ['--expect', expect]
+    return arguments
 
-def open_preview_frames(folder: Path) -> None:
+def open_preview_frames(folder: Path, fps: int | None = None, expect: str = '') -> None:
     """Start the editor on the preview frames of the local farm batch in
-    ``folder`` (the Farm Manager's "Open in player"). Raises when there is
-    no player or no OCIO config."""
+    ``folder`` (the Farm Manager's "Open in player"), or on a render's
+    frames (*Preview in Cinedex*, with ``fps`` and ``expect``: see
+    :func:`frames_arguments`). Raises when there is no player or no OCIO
+    config."""
     player = find_player()
-    _start(player, frames_arguments(player, project_ocio(), Path(folder)))
+    _start(player, frames_arguments(player, project_ocio(), Path(folder), fps, expect))
 
 def _current_project() -> str:
     project = os.environ.get('TH_PROJECT_PATH', '').strip()

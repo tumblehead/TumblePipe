@@ -223,15 +223,46 @@ the Farm Manager takes its badge with it.
 
 To look at the frames, press **Open in player** on the Farm Manager's
 *Preview frames ready* notice. A window of their own opens with the
-preview's frames as stills, through the project's OCIO config:
-**Left**/**Right** or the frame buttons step between them, and
-**Home**/**End** go to the first and the last. From a shell,
+preview's frames, through the project's OCIO config. From a shell,
 `cinedex --frames <folder>` opens the same window (see
 [Running it by hand](#running-it-by-hand)).
 
 Any render's frames open the same way, local or from the farm: right-click
 a render, denoise, composite or slapcomp job (or a batch row) in the Farm Manager ▸
 **Preview in Cinedex** (see [Farm Manager](../deadline.md#the-farm-manager)).
+
+#### The preview window
+
+The preview window plays the frames as the editor plays a cut, with the
+same transport and a timeline under the picture:
+
+- **Play** (Space) plays from the frame shown at the shot's fps (24 when the
+  job names no shot), and loops back to the start while **Loop** (L) is
+  ticked, as it is when the window opens. The rate beside it says when the
+  frames cannot be read that fast ("playing 9 of 24 fps", or "waiting for
+  frames"): a network share or very large EXRs. Playback then waits for
+  each frame instead of skipping it, and a frame read once plays at full
+  speed after that.
+- **Left**/**Right** step one frame, **Alt+Left**/**Alt+Right** one second,
+  **Home**/**End** go to the first and the last frame, and a click or drag
+  on the timeline goes to a frame. Each of these is also in the
+  **Playback** menu and on the transport buttons.
+- **Display**, **View** and **Exposure** under the picture are the editor's.
+- **Frames not rendered yet** are gaps on the timeline: a hatched span
+  labelled *not rendered yet*, and the picture says "Frame 1015 is not
+  rendered yet" when the playhead is on one. **Ctrl+Left**/**Ctrl+Right**
+  jump to the edges of the gaps. *Preview in Cinedex* tells Cinedex which
+  frames the job renders, so frames not started yet at the end of the range
+  show as a gap too; the title bar counts them ("40 of 60 frames
+  rendered").
+- **Frames that land while it is open** fill their gap within about two
+  seconds, and a frame written again is read again, so you can leave the
+  window open on a render that is still going. **View > Refresh** (Ctrl+R)
+  looks at once. A frame that cannot be read (half written, damaged) says
+  so on the picture and is read again when the file changes.
+
+Cinedex has an icon of its own (a film strip with an amber playhead) in the
+taskbar, the title bar and Alt+Tab, on Windows, macOS and Linux (X11).
 
 ### Live view
 
@@ -595,7 +626,7 @@ The editor ships inside the TumblePipe package, as
 ```
 cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>...]
 cinedex [--project <root>] --mcp
-cinedex [--ocio <config>] --frames <batch folder | frames folder | frame>
+cinedex [--ocio <config>] --frames <batch folder | frames folder | frame> [--fps <rate>] [--expect <frame list>]
 ```
 
 `--edit` opens the edit's newest working version, or with `@vNNNN` that
@@ -606,12 +637,17 @@ the project as an untitled edit. The project is `--project`, else
 missing, or the edit does not open, the window says why. `--view` opens the
 edit as [Live view](#live-view) shows a shot, `--at` at that shot frame.
 `--mcp` opens no window: see [Driving it from Claude](#driving-it-from-claude).
-`--frames` opens [preview frames](#preview-frames-ready) as stills, and no
-edit: given a local farm batch folder (one holding `batch.json`, under
+`--frames` opens [the preview window](#the-preview-window) on frames, and
+no edit: given a local farm batch folder (one holding `batch.json`, under
 `batches/` in the local farm's folder), the preview frames its runner
-recorded as ready, every preview of the batch in job order; given any
-other folder, the EXR and JPG frames in it, in frame order; given a frame
-file, that frame. It needs only the OCIO config.
+recorded as ready, every preview of the batch in job order, back to back;
+given any other folder, the EXR and JPG frames in it, in frame order, with
+any frame missing between the first and the last shown as a gap; given a
+frame file, that frame. It needs only the OCIO config. `--fps` is the rate
+it plays at (1 to 240, default 24). `--expect` (with a folder) is the frame
+list the render writes, as Deadline spells one (`1001-1100`,
+`1001,1050,1100`, `1-99x2`): frames of it not in the folder yet are gaps,
+so a render's unstarted end shows too. *Preview in Cinedex* passes both.
 
 While it runs, it listens on a port of 127.0.0.1 for Houdini's Live view
 calls and agents' commands; the port and a token it checks are in

@@ -10,15 +10,24 @@ When a batch the artist submitted in this Houdini session ends
   buttons); on Windows a click on it opens the folder of the job the line
   is about (``Announcement.folder``: its frames, else a playblast's daily
   folder; nothing for a failure without frames);
+- and Houdini's taskbar button flashes until Houdini is activated
+  (:func:`flash_taskbar`: ``QApplication.alert`` on Houdini's main window).
+  Windows shows its notifications on the main display only, whichever
+  screen the artist works on, while the taskbar button is on the screen
+  Houdini is on. Not with Reduce motion on;
 - the Farm Manager button asks TumbleTrove for one pulse, which TumbleTrove
   plays or refuses (hidden browser, reduced motion, Houdini cooking or
   playing back), and shows a dot at its foot, accent for finished, danger
   for failed, until the artist opens the popover.
 
 A click on the button opens the popover, "Finished since you looked": the
-session's ended batches, failures first, with *Preview in Cinedex* and
-*Show in Jobs*. A double-click, or *Open Jobs* in its header, opens the
-Farm Manager as the click used to.
+session's ended batches, failures first, two lines to a row (the title, the
+time and the row's main button, then what it did). The main button is
+*Preview in Cinedex* or, with no frames to look at, *Show in Jobs*; a
+right-click on a row lists all of its actions, a double-click on it runs the
+main one (the row layout is TumbleTrove's). A double-click on the Farm
+Manager button, or *Open Jobs* in the popover's header, opens the Farm
+Manager as the click used to.
 
 The dot, the popover and the pulse need TumbleTrove 0.60.0
 (``Catalog.get_quick_action_dot`` / ``get_quick_action_popover`` /
@@ -92,6 +101,75 @@ def houdini_in_front() -> bool:
         return True
 
 
+def houdini_window():
+    """Houdini's main window, or None (no Houdini UI)."""
+    try:
+        import hou
+        return hou.qt.mainWindow()
+    except Exception:
+        return None
+
+
+def reduced_motion() -> bool:
+    """Whether the artist asked for less motion (TumbleTrove's Reduce motion
+    setting, or the OS's switch); False when it cannot be read."""
+    try:
+        from tumbletrove.asset_browser.ui import motion_host
+        return bool(motion_host.reduced_motion())
+    except Exception:
+        return False
+
+
+def on_main_thread() -> bool:
+    """Whether this is the Qt application's own thread."""
+    try:
+        from PySide6.QtCore import QThread
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        return app is not None and QThread.currentThread() is app.thread()
+    except Exception:
+        return False
+
+
+def _alert(window) -> None:
+    from PySide6.QtWidgets import QApplication
+    QApplication.alert(window, 0)
+
+
+def _hop(func) -> None:
+    from tumblepipe.pipe.houdini.ui.report import run_on_main_thread
+    run_on_main_thread(func)
+
+
+def flash_taskbar(*, reduced=reduced_motion, window=houdini_window, alert=_alert,
+                  main=on_main_thread, hop=_hop) -> str:
+    """Flash Houdini's taskbar button (the dock icon bounces on macOS) until
+    Houdini is activated, on the screen Houdini is on: the OS notification
+    shows on the main display only, and an artist working on another screen
+    saw nothing but a sound.
+
+    Returns '' when the flash was asked for (or handed to the main thread:
+    ``QApplication.alert`` is Qt, so only the main thread may call it), else
+    why not: Reduce motion is on, or there is no Houdini window. Never
+    raises.
+    """
+    try:
+        if reduced():
+            return "reduce motion is on"
+        if not main():
+            hop(lambda: flash_taskbar(reduced=reduced, window=window, alert=alert,
+                                      main=main, hop=hop))
+            return ""
+        target = window()
+        if target is None:
+            return "no Houdini window"
+        alert(target)
+        return ""
+    except Exception as error:
+        log.debug("Farm jobs: the taskbar flash failed", exc_info=True)
+        return f"failed: {error}"
+
+
 def notify_folder(folder: str, is_dir=os.path.isdir) -> str:
     """The folder the OS notification opens on a click: ``folder`` when it
     is on disk, else '' (a click then only dismisses it)."""
@@ -109,9 +187,11 @@ def _notify_os(title: str, body: str, folder: str = "") -> None:
 
 
 def announce(catalog, reports: list, *, in_front=houdini_in_front,
-             notify=_notify_os, status=None) -> finished.Announcement | None:
+             notify=_notify_os, status=None,
+             flash=flash_taskbar) -> finished.Announcement | None:
     """Say on the GUI thread that ``reports`` ended: the status line, the
-    OS notification when Houdini is not in front, and a pulse request.
+    OS notification and the taskbar flash when Houdini is not in front, and
+    a pulse request.
     Returns what was said (for tests); ``status(line, failed)`` replaces
     Houdini's status bar in tests."""
     said = finished.announcement(reports)
@@ -122,6 +202,9 @@ def announce(catalog, reports: list, *, in_front=houdini_in_front,
     except Exception:
         log.debug("Farm jobs: the status line failed", exc_info=True)
     if not in_front():
+        why = flash()
+        if why:
+            log.debug("Farm jobs: no taskbar flash (%s)", why)
         threading.Thread(
             target=notify, args=(said.title, said.line, said.folder),
             name="tumblepipe-farm-notify", daemon=True,

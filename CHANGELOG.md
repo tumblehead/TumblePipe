@@ -12,6 +12,44 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.109.0 — 2026-11-16
+
+### Fixes
+- fix(animate): name rig shapes with no path in an unpacked dive output (`af7b4c8c`)
+- fix(animate): a rig that changes topology mid-shot no longer freezes the export (`1867d012`)
+
+### Refactors
+- refactor(animate): drop the dead vertex-N clear in _computed_normals; docs (`452c9448`)
+
+### Documentation
+- docs(animate): a render holding the first pose after a topology change (`b9f39453`)
+
+### Tests
+- test: hython harness saving th::animate across a topology change (`651183c6`)
+- test: hython harness for th::animate's computed normals (PR #88) (`c92bb095`)
+
+## v1.108.0 — 2026-11-15
+
+### Features
+- feat(asset browser): Open Timeline is a plain icon like its neighbours (`b6d75835`)
+
+### Fixes
+- fix(animate): a shot mixing point N, vertex N and none gets no zero normals (`d2265bb1`)
+- fix(farm submit): the settings panel fits its widest section (`d6a8e5f8`)
+
+### Documentation
+- docs: how a verify harness should end, and no raw control bytes in source (`b6354583`)
+- docs: what a project-reading Qt harness needs, and what the hou stub covers (`7966e711`)
+- docs: regenerate CHANGELOG.md for v1.107.0, and the released-parm snapshot (`584cdddd`)
+
+### Tests
+- test: the hou-harness check looks again, and guards for harness exits (`3f9c91f6`)
+- test: verify_edit_browser exits without Qt teardown (`62b4ea49`)
+- test: guard the Farm Submit panel width on the real dialog, and the hou stub (`61909e7c`)
+
+### Other Changes
+- Merge PR #88: a shot mixing point N, vertex N and none gets no zero normals (`1abf8a85`)
+
 ## v1.107.0 — 2026-11-15
 
 ### Fixes

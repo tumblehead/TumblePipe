@@ -8,7 +8,7 @@
 //! cinedex [--project <root>] [--ocio <config>]
 //! cinedex [--project <root>] [--ocio <config>] --render entity:/edits/<name>@vNNNN --out <dir>
 //! cinedex [--project <root>] --mcp
-//! cinedex [--ocio <config>] --frames <batch folder | frames folder | frame>
+//! cinedex [--ocio <config>] --frames <batch folder | frames folder | frame> [--fps <rate>] [--expect <frame list>]
 //! ```
 //!
 //! `--edit` opens the edit's newest working version (offering an autosave
@@ -19,15 +19,17 @@
 //! and `render.json` written into `--out` for the farm (see `render`);
 //! `--mcp`, no window: an MCP server on stdin/stdout giving an agent the
 //! running players' commands (see `mcp` and `agent`);
-//! `--frames`, a window of preview frames (#75): a local farm batch's ready
-//! previews, a folder's frames, or one frame, stepped through as stills
-//! (see `previews` and `frames_view`). The
+//! `--frames`, a window of rendered frames (#75): a local farm batch's ready
+//! previews, a folder's frames, or one frame, played at `--fps` (24
+//! without), the frames of `--expect` (the render's frame list) not on disk
+//! yet shown as gaps (see `previews`, `reel` and `frames_view`). The
 //! project is `--project`, else `$TH_PROJECT_PATH`; the
 //! OCIO config `--ocio`, else `$OCIO`. When either is missing, or the edit
 //! does not open, the window says why. See `editor` for the window and its
 //! keys.
 
 mod agent;
+mod app_icon;
 mod audio;
 mod board;
 mod burnin;
@@ -38,6 +40,7 @@ mod editor;
 mod engine;
 mod export;
 mod frames_view;
+mod glyph;
 mod journal;
 mod ladder;
 mod layer_view;
@@ -48,6 +51,7 @@ mod look;
 mod mcp;
 mod previews;
 mod raise;
+mod reel;
 mod render;
 mod reveal;
 mod save_dialog;
@@ -87,7 +91,16 @@ impl Application for Failed {
     }
 
     fn update(&mut self, _message: ()) -> Command<()> {
+        app_icon::apply();
         Command::none()
+    }
+
+    fn subscription(&self) -> Subscription<()> {
+        primer::subscription::channel(primer::subscription::hash_id(&"cinedex failed start"), 1, move |sender| async move {
+            let mut sender = sender;
+            let _ = sender.try_send(());
+            futures::future::pending::<()>().await;
+        })
     }
 
     fn view(&self, _window: window::Id) -> Element<()> {
@@ -96,7 +109,7 @@ impl Application for Failed {
     }
 }
 
-const USAGE: &str = "usage: cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>... | --render entity:/edits/<name>@vNNNN --out <dir> | --mcp | --frames <batch folder | frames folder | frame>]";
+const USAGE: &str = "usage: cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>... | --render entity:/edits/<name>@vNNNN --out <dir> | --mcp | --frames <batch folder | frames folder | frame> [--fps <rate>] [--expect <frame list>]]";
 
 /// What the arguments ask the editor for.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -115,6 +128,11 @@ struct Args {
     mcp: bool,
     /// Preview frames to show (#75): a batch folder, a frames folder or a frame.
     frames: Option<PathBuf>,
+    /// The rate `--frames` plays at.
+    fps: Option<u32>,
+    /// The frames `--frames` should have (a render's frame list): those
+    /// not on disk yet show as gaps.
+    expect: Option<Vec<i64>>,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -131,6 +149,16 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--view" => out.view = Some(value("--view")?),
             "--mcp" => out.mcp = true,
             "--frames" => out.frames = Some(PathBuf::from(value("--frames")?)),
+            "--fps" => {
+                let fps: u32 = value("--fps")?.parse().map_err(|_| "--fps wants a whole number of frames per second".to_string())?;
+                if !(1..=240).contains(&fps) {
+                    return Err("--fps wants 1 to 240 frames per second".into());
+                }
+                out.fps = Some(fps);
+            }
+            "--expect" => {
+                out.expect = Some(th_playlist::frame_list::parse_frame_list(&value("--expect")?).map_err(|e| format!("--expect {e}"))?)
+            }
             "--at" => out.at = Some(value("--at")?.parse().map_err(|_| "--at wants a frame number".to_string())?),
             "--shots" => {
                 out.shots.extend(args.by_ref());
@@ -161,6 +189,9 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     }
     if out.frames.is_some() && (out.edit.is_some() || !out.shots.is_empty() || out.render.is_some() || out.mcp || out.view.is_some()) {
         return Err("--frames opens preview frames on their own: only --ocio and --project go with it".into());
+    }
+    if (out.fps.is_some() || out.expect.is_some()) && out.frames.is_none() {
+        return Err("--fps and --expect go with --frames".into());
     }
     Ok(out)
 }
@@ -225,7 +256,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 None => std::env::var("OCIO").ok().filter(|v| !v.trim().is_empty()).ok_or("no --ocio and $OCIO is not set")?,
             };
             let colour = Colour::open(&ocio).map_err(|e| format!("the OCIO config: {e}"))?;
-            Ok::<_, String>(frames_view::FramesView::new(previews::open_frames(path)?, colour))
+            let fill = args.expect.clone().map_or(reel::Fill::Span, reel::Fill::List);
+            let source = frames_view::Source { path: path.clone(), fill };
+            let reel = source.read()?;
+            Ok::<_, String>(frames_view::FramesView::new(source, reel, colour, args.fps.unwrap_or(24)))
         })();
         match opened {
             Ok(view) => run(view, Setup::default())?,
@@ -298,6 +332,13 @@ mod tests {
         assert!(args("--frames D:/f --mcp").is_err());
         assert!(args("--frames D:/f --view entity:/shots/A/010").is_err());
         assert!(args("--frames D:/f --render entity:/edits/Main@v0002 --out D:/r").is_err());
+        let a = args("--frames D:/f --fps 25 --expect 1001-1003").unwrap();
+        assert_eq!((a.fps, a.expect), (Some(25), Some(vec![1001, 1002, 1003])));
+        assert!(args("--frames D:/f --fps 0").is_err());
+        assert!(args("--frames D:/f --fps x").is_err());
+        assert!(args("--frames D:/f --expect x").is_err());
+        assert!(args("--fps 25").is_err(), "--fps wants --frames");
+        assert!(args("--edit entity:/edits/Main --expect 1-2").is_err());
     }
 
     /// What Open starts another window with reads back as that edit of

@@ -1597,13 +1597,16 @@ class ManagerWindow(QWidget):
         return action
 
     def _preview_in_cinedex(self, target: frames_preview.Target) -> None:
-        """Open ``target``'s frames in Cinedex (``cinedex --frames``); a
-        missing player or ``$OCIO`` is said in a message box."""
+        """Open ``target``'s frames in Cinedex (``cinedex --frames``), at
+        the shot's fps with the job's frames not rendered yet as gaps
+        (``frames_preview.launch_options``); a missing player or ``$OCIO``
+        is said in a message box."""
         if not target.enabled:
             return
         try:
             from tumblepipe.pipe import review_playlist
-            review_playlist.open_preview_frames(target.folder)
+            fps, expect = frames_preview.launch_options(target.row)
+            review_playlist.open_preview_frames(target.folder, fps, expect)
         except Exception as error:
             log.warning('Cannot preview %s in Cinedex', target.folder, exc_info=True)
             QMessageBox.warning(

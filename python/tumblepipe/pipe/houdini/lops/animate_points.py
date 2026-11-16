@@ -58,6 +58,18 @@ the world, not the character, once the meshes stopped being subdivided
 (v1.106.0; a subdivision surface ignores authored normals). Normals of any
 other kind (per primitive, per detail) cannot follow; the node warns.
 
+Widths follow as well. The imports read `width` and `pscale` (left out of
+their Attributes pattern up to 1.109, every curve got the missing width,
+0.01), and `apply` copies each frame's (`read_widths`) onto the curves and
+points: per point, per curve or one, as the static import authored them
+(`width_offsets`). Each shape's widths are read where the shape is, as a SOP
+Import of it alone reads them. Merging shapes that read different
+attributes (pscale beside width, curves with none beside hair with some)
+gives the others the attribute's default, 0 as a rule: there
+`normalize_widths` writes each shape's own as point width onto the merged
+geometry, in the static import's (`rest_gate`) and in the frame
+`full_import` imports (`current_widths`), so every frame agrees.
+
 Only shapes with somewhere to go reach the imports (`points_sops/placed`,
 `placed_shapes`). A Scene Invoke whose Shapes pattern is wider than
 `Base` (Houdini's own default is `*`) also outputs a rig's helper shapes,
@@ -227,12 +239,200 @@ def _concat_or_none(leaves, read, per_vertex: bool):
     ]) if parts else None
 
 
-def read_points(geo, unpacked_node=None, vertex_normals=False) -> dict:
+# --- widths ------------------------------------------------------------------
+#
+# Where a SOP Import takes a curve's or a point cloud's USD `widths` from, first
+# found first: `width` on the points or the vertices (Houdini keeps one class
+# per name), on the primitives, on the detail, and only then point `pscale`
+# (doubled: pscale is a radius). Without any of them it authors the Set
+# Missing Widths value (0.01 here), the "default width" a missing
+# `width`/`pscale` in the Attributes pattern gave every hair.
+WIDTH_SOURCES = (
+    ('point', 'width'), ('vertex', 'width'), ('prim', 'width'),
+    ('detail', 'width'), ('point', 'pscale'),
+)
+#: The HDA's Set Missing Widths, when its static import cannot be asked.
+MISSING_WIDTH = 0.01
+
+_FIND = {
+    'point': 'findPointAttrib', 'vertex': 'findVertexAttrib',
+    'prim': 'findPrimAttrib', 'detail': 'findGlobalAttrib',
+}
+_CLASS = {'detail': 0, 'prim': 1, 'point': 2, 'vertex': 3}
+
+
+def _scalar_attrib(geo, kind, name):
+    """`geo`'s one-float attribute `name` of class `kind`, else None."""
+    attrib = getattr(geo, _FIND[kind])(name)
+    if attrib is None or attrib.size() != 1:
+        return None
+    return attrib if _enum_name(attrib.dataType()) == 'Float' else None
+
+
+def width_source(geos):
+    """(class, name, default) of the attribute a SOP Import of `geos`
+    merged into one (as two Unpack SOPs merge a dive's shapes) reads widths
+    from, `default` what the merge gives a shape without it (the attribute's
+    default where it first appears); None when none of them has one."""
+    for kind, name in WIDTH_SOURCES:
+        for geo in geos:
+            attrib = _scalar_attrib(geo, kind, name)
+            if attrib is not None:
+                default = attrib.defaultValue()
+                if isinstance(default, (tuple, list)):
+                    default = default[0] if default else 0.0
+                return kind, name, float(default)
+    return None
+
+
+def _promoted(geo, kind, name, to='point'):
+    """`geo`'s `kind` attribute `name` as one value per point (`to`
+    'point', the way an Attribute Promote SOP averages it) or per vertex
+    (`to` 'vertex': each vertex its point's or primitive's value), in HOM's
+    order."""
+    promote = hou.sopNodeTypeCategory().nodeVerb('attribpromote')
+    promote.setParms({'inname': name, 'inclass': _CLASS[kind],
+                      'outclass': _CLASS[to], 'deletein': 1})
+    out = hou.Geometry()
+    promote.execute(out, [geo])
+    values = (out.vertexFloatAttribValuesAsString(name) if to == 'vertex'
+              else out.pointFloatAttribValuesAsString(name))
+    return np.frombuffer(values, dtype=np.float32)
+
+
+def widths_of(geo, source, per_vertex=False) -> np.ndarray:
+    """One width per point of `geo` (per vertex with `per_vertex`, in HOM's
+    vertex order), as a SOP Import authors them from `source`
+    (`width_source`): the attribute's own values, `default` where `geo`
+    lacks it (a shape merged with others that have it), pscale doubled;
+    the values of a coarser class on each of its points (vertices). Vertex
+    widths per point are averaged: per vertex, a curve's joint (one point,
+    two vertices) keeps each vertex's own, as a SOP Import does when it
+    gives each curve its own copy of the point."""
+    kind, name, default = source
+    to = 'vertex' if per_vertex else 'point'
+    count = geo.intrinsicValue(f'{to}count')
+    scale = 2.0 if name == 'pscale' else 1.0
+    attrib = _scalar_attrib(geo, kind, name)
+    if attrib is None:
+        values = np.full(count, default, np.float32)
+    elif kind == to:
+        values = np.frombuffer(getattr(geo, f'{to}FloatAttribValuesAsString')(name),
+                               dtype=np.float32)
+    elif kind == 'detail':
+        values = np.full(count, geo.attribValue(name), np.float32)
+    else:
+        values = _promoted(geo, kind, name, to)
+    return (values * scale).astype(np.float32) if scale != 1.0 else values.astype(np.float32)
+
+
+def vertex_widths(geos) -> bool:
+    """Whether a shape of `geos` reads its widths from the vertices: they
+    are then read per vertex, a joint of two curves holding two widths."""
+    return any((width_source([geo]) or ('',))[0] == 'vertex' for geo in geos)
+
+
+def read_widths(geos, missing=MISSING_WIDTH, per_vertex=False):
+    """One width per point of `geos` laid out one after another (a dive's
+    shapes as two Unpack SOPs merge them), or per vertex with `per_vertex`,
+    each shape's as a SOP Import of that shape alone authors them
+    (`width_source` of it), `missing` for a shape without any; None when no
+    shape has a width (the static import then authored the missing width,
+    the same every frame).
+
+    Where every shape reads the same attribute this is what a SOP Import of
+    the merge authors too. Where they differ, the merge would not keep
+    them (`width_conflict`): `normalize_widths` puts these on the merged
+    geometry first."""
+    sources = [width_source([geo]) for geo in geos]
+    if all(source is None for source in sources):
+        return None
+    count = 'vertexcount' if per_vertex else 'pointcount'
+    parts = [
+        np.full(geo.intrinsicValue(count), missing, np.float32) if source is None
+        else widths_of(geo, source, per_vertex)
+        for geo, source in zip(geos, sources)
+    ]
+    return np.concatenate(parts) if parts else np.zeros(0, np.float32)
+
+
+_SURFACE_ENUMS = ('Polygon', 'PolySoup', 'Mesh')
+
+
+def _takes_widths(geo) -> bool:
+    """Whether a SOP Import gives some of `geo`'s prims widths: anything
+    but closed polygons (curves, open polygons, particles)."""
+    surfaces = sum(
+        geo.countPrimType(getattr(hou.primType, name))
+        for name in _SURFACE_ENUMS if hasattr(hou.primType, name)
+    )
+    if surfaces < geo.intrinsicValue('primitivecount'):
+        return True
+    return surfaces > 0 and len(geo.globPrims('@intrinsic:closed=0')) > 0
+
+
+def width_conflict(geos) -> bool:
+    """Whether merging `geos` (two Unpack SOPs, a dive's shapes) loses
+    widths: the shapes that take widths (`_takes_widths`) or have one do not
+    all read the same attribute. The merge keeps one attribute and fills
+    the shapes without it with its default (0, as a rule): a rig with pscale
+    beside one with width, curves with no width beside hair with one, got
+    no width at all."""
+    sources = set()
+    for geo in geos:
+        source = width_source([geo])
+        if source is None and not _takes_widths(geo):
+            continue
+        sources.add(None if source is None else source[:2])
+    return len(sources) > 1
+
+
+def normalize_widths(merged, geos, missing=MISSING_WIDTH) -> bool:
+    """Put each shape's own widths (`read_widths`) on `merged`, `geos`
+    merged by two Unpack SOPs (one point and vertex each, in that order),
+    as `width`, which a SOP Import reads first, when the merge lost them
+    (`width_conflict`): on the vertices when a shape reads vertex widths
+    (`vertex_widths`; a joint keeps both its widths), else on the points.
+    The static import (`rest_gate`) and the full import of a frame whose
+    topology changed (`current_widths`) both read it, so they author what
+    `apply` copies every other frame. True when written."""
+    if not geos or not width_conflict(geos):
+        return False
+    per_vertex = vertex_widths(geos)
+    values = read_widths(geos, missing, per_vertex)
+    to = 'vertex' if per_vertex else 'point'
+    if values is None or len(values) != merged.intrinsicValue(f'{to}count'):
+        return False
+    for kind in ('point', 'vertex'):  # one class per name: drop the other
+        attrib = getattr(merged, _FIND[kind])('width')
+        if attrib is not None and (kind != to or attrib.size() != 1
+                                   or _enum_name(attrib.dataType()) != 'Float'):
+            attrib.destroy()
+    if getattr(merged, _FIND[to])('width') is None:
+        merged.addAttrib(getattr(hou.attribType, 'Vertex' if per_vertex else 'Point'),
+                         'width', 0.0)
+    getattr(merged, f'set{to.capitalize()}FloatAttribValuesFromString')(
+        'width', np.ascontiguousarray(values, dtype=np.float32).tobytes())
+    return True
+
+
+def missing_width(import_node) -> float:
+    """The Set Missing Widths of `import_node` (the static import)."""
+    parm = import_node.parm('setmissingwidths') if import_node is not None else None
+    return float(parm.eval()) if parm is not None else MISSING_WIDTH
+
+
+def read_points(geo, unpacked_node=None, vertex_normals=False, widths=False,
+                missing=MISSING_WIDTH) -> dict:
     """{'P': (n, 3) float32, 'N': (n, 3) or None, 'vN': (vertices, 3) or
-    None} for `geo` as two Unpack SOPs would lay it out. 'vN' (vertex N) is
-    read only when `vertex_normals` asks for it. Packed shapes are read
-    where they are; anything else is read from `unpacked_node`'s cook
-    (points_sops/CURRENT)."""
+    None, 'W': float32 or None} for `geo` as two Unpack SOPs would lay it
+    out. 'vN' (vertex N) is read only when `vertex_normals` asks for it,
+    'W' (`read_widths`, `missing` for a shape without) only when `widths`
+    does: 'point' one per point, 'vertex' one per vertex (`widths_mode`).
+    Packed shapes are read where they are; anything else is read from
+    `unpacked_node`'s cook (points_sops/CURRENT)."""
+    per_vertex = widths == 'vertex'
+
     def flat(source):
         normals = _float3(source, 'N')
         vertex = _vertex_float3(source, 'N') if vertex_normals else None
@@ -240,6 +440,7 @@ def read_points(geo, unpacked_node=None, vertex_normals=False) -> dict:
             'P': _float3(source, 'P'),
             'N': None if normals is None else _filled(normals, source, False),
             'vN': None if vertex is None else _filled(vertex, source, True),
+            'W': read_widths([source], missing, per_vertex) if widths else None,
         }
     if not _has_packed(geo):
         return flat(geo)
@@ -257,6 +458,7 @@ def read_points(geo, unpacked_node=None, vertex_normals=False) -> dict:
         'P': np.concatenate(points) if points else np.zeros((0, 3), np.float32),
         'N': normals,
         'vN': vertex,
+        'W': read_widths(leaves, missing, per_vertex) if widths else None,
     }
 
 
@@ -311,9 +513,11 @@ def point_map(stage) -> dict:
     'vindex' / 'vbounds': the same for vertex numbers (a prim without the
     vertex stamp has an empty run), 'normals': [None (none authored) or
     `normals_kind`], 'frozen': [Sdf.Path] (the prims whose normals are
-    'frozen'), 'widths': [VtArray or None], 'kinds': [str]}"""
+    'frozen'), 'widths': [VtArray or None], 'width_offsets': [int array or
+    None: `width_offsets`], 'kinds': [str]}"""
     from pxr import UsdGeom
     paths, runs, vruns, normals, widths, kinds = [], [], [], [], [], []
+    offsets = []
     for prim in stage.Traverse():
         if not prim.IsA(UsdGeom.PointBased): continue
         numbers = _stamp_numbers(prim, STAMP_PRIMVAR)
@@ -332,10 +536,21 @@ def point_map(stage) -> dict:
         if prim.IsA(UsdGeom.Mesh):
             kinds.append('mesh')
             widths.append(None)
+            offsets.append(None)
         else:
             kinds.append('curves' if prim.IsA(UsdGeom.Curves) else 'points')
             width_attr = prim.GetAttribute('widths')
-            widths.append(width_attr.Get() if width_attr else None)
+            value = width_attr.Get() if width_attr else None
+            widths.append(value)
+            counts = None
+            if prim.IsA(UsdGeom.Curves):
+                counts = UsdGeom.Curves(prim).GetCurveVertexCountsAttr().Get()
+            interpolation = (width_attr.GetMetadata('interpolation') or 'vertex'
+                             if width_attr else None)
+            offsets.append(None if value is None else width_offsets(
+                interpolation, len(value), len(numbers),
+                None if counts is None else list(counts),
+            ))
     index = np.concatenate(runs) if runs else np.zeros(0, np.int64)
     vindex = np.concatenate(vruns) if vruns else np.zeros(0, np.int64)
     return {
@@ -347,8 +562,28 @@ def point_map(stage) -> dict:
         'normals': normals,
         'frozen': [path for path, kind in zip(paths, normals) if kind == 'frozen'],
         'widths': widths,
+        'width_offsets': offsets,
         'kinds': kinds,
     }
+
+
+def width_offsets(interpolation, size, points, curve_counts=None):
+    """Which of a prim's points `apply` reads each authored width from, its
+    widths `size` long with `interpolation` over `points` points (curves
+    with `curve_counts` points each): every point for per point widths
+    (`vertex`, or `varying` the same length), each curve's first point for
+    per curve ones (`uniform`; a curve's points share its primitive width),
+    the first point for one width (`constant`). None when the size does not
+    fit the interpolation: those widths keep the first frame's."""
+    if interpolation in ('vertex', 'varying') and size == points:
+        return np.arange(points, dtype=np.int64)
+    if interpolation == 'uniform' and curve_counts is not None:
+        if size == len(curve_counts) and sum(curve_counts) == points:
+            return np.cumsum([0] + list(curve_counts[:-1]), dtype=np.int64)[:size]
+        return None
+    if interpolation in ('constant', 'uniform') and size == 1 and points > 0:
+        return np.zeros(1, np.int64)
+    return None
 
 
 def needs_vertex_normals(mapping) -> bool:
@@ -356,8 +591,40 @@ def needs_vertex_normals(mapping) -> bool:
     return 'vertex' in mapping['normals']
 
 
+def needs_widths(mapping) -> bool:
+    """Whether any mapped prim (curves, points) has widths that follow."""
+    return any(offsets is not None for offsets in mapping.get('width_offsets', ()))
+
+
+def _vertex_run(mapping, i) -> bool:
+    """Whether mapped prim `i` carries a vertex number for each of its
+    points (a curve's points are its vertices: a SOP Import gives each
+    curve its own copy of a point two curves share)."""
+    vbounds, bounds = mapping['vbounds'], mapping['bounds']
+    vcount = int(vbounds[i + 1] - vbounds[i])
+    return vcount > 0 and vcount == int(bounds[i + 1] - bounds[i])
+
+
+def widths_mode(mapping):
+    """How `apply` reads widths for `mapping`: 'vertex' (one per vertex)
+    when the static import carried vertex numbers on a prim with widths
+    that follow (`stamp_vertices` stamps them where widths are on the
+    vertices), 'point' when only point numbers, False with no widths to
+    follow."""
+    offsets = mapping.get('width_offsets', ())
+    with_widths = [i for i, o in enumerate(offsets) if o is not None]
+    if not with_widths:
+        return False
+    return 'vertex' if any(_vertex_run(mapping, i) for i in with_widths) else 'point'
+
+
 def _extent(kind, points, widths):
     from pxr import Gf, UsdGeom, Vt
+    if widths is not None and len(widths) != len(points):
+        # one width, or per curve: the widest bounds every point (Points'
+        # ComputeExtent wants one per point)
+        widths = (Vt.FloatArray([float(max(widths))] * len(points))
+                  if len(widths) else None)
     if kind == 'mesh' or widths is None or len(points) == 0:
         if len(points) == 0:
             return Vt.Vec3fArray()
@@ -372,13 +639,18 @@ def _extent(kind, points, widths):
 
 
 def author_frame(layer, mapping, points, normals, frame, expected_count,
-                 vertex_normals=None, expected_vertices=None) -> None:
+                 vertex_normals=None, expected_vertices=None, widths=None,
+                 widths_per_vertex=False) -> None:
     """Write every mapped prim's points, extent and (where the static
-    import authored them) normals at `frame` into `layer`: per point from
-    `normals` (point N), per face-vertex from `vertex_normals` (vertex N),
-    as `point_map` says for each prim. TopologyChanged when `points` is not
+    import authored them) normals and widths at `frame` into `layer`:
+    normals per point from `normals` (point N), per face-vertex from
+    `vertex_normals` (vertex N), widths from `widths` (one per dive point,
+    or per dive vertex with `widths_per_vertex`: `read_widths`) read at the
+    prim's `width_offsets`, as `point_map` says for each prim; the extent
+    takes this frame's widths. Per vertex, a prim without a vertex number
+    per point keeps its widths. TopologyChanged when `points` is not
     `expected_count` long (the first frame's count), or `vertex_normals`
-    not `expected_vertices`."""
+    (or per vertex widths) not `expected_vertices`."""
     from pxr import Sdf, Vt
 
     def attribute(spec, name, type_name):
@@ -401,6 +673,15 @@ def author_frame(layer, mapping, points, normals, frame, expected_count,
     posed = points[index]
     posed_normals = normals[index] if normals is not None else None
     posed_vertex = vertex_normals[mapping['vindex']] if per_vertex else None
+    if widths is not None:
+        want = expected_vertices if widths_per_vertex else len(points)
+        if want is not None and len(widths) != want:
+            raise TopologyChanged()
+    posed_widths = None
+    if widths is not None:
+        posed_widths = widths[mapping['vindex'] if widths_per_vertex else index]
+    width_bounds = mapping['vbounds'] if widths_per_vertex else mapping['bounds']
+    width_offsets = mapping.get('width_offsets') or [None] * len(mapping['paths'])
     bounds, vbounds = mapping['bounds'], mapping['vbounds']
     with Sdf.ChangeBlock():
         for i, path in enumerate(mapping['paths']):
@@ -411,9 +692,21 @@ def author_frame(layer, mapping, points, normals, frame, expected_count,
                 attribute(spec, 'points', Sdf.ValueTypeNames.Point3fArray).path,
                 frame, Vt.Vec3fArray.FromNumpy(np.ascontiguousarray(run)),
             )
+            extent_widths = mapping['widths'][i]
+            offsets = width_offsets[i]
+            if widths_per_vertex and not _vertex_run(mapping, i):
+                offsets = None
+            if offsets is not None and posed_widths is not None:
+                run_widths = np.ascontiguousarray(
+                    posed_widths[int(width_bounds[i]):int(width_bounds[i + 1])])
+                layer.SetTimeSample(
+                    attribute(spec, 'widths', Sdf.ValueTypeNames.FloatArray).path,
+                    frame, Vt.FloatArray.FromNumpy(np.ascontiguousarray(run_widths[offsets])),
+                )
+                extent_widths = Vt.FloatArray.FromNumpy(run_widths)
             layer.SetTimeSample(
                 attribute(spec, 'extent', Sdf.ValueTypeNames.Float3Array).path,
-                frame, _extent(mapping['kinds'][i], run, mapping['widths'][i]),
+                frame, _extent(mapping['kinds'][i], run, extent_widths),
             )
             kind = mapping['normals'][i]
             if kind == 'point' and posed_normals is not None:
@@ -527,12 +820,16 @@ def apply(lop_node) -> None:
         if add_warning is not None:
             add_warning(frozen_message(mapping['frozen']))
     per_vertex = needs_vertex_normals(mapping)
-    read = read_points(geo, sops.node(CURRENT), vertex_normals=per_vertex)
+    mode = widths_mode(mapping)
+    read = read_points(geo, sops.node(CURRENT), vertex_normals=per_vertex,
+                       widths=mode, missing=missing_width(static_node))
     frame = hou.frame()
     paths = list(mapping['paths'])
     try:
         author_frame(layer, mapping, read['P'], read['N'], frame, expected,
-                     read['vN'], rest_vertex_count(sops) if per_vertex else None)
+                     read['vN'],
+                     rest_vertex_count(sops) if per_vertex or mode == 'vertex' else None,
+                     widths=read['W'], widths_per_vertex=mode == 'vertex')
     except TopologyChanged:
         paths += author_full_frame(layer, _full_layer(lop_node), paths, frame)
     sample_defaults(layer, paths, frame)
@@ -688,13 +985,15 @@ def rest_vertex_count(sops) -> int | None:
 def stamp_vertices(geo) -> bool:
     """Stamp each vertex's number (`__th_vtx`, in the order `read_points`
     reads vertex N) and the vertex count on the static import's geometry
-    when it has vertex N, as `points_sops/stamp` stamps the points: the
-    static import carries the numbers to the stage (faceVarying), so
-    `apply` copies each frame's vertex N in the SOP Import's own order.
-    Geometry without vertex N is left as it is. True when stamped."""
-    if geo.findVertexAttrib('N') is None:
+    when it has vertex N or vertex `width`, as `points_sops/stamp` stamps
+    the points: the static import carries the numbers to the stage
+    (faceVarying on a mesh, one per point on a curve, whose points are its
+    vertices), so `apply` copies each frame's vertex N and vertex widths in
+    the SOP Import's own order: a joint two curves share keeps each curve's
+    width. Geometry with neither is left as it is. True when stamped."""
+    if geo.findVertexAttrib('N') is None and _scalar_attrib(geo, 'vertex', 'width') is None:
         return False
-    count = len(geo.vertexFloatAttribValuesAsString('N')) // 12
+    count = geo.intrinsicValue('vertexcount')
     if geo.findVertexAttrib(VERTEX_STAMP) is None:
         geo.addAttrib(hou.attribType.Vertex, VERTEX_STAMP, 0)
     geo.setVertexIntAttribValuesFromString(
@@ -823,10 +1122,28 @@ def rest_gate(sop_node) -> None:
         if rest is None:
             raise hou.NodeError('\n'.join(build.errors()) or 'th::animate: no rest geometry.')
         rest = rest.freeze()
+        leaves = _packed_leaves(geo) if _has_packed(geo) else None
+        normalize_widths(rest, leaves, missing_width(static_import))
         stamp_vertices(rest)
         cached = _rest_cache[key] = (signature, rest)
     geo.clear()
     geo.merge(cached[1])
+
+
+def current_widths(sop_node) -> None:
+    """The `current_widths` Python SOP before CURRENT: the dive's frame
+    unpacked (what `full_import` imports on a frame whose topology changed,
+    and what `read_points` reads when the shapes cannot be read where they
+    are) with each shape's own widths where the merge lost them
+    (`normalize_widths`), as the static import has them."""
+    geo = sop_node.geometry()
+    placed = sop_node.node(f'../{PLACED}') or sop_node.node(f'../{SCENE}')
+    packed = placed.geometry() if placed is not None else None
+    if packed is None or not _has_packed(packed):
+        return
+    leaves = _packed_leaves(packed)
+    if leaves:
+        normalize_widths(geo, leaves, missing_width(sop_node.node('../../static_import')))
 
 
 def remainder_shapes(sop_node) -> None:

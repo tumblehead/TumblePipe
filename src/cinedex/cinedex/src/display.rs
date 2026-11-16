@@ -22,6 +22,62 @@ impl Display {
     pub(crate) fn lut(&mut self, media: &Media) -> Result<Option<Arc<Lut>>, String> {
         media.colour_space().map(|cs| self.colour.lut(cs, &self.display, &self.view)).transpose()
     }
+
+    /// Show through the config's display `index` (keeping the view when it
+    /// has it, else its first); whether there is one.
+    pub(crate) fn pick_display(&mut self, index: usize) -> bool {
+        let Some(display) = self.colour.displays().get(index).cloned() else { return false };
+        self.display = display;
+        let views = self.colour.views(&self.display);
+        if !views.contains(&self.view)
+            && let Some(first) = views.first()
+        {
+            self.view = first.clone();
+        }
+        true
+    }
+
+    /// Show through the display's view `index`; whether there is one.
+    pub(crate) fn pick_view(&mut self, index: usize) -> bool {
+        let Some(view) = self.colour.views(&self.display).get(index).cloned() else { return false };
+        self.view = view;
+        true
+    }
+}
+
+/// The bar under the picture, the editor's and a preview window's alike:
+/// `leading` (the editor's AOV and layer choices, else empty), then the
+/// OCIO display and view, and the exposure. Out of keyboard focus, so the
+/// player's keys keep working after a pick.
+pub(crate) fn display_bar<M: 'static>(
+    display: &Display,
+    leading: Row<M>,
+    on_display: fn(usize) -> M,
+    on_view: fn(usize) -> M,
+    on_exposure: fn(f32) -> M,
+) -> Element<M> {
+    use crate::look;
+    let displays = display.colour.displays();
+    let views = display.colour.views(&display.display);
+    let d = displays.iter().position(|d| *d == display.display).unwrap_or(0);
+    let v = views.iter().position(|v| *v == display.view).unwrap_or(0);
+    let label = |w: String| text(w).font_size(13.0).color(look::quiet());
+    let controls = leading
+        .spacing(8.0)
+        .align_y(Vertical::Center)
+        .push(label("Display".into()))
+        .push(combo_box(Id::new("display"), displays).selected(d).on_select(on_display).width(Length::fixed(170.0)).focusable(false))
+        .push(combo_box(Id::new("view"), views).selected(v).on_select(on_view).width(Length::fixed(200.0)).focusable(false))
+        .push(space(Length::fixed(16.0), Length::Shrink))
+        .push(label(format!("Exposure {:+.1}", display.exposure)))
+        .push(
+            slider(Id::new("exposure"), -8.0..=8.0, display.exposure, on_exposure)
+                .step(0.5)
+                .width(Length::fixed(120.0))
+                .height(20.0)
+                .focusable(false),
+        );
+    container(controls).padding(Padding::from([6.0, 8.0])).width(Length::Fill).align_x(Horizontal::Center).into()
 }
 
 /// A live playblast's frames (`live`) over a take's movie (`under`), which

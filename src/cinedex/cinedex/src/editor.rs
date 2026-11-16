@@ -1417,6 +1417,7 @@ impl Editor {
             on_drag: || Message::Drag,
             on_op: Message::Edit,
             on_menu: Message::ClipMenu,
+            editable: true,
         };
         let height = program.height().max(tracks::RULER + tracks::ROW);
         let canvas = interactive_canvas(Id::new("edit tracks"), program).width(Length::Fill).height(Length::fixed(height));
@@ -1691,11 +1692,9 @@ impl Editor {
         container(page.height(Length::Fill)).background(look::panel()).width(Length::Fill).height(Length::Fill).into()
     }
 
+    /// The bar under the picture (`display::display_bar`), led by what of
+    /// the take on screen shows.
     fn display_controls(&self) -> Element<Message> {
-        let displays = self.display.colour.displays();
-        let views = self.display.colour.views(&self.display.display);
-        let d = displays.iter().position(|d| *d == self.display.display).unwrap_or(0);
-        let v = views.iter().position(|v| *v == self.display.view).unwrap_or(0);
         let label = |w: String| text(w).font_size(13.0).color(look::quiet());
         let mut controls = row().spacing(8.0).align_y(Vertical::Center);
         // What of the take on screen shows (#58), view only: a render's AOV,
@@ -1743,26 +1742,7 @@ impl Editor {
                 controls = controls.push(space(Length::fixed(16.0), Length::Shrink));
             }
         }
-        let controls = controls
-            .push(label("Display".into()))
-            .push(
-                combo_box(Id::new("display"), displays)
-                    .selected(d)
-                    .on_select(Message::Display)
-                    .width(Length::fixed(170.0))
-                    .focusable(false),
-            )
-            .push(combo_box(Id::new("view"), views).selected(v).on_select(Message::View).width(Length::fixed(200.0)).focusable(false))
-            .push(space(Length::fixed(16.0), Length::Shrink))
-            .push(label(format!("Exposure {:+.1}", self.display.exposure)))
-            .push(
-                slider(Id::new("exposure"), -8.0..=8.0, self.display.exposure, Message::Exposure)
-                    .step(0.5)
-                    .width(Length::fixed(120.0))
-                    .height(20.0)
-                    .focusable(false),
-            );
-        container(controls).padding(Padding::from([6.0, 8.0])).width(Length::Fill).align_x(Horizontal::Center).into()
+        crate::display::display_bar(&self.display, controls, Message::Display, Message::View, Message::Exposure)
     }
 
     fn burnin(&self) -> Option<Burnin> {
@@ -2516,6 +2496,7 @@ impl Application for Editor {
         match message {
             Message::Start if !self.started => {
                 self.started = true;
+                crate::app_icon::apply();
                 let resolve = self.changed();
                 let mut commands = vec![resolve, self.refresh_bins()];
                 if let Some((shot, frame)) = self.pending_view.take() {
@@ -2530,6 +2511,7 @@ impl Application for Editor {
             }
             Message::Start => {}
             Message::Wake => {
+                crate::app_icon::apply();
                 self.collect_proxies();
                 self.refresh_shown();
             }
@@ -2920,18 +2902,12 @@ impl Application for Editor {
                 }
             }
             Message::Display(index) => {
-                if let Some(d) = self.display.colour.displays().get(index).cloned() {
-                    self.display.display = d;
-                    let views = self.display.colour.views(&self.display.display);
-                    if !views.contains(&self.display.view) {
-                        self.display.view = views[0].clone();
-                    }
+                if self.display.pick_display(index) {
                     self.set_display();
                 }
             }
             Message::View(index) => {
-                if let Some(v) = self.display.colour.views(&self.display.display).get(index).cloned() {
-                    self.display.view = v;
+                if self.display.pick_view(index) {
                     self.set_display();
                 }
             }

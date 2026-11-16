@@ -6,7 +6,8 @@ answer is not a toast and never a window opening on its own: when a batch
 of the artist's own ends, the Farm Manager quick action takes one short
 pulse and keeps a dot at its foot (accent when something finished, danger
 when something failed) until the artist looks; one line goes to Houdini's
-status bar, and to the OS when Houdini is not in front. A click on the
+status bar, and to the OS when Houdini is not in front (where its taskbar button also flashes, on
+the screen Houdini is on: ``asset_browser.farm_jobs.flash_taskbar``). A click on the
 button opens a popover, "Finished since you looked", listing them.
 
 This module is the Qt-free half: which batches count, when one has ended,

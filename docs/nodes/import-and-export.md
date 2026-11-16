@@ -559,8 +559,8 @@ Source: [`otls/lop_th.shot_sequencer.1.0`](../../otls/lop_th.shot_sequencer.1.0/
 ## `th::animate` (LOP)
 
 A dive-in SOP network (`anim_dive`) imported as animated USD over the
-incoming stage: topology animated, `P N visibility bounds Cd Alpha` and
-`transform` only, no material binding, and kinds set by depth (assembly /
+incoming stage: topology animated, `P N visibility bounds Cd Alpha`,
+`width`, `pscale` and `transform` only, no material binding, and kinds set by depth (assembly /
 component / scope, as `set_kinds` does). Cameras keep their type at every
 depth. At the item depth (`/<category>/<item>`) the kind is set but not the
 type, and BasisCurves are left alone: a skeleton the rig outputs as curves
@@ -696,6 +696,22 @@ A rig that has none of its own gets them computed: its point normals copied
 to each vertex, or else what a Normal SOP with its defaults gives. Up to
 1.107 those rigs got zero normals, and Karma drew them as a flat cut-out
 (XPU) or flat black (CPU).
+
+Widths follow too. Hair, curves and point clouds get the widths a SOP
+Import reads: a point or vertex `width`, else a primitive or detail
+`width`, else twice a point `pscale` (a radius), per point, per curve or one
+for the prim as the rig has it, and they change with the frame when the rig
+changes them. A shape with none gets the missing width, 0.01. Vertex widths
+stay per vertex: where two curves share a point (a joint), each curve keeps
+its own width there, on every frame and across a change of topology. When the shot's rigs
+read their widths from different attributes (one rig with `pscale`, another
+with `width`, curves with no width beside hair with one), each keeps its
+own: merging them as Houdini does would give the others the
+attribute's default, usually 0, and they would not render. That holds for
+the Scene Invoke's packed folders; a dive whose own SOPs merge the rigs
+(SOPs after a Scene Invoke on Unpacked Geometry) exports what that merge
+made. Up to 1.109 the node read neither `width` nor `pscale`, so every curve
+came out at 0.01 whatever its rig said.
 
 - **Packed Folders.** The node unpacks the Scene Invoke's packed folders
   itself, and reads only the points from them on each frame. That is much

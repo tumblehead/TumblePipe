@@ -16,6 +16,9 @@
 //! A drag becomes one `th_edit` op when it is let go (see [`op_for`]); until
 //! then its outline shows where it goes. A right press names the clip to the
 //! take menu around the tracks.
+//!
+//! Not `editable` (a preview window's frames, `frames_view`), the clips are
+//! only shown: a press or drag anywhere right of the names scrubs.
 
 use primer::Horizontal as H;
 use primer::ImageHandle;
@@ -178,6 +181,9 @@ pub struct Tracks<Message> {
     pub on_op: fn(Op<Source>) -> Message,
     /// A right press on a clip, just before the take menu opens.
     pub on_menu: fn(ClipRef) -> Message,
+    /// Clips can be selected, dragged and right-clicked; else every press
+    /// scrubs.
+    pub editable: bool,
 }
 
 impl<Message> Tracks<Message> {
@@ -417,7 +423,7 @@ impl<Message> Program<Message> for Tracks<Message> {
                 if local.x < HEADER {
                     return (Status::Captured, None);
                 }
-                if local.y < RULER {
+                if local.y < RULER || !self.editable {
                     state.scrubbing = true;
                     return (Status::Captured, Some((self.on_seek)(self.position_at(local.x, w))));
                 }
@@ -435,6 +441,7 @@ impl<Message> Program<Message> for Tracks<Message> {
                     }
                 }
             }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) if !self.editable => (Status::Ignored, None),
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => match cursor.position_relative_to(bounds) {
                 Some(local) => match self.hit(local.x, local.y, w, false) {
                     Some((row, index, _)) => (Status::Ignored, Some((self.on_menu)(ClipRef { track: self.rows[row].track, index }))),
@@ -472,6 +479,9 @@ impl<Message> Program<Message> for Tracks<Message> {
             return mouse::Interaction::Grabbing;
         }
         let Some(local) = cursor.position_relative_to(bounds) else { return mouse::Interaction::Idle };
+        if !self.editable {
+            return mouse::Interaction::Pointer;
+        }
         match self.hit(local.x, local.y, bounds.width, state.modifiers.alt) {
             Some((_, _, Part::Head | Part::Tail | Part::RollHead | Part::RollTail)) => mouse::Interaction::ResizeHorizontal,
             Some(_) => mouse::Interaction::Grab,

@@ -265,7 +265,10 @@ stage prints for a failure are lost in the pipe. The same test pins both;
 `verify_value_ladder` and `verify_edit_browser` show the ending. A harness
 that fails only sometimes is worth running in a loop before blaming the
 code it checks: an exit code of 3221225477 after its "ALL OK" is a
-teardown crash, not a failed check.
+teardown crash, not a failed check. A *hython* harness (the `hython`
+stage) is the other way round: it ends with `sys.exit`, because `os._exit`
+segfaults hython in `UT_Exit` (exit 139), which the stage reads as a
+failure.
 
 Write escapes, never the raw byte: `tests/test_source_control_chars.py`
 fails on any control character other than tab, newline and carriage return
@@ -852,10 +855,30 @@ The tests:
   it), held to the Python by `test_previews_parity` through `pipe_lines`
   (change the reading rules on both sides, in its module docs);
   `cinedex/src/previews.rs` is what the editor makes of them;
-  `cinedex --frames <path>` opens
-  `frames_view.rs`, a window of stills (a batch's ready previews, a
-  folder's frames, or one frame) that reuses `video.rs` and `colour.rs`
-  and opens no project. The editor reads the batches every 5 s off the UI
+  `cinedex --frames <path> [--fps N] [--expect <frame list>]` opens
+  `frames_view.rs`, the preview window (a batch's ready previews, a
+  folder's frames, or one frame), which opens no project. `reel.rs` lays
+  the frames out as slots (`Fill`: a batch's back to back, a folder's
+  first-to-last span or the `--expect` list, gaps for the missing) and
+  holds the `Transport` (play, loop, step, fps clock, waiting on a frame
+  not decoded yet instead of skipping it); the window plays them through
+  the editor's `Engine` (one EXR source per run of frames on disk), draws
+  the timeline with `tracks.rs` (`editable: false`) and the display bar
+  with `display::display_bar`, and rescans the folder every 2 s so a
+  landing frame fills its gap. `glyph.rs` draws the transport icons. The
+  Farm Manager's *Preview in Cinedex* passes `--fps` and `--expect` from
+  `farm.manager.frames_preview.launch_options`; the frame list is read by
+  `th_playlist::frame_list` (no steps in `FrameRanges`, so a separate
+  grammar), held to the Python by `test_expect_parity`.
+  The app icon: `scripts/cinedex_icon.py` draws it (stdlib only; one shape
+  list to SVG and to PNG/ICO, small sizes simplified) into
+  `src/cinedex/cinedex/icon/`; rerun it after changing the drawing
+  (`--check` says whether the committed files are current, comparing PNGs
+  by pixels; `test_cinedex_icon` runs it in the suite). `build.rs`
+  embeds `icon/cinedex.ico` as the Windows executable's resource
+  (`embed-resource`), and `app_icon.rs` sets it on each window at run time
+  (Windows `WM_SETICON`, X11 `_NET_WM_ICON`, the macOS dock icon; Wayland
+  takes its icon from a `.desktop` file, which is not installed). The editor reads the batches every 5 s off the UI
   thread (`Message::PollPreviews`) and `tracks.rs` draws the **Preview
   ready** badge on a shot clip while one of its previews is of a
   department and version it has no take of. The Farm Manager's **Open in

@@ -396,7 +396,8 @@ def verify_preview_in_cinedex(app: QApplication, win, root: Path, project: str) 
     folder = make_batch(
         root, f'{project} render entity:/shots/sq010/sh050 tester',
         [[queue.COMPLETED]] * len(jobs), [[]] * len(jobs),
-        [{'name': name, 'script': f'{workers}/{kind}.py', 'outputs': [str(out)]} for name, kind, out in jobs],
+        [{'name': name, 'script': f'{workers}/{kind}.py', 'outputs': [str(out)], 'frames': '1001-1010'}
+         for name, kind, out in jobs],
     )
     batch_id = f'local:{folder.name}'
     win._mine.setChecked(False)
@@ -434,6 +435,8 @@ def verify_preview_in_cinedex(app: QApplication, win, root: Path, project: str) 
 
     started = []
     saved = (review_playlist.find_player, review_playlist.project_ocio, review_playlist._start)
+    saved_fps = frames_preview.row_fps
+    frames_preview.row_fps = lambda row: 25  # the shot's fps, as the project config would say
     review_playlist.find_player = lambda: Path('cinedex')
     review_playlist.project_ocio = lambda: 'config.ocio'
     review_playlist._start = lambda player, argv: started.append(argv)
@@ -452,8 +455,10 @@ def verify_preview_in_cinedex(app: QApplication, win, root: Path, project: str) 
         finally:
             mw.desktop.open_in_file_browser = saved_open
         preview.trigger()
-        check('it starts Cinedex on the beauty frames, under the folder Open output folder opens',
-              started == [['cinedex', '--ocio', 'config.ocio', '--frames', str(render_v / 'beauty')]]
+        check('it starts Cinedex on the beauty frames, under the folder Open output folder opens, '
+              "at the shot's fps, expecting the job's frames",
+              started == [['cinedex', '--ocio', 'config.ocio', '--frames', str(render_v / 'beauty'),
+                           '--fps', '25', '--expect', '1001-1010']]
               and opened == [render_v], f'{started} / {opened}')
 
         _, preview = menu_for(f'{batch_id}/3')
@@ -477,14 +482,14 @@ def verify_preview_in_cinedex(app: QApplication, win, root: Path, project: str) 
         _, preview = menu_for(batch_id)
         preview.trigger()
         check('the batch row opens the full render over the partial slapcomp',
-              preview.isEnabled() and started and started[-1][-1] == str(render_v / 'beauty'), str(started))
+              preview.isEnabled() and started and started[-1][4] == str(render_v / 'beauty'), str(started))
         (denoise_v / 'beauty').mkdir()
         (denoise_v / 'beauty' / 'sh050_main_beauty_v0002.1001.exr').write_bytes(b'')
         started.clear()
         _, preview = menu_for(batch_id)
         preview.trigger()
         check('once denoised frames land, the batch row opens the denoise',
-              started and started[-1][-1] == str(denoise_v / 'beauty'), str(started))
+              started and started[-1][4] == str(denoise_v / 'beauty'), str(started))
         comp_v.mkdir(parents=True)
         (comp_v / 'sh050_comp_v0001.1001.exr').write_bytes(b'')
         _, preview = menu_for(f'{batch_id}/7')
@@ -493,7 +498,7 @@ def verify_preview_in_cinedex(app: QApplication, win, root: Path, project: str) 
         _, preview = menu_for(batch_id)
         preview.trigger()
         check('once composited frames land, the batch row opens the composite',
-              started and started[-1][-1] == str(comp_v), str(started))
+              started and started[-1][4] == str(comp_v), str(started))
 
         warnings = []
 
@@ -517,6 +522,7 @@ def verify_preview_in_cinedex(app: QApplication, win, root: Path, project: str) 
         check('no $OCIO: a message box says so', len(warnings) == 1 and '$OCIO' in warnings[0][2], str(warnings))
     finally:
         (review_playlist.find_player, review_playlist.project_ocio, review_playlist._start) = saved
+        frames_preview.row_fps = saved_fps
         mw.QMenu = saved_menu
 
 

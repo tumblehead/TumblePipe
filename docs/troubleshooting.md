@@ -444,6 +444,17 @@ authored normals, which hid it. Update TumblePipe: vertex normals follow
 now. If the node warns that normals "stay as they were at the first frame",
 the rig puts N on its primitives: put it on the points or vertices instead.
 
+### Hair and curves come out thin after `th::animate`, all one width
+
+Every curve in the animation layer (hair, fur guides, whiskers) has the
+same small width, 0.01, whatever the rig put on it. Up to 1.109
+`th::animate` read neither `width` nor `pscale` from the rigs, so each curve
+got the missing width, and widths that change over the shot would have kept
+the first frame's anyway. Update TumblePipe and publish the shot again:
+the widths come through per point, per curve or per prim, every frame. If
+one rig's curves still come out at 0.01, it has no `width` or `pscale` of
+its own: add one in the rig.
+
 ### A render holds the first pose to the end, but rendered from a later frame it moves
 
 Some rigs change their own mesh as they pose: a cut, a boolean or a remesh

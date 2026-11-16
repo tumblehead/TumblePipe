@@ -1,7 +1,7 @@
 //! Answers questions about a project, one JSON request per stdin line and
 //! one JSON reply per stdout line, for `tests/test_pipe_parity.py` and
 //! `tests/test_live_parity.py`, `tests/test_previews_parity.py` and
-//! `tests/test_frame_list_parity.py`, which
+//! `tests/test_frame_list_parity.py` and `tests/test_expect_parity.py`, which
 //! ask Python the same and compare.
 //!
 //! The project is the one the request names (`project`, `pipeline`,
@@ -175,6 +175,8 @@ fn live_answer(request: &Value) -> Option<Result<Value, String>> {
         // The local farm's preview frames (#75, `test_previews_parity`):
         // a batch folder's ready previews, each with its summary and frame
         // files; one frame file of a pattern; the farm's folder.
+        // A job's frame list as `cinedex --expect` reads it: its frames.
+        "expect_frames" => text(request, "text").and_then(th_playlist::frame_list::parse_frame_list).map(|frames| json!(frames)),
         // A Frame List movie's `frame_ranges` tag as Cinedex reads it (#86):
         // its ranges and its pictures' frame numbers, in order.
         "frame_ranges" => text(request, "text").and_then(th_playlist::FrameRanges::parse).map(|list| {
