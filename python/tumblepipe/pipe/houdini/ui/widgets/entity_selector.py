@@ -394,7 +394,12 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         )
         self._grid.setMouseTracking(True)
         self._grid.setWrapping(True)
+        # Delegate and model belong to the grid, not the dialog: Qt deletes
+        # the dialog's children in creation order, and the grid is placed in
+        # its stack after these exist, so they were deleted first and the
+        # grid's PySide references to them dangled (util.qt_lifetime).
         self._delegate = _CardDelegate(self)
+        self._delegate.setParent(self._grid)
         self._grid.setItemDelegate(self._delegate)
         gap = get_scaled_preset('normal', 1.0)['card_gap']
         self._grid.setGridSize(self._delegate.card + QSize(gap, gap))
@@ -405,7 +410,7 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         """)
         self._grid.doubleClicked.connect(self._accept_index)
         self._grid.installEventFilter(self)
-        self._model = QStandardItemModel(self)
+        self._model = QStandardItemModel(self._grid)
         self._grid.setModel(self._model)
         self._grid.selectionModel().currentChanged.connect(self._on_card_changed)
         if self._multi:

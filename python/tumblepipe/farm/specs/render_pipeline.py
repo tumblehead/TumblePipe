@@ -18,7 +18,8 @@ config = {
         'tile_count': 'int',
         'first_frame': 'int',
         'last_frame': 'int',
-        'step_size': 'int',
+        'step_size': 'int',     # a shot's above 1 (Farm Submit's Step) is a
+                                # check render: never published, no composite
         'batch_size': 'int',
         'copy_to_edit': 'bool',
         'cut_range': ['int', 'int'],  # optional: the range minus its roll,
@@ -142,6 +143,8 @@ def is_valid_config(config) -> bool:
         if 'full_render' not in config['tasks']: return False
         # A multi-range render is not published: no comp follows it (#84).
         if frame_ranges.CONFIG_KEY in settings: return False
+        # Nor a stepped one (Farm Submit's Step): its frames have gaps.
+        if settings['step_size'] > 1: return False
         # It comps the frames this render makes, so its own frames (when it
         # names any) lie inside the render's.
         block = config['composite']

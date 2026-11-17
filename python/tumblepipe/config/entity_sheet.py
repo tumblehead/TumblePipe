@@ -537,6 +537,19 @@ class Inherited:
     layer_state: LayerState = _NO_LAYERS
 
 
+def natural_key(text: str) -> tuple:
+    """Sort key that orders number runs by value, and ignores case: sh9
+    before sh10, 030 before 061 before 080. Equal-valued runs (sh01, sh1)
+    fall back to the text, so the order is total."""
+    return (
+        tuple(
+            (0, int(part), '') if part.isdecimal() else (1, 0, part.casefold())
+            for part in re.split(r'(\d+)', text) if part
+        ),
+        text,
+    )
+
+
 @dataclass(frozen=True)
 class Base:
     """A project's assets or shots as :func:`load` read them."""
@@ -939,6 +952,21 @@ class Sheet:
             if row.group and row.group not in found:
                 found.append(row.group)
         return found
+
+    def sorted_groups(self) -> list[str]:
+        """:meth:`groups` in the order the editor lists them: names
+        naturally, so sq2 comes before sq10 and a new group sits where it
+        will after a reload, not after the last one."""
+        return sorted(self.groups(), key=natural_key)
+
+    def rows_in(self, group: str) -> list[Row]:
+        """``group``'s rows in the order the editor lists them: by name,
+        naturally (sh2 before sh10), however and whenever they were added.
+        Rows of one name (a rename in progress) keep their sheet order."""
+        return sorted(
+            (row for row in self._rows if row.group == group),
+            key=lambda row: natural_key(row.name),
+        )
 
     def names_in(self, group: str) -> set[str]:
         """Names ``group`` holds or will hold, stored and pending."""

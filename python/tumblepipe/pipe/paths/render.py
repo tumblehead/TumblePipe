@@ -42,6 +42,23 @@ def _load_frame_range(context_path: Path) -> Optional[BlockRange]:
         context['step_size']
     )
 
+def is_published(context_path: Path) -> bool:
+    """Whether the version whose ``context.json`` is ``context_path`` may be
+    read as the shot's render: False for a check render (Farm Submit's Step,
+    ``farm.pipelines.post_render.Shot.check_render``), which records
+    ``published: false``. Its frames are complete on its step and stay on
+    disk to view, but have gaps a comp, the edit or a daily cannot use."""
+    if not context_path.exists(): return True
+    return load_json(context_path).get('published', True) is not False
+
+def check_step(context: dict) -> Optional[int]:
+    """The step of a check render whose ``context.json`` reads ``context``
+    (its ``step_size``, 1 when it records none), None for a published
+    version (see :func:`is_published`)."""
+    if context.get('published', True) is not False: return None
+    step = context.get('step_size', 1)
+    return step if isinstance(step, int) and not isinstance(step, bool) else 1
+
 @dataclass(frozen=True)
 class AOV:
     path: Path
@@ -83,9 +100,16 @@ class Layer:
         if aov_name not in self.aovs: return None
         return self.aovs[aov_name].get_aov_frame_path(index_pattern)
 
+    def is_published(self) -> bool:
+        return is_published(self.path / 'context.json')
+
     def is_complete(self, expected_frame_range: Optional[BlockRange] = None) -> bool:
+        """Every frame of ``expected_frame_range`` is on disk; with none,
+        every frame the version records, and only for a published version
+        (a check render is never a complete render of the shot)."""
         frame_range = expected_frame_range
         if frame_range is None:
+            if not self.is_published(): return False
             frame_range = self.get_frame_range()
         if frame_range is None: return False
         if len(self.aovs) == 0:
@@ -109,6 +133,10 @@ class Render:
         layer_name: str,
         expected_frame_range: Optional[BlockRange] = None
         ) -> Optional[Layer]:
+        """The newest published version of ``layer_name`` complete over
+        ``expected_frame_range`` (by default its own). A check render is
+        never it, whatever range it is asked of: it is not the shot's
+        render (``is_published``)."""
         if layer_name not in self.layers: return None
         version_names = sorted(
             self.layers[layer_name].keys(),
@@ -116,6 +144,7 @@ class Render:
         )
         for version_name in reversed(version_names):
             layer = self.layers[layer_name][version_name]
+            if not layer.is_published(): continue
             if layer.is_complete(expected_frame_range):
                 return layer
         return None
@@ -164,6 +193,8 @@ class RenderContext:
                 layer = layer_versions[version_name]
                 frame_range = layer.get_frame_range()
                 if frame_range is None: continue
+                # A check render's frames have gaps: never synced
+                if not layer.is_published(): continue
                 return version_name, layer, frame_range
             return None
 
@@ -300,6 +331,36 @@ def get_aov_frame_path(
 ###############################################################################
 # Reading renders back
 ###############################################################################
+def get_check_render_step(
+    entity_uri: Uri,
+    render_department_name: str,
+    version_name: str,
+    purpose: str = 'render'
+    ) -> Optional[int]:
+    """The step of ``render_department_name``'s render ``version_name`` of
+    the entity when it is a check render (any of its layers' ``context.json``
+    says ``published: false``, the first by name that does), else None.
+
+    A render department's review movie (``paths.review``) shares its render
+    version's name, so this is how a review movie of a check render is told
+    apart (``th_pipe::discovery::check_steps``)."""
+    department_path = api.storage.resolve(
+        Uri.parse(f'{purpose}:/render') /
+        entity_uri.segments /
+        render_department_name
+    )
+    if not department_path.is_dir(): return None
+    for layer_path in sorted(department_path.iterdir(), key = lambda path: path.name):
+        context_path = layer_path / version_name / 'context.json'
+        try:
+            context = load_json(context_path)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(context, dict): continue
+        step = check_step(context)
+        if step is not None: return step
+    return None
+
 def get_render(
     entity_uri: Uri,
     render_department_name: str,

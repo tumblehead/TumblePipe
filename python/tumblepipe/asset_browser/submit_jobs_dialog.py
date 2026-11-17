@@ -87,6 +87,7 @@ from tumbletrove.asset_browser.core.theme import (
 from tumblepipe.config.department_off import applied_departments, read_disabled_departments
 from tumblepipe.farm.submit import grid as grid
 from tumblepipe.farm.submit import remembered
+from tumblepipe.util.qt_lifetime import release_kept_references
 from tumblepipe.farm.submit import review as submit_review
 from tumblepipe.farm.submit import status as farm_status
 from tumblepipe.farm.submit import camera as render_camera
@@ -108,6 +109,7 @@ from .farm_submit_ui import (
     ReviewSheet, Section, SubmissionView,
 )
 from .frame_timeline import FrameTimeline
+from . import tooltips
 from tumblepipe.farm.submit import frame_selection
 from tumblepipe.farm.submit.review import ReviewRow
 
@@ -1171,7 +1173,12 @@ class _ContextPane(QWidget):
             [self._noun[0].capitalize()]
             + [c.label for c in self._columns] + ["Warnings"]
         )
-        tree.setItemDelegate(_GridDelegate(self))
+        # Owned by the tree, not the pane: Qt deletes the pane's children in
+        # creation order, and a delegate deleted before its view leaves the
+        # view's PySide reference to it dangling (qt_lifetime).
+        delegate = _GridDelegate(self)
+        delegate.setParent(tree)
+        tree.setItemDelegate(delegate)
         tree.setSelectionMode(QAbstractItemView.NoSelection)
         tree.setFocusPolicy(Qt.NoFocus)
         tree.setExpandsOnDoubleClick(False)
@@ -1286,7 +1293,8 @@ class _ContextPane(QWidget):
     @staticmethod
     def _show_tip(event, text: str, widget: QWidget) -> None:
         if text:
-            QToolTip.showText(event.globalPos(), text, widget)
+            # A long Warnings cell wraps rather than spanning the screen.
+            QToolTip.showText(event.globalPos(), tooltips.wrapped(text), widget)
         else:
             QToolTip.hideText()
 
@@ -2384,8 +2392,23 @@ class _ContextPane(QWidget):
 
         self._rnd_first = self._spin('first_frame', -1_000_000, 1_000_000)
         self._rnd_last = self._spin('last_frame', -1_000_000, 1_000_000)
+        # The Step (Remy, 2026-11-17): every Nth frame, a farm override the
+        # dialog shows (no th:: node authors a shot render's step). Above 1
+        # the render is a check render: never published, so Copy to edit
+        # goes off (_apply_frame_list_disabled) and a Comp beside it is
+        # refused (resolve.entity_errors).
+        self._rnd_step = self._spin('render_step', 1, 1000)
+        self._rnd_step.setToolTip(
+            "Render every Nth frame of the range (1: every frame), counted "
+            "from the first frame, or from the first of each Frame list "
+            "range. Above 1 it is a check render: rendered, denoised and "
+            "made into a movie (each frame held until the next), but not "
+            "published: no daily, no Copy to edit, no Comp."
+        )
         frames_row = self._row(
-            self._rnd_first, "→", self._rnd_last, revert=('first_frame', 'last_frame'),
+            self._rnd_first, "→", self._rnd_last,
+            self._revert('first_frame', 'last_frame'),
+            "Step", self._rnd_step, revert=('render_step',),
         )
         form.addRow("Frames:", frames_row)
         # The Frame List (#84): only some ranges of each shot. Two or more
@@ -2411,14 +2434,20 @@ class _ContextPane(QWidget):
         self._rnd_frame_list_note.setWordWrap(True)
         self._rnd_frame_list_note.setStyleSheet(f"color: {TEXT_SECONDARY};")
 
-        def _frame_list_edited(*_a):
+        def _frame_list_noted(*_a):
             self._rnd_frame_list_note.setText(
-                resolve.frame_list_note(self._rnd_frame_list.text())
+                resolve.frame_list_note(self._rnd_frame_list.text(), self._render_step())
             )
             self._apply_frame_list_disabled()
+
+        def _frame_list_edited(*_a):
+            _frame_list_noted()
             self._changed()
 
         self._rnd_frame_list.textChanged.connect(_frame_list_edited)
+        # The step changes what the list renders, and what is published
+        # (the field's own registration recomputes the rows).
+        self._rnd_step.valueChanged.connect(_frame_list_noted)
         form.addRow("Frame list:", self._rnd_frame_list)
         # Pick the ranges on a timeline too (Remy, 2026-11-13): it writes
         # the field, and typing there redraws it.
@@ -2640,7 +2669,8 @@ class _ContextPane(QWidget):
     def _update_timelines(self, rows) -> None:
         """Show each timeline the frames of the rows its field applies to:
         the render's frames (rolls included, as the Frame list and the
-        render's Preview frames are read), the comp's frames on its step.
+        render's Preview frames are read) on its Step, the comp's frames
+        on its step.
         With rows of different ranges a timeline shows their union and
         says so; each row still reads the text against its own range (the
         Warnings column names what it drops)."""
@@ -2658,7 +2688,9 @@ class _ContextPane(QWidget):
         else:
             spans = [resolve.rendered_range(s) for _u, s, _w, _e in rows if s.get('render')]
             view = frame_selection.view(spans, noun)
-            render_step = 1
+            # The Step: the Preview frames timeline picks only frames on it,
+            # the Frame list's draws the frames each range renders.
+            render_step = self._render_step()
         for timeline in timelines:
             if timeline is not None:
                 timeline.set_view(view, render_step)
@@ -2970,9 +3002,12 @@ class _ContextPane(QWidget):
             resolve.CHANNEL_LIST_KEY: self._rnd_channels.checked_items(),
             'render_mode': self._render_mode() or 'full',
             'standalone': self._rnd_standalone.isChecked(),
-            # Off (not sent) while a multi-range Frame List disables it;
-            # the tick itself is kept for when the list is cleared.
-            'copy_to_edit': self._rnd_copy_edit.isChecked() and self._rnd_copy_edit.isEnabled(),
+            # Off (not sent) while a multi-range Frame List or a Step above
+            # 1 disables it; the tick itself is kept for when that ends.
+            'copy_to_edit': (
+                self._rnd_copy_edit.isChecked()
+                and 'copy_to_edit' not in self._render_disabled()
+            ),
             'preview_frame_list': self._rnd_preview_list.text(),
             # An asset's turntable renders the studio's frames (hidden there)
             'frame_list': '' if self._context == 'assets' else self._rnd_frame_list.text(),
@@ -2983,13 +3018,32 @@ class _ContextPane(QWidget):
             values['comp_preview_frame_list'] = self._comp_preview_list.text()
         return values
 
+    def _render_step(self) -> int:
+        """The Render's Step; 1 on an asset's tab (a turntable renders on
+        the studio's step, and the field is hidden there)."""
+        if self._context == 'assets':
+            return 1
+        return max(1, self._rnd_step.value())
+
+    def _render_disabled(self) -> dict[str, str]:
+        """``{key: why}`` for the Render settings the submit would ignore:
+        those a multi-range Frame List (``resolve.frame_list_disabled``) or
+        a Step above 1 (``resolve.step_disabled``) turn off."""
+        if self._context == 'assets':
+            return {}
+        return {
+            **resolve.step_disabled(self._render_step()),
+            **resolve.frame_list_disabled(self._rnd_frame_list.text()),
+        }
+
     def _apply_frame_list_disabled(self) -> None:
-        """Disable what a multi-range Frame List makes the submit ignore
-        (``resolve.frame_list_disabled``), its tooltip saying why; give
-        each back as it was (tick and tooltip) once the list is cleared or
-        is one range. No silent override: the artist sees the box off."""
+        """Disable what a multi-range Frame List or a Step above 1 makes the
+        submit ignore (:meth:`_render_disabled`), its tooltip saying why;
+        give each back as it was (tick and tooltip) once the list is
+        cleared or is one range and the step is 1. No silent override: the
+        artist sees the box off."""
         targets = getattr(self, '_frame_list_targets', {})
-        disabled = resolve.frame_list_disabled(self._rnd_frame_list.text())
+        disabled = self._render_disabled()
         for key, (widget, tooltip) in targets.items():
             why = disabled.get(key)
             widget.setEnabled(why is None)
@@ -3395,6 +3449,9 @@ class SubmitJobsDialog(QDialog):
         size = self.ui['size'] or [1600, 860]
         self.resize(*size)
         self.setStyleSheet(_DIALOG_STYLE)
+        # Long tooltips wrap at a readable width instead of one line across
+        # the screen (Remy, 2026-11-17), for every widget built from here.
+        tooltips.install(self)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 10, 12, 12)
@@ -3669,6 +3726,9 @@ class SubmitJobsDialog(QDialog):
         self._save_remembered()
         for pane in self._panes.values():
             pane.shutdown()
+        # WA_DeleteOnClose: drop what PySide keeps on the views before Qt
+        # deletes them in creation order (qt_lifetime).
+        release_kept_references(self)
         super().done(result)
 
 

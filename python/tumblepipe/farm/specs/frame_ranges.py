@@ -48,6 +48,11 @@ PLACEHOLDER = 'First → Last'
 #: Warnings column, the submit log).
 NOT_PUBLISHED = 'multi-range renders are not published'
 
+#: The same for a shot render on a Step above 1 (Remy, 2026-11-17): its
+#: frames have gaps, so it is never the shot's render (a daily, the edit
+#: and a comp want every frame).
+STEPPED_NOT_PUBLISHED = 'stepped renders are not published'
+
 _SEPARATORS = re.compile(r'[\s,]+')
 _WORD = re.compile(r'(\d+)(?:-(\d+))?')
 

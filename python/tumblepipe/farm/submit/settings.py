@@ -183,6 +183,12 @@ FIELDS: tuple[Field, ...] = (
     # batch field, as the Preview Frames List.
     Field('frame_list', 'render', 'Frame list', prop=None, default='',
           kind='str'),
+    # The Step (Remy, 2026-11-17): render every Nth frame of the range (or
+    # of each Frame list range), counted from its first. A batch field, a
+    # farm override the dialog shows: the scene authors no step for a
+    # shot's render. Above 1 the render is a check render, never published
+    # (:func:`step_disabled`).
+    Field('render_step', 'render', 'Step', prop=None, default=1, kind='int'),
     # Entity fields. The four frame keys are REQUIRED: this is the fix.
     Field('first_frame', 'render', 'First', prop='frame_start',
           default=REQUIRED, kind='int', preflight=True),
@@ -855,6 +861,8 @@ def entity_warnings(
                 )
 
     warnings.extend(frame_list_warnings(resolved))
+    if not turntable:
+        warnings.extend(step_warnings(resolved))
     warnings.extend(preview_frame_warnings(properties, resolved))
     return warnings
 
@@ -888,14 +896,26 @@ def frame_list(resolved: dict) -> tuple[tuple[tuple[int, int], ...], str | None]
         return (), str(e)
 
 
-def frame_list_note(text: str | None) -> str:
+def frame_list_note(text: str | None, step: int = 1) -> str:
     """The line under Farm Submit's Frame List field: what the typed list
-    renders, and whether it is published. The rows' Warnings column checks
-    it against each shot's range (:func:`frame_list`)."""
+    renders on the render's ``step``, and whether it is published. The
+    rows' Warnings column checks it against each shot's range
+    (:func:`frame_list`)."""
     try:
         ranges = frame_ranges.normalise(frame_ranges.parse(text))
     except frame_ranges.FrameListError as e:
         return str(e)
+    step = step if isinstance(step, int) and step > 1 else 1
+    if step > 1:
+        if not ranges:
+            return (
+                f"Empty: every {nth(step)} frame, First → Last: "
+                f"{STEPPED_NOT_PUBLISHED}."
+            )
+        return (
+            f"{frame_ranges.summary(ranges, step)}, every {nth(step)} frame of "
+            f"each range: {STEPPED_NOT_PUBLISHED}"
+        )
     if not ranges:
         return f"Empty: every frame, First → Last. Several ranges: {frame_ranges.NOT_PUBLISHED}."
     if not frame_ranges.is_multi(ranges):
@@ -928,6 +948,69 @@ def frame_list_disabled(text: str | None) -> dict[str, str]:
         return {}
     why = f"Off while the frame list has several ranges: {frame_ranges.NOT_PUBLISHED}."
     return {key: why for key in MULTI_RANGE_IGNORED}
+
+
+#: Why a stepped render publishes nothing (``batch_submit`` logs the same).
+STEPPED_NOT_PUBLISHED = frame_ranges.STEPPED_NOT_PUBLISHED
+
+#: The Render settings a stepped render ignores, as a multi-range one does.
+STEPPED_IGNORED = ('copy_to_edit',)
+
+
+def nth(step: int) -> str:
+    """``2nd``, ``3rd``, ``10th``, ``21st``: every Nth frame, in words."""
+    if step % 100 in (11, 12, 13):
+        return f"{step}th"
+    return f"{step}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(step % 10, 'th')}"
+
+
+def render_step(resolved: dict) -> int:
+    """The row's render Step, 1 when unset or not a whole number above 0
+    (``batch_submit`` refuses those; the dialog's field cannot hold one)."""
+    step = _int(resolved.get('render_step'))
+    return step if step is not None and step > 0 else 1
+
+
+def step_disabled(step: int | None) -> dict[str, str]:
+    """``{setting key: why}`` for the Render settings a shot render on
+    ``step`` makes the submit ignore: none on step 1, else the ones a
+    stepped render ignores (:data:`STEPPED_IGNORED`), shown off with the
+    reason rather than dropped silently."""
+    if not isinstance(step, int) or isinstance(step, bool) or step <= 1:
+        return {}
+    why = f"Off while Step is {step}: {STEPPED_NOT_PUBLISHED}."
+    return {key: why for key in STEPPED_IGNORED}
+
+
+def rendered_frames(resolved: dict) -> int | None:
+    """How many frames a row's render makes on its step: its Frame list's
+    ranges, else its rolled range; None without a range or with a list
+    that cannot be read."""
+    ranges, error = frame_list(resolved)
+    if error is not None:
+        return None
+    if not ranges:
+        span = rendered_range(resolved)
+        if span is None or span[0] > span[1]:
+            return None
+        ranges = (span,)
+    return frame_ranges.frame_count(ranges, render_step(resolved))
+
+
+def step_warnings(resolved: dict) -> list[str]:
+    """The Warnings-column line of a stepped shot render: how many frames
+    it makes, and that it is not published (so skips Copy to edit)."""
+    step = render_step(resolved)
+    if not resolved.get('render') or step <= 1:
+        return []
+    count = rendered_frames(resolved)
+    text = f"every {nth(step)} frame"
+    if count is not None:
+        text += f" ({count} frame{'s' if count != 1 else ''})"
+    text += f": {STEPPED_NOT_PUBLISHED}, no daily"
+    if resolved.get('copy_to_edit'):
+        text += ', Copy to edit skipped'
+    return [text]
 
 
 def frame_list_warnings(resolved: dict) -> list[str]:
@@ -1010,7 +1093,7 @@ def preview_frame_warnings(properties: dict, resolved: dict) -> list[str]:
             ranges, _error = frame_list(resolved)
             if ranges:
                 span = frame_ranges.span(ranges)
-            preview = preview_frames.parse(text, *span)
+            preview = preview_frames.parse(text, *span, render_step(resolved))
             if frame_ranges.is_multi(ranges):
                 preview = preview_frames.inside_ranges(preview, ranges)
             warnings.extend(f"render {warning}" for warning in preview.warnings)
@@ -1092,6 +1175,12 @@ def entity_errors(
         errors.append(
             f"Comp follows a published render, and "
             f"{frame_ranges.NOT_PUBLISHED}: untick Comp, or render one range"
+        )
+    if resolved.get('comp') and resolved.get('render') and render_step(resolved) > 1:
+        # batch_submit refuses it: the comp reads a published render.
+        errors.append(
+            f"Comp follows a published render, and {STEPPED_NOT_PUBLISHED}: "
+            "untick Comp, or set the render's Step to 1"
         )
     if resolved.get('comp') and resolved.get('render') and (
         resolved.get('render_mode') not in FULL_RENDER_MODES

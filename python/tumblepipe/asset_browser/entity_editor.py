@@ -64,6 +64,7 @@ from tumblepipe.config.multi_timeline import (
     TIMELINE_CHOICES, new_overlaps, timeline_choice, timeline_settings,
 )
 from tumblepipe.util import value_ladder_qt
+from tumblepipe.util.qt_lifetime import release_kept_references
 from tumblepipe.util.uri import Uri
 
 from . import entity_editor_layout as layout_prefs
@@ -540,15 +541,14 @@ class _SheetModel(QAbstractTableModel):
         self._rigged: dict[str, bool] = {}
 
     def _layout(self) -> list:
-        by_group: dict[str, list[int]] = {}
-        for row in self.sheet.rows:
-            by_group.setdefault(row.group, []).append(row.id)
+        # Natural order by name, as a reload lists them: a row just added
+        # sits among its neighbours, not after the last one.
         keys = []
-        for group in self.sheet.groups():
+        for group in self.sheet.sorted_groups():
             keys.append(GroupKey(group))
-            keys += by_group.pop(group, [])
-        for ids in by_group.values():   # a new row not given a group yet
-            keys += ids
+            keys += [row.id for row in self.sheet.rows_in(group)]
+        # A new row not given a group yet.
+        keys += [row.id for row in self.sheet.rows if not row.group]
         return keys
 
     def set_sheet(self, sheet: es.Sheet) -> None:
@@ -1022,8 +1022,8 @@ class _Filter(QSortFilterProxyModel):
     shows while it or one of its entities matches; a collapsed group's
     entities show only when it is the group picked."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
         self.group = ''
         self.text = ''
 
@@ -1724,7 +1724,7 @@ class AddShotsDialog(QDialog):
         self._sequence = QComboBox()
         self._sequence.setEditable(True)
         self._sequence.setStyleSheet(COMBO_STYLE)
-        self._sequence.addItems(self._sheet.groups())
+        self._sequence.addItems(self._sheet.sorted_groups())
         self._sequence.lineEdit().setPlaceholderText('Pick or type a sequence')
         self._sequence.setCurrentText(sequence)
         self._sequence.currentTextChanged.connect(self._on_sequence_changed)
@@ -1882,7 +1882,7 @@ class AddAssetsDialog(QDialog):
         self._category = QComboBox()
         self._category.setEditable(True)
         self._category.setStyleSheet(COMBO_STYLE)
-        self._category.addItems(self._sheet.groups())
+        self._category.addItems(self._sheet.sorted_groups())
         self._category.lineEdit().setPlaceholderText('Pick or type a category')
         self._category.setCurrentText(category)
         self._category.currentTextChanged.connect(self._update)
@@ -2575,8 +2575,13 @@ class _SheetPane(QWidget):
         self.legend = legend
         left_layout.addWidget(legend)
 
+        # The proxy is the pane's child and made before the model: Qt
+        # deletes children in creation order, and a proxy left alive (it was
+        # parentless) kept a reference to a model the pane had already
+        # deleted, which the cyclic collector later freed into
+        # (qt_lifetime.release_kept_references).
+        self.proxy = _Filter(self)
         self.model = _SheetModel(self)
-        self.proxy = _Filter()
         self.proxy.setSourceModel(self.model)
         table = self.table = _Table()
         table.setModel(self.proxy)
@@ -2846,9 +2851,16 @@ class _SheetPane(QWidget):
             selection = [(self._row_id(i), i.column()) for i in self._selected()]
             current = self.table.currentIndex()
             current = (self._row_id(current), current.column()) if current.isValid() else None
-            if self.model.refresh():
+            moved = self.model.refresh()
+            if moved:
                 self.select_cells(selection, current)
         self.table.verticalScrollBar().setValue(scroll)
+        if sheet is None and moved:
+            # A row that moved into its place (a new shot among the older
+            # ones) stays in view; a no-op when it is already shown.
+            keep = self.table.currentIndex()
+            if keep.isValid():
+                self.table.scrollTo(keep)
         self._fill_group_filter()
         if getattr(self, 'render_settings', None) is not None:
             self.render_settings.fill()
@@ -2881,7 +2893,7 @@ class _SheetPane(QWidget):
                 model.setCurrentIndex(index, QItemSelectionModel.NoUpdate)
 
     def _fill_group_filter(self) -> None:
-        wanted = [''] + self.sheet.groups()
+        wanted = [''] + self.sheet.sorted_groups()
         combo = self._group_filter
         have = [combo.itemData(i) for i in range(combo.count())]
         tips = [combo.itemData(i, Qt.ToolTipRole) or '' for i in range(combo.count())]
@@ -3061,6 +3073,8 @@ class _SheetPane(QWidget):
                 added.append(self.sheet.add(row.sequence, row.shot, values))
         self.edit(change)
         self.select_cells([(row_id, 1) for row_id in added])
+        if added:
+            self.table.scrollTo(self._index_of(added[0], 1))
         if rejected:
             first = rejected[0].replace('\t', '  ')
             self.say(
@@ -3172,6 +3186,8 @@ class _SheetPane(QWidget):
         if rows and self.proxy.group and rows[0][0] != self.proxy.group:
             self.focus(rows[0][0])
         self.select_cells([(row_id, 1) for row_id in added])
+        if added:
+            self.table.scrollTo(self._index_of(added[0], 1))
 
     def new_root(self, name: str = '', parent=None) -> str | None:
         """A new Root in the sheet (New Root from assets…); its URI, or None."""
@@ -3835,7 +3851,7 @@ class MultiMembersDialog(QDialog):
         # greyed (take the sequence out to change them one by one).
         listed = set(sheet.multi_groups(multi))
         groups = [
-            g for g in sheet.groups()
+            g for g in sheet.sorted_groups()
             if g in listed or any(r.group == g and not r.retire for r in sheet.rows)
         ]
         for group in groups:
@@ -4112,8 +4128,8 @@ class _MultiModel(QAbstractTableModel):
 
 
 class _MultiFilter(QSortFilterProxyModel):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
         self.text = ''
 
     def set_text(self, text: str) -> None:
@@ -4215,6 +4231,7 @@ class _MultiWorkfiles(QWidget):
                 # Hidden now: deleteLater waits for the event loop, and
                 # until then the old row would show under the new one.
                 widget.hide()
+                release_kept_references(widget)
                 widget.deleteLater()
         self.buttons = {}
 
@@ -4359,8 +4376,9 @@ class _MultiPane(QWidget):
             'Multi\'s Timeline to lay them end to end.'
         ))
 
+        # Proxy first and parented, as in _SheetPane.
+        self.proxy = _MultiFilter(self)
         self.model = _MultiModel(self)
-        self.proxy = _MultiFilter()
         self.proxy.setSourceModel(self.model)
         table = self.table = _Table()
         table.setModel(self.proxy)
@@ -5116,4 +5134,8 @@ class EntityEditorWindow(QDialog):
                 event.ignore()
                 return
         self.remember_splitters()
+        # WA_DeleteOnClose: drop what PySide keeps on the sheets' views (the
+        # frozen-column views share their table's model, selection model and
+        # delegate) before Qt deletes them in creation order.
+        release_kept_references(self)
         event.accept()

@@ -272,7 +272,13 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   range renders as First..Last would, two
                                   or more are a multi-range render, never
                                   published (no daily, no Copy to edit, no
-                                  Comp). Shots only.
+                                  Comp). Shots only. Optional render_step
+                                  (int, default 1): every Nth frame of the
+                                  range, or of each Frame List range, from
+                                  its first; above 1 a shot's render is a
+                                  check render, never published (as a
+                                  multi-range one). A turntable takes 1
+                                  (it renders on the studio's step).
                 - Playblast section: pb_department, pb_pool, pb_priority,
                                      pb_res, pb_look
                                      (specs.playblast.valid_look)
@@ -353,6 +359,15 @@ def submit_entity_batch(config: dict) -> list[str]:
         pre_roll = settings['pre_roll']
         post_roll = settings['post_roll']
         batch_size = settings['batch_size']
+        # The Step (Remy, 2026-11-17): every Nth frame of the range, or of
+        # each Frame List range, from its first. Default 1, what a caller
+        # from before it got.
+        render_step = settings.get('render_step', 1)
+        if isinstance(render_step, bool) or not isinstance(render_step, int) or render_step < 1:
+            raise BatchSubmitError(
+                f"Invalid render step for {entity_uri}: {render_step!r} (a whole "
+                "number from 1)"
+            )
         denoise = settings['denoise']
         copy_to_edit = settings['copy_to_edit']
         standalone = settings['standalone']
@@ -435,6 +450,12 @@ def submit_entity_batch(config: dict) -> list[str]:
         turntable_frames = turntable.farm_frames()
         first_frame, last_frame = turntable_frames.first, turntable_frames.last
         pre_roll = post_roll = 0
+        if render_step != 1:
+            raise BatchSubmitError(
+                f"{entity_uri}: an asset's turntable renders on the studio's "
+                f"step ({turntable_frames.step}); set the render step to 1"
+            )
+        render_step = turntable_frames.step
 
     if do_render and (first_frame is None or last_frame is None):
         raise BatchSubmitError(
@@ -491,6 +512,25 @@ def submit_entity_batch(config: dict) -> list[str]:
                     f"{frame_ranges.NOT_PUBLISHED}: untick Comp, or render "
                     "one range"
                 )
+        # A stepped shot render is a check render, never published
+        # (pipelines.render.is_check_render): the same as a multi-range one.
+        if render_step > 1 and not asset_turntable:
+            logging.info(
+                f"{entity_uri}: rendering every {render_step} frames; "
+                f"{frame_ranges.STEPPED_NOT_PUBLISHED}"
+            )
+            if copy_to_edit:
+                logging.warning(
+                    f"{entity_uri}: Copy to edit skipped: "
+                    f"{frame_ranges.STEPPED_NOT_PUBLISHED}"
+                )
+                copy_to_edit = False
+            if do_comp:
+                raise BatchSubmitError(
+                    f"{entity_uri}: Comp follows a published render, and "
+                    f"{frame_ranges.STEPPED_NOT_PUBLISHED}: untick Comp, or "
+                    "set the render step to 1"
+                )
         # The Preview Frames List, read against the frames this render
         # makes (rolls included, every frame); the dialog's Warnings column
         # showed the same drops (submit_settings.preview_frame_warnings).
@@ -498,7 +538,7 @@ def submit_entity_batch(config: dict) -> list[str]:
         if 'partial_render' in render_task_keys:
             render_preview = preview_frames.parse(
                 settings.get('preview_frame_list', ''), first_frame, last_frame,
-                *((turntable_frames.step,) if turntable_frames else ()),
+                render_step,
             )
             if frame_ranges_entry:
                 render_preview = preview_frames.inside_ranges(render_preview, listed)
@@ -787,6 +827,9 @@ def submit_entity_batch(config: dict) -> list[str]:
                         first_frame=first_frame,
                         last_frame=last_frame,
                         batch_size=batch_size,
+                        # Sent only off step 1: a collapse job from before
+                        # the Step names none (specs.collapse).
+                        **({} if render_step == 1 else {'step_size': render_step}),
                         denoise=denoise,
                         copy_to_edit=copy_to_edit,
                         cut_range=cut_range,
@@ -819,6 +862,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         tile_count=tile_count,
                         first_frame=first_frame,
                         last_frame=last_frame,
+                        step_size=render_step,
                         batch_size=batch_size,
                         denoise=denoise,
                         copy_to_edit=copy_to_edit,
@@ -863,7 +907,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         tile_count=tile_count,
                         first_frame=first_frame,
                         last_frame=last_frame,
-                        step_size=1,  # Default
+                        step_size=render_step,
                         batch_size=batch_size,
                         copy_to_edit=copy_to_edit,
                         cut_range=cut_range,

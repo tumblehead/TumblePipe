@@ -198,6 +198,7 @@ impl Editor {
                             "kind": th_edit::takes::kind_of(t),
                             "media": t.media,
                             "frame_list": t.multi_range,
+                            "check": t.check,
                         })
                     })
                     .collect();

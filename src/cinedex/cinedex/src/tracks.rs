@@ -24,7 +24,9 @@ use primer::Horizontal as H;
 use primer::ImageHandle;
 use primer::Vertical as V;
 use primer::prelude::*;
-use primer::widget::custom::{Cursor, Event, Status, keyboard, mouse};
+use primer::widget::custom::{
+    BoxStyle, Ctx, Cursor, Event, Layout, LayoutCtx, Limits, Node, RenderNode, Shell, Sizing, Status, TextNode, Widget, keyboard, mouse,
+};
 use th_edit::document::{ClipRef, Frame as EditFrame, Source, TrackKind, TrackRef};
 use th_edit::ops::{Edge, Op};
 
@@ -85,23 +87,6 @@ pub struct RowView {
 /// The rows as drawn, top first: video tracks top track first, then audio.
 pub fn row_order(video: usize, audio: usize) -> Vec<TrackRef> {
     (0..video).rev().map(TrackRef::video).chain((0..audio).map(TrackRef::audio)).collect()
-}
-
-/// The hatching of `r`: lines rising left to right, `HATCH` apart, each
-/// cut to `r` (the frame has no clip regions).
-fn hatch(frame: &mut Frame, r: Rectangle, color: Color) {
-    let (left, right, bottom) = (r.x, r.x + r.width, r.y + r.height);
-    let mut start = left - r.height;
-    while start < right {
-        // The line from (start, bottom) to (start + height, top), cut to r.
-        let (x0, x1) = (start.max(left), (start + r.height).min(right));
-        if x1 > x0 {
-            let a = Point::new(x0, bottom - (x0 - start));
-            let b = Point::new(x1, bottom - (x1 - start));
-            frame.stroke(&Path::line(a, b), Stroke::new(1.0, color));
-        }
-        start += HATCH;
-    }
 }
 
 /// What part of a clip a press took.
@@ -272,62 +257,271 @@ pub struct Pointer {
 /// The gap between the hatching's lines on a clip with nothing to play.
 const HATCH: f32 = 7.0;
 
-fn outline(frame: &mut Frame, r: Rectangle, thick: f32, color: Color) {
-    frame.fill_rectangle(Point::new(r.x, r.y), Size::new(r.width, thick), color);
-    frame.fill_rectangle(Point::new(r.x, r.y + r.height - thick), Size::new(r.width, thick), color);
-    frame.fill_rectangle(Point::new(r.x, r.y), Size::new(thick, r.height), color);
-    frame.fill_rectangle(Point::new(r.x + r.width - thick, r.y), Size::new(thick, r.height), color);
+/// What the tracks paint with, in local pixels (origin at their top-left).
+///
+/// Not a canvas: any canvas geometry (a `Frame` mesh) in a window makes
+/// Primer draw that whole window's scene pass at 4x multisampling, and the
+/// tracks are always on screen, so every frame of the editor paid for it. On
+/// an RTX 3070 the scene pass was 2.6 ms at 4x against 0.17 ms single-
+/// sampled; on a laptop GPU it made the editor lag the pointer by a quarter
+/// of a second (2026-11-16). So rectangles are quads, the hatching an image,
+/// and only the rare slanted shapes (fade ramps, markers) are geometry.
+trait Paint {
+    fn rect(&mut self, top_left: Point, size: Size, color: Color);
+    /// Lines rising left to right, [`HATCH`] apart, over `r`.
+    fn hatch(&mut self, r: Rectangle, color: Color);
+    fn fill(&mut self, path: &Path, color: Color);
+    fn stroke(&mut self, path: &Path, stroke: Stroke);
+    fn text(&mut self, content: String, bounds: Rectangle, h: H, v: V, size: f32, color: Color);
+    fn image(&mut self, handle: &ImageHandle, bounds: Rectangle);
+    /// What is painted after this paints above everything before it.
+    fn raise(&mut self);
 }
 
-impl<Message> Program<Message> for Tracks<Message> {
-    type State = Pointer;
+fn outline(p: &mut impl Paint, r: Rectangle, thick: f32, color: Color) {
+    p.rect(Point::new(r.x, r.y), Size::new(r.width, thick), color);
+    p.rect(Point::new(r.x, r.y + r.height - thick), Size::new(r.width, thick), color);
+    p.rect(Point::new(r.x, r.y), Size::new(thick, r.height), color);
+    p.rect(Point::new(r.x + r.width - thick, r.y), Size::new(thick, r.height), color);
+}
 
-    fn draw(&self, state: &Pointer, frame: &mut Frame, bounds: Rectangle, _cursor: Cursor) {
-        let (w, h) = (bounds.width, bounds.height);
-        frame.fill_rectangle(Point::new(0.0, 0.0), Size::new(w, h), look::seam());
-        frame.fill_rectangle(Point::new(0.0, 0.0), Size::new(w, RULER), look::panel());
+/// One level of [`Nodes`]: its quads, images and words, and its geometry.
+struct Level {
+    nodes: Vec<RenderNode>,
+    geometry: Frame,
+}
+
+/// [`Paint`] into render nodes at `origin` (the tracks' top-left in the
+/// window), clipped to the tracks.
+struct Nodes {
+    origin: Vector,
+    size: Size,
+    levels: Vec<Level>,
+}
+
+impl Nodes {
+    fn new(bounds: Rectangle) -> Self {
+        let size = bounds.size();
+        Self { origin: Vector::new(bounds.x, bounds.y), size, levels: vec![Level { nodes: Vec::new(), geometry: Frame::new(size) }] }
+    }
+
+    fn level(&mut self) -> &mut Level {
+        self.levels.last_mut().expect("a first level")
+    }
+
+    fn placed(&self, r: Rectangle) -> Rectangle {
+        r.translate(self.origin)
+    }
+
+    /// The levels, each a paint band above the one before.
+    fn finish(self) -> RenderNode {
+        let bounds = Rectangle::new(Point::new(self.origin.x, self.origin.y), self.size);
+        let origin = self.origin;
+        let mut above: Option<RenderNode> = None;
+        for level in self.levels.into_iter().rev() {
+            let mut nodes = level.nodes;
+            let mut mesh = level.geometry.into_mesh();
+            if !mesh.is_empty() {
+                for vertex in &mut mesh.vertices {
+                    vertex.position = [vertex.position[0] + origin.x, vertex.position[1] + origin.y];
+                }
+                mesh.bounds = mesh.bounds.translate(origin);
+                nodes.push(RenderNode::mesh(mesh));
+            }
+            nodes.extend(above.take().map(RenderNode::layer));
+            above = Some(RenderNode::group(bounds, nodes));
+        }
+        RenderNode::clip(bounds, above.expect("a first level"))
+    }
+}
+
+impl Paint for Nodes {
+    fn rect(&mut self, top_left: Point, size: Size, color: Color) {
+        let r = self.placed(Rectangle::new(top_left, size));
+        self.level().nodes.push(RenderNode::quad(r, BoxStyle::solid(color)));
+    }
+
+    fn hatch(&mut self, r: Rectangle, color: Color) {
+        let r = self.placed(r);
+        let tile = hatch_tile(color);
+        let mut tiles = Vec::new();
+        let mut x = r.x;
+        while x < r.x + r.width {
+            tiles.push(RenderNode::image(Rectangle::new(Point::new(x, r.y), Size::new(HATCH_TILE_WIDE, ROW)), tile.clone()));
+            x += HATCH_TILE_WIDE;
+        }
+        self.level().nodes.push(RenderNode::clip(r, RenderNode::group(r, tiles)));
+    }
+
+    fn fill(&mut self, path: &Path, color: Color) {
+        self.level().geometry.fill(path, color);
+    }
+
+    fn stroke(&mut self, path: &Path, stroke: Stroke) {
+        self.level().geometry.stroke(path, stroke);
+    }
+
+    fn text(&mut self, content: String, bounds: Rectangle, h: H, v: V, size: f32, color: Color) {
+        let words = TextNode::new(content, self.placed(bounds), size, color).with_align(h).with_valign(v);
+        self.level().nodes.push(RenderNode::text(words));
+    }
+
+    fn image(&mut self, handle: &ImageHandle, bounds: Rectangle) {
+        let r = self.placed(bounds);
+        self.level().nodes.push(RenderNode::image(r, handle.clone()));
+    }
+
+    fn raise(&mut self) {
+        let size = self.size;
+        self.levels.push(Level { nodes: Vec::new(), geometry: Frame::new(size) });
+    }
+}
+
+/// One tile of the hatching, in logical pixels: a whole number of line
+/// gaps wide (so tiles side by side continue the lines), a row tall.
+const HATCH_TILE_WIDE: f32 = HATCH * 64.0;
+/// The tile's pixels per logical pixel: sharp up to 200% display scaling.
+const HATCH_TILE_SCALE: f32 = 2.0;
+
+/// The hatching tile in `color`, made once per colour.
+fn hatch_tile(color: Color) -> ImageHandle {
+    static TILES: std::sync::Mutex<Vec<([u8; 4], ImageHandle)>> = std::sync::Mutex::new(Vec::new());
+    let key = color.to_srgba8();
+    let mut tiles = TILES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((_, tile)) = tiles.iter().find(|(k, _)| *k == key) {
+        return tile.clone();
+    }
+    let (wide, tall) = ((HATCH_TILE_WIDE * HATCH_TILE_SCALE) as u32, (ROW * HATCH_TILE_SCALE) as u32);
+    let mut rgba = Vec::with_capacity((wide * tall * 4) as usize);
+    for py in 0..tall {
+        for px in 0..wide {
+            let (x, y) = ((px as f32 + 0.5) / HATCH_TILE_SCALE, (py as f32 + 0.5) / HATCH_TILE_SCALE);
+            let coverage = hatch_coverage(x, y);
+            rgba.extend_from_slice(&[key[0], key[1], key[2], (f32::from(key[3]) * coverage).round() as u8]);
+        }
+    }
+    let tile = ImageHandle::from_rgba(wide, tall, rgba);
+    tiles.push((key, tile.clone()));
+    tile
+}
+
+/// How much of the logical pixel at `(x, y)` a hatching line covers: lines
+/// one pixel wide where `x + y` is a multiple of [`HATCH`] (rising left to
+/// right, as y grows downwards), anti-aliased over one tile pixel.
+fn hatch_coverage(x: f32, y: f32) -> f32 {
+    let along = (x + y).rem_euclid(HATCH);
+    let across = along.min(HATCH - along) / std::f32::consts::SQRT_2;
+    (0.5 + (0.5 - across) * HATCH_TILE_SCALE).clamp(0.0, 1.0)
+}
+
+/// The tracks as a widget: `Tracks` painted as quads (see [`Paint`]), its
+/// pointer state kept under `id` as an interactive canvas keeps its own.
+pub struct TrackView<Message> {
+    id: Id,
+    tracks: Tracks<Message>,
+    height: f32,
+}
+
+/// `tracks` as a widget `height` tall, filling the width; its gesture state
+/// lives under `id` (frame-stable).
+pub fn track_view<Message: 'static>(id: Id, tracks: Tracks<Message>, height: f32) -> TrackView<Message> {
+    TrackView { id, tracks, height }
+}
+
+impl<Message> Widget<Message> for TrackView<Message> {
+    fn sizing(&self) -> Sizing {
+        Sizing { width: Length::Fill, height: Length::fixed(self.height) }
+    }
+
+    fn layout(&self, limits: &Limits, _ctx: LayoutCtx<'_>) -> Node {
+        Node::new(limits.resolve(self.sizing(), Size::ZERO))
+    }
+
+    fn draw(&self, layout: Layout<'_>, ctx: Ctx<'_>) -> RenderNode {
+        let bounds = layout.bounds();
+        let idle = Pointer::default();
+        let state = ctx.store.state::<Pointer>(&self.id).unwrap_or(&idle);
+        let mut nodes = Nodes::new(bounds);
+        self.tracks.paint(state, &mut nodes, bounds.width, bounds.height);
+        nodes.finish()
+    }
+
+    // As an interactive canvas: the press the tracks take focuses them, so
+    // the keys the timeline ignores reach `on_key` again.
+    fn on_event(&mut self, event: &Event, layout: Layout<'_>, shell: &mut Shell<'_, Message>) -> Status {
+        let bounds = layout.bounds();
+        let cursor = shell.cursor();
+        let state = shell.store_mut().state_mut::<Pointer>(&self.id);
+        let (status, message) = self.tracks.update(state, event, bounds, cursor);
+        if status == Status::Captured
+            && matches!(event, Event::Mouse(mouse::Event::ButtonPressed(_)))
+            && !shell.store_mut().is_focused(&self.id)
+        {
+            shell.store_mut().set_focus(self.id);
+            shell.request_redraw();
+        }
+        if let Some(message) = message {
+            shell.publish(message);
+        }
+        status
+    }
+
+    fn mouse_interaction(&self, layout: Layout<'_>, ctx: Ctx<'_>) -> mouse::Interaction {
+        let idle = Pointer::default();
+        let state = ctx.store.state::<Pointer>(&self.id).unwrap_or(&idle);
+        self.tracks.mouse_interaction(state, layout.bounds(), ctx.cursor)
+    }
+
+    fn hover(&self, layout: Layout<'_>, _ctx: LayoutCtx<'_>, regions: &mut mouse::HoverRegions) {
+        // The cursor shape follows the clip edges under the pointer.
+        regions.motion(layout.bounds());
+    }
+}
+
+impl<Message: 'static> From<TrackView<Message>> for Element<Message> {
+    fn from(view: TrackView<Message>) -> Self {
+        Element::new(view)
+    }
+}
+
+impl<Message> Tracks<Message> {
+    /// Paint the tracks `w` by `h` (local pixels) into `p`, the dragged
+    /// clip's outline from `state`. Rectangles, the hatching, thumbnails and
+    /// words first; then, above them all ([`Paint::raise`]), the markers, the
+    /// fade ramps, the selection, a drag's outline and the playhead.
+    fn paint(&self, state: &Pointer, p: &mut impl Paint, w: f32, h: f32) {
+        p.rect(Point::new(0.0, 0.0), Size::new(w, h), look::seam());
+        p.rect(Point::new(0.0, 0.0), Size::new(w, RULER), look::panel());
         let slot = (w - HEADER) / self.total.max(1) as f32;
         let step = tick_step(slot);
         if step != usize::MAX {
             for f in (0..self.total).step_by(step) {
                 let tall = if f % (step * 5) == 0 { 8.0 } else { 4.0 };
-                frame.fill_rectangle(Point::new(self.x(f as EditFrame, w), RULER - STRIP - tall), Size::new(1.0, tall), look::tick());
+                p.rect(Point::new(self.x(f as EditFrame, w), RULER - STRIP - tall), Size::new(1.0, tall), look::tick());
             }
         }
         for &(start, end) in &self.buffered {
             let (x0, x1) = (self.x(start as EditFrame, w), self.x(end as EditFrame, w));
-            frame.fill_rectangle(Point::new(x0, RULER - STRIP), Size::new((x1 - x0).max(1.0), STRIP), look::buffered());
-        }
-        let marker = look::mark();
-        for &m in &self.markers {
-            let x = self.x(m, w) + slot / 2.0;
-            let tip = Path::new(|p| {
-                p.move_to(Point::new(x - 5.0, 0.0));
-                p.line_to(Point::new(x + 5.0, 0.0));
-                p.line_to(Point::new(x, 8.0));
-                p.close();
-            });
-            frame.fill(&tip, marker);
+            p.rect(Point::new(x0, RULER - STRIP), Size::new((x1 - x0).max(1.0), STRIP), look::buffered());
         }
 
         for (r, row) in self.rows.iter().enumerate() {
             let top = RULER + r as f32 * ROW;
             let band = if row.track.kind == TrackKind::Video { look::band() } else { look::band_audio() };
-            frame.fill_rectangle(Point::new(0.0, top), Size::new(HEADER - 1.0, ROW - 1.0), look::panel());
-            frame.fill_rectangle(Point::new(HEADER, top), Size::new(w - HEADER, ROW - 1.0), band);
+            p.rect(Point::new(0.0, top), Size::new(HEADER - 1.0, ROW - 1.0), look::panel());
+            p.rect(Point::new(HEADER, top), Size::new(w - HEADER, ROW - 1.0), band);
             let label = Rectangle { x: 10.0, y: top, width: HEADER - 14.0, height: ROW };
-            frame.fill_text_in(row.name.clone(), label, H::Left, V::Center, 13.0, look::quiet());
+            p.text(row.name.clone(), label, H::Left, V::Center, 13.0, look::quiet());
             for c in &row.clips {
-                let (x0, x1) = (self.x(c.at, w), self.x(c.at + c.duration, w));
-                let rect = Rectangle { x: x0, y: top + 1.0, width: (x1 - x0 - 1.0).max(1.0), height: ROW - 3.0 };
+                let rect = self.clip_rect(c, top, w);
                 let body = match (row.track.kind, c.missing) {
                     (_, true) => look::missing(),
                     (TrackKind::Video, false) => c.department.as_deref().map_or_else(look::clip, look::department),
                     (TrackKind::Audio, false) => look::audio(),
                 };
-                frame.fill_rectangle(Point::new(rect.x, rect.y), Size::new(rect.width, rect.height), body);
+                p.rect(Point::new(rect.x, rect.y), Size::new(rect.width, rect.height), body);
                 if c.missing {
-                    hatch(frame, rect, look::hatch());
+                    p.hatch(rect, look::hatch());
                 }
                 let mut left = rect.x + INSET;
                 if let Some(handle) = &c.thumbnail {
@@ -335,7 +529,7 @@ impl<Message> Program<Message> for Tracks<Message> {
                     let tall = rect.height - 2.0 * INSET;
                     let wide = (tall * iw / ih).min(rect.width - 2.0 * INSET);
                     if wide >= 12.0 {
-                        frame.draw_image(handle, Rectangle { x: left, y: rect.y + INSET, width: wide, height: wide * ih / iw });
+                        p.image(handle, Rectangle { x: left, y: rect.y + INSET, width: wide, height: wide * ih / iw });
                         left += wide + INSET;
                     }
                 }
@@ -343,15 +537,15 @@ impl<Message> Program<Message> for Tracks<Message> {
                 if let (TrackKind::Video, Some(words)) = (row.track.kind, c.preview)
                     && let Some(tag) = badge_box(rect, 86.0)
                 {
-                    frame.fill_rectangle(Point::new(tag.x, tag.y), Size::new(tag.width, tag.height), look::now());
-                    frame.fill_text_in(words.to_owned(), tag, H::Center, V::Center, 10.0, look::surround());
+                    p.rect(Point::new(tag.x, tag.y), Size::new(tag.width, tag.height), look::now());
+                    p.text(words.to_owned(), tag, H::Center, V::Center, 10.0, look::surround());
                     right = tag.x - INSET;
                 }
                 let room = right - left - INSET;
                 if room >= 10.0 {
                     let line = |y: f32, tall: f32| Rectangle { x: left, y: rect.y + y, width: room, height: tall };
-                    frame.fill_text_in(c.name.clone(), line(FADE_BAND, 15.0), H::Left, V::Top, 12.0, look::text());
-                    frame.fill_text_in(
+                    p.text(c.name.clone(), line(FADE_BAND, 15.0), H::Left, V::Top, 12.0, look::text());
+                    p.text(
                         c.detail.clone(),
                         line(FADE_BAND + 16.0, 13.0),
                         H::Left,
@@ -360,33 +554,52 @@ impl<Message> Program<Message> for Tracks<Message> {
                         if c.missing { look::error() } else { look::quiet_on_clip() },
                     );
                 }
+            }
+        }
+
+        p.raise();
+        let marker = look::mark();
+        for &m in &self.markers {
+            let x = self.x(m, w) + slot / 2.0;
+            let tip = Path::new(|b| {
+                b.move_to(Point::new(x - 5.0, 0.0));
+                b.line_to(Point::new(x + 5.0, 0.0));
+                b.line_to(Point::new(x, 8.0));
+                b.close();
+            });
+            p.fill(&tip, marker);
+        }
+        for (r, row) in self.rows.iter().enumerate() {
+            let top = RULER + r as f32 * ROW;
+            for c in &row.clips {
+                let rect = self.clip_rect(c, top, w);
                 // Fades: a ramp from the clip's corner over its top band.
                 let ramp = Color::from_rgba8(240, 240, 240, 140);
                 if c.fade_in > 0 {
                     let xe = self.x(c.at + c.fade_in, w);
-                    let tri = Path::new(|p| {
-                        p.move_to(Point::new(rect.x, rect.y + rect.height));
-                        p.line_to(Point::new(xe, rect.y));
-                        p.line_to(Point::new(rect.x, rect.y));
-                        p.close();
+                    let tri = Path::new(|b| {
+                        b.move_to(Point::new(rect.x, rect.y + rect.height));
+                        b.line_to(Point::new(xe, rect.y));
+                        b.line_to(Point::new(rect.x, rect.y));
+                        b.close();
                     });
-                    frame.fill(&tri, Color::from_rgba8(0, 0, 0, 90));
-                    frame.stroke(&Path::line(Point::new(rect.x, rect.y + rect.height), Point::new(xe, rect.y)), Stroke::new(1.0, ramp));
+                    p.fill(&tri, Color::from_rgba8(0, 0, 0, 90));
+                    p.stroke(&Path::line(Point::new(rect.x, rect.y + rect.height), Point::new(xe, rect.y)), Stroke::new(1.0, ramp));
                 }
                 if c.fade_out > 0 {
                     let xs = self.x(c.at + c.duration - c.fade_out, w);
                     let xr = rect.x + rect.width;
-                    let tri = Path::new(|p| {
-                        p.move_to(Point::new(xr, rect.y + rect.height));
-                        p.line_to(Point::new(xs, rect.y));
-                        p.line_to(Point::new(xr, rect.y));
-                        p.close();
+                    let tri = Path::new(|b| {
+                        b.move_to(Point::new(xr, rect.y + rect.height));
+                        b.line_to(Point::new(xs, rect.y));
+                        b.line_to(Point::new(xr, rect.y));
+                        b.close();
                     });
-                    frame.fill(&tri, Color::from_rgba8(0, 0, 0, 90));
-                    frame.stroke(&Path::line(Point::new(xs, rect.y), Point::new(xr, rect.y + rect.height)), Stroke::new(1.0, ramp));
+                    p.fill(&tri, Color::from_rgba8(0, 0, 0, 90));
+                    p.stroke(&Path::line(Point::new(xs, rect.y), Point::new(xr, rect.y + rect.height)), Stroke::new(1.0, ramp));
                 }
                 if c.selected {
-                    outline(frame, rect, 2.0, look::mark());
+                    outline(p, rect, 2.0, look::mark());
                 }
             }
         }
@@ -394,7 +607,7 @@ impl<Message> Program<Message> for Tracks<Message> {
         if let Some(grab) = &state.grab
             && let Some(ghost) = self.ghost(grab, w, state.at.0, state.at.1)
         {
-            outline(frame, ghost, 2.0, look::now());
+            outline(p, ghost, 2.0, look::now());
             let dx = self.frames_dragged(grab, state.at.0, w);
             let words = match grab.part {
                 Part::Slip => format!("slip {:+}", -dx),
@@ -402,13 +615,19 @@ impl<Message> Program<Message> for Tracks<Message> {
                 _ => format!("{dx:+}"),
             };
             let tag = Rectangle { x: ghost.x + 2.0, y: ghost.y + ghost.height - 15.0, width: 120.0, height: 14.0 };
-            frame.fill_text_in(words, tag, H::Left, V::Center, 11.0, look::now());
+            p.text(words, tag, H::Left, V::Center, 11.0, look::now());
         }
 
         let centre = self.x(self.playhead as EditFrame, w) + slot / 2.0;
         let accent = look::now();
-        frame.fill_rectangle(Point::new(centre - 1.0, 0.0), Size::new(2.0, h), accent);
-        frame.fill_rectangle(Point::new(centre - 4.0, 0.0), Size::new(8.0, 3.0), accent);
+        p.rect(Point::new(centre - 1.0, 0.0), Size::new(2.0, h), accent);
+        p.rect(Point::new(centre - 4.0, 0.0), Size::new(8.0, 3.0), accent);
+    }
+
+    /// Where clip `c` of the row at `top` is drawn.
+    fn clip_rect(&self, c: &ClipView, top: f32, w: f32) -> Rectangle {
+        let (x0, x1) = (self.x(c.at, w), self.x(c.at + c.duration, w));
+        Rectangle { x: x0, y: top + 1.0, width: (x1 - x0 - 1.0).max(1.0), height: ROW - 3.0 }
     }
 
     fn update(&self, state: &mut Pointer, event: &Event, bounds: Rectangle, cursor: Cursor) -> (Status, Option<Message>) {
@@ -628,5 +847,95 @@ mod tests {
                 prop_assert!(fade_in >= 0 && fade_out >= 0 && fade_in + fade_out <= duration);
             }
         }
+    }
+
+    /// A painter that counts what would be canvas geometry: the paths.
+    #[derive(Default)]
+    struct Geometry {
+        paths: usize,
+    }
+
+    impl Paint for Geometry {
+        fn rect(&mut self, _: Point, _: Size, _: Color) {}
+        fn hatch(&mut self, _: Rectangle, _: Color) {}
+        fn fill(&mut self, _: &Path, _: Color) {
+            self.paths += 1;
+        }
+        fn stroke(&mut self, _: &Path, _: Stroke) {
+            self.paths += 1;
+        }
+        fn text(&mut self, _: String, _: Rectangle, _: H, _: V, _: f32, _: Color) {}
+        fn image(&mut self, _: &ImageHandle, _: Rectangle) {}
+        fn raise(&mut self) {}
+    }
+
+    fn tracks_of(rows: Vec<RowView>, markers: Vec<EditFrame>, total: usize) -> Tracks<()> {
+        Tracks {
+            rows,
+            markers,
+            total,
+            playhead: 0,
+            buffered: vec![(0, total / 2)],
+            on_seek: |_| (),
+            on_select: |_, _, _| (),
+            on_drag: || (),
+            on_op: |_| (),
+            on_menu: |_| (),
+            editable: true,
+        }
+    }
+
+    proptest! {
+        /// The tracks paint no geometry (which would multisample the whole
+        /// window, see `Paint`) unless a clip has a fade or the cut a
+        /// marker: missing (hatched), selected and dragged clips, the
+        /// ruler and the playhead are all quads or images.
+        #[test]
+        fn only_fades_and_markers_are_geometry(
+            clips in prop::collection::vec((0i64..400, 1i64..200, 0i64..3, 0i64..3, any::<bool>(), any::<bool>()), 0..12),
+            markers in prop::collection::vec(0i64..600, 0..3),
+            width in 60f32..3000.0,
+            grabbed in any::<bool>(),
+        ) {
+            let views: Vec<ClipView> = clips
+                .iter()
+                .map(|&(at, duration, fade_in, fade_out, missing, selected)| ClipView {
+                    missing,
+                    selected,
+                    ..view(at, duration, fade_in.min(duration), fade_out.min(duration - fade_in.min(duration)))
+                })
+                .collect();
+            let faded = views.iter().any(|c| c.fade_in > 0 || c.fade_out > 0);
+            let row = RowView { track: TrackRef::video(0), name: "V1".into(), clips: views };
+            let any_clip = !row.clips.is_empty();
+            let tracks = tracks_of(vec![row], markers.clone(), 600);
+            let mut state = Pointer::default();
+            if grabbed && any_clip {
+                state.grab = Some(Grab { row: 0, index: 0, part: Part::Body, from_x: 100.0 });
+                state.at = (140.0, RULER + 10.0);
+            }
+            let mut painted = Geometry::default();
+            tracks.paint(&state, &mut painted, width, tracks.height());
+            prop_assert_eq!(painted.paths > 0, faded || !markers.is_empty());
+        }
+
+        /// The hatching tile is a line gap periodic both ways, so tiles laid
+        /// side by side (and any row height) continue its lines; the lines
+        /// rise left to right, and cover between nothing and all of a pixel.
+        #[test]
+        fn hatching_tiles_seamlessly(x in 0f32..HATCH_TILE_WIDE, y in 0f32..ROW) {
+            let here = hatch_coverage(x, y);
+            prop_assert!((0.0..=1.0).contains(&here));
+            prop_assert!((hatch_coverage(x + HATCH_TILE_WIDE, y) - here).abs() < 1e-3);
+            prop_assert!((hatch_coverage(x + 1.0, y - 1.0) - here).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn hatching_lines_are_a_gap_apart() {
+        // On a line, fully covered; halfway between two, bare.
+        assert!((hatch_coverage(HATCH, 0.0) - 1.0).abs() < 1e-6);
+        assert_eq!(hatch_coverage(HATCH / 2.0, 0.0), 0.0);
+        const { assert!(HATCH_TILE_WIDE % HATCH == 0.0) };
     }
 }

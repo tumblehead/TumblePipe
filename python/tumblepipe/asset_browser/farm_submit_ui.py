@@ -400,6 +400,8 @@ class Overlay(QWidget):
         if self._content is not None:
             self._card_layout.removeWidget(self._content)
             self._content.hide()
+            from tumblepipe.util.qt_lifetime import release_kept_references
+            release_kept_references(self._content)
             self._content.deleteLater()
             self._content = None
 

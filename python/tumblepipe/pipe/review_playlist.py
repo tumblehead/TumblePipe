@@ -24,6 +24,14 @@ one's frame range. The player shows a stack's layers as rows over its
 track and can hide each. A shot never opens on a stack while it has a plain
 take: every stack is of a version that has one.
 
+A *check render* (Farm Submit's Step above 1) records ``published: false``
+in its ``context.json`` (``paths.render.is_published``): its frames are
+complete on its step, so it plays, but it is never the shot's render. Its
+takes (its EXRs, the stacks of them, and the render department's review
+movie and layer movies of its version) are marked ``check`` and their
+labels end in ``(check, every <n>th)`` (:func:`check_label`); a shot never
+opens on one, but each stays there to pick by hand.
+
 Nothing here writes to the project. ``play_shots`` starts the editor on
 shots, end to end in an untitled edit (Magnus's ask: pick shots, play them
 back to back, Resolve untouched), and ``open_edit`` on an edit; the
@@ -49,7 +57,12 @@ from tumblepipe.pipe.paths.review import (
     list_layer_playblast_movies,
     list_playblast_versions,
 )
-from tumblepipe.pipe.paths.render import AOV, Layer, get_render_context
+from tumblepipe.pipe.paths.render import (
+    AOV,
+    Layer,
+    get_check_render_step,
+    get_render_context,
+)
 
 # The AOV a render take shows when it has one.
 BEAUTY = 'beauty'
@@ -96,6 +109,23 @@ class Stack:
 
 # What a stack take's label ends in.
 STACK_LABEL = 'layers'
+# What a check render's take label says, in brackets at its end.
+CHECK_LABEL = 'check'
+
+def ordinal(number: int) -> str:
+    """``number`` as an English ordinal: 1st, 2nd, 3rd, 4th, 11th, 21st."""
+    if 10 <= number % 100 <= 20: suffix = 'th'
+    else: suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(number % 10, 'th')
+    return f'{number}{suffix}'
+
+def check_label(step: int) -> str:
+    """What a check render's take label ends in, its step said:
+    ``(check, every 2nd)``, or ``(check)`` on a step of 1."""
+    if step > 1: return f'({CHECK_LABEL}, every {ordinal(step)})'
+    return f'({CHECK_LABEL})'
+
+def _labelled(label: str, check_step: int | None) -> str:
+    return label if check_step is None else f'{label} {check_label(check_step)}'
 
 def _kind_of(media: Movie | Exr | Stack) -> str:
     if isinstance(media, Stack): return _kind_of(media.layers[0][1])
@@ -107,6 +137,9 @@ class Take:
     department: str
     version: str
     media: Movie | Exr | Stack
+    # Of a check render (``paths.render.is_published``): picked only by
+    # hand, never the take a shot opens on.
+    check: bool = False
 
     @property
     def kind(self) -> str:
@@ -133,26 +166,34 @@ class Shot:
 def list_playblast_takes(entity_uri: Uri) -> list[Take]:
     """Every playblast of the shot: departments in pipeline order, versions
     ascending, each department's layered versions (as stacks of their layer
-    movies, in channel order) after its plain ones."""
+    movies, in channel order) after its plain ones. A render department's
+    review movies of a check render are marked (see the module doc)."""
     channels = list_channels(entity_uri)
+    render_departments = {d.name for d in list_departments('render')}
     takes = []
     for department in list_departments('shots'):
         versions = list_playblast_versions(entity_uri, department.name)
         stacks = []
         for version_name in versions:
+            step = (
+                get_check_render_step(entity_uri, department.name, version_name)
+                if department.name in render_departments else None
+            )
             takes.append(Take(
-                label = f'{department.name} {version_name}',
+                label = _labelled(f'{department.name} {version_name}', step),
                 department = department.name,
                 version = version_name,
-                media = Movie(get_playblast_path(entity_uri, department.name, version_name))
+                media = Movie(get_playblast_path(entity_uri, department.name, version_name)),
+                check = step is not None
             ))
             movies = list_layer_playblast_movies(entity_uri, department.name, version_name, channels)
             if not movies: continue
             stacks.append(Take(
-                label = f'{department.name} {version_name} {STACK_LABEL}',
+                label = _labelled(f'{department.name} {version_name} {STACK_LABEL}', step),
                 department = department.name,
                 version = version_name,
-                media = Stack(tuple((layer_name, Movie(path)) for layer_name, path in movies.items()))
+                media = Stack(tuple((layer_name, Movie(path)) for layer_name, path in movies.items())),
+                check = step is not None
             ))
         takes += stacks
     return takes
@@ -195,28 +236,31 @@ def _frames(aov: AOV, frame_range: BlockRange) -> Frames:
 def _render_stacks(department_takes: list[Take], channels: list[str]) -> list[Take]:
     """A department's render stacks, versions oldest first: for each
     version, its takes of the shot's channels (not the slapcomp), in channel
-    order, that share the bottom one's frame range, when there are two."""
-    by_version: dict[str, dict[str, Exr]] = {}
+    order, that share the bottom one's frame range, when there are two. A
+    stack with a check render in it is a check take, on its step."""
+    by_version: dict[str, dict[str, Take]] = {}
     for take in department_takes:
-        by_version.setdefault(take.version, {})[take.media.layer] = take.media
+        by_version.setdefault(take.version, {})[take.media.layer] = take
     stacks = []
     for version_name in sorted(by_version, key = naming.get_version_code):
         found = by_version[version_name]
         layers = [(name, found[name]) for name in channels if name != SLAPCOMP and name in found]
         if not layers: continue
-        bottom = layers[0][1].frames
+        bottom = layers[0][1].media.frames
         span = (bottom.first, bottom.last, bottom.step)
         layers = [
-            (name, exr) for name, exr in layers
-            if (exr.frames.first, exr.frames.last, exr.frames.step) == span
+            (name, take) for name, take in layers
+            if (take.media.frames.first, take.media.frames.last, take.media.frames.step) == span
         ]
         if len(layers) < 2: continue
+        check = any(take.check for _, take in layers)
         department_name = department_takes[0].department
         stacks.append(Take(
-            label = f'{department_name} {version_name} {STACK_LABEL}',
+            label = _labelled(f'{department_name} {version_name} {STACK_LABEL}', span[2] if check else None),
             department = department_name,
             version = version_name,
-            media = Stack(tuple(layers))
+            media = Stack(tuple((name, take.media) for name, take in layers)),
+            check = check
         ))
     return stacks
 
@@ -241,19 +285,23 @@ def _plain_render_takes(entity_uri: Uri) -> list[Take]:
         for layer_name, layers in sorted(render.layers.items(), key = lambda item: _layer_order(item[0]))
         for version_name in sorted(layers, key = naming.get_version_code)
     ]
+    def check(layer: Layer) -> tuple[BlockRange | None, bool]:
+        frame_range = _playable_range(layer)
+        return frame_range, frame_range is not None and not layer.is_published()
     with ThreadPoolExecutor(CHECKS) as pool:
-        ranges = list(pool.map(lambda version: _playable_range(version[2]), versions))
+        checked = list(pool.map(lambda version: check(version[2]), versions))
     takes = []
-    for (department_name, layer_name, layer), frame_range in zip(versions, ranges):
+    for (department_name, layer_name, layer), (frame_range, unpublished) in zip(versions, checked):
         if frame_range is None: continue
         aov, aov_name = _shown_frames(layer)
         label = f'{department_name} {layer.version} {layer_name}'
         if aov_name is not None: label = f'{label} {aov_name}'
         takes.append(Take(
-            label = label,
+            label = _labelled(label, frame_range.step_size if unpublished else None),
             department = department_name,
             version = layer.version,
-            media = Exr(layer_name, _frames(aov, frame_range))
+            media = Exr(layer_name, _frames(aov, frame_range)),
+            check = unpublished
         ))
     return takes
 
@@ -267,17 +315,22 @@ def default_take(takes: list[Take]) -> int:
     """The take a shot opens on: the playblast written last, whichever
     department it was cut at (a tie goes to the more downstream one), else
     the last plain take (the latest render of the most downstream department
-    and layer), else (only stacks) the last take.
+    and layer), else (only stacks) the last take; never a check render's
+    take, and ``len(takes)`` (no take, as for a shot with none) when every
+    take is one.
 
     Not the most downstream department's latest: a farm playblast cut at
     animation after one cut at render would never open (wifi_retina). Never
     a stack while there is a plain take: a stack is a closer look at a
-    version, not what a shot is."""
-    plain = [index for index, take in enumerate(takes) if not take.is_stack]
+    version, not what a shot is. Never a check render: it is not the
+    shot's render (Farm Submit's Step), though it is there to pick."""
+    published = [index for index, take in enumerate(takes) if not take.check]
+    plain = [index for index in published if not takes[index].is_stack]
     movies = [index for index in plain if takes[index].kind == 'movie']
     if movies: return max(movies, key = lambda index: (_written_at(takes[index]), index))
     if plain: return plain[-1]
-    return max(len(takes) - 1, 0)
+    if published: return published[-1]
+    return len(takes)
 
 def sequence_of(entity_uri: Uri) -> str:
     """The sequence a shot is in: its path between ``shots`` and its name."""

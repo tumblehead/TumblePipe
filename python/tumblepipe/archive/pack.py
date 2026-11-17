@@ -160,18 +160,24 @@ def _derived_entries(plan: Plan) -> list[dict]:
         elif item.kind == Kind.RENDER and decision.reason == Reason.RENDER:
             entries[key] = dict(
                 kind='render', root=item.root, unit=item.unit, version=item.version,
+                published=item.published,
             )
-    # Renders: only the latest version of each series is worth re-making.
+    # Renders: only the latest version of each series is worth re-making,
+    # its newest published one: a check render (Farm Submit's Step,
+    # ``published: false``) is never it, nor re-made.
     latest_render: dict[str, int] = {}
     for entry in entries.values():
-        if entry['kind'] == 'render':
+        if entry['kind'] == 'render' and entry['published']:
             series = entry['unit'].rsplit('/', 1)[0]
             latest_render[series] = max(latest_render.get(series, 0), entry['version'])
-    return [
+    kept = [
         entry for entry in entries.values()
         if entry['kind'] != 'render'
-        or entry['version'] == latest_render[entry['unit'].rsplit('/', 1)[0]]
+        or entry['version'] == latest_render.get(entry['unit'].rsplit('/', 1)[0])
     ]
+    for entry in kept:
+        entry.pop('published', None)
+    return kept
 
 
 def _external_references(plan: Plan) -> dict:

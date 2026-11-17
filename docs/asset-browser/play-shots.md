@@ -101,6 +101,22 @@ a fade still runs as the clip's own fade. **Export movie** places the
 frames the same way. A movie whose `frame_ranges` tag does not list exactly
 its frames does not open; its clip says why.
 
+### Check renders
+
+A render with a **Step** above 1 (Farm Submit, every Nth frame) is a check
+render, never published ([Stepped renders](submit-jobs.md#stepped-renders)):
+its version's `context.json` says `"published": false`. Its frames are all
+there on its step, so it plays (each frame held until the next), but it is
+never the shot's render. Like a frame list's, the editor shows it only when
+you choose it: Best available, a department's newest version, a shot
+opening and View > Show pass over its EXRs, its stacks of layers and the
+render department's review movie of it, so a clip never switches to it by
+itself. Each of its takes is still listed, labelled `render v0014 default
+beauty (check, every 2nd)`, and the **Version** submenu shows it as
+`v0014 · check`; choosing it pins it, and a clip pinned to it keeps playing
+it. A shot whose only takes are check renders opens on nothing (its cut
+says so) until a published render or a playblast is made.
+
 ### The whole cut as renders or playblasts
 
 **View > Show** plays every shot clip at once as one kind of take, to watch

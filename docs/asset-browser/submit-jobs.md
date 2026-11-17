@@ -279,6 +279,13 @@ The Warnings column says, per row, what the submission would run into:
 - `Comp follows a published render, and multi-range renders are not
   published: …` — Comp is ticked beside a multi-range render. **Blocks**:
   untick Comp, or render one range.
+- `every Nth frame (<n> frames): stepped renders are not published, no
+  daily` (`…, Copy to edit skipped` with **Copy to edit** ticked) — a
+  [stepped render](#stepped-renders) (the Render's **Step** above 1). A
+  warning, not a block.
+- `Comp follows a published render, and stepped renders are not
+  published: …` — Comp is ticked beside a stepped render. **Blocks**:
+  untick Comp, or set the Render's **Step** to 1.
 - `render preview frames: …, dropped` / `comp preview frames: …, dropped`
   — the **Preview frames** list names a word that is not a frame number, a
   frame outside the range (the render's with its rolls; the comp's
@@ -442,6 +449,7 @@ pixel samples: more is cleaner and slower.
 | **Range** | — | Full range ticked | Two checkboxes. **Full range** renders everything and chains slapcomp + MP4; **Preview (first / middle / last)** renders three check frames and posts them to Discord. Tick both to get the preview first, with the full range queued behind it. One of the two must be ticked. |
 | **Preview frames** | — | empty: first / middle / last | The Preview Frames List, shown under **Range** only while **Preview** is ticked, with a [frame timeline](#frame-timelines) under it. Empty, the preview is the first, middle and last frame of the cut, as before. Otherwise type the frames to preview, separated by spaces, e.g. `1012 1040 1077` for key poses: any number, rendered first and in that order, and posted to Discord (the panorama shows the first 8; the message says how many more were rendered). The rest of the range follows as usual. Whole frame numbers only; a repeat counts once. A frame outside the rendered range (rolls included) or not a number is dropped and named in the [Warnings](#warnings) column (and the submit log); when none is left the preview falls back to first / middle / last, with a warning. One list for the whole submission: the grid has no per-shot settings, so different key poses per shot mean one submission per shot. Not remembered for the next opening. |
 | **Frames** (first → last) | `frame_start` / `frame_end` | *required* — omitted, and the entity fails with "no frame range configured" | |
+| **Step** (beside **Frames**) | — | 1 | Render every Nth frame: the range from its first frame (rolls included), or each **Frame list** range from its own first. Above 1 it is a [stepped render](#stepped-renders), a check render that is not published. Remembered for the next opening once set; ↺ goes back to 1. Hidden on the Assets tab: a turntable renders on the studio's own step. |
 | **Frame list** | — | empty: every frame, first → last | Render only some stretches of the shot: ranges and single frames, separated by spaces, e.g. `1001-1030 1040-1055 1100-1200` (commas are taken too). A [frame timeline](#frame-timelines) under the field picks them with the mouse. Each must lie inside the rendered range (**Frames** with the rolls). Ranges are sorted, and ranges that overlap or touch merge (`1001-1030 1031-1040` is `1001-1040`); the note under the field shows the frame count. **One range** renders exactly as **Frames** set to it, with no rolls added, and publishes as usual. **Two or more** make a [multi-range render](#multi-range-renders). A word that is not a frame or a range, a range written backwards (`1030-1001`) or one past the shot **blocks** the row (see [Warnings](#warnings)). One list for the whole submission, as the Preview frames list. Hidden on the Assets tab: a turntable renders the studio's frames. Not remembered for the next opening. |
 | **Pre / Post roll** | `roll_start` / `roll_end` | 0 / 0 | **Extends** the rendered range: `first - pre … last + post`. |
 | **Pool** | `farm.default_pool` | `general` | |
@@ -454,8 +462,9 @@ pixel samples: more is cleaner and slower.
 | **Standalone** | — | off | Off = direct render of the collapsed staged file. On = a farm **stage** job builds the render stage first. See [Render staging](../composition.md#render-staging). |
 | **Copy to edit** | — | off | Adds an *edit* job that copies the finished `beauty` (RGBA — the alpha is its A), the `objid_*` / `holdout_*` mattes and the `ramp_*` distance ramps to the edit location (the other AOVs stay with the render). |
 
-There is no step field: a shot's farm render always submits
-`step_size = 1`.
+No `th::` node authors a shot render's step, so **Step** is a farm
+setting of the submission, shown here (on the Assets tab the turntable's
+step is the studio's, as before).
 
 #### Frame timelines
 
@@ -472,6 +481,19 @@ redraws the timeline, so the two always agree.
 - With the timeline focused (Tab or a click): **Left / Right** move a frame
   cursor (**Shift**: 10 frames), **Home / End** jump to the ends, **Space**
   or **Enter** toggles the cursor's frame, **Delete** removes it.
+- **Ctrl+wheel** zooms in or out about the pointer; **Shift+wheel** (or a
+  sideways wheel) pans a zoomed timeline. A plain wheel scrolls the
+  settings as ever. Zoomed, the ends show the frames in view, a bar along
+  the bottom of the track shows where they sit in the whole range, and the
+  keyboard cursor pans the view to stay in it.
+
+To make a pick precise when a long shot leaves a frame under two pixels
+(Remy, 2026-11-17): the frame under the pointer is outlined (a line
+through it when the frames are narrow) and its number shows in a chip
+beside the pointer; while you drag, the chip shows the first and last
+frame of the stretch (`remove …` on a removing drag), so you can see what a
+release will write before you let go. Hovering also shows a tooltip that
+starts with that frame and whether it is selected.
 
 On the Frame list timeline a drag adds a range (ranges that touch merge),
 and an empty list shows every frame filled faintly: removing a stretch from
@@ -479,9 +501,11 @@ it leaves the rest, e.g. right-dragging over 1040-1050 of 1001-1100 writes
 `1001-1039 1051-1100`. On a Preview frames timeline every frame is its own
 mark and new frames go to the end of the list, so the order you click is
 the order they render; an empty list shows the first, middle and last frame
-faintly. A comp's timeline picks only frames on its **Step**. The Render's
-Preview frames timeline hatches the frames a Frame list leaves out (they are
-never rendered).
+faintly. A comp's timeline picks only frames on its **Step**, and the
+Render's Preview frames timeline only frames on the Render's **Step**. On a
+**Step** above 1 the Frame list timeline draws only the frames each range
+renders on it. The Render's Preview frames timeline hatches the frames a
+Frame list leaves out (they are never rendered).
 
 The timeline shows the rendered range of the ticked shots, rolls included
 (for the comp, its frames). When the ticked shots' ranges differ it shows
@@ -518,6 +542,41 @@ A **Frame list** of two or more ranges renders only those frames (#84):
   **Comp** beside it is refused (the row is blocked). The
   version's `context.json` lists the ranges under `frame_ranges`, as
   `[[first, last], ...]` (inclusive, sorted, a gap between each two).
+
+#### Stepped renders
+
+A **Step** above 1 renders every Nth frame (Remy, 2026-11-17): from the
+first frame of the range (rolls included), or of each **Frame list** range.
+It is a check render, for looking at lighting across a shot cheaply:
+
+- The render, the denoise, the slapcomp and the review mp4s run on the
+  step; the mp4 holds each rendered frame until the next, so it runs the
+  shot's full length and stays in sync with the edit.
+- A **Preview** checks the first, middle and last frame of the cut as
+  ever (rendered one by one, on the step or not); the **Preview frames**
+  list drops a frame off the step, with a warning (`render preview frames:
+  … not on step …`).
+- **Stepped renders are not published**, like a multi-range render: its
+  frames have gaps, and a daily, the edit and a comp all want every frame.
+  The frames stay in their render version on disk, to view, but no daily
+  is written, **Copy to edit** is greyed out (its tooltip saying why, its
+  tick back when the Step is 1 again), and a **Comp** beside it blocks the
+  row. Each frame stack it writes records `"published": false` in its
+  `context.json`, so nothing that *chooses* the shot's render takes it:
+  a comp's `latest` and `th::import_render`'s default, the edit sync, the
+  take a shot opens on in Cinedex (its Best available, a department's
+  newest version and View > Show; its review movie too), and an archive
+  with renders (which keeps each render series' newest *published*
+  version, and leaves a check render out as `check render (stepped, never
+  published)`). It is still there to look at: Cinedex lists each of its
+  takes, labelled `… (check, every 2nd)` and `v0014 · check` in the
+  Version submenu, and a clip pinned to it keeps playing it
+  ([Check renders](play-shots.md#check-renders)). Its stepped frame range
+  alone never tells it apart (its frames are complete on its step); only
+  `published` does.
+- The note under the **Frame list** counts the frames on the step, and the
+  [Warnings](#warnings) column says `every Nth frame (<n> frames): stepped
+  renders are not published, no daily`.
 
 #### An asset's turntable
 

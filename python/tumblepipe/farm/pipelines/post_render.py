@@ -66,6 +66,11 @@ class Shot:
     # rendered, comped and encoded, but never published: no daily, no
     # copy to the edit.
     frame_ranges: tuple[tuple[int, int], ...] | None = None
+    # A check render (Farm Submit's Step on a shot, Remy 2026-11-17): its
+    # frames have gaps, so like a multi-range render it is rendered,
+    # denoised and encoded but never published, and its frame stacks never
+    # read as the shot's render (``context.json``'s ``published``).
+    check_render: bool = False
 
     @property
     def frames(self) -> BlockRange:
@@ -74,8 +79,8 @@ class Shot:
     @property
     def publishes(self) -> bool:
         """Whether the review chain publishes: writes the dailies and may
-        copy to the edit. A multi-range render does not."""
-        return not self.frame_ranges
+        copy to the edit. A multi-range render or a check render does not."""
+        return not self.frame_ranges and not self.check_render
 
     @property
     def frame_ranges_entry(self) -> dict:
@@ -133,6 +138,9 @@ def write_framestack_context(
         # A multi-range render's (#84): the version holds only these frames
         # of first..last, so it never reads as a complete render
         **shot.frame_ranges_entry,
+        # A check render's (Farm Submit's Step): complete on its step, but
+        # never the shot's render (pipe.paths.render.is_published)
+        **({'published': False} if shot.check_render else {}),
         **({} if reads is None else dict(reads = reads))
     ))
 

@@ -24,6 +24,16 @@ bare pane (only what the section builder touches) and pins:
   7. The Comp's Preview frames row does the same; its timeline picks only
      frames on the comp's step.
   8. A remembered Preview tick restores its row shown (or hidden).
+  9. The render's Step (Remy, 2026-11-17) sits on the Frames row and is
+     sent as render_step; above 1 the note says the list renders every
+     Nth frame and is not published, Copy to edit goes off (saying why),
+     and the timelines take the step; back on 1 all comes back.
+ 10. Precision (Remy, 2026-11-17): hovering names the frame a click lands
+     on, a drag names its first and last frame, Ctrl+wheel zooms about the
+     pointer and Shift+wheel pans (a plain wheel scrolls the form), a click
+     on the zoomed ruler picks the frame under it; the timeline's tooltip
+     is short wrapped rich text drawn at a readable width, and
+     ``asset_browser.tooltips.install`` wraps a window's long tooltips.
 
 Run (no Houdini, no project):
     QT_QPA_PLATFORM=offscreen TUMBLETROVE_PYTHON=<tumbletrove>/python \\
@@ -59,7 +69,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt  # noqa: E402
 from PySide6.QtGui import QMouseEvent  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication, QToolTip, QWidget  # noqa: E402
 
 app = QApplication.instance() or QApplication(sys.argv)
 
@@ -278,8 +288,151 @@ def main() -> int:
           restored is True and pane._rnd_preview.isChecked() == _row_visible(pane, holder)
           and pane._comp_preview.isChecked() == _row_visible(pane, comp_holder), str(restored))
 
+    # 9. The render's Step (Remy, 2026-11-17)
+    step = pane._rnd_step
+    frames_row = pane._rnd_first.parentWidget()
+    check("a Step field sits on the Frames row, beside First → Last",
+          step.parentWidget() is frames_row and _row_visible(pane, frames_row))
+    field.setText('')
+    copy.setChecked(True)
+    step.setValue(2)
+    values = pane._form_values()
+    check("the form sends the step as render_step", values.get('render_step') == 2,
+          repr(values.get('render_step')))
+    check("the note says every 2nd frame, not published",
+          'every 2nd frame' in note.text() and frame_ranges.STEPPED_NOT_PUBLISHED in note.text(),
+          note.text())
+    check("a step above 1 disables Copy to edit, saying why, and sends none",
+          not copy.isEnabled() and frame_ranges.STEPPED_NOT_PUBLISHED in copy.toolTip()
+          and copy.isChecked() and values['copy_to_edit'] is False,
+          f"enabled={copy.isEnabled()} tip={copy.toolTip()!r}")
+    field.setText('1001-1030 1040-1055')
+    check("a list on a step counts each range's frames on it",
+          note.text().startswith('23 frames in 2 ranges'), note.text())
+    pane._update_timelines(rows)
+    check("the timelines take the step", timeline._step == 2 and ptl._step == 2,
+          f"{timeline._step} {ptl._step}")
+    pane._rnd_preview.setChecked(True)
+    pane._rnd_preview_list.setText('')
+    ptl.apply(1001, 1006, False)
+    check("the preview timeline picks only frames on the render's step",
+          pane._rnd_preview_list.text() == '1001 1003 1005', pane._rnd_preview_list.text())
+    pane._rnd_preview_list.setText('')
+    pane._rnd_preview.setChecked(False)
+    field.setText('')
+    step.setValue(1)
+    values = pane._form_values()
+    check("step 1 gives Copy to edit back as it was",
+          copy.isEnabled() and copy.toolTip() == 'the own tooltip' and values['copy_to_edit'] is True,
+          f"enabled={copy.isEnabled()} tip={copy.toolTip()!r}")
+    field.setText('')
+
+    # 10. Precision: the frame under the pointer, zoom, and wrapped tooltips
+    from PySide6.QtGui import QHelpEvent, QWheelEvent  # noqa: PLC0415
+    from tumblepipe.asset_browser import tooltips  # noqa: PLC0415
+    pane._update_timelines(rows)
+    timeline.resize(350, timeline.height())
+
+    def x_at(frame):
+        lo, hi = timeline.shown()
+        return int((frame - lo + 0.5) / (hi - lo + 1) * (timeline.width() - 2)) + 1
+
+    def move(frame, buttons=Qt.NoButton):
+        pos = QPointF(x_at(frame), 10)
+        QApplication.sendEvent(timeline, QMouseEvent(
+            QEvent.MouseMove, pos, timeline.mapToGlobal(pos), Qt.NoButton, buttons, Qt.NoModifier,
+        ))
+
+    move(1043)
+    check("hovering names the frame a click lands on", timeline.floating_label() == '1043',
+          timeline.floating_label())
+    pos = QPointF(x_at(1011), 10)
+    QApplication.sendEvent(timeline, QMouseEvent(
+        QEvent.MouseButtonPress, pos, timeline.mapToGlobal(pos), Qt.LeftButton, Qt.LeftButton,
+        Qt.NoModifier,
+    ))
+    move(1020, Qt.LeftButton)
+    check("a drag names its first and last frame before the release",
+          timeline.floating_label() == '1011-1020', timeline.floating_label())
+    pos = QPointF(x_at(1020), 10)
+    QApplication.sendEvent(timeline, QMouseEvent(
+        QEvent.MouseButtonRelease, pos, timeline.mapToGlobal(pos), Qt.LeftButton, Qt.NoButton,
+        Qt.NoModifier,
+    ))
+    check("... and writes exactly those frames", field.text() == '1011-1020', field.text())
+    QApplication.sendEvent(timeline, QEvent(QEvent.Leave))
+    check("leaving clears the label", timeline.floating_label() == '', timeline.floating_label())
+    field.setText('')
+
+    def wheel(frame, notches, mods):
+        pos = QPointF(x_at(frame), 10)
+        event = QWheelEvent(
+            pos, timeline.mapToGlobal(pos), QPoint(0, 0), QPoint(0, 120 * notches),
+            Qt.NoButton, mods, Qt.NoScrollPhase, False,
+        )
+        QApplication.sendEvent(timeline, event)
+        return event.isAccepted()
+
+    accepted = wheel(1050, 3, Qt.NoModifier)
+    check("a plain wheel is left to scroll the form", not accepted and timeline.shown() == (1001, 1100),
+          repr(timeline.shown()))
+    wheel(1050, 3, Qt.ControlModifier)
+    lo, hi = timeline.shown()
+    check("Ctrl+wheel zooms in about the pointer", hi - lo + 1 < 100 and lo <= 1050 <= hi,
+          repr(timeline.shown()))
+    check("... and the frame under the pointer stays under it",
+          abs(timeline.frame_at(x_at(1050)) - 1050) <= 1, str(timeline.frame_at(x_at(1050))))
+    before = timeline.shown()
+    wheel(1050, -1, Qt.ShiftModifier)
+    after = timeline.shown()
+    check("Shift+wheel pans the zoomed ruler, as many frames shown",
+          after != before and after[1] - after[0] == before[1] - before[0], f"{before} {after}")
+    move(after[0] + 3)
+    pos = QPointF(x_at(after[0] + 3), 10)
+    QTest.mouseClick(timeline, Qt.LeftButton, Qt.NoModifier, pos.toPoint())
+    check("a click on the zoomed ruler picks the frame under it",
+          field.text() == str(after[0] + 3), field.text())
+    field.setText('')
+    wheel(1050, -20, Qt.ControlModifier)
+    check("Ctrl+wheel out goes back to every frame", timeline.shown() == (1001, 1100),
+          repr(timeline.shown()))
+
+    tip = timeline.toolTip()
+    check("the timeline's tooltip is wrapped rich text, and short",
+          tip.startswith('<qt>') and len(tip) < 600, f"{len(tip)} {tip[:80]!r}")
+    QApplication.sendEvent(timeline, QHelpEvent(
+        QEvent.ToolTip, QPoint(x_at(1043), 10), timeline.mapToGlobal(QPoint(x_at(1043), 10)),
+    ))
+    shown_tip = QToolTip.text()
+    label = next((w for w in QApplication.topLevelWidgets()
+                  if w.inherits('QLabel') and w.isVisible() and w.objectName() == 'qtooltip_label'), None)
+    check("hovering shows the frame first in the tooltip",
+          'Frame 1043' in shown_tip and shown_tip.startswith('<qt>'), shown_tip[:80])
+    check("... drawn at a readable width",
+          label is not None and 0 < label.width() <= 640, str(label and label.width()))
+    QToolTip.hideText()
+
+    long_text = "word " * 60
+    check("long plain text wraps", tooltips.wrapped(long_text).startswith('<qt>'))
+    check("short text and markup are left alone",
+          tooltips.wrapped('Short tip') == 'Short tip' and tooltips.wrapped('<b>x</b>') == '<b>x</b>')
+    root = QWidget()
+    tooltips.install(root)
+    late = sjd.QCheckBox("late", root)      # added after install
+    late.setToolTip(long_text.strip())
+    root.resize(200, 100)
+    root.show()
+    QApplication.sendEvent(late, QHelpEvent(QEvent.ToolTip, QPoint(5, 5), late.mapToGlobal(QPoint(5, 5))))
+    check("a window's long tooltips show wrapped, widgets added later too",
+          QToolTip.text().startswith('<qt>'), QToolTip.text()[:60])
+    QToolTip.hideText()
+    root.close()
+
     shot = os.environ.get('FRAME_LIST_SCREENSHOT')
     if shot:
+        step.setValue(2)
+        pane._update_timelines(rows)
+        move(1043)
         pane._rnd_preview.setChecked(True)
         pane._rnd_preview_list.setText('1012 1040 1077')
         field.setText('1001-1030 1040-1055')
@@ -296,6 +449,9 @@ def main() -> int:
           and not _row_visible(asset_pane, asset_pane._rnd_frame_list_note))
     sent = asset_pane._form_values().get('frame_list')
     check("the Assets tab sends no frame list", sent == '', repr(sent))
+    check("the Assets tab hides the Step with the frames (a turntable's own step)",
+          not _row_visible(asset_pane, asset_pane._rnd_step.parentWidget())
+          and asset_pane._render_step() == 1)
 
     print()
     print('FAILED: ' + ', '.join(FAILED) if FAILED else 'all ok')

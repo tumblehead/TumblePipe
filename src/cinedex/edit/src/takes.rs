@@ -78,11 +78,12 @@ pub fn pick_shown(takes: &[Take], rule: &Rule, show: Option<TakeKind>) -> (Optio
 
 /// The take `rule` picks with its layer as given.
 fn pick_exactly(takes: &[Take], rule: &Rule) -> Option<usize> {
-    // A Frame List render's movie (#84) is never published: only a rule
-    // pinning its version picks it (#86).
+    // A Frame List render's movie (#84) and a check render's takes (Farm
+    // Submit's Step) are never published: only a rule pinning its version
+    // picks one (#86).
     let pinned = matches!(rule.version, VersionRule::Pinned(_));
     let fits = |t: &Take| {
-        (pinned || !t.multi_range)
+        (pinned || t.published())
             && rule.department.as_ref().is_none_or(|d| &t.department == d)
             && rule.kind.is_none_or(|k| kind_of(t) == k)
             && rule.layer.as_deref().is_none_or(|l| t.layer() == Some(l))
@@ -155,7 +156,14 @@ pub fn frozen(take: &Take) -> Result<FrozenTake, String> {
 
 /// `media` as one take, for tests and fixtures.
 pub fn take(department: &str, version: &str, media: Media) -> Take {
-    Take { label: format!("{department} {version}"), department: department.into(), version: version.into(), media, multi_range: false }
+    Take {
+        label: format!("{department} {version}"),
+        department: department.into(),
+        version: version.into(),
+        media,
+        multi_range: false,
+        check: false,
+    }
 }
 
 #[cfg(test)]

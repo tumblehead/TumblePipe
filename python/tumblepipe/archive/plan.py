@@ -13,7 +13,9 @@ Never archived: Houdini's ``backup/`` hips, farm job copies, noise, and
 anything outside the pipeline (client material, the edit, delivery) unless
 ``_config/archive.json`` includes it. Caches and renders are derived and
 only go in when asked (``with_caches`` / ``with_renders``), and then only
-their latest complete version.
+their latest complete version. A render's latest is its newest *published*
+version: a check render (Farm Submit's Step, ``published: false``) is never
+it, and is left out (``Reason.CHECK_RENDER``).
 
 **Only the latest export.** The pipeline's import nodes move to the latest
 version of each export when a workfile opens, so a workfile never needs an
@@ -49,6 +51,7 @@ class Reason:
     CACHE_OLD = 'older cache version'
     RENDER = 'render (opt in with renders)'
     RENDER_OLD = 'older render version'
+    CHECK_RENDER = 'check render (stepped, never published)'
     NOT_PIPELINE = 'not pipeline data (client material, edit, delivery)'
     ENVIRONMENT = 'installed software (Python environment, node_modules)'
 
@@ -111,12 +114,13 @@ class Plan:
 
 
 def _versions_by_series(items, kinds) -> dict[str, dict[int, bool]]:
-    """series -> {version: complete} over the units of ``kinds``."""
+    """series -> {version: complete} over the units of ``kinds``; a check
+    render's version counts as unfinished (it is never the latest)."""
     series: dict[str, dict[int, bool]] = defaultdict(dict)
     for item in items:
         if item.kind in kinds and item.unit is not None:
             key = f'{item.root}:{item.series}'
-            series[key][item.version] = item.complete
+            series[key][item.version] = item.complete and item.published
     return series
 
 
@@ -204,6 +208,8 @@ def make_plan(
         if kind == Kind.RENDER:
             if not options.with_renders:
                 return False, Reason.RENDER
+            if item.unit is not None and not item.published:
+                return False, Reason.CHECK_RENDER
             if item.unit is not None and item.version != latest_of(renders, item):
                 return False, Reason.RENDER_OLD
             return True, Reason.INCLUDED

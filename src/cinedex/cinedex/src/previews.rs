@@ -207,6 +207,7 @@ mod tests {
             version: version.into(),
             media: th_playlist::Media::Movie { path: "P:/m.mp4".into() },
             multi_range: false,
+            check: false,
         }
     }
 

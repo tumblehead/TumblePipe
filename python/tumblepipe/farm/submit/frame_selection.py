@@ -28,6 +28,7 @@ Pure: no ``hou``, no Qt, no config reads, so the tests load it directly.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from tumblepipe.farm.specs import frame_ranges
@@ -216,3 +217,66 @@ def view(spans, noun: str = 'shots') -> View | None:
         caption = '' if count == 1 else f"all {count} {noun}"
         return View(lo, hi, caption, mixed=False)
     return View(lo, hi, f"union of {count} {noun}' frames", mixed=True)
+
+
+# ── Zoom (Remy, 2026-11-17: ~200 frames in ~350 px is under two pixels a
+# frame, so a click landed on a frame nobody could aim at) ──────────────
+
+#: The fewest frames a zoomed timeline shows.
+LEAST_SHOWN = 12
+
+
+def stepped_in(spans, step: int, lo: int, hi: int) -> list[int]:
+    """The frames ``spans`` render on ``step`` (each span counted from its
+    own first frame, as ``frame_ranges.frames`` counts a Frame list) that
+    lie inside ``lo``..``hi``; only those are enumerated, however long a
+    span is."""
+    step = max(1, step)
+    out: list[int] = []
+    for first, last in spans:
+        start = max(first, lo)
+        start = first + -(-(start - first) // step) * step   # next on the step
+        out.extend(range(start, min(last, hi) + 1, step))
+    return out
+
+
+def zoom(lo: int, hi: int, window, anchor: float, factor: float,
+         least: int = LEAST_SHOWN) -> Range:
+    """The frames a timeline of ``lo``..``hi`` shows once ``window`` (the
+    frames it shows now, None for all) is scaled by ``factor`` (below 1
+    zooms in) about ``anchor``: the frame under the pointer stays where it
+    is on the ruler, as near as whole frames allow. Never fewer than
+    ``least`` frames (or all of them, when there are fewer), never more
+    than ``lo``..``hi``, always inside it."""
+    a, b = window or (lo, hi)
+    total = hi - lo + 1
+    count = b - a + 1
+    shown = max(min(least, total), min(total, round(count * factor)))
+    anchor = max(float(a), min(float(b) + 1, float(anchor)))
+    first = round(anchor - (anchor - a) / count * shown)
+    # Rounding must not push the pointer's own frame off the ruler.
+    under = min(b, math.floor(anchor))
+    first = max(under - shown + 1, min(under, first))
+    first = max(lo, min(hi - shown + 1, first))
+    return first, first + shown - 1
+
+
+def pan(lo: int, hi: int, window, frames: int) -> Range:
+    """``window`` moved ``frames`` later (negative: earlier), as many
+    frames shown and stopped at the ends of ``lo``..``hi``."""
+    a, b = window or (lo, hi)
+    count = b - a + 1
+    first = max(lo, min(hi - count + 1, a + frames))
+    return first, first + count - 1
+
+
+def showing(lo: int, hi: int, window, frame: int) -> Range:
+    """``window`` panned the least that shows ``frame`` (clamped to
+    ``lo``..``hi``): the keyboard cursor never walks off a zoomed ruler."""
+    a, b = window or (lo, hi)
+    frame = max(lo, min(hi, frame))
+    if frame < a:
+        return pan(lo, hi, (a, b), frame - a)
+    if frame > b:
+        return pan(lo, hi, (a, b), frame - b)
+    return a, b

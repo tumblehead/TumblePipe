@@ -548,7 +548,7 @@ impl FramesView {
             editable: false,
         };
         let height = program.height();
-        interactive_canvas(Id::new("frames timeline"), program).width(Length::Fill).height(Length::fixed(height)).into()
+        tracks::track_view(Id::new("frames timeline"), program, height).into()
     }
 
     fn menu_bar(&self) -> Menu<Message> {

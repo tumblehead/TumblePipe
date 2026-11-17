@@ -107,7 +107,9 @@ impl ClipId {
 /// onto the frames of the next is still itself). The pairs are taken best
 /// first: the clip showing most of the id's frames; on a tie (frames shown
 /// twice) the one starting nearest its first frame, then the nearest to
-/// where it was, then the one on its own track. Then each takes the clips
+/// where it was, then the one on its own track; an id whose clips were all
+/// taken so gets one when the id that took it can do with another. Then
+/// each takes the clips
 /// left on its track that continue it in its source.
 fn resolve(ids: &[ClipId], edit: &WorkingEdit) -> Vec<Option<(usize, Vec<usize>)>> {
     let clips = || edit.video.iter().enumerate().flat_map(|(t, track)| track.clips.iter().enumerate().map(move |(i, c)| (t, i, c)));
@@ -122,13 +124,30 @@ fn resolve(ids: &[ClipId], edit: &WorkingEdit) -> Vec<Option<(usize, Vec<usize>)
         })
         .collect();
     pairs.sort();
+    // Each id's clips, best first.
+    let mut candidates: Vec<Vec<(usize, usize)>> = vec![Vec::new(); ids.len()];
+    for &(_, k, t, i) in &pairs {
+        candidates[k].push((t, i));
+    }
     let mut best: Vec<Option<(usize, usize)>> = vec![None; ids.len()];
-    let mut taken: std::collections::BTreeSet<(usize, usize)> = Default::default();
+    let mut owner: std::collections::BTreeMap<(usize, usize), usize> = Default::default();
     for (_, k, t, i) in pairs {
-        if best[k].is_none() && taken.insert((t, i)) {
+        if best[k].is_none() && !owner.contains_key(&(t, i)) {
+            owner.insert((t, i), k);
             best[k] = Some((t, i));
         }
     }
+    // An id left without a clip whose clip went to another id that can
+    // take one of its next best instead gets it: an id is lost only when
+    // no clip is left for it (two pieces rolled across frames each shows,
+    // the best pick for one being the other's only clip).
+    for k in 0..ids.len() {
+        if best[k].is_none() {
+            let mut seen = std::collections::BTreeSet::new();
+            claim(k, &candidates, &mut best, &mut owner, &mut seen);
+        }
+    }
+    let mut taken: std::collections::BTreeSet<(usize, usize)> = owner.into_keys().collect();
     let mut found = Vec::with_capacity(ids.len());
     for (id, best) in ids.iter().zip(best) {
         found.push(best.map(|(track, index)| {
@@ -138,6 +157,33 @@ fn resolve(ids: &[ClipId], edit: &WorkingEdit) -> Vec<Option<(usize, Vec<usize>)
         }));
     }
     found
+}
+
+/// Give id `k` a clip of its `candidates` (best first), moving the id that
+/// has it on to another of its own when it can (an augmenting path); false
+/// when no clip can be freed for it. `seen`: clips already tried.
+fn claim(
+    k: usize,
+    candidates: &[Vec<(usize, usize)>],
+    best: &mut [Option<(usize, usize)>],
+    owner: &mut std::collections::BTreeMap<(usize, usize), usize>,
+    seen: &mut std::collections::BTreeSet<(usize, usize)>,
+) -> bool {
+    for &clip in &candidates[k] {
+        if !seen.insert(clip) {
+            continue;
+        }
+        let free = match owner.get(&clip) {
+            None => true,
+            Some(&other) => claim(other, candidates, best, owner, seen),
+        };
+        if free {
+            owner.insert(clip, k);
+            best[k] = Some(clip);
+            return true;
+        }
+    }
+    false
 }
 
 /// A loop over clips of the cut: from `head` frames into the first to
@@ -568,5 +614,26 @@ mod tests {
         }
         // C0 903-904 at 0, C0 913-921 at 2, C1 at 11.
         assert_eq!(looping.span(), (0, 13));
+    }
+
+    /// A split, the first piece slipped a frame back, then the cut between
+    /// the pieces rolled on: the first piece now shows as many of the
+    /// second's old frames as the second still does, and starts nearer
+    /// them. The second still takes its own clip, not the first's (the
+    /// first would be lost, and the loop end with it) (found by the loop
+    /// prop, 2026-11-17).
+    #[test]
+    fn a_rolled_cut_between_pieces_keeps_both() {
+        let mut edit = cut(&[(2, 0, 900), (17, 0, 900)]);
+        let mut looping = shot_view(&edit, "entity:/shots/S/C0", None).unwrap().looping;
+        assert_eq!(looping.span(), (0, 19));
+        let c1 = ClipRef { track: TrackRef::video(0), index: 1 };
+        let changes = [Op::Split { clip: c1, at: 4 }, Op::Slip { clip: c1, delta: -1 }, Op::Roll { clip: c1, delta: 8 }];
+        for change in &changes {
+            edit = ops::apply(&edit, change, &AllFrames).unwrap();
+            assert!(looping.follow(&edit));
+        }
+        // C0 at 0, C1 899-908 at 2, C1 910-916 at 12.
+        assert_eq!(looping.span(), (0, 19));
     }
 }

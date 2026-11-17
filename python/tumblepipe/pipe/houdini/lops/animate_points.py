@@ -19,7 +19,8 @@ without the unpack: `read_points` reads each packed shape's points where
 they are. A dive whose Scene Invoke still outputs unpacked geometry
 straight into the dive's output is switched to packed folders when the
 scene loads (`optimize_dive`), with a comment on the Scene Invoke and a
-message, so the change is never silent. A dive with SOPs after its Scene
+message, so the change is never silent; once per Scene Invoke, and never
+when anything else reads its geometry. A dive with SOPs after its Scene
 Invoke (TumbleRig's Camera Lattice, say) is left as it is: those SOPs keep
 their unpacked geometry, and this reads what they output.
 
@@ -1394,23 +1395,119 @@ def _outputs_unpacked(invoke_node) -> bool:
     return parm is not None and parm.evalAsString() == 'unpacked'
 
 
+# Set on a Scene Invoke th::animate switched to Packed Folders, so it is
+# switched once: an artist who sets it back to Unpacked keeps Unpacked.
+SWITCHED_KEY = 'th_animate_packed'
+# What the comment th::animate leaves says; a scene switched up to 1.111
+# carries only the comment.
+SWITCHED_NOTE = 'Packed Folders by th::animate'
+
+
+def switched_before(invoke_node) -> bool:
+    """True when th::animate switched this Scene Invoke to Packed Folders
+    once already (its user data, or the comment it left before that)."""
+    try:
+        if invoke_node.userData(SWITCHED_KEY):
+            return True
+    except (AttributeError, hou.Error):
+        pass
+    return SWITCHED_NOTE in (invoke_node.comment() or '')
+
+
+def _within(node, parent) -> bool:
+    return node.path().startswith(parent.path() + '/')
+
+
+# The nodes that read a SOP network's geometry by path: (category, type,
+# the prefix of the parms naming it).
+_PATH_READER_TYPES = (
+    ('sopNodeTypeCategory', 'object_merge', 'objpath'),
+    ('lopNodeTypeCategory', 'sopimport', 'soppath'),
+)
+
+
+def _path_readers(targets) -> list:
+    """(reader, target) for every Object Merge SOP and SOP Import LOP in
+    the session whose path parms name one of `targets`."""
+    found = []
+    for category, type_name, prefix in _PATH_READER_TYPES:
+        node_type = hou.nodeType(getattr(hou, category)(), type_name)
+        if node_type is None:
+            continue
+        for node in node_type.instances():
+            for parm in node.parms():
+                if not parm.name().startswith(prefix):
+                    continue
+                try:
+                    named = parm.evalAsNodes()
+                except hou.Error:
+                    continue
+                found += [(node, target) for target in targets if target in named]
+    return found
+
+
+def other_readers(animate_node, invoke_node) -> list[str]:
+    """The nodes other than th::animate that read the Scene Invoke's
+    geometry, by path: SOPs wired after it beside the dive's output (a
+    deformer branch, a second Output SOP), nodes referencing it (an Object
+    Merge in a shot sculpt network, or in the dive), and nodes outside
+    th::animate referencing the dive or its output. th::animate's own
+    nodes (`points_sops` merging the dive) do not count. Packed Folders
+    would change what every one of them gets."""
+    dive_node = animate_node.node(DIVE)
+    if dive_node is None: return []
+    output = dive_output(dive_node)
+    targets = [invoke_node] + [n for n in (output, dive_node)
+                               if n is not None and n != invoke_node]
+    references = [(n, t) for t in targets for n in t.dependents()]
+    # dependents() knows a reference only once the reader has cooked; a
+    # scene that has just loaded has cooked nothing.
+    references += _path_readers(targets)
+    readers = [n for n in invoke_node.outputs() if n != output]
+    for node, target in references:
+        if target == invoke_node:
+            # In the dive (an Object Merge there) it counts; th::animate's
+            # own nodes do not.
+            if _within(node, animate_node) and not _within(node, dive_node):
+                continue
+        elif _within(node, animate_node):
+            continue
+        readers.append(node)
+    paths = []
+    for node in readers:
+        if node.path() not in paths:
+            paths.append(node.path())
+    return paths
+
+
 def optimize_dive(animate_node) -> str | None:
     """Switch the Scene Invoke feeding anim_dive's output straight to
     packed folders, when it outputs unpacked geometry. The rigs then reach
-    `apply` without being unpacked every frame; the node's output does not
-    change. The Scene Invoke gets a comment saying so. Returns the message
-    for the artist, or None when there was nothing to do."""
+    `apply` without being unpacked every frame; th::animate's output does
+    not change. The Scene Invoke gets a comment saying so. Returns the
+    message for the artist, or None when there was nothing to do.
+
+    Done once per Scene Invoke (`switched_before`), and never when anything
+    else reads its geometry (`other_readers`): a deformer or a shot sculpt
+    working on the unpacked rigs would get packed folders. Up to 1.111 it
+    ran on every load whatever read the Scene Invoke, so setting it back to
+    Unpacked did not last past the next open (Remy, tumblepipe__bugs
+    2026-11-17)."""
     dive_node = animate_node.node(DIVE)
     if dive_node is None: return None
     invoke_node = invoke_feeding_output(dive_node)
     if invoke_node is None or not _outputs_unpacked(invoke_node): return None
+    if switched_before(invoke_node): return None
+    if other_readers(animate_node, invoke_node): return None
     invoke_node.parm('outputmode').set('packedfolders')
     stamp = time.strftime('%Y-%m-%d')
+    invoke_node.setUserData(SWITCHED_KEY, stamp)
     note = (
-        f'Output set to Packed Folders by th::animate ({stamp}) for faster '
+        f'Output set to {SWITCHED_NOTE} ({stamp}) for faster '
         'playback; the animation output is unchanged. th::animate unpacks '
         'it itself. SOPs added after this node get packed folders: put an '
-        'Unpack (twice) before them, or set Output back to Unpacked.'
+        'Unpack (twice) before them, or set Output back to Unpacked '
+        '(th::animate does not switch it again).'
     )
     comment = invoke_node.comment()
     invoke_node.setComment(note if not comment else f'{comment}\n{note}')
@@ -1429,10 +1526,18 @@ def announce(message: str) -> None:
 
 
 def on_loaded(animate_node) -> None:
-    """OnLoaded: speed up a dive from before packed folders."""
-    try:
-        message = optimize_dive(animate_node)
-    except hou.Error:
-        return
-    if message is not None:
-        announce(message)
+    """OnLoaded: speed up a dive from before packed folders, once the
+    scene has loaded (`after_load`): what else reads the Scene Invoke (an
+    Object Merge in /obj, say) may load after th::animate does."""
+    from tumblepipe.pipe.houdini import after_load
+
+    def optimize():
+        try:
+            # A node deleted since raises hou.ObjectWasDeleted, a hou.Error.
+            message = optimize_dive(animate_node)
+        except hou.Error:
+            return
+        if message is not None:
+            announce(message)
+
+    after_load.run(optimize)

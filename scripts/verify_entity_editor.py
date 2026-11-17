@@ -238,6 +238,29 @@ check('own Root: the shot points at it', r030.data() == 'sq010_SH030', r030.data
 check('own Root: its assets show', a030.data() == 'PROP/rock', a030.data())
 check('own Root: other shots keep the shared list', a010.data() == 'PROP/tree ×3, VEH/car ×2')
 
+# ── New rows sit in name order, selected ───────────────────────────────────
+
+shots.add_rows([('sq010', 'SH025', {}), ('sq010', 'SH005', {}), ('sq010', 'SH1000', {})])
+
+
+def _listed(pane, group):
+    names = []
+    for source_row in range(pane.model.rowCount()):
+        row = pane.model.row_at(source_row)
+        if not isinstance(row, ee.GroupKey) and row.group == group:
+            names.append(row.name)
+    return names
+
+
+check('new shots sit among their neighbours, numbers by value',
+      _listed(shots, 'sq010') == ['SH005', 'SH010', 'SH020', 'SH025', 'SH030', 'SH1000'],
+      _listed(shots, 'sq010'))
+_sel = {shots.sheet.row(shots._row_id(i)).name for i in shots._selected()}
+check('the new rows stay selected', _sel == {'SH025', 'SH005', 'SH1000'}, _sel)
+_new = [r for r in shots.sheet.rows if r.is_new]
+shots.edit(lambda: shots.sheet.set_retired([r.id for r in _new]))
+check('retiring them leaves the order', _listed(shots, 'sq010') == ['SH010', 'SH020', 'SH030'])
+
 # ── Assets tab ─────────────────────────────────────────────────────────────
 
 window.show_kind('assets')

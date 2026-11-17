@@ -398,11 +398,13 @@ def render_config(
     cut_range: list[int] | None = None,
     preview_frame_list: list[int] | None = None,
     frame_ranges: list[list[int]] | None = None,
+    step_size: int = 1,
 ) -> dict:
     """The ``render/job.py`` config for a direct render of collapsed inputs.
 
     ``frame_ranges`` (``farm.specs.frame_ranges``, #84) makes it a
     multi-range render of only those frames; None renders first..last.
+    ``step_size`` renders every Nth of them (Farm Submit's Step).
 
     ``render_settings_path`` is absolute: the job builder reads it locally.
     ``input_paths`` are relative, resolved in the job data dir on the farm.
@@ -422,7 +424,7 @@ def render_config(
             tile_count=tile_count,
             first_frame=first_frame,
             last_frame=last_frame,
-            step_size=1,
+            step_size=step_size,
             batch_size=batch_size,
             copy_to_edit=copy_to_edit,
             **({} if cut_range is None else dict(cut_range=list(cut_range))),

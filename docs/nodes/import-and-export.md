@@ -722,7 +722,15 @@ came out at 0.01 whatever its rig said.
   in the network), and the status bar and console say which node changed.
   Save the scene to keep the change. If you add SOPs after the Scene Invoke
   later, they get packed folders. Put two Unpack SOPs before them, or set
-  the Scene Invoke back to Unpacked Geometry.
+  the Scene Invoke back to Unpacked Geometry: it stays there, as each Scene
+  Invoke is switched only once. One that anything else reads is never
+  switched: a SOP wired after it beside `output0` (a deformer branch, a
+  second Output SOP), or an Object Merge or SOP Import naming it, the dive or
+  its output from anywhere in the scene (a shot sculpt network). Up to 1.111
+  every Scene Invoke wired straight into `output0` was switched on every
+  open, so those setups got packed folders and setting it back to Unpacked
+  lasted only until the scene was opened again. A Scene Invoke switched
+  then keeps Packed Folders until you set it back, once.
 - **SOPs after the Scene Invoke** (TumbleRig's Camera Lattice, say) still
   work. The node reads whatever reaches `output0`, so the lattice's points
   are the ones exported. Such a dive stays on Unpacked Geometry and plays

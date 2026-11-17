@@ -39,7 +39,9 @@ config = {
                                          # render (farm.specs.frame_ranges, #84)
         'composite': {...},              # optional: specs.composite.valid_recomp
         'turntable': 'bool',             # optional: an asset's turntable (#53)
-        'step_size': 'int'               # optional, turntables only (default 1)
+        'step_size': 'int'               # optional (default 1): a turntable's
+                                         # step, or Farm Submit's Step for a
+                                         # shot (a check render: no composite)
     },
     'playblast': {                       # optional
         'department': 'string',
@@ -108,22 +110,21 @@ def _valid_render(render):
     if not valid_cut_range(render): return False
     if not frame_ranges.valid_entry(render): return False
     if 'turntable' in render and not check_bool(render, 'turntable'): return False
+    if 'step_size' in render and not check_int(render, 'step_size'): return False
+    step = render.get('step_size', 1)
+    if step < 1: return False
+    if not valid_preview_frame_list(render, step): return False
     if render.get('turntable'):
         # A turntable renders the studio's frames, never a frame list.
         if frame_ranges.CONFIG_KEY in render: return False
-        if 'step_size' in render and not check_int(render, 'step_size'): return False
-        step = render.get('step_size', 1)
-        if step < 1: return False
-        if not valid_preview_frame_list(render, step): return False
         # A turntable is an asset's: no shot comp follows it.
         return 'composite' not in render
-    if 'step_size' in render: return False
-    # The direct render it submits renders every frame (step 1).
-    if not valid_preview_frame_list(render): return False
     if 'composite' in render:
         if not valid_recomp(render['composite']): return False
         # A multi-range render is not published: no comp follows it.
         if frame_ranges.CONFIG_KEY in render: return False
+        # Nor a stepped one (Farm Submit's Step): its frames have gaps.
+        if step > 1: return False
     return True
 
 

@@ -10,6 +10,14 @@
 //! takes (its render layers on top of each other) follow its plain takes of
 //! the same kind. [`get_shot`] is Python's `get_shot`, as the player's
 //! [`th_playlist::Shot`].
+//!
+//! A *check render* (Farm Submit's Step above 1) records `published: false`
+//! in its `context.json`: its frames are complete on its step, so it plays,
+//! but it is never the shot's render. Its takes (its EXRs, the stacks of
+//! them, and the render department's review movie and layer movies of its
+//! version) are marked `check`, their labels end in `(check, every <n>th)`
+//! ([`check_label`]), and a shot never opens on one ([`default_take`]); a
+//! rule picks one only by its version pinned (`th_edit::takes`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -29,6 +37,65 @@ use crate::versions::list_version_paths;
 pub const BEAUTY: &str = "beauty";
 /// What a stack take's label ends in.
 pub const STACK_LABEL: &str = "layers";
+/// What a check render's take label says, in brackets at its end.
+pub const CHECK_LABEL: &str = "check";
+
+/// `number` as an English ordinal: 1st, 2nd, 3rd, 4th, 11th, 21st
+/// (Python's `review_playlist.ordinal`).
+pub fn ordinal(number: i64) -> String {
+    let suffix = match (number.rem_euclid(100), number.rem_euclid(10)) {
+        (10..=20, _) => "th",
+        (_, 1) => "st",
+        (_, 2) => "nd",
+        (_, 3) => "rd",
+        _ => "th",
+    };
+    format!("{number}{suffix}")
+}
+
+/// What a check render's take label ends in, its step said:
+/// `(check, every 2nd)`, or `(check)` on a step of 1.
+pub fn check_label(step: i64) -> String {
+    if step > 1 { format!("({CHECK_LABEL}, every {})", ordinal(step)) } else { format!("({CHECK_LABEL})") }
+}
+
+fn labelled(label: String, check_step: Option<i64>) -> String {
+    match check_step {
+        Some(step) => format!("{label} {}", check_label(step)),
+        None => label,
+    }
+}
+
+/// The step of a check render whose `context.json` reads `context` (its
+/// `step_size`, 1 when it records none), None for a published version
+/// (`paths.render.check_step`).
+pub fn check_step(context: &serde_json::Value) -> Option<i64> {
+    if context.get("published") != Some(&serde_json::Value::Bool(false)) {
+        return None;
+    }
+    Some(context.get("step_size").and_then(serde_json::Value::as_i64).unwrap_or(1))
+}
+
+/// The step of `department`'s render `version` of `entity` when it is a
+/// check render (any of its layers' `context.json` says `published: false`,
+/// the first by name that does), else None
+/// (`paths.render.get_check_render_step`). A render department's review
+/// movie shares its render version's name.
+pub fn check_render_step(project: &Project, entity: &Uri, department: &str, version: &str) -> Result<Option<i64>, String> {
+    let root = project
+        .storage
+        .resolve(&Uri::root("render").join("render").join_all(&entity.segments).join(department))
+        .map_err(|e| e.to_string())?;
+    if !root.is_dir() {
+        return Ok(None);
+    }
+    let mut layers = list_dir(&root);
+    layers.sort_by_key(|path| file_name(path));
+    Ok(layers
+        .iter()
+        .filter_map(|layer| crate::io::load_json(&layer.join(version).join("context.json")).ok())
+        .find_map(|context| check_step(&context)))
+}
 /// Digits in a rendered frame's number (`$F4`).
 pub const FRAME_PADDING: usize = 4;
 /// Render versions checked at once: each check lists a folder, slow over
@@ -228,19 +295,21 @@ pub fn playblast_takes(project: &Project, entity: &Uri) -> Result<Vec<Take>, Str
         for version in versions {
             let path = playblast_path(project, entity, &department, &version)?;
             let multi_range = multi.contains(&version);
+            let step = if renders.contains(&department) { check_render_step(project, entity, &department, &version)? } else { None };
             takes.push(Take {
-                label: format!("{department} {version}"),
+                label: labelled(format!("{department} {version}"), step),
                 department: department.clone(),
                 version: version.clone(),
                 media: Media::Movie { path: slashed(&path) },
                 multi_range,
+                check: step.is_some(),
             });
             let movies = layer_playblast_movies(project, entity, &department, &version, &channels)?;
             if movies.is_empty() {
                 continue;
             }
             stacks.push(Take {
-                label: format!("{department} {version} {STACK_LABEL}"),
+                label: labelled(format!("{department} {version} {STACK_LABEL}"), step),
                 department: department.clone(),
                 version,
                 media: Media::Stack {
@@ -250,6 +319,7 @@ pub fn playblast_takes(project: &Project, entity: &Uri) -> Result<Vec<Take>, Str
                         .collect(),
                 },
                 multi_range,
+                check: step.is_some(),
             });
         }
         takes.extend(stacks);
@@ -370,6 +440,12 @@ impl RenderVersion {
         let range = self.frame_range()?;
         self.shown().0.is_complete(&range).then_some(range)
     }
+
+    /// Whether it may be read as the shot's render: not a check render,
+    /// whose `context.json` says `published: false` (`Layer.is_published`).
+    pub fn published(&self) -> bool {
+        crate::io::load_json(&self.path.join("context.json")).map_or(true, |context| check_step(&context).is_none())
+    }
 }
 
 /// A render layer's name and its versions.
@@ -456,9 +532,13 @@ fn plain_render_takes(project: &Project, entity: &Uri) -> Result<Vec<Take>, Stri
             versions.extend(layer_versions.into_iter().map(|v| (department.clone(), v)));
         }
     }
-    let ranges = parallel_map(&versions, |(_, version)| version.playable_range());
+    let checked = parallel_map(&versions, |(_, version)| {
+        let range = version.playable_range();
+        let check = range.is_some() && !version.published();
+        (range, check)
+    });
     let mut takes = Vec::new();
-    for ((department, version), range) in versions.into_iter().zip(ranges) {
+    for ((department, version), (range, check)) in versions.into_iter().zip(checked) {
         let Some(range) = range else { continue };
         let (aov, aov_name) = version.shown();
         let mut label = format!("{department} {} {}", version.version, version.layer);
@@ -466,21 +546,27 @@ fn plain_render_takes(project: &Project, entity: &Uri) -> Result<Vec<Take>, Stri
             label = format!("{label} {aov_name}");
         }
         takes.push(Take {
-            label,
+            label: labelled(label, check.then_some(range.step_size)),
             department,
             version: version.version.clone(),
             media: exr_media(&version.layer, &aov, &range),
             multi_range: false,
+            check,
         });
     }
     Ok(takes)
 }
 
+/// A layer of a render stack in the making: its name, its media and whether
+/// it is a check render's.
+type StackedLayer = (String, Media, bool);
+
 /// A department's render stacks, versions oldest first: each version's
 /// takes of the shot's channels (not the slapcomp), in channel order, that
-/// share the bottom one's frame range, when there are two or more.
+/// share the bottom one's frame range, when there are two or more. A stack
+/// with a check render in it is a check take, on its step.
 fn render_stacks(department_takes: &[Take], channels: &[String]) -> Vec<Take> {
-    let mut by_version: Vec<(String, Vec<(String, Media)>)> = Vec::new();
+    let mut by_version: Vec<(String, Vec<StackedLayer>)> = Vec::new();
     for take in department_takes {
         let Media::Exr { layer, .. } = &take.media else { continue };
         let index = match by_version.iter().position(|(v, _)| *v == take.version) {
@@ -491,9 +577,9 @@ fn render_stacks(department_takes: &[Take], channels: &[String]) -> Vec<Take> {
             }
         };
         let found = &mut by_version[index].1;
-        match found.iter_mut().find(|(name, _)| name == layer) {
-            Some(slot) => slot.1 = take.media.clone(),
-            None => found.push((layer.clone(), take.media.clone())),
+        match found.iter_mut().find(|(name, _, _)| name == layer) {
+            Some(slot) => (slot.1, slot.2) = (take.media.clone(), take.check),
+            None => found.push((layer.clone(), take.media.clone(), take.check)),
         }
     }
     by_version.sort_by_key(|(version, _)| version_key(version));
@@ -503,24 +589,26 @@ fn render_stacks(department_takes: &[Take], channels: &[String]) -> Vec<Take> {
     };
     let mut stacks = Vec::new();
     for (version, found) in by_version {
-        let layers: Vec<(String, Media)> = channels
+        let layers: Vec<StackedLayer> = channels
             .iter()
             .filter(|name| name.as_str() != SLAPCOMP)
-            .filter_map(|name| found.iter().find(|(n, _)| n == name).map(|(_, media)| (name.clone(), media.clone())))
+            .filter_map(|name| found.iter().find(|(n, _, _)| n == name).map(|(_, media, check)| (name.clone(), media.clone(), *check)))
             .collect();
-        let Some(bottom) = layers.first().map(|(_, media)| span(media)) else { continue };
-        let layers: Vec<StackLayer> =
-            layers.into_iter().filter(|(_, media)| span(media) == bottom).map(|(name, media)| StackLayer { name, media }).collect();
+        let Some(bottom) = layers.first().map(|(_, media, _)| span(media)) else { continue };
+        let layers: Vec<StackedLayer> = layers.into_iter().filter(|(_, media, _)| span(media) == bottom).collect();
         if layers.len() < 2 {
             continue;
         }
+        let check = layers.iter().any(|(_, _, check)| *check);
+        let layers: Vec<StackLayer> = layers.into_iter().map(|(name, media, _)| StackLayer { name, media }).collect();
         let department = department_takes[0].department.clone();
         stacks.push(Take {
-            label: format!("{department} {version} {STACK_LABEL}"),
+            label: labelled(format!("{department} {version} {STACK_LABEL}"), check.then_some(bottom.2)),
             department,
             version,
             media: Media::Stack { layers },
             multi_range: false,
+            check,
         });
     }
     stacks
@@ -562,10 +650,14 @@ fn written_at(take: &Take) -> i128 {
 
 /// The take a shot opens on: the playblast written last, whichever
 /// department (a tie goes to the later take), else the last plain take,
-/// else (only stacks or Frame List renders, #86) the last take.
+/// else (only stacks or Frame List renders, #86) the last take; never a
+/// check render's take, and `takes.len()` (no take, as for a shot with
+/// none) when every take is one.
 pub fn default_take(takes: &[Take]) -> usize {
+    // A check render is never the shot's render, though it is there to pick.
+    let open: Vec<usize> = (0..takes.len()).filter(|&i| !takes[i].check).collect();
     // A Frame List render's movie (#84) only by its version pinned (#86).
-    let plain: Vec<usize> = (0..takes.len()).filter(|&i| !takes[i].is_stack() && !takes[i].multi_range).collect();
+    let plain: Vec<usize> = open.iter().copied().filter(|&i| !takes[i].is_stack() && !takes[i].multi_range).collect();
     let movies: Vec<usize> = plain.iter().copied().filter(|&i| matches!(takes[i].media, Media::Movie { .. })).collect();
     if let Some(best) = movies.iter().copied().max_by_key(|&i| (written_at(&takes[i]), i)) {
         return best;
@@ -573,7 +665,7 @@ pub fn default_take(takes: &[Take]) -> usize {
     if let Some(&last) = plain.last() {
         return last;
     }
-    takes.len().saturating_sub(1)
+    open.last().copied().unwrap_or(takes.len())
 }
 
 /// The sequence a shot is in: its path between `shots` and its name.
@@ -736,5 +828,157 @@ mod frame_list_tests {
         let entity = Uri::parse("entity:/shots/S/010").unwrap();
         assert!(multi_range_versions(&project, &entity, "render", &["v0001".into()]).unwrap().is_empty());
         assert!(!records_frame_ranges(&serde_json::json!({"frame_ranges": "1001-1010 1020"})));
+    }
+}
+
+#[cfg(test)]
+mod check_render_tests {
+    use super::*;
+    use crate::testing::make_project;
+    use proptest::prelude::*;
+    use serde_json::json;
+    use th_edit::document::{Rule, TakeKind, Version, VersionRule};
+    use th_edit::takes::pick;
+    use th_playlist::Kind;
+
+    const FIRST: i64 = 1001;
+    const LAST: i64 = 1006;
+
+    /// A project whose `render` department is both a shot department (its
+    /// review movies are playblasts) and a render department.
+    fn project() -> (tempfile::TempDir, PathBuf, Project) {
+        let (dir, root) = make_project();
+        let department = json!({"properties": {"independent": false, "publishable": true, "renderable": true}, "children": {}});
+        let departments = json!({"properties": {}, "children": {
+            "shots": {"properties": {}, "children": {"animation": department, "render": department}},
+            "render": {"properties": {}, "children": {"render": department}},
+        }});
+        std::fs::write(root.join("_config/db/departments.json"), departments.to_string()).unwrap();
+        let project = Project::open(&root, &root).unwrap();
+        (dir, root, project)
+    }
+
+    /// A render version of the `default` layer complete on its step,
+    /// published or a check render, and its review movie (written in
+    /// version order).
+    fn write_version(root: &Path, project: &Project, entity: &Uri, code: u32, published: bool, step: i64, movie: bool) {
+        let version = format!("v{code:04}");
+        let folder = root.parent().unwrap().join("Show_render/render/shots/S/010/render/default").join(&version);
+        let aov = folder.join("beauty");
+        std::fs::create_dir_all(&aov).unwrap();
+        let name = entity_stem(&entity.segments, &["default", "beauty", &version]);
+        for frame in (FIRST..=LAST).step_by(step as usize) {
+            std::fs::write(aov.join(format!("{name}.{frame:04}.exr")), b"").unwrap();
+        }
+        let mut context = json!({"first_frame": FIRST, "last_frame": LAST, "step_size": step});
+        if !published {
+            context["published"] = json!(false);
+        }
+        std::fs::write(folder.join("context.json"), context.to_string()).unwrap();
+        if movie {
+            let path = playblast_path(project, entity, "render", &version).unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let file = std::fs::File::create(&path).unwrap();
+            let stamp = UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000 + u64::from(code));
+            file.set_modified(stamp).unwrap();
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
+
+        /// For any set of render versions (published and check renders
+        /// mixed, any order, any step, with or without review movies),
+        /// whatever chooses the shot's render, the take it opens on, best
+        /// available and a `latest` rule of the render stream or of its
+        /// review movies, picks the newest published version (nothing when
+        /// none is), never a check render. Every check render that plays is
+        /// still a take, marked and labelled, and a rule pinning it picks it.
+        #[test]
+        fn chosen_renders_are_published(
+            drawn in prop::collection::btree_map(1u32..13, (any::<bool>(), 1i64..4, any::<bool>()), 0..7),
+            order in any::<prop::sample::Index>(),
+        ) {
+            let (_dir, root, project) = project();
+            let entity = Uri::parse("entity:/shots/S/010").unwrap();
+            // Written in any order: what is chosen does not follow it.
+            let mut codes: Vec<u32> = drawn.keys().copied().collect();
+            if !codes.is_empty() {
+                let at = order.index(codes.len());
+                codes.rotate_left(at);
+            }
+            for code in &codes {
+                let (published, step, movie) = drawn[code];
+                write_version(&root, &project, &entity, *code, published, step, movie);
+            }
+            let newest = drawn.iter().filter(|(_, d)| d.0).map(|(c, _)| *c).max().map(|c| format!("v{c:04}"));
+            let newest_movie = drawn.iter().filter(|(_, d)| d.0 && d.2).map(|(c, _)| *c).max().map(|c| format!("v{c:04}"));
+
+            let mut takes = playblast_takes(&project, &entity).unwrap();
+            takes.extend(render_takes(&project, &entity).unwrap());
+
+            // The take the shot opens on.
+            let opened = default_take(&takes);
+            let want = newest_movie.clone().map(|v| (v, Kind::Movie)).or_else(|| newest.clone().map(|v| (v, Kind::Exr)));
+            match &want {
+                None => prop_assert_eq!(opened, takes.len()),
+                Some((version, kind)) => {
+                    let t = &takes[opened];
+                    prop_assert!(!t.check);
+                    prop_assert_eq!((&t.version, t.kind()), (version, *kind));
+                }
+            }
+
+            // A latest rule: best available, the render stream, the review movies.
+            let picked = |rule: &Rule| pick(&takes, rule).map(|i| &takes[i]);
+            let renders = Rule { department: Some("render".into()), kind: Some(TakeKind::Render), layer: Some("default".into()), version: VersionRule::Latest };
+            let movies = Rule { department: Some("render".into()), kind: Some(TakeKind::Playblast), layer: None, version: VersionRule::Latest };
+            for rule in [&Rule::best(), &renders] {
+                let got = picked(rule);
+                prop_assert!(got.is_none_or(|t| !t.check));
+                prop_assert_eq!(got.map(|t| t.version.clone()), newest.clone());
+            }
+            let got = picked(&movies);
+            prop_assert!(got.is_none_or(|t| !t.check));
+            prop_assert_eq!(got.map(|t| t.version.clone()), newest_movie.clone());
+
+            // Every check render is still there: marked, labelled, pinnable.
+            for (code, (published, step, movie)) in &drawn {
+                let version = format!("v{code:04}");
+                let mut kinds = vec![(TakeKind::Render, Some("default".to_string()))];
+                if *movie {
+                    kinds.push((TakeKind::Playblast, None));
+                }
+                for (kind, layer) in kinds {
+                    let found: Vec<&Take> = takes.iter().filter(|t| t.version == version && th_edit::takes::kind_of(t) == kind && t.layer() == layer.as_deref()).collect();
+                    prop_assert_eq!(found.len(), 1);
+                    prop_assert_eq!(found[0].check, !published);
+                    if !published {
+                        prop_assert!(found[0].label.ends_with(&check_label(*step)), "{}", found[0].label);
+                    }
+                    let pinned = Rule { department: Some("render".into()), kind: Some(kind), layer, version: VersionRule::Pinned(Version::try_from(version.clone()).unwrap()) };
+                    prop_assert_eq!(picked(&pinned).map(|t| t.version.clone()), Some(version.clone()));
+                }
+            }
+        }
+
+        /// A check render's label says its step as an English ordinal, as
+        /// Python's `review_playlist.check_label` does.
+        #[test]
+        fn check_labels_say_the_step(step in 1i64..250) {
+            let label = check_label(step);
+            if step == 1 {
+                prop_assert_eq!(label, "(check)");
+            } else {
+                let suffix = match (step % 100, step % 10) {
+                    (11..=13, _) => "th",
+                    (_, 1) => "st",
+                    (_, 2) => "nd",
+                    (_, 3) => "rd",
+                    _ => "th",
+                };
+                prop_assert_eq!(label, format!("(check, every {step}{suffix})"));
+            }
+        }
     }
 }

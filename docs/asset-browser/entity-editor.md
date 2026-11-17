@@ -56,6 +56,13 @@ category or sequence, or all of them) and **Filter** (rows whose names
 contain the text), then **Reload** and **Details**, as the asset browser
 lays them out.
 
+**Order.** Rows are listed by category or sequence, then by name, numbers
+by value and case ignored: `sh9` before `sh10`, `061` between `060` and
+`070`. A new row, category or sequence takes its place in that order the
+moment it is added (it stays selected and scrolls into view), and a
+renamed one moves when the name is committed, so the list reads as it will
+after Apply and a reload.
+
 **Columns.** Drag a column's header to move it, and right-click any header
 for a tick per column to show or hide it, and **Reset Columns** (every
 column back, in its first order and width). The category or sequence and

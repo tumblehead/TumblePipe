@@ -256,6 +256,7 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                 version: found.version.clone(),
                 media: th_playlist::Media::Movie { path: path.clone() },
                 multi_range: false,
+                check: false,
             };
             let opened = match found.measure.frames {
                 Some(_) => Some(Media::movie(&path).map(Arc::new).map_err(|e| e.to_string())?),
@@ -1442,10 +1443,10 @@ impl Editor {
             editable: true,
         };
         let height = program.height().max(tracks::RULER + tracks::ROW);
-        let canvas = interactive_canvas(Id::new("edit tracks"), program).width(Length::Fill).height(Length::fixed(height));
+        let view = tracks::track_view(Id::new("edit tracks"), program, height);
         // A timeline dragged lower than its tracks scrolls them.
-        let canvas = scrollable(Id::new("tracks scroll"), canvas).width(Length::Fill).height(Length::Fill);
-        let mut menu = context_menu(Id::new("clip menu"), canvas);
+        let view = scrollable(Id::new("tracks scroll"), view).width(Length::Fill).height(Length::Fill);
+        let mut menu = context_menu(Id::new("clip menu"), view);
         if let Some(clip) = self.menu_clip
             && let Some(source @ Source::Shot { .. }) = clip_source(&self.doc.edit, clip)
             && let Some(resolved) = self.entry_of(source).and_then(|i| self.entries[i].resolved())

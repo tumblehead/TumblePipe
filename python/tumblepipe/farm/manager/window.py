@@ -1831,6 +1831,11 @@ class ManagerWindow(QWidget):
             timer.stop()
         self._executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)
+        if event.isAccepted():
+            # WA_DeleteOnClose: drop what PySide keeps on the job trees before
+            # Qt deletes them in creation order (qt_lifetime).
+            from tumblepipe.util.qt_lifetime import release_kept_references
+            release_kept_references(self)
 
 
 # ── worker-thread calls (no Qt in here) ───────────────────

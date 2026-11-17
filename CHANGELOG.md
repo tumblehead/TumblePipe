@@ -12,6 +12,22 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.111.0 — 2026-11-16
+
+### Features
+- feat(save): Autosave and an unsaved-time warning on the Save quick action (`7df132f4`)
+
+### Fixes
+- fix(save): autosave holds off after a long cook, and a backup copy keeps the unsaved count (`502b94b1`)
+- fix(cinedex): keep the editor timeline still while editing (`be1ba57f`)
+
+### Documentation
+- docs(save): Autosave and Warn When Unsaved on the Save button's right-click menu (`1c6fee68`)
+- docs: regenerate CHANGELOG.md for v1.110.0, and the released-parm snapshot (`d85ba46a`)
+
+### Tests
+- test(save): pin the autosave tick, the quiet autosave and the Save menu choices (`eef3ac72`)
+
 ## v1.110.0 — 2026-11-16
 
 ### Features

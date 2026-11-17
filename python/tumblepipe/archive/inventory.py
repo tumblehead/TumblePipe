@@ -14,15 +14,19 @@ is one of, its number, and whether it finished:
   folder in a workfile folder, complete when its ``kind: cache`` sidecar is
   there (``pipe/cache_context``); caches from before the sidecar read as
   incomplete *and* unknown provenance, which the plan flags;
-- a render version is a ``vNNNN`` folder or a ``vNNNN.<ext>`` movie.
+- a render version is a ``vNNNN`` folder or a ``vNNNN.<ext>`` movie; a
+  folder whose ``context.json`` says ``published: false`` is a check render
+  (Farm Submit's Step, ``pipe.paths.render.is_published``), never its
+  series' latest render.
 
 Classification is by layout, so it works on any project the pipeline wrote,
 including a delivered one opened years later without TumblePipe's config
-code: only ``storage.json`` is read.
+code: only ``storage.json`` (and the sidecars named above) is read.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+import json
 import os
 import re
 
@@ -98,6 +102,9 @@ class Item:
     series: str | None = None   # the folder holding that unit's versions
     version: int | None = None
     complete: bool = True
+    #: False for a check render's files (a render version whose
+    #: context.json says ``published: false``)
+    published: bool = True
 
     def path(self, roots: ProjectRoots) -> Path:
         return roots.get(self.root).path.joinpath(*self.rel.split('/'))
@@ -186,6 +193,8 @@ class _Classifier:
     def __init__(self, inventory: Inventory):
         self.inventory = inventory
         self._complete: dict[str, bool] = {}
+        self._published: dict[str, bool] = {}
+        self._layers: dict[str, list[str]] = {}
         self._venv: dict[tuple, bool] = {}
 
     def in_environment(self, root: Root, dirs: tuple[str, ...]) -> bool:
@@ -274,11 +283,53 @@ class _Classifier:
         complete = True if kind == Kind.STAGED else self._export_complete(root, parts[:index + 1])
         return self._unit_item(root, parts, size, kind, index, complete)
 
+    def _render_published(self, root: Root, unit: tuple[str, ...]) -> bool:
+        """Whether the render version folder ``unit`` is published: not a
+        check render, whose ``context.json`` says ``published: false``."""
+        key = f'{root.purpose}:{_join(unit)}'
+        if key not in self._published:
+            published = True
+            try:
+                with long_path(root.path.joinpath(*unit, 'context.json')).open('r', encoding='utf-8') as handle:
+                    context = json.load(handle)
+                published = not (isinstance(context, dict) and context.get('published', True) is False)
+            except (OSError, ValueError):
+                pass
+            self._published[key] = published
+        return self._published[key]
+
+    def _movie_published(self, root: Root, parts: tuple[str, ...]) -> bool:
+        """Whether the review movie ``parts`` (``playblast/<entity>/<dept>/
+        <stem>_vNNNN.mp4``, or a layer's ``…/<dept>/<layer>/…_vNNNN.mov``)
+        is of a published render: a render department's review movie shares
+        its render version's name, ``render/<entity>/<dept>/<layer>/vNNNN``,
+        so it is of a check render when one of those is."""
+        if len(parts) < 3 or parts[0] != 'playblast':
+            return True
+        version_name = _file_version(parts[-1])
+        middle = parts[1:-1]
+        for department in (middle, middle[:-1]):
+            key = f'{root.purpose}:render/{_join(department)}'
+            if key not in self._layers:
+                folder = long_path(root.path.joinpath('render', *department))
+                try:
+                    self._layers[key] = sorted(entry.name for entry in os.scandir(folder) if entry.is_dir())
+                except OSError:
+                    self._layers[key] = []
+            for layer in self._layers[key]:
+                if not self._render_published(root, ('render', *department, layer, version_name)):
+                    return False
+        return True
+
     def render_item(self, root: Root, parts, size) -> Item:
         index = _version_index(parts, stems=True)
         if index is None:
             return Item(root.purpose, _join(parts), size, Kind.RENDER)
-        return self._unit_item(root, parts, size, Kind.RENDER, index, True)
+        item = self._unit_item(root, parts, size, Kind.RENDER, index, True)
+        if index == len(parts) - 1:
+            # A vNNNN.<ext> movie: no context of its own, its render's
+            return replace(item, published=self._movie_published(root, tuple(parts)))
+        return replace(item, published=self._render_published(root, parts[:index + 1]))
 
     def project_item(self, root: Root, parts, size) -> Item:
         rel = _join(parts)

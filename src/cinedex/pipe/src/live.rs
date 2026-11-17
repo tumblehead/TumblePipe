@@ -320,6 +320,7 @@ pub fn live_takes(project: &Project, entity: &Uri, root: &Path) -> Result<Vec<(T
             version: LIVE_VERSION.into(),
             media: Media::Live { frames: state.frames(&folder) },
             multi_range: false,
+            check: false,
         };
         takes.push((take, state, folder));
     }

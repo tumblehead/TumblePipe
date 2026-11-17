@@ -74,6 +74,12 @@ pub struct Take {
     /// available or newest (#86).
     #[serde(default, skip_serializing_if = "is_false")]
     pub multi_range: bool,
+    /// Of a check render (Farm Submit's Step: its `context.json` says
+    /// `published: false`), never published: listed to pick by hand (its
+    /// label says so), picked only by its version pinned, never as best
+    /// available, newest or the take a shot opens on.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub check: bool,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -226,6 +232,12 @@ impl Take {
         self.media.kind()
     }
 
+    /// Whether a rule that does not pin its version may pick it: neither a
+    /// Frame List render's (#84) nor a check render's.
+    pub fn published(&self) -> bool {
+        !self.multi_range && !self.check
+    }
+
     /// A render's layer, [`STACK_STREAM`] for a stack; None for a playblast.
     pub fn layer(&self) -> Option<&str> {
         match &self.media {
@@ -283,6 +295,7 @@ mod tests {
             version: "v0001".into(),
             media: Media::Stack { layers: vec![movie("a")] },
             multi_range: false,
+            check: false,
         };
         assert_eq!((take.kind(), take.layer(), take.is_stack()), (Kind::Movie, Some(STACK_STREAM), true));
     }
@@ -322,6 +335,7 @@ mod tests {
                 version: format!("v{code:04}"),
                 media,
                 multi_range: false,
+                check: false,
             }
         })
     }

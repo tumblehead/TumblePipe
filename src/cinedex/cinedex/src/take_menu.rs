@@ -43,6 +43,17 @@ pub fn rule(picked: Option<&Take>, pin: bool) -> Rule {
 /// The mark on the row of what is shown.
 const SHOWN: &str = "  (shown)";
 
+/// What a Version row adds after the version: a Frame List render's (#84)
+/// or a check render's (Farm Submit's Step), neither ever published, each
+/// picked here by hand only.
+fn version_note(take: &Take) -> &'static str {
+    match (take.multi_range, take.check) {
+        (true, _) => " \u{b7} frame list",
+        (false, true) => " \u{b7} check",
+        (false, false) => "",
+    }
+}
+
 /// The menu's submenus for `takes`, `shown` the take on screen. `of_kind` is the
 /// take a switch to another kind shows, None when
 /// the shot has none of it.
@@ -91,7 +102,7 @@ pub fn submenus(takes: &[Take], shown: usize, of_kind: impl Fn(Kind) -> Option<u
     let versions = (0..takes.len())
         .rev()
         .filter(|&t| takes[t].stream() == current.stream())
-        .map(|t| (t, format!("{}{}{}", takes[t].version, if takes[t].multi_range { " \u{b7} frame list" } else { "" }, mark(t == shown))))
+        .map(|t| (t, format!("{}{}{}", takes[t].version, version_note(&takes[t]), mark(t == shown))))
         .collect();
 
     vec![
@@ -262,7 +273,14 @@ mod tests {
                 Media::Exr { layer: layer.unwrap_or("default").into(), frames }
             }
         };
-        Take { label: format!("{department} {version}"), department: department.into(), version: version.into(), media, multi_range: false }
+        Take {
+            label: format!("{department} {version}"),
+            department: department.into(),
+            version: version.into(),
+            media,
+            multi_range: false,
+            check: false,
+        }
     }
 
     /// The last take of a kind, as the player falls back to.

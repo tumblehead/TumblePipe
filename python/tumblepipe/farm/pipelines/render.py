@@ -60,10 +60,20 @@ def banded_priorities(tasks: dict) -> dict:
     return tasks
 
 
+def is_check_render(entity_uri: Uri, step_size: int) -> bool:
+    """Whether a render is a check render, never published: a shot's on a
+    step above 1 (Farm Submit's Step, Remy 2026-11-17). Its frames have
+    gaps, and a shot's render feeds a daily, the edit and comps, which
+    want every frame. An asset's turntable renders on the studio's step
+    and publishes as ever."""
+    return step_size > 1 and entity_uri.segments[0] == 'shots'
+
+
 def _shot(config: dict, staging_path: Path) -> post_render.Shot:
     settings = config['settings']
+    entity_uri = Uri.parse(config['entity']['uri'])
     return post_render.Shot(
-        entity_uri = Uri.parse(config['entity']['uri']),
+        entity_uri = entity_uri,
         department = config['entity']['department'],
         purpose = settings['purpose'],
         user_name = settings['user_name'],
@@ -74,7 +84,8 @@ def _shot(config: dict, staging_path: Path) -> post_render.Shot:
         staging_path = staging_path,
         cut_range = _cut_range(settings),
         preview_frames = _preview_frames(settings),
-        frame_ranges = frame_ranges.from_config(settings)
+        frame_ranges = frame_ranges.from_config(settings),
+        check_render = is_check_render(entity_uri, settings['step_size'])
     )
 
 
