@@ -106,11 +106,13 @@ def select_desktop() -> None:
 def _register_tumbletrove() -> None:
     from tumblepipe import workfile_context
     from tumblepipe.asset_browser import load_hook
+    from tumblepipe.pipe.houdini import viewer_camera_guard
 
     # Before the package: its catalog lists only the TAB-visible types.
     _guarded("retired node types", hide_retired_node_types)
     _guarded("package registration", register_package)
     _guarded("scene-load import refresh", load_hook.register)
+    _guarded("viewer camera guard", viewer_camera_guard.register)
     _guarded("workfile context provider", workfile_context.register)
     _guarded("shot slate", _start_shot_slate)
     _guarded("live playblast hotkey", _bind_live_playblast_hotkey)
