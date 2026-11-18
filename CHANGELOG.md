@@ -12,6 +12,28 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.112.0 — 2026-11-17
+
+### Features
+- feat(farm-submit): render Step, precise frame timelines, wrapped tooltips (`3f7ea5ba`)
+
+### Fixes
+- fix(render): a check render is never chosen as a shot's render (`5d06b481`)
+- fix(cinedex): Live view loop keeps a piece whose clip another piece's best pick took (`dadec78c`)
+- fix(cinedex): the timeline paints quads, so the window is not multisampled (`bc2f4fb5`)
+- fix(animate): switch a dive's Scene Invoke to Packed Folders once, and never when something else reads it (`5fa33843`)
+- fix(entity-editor): new shots, assets and groups sit in name order, not after the last row (`d756fc8b`)
+- fix(ui): release PySide's kept model/delegate references before Qt deletes them (`76b25c89`)
+
+### Documentation
+- docs: the Entity Editor's row order, and the tests behind today's fixes (`ec8eda06`)
+- docs: regenerate CHANGELOG.md for v1.111.0, and the released-parm snapshot (`d8d3da3b`)
+
+### Tests
+- test(entity-editor): check the listing is in name order, not only that a reload agrees (`7b256877`)
+- test(cinedex): pin a second Live view loop seed found on master before the fix (`2c5f26f4`)
+- test(ui): verify_entity_editor_proxy_gc: the sheet proxies no longer leave a freed model for the collector (`4ef9b79f`)
+
 ## v1.111.0 — 2026-11-16
 
 ### Features

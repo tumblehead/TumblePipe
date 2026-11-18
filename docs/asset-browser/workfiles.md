@@ -114,7 +114,9 @@ A row with no workfile has nothing to open, so double-clicking it creates
 `v0001` from the department template — the same thing as **New from
 Template**, which leads its menu (then **New from Current** and **Open
 Folder**). The detail panel's play button does the same (tooltip *Create
-dept/v0001 from the dept template.*). If a version that should exist is
+dept/v0001 from the dept template.*). A department a Multi covers is the
+Multi's row on every member: opening it before the Multi has a workfile
+creates the Multi's `v0001`, not the member's. If a version that should exist is
 missing from disk the status bar reads *Workfile not found: entity / dept /
 vNNNN*.
 
@@ -300,8 +302,10 @@ Multi's.
 
 ## Open Folder and View Latest Export
 
-- **Open Folder** opens the department folder in Explorer, or the entity's
-  folder when the department has no folder yet.
+- **Open Folder** opens the department folder in Explorer, or the nearest
+  folder above it that exists when the department has none yet (for a
+  department a Multi covers, that is the Multi's folder, or `groups/<context>`
+  before the Multi's first workfile).
 - **View Latest Export** opens the department's newest finished export folder
   (default channel). Nothing published yet: *No export found for dept.*
 - **Open Export Folder** (detail panel) opens the entity's export root.

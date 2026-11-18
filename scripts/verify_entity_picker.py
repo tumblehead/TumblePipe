@@ -14,9 +14,19 @@ an entity on offer and visible, or from_context where offered. Multi-select
 (th::import_assets' top Browse...) is driven with real Ctrl-, Shift- and
 plain clicks, searches and Select all in view, writes picker_multi.png, and
 is fuzzed: what it returns is entities on offer, once each, in picker order.
+
+Last, the ways a picker ends (LIFETIMES), each in a process of its own
+because getting one wrong is an access violation, not a failed check: it is
+freed as soon as it is dropped (nothing under it keeps it alive), and it
+survives the cyclic collector freeing it, Qt deleting it first, and its
+parent's deletion. TumblePipe 1.112.0 made the card delegate the grid's
+child while it still referred to the picker; the collector then freed the
+grid first, and the picker deleted the half-destroyed grid a second time.
+``--part window`` and ``--part lifetimes`` run one half.
 """
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -66,17 +76,117 @@ def _thumbnails(folder: Path, uris) -> dict:
     return paths
 
 
-def main(out: Path, seed: int = 0, rounds: int = 60) -> int:
+# How a picker ends -> what must hold. Each runs alone, in _lifetime().
+LIFETIMES = {
+    'dropped': 'is freed as soon as it is dropped: nothing under it keeps it alive',
+    'collected': 'survives the cyclic collector freeing it',
+    'deleted': 'survives Qt deleting it first and the collector after',
+    'parented': "survives its parent's deletion (Houdini's main window, at exit)",
+}
+
+
+def _lifetime(mode: str) -> int:
+    """End a single-pick and a multi-pick picker the ``mode`` way. Prints
+    ``survived`` when both did; a crash ends the process before that."""
+    import gc
+    import weakref
+
+    import shiboken6
+    from PySide6.QtWidgets import QWidget
+
+    app = QApplication.instance() or QApplication(sys.argv)
+    from tumblepipe.pipe.houdini.ui.widgets.entity_selector import EntitySelectorDialog
+
+    def shown(multi: bool, parent=None):
+        dialog = EntitySelectorDialog(
+            api=None, entity_uris=SHOTS + ASSETS, recent=[],
+            multi_select=multi, parent=parent,
+        )
+        dialog.show()
+        app.processEvents()
+        dialog.grab()  # paints every card, so the delegate has run
+        return dialog
+
+    def read_kept_references(grid) -> None:
+        # What PySide keeps on the grid (model, delegate, selection model):
+        # one of them freed crashes here every time, where the collector
+        # crashes only once the memory was reused.
+        for _ in range(200):
+            shiboken6.dump(grid)
+
+    gc.disable()  # only the collections asked for below
+    for multi in (False, True):
+        if mode == 'dropped':
+            dialog = shown(multi)
+            dialog.reject()
+            alive = weakref.ref(dialog)
+            del dialog
+            if alive() is not None:
+                print(f'still alive (multi={multi}): something it owns refers back to it')
+                return 1
+        elif mode == 'collected':
+            for _ in range(3):
+                dialog = shown(multi)
+                dialog.keeps_itself = dialog  # as any cycle through it would
+                del dialog
+                gc.collect()
+                app.processEvents()
+        elif mode == 'deleted':
+            dialog = shown(multi)
+            dialog.keeps_itself = dialog
+            grid = dialog._grid
+            shiboken6.delete(dialog)
+            app.processEvents()
+            read_kept_references(grid)
+            del dialog, grid
+            gc.collect()
+        elif mode == 'parented':
+            parent = QWidget()
+            dialog = shown(multi, parent)
+            dialog.keeps_itself = dialog
+            grid = dialog._grid
+            shiboken6.delete(parent)
+            app.processEvents()
+            read_kept_references(grid)
+            del dialog, grid, parent
+            gc.collect()
+        else:
+            raise SystemExit(f'unknown lifetime {mode!r}')
+        app.processEvents()
+    print('survived', flush=True)
+    return 0
+
+
+def _check_lifetimes(check):
+    """Run every LIFETIMES mode in its own process."""
+    for mode, holds in LIFETIMES.items():
+        proc = subprocess.run(
+            [sys.executable, __file__, '--lifetime', mode],
+            check=False, capture_output=True, text=True, timeout=300,
+        )
+        ok = proc.returncode == 0 and 'survived' in proc.stdout
+        said = (proc.stdout + proc.stderr).strip().splitlines()[-3:]
+        check(ok, f'lifetime {mode}: the picker {holds}'
+              + ('' if ok else f' (exit {proc.returncode}: {" | ".join(said)})'))
+
+
+def main(out: Path, seed: int = 0, rounds: int = 60, part: str = 'all') -> int:
+    failures = []
+
+    def check(ok, message):
+        print(('ok   ' if ok else 'FAIL ') + message, flush=True)
+        if not ok:
+            failures.append(message)
+
+    if part != 'window':
+        _check_lifetimes(check)
+    if part == 'lifetimes':
+        return 1 if failures else 0
+
     app = QApplication.instance() or QApplication(sys.argv)
     from tumblepipe.pipe.houdini.ui.widgets.entity_selector import EntitySelectorDialog
 
     thumbs = _thumbnails(out / 'thumbs', SHOTS + ASSETS)
-    failures = []
-
-    def check(ok, message):
-        print(('ok   ' if ok else 'FAIL ') + message)
-        if not ok:
-            failures.append(message)
 
     def picker(uris, **kwargs):
         dialog = EntitySelectorDialog(
@@ -350,6 +460,10 @@ if __name__ == '__main__':
     parser.add_argument('out', nargs='?', default='.')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--rounds', type=int, default=60)
+    parser.add_argument('--part', choices=['all', 'window', 'lifetimes'], default='all')
+    parser.add_argument('--lifetime', choices=list(LIFETIMES), help='(internal) end one picker this way')
     args = parser.parse_args()
 
-    sys.exit(main(Path(args.out), args.seed, args.rounds))
+    if args.lifetime:
+        sys.exit(_lifetime(args.lifetime))
+    sys.exit(main(Path(args.out), args.seed, args.rounds, args.part))

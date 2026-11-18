@@ -215,7 +215,8 @@ class DeckBuilder:
                     tint=_GROUP_ACCENT_COLOR,
                     tooltip=(
                         f"{short} — covered by Multi: {group_label}\n"
-                        "Double-click to open the Multi's workfile"
+                        "Double-click to open the Multi's workfile "
+                        "(made from the template if it has none yet)"
                     ),
                     **_drag(dept_name),
                 ))

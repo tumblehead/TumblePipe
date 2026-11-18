@@ -80,12 +80,57 @@ def _renderer():
     return GridCardRenderer(), CardState, Asset
 
 
-class _CardDelegate(QtWidgets.QStyledItemDelegate):
-    """Paints an entity as an asset browser card."""
+class _Thumbnails:
+    """Entity thumbnails, read once per window; None for an entity
+    without one. Its own object rather than the picker's method, so the
+    card delegate can hold it without holding the picker
+    (:class:`_CardDelegate`)."""
 
-    def __init__(self, picker: 'EntitySelectorDialog'):
-        super().__init__(picker)
-        self._picker = picker
+    def __init__(self, path_of: Callable[[str], Path | None]):
+        self._path_of = path_of
+        self._pixmaps: dict[str, QPixmap | None] = {}
+
+    def get(self, uri: str) -> QPixmap | None:
+        if uri not in self._pixmaps:
+            pixmap = None
+            try:
+                path = self._path_of(uri)
+                if path is not None and Path(path).is_file():
+                    loaded = QPixmap(str(path))
+                    if not loaded.isNull():
+                        pixmap = loaded.scaled(
+                            scaled(256), scaled(256),
+                            Qt.KeepAspectRatio, Qt.SmoothTransformation,
+                        )
+            except Exception:
+                log.debug('Thumbnail of %s unreadable', uri, exc_info=True)
+            self._pixmaps[uri] = pixmap
+        return self._pixmaps[uri]
+
+
+class _CardDelegate(QtWidgets.QStyledItemDelegate):
+    """Paints an entity as an asset browser card.
+
+    It is the grid's child (``view``), and it is handed the two lookups it
+    paints from, never the picker. A delegate that is the grid's child and
+    also refers to the picker closes a cycle picker -> grid -> delegate ->
+    picker, so the picker is freed by the cyclic collector, and the
+    collector can free the grid first: Qt then deletes the delegate from
+    inside the grid's destructor, the delegate drops the last reference to
+    the picker, and the picker deletes its widgets, the half-destroyed
+    grid among them, a second time. That was an access violation while
+    "Garbage-collecting" in a later picker (TumblePipe 1.112.0;
+    scripts/verify_entity_picker.py pins both orders).
+    """
+
+    def __init__(
+        self, view: QtWidgets.QAbstractItemView,
+        entry_of: Callable[[str], 'ep.PickerEntry | None'],
+        thumbnail_of: Callable[[str], QPixmap | None],
+    ):
+        super().__init__(view)
+        self._entry_of = entry_of
+        self._thumbnail_of = thumbnail_of
         self._renderer = _renderer()
         preset = get_scaled_preset('normal', 1.0)
         self.card = QSize(preset['card_width'], preset['card_height'])
@@ -94,13 +139,13 @@ class _CardDelegate(QtWidgets.QStyledItemDelegate):
         return self.card
 
     def paint(self, painter: QPainter, option, index: QModelIndex):
-        entry = self._picker.entry(index.data(EntityUriRole))
+        entry = self._entry_of(index.data(EntityUriRole))
         if entry is None:
             return
         rect = QRect(option.rect.topLeft(), self.card)
         selected = bool(option.state & QtWidgets.QStyle.State_Selected)
         hovered = bool(option.state & QtWidgets.QStyle.State_MouseOver)
-        pixmap = self._picker.thumbnail(entry.uri)
+        pixmap = self._thumbnail_of(entry.uri)
         painter.save()
         try:
             if self._renderer is not None:
@@ -266,10 +311,9 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         )
         self._recent = self._state.recent
         self._syncing = False
-        self._thumbnail_path = thumbnail_path or (
+        self._thumbnails = _Thumbnails(thumbnail_path or (
             _default_thumbnail_path(api) if api is not None else (lambda uri: None)
-        )
-        self._pixmaps: dict[str, QPixmap | None] = {}
+        ))
         contexts = {e.context for e in self._entries}
         self._noun = (
             f'{ep.CONTEXT_KINDS.get(next(iter(contexts)), "entity")}s'
@@ -284,29 +328,6 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         self._fill_sidebar()
         self._show()
         self._search.setFocus()
-
-    # Entries and thumbnails (for the delegate)
-
-    def entry(self, uri) -> ep.PickerEntry | None:
-        return self._by_uri.get(uri)
-
-    def thumbnail(self, uri: str) -> QPixmap | None:
-        """The entity's thumbnail, read once per window; None without one."""
-        if uri not in self._pixmaps:
-            pixmap = None
-            try:
-                path = self._thumbnail_path(uri)
-                if path is not None and Path(path).is_file():
-                    loaded = QPixmap(str(path))
-                    if not loaded.isNull():
-                        pixmap = loaded.scaled(
-                            scaled(256), scaled(256),
-                            Qt.KeepAspectRatio, Qt.SmoothTransformation,
-                        )
-            except Exception:
-                log.debug('Thumbnail of %s unreadable', uri, exc_info=True)
-            self._pixmaps[uri] = pixmap
-        return self._pixmaps[uri]
 
     # UI
 
@@ -397,9 +418,12 @@ class EntitySelectorDialog(QtWidgets.QDialog):
         # Delegate and model belong to the grid, not the dialog: Qt deletes
         # the dialog's children in creation order, and the grid is placed in
         # its stack after these exist, so they were deleted first and the
-        # grid's PySide references to them dangled (util.qt_lifetime).
-        self._delegate = _CardDelegate(self)
-        self._delegate.setParent(self._grid)
+        # grid's PySide references to them dangled (util.qt_lifetime). The
+        # delegate gets the lookups it paints from and not the dialog: as
+        # the grid's child it must not keep the dialog alive (_CardDelegate).
+        self._delegate = _CardDelegate(
+            self._grid, self._by_uri.get, self._thumbnails.get,
+        )
         self._grid.setItemDelegate(self._delegate)
         gap = get_scaled_preset('normal', 1.0)['card_gap']
         self._grid.setGridSize(self._delegate.card + QSize(gap, gap))

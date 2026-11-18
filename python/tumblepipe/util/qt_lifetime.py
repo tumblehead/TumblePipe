@@ -18,6 +18,15 @@ proxy whose source model belongs to the pane, or a frozen-column view sharing
 the table's selection model is enough. TumbleTrove measures each case in its
 ``scripts/verify_kept_references.py``.
 
+Making the delegate or model the view's child fixes the order, with one
+condition: the child must not refer back to the window. A child that does
+closes a cycle window -> view -> child -> window, the cyclic collector may
+then free the view first, and the child, deleted from inside the view's
+destructor, drops the last reference to the window, which deletes the
+half-destroyed view again. The entity picker's card delegate did that in
+1.112.0; it is now handed the lookups it paints from, not the picker
+(``pipe/houdini/ui/widgets/entity_selector.py``).
+
 TumbleTrove 0.65+ ships the same helper as
 ``tumbletrove.common.gui.release_kept_references``; this module uses it when
 present and its own copy otherwise (TumblePipe requires tumbletrove >= 0.57).

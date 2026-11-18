@@ -1450,10 +1450,9 @@ class PipelineCatalog(Catalog):
             # The card menu's Open Folder: the entity's folder, or its
             # nearest existing parent.
             from tumblepipe.util import desktop
-            folder = Path(self._resolver.entity_dir(detail.id))
-            while not folder.exists() and folder.parent != folder:
-                folder = folder.parent
-            desktop.open_in_file_browser(folder)
+            desktop.open_in_file_browser(desktop.nearest_existing(
+                self._resolver.entity_dir(detail.id),
+            ))
 
         elif action_id == "open_entity_editor" and detail:
             # A window: built on the GUI thread, never on this worker.

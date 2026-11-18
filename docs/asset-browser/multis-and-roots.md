@@ -91,10 +91,13 @@ What coverage does to a member, as soon as it is written:
 
 - The member's deck item and list row for that department show **ⓜ** on
   an orange tint instead of a version, with the tooltip *Dept — covered by
-  Multi: name. Double-click to open the Multi's workfile*. Opening the row
-  opens the Multi's hip, and creating a workfile from it (**New from
-  Template**, **New from Current**) writes the next version of the Multi's
-  workfile, recorded as the Multi's.
+  Multi: name. Double-click to open the Multi's workfile (made from the
+  template if it has none yet)*. Opening the row opens the Multi's hip, and
+  creating a workfile from it (**New from Template**, **New from Current**)
+  writes the next version of the Multi's workfile, recorded as the Multi's.
+  A Multi with no workfile for that department yet gets its `v0001` from
+  the department template on that first open, the same as a double-click on
+  the Multi's own *missing* row.
 - The member's own workfiles for that department, if any exist, stay on
   disk and stop being what the row opens. Uncover the department and they
   are back.

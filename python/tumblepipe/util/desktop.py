@@ -8,6 +8,16 @@ import sys
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
+def nearest_existing(folder: Path) -> Path:
+    """``folder``, or its nearest parent that exists: a department nobody
+    has saved in has no folder yet, and a Multi nobody has opened has none
+    at all (``groups/<context>/<name>`` is made by its first workfile)."""
+    folder = Path(folder)
+    while not folder.exists() and folder.parent != folder:
+        folder = folder.parent
+    return folder
+
+
 def open_in_file_browser(path: Path) -> None:
     """Show ``path`` in Explorer / Finder / the desktop's file manager.
 

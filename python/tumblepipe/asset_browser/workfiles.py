@@ -214,7 +214,7 @@ class WorkfileManager:
         base = self.dept_dir_for(asset_id, dept)
         if base is None:
             return
-        desktop.open_in_file_browser(base if base.exists() else base.parent)
+        desktop.open_in_file_browser(desktop.nearest_existing(base))
 
     @_action("Opening the latest export")
     def open_latest_export(self, asset_id: str, dept: str) -> None:
@@ -1040,8 +1040,11 @@ class WorkfileManager:
         Resolution is delegated to ``latest_hip_file_path_with_context``,
         which auto-routes to a covering group's workfile when one
         exists — so clicking a member shot's covered dept opens the
-        group's hip, not a local shot hip. With no workfile at all, the
-        department's folder opens instead.
+        group's hip, not a local shot hip. With no workfile at all, one is
+        made from the template (:meth:`new_from_template`): a department a
+        Multi covers shows as openable on every member before the Multi's
+        first workfile exists, and opening it used to show the Multi's
+        folder, which did not exist either.
         """
         if not asset_id:
             return
@@ -1060,18 +1063,15 @@ class WorkfileManager:
         if hip_path is not None and hip_path.exists():
             self._load(hip_path, proj, asset_id)
             return
-        work_dir = self.dept_dir_for(asset_id, dept)
-        desktop.open_in_file_browser(
-            work_dir if work_dir.exists() else work_dir.parent,
-        )
+        self.new_from_template(asset_id, dept, self._refresh.detail)
 
     @_action("Opening the group workfile")
     def open_group_workfile(self, asset_id: str, dept: str) -> None:
         """Open the latest workfile for a group's department.
 
         Mirrors :meth:`open_workfile` but routes through tumblepipe's
-        group-aware path resolver. If no workfile exists, the group's
-        work directory is opened in Explorer.
+        group-aware path resolver. If no workfile exists, one is made
+        from the template.
         """
         if not asset_id.startswith("group:"):
             return
@@ -1087,7 +1087,7 @@ class WorkfileManager:
         if hip_path is not None and hip_path.exists():
             self._load(hip_path, proj, asset_id)
             return
-        self._open_group_folder(path, dept)
+        self.new_group_from_template(asset_id, dept, self._refresh.detail)
 
     @_action("Opening the group work directory")
     def open_group_dept_work_dir(self, asset_id: str, dept: str) -> None:
@@ -1103,19 +1103,15 @@ class WorkfileManager:
 
     @staticmethod
     def _open_group_folder(path: str, dept: str) -> None:
-        """Show a group dept's work directory, or the group's own root
-        when the dept folder does not exist yet. The group's project must
-        be active."""
+        """Show a group dept's work directory, or its nearest parent that
+        exists (a Multi nobody has opened has no folder at all). The
+        group's project must be active."""
         from tumblepipe.api import api as tp_api
         group_segments = uris.group(path).segments
         target = tp_api.storage.resolve(
             uris.groups_root() / group_segments / dept,
         )
-        if not target.exists():
-            target = tp_api.storage.resolve(
-                uris.groups_root() / group_segments,
-            )
-        desktop.open_in_file_browser(target)
+        desktop.open_in_file_browser(desktop.nearest_existing(target))
 
     @_action("Creating a group workfile")
     def new_group_from_template(

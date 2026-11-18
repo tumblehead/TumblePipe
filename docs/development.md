@@ -89,6 +89,14 @@ catalog never overrode it, so an artist could create a Multi and then do nothing
 with it — invisible to a stub whose base `Catalog` was `pass`. Launch a
 project from TumbleTrove Desktop once so the SDK is fetched.
 
+A property has to hold on every SDK from that floor up, not only the
+newest. Where TumblePipe does one thing on a newer TumbleTrove and another
+on an older one (a Save menu choice is a `MenuItem` with `checked` from
+0.65, a `✓` in its label before), check each form with a stand-in for that
+SDK's type, and the real one in whichever form the installed SDK has:
+`test_save_timer.py` read `entry.checked` alone and failed on 0.64, where
+the entries are plain pairs.
+
 A second class of silent break lives *between* the catalog's own modules:
 they reach each other through the catalog instance
 (`self._catalog._containers.x`), so a helper that moves in a refactor is an
@@ -284,8 +292,8 @@ headless from their imports but argparse-require a project. Preflight says
 how many it skipped rather than implying full coverage.
 
 `qt` runs the `scripts/verify_*.py` harnesses that drive real PySide6
-widgets offscreen with no Houdini (`QT_HARNESSES` in `.ci/preflight.py`, 20
-of 63), four at a time, and prints ok or FAILED per script with the tail of a
+widgets offscreen with no Houdini (`QT_HARNESSES` in `.ci/preflight.py`, 22
+of 73), four at a time, and prints ok or FAILED per script with the tail of a
 failure's output. Each runs as
 `uv run --no-project --python 3.12 --with pyside6 --with usd-core python scripts/<name>`
 with `QT_QPA_PLATFORM=offscreen`, this checkout's `python/` and
@@ -300,8 +308,10 @@ printed "ALL CHECKS PASSED" with every check skipped (no `hou`) and exited
 0 whatever happened, so it now exits 1 on a failure (the `hython` stage
 runs it).
 
-`hython` runs the harnesses that import `hou` and need no arguments
-(`HYTHON_HARNESSES`, 32 of 63) under the newest installed Houdini's hython
+`hython` runs the harnesses that import `hou` and need no arguments, and
+`verify_entity_editor_proxy_gc`, which imports none but pins a crash in
+Houdini's own PySide (`HYTHON_HARNESSES`, 39 of 73) under the newest
+installed Houdini's hython
 (22.x, or `$HPM_HOUDINI_MAJORS`; found as `delegate` finds husk), three at a
 time since each takes a licence, and prints ok, FAILED (with the tail of
 its output) or SKIPPED per script. It first compiles every expanded HDA
@@ -555,6 +565,20 @@ The rules that follow:
   a reference cycle, it is freed by the cyclic collector on whichever thread
   crosses the allocation threshold — and workers allocate constantly.
   A C++-parented object is C++-owned and out of the collector's reach.
+- **A view's delegate and model are the view's children, and neither refers
+  back to the window.** Children of the window are deleted in creation
+  order, so a delegate or model made before its view dies first and leaves
+  the view's PySide reference to it dangling (`util/qt_lifetime.py`). And a
+  view's child that refers to the window closes a cycle window → view →
+  child → window: the collector may free the view first, Qt deletes the
+  child from inside the view's destructor, the child drops the last
+  reference to the window, and the window deletes the half-destroyed view a
+  second time. The entity picker's card delegate did exactly that in
+  1.112.0 (an access violation while "Garbage-collecting", in whichever
+  picker was built next). Hand such a child the lookups it needs, not the
+  window. `scripts/verify_entity_picker.py --part lifetimes` ends a picker
+  each way (dropped, collected, deleted by Qt first, parent deleted), one
+  process per way.
 - **Close a dialog before tearing down its owner.** Loading a scene deletes
   the node a dialog was opened from; a modeless dialog outliving its parent
   is a teardown crash.
