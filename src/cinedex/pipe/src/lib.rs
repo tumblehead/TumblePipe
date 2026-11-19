@@ -24,6 +24,7 @@ pub mod master;
 pub mod media;
 pub mod movie;
 pub mod naming;
+pub mod number_expr;
 pub mod player_rpc;
 pub mod previews;
 pub mod project;
@@ -32,6 +33,7 @@ pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod timeline;
+pub mod unfinished;
 pub mod uri;
 pub mod versions;
 pub mod workfiles;

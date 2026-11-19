@@ -12,6 +12,110 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.114.0 — 2026-11-19
+
+### Features
+- feat(farm): the Farm Manager button menu previews the frames a failed batch wrote (`16411849`)
+- feat(cinedex): Up plays in the editor, and the version keys are Page Up and Page Down (`801ab4bd`)
+- feat(cleanup): Clean Up Project lists and deletes what a project no longer needs (`ef88db44`)
+- feat(cinedex): a track is moved up or down, renamed, coloured and deleted with its clips (`246b6e98`)
+- feat(cinedex): the Up arrow plays and pauses in the preview window (`1193fa07`)
+- feat(cinedex): the timeline scrolls and zooms, with a strip to scroll by and Fit to Clips (`9a7ee6af`)
+- feat(cinedex): gaps are selected and closed, Shift+click selects a range, a box selects, and the selection follows its clips (`c431ba2e`)
+- feat(cinedex): a moved clip snaps and lands beside what is in its way (`d52a97a1`)
+- feat(cinedex): a trim never cuts or removes another track's clips, and Ctrl-drag pushes what follows (`4a000bf6`)
+- feat: a farm playblast's frames can be watched while it renders, in Cinedex and from the Farm Manager (`40cf463f`)
+- feat(cinedex): a clip says how far its shot's unfinished render is, with a strip of the frames on disk (`6f3a6787`)
+- feat(cinedex): Export Movie asks for size, frames, codec, sound and burn-ins, and remembers them (`d185d94b`)
+- feat: number fields work out maths typed into them, in Cinedex and in TumblePipe's Qt fields (`5e3f0550`)
+- feat(cinedex): Import opens the file browser, bin rows get a right-click menu, and dropped files have a way in (`11ec4c12`)
+- feat(cinedex): bin rows drag onto the timeline, with a placeholder where they will land (`8f9a8c34`)
+- feat(cinedex): a bin row is one line, its details in a tip, and sequences fold (`37108082`)
+- feat(cinedex): the take menu ticks the row that is shown, in place of "(shown)" after it (`d023396d`)
+- feat(cache): th::cache gets an Open Location button (`25b4ad54`)
+- feat(comp): th::import_render reads a check render and holds its nearest frame (`a7f3203f`)
+- feat(farm): Farm Submit highlights the row of the entity whose workfile is open (`2c0a1599`)
+
+### Fixes
+- fix(prune): a local farm job folder is not an orphan because Deadline does not know it (`3a85f5af`)
+- fix(cinedex): tracks made by a bin drop and its tests carry the colour field (`c4b99caf`)
+- fix(cinedex): the selection is not carried to a look-alike clip a ripple delete or an insert made (`6b681a3b`)
+- fix(ui): a minimised Farm Manager comes back when its button is clicked (`6349ec75`)
+- fix(farm): a click on the Farm Manager button always opens the Farm Manager (`49d093f8`)
+- fix(animate): geometry made in th::animate's dive keeps its UVs (`839fdd62`)
+
+### Documentation
+- docs: what the TumbleTrove 0.66 floor and primer 0.19 changed (`5bffc693`)
+- docs(cleanup): cleaning up a project, per category, and what each always keeps (`76371fe7`)
+- docs(cinedex): the timeline's selection, gaps, snapping, zoom and track rows (`14b59d02`)
+- docs(changelog): v1.112.1 to v1.113.0, and the HDA parms v1.113.0 shipped (`e5d9f8e7`)
+
+### Tests
+- test(farm): the dome playblast property draws dome looks (`04f469bc`)
+- test(qt): the number-field harness builds its bare Farm Submit pane with the scroll-on-open flag (`250a7e67`)
+- test(cinedex): a track renamed to the name it has is no step of undo (`aacd13cc`)
+- test: the ladder coverage check counts the maths validator among our own (`bff6294f`)
+
+## v1.113.0 — 2026-11-19
+
+### Features
+- feat(cinedex): File > Export Timeline writes the cut for Resolve and Premiere Pro (`e8902026`)
+- feat(cinedex): the edit as Final Cut Pro 7 XML, and UNC and non-ASCII paths in file URLs (`90d51e82`)
+- feat(cinedex): a right-click on empty timeline opens a menu (`78ef4516`)
+- feat(cinedex): one empty layer always shows over the top video track (`4a42220b`)
+- feat(cinedex): hide the audio tracks' rows, and solo a track by double-clicking its name (`18c367c3`)
+- feat(cinedex): each track's height is its own (`8f940521`)
+- feat(cinedex): thumbnails in the bins, as a list or a grid (`c19ba4ae`)
+- feat(cinedex): a clip with nothing to play says why (`8e1cb198`)
+- feat(cinedex): Shift+double-click in a bin overlays instead of inserting (`dffb8872`)
+- feat(cinedex): double-clicking a sequence's name inserts all its shots (`7cfd766c`)
+- feat(cinedex): a transform on video clips (`ffedfebd`)
+- feat(cinedex): a transport bar under the picture (`a92ad95b`)
+
+### Fixes
+- fix(cinedex): a dissolve does not cut the clip before it shorter than that clip's own fade in (`907e8a86`)
+- fix(cinedex): an undo clears an old refusal, and Remove Marker Here is offered where it acts (`457d64df`)
+- fix(cinedex): a cut changed under a held clip drops the drag (`ef3cb97a`)
+- fix(cinedex): an exported timeline says which clips lost their transform (`3c76cda7`)
+- fix(animate): a prim born on a changed frame is sampled on every changed frame (`430ba190`)
+- fix(cinedex): a trimmed clip drags back out, and an edge stops where the footage ends (`0c37a3df`)
+- fix(animate): a shape the rig leaves out of some frames is hidden on those frames only (`a9aa784a`)
+
+### Documentation
+- docs(animate): which release fixed which part of animated visibility (`44fbc5a1`)
+- docs: th::animate visibility in troubleshooting, the OTIO dissolve rule, the cross-feature Cinedex tests (`2ae85e99`)
+- docs(cinedex): the link to Export to Resolve / Premiere reaches its heading (`286e2f78`)
+- docs(troubleshooting): why a project's menu in the Desktop has no Open Cinedex (`eedff848`)
+
+### Tests
+- test(cinedex): runs into cuts of many tracks, gone renders, row limits, a thumbnail or its reason (`3acabe84`)
+- test(cinedex): a note spans its clip as written, and every timecode is non-drop (`4e63a68f`)
+- test(cinedex): transforms hold across ops, files, exports, the blend and Python (`c3305d52`)
+- test(animate): apply cooked over a script of frames, and which usdvisibility is read (`7b3497fd`)
+- test(cinedex): the export's generated clips carry the transform field (`2d737af8`)
+- test(cinedex): the combined branches build: transform and track-view fields in the new tests (`008749f3`)
+
+## v1.112.2 — 2026-11-18
+
+### Fixes
+- fix(houdini): a viewer on a Solaris camera no longer makes the hip crash on open (`dfa1cfcd`)
+
+## v1.112.1 — 2026-11-18
+
+### Fixes
+- fix(animate): carry animated visibility through th::animate (`ce32c52c`)
+- fix(entity picker): a collected picker no longer deletes its grid twice (`ea6b859f`)
+- fix(browser): opening a covered department makes the Multi's first workfile (`0c7ead2f`)
+
+### Documentation
+- docs: a view's children and the window, testing on every supported TumbleTrove, properties in the spec (`78ad5da8`)
+- docs: opening a covered department before its Multi has a workfile (`02283af0`)
+- docs: regenerate CHANGELOG.md for v1.112.0, and the released-parm snapshot (`7ba254af`)
+
+### Tests
+- test: every @prop in a test module is in that module's spec (`4ce5a64a`)
+- test(save): the Save menu test holds on TumbleTrove before 0.65, and four properties run (`8a667cdc`)
+
 ## v1.112.0 — 2026-11-17
 
 ### Features

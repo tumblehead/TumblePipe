@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.113.0"
+version = "1.114.1"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -74,8 +74,8 @@ HOUDINI_DSO_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/dso/$HOUDINI
 # are TumbleTrove's SDK; the network menus are Radial's. TumblePipe calls both
 # directly, so it requires the versions whose API it is written against.
 [dependencies]
-"tumbletrove/tumbletrove" = ">=0.57"
-"tumbletrove/radial" = ">=0.8"
+"tumbletrove/tumbletrove" = ">=0.66"
+"tumbletrove/radial" = ">=0.19"
 # Mesh Lasso, Mesh Carver and Mesh Blender (th::mesh_*::1.0) moved to hModel
 # under the same type names; scenes holding them load because it comes along.
 "tumblehead/hmodel" = ">=0.3.1"
@@ -83,7 +83,7 @@ HOUDINI_DSO_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/dso/$HOUDINI
 [python_dependencies]
 dictdiffer = ">=0.9.0"
 # Writes the farm-job hpm.toml manifest (tumblepipe.farm.deadline).
-tomli-w = ">=1.0"
+tomli-w = ">=1.2"
 
 [stage]
 # Build the artifacts the archive ships, before staging. Only `hpm build` (and
@@ -259,14 +259,15 @@ python = "3.11"
 label = "Restore Archive"
 description = "Check a TumblePipe archive and unpack it into a folder"
 
-# prune-exports: the Prune Old Exports window (tumblepipe.prune_app): lists
-# the export versions it would delete, then deletes them when confirmed. The
-# same library runs headless as `python -m tumblepipe.prune exports`.
-[scripts.prune-exports]
-cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app prune"
+# project-cleanup: the Clean Up Project window (tumblepipe.cleanup.app): lists, per
+# category (old export, render and cache versions, Houdini backups, farm
+# job folders, deleted entities), what it would delete, then deletes it when
+# confirmed. The same library runs headless as `python -m tumblepipe.cleanup`.
+[scripts.project-cleanup]
+cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app cleanup"
 python = "3.11"
-label = "Prune Old Exports"
-description = "Delete old export versions of shots and assets, keeping the newest few and anything a staged build or latest workfile still loads"
+label = "Clean Up Project"
+description = "Free space: delete old export, render and cache versions, Houdini backups, finished farm job folders and long-deleted entities, keeping the newest few and anything still in use"
 
 # edits: Open Cinedex, the editor (cinedex) on the whole film: the project's
 # master edit, or with none set an untitled edit of every shot (what the

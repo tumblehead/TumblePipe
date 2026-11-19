@@ -25,6 +25,9 @@ png = "0.18"
 serde_json.workspace = true
 # The board: how long ago a workfile was saved.
 chrono.workspace = true
+# Export movie's burn-ins, shaped and painted as Primer shapes the viewer's
+# (`src/burnin_raster.rs`). Already in the tree, through Primer's glyphon.
+cosmic-text = { version = "0.19", default-features = false, features = ["std", "swash"] }
 # Export movie's mix, in a temporary folder while it encodes.
 tempfile.workspace = true
 # Sound out. On by default; Linux builds need ALSA headers (libasound2-dev)

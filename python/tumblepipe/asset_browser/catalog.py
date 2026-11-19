@@ -950,7 +950,8 @@ class PipelineCatalog(Catalog):
         elif action_id == "entity_editor":
             self._open_scene_entity_editor(done_cb)
         elif action_id == "farm_manager":
-            self._scene.open_farm_manager(done_cb)
+            from . import farm_jobs
+            farm_jobs.open_manager(self._scene, _watch_farm(self).session, done_cb)
         elif action_id == "update":
             self._scene.update_scene_imports(done_cb)
         elif action_id == "reload":
@@ -1009,7 +1010,19 @@ class PipelineCatalog(Catalog):
         Then the Autosave interval and the unsaved-time warning
         (:mod:`.save_timer`, Remy 2026-11-11), each a submenu of ticked
         choices like the Refresh button's auto-refresh.
+
+        ``farm_manager`` offers Open Farm Manager, then this session's ended
+        batches, failures first, each running its main action (Preview in
+        Cinedex, or Show in Jobs; a failure that wrote frames has Preview N
+        Frames in Cinedex too): the way to a finished job's outputs now
+        that a click on the button always opens the Farm Manager
+        (``farm_jobs.menu_items``).
         """
+        if action_id == "farm_manager":
+            from . import farm_jobs
+            return reporting_menu(
+                farm_jobs.menu_items(self._scene, _watch_farm(self).session)
+            )
         if action_id == "save":
             from . import save_timer
             autosave = self._prefs.autosave_minutes
@@ -1079,32 +1092,32 @@ class PipelineCatalog(Catalog):
 
     def get_quick_action_dot(self, action_id: str) -> str:
         """The dot at the Farm Manager button's foot: ``danger`` while a batch
-        of this session failed and the Jobs popover has not been opened since,
-        ``accent`` while one finished, ``""`` once seen (``farm_jobs``). Read
-        from the farm watcher's thread, never waiting on it; TumbleTrove
-        0.60.0 asks, an older one never does."""
+        of this session failed and the Farm Manager has not been opened from
+        the button since, ``accent`` while one finished, ``""`` once seen
+        (``farm_jobs``). Read from the farm watcher's thread, never waiting
+        on it; TumbleTrove 0.60.0 asks, an older one never does."""
         if action_id != "farm_manager":
             return ""
         return _watch_farm(self).session.dot()
 
     def get_quick_action_popover(self, action_id: str):
-        """The Jobs popover a click on the Farm Manager button opens:
-        "Finished since you looked", this session's ended batches. A
-        double-click or its Open Jobs link opens the Farm Manager."""
-        if action_id != "farm_manager":
-            return None
+        """No quick action has a popover: a click on a button always runs
+        its action, so the Farm Manager button always opens the Farm Manager
+        (``farm_jobs``; it opened a "Finished since you looked" popover
+        through 1.112, which now is part of the button's hover)."""
         from . import farm_jobs
-        return farm_jobs.popover(_watch_farm(self).session)
+        return farm_jobs.CLICK_POPOVER
 
     def quick_action_popover_opened(self, action_id: str) -> None:
-        """Opening the Jobs popover marks every row seen: the dot goes."""
+        """Never asked, as no action has a popover; were one opened for the
+        Farm Manager, its ended batches would be seen."""
         if action_id == "farm_manager":
             _watch_farm(self).session.mark_seen()
 
     def execute_quick_action_popover_button(
         self, action_id: str, row_id: str, button_id: str,
     ) -> None:
-        """A Jobs popover row's Preview in Cinedex or Show in Jobs."""
+        """An ended batch's Preview in Cinedex or Show in Jobs, by its id."""
         if action_id != "farm_manager":
             return
         from . import farm_jobs
@@ -1134,7 +1147,9 @@ class PipelineCatalog(Catalog):
           current scene's (entity, dept, channel) tuple.
         - ``farm_manager``: this user's recent farm work in this project,
           as the farm watcher last counted it (shots, jobs by state, tasks,
-          a rough finish time, the failed shots). Asked on the GUI thread
+          a rough finish time, the failed shots), then the batches of this
+          session that ended since the Farm Manager was last opened from
+          the button. The button's only summary. Asked on the GUI thread
           on hover, so it only reads what the watcher's thread counted.
 
         Returns ``None`` for actions we don't track (e.g. ``reload``) so
@@ -1184,7 +1199,7 @@ class PipelineCatalog(Catalog):
 
             from tumbletrove.asset_browser.core import theme
 
-            from tumblepipe.farm.manager.activity import summary_html
+            from . import farm_jobs
             activity = _watch_farm(self)
             # An older TumbleTrove may lack a token: the defaults stand in.
             colours = {
@@ -1192,8 +1207,10 @@ class PipelineCatalog(Catalog):
                 (("dim", "TEXT_SECONDARY"), ("warn", "WARNING"))
                 if isinstance(getattr(theme, name, None), str)
             }
-            return summary_html(
-                activity.summary, dt.datetime.now(),
+            # The button's one summary: the recent jobs, then what ended
+            # since the Farm Manager was last opened from the button.
+            return farm_jobs.hover_html(
+                activity.summary, activity.session.unseen(), dt.datetime.now(),
                 hours=activity.recent_hours, **colours,
             )
 

@@ -15,8 +15,8 @@ use crate::document::tests::transforms;
 use crate::document::{ClipRef, Edit, Frame, Source, TrackKind, TrackRef, Transform, Version, VersionRule, VideoClip};
 use crate::freeze::{freeze, tests::Fixed};
 use crate::history::History;
-use crate::ops::tests::{Lengths, Try, any_op, choose, edits};
-use crate::ops::{NewClip, Op, apply};
+use crate::ops::tests::{Lengths, Try, any_op, choose, edits, pick};
+use crate::ops::{Edge, NewClip, Op, apply};
 use crate::timeline_export::{Kind, Movie, Probe, otio_summary};
 
 /// A source no other clip has: media with frames 0 to 1000, by its number.
@@ -279,7 +279,7 @@ proptest! {
             t
         };
         let mut edit = Edit::<Source>::new(24, [1920, 1080], "01:00:00:00");
-        edit.video.push(crate::Track { name: "V1".into(), clips: vec![VideoClip::new(0, 10, 0, source_of(0))] });
+        edit.video.push(crate::Track { name: "V1".into(), clips: vec![VideoClip::new(0, 10, 0, source_of(0))], color: None });
         let clip = ClipRef { track: TrackRef::video(0), index: 0 };
         for (value, fine) in [(limit, true), ((low + (top - low) * inside).clamp(low, top), true), (past, false)] {
             let transform = with(value);
@@ -382,6 +382,243 @@ proptest! {
         let summary = otio_summary(&plain, &crate::otio::timeline(&plain, "cut"), &Whole);
         prop_assert_eq!((summary.count(Kind::Transform), summary.count(Kind::Opacity)), (0, 0));
     }
+
+    /// A trim (an edge dragged) and a shift (a clip pushed with what
+    /// follows it) are of one clip's track: on every other track each
+    /// clip is still there after, whole, with its source frames, fades,
+    /// transform and opacity, in the order they were; all a trim may do
+    /// to it is move it along by the frames the trim put in or took out,
+    /// and a shift not even that. (Up to 1.112.0 a trim inwards took its
+    /// frames out of every track: a clip of another track lying in them
+    /// was deleted without a word, and one across them cut in two.) The
+    /// result is an edit, and one undo gives back the bytes.
+    #[test]
+    fn a_trim_or_a_shift_keeps_every_other_tracks_clips_whole(
+        edit in edits(),
+        dresses in dresses(),
+        t in any::<prop::sample::Index>(),
+        c in any::<prop::sample::Index>(),
+        delta in -60i64..60,
+        which in 0u8..3,
+    ) {
+        let mut edit = dress(edit, &dresses, true);
+        let Some(clip) = pick(&edit, t, c) else { return Ok(()) };
+        let op = match which {
+            0 => Op::Trim { clip, edge: Edge::Head, delta },
+            1 => Op::Trim { clip, edge: Edge::Tail, delta },
+            _ => Op::Shift { clip, delta },
+        };
+        let before = edit.clone();
+        let bytes = before.to_json();
+        let mut history = History::new();
+        if history.apply(&mut edit, &op, &Lengths).is_err() {
+            prop_assert_eq!(edit.to_json(), bytes);
+            return Ok(());
+        }
+        prop_assert_eq!(edit.problem(), None);
+        let by = match which {
+            0 => -delta,
+            1 => delta,
+            _ => 0,
+        };
+        for (index, (was, now)) in before.video.iter().zip(&edit.video).enumerate() {
+            if clip.track == TrackRef::video(index) {
+                continue;
+            }
+            prop_assert_eq!(was.clips.len(), now.clips.len(), "V{} lost or gained a clip to {:?}", index + 1, op);
+            for (a, b) in was.clips.iter().zip(&now.clips) {
+                prop_assert!(b.at == a.at || b.at == a.at + by, "{:?} moved by {} under {:?}", a, b.at - a.at, op);
+                prop_assert_eq!(&VideoClip { at: a.at, ..b.clone() }, a, "{:?} changed a clip of another track", op);
+            }
+        }
+        for (index, (was, now)) in before.audio.iter().zip(&edit.audio).enumerate() {
+            if clip.track == TrackRef::audio(index) {
+                continue;
+            }
+            prop_assert_eq!(was.clips.len(), now.clips.len(), "A{} lost or gained a clip to {:?}", index + 1, op);
+            for (a, b) in was.clips.iter().zip(&now.clips) {
+                prop_assert!(b.at == a.at || b.at == a.at + by, "{:?} moved by {} under {:?}", a, b.at - a.at, op);
+                prop_assert_eq!(&crate::document::AudioClip { at: a.at, ..b.clone() }, a, "{:?} changed a clip of another track", op);
+            }
+        }
+        // Its own track keeps its clips too, in order: only the trimmed
+        // one's length, source frames and fades may differ.
+        let sources = |e: &Edit<Source>| -> Vec<Source> {
+            match clip.track.kind {
+                TrackKind::Video => e.video[clip.track.index].clips.iter().map(|c| c.source.clone()).collect(),
+                TrackKind::Audio => e.audio[clip.track.index].clips.iter().map(|c| c.source.clone()).collect(),
+            }
+        };
+        prop_assert_eq!(sources(&edit), sources(&before));
+        prop_assert!(history.undo(&mut edit));
+        prop_assert_eq!(edit.to_json(), bytes);
+    }
+
+    /// A track moved, renamed, coloured, removed or added, one after
+    /// another, against a model that knows only names, colours and each
+    /// track's clips as written: a move puts the track at its new place
+    /// with the others in their order around it (refused to where it is,
+    /// or past the top); a rename changes one name (refused when empty or
+    /// another track's of its kind); a colour changes one colour (refused
+    /// when no colour name); a remove takes one track, clips and all; an
+    /// add puts an empty one on top (refused under a name taken). Every
+    /// clip stays as it was written, transform, opacity and fades too, on
+    /// the track it was on; the markers stay. A refused op changes
+    /// nothing. Each result is an edit, reads back from its JSON, and
+    /// writes a `color` for exactly the tracks that have one. Undo gives
+    /// back every earlier document byte for byte, and redo every later.
+    #[test]
+    fn track_ops_keep_every_clip_and_undo_gives_the_bytes_back(
+        edit in edits(),
+        dresses in dresses(),
+        tries in prop::collection::vec((any::<prop::sample::Index>(), any::<prop::sample::Index>(), 0u8..8), 1..16),
+    ) {
+        let mut edit = dress(edit, &dresses, true);
+        let markers = edit.markers.clone();
+        let mut model = model_of(&edit);
+        let mut history = History::new();
+        let mut bytes = vec![edit.to_json()];
+        for &(t, to, which) in &tries {
+            let Some(op) = choose(&edit, &Try::Track { t, to, which }) else { continue };
+            let expected = modelled(&model, &op);
+            let before = edit.to_json();
+            match (history.apply(&mut edit, &op, &Lengths), expected) {
+                (Ok(()), Some(next)) => model = next,
+                (Err(_), None) => {
+                    prop_assert_eq!(edit.to_json(), before, "{:?} was refused and changed the edit", op);
+                    continue;
+                }
+                (Ok(()), None) => prop_assert!(false, "{:?} should have been refused", op),
+                (Err(why), Some(_)) => prop_assert!(false, "{:?} was refused: {}", op, why),
+            }
+            prop_assert_eq!(&model_of(&edit), &model, "after {:?}", op);
+            prop_assert_eq!(edit.problem(), None);
+            prop_assert_eq!(&edit.markers, &markers);
+            let json = edit.to_json();
+            prop_assert_eq!(&Edit::<Source>::parse(&json).unwrap(), &edit);
+            let document: Value = serde_json::from_str(&json).unwrap();
+            for (kind, tracks) in [("video", &model.0), ("audio", &model.1)] {
+                for (written, (_, color, _)) in document[kind].as_array().unwrap().iter().zip(tracks) {
+                    prop_assert_eq!(written.get("color").cloned(), color.clone().map(Value::String), "{}", json);
+                }
+            }
+            bytes.push(json);
+        }
+        for earlier in bytes.iter().rev().skip(1) {
+            prop_assert!(history.undo(&mut edit));
+            prop_assert_eq!(&edit.to_json(), earlier);
+        }
+        prop_assert!(!history.undo(&mut edit));
+        for later in bytes.iter().skip(1) {
+            prop_assert!(history.redo(&mut edit));
+            prop_assert_eq!(&edit.to_json(), later);
+        }
+    }
+
+    /// An edit whose tracks have no colour is, byte for byte, the document
+    /// from before tracks had colours: no track says `color`. Colouring
+    /// tracks and clearing the colours again gives those bytes back, and a
+    /// document that names a colour reads with it.
+    #[test]
+    fn an_edit_without_track_colours_is_the_document_from_before_them(edit in edits(), dresses in dresses(), picks in prop::collection::vec(0usize..3, 8)) {
+        let plain = dress(edit, &dresses, true);
+        let bytes = plain.to_json();
+        prop_assert!(!bytes.contains("\"color\""));
+        let mut coloured = plain.clone();
+        let tracks: Vec<TrackRef> = plain.tracks().collect();
+        for (track, pick) in tracks.iter().zip(&picks) {
+            let color = Some(["blue", "teal", "brick"][*pick].to_owned());
+            coloured = apply(&coloured, &Op::SetTrackColor { track: *track, color }, &Lengths).unwrap();
+        }
+        let written = coloured.to_json();
+        prop_assert_eq!(written.matches("\"color\"").count(), tracks.len().min(picks.len()));
+        prop_assert_eq!(&Edit::<Source>::parse(&written).unwrap(), &coloured);
+        // Published and exported, each coloured track is noted, and an
+        // edit without colours has no such note.
+        let n = tracks.len().min(picks.len());
+        for (edit, noted) in [(&coloured, n), (&plain, 0)] {
+            let frozen = freeze(edit, &Fixed).unwrap();
+            let summary = otio_summary(&frozen, &crate::otio::timeline(&frozen, "cut"), &Whole);
+            prop_assert_eq!(summary.count(Kind::TrackColor), noted);
+            prop_assert_eq!(summary.lines().iter().filter(|l| l.contains("track colour")).count(), usize::from(noted > 0));
+        }
+        for track in &tracks {
+            coloured = apply(&coloured, &Op::SetTrackColor { track: *track, color: None }, &Lengths).unwrap();
+        }
+        prop_assert_eq!(coloured.to_json(), bytes);
+    }
+}
+
+/// An edit as the track ops' model sees it: per kind, bottom first, each
+/// track's name, colour and clips as they are written.
+type TrackModel = (Vec<(String, Option<String>, Value)>, Vec<(String, Option<String>, Value)>);
+
+fn model_of(edit: &Edit<Source>) -> TrackModel {
+    (
+        edit.video.iter().map(|t| (t.name.clone(), t.color.clone(), serde_json::to_value(&t.clips).unwrap())).collect(),
+        edit.audio.iter().map(|t| (t.name.clone(), t.color.clone(), serde_json::to_value(&t.clips).unwrap())).collect(),
+    )
+}
+
+/// What a track op makes of the model, or None when it is to be refused.
+fn modelled(model: &TrackModel, op: &Op<Source>) -> Option<TrackModel> {
+    let mut next = model.clone();
+    let of = |next: &mut TrackModel, kind: TrackKind| match kind {
+        TrackKind::Video => std::mem::take(&mut next.0),
+        TrackKind::Audio => std::mem::take(&mut next.1),
+    };
+    let (kind, tracks) = match op {
+        Op::MoveTrack { track, to } => {
+            let tracks = of(&mut next, track.kind);
+            if *to >= tracks.len() || *to == track.index {
+                return None;
+            }
+            let mut others: Vec<_> = tracks.iter().enumerate().filter(|(i, _)| *i != track.index).map(|(_, t)| t.clone()).collect();
+            let above = others.split_off(*to);
+            others.push(tracks[track.index].clone());
+            others.extend(above);
+            (track.kind, others)
+        }
+        Op::RenameTrack { track, name } => {
+            let mut tracks = of(&mut next, track.kind);
+            if name.is_empty() || tracks.iter().enumerate().any(|(i, t)| i != track.index && t.0 == *name) {
+                return None;
+            }
+            tracks[track.index].0 = name.clone();
+            (track.kind, tracks)
+        }
+        Op::SetTrackColor { track, color } => {
+            let mut tracks = of(&mut next, track.kind);
+            if let Some(name) = color
+                && (name.is_empty()
+                    || name.chars().count() > 32
+                    || !name.chars().all(|c| "abcdefghijklmnopqrstuvwxyz0123456789-".contains(c)))
+            {
+                return None;
+            }
+            tracks[track.index].1 = color.clone();
+            (track.kind, tracks)
+        }
+        Op::RemoveTrack { track } => {
+            let mut tracks = of(&mut next, track.kind);
+            tracks.remove(track.index);
+            (track.kind, tracks)
+        }
+        Op::AddTrack { kind, name } => {
+            let mut tracks = of(&mut next, *kind);
+            if tracks.iter().any(|t| t.0 == *name) {
+                return None;
+            }
+            tracks.push((name.clone(), None, Value::Array(Vec::new())));
+            (*kind, tracks)
+        }
+        other => panic!("{other:?} is no track op"),
+    };
+    match kind {
+        TrackKind::Video => next.0 = tracks,
+        TrackKind::Audio => next.1 = tracks,
+    }
+    Some(next)
 }
 
 /// `op` with a clip it adds as fitted, and a transform it sets none: what

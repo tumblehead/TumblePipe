@@ -687,7 +687,7 @@ mod tests {
             .enumerate()
             .map(|(n, &i)| VideoClip::new(n as Frame * 10, 10, 1001, shot(&format!("{:03}", (i % count + 1) * 10), &movies[i % count])))
             .collect();
-        edit.video.push(Track { name: "V1".into(), clips });
+        edit.video.push(Track { name: "V1".into(), clips, color: None });
         (edit, movies)
     }
 

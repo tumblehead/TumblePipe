@@ -123,10 +123,10 @@ mod tests {
     fn a_dissolve_blends_the_upper_clip_over_the_lower() {
         let mut edit = Edit::new(24, [1920, 1080], "01:00:00:00");
         let media = |n: &str| Source::Media { item: n.into(), version: crate::VersionRule::Latest };
-        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 20, 0, media("a"))] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 20, 0, media("a"))], color: None });
         let mut upper = vclip(16, 10, 100, media("b"));
         upper.fade_in = 4;
-        edit.video.push(Track { name: "V2".into(), clips: vec![upper] });
+        edit.video.push(Track { name: "V2".into(), clips: vec![upper], color: None });
         let at = |f| layers_at(&edit, f, &MediaOnly);
         assert_eq!(at(10).len(), 1);
         let mid = at(17);

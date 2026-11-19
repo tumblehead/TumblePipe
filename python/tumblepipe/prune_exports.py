@@ -131,15 +131,17 @@ def _unit(parts: tuple[str, ...] | list[str]) -> tuple[str, ...] | None:
     return None
 
 
-def list_versions(roots: ProjectRoots) -> tuple[list[Version], list[Version], list[str]]:
+def list_versions(roots: ProjectRoots, inventory=None) -> tuple[list[Version], list[Version], list[str]]:
     """``(exports, staged, errors)``: every version folder under the export
     root, its own exports and its staged builds apart. ``other/`` is left
-    out."""
-    inventory = scan(roots, purposes=('export',))
+    out. ``inventory`` is a scan that already read the export root
+    (``tumblepipe.cleanup`` reads the project once for every category)."""
+    if inventory is None:
+        inventory = scan(roots, purposes=('export',))
     sizes: dict[str, int] = defaultdict(int)
     info: dict[str, tuple[str, str, int, bool]] = {}
     for item in inventory.items:
-        if item.kind not in (Kind.EXPORT, Kind.STAGED) or item.unit is None:
+        if item.root != 'export' or item.kind not in (Kind.EXPORT, Kind.STAGED) or item.unit is None:
             continue
         if item.unit.split('/', 1)[0] in _SKIP_TOP:
             continue
@@ -375,14 +377,14 @@ def _in_context(version: Version, context: str | None) -> bool:
 
 def make_plan(
     roots: ProjectRoots, keep: int = DEFAULT_KEEP, context: str | None = None,
-    *, read_workfiles: bool = True,
+    *, read_workfiles: bool = True, inventory=None,
 ) -> Plan:
     """A verdict for every export version of the shots and assets (those
     under ``context``, a context or a path like ``shots/sq010``)."""
     if keep < 1:
         raise ValueError('keep at least one version')
     export_path = roots.get('export').path
-    exports, staged, errors = list_versions(roots)
+    exports, staged, errors = list_versions(roots, inventory)
     plan = Plan(export_path, keep, errors=errors)
     known = {tuple(v.rel.split('/')) for v in (*exports, *staged)}
 

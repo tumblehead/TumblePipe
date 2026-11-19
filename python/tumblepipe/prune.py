@@ -1,6 +1,6 @@
 """Prune a project's farm job folders once Deadline can no longer need them.
 
-    python -m tumblepipe.prune [jobs] [project] [--apply] [--min-age-days 2]
+    python -m tumblepipe.prune [jobs] [project] [--apply] [--min-age-days 2] [--local-min-age-days 14]
     python -m tumblepipe.prune exports [project] [--keep 3] [--context shots] [--apply]
 
 ``exports`` prunes old export versions instead (``tumblepipe.prune_exports``).
@@ -22,6 +22,13 @@ A folder is pruned only when nothing in Deadline can run from it again:
 A folder any job names as Suspended, Failed, Queued, Rendering or Pending is
 kept: that job can be requeued. When Deadline cannot be asked, nothing is
 pruned.
+
+The local farm (``farm.local``) writes the same folders, and Deadline never
+hears of those jobs. A folder whose env file says ``TH_FARM_BACKEND=local``
+is kept while a batch in this machine's local queue runs from it (queued,
+failed or done: a batch still listed can be retried), and otherwise until it
+is older than ``--local-min-age-days``, since the batch may be in another
+machine's queue.
 
 This is not the archive tool and the archive tool never calls it: archiving
 only reads a project (``export/other/jobs`` is simply left out of every
@@ -52,6 +59,10 @@ _JOB_FOLDER_REF = re.compile(r'[\\/]other[\\/]jobs[\\/](' + _UUID.pattern + r')[
 #: The one Deadline status from which a job cannot run again by itself.
 DONE = 'Completed'
 
+#: How long a local farm job folder no batch on this machine uses is kept:
+#: the batch may sit in another machine's queue, which cannot be asked.
+DEFAULT_LOCAL_MIN_AGE_DAYS = 14.0
+
 
 class Decision:
     PRUNE_COMPLETED = 'every job that used it completed'
@@ -59,6 +70,8 @@ class Decision:
     KEEP_ACTIVE = 'a job that uses it is {status} in Deadline and may be requeued'
     KEEP_RECENT = 'no Deadline job uses it, but it is too recent to be sure'
     KEEP_UNKNOWN = 'Deadline could not be asked'
+    KEEP_LOCAL = "a batch in this machine's local farm queue uses it"
+    KEEP_LOCAL_RECENT = "a local farm job folder: another machine's queue may still use it"
 
 
 @dataclass(frozen=True)
@@ -67,6 +80,9 @@ class JobFolder:
     path: Path
     size: int
     mtime: float
+    #: written for the local farm (its env file says so): Deadline has no
+    #: job for it, whatever state it is in
+    local: bool = False
 
 
 @dataclass(frozen=True)
@@ -149,6 +165,41 @@ def _size(path: Path) -> int:
     return total
 
 
+def is_local_job_folder(folder: Path) -> bool:
+    """Whether ``folder`` was written for the local farm: one of its env
+    files (``NN.env``) carries ``TH_FARM_BACKEND=local``
+    (``farm.local.backend.LocalFarm.submit``)."""
+    try:
+        env_files = sorted(folder.glob('*.env'))
+    except OSError:
+        return False
+    for env_file in env_files:
+        try:
+            text = env_file.read_bytes().decode('utf-8', 'replace')
+        except OSError:
+            continue
+        for line in text.splitlines():
+            key, sep, value = line.partition('=')
+            if sep and key.strip() == 'TH_FARM_BACKEND' and value.strip().lower() == 'local':
+                return True
+    return False
+
+
+def local_queue_folders(root_path: Path | None = None) -> set[str]:
+    """The job folders (by uuid) the batches in this machine's local farm
+    queue run from. A batch that cannot be read names none."""
+    from tumblepipe.farm.local import queue
+    names: set[str] = set()
+    for batch_dir in queue.list_batch_dirs(Path(root_path) if root_path is not None else queue.root()):
+        try:
+            job_dir = queue.read_batch(batch_dir).get('job_dir')
+        except (OSError, ValueError):
+            continue
+        if job_dir:
+            names.add(str(job_dir).replace('\\', '/').rstrip('/').rsplit('/', 1)[-1].lower())
+    return names
+
+
 def list_job_folders(jobs_path: Path) -> list[JobFolder]:
     """The submission folders: uuid-named directories, nothing else."""
     if not jobs_path.is_dir():
@@ -156,7 +207,9 @@ def list_job_folders(jobs_path: Path) -> list[JobFolder]:
     folders = []
     for entry in sorted(jobs_path.iterdir()):
         if entry.is_dir() and not entry.is_symlink() and _UUID.fullmatch(entry.name.lower()):
-            folders.append(JobFolder(entry.name, entry, _size(entry), entry.stat().st_mtime))
+            folders.append(JobFolder(
+                entry.name, entry, _size(entry), entry.stat().st_mtime, is_local_job_folder(entry),
+            ))
     return folders
 
 
@@ -167,6 +220,8 @@ def decide(
     now: float,
     min_age_days: float,
     deadline_known: bool,
+    local_folders: frozenset[str] | set[str] = frozenset(),
+    local_min_age_days: float = DEFAULT_LOCAL_MIN_AGE_DAYS,
 ) -> Verdict:
     if not deadline_known:
         return Verdict(folder, False, Decision.KEEP_UNKNOWN)
@@ -175,6 +230,10 @@ def decide(
         if live:
             return Verdict(folder, False, Decision.KEEP_ACTIVE.format(status=live[0]))
         return Verdict(folder, True, Decision.PRUNE_COMPLETED)
+    if folder.name.lower() in local_folders:
+        return Verdict(folder, False, Decision.KEEP_LOCAL)
+    if folder.local and now - folder.mtime < max(min_age_days, local_min_age_days) * 86400:
+        return Verdict(folder, False, Decision.KEEP_LOCAL_RECENT)
     if now - folder.mtime < min_age_days * 86400:
         return Verdict(folder, False, Decision.KEEP_RECENT)
     return Verdict(folder, True, Decision.PRUNE_ORPHANED)
@@ -186,14 +245,19 @@ def plan_prune(
     *,
     now: float | None = None,
     min_age_days: float = 2.0,
+    local_folders: frozenset[str] | set[str] = frozenset(),
+    local_min_age_days: float = DEFAULT_LOCAL_MIN_AGE_DAYS,
 ) -> list[Verdict]:
-    """A verdict per job folder; ``jobs`` None means Deadline was unreachable."""
+    """A verdict per job folder; ``jobs`` None means Deadline was unreachable.
+    ``local_folders`` are the folders this machine's local farm queue uses
+    (:func:`local_queue_folders`)."""
     now = time.time() if now is None else now
     return [
         decide(
             folder,
             None if jobs is None else jobs.get(folder.name.lower()),
             now=now, min_age_days=min_age_days, deadline_known=jobs is not None,
+            local_folders=local_folders, local_min_age_days=local_min_age_days,
         )
         for folder in list_job_folders(jobs_path)
     ]
@@ -257,6 +321,9 @@ def main(argv: list[str] | None = None) -> int:
                         help='delete the folders listed as prunable (default: only list them)')
     parser.add_argument('--min-age-days', type=float, default=2.0,
                         help='keep a folder no Deadline job names until it is this old (default 2)')
+    parser.add_argument('--local-min-age-days', type=float, default=DEFAULT_LOCAL_MIN_AGE_DAYS,
+                        help="keep a local farm job folder no batch on this machine uses until it is "
+                             f'this old (default {DEFAULT_LOCAL_MIN_AGE_DAYS:g})')
     args = parser.parse_args(argv)
 
     project = Path(args.project or os.environ.get('TH_PROJECT_PATH') or '')
@@ -276,7 +343,10 @@ def main(argv: list[str] | None = None) -> int:
             jobs = query_deadline(command)
         except (OSError, RuntimeError, ValueError) as error:
             print(f'Deadline could not be asked ({error}): nothing will be pruned.')
-    verdicts = plan_prune(jobs_path, jobs, min_age_days=args.min_age_days)
+    verdicts = plan_prune(
+        jobs_path, jobs, min_age_days=args.min_age_days,
+        local_folders=local_queue_folders(), local_min_age_days=args.local_min_age_days,
+    )
     print(f'{len(verdicts)} job folder(s) in {jobs_path}')
     by_reason: dict[tuple[bool, str], list[Verdict]] = {}
     for verdict in verdicts:

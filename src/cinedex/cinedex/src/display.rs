@@ -130,23 +130,34 @@ pub(crate) fn open_media(media: &th_playlist::Media, rate: (i32, i32)) -> Result
 }
 
 /// Neutral greys around the image (see [`crate::look`]): a tinted surround
-/// shifts how its colours read. `primary` marks what is on (a ticked
-/// checkbox, a slider's fill, the selected tab, the highlighted menu row):
-/// clear of the surface, and dark enough that white words on it read;
-/// focus is the accent. Corners are nearly square,
-/// like the picture they sit around.
+/// shifts how its colours read, so primer's jade accent is replaced by
+/// greys. The accent fills mark what is on (a ticked checkbox, a slider's
+/// fill, the highlighted menu row): clear of the panels, and dark enough
+/// that white words on them read. `accent_bright` is the accent as a line
+/// or as words (the selected tab's line, a selected row's bar), so it is
+/// lighter. Focus is the playhead's colour. Corners are nearly square, like
+/// the picture they sit around.
 pub fn theme() -> Theme {
     use crate::look;
+    let page = look::surround();
+    let on = look::on();
+    // The radii's type is not exported by name: start from the default's.
+    let mut radius = Theme::dark().radius;
+    radius.sm = 2.0;
+    radius.md = 2.0;
     Theme {
-        background: look::surround(),
-        surface: look::panel(),
+        bg_page: page,
+        bg_card: look::panel(),
+        bg_raised: Color::from_rgb8(54, 54, 54),
         text: look::text(),
-        primary: look::on(),
-        secondary: Color::from_rgb8(54, 54, 54),
+        accent: on,
+        accent_deep: on,
+        accent_hover: Color::from_rgb8(112, 112, 112),
+        accent_bright: Color::from_rgb8(170, 170, 170),
+        selection: on.wash_over(0.19, page),
         border: look::rule(),
         focus: look::now(),
-        radius: 2.0,
-        control_radius: 2.0,
+        radius,
         ..Theme::dark()
     }
 }

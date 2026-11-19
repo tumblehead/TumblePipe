@@ -458,6 +458,15 @@ turns green when the loaded version is the newest, orange
 otherwise, and its comment says which is which. A single-frame cache is
 time-shifted so it holds on that frame.
 
+**Open Location**, beside them, shows the picked **Version**'s folder
+(`…/cache/<name>/v####/`, or `…/lops_cache/<name>/v####/` for the LOP) in
+Explorer, Finder or your desktop's file manager; with no Version picked it
+shows the cache's folder, with its versions. When that folder is not there
+yet it opens nothing and says which folder is missing and why: `version
+v0003 of cache 'sweeps' is not on disk yet (<folder>): press Cache to write
+it, or pick another Version`, or `cache 'sweeps' has nothing on disk yet
+(<folder>): press Cache to write it` for a name that was never cached.
+
 When a version finishes, the node writes `context.json` into its folder:
 who cached it and when, the frames, and the workfile version and node that
 wrote it, with the TumblePipe and Houdini versions. A version folder without
@@ -560,7 +569,7 @@ Source: [`otls/lop_th.shot_sequencer.1.0`](../../otls/lop_th.shot_sequencer.1.0/
 
 A dive-in SOP network (`anim_dive`) imported as animated USD over the
 incoming stage: topology animated, `P N visibility bounds Cd Alpha`,
-`width`, `pscale` and `transform` only, no material binding, and kinds set by depth (assembly /
+`width`, `pscale`, `uv*` and `transform` only, no material binding, and kinds set by depth (assembly /
 component / scope, as `set_kinds` does). Cameras keep their type at every
 depth. At the item depth (`/<category>/<item>`) the kind is set but not the
 type, and BasisCurves are left alone: a skeleton the rig outputs as curves
@@ -578,6 +587,44 @@ shape the rig leaves out of some frames is invisible on those. Up to 1.112.0
 the first frame's visibility held for the whole shot (hidden at the first
 frame: never shown; hidden later: never hidden), and up to 1.112.2 a shape
 left out of some frames was hidden on every frame of the published layer.
+
+UVs come through for geometry made in the dive. `uv` becomes
+`primvars:st` (a `texCoord2f[]`, per face-vertex or per point as the SOP
+attribute is, not indexed: what a SOP Import of the same geometry authors,
+value for value), and `uv2`, `uv3`, ... keep their names. Up to 1.112.2 the
+node did not read `uv` at all: an asset's meshes had their UVs from the
+asset, and a mesh made in the dive (it has no prim under it) had none, so
+its material broke. What the node does with them:
+
+- **The asset's UVs stay the asset's.** The rigs carry their meshes' UVs
+  too, a copy from when the rig was built. Where the incoming stage already
+  has that primvar on the prim, with a size that fits the prim as
+  `th::animate` authors it (one value, one per face, per point or per
+  face-vertex, as its interpolation says), the node authors nothing: the
+  animation layer is stronger than the asset's, and a copy in it would hide
+  every later UV fix of the asset. So the dive's UVs are authored on a prim
+  with no such primvar under it, and on one whose topology the dive changed
+  (the asset's no longer fit). Changing only the UV values of an asset's
+  mesh in the dive has no effect.
+- **A shape without UVs gets none.** Merging shapes gives the ones without
+  `uv` zeros (a Merge fills a missing attribute). With the Scene Invoke on
+  Packed Folders the node knows each shape and authors `st` only on those
+  that have `uv`. In a dive that merges its shapes itself (SOPs after the
+  Scene Invoke), a mesh without `uv` beside meshes with it gets the merge's
+  zeros, as from a SOP Import, unless the asset has UVs for it.
+- **Read once, at the shot's first frame**, like `Cd`: UVs animated in the
+  dive hold the first frame's. A frame whose point count changes is
+  imported whole, with its own UVs, and then every frame of the published
+  layer has a sample.
+
+No primvar the node authors is indexed. A SOP Import marks that with a
+blocked `:indices`; up to 1.112.2 the node repeated the block as a time
+sample on every frame, which made `displayColor` read as indexed with no
+indices (`UsdGeomPrimvar.ComputeFlattened` fails on it).
+
+Other attributes of the dive's geometry (masks, custom primvars) are not
+imported: a rig carries dozens (capture weights, deformer masks) that do not
+belong in the animation layer, so the list above is fixed.
 
 The posed geometry is world space (each rig starts at its layout
 placement, see [`th::import_rig`](assets.md#thimport_rig-sop)), so the

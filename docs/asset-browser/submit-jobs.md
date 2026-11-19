@@ -136,6 +136,20 @@ Hover a column's header for what the column does and what each mark in it
 means (this replaced the legend above the grid); hover a cell for its own
 state.
 
+### The open workfile's row
+
+The row of the entity whose workfile you have open is highlighted: a tinted
+row with a bar in the accent colour at its left edge. It is the workfile
+that decides, not the ticks, so the row stays highlighted when you untick
+it (by accident, say) and is easy to find again; hover its name and the
+tooltip says so. The grid scrolls it into view when its tab is first shown.
+In a Multi's workfile every member's row is highlighted and the first is
+scrolled to. Opened from a card's **Submit Jobs…** for another entity, the
+grid scrolls to the card's entity (what you asked for) and still highlights
+the open workfile's row. With no pipeline workfile open nothing is
+highlighted. The colours are the browser theme's (its accent and its
+selection tint).
+
 ### Collapsing columns
 
 A column can collapse to a thin sliver, to keep the grid to the columns you
@@ -349,6 +363,35 @@ re-derives only unpinned fields; pinned ones survive. A field that is a
 choice *about the submission* rather than a property of the entity (Range,
 Standalone, Copy to edit, Channels) is a plain widget with no per-entity
 state.
+
+#### Maths in number fields
+
+A number field takes a sum: type `100/2` into **Step**, **Priority**, a
+sample count or any other number field and Enter (or Tab, or a click away)
+sets 50, pinning the field as a typed number does. This goes for every
+number field TumblePipe builds in Houdini: Farm Submit, the Entity Editor's
+frames, counts and render settings, the Database Editor's integer and float
+cells and the Prune window.
+
+- `+ - * /` and brackets, `*` and `/` first, left to right: `(1001+48)*2`
+  is 2098, `8/2/2` is 2.
+- `+=10`, `-=10`, `*=2` and `/=2` change what the field holds: `+=10` on a
+  priority of 50 sets 60. A leading sign alone is not that: `+10` is 10 and
+  `-10` is minus 10, because a field that takes negative numbers could not
+  tell minus ten from "ten less".
+- A whole-number field rounds the result to the nearest whole number, a
+  half away from zero: `7/2` sets 4.
+- The field's limits hold: a result past a spin field's maximum sets the
+  maximum, as typing a number past it does.
+- A sum with no answer (`3/`, `1/0`) changes nothing: the field goes back
+  to the value it had.
+- Numbers are digits with a decimal point. There are no names (`pi`),
+  exponents (`1e3`), thousands separators or decimal commas, and `--2` is
+  refused (`2--3`, two minus minus three, is 5).
+
+Cinedex's number fields read maths by the same rules. The Asset Browser's
+own fields (the Settings numbers, a create dialog's number fields) are
+TumbleTrove's and do not yet.
 
 ### Publish
 
@@ -573,7 +616,11 @@ It is a check render, for looking at lighting across a shot cheaply:
   Version submenu, and a clip pinned to it keeps playing it
   ([Check renders](play-shots.md#check-renders)). Its stepped frame range
   alone never tells it apart (its frames are complete on its step); only
-  `published` does.
+  `published` does. A `th::import_render` reads one when you pick it in
+  its **Version** menu (`v0014 (check, every 5th)`), holding each rendered
+  frame over the gaps
+  ([Reading a check render](../nodes/comp.md#reading-a-check-render)); such
+  a comp is for looking at, and is not sent to the farm.
 - The note under the **Frame list** counts the frames on the step, and the
   [Warnings](#warnings) column says `every Nth frame (<n> frames): stepped
   renders are not published, no daily`.
@@ -862,6 +909,10 @@ newest installed Houdini that satisfies both the project's and TumblePipe's
 Houdini version range (or `$HFS`, when set), builds the environment a Houdini
 session would have for the project from its package files, and opens the
 dialog in that Houdini's bundled Python. Submitting works exactly as above.
+Cinedex's **Farm Submit…** (right-click a shot in its Shots bin or on the
+timeline) opens the same window with those shots already ticked for a
+render (`python -m tumblepipe.farm_app --entity <uri>`, once per shot);
+nothing is submitted until you press Submit in it.
 That Python is not Houdini, so the launcher adds what Houdini would find on
 its own: PySide6 from Houdini's `site-packages-forced` folder
 (`python313/lib` on Windows, `lib/python3.13` beside `bin/` on macOS and

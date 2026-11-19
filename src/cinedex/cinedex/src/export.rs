@@ -12,10 +12,12 @@
 //! decodes only.
 //!
 //! What it exports is the edit as it is in the window, saved or not, at the
-//! edit's rate and resolution, its start timecode on the timecode track,
-//! through the display and view the viewer shows (the project's OCIO
-//! default until another is picked). Live playblasts are never exported:
-//! a shot shows its take. The movie is written beside its final name and
+//! edit's rate, through the display and view the viewer shows (the
+//! project's OCIO default until another is picked). Which frames, how big
+//! (hffmpeg scales the edit's frames), the codec, the sound and the
+//! viewer's burn-ins (`burnin_raster`) are the request's `Plan`
+//! (`export_settings`); the timecode track starts at its first frame's
+//! timecode. Live playblasts are never exported: a shot shows its take. The movie is written beside its final name and
 //! renamed over it when done, so a cancelled or failed export leaves
 //! nothing behind and does not touch a file already there.
 
@@ -29,9 +31,11 @@ use std::time::{Duration, Instant};
 use th_edit::document::WorkingEdit;
 use th_pipe::movie;
 
+use crate::burnin_raster::{self, Painter};
 use crate::colour::Colour;
 use crate::editing::Origin;
 use crate::editor::ProjectPaths;
+use crate::export_settings::Plan;
 use crate::render;
 
 /// How often the window hears of progress, at most.
@@ -103,6 +107,8 @@ pub struct Request {
     pub view: String,
     pub hffmpeg: PathBuf,
     pub output: PathBuf,
+    /// Which frames, how big, how encoded (`Settings::plan`).
+    pub plan: Plan,
 }
 
 /// What an export wrote.
@@ -190,10 +196,12 @@ impl Drop for Encoder {
 /// most every [`WAKE_EVERY`]) when it moved. None when it was cancelled.
 pub fn export(request: &Request, progress: &Progress, mut wake: impl FnMut()) -> Result<Option<Exported>, String> {
     let edit = &request.edit;
-    let frames = edit.length().max(0) as usize;
-    if frames == 0 {
+    let plan = request.plan;
+    let length = edit.length().max(0) as usize;
+    if length == 0 || plan.frames == 0 || plan.first + plan.frames > length {
         return Err("the edit is empty: there is nothing to export".into());
     }
+    let (first, frames) = (plan.first, plan.frames);
     let fps = edit.fps.max(1);
     let [width, height] = edit.resolution;
     progress.total.store(frames, Ordering::Relaxed);
@@ -204,29 +212,53 @@ pub fn export(request: &Request, progress: &Progress, mut wake: impl FnMut()) ->
     let mut sources = render::open_sources(&request.paths, &mut colour, &request.display, &request.view, edit)?;
     let work = tempfile::Builder::new().prefix("cinedex-export-").tempdir().map_err(|e| format!("a temporary folder: {e}"))?;
     let wav = work.path().join(format!("{}.wav", render::STEM));
-    let audio = render::write_mix(edit, &sources, fps, frames, &wav)?;
+    let audio = plan.audio && render::write_mix(edit, &sources, fps, first, frames, &wav)?;
     if progress.cancelled() {
         return Ok(None);
     }
 
     let partial = movie::partial_path(&request.output);
     let wav_arg = audio.then(|| wav.to_string_lossy().into_owned());
-    let args = movie::edit_export_args(width, height, fps, frames, wav_arg.as_deref(), &edit.start_timecode, &partial.to_string_lossy())?;
+    // The timecode track starts where the range does.
+    let timecode = crate::editing::timecode(first as i64, edit);
+    let partial_arg = partial.to_string_lossy();
+    let args = movie::export_args(&movie::Encode {
+        width,
+        height,
+        scale: Some([plan.width, plan.height]),
+        fps,
+        frames,
+        audio: wav_arg.as_deref(),
+        start_timecode: &timecode,
+        output: &partial_arg,
+        codec: plan.codec,
+        quality: plan.quality,
+    })?;
+    // Burn-ins are painted on the edit's frames, sized so that they are
+    // the viewer's once hffmpeg has scaled the frames to the movie.
+    let mut painter = plan.burnins.then(Painter::new);
+    if painter.as_ref().is_some_and(|p| !p.has_fonts()) {
+        return Err("no font was found on this machine to write the burn-ins with: export without Burn-ins".into());
+    }
+    let sizes = burnin_raster::sizes(plan.height, height);
     let mut encoder = Encoder::start(&request.hffmpeg, &args, partial.clone())?;
     progress.set_phase(Phase::Frames);
     let mut woke = Instant::now();
-    for at in 0..frames {
+    for (done, at) in plan.range().enumerate() {
         if progress.cancelled() {
             return Ok(None);
         }
-        let rgb = render::rgb(&render::picture(edit, &mut sources, at)?)?;
+        let mut rgb = render::rgb(&render::picture(edit, &mut sources, at)?)?;
+        if let (Some(painter), Some(lines)) = (painter.as_mut(), render::burnin_lines(edit, &sources, at)) {
+            painter.paint(&mut rgb, width, height, &sizes, &lines);
+        }
         if !encoder.frame(&rgb) {
             // It stopped reading: it says why when it ends.
             return Err(encoder.finish().err().unwrap_or_else(|| format!("hffmpeg stopped at frame {at}")));
         }
-        progress.done.store(at + 1, Ordering::Relaxed);
+        progress.done.store(done + 1, Ordering::Relaxed);
         // The first frame says the frames have begun; then now and then.
-        if at == 0 || woke.elapsed() >= WAKE_EVERY {
+        if done == 0 || woke.elapsed() >= WAKE_EVERY {
             woke = Instant::now();
             wake();
         }
@@ -241,7 +273,7 @@ pub fn export(request: &Request, progress: &Progress, mut wake: impl FnMut()) ->
         let _ = std::fs::remove_file(&partial);
         return Err(format!("{}: {e}", request.output.display()));
     }
-    Ok(Some(Exported { path: request.output.clone(), frames, width, height, fps, audio }))
+    Ok(Some(Exported { path: request.output.clone(), frames, width: plan.width, height: plan.height, fps, audio }))
 }
 
 /// The movie's file name until another is chosen: the edit's name and
@@ -292,14 +324,23 @@ pub fn duration(frames: usize, fps: u32) -> String {
 
 /// What the movie will be, in a line: size, rate, length, how it is shown
 /// and encoded.
-pub fn summary(edit: &WorkingEdit, display: &str, view: &str) -> String {
-    let frames = edit.length().max(0) as usize;
+pub fn summary(edit: &WorkingEdit, display: &str, view: &str, plan: &Plan) -> String {
     let fps = edit.fps.max(1);
-    let [w, h] = edit.resolution;
+    let range = if plan.frames as i64 == edit.length() {
+        String::new()
+    } else {
+        format!(", frames {} to {}", plan.first + 1, plan.first + plan.frames)
+    };
+    let sound = if plan.audio { "the sound as AAC" } else { "no sound" };
+    let burnins = if plan.burnins { " With burn-ins." } else { "" };
     format!(
-        "{w}x{h}, {fps} fps, {frames} frames ({}), shown as {display} / {view}. H.264, the sound as AAC; timecode from {}.",
-        duration(frames, fps),
-        edit.start_timecode
+        "{}x{}, {fps} fps, {} frames ({}){range}, shown as {display} / {view}. {}, {sound}; timecode from {}.{burnins}",
+        plan.width,
+        plan.height,
+        plan.frames,
+        duration(plan.frames, fps),
+        plan.codec.label(),
+        crate::editing::timecode(plan.first as i64, edit)
     )
 }
 
@@ -320,8 +361,10 @@ pub type Shared = Arc<Progress>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::export_settings::{Settings, Size, Span, Spans};
     use proptest::prelude::*;
     use th_edit::document::{Source, Track, VideoClip};
+    use th_pipe::movie::{Codec, Quality};
 
     proptest! {
         /// The offered name is the edit's name and version, a .mp4 that
@@ -420,14 +463,31 @@ mod tests {
             opacity: 1.0,
             transform: Default::default(),
         };
-        edit.video.push(Track { name: "V1".into(), clips: vec![clip(0, half, "A"), clip(half, frames - half, "B")] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![clip(0, half, "A"), clip(half, frames - half, "B")], color: None });
         edit
     }
 
     fn request(dir: &Path, hffmpeg: PathBuf, edit: WorkingEdit, name: &str) -> Request {
+        request_of(dir, hffmpeg, edit, name, Settings { audio: true, ..Settings::default() })
+    }
+
+    fn request_of(dir: &Path, hffmpeg: PathBuf, edit: WorkingEdit, name: &str, settings: Settings) -> Request {
         let ocio = dir.join("config.ocio");
         std::fs::write(&ocio, OCIO).unwrap();
+        let spans = Spans { length: edit.length().max(0) as usize, ..Spans::default() };
+        // An empty edit has no plan: its request says the whole of nothing.
+        let plan = settings.plan(edit.resolution, &spans).unwrap_or(Plan {
+            width: edit.resolution[0],
+            height: edit.resolution[1],
+            first: 0,
+            frames: 0,
+            codec: settings.codec,
+            quality: settings.quality,
+            audio: settings.audio,
+            burnins: settings.burnins,
+        });
         Request {
+            plan,
             paths: ProjectPaths::at(&dir.join("NoProject")),
             ocio: ocio.to_string_lossy().into_owned(),
             edit,
@@ -477,6 +537,96 @@ mod tests {
             assert_eq!(rate, format!("{fps}/1"));
             assert_eq!((w, h), (size[0].next_multiple_of(2), size[1].next_multiple_of(2)));
             assert!(!movie::partial_path(&request.output).exists());
+        }
+    }
+
+    /// hffprobe's word on `movie`'s codec and its timecode track's start.
+    fn probe_codec(hffmpeg: &Path, movie: &Path) -> (String, String) {
+        let probe = hffmpeg.with_file_name(hffmpeg.file_name().unwrap().to_string_lossy().replace("hffmpeg", "hffprobe"));
+        let out = Command::new(probe)
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_name:stream_tags=timecode:format_tags=timecode",
+                "-of",
+                "default=noprint_wrappers=1",
+            ])
+            .arg(movie)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        let get = |k: &str| text.lines().find_map(|l| l.strip_prefix(&format!("{k}="))).unwrap_or_default().to_owned();
+        (get("codec_name"), get("TAG:timecode"))
+    }
+
+    /// The settings are what the movie is: its size (scaled by the
+    /// encoder, padded even), its frames (a range starts the timecode
+    /// where it starts), its codec; with burn-ins asked for over a cut of
+    /// slugs, where the viewer shows none, it is still every frame.
+    #[test]
+    fn an_export_is_what_its_settings_ask() {
+        let Some(hffmpeg) = hffmpeg() else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let custom = Size::Custom { width: 48, height: 36 };
+        let cases = [
+            ("half.mp4", Settings { size: Size::Half, ..Settings::default() }, [32, 24], 30, "h264", "01:00:00:00"),
+            (
+                "range.mp4",
+                Settings { span: Span::Custom { first: 7, last: 18 }, quality: Quality::Best, ..Settings::default() },
+                [64, 48],
+                12,
+                "h264",
+                "01:00:00:06",
+            ),
+            (
+                "mjpeg.mov",
+                Settings { codec: Codec::Mjpeg, size: custom, burnins: true, ..Settings::default() },
+                [48, 36],
+                30,
+                "mjpeg",
+                "01:00:00:00",
+            ),
+            (
+                "small.mov",
+                Settings { quality: Quality::Small, audio: false, span: Span::Custom { first: 30, last: 30 }, ..Settings::default() },
+                [64, 48],
+                1,
+                "h264",
+                "01:00:01:05",
+            ),
+        ];
+        for (name, settings, size, frames, codec, timecode) in cases {
+            let request = request_of(dir.path(), hffmpeg.clone(), slugs(30, 24, [64, 48]), name, settings);
+            let progress = Progress::default();
+            let exported = export(&request, &progress, || {}).unwrap().unwrap();
+            assert_eq!((exported.frames, exported.width, exported.height), (frames, size[0], size[1]), "{name}");
+            assert_eq!(progress.frames(), (frames, frames), "{name}");
+            let (n, _, w, h) = probe(&hffmpeg, &request.output);
+            assert_eq!((n, w, h), (frames, size[0], size[1]), "{name}");
+            assert_eq!(probe_codec(&hffmpeg, &request.output), (codec.to_owned(), timecode.to_owned()), "{name}");
+        }
+    }
+
+    proptest! {
+        /// The summary says the plan: its size, its frames and where they
+        /// are in the cut when not all of it, its codec, its sound and
+        /// burn-ins, and the timecode its first frame has.
+        #[test]
+        fn the_summary_says_the_plan(settings in crate::export_settings::tests::settings(), length in 1i64..200) {
+            let edit = slugs(length.max(2), 24, [1920, 1080]);
+            let spans = Spans { length: edit.length() as usize, ..Spans::default() };
+            let Ok(plan) = settings.plan(edit.resolution, &spans) else { return Ok(()) };
+            let line = summary(&edit, "sRGB", "Raw", &plan);
+            prop_assert!(line.starts_with(&format!("{}x{}, 24 fps, {} frames", plan.width, plan.height, plan.frames)), "{}", line);
+            let partial = plan.frames != spans.length;
+            prop_assert_eq!(line.contains(&format!("frames {} to {}", plan.first + 1, plan.first + plan.frames)), partial, "{}", line);
+            prop_assert!(line.contains(plan.codec.label()));
+            prop_assert_eq!(line.contains("the sound as AAC"), plan.audio);
+            prop_assert_eq!(line.contains("no sound"), !plan.audio);
+            prop_assert_eq!(line.contains("burn-ins"), plan.burnins);
+            let seconds = plan.first / 24;
+            prop_assert!(line.contains(&format!("timecode from 01:00:{:02}:{:02}.", seconds, plan.first % 24)), "{}", line);
         }
     }
 

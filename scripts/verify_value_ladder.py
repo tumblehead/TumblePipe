@@ -300,8 +300,8 @@ def main() -> int:
     # Submit pane and Database Editor cells built above.
     roots = [host]
     try:
-        from tumblepipe import prune_app
-        prune = prune_app.build_window()
+        from tumblepipe.cleanup import app as cleanup_app
+        prune = cleanup_app.build_window()
         roots.append(prune)
     except ImportError as error:
         check('11 the Prune window builds', False, str(error))

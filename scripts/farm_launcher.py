@@ -26,14 +26,15 @@ package files, nor any Houdini install path. So this launcher:
 ``TH_USER`` comes from ``TT_USER_NAME``, which the Desktop does not yet pass
 to scripts; until it does, submissions made from here carry no user name.
 
-    python scripts/farm_launcher.py [--app farm|manager|archive|restore|rebuild|prune|edits]
+    python scripts/farm_launcher.py [--app farm|manager|archive|restore|rebuild|cleanup|edits]
                                     [--context shots|assets] [--dry-run]
 
 ``--app`` picks what runs: the Farm Submit grid (default), the Farm Manager
 (``tumblepipe.farm.manager``: local and farm jobs, their logs), the project
 archive window (``tumblepipe.archive.app``) on its Archive or Restore tab,
 ``rebuild``, which re-makes a restored project's left-out caches in hython,
-``prune``, the Prune Old Exports window (``tumblepipe.prune_app``), or
+``cleanup``, the Clean Up Project window (``tumblepipe.cleanup.app``;
+``prune`` still opens it), or
 ``edits``, the editor on the project's master edit, else on every shot
 (``tumblepipe.editor_app``).
 """
@@ -63,7 +64,9 @@ APPS = {
     'archive': ('tumblepipe.archive.app',),
     'restore': ('tumblepipe.archive.app', '--restore'),
     'rebuild': ('tumblepipe.archive', 'rebuild'),
-    'prune': ('tumblepipe.prune_app',),
+    'cleanup': ('tumblepipe.cleanup.app',),
+    # What Clean Up Project was called while it only pruned exports.
+    'prune': ('tumblepipe.cleanup.app',),
     'edits': ('tumblepipe.editor_app',),
 }
 

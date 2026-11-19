@@ -41,6 +41,14 @@ pub fn timeline(edit: &FrozenEdit, name: &str) -> Value {
             )]
         }));
     }
+    // A track's colour, when it has one, in its `tumblepipe` metadata: OTIO
+    // has no colour of its own for a track.
+    let colors = edit.video.iter().map(|t| &t.color).chain(edit.audio.iter().map(|t| &t.color));
+    for (child, color) in children.iter_mut().zip(colors) {
+        if let Some(color) = color {
+            child["metadata"] = json!({"tumblepipe": {"color": color}});
+        }
+    }
     let mut markers: Vec<Value> = edit.markers.iter().map(|m| marker(&m.note, m.at, 1, "RED", fps)).collect();
     markers.extend(notes.iter().map(|(at, duration, note)| marker(note, *at, *duration, "YELLOW", fps)));
     let start = timecode_frames(&edit.start_timecode, fps).expect("a checked edit's timecode reads");
@@ -537,10 +545,10 @@ mod tests {
     #[test]
     fn a_plain_dissolve_becomes_a_transition() {
         let mut edit = crate::WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
-        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 20, 0, mediate(1))] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 20, 0, mediate(1))], color: None });
         let mut upper = vclip(16, 10, 100, mediate(2));
         upper.fade_in = 4;
-        edit.video.push(Track { name: "V2".into(), clips: vec![upper] });
+        edit.video.push(Track { name: "V2".into(), clips: vec![upper], color: None });
         let otio = timeline(&freeze(&edit, &Fixed).unwrap(), "cut");
         let v1 = otio["tracks"]["children"][0]["children"].as_array().unwrap();
         let kinds: Vec<&str> = v1.iter().map(|i| i["OTIO_SCHEMA"].as_str().unwrap()).collect();
@@ -590,6 +598,7 @@ mod tests {
             transform: Default::default(),
         };
         edit.video.push(Track {
+            color: None,
             name: "V1".into(),
             clips: vec![
                 clip(0, shot("entity:/shots/S/010", "layout", "v0001", "P:/r/S/010/layout/v0001.mp4")),
@@ -642,7 +651,7 @@ mod tests {
             opacity: 1.0,
             transform: Default::default(),
         };
-        edit.video.push(Track { name: "V1".into(), clips: vec![item(0, "P:/1/x.mp4"), item(10, "P:/2/x.mp4")] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![item(0, "P:/1/x.mp4"), item(10, "P:/2/x.mp4")], color: None });
         let links = movie_links(&edit);
         assert_eq!(links["P:/1/x.mp4"], "a_b_v0001.mp4");
         assert_eq!(links["P:/2/x.mp4"], "a_b_v0001_2.mp4");
@@ -718,9 +727,9 @@ mod tests {
     fn movie_edit() -> impl Strategy<Value = FrozenEdit> {
         prop::collection::vec((0usize..3, any_source()), 0..14).prop_map(|clips| {
             let mut edit = FrozenEdit::new(24, [1920, 1080], "01:00:00:00");
-            edit.video.push(Track { name: "V1".into(), clips: Vec::new() });
-            edit.video.push(Track { name: "V2".into(), clips: Vec::new() });
-            edit.audio.push(Track { name: "A1".into(), clips: Vec::new() });
+            edit.video.push(Track { name: "V1".into(), clips: Vec::new(), color: None });
+            edit.video.push(Track { name: "V2".into(), clips: Vec::new(), color: None });
+            edit.audio.push(Track { name: "A1".into(), clips: Vec::new(), color: None });
             for (i, (track, source)) in clips.into_iter().enumerate() {
                 let at = i as Frame * 10;
                 if track == 2 {
@@ -816,6 +825,39 @@ mod tests {
     }
 
     proptest! {
+        /// A track's colour goes through a publish (freeze) and into the
+        /// OTIO, in its track's `tumblepipe` metadata; a track without
+        /// one has empty metadata, as before colours. Taking the colours
+        /// out of the OTIO leaves the OTIO of the same edit uncoloured.
+        #[test]
+        fn the_otio_names_each_tracks_colour(edit in edits(), picks in prop::collection::vec(prop::option::of(0usize..3), 8)) {
+            let plain = freeze(&edit, &Fixed).unwrap();
+            let mut edit = edit;
+            let mut wanted: Vec<Option<&str>> = Vec::new();
+            let colors = ["blue", "teal", "brick"];
+            for (i, t) in edit.video.iter_mut().enumerate() {
+                t.color = picks.get(i).copied().flatten().map(|p| colors[p].to_owned());
+                wanted.push(picks.get(i).copied().flatten().map(|p| colors[p]));
+            }
+            let video = edit.video.len();
+            for (i, t) in edit.audio.iter_mut().enumerate() {
+                t.color = picks.get(video + i).copied().flatten().map(|p| colors[p].to_owned());
+                wanted.push(picks.get(video + i).copied().flatten().map(|p| colors[p]));
+            }
+            let frozen = freeze(&edit, &Fixed).unwrap();
+            let mut otio = timeline(&frozen, "cut");
+            let tracks = otio["tracks"]["children"].as_array_mut().unwrap();
+            prop_assert_eq!(tracks.len(), wanted.len());
+            for (track, color) in tracks.iter_mut().zip(&wanted) {
+                match color {
+                    Some(color) => prop_assert_eq!(&track["metadata"], &json!({"tumblepipe": {"color": color}})),
+                    None => prop_assert_eq!(&track["metadata"], &json!({})),
+                }
+                track["metadata"] = json!({});
+            }
+            prop_assert_eq!(otio, timeline(&plain, "cut"));
+        }
+
         /// Outside fades, every frame of the timeline shows the clip (and
         /// source frame) the edit shows; every fade not written as a
         /// dissolve is noted.
@@ -878,7 +920,7 @@ mod tests {
         first.fade_in = 6;
         let mut second = vclip(20, 10, 0, mediate(2));
         second.fade_out = 4;
-        edit.video.push(Track { name: "V1".into(), clips: vec![first, second] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![first, second], color: None });
         let otio = timeline(&freeze(&edit, &Fixed).unwrap(), "cut");
         let v1 = otio["tracks"]["children"][0]["children"].as_array().unwrap();
         let kinds: Vec<&str> = v1.iter().map(|i| i["OTIO_SCHEMA"].as_str().unwrap()).collect();
@@ -897,7 +939,7 @@ mod tests {
         let mut edit = crate::WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
         let mut c = vclip(0, 20, 0, mediate(1));
         c.opacity = 0.5;
-        edit.video.push(Track { name: "V1".into(), clips: vec![c, vclip(20, 5, 0, mediate(2))] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![c, vclip(20, 5, 0, mediate(2))], color: None });
         let otio = timeline(&freeze(&edit, &Fixed).unwrap(), "cut");
         let v1 = &otio["tracks"]["children"][0]["children"];
         assert_eq!(v1[0]["metadata"]["tumblepipe"]["opacity"], 0.5);
@@ -924,7 +966,7 @@ mod tests {
                 c.transform = *transform;
                 clips.push(c);
             }
-            edit.video.push(Track { name: "V1".into(), clips });
+            edit.video.push(Track { name: "V1".into(), clips, color: None });
             let otio = timeline(&freeze(&edit, &Fixed).unwrap(), "cut");
             let v1 = otio["tracks"]["children"][0]["children"].as_array().unwrap();
             prop_assert_eq!(v1.len(), given.len());

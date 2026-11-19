@@ -13,7 +13,7 @@ use primer::prelude::*;
 use primer::widget::custom::Cursor;
 
 /// Space between a burn-in and the picture's edge, in logical pixels.
-const MARGIN: f32 = 10.0;
+pub const MARGIN: f32 = 10.0;
 
 /// What the burn-ins say, and the size of the frame they are on.
 pub struct Burnin {

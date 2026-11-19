@@ -113,7 +113,7 @@ fn cut() -> impl Strategy<Value = WorkingEdit> {
                 .enumerate()
                 .map(|(i, (at, duration))| VideoClip::new(at, duration, 0, Source::Slug { text: format!("{name}.{i}") }))
                 .collect();
-            edit.video.push(Track { name, clips });
+            edit.video.push(Track { name, clips, color: None });
         }
         for (t, spans) in audio.iter().enumerate() {
             let name = format!("A{}", t + 1);
@@ -130,7 +130,7 @@ fn cut() -> impl Strategy<Value = WorkingEdit> {
                     fade_out: 0,
                 })
                 .collect();
-            edit.audio.push(Track { name, clips });
+            edit.audio.push(Track { name, clips, color: None });
         }
         edit
     })
@@ -312,6 +312,8 @@ struct Hand {
     pointer: Pointer,
     origin: (f32, f32),
     px: f32,
+    /// Ctrl (Cmd) goes down while an edge is held: it stays a trim.
+    ctrl_on_edges: bool,
     now: Instant,
 }
 
@@ -321,7 +323,13 @@ fn hand() -> impl Strategy<Value = ((i16, i16), u8)> {
 
 impl Hand {
     fn new(((x, y), px): ((i16, i16), u8)) -> Self {
-        Hand { pointer: Pointer::default(), origin: (f32::from(x), f32::from(y)), px: f32::from(px), now: Instant::now() }
+        Hand {
+            pointer: Pointer::default(),
+            origin: (f32::from(x), f32::from(y)),
+            px: f32::from(px),
+            ctrl_on_edges: false,
+            now: Instant::now(),
+        }
     }
 
     /// The window point over the middle of `frame`, `y` pixels below the
@@ -373,7 +381,11 @@ impl Hand {
     }
 
     fn hold_alt(&mut self, editor: &mut Editor, alt: bool) {
-        let modifiers = Modifiers { alt, ..Modifiers::NONE };
+        self.hold(editor, Modifiers { alt, ..Modifiers::NONE });
+    }
+
+    /// The keys held change to `modifiers`.
+    fn hold(&mut self, editor: &mut Editor, modifiers: Modifiers) {
         self.event(editor, Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)), self.at(0.0, 0.0));
     }
 
@@ -386,7 +398,7 @@ impl Hand {
         let x = match grip {
             Grip::Head | Grip::RollHead => HEADER + self.px * at as f32 + 0.5,
             Grip::Tail | Grip::RollTail => HEADER + self.px * end as f32 - 1.0,
-            Grip::Body | Grip::Slip => HEADER + self.px * (at + end) as f32 / 2.0,
+            Grip::Body | Grip::Push | Grip::Slip => HEADER + self.px * (at + end) as f32 / 2.0,
         };
         self.at(x, Self::row_y(editor, row, 0.5))
     }
@@ -399,6 +411,10 @@ impl Hand {
         self.hold_alt(editor, alt);
         let from = self.grip_point(editor, clip, grip);
         self.press(editor, from);
+        if grip == Grip::Push || (self.ctrl_on_edges && matches!(grip, Grip::Head | Grip::Tail)) {
+            // Ctrl (Cmd) pressed once the clip is held: a push from here on.
+            self.hold(editor, Modifiers::COMMAND);
+        }
         let to = Point::new(from.x + self.px * dx as f32, row_y.map_or(from.y, |y| self.origin.1 + y));
         self.move_to(editor, to);
         self.release(editor, to);
@@ -415,6 +431,8 @@ enum Grip {
     RollTail,
     Slip,
     Body,
+    /// The body, with Ctrl (Cmd) held: what follows on its track moves too.
+    Push,
 }
 
 fn grip() -> impl Strategy<Value = Grip> {
@@ -425,35 +443,39 @@ fn grip() -> impl Strategy<Value = Grip> {
         1 => Just(Grip::RollTail),
         1 => Just(Grip::Slip),
         2 => Just(Grip::Body),
+        2 => Just(Grip::Push),
     ]
 }
 
-/// What an edit of every track does to a clip that is not the one edited:
-/// frames `from .. to` taken out of the cut (`to` before `from`: that many
-/// put in at `to`). Its new place, or None when the ripple cuts into it
-/// (the document's rule: a clip across the place is split, one under frames
-/// taken out loses them).
-fn rippled((at, duration): (EditFrame, EditFrame), from: EditFrame, to: EditFrame) -> Option<(EditFrame, EditFrame)> {
-    let end = at + duration;
-    if to >= from {
-        // Frames taken out.
-        if end <= from {
-            Some((at, duration))
-        } else if at >= to {
-            Some((at - (to - from), duration))
-        } else {
-            None
-        }
-    } else {
-        // Frames put in at `to`.
-        if end <= to {
-            Some((at, duration))
-        } else if at >= to {
-            Some((at + (from - to), duration))
-        } else {
-            None
-        }
+/// What a trim does to another track, whose clips are at `spans` (each
+/// where it starts and how long, in order): the trim made its clip
+/// `longer` frames longer at frame `at` (shorter: it took the frames
+/// `at .. at - longer` out). No clip is ever cut or lost: the clips that
+/// start at or after those frames all move along by `longer`, or, when
+/// moving them earlier would put one on a clip that stays or a clip starts
+/// in the frames taken out, the whole track stays as it is.
+fn trim_rippled(spans: &[(EditFrame, EditFrame)], at: EditFrame, longer: EditFrame) -> Vec<(EditFrame, EditFrame)> {
+    let to = if longer < 0 { at - longer } else { at };
+    let moved: Vec<(EditFrame, EditFrame)> = spans.iter().map(|&(a, d)| (if a >= to { a + longer } else { a }, d)).collect();
+    let apart = moved.iter().enumerate().all(|(i, a)| moved[i + 1..].iter().all(|b| a.0 + a.1 <= b.0 || b.0 + b.1 <= a.0));
+    let inside = spans.iter().any(|&(a, _)| at <= a && a < to);
+    if longer > 0 || (apart && !inside) { moved } else { spans.to_vec() }
+}
+
+/// The edit frame a trim of `longer` frames puts frames in at, or takes
+/// them out from: the clip is at `at .. end`, trimmed at its tail (else
+/// its head, which stays where it is while what it shows changes).
+fn trim_place(tail: bool, at: EditFrame, end: EditFrame, longer: EditFrame) -> EditFrame {
+    match (tail, longer < 0) {
+        (true, true) => end + longer,
+        (true, false) => end,
+        (false, _) => at,
     }
+}
+
+/// Each track's clips as where they start and how long.
+fn track_spans(edit: &WorkingEdit, track: TrackRef) -> Vec<(EditFrame, EditFrame)> {
+    edit.spans(track).into_iter().map(|(at, end)| (at, end - at)).collect()
 }
 
 proptest! {
@@ -567,13 +589,24 @@ proptest! {
         let (clicked, on) = bench.editor.menu_empty.expect("the menu is for that click");
         let entries = timeline_menu::entries(&bench.editor.timeline_menu_state(clicked, on));
         let labels: Vec<&str> = entries.iter().map(|(label, _)| label.as_str()).collect();
-        let changes = |message: &Message| matches!(message, Message::Edit(_) | Message::At(..));
+        let changes = |message: &Message| matches!(message, Message::Edit(_) | Message::At(..) | Message::CloseGap(_));
+        // Close Gap is offered exactly on a gap: empty frames of a track
+        // with a clip of it after them.
+        let in_gap = at.zip(track).is_some_and(|(frame, t)| {
+            let spans = before.spans(t);
+            let frame = frame as EditFrame;
+            !spans.iter().any(|&(a, e)| a <= frame && frame < e) && spans.iter().any(|&(a, _)| a > frame)
+        });
+        prop_assert_eq!(labels.contains(&"Close Gap"), !read_only && in_gap, "{:?}", labels);
         if read_only {
             prop_assert!(!entries.iter().any(|(_, m)| changes(m)), "a published cut is offered {:?}", labels);
         }
         prop_assert_eq!(labels.iter().any(|l| l.contains("Here")), !read_only && at.is_some(), "{:?}", labels);
         let removable = track.is_some_and(|t| before.spans(t).is_empty() && before.track_count(t.kind) > 1);
         prop_assert_eq!(labels.iter().any(|l| l.starts_with("Remove Track")), !read_only && removable, "{:?}", labels);
+        // A track with clips is deleted with them, and its row says so.
+        let deletable = track.is_some_and(|t| !before.spans(t).is_empty() && before.track_count(t.kind) > 1);
+        prop_assert_eq!(labels.iter().any(|l| l.starts_with("Delete Track")), !read_only && deletable, "{:?}", labels);
 
         let (label, message) = choice.get(&entries).clone();
         let changing = changes(&message);
@@ -625,11 +658,36 @@ proptest! {
                 prop_assert!(after.spans(top).is_empty());
                 prop_assert_eq!(known(&after), known(&before));
             }
+            "Close Gap" => {
+                // The clips after the click on that track, earlier by the
+                // empty frames around it; nothing else.
+                let (t, frame) = (track.unwrap(), at.unwrap() as EditFrame);
+                let spans = before.spans(t);
+                let next = spans.iter().find(|s| s.0 > frame).unwrap().0;
+                let gap = next - spans.iter().filter(|s| s.1 <= frame).map(|s| s.1).max().unwrap_or(0);
+                let expected: Vec<Known> =
+                    known(&before).into_iter().map(|c| if c.1 == t && c.2 >= next { (c.0, c.1, c.2 - gap, c.3) } else { c }).collect();
+                prop_assert_eq!(known(&after), expected);
+            }
             l if l.starts_with("Remove Track") => {
                 let gone = track.unwrap();
                 prop_assert!(l.ends_with(before.track_name(gone)));
                 prop_assert_eq!(after.track_count(gone.kind), before.track_count(gone.kind) - 1, "{:?}", bench.refusal());
                 prop_assert_eq!(known(&after).len(), known(&before).len(), "Remove Track took clips with it");
+            }
+            l if l.starts_with("Delete Track") => {
+                // The track and its clips, and no other clip (`track_menu`
+                // holds it to the rest).
+                let gone = track.unwrap();
+                let n = before.spans(gone).len();
+                prop_assert!(l.ends_with(&format!("and {n} Clip{}", if n == 1 { "" } else { "s" })), "{}", l);
+                prop_assert_eq!(known(&after).len(), known(&before).len() - n, "{:?}", bench.refusal());
+            }
+            l if l.starts_with("Move Track") => {
+                // Every clip is still there, as long and where in time it
+                // was (`track_menu` holds it to the order).
+                let timed = |edit: &WorkingEdit| -> BTreeSet<(String, EditFrame, EditFrame)> { known(edit).into_iter().map(|c| (c.0, c.2, c.3)).collect() };
+                prop_assert_eq!(timed(&after), timed(&before), "{:?}", bench.refusal());
             }
             _ => {
                 prop_assert!(!changing, "{} is not known to this test", label);
@@ -658,7 +716,7 @@ proptest! {
     #[test]
     fn no_drag_takes_a_clip_away(
         edit in cut(), looks in prop::collection::vec(focus_look(), 0..3), stage in hand(),
-        pick in any::<Index>(), grip in grip(), dx in -70i64..70, playhead in any::<Index>(),
+        pick in any::<Index>(), grip in grip(), dx in -70i64..70, playhead in any::<Index>(), ctrl in any::<bool>(),
     ) {
         let mut bench = Bench::new(&edit, false);
         let mut view = View::default();
@@ -675,28 +733,20 @@ proptest! {
         let before = clips(&edit);
         let name = before.iter().find(|c| c.1 == clip.track && c.2 == at).unwrap().0.clone();
 
-        let mut hand = Hand::new(stage);
+        let mut hand = Hand { ctrl_on_edges: ctrl, ..Hand::new(stage) };
         hand.drag(&mut bench.editor, clip, grip, dx, None);
         let after = clips(bench.edit());
         let refused = bench.refusal().map(str::to_owned);
         let now = |name: &str| after.iter().filter(|c| c.0 == name).cloned().collect::<Vec<Known>>();
-        // How much longer a trim made the clip, and the frames its ripple
-        // took out of every track (or put in: see `rippled`).
-        let mut ripple: Option<(EditFrame, (EditFrame, EditFrame))> = None;
+        // How much longer a trim made the clip, and where (`trim_place`).
+        let mut ripple: Option<(EditFrame, EditFrame)> = None;
         match grip {
             Grip::Head | Grip::Tail => {
                 prop_assert_eq!(&refused, &None, "an edge drag was refused");
                 let longer = if grip == Grip::Tail { dx.max(1 - duration) } else { (-dx).max(1 - duration) };
                 prop_assert_eq!(now(&name), vec![(name.clone(), clip.track, at, duration + longer)]);
-                let frames = match (grip, longer < 0) {
-                    // The tail's last frames go; or frames are put in after it.
-                    (Grip::Tail, _) => (end + longer, end),
-                    // The head's first frames go; or frames are put in before it.
-                    (_, true) => (at, at - longer),
-                    (_, false) => (at + longer, at),
-                };
                 if longer != 0 {
-                    ripple = Some((longer, frames));
+                    ripple = Some((longer, trim_place(grip == Grip::Tail, at, end, longer)));
                 }
             }
             Grip::Slip => {
@@ -720,36 +770,77 @@ proptest! {
                     None => prop_assert_eq!(&after, &before, "a roll with no clip touching changed the cut"),
                 }
             }
+            Grip::Push => {
+                // The clip and all after it on its track, by as far as the
+                // clip before it (or the cut's start) lets them; nothing
+                // else, on any track; and it is one undo step.
+                prop_assert_eq!(&refused, &None, "a push was refused");
+                let floor = clip.index.checked_sub(1).map_or(0, |i| own[i].1);
+                let moved = dx.max(floor - at);
+                let expected: Vec<Known> = before
+                    .iter()
+                    .map(|c| if c.1 == clip.track && c.2 >= at { (c.0.clone(), c.1, c.2 + moved, c.3) } else { c.clone() })
+                    .collect();
+                prop_assert_eq!(&after, &expected, "a push by {} (held to {})", dx, moved);
+                if moved != 0 {
+                    let mut again = Bench::new(&edit, false);
+                    Hand::new(stage).drag(&mut again.editor, clip, grip, dx, None);
+                    again.send(Message::Undo);
+                    prop_assert_eq!(again.edit(), &edit, "a push was not one undo step");
+                    prop_assert!(!again.editor.doc.can_undo());
+                }
+            }
             Grip::Body => {
-                let to = (at + dx).max(0);
-                let free = own.iter().enumerate().all(|(i, &(a, e))| i == clip.index || e <= to || a >= to + duration);
-                if free {
-                    prop_assert_eq!(&refused, &None, "a move to free frames was refused");
-                    prop_assert_eq!(now(&name), vec![(name.clone(), clip.track, to, duration)]);
-                    let others = |all: &[Known]| all.iter().filter(|c| c.0 != name).cloned().collect::<Vec<_>>();
-                    prop_assert_eq!(others(&after), others(&before));
-                } else {
-                    prop_assert!(refused.as_deref().is_some_and(|why| why.contains("are taken")), "{:?}", refused);
-                    prop_assert_eq!(bench.edit(), &edit, "a refused move changed the cut");
+                // A move is never refused for want of room, and never lands
+                // on a clip: it goes where it was let go when those frames
+                // are free and nothing is near enough to snap to, else on a
+                // snap point within 8 pixels or the nearest free place
+                // beside what is in the way. Nothing else moves.
+                prop_assert_eq!(&refused, &None, "a move was refused");
+                let to = at + dx;
+                let free = |to: EditFrame| to >= 0 && own.iter().enumerate().all(|(i, &(a, e))| i == clip.index || e <= to || a >= to + duration);
+                let landed = now(&name);
+                prop_assert_eq!(landed.len(), 1);
+                let got = landed[0].2;
+                prop_assert_eq!(&landed[0], &(name.clone(), clip.track, got, duration));
+                prop_assert!(free(got), "the clip landed on another, at {}", got);
+                let others = |all: &[Known]| all.iter().filter(|c| c.0 != name).cloned().collect::<Vec<_>>();
+                prop_assert_eq!(others(&after), others(&before));
+                // What it may snap to: the cut's start, the playhead, and
+                // the ends of every other clip that has a row.
+                let reach = if dx == 0 { 0 } else { (8.0 / hand.px).round() as EditFrame };
+                let mut points = vec![0, bench.editor.position as EditFrame];
+                points.extend(before.iter().filter(|c| c.0 != name && view.rows(&edit).contains(&c.1)).flat_map(|c| [c.2, c.2 + c.3]));
+                let near = points.iter().any(|&p| (p - to).abs() <= reach || (p - to - duration).abs() <= reach);
+                if free(to) && !near {
+                    prop_assert_eq!(got, to, "free frames, nothing to snap to");
+                }
+                // No free place is much nearer than where it landed.
+                let nearest = (0..400).filter(|&d| free(to - d) || free(to + d)).min().unwrap();
+                prop_assert!((got - to).abs() <= nearest + 2 * reach, "landed {} from {}, a free place was {} away", got - to, to, nearest);
+                if got != to {
+                    let on_point = points.contains(&got) || points.contains(&(got + duration));
+                    let beside = own.iter().enumerate().any(|(i, &(a, e))| i != clip.index && (e == got || a == got + duration));
+                    prop_assert!(on_point || beside || got == 0, "it landed at {} for no reason", got);
                 }
             }
         }
         // Every clip is still there, each track's in the order they were.
-        if let Some((longer, (from, to))) = ripple {
+        if let Some((longer, place)) = ripple {
             for (other, track, was_at, was_long) in &before {
-                if *other == name {
-                    continue;
-                }
-                let held = if *track == clip.track {
-                    // Its own track's clips are never cut into: those after it move along.
-                    Some((if *was_at > at { was_at + longer } else { *was_at }, *was_long))
-                } else {
-                    rippled((*was_at, *was_long), from, to)
-                };
-                if let Some((new_at, new_long)) = held {
-                    prop_assert_eq!(now(other), vec![(other.clone(), *track, new_at, new_long)], "{} after {:?} by {}", other, grip, dx);
+                if *other != name && *track == clip.track {
+                    // Its own track: the clips after it move along.
+                    let new_at = if *was_at > at { was_at + longer } else { *was_at };
+                    prop_assert_eq!(now(other), vec![(other.clone(), *track, new_at, *was_long)], "{} after {:?} by {}", other, grip, dx);
                 }
             }
+            // Every other track, shown or not, to the frame: nothing of it
+            // is cut or lost.
+            for track in edit.tracks().filter(|t| *t != clip.track) {
+                prop_assert_eq!(track_spans(bench.edit(), track), trim_rippled(&track_spans(&edit, track), place, longer), "{:?} after {:?} by {}", track, grip, dx);
+            }
+            let names = |all: &[Known]| all.iter().map(|c| c.0.clone()).collect::<Vec<_>>();
+            prop_assert_eq!(names(&after), names(&before), "a trim took a clip away, or cut one");
         }
         // Its track has the clips it had: in the order they were, but for a
         // clip moved along it.
@@ -790,10 +881,19 @@ proptest! {
         prop_assert_eq!(bench.refusal(), None);
         let track_of = |edit: &WorkingEdit| clips(edit).into_iter().filter(|c| c.1 == clip.track).collect::<Vec<_>>();
         prop_assert_eq!(track_of(bench.edit()), track_of(&edit));
-        // The frames the trim took out of every track, and put back.
-        let (from, to) = if tail { (end - by, end) } else { (at, at + by) };
-        let cut_into = clips(&edit).iter().any(|c| c.1 != clip.track && rippled((c.2, c.3), from, to).is_none());
-        if !cut_into {
+        // No clip of any track was cut or lost on the way.
+        let names = |edit: &WorkingEdit| clips(edit).into_iter().map(|c| (c.0, c.1, c.3)).collect::<Vec<_>>();
+        prop_assert_eq!(names(bench.edit()), names(&edit));
+        // The whole cut is as it was when every other track followed the
+        // trim in (one that had no room stayed, and is pushed on the way
+        // back out).
+        let place = trim_place(tail, at, end, -by);
+        let followed = edit.tracks().filter(|t| *t != clip.track).all(|t| {
+            let spans = track_spans(&edit, t);
+            let moved = trim_rippled(&spans, place, -by);
+            moved != spans || !spans.iter().any(|s| s.0 >= place)
+        });
+        if followed {
             prop_assert_eq!(bench.edit(), &edit);
         }
     }
@@ -877,7 +977,16 @@ proptest! {
         let after = clips(bench.edit());
         prop_assert_eq!(bench.edit().video.len(), edit.video.len() + 1);
         let landed: Vec<Known> = after.iter().filter(|c| c.1 == top).cloned().collect();
-        prop_assert_eq!(landed, vec![(name.clone(), top, (at + dx).max(0), end - at)]);
+        prop_assert_eq!(landed.len(), 1);
+        let got = landed[0].2;
+        prop_assert_eq!(&landed[0], &(name.clone(), top, got, end - at));
+        // Where it was let go, or within 8 pixels of there on a snap
+        // point: the cut's start, the playhead or another clip's end.
+        let reach = if dx == 0 { 0 } else { (8.0 / hand.px).round() as EditFrame };
+        let mut points = vec![0, bench.editor.position as EditFrame];
+        points.extend(clips(&edit).iter().filter(|c| c.0 != name && view.rows(&edit).contains(&c.1)).flat_map(|c| [c.2, c.2 + c.3]));
+        let snapped = points.contains(&got) || points.contains(&(got + end - at));
+        prop_assert!(got == at + dx || (snapped && (got - at - dx).abs() <= reach) || (got == 0 && at + dx < 0), "landed at {}, let go at {}", got, at + dx);
         let others = |all: &[Known]| all.iter().filter(|c| c.0 != name).cloned().collect::<Vec<_>>();
         prop_assert_eq!(others(&after), others(&clips(&edit)));
         check_rows(&bench, &view, true)?;
@@ -976,6 +1085,55 @@ proptest! {
         prop_assert!(!bench.editor.doc.can_undo(), "more than one undo step");
     }
 
+    /// Maths typed into a clip field and entered (`48/2`, `+=5`) leaves the
+    /// cut exactly as the number it works out to does when typed plainly,
+    /// in one undo step; a sum with no answer (a division by zero) changes
+    /// nothing and the status line says so.
+    #[test]
+    fn maths_entered_in_a_clip_field_is_its_number_entered(
+        edit in cut(), pick in any::<Index>(), field in any::<Index>(),
+        a in 0u32..200, b in 0u32..40, op in prop::sample::select(vec!['+', '-', '*', '/']), relative in any::<bool>(),
+    ) {
+        let video: Vec<TrackRef> = edit.tracks().filter(|t| t.kind == TrackKind::Video).collect();
+        let every = clip_refs(&edit, &video);
+        prop_assume!(!every.is_empty());
+        let clip = *pick.get(&every);
+        let which = *field.get(&ClipField::ALL);
+        let at = ClipField::ALL.iter().position(|f| *f == which).unwrap();
+        let enter = |text: &str| {
+            let mut bench = Bench::new(&edit, false);
+            bench.send(Message::Select(Some(clip), false, 0));
+            bench.send(Message::ClipField(which, text.to_owned()));
+            bench.send(Message::ClipFieldSet(which));
+            bench
+        };
+        // What the field shows is where a relative entry starts from.
+        let own: f64 = {
+            let mut bench = Bench::new(&edit, false);
+            bench.send(Message::Select(Some(clip), false, 0));
+            bench.editor.clip_fields_shown().0[at].shown.parse().expect("a field shows a number")
+        };
+        let (x, y) = (f64::from(a) / 4.0, f64::from(b) / 4.0);
+        let left = if relative { own } else { x };
+        let value = match op { '+' => left + y, '-' => left - y, '*' => left * y, _ => left / y };
+        let typed = if relative { format!("{op}={y}") } else { format!("{x}{op}{y}") };
+        let mut sum = enter(&typed);
+        if !value.is_finite() {
+            prop_assert_eq!(sum.edit(), &edit, "{} changed the cut", typed);
+            prop_assert!(sum.refusal().is_some_and(|r| r.contains("divides by zero")), "{:?}", sum.refusal());
+            return Ok(());
+        }
+        let fade = matches!(which, ClipField::FadeIn | ClipField::FadeOut);
+        let plain = enter(&if fade { format!("{}", value.round() as i64) } else { format!("{value}") });
+        prop_assert_eq!(sum.edit(), plain.edit(), "{} is not {} entered", typed, value);
+        prop_assert_eq!(sum.refusal().is_some(), plain.refusal().is_some());
+        if sum.edit() != &edit {
+            sum.send(Message::Undo);
+            prop_assert_eq!(sum.edit(), &edit);
+            prop_assert!(!sum.editor.doc.can_undo(), "more than one undo step");
+        }
+    }
+
     /// A double-click on a sequence's name in the Shots bin (or two presses
     /// on it in the grid; with Shift, laid over) puts every shot of the
     /// sequence in the cut, once, in natural name order whatever order the
@@ -1070,7 +1228,7 @@ proptest! {
     ) {
         let mut edit = WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
         let clip = VideoClip::new(40, duration, 1001 + head, Source::Slug { text: "V1.0".into() });
-        edit.video.push(Track { name: "V1".into(), clips: vec![clip] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![clip], color: None });
         let mut bench = Bench::new(&edit, false);
         // Its source resolves, with frames 1001 to the clip's last and `tail` more.
         drop(bench.editor.changed());
@@ -1168,7 +1326,7 @@ fn the_grid_choice_is_there_next_time() {
 fn an_undo_takes_an_old_refusal_off_the_status_line() {
     let mut edit = WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
     let clip = |at, text: &str| VideoClip::new(at, 72, 0, Source::Slug { text: text.into() });
-    edit.video.push(Track { name: "V1".into(), clips: vec![clip(0, "a")] });
+    edit.video.push(Track { name: "V1".into(), clips: vec![clip(0, "a")], color: None });
     let mut bench = Bench::new(&edit, false);
     bench.send(Message::Edit(Op::Insert { track: TrackRef::video(0), clip: NewClip::Video(clip(72, "b")) }));
     assert_eq!(bench.refusal(), None);
@@ -1186,3 +1344,212 @@ fn an_undo_takes_an_old_refusal_off_the_status_line() {
     bench.send(Message::Redo);
     assert_eq!(bench.refusal(), None);
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(CASES))]
+
+    /// File > Export Movie…: the dialog opens on the whole cut at the
+    /// edit's size (a new user's settings), offers the selected clips'
+    /// extent only when clips are selected, and each control sets its own
+    /// thing: the line under them says the movie they come to, or why
+    /// there is none. Export with settings that make no movie starts
+    /// nothing and keeps nothing; with ones that do, the export runs and
+    /// the settings are this user's the next time the editor opens.
+    #[test]
+    fn export_movie_asks_keeps_and_offers_its_settings_again(
+        edit in cut(), settings in crate::export_settings::tests::settings(), pick in any::<Index>(), select in any::<bool>(),
+    ) {
+        use super::export_dialog::{ExportDialog, ExportMessage};
+        use crate::export_settings::{self, Form, Settings, Size, SizeKind, Span, SpanKind, Spans};
+        use th_pipe::movie::{Codec, Quality};
+
+        let resolution = edit.resolution;
+        let every = clip_refs(&edit, &edit.tracks().collect::<Vec<_>>());
+        let selected = (select && !every.is_empty()).then(|| *pick.get(&every));
+        let mut bench = Bench::new(&edit, false);
+        if let Some(clip) = selected {
+            bench.send(Message::Select(Some(clip), false, 0));
+        }
+        let export = |bench: &mut Bench, m: ExportMessage| bench.send(Message::Export(m));
+        export(&mut bench, ExportMessage::Open);
+        let length = edit.length().max(0) as usize;
+        let selection = selected.map(|clip| edit.spans(clip.track)[clip.index]).map(|(at, end)| (at as usize, end as usize));
+        let want_spans = Spans { length, selection, looped: None };
+        let setup = |bench: &Bench| match &bench.editor.dialog {
+            Some(Dialog::Export(ExportDialog::Setup { form, spans, summary, problem, hffmpeg, path, .. })) => {
+                Some(((**form).clone(), *spans, summary.clone(), problem.clone(), hffmpeg.is_ok(), path.clone()))
+            }
+            _ => None,
+        };
+        let (form, spans, _, problem, has_encoder, _) = setup(&bench).expect("the dialog is open on its settings");
+        prop_assert_eq!(spans, want_spans);
+        prop_assert_eq!(&form, &Form::new(&Settings::default(), resolution, &spans));
+        prop_assert_eq!(problem, None);
+
+        // Each control, as a person would set it. A width typed brings the
+        // height of the edit's shape; a span the cut does not offer is not
+        // there to press.
+        let asked_size = match settings.size {
+            Size::Custom { width, .. } => {
+                let [width, height] = export_settings::from_width(resolution, width);
+                Size::Custom { width, height }
+            }
+            other => other,
+        };
+        let size_kind = match asked_size {
+            Size::Edit => SizeKind::Edit,
+            Size::Half => SizeKind::Half,
+            Size::Custom { .. } => SizeKind::Custom,
+        };
+        export(&mut bench, ExportMessage::Size(SizeKind::ALL.iter().position(|k| *k == size_kind).unwrap()));
+        if let Size::Custom { width, .. } = asked_size {
+            export(&mut bench, ExportMessage::Width(width.to_string()));
+        }
+        let span_kind = match settings.span {
+            Span::Whole => SpanKind::Whole,
+            Span::Selection => SpanKind::Selection,
+            Span::Loop => SpanKind::Loop,
+            Span::Custom { .. } => SpanKind::Custom,
+        };
+        let offered = spans.kinds().iter().position(|k| *k == span_kind);
+        let asked_span = if offered.is_some() { settings.span } else { Span::Whole };
+        if let Some(at) = offered {
+            export(&mut bench, ExportMessage::Span(at));
+        }
+        if let Span::Custom { first, last } = settings.span {
+            export(&mut bench, ExportMessage::First(first.to_string()));
+            // The last frame as a sum: the field works it out.
+            export(&mut bench, ExportMessage::Last(format!("{}+1", last - 1)));
+        }
+        export(&mut bench, ExportMessage::Codec(Codec::ALL.iter().position(|c| *c == settings.codec).unwrap()));
+        // The offered .mp4 follows the codec: Motion JPEG goes in a .mov.
+        let (_, _, _, _, _, offered_path) = setup(&bench).expect("still asking");
+        prop_assert_eq!(offered_path.ends_with(".mov"), settings.codec == Codec::Mjpeg, "{}", offered_path);
+        prop_assert_eq!(offered_path.ends_with(".mp4"), settings.codec == Codec::H264, "{}", offered_path);
+        export(&mut bench, ExportMessage::Quality(Quality::ALL.iter().position(|q| *q == settings.quality).unwrap()));
+        export(&mut bench, ExportMessage::Audio(settings.audio));
+        export(&mut bench, ExportMessage::Burnins(settings.burnins));
+        let extension = if settings.codec == Codec::Mjpeg { "mov" } else { "mp4" };
+        let movie = bench.prefs.path().join(format!("cut.{extension}")).to_string_lossy().into_owned();
+        export(&mut bench, ExportMessage::Path(movie));
+
+        let asked = Settings { size: asked_size, span: asked_span, ..settings };
+        let (form, _, summary, _, _, _) = setup(&bench).expect("still asking");
+        prop_assert_eq!(form.settings(), Ok(asked));
+        let plan = asked.plan(resolution, &spans);
+        match &plan {
+            Ok(plan) => {
+                let line = crate::export::summary(&edit, &bench.editor.display.display, &bench.editor.display.view, plan);
+                prop_assert_eq!(summary, Ok(line));
+            }
+            Err(why) => prop_assert_eq!(summary, Err(why.clone())),
+        }
+
+        let kept = export_settings::path(&bench.prefs.path().join("layout.json"));
+        export(&mut bench, ExportMessage::Start);
+        if plan.is_err() || !has_encoder {
+            let (_, _, _, problem, _, _) = setup(&bench).expect("nothing started");
+            prop_assert!(problem.is_some(), "it says why it did not start");
+            prop_assert!(!kept.exists(), "settings that make no movie are not kept");
+            return Ok(());
+        }
+        prop_assert!(matches!(bench.editor.dialog, Some(Dialog::Export(ExportDialog::Running { .. }))), "the export runs");
+        prop_assert_eq!(export_settings::load(&kept, resolution), asked);
+
+        // The same user, the editor opened again with nothing selected.
+        let mut again = bench.reopened(&edit, false);
+        again.send(Message::Export(ExportMessage::Open));
+        let (form, spans, _, _, _, path) = setup(&again).expect("the dialog opens again");
+        prop_assert_eq!(&form, &Form::new(&asked, resolution, &spans));
+        prop_assert_eq!((form.codec, form.quality, form.audio, form.burnins), (settings.codec, settings.quality, settings.audio, settings.burnins));
+        if asked.span == Span::Selection {
+            prop_assert_eq!(form.span, SpanKind::Whole, "no selection now: the whole cut");
+        }
+        prop_assert_eq!(path.ends_with(".mov"), settings.codec == Codec::Mjpeg, "{}", path);
+    }
+}
+
+/// A shot waiting for a render says so on its clips: the poll looks at the
+/// cut's shots (one look at a time, never at a slug), and once a render is
+/// found each clip of the shot counts its frames in its second line and
+/// carries a strip of the frames it shows, lit where they are on disk,
+/// which the tracks draw. When the render is complete both go.
+#[test]
+fn a_render_on_its_way_shows_on_its_shots_clips() {
+    use crate::rendering::{Job, Strip, Unfinished};
+    use th_edit::document::Rule;
+    use th_pipe::discovery::Aov;
+
+    let shot = "entity:/shots/S/010".to_owned();
+    let of_shot = || Source::Shot { shot: shot.clone(), take: Rule::best() };
+    let mut edit = WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
+    let clips = vec![
+        VideoClip::new(0, 10, 1001, of_shot()),
+        VideoClip::new(10, 10, 0, Source::Slug { text: "gap".into() }),
+        VideoClip::new(24, 10, 1005, of_shot()),
+    ];
+    edit.video.push(Track { name: "V1".into(), clips, color: None });
+    let mut bench = Bench::new(&edit, false);
+    assert!(bench.editor.render_strips().is_empty());
+
+    // A fresh watch would look at the shot, and only at it; the editor's
+    // poll starts that look, so none starts while it is out.
+    let mut fresh = crate::rendering::Watch::default();
+    let cut_shots = crate::rendering::shots_of(edit.video[0].clips.iter().map(|c| &c.source));
+    assert_eq!(cut_shots, vec![shot.clone()]);
+    assert_eq!(fresh.plan(&cut_shots), vec![Job::Find(shot.clone())]);
+    bench.send(Message::PollPreviews);
+    assert_eq!(bench.editor.rendering.plan(&cut_shots), Vec::new(), "the editor's look is out");
+
+    let details = |bench: &Bench| -> Vec<String> {
+        let rows = bench.editor.rows();
+        let row = rows.iter().find(|r| r.track == TrackRef::video(0)).expect("V1 has a row");
+        row.clips.iter().map(|c| c.detail.clone()).collect()
+    };
+    let before = details(&bench);
+    assert!(before.iter().all(|d| !d.contains("rendered")), "{before:?}");
+
+    // The look is back: lighting v0007 has four of its twelve frames.
+    let aov = Aov { path: bench.prefs.path().join("nowhere"), name: "S_010_default_beauty_v0007".into(), suffix: "exr".into() };
+    let unfinished = Unfinished {
+        department: "lighting".into(),
+        layer: "default".into(),
+        version: "v0007".into(),
+        aov,
+        expected: (1001..=1012).collect(),
+        there: vec![1001, 1002, 1003, 1008],
+        playblast: false,
+    };
+    bench.send(Message::Rendering(vec![(shot.clone(), Some(unfinished.clone()))]));
+    let now = details(&bench);
+    for at in [0, 2] {
+        assert!(now[at].ends_with("lighting v0007: 4/12 rendered"), "{:?}", now[at]);
+        assert!(now[at].starts_with(&before[at]), "it keeps what it said: {:?}", now[at]);
+    }
+    assert_eq!(now[1], before[1], "a slug waits for nothing");
+    let track = TrackRef::video(0);
+    let want = vec![
+        // Frames 1001 to 1010 of the shot at 0: all expected, 1001-1003 and 1008 there.
+        Strip { track, expected: vec![(0, 10)], there: vec![(0, 3), (7, 8)] },
+        // Frames 1005 to 1014 at 24: 1005-1012 expected, 1008 there.
+        Strip { track, expected: vec![(24, 32)], there: vec![(27, 28)] },
+    ];
+    assert_eq!(bench.editor.render_strips(), want);
+    assert_eq!(bench.editor.tracks_program().rendering, want, "the tracks are given them to draw");
+
+    // The next poll lists the watched render again (one listing).
+    let again = bench.editor.rendering.plan(&cut_shots);
+    assert!(matches!(again.as_slice(), [Job::Relist(s, u)] if *s == shot && *u == unfinished), "{again:?}");
+
+    // Every frame landed: nothing more is said or drawn.
+    let complete = Unfinished { there: unfinished.expected.clone(), ..unfinished };
+    bench.send(Message::Rendering(vec![(shot.clone(), Some(complete))]));
+    assert_eq!(details(&bench), before);
+    assert!(bench.editor.render_strips().is_empty());
+    assert!(bench.editor.tracks_program().rendering.is_empty());
+}
+
+mod picks;
+
+mod track_menu;
+mod view;

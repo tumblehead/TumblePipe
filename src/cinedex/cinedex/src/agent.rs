@@ -146,7 +146,8 @@ fn op_defs() -> Value {
             op("lift", "take a clip out, leaving a gap", json!({"clip": clip})),
             op("ripple_delete", "take the clip's span out of every track", json!({"clip": clip})),
             op("move", "move a clip to free space at `at` on a track of its kind", json!({"clip": clip, "to": track, "at": int})),
-            op("trim", "ripple trim: move an edge by delta frames (positive: later), everything after the edit point with it", json!({"clip": clip, "edge": {"enum": ["head", "tail"]}, "delta": int})),
+            op("trim", "ripple trim: move an edge by delta frames (positive: later); the clips after it on its track move with it, and so do the later clips of the other tracks that can and the markers; no clip of another track is taken out or cut", json!({"clip": clip, "edge": {"enum": ["head", "tail"]}, "delta": int})),
+            op("shift", "move a clip and every clip after it on its track by delta frames (positive: later); refused over the clip before it; no other track moves", json!({"clip": clip, "delta": int})),
             op("roll", "move the cut between a clip and the next on its track (they must touch) by delta: the length holds", json!({"clip": clip, "delta": int})),
             op("slip", "show source frames delta later in the same span", json!({"clip": clip, "delta": int})),
             op("split", "split a clip in two at edit frame `at`", json!({"clip": clip, "at": int})),
@@ -159,7 +160,10 @@ fn op_defs() -> Value {
             op("add_marker", "a marker at edit frame `at`", json!({"at": int, "note": {"type": "string"}})),
             op("remove_marker", "remove a marker by its index (get_edit lists them)", json!({"index": index})),
             op("add_track", "a new track on top of those of its kind", json!({"kind": {"enum": ["video", "audio"]}, "name": {"type": "string"}})),
-            op("remove_track", "remove an empty track", json!({"track": track})),
+            op("remove_track", "remove a track and every clip on it", json!({"track": track})),
+            op("move_track", "put a track at index `to` among those of its kind (bottom first; a higher video track is over a lower one); no clip moves in time; refused when it is there already", json!({"track": track, "to": index})),
+            op("rename_track", "another name for a track: not empty, and no other track of its kind has it", json!({"track": track, "name": {"type": "string"}})),
+            op("set_track_color", "the colour a track's row is marked with: violet, blue, teal, green, olive, ochre, brick or plum; null for none", json!({"track": track, "color": {"type": ["string", "null"]}})),
         ]},
     })
 }
@@ -278,6 +282,26 @@ pub(crate) const TOOLS: &[Tool] = &[
                     "format": {"enum": ["fcp7xml", "otio"], "default": "fcp7xml"},
                     "collect_media": {"type": "boolean"},
                     "sequences": {"enum": ["resolve", "premiere"], "default": "resolve"},
+                }),
+                &["path"],
+            )
+        },
+        read_only: false,
+        destructive: false,
+    },
+    Tool {
+        name: "export_movie",
+        description: "Encode the edit as it is now (saved or not, the cut's own takes) into one movie on this machine, as File > Export Movie… does, and answer when it is written (a long cut takes minutes). `path` is the .mp4 or .mov to write (its folder must exist; a file there is replaced). resolution: \"edit\" (default), \"half\", or {\"width\": n} / {\"height\": n} for another size of the edit's shape. range: \"whole\" (default), \"selection\" (the selected clips' extent), \"loop\", or {\"first\": a, \"last\": b}, frames of the cut counted from 1, both included. codec: \"h264\" (default; .mp4 or .mov) or \"mjpeg\" (.mov only, every frame whole). quality: \"best\", \"high\", \"standard\" (default, the farm's Render Edit encode) or \"small\". audio: the cut's sound (default true). burnins: the viewer's burn-ins painted on the picture (default false). Shown through the display and view the window shows. Changes nothing in the project. Answers the path, frames, width, height, fps and whether it has sound.",
+        schema: || {
+            object(
+                json!({
+                    "path": {"type": "string", "description": "the movie to write, with its folder"},
+                    "resolution": {"description": "\"edit\", \"half\", or an object naming a width, a height or both"},
+                    "range": {"description": "\"whole\", \"selection\", \"loop\", or {\"first\": a, \"last\": b}"},
+                    "codec": {"enum": ["h264", "mjpeg"], "default": "h264"},
+                    "quality": {"enum": ["best", "high", "standard", "small"], "default": "standard"},
+                    "audio": {"type": "boolean", "default": true},
+                    "burnins": {"type": "boolean", "default": false},
                 }),
                 &["path"],
             )
@@ -426,6 +450,7 @@ mod tests {
                     Op::Move { clip, to: track, at: n },
                     Op::Trim { clip, edge: if audio { Edge::Head } else { Edge::Tail }, delta: n },
                     Op::Roll { clip, delta: n },
+                    Op::Shift { clip, delta: n },
                     Op::Slip { clip, delta: n },
                     Op::Split { clip, at: n },
                     Op::Join { clip },
@@ -438,6 +463,9 @@ mod tests {
                     Op::RemoveMarker { index: i },
                     Op::AddTrack { kind: track.kind, name: "V9".into() },
                     Op::RemoveTrack { track },
+                    Op::MoveTrack { track, to: i },
+                    Op::RenameTrack { track, name: "Plates".into() },
+                    Op::SetTrackColor { track, color: if audio { None } else { Some("teal".into()) } },
                 ];
                 for op in &all {
                     match op {
@@ -448,6 +476,7 @@ mod tests {
                         | Op::Move { .. }
                         | Op::Trim { .. }
                         | Op::Roll { .. }
+                        | Op::Shift { .. }
                         | Op::Slip { .. }
                         | Op::Split { .. }
                         | Op::Join { .. }
@@ -459,7 +488,10 @@ mod tests {
                         | Op::AddMarker { .. }
                         | Op::RemoveMarker { .. }
                         | Op::AddTrack { .. }
-                        | Op::RemoveTrack { .. } => {}
+                        | Op::RemoveTrack { .. }
+                        | Op::MoveTrack { .. }
+                        | Op::RenameTrack { .. }
+                        | Op::SetTrackColor { .. } => {}
                     }
                 }
                 all

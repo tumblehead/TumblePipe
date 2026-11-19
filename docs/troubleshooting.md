@@ -497,6 +497,34 @@ TumblePipe: the scene needs no change, and the stage follows the rig on
 the next cook. An animation layer published before the update has the
 wrong visibility in it, so export those shots again.
 
+### Geometry I made inside `th::animate` has no UVs on the stage, and its material is broken
+
+A mesh built in the dive (a prop modelled for the shot, a cloth strip, a
+proxy merged in beside the rigs) has `uv` in the SOP network and no
+`primvars:st` on the stage after `th::animate`, so a textured material on it
+renders flat or wrong. The characters look right: their UVs come from the
+asset. Up to 1.112.2 `th::animate` did not read `uv` from the dive at all,
+so only geometry with an asset under it had UVs. Update TumblePipe: the
+scene needs no change, the UVs (`uv`, and `uv2`, `uv3`, ... beside it) are
+on the stage on the next cook. An animation layer published before the
+update has no UVs for that geometry in it, so export those shots again.
+
+Three things to know about what comes through:
+
+- An asset's own UVs stay the asset's. A rig carries the UVs its meshes had
+  when it was built, and `th::animate` does not publish that copy over the
+  asset's: where the incoming stage already has `primvars:st` on a mesh and
+  it fits the mesh, that one is used. Changing the UVs of an asset's mesh
+  inside the dive therefore does nothing, unless you also change its
+  topology; change them in the asset.
+- UVs are read at the shot's first frame and held, as `Cd` is. UVs you
+  animate in the dive do not follow (they do on a frame where the point
+  count changes, which is imported whole).
+- Other attributes you add in the dive (a mask, a custom primvar) are still
+  not imported: the node reads a fixed list (see
+  [`th::animate`](nodes/import-and-export.md#thanimate-lop)). Ask for the
+  one you need.
+
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 
 Each is a deliberate guard in `th::export_layer`, and the dialog names the
@@ -973,9 +1001,10 @@ The click opens the folder of the job the notification names (see
 [When your jobs end](deadline.md#when-your-jobs-end)). Nothing opens when:
 
 - You're on macOS or Linux: their notifications can't open anything on
-  click. Use **Preview in Cinedex** in the Farm Manager button's popover.
+  click. Right-click the **Farm Manager** button and pick the batch's
+  **Preview in Cinedex**.
 - The job failed before it wrote any frames: there is no folder to show.
-  **Show in Jobs** in the popover has the error.
+  The batch's **Show in Jobs**, in the same right-click menu, has the error.
 - The folder isn't there (yet) on this machine, for example a share that
   isn't connected.
 - The batch only published, exported or built: those jobs write nothing

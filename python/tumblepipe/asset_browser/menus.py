@@ -83,7 +83,7 @@ def sections(*groups: list) -> list:
     """The non-empty *groups*, in order, one separator between each two.
 
     The browser renders ``("__separator__", None)`` as a line in every
-    catalog menu from TumbleTrove 0.57; no group means no stray line at
+    catalog menu; no group means no stray line at
     either end or two in a row.
     """
     out: list = []

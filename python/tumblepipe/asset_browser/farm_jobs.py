@@ -1,4 +1,4 @@
-"""The Farm Manager quick action's Jobs popover, dot, pulse and announcement.
+"""The Farm Manager quick action's click, hover, menu, dot, pulse and announcement.
 
 When a batch the artist submitted in this Houdini session ends
 (``farm.manager.finished``, fed by the farm watcher's thread):
@@ -18,22 +18,30 @@ When a batch the artist submitted in this Houdini session ends
 - the Farm Manager button asks TumbleTrove for one pulse, which TumbleTrove
   plays or refuses (hidden browser, reduced motion, Houdini cooking or
   playing back), and shows a dot at its foot, accent for finished, danger
-  for failed, until the artist opens the popover.
+  for failed, until the artist opens the Farm Manager from the button.
 
-A click on the button opens the popover, "Finished since you looked": the
-session's ended batches, failures first, two lines to a row (the title, the
-time and the row's main button, then what it did). The main button is
-*Preview in Cinedex* or, with no frames to look at, *Show in Jobs*; a
-right-click on a row lists all of its actions, a double-click on it runs the
-main one (the row layout is TumbleTrove's). A double-click on the Farm
-Manager button, or *Open Jobs* in the popover's header, opens the Farm
-Manager as the click used to.
+The button itself (Remy, 2026-11-18: "I want to click it to open the
+manager but instead I see two summaries? Let's make it just one and only on
+hover. Clicking the button should always open the manger window"):
 
-The dot, the popover and the pulse need TumbleTrove 0.60.0
-(``Catalog.get_quick_action_dot`` / ``get_quick_action_popover`` /
-``request_quick_action_pulse``). With an older TumbleTrove the hooks are
-never asked, the click opens the Farm Manager, and the status line and the
-OS notification still go out.
+- **a click always opens the Farm Manager** (:func:`open_manager`), brought
+  to the front and restored when it was minimised, and marks the ended
+  batches seen, so the dot goes. The catalog gives TumbleTrove no popover
+  for the button (:data:`CLICK_POPOVER` is None), which is what makes a
+  click run the action on every TumbleTrove;
+- **the hover is the one summary** (:func:`hover_html`): the artist's
+  recent jobs as the watcher counted them, then, while some ended since the
+  Farm Manager was last opened from the button, "Finished since you looked"
+  and their lines, failures first;
+- **a right-click** offers *Open Farm Manager* and each ended batch's main
+  action (:func:`menu_items`): *Preview in Cinedex*, or *Show in Jobs* for
+  a failure or a batch with no frames, so the outputs stay one click away;
+  a failure that wrote frames also has *Preview N Frames in Cinedex*.
+
+The dot and the pulse need TumbleTrove 0.60.0
+(``Catalog.get_quick_action_dot`` / ``request_quick_action_pulse``). With an
+older TumbleTrove those hooks are never asked; the click, the hover, the
+status line and the OS notification work the same.
 """
 
 from __future__ import annotations
@@ -51,43 +59,58 @@ log = logging.getLogger(__name__)
 ACTION_ID = "farm_manager"
 
 
-def popover_api():
-    """TumbleTrove's popover values ``(QuickActionPopover, PopoverRow,
-    PopoverButton)``, or None for a TumbleTrove without them (before 0.60.0)."""
-    try:
-        from tumbletrove.asset_browser.api.types import (
-            PopoverButton, PopoverRow, QuickActionPopover,
-        )
-    except ImportError:
-        return None
-    return QuickActionPopover, PopoverRow, PopoverButton
+#: What the catalog answers TumbleTrove's ``get_quick_action_popover`` for
+#: the button: no popover, so a click runs the action (TumbleTrove's
+#: ``click_outcome``) and the hover is the only summary on screen.
+CLICK_POPOVER = None
+
+#: The right-click menu's first entry, and TumbleTrove's separator row.
+MENU_OPEN = "Open Farm Manager"
+MENU_SEPARATOR = "__separator__"
 
 
-def build_popover(spec: finished.PopoverSpec, api):
-    """TumbleTrove's ``QuickActionPopover`` for ``spec``."""
-    popover_cls, row_cls, button_cls = api
-    rows = tuple(
-        row_cls(
-            row.id, row.title, icon=row.icon, tone=row.tone, caption=row.caption,
-            line=row.line,
-            buttons=tuple(button_cls(bid, label, primary=primary)
-                          for bid, label, primary in row.buttons),
-        )
-        for row in spec.rows
+def open_manager(scene, session: finished.SessionWatch, done_cb=None) -> None:
+    """A click on the button: open the Farm Manager (in front, restored when
+    minimised: ``farm.manager.window.show_manager``), and mark the session's
+    ended batches seen, as the artist is now looking at their jobs."""
+    session.mark_seen()
+    scene.open_farm_manager(done_cb)
+
+
+def hover_html(summary, unseen, now, *, hours: float, dim: str | None = None,
+               warn: str | None = None) -> str:
+    """The button's hover, its one summary: the artist's recent jobs
+    (``activity.summary_html``), then what ended since they last opened the
+    Farm Manager from the button (``finished.hover_html``; nothing when all
+    is seen). ``dim`` and ``warn`` are the theme's colours; None keeps each
+    function's default."""
+    from tumblepipe.farm.manager.activity import summary_html
+    colours = {key: value for key, value in (("dim", dim), ("warn", warn)) if value}
+    return (
+        summary_html(summary, now, hours=hours, **colours)
+        + finished.hover_html(unseen, **colours)
     )
-    return popover_cls(
-        spec.title, link_label=spec.link_label, rows=rows,
-        empty_text=spec.empty_text, footer=spec.footer,
-    )
 
 
-def popover(session: finished.SessionWatch):
-    """The Jobs popover for the session's ended batches; None when this
-    TumbleTrove has no popovers (the click then opens the Farm Manager)."""
-    api = popover_api()
-    if api is None:
-        return None
-    return build_popover(finished.popover_spec(session.reports()), api)
+def menu_items(scene, session: finished.SessionWatch, *, preview=None) -> list:
+    """The button's right-click menu, as ``(label, action)``: *Open Farm
+    Manager* (the click), then, under a separator, an entry per ended batch
+    of the session, failures first, each running its main action (a failed
+    batch that wrote frames has a second entry that previews them)
+    (:func:`run_button`; ``preview`` replaces Cinedex in tests).
+
+    Never empty: TumbleTrove gives a button a right-click menu only when
+    the catalog has items for it as the toolbar is built, which is before
+    any batch has ended, and asks again at each right-click."""
+    items = [(MENU_OPEN, lambda: open_manager(scene, session))]
+    ended = [
+        (label, lambda key=key, button=button: run_button(
+            scene, session, key, button, preview=preview))
+        for label, key, button in finished.menu_entries(session.reports())
+    ]
+    if ended:
+        items += [(MENU_SEPARATOR, None)] + ended
+    return items
 
 
 def houdini_in_front() -> bool:
@@ -238,7 +261,7 @@ def announcer(catalog):
 
 def run_button(scene, session: finished.SessionWatch, row_id: str, button_id: str,
                *, preview=None) -> str:
-    """A popover row's button: *Preview in Cinedex* opens the report's frames
+    """An ended batch's action: *Preview in Cinedex* opens the report's frames
     in Cinedex, *Show in Jobs* opens the Farm Manager with its job selected
     (a failed batch's failed job, its error in view). Returns what was done;
     raises when Cinedex cannot open (the browser says so)."""

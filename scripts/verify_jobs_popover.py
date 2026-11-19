@@ -11,12 +11,15 @@ one that fails. Checks:
   2. the batch finishing is reported once, with its line; a failed batch
      after it is reported with the failed frame, worker and error
   3. the Farm Manager button's dot is ``danger`` while a failure is unseen,
-     and the popover lists failures first
-  4. with TumbleTrove 0.60.0: the catalog's popover renders in TumbleTrove's
-     QuickActionPopoverPanel with the session's rows and buttons; its Show
-     in Jobs reaches the scene with the failed job; opening it clears the
-     dot. With an older TumbleTrove the popover hook answers None (the click
-     opens the Farm Manager as before)
+     and the ended batches list failures first
+  4. the button (the harness keeps its name from the Jobs popover a click
+     opened through 1.112): the catalog gives no popover; the hover is one
+     summary, the recent jobs and then what ended, the failure first; the
+     right-click menu is Open Farm Manager and each ended batch's main
+     action, and the failed batch's opens the Farm Manager at the failed
+     job; every click on the real button in TumbleTrove's QuickActionsBar
+     opens the Farm Manager and no popover, clears the dot and takes the
+     ended batches out of the hover
   5. the announcement: one status line, an OS notification and a flash of
      Houdini's taskbar button only when Houdini is not in front, a pulse
      asked only of a catalog that takes one
@@ -146,7 +149,7 @@ def main() -> int:
     keys = [r.key for r in session.reports()]
     check('failures first', failed is not None and keys[:1] == [failed.key], str(keys))
 
-    print('4. the catalog hooks and TumbleTrove\'s popover')
+    print('4. the button: its hover, menu and click')
     from tumblepipe.asset_browser import farm_jobs
     from tumblepipe.asset_browser.catalog import PipelineCatalog
 
@@ -155,49 +158,74 @@ def main() -> int:
     host = SimpleNamespace(_farm_activity=watcher, _scene=scene)
     check('the hook gives the dot', PipelineCatalog.get_quick_action_dot(host, 'farm_manager') == 'danger')
     check('no dot on another action', PipelineCatalog.get_quick_action_dot(host, 'save') == '')
-    model = PipelineCatalog.get_quick_action_popover(host, 'farm_manager')
-    if farm_jobs.popover_api() is None:
-        check('an older TumbleTrove gets no popover (the click opens the Farm Manager)', model is None)
-    else:
-        from tumbletrove.asset_browser.ui.quick_action_popover import QuickActionPopoverPanel
-        check('the popover is titled', model is not None and model.title == finished.POPOVER_TITLE)
-        check('it lists both batches, the failure first', model is not None
-              and [r.id for r in model.rows] == keys, str(model and [r.id for r in model.rows]))
-        clicked: list[tuple[str, str]] = []
+    check('the catalog gives the button no popover',
+          PipelineCatalog.get_quick_action_popover(host, 'farm_manager') is None)
 
-        def on_button(row_id: str, button_id: str) -> None:
-            clicked.append((row_id, button_id))
-            PipelineCatalog.execute_quick_action_popover_button(host, 'farm_manager', row_id, button_id)
+    # The hover: the one summary, naming what ended since the artist looked.
+    hover = PipelineCatalog.get_quick_action_hover_html(host, 'farm_manager')
+    check('the hover has the recent jobs once and the ended batches once',
+          hover.count('Your jobs:') == 1 and hover.count(finished.HOVER_TITLE) == 1, hover)
+    check('the hover names the failure before the finished batch',
+          failed is not None and 0 <= hover.find('sh020') < hover.find('sh010'), hover)
 
-        panel = QuickActionPopoverPanel(model, lambda: None, on_button, lambda: None)
-        panel.show()
-        pump(app, 0.2)
-        if hasattr(panel, 'menu_labels'):
-            # TumbleTrove with two-line rows (the popover of the Farm Manager
-            # button with ten jobs must not fill the screen).
-            heights = [w.height() for w in panel._row_widgets]
-            check('each row is two lines, not a button under its text',
-                  bool(heights) and max(heights) <= 54, str(heights))
-            check('a row shows its one main button and lists every action in its menu',
-                  failed is not None
-                  and panel.menu_labels(failed.key)[0] == finished.SHOW_LABEL
-                  and len(panel.menu_labels(failed.key)) == len(finished.buttons(failed)),
-                  str(panel.menu_labels(failed.key if failed else '')))
-        show = panel._buttons.get((failed.key, finished.SHOW)) if failed else None
-        check('the failed row has Show in Jobs', show is not None and show.text() == finished.SHOW_LABEL,
-              str(sorted(panel._buttons)))
-        if show is not None:
-            show.click()
-            pump(app, 0.2)
-        check('Show in Jobs opens the Farm Manager at the failed job',
-              failed is not None and opened == [failed.select_id], f'{clicked} {opened}')
-        import shiboken6
-        check('a button click closes the popover', not shiboken6.isValid(panel) or not panel.isVisible())
-        if shiboken6.isValid(panel):
-            panel.close()
+    # The right-click menu: the click, then each ended batch's main action.
+    menu = PipelineCatalog.get_quick_action_menu_items(host, 'farm_manager')
+    labels = [label for label, _action in menu]
+    check('the menu is Open Farm Manager, a rule, then both batches, the failure first',
+          labels[:2] == [farm_jobs.MENU_OPEN, farm_jobs.MENU_SEPARATOR]
+          and len(labels) == 2 + len(finished.menu_entries(watcher.session.reports()))
+          and len({label.split(': ')[0] for label in labels[2:]}) == 2
+          and failed is not None and labels[2] == f'{failed.title}: {finished.SHOW_LABEL}', str(labels))
+    if len(menu) > 2:
+        menu[2][1]()
+    check("the failed batch's entry opens the Farm Manager at the failed job",
+          failed is not None and opened == [failed.select_id], str(opened))
+    check('which does not mark the batches seen',
+          PipelineCatalog.get_quick_action_dot(host, 'farm_manager') == 'danger')
+    opened.clear()
+
+    # The click, through TumbleTrove's own quick actions bar where it has
+    # one that asks for a popover (0.60.0): it must run the action.
+    from PySide6.QtWidgets import QPushButton
+    from tumbletrove.asset_browser.ui.quick_actions_bar import QuickActionEntry, QuickActionsBar
+    button = QPushButton()
+    wiring = dict(
+        button=button, label='Farm Manager', icon=None,
+        run=lambda: PipelineCatalog.execute_quick_action(host, 'farm_manager'),
+        menu_items=lambda: PipelineCatalog.get_quick_action_menu_items(host, 'farm_manager'),
+    )
+    if hasattr(QuickActionsBar, 'activate'):
+        entry = QuickActionEntry(
+            **wiring, action_id='farm_manager',
+            popover=lambda: PipelineCatalog.get_quick_action_popover(host, 'farm_manager'),
+            popover_opened=lambda: PipelineCatalog.quick_action_popover_opened(host, 'farm_manager'),
+        )
+        bar = QuickActionsBar(lambda menu, items: None)
+        bar.set_contents('', [entry])
+        button.clicked.connect(lambda checked=False: bar.activate(entry))
+        bar.resize(400, 40)
+        bar.show()
+        pump(app, 0.1)
+        for click in (1, 2):
+            button.click()
             pump(app, 0.1)
-    PipelineCatalog.quick_action_popover_opened(host, 'farm_manager')
-    check('opening the popover clears the dot', PipelineCatalog.get_quick_action_dot(host, 'farm_manager') == '')
+            check(f'click {click} on the button opens the Farm Manager, with no job selected',
+                  opened == [''] * click, str(opened))
+            check(f'click {click} opens no popover', bar.popover() is None)
+        bar.stop()
+        bar.close()
+    else:
+        # Before 0.60.0 the bar knows no popovers: the button runs the action.
+        entry = QuickActionEntry(**wiring)
+        entry.run()
+        entry.run()
+        check('a click opens the Farm Manager (a TumbleTrove without popovers)', opened == ['', ''], str(opened))
+    opened.clear()
+    check('opening the Farm Manager from the button clears the dot',
+          PipelineCatalog.get_quick_action_dot(host, 'farm_manager') == '')
+    hover = PipelineCatalog.get_quick_action_hover_html(host, 'farm_manager')
+    check('and the hover is the recent jobs alone',
+          hover.count('Your jobs:') == 1 and finished.HOVER_TITLE not in hover, hover)
 
     print('5. the announcement')
     statuses, notified, pulses, flashes = [], [], [], []

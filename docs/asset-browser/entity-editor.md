@@ -318,7 +318,10 @@ value there sets it, even the same number the pipeline defaults hold.
   1, 0.1, 0.01; whole numbers stop at 1), then left or right; letting go
   sets it. Ctrl + middle-click empties it, the same as **Inherit**. The
   number fields of the Entity Editor's dialogs (frames, counts) step the
-  same way, and Ctrl + middle-click puts back the number they opened with. Typing what a target already
+  same way, and Ctrl + middle-click puts back the number they opened with.
+  Every one of these number fields takes maths too (`1001+48`, `1920/2`,
+  `+=10`): see [Maths in number fields](submit-jobs.md#maths-in-number-fields).
+  Typing what a target already
   inherits pins nothing, as in the sheet. A value the root layer could not
   use (a camera without a leading `/`) is refused, and the footer says why.
 - **Inherit** takes the value set here away, so the target follows the

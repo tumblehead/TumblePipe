@@ -291,6 +291,70 @@ def opened_ticks(
     }
 
 
+def active_rows(rows: Iterable[str], workfile_entities: Iterable[str]) -> frozenset:
+    """The grid rows that are the open workfile's: its entity's row, or,
+    for a Multi's workfile, each member's.
+
+    The dialog highlights them (Remy, 2026-11-18: "when you submit a render
+    and accidentally disable the task, it's sometimes hard to find the
+    entity again"), so the answer depends on the workfile alone, never on
+    what is ticked, filtered or was opened: a card's **Submit Jobs…** for
+    another shot still marks the shot whose workfile is open. An entity of
+    the other context (an asset workfile, on the Shots tab), or one the
+    grid does not list, marks nothing.
+    """
+    wanted = {str(uri) for uri in workfile_entities}
+    return frozenset(row for row in rows if row in wanted)
+
+
+def scroll_target(
+    rows: Sequence[str], active: Iterable[str], opened: Iterable[str],
+    hidden: Iterable[str] = (),
+) -> str | None:
+    """The row brought into view when the grid opens: the first row the
+    grid was opened for (its ticked rows), else the first of the open
+    workfile's rows (:func:`active_rows`), in the grid's order; a hidden
+    (filtered-out) row is never the target. None: stay at the top.
+
+    Opened from the workfile (the Render quick action, th::import_render's
+    Render) the two are the same rows. They differ for a card's **Submit
+    Jobs…** on another entity, where the card's entity is what was asked
+    for, and for a workfile that seeds no ticks (opened with nothing
+    ticked), where the workfile's row is the only one to go to.
+    """
+    active, opened, hidden = set(active), set(opened), set(hidden)
+    for wanted in (opened, active):
+        for row in rows:
+            if row in wanted and row not in hidden:
+                return row
+    return None
+
+
+#: The tooltip on the open workfile's row.
+ACTIVE_ROW_TIP = "The entity of the workfile you have open."
+
+
+def token_rgba(token: str) -> tuple[int, int, int, int]:
+    """A theme colour token as ``(red, green, blue, alpha)``, each 0 to 255.
+
+    TumbleTrove's tokens are ``#rrggbb`` (opaque) or, for a translucent one
+    such as ``ACCENT_DIM`` (the selected / highlight wash), the stylesheet
+    form ``rgba(r, g, b, a)``, which a painter's colour cannot be built
+    from directly. Raises ``ValueError`` on anything else, so a token that
+    changes form fails loudly instead of painting black.
+    """
+    text = str(token).strip()
+    if text.startswith('#') and len(text) == 7:
+        return (int(text[1:3], 16), int(text[3:5], 16), int(text[5:7], 16), 255)
+    if text.lower().startswith('rgba(') and text.endswith(')'):
+        parts = [part.strip() for part in text[5:-1].split(',')]
+        if len(parts) == 4:
+            values = tuple(int(part) for part in parts)
+            if all(0 <= value <= 255 for value in values):
+                return values
+    raise ValueError(f'not a colour token: {token!r}')
+
+
 def row_publish_departments(uri: str, columns: Sequence[Column], ticks: set) -> list[str]:
     """The ticked publish departments of one row, in pool (column) order."""
     return [

@@ -22,6 +22,7 @@
 
 pub mod diff;
 pub mod document;
+pub mod follow;
 pub mod freeze;
 pub mod history;
 pub mod ops;

@@ -36,7 +36,8 @@ A shot has **takes**:
 - each of its **renders**, every render department, layer and version whose
   frames are all there, as an EXR sequence: its `beauty` AOV, or its first
   AOV when it has no beauty. A render still running, or one that stopped
-  short, is not a take yet.
+  short, is not a take yet; the shot's clips say how far it is (see
+  [Renders on their way](#renders-on-their-way)).
 
 A shot clip keeps a *rule*, not a file: which take it shows is worked out
 each time the edit opens, so a new playblast or render shows up in the cut
@@ -49,14 +50,15 @@ Layer `comp`), not an oiiotool stack of the channels.
 Right-click a shot clip to change its rule. **Best available** goes back to
 the default. The **Source** (playblast or render), **Department** and
 **Version** submenus list what the shot has for the take on screen; the one
-shown is marked. Choosing a version of the shown department pins that
+shown has a tick (✓) before it, as the current row of **View > Show** has
+(up to 1.112.0 it had `(shown)` after it). Choosing a version of the shown department pins that
 version; choosing a source or department follows its newest. The **Layer**
 submenu picks the render layer (`default`, `chars`, `env`, the `slapcomp`,
 a **layers** stack) and changes only that: the clip keeps its source,
 department and version rule, and **Best available** (the default) goes back
 to the rule above. It lists every layer the shot has of the shown source
 (in the chosen department, when one is chosen); the one on screen is
-marked. A chosen layer is saved in the edit. While the shot has no
+ticked. A chosen layer is saved in the edit. While the shot has no
 complete render of it yet, the clip plays what best available plays and
 the layer is listed as **not ready**; once the render is complete the clip
 changes to it by itself. A shot clip's name says which layer plays and how
@@ -238,6 +240,58 @@ made elsewhere, and media from a pipeline older than this, still needs
 **View > Refresh** (Ctrl+R), which reads every shot's takes and the bins
 again.
 
+### Renders on their way
+
+While a shot's newest render is still missing frames, its clips say so:
+their second line ends with the render and its count,
+`animation v0004  ·  lighting v0007: 34/120 rendered`, and a thin strip
+runs along the clip's bottom edge, dark where the render is to have a
+frame and lit where the frame is on disk. The strip follows the clip: it
+shows the frames that clip shows, so a trimmed clip shows its own part of
+the render. It is not the frame cache, which is the strip under the ruler
+(the frames of what plays that are decoded in memory).
+
+The clip goes on playing what its rule picks of the finished takes (the
+playblast, or the render before), or stays hatched when the shot has
+nothing else: an unfinished render is never played in the cut, so no frame
+is ever missing from playback or from **Export Movie**. When its last frame
+lands the count and the strip go and the clip changes to the render by
+itself, as with any new take. To look at the frames that are there
+meanwhile, use **Preview in Cinedex** on its job in the Farm Manager, or
+`cinedex --frames <folder>`: [the preview window](#the-preview-window)
+shows the frames not rendered yet as gaps.
+
+Which render is counted: the newest version of a render layer, when it
+records its frame range, is not a check render, and lacks frames. Of
+several layers still rendering it is the one the clip would pick once
+done (the most downstream department, its slapcomp, else `default`). An
+older version that stopped short under a newer finished one is an
+abandoned render and is not shown.
+
+A playblast the farm (or this machine's queue) is rendering is said the
+same way, `animation v0005 playblast: 34/120 rendered`, with the same
+strip. A farm playblast renders on its worker's own disk and writes only
+the finished movie to the project, so until now nothing of it could be
+seen before it was done. Its worker now copies each frame it finishes into
+a folder beside the movie to come (`<shot>_<dept>_v0005.mp4.frames`, a few
+seconds behind the render and always one frame short of it: the newest
+frame is copied when the next one starts), and removes the folder when the
+playblast ends. The clip plays the movie when it arrives; to watch the
+frames meanwhile, use **Preview in Cinedex** on the playblast's job in the
+Farm Manager. A shot with a render on its way too shows the render. This
+needs the worker to run this version of TumblePipe: a playblast rendered
+by an older one shows nothing until its movie is written. A playblast made
+in Houdini with **Renderer: Houdini GL** writes its movie directly and has
+no frames to show; a [live playblast](#live-playblasts) is played as it
+renders, as before.
+
+The editor lists the frames folder of each render it is following every
+five seconds, on a thread of its own, and stops when the render is
+complete. It looks for renders that have started two shots at a time and
+at each shot again after five minutes, so that a long cut on a file server
+costs a listing or two per poll: a render started after the editor opened
+can take a few minutes to show its strip.
+
 ### Preview frames ready
 
 A render or comp submitted with Preview Frames to **This machine** renders
@@ -266,8 +320,9 @@ a render, denoise, composite or slapcomp job (or a batch row) in the Farm Manage
 The preview window plays the frames as the editor plays a cut, with the
 same transport and a timeline under the picture:
 
-- **Play** (Space) plays from the frame shown at the shot's fps (24 when the
-  job names no shot), and loops back to the start while **Loop** (L) is
+- **Play** (Space, or the Up arrow) plays from the frame shown at the shot's
+  fps (24 when the job names no shot); the button's tooltip names both
+  keys. Up plays in the editor too, as it does in Houdini. It loops back to the start while **Loop** (L) is
   ticked, as it is when the window opens. The rate beside it says when the
   frames cannot be read that fast ("playing 9 of 24 fps", or "waiting for
   frames"): a network share or very large EXRs. Playback then waits for
@@ -360,8 +415,9 @@ talks to any of your editors. Its tools:
 - **view_shot**, **seek**, **play**: show a shot as [Live view](#live-view)
   does (on any edit), move the playhead, start or stop.
 - **edit**: one or more of the editor's operations (place, insert, lift,
-  ripple delete, move, trim, roll, slip, split, join, fades, another take,
-  gain, markers, tracks) as **one undo step**, all of them or none. With
+  ripple delete, move, shift, trim, roll, slip, split, join, fades, another
+  take, gain, markers, and tracks: add, remove with its clips, move,
+  rename, colour) as **one undo step**, all of them or none. With
   `dry_run` nothing changes, and the answer says what would: the clips
   taken out and put in on each track, the markers and the length.
 - **undo**, **redo**: the same history as yours. Ctrl+Z undoes an agent's
@@ -374,6 +430,14 @@ talks to any of your editors. Its tools:
   Pro, as [File > Export Timeline…](#export-to-resolve-premiere) writes
   it: `path`, `format` (`fcp7xml` or `otio`), `collect_media`, `sequences`.
   It answers what was carried and what was dropped or approximated.
+- **export_movie**: the cut as one movie on this machine, as
+  [File > Export Movie…](#export-movie) makes it, answered when the movie
+  is written: `path`, and the dialog's settings, each optional:
+  `resolution` (`"edit"`, `"half"`, or `{"width": n}` / `{"height": n}`),
+  `range` (`"whole"`, `"selection"`, `"loop"`, or
+  `{"first": a, "last": b}`), `codec` (`h264`, `mjpeg`), `quality` (`best`,
+  `high`, `standard`, `small`), `audio`, `burnins`. A setting left out is
+  the dialog's first offer, not what the user last chose.
 - **events**: what happened since the agent last asked (edits, saves,
   publishes, takes changing, Live view), waiting up to 25 seconds for
   something new.
@@ -425,8 +489,52 @@ held.
 Beside the picture are the bins. **Shots** lists the project's shots,
 each sequence's under its name;
 **Media** its media library (movies, stills and sound copied into the
-project as versioned items: **Import…** copies a file in, naming the item
-after the file until you type a name). Select an item
+project as versioned items).
+
+**Import…** (the Media bin's button, or **File > Import Media…**) opens
+your system's file browser: pick one file or several. Each movie, sound or
+single picture is copied in as an item named after the file (its letters and digits:
+`cut 3.mov` becomes `cut3`); a name the library already has gets a new
+version, and two files of one batch that would get the same name get `2`,
+`3`… after it. When it is done the status line names every item made and
+every file that did not go in, with why:
+
+- a file that is no movie, picture or sound, or a folder, is named as such;
+- a frame of a numbered image sequence (`plate.1001.exr`) stands for the
+  whole sequence, which is named once with its frame count and range. The
+  library holds one file per item, so a sequence is **not imported yet**:
+  make a movie of it and import that;
+- a file the player cannot read is named with the reader's error. The
+  other files still go in.
+
+To rename an item or change its note, right-click it in the Media bin:
+**Rename or Edit Note…**. An item that clips of the open edit use is not
+renamed (take it out of the cut first); other saved edits that use the old
+name will show it as missing, so rename before you cut with it. On a Linux
+without `zenity` or `kdialog` there is no file browser to open: the old
+dialog with a typed path opens instead and says so. (Up to 1.112.0 Import
+was always that typed path.)
+
+Dropping files from Explorer or Finder onto the window is **not there
+yet**: the UI toolkit does not hand dropped files to the app. Everything
+behind it is built (the same import, then the clips put on the track and
+frame under the pointer), so it arrives with the toolkit's next step.
+
+Right-click a row of either bin for its menu. On a shot, several picked
+rows, or a sequence's name: **Insert at Playhead** and **Overlay at
+Playhead** (not on a read-only edit), **Open in Houdini** with the shot's
+workfiles (one shot), **Farm Submit…**, **Reveal in File Browser** (the
+folder of what the shot plays; one shot), **Copy Name**, **Copy URI** and
+**Refresh Thumbnail**. On a media item: Insert, Overlay, Reveal, Copy Name
+and Rename or Edit Note. **Farm Submit…** opens the pipeline's Farm Submit
+window with those shots ticked, as the Render quick action does in
+Houdini: you read and change the settings there and press Submit. Cinedex
+itself never sends anything to the farm. The row is there only where
+Houdini is found (`HFS` is set, which it is when Cinedex is opened from
+TumbleTrove Desktop or from Houdini). A shot clip's menu in the timeline
+has **Copy URI** and **Farm Submit…** too.
+
+Select an item
 and press **Insert** (the cut opens at the playhead and everything after it
 moves on, on every track) or **Overlay** (it goes over what is there).
 Either moves the playhead to the end of what it put, so picking SH010,
@@ -447,11 +555,26 @@ Enter and Shift+Enter in a bin list you clicked in do the same. The Insert
 and Overlay buttons say so when you hover them. A movie brings its sound
 onto an audio track.
 
+A row is one line: the thumbnail and the name. Rest the pointer on a row
+and a tip says the rest: a shot's length and frame range, a media item's
+version and what it holds (up to 1.112.0 that was a second line under every
+name, and half as many shots fitted in the list).
+
+The chevron before a sequence's name folds that sequence's shots away, and
+brings them back; Cinedex remembers which sequences you folded, per
+project, for next time. A folded sequence's name still works for all its
+shots: double-click it to insert them, Shift+double-click to overlay them.
+
+**Ctrl**-click (**Cmd** on macOS) adds a row to the picked ones, or takes
+it out. Insert and Overlay then put all of them, in the bin's order, as
+one step of undo.
+
 Each shot and media item has a thumbnail: a shot's is the
 first frame of its best available take (what a double-click puts in the
 cut), a media item's the first frame of its newest version. A shot with
 nothing to play has no picture, and its row says why in the same words its
-clip would (see the table above). Thumbnails are read as their rows come on
+clip would (see the table above; in the grid the words are inside the empty
+picture). Thumbnails are read as their rows come on
 screen, a few at a time and never on the window's own thread, so a project
 of hundreds of shots on a slow file server opens and scrolls as before and
 the pictures fill in; one that was read is kept until Cinedex closes. A
@@ -464,8 +587,31 @@ holds (drag the line beside the bins to make them larger); untick it for
 the list. Cinedex remembers the choice. The grid works as the list does:
 click a tile to pick it for **Insert** and **Overlay**, double-click to
 insert it, Shift+double-click to overlay it, and the same on a sequence's
-name for all its shots. Nothing is dragged from a bin to the timeline, in
-either view.
+name for all its shots.
+
+You can also drag out of a bin onto the timeline, from the list or the
+grid: a shot, a media item, several rows picked together (drag any one of
+them), or a sequence's name for all its shots in order, folded or not.
+While you carry it, words beside the pointer say what it is and what
+letting go will do, and the timeline shows a box for each clip where it
+would land, on the track under the pointer:
+
+- Let go, and it is **laid over** the cut from the frame under the
+  pointer: on the track under the pointer when that has room, else the
+  next one up with room, else a new track on top. Nothing that is there
+  moves.
+- Hold **Ctrl** (**Cmd** on macOS) as you let go, and it is **inserted**
+  on the track under the pointer: what follows moves on, on every track.
+- Over the empty layer above the top video track it makes that track.
+- Where it cannot land the box is red and says why, before you let go: a
+  picture over an audio track, sound over a video track, a read-only edit.
+  Letting go there changes nothing.
+- **Escape**, or letting go anywhere off the tracks' rows, drops nothing.
+
+A drop is one step of undo, and the playhead goes to the end of what was
+put, as after Insert. Sound alone goes where Overlay puts it: the first
+audio track with room. (Up to 1.112.0 nothing could be dragged out of a
+bin.)
 
 Under the picture are the tracks: a ruler, then the video tracks (the top
 track on top), then the audio tracks. Each clip shows its first frame, its
@@ -477,25 +623,83 @@ why. The ruler marks the markers, the playhead, and in a lighter strip the
 frames already decoded. Amber means *now*: the playhead, the timecode, a
 clip being dragged.
 
-- Click or drag on the ruler, or on empty track, to seek. A click past the
-  last clip parks on the cut's end (one past its last frame), where an
-  Insert appends.
-- Click a clip to select it; Shift or Ctrl-click adds it or takes it out.
+- Click or drag on the ruler to seek; a click on empty track seeks too. A
+  click past the last clip parks on the cut's end (one past its last
+  frame), where an Insert appends.
+- Click a clip to select it. **Ctrl+click** adds it or takes it out.
+  **Shift+click** selects the range from the clip you clicked last (plainly
+  or with Ctrl) to this one, in place of what was selected: on one track
+  the clips between the two; across tracks, on every row from the one to
+  the other as shown, the clips with a frame between the start of the
+  earlier clip and the end of the later one. Shift+click again and the
+  range is taken from the same first clip. With nothing clicked before, it
+  selects the clip alone.
+- Drag from empty track to **box select**: every clip the box touches, on
+  the rows it crosses, is selected (after 4 pixels, so a click stays a
+  click). Dragging on the ruler still scrubs.
+- The selection stays on its clips: move them, trim them, undo, redo, and
+  the same clips are selected where they are now. A clip that is gone
+  (deleted, joined away, undone out of the cut) is deselected; the
+  selection never passes to whichever clip took its place.
+- Click the empty frames between two clips (or before a track's first clip)
+  to select that **gap**: it is hatched and outlined. **Delete** closes it,
+  as does **Close Gap** in its right-click menu: the clips after it on that
+  track move earlier by its length, as one step of undo. The other tracks
+  and the markers stay where they are. The empty frames after a track's
+  last clip are no gap.
 - Right-click where there is no clip (empty track, the ruler, a track's
   name) for the timeline's menu. On a frame: **Add Marker Here** (or
   **Remove Marker Here**), **New Shot Here…**, and with a pick in the bins
   **Insert Bin Pick Here** and **Overlay Bin Pick Here**; each parks the
   playhead on the frame you clicked first, then does what its menu bar
   entry does there. **Add Video Track** and **Add Audio Track** put an
-  empty track on top of its kind, and an empty track's row offers
-  **Remove Track** (not for the last track of its kind). On a track's row:
-  **Solo** it and, once dragged, **Reset Track Height**. Always: hide or
+  empty track on top of its kind, named with the first free number. On a
+  track's row (its name, or its empty frames):
+  - **Move Track V2 Up** and **Move Track V2 Down** change its place with
+    the track above or below it (among the tracks of its kind, and only
+    where there is one that side). For video the picture changes with it:
+    the upper track is drawn over the lower. The row's height and a solo
+    go with the track.
+  - **Rename Track V2…** asks for the new name. An empty name, or one
+    another track of its kind has, is refused there, and the dialog says
+    why.
+  - **Track Colour of V2 (None)** lists the eight colours (Violet, Blue,
+    Teal, Green, Olive, Ochre, Brick, Plum) and **None**; the colour the
+    track has is named in the title and left out of the list. A coloured
+    track has a stripe of its colour down the left of its name. The
+    colour is saved in the edit, so everyone sees it.
+  - **Remove Track V2** for an empty track, **Delete Track V2 and 3
+    Clips** for one that holds clips: the track and every clip on it go,
+    and the other tracks keep their clips where they are. Not offered for
+    the last track of its kind.
+  - **Solo** it and, once dragged, **Reset Track Height**.
+
+  Moving, renaming, colouring and deleting a track are each one step of
+  undo (a deleted track comes back with its clips, name and colour).
+  Always: hide or
   show the audio tracks, **Select All** and **Fit Timeline**. A published
   edit offers only the rows that change nothing. (Right-click a shot's
   clip for its takes, as before. There is no Paste: the editor has no
   copy yet.)
 - Drag a clip to move it, onto another track of its kind too. With Alt held
-  it slips: the clip stays and the frames in it move.
+  it slips: the clip stays and the frames in it move. A moved clip
+  **snaps**: when its start or its end comes within 8 pixels of the cut's
+  start, the playhead, a marker or an edge of a clip that stays, it lands
+  exactly there (the nearest wins; a line shows where). And it always
+  **lands**: where another clip is in the way, it goes beside it, butted
+  against the nearest free place it fits (as near either way, the one
+  nearer where it came from). The clip drawn under the pointer is where it
+  will land, and the tag beside it says *snapped* or *beside the clip
+  there*. Several selected clips dragged along their own tracks move
+  together, by one distance, and keep their spacing. A click that does not
+  drag never moves a clip. (Up to 1.112.2 a move onto another clip was
+  refused, and the clip went back.)
+- Hold **Ctrl** while dragging a clip's body to **push**: the clip and
+  every clip after it on its track move together, so room opens (or
+  closes) before it. It stops at the clip before it and at the cut's
+  start. Only that track moves; the other tracks and the markers stay. The
+  tag says how far and how many clips follow ("push +12 · 2 clips
+  follow"). One step of undo.
 - Over the top video track there is always one empty layer more, its name
   faint (*Drag a clip here for a new layer*). Drag a clip onto it and it
   becomes a track of the edit, with the next empty layer over it, so you
@@ -503,7 +707,16 @@ clip being dragged.
   one step. The empty layer is only shown: it is not saved in the edit
   until a clip is on it. (A published edit, which cannot change, has none,
   and neither has a soloed track.)
-- Drag a clip's edge to trim it; what follows moves with it. With Alt held
+- Drag a clip's edge to trim it; what follows moves with it. The clip keeps
+  its start, and the clips after it on its track move by what it grew or
+  shrank. On the other tracks no clip is ever cut or removed: when the
+  trim puts frames in, the clips that start at or after that point move
+  later with it; when it takes frames out, the clips after them move
+  earlier only if no clip of that track starts inside the frames taken out
+  and there is room before them, and otherwise that whole track stays
+  where it is. The tag beside the edge says so while you drag ("-5 · 2
+  clips follow · V2, A1 stay (no room)"). (Up to 1.112.2 a trim could cut
+  into or remove clips on other tracks.) With Alt held
   the cut rolls: the clip and its neighbour change together and the length
   holds. A trim throws nothing away: the clip only shows less of its shot
   or media, and dragging the edge back out shows the frames again. An edge
@@ -525,6 +738,19 @@ clip being dragged.
   are. **View > Fit Timeline** (F) fits them to the cut again (up to
   1.110.0 the tracks refitted after every change, so a trim rescaled the
   whole ruler).
+- **Zoom and scroll** the timeline with the wheel over the tracks:
+  **Ctrl+wheel** zooms in and out about the frame under the pointer (a
+  notch is a quarter; in as far as 8 frames, out as far as the whole
+  timeline); **Shift+wheel**, a sideways wheel or a sideways swipe on a
+  trackpad scrolls through time. The wheel alone scrolls the tracks up and
+  down when they are taller than the timeline, as before. Under the
+  tracks a thin strip shows the whole timeline, its clips and the
+  playhead, with the part you see as a lighter thumb: drag the thumb to
+  scroll, or click the strip to centre the view there. **View > Fit to
+  Clips** (Shift+F, also in the timeline's right-click menu) shows the
+  first clip's start to the last clip's end (at least 8 frames); **Fit
+  Timeline** (F) shows everything. Zoomed in, an edit never changes the
+  scale or the place. The zoom is not saved with the edit.
 - The strip above the tracks shows the selected clip's **Fade in** and
   **Fade out** in frames and, for a video clip, its **Opacity** in
   percent. With no clip, or several, selected, the same fields stay there
@@ -556,23 +782,34 @@ clip being dragged.
   puts the field back to its default: no fade, 100% opacity, no move or
   turn, 100% scale. The
   **Frames** field of **New shot…** steps the same way (its default is 48).
+- Any of these fields takes maths: type `100/2` and Enter sets 50. `+ - * /`
+  and brackets work (`(1001+48)*2`), with or without the field's `%` or `°`
+  at the end. `+=10`, `-=10`, `*=2` and `/=2` change what the field holds
+  (`+=10` on a fade of 5 sets 15). A leading sign is not that: `+10` is 10
+  and `-10` is minus 10, since X, Y and Rotate take negative numbers. A
+  fade, and **New shot…**'s **Frames**, round to whole frames, a half
+  upwards (`7/2` is 4). A sum with no answer (`1/0`, `2+`) is refused like
+  any text that is no number: the status line says why and the clip keeps
+  its value. There are no names, exponents or decimal commas. TumblePipe's
+  number fields in Houdini (Farm Submit, the Entity Editor, the Database
+  Editor) read maths by the same rules.
 
 Every change is one step of undo, however many clips it moves.
 
 | Key | Does |
 | --- | --- |
-| Space | play / pause |
+| Space, or Up | play / pause. Up alone, as in Houdini; with a key held, and Down, do nothing (up to 1.113.0 Up and Down changed the version, see Page Up below) |
 | Left / Right | step one frame back / forward |
 | Alt+Left / Alt+Right | jump one second back / forward |
 | Ctrl+Left / Ctrl+Right | jump to the previous / next cut |
 | Home / End | the first frame / the cut's end, one past its last frame (up to 1.101.0 End stopped on the last frame, so an Insert there split the last clip) |
-| Up / Down | the selected clips (none: the clip under the playhead) show the next newer / older version of the take they show, pinned, as the take menu's Version rows do |
-| Ctrl+Up / Ctrl+Down | the previous / next department of that kind (its newest version), as the Department rows |
-| Shift+Up / Shift+Down | playblast / render, as the Source rows |
+| Page Up / Page Down | the selected clips (none: the clip under the playhead) show the next newer / older version of the take they show, pinned, as the take menu's Version rows do (up to 1.113.0 these three were on the Up and Down arrows, where a play habit from Houdini changed the cut) |
+| Ctrl+Page Up / Ctrl+Page Down | the previous / next department of that kind (its newest version), as the Department rows |
+| Shift+Page Up / Shift+Page Down | playblast / render, as the Source rows |
 | S | split the selected clips at the playhead (none selected: the top video clip there) |
 | M | a marker at the playhead |
-| Delete | lift the selected clips, leaving a gap |
-| Shift+Delete | ripple delete: what follows closes the gap |
+| Delete | lift the selected clips, leaving a gap; with a gap selected (and no clip), close it |
+| Shift+Delete | ripple delete: what follows closes the gap; with a gap selected, close it |
 | Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) | undo / redo |
 | Ctrl+O | open an edit |
 | Ctrl+S / Ctrl+Shift+S | save / save as |
@@ -581,6 +818,8 @@ Every change is one step of undo, however many clips it moves.
 | B | show / hide the burn-ins |
 | V | View > Show: the cut, renders, playblasts, round (view only, never saved) |
 | F | View > Fit Timeline: the tracks span the cut and a second past it again |
+| Shift+F | View > Fit to Clips: the first clip's start to the last clip's end |
+| Ctrl+wheel / Shift+wheel | zoom about the pointer / scroll through time |
 
 On macOS, use Cmd for Ctrl.
 
@@ -746,13 +985,41 @@ movie is made beside the file under a temporary name
 complete. When it is done, **Play** opens the movie in your
 player and **Show in Folder** its folder.
 
+Under the file, the dialog asks what the movie is to be (at first the
+whole cut at the edit's size, with sound, clean, as it always was before
+there were settings):
+
+| Setting | Choices |
+| --- | --- |
+| **Size** | **Edit's** (the edit's resolution), **Half**, or **Custom**: type a width or a height and the other follows, so the picture keeps the edit's shape. 16 to 16384 pixels a side. |
+| **Frames** | **Whole cut**; **Selection**, from the first selected clip's start to the last one's end (offered when clips are selected); **Loop**, the range a Live view loops over (offered while it loops); or **Custom**, a first and a last frame counted from 1 at the cut's start, both included. The timecode track starts at the first frame's timecode. The editor has no in and out marks yet. |
+| **Codec** | **H.264** in a `.mp4` or `.mov`, which plays everywhere, or **Motion JPEG** in a `.mov`: every frame is a whole picture, so an NLE scrubs it easily, and the file is several times larger. Choosing Motion JPEG changes a `.mp4` name to `.mov`. |
+| **Quality** | **Best**, **High**, **Standard** or **Small file**. Standard is the encode Render Edit makes on the farm. |
+| **Sound** | Untick for a movie with no sound track. |
+| **Burn-ins** | Tick to have the viewer's burn-ins in the picture: the shot top left, the take top right, the cut's timecode bottom left and the take's frame bottom right, each frame saying what the viewer says there. They are laid out as the viewer lays them out on a full-HD picture and keep that share of a larger one; nothing is written over frames where nothing plays. They need a font on the machine (any desktop has one). |
+
+The number fields take [maths](submit-jobs.md#maths-in-number-fields)
+(`1920/2`). The line under the settings says what they come to (size,
+frames, length, codec), or why no movie can be made of them. The settings
+are remembered for you, on this machine, the next time you export
+(`export.json` beside the editor's layout file); a remembered selection,
+loop or custom range that the cut at hand does not have goes back to the
+whole cut.
+
+The codecs are the ones Houdini's `hffmpeg` can write on every machine. It
+has no ProRes or DNxHD encoder, so those are not offered; its H.265 encoder
+refuses many sizes and its hardware encoders depend on the graphics card, so
+neither are those. **Render Edit** on the farm is unchanged: it renders the
+whole published edit at its own size with the Standard encode and no
+burn-ins.
+
 The editor decodes with its own FFmpeg but encodes with Houdini's
 `hffmpeg`: the one of the Houdini it was started from (`$HFS`), else the
 newest Houdini installed in SideFX's default place. Set `TH_HFFMPEG` to use
 another FFmpeg (it needs openh264 and AAC). With none, the dialog says so and
 does not export. A live playblast never goes into a movie: a shot shows its
-take, as in Render Edit. The viewer's exposure and burn-ins are not part of
-the movie.
+take, as in Render Edit. The viewer's exposure is not part of the movie,
+and neither are its burn-ins unless **Burn-ins** is ticked.
 
 ### Export to Resolve / Premiere
 
@@ -793,6 +1060,7 @@ approximated, each with the clips it happened to.
 | In the cut | Final Cut Pro 7 XML | OpenTimelineIO |
 |---|---|---|
 | Tracks | One to one, bottom first. Track names are not carried | One to one, with their names |
+| Track colour | Not carried (the format has no place for it); the summary says so | Only in the track's metadata (`tumblepipe.color`); Resolve does not show it, and the summary says so |
 | Clip | A clip named after its shot (or media item), on its frames | The same, named shot, department and version |
 | Gap | A gap | A gap |
 | Fade in or out | A one-sided Cross Dissolve on the clip's own track, whatever is below | A dissolve only for a plain dissolve or a fade over nothing; any other is left out, with a yellow marker |

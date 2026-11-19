@@ -7,9 +7,16 @@
 //!
 //! *Ripple* ops change the edit's length and move everything after their
 //! edit point on **every** track, markers included, so what was in sync
-//! stays in sync: room opened at a point splits whatever spans it, and a
-//! span taken out is taken out of every track (a clip across it keeps the
-//! frames either side, as two clips). The others move nothing else.
+//! stays in sync. An insert and a ripple delete are asked for by name, and
+//! are of every track: room opened at a point splits whatever spans it,
+//! and a span taken out is taken out of every track (a clip across it
+//! keeps the frames either side, as two clips).
+//!
+//! A *trim* is of one clip, so it never takes out or cuts a clip of
+//! another track ([`Op::Trim`]): the other tracks' later clips move along
+//! with it where they can ([`follows`]), and a track that cannot stays as
+//! it is. A *shift* ([`Op::Shift`]) is of one track only. The others move
+//! nothing else.
 
 use std::fmt;
 
@@ -89,11 +96,21 @@ pub enum Op<S> {
         to: TrackRef,
         at: Frame,
     },
-    /// Ripple trim: move an edge by `delta` frames (positive: later),
-    /// moving everything after the edit point with it.
+    /// Ripple trim: move an edge by `delta` frames (positive: later). The
+    /// clips after it on its track move with it; so do the later clips of
+    /// each other track that can ([`follows`]), and the markers. No clip
+    /// of another track is taken out or cut.
     Trim {
         clip: ClipRef,
         edge: Edge,
+        delta: Frame,
+    },
+    /// Move a clip and every clip after it on its track by `delta` frames
+    /// (positive: later), as one: the gap before it opens or closes.
+    /// Refused when it would go over the clip before it, or before frame
+    /// 0. Its track only: no other track and no marker moves.
+    Shift {
+        clip: ClipRef,
         delta: Frame,
     },
     /// Roll the cut between a clip and the next one on its track, which it
@@ -157,8 +174,33 @@ pub enum Op<S> {
         kind: TrackKind,
         name: String,
     },
+    /// Take a track away, with every clip on it. The other tracks keep
+    /// their clips and their order; the markers stay.
     RemoveTrack {
         track: TrackRef,
+    },
+    /// Put a track at index `to` among those of its kind (bottom first),
+    /// the others keeping their order around it. For video that changes
+    /// the picture: a higher track is over a lower one. No clip moves in
+    /// time. Refused when it is there already.
+    MoveTrack {
+        track: TrackRef,
+        to: usize,
+    },
+    /// Another name for a track: not empty, and no other track of its kind
+    /// has it.
+    RenameTrack {
+        track: TrackRef,
+        name: String,
+    },
+    /// The colour a track's row is marked with (a palette name of 1 to 32
+    /// lower-case letters, digits or `-`), or None for the default.
+    SetTrackColor {
+        track: TrackRef,
+        /// Always written, null for None: an op that leaves it out is
+        /// no op, as with any other field.
+        #[serde(deserialize_with = "said")]
+        color: Option<String>,
     },
 }
 
@@ -225,6 +267,7 @@ fn change<S: Clone + PartialEq>(edit: &mut Edit<S>, op: &Op<S>) -> Result<(), Re
             place(edit, *to, taken)
         }
         Op::Trim { clip, edge, delta } => trim(edit, *clip, *edge, *delta),
+        Op::Shift { clip, delta } => on_clip(edit, *clip, |clips, i| shift(clips, i, *delta)),
         Op::Roll { clip, delta } => on_clip(edit, *clip, |clips, i| roll(clips, i, *delta)),
         Op::Slip { clip, delta } => on_clip(edit, *clip, |clips, i| {
             let source_in = clips.get(i).source_in;
@@ -294,8 +337,8 @@ fn change<S: Clone + PartialEq>(edit: &mut Edit<S>, op: &Op<S>) -> Result<(), Re
         }
         Op::AddTrack { kind, name } => {
             match kind {
-                TrackKind::Video => edit.video.push(crate::Track { name: name.clone(), clips: Vec::new() }),
-                TrackKind::Audio => edit.audio.push(crate::Track { name: name.clone(), clips: Vec::new() }),
+                TrackKind::Video => edit.video.push(crate::Track { name: name.clone(), clips: Vec::new(), color: None }),
+                TrackKind::Audio => edit.audio.push(crate::Track { name: name.clone(), clips: Vec::new(), color: None }),
             }
             Ok(())
         }
@@ -304,6 +347,47 @@ fn change<S: Clone + PartialEq>(edit: &mut Edit<S>, op: &Op<S>) -> Result<(), Re
             match track.kind {
                 TrackKind::Video => drop(edit.video.remove(track.index)),
                 TrackKind::Audio => drop(edit.audio.remove(track.index)),
+            }
+            Ok(())
+        }
+        Op::MoveTrack { track, to } => {
+            track_exists(edit, *track)?;
+            track_exists(edit, TrackRef { kind: track.kind, index: *to })?;
+            if *to == track.index {
+                return refuse("the track is there already");
+            }
+            match track.kind {
+                TrackKind::Video => {
+                    let moved = edit.video.remove(track.index);
+                    edit.video.insert(*to, moved);
+                }
+                TrackKind::Audio => {
+                    let moved = edit.audio.remove(track.index);
+                    edit.audio.insert(*to, moved);
+                }
+            }
+            Ok(())
+        }
+        Op::RenameTrack { track, name } => {
+            track_exists(edit, *track)?;
+            // An empty name, or another track's, is the document's to
+            // refuse (`Edit::problem`).
+            match track.kind {
+                TrackKind::Video => edit.video[track.index].name = name.clone(),
+                TrackKind::Audio => edit.audio[track.index].name = name.clone(),
+            }
+            Ok(())
+        }
+        Op::SetTrackColor { track, color } => {
+            track_exists(edit, *track)?;
+            if let Some(name) = color
+                && !color_name(name)
+            {
+                return refuse(format!("'{name}' is no colour name: 1 to 32 lower-case letters, digits or '-'"));
+            }
+            match track.kind {
+                TrackKind::Video => edit.video[track.index].color = color.clone(),
+                TrackKind::Audio => edit.audio[track.index].color = color.clone(),
             }
             Ok(())
         }
@@ -338,6 +422,18 @@ fn shown<S: Clone>(edit: &Edit<S>) -> Vec<(&S, Frame, Frame)> {
     let video = edit.video.iter().flat_map(|t| t.clips.iter().map(|c| (&c.source, c.source_in, c.duration)));
     let audio = edit.audio.iter().flat_map(|t| t.clips.iter().map(|c| (&c.source, c.source_in, c.duration)));
     video.chain(audio).collect()
+}
+
+/// An optional value that must be said, null or not: serde alone reads a
+/// missing `Option` field as None.
+fn said<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(deserializer)
+}
+
+/// Whether `name` can name a track's colour: what the editor's palette
+/// names look like, whichever of them a given editor knows.
+pub fn color_name(name: &str) -> bool {
+    (1..=32).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 fn track_exists<S: Clone>(edit: &Edit<S>, track: TrackRef) -> Result<(), Refused> {
@@ -574,6 +670,76 @@ fn cut<C: Clip>(c: &C, at: Frame) -> (C, C) {
     (left, right)
 }
 
+/// Whether a track's later clips move along when frames `from .. to` are
+/// taken out of another track's clip by a trim: `spans` are the track's
+/// clips, each `(at, end)`, in order. The later clips are those starting
+/// at or after `to`; they move `to - from` earlier, as one, when no clip
+/// of the track starts inside the frames taken out and the clip before
+/// them ends at or before where the first of them lands. Otherwise the
+/// track stays as it is: nothing of it is cut or lost to make room.
+///
+/// (Frames put *in* by a trim always move a track's clips that start at or
+/// after the place: there is always room later.)
+pub fn follows(spans: &[(Frame, Frame)], from: Frame, to: Frame) -> bool {
+    if spans.iter().any(|&(at, _)| from <= at && at < to) {
+        return false;
+    }
+    let Some(first) = spans.iter().position(|&(at, _)| at >= to) else { return true };
+    let lands = spans[first].0 - (to - from);
+    first.checked_sub(1).is_none_or(|before| spans[before].1 <= lands)
+}
+
+/// Move the clips of `clips` from index `first` on by `by` frames.
+fn shift_from<S>(clips: &mut dyn ClipList<S>, first: usize, by: Frame) {
+    for i in first..clips.len() {
+        let view = clips.get(i);
+        clips.set(i, ClipView { at: view.at + by, ..view });
+    }
+}
+
+fn shift<S>(clips: &mut dyn ClipList<S>, i: usize, delta: Frame) -> Result<(), Refused> {
+    let at = clips.get(i).at;
+    let floor = if i == 0 { 0 } else { clips.get(i - 1).end() };
+    if at + delta < floor {
+        return refuse(if i == 0 {
+            format!("a shift of {delta} takes the clip before frame 0")
+        } else {
+            format!("a shift of {delta} takes the clip over the one before it, which ends at {}", floor - 1)
+        });
+    }
+    shift_from(clips, i, delta);
+    Ok(())
+}
+
+/// Run `f` on every track's clips but `own`'s.
+fn other_tracks<S: Clone + PartialEq>(edit: &mut Edit<S>, own: TrackRef, mut f: impl FnMut(&mut dyn ClipList<S>)) {
+    for (index, t) in edit.video.iter_mut().enumerate() {
+        if own != TrackRef::video(index) {
+            f(&mut t.clips);
+        }
+    }
+    for (index, t) in edit.audio.iter_mut().enumerate() {
+        if own != TrackRef::audio(index) {
+            f(&mut t.clips);
+        }
+    }
+}
+
+/// Ripple trim. The clip keeps its place and gets longer or shorter at
+/// one end; the clips after it on its track move by as much. Frames are
+/// so put into the cut at a place (an edge dragged outwards) or taken out
+/// of it (inwards), and the rest of the cut keeps in sync where it can
+/// without losing anything:
+///
+/// - frames put in at `point`: each other track's clips that start at or
+///   after `point` move later with them (a clip across `point` stays
+///   whole, where it is), and so do the markers there or after;
+/// - frames `from .. to` taken out: each other track's clips starting at
+///   or after `to` move earlier when [`follows`] says they can, else that
+///   track stays as it is; a marker after them moves, one inside goes to
+///   `from`.
+///
+/// No clip of another track is ever taken out or cut by a trim.
 fn trim<S: Clone + PartialEq>(edit: &mut Edit<S>, clip: ClipRef, edge: Edge, delta: Frame) -> Result<(), Refused> {
     let (at, end) = span(edit, clip)?;
     let duration = end - at;
@@ -587,33 +753,51 @@ fn trim<S: Clone + PartialEq>(edit: &mut Edit<S>, clip: ClipRef, edge: Edge, del
     if new_duration < 1 {
         return refuse(format!("a trim of {delta} leaves the clip {new_duration} frames long"));
     }
-    let view = {
-        let mut v = None;
-        on_clip(edit, clip, |clips, i| {
-            v = Some(clips.get(i));
-            Ok(())
-        })?;
-        v.expect("the clip is there")
-    };
-    // The clips on its track before it keep their indices through either
-    // ripple below, so it is found again at `clip.index`.
-    match (edge, delta > 0) {
-        (Edge::Tail, true) => open_gap(edit, end, delta),
-        (Edge::Tail, false) => remove_span(edit, end + delta, end),
-        (Edge::Head, true) => remove_span(edit, at, at + delta),
-        (Edge::Head, false) => open_gap(edit, at, -delta),
+    let longer = new_duration - duration;
+    if longer > 0 {
+        let point = match edge {
+            Edge::Head => at,
+            Edge::Tail => end,
+        };
+        other_tracks(edit, clip.track, |clips| {
+            let first = (0..clips.len()).find(|&i| clips.get(i).at >= point).unwrap_or(clips.len());
+            shift_from(clips, first, longer);
+        });
+        for m in &mut edit.markers {
+            if m.at >= point {
+                m.at += longer;
+            }
+        }
+    } else {
+        let (from, to) = match edge {
+            Edge::Head => (at, at - longer),
+            Edge::Tail => (end + longer, end),
+        };
+        other_tracks(edit, clip.track, |clips| {
+            let spans: Vec<(Frame, Frame)> = (0..clips.len()).map(|i| (clips.get(i).at, clips.get(i).end())).collect();
+            if follows(&spans, from, to) {
+                let first = spans.iter().position(|&(at, _)| at >= to).unwrap_or(spans.len());
+                shift_from(clips, first, longer);
+            }
+        });
+        for m in &mut edit.markers {
+            if m.at >= to {
+                m.at += longer;
+            } else if m.at > from {
+                m.at = from;
+            }
+        }
     }
     on_clip(edit, clip, |clips, i| {
-        let (source_in, new_at) = match edge {
-            Edge::Head => (view.source_in + delta, at),
-            Edge::Tail => (view.source_in, at),
+        let view = clips.get(i);
+        let source_in = match edge {
+            Edge::Head => view.source_in + delta,
+            Edge::Tail => view.source_in,
         };
-        // An open gap before it split nothing on its track (it starts
-        // there); taking its head out left only its right part. Either way
-        // the clip is at `i`: put it back whole, with its own fades.
         let fade_in = view.fade_in.min(new_duration);
         let fade_out = view.fade_out.min(new_duration - fade_in);
-        clips.set(i, ClipView { at: new_at, duration: new_duration, source_in, fade_in, fade_out });
+        clips.set(i, ClipView { at, duration: new_duration, source_in, fade_in, fade_out });
+        shift_from(clips, i + 1, longer);
         Ok(())
     })
 }
@@ -728,12 +912,16 @@ pub(crate) mod tests {
             };
             for (i, clips) in video.iter().enumerate() {
                 edit.video.push(Track {
+                    color: None,
                     name: format!("V{}", i + 1),
                     clips: lay(clips).into_iter().map(|(a, d, s, src)| vclip(a, d, s, src)).collect(),
                 });
             }
-            edit.audio
-                .push(Track { name: "A1".into(), clips: lay(&audio).into_iter().map(|(a, d, s, src)| aclip(a, d, s, src)).collect() });
+            edit.audio.push(Track {
+                name: "A1".into(),
+                clips: lay(&audio).into_iter().map(|(a, d, s, src)| aclip(a, d, s, src)).collect(),
+                color: None,
+            });
             edit.markers = vec![Marker { at: 10, note: "a".into() }, Marker { at: 50, note: "b".into() }];
             edit
         })
@@ -764,8 +952,8 @@ pub(crate) mod tests {
     #[test]
     fn insert_opens_room_on_every_track_and_splits_what_spans_it() {
         let mut edit = Edit::new(24, [1920, 1080], "01:00:00:00");
-        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 100, 0, media(20))] });
-        edit.video.push(Track { name: "V2".into(), clips: vec![vclip(40, 10, 1001, Source::Slug { text: "x".into() })] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 100, 0, media(20))], color: None });
+        edit.video.push(Track { name: "V2".into(), clips: vec![vclip(40, 10, 1001, Source::Slug { text: "x".into() })], color: None });
         let op = Op::Insert { track: TrackRef::video(1), clip: NewClip::Video(vclip(20, 5, 0, media(20))) };
         let next = apply(&edit, &op, &Lengths).unwrap();
         assert_eq!(next.length(), 105);
@@ -778,7 +966,7 @@ pub(crate) mod tests {
     #[test]
     fn a_clip_past_its_source_is_refused() {
         let mut edit = Edit::new(24, [1920, 1080], "01:00:00:00");
-        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 100, 0, media(10))] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 100, 0, media(10))], color: None });
         let slip = Op::Slip { clip: ClipRef { track: TrackRef::video(0), index: 0 }, delta: 2 };
         assert!(apply(&edit, &slip, &Lengths).unwrap_err().0.contains("0 to 100"));
         let back = Op::Slip { clip: ClipRef { track: TrackRef::video(0), index: 0 }, delta: -1 };
@@ -790,7 +978,7 @@ pub(crate) mod tests {
     #[test]
     fn another_source_shows_only_where_it_has_the_frames() {
         let mut edit = Edit::new(24, [1920, 1080], "01:00:00:00");
-        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 50, 30, media(10))] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 50, 30, media(10))], color: None });
         let clip = ClipRef { track: TrackRef::video(0), index: 0 };
         let longer = apply(&edit, &Op::SetSource { clip, source: media(20) }, &Lengths).unwrap();
         assert_eq!(longer.video[0].clips[0].source, media(20));
@@ -829,8 +1017,15 @@ pub(crate) mod tests {
             }
             let edge = if head { Edge::Head } else { Edge::Tail };
             if let Ok(next) = apply(&edit, &Op::Trim { clip, edge, delta }, &Lengths) {
+                // Its own track ends later by the trim; no track gets
+                // longer by more, or shorter by more.
                 let change = if head { -delta } else { delta };
-                prop_assert_eq!(next.length(), edit.length() + change);
+                let ends = |e: &Edit<Source>, t: TrackRef| e.spans(t).last().map_or(0, |s| s.1);
+                prop_assert_eq!(ends(&next, clip.track), ends(&edit, clip.track) + change);
+                for track in edit.tracks() {
+                    let moved = ends(&next, track) - ends(&edit, track);
+                    prop_assert!(moved == 0 || moved == change, "{:?} ends {} later after a trim of {}", track, moved, change);
+                }
             }
             if let Ok(next) = apply(&edit, &Op::Lift { clip }, &Lengths) {
                 let mut before = layout(&edit);
@@ -858,12 +1053,9 @@ pub(crate) mod tests {
         /// started at or after the edit point moves by the same amount,
         /// with the same source frames, and none before it moves.
         #[test]
-        fn ripples_move_every_track_together(edit in edits(), t in any::<prop::sample::Index>(), c in any::<prop::sample::Index>(), delta in -30i64..30, head in any::<bool>(), insert_at in 0i64..150, n in 1i64..20) {
-            let check = |next: &Edit<Source>, point: Frame, shift: Frame, removed_to: Frame, own: Option<(TrackRef, Frame)>| -> Result<(), TestCaseError> {
+        fn ripples_move_every_track_together(edit in edits(), t in any::<prop::sample::Index>(), c in any::<prop::sample::Index>(), insert_at in 0i64..150, n in 1i64..20) {
+            let check = |next: &Edit<Source>, point: Frame, shift: Frame, removed_to: Frame| -> Result<(), TestCaseError> {
                 for (track, at, duration, source_in) in layout(&edit) {
-                    if own == Some((track, at)) {
-                        continue;
-                    }
                     if at >= removed_to.max(point) {
                         prop_assert!(layout(next).contains(&(track, at + shift, duration, source_in)), "{:?} at {} did not move by {}", track, at, shift);
                     } else if at + duration <= point {
@@ -878,17 +1070,121 @@ pub(crate) mod tests {
             };
             let op = Op::Insert { track: TrackRef::video(0), clip: NewClip::Video(vclip(insert_at, n, 0, Source::Slug { text: "i".into() })) };
             if let Ok(next) = apply(&edit, &op, &Lengths) {
-                check(&next, insert_at, n, insert_at, None)?;
+                check(&next, insert_at, n, insert_at)?;
             }
             let Some(clip) = pick(&edit, t, c) else { return Ok(()) };
             let (at, end) = edit.spans(clip.track)[clip.index];
             if let Ok(next) = apply(&edit, &Op::RippleDelete { clip }, &Lengths) {
-                check(&next, at, -(end - at), end, None)?;
+                check(&next, at, -(end - at), end)?;
             }
-            if !head && delta > 0
-                && let Ok(next) = apply(&edit, &Op::Trim { clip, edge: Edge::Tail, delta }, &Lengths) {
-                    check(&next, end, delta, end, Some((clip.track, at)))?;
+        }
+
+        /// A trim, by a model that knows nothing of how the op is made:
+        /// the clip stays where it starts and is longer or shorter by the
+        /// trim, at the end trimmed (a head's source frames move with it);
+        /// the clips before it on its track stay and those after move by
+        /// as much. On every other track no clip is taken out, cut or
+        /// changed, and they keep their order: the clips starting at or
+        /// after the edit point all move by the trim, or (frames taken
+        /// out, and moving them would put one on a clip that stays, or a
+        /// clip starts inside those frames) none does. The markers move as
+        /// with any ripple.
+        #[test]
+        fn a_trim_changes_its_clip_and_only_moves_the_rest(edit in edits(), t in any::<prop::sample::Index>(), c in any::<prop::sample::Index>(), delta in -45i64..45, head in any::<bool>()) {
+            let Some(clip) = pick(&edit, t, c) else { return Ok(()) };
+            let (at, end) = edit.spans(clip.track)[clip.index];
+            let edge = if head { Edge::Head } else { Edge::Tail };
+            let longer = if head { -delta } else { delta };
+            let Ok(next) = apply(&edit, &Op::Trim { clip, edge, delta }, &Lengths) else {
+                // Refused only for a clip left with no frame, or shown past
+                // its source's frames.
+                prop_assert!(delta != 0);
+                return Ok(());
+            };
+            // Where frames go in (`point`), or which go out (`from..to`).
+            let (from, to) = match (head, longer > 0) {
+                (false, true) => (end, end),
+                (true, true) => (at, at),
+                (false, false) => (end + longer, end),
+                (true, false) => (at, at - longer),
+            };
+            for track in edit.tracks() {
+                let before: Vec<_> = layout(&edit).into_iter().filter(|c| c.0 == track).collect();
+                let after: Vec<_> = layout(&next).into_iter().filter(|c| c.0 == track).collect();
+                prop_assert_eq!(before.len(), after.len(), "{:?} lost or gained a clip", track);
+                if track == clip.track {
+                    for (i, (was, now)) in before.iter().zip(&after).enumerate() {
+                        let want = match i.cmp(&clip.index) {
+                            std::cmp::Ordering::Less => *was,
+                            std::cmp::Ordering::Equal => (track, at, end - at + longer, was.3 + if head { delta } else { 0 }),
+                            std::cmp::Ordering::Greater => (track, was.1 + longer, was.2, was.3),
+                        };
+                        prop_assert_eq!(*now, want, "clip {} of the trimmed track", i);
+                    }
+                    continue;
                 }
+                let moved: Vec<_> = before.iter().map(|&(tr, a, d, s)| (tr, if a >= to { a + longer } else { a }, d, s)).collect();
+                // The model's own test of whether the moved clips fit:
+                // none on another, and none starting in the frames taken out.
+                let fits = moved.iter().enumerate().all(|(i, a)| moved.iter().skip(i + 1).all(|b| a.1 + a.2 <= b.1 || b.1 + b.2 <= a.1));
+                let inside = before.iter().any(|c| from <= c.1 && c.1 < to);
+                let want = if longer > 0 || (fits && !inside) { moved } else { before.clone() };
+                prop_assert_eq!(after, want, "{:?} after a trim of {} at {}..{}", track, longer, from, to);
+            }
+            let want: Vec<Frame> = edit.markers.iter().map(|m| if m.at >= to { m.at + longer } else if m.at > from { from } else { m.at }).collect();
+            prop_assert_eq!(next.markers.iter().map(|m| m.at).collect::<Vec<_>>(), want);
+            // Out and back in is as it was, always; in and back out too,
+            // unless a track could not follow on the way in.
+            let back = apply(&next, &Op::Trim { clip, edge, delta: -delta }, &Lengths).unwrap();
+            let own = |e: &Edit<Source>| layout(e).into_iter().filter(|c| c.0 == clip.track).collect::<Vec<_>>();
+            prop_assert_eq!(own(&back), own(&edit));
+            let followed = edit.tracks().all(|tr| tr == clip.track || follows(&edit.spans(tr), from, to));
+            let unmarked = !edit.markers.iter().any(|m| from <= m.at && m.at < to);
+            if longer > 0 || (followed && unmarked) {
+                prop_assert_eq!(&back, &edit, "a trim of {} and back", longer);
+            }
+        }
+
+        /// [`follows`] against every placement tried: the later clips of a
+        /// track follow frames taken out exactly when moving them leaves
+        /// the track's clips in order without one on another, and no clip
+        /// starts in the frames taken out.
+        #[test]
+        fn later_clips_follow_exactly_when_they_fit(gaps in prop::collection::vec((0i64..12, 1i64..12), 0..6), from in 0i64..60, n in 1i64..20) {
+            let mut at = 0;
+            let spans: Vec<(Frame, Frame)> = gaps.iter().map(|&(gap, long)| { at += gap; let s = (at, at + long); at += long; s }).collect();
+            let to = from + n;
+            let moved: Vec<(Frame, Frame)> = spans.iter().map(|&(a, e)| if a >= to { (a - n, e - n) } else { (a, e) }).collect();
+            let in_order = moved.windows(2).all(|w| w[0].1 <= w[1].0);
+            let inside = spans.iter().any(|&(a, _)| (from..to).contains(&a));
+            prop_assert_eq!(follows(&spans, from, to), in_order && !inside, "{:?} with {}..{} out", spans, from, to);
+        }
+
+        /// A shift moves its clip and every clip after it on its track by
+        /// the same frames, and nothing else in the edit: no other track,
+        /// no marker, no clip before it. It is refused exactly when the
+        /// clip would go over the one before it, or before frame 0; and
+        /// the shift back is the edit as it was.
+        #[test]
+        fn a_shift_moves_its_clip_and_the_rest_of_its_track(edit in edits(), t in any::<prop::sample::Index>(), c in any::<prop::sample::Index>(), delta in -40i64..40) {
+            let Some(clip) = pick(&edit, t, c) else { return Ok(()) };
+            let spans = edit.spans(clip.track);
+            let floor = if clip.index == 0 { 0 } else { spans[clip.index - 1].1 };
+            let result = apply(&edit, &Op::Shift { clip, delta }, &Lengths);
+            if spans[clip.index].0 + delta < floor {
+                prop_assert!(result.is_err(), "a shift of {} over the clip before", delta);
+                return Ok(());
+            }
+            let next = result.unwrap();
+            let mut index = 0;
+            let want: Vec<_> = layout(&edit).into_iter().map(|(tr, a, d, s)| {
+                if tr != clip.track { return (tr, a, d, s); }
+                index += 1;
+                (tr, if index > clip.index { a + delta } else { a }, d, s)
+            }).collect();
+            prop_assert_eq!(layout(&next), want);
+            prop_assert_eq!(&next.markers, &edit.markers);
+            prop_assert_eq!(&apply(&next, &Op::Shift { clip, delta: -delta }, &Lengths).unwrap(), &edit);
         }
 
         /// The document round-trips through JSON.
@@ -911,6 +1207,10 @@ pub(crate) mod tests {
                 Op::RemoveMarker { index: 1 },
                 Op::AddTrack { kind: TrackKind::Audio, name: "A2".into() },
                 Op::RemoveTrack { track: TrackRef::video(0) },
+                Op::MoveTrack { track: TrackRef::video(0), to: 1 },
+                Op::RenameTrack { track: TrackRef::audio(0), name: "Music".into() },
+                Op::SetTrackColor { track: TrackRef::video(0), color: Some("teal".into()) },
+                Op::SetTrackColor { track: TrackRef::video(0), color: None },
             ]);
             for op in ops {
                 let json = serde_json::to_value(&op).unwrap();
@@ -1004,17 +1304,66 @@ pub(crate) mod tests {
     /// tried on.
     #[derive(Debug, Clone)]
     pub(crate) enum Try {
-        Add { t: prop::sample::Index, at: Frame, n: Frame, ripple: bool },
-        OnClip { t: prop::sample::Index, c: prop::sample::Index, delta: Frame, which: u8, at: Frame },
-        Marker { at: Frame },
+        Add {
+            t: prop::sample::Index,
+            at: Frame,
+            n: Frame,
+            ripple: bool,
+        },
+        OnClip {
+            t: prop::sample::Index,
+            c: prop::sample::Index,
+            delta: Frame,
+            which: u8,
+            at: Frame,
+        },
+        Marker {
+            at: Frame,
+        },
+        /// A track moved, renamed, coloured, removed or added.
+        Track {
+            t: prop::sample::Index,
+            to: prop::sample::Index,
+            which: u8,
+        },
+    }
+
+    /// The names and colours [`choose`] gives tracks: some taken, one
+    /// empty, some no colour name (one empty, one a character too long).
+    pub(crate) const TRACK_NAMES: [&str; 5] = ["V1", "V2", "Plates", "A1", ""];
+    pub(crate) const TRACK_COLORS: [&str; 8] = [
+        "blue",
+        "teal",
+        "brick",
+        "Not A Colour",
+        "",
+        "x",
+        // 32 characters, the longest, and 33.
+        "a-colour-name-of-32-characters-0",
+        "a-colour-name-of-33-characters-00",
+    ];
+
+    /// A colour name is 1 to 32 lower-case letters, digits or hyphens, to
+    /// the character.
+    #[test]
+    fn a_colour_name_is_1_to_32_plain_characters() {
+        let (longest, too_long) = (TRACK_COLORS[6], TRACK_COLORS[7]);
+        assert_eq!((longest.len(), too_long.len()), (32, 33));
+        for (name, is) in [("", false), ("x", true), ("7", true), ("-", true), (longest, true), (too_long, false)] {
+            assert_eq!(color_name(name), is, "{name:?}");
+        }
+        for name in ["Blue", "sky blue", "bl{e5}", "teal_2", "a.b"] {
+            assert!(!color_name(name), "{name:?}");
+        }
     }
 
     pub(crate) fn any_op() -> impl Strategy<Value = Try> {
         let i = any::<prop::sample::Index>;
         prop_oneof![
             1 => (i(), 0i64..120, 1i64..30, any::<bool>()).prop_map(|(t, at, n, ripple)| Try::Add { t, at, n, ripple }),
-            3 => (i(), i(), -20i64..20, 0u8..10, 0i64..150).prop_map(|(t, c, delta, which, at)| Try::OnClip { t, c, delta, which, at }),
+            3 => (i(), i(), -20i64..20, 0u8..11, 0i64..150).prop_map(|(t, c, delta, which, at)| Try::OnClip { t, c, delta, which, at }),
             1 => (0i64..100).prop_map(|at| Try::Marker { at }),
+            1 => (i(), i(), 0u8..8).prop_map(|(t, to, which)| Try::Track { t, to, which }),
         ]
     }
 
@@ -1051,10 +1400,28 @@ pub(crate) mod tests {
                             rotation: (at % 7) as f64 * 15.0,
                         },
                     },
+                    10 => Op::Shift { clip, delta },
                     _ => Op::Move { clip, to: clip.track, at },
                 })
             }
             Try::Marker { at } => Some(Op::AddMarker { at, note: "m".into() }),
+            Try::Track { t, to, which } => {
+                let tracks: Vec<TrackRef> = e.tracks().collect();
+                if tracks.is_empty() {
+                    return None;
+                }
+                let track = tracks[t.index(tracks.len())];
+                let count = e.track_count(track.kind);
+                Some(match which {
+                    // Now and then to where it is, or past the top: refused.
+                    0..=2 => Op::MoveTrack { track, to: to.index(count + 1) },
+                    3 => Op::RenameTrack { track, name: TRACK_NAMES[to.index(TRACK_NAMES.len())].into() },
+                    4 => Op::SetTrackColor { track, color: Some(TRACK_COLORS[to.index(TRACK_COLORS.len())].into()) },
+                    5 => Op::SetTrackColor { track, color: None },
+                    6 => Op::RemoveTrack { track },
+                    _ => Op::AddTrack { kind: track.kind, name: format!("N{}", to.index(4)) },
+                })
+            }
         }
     }
 }

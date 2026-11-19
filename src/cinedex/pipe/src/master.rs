@@ -274,7 +274,7 @@ mod tests {
     fn edit(tracks: Vec<Vec<VideoClip<Source>>>) -> WorkingEdit {
         let mut edit = WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
         for (i, clips) in tracks.into_iter().enumerate() {
-            edit.video.push(Track { name: format!("V{}", i + 1), clips });
+            edit.video.push(Track { name: format!("V{}", i + 1), clips, color: None });
         }
         edit
     }

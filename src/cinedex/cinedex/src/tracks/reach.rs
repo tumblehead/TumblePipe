@@ -47,6 +47,9 @@ pub enum Stop {
     Footage,
     /// A clip would be left with no frame.
     Length,
+    /// The clip before it on its track (or frame 0) is in the way of a
+    /// push.
+    Clip,
 }
 
 /// A clip as a drag sees it.
@@ -102,6 +105,8 @@ pub fn reach(part: Part, clip: Span, before: Option<Span>, after: Option<Span>, 
     };
     let (low, high) = match part {
         Part::Body | Part::FadeIn | Part::FadeOut => (None, None),
+        // A push takes what follows along: only what is before is in the way.
+        Part::Push => (Some((before.map_or(0, |b| b.end()) - clip.at, Stop::Clip)), None),
         Part::Head => (clip.room.map(|r| footage(-r.head)), Some(length(clip.duration - 1))),
         Part::Tail => (Some(length(-(clip.duration - 1))), clip.room.map(|r| footage(r.tail))),
         // Dragging right shows earlier source frames.
@@ -180,7 +185,7 @@ mod tests {
                 clip
             })
             .collect();
-        edit.video.push(Track { name: "V1".into(), clips });
+        edit.video.push(Track { name: "V1".into(), clips, color: None });
         edit
     }
 

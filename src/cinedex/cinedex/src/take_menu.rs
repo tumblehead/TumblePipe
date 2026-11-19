@@ -40,8 +40,25 @@ pub fn rule(picked: Option<&Take>, pin: bool) -> Rule {
     }
 }
 
-/// The mark on the row of what is shown.
-const SHOWN: &str = "  (shown)";
+/// The mark before the row of what is shown: the tick the menu bar puts
+/// before its current row (View > Show). Up to 1.112.0 it was a "(shown)"
+/// after the label.
+const SHOWN: &str = "\u{2713} ";
+
+/// `label` as a menu row: ticked when it is the one shown.
+fn marked_row(label: &str, shown: bool) -> String {
+    if shown { format!("{SHOWN}{label}") } else { label.to_owned() }
+}
+
+/// Whether a row's label is ticked, and the label without the tick: what
+/// the tests and an agent listing read a row by.
+#[cfg(test)]
+pub fn unmarked(label: &str) -> (bool, &str) {
+    match label.strip_prefix(SHOWN) {
+        Some(plain) => (true, plain),
+        None => (false, label),
+    }
+}
 
 /// What a Version row adds after the version: a Frame List render's (#84)
 /// or a check render's (Farm Submit's Step), neither ever published, each
@@ -61,7 +78,6 @@ pub fn submenus(takes: &[Take], shown: usize, of_kind: impl Fn(Kind) -> Option<u
     let Some(current) = takes.get(shown) else {
         return Vec::new();
     };
-    let mark = |yes: bool| if yes { SHOWN } else { "" };
 
     let mut kinds: Vec<Kind> = Vec::new();
     for take in takes {
@@ -73,7 +89,7 @@ pub fn submenus(takes: &[Take], shown: usize, of_kind: impl Fn(Kind) -> Option<u
         .into_iter()
         .filter_map(|kind| {
             let target = if kind == current.kind() { Some(shown) } else { of_kind(kind) }?;
-            Some((target, format!("{}{}", kind_word(kind), mark(kind == current.kind()))))
+            Some((target, marked_row(kind_word(kind), kind == current.kind())))
         })
         .collect();
 
@@ -94,7 +110,7 @@ pub fn submenus(takes: &[Take], shown: usize, of_kind: impl Fn(Kind) -> Option<u
                 Some(layer) if layers > 1 => format!("{} ({layer})", s.1),
                 _ => s.1.to_owned(),
             };
-            (newest, format!("{name}{}", mark(s == current.stream())))
+            (newest, marked_row(&name, s == current.stream()))
         })
         .collect();
 
@@ -102,7 +118,7 @@ pub fn submenus(takes: &[Take], shown: usize, of_kind: impl Fn(Kind) -> Option<u
     let versions = (0..takes.len())
         .rev()
         .filter(|&t| takes[t].stream() == current.stream())
-        .map(|t| (t, format!("{}{}{}", takes[t].version, version_note(&takes[t]), mark(t == shown))))
+        .map(|t| (t, marked_row(&format!("{}{}", takes[t].version, version_note(&takes[t])), t == shown)))
         .collect();
 
     vec![
@@ -157,8 +173,7 @@ pub fn layer_submenu(takes: &[Take], shown: usize, rule: &Rule) -> Option<(Strin
     };
     let mut rows: Vec<LayerRow> = vec![(None, "Best available".to_string())];
     for layer in &offered {
-        let mark = if current.layer() == Some(layer) { SHOWN } else { "" };
-        rows.push((Some((*layer).to_string()), format!("{layer}{mark}")));
+        rows.push((Some((*layer).to_string()), marked_row(layer, current.layer() == Some(layer))));
     }
     if let Some(chosen) = rule.layer.as_deref().filter(|c| !offered.contains(c)) {
         rows.push((Some(chosen.to_string()), format!("{chosen}{NOT_READY}")));
@@ -192,9 +207,10 @@ pub fn layer_note(takes: &[Take], shown: usize, rule: &Rule) -> Option<String> {
     Some(note)
 }
 
-/// What a take key steps through (#47): the shown stream's versions (Up /
-/// Down), the departments of the shown kind (Ctrl+Up / Down), or playblast
-/// and render (Shift+Up / Down), the keys the old playlist player had.
+/// What a take key steps through (#47): the shown stream's versions (Page
+/// Up / Page Down), the departments of the shown kind (with Ctrl), or
+/// playblast and render (with Shift). Up to 1.113.0 these were the Up and
+/// Down arrows, as in the old playlist player; Up plays now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TakeAxis {
     Version,
@@ -303,9 +319,9 @@ mod tests {
         assert_eq!(
             submenus(&takes, 1, last_of(&takes)),
             vec![
-                g("Source: Render", vec![t(2, "Playblast"), t(1, "Render  (shown)")], false),
-                g("Department: light", vec![t(5, "light (default)  (shown)"), t(3, "light (slapcomp)"), t(4, "comp")], false),
-                g("Version: v0003", vec![t(5, "v0004"), t(1, "v0003  (shown)")], true),
+                g("Source: Render", vec![t(2, "Playblast"), t(1, "\u{2713} Render")], false),
+                g("Department: light", vec![t(5, "\u{2713} light (default)"), t(3, "light (slapcomp)"), t(4, "comp")], false),
+                g("Version: v0003", vec![t(5, "v0004"), t(1, "\u{2713} v0003")], true),
             ]
         );
     }
@@ -325,7 +341,7 @@ mod tests {
         let (label, rows) = layer_submenu(&takes, 1, &best).unwrap();
         assert_eq!(label, "Layer: best available");
         let labels: Vec<&str> = rows.iter().map(|r| r.1.as_str()).collect();
-        assert_eq!(labels, ["Best available", "chars  (shown)", "env", "fx"]);
+        assert_eq!(labels, ["Best available", "\u{2713} chars", "env", "fx"]);
         let waiting = with_layer(&best, Some("default".into()));
         assert_eq!(layer_note(&takes, 1, &waiting).as_deref(), Some("chars (+2) · default not ready"));
         let (label, rows) = layer_submenu(&takes, 1, &waiting).unwrap();
@@ -344,7 +360,52 @@ mod tests {
     }
 
     fn marked(rows: &[(usize, String)]) -> Vec<usize> {
-        rows.iter().filter(|(_, label)| label.ends_with(SHOWN)).map(|&(t, _)| t).collect()
+        rows.iter().filter(|(_, label)| unmarked(label).0).map(|&(t, _)| t).collect()
+    }
+
+    /// A row's words, as an oracle writes them: the plain label, with no
+    /// mark of any kind in it.
+    fn plain(take: &Take, streams_of_department: usize, column: usize) -> String {
+        match column {
+            0 => kind_word(take.kind()).to_owned(),
+            1 => match take.layer() {
+                Some(layer) if streams_of_department > 1 => format!("{} ({layer})", take.department),
+                _ => take.department.clone(),
+            },
+            _ => take.version.clone(),
+        }
+    }
+
+    proptest! {
+        /// The mark is the tick before the label, as the menu bar ticks its
+        /// current row, and nothing else: no row says "(shown)" any more,
+        /// and a row without its tick is exactly the plain label of what it
+        /// goes to, so a test or an agent reads a row by `unmarked`.
+        #[test]
+        fn the_shown_row_is_ticked_and_no_row_says_shown(takes in prop::collection::vec(arb_take(), 1..30), at in any::<prop::sample::Index>()) {
+            let shown = at.index(takes.len());
+            let menu = submenus(&takes, shown, last_of(&takes));
+            for (column, submenu) in menu.iter().enumerate() {
+                for (target, label) in &submenu.rows {
+                    prop_assert!(!label.contains("(shown)") && !label.ends_with(' '), "{:?}", label);
+                    let (ticked, words) = unmarked(label);
+                    prop_assert_eq!(ticked, label.starts_with('\u{2713}'));
+                    prop_assert!(!words.contains('\u{2713}'), "{:?} is ticked twice", label);
+                    let same_department = takes.iter().filter(|t| t.kind() == takes[shown].kind() && t.department == takes[*target].department)
+                        .map(Take::stream).collect::<std::collections::HashSet<_>>().len();
+                    prop_assert_eq!(words, plain(&takes[*target], same_department, column));
+                    let is_shown = match column {
+                        0 => takes[*target].kind() == takes[shown].kind(),
+                        1 => takes[*target].stream() == takes[shown].stream(),
+                        _ => *target == shown,
+                    };
+                    prop_assert_eq!(ticked, is_shown, "{:?}", label);
+                }
+            }
+            prop_assert_eq!(marked_row("light", true), "\u{2713} light");
+            prop_assert_eq!(marked_row("light", false), "light");
+            prop_assert_eq!(unmarked("light  (shown)"), (false, "light  (shown)"));
+        }
     }
 
     proptest! {
@@ -445,7 +506,11 @@ mod tests {
                     prop_assert_eq!(&rows[0], &(None, "Best available".to_string()));
                     let real: Vec<&str> = rows[1..].iter().filter(|r| !r.1.ends_with(NOT_READY)).map(|r| r.0.as_deref().unwrap()).collect();
                     prop_assert_eq!(&real, &offered);
-                    let marked: Vec<&str> = rows.iter().filter(|r| r.1.ends_with(SHOWN)).map(|r| r.0.as_deref().unwrap()).collect();
+                    let marked: Vec<&str> = rows.iter().filter(|r| unmarked(&r.1).0).map(|r| r.0.as_deref().unwrap()).collect();
+                    for (layer, label) in &rows[1..] {
+                        let words = unmarked(label).1;
+                        prop_assert_eq!(words.strip_suffix(NOT_READY).unwrap_or(words), layer.as_deref().unwrap(), "{:?}", label);
+                    }
                     prop_assert_eq!(marked, takes[shown].layer().filter(|l| offered.contains(l)).into_iter().collect::<Vec<_>>());
                     let not_ready: Vec<&str> = rows.iter().filter(|r| r.1.ends_with(NOT_READY)).map(|r| r.0.as_deref().unwrap()).collect();
                     let chosen_missing = rule.layer.as_deref().filter(|c| !offered.contains(c));

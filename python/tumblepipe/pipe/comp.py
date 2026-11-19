@@ -392,6 +392,9 @@ class Resolved:
     department: str
     version: str
     aovs: dict
+    # The version's step when it is a check render (:func:`check_step_of`):
+    # only ever a version picked by hand, never ``latest``.
+    check_step: Optional[int] = None
 
     @property
     def fields(self) -> list[str]:
@@ -405,7 +408,9 @@ class Resolved:
 
     @property
     def label(self) -> str:
-        return f'{self.department} {self.version}, {len(self.fields)} AOVs'
+        version = self.version if self.check_step is None else \
+            check_version_label(self.version, self.check_step)
+        return f'{self.department} {version}, {len(self.fields)} AOVs'
 
 
 def _complete_versions(render, channel: str) -> list[str]:
@@ -422,6 +427,71 @@ def _complete_versions(render, channel: str) -> list[str]:
 def list_versions(renders: Mapping, department: str, channel: str) -> list[str]:
     """The complete versions of ``channel`` a department has, newest first."""
     return _complete_versions(renders.get(department), channel)
+
+
+def check_step_of(layer) -> Optional[int]:
+    """The step of ``layer`` when it is a check render a comp can read by
+    hand: not published (Farm Submit's **Step**), and every frame it
+    records on its step on disk. None for anything else.
+
+    A check render is never a *complete* version (:func:`list_versions`),
+    so ``latest`` never reads it; an import pinned to it by hand does, and
+    holds each rendered frame over the gaps (``pipe.hold_frames``).
+    """
+    is_published = getattr(layer, 'is_published', None)
+    if is_published is None or is_published(): return None
+    frame_range = layer.get_frame_range()
+    if frame_range is None or not layer.is_complete(frame_range): return None
+    return frame_range.step_size
+
+
+def list_check_versions(renders: Mapping, department: str, channel: str) -> list[tuple[str, int]]:
+    """The check renders of ``channel`` a department has that a comp can
+    read by hand, newest first: ``(version, step)``."""
+    render = renders.get(department)
+    if render is None or channel not in render.layers: return []
+    layers = render.layers[channel]
+    found = []
+    for version_name in sorted(layers, key=naming.get_version_code, reverse=True):
+        step = check_step_of(layers[version_name])
+        if step is not None:
+            found.append((version_name, step))
+    return found
+
+
+def check_version_label(version: str, step: int) -> str:
+    """A check render in the Version menu: ``v0014 (check, every 5th)``."""
+    from tumblepipe.pipe.hold_frames import _ordinal
+    return f'{version} (check, every {_ordinal(step)})' if step > 1 else f'{version} (check)'
+
+
+def version_items(complete: Iterable[str], checks: Iterable[tuple[str, int]]) -> list[tuple[str, str]]:
+    """The versions an import's Version menu offers under ``latest``, as
+    ``(token, label)``, newest first: the complete ones by name, the check
+    renders labelled (:func:`check_version_label`)."""
+    labels = {version: version for version in complete}
+    for version, step in checks:
+        labels.setdefault(version, check_version_label(version, step))
+    return [
+        (version, labels[version])
+        for version in sorted(labels, key=naming.get_version_code, reverse=True)
+    ]
+
+
+def check_render_refusal(reads: Iterable[Resolved]) -> Optional[str]:
+    """Why a comp reading ``reads`` is not sent to the farm, None when it
+    is: a check render has gaps, and a comp of it (its frames held) would
+    be published as the shot's comp. It is for looking at in the session."""
+    checks = [read for read in reads if read.check_step is not None]
+    if not checks: return None
+    named = ', '.join(
+        f'{read.channel}: {check_version_label(f"{read.department} {read.version}", read.check_step)}'
+        for read in checks
+    )
+    return (
+        f'reads a check render ({named}); a check render is not comped on '
+        'the farm: pick a published version'
+    )
 
 
 @dataclass(frozen=True)
@@ -534,15 +604,20 @@ def resolve_render(
         candidates = _fresh_candidates(renders, candidates, channel)
     for candidate in candidates:
         versions = list_versions(renders, candidate, channel)
+        check_step = None
         if version == LATEST:
             if not versions: continue
             version_name = versions[0]
         else:
             if version not in versions:
-                raise CompError(
-                    f'{candidate} {version} of channel "{channel}" is not a '
-                    'complete render'
-                )
+                # Picked by hand, a check render is read too (its frames
+                # held over its gaps); latest never is.
+                check_step = dict(list_check_versions(renders, candidate, channel)).get(version)
+                if check_step is None:
+                    raise CompError(
+                        f'{candidate} {version} of channel "{channel}" is not a '
+                        'complete render'
+                    )
             version_name = version
         layer = renders[candidate].layers[channel][version_name]
         return Resolved(
@@ -553,6 +628,7 @@ def resolve_render(
                 label: aov for label, aov in layer.aovs.items()
                 if aov_included(label)
             }),
+            check_step = check_step,
         )
     where = ' or '.join(reversed(candidates)) or 'any render department'
     raise NotRendered(f'channel "{channel}" has no complete render in {where} yet')

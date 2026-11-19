@@ -1923,16 +1923,18 @@ _WINDOW: ManagerWindow | None = None
 def show_manager(
     parent: QWidget | None = None, source: str | None = None, select: str = '',
     ) -> ManagerWindow:
-    """Show the Farm Manager, raising the open one instead of opening a
-    second; with ``select``, that job selected (:meth:`ManagerWindow.select_job`)."""
+    """Show the Farm Manager, bringing the open one to the front instead of
+    opening a second (restored when it was minimised:
+    ``util.window_front``); with ``select``, that job selected
+    (:meth:`ManagerWindow.select_job`)."""
+    from tumblepipe.util.window_front import bring_to_front
+
     global _WINDOW
     if _WINDOW is not None:
         try:
             if source is not None:
                 _WINDOW.set_source(source)
-            _WINDOW.show()
-            _WINDOW.raise_()
-            _WINDOW.activateWindow()
+            bring_to_front(_WINDOW)
             if select:
                 _WINDOW.select_job(select)
             return _WINDOW
@@ -1941,8 +1943,7 @@ def show_manager(
     window = ManagerWindow(parent, source)
     window.destroyed.connect(_forget)
     _WINDOW = window
-    window.show()
-    window.raise_()
+    bring_to_front(window)
     if select:
         window.select_job(select)
     return window

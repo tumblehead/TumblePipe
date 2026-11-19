@@ -1,4 +1,4 @@
-"""The artist's farm work that finished this session: what the Jobs popover lists.
+"""The artist's farm work that finished this session: what the Farm Manager button says of it.
 
 Remy asked for "a short non-intrusive notification for when farm jobs
 finish, with a button to view or inspect the outputs". The UI convention's
@@ -7,14 +7,21 @@ of the artist's own ends, the Farm Manager quick action takes one short
 pulse and keeps a dot at its foot (accent when something finished, danger
 when something failed) until the artist looks; one line goes to Houdini's
 status bar, and to the OS when Houdini is not in front (where its taskbar button also flashes, on
-the screen Houdini is on: ``asset_browser.farm_jobs.flash_taskbar``). A click on the
-button opens a popover, "Finished since you looked", listing them.
+the screen Houdini is on: ``asset_browser.farm_jobs.flash_taskbar``).
+
+A click on the button opened a popover listing them through 1.112; Remy
+found the two summaries (the hover and the popover) in the way of the one
+thing the button is for (2026-11-18). Now a click always opens the Farm
+Manager, the hover is the one summary and names what ended since the artist
+last opened it ("Finished since you looked", :func:`hover_html`), and a
+right-click on the button lists each ended batch's main action, and a
+failed batch's written frames (:func:`menu_entries`).
 
 This module is the Qt-free half: which batches count, when one has ended,
-what its row says and which buttons it has, the order, the seen state and
+what its line says and which actions it has, the order, the seen state and
 the dot's colour. :class:`SessionWatch` keeps it from one read of the jobs
 to the next (``activity.FarmActivity`` feeds it on its daemon thread); the
-catalog turns it into the browser's popover.
+catalog turns it into the button's hover and menu.
 
 - **Whose, and which**: the jobs of the pipeline user in the current
   project (``activity.mine``), submitted since this Houdini session began
@@ -38,13 +45,13 @@ from typing import Callable, Iterable
 from tumblepipe.farm.local import queue
 from tumblepipe.farm.manager import activity, rows
 
-#: At most this many rows in the popover.
+#: At most this many ended batches are kept in view (the button's menu).
 MAX_ROWS = 10
 
 FINISHED = 'finished'
 FAILED = 'failed'
 
-#: The popover's buttons, by id.
+#: An ended batch's actions, by id.
 PREVIEW = 'preview'
 SHOW = 'show'
 PREVIEW_LABEL = 'Preview in Cinedex'
@@ -336,7 +343,7 @@ class Detail:
 
 @dataclass(frozen=True)
 class Report:
-    """One ended batch of the artist's, as the popover shows it."""
+    """One ended batch of the artist's, as the button's hover and menu show it."""
     key: str                          # the batch key
     state: str                        # FINISHED or FAILED
     title: str                        # SQ010/SH020 render
@@ -527,8 +534,8 @@ class SessionWatch:
     user's batches in the project submitted since ``since``, and returns
     the reports of the batches that ended since the last update: what the
     pulse, the status line and the OS notification announce, once per
-    batch. :meth:`reports`, :meth:`dot` and :meth:`mark_seen` serve the
-    popover. ``detail`` reads a batch's tasks and frames (:func:`read_detail`);
+    batch. :meth:`reports`, :meth:`unseen`, :meth:`dot` and :meth:`mark_seen`
+    serve the button's hover, menu and dot. ``detail`` reads a batch's tasks and frames (:func:`read_detail`);
     tests pass :func:`no_detail` or their own.
 
     Not locked: one thread updates, others only read attributes that are
@@ -580,7 +587,7 @@ class SessionWatch:
         return fresh
 
     def reports(self) -> list[Report]:
-        """The popover's rows: failures first, then the newest, at most ten."""
+        """The ended batches: failures first, then the newest, at most ten."""
         return order(self._reports.values())
 
     def report(self, key: str) -> Report | None:
@@ -590,7 +597,8 @@ class SessionWatch:
         return dot(self._reports.values(), set(self._seen))
 
     def mark_seen(self) -> None:
-        """The popover opened: every report so far is seen."""
+        """The artist opened the Farm Manager from its button: every report
+        so far is seen."""
         self._seen = self._seen | {r.seen_key for r in self._reports.values()}
 
     def unseen(self) -> list[Report]:
@@ -609,56 +617,61 @@ class SessionWatch:
         self._seen = frozenset()
 
 
-# ── what the popover and the announcement say ─────────────
+# ── what the hover, the menu and the announcement say ─────
 
-#: The popover's words (the UI convention's "Side panels collapsed; Jobs
-#: popover" board).
-POPOVER_TITLE = 'Finished since you looked'
-POPOVER_LINK = 'Open Jobs'
-POPOVER_FOOTER = 'Your jobs from this session; failures first. Opening this marks them seen.'
-POPOVER_EMPTY = 'None of your farm jobs from this session has finished yet.'
-ICON_FINISHED = 'circle-check'
-ICON_FAILED = 'circle-x'
+#: The heading of the hover's ended batches.
+HOVER_TITLE = 'Finished since you looked'
+#: At most this many ended batches are named in the hover, then "and N more".
+HOVER_NAMED = 3
 
 
-@dataclass(frozen=True)
-class RowSpec:
-    """One popover row, in plain values (the catalog builds TumbleTrove's
-    ``PopoverRow`` from it)."""
-    id: str
-    title: str
-    icon: str
-    tone: str                                   # 'accent' or 'danger'
-    caption: str
-    line: str
-    buttons: tuple[tuple[str, str, bool], ...]  # (id, label, primary)
+def hover_rows(unseen: Iterable[Report], limit: int = HOVER_NAMED) -> tuple[list[Report], int]:
+    """The ended batches the hover names, and how many more it only counts:
+    the unseen ones, failures first, then the newest (:func:`order`)."""
+    ordered = order(unseen, limit=1 << 30)
+    named = ordered[:max(0, limit)]
+    return named, len(ordered) - len(named)
 
 
-@dataclass(frozen=True)
-class PopoverSpec:
-    title: str
-    link_label: str
-    rows: tuple[RowSpec, ...]
-    empty_text: str
-    footer: str
+def hover_html(
+    unseen: Iterable[Report], *, limit: int = HOVER_NAMED,
+    dim: str = '#a0a0a0', warn: str = '#f0a030',
+    ) -> str:
+    """The part of the Farm Manager button's hover that says what ended
+    since the artist last opened the Farm Manager from the button: a
+    heading, then each batch's status line (a failed one in ``warn``), then
+    ``and N more``. '' when nothing is unseen: the hover is then the
+    summary alone."""
+    import html
+    named, more = hover_rows(unseen, limit)
+    if not named:
+        return ''
+    lines = [f"<div style='color:{dim}; margin-top:6px;'>{HOVER_TITLE}</div>"]
+    for report in named:
+        text = html.escape(status_line(report))
+        style = f" style='color:{warn};'" if report.failed else ''
+        lines.append(f'<div{style}>{text}</div>')
+    if more:
+        lines.append(f"<div style='color:{dim};'>and {more} more</div>")
+    return ''.join(lines)
 
 
-def row_spec(report: Report) -> RowSpec:
-    return RowSpec(
-        id=report.key, title=report.title,
-        icon=ICON_FAILED if report.failed else ICON_FINISHED,
-        tone='danger' if report.failed else 'accent',
-        caption=caption(report), line=report.line, buttons=tuple(buttons(report)),
-    )
+def menu_entries(reports: Iterable[Report], limit: int = MAX_ROWS) -> list[tuple[str, str, str]]:
+    """The Farm Manager button's right-click menu: per ended batch
+    (already :func:`order`-ed; at most ``limit`` batches) an entry that
+    runs its main action (the first of :func:`buttons`), as ``(label,
+    report key, button id)``. The label is ``<title>: <the action>``.
 
-
-def popover_spec(reports: Iterable[Report]) -> PopoverSpec:
-    """The Jobs popover for ``reports`` (already :func:`order`-ed)."""
-    return PopoverSpec(
-        title=POPOVER_TITLE, link_label=POPOVER_LINK,
-        rows=tuple(row_spec(r) for r in reports),
-        empty_text=POPOVER_EMPTY, footer=POPOVER_FOOTER,
-    )
+    A failed batch that wrote frames has a second entry after it, *Preview
+    N Frames in Cinedex* (its second button): with the popover gone
+    (1.113.0) the menu is the only way from the button to the frames a
+    failed render did write."""
+    entries = []
+    for report in list(reports)[:max(0, limit)]:
+        for button_id, label, primary in buttons(report):
+            if primary or report.failed:
+                entries.append((f'{report.title}: {label}', report.key, button_id))
+    return entries
 
 
 @dataclass(frozen=True)

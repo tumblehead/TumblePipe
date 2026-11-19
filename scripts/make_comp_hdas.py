@@ -191,8 +191,13 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             label   "Version"
             type    string
             default {{ "latest" }}
-            help    "latest: the newest complete version. Pinning a version needs a concrete department."
-            {_menu('import_render', 'ImportRender', 'list_version_names')}
+            help    "latest: the newest complete version. Pinning a version needs a concrete department. A check render (Farm Submit's Step) is listed as v#### (check, every Nth): it is read only when picked here, never by latest."
+            menu {{
+                [ "from tumblepipe.pipe.houdini.cops import import_render" ]
+                [ "" ]
+                [ "return import_render.ImportRender(hou.pwd()).version_menu()" ]
+                language python
+            }}
             {_callback('import_render', 'changed')}
         }}
         parm {{
@@ -216,6 +221,25 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             disablewhen "{{ time_offset_mode != manual }}"
             range   {{ -1000 1000 }}
             {_callback('import_render', 'changed')}
+        }}
+        parm {{
+            name    "missing_frames"
+            label   "Missing Frames"
+            type    string
+            default {{ "auto" }}
+            help    "What a frame the render does not have reads as. Automatic: empty (black), as ever, unless the version is a check render (every Nth frame), which holds. Empty: black. Hold Nearest Frame: the nearest rendered frame, the earlier one when two are as near; before the render's first frame its first, after its last its last. The line under it says which is in use."
+            menu {{
+                "auto"      "Automatic"
+                "empty"     "Empty (Black)"
+                "hold"      "Hold Nearest Frame"
+            }}
+            {_callback('import_render', 'changed')}
+        }}
+        parm {{
+            name    "missing_frames_label"
+            label   " "
+            type    label
+            default {{ "" }}
         }}
         parm {{
             name    "applied_offset"
@@ -251,6 +275,14 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             type    string
             invisible
             default {{ "" }}
+        }}
+        parm {{
+            name    "held"
+            label   "Held"
+            type    string
+            invisible
+            default {{ "" }}
+            help    "What the File COPs hold over missing frames, per channel (first, last, step); kept by the node."
         }}
         parm {{
             name    "pins"

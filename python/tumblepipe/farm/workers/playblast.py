@@ -4,6 +4,7 @@ daily."""
 
 from tempfile import TemporaryDirectory
 from pathlib import Path
+import threading
 import shutil
 import json
 import sys
@@ -22,7 +23,9 @@ from tumblepipe.apps.viewport_renderer import VIEWPORT_DELEGATE, viewport_args, 
 from tumblepipe.pipe import review_events
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import get_base_env, print_env, job_data_dir
-from tumblepipe.farm.frames import frame_file, HOUDINI_FRAME_TOKEN
+from tumblepipe.farm.frames import (
+    frame_file, playblast_frames_dir, HOUDINI_FRAME_TOKEN, PLAYBLAST_FRAMES_INFO,
+)
 from tumblepipe.farm.specs import playblast as playblast_spec
 from tumblepipe.farm.worker import ensure_dir, error, headline
 from tumblepipe.pipe.paths.review import release_playblast
@@ -135,6 +138,104 @@ def render_problem(
     )
 
 
+# ── the frames, while it renders ──────────────────────────
+#
+# husk renders into this worker's own temp folder, so until the movie is
+# copied out nobody else can see how far the playblast is. FrameMirror
+# copies each finished frame beside the movie to come
+# (frames.playblast_frames_dir), where the Farm Manager's Preview in Cinedex
+# and Cinedex's timeline read them. It is a courtesy: nothing it fails at
+# fails the playblast, and the movie is still encoded from husk's own frames.
+
+# How often the rendered frames are looked for, in seconds.
+MIRROR_SECONDS = 2.0
+
+
+def finished_frames(rendered, done: bool) -> list[int]:
+    """The frames of ``rendered`` (those with a file on disk) that are
+    whole. husk writes a range in order, one frame at a time, so every
+    frame but the newest is; the newest is too once husk has ended."""
+    ordered = sorted(set(rendered))
+    return ordered if done else ordered[:-1]
+
+
+def mirror_once(
+    jpg_path: Path, render_range: BlockRange, frames_dir: Path,
+    mirrored: set, done: bool,
+) -> None:
+    """Copy the finished frames of ``render_range`` not in ``mirrored`` yet
+    from ``jpg_path`` (with ``HOUDINI_FRAME_TOKEN``) into ``frames_dir``,
+    and note them in ``mirrored``. A frame appears under its name whole: it
+    is copied as ``<name>.part`` and renamed."""
+    rendered = [
+        frame for frame in render_range
+        if frame_file(jpg_path, frame, HOUDINI_FRAME_TOKEN).exists()
+    ]
+    for frame in finished_frames(rendered, done):
+        if frame in mirrored:
+            continue
+        source = frame_file(jpg_path, frame, HOUDINI_FRAME_TOKEN)
+        target = frames_dir / source.name
+        partial = target.with_name(target.name + '.part')
+        shutil.copyfile(source, partial)
+        os.replace(partial, target)
+        mirrored.add(frame)
+
+
+class FrameMirror:
+    """While open, the frames husk finishes are copied to ``frames_dir``,
+    which says what is rendered in its ``frames.json``."""
+
+    def __init__(self, jpg_path: Path, render_range: BlockRange, fps: int,
+                 frames_dir: Path, seconds: float = MIRROR_SECONDS):
+        self.jpg_path = jpg_path
+        self.render_range = render_range
+        self.fps = fps
+        self.frames_dir = frames_dir
+        self.seconds = seconds
+        self.mirrored: set[int] = set()
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _run(self) -> None:
+        try:
+            while not self._stop.wait(self.seconds):
+                mirror_once(self.jpg_path, self.render_range, self.frames_dir,
+                            self.mirrored, done=False)
+        except OSError as problem:
+            print(f'Preview frames stopped (the playblast goes on): {problem}')
+
+    def __enter__(self):
+        try:
+            self.frames_dir.mkdir(parents=True, exist_ok=True)
+            (self.frames_dir / PLAYBLAST_FRAMES_INFO).write_text(json.dumps(dict(
+                first_frame=self.render_range.first_frame,
+                last_frame=self.render_range.last_frame,
+                step_size=self.render_range.step_size,
+                fps=self.fps,
+            )), encoding='utf-8')
+        except OSError as problem:
+            print(f'No preview frames (the playblast goes on): {problem}')
+            return self
+        self._thread = threading.Thread(target=self._run, name='playblast-frames', daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, *_exc) -> None:
+        self._stop.set()
+        if self._thread is None:
+            return
+        self._thread.join()
+        if exc_type is not None:
+            # husk died: its newest frame may be half written.
+            return
+        try:
+            mirror_once(self.jpg_path, self.render_range, self.frames_dir,
+                        self.mirrored, done=True)
+        except OSError:
+            pass
+
+
 def main(
     render_range: BlockRange,
     fps: int,
@@ -142,6 +243,25 @@ def main(
     look: dict,
     input_path: Path,
     output_paths: list[Path]
+    ) -> int:
+    """Playblast ``render_range`` into ``output_paths`` (the versioned
+    movie first). The preview frames beside that movie go when it ends,
+    whether the movie was written or not."""
+    frames_dir = playblast_frames_dir(output_paths[0])
+    try:
+        return _playblast(render_range, fps, resolution, look, input_path, output_paths, frames_dir)
+    finally:
+        shutil.rmtree(frames_dir, ignore_errors=True)
+
+
+def _playblast(
+    render_range: BlockRange,
+    fps: int,
+    resolution: tuple[int, int],
+    look: dict,
+    input_path: Path,
+    output_paths: list[Path],
+    frames_dir: Path,
     ) -> int:
 
     # XPU reads the OCIO config just like the render worker does.
@@ -216,22 +336,23 @@ def main(
         # both.
         husk_returncode = 0
         try:
-            husk.run(
-                input_path,
-                [
-                    '--resolver-context', path_str(input_path),
-                    *renderer_args,
-                    '--verbose', 'a2',
-                    '--make-output-path',
-                    '--no-mplay',
-                    '--res', str(width), str(height),
-                    '--frame', str(render_range.first_frame),
-                    '--frame-count', str(len(render_range)),
-                    '--frame-inc', str(render_range.step_size),
-                    '--output', path_str(temp_jpg_path)
-                ],
-                env=env
-            )
+            with FrameMirror(temp_jpg_path, render_range, fps, frames_dir):
+                husk.run(
+                    input_path,
+                    [
+                        '--resolver-context', path_str(input_path),
+                        *renderer_args,
+                        '--verbose', 'a2',
+                        '--make-output-path',
+                        '--no-mplay',
+                        '--res', str(width), str(height),
+                        '--frame', str(render_range.first_frame),
+                        '--frame-count', str(len(render_range)),
+                        '--frame-inc', str(render_range.step_size),
+                        '--output', path_str(temp_jpg_path)
+                    ],
+                    env=env
+                )
         except CommandFailed as failed:
             husk_returncode = failed.returncode
         problem = render_problem(husk_returncode, render_range, temp_jpg_path)

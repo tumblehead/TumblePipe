@@ -66,15 +66,48 @@ render (a missing frame reads as empty rather than failing, so pre-rolls
 cook), or the render's beauty is empty. Open the frame from **Open
 Location** in MPlay to tell which.
 
+#### Reading a check render
+
+A render made with Farm Submit's **Step**
+([stepped renders](../asset-browser/submit-jobs.md#stepped-renders)) has
+only every Nth frame, and is never the shot's render: `latest` and `best`
+skip it. To look at one in a comp, set a concrete **Department** and pick
+it in **Version**, where it is listed as `v0014 (check, every 5th)`;
+**Reads** then says `render v0014 (check, every 5th), 10 AOVs`.
+
+Its gaps would be black, so on **Missing Frames ▸ Automatic** the node
+holds each rendered frame over them: every scene frame shows the nearest
+rendered frame, and when two are as near (frame 1003 of a render on 1001
+and 1005) the earlier one. Every output and cable holds the same frame.
+Choose **Empty (Black)** to see the gaps instead. **Hold Nearest Frame**
+also works on a published version, where the only frames it lacks are
+those outside its range (a pre-roll, a comp longer than the render): they
+then show its first or last frame instead of black.
+
+- Which frames a version has comes from what it recorded when it was
+  submitted (its first and last frame and its step), worked into each
+  read's file name as plain arithmetic. Nothing lists a folder when a frame
+  cooks, so holding costs nothing on a network share.
+- With a **Time Offset**, the frame held is the nearest to the scene's
+  frame less the offset.
+- All channels read `latest` only, so they never read a check render;
+  **Hold Nearest Frame** still holds each channel's first and last frame.
+- **A comp that reads a check render is not sent to the farm.** Submit
+  (and a re-comp from Farm Submit) stops with `reads a check render
+  (default: render v0014 (check, every 5th)); a check render is not comped
+  on the farm: pick a published version`: a comp of held frames would
+  otherwise be published as the shot's comp.
+
 | Label | Default | What it does |
 |---|---|---|
 | Shot | `from_context` | Shots only (*Select Shot*); the label under it shows what resolved. In a Multi's workfile the template pins it to the member |
 | Channel | `default` | A menu of the shot's channels, then **All channels** (`*`): every channel in this one node (below) |
 | Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render), unless the denoise was made from an older render than the newest one (a render with Denoise off); or one department |
-| Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department) |
+| Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department). A [check render](#reading-a-check-render) is listed too, as `v0014 (check, every 5th)`: it is read only when you pick it, never by `latest` |
 | Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did; for All channels, which channel is on which output (also under the node, its comment) |
 | Time Offset | From Multi | Moves the shot's renders to where the shot sits in this scene: frame F reads the render's frame F minus the offset. **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** keeps the render on its own frames; **Manual** uses **Offset Frames**. The farm always comps each shot on its own frames, whatever this says |
 | Offset Frames | `0` | Manual only |
+| Missing Frames | Automatic | What a frame the render does not have reads as. **Automatic**: empty (black), as ever, unless the version is a check render, which holds. **Empty (Black)**: always empty. **Hold Nearest Frame**: the nearest rendered frame, the earlier one when two are as near; a frame before the render's first shows its first, one after its last its last. The line under it says what is in use and why (`Automatic: holding the nearest rendered frame (a check render, every 5th frame)`). See [Reading a check render](#reading-a-check-render) |
 | Scene › Department, Version | `from_context`, `latest` | The staged shot **geometry** and **camera** read, through a [`th::import_scene`](#thimport_scene-cop) inside the node; its shot and channel are this node's (`default` for All channels) |
 | Scene › Reads | | What the scene imported, or why **geometry** / **camera** are still empty |
 | Scene › Camera, Primitives, Purpose, Time Sample, Static Frame | `/cameras/render_camera`, `/*`, Render, Animated | As on `th::import_scene` |

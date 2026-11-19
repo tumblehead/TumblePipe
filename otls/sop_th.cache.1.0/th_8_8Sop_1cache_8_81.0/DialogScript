@@ -294,8 +294,18 @@
             name    "load"
             label   "Load"
             type    button
+            joinnext
             default { "0" }
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.cache as th_cache; th_cache.load(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "open_location"
+            label   "Open Location"
+            type    button
+            default { "0" }
+            help    "Show the folder of the picked Version in the file browser; with no Version picked, the folder of the cache (its versions)."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cache as th_cache; th_cache.open_location(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }

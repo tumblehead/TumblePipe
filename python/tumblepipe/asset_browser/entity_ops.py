@@ -793,9 +793,9 @@ class EntityOps:
         if window is not None:
             try:
                 window.focus(kind, group, name)
-                window.show()
-                window.raise_()
-                window.activateWindow()
+                # Restored when it was minimised (util.window_front).
+                from tumblepipe.util.window_front import bring_to_front
+                bring_to_front(window)
                 return window
             except RuntimeError:
                 pass    # closed: its Qt object is gone

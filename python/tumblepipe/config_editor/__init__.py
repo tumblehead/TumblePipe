@@ -54,9 +54,9 @@ def open_database_editor(uri=None, parent=None):
 
         if uri is not None:
             w.select_entity(uri)
-        w.show()
-        w.raise_()
-        w.activateWindow()
+        # Restored when it was minimised (util.window_front).
+        from tumblepipe.util.window_front import bring_to_front
+        bring_to_front(w)
         return w
     except Exception as exc:
         report_failure("Opening the Database Editor", exc)

@@ -129,7 +129,11 @@ A changed field is prefixed `*`. Editing:
   incomplete entry (empty, or a lone `-`) keeps the old value. While one is
   open, middle-drag it to step it as in Houdini (move up or down to pick a
   step, then left or right), and Ctrl + middle-click puts back the value it
-  opened with. Booleans edit as a checkbox.
+  opened with. A number field also takes maths (`100/2`, `(3+4)*2`,
+  `+=10` for ten more than it holds): Enter works it out first; an integer
+  rounds to the nearest whole number. See
+  [Maths in number fields](submit-jobs.md#maths-in-number-fields). Booleans
+  edit as a checkbox.
 - Double-click a key to rename it; the same commit rules apply, and a key
   already present on the same object is rejected.
 - Right-click a field for **Change Type** (null, boolean, integer, float,

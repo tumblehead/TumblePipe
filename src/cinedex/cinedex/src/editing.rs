@@ -146,8 +146,8 @@ pub fn of_shots(shots: &[(String, Frame, Frame)], fps: u32, resolution: [u32; 2]
             clip
         })
         .collect();
-    edit.video.push(Track { name: "V1".into(), clips });
-    edit.audio.push(Track { name: "A1".into(), clips: Vec::new() });
+    edit.video.push(Track { name: "V1".into(), clips, color: None });
+    edit.audio.push(Track { name: "A1".into(), clips: Vec::new(), color: None });
     edit
 }
 
@@ -1034,7 +1034,7 @@ mod tests {
                 track.push(VideoClip { at, duration, source_in, source: shot(names[s]), fade_in, fade_out, opacity: 1.0, transform: Default::default() });
                 at += duration;
             }
-            edit.video.push(Track { name: "V1".into(), clips: track.clone() });
+            edit.video.push(Track { name: "V1".into(), clips: track.clone(), color: None });
             let bind = |source: &Source| {
                 let Source::Shot { shot, .. } = source else { return None };
                 let s = names.iter().position(|n| shot.ends_with(n))?;
@@ -1101,7 +1101,7 @@ mod tests {
                     track.push(VideoClip { at, duration, source_in: 1001, source: shot("010"), fade_in, fade_out, opacity, transform });
                     at += duration;
                 }
-                edit.video.push(Track { name: format!("V{}", t + 1), clips: track });
+                edit.video.push(Track { name: format!("V{}", t + 1), clips: track, color: None });
             }
             prop_assert_eq!(edit.problem(), None);
             let first = list.as_ref().map_or(1001, |l| l.ranges()[0].0);

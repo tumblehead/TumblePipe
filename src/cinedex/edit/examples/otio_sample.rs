@@ -70,8 +70,9 @@ fn main() {
     let mut edit = FrozenEdit::new(24, [1920, 1080], "01:00:00:00");
     let mut end_card = clip(240, 48, 0, FrozenSource::Slug { text: "The end".into() }, 6);
     end_card.fade_out = 12;
-    edit.video.push(Track { name: "V1".into(), clips: vec![clip(0, 240, 0, animatic, 0), end_card] });
+    edit.video.push(Track { name: "V1".into(), clips: vec![clip(0, 240, 0, animatic, 0), end_card], color: None });
     edit.video.push(Track {
+        color: None,
         name: "V2".into(),
         clips: vec![
             clip(0, 24, 0, FrozenSource::Slug { text: "Sample - cut 3".into() }, 0),
@@ -79,8 +80,9 @@ fn main() {
             clip(84, 50, 1005, shot("020", "v0004"), 0),
         ],
     });
-    edit.video.push(Track { name: "V3".into(), clips: vec![clip(122, 60, 1001, render("030"), 12)] });
+    edit.video.push(Track { name: "V3".into(), clips: vec![clip(122, 60, 1001, render("030"), 12)], color: None });
     edit.audio.push(Track {
+        color: None,
         name: "A1".into(),
         clips: vec![AudioClip { at: 0, duration: 240, source_in: 0, source: music, gain_db: -3.0, fade_in: 0, fade_out: 24 }],
     });

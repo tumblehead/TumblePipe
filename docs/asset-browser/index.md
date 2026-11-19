@@ -352,8 +352,7 @@ first: favourites, collections, **Add to Multi ▸**, **Add to Root ▸**, then
 **Open Folder**, which opens the entity's folder (where its
 `description.txt` and `thumbnail.png` live). The catalog's entries follow
 ([`get_card_menu_items`](../../python/tumblepipe/asset_browser/catalog.py)),
-in sections with a line between each (TumbleTrove 0.57+; older builds show
-them as one list), and TumbleTrove ends with **Refresh Thumbnail** and
+in sections with a line between each, and TumbleTrove ends with **Refresh Thumbnail** and
 **Delete asset…** / **Delete shot…**:
 
 | Section | Item | What it does |

@@ -332,7 +332,7 @@ mod tests {
             });
             at += duration;
         }
-        Track { name: "V1".into(), clips: out }
+        Track { name: "V1".into(), clips: out, color: None }
     }
 
     fn clips() -> impl Strategy<Value = Vec<(String, i64, i64)>> {
@@ -416,7 +416,7 @@ mod tests {
             });
             at += duration;
         }
-        edit(vec![Track { name: "V1".into(), clips: out }, Track { name: "V2".into(), clips: vec![] }])
+        edit(vec![Track { name: "V1".into(), clips: out, color: None }, Track { name: "V2".into(), clips: vec![], color: None }])
     }
 
     fn cut_clips() -> impl Strategy<Value = Vec<(i64, i64, i64)>> {
@@ -574,7 +574,8 @@ mod tests {
             opacity: 1.0,
             transform: Default::default(),
         };
-        let mut edit = edit(vec![Track { name: "V1".into(), clips: vec![clip(0, "A"), clip(10, "B"), clip(20, "A"), clip(30, "C")] }]);
+        let mut edit =
+            edit(vec![Track { name: "V1".into(), clips: vec![clip(0, "A"), clip(10, "B"), clip(20, "A"), clip(30, "C")], color: None }]);
         let mut looping = Loop::over(&edit, &[(0, 2)]).unwrap();
         assert_eq!(looping.span(), (20, 30));
         // Four frames inserted at the start: both A move on, the loop with
@@ -600,7 +601,7 @@ mod tests {
             opacity: 1.0,
             transform: Default::default(),
         };
-        let mut edit = edit(vec![Track { name: "V1".into(), clips: vec![clip(0, 20, "A"), clip(20, 20, "B")] }]);
+        let mut edit = edit(vec![Track { name: "V1".into(), clips: vec![clip(0, 20, "A"), clip(20, 20, "B")], color: None }]);
         let mut looping = Loop::over(&edit, &[(0, 0), (0, 1)]).unwrap();
         (looping.head, looping.tail) = (5, 3);
         assert!(looping.follow(&edit));

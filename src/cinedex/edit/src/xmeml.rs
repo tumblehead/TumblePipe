@@ -695,6 +695,16 @@ pub fn sequence(edit: &FrozenEdit, name: &str, probe: &impl Probe, options: &Opt
     let fades =
         |tracks: &[Vec<Item>]| tracks.iter().flatten().map(|i| usize::from(i.fade_in > 0) + usize::from(i.fade_out > 0)).sum::<usize>();
     writer.summary.video_tracks = video.len();
+    // FCP7 XML has no colour for a track (and no name): said, not written.
+    for name in edit
+        .video
+        .iter()
+        .filter(|t| t.color.is_some())
+        .map(|t| &t.name)
+        .chain(edit.audio.iter().filter(|t| t.color.is_some()).map(|t| &t.name))
+    {
+        writer.summary.note(Kind::TrackColor, name);
+    }
     writer.summary.audio_tracks = audio.len();
     writer.summary.clips = video.iter().map(Vec::len).sum();
     writer.summary.audio_clips = audio.iter().map(Vec::len).sum();
@@ -1083,10 +1093,12 @@ mod tests {
         let mut second = vclip(60, 24, 1001, shot("020", exr("P:/Show/render/S/020", 1001, 1100, 1)));
         second.fade_out = 6;
         edit.video.push(Track {
+            color: None,
             name: "V1".into(),
             clips: vec![first, second, vclip(90, 10, 0, FrozenSource::Slug { text: "End <card>".into() })],
         });
         edit.audio.push(Track {
+            color: None,
             name: "A1".into(),
             clips: vec![AudioClip {
                 at: 0,
@@ -1158,6 +1170,7 @@ mod tests {
             ],
         };
         edit.video.push(Track {
+            color: None,
             name: "V1".into(),
             clips: vec![
                 vclip(0, 10, 1001, FrozenSource::Shot { shot: "entity:/shots/S/030".into(), take: None }),
@@ -1169,6 +1182,7 @@ mod tests {
             ],
         });
         edit.audio.push(Track {
+            color: None,
             name: "A1".into(),
             clips: vec![AudioClip {
                 at: 0,
@@ -1219,6 +1233,7 @@ mod tests {
         let a = "//nas/proj/S/010/v0001.mp4";
         let b = "//nas/proj/S/020/v0001.mp4";
         edit.video.push(Track {
+            color: None,
             name: "V1".into(),
             clips: vec![
                 vclip(0, 10, 1001, shot("010", Media::Movie { path: a.into() })),
@@ -1260,7 +1275,7 @@ mod tests {
         fn names_are_escaped(name in awkward(), note in awkward(), slug in awkward()) {
             let mut edit = FrozenEdit::new(24, [1920, 1080], "01:00:00:00");
             let item = FrozenSource::Media { item: name.clone(), version: version("v0001"), media: Media::Movie { path: format!("P:/m/{name}.mov") } };
-            edit.video.push(Track { name: name.clone(), clips: vec![vclip(0, 10, 0, item), vclip(10, 5, 0, FrozenSource::Slug { text: slug.clone() })] });
+            edit.video.push(Track { name: name.clone(), clips: vec![vclip(0, 10, 0, item), vclip(10, 5, 0, FrozenSource::Slug { text: slug.clone() })], color: None });
             edit.markers.push(Marker { at: 3, note: note.clone() });
             let (xml, _) = sequence(&edit, &name, &Disk::default(), &Options::default());
             let clean = |text: &str| -> String {
@@ -1350,7 +1365,7 @@ mod tests {
                             transform: Default::default(),
                         })
                         .collect();
-                    edit.video.push(Track { name: format!("V{}", i + 1), clips });
+                    edit.video.push(Track { name: format!("V{}", i + 1), clips, color: (i % 2 == 1).then(|| "teal".to_owned()) });
                 }
                 for (i, (clips, gains)) in audio.into_iter().enumerate() {
                     let clips = place(clips)
@@ -1366,7 +1381,7 @@ mod tests {
                             fade_out,
                         })
                         .collect();
-                    edit.audio.push(Track { name: format!("A{}", i + 1), clips });
+                    edit.audio.push(Track { name: format!("A{}", i + 1), clips, color: (i % 2 == 0).then(|| "plum".to_owned()) });
                 }
                 edit.markers = markers.into_iter().map(|(at, note)| Marker { at, note }).collect();
                 assert_eq!(edit.problem(), None);
@@ -1584,6 +1599,10 @@ mod tests {
             prop_assert_eq!(summary.audio_clips, read.audio.iter().map(Vec::len).sum::<usize>());
             prop_assert_eq!(summary.shot_sounds, sounds);
             prop_assert_eq!(summary.markers, edit.markers.len());
+            // A track's colour has no place in the XML: each is noted, none written.
+            let coloured = edit.video.iter().filter(|t| t.color.is_some()).count() + edit.audio.iter().filter(|t| t.color.is_some()).count();
+            prop_assert_eq!(summary.count(Kind::TrackColor), coloured);
+            prop_assert!(!xml.contains("teal") && !xml.contains("plum"));
             let fades = |tracks: &[Vec<Read>]| tracks.iter().flatten().map(|i| usize::from(i.fade_in > 0) + usize::from(i.fade_out > 0)).sum::<usize>();
             prop_assert_eq!(summary.transitions, fades(&read.video) + fades(&read.audio[..edit.audio.len()]));
             let video_clips = || edit.video.iter().flat_map(|t| &t.clips);
@@ -1665,7 +1684,7 @@ mod tests {
         fn a_movie_is_referred_to_by_its_path(folder in any_path(), file in segment()) {
             let path = format!("{folder}/{file}.mp4");
             let mut edit = FrozenEdit::new(24, [1920, 1080], "01:00:00:00");
-            edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 10, 1001, shot("010", Media::Movie { path: path.clone() }))] });
+            edit.video.push(Track { name: "V1".into(), clips: vec![vclip(0, 10, 1001, shot("010", Media::Movie { path: path.clone() }))], color: None });
             let (xml, _) = sequence(&edit, "cut", &Disk::default(), &Options::default());
             let read = read(&xml);
             prop_assert_eq!(read.video[0][0].path.as_ref(), Some(&path));

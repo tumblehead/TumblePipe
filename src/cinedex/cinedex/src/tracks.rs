@@ -32,8 +32,14 @@ use th_edit::ops::{Edge, Op};
 
 use crate::look;
 
+pub mod landing;
 mod lanes;
+mod marks;
+pub mod overview;
+pub mod picks;
 mod reach;
+pub mod tags;
+pub use landing::{Landing, Moving};
 #[cfg(test)]
 pub use lanes::ROW_MAX;
 pub use lanes::{ROW_MIN, row_height};
@@ -111,6 +117,9 @@ pub struct RowView {
     /// The spare layer: an empty row over the top video track for a track
     /// the edit has not got yet. A clip dragged onto it makes the track.
     pub spare: bool,
+    /// The colour the track is marked with, when it has one: a stripe
+    /// down the left of its name.
+    pub color: Option<Color>,
 }
 
 /// The rows as drawn, top first: video tracks top track first, then audio.
@@ -122,6 +131,9 @@ pub fn row_order(video: usize, audio: usize) -> Vec<TrackRef> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Part {
     Body,
+    /// The body with Ctrl (Cmd on macOS) held: the clip and every clip
+    /// after it on its track move as one ([`Op::Shift`]).
+    Push,
     Slip,
     Head,
     Tail,
@@ -158,6 +170,7 @@ pub fn op_for(part: Part, clip: ClipRef, view: &ClipView, dx: EditFrame, to: Opt
     }
     Some(match part {
         Part::Body => Op::Move { clip, to, at: (view.at + dx).max(0) },
+        Part::Push => Op::Shift { clip, delta: dx },
         // Dragging right moves the picture right: earlier source frames.
         Part::Slip => Op::Slip { clip, delta: -dx },
         Part::Head => Op::Trim { clip, edge: Edge::Head, delta: dx },
@@ -205,11 +218,19 @@ pub struct Tracks<Message> {
     /// Top first (see [`row_order`]).
     pub rows: Vec<RowView>,
     pub markers: Vec<EditFrame>,
-    /// Edit frames the width spans.
+    /// Edit frames the width spans, from frame `first` on.
     pub total: usize,
+    /// The edit frame at the left edge of the tracks' time: what the
+    /// timeline is scrolled to.
+    pub first: f64,
+    /// The wheel over the tracks asks for another view of them.
+    pub on_view: fn(ViewChange) -> Message,
     pub playhead: usize,
     /// Buffered frames as half-open ranges.
     pub buffered: Vec<(usize, usize)>,
+    /// Renders on their way (`rendering`): a thin strip along the bottom
+    /// of each clip waiting for one, the frames on disk lit.
+    pub rendering: Vec<crate::rendering::Strip>,
     pub on_seek: fn(usize) -> Message,
     /// A click on a clip (None: on empty track), whether it adds to the
     /// selection, and the edit frame under it.
@@ -228,6 +249,10 @@ pub struct Tracks<Message> {
     /// the edit frame under it (None on a track's name) and the track of
     /// the row it is on (None on the ruler and the spare layer).
     pub on_context: fn(Option<usize>, Option<TrackRef>) -> Message,
+    /// A press or drag that picks more than one clip, or a gap.
+    pub on_gesture: fn(Gesture) -> Message,
+    /// The gap selected, named by the clip after it: drawn outlined.
+    pub gap: Option<ClipRef>,
     /// What the rows leave out, said in a line under them ("2 audio tracks
     /// hidden"); None when every track has its row.
     pub note: Option<String>,
@@ -236,7 +261,59 @@ pub struct Tracks<Message> {
     pub editable: bool,
 }
 
+/// What a press or drag on the tracks picks, beyond one clip ([`picks`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Gesture {
+    /// A clip pressed with Shift held: the range from the clip clicked
+    /// last to it.
+    Range(ClipRef),
+    /// A press on the empty frames before a clip: that gap, named by the
+    /// clip, and the edit frame under the press.
+    Gap(ClipRef, usize),
+    /// A box dragged from empty track: the clips it touches now.
+    Box(Vec<ClipRef>),
+}
+
+/// What the wheel over the tracks asks for. Ctrl (Cmd) and the wheel
+/// zooms about the frame under the pointer; Shift and the wheel, or a
+/// sideways wheel or trackpad swipe, scrolls through time. The wheel
+/// alone is not taken: it scrolls the tracks up and down when they are
+/// taller than the timeline.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ViewChange {
+    /// Scroll by this many frames (positive: later).
+    Scroll(f64),
+    /// Zoom by `factor` (above 1: in) about edit frame `about`.
+    Zoom { about: f64, factor: f64 },
+}
+
+/// One notch of the wheel, in the pixels the wheel event counts.
+const WHEEL_NOTCH: f32 = 16.0;
+/// How much one notch of the wheel zooms.
+pub const ZOOM_NOTCH: f64 = 1.25;
+
+/// How far (pixels) a press on empty track is dragged before it is a box.
+const BOX_SLOP: f32 = 4.0;
+
 impl<Message> Tracks<Message> {
+    /// Each row's clips as `(at, end)`.
+    fn row_spans(&self) -> Vec<Vec<(EditFrame, EditFrame)>> {
+        self.rows.iter().map(|r| r.clips.iter().map(|c| (c.at, c.at + c.duration)).collect()).collect()
+    }
+
+    /// The row at local `y`, or the nearest: the top one above them, the
+    /// bottom one below.
+    fn row_near(&self, y: f32) -> usize {
+        self.row_at(y).unwrap_or(if y < RULER { 0 } else { self.rows.len().saturating_sub(1) })
+    }
+
+    /// The clips a box dragged from local `from` to local `to` picks.
+    fn boxed(&self, from: (f32, f32), to: (f32, f32), width: f32) -> Vec<ClipRef> {
+        let frame = |x: f32| self.frame_at(x.max(HEADER), width).floor() as EditFrame;
+        let picked = picks::boxed(&self.row_spans(), self.row_near(from.1), self.row_near(to.1), frame(from.0), frame(to.0));
+        picked.into_iter().map(|(r, index)| ClipRef { track: self.rows[r].track, index }).collect()
+    }
+
     pub fn height(&self) -> f32 {
         RULER + self.rows.iter().map(|r| r.height).sum::<f32>() + if self.note.is_some() { NOTE } else { 0.0 }
     }
@@ -250,17 +327,26 @@ impl<Message> Tracks<Message> {
         RULER + lanes::row_top(&self.heights(), row)
     }
 
+    /// Where edit frame `frame` starts, in local pixels: left of the names'
+    /// column, or past the width, when it is scrolled out of sight.
     fn x(&self, frame: EditFrame, width: f32) -> f32 {
-        HEADER + frame as f32 / self.total.max(1) as f32 * (width - HEADER).max(1.0)
+        HEADER + ((frame as f64 - self.first) / self.total.max(1) as f64) as f32 * (width - HEADER).max(1.0)
     }
 
     /// The edit frame under local `x` (unclamped, may be negative).
     fn frame_at(&self, x: f32, width: f32) -> f64 {
-        f64::from(x - HEADER) / f64::from((width - HEADER).max(1.0)) * self.total.max(1) as f64
+        self.first + f64::from(x - HEADER) / f64::from((width - HEADER).max(1.0)) * self.total.max(1) as f64
     }
 
     fn position_at(&self, x: f32, width: f32) -> usize {
-        (self.frame_at(x, width).floor().max(0.0) as usize).min(self.total.saturating_sub(1))
+        let last = ((self.first + self.total as f64).ceil() as usize).saturating_sub(1);
+        (self.frame_at(x, width).floor().max(0.0) as usize).min(last)
+    }
+
+    /// The part of the pixels `x0..x1` that is in the tracks' time (right
+    /// of the names, inside the width); None when none of it is.
+    fn seen(x0: f32, x1: f32, width: f32) -> Option<(f32, f32)> {
+        (x1 > HEADER && x0 < width).then(|| (x0.max(HEADER), x1.min(width)))
     }
 
     fn row_at(&self, y: f32) -> Option<usize> {
@@ -275,7 +361,8 @@ impl<Message> Tracks<Message> {
 
     /// The clip under local `(x, y)`: its row, its index, and the part.
     fn hit(&self, x: f32, y: f32, width: f32, alt: bool) -> Option<(usize, usize, Part)> {
-        let row = self.row_at(y)?;
+        // A clip scrolled under the names' column is not there to press.
+        let row = self.row_at(y).filter(|_| x >= HEADER)?;
         let top = self.row_top(row);
         self.rows[row].clips.iter().enumerate().find_map(|(i, c)| {
             let (x0, x1) = (self.x(c.at, width), self.x(c.at + c.duration, width));
@@ -296,29 +383,84 @@ impl<Message> Tracks<Message> {
 
     /// The rectangle a drag in progress would leave its clip in, and how
     /// far the drag went; None when its clip is no longer held.
-    fn ghost(&self, grab: &Grab, width: f32, cursor_x: f32, cursor_y: f32) -> Option<(Rectangle, Reach)> {
+    fn ghost(&self, grab: &Grab, width: f32, cursor_x: f32, cursor_y: f32) -> Option<(Rectangle, Reach, Option<Landing>)> {
         let held = self.held(grab)?;
         let c = &self.rows[held].clips[grab.clip.index];
-        let reach = self.reach(grab, held, cursor_x, width);
+        let (reach, row, landing) = self.dragged(grab, held, cursor_x, cursor_y, width);
         let dx = reach.dx;
         let (mut at, mut end) = (c.at, c.at + c.duration);
-        let mut row = held;
-        match grab.part {
+        match grab.part() {
+            Part::Push => {
+                // The clip and all that follows it on its track, as one.
+                let last = self.rows[held].clips.last().map_or(end, |l| l.at + l.duration);
+                at += dx;
+                end = last + dx;
+            }
             Part::Body => {
                 at += dx;
                 end += dx;
-                if let Some(r) = self.row_at(cursor_y).filter(|&r| self.rows[r].track.kind == grab.clip.track.kind) {
-                    row = r;
-                }
             }
             Part::Head => at += dx,
             Part::Tail | Part::RollTail => end += dx,
             Part::RollHead => at += dx,
             Part::Slip | Part::FadeIn | Part::FadeOut => {}
         }
-        let (x0, x1) = (self.x(at.max(0), width), self.x(end.max(at.max(0) + 1), width));
+        // Scrolled out on the left, it is held at the names' column.
+        let (x0, x1) = (self.x(at.max(0), width).max(HEADER), self.x(end.max(at.max(0) + 1), width).max(HEADER));
         let ghost = Rectangle { x: x0, y: self.row_top(row) + 1.0, width: (x1 - x0).max(2.0), height: self.rows[row].height - 2.0 };
-        Some((ghost, reach))
+        Some((ghost, reach, landing))
+    }
+
+    /// The row a body drag of `grab` (held on row `held`) lands on with
+    /// the pointer `cursor_y` down the tracks: the row under it when that
+    /// is of the clip's kind (the spare layer is), else its own.
+    fn target_row(&self, grab: &Grab, held: usize, cursor_y: f32) -> usize {
+        self.row_at(cursor_y).filter(|&r| self.rows[r].track.kind == grab.clip.track.kind).unwrap_or(held)
+    }
+
+    /// Where a body drag of `grab` by `dx` frames onto row `target` lands
+    /// ([`landing`]): snapped to the cut's start, the playhead, the
+    /// markers and the other clips' ends, then fitted among the clips that
+    /// stay. Let go on its own row, a selected clip takes the rest of the
+    /// selection with it.
+    fn landing(&self, grab: &Grab, held: usize, target: usize, dx: EditFrame, width: f32) -> Landing {
+        let dragged = &self.rows[held].clips[grab.clip.index];
+        let together = target == held && dragged.selected && self.rows.iter().flat_map(|r| &r.clips).filter(|c| c.selected).count() > 1;
+        let moves = |r: usize, i: usize| (r == held && i == grab.clip.index) || (together && self.rows[r].clips[i].selected);
+        let mut moving = vec![Moving { row: target, at: dragged.at, duration: dragged.duration }];
+        let mut staying: Vec<Vec<(EditFrame, EditFrame)>> = Vec::with_capacity(self.rows.len());
+        for (r, row) in self.rows.iter().enumerate() {
+            let mut stay = Vec::new();
+            for (i, c) in row.clips.iter().enumerate() {
+                if !moves(r, i) {
+                    stay.push((c.at, c.at + c.duration));
+                } else if (r, i) != (held, grab.clip.index) {
+                    moving.push(Moving { row: r, at: c.at, duration: c.duration });
+                }
+            }
+            staying.push(stay);
+        }
+        let mut points: Vec<EditFrame> = vec![0, self.playhead as EditFrame];
+        points.extend(&self.markers);
+        points.extend(staying.iter().flatten().flat_map(|&(at, end)| [at, end]));
+        let pixels_a_frame = (width - HEADER).max(1.0) / self.total.max(1) as f32;
+        // A clip not dragged along (a click, or a drag straight up to
+        // another row) snaps to nothing: a click never moves a clip.
+        let reach = if dx == 0 { 0 } else { (landing::SNAP_PIXELS / pixels_a_frame).round() as EditFrame };
+        landing::land(&moving, &staying, &points, reach, dx)
+    }
+
+    /// How far the drag in progress has taken its clip, held on row
+    /// `held`, the row it would land on, and for a body drag where it
+    /// lands.
+    fn dragged(&self, grab: &Grab, held: usize, cursor_x: f32, cursor_y: f32, width: f32) -> (Reach, usize, Option<Landing>) {
+        let reach = self.reach(grab, held, cursor_x, width);
+        if grab.part() != Part::Body {
+            return (reach, held, None);
+        }
+        let target = self.target_row(grab, held, cursor_y);
+        let landing = self.landing(grab, held, target, reach.dx, width);
+        (Reach { dx: landing.delta, stop: None }, target, Some(landing))
     }
 
     fn frames_dragged(&self, grab: &Grab, cursor_x: f32, width: f32) -> EditFrame {
@@ -330,7 +472,43 @@ impl<Message> Tracks<Message> {
     /// ([`reach`]).
     fn reach(&self, grab: &Grab, held: usize, cursor_x: f32, width: f32) -> Reach {
         let row = &self.rows[held];
-        drag_op(grab.part, row.track, &row.clips, grab.clip.index, self.frames_dragged(grab, cursor_x, width), None).1
+        drag_op(grab.part(), row.track, &row.clips, grab.clip.index, self.frames_dragged(grab, cursor_x, width), None).1
+    }
+
+    /// The words under a drag's outline: how far it went and what moves
+    /// with it ([`tags`]).
+    fn drag_words(&self, grab: &Grab, held: usize, reach: Reach, landing: Option<Landing>) -> String {
+        let row = &self.rows[held];
+        let c = &row.clips[grab.clip.index];
+        let after = row.clips.len() - grab.clip.index - 1;
+        let dx = reach.dx;
+        match grab.part() {
+            Part::Slip => format!("slip {:+}", -dx),
+            Part::FadeIn => format!("fade {dx:+}"),
+            Part::FadeOut => format!("fade {:+}", -dx),
+            Part::Push => tags::push_words(dx, after, reach.stop == Some(Stop::Clip)),
+            part @ (Part::Head | Part::Tail) => {
+                let out = tags::taken_out(part == Part::Head, c.at, c.at + c.duration, dx);
+                let staying: Vec<&str> = self
+                    .rows
+                    .iter()
+                    .enumerate()
+                    .filter(|(r, other)| *r != held && !other.spare)
+                    .filter(|(_, other)| {
+                        let spans: Vec<(EditFrame, EditFrame)> = other.clips.iter().map(|c| (c.at, c.at + c.duration)).collect();
+                        out.is_some_and(|(from, to)| tags::stays(&spans, from, to))
+                    })
+                    .map(|(_, other)| other.name.as_str())
+                    .collect();
+                tags::trim_words(dx, after, &staying)
+            }
+            Part::Body => match landing {
+                Some(Landing { bumped: true, .. }) => format!("{dx:+} \u{b7} beside the clip there"),
+                Some(Landing { snapped: Some(_), .. }) => format!("{dx:+} \u{b7} snapped"),
+                _ => format!("{dx:+}"),
+            },
+            Part::RollHead | Part::RollTail => format!("{dx:+}"),
+        }
     }
 }
 
@@ -344,6 +522,15 @@ pub struct Grab {
     span: (EditFrame, EditFrame),
     part: Part,
     from_x: f32,
+    /// Ctrl (Cmd on macOS) is held now: a body drag pushes what follows.
+    push: bool,
+}
+
+impl Grab {
+    /// What it drags now: its body is a push while Ctrl/Cmd is held.
+    fn part(&self) -> Part {
+        if self.part == Part::Body && self.push { Part::Push } else { self.part }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -359,6 +546,9 @@ pub struct Pointer {
     resize: Option<(TrackRef, f32, f32)>,
     /// The last press on a track's name, for a double-click.
     header_press: Option<(TrackRef, std::time::Instant)>,
+    /// A press on empty track is held: where it was (local), and whether
+    /// it has been dragged far enough to be a box ([`BOX_SLOP`]).
+    marquee: Option<((f32, f32), bool)>,
 }
 
 /// The gap between the hatching's lines on a clip with nothing to play.
@@ -610,14 +800,20 @@ impl<Message> Tracks<Message> {
         let slot = (w - HEADER) / self.total.max(1) as f32;
         let step = tick_step(slot);
         if step != usize::MAX {
-            for f in (0..self.total).step_by(step) {
+            // The ticks of the frames shown: from the first on a step.
+            let from = (self.first.max(0.0).ceil() as usize).div_ceil(step) * step;
+            let to = (self.first + self.total as f64).ceil().max(0.0) as usize;
+            for f in (from..to).step_by(step) {
                 let tall = if f % (step * 5) == 0 { 8.0 } else { 4.0 };
                 p.rect(Point::new(self.x(f as EditFrame, w), RULER - STRIP - tall), Size::new(1.0, tall), look::tick());
             }
         }
         for &(start, end) in &self.buffered {
-            let (x0, x1) = (self.x(start as EditFrame, w), self.x(end as EditFrame, w));
-            p.rect(Point::new(x0, RULER - STRIP), Size::new((x1 - x0).max(1.0), STRIP), look::buffered());
+            if let Some((x0, x1)) =
+                Self::seen(self.x(start as EditFrame, w), self.x(end as EditFrame, w).max(self.x(start as EditFrame, w) + 1.0), w)
+            {
+                p.rect(Point::new(x0, RULER - STRIP), Size::new((x1 - x0).max(1.0), STRIP), look::buffered());
+            }
         }
 
         let mut top = RULER;
@@ -625,6 +821,7 @@ impl<Message> Tracks<Message> {
             let tall = row.height;
             let band = if row.track.kind == TrackKind::Video { look::band() } else { look::band_audio() };
             p.rect(Point::new(0.0, top), Size::new(HEADER - 1.0, tall - 1.0), look::panel());
+            marks::paint(p, row, top);
             p.rect(Point::new(HEADER, top), Size::new(w - HEADER, tall - 1.0), band);
             let label = Rectangle { x: 10.0, y: top, width: HEADER - 14.0, height: tall };
             if row.solo {
@@ -642,7 +839,7 @@ impl<Message> Tracks<Message> {
                 p.text(row.name.clone(), label, H::Left, V::Center, 13.0, look::quiet());
             }
             for c in &row.clips {
-                let rect = self.clip_rect(c, top, tall, w);
+                let Some(rect) = self.clip_rect(c, top, tall, w) else { continue };
                 let body = match (row.track.kind, c.missing) {
                     (_, true) => look::missing(),
                     (TrackKind::Video, false) => c.department.as_deref().map_or_else(look::clip, look::department),
@@ -689,6 +886,12 @@ impl<Message> Tracks<Message> {
                     }
                 }
             }
+            for strip in self.rendering.iter().filter(|s| s.track == row.track) {
+                for (x, wide, there) in crate::rendering::bars(strip, |frame| self.x(frame, w)) {
+                    let y = top + tall - 2.0 - crate::rendering::STRIP;
+                    p.rect(Point::new(x, y), Size::new(wide, crate::rendering::STRIP), if there { look::now() } else { look::surround() });
+                }
+            }
             top += tall;
         }
         if let Some(note) = &self.note {
@@ -701,6 +904,9 @@ impl<Message> Tracks<Message> {
         let marker = look::mark();
         for &m in &self.markers {
             let x = self.x(m, w) + slot / 2.0;
+            if !(HEADER..=w).contains(&x) {
+                continue;
+            }
             let tip = Path::new(|b| {
                 b.move_to(Point::new(x - 5.0, 0.0));
                 b.line_to(Point::new(x + 5.0, 0.0));
@@ -712,11 +918,13 @@ impl<Message> Tracks<Message> {
         for (r, row) in self.rows.iter().enumerate() {
             let top = self.row_top(r);
             for c in &row.clips {
-                let rect = self.clip_rect(c, top, row.height, w);
-                // Fades: a ramp from the clip's corner over its top band.
+                let Some(rect) = self.clip_rect(c, top, row.height, w) else { continue };
+                // Fades: a ramp from the clip's corner over its top band;
+                // not drawn for an end that is scrolled out of sight.
                 let ramp = Color::from_rgba8(240, 240, 240, 140);
-                if c.fade_in > 0 {
-                    let xe = self.x(c.at + c.fade_in, w);
+                let (head_seen, tail_seen) = (self.x(c.at, w) >= HEADER, self.x(c.at + c.duration, w) <= w);
+                if c.fade_in > 0 && head_seen {
+                    let xe = self.x(c.at + c.fade_in, w).min(w);
                     let tri = Path::new(|b| {
                         b.move_to(Point::new(rect.x, rect.y + rect.height));
                         b.line_to(Point::new(xe, rect.y));
@@ -726,8 +934,8 @@ impl<Message> Tracks<Message> {
                     p.fill(&tri, Color::from_rgba8(0, 0, 0, 90));
                     p.stroke(&Path::line(Point::new(rect.x, rect.y + rect.height), Point::new(xe, rect.y)), Stroke::new(1.0, ramp));
                 }
-                if c.fade_out > 0 {
-                    let xs = self.x(c.at + c.duration - c.fade_out, w);
+                if c.fade_out > 0 && tail_seen {
+                    let xs = self.x(c.at + c.duration - c.fade_out, w).max(HEADER);
                     let xr = rect.x + rect.width;
                     let tri = Path::new(|b| {
                         b.move_to(Point::new(xr, rect.y + rect.height));
@@ -745,14 +953,14 @@ impl<Message> Tracks<Message> {
         }
 
         if let Some(grab) = &state.grab
-            && let Some((ghost, Reach { dx, stop })) = self.ghost(grab, w, state.at.0, state.at.1)
+            && let Some((ghost, Reach { dx, stop }, landing)) = self.ghost(grab, w, state.at.0, state.at.1)
         {
             outline(p, ghost, 2.0, look::now());
-            let mut words = match grab.part {
-                Part::Slip => format!("slip {:+}", -dx),
-                Part::FadeIn | Part::FadeOut => format!("fade {:+}", if grab.part == Part::FadeIn { dx } else { -dx }),
-                _ => format!("{dx:+}"),
-            };
+            if let Some(point) = landing.and_then(|l| l.snapped).filter(|&point| self.x(point, w) >= HEADER) {
+                // The line it snapped to, down every row.
+                p.rect(Point::new(self.x(point, w) - 0.5, RULER), Size::new(1.0, h - RULER), look::now());
+            }
+            let mut words = self.held(grab).map(|held| self.drag_words(grab, held, Reach { dx, stop }, landing)).unwrap_or_default();
             let mut colour = look::now();
             if stop == Some(Stop::Footage) {
                 // The edge is at the end of its source's frames: a bar on
@@ -778,16 +986,56 @@ impl<Message> Tracks<Message> {
             p.text(words, tag, H::Left, V::Center, 11.0, colour);
         }
 
+        if let Some(gap) = self.gap
+            && let Some(r) = self.rows.iter().position(|row| !row.spare && row.track == gap.track)
+            && let Some((from, to)) = picks::gap_before(&self.row_spans()[r], gap.index)
+            && let Some((x0, x1)) = Self::seen(self.x(from, w), self.x(to, w), w)
+        {
+            // The gap selected: washed and outlined as a selected clip is.
+            let rect = Rectangle { x: x0, y: self.row_top(r) + 1.0, width: (x1 - x0 - 1.0).max(1.0), height: self.rows[r].height - 3.0 };
+            p.hatch(rect, look::mark());
+            outline(p, rect, 2.0, look::mark());
+        }
+        if let Some((from, true)) = state.marquee {
+            let (x0, x1) = (from.0.min(state.at.0).max(HEADER), from.0.max(state.at.0).max(HEADER));
+            let (y0, y1) = (from.1.min(state.at.1).max(RULER), from.1.max(state.at.1).max(RULER));
+            outline(p, Rectangle { x: x0, y: y0, width: (x1 - x0).max(1.0), height: (y1 - y0).max(1.0) }, 1.0, look::now());
+        }
+
         let centre = self.x(self.playhead as EditFrame, w) + slot / 2.0;
-        let accent = look::now();
-        p.rect(Point::new(centre - 1.0, 0.0), Size::new(2.0, h), accent);
-        p.rect(Point::new(centre - 4.0, 0.0), Size::new(8.0, 3.0), accent);
+        if (HEADER..=w).contains(&centre) {
+            let accent = look::now();
+            p.rect(Point::new(centre - 1.0, 0.0), Size::new(2.0, h), accent);
+            p.rect(Point::new(centre - 4.0, 0.0), Size::new(8.0, 3.0), accent);
+        }
     }
 
-    /// Where clip `c` of the row at `top` is drawn.
-    fn clip_rect(&self, c: &ClipView, top: f32, tall: f32, w: f32) -> Rectangle {
+    /// Where clip `c` of the row at `top` is drawn: the part of it in the
+    /// tracks' time; None when it is scrolled out of sight.
+    fn clip_rect(&self, c: &ClipView, top: f32, tall: f32, w: f32) -> Option<Rectangle> {
         let (x0, x1) = (self.x(c.at, w), self.x(c.at + c.duration, w));
-        Rectangle { x: x0, y: top + 1.0, width: (x1 - x0 - 1.0).max(1.0), height: tall - 3.0 }
+        let (x0, x1) = Self::seen(x0, (x1 - 1.0).max(x0 + 1.0), w)?;
+        Some(Rectangle { x: x0, y: top + 1.0, width: x1 - x0, height: tall - 3.0 })
+    }
+
+    /// What the wheel, turned by `delta` with the pointer at local `x`,
+    /// asks of the view ([`ViewChange`]); None when it is left to whatever
+    /// scrolls the tracks up and down.
+    fn wheel(&self, modifiers: keyboard::Modifiers, delta: Vector, x: f32, width: f32) -> Option<ViewChange> {
+        if modifiers.command() {
+            // Away from the user (up) zooms in.
+            let factor = ZOOM_NOTCH.powf(f64::from(delta.y / WHEEL_NOTCH));
+            return Some(ViewChange::Zoom { about: self.frame_at(x.max(HEADER), width), factor });
+        }
+        let along = match (modifiers.shift, delta.x != 0.0) {
+            (true, false) => delta.y,
+            (true, true) => delta.x,
+            (false, _) if delta.x.abs() > delta.y.abs() => delta.x,
+            (false, _) => return None,
+        };
+        // The wheel towards the user (down, or left) shows what is later.
+        let frames_a_pixel = self.total.max(1) as f64 / f64::from((width - HEADER).max(1.0));
+        Some(ViewChange::Scroll(-f64::from(along) * frames_a_pixel))
     }
 
     /// What a pointer or key `event` does to the tracks laid out in
@@ -806,7 +1054,16 @@ impl<Message> Tracks<Message> {
         match event {
             Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
                 state.modifiers = *modifiers;
-                (Status::Ignored, None)
+                // A held clip's outline follows the modifier: redraw it.
+                let held = state.grab.as_mut().map(|grab| grab.push = modifiers.command());
+                (Status::Ignored, held.map(|()| (self.on_drag)()))
+            }
+            Event::Mouse(mouse::Event::WheelScrolled { delta }) if self.editable => {
+                let Some(local) = cursor.position_relative_to(bounds) else { return (Status::Ignored, None) };
+                match self.wheel(state.modifiers, *delta, local.x, w) {
+                    Some(change) => (Status::Captured, Some((self.on_view)(change))),
+                    None => (Status::Ignored, None),
+                }
             }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 let Some(local) = cursor.position_relative_to(bounds) else { return (Status::Ignored, None) };
@@ -834,13 +1091,30 @@ impl<Message> Tracks<Message> {
                         let additive = state.modifiers.shift || state.modifiers.command();
                         let clip = ClipRef { track: self.rows[row].track, index };
                         let taken = &self.rows[row].clips[index];
-                        state.grab = Some(Grab { clip, span: (taken.at, taken.duration), part, from_x: local.x });
+                        state.grab =
+                            Some(Grab { clip, span: (taken.at, taken.duration), part, from_x: local.x, push: state.modifiers.command() });
                         state.at = (local.x, local.y);
+                        if state.modifiers.shift && !state.modifiers.command() {
+                            return (Status::Captured, Some((self.on_gesture)(Gesture::Range(clip))));
+                        }
                         (Status::Captured, Some((self.on_select)(Some(clip), additive, self.position_at(local.x, w))))
                     }
                     None => {
-                        state.scrubbing = true;
-                        (Status::Captured, Some((self.on_select)(None, false, self.position_at(local.x, w))))
+                        // Empty track: the playhead comes here, the gap
+                        // under the press is picked, and a drag from here
+                        // draws a box.
+                        state.marquee = Some(((local.x, local.y), false));
+                        state.at = (local.x, local.y);
+                        let position = self.position_at(local.x, w);
+                        let gap = self.row_at(local.y).filter(|&r| !self.rows[r].spare).and_then(|r| {
+                            let (index, _, _) = picks::gap_at(&self.row_spans()[r], self.frame_at(local.x, w).floor() as EditFrame)?;
+                            Some(ClipRef { track: self.rows[r].track, index })
+                        });
+                        let message = match gap {
+                            Some(clip) => (self.on_gesture)(Gesture::Gap(clip, position)),
+                            None => (self.on_select)(None, false, position),
+                        };
+                        (Status::Captured, Some(message))
                     }
                 }
             }
@@ -869,6 +1143,15 @@ impl<Message> Tracks<Message> {
                     state.at = local;
                     return (Status::Captured, Some((self.on_drag)()));
                 }
+                if let Some((from, drawn)) = state.marquee {
+                    state.at = local;
+                    let far = (local.0 - from.0).abs().max((local.1 - from.1).abs()) >= BOX_SLOP;
+                    if !(drawn || far) {
+                        return (Status::Captured, None);
+                    }
+                    state.marquee = Some((from, true));
+                    return (Status::Captured, Some((self.on_gesture)(Gesture::Box(self.boxed(from, local, w)))));
+                }
                 (Status::Ignored, None)
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
@@ -876,14 +1159,24 @@ impl<Message> Tracks<Message> {
                 if state.resize.take().is_some() {
                     return (Status::Captured, None);
                 }
+                if let Some((_, drawn)) = state.marquee.take() {
+                    // The box goes; what it picked stays picked.
+                    return (Status::Captured, drawn.then(|| (self.on_drag)()));
+                }
                 let Some(grab) = state.grab.take() else { return (Status::Ignored, None) };
                 // The cut changed under the pointer: the drag is dropped.
                 let Some(held) = self.held(&grab) else { return (Status::Captured, None) };
                 let local = cursor.position_relative_to(bounds).map_or(state.at, |p| (p.x, p.y));
                 let dx = self.frames_dragged(&grab, local.0, w);
-                let to = self.row_at(local.1).map(|r| self.rows[r].track);
                 let row = &self.rows[held];
-                let (op, _) = drag_op(grab.part, row.track, &row.clips, grab.clip.index, dx, to);
+                let op = if grab.part() == Part::Body {
+                    // A move lands where there is room for it ([`landing`]).
+                    let target = self.target_row(&grab, held, local.1);
+                    let landing = self.landing(&grab, held, target, dx, w);
+                    op_for(Part::Body, grab.clip, &row.clips[grab.clip.index], landing.delta, Some(self.rows[target].track))
+                } else {
+                    drag_op(grab.part(), row.track, &row.clips, grab.clip.index, dx, None).0
+                };
                 (Status::Captured, op.map(self.on_op))
             }
             _ => (Status::Ignored, None),
@@ -1031,6 +1324,21 @@ mod tests {
         assert_eq!(op_for(Part::Body, clip, &v, 0, Some(TrackRef::video(1))), Some(Op::Move { clip, to: TrackRef::video(1), at: 100 }));
         // Onto an audio track a video clip stays on its own.
         assert_eq!(op_for(Part::Body, clip, &v, -200, Some(TrackRef::audio(0))), Some(Op::Move { clip, to: TrackRef::video(0), at: 0 }));
+        // A push stays on its track, wherever it is let go.
+        assert_eq!(op_for(Part::Push, clip, &v, 7, Some(TrackRef::video(1))), Some(Op::Shift { clip, delta: 7 }));
+        assert_eq!(op_for(Part::Push, clip, &v, 0, Some(TrackRef::video(1))), None);
+        // It is held by the clip before it, or by the cut's start.
+        let row = [view(10, 20, 0, 0), view(40, 10, 0, 0), view(60, 5, 0, 0)];
+        let pushed = |index, dx| drag_op(Part::Push, TrackRef::video(0), &row, index, dx, None);
+        assert_eq!(
+            pushed(1, -30),
+            (
+                Some(Op::Shift { clip: ClipRef { track: TrackRef::video(0), index: 1 }, delta: -10 }),
+                Reach { dx: -10, stop: Some(Stop::Clip) }
+            )
+        );
+        assert_eq!(pushed(0, -30).1, Reach { dx: -10, stop: Some(Stop::Clip) });
+        assert_eq!(pushed(1, 25).1, Reach { dx: 25, stop: None });
         assert_eq!(op_for(Part::Slip, clip, &v, 4, None), Some(Op::Slip { clip, delta: -4 }));
         assert_eq!(op_for(Part::Tail, clip, &v, -3, None), Some(Op::Trim { clip, edge: Edge::Tail, delta: -3 }));
         assert_eq!(op_for(Part::RollHead, clip, &v, 2, None), Some(Op::Roll { clip: ClipRef { index: 1, ..clip }, delta: 2 }));
@@ -1080,6 +1388,7 @@ mod tests {
             total,
             playhead: 0,
             buffered: vec![(0, total / 2)],
+            rendering: Vec::new(),
             on_seek: |_| (),
             on_select: |_, _, _| (),
             on_drag: || (),
@@ -1088,6 +1397,10 @@ mod tests {
             on_row_height: |_, _| (),
             on_solo: |_| (),
             on_context: |_, _| (),
+            on_gesture: |_| (),
+            first: 0.0,
+            on_view: |_| (),
+            gap: None,
             note: None,
             editable: true,
         }
@@ -1115,15 +1428,15 @@ mod tests {
                 })
                 .collect();
             let faded = views.iter().any(|c| c.fade_in > 0 || c.fade_out > 0);
-            let row = RowView { track: TrackRef::video(0), name: "V1".into(), clips: views, height, solo: grabbed, spare: false };
-            let over = RowView { track: TrackRef::video(1), name: "V2".into(), clips: Vec::new(), height, solo: false, spare: true };
+            let row = RowView { track: TrackRef::video(0), name: "V1".into(), clips: views, height, solo: grabbed, spare: false, color: None };
+            let over = RowView { track: TrackRef::video(1), name: "V2".into(), clips: Vec::new(), height, solo: false, spare: true, color: None };
             let any_clip = !row.clips.is_empty();
             let tracks = tracks_of(vec![over, row], markers.clone(), 600);
             let mut state = Pointer::default();
             if grabbed && any_clip {
                 let taken = &tracks.rows[1].clips[0];
                 let clip = ClipRef { track: TrackRef::video(0), index: 0 };
-                state.grab = Some(Grab { clip, span: (taken.at, taken.duration), part: Part::Body, from_x: 100.0 });
+                state.grab = Some(Grab { clip, span: (taken.at, taken.duration), part: Part::Body, from_x: 100.0, push: false });
                 state.at = (140.0, RULER + 10.0);
             }
             let mut painted = Geometry::default();
@@ -1155,6 +1468,8 @@ mod tests {
         RowHeight(TrackRef, f32),
         Solo(TrackRef),
         Context(Option<usize>, Option<TrackRef>),
+        Gesture(Gesture),
+        View(ViewChange),
     }
 
     /// The frames the tracks under test span.
@@ -1167,6 +1482,7 @@ mod tests {
             total: TOTAL,
             playhead: 0,
             buffered: Vec::new(),
+            rendering: Vec::new(),
             on_seek: Sent::Seek,
             on_select: Sent::Select,
             on_drag: || Sent::Drag,
@@ -1175,6 +1491,10 @@ mod tests {
             on_row_height: Sent::RowHeight,
             on_solo: Sent::Solo,
             on_context: Sent::Context,
+            on_gesture: Sent::Gesture,
+            first: 0.0,
+            on_view: Sent::View,
+            gap: None,
             note: note.then(|| "1 audio track hidden".to_owned()),
             editable: true,
         }
@@ -1198,7 +1518,7 @@ mod tests {
                 clip
             })
             .collect();
-        RowView { track, name: String::new(), clips, height: height as f32, solo: false, spare: false }
+        RowView { track, name: String::new(), clips, height: height as f32, solo: false, spare: false, color: None }
     }
 
     /// Rows as the editor makes them: the spare layer first when there is
@@ -1309,7 +1629,27 @@ mod tests {
                 }
                 None => {
                     prop_assert_eq!(press(RIGHT, x, y), Some(Sent::Context(Some(at), track)));
-                    prop_assert_eq!(press(LEFT, x, y), Some(Sent::Select(None, false, at)));
+                    // Before a clip of a track: the gap there, named by
+                    // that clip. After the last, and on the spare layer:
+                    // nothing is picked.
+                    let next = rows[r].clips.iter().position(|c| c.at > frame).filter(|_| !rows[r].spare);
+                    let expected = match next {
+                        Some(index) => Sent::Gesture(Gesture::Gap(ClipRef { track: rows[r].track, index }, at)),
+                        None => Sent::Select(None, false, at),
+                    };
+                    prop_assert_eq!(press(LEFT, x, y), Some(expected));
+                }
+            }
+            // With Shift a press on a clip asks for the range to it; with
+            // Ctrl (Cmd), and with both, it adds the clip or takes it out.
+            if let Some(clip) = clip_over(&rows[r], frame) {
+                for (shift, command) in [(true, false), (false, true), (true, true)] {
+                    let mut state = Pointer::default();
+                    let held = keyboard::Modifiers { shift, ..if command { keyboard::Modifiers::COMMAND } else { keyboard::Modifiers::NONE } };
+                    tracks.update(&mut state, &Event::Keyboard(keyboard::Event::ModifiersChanged(held)), stage.bounds(&tracks), Cursor::Unavailable, now);
+                    let sent = stage.send(&tracks, &mut state, LEFT, stage.point(x, y), now);
+                    let expected = if command { Sent::Select(Some(clip), true, at) } else { Sent::Gesture(Gesture::Range(clip)) };
+                    prop_assert_eq!(sent, Some(expected), "shift {} command {}", shift, command);
                 }
             }
             // The ruler, the line under the rows, and a track's name.
@@ -1320,6 +1660,78 @@ mod tests {
                 prop_assert_eq!(press(RIGHT, x, under), Some(Sent::Context(Some(at), None)));
             }
             prop_assert_eq!(press(RIGHT, within * 56.0, y), Some(Sent::Context(None, track)));
+        }
+
+        /// A press on empty track dragged away draws a box: once it has
+        /// gone 4 pixels, every move sends the clips whose drawn rectangle
+        /// the box from the press to the pointer touches (rows by their
+        /// drawn heights, frames by their drawn width), and no other; a
+        /// shorter drag sends nothing; letting go sends no pick.
+        #[test]
+        fn a_drag_from_empty_track_boxes_the_clips_it_touches(
+            rows in rows(), stage in stage(), row in any::<prop::sample::Index>(), frame in 0i64..TOTAL as i64,
+            to_row in any::<prop::sample::Index>(), to_frame in 0i64..TOTAL as i64, within in 0.05f32..0.95, to_within in 0.05f32..0.95,
+        ) {
+            let r = row.index(rows.len());
+            prop_assume!(clip_over(&rows[r], frame).is_none());
+            let tracks = sending(rows.clone(), false);
+            let now = std::time::Instant::now();
+            let mut state = Pointer::default();
+            let from = (stage.x(frame), stage.y(&rows, r, within));
+            stage.send(&tracks, &mut state, LEFT, stage.point(from.0, from.1), now);
+            // Three pixels: not yet a box.
+            let near = stage.point(from.0 + 3.0, from.1 + 3.0);
+            prop_assert_eq!(stage.send(&tracks, &mut state, mouse::Event::CursorMoved { position: near }, near, now), None);
+            let t = to_row.index(rows.len());
+            let to = (stage.x(to_frame), stage.y(&rows, t, to_within));
+            prop_assume!((to.0 - from.0).abs() >= 4.0 || (to.1 - from.1).abs() >= 4.0);
+            let over = stage.point(to.0, to.1);
+            let sent = stage.send(&tracks, &mut state, mouse::Event::CursorMoved { position: over }, over, now);
+            let Some(Sent::Gesture(Gesture::Box(picked))) = sent else { panic!("no box: {sent:?}") };
+            let (x0, x1) = (from.0.min(to.0), from.0.max(to.0));
+            let mut expected = Vec::new();
+            for (at_row, row) in rows.iter().enumerate().filter(|(at_row, _)| (r.min(t)..=r.max(t)).contains(at_row)) {
+                for (index, c) in row.clips.iter().enumerate() {
+                    // The clip's drawn left and right edges.
+                    let (left, right) = (HEADER + stage.px * c.at as f32, HEADER + stage.px * (c.at + c.duration) as f32);
+                    if left <= x1 && x0 < right {
+                        expected.push(ClipRef { track: rows[at_row].track, index });
+                    }
+                }
+            }
+            prop_assert_eq!(picked, expected);
+            prop_assert_eq!(stage.send(&tracks, &mut state, UP, over, now), Some(Sent::Drag));
+            // The box is gone: a move sends nothing.
+            prop_assert_eq!(stage.send(&tracks, &mut state, mouse::Event::CursorMoved { position: near }, near, now), None);
+        }
+
+        /// Scrolled, a press is still on the frame drawn under it: the
+        /// frame as many frames after the first one shown as the press is
+        /// frames' widths right of the names. A clip scrolled under the
+        /// names' column is not there to press: a right press on a name
+        /// names the track, never a clip.
+        #[test]
+        fn scrolled_a_press_is_on_the_frame_drawn_under_it(
+            rows in rows(), stage in stage(), first in 0u32..300, row in any::<prop::sample::Index>(),
+            across in 0i64..TOTAL as i64, within in 0.02f32..0.98,
+        ) {
+            let mut tracks = sending(rows.clone(), false);
+            tracks.first = f64::from(first);
+            let now = std::time::Instant::now();
+            let press = |event: mouse::Event, x: f32, y: f32| stage.send(&tracks, &mut Pointer::default(), event, stage.point(x, y), now);
+            let r = row.index(rows.len());
+            let frame = i64::from(first) + across;
+            let (x, y) = (stage.x(across), stage.y(&rows, r, within));
+            let track = (!rows[r].spare).then_some(rows[r].track);
+            match clip_over(&rows[r], frame) {
+                Some(clip) => {
+                    prop_assert_eq!(press(RIGHT, x, y), Some(Sent::Menu(clip)));
+                    prop_assert_eq!(press(LEFT, x, y), Some(Sent::Select(Some(clip), false, frame as usize)));
+                }
+                None => prop_assert_eq!(press(RIGHT, x, y), Some(Sent::Context(Some(frame as usize), track))),
+            }
+            prop_assert_eq!(press(RIGHT, within * 56.0, y), Some(Sent::Context(None, track)));
+            prop_assert_eq!(press(LEFT, x, within * 20.0), Some(Sent::Seek(frame as usize)));
         }
 
         /// Two presses on a track's name, soon enough, solo it; the spare
@@ -1347,12 +1759,20 @@ mod tests {
         fn a_clip_let_go_over_a_row_moves_to_its_track(
             rows in rows(), stage in stage(),
             from in any::<prop::sample::Index>(), to in any::<prop::sample::Index>(), dx in -120i64..120,
+            markers in prop::collection::vec(0i64..200, 0..3), playhead in 0usize..200,
+            selected in prop::collection::vec(any::<bool>(), 12), own_row in any::<bool>(),
         ) {
+            let mut rows = rows;
+            for (n, clip) in rows.iter_mut().flat_map(|row| &mut row.clips).enumerate() {
+                clip.selected = selected[n % selected.len()];
+            }
             let held: Vec<(usize, usize)> = rows.iter().enumerate().flat_map(|(r, row)| (0..row.clips.len()).map(move |i| (r, i))).collect();
             prop_assume!(!held.is_empty());
             let (r, index) = *from.get(&held);
-            let target = to.index(rows.len());
-            let tracks = sending(rows.clone(), false);
+            let target = if own_row { r } else { to.index(rows.len()) };
+            let mut tracks = sending(rows.clone(), false);
+            tracks.markers.clone_from(&markers);
+            tracks.playhead = playhead;
             let c = &rows[r].clips[index];
             let clip = ClipRef { track: rows[r].track, index };
             let now = std::time::Instant::now();
@@ -1363,8 +1783,46 @@ mod tests {
             let over = stage.point(middle + stage.px * dx as f32, stage.y(&rows, target, 0.5));
             prop_assert_eq!(stage.send(&tracks, &mut state, mouse::Event::CursorMoved { position: over }, over, now), Some(Sent::Drag));
             let sent = stage.send(&tracks, &mut state, UP, over, now);
-            let onto = if rows[target].track.kind == clip.track.kind { rows[target].track } else { clip.track };
-            let expected = (dx != 0 || onto != clip.track).then(|| Sent::Op(Op::Move { clip, to: onto, at: (c.at + dx).max(0) }));
+            let onto = if rows[target].track.kind == clip.track.kind { target } else { r };
+            // Where it lands: snapped to the cut's start, the playhead, the
+            // markers and the ends of every clip shown that stays, within
+            // 8 pixels, then fitted among the clips that stay. A selected
+            // clip let go on its own row takes the other selected clips
+            // along, each on its own row; let go on another row it goes
+            // alone.
+            let together = onto == r && c.selected && rows.iter().flat_map(|row| &row.clips).filter(|c| c.selected).count() > 1;
+            let moves = |at_row: usize, i: usize| (at_row, i) == (r, index) || (together && rows[at_row].clips[i].selected);
+            let staying: Vec<Vec<(EditFrame, EditFrame)>> = rows
+                .iter()
+                .enumerate()
+                .map(|(at_row, row)| {
+                    let others = row.clips.iter().enumerate().filter(|(i, _)| !moves(at_row, *i));
+                    others.map(|(_, other)| (other.at, other.at + other.duration)).collect()
+                })
+                .collect();
+            let mut points: Vec<EditFrame> = staying.iter().flatten().flat_map(|&(at, end)| [at, end]).chain([0, playhead as EditFrame]).collect();
+            points.extend(&markers);
+            let mut moving = vec![Moving { row: onto, at: c.at, duration: c.duration }];
+            for (at_row, i) in held.iter().copied().filter(|&(at_row, i)| (at_row, i) != (r, index) && moves(at_row, i)) {
+                let other = &rows[at_row].clips[i];
+                moving.push(Moving { row: at_row, at: other.at, duration: other.duration });
+            }
+            prop_assert_eq!(moving.len() > 1, together);
+            // Not dragged along, it snaps to nothing: a click moves no clip.
+            let reach = if dx == 0 { 0 } else { (8.0 / stage.px).round() as EditFrame };
+            for m in &moving {
+                let landed = landing::land(&moving, &staying, &points, reach, dx);
+                let (at, end) = (m.at + landed.delta, m.at + m.duration + landed.delta);
+                prop_assert!(at >= 0 && staying[m.row].iter().all(|&(a, e)| end <= a || e <= at), "a moving clip lands on one that stays");
+            }
+            if dx == 0 && onto == r {
+                prop_assert_eq!(&sent, &None, "a click moved a clip");
+            }
+            let landed = landing::land(&moving, &staying, &points, reach, dx);
+            let (at, end) = (c.at + landed.delta, c.at + c.duration + landed.delta);
+            prop_assert!(at >= 0 && staying[onto].iter().all(|&(a, e)| end <= a || e <= at), "it lands on a clip: {:?}", landed);
+            let expected =
+                (landed.delta != 0 || onto != r).then(|| Sent::Op(Op::Move { clip, to: rows[onto].track, at }));
             prop_assert_eq!(sent, expected);
         }
     }

@@ -146,7 +146,7 @@ pub(crate) mod tests {
         }
         let shot = |name: &str| Source::Shot { shot: format!("entity:/shots/S/{name}"), take: Rule::best() };
         let mut edit = WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
-        edit.video.push(crate::Track { name: "V1".into(), clips: vec![crate::ops::tests::vclip(0, 10, 1001, shot("010"))] });
+        edit.video.push(crate::Track { name: "V1".into(), clips: vec![crate::ops::tests::vclip(0, 10, 1001, shot("010"))], color: None });
         let frozen = freeze(&edit, &Nothing).unwrap();
         assert!(matches!(&frozen.video[0].clips[0].source, FrozenSource::Shot { take: None, .. }));
         assert_eq!(thaw(&frozen), edit);

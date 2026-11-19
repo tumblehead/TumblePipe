@@ -46,6 +46,12 @@ cells ticked. With no pipeline workfile open, the Render quick action opens
 it with nothing ticked. The settings panel shows only
 the sections of the step kinds that have a ticked cell.
 
+The row of the entity whose workfile is open (a Multi workfile: each
+member's) is highlighted with the theme's wash and an accent bar at its
+left edge, ticked or not, and is scrolled into view when its tab is first
+shown (``grid.active_rows`` / ``grid.scroll_target``; Remy, 2026-11-18: a
+shot unticked by accident was hard to find again).
+
 **Assets** and **Shots** tabs switch the context. The dialog opens on the
 context it was opened for (the open workfile's, or the card's), but an
 artist in an asset workfile can still submit shots: each tab is its own
@@ -80,7 +86,7 @@ from PySide6.QtWidgets import (
 )
 
 from tumbletrove.asset_browser.core.theme import (
-    ACCENT, BG_DARK, BG_DARKEST, BORDER, FONT_BODY, FONT_FAMILY,
+    ACCENT, ACCENT_DIM, BG_DARK, BG_DARKEST, BORDER, FONT_BODY, FONT_FAMILY,
     TEXT_PRIMARY, TEXT_SECONDARY,
 )
 
@@ -151,6 +157,20 @@ ZEBRA_COLOUR = "#1f1f1f"
 BAND_COLOUR = "#262626"
 WARNING_COLOUR = STALE_COLOUR
 ERROR_COLOUR = "#e05a4f"
+
+# The open workfile's row (``grid.active_rows``): the theme's highlight wash
+# over the whole row and its accent as a bar down the row's left edge, both
+# TumbleTrove's tokens, so the row follows the theme. Drawn whatever is
+# ticked, so a row unticked by accident is still found.
+ACTIVE_WASH = ACCENT_DIM
+ACTIVE_EDGE = ACCENT
+ACTIVE_EDGE_WIDTH = 3
+
+
+def _token_colour(token: str) -> QColor:
+    """A painter's colour from a theme token (``grid.token_rgba``)."""
+    return QColor(*grid.token_rgba(token))
+
 
 # A collapsed column's width: room for its kind's strip, a ticked cell's
 # colour and a stale dot, nothing else.
@@ -797,6 +817,14 @@ class _GridDelegate(QStyledItemDelegate):
             painter.fillRect(rect, QColor(BAND_COLOUR))
         elif item.data(0, _URI_ROLE) in dialog._zebra:
             painter.fillRect(rect, QColor(ZEBRA_COLOUR))
+        if not is_group and item.data(0, _URI_ROLE) in dialog._active:
+            # The open workfile's row, over the stripe and under the cell.
+            painter.fillRect(rect, _token_colour(ACTIVE_WASH))
+            if column == 0:
+                painter.fillRect(
+                    QRect(rect.left(), rect.top(), ACTIVE_EDGE_WIDTH, rect.height()),
+                    _token_colour(ACTIVE_EDGE),
+                )
         dialog._paint_cell(painter, rect, item, column, is_group)
         # Grid rules: a right rule per column, a bottom rule per row, and a
         # heavier one where one step kind gives way to the next.
@@ -887,6 +915,8 @@ class _ContextPane(QWidget):
         tick_kinds: Step kinds to tick for ``entity_uris``.
         channels: Render channels to open checked, or ``None`` for the
             usual seed (``settings.opened_channels``).
+        active: The open workfile's entities (URI strings); their rows are
+            highlighted and the first is scrolled into view.
     """
 
     def __init__(
@@ -897,6 +927,7 @@ class _ContextPane(QWidget):
         department: str | None = None,
         tick_kinds: Sequence[str] = (grid.RENDER,),
         channels: Sequence[str] | None = None,
+        active: Sequence[str] = (),
     ) -> None:
         super().__init__(dialog)
         self._dialog = dialog
@@ -928,6 +959,10 @@ class _ContextPane(QWidget):
         self._uri_objects = by_uri
         props = _properties_for([by_uri[key] for key in self._uris])
         self._props: dict[str, dict] = dict(zip(self._uris, props))
+        # The open workfile's rows: highlighted, whatever is ticked.
+        self._active: frozenset = grid.active_rows(self._uris, active)
+        self._opened_rows = frozenset(opened)
+        self._scrolled_on_open = False
 
         self._publish_departments = _list_dept_names(
             context, only_publishable=True, only_renderable=False,
@@ -1016,7 +1051,7 @@ class _ContextPane(QWidget):
         self._ticks = grid.opened_ticks(
             opened, self._columns, tick_kinds, self._open_department,
         )
-        self._scroll_to_first_ticked(opened)
+        self._scroll_on_open()
         self._show_active_sections()
         self._reseed_form(initial=True)
         self._start_scan()
@@ -1305,6 +1340,8 @@ class _ContextPane(QWidget):
         item = self._tree.itemFromIndex(index)
         uri = item.data(0, _URI_ROLE)
         column = index.column()
+        if uri is not None and column == 0 and uri in self._active:
+            return grid.ACTIVE_ROW_TIP
         if uri is None or column == 0:
             return ""
         if column == self._warnings_column:
@@ -1772,11 +1809,22 @@ class _ContextPane(QWidget):
         self._restripe()
         self._changed()
 
-    def _scroll_to_first_ticked(self, opened: dict) -> None:
-        for uri in self._uris:
-            if uri in opened:
-                self._tree.scrollToItem(self._items[uri])
-                return
+    def _scroll_on_open(self) -> None:
+        """Bring the first row the grid was opened for into view (opened
+        from the workfile, that is its highlighted row), else the open
+        workfile's row (``grid.scroll_target``), in the middle of the grid
+        so the rows around it show too."""
+        uri = grid.scroll_target(self._uris, self._active, self._opened_rows, self._hidden)
+        if uri is not None:
+            self._tree.scrollToItem(self._items[uri], QAbstractItemView.PositionAtCenter)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # Once more when first shown: before that the grid has no size, and
+        # a scroll asked of it then lands wherever the layout later puts it.
+        if not self._scrolled_on_open:
+            self._scrolled_on_open = True
+            QTimer.singleShot(0, self._scroll_on_open)
 
     # ── Status scan ───────────────────────────────────────
 
@@ -3404,6 +3452,12 @@ class SubmitJobsDialog(QDialog):
             seed (``settings.opened_channels``; ``*`` checks all), on the
             opened tab only. th::import_render's **Render** passes its
             Channel. None: the usual seed.
+        active: The entities of the workfile the artist has open, as URI
+            strings (``scene.workfile_entities``: its shot or asset, a
+            Multi's members). Their rows are highlighted on whichever tab
+            lists them, ticked or not, and scrolled into view when the tab
+            is first shown (after any row the dialog was opened for:
+            ``grid.scroll_target``). Empty: no workfile, nothing highlighted.
     """
 
     def __init__(
@@ -3415,8 +3469,10 @@ class SubmitJobsDialog(QDialog):
         department: str | None = None,
         tick_kinds: Sequence[str] = (grid.RENDER,),
         channels: Sequence[str] | None = None,
+        active: Sequence[str] = (),
     ) -> None:
         super().__init__(parent)
+        self._active = tuple(str(uri) for uri in active)
         if context not in grid.CONTEXTS:
             raise ValueError(f"context must be one of {grid.CONTEXTS}, got {context!r}")
         # A Multi is never submitted itself: its member entities are.
@@ -3546,6 +3602,7 @@ class SubmitJobsDialog(QDialog):
                     channels=grid.tab_channels(
                         context, opened_context, self._opened_channels,
                     ),
+                    active=self._active,
                 )
             self._panes[context] = pane
             self._stack.addWidget(pane)

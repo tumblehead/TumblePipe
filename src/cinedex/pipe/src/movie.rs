@@ -19,6 +19,176 @@ pub const HFFMPEG_OVERRIDE: &str = "TH_HFFMPEG";
 /// AAC as they are.
 pub const MOVIE_EXTENSIONS: [&str; 2] = ["mp4", "mov"];
 
+/// What Export movie encodes the picture with. Only what Houdini's hffmpeg
+/// writes on every machine is here: it has no ProRes or DNxHD encoder, its
+/// H.265 (kvazaar) refuses sizes that are not multiples of 8, and its
+/// hardware encoders depend on the graphics card.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Codec {
+    /// H.264 through openh264, in .mp4 or .mov: plays everywhere.
+    #[default]
+    H264,
+    /// Motion JPEG in .mov: every frame whole, so an NLE scrubs it; big.
+    Mjpeg,
+}
+
+impl Codec {
+    pub const ALL: [Codec; 2] = [Codec::H264, Codec::Mjpeg];
+
+    /// Its name in settings files and to agents.
+    pub fn word(self) -> &'static str {
+        match self {
+            Codec::H264 => "h264",
+            Codec::Mjpeg => "mjpeg",
+        }
+    }
+
+    pub fn named(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.word() == word)
+    }
+
+    /// Its name in the dialog.
+    pub fn label(self) -> &'static str {
+        match self {
+            Codec::H264 => "H.264",
+            Codec::Mjpeg => "Motion JPEG",
+        }
+    }
+
+    /// The containers that take it, by extension, the first offered.
+    pub fn extensions(self) -> &'static [&'static str] {
+        match self {
+            Codec::H264 => &MOVIE_EXTENSIONS,
+            Codec::Mjpeg => &["mov"],
+        }
+    }
+}
+
+/// How hard the picture is squeezed. `Standard` is the farm's Render Edit
+/// encode, argument for argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Quality {
+    Best,
+    High,
+    #[default]
+    Standard,
+    Small,
+}
+
+impl Quality {
+    pub const ALL: [Quality; 4] = [Quality::Best, Quality::High, Quality::Standard, Quality::Small];
+
+    pub fn word(self) -> &'static str {
+        match self {
+            Quality::Best => "best",
+            Quality::High => "high",
+            Quality::Standard => "standard",
+            Quality::Small => "small",
+        }
+    }
+
+    pub fn named(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|q| q.word() == word)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Quality::Best => "Best",
+            Quality::High => "High",
+            Quality::Standard => "Standard",
+            Quality::Small => "Small file",
+        }
+    }
+
+    /// openh264's quantiser bounds (`-qmin`, `-qmax`; lower is finer), None
+    /// for the farm's encode, which leaves them to the encoder. Its
+    /// `-q:v` changes nothing in hffmpeg's openh264, so the bounds are the
+    /// quality.
+    pub fn h264_quantisers(self) -> Option<(u32, u32)> {
+        match self {
+            Quality::Best => Some((8, 16)),
+            Quality::High => Some((14, 24)),
+            Quality::Standard => None,
+            Quality::Small => Some((30, 38)),
+        }
+    }
+
+    /// Motion JPEG's `-q:v` (2 the finest).
+    pub fn mjpeg_q(self) -> u32 {
+        match self {
+            Quality::Best => 2,
+            Quality::High => 3,
+            Quality::Standard => 5,
+            Quality::Small => 10,
+        }
+    }
+}
+
+/// One movie to encode from raw frames on hffmpeg's stdin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Encode<'a> {
+    /// The size of the frames sent.
+    pub width: u32,
+    pub height: u32,
+    /// The size the movie is, when not the frames' own: hffmpeg scales.
+    pub scale: Option<[u32; 2]>,
+    pub fps: u32,
+    pub frames: usize,
+    /// The WAV of the sound, when the movie has sound.
+    pub audio: Option<&'a str>,
+    pub start_timecode: &'a str,
+    pub output: &'a str,
+    pub codec: Codec,
+    pub quality: Quality,
+}
+
+/// hffmpeg's arguments for `encode`. With no scale, H.264 and the standard
+/// quality they are [`edit_export_args`]'s, the farm's encode.
+pub fn export_args(encode: &Encode) -> Result<Vec<String>, String> {
+    let Encode { width, height, fps, frames, .. } = *encode;
+    if frames == 0 || fps == 0 || width == 0 || height == 0 || encode.scale.is_some_and(|[w, h]| w == 0 || h == 0) {
+        return Err(format!("No movie of {frames} frames of {width}x{height} at {fps} fps"));
+    }
+    let mut args: Vec<String> =
+        ["-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", &format!("{width}x{height}"), "-framerate", &fps.to_string(), "-i", "pipe:0"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+    if let Some(audio) = encode.audio {
+        args.extend(["-i".to_owned(), audio.to_owned()]);
+    }
+    // Sizes padded even: both encoders subsample the colour.
+    let pad = "pad=ceil(iw/2)*2:ceil(ih/2)*2";
+    let filter = match encode.scale.filter(|size| *size != [width, height]) {
+        Some([w, h]) => format!("scale={w}:{h}:flags=lanczos,{pad}"),
+        None => pad.to_owned(),
+    };
+    args.extend(["-frames:v".to_owned(), frames.to_string(), "-vf".to_owned(), filter, "-c:v".to_owned()]);
+    match encode.codec {
+        Codec::H264 => {
+            args.extend(["libopenh264", "-rc_mode", "quality", "-q:v", "22"].into_iter().map(str::to_owned));
+            if let Some((qmin, qmax)) = encode.quality.h264_quantisers() {
+                args.extend(["-qmin".to_owned(), qmin.to_string(), "-qmax".to_owned(), qmax.to_string()]);
+            }
+            args.extend(["-pix_fmt".to_owned(), "yuv420p".to_owned()]);
+        }
+        Codec::Mjpeg => {
+            args.extend([
+                "mjpeg".to_owned(),
+                "-q:v".to_owned(),
+                encode.quality.mjpeg_q().to_string(),
+                "-pix_fmt".to_owned(),
+                "yuvj422p".to_owned(),
+            ]);
+        }
+    }
+    if encode.audio.is_some() {
+        args.extend(["-c:a", "aac", "-b:a", "192k", "-shortest"].into_iter().map(str::to_owned));
+    }
+    args.extend(["-timecode".to_owned(), encode.start_timecode.to_owned(), encode.output.to_owned()]);
+    Ok(args)
+}
+
 /// hffmpeg's arguments that encode `frames` raw RGB frames (`rgb24`,
 /// `width` x `height`, read from its stdin) at `fps`, with the WAV `audio`
 /// when the edit has sound, into `output`, starting its timecode track at
@@ -34,40 +204,25 @@ pub fn edit_export_args(
     start_timecode: &str,
     output: &str,
 ) -> Result<Vec<String>, String> {
-    if frames == 0 || fps == 0 || width == 0 || height == 0 {
-        return Err(format!("No movie of {frames} frames of {width}x{height} at {fps} fps"));
-    }
-    let mut args: Vec<String> =
-        ["-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", &format!("{width}x{height}"), "-framerate", &fps.to_string(), "-i", "pipe:0"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-    if let Some(audio) = audio {
-        args.extend(["-i".to_owned(), audio.to_owned()]);
-    }
-    args.extend(
-        [
-            "-frames:v",
-            &frames.to_string(),
-            "-vf",
-            "pad=ceil(iw/2)*2:ceil(ih/2)*2",
-            "-c:v",
-            "libopenh264",
-            "-rc_mode",
-            "quality",
-            "-q:v",
-            "22",
-            "-pix_fmt",
-            "yuv420p",
-        ]
-        .into_iter()
-        .map(str::to_owned),
-    );
-    if audio.is_some() {
-        args.extend(["-c:a", "aac", "-b:a", "192k", "-shortest"].into_iter().map(str::to_owned));
-    }
-    args.extend(["-timecode".to_owned(), start_timecode.to_owned(), output.to_owned()]);
-    Ok(args)
+    export_args(&Encode {
+        width,
+        height,
+        scale: None,
+        fps,
+        frames,
+        audio,
+        start_timecode,
+        output,
+        codec: Codec::H264,
+        quality: Quality::Standard,
+    })
+}
+
+/// `movie` with the extension `codec` goes in, when its own is not one:
+/// `cut.mp4` as Motion JPEG is `cut.mov`.
+pub fn fitting_extension(movie: &Path, codec: Codec) -> PathBuf {
+    let fits = movie.extension().is_some_and(|e| codec.extensions().contains(&e.to_string_lossy().to_lowercase().as_str()));
+    if fits { movie.to_path_buf() } else { movie.with_extension(codec.extensions()[0]) }
 }
 
 /// The hffmpeg program's file name on this platform.
@@ -277,6 +432,104 @@ mod tests {
             prop_assert_eq!(partial.extension(), out.extension());
             prop_assert_ne!(&partial, &out);
             prop_assert!(partial.file_name().unwrap().to_string_lossy().starts_with('.'));
+        }
+    }
+
+    /// The farm's encode, word for word: what the standard H.264 export
+    /// has always sent (and `apps.mp4.edit_movie_args` from -frames:v on).
+    #[test]
+    fn the_standard_encode_is_the_farms() {
+        let got = edit_export_args(1920, 1080, 24, 48, Some("mix.wav"), "01:00:00:00", "out.mp4").unwrap();
+        let want = "-y -f rawvideo -pix_fmt rgb24 -s 1920x1080 -framerate 24 -i pipe:0 -i mix.wav -frames:v 48 -vf pad=ceil(iw/2)*2:ceil(ih/2)*2 \
+                    -c:v libopenh264 -rc_mode quality -q:v 22 -pix_fmt yuv420p -c:a aac -b:a 192k -shortest -timecode 01:00:00:00 out.mp4";
+        assert_eq!(got, want.split_whitespace().map(str::to_owned).collect::<Vec<_>>());
+    }
+
+    fn codecs() -> impl Strategy<Value = Codec> {
+        prop::sample::select(Codec::ALL.to_vec())
+    }
+
+    fn qualities() -> impl Strategy<Value = Quality> {
+        prop::sample::select(Quality::ALL.to_vec())
+    }
+
+    proptest! {
+        /// An encode's choices change only their own arguments: the codec
+        /// and its quality after -c:v, a scale ahead of the padding (none
+        /// when the size is the frames' own), the sound only when asked.
+        #[test]
+        fn each_choice_changes_only_its_own_arguments(
+            width in 1u32..5000, height in 1u32..5000, fps in 1u32..121, frames in 1usize..100_000,
+            scale in prop::option::of((1u32..5000, 1u32..5000)), same in any::<bool>(),
+            audio in any::<bool>(), codec in codecs(), quality in qualities(),
+        ) {
+            let scale = scale.map(|(w, h)| if same { [width, height] } else { [w, h] });
+            let encode = Encode {
+                width, height, scale, fps, frames, audio: audio.then_some("mix.wav"),
+                start_timecode: "01:00:00:00", output: "out.mov", codec, quality,
+            };
+            let args = export_args(&encode).unwrap();
+            let after = |flag: &str| args.iter().position(|a| a == flag).map(|i| args[i + 1].clone());
+            // The frames go in at their own size whatever the movie's is.
+            prop_assert_eq!(after("-s"), Some(format!("{width}x{height}")));
+            let pad = "pad=ceil(iw/2)*2:ceil(ih/2)*2";
+            let filter = match scale {
+                Some([w, h]) if [w, h] != [width, height] => format!("scale={w}:{h}:flags=lanczos,{pad}"),
+                _ => pad.to_owned(),
+            };
+            prop_assert_eq!(after("-vf"), Some(filter));
+            let c = args.iter().position(|a| a == "-c:v").unwrap();
+            let end = args.iter().position(|a| a == "-c:a" || a == "-timecode").unwrap();
+            let picture: Vec<&str> = args[c + 1..end].iter().map(String::as_str).collect();
+            let want: Vec<String> = match (codec, quality) {
+                (Codec::H264, Quality::Standard) => "libopenh264 -rc_mode quality -q:v 22 -pix_fmt yuv420p".split(' ').map(str::to_owned).collect(),
+                (Codec::H264, q) => {
+                    let (lo, hi) = q.h264_quantisers().unwrap();
+                    format!("libopenh264 -rc_mode quality -q:v 22 -qmin {lo} -qmax {hi} -pix_fmt yuv420p").split(' ').map(str::to_owned).collect()
+                }
+                (Codec::Mjpeg, q) => format!("mjpeg -q:v {} -pix_fmt yuvj422p", q.mjpeg_q()).split(' ').map(str::to_owned).collect(),
+            };
+            prop_assert_eq!(picture, want.iter().map(String::as_str).collect::<Vec<_>>());
+            prop_assert_eq!(args.iter().filter(|a| *a == "-i").count(), 1 + usize::from(audio));
+            prop_assert_eq!(args.iter().any(|a| a == "aac"), audio);
+            prop_assert_eq!(&args[args.len() - 3..], &["-timecode".to_owned(), "01:00:00:00".to_owned(), "out.mov".to_owned()]);
+            // The same encode without the choices is the farm's.
+            let plain = Encode { scale: None, codec: Codec::H264, quality: Quality::Standard, ..encode.clone() };
+            prop_assert_eq!(export_args(&plain).unwrap(), edit_export_args(width, height, fps, frames, plain.audio, "01:00:00:00", "out.mov").unwrap());
+        }
+
+        /// Finer is a lower quantiser, in order, for both codecs; words
+        /// read back.
+        #[test]
+        fn quality_is_ordered_and_named(codec in codecs(), quality in qualities()) {
+            let rank = |q: Quality| match codec {
+                // The farm's encode leaves the quantiser to the encoder's
+                // rate control: taken as openh264's middle, 26.
+                Codec::H264 => q.h264_quantisers().map_or(52, |(lo, hi)| lo + hi),
+                Codec::Mjpeg => q.mjpeg_q(),
+            };
+            let ranks: Vec<u32> = Quality::ALL.iter().map(|q| rank(*q)).collect();
+            prop_assert!(ranks.windows(2).all(|w| w[0] < w[1]), "{:?}", ranks);
+            if let Some((lo, hi)) = quality.h264_quantisers() { prop_assert!(lo < hi && hi <= 51); }
+            prop_assert_eq!(Codec::named(codec.word()), Some(codec));
+            prop_assert_eq!(Quality::named(quality.word()), Some(quality));
+            prop_assert!(Codec::named(quality.word()).is_none());
+        }
+
+        /// A movie's extension is one its codec goes in: kept when it is,
+        /// else the codec's first; the folder and name stay.
+        #[test]
+        fn the_extension_fits_the_codec(stem in "[A-Za-z0-9_]{1,12}", ext in "(mp4|MP4|mov|MOV)", codec in codecs()) {
+            let movie = PathBuf::from(format!("C:/out/{stem}.{ext}"));
+            let got = fitting_extension(&movie, codec);
+            let lower = ext.to_lowercase();
+            prop_assert_eq!(got.parent(), movie.parent());
+            prop_assert_eq!(got.file_stem(), movie.file_stem());
+            if codec == Codec::Mjpeg && lower == "mp4" {
+                prop_assert_eq!(got, PathBuf::from(format!("C:/out/{stem}.mov")));
+            } else {
+                prop_assert_eq!(got, movie);
+            }
         }
     }
 

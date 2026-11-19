@@ -109,7 +109,7 @@ pub fn render(
         progress(at, frames);
     }
 
-    let audio = write_mix(&edit, &sources, fps, frames, &out.join(format!("{STEM}.wav")))?;
+    let audio = write_mix(&edit, &sources, fps, 0, frames, &out.join(format!("{STEM}.wav")))?;
     let summary = serde_json::json!({
         "fps": fps,
         "frames": frames,
@@ -198,6 +198,25 @@ fn blend(width: u32, height: u32, layers: &[Layer], pictures: &[(Frame, Option<A
     })
 }
 
+/// What the viewer's burn-ins say on edit frame `at` (top left, top right,
+/// bottom left, bottom right): the top clip's source and take, the cut's
+/// timecode, and the take's frame. None where nothing plays: the viewer
+/// shows none there either.
+pub(crate) fn burnin_lines(edit: &WorkingEdit, sources: &Sources, at: usize) -> Option<[String; 4]> {
+    let layers = layers_at(edit, at as EditFrame, sources);
+    let layer = layers.last()?;
+    let clip = &edit.video[layer.track].clips[layer.clip];
+    let resolved = &sources.opened[sources.index(&clip.source)?].resolved;
+    let media = resolved.media.as_ref()?;
+    let index = media.index_at(layer.frame, resolved.first)?;
+    Some([
+        crate::editor::source_name(&clip.source),
+        resolved.take_label(),
+        crate::editing::timecode(at as EditFrame, edit),
+        crate::burnin::frame_text(media.frame_number(index), index, media.frame_count()),
+    ])
+}
+
 /// `picture` (display code values, as [`picture`] makes them) as packed
 /// 8-bit RGB, row by row: a PNG's pixels, and hffmpeg's `rgb24`.
 pub(crate) fn rgb(picture: &Frame) -> Result<Vec<u8>, String> {
@@ -255,9 +274,10 @@ fn write_png(path: &Path, picture: &Frame) -> Result<(), String> {
     writer.write_image_data(&rgb).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// The edit's sound mixed into `path` as 16-bit stereo at [`AUDIO_RATE`],
-/// as long as its `frames`; false, and nothing written, when nothing sounds.
-pub(crate) fn write_mix(edit: &WorkingEdit, sources: &Sources, fps: u32, frames: usize, path: &Path) -> Result<bool, String> {
+/// The edit's sound from its frame `first` on, mixed into `path` as 16-bit
+/// stereo at [`AUDIO_RATE`], as long as `frames`; false, and nothing
+/// written, when the edit has no sound.
+pub(crate) fn write_mix(edit: &WorkingEdit, sources: &Sources, fps: u32, first: usize, frames: usize, path: &Path) -> Result<bool, String> {
     let fps = f64::from(fps);
     let mut voices = Vec::new();
     let mut place =
@@ -291,7 +311,7 @@ pub(crate) fn write_mix(edit: &WorkingEdit, sources: &Sources, fps: u32, frames:
     if voices.is_empty() {
         return Ok(false);
     }
-    let total = (frames as f64 / fps * f64::from(AUDIO_RATE)).round() as u64;
+    let (start, total) = mix_span(first, frames, fps);
     let file = File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut out = BufWriter::new(file);
     let fail = |e: std::io::Error| format!("{}: {e}", path.display());
@@ -301,13 +321,22 @@ pub(crate) fn write_mix(edit: &WorkingEdit, sources: &Sources, fps: u32, frames:
     while from < total {
         let n = (total - from).min(4096) as usize;
         let samples = &mut chunk[..n * 2];
-        mix(&voices, AUDIO_RATE, from, samples);
+        mix(&voices, AUDIO_RATE, start + from, samples);
         let bytes: Vec<u8> = samples.iter().flat_map(|s| pcm16(*s).to_le_bytes()).collect();
         out.write_all(&bytes).map_err(fail)?;
         from += n as u64;
     }
     out.flush().map_err(fail)?;
     Ok(true)
+}
+
+/// The sample frames of the mix that `frames` edit frames from `first` are,
+/// at `fps`: where they start and how many, at [`AUDIO_RATE`]. Ranges that
+/// follow each other share no sample and leave none out.
+pub fn mix_span(first: usize, frames: usize, fps: f64) -> (u64, u64) {
+    let sample = |frame: usize| (frame as f64 / fps * f64::from(AUDIO_RATE)).round() as u64;
+    let start = sample(first);
+    (start, sample(first + frames) - start)
 }
 
 /// A sample as 16-bit PCM, as WAV readers take it back (`/ 32768`).
@@ -356,6 +385,22 @@ mod tests {
                 let want = want.min(32767.0 / 32768.0);
                 prop_assert!((got - want).abs() <= 0.5 / 32768.0 + 1e-6, "{} read back as {}", want, got);
             }
+        }
+    }
+
+    proptest! {
+        /// A range's sound is its own frames' samples: it starts where the
+        /// frames before it end, is as long as its frames, and two ranges
+        /// end to end are the one range of both.
+        #[test]
+        fn a_ranges_sound_is_its_frames(first in 0usize..5000, frames in 0usize..5000, more in 0usize..5000, fps in prop::sample::select(vec![24.0f64, 25.0, 30.0, 12.0])) {
+            let (start, total) = mix_span(first, frames, fps);
+            prop_assert_eq!(mix_span(0, frames, fps), (0, (frames as f64 / fps * 48_000.0).round() as u64));
+            prop_assert_eq!(start, mix_span(0, first, fps).1);
+            let (next, rest) = mix_span(first + frames, more, fps);
+            prop_assert_eq!(next, start + total);
+            prop_assert_eq!(mix_span(first, frames + more, fps), (start, total + rest));
+            prop_assert!((total as f64 - frames as f64 / fps * 48_000.0).abs() <= 1.0);
         }
     }
 

@@ -71,7 +71,12 @@ pub(super) fn controls(state: &State) -> Vec<Control> {
         let Some(at) = rows.iter().position(|entry| matches!(entry, Entry::Item { label, .. } if labels.contains(label))) else { continue };
         let Entry::Item { label, message, enabled, keys: Some(keys) } = rows.remove(at) else { continue };
         let glyph = if label == "&Pause" { Glyph::Pause } else { glyph };
-        let tip = format!("{} ({})", label.replace('&', ""), keys_text(keys.0.clone(), keys.1));
+        let mut tip = format!("{} ({}", label.replace('&', ""), keys_text(keys.0.clone(), keys.1));
+        // Play and pause have a second key, which only this tooltip can name.
+        if matches!(message, Message::TogglePlay) {
+            tip.push_str(&format!(" or {}", keys_text(menu_bar::ALSO_PLAYS.0.clone(), menu_bar::ALSO_PLAYS.1)));
+        }
+        tip.push(')');
         out.push(Control { name, glyph, tip, message, enabled, keys });
     }
     out
@@ -87,6 +92,8 @@ pub(super) fn keys_text(key: Key, modifiers: Modifiers) -> String {
         Key::Named(Named::ArrowRight) => "Right".to_owned(),
         Key::Named(Named::ArrowUp) => "Up".to_owned(),
         Key::Named(Named::ArrowDown) => "Down".to_owned(),
+        Key::Named(Named::PageUp) => "Page Up".to_owned(),
+        Key::Named(Named::PageDown) => "Page Down".to_owned(),
         Key::Named(named) => format!("{named:?}"),
         Key::Unidentified => "?".to_owned(),
     };
@@ -205,9 +212,16 @@ mod tests {
                 prop_assert_eq!(c.enabled, state.free, "{}", c.name);
                 prop_assert_eq!(&key, &c.enabled.then(|| format!("{:?}", c.message)), "{}", c.name);
                 // And a press: the key's message, or nothing when greyed.
-                prop_assert_eq!(c.pressed().map(|m| format!("{m:?}")), key, "{}", c.name);
-                let named = format!("({})", keys_text(c.keys.0.clone(), c.keys.1));
+                prop_assert_eq!(c.pressed().map(|m| format!("{m:?}")), key.clone(), "{}", c.name);
+                // Play and pause name their second key too, and it sends the same.
+                let plays = matches!(c.message, Message::TogglePlay);
+                let (also, held) = menu_bar::ALSO_PLAYS;
+                let second = if plays { format!(" or {}", keys_text(also.clone(), held)) } else { String::new() };
+                let named = format!("({}{})", keys_text(c.keys.0.clone(), c.keys.1), second);
                 prop_assert!(c.tip.ends_with(&named), "{} does not name {}", c.tip, named);
+                if plays {
+                    prop_assert_eq!(menu_bar::key_message(&state, also, held).map(|m| format!("{m:?}")), key.clone(), "{}", c.name);
+                }
                 prop_assert!(!c.tip.contains('&'), "{}", c.tip);
             }
         }
@@ -231,6 +245,9 @@ mod tests {
         assert_eq!(keys_text(Key::Named(Named::Space), Modifiers::NONE), "Space");
         assert_eq!(keys_text(Key::Named(Named::ArrowLeft), Modifiers::NONE), "Left");
         assert_eq!(keys_text(Key::Named(Named::Home), Modifiers::NONE), "Home");
+        assert_eq!(keys_text(Key::Named(Named::ArrowUp), Modifiers::NONE), "Up");
+        assert_eq!(keys_text(Key::Named(Named::PageUp), Modifiers::NONE), "Page Up");
+        assert_eq!(keys_text(Key::Named(Named::PageDown), Modifiers { shift: true, ..Modifiers::NONE }), "Shift+Page Down");
         assert_eq!(keys_text(Key::Character('s'), Modifiers { shift: true, control: true, ..Modifiers::NONE }), "Ctrl+Shift+S");
         let chord = keys_text(Key::Named(Named::ArrowRight), Modifiers::COMMAND);
         assert_eq!(chord, if cfg!(target_os = "macos") { "Cmd+Right" } else { "Ctrl+Right" });

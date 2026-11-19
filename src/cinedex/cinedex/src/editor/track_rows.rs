@@ -86,9 +86,17 @@ pub(crate) fn top_used<S>(edit: &Edit<S>) -> bool {
     edit.video.last().is_some_and(|t| !t.clips.is_empty())
 }
 
-/// The name a new video track on top of `video` others gets.
-pub(crate) fn video_name(video: usize) -> String {
-    format!("V{}", video + 1)
+/// A name for a new track that none of `taken` (the names of the tracks of
+/// its kind) has: `letter` and the next number, as V3 on top of V1 and V2,
+/// or the first number after it that is free (tracks renamed, moved or
+/// deleted leave numbers taken out of order, and an edit refuses a second
+/// track of a name).
+pub(crate) fn fresh_name<N: AsRef<str>>(letter: char, taken: &[N]) -> String {
+    let mut number = taken.len() + 1;
+    while taken.iter().any(|name| name.as_ref() == format!("{letter}{number}")) {
+        number += 1;
+    }
+    format!("{letter}{number}")
 }
 
 /// The ops a drag's `op` is done with: a clip moved onto the spare layer
@@ -97,7 +105,8 @@ pub(crate) fn video_name(video: usize) -> String {
 pub(crate) fn landing<S>(edit: &Edit<S>, op: Op<S>) -> Vec<Op<S>> {
     match &op {
         Op::Move { clip, to, .. } if clip.track.kind == TrackKind::Video && to.kind == TrackKind::Video && to.index == edit.video.len() => {
-            vec![Op::AddTrack { kind: TrackKind::Video, name: video_name(edit.video.len()) }, op]
+            let taken: Vec<&str> = edit.video.iter().map(|t| t.name.as_str()).collect();
+            vec![Op::AddTrack { kind: TrackKind::Video, name: fresh_name('V', &taken) }, op]
         }
         _ => vec![op],
     }
@@ -229,6 +238,36 @@ pub(crate) mod tests {
     }
 
     proptest! {
+        /// A new track's name is its letter and a number, no track has it,
+        /// and no free number between the count of tracks and it was
+        /// passed over: V3 on top of V1 and V2, as it always was. So a
+        /// track can be added, and a clip dropped on the spare layer,
+        /// whatever the tracks were renamed to or whichever were deleted.
+        #[test]
+        fn a_new_tracks_name_is_free(numbers in prop::collection::btree_set(1usize..12, 0..8), words in prop::collection::btree_set("[A-Z][a-z]{1,4}", 0..3)) {
+            let taken: Vec<String> = numbers.iter().map(|n| format!("V{n}")).chain(words.iter().cloned()).collect();
+            let name = fresh_name('V', &taken);
+            prop_assert!(!taken.contains(&name));
+            let number: usize = name.strip_prefix('V').and_then(|n| n.parse().ok()).expect("V and a number");
+            prop_assert!(number > taken.len());
+            for skipped in taken.len() + 1..number {
+                prop_assert!(numbers.contains(&skipped), "V{} was free", skipped);
+            }
+            // A drop on the spare layer makes its track under that name.
+            let mut edit = WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
+            for (i, name) in taken.iter().enumerate() {
+                let clips = if i + 1 == taken.len() { vec![VideoClip::new(0, 10, 0, Source::Slug { text: "x".into() })] } else { Vec::new() };
+                edit.video.push(Track { name: name.clone(), clips, color: None });
+            }
+            if let Some(top) = taken.len().checked_sub(1) {
+                let clip = ClipRef { track: TrackRef::video(top), index: 0 };
+                let ops = landing(&edit, Op::Move { clip, to: TrackRef::video(top + 1), at: 0 });
+                let after = apply_all(&edit, &ops).expect("the drop is taken");
+                prop_assert_eq!(&after.video[top + 1].name, &name);
+                prop_assert_eq!(after.video[top + 1].clips.len(), 1);
+            }
+        }
+
         /// A track's row is as tall as it was last dragged (within the
         /// rows' limits), every other track's row as tall as it was, and a
         /// track never dragged the default.
@@ -353,9 +392,9 @@ pub(crate) mod tests {
                     clip
                 })
                 .collect();
-            edit.video.push(Track { name: video_name(index), clips });
+            edit.video.push(Track { name: format!("V{}", index + 1), clips, color: None });
         }
-        edit.audio.push(Track { name: "A1".into(), clips: Vec::new() });
+        edit.audio.push(Track { name: "A1".into(), clips: Vec::new(), color: None });
         edit
     }
 
@@ -407,7 +446,7 @@ pub(crate) mod tests {
             let ops = landing(&edit, op);
             let after = apply_all(&edit, &ops).expect("the clip lands on the spare layer");
             prop_assert_eq!(after.video.len(), top + 1);
-            prop_assert_eq!(&after.video[top].name, &video_name(top));
+            prop_assert_eq!(&after.video[top].name, &format!("V{}", top + 1));
             prop_assert_eq!(&after.video[top].clips, &vec![VideoClip { at, ..moved }]);
             // Every other track is as it was, less the clip.
             for (index, track) in edit.video.iter().enumerate() {

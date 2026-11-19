@@ -185,13 +185,112 @@ writes these as you work:
 Caches made before this have no record. Their archives flag them, and
 **Rebuild Caches** can't re-make them.
 
-## Pruning farm job folders
+## Cleaning up a project
 
 Archiving never deletes anything. Freeing space on the server is a separate
-tool:
+tool: **Clean Up Project** in TumbleTrove Desktop's Scripts panel. A project
+only grows (every export, render and save adds a version), and on
+HideAndReek 1.6 TB of its 2.5 TB was nothing anyone would open again.
+
+Tick what to look at, set what each keeps, and press **List**. The window
+reads the project once and shows, per category, what would go and what
+stays, each with its reason. Nothing is deleted until you press **Delete…**
+and confirm; changing a setting needs a new listing first. Everything
+removed is written to `export/other/logs/cleanup-<date>.log`.
+
+| Category | What goes | What always stays |
+|---|---|---|
+| **Old export versions** | versions older than the newest 3 finished of each export | anything a current staged build or a latest workfile loads ([below](#pruning-old-export-versions)) |
+| **Old render versions** | versions older than the newest 2 complete of each render layer; check renders older than 14 days, with their review movies | the highest version of a layer, and anything a workfile, an edit or a kept composite names ([below](#old-render-versions)) |
+| **Old cache versions** | `th::cache` versions older than the newest 2 finished of each cache, that their workfile can make again | anything a latest workfile or an export on disk still loads ([below](#old-cache-versions)) |
+| **Houdini backups** | `backup/*_bakN.hip` of a workfile version that has since been saved as a newer version; of the latest version, all but the newest 5 | any backup newer than 7 days ([below](#houdini-backups)) |
+| **Farm job folders** | folders neither Deadline nor the local farm can run from again | anything requeueable ([below](#pruning-farm-job-folders)) |
+| **Deleted entities** | `_deleted/<date>-<time>/` folders older than 30 days | anything else in a `_deleted` folder |
+
+From a shell, where it lists unless given `--apply`:
 
 ```
-python -m tumblepipe.prune [project] [--apply] [--min-age-days 2]
+python -m tumblepipe.cleanup [project] [--only renders,backups] [--context shots/sq010]
+                             [--keep-exports 3] [--keep-renders 2] [--check-render-days 14]
+                             [--keep-caches 2] [--keep-backups 5] [--backup-days 7] [--deleted-days 30]
+                             [--job-days 2] [--local-job-days 14] [--apply]
+```
+
+`--context` (in the window, the *of* menu) narrows exports, renders,
+caches and backups to shots, assets or a path under them; job folders and
+deleted entities are of the whole project.
+
+Playblasts, dailies, turntables, the grade's mattes and workfile versions
+are not touched.
+
+### Old render versions
+
+Every render writes a new `render/<entity>/<department>/<layer>/vNNNN`
+under the render root, and these are most of a project's bytes (2.1 TB on
+HideAndReek, 1.4 TB of it older than the newest two versions). A version
+goes only when none of these is true:
+
+| Kept because | |
+|---|---|
+| it is one of the **newest 2 complete** versions of its layer, or newer | complete: every frame its `context.json` records is there in every AOV. The shot's render is the newest complete one, so partial renders and multi-range renders on top of it never push it out |
+| it is the **highest** version of its layer | the next render takes the highest number plus one; a number used twice would hand everything naming the old version the new frames |
+| a **latest workfile** names it | `th::import_render` set to a version, or frozen by the farm |
+| an **edit** names it | a published edit plays a render's frames by path, a working edit can pin a take, and the sync to the edit root records the version it copied |
+| a kept **composite** version read it | followed through: what that composite's inputs read stays too |
+| it was **written to in the last two days** | it may be rendering |
+| it holds a **`.keep` file** | put an empty file named `.keep` in a version folder to keep it whatever else is true: a delivered render |
+
+A check render (Farm Submit's Step) is never the shot's render, so it goes
+by age alone, under the same guards.
+
+Only plain `.hip` workfiles can be read, as for exports. A DaVinci Resolve
+project is not read either: if a grade reads frames straight from the
+render root, at a version older than the newest two, mark that version
+with `.keep` first.
+
+### Old cache versions
+
+A cache is the one derived thing other files point straight into: a
+`th::cache` node loads the exact version it is set to, and a published
+export references a cache's files instead of copying them. So a
+`cache/<name>/vNNNN` or `lops_cache/<name>/vNNNN` folder (in a workfile
+folder or under the proxy root) goes only when none of these is true:
+
+| Kept because | |
+|---|---|
+| it has **no record** of what made it | no `context.json` sidecar: unfinished, or cached before TumblePipe wrote one. It could not be made again, so it is never deleted here |
+| **its workfile is gone** | the workfile version its record names is not in the project any more |
+| it is one of the **newest 2 finished** versions, or the **highest** | a number used twice would hand a node set to the old version the new files |
+| a **latest workfile** names it | a node whose Name and Version are its, in any department, or any path into it. A path is matched by how it ends (drives and shares are spelled differently per machine), so it also keeps the cache of the same name under the proxy root |
+| an **export** references it | every USD layer under the export root is read for the files it references. Where USD cannot be loaded, no cache is deleted |
+| it was written to in the last two days, or holds a `.keep` file | |
+
+What it deletes, **Rebuild Caches** could make again from the workfile
+(not bit for bit, for a cache that depends on a random seed or an input
+that has changed: mark such a version with `.keep`).
+
+### Houdini backups
+
+Houdini copies the file it is about to overwrite into `backup/` on every
+save and never removes one (63 GB on HideAndReek). TumblePipe saves a new
+workfile version each time, so a backup is only a safety net for the
+version being worked on: a backup of `…_v0012` is dead weight once
+`…_v0013` is saved. Those go, and of the latest version's backups all but
+the newest few. No backup newer than a week goes, and a file in `backup/`
+not named like a backup of a workfile version is left alone.
+
+### Deleted entities
+
+Deleting an asset, a shot or an edit moves its folders to
+`_deleted/<date>-<time>/` in every storage root, so a mistake can be put
+back by hand. Clean Up empties those once the delete is a month old.
+
+## Pruning farm job folders
+
+The farm job category of Clean Up Project, on its own:
+
+```
+python -m tumblepipe.prune [project] [--apply] [--min-age-days 2] [--local-min-age-days 14]
 ```
 
 Every farm submission writes a folder under `export/other/jobs/<id>/`: a
@@ -204,6 +303,8 @@ folders and 25 GB. The prune asks Deadline which jobs still use each folder:
 | every job that used it is **Completed** | yes |
 | a job that uses it is Suspended, Failed, Queued, Rendering or Pending | no, it may be requeued |
 | no Deadline job uses it any more (the jobs were deleted from Deadline) | yes, once it is older than `--min-age-days` |
+| a batch in this machine's local farm queue runs from it (queued, failed or done) | no, the batch can be retried |
+| it was written for the local farm and no batch here uses it | yes, once it is older than `--local-min-age-days`: the batch may be in another machine's queue |
 | Deadline cannot be asked, or reports no TumblePipe jobs at all | nothing is pruned |
 
 Without `--apply` it only lists what it would delete. With it, it deletes
@@ -213,9 +314,9 @@ those folders and writes their names to
 ## Pruning old export versions
 
 Every export writes a new version folder, and nothing removes the old ones:
-on HideAndReek, 2,000 export versions held 157 GB. **Prune Old Exports** in
-TumbleTrove Desktop's Scripts panel lists what can go and deletes it when
-you confirm; from a shell:
+on HideAndReek, 2,000 export versions held 157 GB. The export category of
+**Clean Up Project** lists what can go and deletes it when you confirm; on
+its own, from a shell:
 
 ```
 python -m tumblepipe.prune exports [project] [--keep 3] [--context shots] [--apply]
@@ -247,6 +348,7 @@ Each version deleted is written to `export/other/logs/prune-<date>.log`.
 ## From a shell
 
 ```
+python -m tumblepipe.cleanup         [project] [--only exports,renders,caches,backups,jobs,deleted] [--apply]
 python -m tumblepipe.prune [jobs]    [project] [--apply] [--min-age-days 2]
 python -m tumblepipe.prune exports   [project] [--keep 3] [--context shots] [--apply]
 python -m tumblepipe.archive plan    [project] [--profile proof|latest|full]

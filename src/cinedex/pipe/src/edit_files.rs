@@ -291,6 +291,7 @@ mod tests {
         let mut edit = WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
         let slug = Source::Slug { text: "title".into() };
         edit.video.push(Track {
+            color: None,
             name: "V1".into(),
             clips: vec![VideoClip {
                 at: 0,
@@ -352,6 +353,7 @@ mod tests {
         let mut edit = FrozenEdit::new(24, [1920, 1080], "01:00:00:00");
         let slug = FrozenSource::Slug { text: "title".into() };
         edit.video.push(Track {
+            color: None,
             name: "V1".into(),
             clips: vec![VideoClip {
                 at: 0,
@@ -412,7 +414,7 @@ mod tests {
                 transform: Default::default(),
             });
         }
-        edit.video.push(Track { name: "V1".into(), clips });
+        edit.video.push(Track { name: "V1".into(), clips, color: None });
         publish(&project, "Main", &edit, "").unwrap();
         let out = export_dir(&project, "Main").unwrap().join("v0001");
         let otio = std::fs::read_to_string(out.join("Main_edit_v0001.otio")).unwrap();
@@ -488,7 +490,7 @@ mod tests {
                 }
             })
             .collect();
-        edit.video.push(Track { name: "V1".into(), clips });
+        edit.video.push(Track { name: "V1".into(), clips, color: None });
         edit
     }
 

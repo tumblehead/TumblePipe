@@ -12,6 +12,7 @@
 //! sequence's name on a line of its own, then its shots, so many a line.
 
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 use th_edit::document::{AudioClip, Frame, Source, VideoClip, WorkingEdit};
@@ -77,7 +78,8 @@ impl BinRow {
         }
     }
 
-    /// What a double-click on the row puts in the cut.
+    /// What a double-click on the row puts in the cut (a sequence's name
+    /// all its shots, folded or not).
     pub fn target(&self) -> Target {
         match self {
             BinRow::Item { index, .. } => Target::Item(*index),
@@ -87,26 +89,124 @@ impl BinRow {
 }
 
 /// `shots` (sorted by sequence, as [`editing::project_shots`] lists them)
-/// as bin rows: each sequence's name, then its shots.
-pub fn shot_rows(shots: &[BinShot]) -> Vec<BinRow> {
+/// as bin rows: each sequence's name, then its shots, unless the sequence
+/// is one of `folded` (its name's chevron was clicked): then its name
+/// alone, which still stands for all its shots ([`Target::Sequence`]).
+pub fn shot_rows(shots: &[BinShot], folded: &BTreeSet<String>) -> Vec<BinRow> {
     let mut out = Vec::new();
     for (index, shot) in shots.iter().enumerate() {
         if index == 0 || shots[index - 1].sequence != shot.sequence {
             out.push(BinRow::Sequence(shot.sequence.clone()));
         }
-        let frames = shot.last - shot.first + 1;
-        let detail = format!("{frames} frames, {}–{}", shot.first, shot.last);
-        out.push(BinRow::Item { index, name: shot.name.clone(), detail });
+        if folded.contains(&shot.sequence) {
+            continue;
+        }
+        out.push(BinRow::Item { index, name: shot.name.clone(), detail: shot_detail(shot) });
     }
     out
 }
 
-/// What a double-click in a bin puts in the cut: one item (its index in the
-/// bin's shots or media), or every shot of a sequence.
+/// What a shot is besides its name: how long, and from which frame to
+/// which.
+pub fn shot_detail(shot: &BinShot) -> String {
+    let frames = shot.last - shot.first + 1;
+    format!("{frames} frames, {}–{}", shot.first, shot.last)
+}
+
+/// What a row says when the pointer rests on it: its name, then what the
+/// row no longer shows (a shot's length and range, a media item's version
+/// and what it holds), then why it has no picture when it has none.
+pub fn row_tip(name: &str, detail: &str, note: Option<&str>) -> String {
+    [name, detail, note.unwrap_or_default()].into_iter().filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" \u{b7} ")
+}
+
+/// What a double-click, a drag or a menu row in a bin puts in the cut: one
+/// item (its index in the bin's shots or media), several picked together
+/// (in the bin's order), or every shot of a sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     Item(usize),
+    Items(Vec<usize>),
     Sequence(String),
+}
+
+/// The items `target` stands for, in the order they go into the cut: an
+/// item itself, picked items in the bin's order (each once), a sequence's
+/// shots in natural name order. `shots` is the Shots bin's; a sequence in
+/// the Media bin (`shots` None) is nothing. Indices past `count` (the bin
+/// was read again meanwhile) are left out.
+pub fn target_items(target: &Target, shots: Option<&[BinShot]>, count: usize) -> Vec<usize> {
+    let items = match target {
+        Target::Item(index) => vec![*index],
+        Target::Items(indices) => indices.iter().copied().collect::<BTreeSet<_>>().into_iter().collect(),
+        Target::Sequence(sequence) => shots.map(|shots| sequence_shots(shots, sequence)).unwrap_or_default(),
+    };
+    items.into_iter().filter(|&i| i < count).collect()
+}
+
+/// The bin's picked items: `picks` when the pick (the one last clicked) is
+/// among them, else the pick alone (a pick made by a message that names
+/// one item drops the others), in the bin's order.
+pub fn picked(pick: Option<usize>, picks: &BTreeSet<usize>) -> Vec<usize> {
+    match pick {
+        Some(pick) if picks.contains(&pick) => picks.iter().copied().collect(),
+        Some(pick) => vec![pick],
+        None => Vec::new(),
+    }
+}
+
+/// What Insert, Overlay and a drag put for the bin's `picked` items: the
+/// one, or all of them together; None with nothing picked.
+pub fn picked_target(picked: &[usize]) -> Option<Target> {
+    match picked {
+        [] => None,
+        [one] => Some(Target::Item(*one)),
+        several => Some(Target::Items(several.to_vec())),
+    }
+}
+
+/// What a press on a row that names `row` takes hold of, for a drag or the
+/// row's menu: every picked item when the row is one of several picked,
+/// else what the row itself names.
+pub fn held_target(row: &Target, picked: &[usize]) -> Target {
+    match row {
+        Target::Item(index) if picked.len() > 1 && picked.contains(index) => Target::Items(picked.to_vec()),
+        other => other.clone(),
+    }
+}
+
+/// A grid tile clicked with Ctrl (Cmd) held: `index` joins the picked
+/// items, or leaves them. The picks after, and the pick: the tile when it
+/// joined, else the last of those left.
+pub fn toggled(picked: &[usize], index: usize) -> (BTreeSet<usize>, Option<usize>) {
+    let mut picks: BTreeSet<usize> = picked.iter().copied().collect();
+    if picks.remove(&index) {
+        let pick = picks.iter().next_back().copied();
+        (picks, pick)
+    } else {
+        picks.insert(index);
+        (picks, Some(index))
+    }
+}
+
+/// The rows of `rows` the list shows as selected: those of the picked items.
+pub fn selected_rows(rows: &[BinRow], picked: &[usize]) -> BTreeSet<usize> {
+    rows.iter().enumerate().filter(|(_, row)| row.item().is_some_and(|i| picked.contains(&i))).map(|(at, _)| at).collect()
+}
+
+/// What a drag's ghost and placeholder call what is carried: an item's
+/// name, a sequence's, or how many.
+pub fn count_words(count: usize, what: &str) -> String {
+    format!("{count} {what}{}", if count == 1 { "" } else { "s" })
+}
+
+/// What is carried, in words.
+pub fn carried_words(target: &Target, names: &[&str], shots_bin: bool) -> String {
+    match (target, names) {
+        (Target::Sequence(sequence), _) => format!("{sequence} \u{b7} {} shot{}", names.len(), if names.len() == 1 { "" } else { "s" }),
+        (_, [one]) => (*one).to_owned(),
+        (_, several) => format!("{} {}", several.len(), if shots_bin { "shots" } else { "items" }),
+    }
 }
 
 /// The shots of `sequence` among `shots` (their indices), in natural name
@@ -357,6 +457,139 @@ mod tests {
             prop_assert!(found.iter().all(|&i| shots[i].sequence == "A"));
             prop_assert!(sequence_shots(&shots, "C").is_empty());
         }
+
+        /// Folding hides a sequence's shots and nothing else: every
+        /// sequence keeps its name row, in the same order; the shots of the
+        /// ones not folded are the rows they had, and a folded one's name
+        /// still stands for all its shots.
+        #[test]
+        fn folding_hides_only_the_folded_sequences_shots(
+            sizes in prop::collection::vec(1usize..5, 0..6), folded in prop::collection::btree_set(0usize..7, 0..5),
+        ) {
+            // Sorted by sequence, as the bin lists them.
+            let shots: Vec<BinShot> = sizes.iter().enumerate()
+                .flat_map(|(s, &n)| (0..n).map(move |i| bin_shot(&format!("S{s}"), &format!("sh{i}"), 5 + i as Frame)))
+                .collect();
+            let folded: BTreeSet<String> = folded.iter().map(|s| format!("S{s}")).collect();
+            let rows = shot_rows(&shots, &folded);
+            // The oracle, in the test's own words: (sequence, its shots shown).
+            let mut expected: Vec<(String, Vec<usize>)> = Vec::new();
+            let mut index = 0;
+            for (s, &n) in sizes.iter().enumerate() {
+                let name = format!("S{s}");
+                let shown = if folded.contains(&name) { Vec::new() } else { (index..index + n).collect() };
+                expected.push((name, shown));
+                index += n;
+            }
+            let mut got: Vec<(String, Vec<usize>)> = Vec::new();
+            for row in &rows {
+                match row {
+                    BinRow::Sequence(name) => got.push((name.clone(), Vec::new())),
+                    BinRow::Item { index, name, detail } => {
+                        prop_assert_eq!(name, &shots[*index].name);
+                        prop_assert_eq!(detail, &shot_detail(&shots[*index]));
+                        got.last_mut().expect("a shot under a name").1.push(*index);
+                    }
+                }
+            }
+            prop_assert_eq!(&got, &expected);
+            for (s, &n) in sizes.iter().enumerate() {
+                let target = Target::Sequence(format!("S{s}"));
+                prop_assert!(rows.iter().any(|r| r.target() == target));
+                prop_assert_eq!(target_items(&target, Some(&shots), shots.len()).len(), n, "a folded name stands for all its shots");
+            }
+            // Nothing folded: every shot has its row.
+            let open = shot_rows(&shots, &BTreeSet::new());
+            prop_assert_eq!(open.iter().filter_map(BinRow::item).collect::<Vec<_>>(), (0..shots.len()).collect::<Vec<_>>());
+        }
+
+        /// A row's tip says its name first, then each thing there is to
+        /// say, once, in order, and nothing for what there is not.
+        #[test]
+        fn a_tip_says_what_the_row_no_longer_shows(name in "[a-z0-9]{1,6}", detail in "[a-z0-9 ,]{0,12}", note in proptest::option::of("[A-Za-z ]{0,10}")) {
+            let tip = row_tip(&name, &detail, note.as_deref());
+            let parts: Vec<&str> = tip.split(" \u{b7} ").collect();
+            let expected: Vec<&str> = [name.as_str(), detail.as_str(), note.as_deref().unwrap_or("")].into_iter().filter(|p| !p.is_empty()).collect();
+            prop_assert_eq!(parts, expected);
+        }
+
+        /// What is picked: the pick alone unless it is one of several
+        /// picked together; a Ctrl-click adds a tile or takes it out, the
+        /// pick moving to it or to one still picked; and Insert, a drag or
+        /// a menu takes all of them when it starts on one of them, else
+        /// just the row it starts on.
+        #[test]
+        fn picking_several_keeps_them_while_the_pick_is_one_of_them(
+            picks in prop::collection::btree_set(0usize..12, 0..6), pick in proptest::option::of(0usize..12), clicked in 0usize..12,
+        ) {
+            let now = picked(pick, &picks);
+            match pick {
+                None => prop_assert!(now.is_empty()),
+                Some(p) if picks.contains(&p) => prop_assert_eq!(&now, &picks.iter().copied().collect::<Vec<_>>()),
+                Some(p) => prop_assert_eq!(&now, &vec![p]),
+            }
+            prop_assert!(now.windows(2).all(|w| w[0] < w[1]), "in the bin's order, each once");
+            match (picked_target(&now), now.as_slice()) {
+                (None, []) => {}
+                (Some(Target::Item(one)), [only]) => prop_assert_eq!(one, *only),
+                (Some(Target::Items(all)), several) if several.len() > 1 => prop_assert_eq!(all.as_slice(), several),
+                (target, _) => prop_assert!(false, "{:?} for {:?}", target, now),
+            }
+            let (after, new_pick) = toggled(&now, clicked);
+            let mut oracle: Vec<usize> = now.clone();
+            if now.contains(&clicked) { oracle.retain(|&i| i != clicked) } else { oracle.push(clicked) }
+            oracle.sort_unstable();
+            prop_assert_eq!(after.iter().copied().collect::<Vec<_>>(), oracle.clone());
+            prop_assert_eq!(picked(new_pick, &after), oracle.clone(), "what is picked after is what the click left");
+            if !now.contains(&clicked) {
+                prop_assert_eq!(new_pick, Some(clicked));
+            }
+            let held = held_target(&Target::Item(clicked), &now);
+            if now.len() > 1 && now.contains(&clicked) {
+                prop_assert_eq!(held, Target::Items(now.clone()));
+            } else {
+                prop_assert_eq!(held, Target::Item(clicked));
+            }
+            let name = Target::Sequence("A".into());
+            prop_assert_eq!(held_target(&name, &now), name);
+            // Items go into the cut in the bin's order, each once, and one
+            // the bin no longer has is left out.
+            let jumbled: Vec<usize> = now.iter().rev().chain(now.iter()).copied().collect();
+            prop_assert_eq!(target_items(&Target::Items(jumbled), None, 8), now.iter().copied().filter(|&i| i < 8).collect::<Vec<_>>());
+            prop_assert_eq!(target_items(&Target::Item(clicked), None, 8), if clicked < 8 { vec![clicked] } else { vec![] });
+            prop_assert!(target_items(&Target::Sequence("A".into()), None, 8).is_empty(), "the Media bin has no sequences");
+        }
+
+        /// The list marks the rows of the picked items, and only those.
+        #[test]
+        fn the_rows_marked_are_the_picked_items(sizes in prop::collection::vec(1usize..4, 1..4), picks in prop::collection::btree_set(0usize..12, 0..6)) {
+            let shots: Vec<BinShot> = sizes.iter().enumerate()
+                .flat_map(|(s, &n)| (0..n).map(move |i| bin_shot(&format!("S{s}"), &format!("sh{i}"), 5)))
+                .collect();
+            let rows = shot_rows(&shots, &BTreeSet::new());
+            let picked: Vec<usize> = picks.iter().copied().collect();
+            let marked = selected_rows(&rows, &picked);
+            for (at, row) in rows.iter().enumerate() {
+                prop_assert_eq!(marked.contains(&at), row.item().is_some_and(|i| picks.contains(&i)), "row {}", at);
+            }
+        }
+
+        /// What is carried is named by what it is: one item by its name, a
+        /// sequence by its name and how many shots, several by how many.
+        #[test]
+        fn what_is_carried_is_named(names in prop::collection::vec("[a-z]{1,5}", 1..6), shots_bin in any::<bool>()) {
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            let items = Target::Items((0..names.len()).collect());
+            let words = carried_words(&items, &refs, shots_bin);
+            if names.len() == 1 {
+                prop_assert_eq!(&words, &names[0]);
+            } else {
+                prop_assert_eq!(words, format!("{} {}", names.len(), if shots_bin { "shots" } else { "items" }));
+            }
+            let sequence = carried_words(&Target::Sequence("SEQ".into()), &refs, true);
+            prop_assert!(sequence.starts_with("SEQ") && sequence.contains(&names.len().to_string()), "{}", sequence);
+            prop_assert_eq!(sequence.ends_with("shots"), names.len() != 1);
+        }
     }
 
     fn apply_all(edit: &WorkingEdit, ops: &[Op<Source>]) -> WorkingEdit {
@@ -498,7 +731,7 @@ mod tests {
     #[test]
     fn rows_name_what_a_double_click_puts() {
         let shots = [bin_shot("A", "010", 10), bin_shot("A", "020", 10), bin_shot("B", "010", 10)];
-        let rows = shot_rows(&shots);
+        let rows = shot_rows(&shots, &BTreeSet::new());
         let targets: Vec<Target> = rows.iter().map(BinRow::target).collect();
         assert_eq!(
             targets,
@@ -546,7 +779,7 @@ mod tests {
                     clips.push(VideoClip::new(at, duration, 0, Source::Slug { text: format!("V{t}.{i}") }));
                     at += duration;
                 }
-                edit.video.push(Track { name: format!("V{}", t + 1), clips });
+                edit.video.push(Track { name: format!("V{}", t + 1), clips, color: None });
             }
             for (t, spans) in audio.iter().enumerate() {
                 let mut at = 0;
@@ -557,7 +790,7 @@ mod tests {
                     clips.push(AudioClip { at, duration, source_in: 0, source, gain_db: 0.0, fade_in: 0, fade_out: 0 });
                     at += duration;
                 }
-                edit.audio.push(Track { name: format!("A{}", t + 1), clips });
+                edit.audio.push(Track { name: format!("A{}", t + 1), clips, color: None });
             }
             edit
         })

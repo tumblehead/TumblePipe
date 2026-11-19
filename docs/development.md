@@ -91,8 +91,8 @@ project from TumbleTrove Desktop once so the SDK is fetched.
 
 A property has to hold on every SDK from that floor up, not only the
 newest. Where TumblePipe does one thing on a newer TumbleTrove and another
-on an older one (a Save menu choice is a `MenuItem` with `checked` from
-0.65, a `✓` in its label before), check each form with a stand-in for that
+on an older one (a Save menu choice was a `MenuItem` with `checked` from
+0.65 and a `✓` in its label before, while the floor was 0.57), check each form with a stand-in for that
 SDK's type, and the real one in whichever form the installed SDK has:
 `test_save_timer.py` read `entry.checked` alone and failed on 0.64, where
 the entries are plain pairs.
@@ -292,8 +292,8 @@ headless from their imports but argparse-require a project. Preflight says
 how many it skipped rather than implying full coverage.
 
 `qt` runs the `scripts/verify_*.py` harnesses that drive real PySide6
-widgets offscreen with no Houdini (`QT_HARNESSES` in `.ci/preflight.py`, 22
-of 73), four at a time, and prints ok or FAILED per script with the tail of a
+widgets offscreen with no Houdini (`QT_HARNESSES` in `.ci/preflight.py`, 24
+of 78), four at a time, and prints ok or FAILED per script with the tail of a
 failure's output. Each runs as
 `uv run --no-project --python 3.12 --with pyside6 --with usd-core python scripts/<name>`
 with `QT_QPA_PLATFORM=offscreen`, this checkout's `python/` and
@@ -310,7 +310,7 @@ runs it).
 
 `hython` runs the harnesses that import `hou` and need no arguments, and
 `verify_entity_editor_proxy_gc`, which imports none but pins a crash in
-Houdini's own PySide (`HYTHON_HARNESSES`, 39 of 73) under the newest
+Houdini's own PySide (`HYTHON_HARNESSES`, 42 of 78) under the newest
 installed Houdini's hython
 (22.x, or `$HPM_HOUDINI_MAJORS`; found as `delegate` finds husk), three at a
 time since each takes a licence, and prints ok, FAILED (with the tail of
@@ -382,6 +382,19 @@ widget stacks involved are pure PySide6:
   restore it under a new name. Run it with Houdini's bundled Python (it has
   PySide6, takes no licence):
   `PYTHONPATH="$HFS/python313/lib/site-packages-forced" "$HFS/python313/python.exe" scripts/verify_archive_app.py`.
+
+- `verify_window_front.py` — bringing a kept window to the front
+  (`tumblepipe.util.window_front`), on real windows offscreen: Qt's own
+  `show()`, `raise_()` and `activateWindow()` leave a minimised window
+  minimised (the Farm Manager bug of 2026-11-18); `bring_to_front` restores
+  it, to maximised when it was minimised from maximised; and the Farm
+  Manager's `show_manager` restores its one window.
+
+A window the package keeps and shows again (the Farm Manager, the Entity
+Editor, the Database Editor, the VRAM Inspector) comes forward through
+`tumblepipe.util.window_front.bring_to_front(window)`, never by hand:
+`tests/test_window_front.py` fails on an `activateWindow()` anywhere else
+in the package that is not listed there with its reason.
 
 All of these, and the other Qt harnesses that need no Houdini, run
 offscreen in one go with `uv run --no-project python .ci/preflight.py --only qt`
@@ -705,7 +718,25 @@ workspace:
   `ladder.rs` is Houdini's middle-mouse value ladder for number fields
   (`ladder(...)` wraps any field); its row height, notch and finest step
   are the Qt helper's (`util/value_ladder.py`, `value_ladder_qt.install`),
-  checked by `tests/test_value_ladder.py`.
+  checked by `tests/test_value_ladder.py`. `number_field.rs` reads what
+  is typed into a number field as a number, maths worked out (`100/2`,
+  `+=10` from the field's value) by `th_pipe::number_expr`: every number
+  field reads through it (the clip fields, New shot's Frames, Export
+  Movie's sizes and frames), so add a field's parsing there, never with
+  `str::parse`. The grammar is in `number_expr.rs`'s module docs and has a
+  twin in Python, `tumblepipe.util.number_expr`, which
+  `value_ladder_qt.install` puts on every Qt number field through
+  `number_expr_qt` (a validator around the field's own that lets a sum be
+  typed and works it out when Qt asks for a fix-up, plus, for a spin box,
+  a filter that sets the value before Qt reads the text).
+  `tests/test_number_expr_parity.py` holds the two to the same number,
+  the same rounding and the same refusal for the same text through
+  `pipe_lines`' `number_expr`; change the rules on both sides.
+  `scripts/verify_number_expr.py` types into real Qt fields offscreen.
+  TumbleTrove's own fields (`tumbletrove.common.value_ladder_qt.install`:
+  the Settings numbers in `settings/widgets.py`, a create dialog's `int`
+  fields in `asset_browser/ui/browser.py`) have no maths until the SDK
+  takes the same hook.
   `main.rs` reads the arguments and opens the OCIO config; when it fails,
   or the edit does not open, the window says why. `display.rs` is the
   display and view the picture shows through, and opens a take's media off
@@ -751,7 +782,33 @@ workspace:
   on), written under `movie::partial_path` and renamed over the movie when
   done; a cancel or failure kills hffmpeg and deletes the partial file.
   `movie::find_hffmpeg` picks `$TH_HFFMPEG`, `$HFS/bin`, else the newest
-  SideFX install. `editor/export_dialog.rs` is its dialog (path, Browse…,
+  SideFX install. `rendering.rs` is the renders on their way: which of
+  the cut's shots wait for an unfinished render (`th_pipe::unfinished`:
+  `find` reads a shot's render folders, `waited_for` picks the version,
+  `Unfinished::relisted` is the one listing that follows it), the `Watch`
+  that rations those reads (`plan`/`apply`, pure, on the previews' tick;
+  `editor/rendering_watch.rs` runs it off the UI thread), and each clip's
+  `Strip`, which `tracks.rs` only draws (`Tracks::rendering`,
+  `rendering::bars`). A farm playblast is followed the same way
+  (`th_pipe::unfinished::find_playblast`): `farm/workers/playblast.py`
+  renders on the worker's disk, and its `FrameMirror` copies each finished
+  frame to `<movie>.mp4.frames` beside the movie to come
+  (`farm.frames.playblast_frames_dir`, with the range in `frames.json`),
+  removed when the worker ends; the names are pinned on both sides by
+  `tests/test_farm_media.py`. `export_settings.rs` is what an export can be asked for
+  (size, frames, codec, quality, sound, burn-ins): `Settings` as kept in
+  the user's `export.json` and as the agent's `export_movie` gives it,
+  `Settings::plan` the one place it is judged against an edit, `Form` the
+  dialog's state. `movie::export_args` turns a plan into hffmpeg's
+  arguments (`edit_export_args` is the same with no choices made, held to
+  the farm's by `test_live_parity`); only codecs every hffmpeg writes are
+  in `movie::Codec` (it has no ProRes; openh264 ignores `-q:v`, so quality
+  is `-qmin`/`-qmax`). `burnin_raster.rs` paints the viewer's burn-ins
+  into the frames with cosmic-text, the shaper and font Primer draws the
+  viewer's with, laid out by `burnin.rs`'s measures; the lines are
+  `render::burnin_lines`. Render Edit takes none of these: it is the
+  whole published edit, standard encode, clean.
+  `editor/export_dialog.rs` is its dialog (path, Browse…, the settings,
   progress bar, Cancel, Play, Show in Folder); `save_dialog.rs` the system
   Save dialog (Windows' `GetSaveFileNameW` called directly, `osascript` on
   macOS, zenity or kdialog on Linux: no crate, so no GTK link).
@@ -767,10 +824,67 @@ workspace:
   Support>/tumblepipe/cinedex/layout.json` (written whole, renamed over);
   the split clamps them to the window when it lays out, so they are saved
   as the user left them. Its tests round-trip any layout and load any JSON
-  as sizes within reason.
+  as sizes within reason. The sequences folded in the Shots bin are in
+  `folded.json` beside it, a list per project root
+  (`load_folded`/`save_folded`, the other projects' kept).
+  The bins panel (`editor/bin_panel.rs`, rules in `bins.rs`) is a Primer
+  windowed list in both views. Primer's list reports a click and a
+  double-click and nothing else, and shows no overlay of its rows, so a
+  row has no tooltip, drag or menu of its own: `sense.rs` wraps a row (or
+  the list) and reports what the pointer does over it, floats words over
+  the window (`Float`: a row's tip) and paints `Mark`s over its child.
+  Each row says when the pointer comes onto it (`BinMessage::Hover`), the
+  list when it leaves that row, and the tip shows once it has rested
+  (`TIP_DELAY`). `modified.rs` gives a message the keys held when it was
+  sent (`with_keys`: Shift overlays, Ctrl/Cmd toggles a pick).
+  `editor/bin_wiring_tests.rs` lays the real `bins_view` out with a
+  fixed-size text measurer and sends it mouse events at pixels, finding
+  each row by moving the pointer over the panel.
+  A drag out of the bins is `bin_drag.rs`: a press on a row holds what the
+  row stands for (`bins::held_target`: every picked row when it is one of
+  several), `THRESHOLD` pixels on it is carried, and `landing` makes the
+  ops for the frame and track under the pointer: `bins::put_run` again,
+  laid over plain and inserted with Ctrl/Cmd (`inserts`), an `AddTrack`
+  first for an insert on the spare layer. Three watchers do it, none of
+  them in `tracks.rs`: each row sends `Hold`; the panel, which like every
+  widget is given every event wherever the pointer is, sends `Moved` and
+  `Dropped` and floats the words beside the pointer; and `tracks_view`'s
+  track view is wrapped by `bin_drop_zone` while something is carried,
+  which sends `Over` (`Lanes::over`, the rows from `Editor::rows`) and
+  paints the placeholder from the ops' own clips (`bin_drag::spans`), so
+  the box is where the clip goes. While carried the ops are tried with
+  every frame taken as there (`AnyFrames`, no project read per pixel); the
+  drop itself asks the project. `Editor::on_key` gives Escape to
+  `bin_escape` first.
+  Import… is `open_dialog.rs` (the open side of `save_dialog.rs`, the same
+  `Kind`: `GetOpenFileNameW` with multi-select on Windows, `osascript` on
+  macOS, zenity or kdialog on Linux; the buffer and output parsers are
+  pure and tested, the dialog itself is never shown in a test), then
+  `editor/bin_files.rs`: `import_files::plan` sorts the files (an item
+  name per file, a numbered picture found among its neighbours as one
+  sequence, the rest unsupported), `import_all` runs
+  `th_pipe::media::import` on each, and `words` names everything that did
+  and did not go in. The media library has no item kind for an image
+  sequence, so one is reported, not imported. `FilesMessage::Dropped` is
+  where files dropped on the window come in, with the track and frame to
+  put them at; nothing sends it yet, because Primer does not surface the
+  window's file drops (winit's `HoveredFile`, `DroppedFile` and
+  `HoveredFileCancelled` are ignored in `primer-runtime`'s
+  `on_window_event`, and they carry no pointer position).
+  `th_pipe::media::set_note` and `rename_item` are behind the Media bin's
+  **Rename or Edit Note…**.
+  A bin row's right-click menu is `editor/bin_menu.rs`, built as the
+  timeline's clip menu is: the right press says which row
+  (`BinMessage::Menu`), and `entries` gives the rows from a `State`.
+  **Farm Submit…** is `farm_submit.rs`: it starts
+  `python -m tumblepipe.farm_app --entity <uri>…` in Houdini's bundled
+  Python (found under `$HFS` as `scripts/farm_launcher.py` finds it), which
+  opens the Farm Submit window ticked on those shots. Nothing in Cinedex
+  submits; in tests the launch is recorded and nothing is started.
 
 Primer is a git dependency that cargo fetches from 3db Gitea
-over plain HTTP (`http://10.100.36.15:3000/...`). It is readable without
+over plain HTTP (`http://10.100.36.15:3000/...`), pinned in
+`src/cinedex/Cargo.toml` to the commit of a release tag (v0.19.0). It is readable without
 credentials, so the studio network is all a build needs; CI needs no key.
 
 **FFmpeg.** The player links its own FFmpeg, not Houdini's.
@@ -849,7 +963,8 @@ The tests:
   bounds, its shape kept, centred. `take_menu.rs` checks that each submenu
   lists its choices once (every kind, every stream of the shown kind going
   to its newest version, the shown stream's versions newest first) and
-  marks only what is shown, that the Layer submenu lists each layer of the
+  ticks only what is shown (`marked_row`: the menu bar's `✓ ` before the
+  label, read back by `unmarked`; Primer's menus have no checked row), that the Layer submenu lists each layer of the
   shown kind once (a chosen layer not there as not ready) and its rows
   change only the layer, and the clip name's layer note; `layer_view.rs`
   that an AOV row shows its layer, a toggle changes one layer only and a
@@ -961,7 +1076,62 @@ The tests:
   `Message::At(frame, ..)`, which parks the playhead first (proptests:
   nothing that changes the cut on a read-only edit, every "here" row at
   the frame clicked, tracks added on top and only empty ones removed, no
-  two rows alike). There is no Paste row: Cinedex has no clipboard;
+  two rows alike). There is no Paste row: Cinedex has no clipboard.
+  The timeline's gestures are each decided in a small pure module with
+  proptests against an oracle of its own, and driven through real pointer
+  events in `editor/wiring_tests.rs` (and its `picks.rs` and `view.rs`):
+  `tracks/landing.rs` is where a moved clip lands (`land`: snap its start
+  or end to the nearest of the cut's start, the playhead, the markers and
+  the edges of the clips that stay, within `SNAP_PIXELS`; then, if the
+  place is taken, the nearest free place butted against a clip; never
+  refused for room; a drag of no frames snaps to nothing, so a click moves
+  no clip); `tracks/tags.rs` words the tag beside a drag (which tracks
+  follow a trim and which stay); `tracks/picks.rs` finds the gap under a
+  frame and the clips of a Shift+click range or a dragged box;
+  `editor/gestures.rs` turns the tracks' `Gesture` (`Range`, `Gap`, `Box`)
+  into the selection, keeps the anchor a range is taken from, closes a gap
+  (`Op::Shift` on the clip after it) and, after every change of the cut,
+  moves the selection with its clips (`th_edit::follow::followed`: a clip
+  like no other is found wherever it went; a clip with twins only where it
+  was; a clip changed in place stays; anything else is let go, never
+  passed to another clip); `editor/timeline_view.rs` is the part of the
+  timeline shown (`TimelineView`: first frame and frames shown, zoomed
+  about a frame, scrolled, fitted to the whole or to the clips, kept
+  through edits) and `tracks/overview.rs` the strip under the tracks with
+  its thumb. The tracks draw and hit-test through `first` and `total`, so
+  a scrolled press is on the frame drawn under it, and a clip scrolled
+  under the names' column is neither drawn nor pressed. The wheel is the
+  tracks' only with Ctrl/Cmd (zoom), Shift or a sideways turn (scroll);
+  alone it is left to the scrollable around the rows. In `th_edit`,
+  `Op::Shift { clip, delta }` moves a clip and all after it on its track
+  (Ctrl-drag, Close Gap), and `Op::Trim` never cuts or removes another
+  track's clips: a track follows frames taken out only when
+  `ops::follows` says none of its clips starts inside them and there is
+  room (`cross_tests.rs` pins it). Tracks: `Op::MoveTrack { track, to }`
+  (refused when it is there already), `Op::RenameTrack` (an empty or
+  taken name is refused by `Edit::problem`), `Op::SetTrackColor { track,
+  color }` (a name `ops::color_name` takes, or null) and `Op::RemoveTrack`,
+  which takes the track's clips with it. A track's `color` is a name, not
+  an RGB, and is written only when set, so an edit without colours is
+  byte for byte the document from before them
+  (`an_edit_without_track_colours_is_the_document_from_before_them`); the
+  editor's palette is `look::TRACK_COLORS` / `look::track`, a name it does
+  not know is kept and drawn unmarked, and `tracks/marks.rs` draws the
+  stripe. OTIO carries the colour in the track's `metadata.tumblepipe`,
+  FCP7 XML not at all, and both note it in the export summary
+  (`Kind::TrackColor`). Every `Track { .. }` literal names `color`.
+  `editor/track_order.rs` carries the per-user row heights and the solo
+  with their tracks when an edit's tracks are the same tracks in another
+  order (a move, its undo and redo); a delete leaves heights by place.
+  `track_rows::fresh_name` names a new track with the first free number,
+  since after a rename, move or delete the next number can be taken. The
+  track rows of the menu are in `editor/timeline_menu.rs` (`step`,
+  `delete_label`, `colours`, `rename_problem`), driven end to end by
+  `wiring_tests/track_menu.rs`. `th_edit::follow` does not follow a clip
+  to a look-alike a ripple delete or an insert may have made (see its
+  module rules). In the preview window (`frames_view.rs`) a bare Up is a
+  second play/pause key and `play_tip` names both; the editor's Up stays
+  Newer Version;
   `editor/clip_fields.rs` is the strip of the selected clip's fades and
   opacity and its transform (X, Y, Scale, Rotate, Reset) as typed numbers
   (#60), its proptests that a typed fade, opacity or part of the transform
@@ -973,8 +1143,12 @@ The tests:
   holds every colour the window draws with (untinted greys, amber only for
   the present moment, a muted hue per department for clips); draw with its
   tokens, not colour literals, and its tests keep text readable on them;
-  its `tick_box` is the window's checkbox (Primer's draws its tick in
-  the theme's primary grey, too faint to tell from unticked). `reveal.rs`
+  its `tick_box` is the window's checkbox (Primer's own fills with the
+  theme's accent, here a grey too faint to tell from unticked). The
+  window's Primer theme is `display::theme()`: Primer's default is the
+  Tumblehead UI convention with its jade accent, and Cinedex swaps the
+  accent tokens for these greys, because a tinted surround shifts how a
+  picture's colours read. `reveal.rs`
   finds a take's folder and opens the file manager on it (Explorer takes
   only backslashes; given `C:/a/b` it opens Documents). A dialog field
   that offers a value until the user types one (New shot's name, Import's
@@ -1655,6 +1829,16 @@ fields by name with pixels, and the node's comment names the layer on each
 output (`rgba: chars`, `rgba 2: bg`, `rgba 3: fx`) without replacing one
 someone typed. Run it the same way (compile the HDAs first).
 
+`scripts/verify_import_render_hold.py` stages a published render and a
+newer check render (every 4th frame, each frame's red its own) and cooks
+`th::import_render`'s **Missing Frames**: the Version menu lists the check
+render and `latest` skips it; pinned to it, every scene frame reads the
+nearest rendered frame (against a brute-force search, ties to the earlier
+frame, and by the pixels), through plain HScript in the file names; Empty
+leaves the gaps black; Hold on a published version holds its first and
+last frame; a time offset shifts what is held; a submit's freeze of such
+an import is refused.
+
 ## Slap comp harness
 
 `scripts/verify_slap_comp.py` drives the *TumblePipe Slap Comp* preset
@@ -1947,6 +2131,16 @@ dangling arc. It needs `pxr` but no scene or project data (temp dirs
 only), so run it under any project hython (e.g. TumbleTrove Desktop's
 run_hython). The arc walk and the path classification are covered by
 `tests/test_arcs.py`.
+
+`scripts/verify_cache_open_location.py` (the `hython` stage) pins
+`th::cache`'s **Open Location** on the compiled SOP and LOP HDAs: the
+button is in the Action row after Load and calls `cache.open_location`;
+a node that cached nothing refuses, naming the missing folder; after
+**Cache** writes a version, pressing the button opens that version's
+folder. The OS file browser is stood in for
+(`util.desktop.open_in_file_browser` is replaced), so nothing opens on the
+desktop. `tests/test_cache_open_location.py` pins which folder, and what
+is said when it is missing.
 
 ## Animated switch/blend export (track prim existence)
 

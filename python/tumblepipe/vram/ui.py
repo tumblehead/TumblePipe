@@ -591,12 +591,13 @@ def _show() -> None:
     global _window
     if _window is not None:
         try:
-            if _window.isVisible():
-                _window.raise_()
-                _window.activateWindow()
-                return
-            _window.show()
-            _window.rescan()
+            # In front, restored when it was minimised (util.window_front);
+            # one that was closed reads the scene again.
+            from tumblepipe.util.window_front import bring_to_front
+            was_closed = not _window.isVisible()
+            bring_to_front(_window)
+            if was_closed:
+                _window.rescan()
             return
         except RuntimeError:
             _window = None  # its C++ side is gone

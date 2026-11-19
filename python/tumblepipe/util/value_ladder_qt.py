@@ -14,7 +14,10 @@ with a number validator Houdini's gestures:
   an ``on_reset`` that does the resetting itself, as the Farm Submit
   dialog's ↺ does).
 
-The field's limits still hold. Left-mouse editing and typing are unchanged.
+The field's limits still hold. Left-mouse editing is unchanged, and typing
+gains maths: :func:`install` also gives the field
+:mod:`tumblepipe.util.number_expr_qt` (``100/2`` sets 50), so every number
+field has both from the one call.
 The maths is :mod:`tumblepipe.util.value_ladder`, shared with the tests.
 """
 
@@ -26,6 +29,7 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt
 from PySide6.QtGui import QDoubleValidator, QIntValidator, QPainter, QPalette
 from PySide6.QtWidgets import QAbstractSpinBox, QDoubleSpinBox, QLineEdit, QSpinBox, QWidget
 
+from tumblepipe.util import number_expr_qt
 from tumblepipe.util import value_ladder as maths
 
 Default = Optional[Union[float, Callable[[], float]]]
@@ -107,7 +111,7 @@ class _Ladder(QObject):
             return 0
         if isinstance(field, QDoubleSpinBox):
             return field.decimals()
-        validator = field.validator() if isinstance(field, QLineEdit) else None
+        validator = number_expr_qt.number_validator(field)
         if isinstance(validator, QIntValidator):
             return 0
         if isinstance(validator, QDoubleValidator):
@@ -118,7 +122,7 @@ class _Ladder(QObject):
         field = self.field
         if isinstance(field, (QSpinBox, QDoubleSpinBox)):
             return float(field.minimum()), float(field.maximum())
-        validator = field.validator() if isinstance(field, QLineEdit) else None
+        validator = number_expr_qt.number_validator(field)
         if isinstance(validator, (QIntValidator, QDoubleValidator)):
             return float(validator.bottom()), float(validator.top())
         return -1e12, 1e12
@@ -303,6 +307,8 @@ def install(field: QWidget, default: Default = None, decimals: Optional[int] = N
     field.installEventFilter(ladder)
     if isinstance(field, QAbstractSpinBox):
         field.lineEdit().installEventFilter(ladder)
+    # Maths typed into it (100/2): every number field, from this one call.
+    number_expr_qt.install(field)
     return field
 
 
@@ -311,7 +317,7 @@ def is_number_field(widget: QWidget) -> bool:
     if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
         return True
     return isinstance(widget, QLineEdit) and isinstance(
-        widget.validator(), (QIntValidator, QDoubleValidator))
+        number_expr_qt.number_validator(widget), (QIntValidator, QDoubleValidator))
 
 
 def install_all(root: QWidget) -> int:

@@ -132,13 +132,15 @@ fn edit_menu(s: &State) -> Vec<Entry> {
         item("&Insert Bin Pick", Message::BinPut(false), picked, None),
         item("&Overlay Bin Pick", Message::BinPut(true), picked, None),
         Entry::Separator,
-        // The take keys (#47), as the old playlist player had them.
-        item("&Newer Version", Message::TakeStep(TakeAxis::Version, 1), s.writable, named(Named::ArrowUp, NONE)),
-        item("Older &Version", Message::TakeStep(TakeAxis::Version, -1), s.writable, named(Named::ArrowDown, NONE)),
-        item("&Previous Department", Message::TakeStep(TakeAxis::Department, -1), s.writable, named(Named::ArrowUp, COMMAND)),
-        item("Ne&xt Department", Message::TakeStep(TakeAxis::Department, 1), s.writable, named(Named::ArrowDown, COMMAND)),
-        item("Previous Source (Playblast / Render)", Message::TakeStep(TakeAxis::Source, -1), s.writable, named(Named::ArrowUp, SHIFT)),
-        item("Next Source (Playblast / Render)", Message::TakeStep(TakeAxis::Source, 1), s.writable, named(Named::ArrowDown, SHIFT)),
+        // The take keys (#47). Page Up and Page Down, not the arrows the old
+        // playlist player had: Up plays here as it does in Houdini, and a
+        // habit from there must not change which version the cut shows.
+        item("&Newer Version", Message::TakeStep(TakeAxis::Version, 1), s.writable, named(Named::PageUp, NONE)),
+        item("Older &Version", Message::TakeStep(TakeAxis::Version, -1), s.writable, named(Named::PageDown, NONE)),
+        item("&Previous Department", Message::TakeStep(TakeAxis::Department, -1), s.writable, named(Named::PageUp, COMMAND)),
+        item("Ne&xt Department", Message::TakeStep(TakeAxis::Department, 1), s.writable, named(Named::PageDown, COMMAND)),
+        item("Previous Source (Playblast / Render)", Message::TakeStep(TakeAxis::Source, -1), s.writable, named(Named::PageUp, SHIFT)),
+        item("Next Source (Playblast / Render)", Message::TakeStep(TakeAxis::Source, 1), s.writable, named(Named::PageDown, SHIFT)),
     ]
 }
 
@@ -178,6 +180,8 @@ fn view_menu(s: &State) -> Vec<Entry> {
         // The only thing that rescales the tracks besides opening an edit
         // (`timeline_view`): drags, trims and retimes leave the scale alone.
         item("&Fit Timeline", Message::FitTimeline, s.free, letter('f', NONE)),
+        // The first clip's start to the last clip's end, and no more.
+        item("Fit to C&lips", Message::FitClips, s.free, letter('f', SHIFT)),
         // Which tracks have a row (`track_rows`): the view's only, every
         // track still plays. A double-click on a track's name solos it.
         item(if s.audio_hidden { "Show &Audio Tracks" } else { "Hide &Audio Tracks" }, Message::HideAudio(!s.audio_hidden), s.free, None),
@@ -196,6 +200,11 @@ pub(super) fn next_show(show: Option<TakeKind>) -> Option<TakeKind> {
     }
 }
 
+/// The second key that plays and pauses, beside the Playback menu's Space:
+/// Up, as in Houdini. The menu shows one shortcut per row, so the
+/// transport bar's tooltip is where both are named.
+pub(super) const ALSO_PLAYS: (Key, Modifiers) = (Key::Named(Named::ArrowUp), NONE);
+
 /// What a key pressed in the window sends: nothing while a dialog is open
 /// (its fields take the keys). A bare letter acts only with neither Command
 /// nor Alt held, so Ctrl+B or Alt+M is not taken for B or M.
@@ -212,12 +221,16 @@ pub(super) fn key_message(state: &State, key: Key, modifiers: Modifiers) -> Opti
         Key::Named(Named::ArrowLeft) if modifiers.alt => Some(Message::Seconds(-1)),
         Key::Named(Named::ArrowRight) => Some(Message::Step(1)),
         Key::Named(Named::ArrowLeft) => Some(Message::Step(-1)),
-        Key::Named(Named::ArrowUp) if command => Some(Message::TakeStep(TakeAxis::Department, -1)),
-        Key::Named(Named::ArrowDown) if command => Some(Message::TakeStep(TakeAxis::Department, 1)),
-        Key::Named(Named::ArrowUp) if modifiers.shift => Some(Message::TakeStep(TakeAxis::Source, -1)),
-        Key::Named(Named::ArrowDown) if modifiers.shift => Some(Message::TakeStep(TakeAxis::Source, 1)),
-        Key::Named(Named::ArrowUp) => Some(Message::TakeStep(TakeAxis::Version, 1)),
-        Key::Named(Named::ArrowDown) => Some(Message::TakeStep(TakeAxis::Version, -1)),
+        Key::Named(Named::PageUp) if command => Some(Message::TakeStep(TakeAxis::Department, -1)),
+        Key::Named(Named::PageDown) if command => Some(Message::TakeStep(TakeAxis::Department, 1)),
+        Key::Named(Named::PageUp) if modifiers.shift => Some(Message::TakeStep(TakeAxis::Source, -1)),
+        Key::Named(Named::PageDown) if modifiers.shift => Some(Message::TakeStep(TakeAxis::Source, 1)),
+        Key::Named(Named::PageUp) => Some(Message::TakeStep(TakeAxis::Version, 1)),
+        Key::Named(Named::PageDown) => Some(Message::TakeStep(TakeAxis::Version, -1)),
+        // Up plays and pauses too ([`ALSO_PLAYS`]), alone: with anything
+        // held it does nothing, and neither does Down, so no arrow changes
+        // the cut.
+        Key::Named(Named::ArrowUp) if modifiers == ALSO_PLAYS.1 => Some(Message::TogglePlay),
         Key::Named(Named::Home) => Some(Message::Seek(0)),
         Key::Named(Named::End) => Some(Message::Seek(state.end)),
         Key::Named(Named::Space) => Some(Message::TogglePlay),
@@ -236,6 +249,7 @@ pub(super) fn key_message(state: &State, key: Key, modifiers: Modifiers) -> Opti
         Key::Character('m' | 'M') if bare => Some(Message::Marker),
         Key::Character('b' | 'B') if bare => Some(Message::Burnins(!state.burnins)),
         Key::Character('v' | 'V') if bare => Some(Message::Show(next_show(state.show))),
+        Key::Character('f' | 'F') if bare && modifiers.shift => Some(Message::FitClips),
         Key::Character('f' | 'F') if bare => Some(Message::FitTimeline),
         _ => None,
     }
@@ -338,6 +352,8 @@ mod tests {
             Named::ArrowRight,
             Named::ArrowUp,
             Named::ArrowDown,
+            Named::PageUp,
+            Named::PageDown,
             Named::Home,
             Named::End,
             Named::Space,
@@ -415,6 +431,40 @@ mod tests {
                     prop_assert_eq!(sent, Some(message.clone()), "{} > {}: {:?} {:?}", menu, label, key, modifiers);
                 }
             }
+        }
+
+        /// Up alone plays and pauses, as Space does, and no arrow changes
+        /// the cut: with anything held Up does nothing, and Down does
+        /// nothing at all (up to 1.113.0 they stepped the version, so a
+        /// play habit from Houdini edited the timeline).
+        #[test]
+        fn up_plays_and_no_arrow_steps_a_take(state in state(), modifiers in modifiers()) {
+            let state = State { free: true, ..state };
+            let sent = |key: Named, held: Modifiers| key_message(&state, Key::Named(key), held).map(|m| format!("{m:?}"));
+            let space = sent(Named::Space, NONE);
+            prop_assert_eq!(space.as_deref(), Some("TogglePlay"));
+            prop_assert_eq!(sent(Named::ArrowUp, modifiers), if modifiers == NONE { space } else { None });
+            prop_assert_eq!(sent(Named::ArrowDown, modifiers), None);
+            prop_assert_eq!(ALSO_PLAYS, (Key::Named(Named::ArrowUp), NONE));
+        }
+
+        /// The take keys are Page Up and Page Down: alone the version
+        /// (up is newer), with Command the department, with Shift the
+        /// source (up is the one before), Command first when both are
+        /// held. The two keys always step the same axis opposite ways.
+        #[test]
+        fn the_page_keys_step_the_take(state in state(), modifiers in modifiers()) {
+            let state = State { free: true, ..state };
+            let (axis, up) = if modifiers.command() {
+                (TakeAxis::Department, -1)
+            } else if modifiers.shift {
+                (TakeAxis::Source, -1)
+            } else {
+                (TakeAxis::Version, 1)
+            };
+            let sent = |key: Named| key_message(&state, Key::Named(key), modifiers).map(|m| format!("{m:?}"));
+            prop_assert_eq!(sent(Named::PageUp), Some(format!("{:?}", Message::TakeStep(axis, up))));
+            prop_assert_eq!(sent(Named::PageDown), Some(format!("{:?}", Message::TakeStep(axis, -up))));
         }
 
         /// While a dialog is open no key acts, and every item but Exit is greyed.

@@ -567,6 +567,7 @@ Content-Type: text/plain
 version 0.8
 selection	[ 0	locks=0 ]	(	0	)
 entity_select	[ 0	locks=0 ]	(	0	)
+entity_browse	[ 0	locks=0 ]	(	0	)
 entity	[ 0	locks=0 ]	(	[ entity	from_context ] 	)
 entity_label	[ 0	locks=0 ]	(	"from_context: none"	)
 channel	[ 0	locks=0 ]	(	[ channel	default ] 	)
@@ -679,6 +680,7 @@ Content-Type: text/plain
 version 0.8
 selection	[ 0	locks=0 ]	(	0	)
 entity_select	[ 0	locks=0 ]	(	0	)
+entity_browse	[ 0	locks=0 ]	(	0	)
 entity	[ 0	locks=0 ]	(	[ entity	from_context ] 	)
 entity_label	[ 0	locks=0 ]	(	"from_context: none"	)
 channel	[ 0	locks=0 ]	(	[ channel	default ] 	)

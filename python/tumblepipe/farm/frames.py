@@ -10,6 +10,21 @@ from pathlib import Path
 FRAME_TOKEN = '####'
 HOUDINI_FRAME_TOKEN = '$F4'
 
+# A farm or local-queue playblast renders on its worker's own disk and
+# writes only the finished movie to the project. While it renders, the
+# frames it has finished are copied into this folder beside the movie it
+# will write (``<movie>.mp4.frames``), with what it renders in
+# ``frames.json``, so they can be looked at meanwhile; the folder goes when
+# the playblast ends, either way (``farm.workers.playblast``).
+PLAYBLAST_FRAMES_SUFFIX = '.frames'
+PLAYBLAST_FRAMES_INFO = 'frames.json'
+
+
+def playblast_frames_dir(movie_path: Path) -> Path:
+    """Where the frames of the playblast that will write ``movie_path``
+    are while it renders."""
+    return movie_path.with_name(movie_path.name + PLAYBLAST_FRAMES_SUFFIX)
+
 
 def frame_file(pattern: Path, frame: int, token: str = FRAME_TOKEN) -> Path:
     """``pattern`` with the frame ``token`` in its file name replaced by

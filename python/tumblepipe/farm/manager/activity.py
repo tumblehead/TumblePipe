@@ -30,7 +30,7 @@ in this Houdini session is still running, it keeps reading, so the end of
 that batch is noticed even with the browser closed.
 
 From the same reads it feeds :class:`finished.SessionWatch`: the batches of
-this session that ended, for the Jobs popover, the Farm Manager button's dot
+this session that ended, for the Farm Manager button's hover, menu, dot
 and pulse, the status line and the OS notification. A batch that ends is
 passed once to the ``on_finished`` callback, on this thread.
 
@@ -373,7 +373,7 @@ class FarmActivity:
 
     @property
     def session(self) -> 'finished.SessionWatch':
-        """The batches of this Houdini session that ended (the Jobs popover)."""
+        """The batches of this Houdini session that ended (the button's hover and menu)."""
         return self._session
 
     def set_on_finished(self, callback: Callable[[list], None] | None) -> None:

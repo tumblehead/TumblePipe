@@ -8,7 +8,7 @@
 //! timeline: the editor's tracks (`tracks`, not editable) whose clips are
 //! the runs of frames on disk and whose hatched gaps are frames not
 //! rendered yet, with the ruler's buffered strip and the playhead. Press or
-//! drag on it to scrub. The keys are the editor's Playback keys: Space
+//! drag on it to scrub. The keys are the editor's Playback keys: Space or Up
 //! plays and pauses, Left/Right step a frame, Alt+Left/Right a second,
 //! Ctrl+Left/Right go to the previous or next run's edge, Home/End to the
 //! first and last frame; L turns looping on and off (on to start with).
@@ -166,7 +166,14 @@ fn span_label(reel: &Reel, run: &Run) -> String {
     if run.len == 1 { number(run.first) } else { format!("{}\u{2013}{}", number(run.first), number(run.first + run.len - 1)) }
 }
 
-/// What a key does in the window (the menu shows the same keys).
+/// What the play button says under the pointer: what it does now, and both
+/// keys that do the same.
+pub(crate) fn play_tip(playing: bool) -> &'static str {
+    if playing { "Pause (Space or Up)" } else { "Play (Space or Up)" }
+}
+
+/// What a key does in the window (the menu shows the same keys; Up is a
+/// second play and pause, as Space).
 pub(crate) fn key_message(key: &Key, modifiers: Modifiers) -> Option<Message> {
     let command = modifiers.command();
     match key {
@@ -179,6 +186,8 @@ pub(crate) fn key_message(key: &Key, modifiers: Modifiers) -> Option<Message> {
         Key::Named(Named::Home) => Some(Message::Seek(0)),
         Key::Named(Named::End) => Some(Message::Last),
         Key::Named(Named::Space) => Some(Message::TogglePlay),
+        // Up plays and pauses too, alone: with a modifier it is left free.
+        Key::Named(Named::ArrowUp) if modifiers == Modifiers::NONE => Some(Message::TogglePlay),
         Key::Character('r' | 'R') if command => Some(Message::Rescan),
         Key::Character('l' | 'L') if !command && !modifiers.alt => Some(Message::Loop),
         _ => None,
@@ -493,7 +502,15 @@ impl FramesView {
                 }
             })
             .collect();
-        vec![RowView { track: TrackRef::video(0), name: "Frames".into(), clips, height: tracks::ROW, solo: false, spare: false }]
+        vec![RowView {
+            track: TrackRef::video(0),
+            name: "Frames".into(),
+            clips,
+            height: tracks::ROW,
+            solo: false,
+            spare: false,
+            color: None,
+        }]
     }
 
     fn toolbar(&self) -> Element<Message> {
@@ -509,12 +526,7 @@ impl FramesView {
             .align_y(Vertical::Center)
             .push(glyph::button("start", Glyph::ToStart, "Go to start (Home)", Message::Seek(0)))
             .push(glyph::button("back", Glyph::StepBack, "Previous frame (Left)", Message::Step(-1)))
-            .push(glyph::button(
-                "play",
-                if playing { Glyph::Pause } else { Glyph::Play },
-                if playing { "Pause (Space)" } else { "Play (Space)" },
-                Message::TogglePlay,
-            ))
+            .push(glyph::button("play", if playing { Glyph::Pause } else { Glyph::Play }, play_tip(playing), Message::TogglePlay))
             .push(glyph::button("forward", Glyph::StepForward, "Next frame (Right)", Message::Step(1)))
             .push(glyph::button("end", Glyph::ToEnd, "Go to end (End)", Message::Last));
         let looping = row()
@@ -541,6 +553,7 @@ impl FramesView {
             total: self.reel.len(),
             playhead: self.transport.position,
             buffered: tracks::ranges(&self.engine.buffered_positions()),
+            rendering: Vec::new(),
             on_seek: Message::Seek,
             // No selection here: a click on a clip seeks, as one on a gap.
             on_select: |_, _, position| Message::Seek(position),
@@ -550,6 +563,10 @@ impl FramesView {
             on_row_height: |_, _| Message::Ignore,
             on_solo: |_| Message::Ignore,
             on_context: |_, _| Message::Ignore,
+            on_gesture: |_| Message::Ignore,
+            first: 0.0,
+            on_view: |_| Message::Ignore,
+            gap: None,
             note: None,
             editable: false,
         };
@@ -795,6 +812,43 @@ mod tests {
                     prop_assert_eq!(l.key, FrameKey { source: g, index: i });
                 }
             }
+        }
+    }
+
+    /// Space and Up, alone, play and pause, and no other key does: Up with
+    /// a modifier and Down do nothing. The play button's tooltip names what
+    /// it does now and both keys.
+    #[test]
+    fn space_and_up_play_and_pause_and_the_tooltip_names_both() {
+        let named = [
+            (Named::Space, "Space"),
+            (Named::ArrowUp, "Up"),
+            (Named::ArrowDown, "Down"),
+            (Named::ArrowLeft, "Left"),
+            (Named::ArrowRight, "Right"),
+            (Named::Home, "Home"),
+            (Named::End, "End"),
+        ];
+        let toggles: Vec<&str> = named
+            .iter()
+            .filter(|(key, _)| matches!(key_message(&Key::Named(*key), NONE), Some(Message::TogglePlay)))
+            .map(|(_, name)| *name)
+            .collect();
+        assert_eq!(toggles, ["Space", "Up"]);
+        for (playing, does, other) in [(false, "Play", "Pause"), (true, "Pause", "Play")] {
+            let tip = play_tip(playing);
+            assert!(tip.starts_with(does) && !tip.contains(other), "{tip}");
+            assert_eq!(tip, format!("{does} ({})", toggles.join(" or ")));
+        }
+        let shift = Modifiers { shift: true, ..NONE };
+        let control = Modifiers { control: true, ..NONE };
+        let logo = Modifiers { logo: true, ..NONE };
+        for held in [shift, ALT, control, logo, Modifiers::COMMAND] {
+            assert!(key_message(&Key::Named(Named::ArrowUp), held).is_none(), "Up with {held:?}");
+            assert!(key_message(&Key::Named(Named::ArrowDown), held).is_none(), "Down with {held:?}");
+        }
+        for c in ('a'..='z').chain('0'..='9') {
+            assert!(!matches!(key_message(&Key::Character(c), NONE), Some(Message::TogglePlay)), "{c} plays");
         }
     }
 

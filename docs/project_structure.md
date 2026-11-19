@@ -98,8 +98,14 @@ with `from tumblepipe import ...`. Subpackages:
   Deadline has no job that could run from them again; lists by default,
   `--apply` deletes. `prune.py exports` hands over to `prune_exports.py`:
   old export versions, keeping the newest N finished and anything a current
-  staged build or latest `.hip` pins; `prune_app.py` is its window (Desktop
-  **Prune Old Exports**).
+  staged build or latest `.hip` pins.
+- `cleanup/` — Clean Up Project ([user guide](archiving.md#cleaning-up-a-project)):
+  one category per module (`exports` and `jobs` over the two prunes above,
+  `renders`, `caches`, `backups`, `deleted`), each a `plan` giving every file or folder
+  it looked at a verdict and a reason, and an `apply` that checks each again
+  before it goes. `core` reads the project once for all of them, `cli` is
+  `python -m tumblepipe.cleanup`, `app` the window (Desktop **Clean Up
+  Project**; `prune_app.py` still opens it).
 - `vram/` — the VRAM Inspector ([user guide](vram-inspector.md)): reads the
   viewport hook's measurements (every memory client, and each viewer prim's
   exact bytes), scans the viewed stage, textures and cooked COP layers, and

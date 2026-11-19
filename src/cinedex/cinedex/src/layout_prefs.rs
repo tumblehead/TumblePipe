@@ -12,6 +12,7 @@
 //! big one. Only nonsense (not a number, or beyond any screen) is dropped
 //! here, for the default.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -116,14 +117,66 @@ pub fn load(path: &Path) -> Layout {
 /// Save `layout` at `path`, whole: written beside it and renamed over it,
 /// so a second Cinedex reading it never sees half a file.
 pub fn save(path: &Path, layout: Layout) -> std::io::Result<()> {
+    write_whole(path, &layout.to_json())
+}
+
+fn write_whole(path: &Path, value: &Value) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let partial = path.with_extension(format!("json.{}.partial", std::process::id()));
-    std::fs::write(&partial, serde_json::to_vec_pretty(&layout.to_json()).map_err(std::io::Error::other)?)?;
+    std::fs::write(&partial, serde_json::to_vec_pretty(value).map_err(std::io::Error::other)?)?;
     std::fs::rename(&partial, path).inspect_err(|_| {
         let _ = std::fs::remove_file(&partial);
     })
+}
+
+/// The file the folded sequences of the Shots bin are remembered in, beside
+/// the layout file at `layout`: `{"<project>": ["<sequence>", ...]}`, a
+/// project by its root. A sequence's name is folded by the chevron before
+/// it; one that is not listed shows its shots.
+pub fn folded_path(layout: &Path) -> PathBuf {
+    layout.with_file_name("folded.json")
+}
+
+/// The sequences `value` (the file's JSON) says are folded in `project`;
+/// none when it says nothing, or nonsense.
+pub fn folded_from_json(value: &Value, project: &str) -> BTreeSet<String> {
+    value
+        .get(project)
+        .and_then(Value::as_array)
+        .map(|names| names.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// `value` with `project`'s folded sequences set to `folded`, the other
+/// projects' kept. A project with none folded is left out; a file that was
+/// not an object starts again.
+pub fn folded_into_json(value: Value, project: &str, folded: &BTreeSet<String>) -> Value {
+    let mut all = match value {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    if folded.is_empty() {
+        all.remove(project);
+    } else {
+        all.insert(project.to_owned(), json!(folded));
+    }
+    Value::Object(all)
+}
+
+fn read_json(path: &Path) -> Value {
+    std::fs::read(path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(Value::Null)
+}
+
+/// The sequences folded in `project`, as the file at `path` says.
+pub fn load_folded(path: &Path, project: &str) -> BTreeSet<String> {
+    folded_from_json(&read_json(path), project)
+}
+
+/// Remember `folded` for `project` in the file at `path`.
+pub fn save_folded(path: &Path, project: &str, folded: &BTreeSet<String>) -> std::io::Result<()> {
+    write_whole(path, &folded_into_json(read_json(path), project, folded))
 }
 
 #[cfg(test)]
@@ -191,6 +244,39 @@ mod tests {
             }
             // What loads saves and loads back unchanged.
             prop_assert_eq!(Layout::from_json(&layout.to_json()), layout);
+        }
+    }
+
+    proptest! {
+        /// Folding is remembered per project: what one project saves loads
+        /// back for it, and every other project's is as it was, whatever
+        /// the file held before (nothing, nonsense, other projects).
+        #[test]
+        fn folded_sequences_load_back_per_project(
+            saves in prop::collection::vec((0usize..3, prop::collection::btree_set("[A-C][0-9]?", 0..4)), 1..8),
+            before in prop::sample::select(vec!["", "{ not json", "[1, 2]", r#"{"P0": "x", "P9": ["Z"]}"#]),
+        ) {
+            let dir = tempfile::tempdir().unwrap();
+            let path = folded_path(&dir.path().join("deep").join("layout.json"));
+            prop_assert_eq!(path.parent().map(Path::to_path_buf), Some(dir.path().join("deep")));
+            if !before.is_empty() {
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(&path, before).unwrap();
+            }
+            // The oracle: a map, last save wins.
+            let mut oracle: std::collections::BTreeMap<String, BTreeSet<String>> = Default::default();
+            if before.contains("P9") {
+                oracle.insert("P9".into(), ["Z".to_owned()].into());
+            }
+            for (project, folded) in saves {
+                let project = format!("P{project}");
+                save_folded(&path, &project, &folded).unwrap();
+                oracle.insert(project, folded);
+                for name in ["P0", "P1", "P2", "P9", "never"] {
+                    prop_assert_eq!(load_folded(&path, name), oracle.get(name).cloned().unwrap_or_default(), "{}", name);
+                }
+            }
+            prop_assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 1, "a partial file was left");
         }
     }
 

@@ -27,6 +27,11 @@ entity's, as the project config says) and the frame list the job renders
 (``--expect``, the job's ``frames``). Either is left out when it is not
 known, or the frame list is not one Cinedex reads (:func:`expected_frames`).
 
+A playblast job is offered while it renders: its worker copies each
+finished frame beside the movie it will write (``<movie>.mp4.frames``,
+``farm.workers.playblast.FrameMirror``) and removes them when it ends, so
+a finished playblast is played as its movie.
+
 An mp4 job is not offered: its output is a movie, and the frames it encodes
 are another job's output, a row of their own in the same batch. A batch row
 (or several jobs) opens the best output among its jobs: a full job before
@@ -46,6 +51,7 @@ from pathlib import Path
 from typing import Iterable
 
 from tumblepipe import naming
+from tumblepipe.farm.frames import playblast_frames_dir
 from tumblepipe.farm.manager.rows import JobRow, row_entity
 
 #: The menu item.
@@ -59,6 +65,9 @@ RENDER = 'render'
 FRAME_KINDS = (SLAPCOMP, COMPOSITE, DENOISE, RENDER)
 #: The farm worker that encodes frames to a movie.
 MOVIE_KIND = 'mp4'
+#: The farm worker that renders a playblast: frames beside its movie to
+#: come while it renders (``frames.playblast_frames_dir``), then the movie.
+PLAYBLAST_KIND = 'playblast'
 
 #: The file kinds Cinedex shows as frames (``previews.rs`` FRAME_EXTENSIONS).
 FRAME_EXTENSIONS = ('exr', 'jpg', 'jpeg')
@@ -150,6 +159,16 @@ def job_target(row: JobRow) -> Target:
         return Target(row, reason=(
             'An mp4 job writes a movie, not frames: preview the job whose '
             'frames it encodes (or the batch row)'
+        ))
+    if row.kind == PLAYBLAST_KIND:
+        if not row.outputs:
+            return Target(row, reason='The job names no output')
+        frames = playblast_frames_dir(Path(row.outputs[0]))
+        if has_frames(frames):
+            return Target(row, frames)
+        return Target(row, reason=(
+            "A playblast's frames are there only while it renders, from its "
+            'second frame on; when it is done, play its movie'
         ))
     if row.kind not in FRAME_KINDS:
         what = f'a {row.kind} job' if row.kind else 'a job of an unknown kind'

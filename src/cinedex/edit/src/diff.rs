@@ -180,6 +180,7 @@ mod tests {
     fn a_lift_is_one_clip_taken_out() {
         let mut edit = Edit::new(24, [1920, 1080], "01:00:00:00");
         edit.video.push(crate::document::Track {
+            color: None,
             name: "V1".into(),
             clips: vec![
                 crate::ops::tests::vclip(0, 10, 0, crate::ops::tests::media(5)),

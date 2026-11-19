@@ -324,6 +324,27 @@ class CacheBase(FrameRangeNode, EntityNode):
         if version_name is None: return
         self.set_version_name(version_name)
 
+    def open_location(self, open_folder=None) -> Path:
+        """Show the picked version's folder in the OS file browser
+        (``util.desktop.open_in_file_browser``; ``open_folder`` stands in
+        for it in tests); with no version picked, the cache's folder. A
+        folder that is not there yet raises the node's error saying so:
+        the shell would open some other place and look as if it worked.
+
+        The Version parm is read as it stands: a version that is not on
+        disk is exactly what the message is for."""
+        from tumblepipe.util import desktop
+        folder = location_folder(
+            self._require_cache_path(), self.get_cache_name(), self.parm('version').eval(),
+        )
+        refusal = location_refusal(
+            folder, folder.is_dir(), self.get_cache_name(), self.parm('version').eval(),
+        )
+        if refusal is not None:
+            raise self._error(refusal)
+        (open_folder or desktop.open_in_file_browser)(folder)
+        return folder
+
     def _missing_cache_message(self, cache_name: str) -> str:
         department_name = self.require_department_name()
         location_name = self.get_location_name()
@@ -485,6 +506,33 @@ def named_version_refusal(version_name: str, complete: bool) -> str | None:
     return None
 
 
+def location_folder(cache_path: Path, cache_name: str | None, version_name: str | None) -> Path:
+    """The folder **Open Location** shows: the picked version's
+    (``<caches>/<name>/<version>``, where :meth:`CacheBase.cache_file_path`
+    writes), the cache's with no version picked, the workfile's caches with
+    no name either."""
+    if not cache_name: return Path(cache_path)
+    if not version_name: return Path(cache_path) / cache_name
+    return Path(cache_path) / cache_name / version_name
+
+
+def location_refusal(
+    folder: Path, exists: bool, cache_name: str | None, version_name: str | None,
+    ) -> str | None:
+    """Why **Open Location** opens nothing, None when ``folder`` is there:
+    what is missing, where it would be, and what makes it."""
+    if exists: return None
+    where = path_str(folder)
+    if cache_name and version_name:
+        return (
+            f"version {version_name} of cache '{cache_name}' is not on disk "
+            f'yet ({where}): press Cache to write it, or pick another Version'
+        )
+    if cache_name:
+        return f"cache '{cache_name}' has nothing on disk yet ({where}): press Cache to write it"
+    return f'nothing is cached here yet ({where}): name a cache and press Cache'
+
+
 class LopCache(CacheBase):
     """The LOP th::cache: one ``.usd`` stage per version."""
     CATEGORY = 'Lop'
@@ -621,3 +669,10 @@ def cache(kwargs):
 
 def load(kwargs):
     wrap(kwargs['node']).load()
+
+
+def open_location(kwargs):
+    """Open Location: the picked version's folder in the OS file browser;
+    a folder that is not there yet is said in a message, not a traceback."""
+    with ns.node_errors_as_message('Open Location'):
+        wrap(kwargs['node']).open_location()

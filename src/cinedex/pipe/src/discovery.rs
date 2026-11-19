@@ -139,7 +139,7 @@ pub fn playblast_dir(project: &Project, entity: &Uri, department: &str, layer: O
     project.storage.resolve(&uri).map_err(|e| e.to_string())
 }
 
-fn playblast_stem(entity: &Uri, department: &str, layer: Option<&str>) -> String {
+pub(crate) fn playblast_stem(entity: &Uri, department: &str, layer: Option<&str>) -> String {
     match layer {
         Some(layer) => entity_stem(&entity.segments, &[department, layer]),
         None => entity_stem(&entity.segments, &[department]),
@@ -147,7 +147,7 @@ fn playblast_stem(entity: &Uri, department: &str, layer: Option<&str>) -> String
 }
 
 /// The version a playblast file is: `<stem>_<version>`, or a bare `<version>`.
-fn version_of_movie(path: &Path, stem: &str) -> Option<String> {
+pub(crate) fn version_of_movie(path: &Path, stem: &str) -> Option<String> {
     let name = file_name(path);
     let (file_stem, _) = split_suffix(&name);
     if is_valid_version_name(file_stem) {
@@ -158,7 +158,7 @@ fn version_of_movie(path: &Path, stem: &str) -> Option<String> {
 }
 
 /// A folder's playblasts by version; the shot-named file wins over a bare one.
-fn movie_versions(directory: &Path, stem: &str) -> HashMap<String, PathBuf> {
+pub(crate) fn movie_versions(directory: &Path, stem: &str) -> HashMap<String, PathBuf> {
     let mut found: HashMap<String, PathBuf> = HashMap::new();
     if !directory.is_dir() {
         return found;
@@ -374,6 +374,13 @@ pub struct Aov {
 impl Aov {
     /// Whether its frames are exactly `range`'s (`AOV.is_complete`).
     pub fn is_complete(&self, range: &BlockRange) -> bool {
+        self.frames().is_some_and(|found| found == range.frames().collect::<Vec<_>>())
+    }
+
+    /// The numbers of the frames on disk, ascending: one listing of its
+    /// folder. None when a frame's number does not read (such a version
+    /// cannot play).
+    pub fn frames(&self) -> Option<Vec<i64>> {
         let prefix = format!("{}.", self.name);
         let suffix = format!(".{}", self.suffix);
         let mut found: Vec<i64> = Vec::new();
@@ -386,14 +393,12 @@ impl Aov {
                 continue;
             }
             let (stem, _) = split_suffix(&name);
-            match stem.rsplit('.').next().and_then(|n| n.trim().parse().ok()) {
-                Some(number) => found.push(number),
-                // Python's int() raises here; such a version cannot play.
-                None => return false,
-            }
+            // Python's int() raises on a number that does not read; such a
+            // version cannot play.
+            found.push(stem.rsplit('.').next().and_then(|n| n.trim().parse().ok())?);
         }
         found.sort();
-        found == range.frames().collect::<Vec<_>>()
+        Some(found)
     }
 }
 

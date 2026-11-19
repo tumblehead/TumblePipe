@@ -664,7 +664,8 @@ class SceneManager:
 
     def open_farm_manager(self, refresh_cb=None, select: str = "") -> None:
         """Open the Farm Manager: local and farm jobs, their tasks and logs;
-        with ``select``, that job selected (the Jobs popover's Show in Jobs)."""
+        with ``select``, that job selected (Show in Jobs, in the Farm Manager
+        button's right-click menu)."""
         def _open():
             try:
                 import hou
@@ -819,6 +820,40 @@ def farm_seed(scene_ctx, members_of) -> tuple[list, list[str], str, str | None]:
     return [uri], [segments[-1]], segments[0], department
 
 
+def workfile_entities(scene_ctx, members_of) -> list[str]:
+    """The entities the loaded workfile is of, as URI strings: its shot or
+    asset, or a Multi workfile's members (``members_of(uri)`` lists them).
+    Empty with no pipeline workfile, or one of neither context.
+
+    The Farm Submit grid highlights their rows (``grid.active_rows``),
+    whoever opened it and whatever is ticked.
+    """
+    from tumblepipe.farm.submit.settings import expand_targets
+
+    if scene_ctx is None:
+        return []
+    uri = scene_ctx.entity_uri
+    segments = uri.segments
+    if not segments or segments[0] not in ("shots", "assets"):
+        return []
+    return [str(member) for member in expand_targets([uri], members_of)]
+
+
+def _loaded_workfile_entities() -> list[str]:
+    """:func:`workfile_entities` of the scene Houdini has open; empty when
+    it cannot be read (the highlight is a help, never a reason to fail)."""
+    try:
+        import hou
+        from tumblepipe.pipe.paths import get_workfile_context
+        hip = hou.hipFile.path()
+        if not hip or hou.hipFile.isNewFile():
+            return []
+        return workfile_entities(get_workfile_context(Path(hip)), _multi_members)
+    except Exception:
+        log.debug("Farm Submit: the open workfile's entity could not be read", exc_info=True)
+        return []
+
+
 def _multi_members(group_uri) -> list:
     """Member URIs of the Multi at ``group_uri``; empty when it is gone."""
     from tumblepipe.config.groups import get_group
@@ -864,6 +899,8 @@ def open_submit_jobs_dialog(
     dialog = SubmitJobsDialog(
         uris, names, context, parent=hou.qt.mainWindow(),
         department=department, tick_kinds=tick_kinds, channels=channels,
+        # The open workfile's rows are highlighted, whoever opened the grid.
+        active=_loaded_workfile_entities(),
     )
     if geometry is not None:
         dialog.setGeometry(geometry)

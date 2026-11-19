@@ -48,6 +48,11 @@ pub struct Track<C> {
     pub name: String,
     /// In position order, never overlapping.
     pub clips: Vec<C>,
+    /// The colour its row is marked with: a name of the editor's palette
+    /// (`blue`, `teal`, ...). None, the default, is not written, so an
+    /// edit without colours is the same text as before there were any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -540,7 +545,7 @@ impl<S: Clone> Edit<S> {
                 let VideoClip { at, duration, source_in, fade_in, fade_out, opacity, transform, .. } = *c;
                 clips.push(VideoClip { at, duration, source_in, source: f(&c.source)?, fade_in, fade_out, opacity, transform });
             }
-            video.push(Track { name: t.name.clone(), clips });
+            video.push(Track { name: t.name.clone(), clips, color: t.color.clone() });
         }
         let mut audio = Vec::with_capacity(self.audio.len());
         for t in &self.audio {
@@ -549,7 +554,7 @@ impl<S: Clone> Edit<S> {
                 let AudioClip { at, duration, source_in, gain_db, fade_in, fade_out, .. } = *c;
                 clips.push(AudioClip { at, duration, source_in, source: f(&c.source)?, gain_db, fade_in, fade_out });
             }
-            audio.push(Track { name: t.name.clone(), clips });
+            audio.push(Track { name: t.name.clone(), clips, color: t.color.clone() });
         }
         Ok(Edit {
             fps: self.fps,
@@ -559,6 +564,15 @@ impl<S: Clone> Edit<S> {
             audio,
             markers: self.markers.clone(),
         })
+    }
+
+    /// The colour name `track` is marked with, if it has one (and is a
+    /// track of the edit).
+    pub fn track_color(&self, track: TrackRef) -> Option<&str> {
+        match track.kind {
+            TrackKind::Video => self.video.get(track.index)?.color.as_deref(),
+            TrackKind::Audio => self.audio.get(track.index)?.color.as_deref(),
+        }
     }
 
     pub fn track_name(&self, track: TrackRef) -> &str {

@@ -103,9 +103,9 @@ pub fn hatch() -> Color {
 }
 
 /// A button on the panels: the neutral fill. primer's default intent fills
-/// a button with the theme's `primary`, the light grey that marks what is
-/// on, and white words on it do not read.
-pub fn button<Message>(id: Id, child: impl Into<Element<Message>>) -> primer::widget::Button<Message> {
+/// a button with the theme's accent, which here is the grey that marks what
+/// is on.
+pub fn button<Message>(id: Id, child: impl Into<Element<Message>> + 'static) -> primer::widget::Button<Message> {
     primer::prelude::button(id, child).intent(Intent::Secondary)
 }
 
@@ -158,9 +158,41 @@ pub fn department(department: &str) -> Color {
     Color::from_rgb8(r, g, b)
 }
 
+/// The names a track's colour goes by in the edit, one per hue of
+/// [`DEPARTMENT_HUES`], in its order.
+pub const TRACK_COLORS: [&str; 8] = ["violet", "blue", "teal", "green", "olive", "ochre", "brick", "plum"];
+
+/// The colour a track named `name` in the edit is marked with: its hue,
+/// lighter than a clip's so a thin stripe of it shows on the panels. None
+/// for a name this palette has not got (an edit from a later Cinedex): the
+/// track is drawn unmarked, and keeps its name in the edit.
+pub fn track(name: &str) -> Option<Color> {
+    let (r, g, b) = DEPARTMENT_HUES[TRACK_COLORS.iter().position(|n| *n == name)?];
+    let lit = |c: u8| (f32::from(c) * 1.7).min(255.0) as u8;
+    Some(Color::from_rgb8(lit(r), lit(g), lit(b)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every colour a track can have is a colour the edit takes, has a hue
+    /// of its own, and stands off the panel its stripe is drawn on (3:1,
+    /// the contrast for marks that are not text). Any other name is none.
+    #[test]
+    fn every_track_colour_shows_on_the_panel() {
+        let mut seen = Vec::new();
+        for name in TRACK_COLORS {
+            assert!(th_edit::ops::color_name(name), "{name}");
+            let color = track(name).expect(name);
+            assert!((luma(color) + 0.05) / (luma(panel()) + 0.05) > 3.0, "{name} {color:?}");
+            assert!(!seen.contains(&(color.r.to_bits(), color.g.to_bits(), color.b.to_bits())), "{name} is another's hue");
+            seen.push((color.r.to_bits(), color.g.to_bits(), color.b.to_bits()));
+        }
+        for name in ["", "Blue", "blue ", "pink", "none"] {
+            assert!(track(name).is_none(), "{name:?}");
+        }
+    }
 
     fn luma(c: Color) -> f32 {
         0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b

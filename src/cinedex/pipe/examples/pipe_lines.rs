@@ -1,7 +1,8 @@
 //! Answers questions about a project, one JSON request per stdin line and
 //! one JSON reply per stdout line, for `tests/test_pipe_parity.py` and
 //! `tests/test_live_parity.py`, `tests/test_previews_parity.py` and
-//! `tests/test_frame_list_parity.py`, `tests/test_expect_parity.py` and
+//! `tests/test_frame_list_parity.py`, `tests/test_expect_parity.py`,
+//! `tests/test_number_expr_parity.py` and
 //! `tests/test_edit_document_parity.py`, which ask Python the same and
 //! compare.
 //!
@@ -176,6 +177,18 @@ fn live_answer(request: &Value) -> Option<Result<Value, String>> {
         // The local farm's preview frames (#75, `test_previews_parity`):
         // a batch folder's ready previews, each with its summary and frame
         // files; one frame file of a pattern; the farm's folder.
+        // Maths typed into a number field (`test_number_expr_parity`): the
+        // number `text` stands for, from `current` when it has one, and
+        // that number as a whole-number field takes it. A refusal answers
+        // its code.
+        "number_expr" => text(request, "text").map(|typed| {
+            let current = request.get("current").and_then(Value::as_f64);
+            let plain = th_pipe::number_expr::is_plain(typed);
+            match th_pipe::number_expr::evaluate(typed, current) {
+                Ok(value) => json!({"value": value, "whole": th_pipe::number_expr::whole(value), "plain": plain}),
+                Err(problem) => json!({"refused": problem.code(), "plain": plain}),
+            }
+        }),
         // A job's frame list as `cinedex --expect` reads it: its frames.
         "expect_frames" => text(request, "text").and_then(th_playlist::frame_list::parse_frame_list).map(|frames| json!(frames)),
         // A Frame List movie's `frame_ranges` tag as Cinedex reads it (#86):
@@ -246,7 +259,7 @@ fn live_answer(request: &Value) -> Option<Result<Value, String>> {
                 }
                 clips.push(made);
             }
-            edit.video.push(Track { name: "V1".into(), clips });
+            edit.video.push(Track { name: "V1".into(), clips, color: None });
             match edit.problem() {
                 Some(problem) => Err(problem),
                 None => Ok(json!(edit.to_json())),

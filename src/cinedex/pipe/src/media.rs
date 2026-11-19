@@ -127,10 +127,90 @@ pub fn import(project: &Project, file: &Path, item: &str, measure: Measure, note
     read_version(item, &dir)
 }
 
+/// Write `note` as the note of `item`'s version `version`; everything else
+/// its `context.json` says stays.
+pub fn set_note(project: &Project, item: &str, version: &str, note: &str) -> Result<(), String> {
+    let marker = library_dir(project)?.join(item).join(version).join(VERSION_MARKER);
+    let mut context: Value = serde_json::from_str(&std::fs::read_to_string(&marker).map_err(|e| format!("{}: {e}", marker.display()))?)
+        .map_err(|e| format!("{}: {e}", marker.display()))?;
+    let fields = context.as_object_mut().ok_or_else(|| format!("{}: not an object", marker.display()))?;
+    fields.insert("note".into(), json!(note));
+    store_json(&marker, &context).map_err(|e| e.to_string())
+}
+
+/// Give item `from` the name `to`: its folder is renamed, with every
+/// version in it (the files keep the names they were copied under, which
+/// each version's `context.json` gives). Refused when `to` is no name for
+/// an item or is one already. An edit that uses the item names it as
+/// `from`, and is not looked at here: the caller answers for that.
+pub fn rename_item(project: &Project, from: &str, to: &str) -> Result<(), String> {
+    if let Some(problem) = entity_name_problem(to) {
+        return Err(format!("{to:?}: an item's name {problem}"));
+    }
+    let library = library_dir(project)?;
+    let (old, new) = (library.join(from), library.join(to));
+    if !is_name_alphabet(from) || !old.is_dir() {
+        return Err(format!("{from}: no such item"));
+    }
+    // Names differ by more than case, or Windows would call them one folder.
+    if list_items(project)?.iter().any(|item| item.eq_ignore_ascii_case(to)) {
+        return Err(format!("{to}: there is an item of that name"));
+    }
+    std::fs::rename(&old, &new).map_err(|e| format!("renaming {}: {e}", old.display()))?;
+    for dir in list_version_paths(&new).into_iter().filter(|dir| is_finished_version(dir)) {
+        let marker = dir.join(VERSION_MARKER);
+        let Ok(text) = std::fs::read_to_string(&marker) else { continue };
+        let Ok(mut context) = serde_json::from_str::<Value>(&text) else { continue };
+        if let Some(fields) = context.as_object_mut() {
+            fields.insert("item".into(), json!(to));
+            store_json(&marker, &context).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::testing::make_project;
+
+    /// A note written is the note read, of that version alone; a renamed
+    /// item is found under its new name with every version, file and note
+    /// it had, and under the old no more. A name taken (in any case), a
+    /// bad name, an item that is not there: refused, and nothing moves.
+    #[test]
+    fn notes_and_names_change_and_nothing_else_does() {
+        let (dir, root) = make_project();
+        let project = Project::open(&root, &root).unwrap();
+        let source = dir.path().join("cut3.mov");
+        std::fs::write(&source, b"movie").unwrap();
+        let movie = Measure { frames: Some((240, (24, 1))), seconds: 10.0, sound: true };
+        import(&project, &source, "animatic", movie, "first").unwrap();
+        import(&project, &source, "animatic", movie, "second").unwrap();
+        import(&project, &source, "music", movie, "").unwrap();
+        set_note(&project, "animatic", "v0002", "the \"new\" pass").unwrap();
+        let before = item_versions(&project, "animatic").unwrap();
+        assert_eq!(before.iter().map(|v| v.note.as_str()).collect::<Vec<_>>(), ["first", "the \"new\" pass"]);
+        assert_eq!(before[1].measure, movie);
+        assert!(set_note(&project, "animatic", "v0009", "x").is_err());
+
+        for (from, to) in [("animatic", "music"), ("animatic", "MUSIC"), ("animatic", "bad name"), ("animatic", "nul"), ("nothere", "fine")]
+        {
+            assert!(rename_item(&project, from, to).is_err(), "{from} -> {to}");
+            assert_eq!(list_items(&project).unwrap(), ["animatic", "music"]);
+        }
+        rename_item(&project, "animatic", "boards").unwrap();
+        assert_eq!(list_items(&project).unwrap(), ["boards", "music"]);
+        let after = item_versions(&project, "boards").unwrap();
+        assert_eq!(after.len(), 2);
+        for (was, is) in before.iter().zip(&after) {
+            assert_eq!((&was.version, &was.note, &was.measure, &was.user), (&is.version, &is.note, &is.measure, &is.user));
+            assert_eq!(was.path.file_name(), is.path.file_name());
+            assert_eq!(std::fs::read(&is.path).unwrap(), b"movie");
+        }
+        assert!(item_versions(&project, "animatic").unwrap().is_empty());
+        assert_eq!(item_versions(&project, "music").unwrap().len(), 1);
+    }
 
     #[test]
     fn imports_are_versions_of_named_items() {

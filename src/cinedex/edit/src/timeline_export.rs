@@ -215,6 +215,8 @@ pub enum Kind {
     Transform,
     /// An audio clip's level or fades (OTIO).
     AudioLevel,
+    /// A track with a colour: by the track.
+    TrackColor,
     /// An audio clip of nothing that sounds.
     Silent,
 }
@@ -293,6 +295,9 @@ impl Summary {
                     Kind::Transform => format!("{n} clip{s} moved, scaled or turned: not in the timeline, the clip is written as fitted"),
                     Kind::AudioLevel => format!("{n} audio clip{s} with a level or fades: only in the clip's metadata"),
                     Kind::Silent => format!("{n} audio clip{s} of something with no sound: not written"),
+                    Kind::TrackColor => {
+                        format!("{n} track colour{s}: an OTIO keeps it in the track's metadata, an XML has no place for it; an NLE shows neither")
+                    }
                 };
                 format!("{what} ({}).", examples(names))
             })
@@ -407,6 +412,10 @@ pub fn otio_summary(edit: &FrozenEdit, otio: &Value, probe: &impl Probe) -> Summ
             _ => {}
         }
     };
+    // A track's colour is in its metadata only: no NLE reads it from there.
+    for track in tracks.iter().filter(|t| t["metadata"]["tumblepipe"]["color"].is_string()) {
+        summary.note(Kind::TrackColor, track["name"].as_str().unwrap_or_default());
+    }
     for clip in edit.video.iter().flat_map(|t| &t.clips) {
         source(&clip.source, &mut summary);
     }

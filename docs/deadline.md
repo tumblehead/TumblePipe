@@ -340,9 +340,9 @@ red, and so is its batch's; finished jobs are dimmed so the ones that need
 you stand out. A batch is listed under its project, kind and entity (hover it for the
 full Deadline batch name). To open it, use
 **TumbleTrove ▸ TumblePipe ▸ Farm Manager** in Houdini's menu bar, the
-browser's **Farm Manager** quick action (a double-click, or **Open Jobs** in
-the popover a single click opens; see [When your jobs end](#when-your-jobs-end)),
-the **Farm Manager** button of a
+browser's **Farm Manager** quick action (a click always opens it; see
+[When your jobs end](#when-your-jobs-end) for what its hover and right-click
+add), the **Farm Manager** button of a
 submission's progress in the Farm Submit dialog, or the **Farm Manager** script in TumbleTrove
 Desktop (`python -m tumblepipe.farm.manager`).
 
@@ -360,6 +360,11 @@ Desktop (`python -m tumblepipe.farm.manager`).
   **Dismiss** closes the notice. Several at once wait behind each other
   (*+N more*). The band does not interrupt anything, and previews that were
   ready before the window opened are not announced.
+- **One window:** there is only ever one Farm Manager. Opening it again,
+  from any of those places, brings the open one to the front; if you had
+  minimised it, it is restored (to maximised, if that is how you had it)
+  rather than left collapsed. The Entity Editor, the Database Editor and
+  the VRAM Inspector behave the same way.
 - **Layout:** drag the grey lines between the panes (the job list and its
   details, the tasks and the log, and the top and bottom halves) to resize
   them; a line lights up under the mouse.
@@ -449,7 +454,11 @@ Desktop (`python -m tumblepipe.farm.manager`).
   Loop, frame stepping, a timeline, at the shot's fps (`--fps`, from the
   project config; 24 when the job names no shot). The job's frames not
   rendered yet are gaps on that timeline (`--expect`, the job's frame
-  list), which fill in as frames land while the window is open. It looks where *Open output folder* goes:
+  list), which fill in as frames land while the window is open. A
+  **playblast** job is offered while it renders, from its second frame on:
+  its worker copies each finished frame beside the movie it will write
+  (`<movie>.mp4.frames`) and removes them when it ends, so a finished
+  playblast is played as its movie. For the other jobs it looks where *Open output folder* goes:
   a slapcomp's or a merged comp's frames are in that folder, a render's, a
   denoise's or a channel comp's in the `beauty` AOV folder under it. It is
   offered for render, denoise, composite and slapcomp jobs (partial or full)
@@ -523,7 +532,8 @@ this machine, TumblePipe tells you without getting in your way:
   Jobs that write nothing to look at (publish, export, build, stage,
   collapse, sync, Discord notify) open nothing on their own. A
   failed batch opens its frames when it wrote some; one that wrote none
-  opens nothing (use **Show in Jobs** in Houdini to see why). The
+  opens nothing (right-click the **Farm Manager** button in Houdini and
+  pick its **Show in Jobs** to see why). The
   notification says it comes from **TumblePipe**. On macOS and Linux it is
   words only: clicking it opens nothing, as the notifiers those systems
   ship cannot open a folder. Switch to Houdini for the buttons.
@@ -542,40 +552,44 @@ this machine, TumblePipe tells you without getting in your way:
   browser's *Reduce motion* setting, or Windows' *Animation effects* off);
   the dot is shown either way.
 
-A click on the **Farm Manager** button then opens the **Jobs popover**,
-*Finished since you looked*: this session's ended batches, failures first,
-then the newest, at most ten. A row is two lines, so a long list stays
-short: what it was for, when it ended and one small button on the first
-line, and the one line of what happened under the name (cut with an
-ellipsis when it is long; hover for all of it). The popover grows to 60 % of
-the screen's height and then scrolls. The button is the row's main action;
-**right-click a row** for the menu of all of them, and **double-click a
-row** to run the main one:
+The **Farm Manager** button then does three things, none of which gets in
+the way of the click:
 
-- a finished batch that wrote frames: **Preview in Cinedex** (opens its
-  frames in Cinedex, as the Farm Manager's *Preview in Cinedex* does) is
-  the main action, **Show in Jobs** is in the menu; one that wrote none (a
-  publish): **Show in Jobs**;
-- a failed batch: **Show in Jobs** is the main action, which opens the Farm
-  Manager with the failed job selected and its failed task's log in view;
-  **Preview N Frames in Cinedex** is in the menu when it wrote some frames
-  before failing.
+- **A click always opens the Farm Manager**, in front of the other windows
+  and restored if you had minimised it. It also marks the ended batches
+  seen: the dot goes.
+- **Hover it** for its one summary. Under your recent jobs (see
+  [The Farm Manager](#the-farm-manager)) it lists *Finished since you
+  looked*: the batches of this session that ended since you last opened the
+  Farm Manager from the button, failures first, then the newest, each as
+  the line the status bar showed. Three are named, the rest counted
+  ("and 2 more"). Once you have clicked the button the list is gone until
+  another batch ends.
+- **Right-click it** for **Open Farm Manager** and one entry per ended batch
+  of this session (failures first, then the newest, at most ten), named
+  after the batch, that runs its main action:
+  - a finished batch that wrote frames: **Preview in Cinedex** (opens its
+    frames in Cinedex, as the Farm Manager's *Preview in Cinedex* does);
+    one that wrote none (a publish): **Show in Jobs**;
+  - a failed batch: **Show in Jobs**, which opens the Farm Manager with the
+    failed job selected and its failed task's log in view. When it wrote
+    some frames before failing, a second entry under it, **Preview N
+    Frames in Cinedex**, opens those.
 
-Opening the popover marks every row seen: the dot goes. A batch you retry
-that ends again comes back as unseen. **Open Jobs** in the popover's header,
-or a double-click on the button, opens the Farm Manager. A press of Esc or a
-click outside closes the popover. Cancelled batches are not reported.
+Through 1.112 a click opened a popover with that list instead, and only a
+double-click opened the Farm Manager; with the hover up as well that was
+two summaries in front of the window you wanted.
+
+A batch you retry that ends again comes back as unseen. Cancelled batches
+are not reported.
 
 Only batches submitted since this Houdini session started count, by you in
 this project, and their end is noticed only once the asset browser has
 been opened in the session (it starts the background reading). The status
-line and the desktop notification work with any TumbleTrove; the popover,
-dot and pulse need TumbleTrove 0.60.0 (its `get_quick_action_dot`,
-`get_quick_action_popover` and `request_quick_action_pulse` hooks), and the
-two-line rows, the right-click menu, the double-click and the scrolling need
-TumbleTrove 0.64.0 (an older one draws each row in three lines, with all of
-its buttons under the text). With a TumbleTrove older than 0.60.0 a click on
-the button opens the Farm Manager as before. The taskbar flash needs none.
+line, the desktop notification, the click, the hover and the right-click
+menu work with any TumbleTrove; the dot and the pulse need TumbleTrove
+0.60.0 (its `get_quick_action_dot` and `request_quick_action_pulse` hooks).
+The taskbar flash needs none.
 
 ## Further reading
 

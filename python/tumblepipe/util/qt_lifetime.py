@@ -29,7 +29,8 @@ half-destroyed view again. The entity picker's card delegate did that in
 
 TumbleTrove 0.65+ ships the same helper as
 ``tumbletrove.common.gui.release_kept_references``; this module uses it when
-present and its own copy otherwise (TumblePipe requires tumbletrove >= 0.57).
+present and its own copy otherwise (only a TumbleTrove older than the 0.66
+``hpm.toml`` requires would need the copy).
 """
 from __future__ import annotations
 

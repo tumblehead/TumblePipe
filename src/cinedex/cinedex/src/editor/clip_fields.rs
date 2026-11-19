@@ -6,7 +6,8 @@
 //! the clip's value until something is typed into it; Enter sets what was
 //! typed, as one op (`SetFades`, `SetOpacity`, `SetTransform`) through the
 //! document's history, refused (the status says why) rather than clamped,
-//! as every op is.
+//! as every op is. What is typed may be maths (`100/2`, `+=10` from the
+//! field's value: `crate::number_field`); a fade rounds to whole frames.
 
 use primer::prelude::*;
 use th_edit::document::{Clip, ClipRef, Frame, Source, TrackKind, Transform, WorkingEdit};
@@ -15,6 +16,7 @@ use th_edit::ops::Op;
 use super::{Editor, Message};
 use crate::ladder::{Number, ladder};
 use crate::look;
+use crate::number_field;
 
 /// A clip field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,8 +129,12 @@ pub(crate) fn field_op(edit: &WorkingEdit, clip: ClipRef, field: ClipField, text
     let text = text.trim();
     match field {
         ClipField::FadeIn | ClipField::FadeOut => {
-            let frames: Frame =
-                text.parse().ok().filter(|f| *f >= 0).ok_or_else(|| format!("{text:?}: a fade is a whole number of frames, 0 or more"))?;
+            let own = if field == ClipField::FadeIn { fade_in } else { fade_out };
+            let typed = number_field::whole(text, Some(own));
+            let frames: Frame = typed
+                .ok()
+                .filter(|f| *f >= 0)
+                .ok_or_else(|| number_field::refusal(text, typed.err(), "a fade is a whole number of frames, 0 or more"))?;
             let (new_in, new_out) = if field == ClipField::FadeIn { (frames, fade_out) } else { (fade_in, frames) };
             Ok(((new_in, new_out) != (fade_in, fade_out)).then_some(Op::SetFades { clip, fade_in: new_in, fade_out: new_out }))
         }
@@ -136,14 +142,11 @@ pub(crate) fn field_op(edit: &WorkingEdit, clip: ClipRef, field: ClipField, text
             if clip.track.kind != TrackKind::Video {
                 return Err("only a video clip has an opacity".into());
             }
-            let number: f64 = text
-                .strip_suffix('%')
-                .unwrap_or(text)
-                .trim()
-                .parse()
+            let typed = number_field::number(text, &['%'], Some(opacity * 100.0));
+            let number: f64 = typed
                 .ok()
                 .filter(|p: &f64| (0.0..=100.0).contains(p))
-                .ok_or_else(|| format!("{text:?}: an opacity is a percentage, 0 to 100"))?;
+                .ok_or_else(|| number_field::refusal(text, typed.err(), "an opacity is a percentage, 0 to 100"))?;
             let new = number / 100.0;
             Ok((percent(new) != percent(opacity)).then_some(Op::SetOpacity { clip, opacity: new }))
         }
@@ -153,14 +156,10 @@ pub(crate) fn field_op(edit: &WorkingEdit, clip: ClipRef, field: ClipField, text
             }
             let (min, max) = field.limits();
             let unit = if field == ClipField::Rotation { '\u{b0}' } else { '%' };
-            let number: f64 = text
-                .strip_suffix(unit)
-                .unwrap_or(text)
-                .trim()
-                .parse()
-                .ok()
-                .filter(|v: &f64| (min..=max).contains(v))
-                .ok_or_else(|| format!("{text:?}: {} is a number from {} to {}", field.name(), tenths(min), tenths(max)))?;
+            let typed = number_field::number(text, &[unit], Some(transform_value(&transform, field)));
+            let number: f64 = typed.ok().filter(|v: &f64| (min..=max).contains(v)).ok_or_else(|| {
+                number_field::refusal(text, typed.err(), &format!("{} is a number from {} to {}", field.name(), tenths(min), tenths(max)))
+            })?;
             // What the field shows already is no change.
             let shown = tenths(transform_value(&transform, field));
             Ok((tenths(number) != shown).then_some(Op::SetTransform { clip, transform: with_value(transform, field, number) }))
@@ -174,8 +173,10 @@ pub(crate) fn field_op(edit: &WorkingEdit, clip: ClipRef, field: ClipField, text
 /// tenth, default 100) or a part of the transform (to a tenth; default: as
 /// fitted, so no move, 100 % and no turn).
 pub(crate) fn field_number(field: ClipField, typed: &str, shown: &str) -> Number {
-    let parse = |t: &str| t.trim().trim_end_matches(['%', '\u{b0}']).trim().parse::<f64>().ok();
-    let value = parse(typed).or_else(|| parse(shown)).unwrap_or(0.0);
+    // Maths half typed is no value yet: the ladder then starts from the
+    // clip's own.
+    let own = number_field::number(shown, &['%', '\u{b0}'], None).ok();
+    let value = number_field::number(typed, &['%', '\u{b0}'], own).ok().or(own).unwrap_or(0.0);
     match field {
         ClipField::FadeIn | ClipField::FadeOut => Number { value, min: 0.0, max: 1_000_000.0, decimals: 0, default: 0.0 },
         ClipField::Opacity => Number { value, min: 0.0, max: 100.0, decimals: 1, default: 100.0 },
@@ -379,9 +380,9 @@ mod tests {
         let mut edit = WorkingEdit::new(24, [16, 9], "01:00:00:00");
         let mut v = VideoClip::new(0, duration, 0, source.clone());
         (v.fade_in, v.fade_out, v.opacity) = (fades.0, fades.1, opacity);
-        edit.video.push(Track { name: "V1".into(), clips: vec![v] });
+        edit.video.push(Track { name: "V1".into(), clips: vec![v], color: None });
         let a = AudioClip { at: 0, duration, source_in: 0, source, gain_db: 0.0, fade_in: fades.0, fade_out: fades.1 };
-        edit.audio.push(Track { name: "A1".into(), clips: vec![a] });
+        edit.audio.push(Track { name: "A1".into(), clips: vec![a], color: None });
         edit
     }
 
@@ -488,7 +489,7 @@ mod tests {
                 let other = if out { ClipField::FadeIn } else { ClipField::FadeOut };
                 prop_assert_eq!(field_text(&next, clip, other), field_text(&edit, clip, other));
             }
-            for bad in ["", "x", "1.5", "3f", "--2"] {
+            for bad in ["", "x", "3f", "--2", "1/0", "5,5", "2**3", "-1", "0-1"] {
                 prop_assert!(field_op(&edit, clip, field, bad).is_err(), "{:?} taken", bad);
             }
         }
@@ -597,6 +598,51 @@ mod tests {
             prop_assert_eq!(reset_op(&edit, audio), None);
         }
 
+        /// Maths typed into a clip field (`100/2`; `+=5` and its like from
+        /// what the field holds) makes exactly what the number it works out
+        /// to makes when typed plainly: the same op, or a refusal where
+        /// that number is refused. A fade rounds to whole frames, a half
+        /// away from zero.
+        #[test]
+        fn maths_in_a_clip_field_is_the_number_typed(
+            field in prop::sample::select(ClipField::ALL.to_vec()),
+            a in 0u32..4000, b in 0u32..400,
+            op in prop::sample::select(vec!['+', '-', '*', '/']),
+            relative in any::<bool>(), unit in any::<bool>(), pad in prop::sample::select(vec!["", " "]),
+        ) {
+            let mut edit = edit(400, (3, 5), 0.5);
+            let clip = ClipRef { track: TrackRef::video(0), index: 0 };
+            edit.video[0].clips[0].transform = Transform { x: 0.25, y: -0.125, scale: 1.5, rotation: 30.0 };
+            let (x, y) = (f64::from(a) / 8.0, f64::from(b) / 8.0);
+            let own = match field {
+                ClipField::FadeIn => 3.0,
+                ClipField::FadeOut => 5.0,
+                ClipField::Opacity => 0.5 * 100.0,
+                ClipField::X => 0.25 * 100.0,
+                ClipField::Y => -0.125 * 100.0,
+                ClipField::Scale => 1.5 * 100.0,
+                ClipField::Rotation => 30.0,
+            };
+            let left = if relative { own } else { x };
+            let value = match op { '+' => left + y, '-' => left - y, '*' => left * y, _ => left / y };
+            let suffix = match (unit, field) {
+                (false, _) | (true, ClipField::FadeIn | ClipField::FadeOut) => "",
+                (true, ClipField::Rotation) => "\u{b0}",
+                (true, _) => "%",
+            };
+            let typed = if relative { format!("{op}={pad}{y}{suffix}") } else { format!("{x}{pad}{op}{pad}{y}{suffix}") };
+            let got = field_op(&edit, clip, field, &typed);
+            if !value.is_finite() {
+                prop_assert!(got.is_err(), "{} taken", typed);
+                return Ok(());
+            }
+            let fade = matches!(field, ClipField::FadeIn | ClipField::FadeOut);
+            let plain = if fade { format!("{}", value.round() as i64) } else { format!("{}", if value == 0.0 { 0.0 } else { value }) };
+            let want = field_op(&edit, clip, field, &plain);
+            prop_assert_eq!(got.is_err(), want.is_err(), "{} against {}", typed, plain);
+            prop_assert_eq!(got.ok(), want.ok(), "{} against {}", typed, plain);
+        }
+
         /// An opacity typed as a percentage, with or without `%`, sets the
         /// video clip's opacity to that over 100 and shows it back as typed
         /// to a tenth; outside 0 to 100, or on an audio clip, it is refused.
@@ -624,5 +670,29 @@ mod tests {
             prop_assert!(field_op(&edit, audio, ClipField::Opacity, "50").is_err());
             prop_assert_eq!(field_text(&edit, audio, ClipField::Opacity), Some("100".to_string()));
         }
+    }
+
+    /// The sums an artist types, in each kind of field, and what a refused
+    /// one says.
+    #[test]
+    fn sums_set_what_they_work_out_to() {
+        let edit = edit(400, (3, 5), 0.5);
+        let clip = ClipRef { track: TrackRef::video(0), index: 0 };
+        let op = |field, text: &str| field_op(&edit, clip, field, text);
+        assert_eq!(op(ClipField::FadeIn, "100/2"), Ok(Some(Op::SetFades { clip, fade_in: 50, fade_out: 5 })));
+        assert_eq!(op(ClipField::FadeOut, "+=10"), Ok(Some(Op::SetFades { clip, fade_in: 3, fade_out: 15 })));
+        assert_eq!(op(ClipField::FadeIn, "7/2"), Ok(Some(Op::SetFades { clip, fade_in: 4, fade_out: 5 })));
+        assert_eq!(op(ClipField::FadeIn, "(1+2)"), Ok(None), "what it has already");
+        assert_eq!(op(ClipField::Opacity, "100/4%"), Ok(Some(Op::SetOpacity { clip, opacity: 0.25 })));
+        assert_eq!(op(ClipField::Opacity, "*=2"), Ok(Some(Op::SetOpacity { clip, opacity: 1.0 })));
+        let scaled = Transform { scale: 0.5, ..Transform::IDENTITY };
+        assert_eq!(op(ClipField::Scale, "200/4"), Ok(Some(Op::SetTransform { clip, transform: scaled })));
+        assert_eq!(op(ClipField::FadeIn, "1/0").unwrap_err(), "\"1/0\": it divides by zero");
+        assert_eq!(op(ClipField::FadeIn, "2+").unwrap_err(), "\"2+\": a fade is a whole number of frames, 0 or more");
+        assert_eq!(op(ClipField::Opacity, "50*3").unwrap_err(), "\"50*3\": an opacity is a percentage, 0 to 100");
+        // The ladder starts from what the sum works out to, else the clip's own.
+        assert_eq!(field_number(ClipField::Opacity, "100/4", "50").value, 25.0);
+        assert_eq!(field_number(ClipField::Opacity, "100/", "50").value, 50.0);
+        assert_eq!(field_number(ClipField::Opacity, "+=5", "50").value, 55.0);
     }
 }

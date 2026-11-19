@@ -88,6 +88,17 @@ black). The offset is kept in ``applied_offset``, which the File COPs read,
 so a timeline edit moves them without a rebuild (:func:`sync_time_offsets`).
 An import that never had an offset keeps plain ``$F4`` frames. The composite
 worker sets every import to None: a farm comp writes the shot's own frames.
+
+A frame the render does not have reads as empty, so a pre-roll cooks.
+**Missing Frames** (``pipe.hold_frames``; Remy, 2026-11-18) can hold the
+nearest rendered frame instead, and does by default for a check render
+(Farm Submit's Step: every Nth frame), which the Version menu offers by
+hand (``latest`` never reads one). The frames a version has are those its
+``context.json`` records, so the File COPs' file names carry the nearest
+frame as HScript arithmetic (:func:`frame_token`): no cook lists a
+directory. What was built is kept in ``held``; changing the setting
+rebuilds the dive. A submit refuses an import reading a check render
+(``comp.check_render_refusal``).
 """
 
 import hou
@@ -96,7 +107,7 @@ from tumblepipe.api import path_str, api
 from tumblepipe.config.channels import list_channels
 from tumblepipe.config.department import list_departments
 from tumblepipe.util.uri import Uri
-from tumblepipe.pipe import comp
+from tumblepipe.pipe import comp, hold_frames
 from tumblepipe.pipe.paths import get_render_context
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
@@ -108,7 +119,13 @@ TYPE_NAME = 'import_render'
 # frame F of the scene is the render's frame F - offset.
 APPLIED_OFFSET_PARM = 'applied_offset'
 PLAIN_FRAME = '$F4'
-OFFSET_FRAME = f'`padzero(4, $F-ch("../../{APPLIED_OFFSET_PARM}"))`'
+OFFSET_REF = f'ch("../../{APPLIED_OFFSET_PARM}")'
+OFFSET_FRAME = f'`padzero(4, $F-{OFFSET_REF})`'
+# Missing Frames (pipe.hold_frames): what a frame the render does not have
+# reads as. HELD_PARM keeps what the dive's File COPs were built to hold.
+MISSING_PARM = 'missing_frames'
+MISSING_LABEL_PARM = 'missing_frames_label'
+HELD_PARM = 'held'
 
 # The node's outputs, in order (#67), and their indices: the channel
 # outputs, the AOV cables, then the scene's.
@@ -464,14 +481,67 @@ def resolve(shot_uri: Uri, channel: str, department: str, version: str) -> comp.
     )
 
 
-def version_menu(shot_uri: Uri | None, department: str, channel: str) -> list[str]:
-    """The Version menu: ``latest``, then a concrete department's complete
-    versions newest first. All channels read ``latest`` only (each channel
-    has versions of its own)."""
-    if department == comp.BEST or shot_uri is None: return [comp.LATEST]
-    if channel == comp.ALL_CHANNELS: return [comp.LATEST]
+def version_items(shot_uri: Uri | None, department: str, channel: str) -> list[tuple[str, str]]:
+    """The Version menu as ``(token, label)``: ``latest``, then a concrete
+    department's versions newest first, the complete ones and its check
+    renders (labelled, ``v0014 (check, every 5th)``: read only when picked,
+    their frames held over the gaps). All channels read ``latest`` only
+    (each channel has versions of its own)."""
+    items = [(comp.LATEST, comp.LATEST)]
+    if department == comp.BEST or shot_uri is None: return items
+    if channel == comp.ALL_CHANNELS: return items
     renders = get_render_context(shot_uri, purpose='render').renders
-    return [comp.LATEST] + comp.list_versions(renders, department, channel)
+    return items + comp.version_items(
+        comp.list_versions(renders, department, channel),
+        comp.list_check_versions(renders, department, channel),
+    )
+
+
+def version_menu(shot_uri: Uri | None, department: str, channel: str) -> list[str]:
+    """The Version menu's tokens (:func:`version_items`)."""
+    return [token for token, _ in version_items(shot_uri, department, channel)]
+
+
+def format_held(held: dict) -> str:
+    """``{channel: (first, last, step)}`` as :data:`HELD_PARM` keeps it."""
+    import json
+    return json.dumps({c: list(r) for c, r in sorted(held.items())}) if held else ''
+
+
+def parse_held(text: str) -> dict:
+    """:func:`format_held` read back; anything else reads as nothing held."""
+    import json
+    try:
+        raw = json.loads(text) if text else {}
+        return {str(c): (int(r[0]), int(r[1]), int(r[2])) for c, r in raw.items()}
+    except (ValueError, TypeError, IndexError, AttributeError, KeyError):
+        return {}
+
+
+def held_ranges(setting: str, reads: dict) -> dict:
+    """What each channel read holds: ``{channel: (first, last, step)}`` for
+    the channels whose missing frames hold the nearest rendered one
+    (``hold_frames.holds``), from the range the version records. A version
+    with no record holds nothing (its frames are not known)."""
+    held = dict()
+    for channel, resolved in reads.items():
+        if not hold_frames.holds(setting, resolved.check_step): continue
+        frame_range = next(
+            (aov.get_frame_range() for aov in resolved.aovs.values()), None)
+        if frame_range is None: continue
+        held[channel] = (frame_range.first_frame, frame_range.last_frame, frame_range.step_size)
+    return held
+
+
+def frame_token(follow_offset: bool, hold: tuple | None = None) -> str:
+    """The frame number in a File COP's file name: the scene's frame
+    (``$F4``), less the node's time offset when it follows one, and, when
+    the read holds (``hold``: its first, last and step), the nearest
+    rendered frame to that (``hold_frames.hold_expression``)."""
+    if hold is None:
+        return OFFSET_FRAME if follow_offset else PLAIN_FRAME
+    frame = f'$F-{OFFSET_REF}' if follow_offset else '$F'
+    return f'`padzero(4, {hold_frames.hold_expression(*hold, frame=frame)})`'
 
 
 class ImportRender(TimeOffsetNode, EntityNode):
@@ -491,7 +561,7 @@ class ImportRender(TimeOffsetNode, EntityNode):
         if dive is None: return False
         files = [c for c in dive.children() if c.type().name() == 'file']
         return bool(files) and all(
-            OFFSET_FRAME in f.parm('filename').unexpandedString() for f in files
+            OFFSET_REF in f.parm('filename').unexpandedString() for f in files
         )
 
     def sync_time_offset(self) -> bool:
@@ -532,6 +602,15 @@ class ImportRender(TimeOffsetNode, EntityNode):
             self.get_department_setting(),
             self.get_channel_name(),
         )
+
+    def version_menu(self) -> list[str]:
+        """The Version menu as token/label pairs (:func:`version_items`)."""
+        items = []
+        for token, label in version_items(
+                self.get_entity_uri(), self.get_department_setting(),
+                self.get_channel_name()):
+            items += [token, label]
+        return items
 
     # Parms
 
@@ -580,6 +659,29 @@ class ImportRender(TimeOffsetNode, EntityNode):
 
     def get_build_key(self) -> str:
         return self.parm(BUILD_KEY_PARM).eval()
+
+    # Missing frames (pipe.hold_frames)
+
+    def get_missing_setting(self) -> str:
+        """The Missing Frames parm; Automatic on an HDA build without it."""
+        parm = self.native().parm(MISSING_PARM)
+        return hold_frames.AUTO if parm is None else parm.eval()
+
+    def get_held(self) -> dict:
+        """What the dive's File COPs hold, as last built
+        (:func:`held_ranges`)."""
+        parm = self.native().parm(HELD_PARM)
+        return {} if parm is None else parse_held(parm.eval())
+
+    def _wanted_held(self, reads) -> dict:
+        if self.native().parm(HELD_PARM) is None: return {}  # an old HDA build
+        return held_ranges(self.get_missing_setting(), reads)
+
+    def _update_missing_label(self, reads):
+        parm = self.native().parm(MISSING_LABEL_PARM)
+        if parm is None: return
+        parm.set(hold_frames.missing_label(
+            self.get_missing_setting(), [r.check_step for r in reads.values()]))
 
     def read_channels(self) -> list[str]:
         """The channels the node reads: its channel, or for all channels
@@ -882,12 +984,14 @@ class ImportRender(TimeOffsetNode, EntityNode):
             previous_slots, list(reads), self.is_all_channels()
         )
         offset_unread = self.sync_time_offset()
+        held = self._wanted_held(reads)
         rebuilt = (key != previous_key or not self._dive_built(plan, slots)
-                   or offset_unread)
+                   or offset_unread or held != self.get_held())
         if rebuilt:
             self._drop_moved_wires(previous_slots, slots)
             follow = self.get_applied_offset() != 0 or self.files_follow_offset()
-            self._build(reads, plan, key, slots, follow_offset=follow)
+            self._build(reads, plan, key, slots, follow_offset=follow, held=held)
+        self._update_missing_label(reads)
         label = self._label(reads, skipped, previous, previous_key)
         if self.is_all_channels():
             label += channel_outputs_label(slots, reads, overflow)
@@ -903,6 +1007,9 @@ class ImportRender(TimeOffsetNode, EntityNode):
         """Execute, and say what a submit freezes: one state per channel
         read, keyed by ``pipe.comp.plan_key``."""
         reads = self.execute()
+        refusal = comp.check_render_refusal(reads.values())
+        if refusal:
+            raise self._error(refusal)
         all_channels = self.is_all_channels()
         return [
             comp.ImportState(
@@ -951,12 +1058,15 @@ class ImportRender(TimeOffsetNode, EntityNode):
         return all(dive.node(name) is not None for name in CABLE_PACKS.values())
 
     def _build(self, reads: dict[str, comp.Resolved], plan: comp.DivePlan, key: str,
-               slots, follow_offset: bool = False):
+               slots, follow_offset: bool = False, held: dict | None = None):
         """Rebuild the dive: one File COP per AOV read (behind its frame
         cache), each AOV into the pack of its cable (``pipe.comp.aov_cable``),
         each channel's beauty to the channel output ``slots`` gives it. Laid
         out by :func:`dive_positions`. Nothing outside the dive changes.
-        ``follow_offset``: the File COPs read ``applied_offset``."""
+        ``follow_offset``: the File COPs read ``applied_offset``. ``held``:
+        the channels whose File COPs hold the nearest rendered frame
+        (:func:`held_ranges`)."""
+        held = held or {}
         dive = self.native().node(DIVE)
         if dive is None:
             raise self._error(f'the node has no {DIVE} subnet (a broken HDA)')
@@ -973,7 +1083,7 @@ class ImportRender(TimeOffsetNode, EntityNode):
         for read in plan.files:
             file_node = dive.createNode('file', read.name)
             _configure_file(file_node, reads[read.channel].aovs[read.aov], read.aov,
-                            follow_offset)
+                            follow_offset, held.get(read.channel))
             files[read.name] = _cached_read(
                 dive, file_node, cache_toggles(read.name in beauty_reads)
             )
@@ -998,6 +1108,9 @@ class ImportRender(TimeOffsetNode, EntityNode):
         )
         self.parm(FIELDS_PARM).set(' '.join(plan.fields))
         self.parm(BUILD_KEY_PARM).set(key)
+        held_parm = self.native().parm(HELD_PARM)
+        if held_parm is not None:
+            held_parm.set(format_held(held))
         self.set_channel_outputs(slots)
 
     # AOV Outputs
@@ -1183,9 +1296,10 @@ def _pack(dive, name: str, sources: list, fields: list[str]):
     return pack
 
 
-def _configure_file(file_node, aov, field: str, follow_offset: bool = False):
+def _configure_file(file_node, aov, field: str, follow_offset: bool = False,
+                    hold: tuple | None = None):
     render_range = aov.get_frame_range()
-    frame_path = aov.get_aov_frame_path(OFFSET_FRAME if follow_offset else PLAIN_FRAME)
+    frame_path = aov.get_aov_frame_path(frame_token(follow_offset, hold))
     file_node.parm('filename').set(path_str(frame_path))
     file_node.parm('videoframestart').deleteAllKeyframes()
     if render_range is not None:
