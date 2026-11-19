@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.114.1 — 2026-11-19
+
+### Fixes
+- fix(cinedex): the Linux build finds the no-dialog message (`e325bbfb`)
+
+### Documentation
+- docs(changelog): v1.114.0, and the HDA parms v1.114.0 shipped (`851fbebf`)
+
 ## v1.114.0 — 2026-11-19
 
 ### Features

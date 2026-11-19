@@ -688,7 +688,9 @@ def asset_primvars(stage, mapping, time=None) -> list:
     can: the dive's is authored on a prim with none under it (geometry made
     in the dive, which got no UVs at all up to 1.112: its materials broke),
     and where the asset's does not fit (the dive changed the mesh's
-    topology). An empty set per prim without `stage`."""
+    topology). A primvar that is one value and no array (`float`, not
+    `float[]`) counts as one element. An empty set per prim without
+    `stage`."""
     from pxr import Usd, UsdGeom
     if time is None:
         time = Usd.TimeCode.EarliestTime()
@@ -708,7 +710,10 @@ def asset_primvars(stage, mapping, time=None) -> list:
                           else primvar.Get(time))
                 if values is None:  # blocked: the asset says nothing
                     continue
-                if primvar_fits(primvar.GetInterpolation(), len(values), shape):
+                # one value that is no array (a float, a vector: `len` of
+                # it is an error or its components) is one element
+                size = len(values) if primvar.GetTypeName().isArray else 1
+                if primvar_fits(primvar.GetInterpolation(), size, shape):
                     have.add(name)
         found.append(have)
     return found
