@@ -984,7 +984,7 @@ mod tests {
         if exr {
             let sequence = ExrSequence::new(1, 1, Vec::new());
             let header = th_media::ExrHeader { layers: Vec::new(), colour_space: Some("ACEScg".into()) };
-            Arc::new(Media::Exr { sequence, header, colour_space: "ACEScg".into(), rate: (24, 1) })
+            Arc::new(Media::Exr { sequence, header, colour_space: Some("ACEScg".into()), rate: (24, 1) })
         } else {
             let index = MOVIE.get_or_init(|| Arc::new(MovieIndex::read(&fixture("grey_ramp_gop5.mp4")).unwrap()));
             Arc::new(Media::Movie(Arc::clone(index)))
@@ -1409,7 +1409,7 @@ mod tests {
     fn layer_of(frames: usize) -> Arc<Media> {
         let sequence = ExrSequence::new(1, 1, vec![std::path::PathBuf::new(); frames]);
         let header = th_media::ExrHeader { layers: Vec::new(), colour_space: Some("ACEScg".into()) };
-        Arc::new(Media::Exr { sequence, header, colour_space: "ACEScg".into(), rate: (24, 1) })
+        Arc::new(Media::Exr { sequence, header, colour_space: Some("ACEScg".into()), rate: (24, 1) })
     }
 
     proptest! {

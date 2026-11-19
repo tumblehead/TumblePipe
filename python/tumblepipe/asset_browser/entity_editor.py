@@ -1962,11 +1962,20 @@ _RENDER_TIPS = {
     render_config.SSS_LIMIT: 'How many subsurface scattering bounces a ray takes.',
     render_config.DOF: 'Whether Karma renders depth of field.',
     render_config.MBLUR: 'Whether Karma renders motion blur.',
+    render_config.AOVS: (
+        'The AOVs every shot under this level renders, from the AOVs of '
+        'th::render_vars: the root layer adds each beside the ones the '
+        'project\'s render defaults already have. Set it on All shots for '
+        'the whole project. A list set on a sequence or a shot replaces the '
+        'one it would inherit; a shot adds more with th::render_vars in its '
+        'render department. A shot whose render department is already '
+        'published picks new AOVs up at that department\'s next publish.'
+    ),
 }
 _RENDER_ORDER_NOTE = (
     'Each setting comes from the strongest level that sets it: the shot, '
     'its sequence, all shots, the project, then the pipeline defaults. '
-    'Samples, ray limits, dicing, depth of field and motion blur that no '
+    'Samples, ray limits, dicing, depth of field, motion blur and AOVs that no '
     'level sets keep the project\'s render defaults. A department\'s render '
     'settings node and a Farm Submit override still win. Apply brings the '
     'shots\' root layers up to date.'
@@ -2208,6 +2217,57 @@ class _ResolutionField(_Field):
         # One of the two still empty: wait for the other.
 
 
+class _AovsField(_Field):
+    """The AOVs a level adds: their names typed (``albedo, depth``), or
+    ticked in the AOVs menu, which lists the AOVs of th::render_vars.
+    Emptied takes the pin away; ``none`` pins an empty list."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.edit = QLineEdit()
+        self.edit.setPlaceholderText(_NOT_SET)
+        self._layout.addWidget(self.edit, 1)
+        self._shown = ''
+        self._names: list[str] = []
+        self.edit.editingFinished.connect(self._on_finished)
+        self.menu_button = QToolButton()
+        self.menu_button.setText('AOVs')
+        self.menu_button.setToolTip('Tick the AOVs of th::render_vars to add.')
+        self.menu_button.setPopupMode(QToolButton.InstantPopup)
+        self.menu_button.setStyleSheet(BUTTON_GHOST_STYLE.replace('QPushButton', 'QToolButton'))
+        menu = QMenu(self.menu_button)
+        menu.aboutToShow.connect(lambda m=menu: self._fill_menu(m))
+        self.menu_button.setMenu(menu)
+        self._layout.addWidget(self.menu_button)
+
+    def _fill_menu(self, menu: QMenu) -> None:
+        menu.clear()
+        for name in render_config.AOV_NAMES:
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(name in self._names)
+            action.triggered.connect(lambda on, n=name: self.tick(n, on))
+
+    def tick(self, name: str, on: bool) -> None:
+        """An AOV ticked or unticked in the menu."""
+        names = [n for n in self._names if n != name] + ([name] if on else [])
+        self._emit(render_config.valid_aovs(names) or _UNPIN)
+
+    def _show(self, value, mixed, unset) -> None:
+        found = None if mixed else render_config.valid_aovs(value)
+        self._names = list(found or [])
+        text = '' if mixed or value is None else render_config.format_value(render_config.AOVS, value)
+        self.edit.setPlaceholderText(_MIXED if mixed else unset)
+        if self.edit.text() != text:
+            self.edit.setText(text)
+        self._shown = text
+
+    def _on_finished(self) -> None:
+        text = self.edit.text().strip()
+        if text != self._shown:
+            self._emit(text or _UNPIN)
+
+
 class _RenderSettings(QWidget):
     """The Shots tab's side panel: the render settings a shot's root layer
     applies (#70), for the selected shots, the selected sequences (a
@@ -2296,6 +2356,8 @@ class _RenderSettings(QWidget):
             return _ResolutionField(self.presets, self._no_wheel)
         if name == es.RENDER_CAMERA:
             return _TextField('/cameras/render_camera')
+        if name == render_config.AOVS:
+            return _AovsField()
         kind = render_config.KARMA[render_config.split(name)[1]]
         if kind == 'bool':
             return _ChoiceField()
@@ -2392,7 +2454,7 @@ class _RenderSettings(QWidget):
                     for name in render_config.IMAGE_FIELDS
                 }
                 karma = {
-                    name: value for name in render_config.KARMA_FIELDS
+                    name: value for name in render_config.PINNED_FIELDS
                     if (value := self._renders(mode, target, name)) is not None
                 }
                 effects.add(render_config.effect(values, karma))

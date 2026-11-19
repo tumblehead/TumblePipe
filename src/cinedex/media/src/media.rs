@@ -34,8 +34,9 @@ pub enum Media {
     Exr {
         sequence: ExrSequence,
         header: ExrHeader,
-        /// The colour space its frames are in.
-        colour_space: String,
+        /// The colour space its frames are in; None only for one opened
+        /// with [`Media::exr_any_from`] whose frames do not say.
+        colour_space: Option<String>,
         rate: (i32, i32),
     },
     /// A live playblast's JPG frames, display-referred like a movie's,
@@ -73,6 +74,17 @@ impl Media {
             path: sequence.describe(),
             message: "the frames do not say their colour space (oiio:ColorSpace)".into(),
         })?;
+        Ok(Self::Exr { sequence, header, colour_space: Some(colour_space), rate })
+    }
+
+    /// [`Self::exr_from`] of frames that need not say their colour space: a
+    /// data AOV (depth, ids, a cryptomatte) is shown as written, through no
+    /// display transform, and often says none. Whoever shows a colour layer
+    /// of it must refuse one without a colour space
+    /// ([`Self::colour_space`] is None then).
+    pub fn exr_any_from(sequence: ExrSequence, rate: (i32, i32), index: usize) -> Result<Self> {
+        let header = sequence.header_of(index)?;
+        let colour_space = header.colour_space.clone();
         Ok(Self::Exr { sequence, header, colour_space, rate })
     }
 
@@ -205,11 +217,13 @@ impl Media {
 
     /// The colour space of scene-linear frames (shown through the display
     /// transform); None for a movie or a live playblast, which are
-    /// display-referred. A stack's is its layers'.
+    /// display-referred, and for an EXR sequence opened with
+    /// [`Self::exr_any_from`] whose frames do not say. A stack's is its
+    /// layers'.
     pub fn colour_space(&self) -> Option<&str> {
         match self {
             Self::Movie(_) | Self::Jpg { .. } => None,
-            Self::Exr { colour_space, .. } => Some(colour_space),
+            Self::Exr { colour_space, .. } => colour_space.as_deref(),
             Self::Stack(layers) => layers[0].1.colour_space(),
         }
     }

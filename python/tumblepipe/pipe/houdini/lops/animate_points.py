@@ -74,6 +74,25 @@ that first appears on a changed frame is sampled on every changed frame the
 same way (sampled only where the dive said something of it, it read the
 nearest such frame's on the changed frames that said nothing).
 
+One USD prim can be made of shapes that disagree: a `/geo/arms` mesh holding
+both arms, each switched on its own (`usdvisibility` differs from primitive
+to primitive, or from one packed shape to the next under the same `path`). A
+prim has one `visibility`, and up to 1.114 the shape holding its first point
+decided for all of it. So `rest_gate` stamps each primitive's number
+(`__th_prim`, `stamp_prims`), the static import carries it per face and per
+curve, and `apply` reads every primitive's word each frame
+(`shape_visibility`). Where they agree the prim's `visibility` says it, as
+before. Where they do not (`split_visibility`) the prim is visible and its
+hidden part is taken out of it (`author_parts`): a mesh's hidden faces are
+that frame's `holeIndices` (Karma CPU and XPU and Storm leave holes out of
+any mesh, subdivided or not; no material has to cooperate), a curve's
+hidden curves get width 0. Every mesh that carries the stamp gets a
+`holeIndices` sample on every frame, for the reason visibility does: what the
+incoming stage has for it (`hole_bases`), with the hidden faces added. Not
+split: a points prim, curves with one width for all of them (the first
+shape decides, as before, and the node warns), and a frame whose topology
+changed (the full import's rule: the prim's first primitive).
+
 Widths follow as well. The imports read `width` and `pscale` (left out of
 their Attributes pattern up to 1.109, every curve got the missing width,
 0.01), and `apply` copies each frame's (`read_widths`) onto the curves and
@@ -112,6 +131,16 @@ publish them. In a character that has geometry with paths, its path-less
 shapes made of points (meshes, curves) are left out, with a warning on the
 node and one status-bar message. A character with no path anywhere (a rig
 not built for the pipeline) is kept as it is and named in the warning.
+
+What comes to the stage is the node's to say, on its Attributes folder,
+with defaults that are what the node did before it had the folder.
+**Attributes** (`attribs`) names the dive's attributes the three imports
+read beside the ones the node cannot do without (`attribute_pattern`,
+`import_pattern`: the imports' Attributes are an expression calling it);
+**Normals** takes N in or out of it; **Missing Width** is the imports' Set
+Missing Widths; **Hide Parts** and **Keep Asset Primvars** switch off the
+two rules above that decide for the artist (`split_visibility`,
+`asset_primvars`).
 """
 
 import time
@@ -126,6 +155,10 @@ STAMP_PRIMVAR = f'primvars:{STAMP}'
 VERTEX_STAMP = '__th_vtx'
 VERTEX_COUNT = '__th_vcount'
 VERTEX_STAMP_PRIMVAR = f'primvars:{VERTEX_STAMP}'
+# Each primitive's number, so `apply` knows which shape a face or a curve is of.
+PRIM_STAMP = '__th_prim'
+PRIM_COUNT = '__th_pcount'
+PRIM_STAMP_PRIMVAR = f'primvars:{PRIM_STAMP}'
 POINTS_SOPS = 'points_sops'
 REST = 'REST'
 CURRENT = 'CURRENT'
@@ -154,6 +187,64 @@ def non_point_prim_count(geo) -> int:
 
 
 _mapping_cache = {}
+
+# --- the node's Attributes folder ---------------------------------------------
+
+#: The Attributes parm's default: what the imports read up to 1.114 beside
+#: `FIXED_ATTRIBS` and N.
+DEFAULT_ATTRIBS = 'Cd Alpha width pscale uv*'
+#: What every import reads whatever the node says: without the points, the
+#: bounds, the transforms and visibility there is no animation to import.
+FIXED_ATTRIBS = ('P', 'visibility', 'bounds', 'transform')
+#: Never primvars, whatever the node's pattern matches (a SOP Import's own
+#: default is `* ^__* ^usd*`): Houdini's and th::animate's `__` attributes
+#: (`__topology`, `__th_count`) and the `usd*` ones a SOP Import reads as
+#: instructions (`usdvisibility`), which it does with or without the pattern.
+INTERNAL_ATTRIBS = ('^__*', '^usd*')
+
+
+def attribute_pattern(attribs=DEFAULT_ATTRIBS, normals=True, stamps=False) -> str:
+    """The Attributes pattern of th::animate's SOP Imports: the node's
+    Attributes (`attribs`; names and wildcards, `^name` to leave one out),
+    less `INTERNAL_ATTRIBS`, then `FIXED_ATTRIBS`, N with `normals`, and
+    with `stamps` (the static import) the numbers `apply` maps points,
+    vertices and primitives by. The fixed names come last, so a `^` in the
+    node's pattern cannot take them out (a later name wins), and a `*` in
+    it does not bring Houdini's and th::animate's own bookkeeping along."""
+    names = (attribs.replace(',', ' ').split() + list(INTERNAL_ATTRIBS)
+             + list(FIXED_ATTRIBS))
+    if normals:
+        names.append('N')
+    if stamps:
+        names += [STAMP, VERTEX_STAMP, PRIM_STAMP]
+    return ' '.join(names)
+
+
+def _animate_node(node):
+    """The th::animate `node` (one of its LOPs) is in; None for a stand-in
+    without a parent."""
+    parent = getattr(node, 'parent', None)
+    return parent() if callable(parent) else None
+
+
+def option(animate_node, name, default):
+    """The value of th::animate's parm `name`, `default` where the node
+    has none (contents unlocked from a version before the parm)."""
+    parm = animate_node.parm(name) if animate_node is not None else None
+    return default if parm is None else parm.eval()
+
+
+def import_pattern(import_node) -> str:
+    """The Attributes of `import_node` (the `static_import`,
+    `remainder_import` or `full_import` SOP Import, whose Attributes parm
+    is an expression calling this): `attribute_pattern` of the node's
+    Attributes and Normals parms, with the stamps on the static import."""
+    animate = _animate_node(import_node)
+    return attribute_pattern(
+        str(option(animate, 'attribs', DEFAULT_ATTRIBS)),
+        bool(option(animate, 'normals', 1)),
+        stamps=import_node.name() == 'static_import',
+    )
 
 #: `points_sops/placed`: what the imports read instead of `scene`.
 PLACED = 'placed'
@@ -540,14 +631,7 @@ def read_visibility(geo, mapping, unpacked_node=None):
     the prim's first point is). None when no shape has `usdvisibility`: the
     frame says nothing at all, and nothing more is read. Only for a frame
     with the first frame's topology: the points are found by number."""
-    if not _has_packed(geo):
-        sources = [geo]
-    else:
-        sources = _packed_leaves(geo)
-        if sources is None:
-            if unpacked_node is None:
-                raise hou.NodeError('th::animate: no unpacked copy of the dive to read.')
-            sources = [unpacked_node.geometry()]
+    sources = _visibility_sources(geo, unpacked_node)
     readers = [_visibility_reader(source) for source in sources]
     if not any(reader is not None for reader in readers):
         return None
@@ -614,6 +698,214 @@ def author_visibility(layer, paths, said, bases, frame) -> None:
             layer.SetTimeSample(attr_path, frame, value or bases[i])
 
 
+# --- shapes of one prim that disagree ------------------------------------------
+#
+# What a primitive's `usdvisibility` says, as a number: nothing, shown, hidden.
+NOTHING, SHOWN, HIDDEN = 0, 1, 2
+
+
+def _code(value) -> int:
+    return NOTHING if not value else HIDDEN if value == 'invisible' else SHOWN
+
+
+def _shape_codes(geo):
+    """What `usdvisibility` says of each primitive of `geo` (NOTHING, SHOWN
+    or HIDDEN, int8): its own on the primitives, else its first point's,
+    else the detail's (the classes in the order `_visibility_reader` reads
+    them); None when `geo` has no such string attribute."""
+    count = geo.intrinsicValue('primitivecount')
+    if _is_string(geo.findPrimAttrib(VISIBILITY)):
+        values = geo.primStringAttribValues(VISIBILITY)
+        return np.fromiter((_code(value) for value in values), np.int8, len(values))
+    if _is_string(geo.findPointAttrib(VISIBILITY)):
+        by_point = geo.pointStringAttribValues(VISIBILITY)
+        codes = np.zeros(count, np.int8)
+        for number, prim in enumerate(geo.prims()):
+            points = prim.points()
+            if points:
+                codes[number] = _code(by_point[points[0].number()])
+        return codes
+    if _is_string(geo.findGlobalAttrib(VISIBILITY)):
+        return np.full(count, _code(geo.attribValue(VISIBILITY)), np.int8)
+    return None
+
+
+def _visibility_sources(geo, unpacked_node=None) -> list:
+    """The geometries `geo` (the dive's frame) is read from, one after
+    another as two Unpack SOPs lay them out: itself when it is not packed,
+    its packed shapes, else `unpacked_node`'s cook (points_sops/CURRENT)."""
+    if not _has_packed(geo):
+        return [geo]
+    sources = _packed_leaves(geo)
+    if sources is None:
+        if unpacked_node is None:
+            raise hou.NodeError('th::animate: no unpacked copy of the dive to read.')
+        sources = [unpacked_node.geometry()]
+    return sources
+
+
+def shape_visibility(geo, unpacked_node=None, expected_count=None):
+    """What `geo` (the dive's frame, laid out as `read_points` reads it)
+    says of each of its primitives' visibility: NOTHING, SHOWN or HIDDEN
+    (int8), in the order `stamp_prims` numbers them. None when no shape has
+    `usdvisibility`, and when the frame has not `expected_count` primitives
+    (the first frame's, where the numbers are from: they would name other
+    primitives)."""
+    sources = _visibility_sources(geo, unpacked_node)
+    counts = [source.intrinsicValue('primitivecount') for source in sources]
+    if expected_count is not None and sum(counts) != expected_count:
+        return None
+    codes = [_shape_codes(source) for source in sources]
+    if all(part is None for part in codes):
+        return None
+    return np.concatenate([
+        np.zeros(count, np.int8) if part is None else part
+        for part, count in zip(codes, counts)
+    ])
+
+
+def can_split(mapping) -> bool:
+    """Whether any mapped prim carries its primitives' numbers
+    (`point_map`'s 'shapes'): only then is `shape_visibility` worth
+    reading."""
+    return any(run is not None for run in mapping.get('shapes') or ())
+
+
+def split_visibility(codes, mapping, said):
+    """The mapped prims whose shapes disagree at this frame: some of a
+    prim's faces (curves) hidden, the others not. `codes` is
+    `shape_visibility`, `said` what `read_visibility` gave (one shape
+    deciding for the prim).
+
+    Returns (said, parts, unsplit). `parts` has, per mapped prim, None or
+    one bool per face (curve), True where it is hidden; None when no prim
+    is split. `said` is the prim's own visibility: unchanged where the
+    shapes agree, and for a split prim 'inherited' when a part that shows
+    says so, else None (it says nothing: `visibility_bases`), never
+    'invisible', which would hide the part that shows. `unsplit` names the
+    prims that disagree and cannot be split (`point_map`'s 'splits'): they
+    keep `said`, one shape deciding."""
+    said = list(said)
+    shapes = mapping.get('shapes') or ()
+    if codes is None or not (codes == HIDDEN).any():
+        return said, None, []
+    parts, unsplit = [None] * len(mapping['paths']), []
+    for i, run in enumerate(shapes):
+        if run is None or len(run) < 2:
+            continue
+        if int(run.min()) < 0 or int(run.max()) >= len(codes):
+            continue
+        own = codes[run]
+        hidden = own == HIDDEN
+        if not hidden.any() or hidden.all():
+            continue
+        if not mapping['splits'][i]:
+            unsplit.append(mapping['paths'][i])
+            continue
+        parts[i] = hidden
+        said[i] = 'inherited' if (own == SHOWN).any() else None
+    if all(part is None for part in parts):
+        parts = None
+    return said, parts, unsplit
+
+
+def hole_bases(stage, mapping, frame) -> list:
+    """Per mapped prim, the faces `stage` (the stage coming into
+    th::animate; None without one) leaves out of it at `frame`: its
+    authored `holeIndices` that name a face of the mesh as th::animate has
+    it, as an int array; None for a prim that is not a mesh `author_parts`
+    writes holes on, or has none below. th::animate's layer is the
+    stronger, so its `holeIndices` keep the asset's own holes."""
+    shapes = mapping.get('shapes') or [None] * len(mapping['paths'])
+    bases = []
+    for i, path in enumerate(mapping['paths']):
+        base = None
+        if stage is not None and shapes[i] is not None and mapping['kinds'][i] == 'mesh':
+            prim = stage.GetPrimAtPath(path)
+            attr = prim.GetAttribute('holeIndices') if prim else None
+            value = attr.Get(frame) if attr and attr.HasAuthoredValue() else None
+            if value is not None and len(value):
+                holes = np.asarray(value, dtype=np.int64)
+                holes = holes[(holes >= 0) & (holes < len(shapes[i]))]
+                base = holes if len(holes) else None
+        bases.append(base)
+    return bases
+
+
+def author_parts(layer, mapping, parts, bases, frame) -> None:
+    """The hidden part of every split prim (`parts`: `split_visibility`;
+    None when no prim is split) taken out of it at `frame`, in `layer`.
+
+    A mesh: its hidden faces as `holeIndices`, with the faces the incoming
+    stage already leaves out (`bases`: `hole_bases`; None for none). Every
+    mesh that carries its primitives' numbers gets the sample, on every
+    frame, split or not: sampled on the split frames only, a saved range
+    would read their holes on every frame between them (as with visibility:
+    `author_visibility`). Curves: the widths this frame has (`author_frame`'s
+    sample, else the static import's) with 0 on the hidden curves, per
+    point or per curve as they are authored; the other frames keep theirs
+    (`author_frame`, `sample_defaults`)."""
+    from pxr import Sdf, Vt
+    shapes = mapping.get('shapes')
+    if not shapes:
+        return
+    with Sdf.ChangeBlock():
+        for i, path in enumerate(mapping['paths']):
+            if shapes[i] is None or not mapping['splits'][i]:
+                continue
+            hidden = parts[i] if parts is not None else None
+            spec = layer.GetPrimAtPath(path)
+            if mapping['kinds'][i] == 'mesh':
+                holes = np.zeros(0, np.int64)
+                if bases is not None and bases[i] is not None:
+                    holes = bases[i]
+                if hidden is not None:
+                    holes = np.union1d(holes, np.nonzero(hidden)[0])
+                attr_path = path.AppendProperty('holeIndices')
+                if layer.GetAttributeAtPath(attr_path) is None:
+                    spec = spec or Sdf.CreatePrimInLayer(layer, path)
+                    Sdf.AttributeSpec(spec, 'holeIndices', Sdf.ValueTypeNames.IntArray,
+                                      Sdf.VariabilityVarying)
+                layer.SetTimeSample(
+                    attr_path, frame,
+                    Vt.IntArray.FromNumpy(np.ascontiguousarray(holes, dtype=np.int32)))
+                continue
+            if hidden is None or spec is None:
+                continue
+            attr_path = path.AppendProperty('widths')
+            attr = layer.GetAttributeAtPath(attr_path)
+            if attr is None:
+                continue
+            value = layer.QueryTimeSample(attr_path, frame)
+            if value is None or isinstance(value, Sdf.ValueBlock):
+                value = attr.default if attr.HasInfo('default') else None
+            if value is None or isinstance(value, Sdf.ValueBlock):
+                continue
+            widths = np.array(value, dtype=np.float32)
+            counts = mapping['curve_counts'][i]
+            if len(widths) == len(hidden):
+                widths[hidden] = 0.0
+            elif counts is not None and len(widths) == int(counts.sum()):
+                widths[np.repeat(hidden, counts)] = 0.0
+            else:
+                continue
+            layer.SetTimeSample(attr_path, frame, Vt.FloatArray.FromNumpy(widths))
+
+
+def unsplit_message(paths) -> str:
+    """The warning for prims whose shapes disagree on visibility and
+    cannot be split (`split_visibility`)."""
+    shown = ', '.join(str(path) for path in paths[:5])
+    more = f' and {len(paths) - 5} more' if len(paths) > 5 else ''
+    return (
+        f'th::animate: the shapes of {shown}{more} are not all hidden or all '
+        'shown on this frame, and only a mesh, or curves with a width per '
+        'curve or per point, can be hidden in part: one shape decides for '
+        'all of it. Give the parts paths of their own, or the curves a width '
+        'attribute on their points or primitives.'
+    )
+
+
 # --- primvars ----------------------------------------------------------------
 #
 # The static import reads `uv*` (a SOP Import turns `uv` into `primvars:st`,
@@ -623,7 +915,8 @@ def author_visibility(layer, paths, said, bases, frame) -> None:
 
 #: The primvars every static import authors, whatever is under the prim: they
 #: stay as they were before UVs were read.
-OWN_PRIMVARS = frozenset({'displayColor', 'displayOpacity', STAMP, VERTEX_STAMP})
+OWN_PRIMVARS = frozenset({'displayColor', 'displayOpacity', STAMP, VERTEX_STAMP,
+                          PRIM_STAMP})
 #: The SOP attribute a primvar is read from, where it is not its own name.
 PRIMVAR_ATTRIBS = {'st': 'uv'}
 #: `points_sops/at_start`: the dive's first frame, as `placed` outputs it.
@@ -834,10 +1127,17 @@ def point_map(stage) -> dict:
     'frozen'), 'widths': [VtArray or None], 'width_offsets': [int array or
     None: `width_offsets`], 'kinds': [str], 'primvars': [[str]:
     `primvar_names`], 'topology': [`prim_topology`, None for a prim with no
-    such primvar]}"""
+    such primvar], 'shapes': [int64 array or None: the dive primitive each
+    face of a mesh, each curve of a curves prim is (the `stamp_prims`
+    stamp), None where the prim does not carry one per face (curve)],
+    'splits': [bool: whether a part of the prim can be hidden,
+    `author_parts`: a mesh, curves with a width per curve or per point],
+    'curve_counts': [int64 array: a curves prim's points per curve, or
+    None]}"""
     from pxr import UsdGeom
     paths, runs, vruns, normals, widths, kinds = [], [], [], [], [], []
     offsets, primvars, topology = [], [], []
+    shapes, splits, curve_counts = [], [], []
     for prim in stage.Traverse():
         if not prim.IsA(UsdGeom.PointBased): continue
         numbers = _stamp_numbers(prim, STAMP_PRIMVAR)
@@ -855,10 +1155,17 @@ def point_map(stage) -> dict:
             ))
         else:
             normals.append(None)
+        prim_numbers = _stamp_numbers(prim, PRIM_STAMP_PRIMVAR)
         if prim.IsA(UsdGeom.Mesh):
             kinds.append('mesh')
             widths.append(None)
             offsets.append(None)
+            faces = UsdGeom.Mesh(prim).GetFaceVertexCountsAttr().Get()
+            fits = (prim_numbers is not None and faces is not None
+                    and len(prim_numbers) == len(faces))
+            shapes.append(prim_numbers if fits else None)
+            splits.append(fits)
+            curve_counts.append(None)
         else:
             kinds.append('curves' if prim.IsA(UsdGeom.Curves) else 'points')
             width_attr = prim.GetAttribute('widths')
@@ -873,6 +1180,12 @@ def point_map(stage) -> dict:
                 interpolation, len(value), len(numbers),
                 None if counts is None else list(counts),
             ))
+            fits = (prim_numbers is not None and counts is not None
+                    and len(prim_numbers) == len(counts))
+            shapes.append(prim_numbers if fits else None)
+            curve_counts.append(np.asarray(counts, dtype=np.int64) if fits else None)
+            splits.append(bool(fits and value is not None and len(counts) > 1
+                               and len(value) in (len(counts), len(numbers))))
     index = np.concatenate(runs) if runs else np.zeros(0, np.int64)
     vindex = np.concatenate(vruns) if vruns else np.zeros(0, np.int64)
     return {
@@ -888,6 +1201,9 @@ def point_map(stage) -> dict:
         'kinds': kinds,
         'primvars': primvars,
         'topology': topology,
+        'shapes': shapes,
+        'splits': splits,
+        'curve_counts': curve_counts,
     }
 
 
@@ -1044,7 +1360,8 @@ def remove_stamp(layer, mapping) -> None:
     attributes a plain SOP Import makes."""
     from pxr import Sdf
     names = (STAMP_PRIMVAR, f'{STAMP_PRIMVAR}:indices',
-             VERTEX_STAMP_PRIMVAR, f'{VERTEX_STAMP_PRIMVAR}:indices')
+             VERTEX_STAMP_PRIMVAR, f'{VERTEX_STAMP_PRIMVAR}:indices',
+             PRIM_STAMP_PRIMVAR, f'{PRIM_STAMP_PRIMVAR}:indices')
     with Sdf.ChangeBlock():
         for path in mapping['paths']:
             spec = layer.GetPrimAtPath(path)
@@ -1132,7 +1449,10 @@ def apply(lop_node) -> None:
     # keep one frame's cook, so reading this frame first would cook the rigs
     # again for the static import.
     expected = rest_point_count(sops)
-    left_out = _left_out_primvars(lop_node, sops, mapping)  # reads the first frame too
+    animate = _animate_node(lop_node)
+    left_out = _left_out_primvars(  # reads the first frame too
+        lop_node, sops, mapping, bool(option(animate, 'asset_primvars', 1)))
+    hide_parts = bool(option(animate, 'hide_parts', 1)) and can_split(mapping)
     geo = output.geometry()
     if geo is None:
         raise hou.NodeError('\n'.join(output.errors()) or f'anim_dive: {output.name()} has no geometry.')
@@ -1151,13 +1471,24 @@ def apply(lop_node) -> None:
                        widths=mode, missing=missing_width(static_node))
     frame = hou.frame()
     paths = list(mapping['paths'])
-    said = None
+    said, parts, holes = None, None, None
+    incoming = _incoming_stage(lop_node)
     try:
         author_frame(layer, mapping, read['P'], read['N'], frame, expected,
                      read['vN'],
                      rest_vertex_count(sops) if per_vertex or mode == 'vertex' else None,
                      widths=read['W'], widths_per_vertex=mode == 'vertex')
         said = read_visibility(geo, mapping, sops.node(CURRENT))
+        if said is not None and hide_parts:
+            # shapes of one prim that disagree: its hidden part, not all of it
+            said, parts, unsplit = split_visibility(
+                shape_visibility(geo, sops.node(CURRENT), rest_prim_count(sops)),
+                mapping, said)
+            add_warning = getattr(lop_node, 'addWarning', None)
+            if unsplit and add_warning is not None:
+                add_warning(unsplit_message(unsplit))
+        if hide_parts:
+            holes = hole_bases(incoming, mapping, frame)
     except TopologyChanged:
         # the full import brings this frame's visibility with it
         paths += author_full_frame(layer, _full_layer(lop_node), paths, frame)
@@ -1165,8 +1496,9 @@ def apply(lop_node) -> None:
     # indexes them): one the dive hid on some changed frames and said
     # nothing of on others was sampled on the first alone, and hidden on both.
     author_visibility(
-        layer, paths, said,
-        visibility_bases(_incoming_stage(lop_node), layer, paths, frame), frame)
+        layer, paths, said, visibility_bases(incoming, layer, paths, frame), frame)
+    if hide_parts:
+        author_parts(layer, mapping, parts, holes, frame)
     sample_defaults(layer, paths, frame)
 
 
@@ -1180,10 +1512,11 @@ def _incoming_stage(lop_node):
         return None
 
 
-def _left_out_primvars(lop_node, sops, mapping) -> list:
+def _left_out_primvars(lop_node, sops, mapping, keep_asset=True) -> list:
     """Per mapped prim, the primvars of the static import that `apply`
-    takes back out: the asset's own (`asset_primvars`) and a merge's filler
-    (`filler_primvars`).
+    takes back out: the asset's own (`asset_primvars`; none without
+    `keep_asset`, the node's Keep Asset Primvars: the dive's then go over
+    the asset's) and a merge's filler (`filler_primvars`).
 
     Worked out once per static import and incoming stage, not every frame:
     the filler with the mapping, the asset's again only when the stage held
@@ -1198,6 +1531,8 @@ def _left_out_primvars(lop_node, sops, mapping) -> list:
         first = at_start.geometry() if at_start is not None else None
         leaves = _packed_leaves(first) if first is not None and _has_packed(first) else None
         filler = mapping['filler'] = filler_primvars(leaves, mapping)
+    if not keep_asset:
+        return filler
     incoming = lop_node.node('../IN_stage_start') or lop_node.node('../IN_stage')
     cook_count = getattr(incoming, 'cookCount', None)
     try:
@@ -1377,6 +1712,34 @@ def rest_vertex_count(sops) -> int | None:
     return rest_geo.attribValue(VERTEX_COUNT)
 
 
+def rest_prim_count(sops) -> int | None:
+    """The dive's primitive count at the first frame, as `stamp_prims`
+    stamped it; None when it stamped none."""
+    rest = sops.node(REST)
+    rest_geo = None if rest is None else rest.geometry()
+    if rest_geo is None or rest_geo.findGlobalAttrib(PRIM_COUNT) is None:
+        return None
+    return rest_geo.attribValue(PRIM_COUNT)
+
+
+def stamp_prims(geo) -> None:
+    """Stamp each primitive's number (`__th_prim`) and the primitive count
+    on the static import's geometry, as `points_sops/stamp` stamps the
+    points. The static import carries the numbers to the stage, one per
+    face of a mesh and per curve, so `apply` knows which of the dive's
+    primitives each is and reads that one's `usdvisibility`
+    (`shape_visibility`): the shapes of one prim need not agree."""
+    count = geo.intrinsicValue('primitivecount')
+    if geo.findPrimAttrib(PRIM_STAMP) is None:
+        geo.addAttrib(hou.attribType.Prim, PRIM_STAMP, 0)
+    geo.setPrimIntAttribValuesFromString(
+        PRIM_STAMP, np.arange(count, dtype=np.int32).tobytes(),
+    )
+    if geo.findGlobalAttrib(PRIM_COUNT) is None:
+        geo.addAttrib(hou.attribType.Global, PRIM_COUNT, 0)
+    geo.setGlobalAttribValue(PRIM_COUNT, count)
+
+
 def stamp_vertices(geo) -> bool:
     """Stamp each vertex's number (`__th_vtx`, in the order `read_points`
     reads vertex N) and the vertex count on the static import's geometry
@@ -1520,6 +1883,7 @@ def rest_gate(sop_node) -> None:
         leaves = _packed_leaves(geo) if _has_packed(geo) else None
         normalize_widths(rest, leaves, missing_width(static_import))
         stamp_vertices(rest)
+        stamp_prims(rest)
         cached = _rest_cache[key] = (signature, rest)
     geo.clear()
     geo.merge(cached[1])

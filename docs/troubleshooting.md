@@ -497,6 +497,21 @@ TumblePipe: the scene needs no change, and the stage follows the rig on
 the next cook. An animation layer published before the update has the
 wrong visibility in it, so export those shots again.
 
+### The rig hides one arm, and `th::animate` hides both (or neither)
+
+One mesh holds several parts the rig switches one by one (`/geo/arms` with
+both arms, each with its own `usdvisibility`). A USD prim has one
+`visibility`, and up to 1.114 the part holding the mesh's first point
+decided for the whole mesh. Now the node keeps such a mesh visible and
+leaves the hidden faces out with `holeIndices` on the frames where the
+parts disagree (hidden curves get width 0), which Karma and the viewport
+follow without the material's help. Update TumblePipe; the scene needs no
+change. Export the shots that have such a mesh again: the layers published
+before have one visibility for the whole mesh. Points prims and curves
+that share one width cannot be hidden in part (the node warns and names
+them): give the parts paths of their own. See
+[`th::animate`](nodes/import-and-export.md#thanimate-lop).
+
 ### Geometry I made inside `th::animate` has no UVs on the stage, and its material is broken
 
 A mesh built in the dive (a prop modelled for the shot, a cloth strip, a

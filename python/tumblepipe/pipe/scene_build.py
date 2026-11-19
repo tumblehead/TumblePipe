@@ -122,10 +122,10 @@ def planned_render_override(shot_uri: Uri) -> RenderOverride | None:
     defaults_path = _root_defaults_path()
     if not defaults_path.exists():
         return None
-    # The Karma settings (samples, ray limits, ...) come only from what an
-    # entity level pins: one only the schema holds keeps the defaults
-    # layer's value, which the project always rendered with.
-    pinned = get_pinned_render_settings(shot_uri, render_overrides.KARMA_SETTINGS)
+    # The Karma settings (samples, ray limits, ...) and the AOVs come only
+    # from what an entity level pins: one only the schema holds keeps the
+    # defaults layer's value, which the project always rendered with.
+    pinned = get_pinned_render_settings(shot_uri, render_overrides.PINNED_KEYS)
     return render_overrides.plan_for_defaults(render, defaults_path, pinned)
 
 
@@ -141,6 +141,13 @@ def shot_render_override(shot_uri: Uri) -> RenderOverride | None:
         return None
     parameters = load_json(version_path / 'context.json').get('parameters', {})
     return RenderOverride.from_json(parameters.get('render_override'))
+
+
+def shot_project_aovs(shot_uri: Uri) -> tuple[str, ...]:
+    """The AOVs the shot's newest root layer adds (``render.aovs``): what
+    the stage it composes renders beyond its exports' own."""
+    override = shot_render_override(shot_uri)
+    return override.aovs if override is not None else ()
 
 
 def root_layer_is_stale(shot_uri: Uri) -> bool:

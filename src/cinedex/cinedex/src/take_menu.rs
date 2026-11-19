@@ -46,7 +46,7 @@ pub fn rule(picked: Option<&Take>, pin: bool) -> Rule {
 const SHOWN: &str = "\u{2713} ";
 
 /// `label` as a menu row: ticked when it is the one shown.
-fn marked_row(label: &str, shown: bool) -> String {
+pub(crate) fn marked_row(label: &str, shown: bool) -> String {
     if shown { format!("{SHOWN}{label}") } else { label.to_owned() }
 }
 

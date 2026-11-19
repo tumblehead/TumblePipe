@@ -105,4 +105,46 @@
         }
     }
 
+    groupcollapsible {
+        name    "attributes_folder"
+        label   "Attributes"
+
+        parm {
+            name    "attribs"
+            label   "Attributes"
+            type    string
+            default { "Cd Alpha width pscale uv*" }
+            help    "The attributes of anim_dive's geometry that come to the stage, beside the points, bounds, transforms and visibility the node always reads: names and wildcards, separated by spaces, ^name to leave one out (uv* ^uv3). Cd and Alpha become displayColor and displayOpacity, uv becomes st, width and pscale the curves' and points' widths; without width and pscale every curve gets Missing Width. Read once, at the shot's first frame, but for widths, which follow every frame. Add an attribute a shot needs (rest, a mask) here; a rig carries dozens that do not belong in the animation layer, so * is rarely what you want."
+        }
+        parm {
+            name    "normals"
+            label   "Normals"
+            type    toggle
+            default { "1" }
+            help    "Bring the geometry's normals (N, on points or vertices) to the stage and animate them. Off: no normals are authored, and the renderer computes them (what a subdivided mesh does anyway). Turn it off for a rig whose N is wrong."
+        }
+        parm {
+            name    "hide_parts"
+            label   "Hide Parts"
+            type    toggle
+            default { "1" }
+            help    "When the shapes that make up one prim do not all agree on a frame (a mesh with both arms, one hidden by the rig's usdvisibility), keep the prim visible and leave its hidden faces out on that frame (holeIndices; hidden curves get width 0). Off: the shape holding the prim's first point decides for all of it, as up to 1.114, and no holeIndices is authored."
+        }
+        parm {
+            name    "asset_primvars"
+            label   "Keep Asset Primvars"
+            type    toggle
+            default { "1" }
+            help    "Where the incoming stage already has a primvar that fits the prim (the asset's UVs), author none from the dive, so a later fix of the asset is not hidden by the animation layer. Off: the dive's primvars (the first frame's) are authored over the asset's; use it when the UVs are changed in the dive."
+        }
+        parm {
+            name    "missing_width"
+            label   "Missing Width"
+            type    float
+            default { "0.01" }
+            help    "The width of curves and points that have no width or pscale attribute."
+            range   { 0 1 }
+        }
+    }
+
 }

@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.114.2 — 2026-11-19
+
+### Fixes
+- fix(animate): th::animate cooks over an asset primvar that is one value (`6f905e1e`)
+
+### Documentation
+- docs(changelog): v1.114.1, and the HDA parms v1.114.1 shipped (`47c64840`)
+
 ## v1.114.1 — 2026-11-19
 
 ### Fixes

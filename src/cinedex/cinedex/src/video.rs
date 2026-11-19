@@ -247,13 +247,21 @@ fn write_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[u8], widt
     );
 }
 
+/// The shader's mode (`params.w`) for a float frame: scene-linear colour
+/// through its display transform, or, without one, data (a depth, id or
+/// cryptomatte AOV) shown as written.
+pub fn float_mode(has_lut: bool) -> f32 {
+    if has_lut { 1.0 } else { 3.0 }
+}
+
 /// A frame on screen.
 #[derive(Clone)]
 pub struct Picture {
     /// New for every frame shown, so the renderer uploads it.
     pub id: u64,
     pub frame: Frame,
-    /// The display transform of a scene-linear frame; None for a movie's.
+    /// The display transform of a scene-linear frame; None for a movie's,
+    /// and for a float frame of data, which is shown as written.
     pub lut: Option<Arc<Lut>>,
 }
 
@@ -295,10 +303,9 @@ impl ShaderProgram for Video {
                             pipeline.params = [0.0, 0.0, 1.0, 2.0];
                         }
                         Pixels::Rgba16f(rgba) => {
-                            assert!(lut.is_some(), "a scene-linear frame is shown through its display transform");
                             let textures = pipeline.textures_for(device, Kind::Linear, w, h);
                             write_texture(queue, &textures.planes[3], bytemuck::cast_slice(rgba), w, h, 8);
-                            pipeline.params = [0.0, 0.0, 1.0, 1.0];
+                            pipeline.params = [0.0, 0.0, 1.0, float_mode(lut.is_some())];
                         }
                     }
                     pipeline.uploaded = Some(*id);
@@ -323,5 +330,22 @@ impl ShaderProgram for Video {
         pass.set_pipeline(&pipeline.pipeline);
         pass.set_bind_group(0, &textures.bind_group, &[]);
         pass.draw(0..4, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shader parses and validates (no window draws it in the tests),
+    /// and names every mode `prepare` sets.
+    #[test]
+    fn the_shader_is_valid_wgsl() {
+        let source = include_str!("video.wgsl");
+        let module = wgpu::naga::front::wgsl::parse_str(source).expect("video.wgsl parses");
+        let flags = wgpu::naga::valid::ValidationFlags::all();
+        let capabilities = wgpu::naga::valid::Capabilities::empty();
+        wgpu::naga::valid::Validator::new(flags, capabilities).validate(&module).expect("video.wgsl validates");
+        assert!(source.contains("u.params.w > 2.5"), "the data mode float_mode(false) asks for");
     }
 }

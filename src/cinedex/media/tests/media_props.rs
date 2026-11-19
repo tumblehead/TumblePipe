@@ -81,6 +81,11 @@ fn an_exr_says_its_colour_space_or_does_not_open() {
     write_exr(&silent, None);
     let error = Media::exr(ExrSequence::new(1001, 1, vec![silent.clone()]), (25, 1)).unwrap_err();
     assert!(error.to_string().contains("colour space"), "{error}");
+    // A preview's data AOV opens without one: it is shown as written.
+    let any = Media::exr_any_from(ExrSequence::new(1001, 1, vec![silent.clone()]), (25, 1), 0).unwrap();
+    assert_eq!((any.colour_space(), any.layers().len()), (None, 1));
+    let any = Media::exr_any_from(ExrSequence::new(1001, 1, vec![said.clone()]), (25, 1), 0).unwrap();
+    assert_eq!(any.colour_space(), Some("ACEScg"));
     std::fs::remove_file(said).ok();
     std::fs::remove_file(silent).ok();
 }

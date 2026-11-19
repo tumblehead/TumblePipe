@@ -153,7 +153,7 @@ fn only_a_movie_goes_under_a_live_playblast() {
     assert!(Media::jpg_over(seq.clone(), (24, 1), th_media::Under { media: live, first: 1001 }).is_err());
     let exr = th_media::ExrSequence::new(1001, 1, Vec::new());
     let header = th_media::ExrHeader { layers: Vec::new(), colour_space: Some("ACEScg".into()) };
-    let exr = std::sync::Arc::new(Media::Exr { sequence: exr, header, colour_space: "ACEScg".into(), rate: (24, 1) });
+    let exr = std::sync::Arc::new(Media::Exr { sequence: exr, header, colour_space: Some("ACEScg".into()), rate: (24, 1) });
     assert!(Media::jpg_over(seq.clone(), (24, 1), th_media::Under { media: exr, first: 1001 }).is_err());
     assert!(Media::jpg_over(seq, (24, 1), th_media::Under { media: fixture_movie(), first: 1001 }).is_ok());
 }

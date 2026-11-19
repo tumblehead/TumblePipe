@@ -26,9 +26,21 @@
 //! seconds off the UI thread, and frames that landed fill their gaps (a
 //! frame that failed to read because it was still being written is read
 //! again once its file changes).
+//!
+//! Two choosers sit before the display's, each only when there is something
+//! to choose. **AOV**: the layers the EXR's header lists (`th_media`'s
+//! `aov_rows`) and, for a render in the pipeline's folders, the other AOV
+//! folders of its version (`th_pipe::preview_place`); a layer of the file
+//! shows at once, an AOV folder swaps the frames in place. An AOV that is
+//! not colour (depth, ids, a cryptomatte) says so and is shown as written,
+//! through no display transform ([`transform_of`]). **Version**: the other
+//! versions of what is shown, newest first, saying which are partial or
+//! have no frames; Page Up and Page Down step to the newer and older one,
+//! as in the editor. A swap keeps the frame number and goes on playing; a
+//! finished playblast's version is its movie.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -38,15 +50,18 @@ use primer::menu::{Accelerator, Menu, MenuItem};
 use primer::prelude::*;
 use primer::subscription::{self, time};
 use th_edit::document::TrackRef;
-use th_media::{ExrSequence, FrameKey, JpgSequence, Media};
+use th_media::{AovRow, AovTarget, ExrSequence, ExrView, FrameKey, JpgSequence, LayerKind, Media};
+use th_pipe::preview_place::{self, Place, VersionRow, VersionState};
 
 use crate::colour::{Colour, Lut};
 use crate::display::{Display, display_bar, theme};
 use crate::engine::{Clip, Content, Engine, Timeline};
 use crate::glyph::{self, Glyph};
+use crate::layer_view;
 use crate::look;
 use crate::previews::open_frames;
 use crate::reel::{Fill, Group, Reel, Run, Tick, Transport};
+use crate::take_menu::marked_row;
 use crate::tracks::{self, ClipView, RowView, Tracks};
 use crate::video::{Picture, Video};
 
@@ -68,6 +83,51 @@ impl Source {
     }
 }
 
+/// What is beside the frames shown, in the pipeline's folders: where they
+/// sit, their version's AOV folders and the versions of the same thing.
+/// All empty for frames that sit nowhere (a batch, any other folder).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Beside {
+    place: Option<Place>,
+    aovs: Vec<(String, PathBuf)>,
+    versions: Vec<VersionRow>,
+}
+
+impl Beside {
+    /// Read for the frames at `path`: a folder listing per version, so off
+    /// the UI thread.
+    fn of(path: &Path) -> Self {
+        let Some(place) = preview_place::place(path) else { return Self::default() };
+        Beside { aovs: preview_place::aovs(&place), versions: preview_place::versions(&place), place: Some(place) }
+    }
+
+    fn aov(&self) -> Option<&str> {
+        self.place.as_ref().and_then(Place::aov)
+    }
+
+    fn version(&self) -> Option<&str> {
+        self.place.as_ref().map(Place::version)
+    }
+}
+
+/// What a float frame is shown through: the colour space a colour layer's
+/// display transform starts from, or None for data, shown as written. A
+/// colour layer of frames that do not say their colour space cannot be
+/// shown right, and is refused.
+pub(crate) fn transform_of(kind: LayerKind, colour_space: Option<&str>) -> Result<Option<&str>, String> {
+    match (kind, colour_space) {
+        (LayerKind::Colour, Some(space)) => Ok(Some(space)),
+        (LayerKind::Colour, None) => Err("the frames do not say their colour space (oiio:ColorSpace)".into()),
+        (LayerKind::Data | LayerKind::Cryptomatte, _) => Ok(None),
+    }
+}
+
+/// The Version menu's rows for `versions`, the one shown ticked as the
+/// take menu ticks its own.
+pub(crate) fn version_menu_rows(versions: &[VersionRow], shown: Option<&str>) -> Vec<String> {
+    versions.iter().map(|row| marked_row(&row.label(), Some(row.version.as_str()) == shown)).collect()
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     Start,
@@ -84,11 +144,23 @@ pub(crate) enum Message {
     View(usize),
     Exposure(f32),
     Rescan,
+    /// View > Refresh: the frames, and what is beside them, read again.
+    Refresh,
+    /// The AOV chooser's row.
+    Aov(usize),
+    /// The Version chooser's row.
+    Version(usize),
+    /// Page Up (+1, newer) and Page Down.
+    VersionStep(i8),
+    /// What is beside the frames, for the listing asked for.
+    Beside(u64, Beside),
+    /// Another version's or AOV's frames read, for the swap asked for.
+    Swapped(u64, Source, Result<Reel, String>, Beside),
     /// A group's frames opened, for the generation of the group asked for.
     Opened(usize, u64, Result<Arc<Media>, String>),
-    /// The frames read again, with the modification times of the files of
-    /// frames that failed to read.
-    Scanned(Result<Reel, String>, Vec<(FrameKey, Option<SystemTime>)>),
+    /// The frames read again (of the source of that epoch), with the
+    /// modification times of the files of frames that failed to read.
+    Scanned(u64, Result<Reel, String>, Vec<(FrameKey, Option<SystemTime>)>),
     Ignore,
     Quit,
 }
@@ -107,6 +179,16 @@ struct Opened {
 
 pub(crate) struct FramesView {
     source: Source,
+    /// What the window opened on: its frame list (`--expect`) is that
+    /// version's, and no other's.
+    home: Source,
+    beside: Beside,
+    /// The layer chosen in the AOV chooser; None, each file's default.
+    view: Option<ExrView>,
+    /// Counts listings and swaps asked for: an answer to an older one is dropped.
+    asked: u64,
+    /// Counts sources shown: a rescan of an earlier one is dropped.
+    epoch: u64,
     reel: Reel,
     display: Display,
     engine: Engine,
@@ -147,14 +229,19 @@ pub(crate) fn clips(reel: &Reel, fps: u32) -> Vec<Clip> {
 }
 
 /// Open `group`'s frames at `rate`: an EXR sequence's header read from its
-/// first frame on disk, or JPGs (nothing read). Off the UI thread.
+/// first frame on disk, or JPGs (nothing read), or a movie's index. Off the
+/// UI thread. EXRs need not say their colour space here: a data AOV shows
+/// without one ([`transform_of`] refuses a colour layer that does not).
 fn open_group(group: &Group, rate: (i32, i32)) -> Result<Arc<Media>, String> {
+    if let Some(movie) = group.movie() {
+        return Media::movie(&movie.to_string_lossy()).map(Arc::new).map_err(|e| e.to_string());
+    }
     let index = group.first_present().ok_or("none of its frames is rendered yet")?;
     let first = group.slots.first().and_then(|s| s.number).unwrap_or(0);
     let media = if group.is_jpg() {
         Media::jpg(JpgSequence::new(first, 1, group.paths()), rate)
     } else {
-        Media::exr_from(ExrSequence::new(first, 1, group.paths()), rate, index).map_err(|e| e.to_string())?
+        Media::exr_any_from(ExrSequence::new(first, 1, group.paths()), rate, index).map_err(|e| e.to_string())?
     };
     Ok(Arc::new(media))
 }
@@ -188,11 +275,18 @@ pub(crate) fn key_message(key: &Key, modifiers: Modifiers) -> Option<Message> {
         Key::Named(Named::Space) => Some(Message::TogglePlay),
         // Up plays and pauses too, alone: with a modifier it is left free.
         Key::Named(Named::ArrowUp) if modifiers == Modifiers::NONE => Some(Message::TogglePlay),
-        Key::Character('r' | 'R') if command => Some(Message::Rescan),
+        // The editor's version keys; with Ctrl or Shift (its department
+        // and source keys) they are left free.
+        Key::Named(Named::PageUp) if modifiers == Modifiers::NONE => Some(Message::VersionStep(1)),
+        Key::Named(Named::PageDown) if modifiers == Modifiers::NONE => Some(Message::VersionStep(-1)),
+        Key::Character('r' | 'R') if command => Some(Message::Refresh),
         Key::Character('l' | 'L') if !command && !modifiers.alt => Some(Message::Loop),
         _ => None,
     }
 }
+
+/// The menu the versions are listed in, under its two step rows.
+const VERSION_MENU: &str = "&Version";
 
 const NONE: Modifiers = Modifiers::NONE;
 const ALT: Modifiers = Modifiers { alt: true, ..Modifiers::NONE };
@@ -227,7 +321,14 @@ fn headings(playing: bool, looping: bool) -> Vec<(&'static str, Vec<Option<Row3>
                 Some((if looping { "\u{2713} &Loop" } else { "&Loop" }, Message::Loop, Some((Key::Character('l'), NONE)))),
             ],
         ),
-        ("&View", vec![Some(("&Refresh", Message::Rescan, Some((Key::Character('r'), Modifiers::COMMAND))))]),
+        ("&View", vec![Some(("&Refresh", Message::Refresh, Some((Key::Character('r'), Modifiers::COMMAND))))]),
+        (
+            VERSION_MENU,
+            vec![
+                Some(("&Newer Version", Message::VersionStep(1), named(Named::PageUp, NONE))),
+                Some(("Older &Version", Message::VersionStep(-1), named(Named::PageDown, NONE))),
+            ],
+        ),
     ]
 }
 
@@ -248,8 +349,16 @@ impl FramesView {
         let wake_slot: Arc<Mutex<Option<Sender<Message>>>> = Arc::new(Mutex::new(None));
         engine.set_notifier(waker(&wake_slot));
         let transport = Transport::new(reel.len(), fps, Instant::now());
+        // Where the frames sit is read from the path alone; what is beside
+        // them is listed once the window is up.
+        let beside = Beside { place: preview_place::place(&source.path), ..Beside::default() };
         FramesView {
+            home: source.clone(),
             source,
+            beside,
+            view: None,
+            asked: 0,
+            epoch: 0,
             reel,
             display: Display { colour, display, view, exposure: 0.0 },
             engine,
@@ -292,11 +401,136 @@ impl FramesView {
         Command::perform_blocking(move || open_group(&group, rate), move |r| Message::Opened(g, generation, r))
     }
 
+    /// What `media` shows: the layer chosen when it has it, else its default.
+    fn view_of(&self, media: &Media) -> ExrView {
+        layer_view::kept_view(self.view.as_ref(), media.layers(), media.default_view())
+    }
+
     fn content(&self, g: usize) -> Content {
         match &self.opened.get(g).and_then(|o| o.media.clone()) {
-            Some(media) => Content { media: Some(Arc::clone(media)), view: media.default_view(), hidden: 0, wants_proxy: false },
+            Some(media) => Content { media: Some(Arc::clone(media)), view: self.view_of(media), hidden: 0, wants_proxy: false },
             None => Content::none(),
         }
+    }
+
+    /// The media at the playhead (the first group's in a gap between groups).
+    fn media_here(&self) -> Option<&Arc<Media>> {
+        let g = self.reel.slot_at(self.transport.position).map_or(0, |(g, _)| g);
+        self.opened.get(g).and_then(|o| o.media.as_ref())
+    }
+
+    /// The AOV chooser's rows: the layers of the file at the playhead and
+    /// its version's other AOV folders.
+    fn aov_rows(&self) -> Vec<AovRow> {
+        let layers = self.media_here().map_or(&[][..], |m| m.layers());
+        let folders: Vec<String> = self.beside.aovs.iter().map(|(name, _)| name.clone()).collect();
+        th_media::aov_rows(layers, self.beside.aov(), &folders)
+    }
+
+    /// The display transform `media` is shown through as the display and
+    /// view have it; None for display-referred media, and for a layer of
+    /// data, shown as written.
+    fn lut_of(&mut self, media: &Media) -> Result<Option<Arc<Lut>>, String> {
+        if !media.is_exr() {
+            return Ok(None);
+        }
+        let view = self.view_of(media);
+        let kind = media.layers().iter().find(|l| l.name == view.layer).map_or(LayerKind::Colour, |l| l.kind(self.beside.aov()));
+        let display = &mut self.display;
+        transform_of(kind, media.colour_space())?.map(|space| display.colour.lut(space, &display.display, &display.view)).transpose()
+    }
+
+    /// List what is beside the frames shown, off the UI thread.
+    fn list_beside(&mut self) -> Command<Message> {
+        self.asked += 1;
+        let (asked, path) = (self.asked, self.source.path.clone());
+        Command::perform_blocking(move || Beside::of(&path), move |beside| Message::Beside(asked, beside))
+    }
+
+    /// Read `source`'s frames to show them in place of these, off the UI
+    /// thread; these stay until they are read.
+    fn swap(&mut self, source: Source) -> Command<Message> {
+        self.asked += 1;
+        let asked = self.asked;
+        Command::perform_blocking(
+            move || {
+                let (reel, beside) = (source.read(), Beside::of(&source.path));
+                (source, reel, beside)
+            },
+            move |(source, reel, beside)| Message::Swapped(asked, source, reel, beside),
+        )
+    }
+
+    /// Show `reel` (of `source`) in place of what is shown, at the frame
+    /// number the playhead is on, playing on if it was.
+    fn swapped(&mut self, source: Source, reel: Reel, beside: Beside, now: Instant) -> Command<Message> {
+        let number = self.reel.number_at(self.transport.position);
+        self.epoch += 1;
+        self.scanning = false;
+        self.failed_at.clear();
+        self.status = None;
+        self.source = source;
+        self.beside = beside;
+        self.reel = reel;
+        self.transport.set_len(self.reel.len());
+        self.transport.move_to(self.reel.position_of(number), now);
+        // Sources past the new groups play nothing.
+        for g in self.reel.groups.len()..self.opened.len() {
+            let generation = self.opened[g].generation + 1;
+            self.opened[g] = Opened { generation, ..Opened::default() };
+            self.engine.replace_source(g, Content::none(), self.timeline());
+        }
+        let commands: Vec<Command<Message>> = (0..self.reel.groups.len()).map(|g| self.open(g)).collect();
+        self.shown = None;
+        self.refresh_shown();
+        Command::batch(commands)
+    }
+
+    /// Show another layer of the files shown: every group plays its frames
+    /// as the view chosen has them, from where the playhead is.
+    fn show_view(&mut self) {
+        for g in 0..self.opened.len() {
+            if self.opened[g].media.is_some() {
+                let content = self.content(g);
+                self.engine.replace_source(g, content, self.timeline());
+            }
+        }
+        self.set_display();
+    }
+
+    fn pick_aov(&mut self, row: usize) -> Command<Message> {
+        match self.aov_rows().get(row).map(|r| r.target.clone()) {
+            Some(AovTarget::Layer(layer)) => {
+                self.view = Some(ExrView { layer, channel: None });
+                self.show_view();
+            }
+            Some(AovTarget::Folder(folder)) => {
+                if let Some((_, path)) = self.beside.aovs.get(folder) {
+                    // The same version's frames: its frame list holds.
+                    let source = Source { path: path.clone(), fill: self.source.fill.clone() };
+                    self.view = None;
+                    return self.swap(source);
+                }
+            }
+            None => {}
+        }
+        Command::none()
+    }
+
+    fn pick_version(&mut self, row: usize) -> Command<Message> {
+        let Some(row) = self.beside.versions.get(row) else { return Command::none() };
+        if Some(row.version.as_str()) == self.beside.version() {
+            return Command::none();
+        }
+        if row.state == VersionState::Missing {
+            let what = self.beside.aov().map_or_else(String::new, |aov| format!("{aov} "));
+            self.status = Some(format!("{} has no {what}frames to show", row.version));
+            return Command::none();
+        }
+        let home = preview_place::place(&self.home.path);
+        let fill = if home.as_ref().map(Place::version) == Some(row.version.as_str()) { self.home.fill.clone() } else { Fill::Span };
+        let source = Source { path: row.path.clone(), fill };
+        self.swap(source)
     }
 
     /// The frame at the playhead, when it has one to decode.
@@ -321,6 +555,11 @@ impl FramesView {
         if self.shown.as_ref().is_some_and(|(k, _)| *k == key) {
             return;
         }
+        // A group that cannot show (no display transform for it) says why.
+        if self.opened.get(key.source).is_some_and(|o| o.error.is_some()) {
+            self.shown = None;
+            return;
+        }
         if let Some(frame) = self.engine.frame(key) {
             self.frames_shown += 1;
             let lut = self.opened.get(key.source).and_then(|o| o.lut.clone());
@@ -329,14 +568,13 @@ impl FramesView {
     }
 
     fn set_display(&mut self) {
-        for o in &mut self.opened {
-            if let Some(media) = &o.media {
-                o.lut = match self.display.lut(media) {
-                    Ok(lut) => lut,
-                    Err(e) => {
-                        o.error = Some(e);
-                        None
-                    }
+        for g in 0..self.opened.len() {
+            if let Some(media) = self.opened[g].media.clone() {
+                let lut = self.lut_of(&media);
+                let o = &mut self.opened[g];
+                (o.lut, o.error) = match lut {
+                    Ok(lut) => (lut, None),
+                    Err(e) => (None, Some(e)),
                 };
             }
         }
@@ -345,10 +583,12 @@ impl FramesView {
     }
 
     fn rescan(&mut self) -> Command<Message> {
-        if self.scanning {
+        // A movie is written once: nothing lands in it.
+        if self.scanning || self.reel.groups.iter().all(|g| g.movie().is_some()) {
             return Command::none();
         }
         self.scanning = true;
+        let epoch = self.epoch;
         let source = self.source.clone();
         let failed: Vec<(FrameKey, PathBuf)> = self
             .failed_at
@@ -360,7 +600,7 @@ impl FramesView {
                 let times = failed.into_iter().map(|(k, p)| (k, std::fs::metadata(p).and_then(|m| m.modified()).ok())).collect();
                 (source.read(), times)
             },
-            |(reel, times)| Message::Scanned(reel, times),
+            move |(reel, times)| Message::Scanned(epoch, reel, times),
         )
     }
 
@@ -517,6 +757,9 @@ impl FramesView {
         let playing = self.transport.playing;
         let (rendered, slots) = self.reel.rendered();
         let mut title = format!("Preview \u{00b7} {}", self.reel.title);
+        if let Some(version) = self.beside.version() {
+            title.push_str(&format!(" \u{00b7} {version}"));
+        }
         if rendered < slots {
             title.push_str(&format!("   {rendered} of {slots} frames rendered"));
         }
@@ -544,6 +787,37 @@ impl FramesView {
             .push(text(rate).font_size(13.0).color(rate_colour))
             .push(text(self.frame_text()).font_size(20.0).color(look::now()));
         container(tools).padding(Padding::from([8.0, 14.0])).width(Length::Fill).background(look::panel()).into()
+    }
+
+    /// The AOV and Version choosers, each only when it has a choice to
+    /// make. Out of keyboard focus, as the display's are.
+    fn choosers(&self) -> Row<Message> {
+        let label = |words: &str| text(words.to_owned()).font_size(13.0).color(look::quiet());
+        let mut choosers = row();
+        let rows = self.aov_rows();
+        if rows.len() > 1 {
+            let view = self.media_here().map(|m| self.view_of(m)).or_else(|| self.view.clone()).unwrap_or_default();
+            let mut combo = combo_box(Id::new("preview aov"), rows.iter().map(|r| r.label.clone()).collect())
+                .on_select(Message::Aov)
+                .width(Length::fixed(230.0))
+                .focusable(false);
+            if let Some(selected) = th_media::aov_selected(&rows, &view) {
+                combo = combo.selected(selected);
+            }
+            choosers = choosers.push(label("AOV")).push(combo).push(space(Length::fixed(16.0), Length::Shrink));
+        }
+        let versions = &self.beside.versions;
+        if versions.len() > 1 {
+            let mut combo = combo_box(Id::new("preview version"), versions.iter().map(VersionRow::label).collect())
+                .on_select(Message::Version)
+                .width(Length::fixed(230.0))
+                .focusable(false);
+            if let Some(selected) = versions.iter().position(|r| Some(r.version.as_str()) == self.beside.version()) {
+                combo = combo.selected(selected);
+            }
+            choosers = choosers.push(label("Version")).push(combo).push(space(Length::fixed(16.0), Length::Shrink));
+        }
+        choosers
     }
 
     fn timeline_view(&self) -> Element<Message> {
@@ -581,12 +855,14 @@ impl FramesView {
                 MenuItem::button("Quit Cinedex", Message::Quit).accelerator(Accelerator::new(Key::Character('q'), Modifiers::COMMAND));
             bar = bar.app_submenu("Cinedex", Menu::new().push(quit));
         }
+        let versions = &self.beside.versions;
         for (label, rows) in headings(self.transport.playing, self.transport.looping) {
-            let menu = rows.into_iter().fold(Menu::new(), |menu, row| {
+            let steps = label != VERSION_MENU || versions.len() > 1;
+            let mut menu = rows.into_iter().fold(Menu::new(), |menu, row| {
                 menu.push(match row {
                     None => MenuItem::separator(),
                     Some((label, message, keys)) => {
-                        let item = MenuItem::button(label, message);
+                        let item = MenuItem::button(label, message).enabled(steps);
                         // On macOS only Command chords go to the menu: a bare
                         // key stays the window's (as the editor's menu has it).
                         match keys.filter(|(_, m)| !cfg!(target_os = "macos") || m.command()) {
@@ -596,6 +872,12 @@ impl FramesView {
                     }
                 })
             });
+            if label == VERSION_MENU && !versions.is_empty() {
+                menu = menu.push(MenuItem::separator());
+                for (i, row) in version_menu_rows(versions, self.beside.version()).into_iter().enumerate() {
+                    menu = menu.push(MenuItem::button(row, Message::Version(i)));
+                }
+            }
             bar = bar.submenu(label, menu);
         }
         bar
@@ -624,7 +906,8 @@ impl Application for FramesView {
             Message::Start if !self.started => {
                 self.started = true;
                 crate::app_icon::apply();
-                let commands: Vec<Command<Message>> = (0..self.reel.groups.len()).map(|g| self.open(g)).collect();
+                let mut commands: Vec<Command<Message>> = (0..self.reel.groups.len()).map(|g| self.open(g)).collect();
+                commands.push(self.list_beside());
                 return Command::batch(commands);
             }
             Message::Start => {}
@@ -688,14 +971,46 @@ impl Application for FramesView {
             }
             Message::Exposure(stops) => self.display.exposure = stops,
             Message::Rescan => return self.rescan(),
-            Message::Scanned(reel, times) => return self.scanned(reel, times),
+            Message::Refresh => {
+                let commands = vec![self.rescan(), self.list_beside()];
+                return Command::batch(commands);
+            }
+            Message::Aov(row) => return self.pick_aov(row),
+            Message::Version(row) => return self.pick_version(row),
+            Message::VersionStep(delta) => {
+                let to = self.beside.version().and_then(|current| preview_place::step_version(&self.beside.versions, current, delta));
+                if let Some(row) = to {
+                    return self.pick_version(row);
+                }
+            }
+            Message::Beside(asked, beside) => {
+                if asked == self.asked {
+                    self.beside = beside;
+                    // Which AOV the frames are of says how they are shown.
+                    self.set_display();
+                }
+            }
+            Message::Swapped(asked, source, reel, beside) => {
+                if asked != self.asked {
+                    return Command::none();
+                }
+                match reel {
+                    Ok(reel) => return self.swapped(source, reel, beside, now),
+                    Err(e) => self.status = Some(format!("Cannot show {}: {e}", source.path.display())),
+                }
+            }
+            Message::Scanned(epoch, reel, times) => {
+                if epoch == self.epoch {
+                    return self.scanned(reel, times);
+                }
+            }
             Message::Opened(g, generation, result) => {
                 if self.opened.get(g).is_none_or(|o| o.generation != generation) {
                     return Command::none();
                 }
                 match result {
                     Ok(media) => {
-                        let lut = self.display.lut(&media);
+                        let lut = self.lut_of(&media);
                         let o = &mut self.opened[g];
                         match lut {
                             Ok(lut) => o.lut = lut,
@@ -755,7 +1070,7 @@ impl Application for FramesView {
                     .align_y(Vertical::Center),
             );
         }
-        let bar = display_bar(&self.display, row(), Message::Display, Message::View, Message::Exposure);
+        let bar = display_bar(&self.display, self.choosers(), Message::Display, Message::View, Message::Exposure);
         let mut page =
             column().push(self.toolbar()).push(layers).push(bar).push(self.timeline_view()).width(Length::Fill).height(Length::Fill);
         if let Some(words) = &self.status {
@@ -850,6 +1165,71 @@ mod tests {
         for c in ('a'..='z').chain('0'..='9') {
             assert!(!matches!(key_message(&Key::Character(c), NONE), Some(Message::TogglePlay)), "{c} plays");
         }
+    }
+
+    /// Page Up and Page Down, alone, step versions as in the editor (up is
+    /// newer); with the editor's department and source modifiers they do
+    /// nothing here.
+    #[test]
+    fn page_keys_step_versions_as_the_editor_s() {
+        assert!(matches!(key_message(&Key::Named(Named::PageUp), NONE), Some(Message::VersionStep(1))));
+        assert!(matches!(key_message(&Key::Named(Named::PageDown), NONE), Some(Message::VersionStep(-1))));
+        let shift = Modifiers { shift: true, ..NONE };
+        for held in [shift, ALT, Modifiers::COMMAND] {
+            assert!(key_message(&Key::Named(Named::PageUp), held).is_none(), "{held:?}");
+            assert!(key_message(&Key::Named(Named::PageDown), held).is_none(), "{held:?}");
+        }
+    }
+
+    /// Colour goes through the display transform of its colour space and
+    /// is refused without one; data never needs one.
+    #[test]
+    fn data_is_shown_as_written_and_colour_needs_its_space() {
+        assert_eq!(transform_of(LayerKind::Colour, Some("ACEScg")), Ok(Some("ACEScg")));
+        assert!(transform_of(LayerKind::Colour, None).unwrap_err().contains("colour space"));
+        for kind in [LayerKind::Data, LayerKind::Cryptomatte] {
+            assert_eq!(transform_of(kind, Some("ACEScg")), Ok(None));
+            assert_eq!(transform_of(kind, None), Ok(None));
+        }
+        assert_eq!((crate::video::float_mode(true), crate::video::float_mode(false)), (1.0, 3.0));
+    }
+
+    proptest! {
+        /// The Version menu lists every version, newest first as given,
+        /// and ticks exactly the one shown.
+        #[test]
+        fn the_version_menu_ticks_the_one_shown(count in 0usize..8, shown in prop::option::of(0usize..10)) {
+            let versions: Vec<VersionRow> = (0..count)
+                .map(|i| VersionRow { version: format!("v{:04}", count - i), path: PathBuf::new(), state: VersionState::Complete, check: false })
+                .collect();
+            let shown = shown.map(|n| format!("v{n:04}"));
+            let rows = version_menu_rows(&versions, shown.as_deref());
+            prop_assert_eq!(rows.len(), count);
+            for (row, version) in rows.iter().zip(&versions) {
+                let (ticked, plain) = crate::take_menu::unmarked(row);
+                prop_assert_eq!(plain, version.label());
+                prop_assert_eq!(ticked, Some(&version.version) == shown.as_ref());
+            }
+        }
+    }
+
+    /// A place is read from the window's path at once; a folder that sits
+    /// nowhere has nothing beside it.
+    #[test]
+    fn what_is_beside_the_frames_comes_from_their_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let stream = dir.path().join("default");
+        for (version, aov) in [("v0001", "beauty"), ("v0002", "beauty"), ("v0002", "depth")] {
+            let folder = stream.join(version).join(aov);
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join(format!("s_{aov}_{version}.1001.exr")), b"x").unwrap();
+        }
+        let beside = Beside::of(&stream.join("v0002").join("beauty"));
+        assert_eq!((beside.version(), beside.aov()), (Some("v0002"), Some("beauty")));
+        assert_eq!(beside.aovs.iter().map(|a| a.0.as_str()).collect::<Vec<_>>(), ["beauty", "depth"]);
+        assert_eq!(beside.versions.iter().map(|v| v.version.as_str()).collect::<Vec<_>>(), ["v0002", "v0001"]);
+        let nowhere = Beside::of(dir.path());
+        assert!(nowhere.place.is_none() && nowhere.aovs.is_empty() && nowhere.versions.is_empty());
     }
 
     #[test]

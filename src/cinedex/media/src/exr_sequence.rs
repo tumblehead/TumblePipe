@@ -5,7 +5,9 @@
 //! (`beauty.R` is channel `R` of layer `beauty`). A channel without a prefix
 //! belongs to its part's name, or to the unnamed layer when the part has
 //! none. TumblePipe renders one AOV per file, so a file usually has one
-//! layer, but nothing here assumes it.
+//! layer, but nothing here assumes it. A layer is colour, data or a
+//! cryptomatte ([`layer_kind`]): told from its name and channels, since the
+//! file does not say.
 //!
 //! A frame is the file's display window. Data outside it is cut off and
 //! display pixels the data window does not cover are zero, so a cropped
@@ -28,6 +30,90 @@ use crate::{Error, Result};
 pub struct ExrLayer {
     pub name: String,
     pub channels: Vec<String>,
+}
+
+/// What a layer's values are, as far as its name and channels say (an EXR
+/// has no flag for it): colour to show through the display transform, or
+/// data (depth, normals, positions, ids, mattes) and cryptomatte ids, which
+/// a display transform would only distort and are shown as written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayerKind {
+    Colour,
+    Data,
+    Cryptomatte,
+}
+
+impl LayerKind {
+    /// What a viewer says beside a layer that is not colour; None for colour.
+    pub fn note(self) -> Option<&'static str> {
+        match self {
+            Self::Colour => None,
+            Self::Data => Some("data, shown raw"),
+            Self::Cryptomatte => Some("cryptomatte ids, shown raw"),
+        }
+    }
+}
+
+/// AOV names that hold data whatever their channels are called (a normal
+/// pass is often written as R, G, B): lower case, letters and digits only.
+const DATA_NAMES: [&str; 34] = [
+    "n",
+    "p",
+    "z",
+    "pz",
+    "ng",
+    "uv",
+    "st",
+    "id",
+    "depth",
+    "zdepth",
+    "normal",
+    "normals",
+    "position",
+    "pworld",
+    "nworld",
+    "pcamera",
+    "ncamera",
+    "pref",
+    "prest",
+    "hitp",
+    "hitn",
+    "hitpz",
+    "hitdepth",
+    "worldposition",
+    "worldnormal",
+    "motion",
+    "motionvector",
+    "motionvectors",
+    "velocity",
+    "mask",
+    "matte",
+    "alpha",
+    "primid",
+    "objectid",
+];
+
+/// The kind of a layer or AOV called `name` whose channels are `channels`
+/// (without their layer prefix; empty when they are not known, as for an
+/// AOV folder not opened yet): a cryptomatte by its name (`CryptoObject00`);
+/// data when its channels are not a colour's (one channel, or X, Y, Z), or
+/// its name is a data pass's ([`DATA_NAMES`], or one ending in `id` after a
+/// separator: `prim_id`, `instance.ID`); else colour.
+pub fn layer_kind(name: &str, channels: &[String]) -> LayerKind {
+    let lower = name.to_ascii_lowercase();
+    let key: String = lower.chars().filter(char::is_ascii_alphanumeric).collect();
+    if key.starts_with("crypto") {
+        return LayerKind::Cryptomatte;
+    }
+    let has = |n: &str| channels.iter().any(|c| c.eq_ignore_ascii_case(n));
+    if !channels.is_empty() && !(has("r") && has("g") && has("b")) {
+        return LayerKind::Data;
+    }
+    let id_suffix = ["_id", ".id", "-id", "_ids", ".ids", "-ids"].iter().any(|s| lower.ends_with(s));
+    if DATA_NAMES.contains(&key.as_str()) || id_suffix {
+        return LayerKind::Data;
+    }
+    LayerKind::Colour
 }
 
 /// What to show of a sequence: a layer's colour, or one of its channels.
@@ -107,6 +193,14 @@ fn read_flat(path: &Path, wanted: &dyn Fn() -> bool) -> std::result::Result<Opti
 }
 
 impl ExrLayer {
+    /// Its [`layer_kind`]. An unnamed layer (a file's plain channels) goes
+    /// by `aov`, what its file is an AOV of when that is known: TumblePipe
+    /// renders one AOV per folder, named by the folder.
+    pub fn kind(&self, aov: Option<&str>) -> LayerKind {
+        let name = if self.name.is_empty() { aov.unwrap_or_default() } else { &self.name };
+        layer_kind(name, &self.channels)
+    }
+
     /// The channels `channel` shows, as indices into `channels`, in display
     /// order: that one channel; else the colour channels R,G,B (X,Y,Z for a
     /// vector layer), whatever their case; else, for a layer that is not
@@ -295,6 +389,52 @@ mod tests {
     fn sizes() -> impl Strategy<Value = usize> {
         let piece = PIECE as usize;
         prop_oneof![(0usize..4, -2isize..=2).prop_map(move |(k, d)| (k * piece).saturating_add_signed(d)), 0usize..3 * piece,]
+    }
+
+    fn layer(name: &str, channels: &[&str]) -> ExrLayer {
+        ExrLayer { name: name.into(), channels: channels.iter().map(|c| (*c).to_string()).collect() }
+    }
+
+    #[test]
+    fn layers_say_whether_they_are_colour() {
+        let rgb = ["R", "G", "B", "A"];
+        for (name, channels, kind) in [
+            ("", &rgb[..], LayerKind::Colour),
+            ("beauty", &rgb[..], LayerKind::Colour),
+            ("diffuse", &["r", "g", "b"][..], LayerKind::Colour),
+            ("depth", &["Z"][..], LayerKind::Data),
+            ("anything", &["Y"][..], LayerKind::Data),
+            ("Pworld", &["X", "Y", "Z"][..], LayerKind::Data),
+            ("N", &rgb[..], LayerKind::Data),
+            ("prim_id", &rgb[..], LayerKind::Data),
+            ("grid", &rgb[..], LayerKind::Colour),
+            ("CryptoObject00", &rgb[..], LayerKind::Cryptomatte),
+            ("crypto_material", &["R"][..], LayerKind::Cryptomatte),
+        ] {
+            assert_eq!(layer(name, channels).kind(None), kind, "{name} {channels:?}");
+        }
+        // An unnamed layer goes by the AOV its file is of.
+        assert_eq!(layer("", &rgb).kind(Some("depth")), LayerKind::Data);
+        assert_eq!(layer("", &rgb).kind(Some("beauty")), LayerKind::Colour);
+        assert_eq!(layer("diffuse", &rgb).kind(Some("depth")), LayerKind::Colour, "its own name comes first");
+        assert_eq!(layer_kind("depth", &[]), LayerKind::Data, "by name alone, its channels not known");
+        assert!(LayerKind::Colour.note().is_none() && LayerKind::Data.note().is_some() && LayerKind::Cryptomatte.note().is_some());
+    }
+
+    proptest! {
+        /// A layer without the three colour channels is never colour,
+        /// whatever it is called; a cryptomatte is one by its name alone,
+        /// in either case; and no name panics.
+        #[test]
+        fn a_layer_without_rgb_is_never_colour(name in "\\PC{0,12}", channels in prop::collection::vec("[A-Za-z]{1,2}", 0..5), upper in any::<bool>()) {
+            let kind = layer_kind(&name, &channels);
+            let has = |n: &str| channels.iter().any(|c| c.eq_ignore_ascii_case(n));
+            if !channels.is_empty() && !(has("r") && has("g") && has("b")) {
+                prop_assert_ne!(kind, LayerKind::Colour);
+            }
+            let crypto = if upper { format!("CRYPTO{name}") } else { format!("crypto{name}") };
+            prop_assert_eq!(layer_kind(&crypto, &channels), LayerKind::Cryptomatte);
+        }
     }
 
     proptest! {

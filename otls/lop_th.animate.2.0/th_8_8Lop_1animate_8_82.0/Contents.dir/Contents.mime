@@ -4424,6 +4424,32 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/static_import.chn"
+Content-Type: text/plain
+
+{
+    channel attribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = "\"P N visibility bounds Cd Alpha transform width pscale uv* __th_pt __th_vtx __th_prim\""
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_points
+return animate_points.import_pattern(hou.pwd())" language = python }
+    }
+    channel setmissingwidths {
+      lefttype = extend
+      righttype = extend
+      default = 0.01
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../missing_width\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/static_import.parm"
 Content-Type: text/plain
 
@@ -4485,7 +4511,7 @@ subdgroup	[ 0	locks=0 ]	(	""	)
 enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
 reversepolygons	[ 0	locks=0 ]	(	"off"	)
 enable_setmissingwidths	[ 0	locks=0 ]	(	"on"	)
-setmissingwidths	[ 0	locks=0 ]	(	0.01	)
+setmissingwidths	[ 0	locks=0 ]	(	[ setmissingwidths	0.01 ] 	)
 importdatagroup	[ 0	locks=0 ]	(	1	)
 authortimesamples	[ 0	locks=0 ]	(	auto	)
 enable_setdefaultprim	[ 0	locks=0 ]	(	"off"	)
@@ -4493,7 +4519,7 @@ setdefaultprim	[ 0	locks=0 ]	(	"on"	)
 enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
 topologyhandling	[ 0	locks=0 ]	(	static	)
 enable_attribs	[ 0	locks=0 ]	(	"on"	)
-attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform width pscale uv* __th_pt __th_vtx"	)
+attribs	[ 0	locks=0 ]	(	[ attribs	"P N visibility bounds Cd Alpha transform width pscale uv* __th_pt __th_vtx __th_prim" ] 	)
 enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
 indexattribs	[ 0	locks=0 ]	(	""	)
 enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
@@ -4637,6 +4663,32 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/remainder_import.chn"
+Content-Type: text/plain
+
+{
+    channel attribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = "\"P N visibility bounds Cd Alpha transform width pscale uv*\""
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_points
+return animate_points.import_pattern(hou.pwd())" language = python }
+    }
+    channel setmissingwidths {
+      lefttype = extend
+      righttype = extend
+      default = 0.01
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../missing_width\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/remainder_import.parm"
 Content-Type: text/plain
 
@@ -4698,7 +4750,7 @@ subdgroup	[ 0	locks=0 ]	(	""	)
 enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
 reversepolygons	[ 0	locks=0 ]	(	"off"	)
 enable_setmissingwidths	[ 0	locks=0 ]	(	"on"	)
-setmissingwidths	[ 0	locks=0 ]	(	0.01	)
+setmissingwidths	[ 0	locks=0 ]	(	[ setmissingwidths	0.01 ] 	)
 importdatagroup	[ 0	locks=0 ]	(	1	)
 authortimesamples	[ 0	locks=0 ]	(	auto	)
 enable_setdefaultprim	[ 0	locks=0 ]	(	"off"	)
@@ -4706,7 +4758,7 @@ setdefaultprim	[ 0	locks=0 ]	(	"on"	)
 enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
 topologyhandling	[ 0	locks=0 ]	(	animated	)
 enable_attribs	[ 0	locks=0 ]	(	"on"	)
-attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform width pscale uv*"	)
+attribs	[ 0	locks=0 ]	(	[ attribs	"P N visibility bounds Cd Alpha transform width pscale uv*" ] 	)
 enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
 indexattribs	[ 0	locks=0 ]	(	""	)
 enable_constantattribs	[ 0	locks=0 ]	(	"off"	)
@@ -4786,6 +4838,32 @@ exprlanguage hscript
 end
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/full_import.chn"
+Content-Type: text/plain
+
+{
+    channel attribs {
+      lefttype = extend
+      righttype = extend
+      defaultString = "\"P N visibility bounds Cd Alpha transform width pscale uv*\""
+      flags = 0
+      segment { options = {	 autoslope  ai ao }
+
+	 length = 0 accel = 0.33333333333333331 0.33333333333333331 expr = "from tumblepipe.pipe.houdini.lops import animate_points
+return animate_points.import_pattern(hou.pwd())" language = python }
+    }
+    channel setmissingwidths {
+      lefttype = extend
+      righttype = extend
+      default = 0.01
+      flags = 0
+      segment { options = {	 untie  iv ov is os ia oa }
+
+	 length = 0 expr = ch(\"../missing_width\") }
+    }
+  }
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/full_import.parm"
 Content-Type: text/plain
 
@@ -4847,7 +4925,7 @@ subdgroup	[ 0	locks=0 ]	(	""	)
 enable_reversepolygons	[ 0	locks=0 ]	(	"off"	)
 reversepolygons	[ 0	locks=0 ]	(	"off"	)
 enable_setmissingwidths	[ 0	locks=0 ]	(	"on"	)
-setmissingwidths	[ 0	locks=0 ]	(	0.01	)
+setmissingwidths	[ 0	locks=0 ]	(	[ setmissingwidths	0.01 ] 	)
 importdatagroup	[ 0	locks=0 ]	(	1	)
 authortimesamples	[ 0	locks=0 ]	(	auto	)
 enable_setdefaultprim	[ 0	locks=0 ]	(	"off"	)
@@ -4855,7 +4933,7 @@ setdefaultprim	[ 0	locks=0 ]	(	"on"	)
 enable_topologyhandling	[ 0	locks=0 ]	(	"on"	)
 topologyhandling	[ 0	locks=0 ]	(	animated	)
 enable_attribs	[ 0	locks=0 ]	(	"on"	)
-attribs	[ 0	locks=0 ]	(	"P N visibility bounds Cd Alpha transform width pscale uv*"	)
+attribs	[ 0	locks=0 ]	(	[ attribs	"P N visibility bounds Cd Alpha transform width pscale uv*" ] 	)
 enable_indexattribs	[ 0	locks=0 ]	(	"off"	)
 indexattribs	[ 0	locks=0 ]	(	""	)
 enable_constantattribs	[ 0	locks=0 ]	(	"off"	)

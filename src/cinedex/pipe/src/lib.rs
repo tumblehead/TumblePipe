@@ -26,6 +26,7 @@ pub mod movie;
 pub mod naming;
 pub mod number_expr;
 pub mod player_rpc;
+pub mod preview_place;
 pub mod previews;
 pub mod project;
 pub mod shared_journal;

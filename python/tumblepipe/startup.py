@@ -22,6 +22,8 @@ favour of the radial; the pipeline-specific menus it carried live on here as:
   VOP (material) menu to :data:`VOP_MENU_KEY`, because over a VOP network
   that chord (X) is Houdini's Visualize Output (see
   :func:`_bind_context_menus`).
+- the ``viewer.lop`` menu on :data:`SELECTION_MENU_KEY`: open a department
+  workfile of the asset selected in the Solaris viewport.
 - ``radial_menus/tumblepipe_pipeline.json`` — static custom menu shipped
   with the package (ASSET / RENDER submenus of pipeline HDAs).
 - ``tumblepipe_recipes.json`` + ``tumblepipe_asset_favorites.json`` —
@@ -184,6 +186,9 @@ def register_radial(pipeline_path: Path) -> None:
     keyed_menus = {
         (VOP_MENU_KEY, "network.vop"): _build_vop_menu(radial),
     }
+    selection_menu = _build_selection_menu(radial)
+    if selection_menu is not None:
+        keyed_menus[(SELECTION_MENU_KEY, "viewer.lop")] = selection_menu
 
     # Generate the dynamic menus + register the menu directory so Radial's
     # startup scan of custom-menu directories picks up both the generated
@@ -445,6 +450,120 @@ def _build_vop_menu(radial):
         latch=False,
         tap_release=True,
         activate_on_release=True,
+    )
+
+
+# ── Selected asset: open a department workfile ──────────────────────────────
+#
+# Discord, Remy 2026-11-19: select an asset in the Solaris viewport and jump
+# to its model / blendshape / lookdev / rig workfile from a radial around it.
+# The asset is read off the selected prims (pipe.usd.entity_stamp), never
+# from their names.
+
+#: The key the selected asset's department menu opens on, over a Solaris
+#: viewport. A key of its own: Radial's *Open menus with* key opens Radial's
+#: own viewport menu there.
+SELECTION_MENU_KEY = "Alt+D"
+
+#: Action key prefix; the department name follows.
+OPEN_SELECTED_PREFIX = "tumblepipe.open_selected."
+
+#: Seconds one reading of the selection serves the menu's slices. A radial
+#: asks every slice whether it is enabled each time it paints.
+_SELECTION_TTL = 0.5
+
+_selection_read: tuple[float, str, frozenset] | None = None
+
+
+def _selected_asset() -> tuple[str, frozenset]:
+    """``(name, departments)`` of the one entity the LOP selection belongs
+    to; ``("", frozenset())`` when it names none or several."""
+    global _selection_read
+    import time
+
+    now = time.monotonic()
+    if _selection_read is not None and now - _selection_read[0] < _SELECTION_TTL:
+        return _selection_read[1], _selection_read[2]
+    name, departments = "", frozenset()
+    try:
+        from tumblepipe.pipe.houdini import selection_entities
+        entity_uri = selection_entities.selected_entity()
+        if entity_uri is not None:
+            name = entity_uri.segments[-1]
+            departments = frozenset(
+                selection_entities.selected_entity_departments())
+    except Exception:
+        logger.debug("reading the LOP selection failed", exc_info=True)
+    _selection_read = (now, name, departments)
+    return name, departments
+
+
+def _open_selected_callback(department: str, new_instance: bool):
+    def _cb():
+        def _do():
+            from tumblepipe.pipe.houdini import selection_entities
+            selection_entities.open_selected_workfile(department, new_instance)
+        _defer(_do)
+    return _cb
+
+
+def department_slot_label(department) -> str:
+    """What a department's slice reads: its short label in capitals (MDL),
+    or its name when it has none."""
+    return department.short.upper() if department.short else department.name
+
+
+def register_open_selected_actions(radial, departments) -> list[str]:
+    """Register one "open the selected asset's <department> workfile" action
+    per department; returns their keys, in the order given.
+
+    Shift opens the workfile in a new Houdini. A slice is greyed while the
+    selection does not belong to exactly one entity that has the
+    department, and its second line names the entity it would open.
+    """
+    keys = []
+    for department in departments:
+        name = department.name
+        key = _safe_action_key(OPEN_SELECTED_PREFIX, name)
+        radial.register_action(
+            key=key,
+            label=department_slot_label(department),
+            callback=_open_selected_callback(name, False),
+            icon="lucide:folder",
+            sublabel_fn=lambda: _selected_asset()[0],
+            enabled=lambda name=name: name in _selected_asset()[1],
+            shift_callback=_open_selected_callback(name, True),
+            contexts=("viewer.lop", "network.lop"),
+        )
+        keys.append(key)
+    return keys
+
+
+def _build_selection_menu(radial):
+    """The menu of the project's asset departments, each slice opening that
+    department's workfile of the selected asset; None when the project has
+    fewer than two (a ring needs two) or its departments cannot be read.
+
+    The pool is read once, here: a department added mid-session appears
+    after the next launch. Generated departments have no workfile and get
+    no slice.
+    """
+    try:
+        from tumblepipe.config.department import list_departments
+        departments = list_departments('assets', include_generated=False)
+    except Exception:
+        logger.warning(
+            "could not read the asset departments, so the selected-asset "
+            "workfile menu (%s) is not registered", SELECTION_MENU_KEY,
+            exc_info=True,
+        )
+        return None
+    keys = register_open_selected_actions(radial, departments)
+    if len(keys) < 2:
+        return None
+    return radial.menu(
+        [radial.item_from_action(key, close_on_select=True) for key in keys[:9]],
+        label="Open Workfile",
     )
 
 

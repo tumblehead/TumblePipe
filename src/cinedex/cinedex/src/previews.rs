@@ -10,7 +10,9 @@
 //! - a local farm batch folder (it holds `batch.json`): its ready previews'
 //!   frames, job by job;
 //! - any other folder: the EXR and JPG frames in it;
-//! - a frame file: that frame.
+//! - a frame file: that frame;
+//! - a movie: its pictures (the preview window's Version list goes to a
+//!   finished playblast's).
 //!
 //! A clip's badge: its shot has a ready preview whose version is not yet a
 //! take it can play (a render take is listed only once every frame is
@@ -21,14 +23,12 @@ use std::path::{Path, PathBuf};
 
 use primer::prelude::Command;
 use th_edit::document::Source;
+use th_pipe::preview_place::is_frame_file;
 use th_pipe::previews::{Preview, batch_previews, is_batch, this_farm_root};
 use th_playlist::Take;
 
 /// What a clip whose shot has ready preview frames says.
 pub(crate) const BADGE: &str = "Preview ready";
-
-/// Frame files `--frames` shows from a folder.
-const FRAME_EXTENSIONS: [&str; 3] = ["exr", "jpg", "jpeg"];
 
 /// One frame `--frames` shows.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,10 +68,6 @@ pub(crate) fn trailing_number(stem: &str) -> Option<i64> {
     (digits > 0).then(|| stem[stem.len() - digits..].parse().ok()).flatten()
 }
 
-fn is_frame_file(name: &str) -> bool {
-    name.rsplit_once('.').is_some_and(|(_, ext)| FRAME_EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(ext)))
-}
-
 /// The frames among `names` (files of one folder), by sequence then frame
 /// number: each name's part before its number, then the number.
 pub(crate) fn folder_frames(names: &[String]) -> Vec<(Option<i64>, String)> {
@@ -87,6 +83,13 @@ pub(crate) fn folder_frames(names: &[String]) -> Vec<(Option<i64>, String)> {
         .collect();
     frames.sort();
     frames.into_iter().map(|(_, number, name)| (number, name)).collect()
+}
+
+/// The frame numbers of a movie's `count` pictures: from the start frame
+/// it records, else from 1.
+pub(crate) fn movie_numbers(start: Option<i64>, count: usize) -> Vec<i64> {
+    let first = start.unwrap_or(1);
+    (0..count).map_while(|i| first.checked_add(i64::try_from(i).ok()?)).collect()
 }
 
 fn file_name(path: &Path) -> String {
@@ -122,12 +125,26 @@ pub(crate) fn open_frames(path: &Path) -> Result<Stills, String> {
         }
         return Ok(Stills { title: group, frames, exact: false });
     }
+    if path.is_file() && crate::reel::is_movie(path) {
+        // A finished playblast (the preview window's Version list goes to
+        // one): its pictures, numbered from the start frame it records.
+        let name = file_name(path);
+        let index = th_media::MovieIndex::read(&path.to_string_lossy()).map_err(|e| e.to_string())?;
+        let frames: Vec<Still> = movie_numbers(index.start_frame(), index.frame_count())
+            .into_iter()
+            .map(|number| Still { group: name.clone(), number: Some(number), path: path.to_path_buf() })
+            .collect();
+        if frames.is_empty() {
+            return Err(format!("{} has no pictures", path.display()));
+        }
+        return Ok(Stills { title: name, frames, exact: true });
+    }
     if path.is_file() && is_frame_file(&file_name(path)) {
         let name = file_name(path);
         let number = trailing_number(name.rsplit_once('.').map_or(name.as_str(), |(stem, _)| stem));
         return Ok(Stills { title: name.clone(), frames: vec![Still { group: name, number, path: path.to_path_buf() }], exact: true });
     }
-    Err(format!("{} is not a batch folder, a folder of frames or an EXR or JPG frame", path.display()))
+    Err(format!("{} is not a batch folder, a folder of frames, an EXR or JPG frame or a movie", path.display()))
 }
 
 /// A shot URI as the edit names it, so a preview's and a clip's compare.
@@ -240,6 +257,14 @@ mod tests {
         assert_eq!(stills.title, "2 previews of b1");
         std::fs::write(batch.join(BATCH_NAME), br#"{"version": 2, "jobs": []}"#).unwrap();
         assert!(open_frames(&batch).is_err(), "a batch layout it does not read");
+    }
+
+    #[test]
+    fn a_movie_s_pictures_are_numbered_from_its_start_frame() {
+        assert_eq!(movie_numbers(Some(1001), 3), [1001, 1002, 1003]);
+        assert_eq!(movie_numbers(None, 2), [1, 2]);
+        assert_eq!(movie_numbers(Some(i64::MAX), 3), [i64::MAX], "no overflow");
+        assert!(movie_numbers(Some(5), 0).is_empty());
     }
 
     #[test]

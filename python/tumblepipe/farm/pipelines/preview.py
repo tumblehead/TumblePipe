@@ -85,7 +85,20 @@ def aov_names(entity_uri: Uri, channels: list[str]) -> list[str]:
     Every department is checked, since AOVs can be defined in any of them,
     then the assets each export's context names. Falls back to the root layer
     context (``config:/usd/context.json``) when no export declares any.
+
+    The AOVs the shot's root layer adds from the project's configuration
+    (``render.aovs``, ``pipe.usd.render_overrides``) are kept as well: they
+    are on the stage the farm renders whether or not an export made before
+    the project named them lists them. One a stronger department layer
+    left out of the product's ``orderedVars`` renders no plane, which the
+    render task reports as a missing optional AOV.
     """
+    project_aovs = set()
+    if entity_context(entity_uri) == 'shots':
+        # Imported here: scene_build pulls in the build's modules, which
+        # the config builders above do not need.
+        from tumblepipe.pipe.scene_build import shot_project_aovs
+        project_aovs.update(shot_project_aovs(entity_uri))
     aov_set = set()
     departments = [d.name for d in list_departments(entity_context(entity_uri))]
     # A pass-only render layer renders the default stage, so its AOVs are
@@ -106,14 +119,15 @@ def aov_names(entity_uri: Uri, channels: list[str]) -> list[str]:
         # Sorted: a set's order changes with every process (string hash
         # seeds), and the list goes into the job's render_settings.json, so
         # resubmitting the same shot wrote a different config each time.
-        return sorted(aov_set)
+        return sorted(aov_set | project_aovs)
 
     # Every project carries it (the project template's): without it no
     # render would know its AOVs.
     root_context = load_json(api.storage.resolve(
         Uri.parse('config:/usd/context.json')
     ))
-    return get_aov_names_from_context(root_context)
+    names = get_aov_names_from_context(root_context)
+    return names + sorted(project_aovs - set(names))
 
 
 def write_render_settings(

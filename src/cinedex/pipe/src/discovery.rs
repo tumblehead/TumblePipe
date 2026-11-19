@@ -105,13 +105,13 @@ pub const CHECKS: usize = 16;
 const MOVIE_EXTENSION: &str = "mp4";
 const LAYER_MOVIE_EXTENSION: &str = "mov";
 
-fn file_name(path: &Path) -> String {
+pub(crate) fn file_name(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 /// Python's `PurePath.stem` and `.suffix` (3.13): the suffix is from the
 /// last `.`, unless that is the first or the last character.
-fn split_suffix(name: &str) -> (&str, &str) {
+pub(crate) fn split_suffix(name: &str) -> (&str, &str) {
     match name.rfind('.') {
         Some(i) if i > 0 && i < name.len() - 1 => (&name[..i], &name[i..]),
         _ => (name, ""),
@@ -119,11 +119,11 @@ fn split_suffix(name: &str) -> (&str, &str) {
 }
 
 /// Names compare as the platform's glob does: without case on Windows.
-fn same_name(a: &str, b: &str) -> bool {
+pub(crate) fn same_name(a: &str, b: &str) -> bool {
     if cfg!(windows) { a.eq_ignore_ascii_case(b) } else { a == b }
 }
 
-fn list_dir(path: &Path) -> Vec<PathBuf> {
+pub(crate) fn list_dir(path: &Path) -> Vec<PathBuf> {
     match std::fs::read_dir(path) {
         Ok(entries) => entries.filter_map(Result::ok).map(|e| e.path()).collect(),
         Err(_) => Vec::new(),
@@ -501,7 +501,7 @@ pub fn get_render(project: &Project, entity: &Uri, department: &str) -> Result<O
 }
 
 /// `f` over `items`, up to [`CHECKS`] at once, results in order.
-fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+pub(crate) fn parallel_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
     if items.len() <= 1 {
         return items.iter().map(&f).collect();
     }

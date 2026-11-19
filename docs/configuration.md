@@ -349,6 +349,35 @@ a project that pins none of them renders exactly as before. The rest of
 Entity Editor shows a Karma setting only the pipeline defaults hold as *not
 set*, and typing that same value there pins it.
 
+`render.aovs` is the project's AOVs: a list of standard AOV names, the
+toggles of [`th::render_vars`](nodes/lighting-and-rendering.md#thrender_vars-lop)
+(`pipe/usd/standard_aovs.py`), for example
+
+```json
+"render": { "apply_config": true, "aovs": ["depth", "position", "cryptoprimitives"] }
+```
+
+on `entity:/shots` for every shot (the Entity Editor's **All shots**), or
+on the project, a sequence or a shot. Like the Karma settings it is
+authored only with `apply_config` on and only when one of levels 1-4 pins
+it; no schema, template or migration adds the key, so a project without it
+composes exactly as before and no layout version changes. The root layer
+defines each named AOV as a RenderVar in the `Vars` scope beside the one
+RenderProduct the project's RenderSettings prim renders
+(`/Render/Products/Vars` in the template, where `th::render_vars` authors
+its own) and appends it to that product's `orderedVars`. An AOV the product
+already orders (in any letter case) is not added again; a name that is no
+standard AOV is ignored; a `root_default_prims.usda` whose settings prim
+names no product, or several, gets none. A list is one value: a level's
+`aovs` replaces the list of the levels below it rather than adding to it.
+A shot adds more in its render department with `th::render_vars`, which
+orders every RenderVar on its input stage, these included. That
+department's publish sets `orderedVars` outright, so a shot with a
+published render department picks up AOVs named later at its next publish.
+The farm keeps the AOVs a shot's root layer adds whether or not an older
+export lists them. See
+[The Entity Editor → Project AOVs](asset-browser/entity-editor.md#project-aovs).
+
 **Known gap, existing projects.** The shipped `schemas.json` said
 `pathtracedsamples` 64 and `diffuselimit` 2, where the template's
 `root_default_prims.usda` says 32 and 1. New projects get a `schemas.json`

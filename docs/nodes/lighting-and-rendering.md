@@ -86,6 +86,13 @@ node adds nothing until you tick something. This is the one place a shot's
 AOVs are chosen: the render template builds one after `th::render_settings`.
 (`th::render_settings` had the same toggles in an **AOVs** section up to
 1.103; see [Old AOVs section](#thrender_settings-lop).)
+
+AOVs every shot of the project should have do not need ticking shot by
+shot: name them once in the Entity Editor
+([Project AOVs](../asset-browser/entity-editor.md#project-aovs)), and each
+shot's root layer brings them. This node then adds the shot's own on top:
+it orders every RenderVar on its input, the project's included, and a
+toggle ticked here for an AOV the project also names makes the same prim.
 Source: [`otls/lop_th.render_vars.1.1`](../../otls/lop_th.render_vars.1.1/th_8_8Lop_1render__vars_8_81.1/DialogScript),
 [`pipe/houdini/aov.py`](../../python/tumblepipe/pipe/houdini/aov.py).
 

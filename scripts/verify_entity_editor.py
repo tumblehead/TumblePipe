@@ -928,9 +928,9 @@ from tumblepipe.config import render_config as rc  # noqa: E402
 rs = shots.render_settings
 check('the Shots tab has a Render settings panel, the Assets tab none',
       rs is not None and assets.render_settings is None)
-check('it has an editor, an origin and an Inherit for every render setting, in four sections',
+check('it has an editor, an origin and an Inherit for every render setting, in five sections',
       set(rs.editors) == set(es.RENDER_FIELDS) and set(rs.origins) == set(es.RENDER_FIELDS)
-      and list(rs.section_titles) == ['Image', 'Quality', 'Ray limits', 'Effects'],
+      and list(rs.section_titles) == ['Image', 'Quality', 'Ray limits', 'Effects', 'AOVs'],
       (list(rs.editors), list(rs.section_titles)))
 res = rs.editors[es.RENDER_RESOLUTION]
 cam_edit = rs.editors[es.RENDER_CAMERA].edit

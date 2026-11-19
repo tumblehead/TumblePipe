@@ -69,7 +69,7 @@ MOVIE_KIND = 'mp4'
 #: come while it renders (``frames.playblast_frames_dir``), then the movie.
 PLAYBLAST_KIND = 'playblast'
 
-#: The file kinds Cinedex shows as frames (``previews.rs`` FRAME_EXTENSIONS).
+#: The file kinds Cinedex shows as frames (``th_pipe::preview_place::FRAME_EXTENSIONS``).
 FRAME_EXTENSIONS = ('exr', 'jpg', 'jpeg')
 
 #: The AOV a render's, a denoise's or a channel comp's frames are shown from.

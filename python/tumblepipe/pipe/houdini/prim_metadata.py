@@ -10,6 +10,7 @@ from pathlib import Path
 from tumblepipe.config import channels as _channels
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini.prim_queries import iter_prim_children, iter_scene
+from tumblepipe.pipe.usd.entity_stamp import strip_stamp
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +28,18 @@ def get_metadata(prim):
     the metadata scripts saved scenes carry, from before the variant→channel
     rename write it as ``variant``; both are read through the published-data
     reader (:func:`tumblepipe.config.channels.read_published_channel`).
+
+    The asset's own export stamp (``pipe.usd.entity_stamp``) composes into
+    the same ``customData``. It is not this metadata and is left out: the
+    import nodes write what this returns back into their own layer, and the
+    stamp must stay the asset layers'.
     """
     if prim is None or not prim.IsValid(): return None
     if not prim.HasMetadata('customData'): return None
     _metadata = prim.GetMetadata('customData')
     if _metadata is None: return None
     if 'uri' not in _metadata: return None
-    metadata = _metadata.copy()
+    metadata = strip_stamp(_metadata)
     metadata['inputs'] = json.loads(metadata['inputs'])
     metadata[_channels.CHANNEL_KEY] = _channels.read_published_channel(
         metadata, where=f'customData of {prim.GetPath()}'

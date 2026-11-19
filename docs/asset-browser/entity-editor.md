@@ -288,7 +288,7 @@ falls back to.
 
 The settings are the ones the root layer applies
 ([Configuration → render settings](../configuration.md#render-settings-in-the-root-layer)),
-in four groups:
+in five groups:
 
 | Group | Setting | What it does |
 | --- | --- | --- |
@@ -299,6 +299,7 @@ in four groups:
 | Quality | **Dicing quality** | Karma's dicing quality scale (`render.dicingqualityscale`). |
 | Ray limits | **Diffuse**, **Reflection**, **Refraction**, **Volume**, **SSS limit** | Karma's bounce limits (`render.diffuselimit`, ...), numbers of 0 or more. |
 | Effects | **Depth of field**, **Motion blur** | On or off (`render.enabledof`, `render.enablemblur`). |
+| AOVs | **AOVs** | The AOVs every shot under the level renders (`render.aovs`): see [Project AOVs](#project-aovs). |
 
 Each setting shows its value and, under it, where it comes from: *set
 here*, *from sequence sq010*, *from all shots*, *from the project*, *from
@@ -347,6 +348,40 @@ stronger layers on the same RenderSettings prim: they win (Farm Submit for
 that one submission), and change nothing here. Farm Submit has no render
 resolution or camera override, so for those two the order ends at the shot
 (its playblast width and height start from the shot's resolution).
+
+### Project AOVs
+
+To give every shot the same AOVs, press **All shots** and set **AOVs**:
+type their names (`depth, position, cryptoprimitives`) or tick them in the
+**AOVs** menu beside the field. The names are the toggles of
+[`th::render_vars`](../nodes/lighting-and-rendering.md#thrender_vars-lop),
+and each makes the RenderVar that toggle makes (same source, format and
+compression). After Apply, each shot's root layer adds them beside the
+RenderVars the project's `root_default_prims.usda` already has (the
+template's `beauty`, `albedo` and `normal`), in the same RenderProduct, so
+they land in the same EXR and are published like any other AOV. An AOV the
+project's `root_default_prims.usda` already has is left as that file makes it.
+
+- **Apply to render** must be on for the shot: the AOVs are part of what
+  the root layer authors. While it is off the line under the settings says
+  the AOVs wait for it.
+- **A sequence or a shot** can set its own list, which **replaces** the one
+  it would inherit (it does not add to it): name every AOV that level
+  should have. `none` sets an empty list, for a shot that should render
+  only the defaults' AOVs. **Inherit** follows the level below again.
+- **A shot adds its own on top** in its render department, as before: tick
+  them on `th::render_vars`. That node orders every RenderVar on its
+  input, the project's included, so a shot renders the defaults' AOVs, the
+  project's and its own. Light groups ([`th::lpe_tags`](../nodes/lighting-and-rendering.md#thlpe_tags-lop))
+  and mattes ([`th::mattes`](../nodes/lighting-and-rendering.md#thmattes-lop)) are per
+  shot only: they depend on the shot's lights and prims.
+- **A shot that already published a `th::render_settings` or
+  `th::render_vars` node** keeps the AOV list of that publish (the node's
+  publish sets the product's list outright) until that department is
+  published again, from a workfile opened after the Apply. A shot with no
+  such publish renders the project's AOVs straight away.
+- With no AOVs set anywhere, nothing is authored and every shot renders
+  what it rendered before.
 
 ## Multis
 

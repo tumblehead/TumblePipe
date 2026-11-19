@@ -107,6 +107,32 @@ Two limits: the list is read **once, at startup**, so a favourite added
 mid-session appears after the next launch; and with fewer than two
 favourites no menu is written and Alt+F does nothing.
 
+## Alt+D: the selected asset's workfiles
+
+Key **Alt+D**, context `viewer.lop` (a Solaris viewport), label **Open
+Workfile**. Select an asset in the viewport, or any prim inside it, and
+the ring offers one slot per asset department of the project, in pool
+order (up to **9**), labelled with the department's short name in
+capitals (MDL, LKD, RIG, ...) or its name when it has none. Picking one
+opens that department's latest workfile of the selected asset in this
+session, with Houdini's own save prompt for unsaved work; **Shift** opens
+it in a new Houdini instead.
+
+Which asset is selected comes from the
+[entity stamp](composition.md#the-entity-stamp-which-asset-a-prim-belongs-to)
+on the prims, never from their names. The slots show the asset's name
+under the label, and are greyed when the selection belongs to no known
+asset, to more than one, or to an asset that does not have that
+department. An asset exported before the stamp existed is known only
+where a TumblePipe import node brought it in; otherwise it needs a new
+export. When there is no workfile for the department, a warning says so.
+
+Each slot is an action, `tumblepipe.open_selected.<department>`, offered
+in the `viewer.lop` and `network.lop` contexts, so the Radial editor can
+put it on any other menu. The department list is read **once, at
+startup**: a department added mid-session appears after the next launch.
+With fewer than two asset departments no menu is bound.
+
 ## The two general actions
 
 Both are TumblePipe actions the pipeline radial's ring uses; they are
@@ -223,8 +249,9 @@ and logs nothing, and Shift+Space does nothing.
 ## Keyboard shortcuts
 
 TumblePipe registers no Houdini hotkeys of its own. The only keys it claims
-are the radial keys above (**Alt+T**, **Alt+R**, **Alt+F**, and **Alt+E**
-for the VOP menu over a VOP network), and only while `tumbleradial` is
+are the radial keys above (**Alt+T**, **Alt+R**, **Alt+F**, **Alt+E**
+for the VOP menu over a VOP network, and **Alt+D** over a Solaris
+viewport), and only while `tumbleradial` is
 installed. **Shift+Space** belongs to Radial; TumblePipe only supplies the
 menus it opens. The COP menu claims no key; it uses whichever key Radial's
 own menus open with.

@@ -187,6 +187,26 @@ def _retype_asset_structure(layer_path: Path, entity_uri):
     logger.info("Retyped in the published layer:\n" + "\n".join(changes))
 
 
+def _stamp_entity(layer_path: Path, entity_uri, department_name, version_name):
+    """Stamp the asset's root prim, in the published layer, with the entity
+    and the department and version exporting it (``entity_stamp``), so a
+    stage can say which asset a prim belongs to. A shot export owns no prim
+    and is left as it is."""
+    from tumblepipe.pipe.usd.entity_stamp import stamp_exported_layer
+    try:
+        stamped = stamp_exported_layer(
+            layer_path, entity_uri, department_name, version_name
+        )
+    except RuntimeError as error:
+        raise ExportLayerError(str(error)) from error
+    if stamped:
+        logger.info(
+            "Stamped %s as %s (%s %s)",
+            prim_queries.uri_to_prim_path(entity_uri), entity_uri,
+            department_name, version_name,
+        )
+
+
 def _embed_apex_files(layer_path: Path):
     """Copy the APEX characters' scene files (rig, skeleton, animation) into
     the version, or raise. The USD ROP saves them to each APEX LOP's save
@@ -414,6 +434,9 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             _embed_apex_files(layer_path)
             if entity_uri.segments[0] == 'assets':
                 _retype_asset_structure(layer_path, entity_uri)
+            _stamp_entity(
+                layer_path, entity_uri, department_name, version_name
+            )
             make_portable(layer_path)
             _add_shared_sublayer(layer_path, entity_uri, department_name)
 

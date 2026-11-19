@@ -569,7 +569,8 @@ Source: [`otls/lop_th.shot_sequencer.1.0`](../../otls/lop_th.shot_sequencer.1.0/
 
 A dive-in SOP network (`anim_dive`) imported as animated USD over the
 incoming stage: topology animated, `P N visibility bounds Cd Alpha`,
-`width`, `pscale`, `uv*` and `transform` only, no material binding, and kinds set by depth (assembly /
+`width`, `pscale`, `uv*` and `transform` only (unless the node's **Attributes**
+folder says otherwise, below), no material binding, and kinds set by depth (assembly /
 component / scope, as `set_kinds` does). Cameras keep their type at every
 depth. At the item depth (`/<category>/<item>`) the kind is set but not the
 type, and BasisCurves are left alone: a skeleton the rig outputs as curves
@@ -587,6 +588,28 @@ shape the rig leaves out of some frames is invisible on those. Up to 1.112.0
 the first frame's visibility held for the whole shot (hidden at the first
 frame: never shown; hidden later: never hidden), and up to 1.112.2 a shape
 left out of some frames was hidden on every frame of the published layer.
+
+One prim can be made of shapes the rig switches one by one: a `/geo/arms`
+mesh that holds both arms, each with its own `usdvisibility`. A USD prim has
+one `visibility`, so where its shapes do not agree on a frame the node keeps
+the prim visible and takes the hidden part out of it on that frame:
+
+- **A mesh**: the hidden faces are that frame's `holeIndices`. Karma (CPU
+  and XPU) and the GL viewport leave hole faces out of any mesh, subdivided
+  or not, and no material has to do anything. Every mesh the node animates
+  gets a `holeIndices` sample on every frame (empty when nothing is hidden);
+  holes the incoming stage already has on the mesh are kept.
+- **Curves** with a width per point or per curve: the hidden curves get
+  width `0` on that frame.
+- **Not split**: a points prim, and curves that share one width (curves
+  with no `width` or `pscale` at all get one). There the shape holding the
+  prim's first point decides for all of it, as it did for every prim up to
+  1.114, and the node warns, naming the prim. Give the parts paths of their
+  own, or the curves a `width` on their points or primitives. A frame whose
+  point count changed is imported whole and is not split either.
+
+When all the shapes of a prim agree, the prim's `visibility` says it, as
+before.
 
 UVs come through for geometry made in the dive. `uv` becomes
 `primvars:st` (a `texCoord2f[]`, per face-vertex or per point as the SOP
@@ -623,8 +646,27 @@ sample on every frame, which made `displayColor` read as indexed with no
 indices (`UsdGeomPrimvar.ComputeFlattened` fails on it).
 
 Other attributes of the dive's geometry (masks, custom primvars) are not
-imported: a rig carries dozens (capture weights, deformer masks) that do not
-belong in the animation layer, so the list above is fixed.
+imported unless the node is told to: a rig carries dozens (capture weights,
+deformer masks) that do not belong in the animation layer. What comes to
+the stage is set on the node's **Attributes** folder (closed by default).
+Its defaults are what the node did before it had the folder (up to 1.114
+all of this was fixed inside the HDA), so an existing scene cooks as it
+did:
+
+| Label | Default | What it does |
+|---|---|---|
+| Attributes | `Cd Alpha width pscale uv*` | The dive attributes that come to the stage beside the points, bounds, transforms and visibility, which always do. Names and wildcards separated by spaces; `^name` leaves one out (`uv* ^uv3`). Add what a shot needs (`rest`, a mask); take out one that causes trouble (`^Cd` when the rig's colour hides the asset's `displayColor`). Without `width` and `pscale` every curve gets **Missing Width**. `*` brings everything the rig carries but Houdini's `__*` and `usd*` attributes: rarely what you want |
+| Normals | on | Bring `N` to the stage and animate it. Off: no normals are authored and the renderer computes them. For a rig whose `N` is wrong |
+| Hide Parts | on | Hide part of a prim whose shapes disagree on visibility (above). Off: the shape holding the prim's first point decides for all of it, as up to 1.114, and no `holeIndices` is authored |
+| Keep Asset Primvars | on | Author no primvar from the dive where the incoming stage has one that fits (the asset's UVs stay the asset's, above). Off: the dive's are authored over the asset's, for UVs changed in the dive |
+| Missing Width | `0.01` | The width of curves and points with no `width` or `pscale` |
+
+An attribute added to **Attributes** is read once, at the shot's first
+frame, like `Cd` and the UVs (only points, normals, widths and visibility
+follow every frame), and comes to the stage as a SOP Import brings it: a
+primvar of its own name. The parms are read by the node's own SOP Imports
+through an expression, so a `th::animate` whose contents were unlocked
+before this folder existed keeps what it had inside.
 
 The posed geometry is world space (each rig starts at its layout
 placement, see [`th::import_rig`](assets.md#thimport_rig-sop)), so the

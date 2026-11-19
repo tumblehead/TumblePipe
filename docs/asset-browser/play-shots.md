@@ -333,6 +333,36 @@ same transport and a timeline under the picture:
   on the timeline goes to a frame. Each of these is also in the
   **Playback** menu and on the transport buttons.
 - **Display**, **View** and **Exposure** under the picture are the editor's.
+- **AOV**, before them, picks what of the render is shown. It lists the
+  other AOVs of the version the frames are in (its AOV folders, the beauty
+  first) and, for an EXR that holds several layers, the layers its header
+  lists. Picking one swaps the picture in place: the playhead stays on its
+  frame number and playback goes on, also while frames are still landing
+  (an AOV's frames not written yet are gaps, as the beauty's are). An AOV
+  that is not colour says so in the list, *depth (data, shown raw)* or
+  *CryptoObject00 (cryptomatte ids, shown raw)*: it is shown as written,
+  through no display transform, and **Exposure** scales it (a depth of
+  hundreds of units reads once it is brought down a few stops). Which AOVs
+  are data is told from their names and channels (one channel, X/Y/Z, or a
+  name such as `depth`, `N`, `P`, `*_id`, `crypto*`). The chooser is not
+  shown when there is one layer and no other AOV: a playblast, a slapcomp,
+  a folder of JPGs.
+- **Version**, beside it, lists the other versions of what is shown, newest
+  first: a render's are the version folders of the same department and
+  layer (shown as the same AOV), a playblast's the other playblasts of its
+  department. A version that is not whole says so: *v0007 · 12 of 100
+  frames*, *v0008 · 3 frames, not finished*, *v0005 · no frames* (which
+  cannot be picked), and a check render ends in *check*. Picking one swaps
+  the frames in place at the same frame number (the nearest, when that
+  version has no such frame), playing on if it was playing. **Page Up** and
+  **Page Down** step to the newer and the older version, as in the editor,
+  passing over versions with no frames; the **Version** menu has both and
+  the list, the version shown ticked. An earlier playblast is its movie; a
+  playblast still rendering, its frames so far. The chooser shows only for
+  frames in the project's render or playblast folders (what *Preview in
+  Cinedex* opens), and only when there is more than one version; the
+  department and source keys of the editor (Ctrl and Shift with Page
+  Up/Down) do nothing here. **View > Refresh** reads the lists again.
 - **Frames not rendered yet** are gaps on the timeline: a hatched span
   labelled *not rendered yet*, and the picture says "Frame 1015 is not
   rendered yet" when the playhead is on one. **Ctrl+Left**/**Ctrl+Right**
@@ -1148,7 +1178,7 @@ The editor ships inside the TumblePipe package, as
 ```
 cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>...]
 cinedex [--project <root>] --mcp
-cinedex [--ocio <config>] --frames <batch folder | frames folder | frame> [--fps <rate>] [--expect <frame list>]
+cinedex [--ocio <config>] --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]
 ```
 
 `--edit` opens the edit's newest working version, or with `@vNNNN` that
@@ -1165,7 +1195,8 @@ no edit: given a local farm batch folder (one holding `batch.json`, under
 recorded as ready, every preview of the batch in job order, back to back;
 given any other folder, the EXR and JPG frames in it, in frame order, with
 any frame missing between the first and the last shown as a gap; given a
-frame file, that frame. It needs only the OCIO config. `--fps` is the rate
+frame file, that frame; given a movie (a playblast's `.mp4`), its pictures.
+It needs only the OCIO config. `--fps` is the rate
 it plays at (1 to 240, default 24). `--expect` (with a folder) is the frame
 list the render writes, as Deadline spells one (`1001-1100`,
 `1001,1050,1100`, `1-99x2`): frames of it not in the folder yet are gaps,

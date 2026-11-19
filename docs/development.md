@@ -1006,7 +1006,22 @@ The tests:
   the editor's `Engine` (one EXR source per run of frames on disk), draws
   the timeline with `tracks.rs` (`editable: false`) and the display bar
   with `display::display_bar`, and rescans the folder every 2 s so a
-  landing frame fills its gap. `glyph.rs` draws the transport icons, each
+  landing frame fills its gap. Its **AOV** and **Version** choosers need
+  no project either: `th_pipe::preview_place` reads where the frames sit
+  from the folder's path (`<layer>/vNNNN/<aov>`, a version folder, or a
+  playblast's `<stem>_vNNNN.mp4[.frames]`), lists the version's AOV folders
+  and the stream's versions newest first with what is there of each
+  (`VersionRow::label`, `step_version` for Page Up/Down), and
+  `th_media::aov_rows` merges the AOV folders with the layers the EXR's
+  header lists; `th_media::layer_kind` says which are data or cryptomatte
+  (shown raw: `frames_view::transform_of` gives them no LUT, and
+  `video.wgsl` mode 3 draws a float frame without one), so a preview opens
+  its EXRs with `Media::exr_any_from`, which does not insist on
+  `oiio:ColorSpace` as the editor's `Media::exr` does. A swap
+  (`FramesView::swap`) reads the other folder off the UI thread and keeps
+  the frame number (`Reel::position_of`) and the playing state
+  (`Transport::move_to`); a finished playblast's version is its movie, one
+  group whose slots are its pictures. `glyph.rs` draws the transport icons, each
   rasterised once into an image (not a canvas: canvas geometry puts the
   whole window's scene pass at 4x multisampling); its proptests check that
   each glyph is its own shape inside its square and that a back glyph is

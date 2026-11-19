@@ -8,7 +8,7 @@
 //! cinedex [--project <root>] [--ocio <config>]
 //! cinedex [--project <root>] [--ocio <config>] --render entity:/edits/<name>@vNNNN --out <dir>
 //! cinedex [--project <root>] --mcp
-//! cinedex [--ocio <config>] --frames <batch folder | frames folder | frame> [--fps <rate>] [--expect <frame list>]
+//! cinedex [--ocio <config>] --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]
 //! ```
 //!
 //! `--edit` opens the edit's newest working version (offering an autosave
@@ -20,7 +20,7 @@
 //! `--mcp`, no window: an MCP server on stdin/stdout giving an agent the
 //! running players' commands (see `mcp` and `agent`);
 //! `--frames`, a window of rendered frames (#75): a local farm batch's ready
-//! previews, a folder's frames, or one frame, played at `--fps` (24
+//! previews, a folder's frames, one frame, or a movie, played at `--fps` (24
 //! without), the frames of `--expect` (the render's frame list) not on disk
 //! yet shown as gaps (see `previews`, `reel` and `frames_view`). The
 //! project is `--project`, else `$TH_PROJECT_PATH`; the
@@ -123,7 +123,7 @@ impl Application for Failed {
     }
 }
 
-const USAGE: &str = "usage: cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>... | --render entity:/edits/<name>@vNNNN --out <dir> | --mcp | --frames <batch folder | frames folder | frame> [--fps <rate>] [--expect <frame list>]]";
+const USAGE: &str = "usage: cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>... | --render entity:/edits/<name>@vNNNN --out <dir> | --mcp | --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]]";
 
 /// What the arguments ask the editor for.
 #[derive(Debug, Default, PartialEq, Eq)]

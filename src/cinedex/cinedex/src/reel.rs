@@ -62,10 +62,20 @@ impl Group {
         self.slots.iter().position(|s| s.present)
     }
 
+    /// The movie its slots are the pictures of, when it is one.
+    pub(crate) fn movie(&self) -> Option<&Path> {
+        self.slots.first().map(|s| s.path.as_path()).filter(|p| is_movie(p))
+    }
+
     /// Whether its frames are JPGs (display-referred), not EXRs.
     pub(crate) fn is_jpg(&self) -> bool {
         self.slots.iter().find(|s| s.present).is_some_and(|s| is_jpg(&s.path))
     }
+}
+
+/// Whether `path` is a movie (a finished playblast), played as one source.
+pub(crate) fn is_movie(path: &Path) -> bool {
+    path.extension().is_some_and(|e| th_pipe::movie::MOVIE_EXTENSIONS.iter().any(|m| e.eq_ignore_ascii_case(m)))
 }
 
 pub(crate) fn is_jpg(path: &Path) -> bool {
@@ -183,6 +193,21 @@ impl Reel {
 
     pub(crate) fn slot(&self, position: usize) -> Option<&Slot> {
         self.slot_at(position).map(|(g, i)| &self.groups[g].slots[i])
+    }
+
+    /// The frame number at timeline `position`, when its slot has one.
+    pub(crate) fn number_at(&self, position: usize) -> Option<i64> {
+        self.slot(position).and_then(|s| s.number)
+    }
+
+    /// Where the playhead goes to keep showing frame `number` (what it
+    /// showed of another version or AOV): the first slot of that number,
+    /// else of the nearest number (the lower of two as near); the start
+    /// for None or a reel without numbers.
+    pub(crate) fn position_of(&self, number: Option<i64>) -> usize {
+        let Some(number) = number else { return 0 };
+        let numbers = self.groups.iter().flat_map(|g| &g.slots).enumerate().filter_map(|(at, s)| s.number.map(|n| (at, n)));
+        numbers.min_by_key(|&(at, n)| (n.abs_diff(number), n, at)).map_or(0, |(at, _)| at)
     }
 
     /// The groups' runs of frames on disk and of frames not yet, in order.
@@ -304,6 +329,15 @@ impl Transport {
         self.seek(to as usize, now);
     }
 
+    /// Go to `position` (clamped) without stopping: what is shown was
+    /// swapped for another version or AOV, and playback goes on from there.
+    pub(crate) fn move_to(&mut self, position: usize, now: Instant) {
+        self.position = position.min(self.last());
+        self.clock = (now, self.position);
+        self.shown_at.clear();
+        self.stalled = false;
+    }
+
     /// The reel changed length (frames landed past the end); the playhead
     /// stays, or moves to the new last frame.
     pub(crate) fn set_len(&mut self, len: usize) {
@@ -396,6 +430,46 @@ mod tests {
         assert_eq!(sibling(Path::new("R:/v/beauty.0001.exr"), 12345), Some(PathBuf::from("R:/v/beauty.12345.exr")));
         assert_eq!(sibling(Path::new("R:/v/plate_07.jpg"), 9), Some(PathBuf::from("R:/v/plate_09.jpg")));
         assert_eq!(sibling(Path::new("R:/v/still.exr"), 9), None);
+    }
+
+    proptest! {
+        /// Swapping keeps the frame: the playhead lands on the slot of the
+        /// same number when the new reel has it, else on a nearest one; and
+        /// a move keeps playing or paused as it was.
+        #[test]
+        fn a_swap_keeps_the_frame_and_the_playback(
+            numbers in prop::collection::btree_set(1i64..80, 1..20), wanted in 1i64..80, playing in any::<bool>(),
+        ) {
+            let numbers: Vec<i64> = numbers.into_iter().collect();
+            let reel = Reel::of(&stills(&[("beauty", &numbers)]), &Fill::Exact);
+            let at = reel.position_of(Some(wanted));
+            let got = reel.number_at(at).unwrap();
+            let nearest = numbers.iter().map(|n| n.abs_diff(wanted)).min().unwrap();
+            prop_assert_eq!(got.abs_diff(wanted), nearest);
+            if numbers.contains(&wanted) {
+                prop_assert_eq!(got, wanted);
+            }
+            prop_assert_eq!(reel.position_of(None), 0);
+            let now = Instant::now();
+            let mut transport = Transport::new(reel.len(), 24, now);
+            transport.set_playing(playing, now);
+            transport.move_to(at + 100, now);
+            prop_assert_eq!(transport.playing, playing);
+            prop_assert_eq!(transport.position, reel.len() - 1);
+            transport.move_to(at, now);
+            prop_assert_eq!((transport.position, transport.playing), (at, playing));
+        }
+    }
+
+    #[test]
+    fn a_movie_is_one_group_of_its_pictures() {
+        let path = PathBuf::from("R:/pb/a_v0001.mp4");
+        let frames = (0..3).map(|i| Still { group: "a_v0001.mp4".into(), number: Some(1001 + i), path: path.clone() }).collect();
+        let reel = Reel::of(&Stills { title: "a_v0001.mp4".into(), frames, exact: true }, &Fill::Exact);
+        assert_eq!((reel.groups.len(), reel.len(), reel.rendered()), (1, 3, (3, 3)));
+        assert_eq!(reel.groups[0].movie(), Some(path.as_path()));
+        assert!(!reel.groups[0].is_jpg());
+        assert_eq!(Reel::of(&stills(&[("beauty", &[1, 2])]), &Fill::Span).groups[0].movie(), None);
     }
 
     #[test]

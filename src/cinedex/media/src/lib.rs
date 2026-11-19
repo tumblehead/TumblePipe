@@ -18,6 +18,7 @@
 //! - [`sound`]: a file's audio decoded whole, and the mix of an edit's audio
 //!   clips.
 
+mod aov_rows;
 mod buffer;
 pub mod composite;
 mod exr_sequence;
@@ -28,8 +29,9 @@ mod movie;
 pub mod sound;
 mod thumbnail;
 
+pub use aov_rows::{AovRow, AovTarget, UNNAMED, aov_rows, aov_selected};
 pub use buffer::{FrameBuffer, FrameKey};
-pub use exr_sequence::{ExrHeader, ExrLayer, ExrSequence, ExrView};
+pub use exr_sequence::{ExrHeader, ExrLayer, ExrSequence, ExrView, LayerKind, layer_kind};
 pub use frame::{Frame, Pixels, YuvMatrix};
 pub use jpg_sequence::{JpgSequence, decode_jpg};
 pub use media::{Media, Under};

@@ -9,7 +9,8 @@ struct Uniforms {
     bounds: vec4<f32>,       // widget rect: x, y, width, height (physical)
     // x: 1 = full range, 0 = video range; y: 1 = BT.709, 0 = BT.601;
     // z: 1 = there is a frame to show; w: 1 = scene-linear RGBA, 0 = Y'CbCr,
-    // 2 = display RGBA code values (straight alpha) in `linear_rgba`'s slot.
+    // 2 = display RGBA code values (straight alpha) in `linear_rgba`'s slot;
+    // 3 = float data (depth, ids) in `linear_rgba`'s slot, shown as written.
     params: vec4<f32>,
     // x: exposure gain; y, z: the shaper's log2 range.
     display: vec4<f32>,
@@ -91,6 +92,13 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     }
     if (u.params.w < 0.5) {
         return vec4<f32>(srgb_to_linear(yuv(in.uv)), 1.0);
+    }
+    if (u.params.w > 2.5) {
+        // Data, not colour: no display transform. The values as written,
+        // times the exposure gain (which brings a depth into range), as
+        // code values.
+        let raw = textureSample(linear_rgba, plane_sampler, in.uv).rgb * u.display.x;
+        return vec4<f32>(srgb_to_linear(clamp(raw, vec3<f32>(0.0), vec3<f32>(1.0))), 1.0);
     }
     if (u.params.w > 1.5) {
         // Display code values, straight alpha: over black.

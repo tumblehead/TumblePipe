@@ -587,6 +587,76 @@ animation included — lives below the layerbreak, is dropped on export,
 and re-imports as a default-pose reference. The instanceable toggle is
 the correct lever; Copy is a footgun.
 
+## The entity stamp: which asset a prim belongs to
+
+Every `th::export_layer` publish of an **asset** stamps the asset's root
+prim (`/<category>/<asset>`), in the published layer, with the asset's
+entity URI and the department and version that wrote the layer:
+
+```
+def Xform "hero" (
+    customData = {
+        dictionary tumblepipe = {
+            string entity = "entity:/assets/CHAR/hero"
+            dictionary departments = {
+                string model = "v0003"
+            }
+        }
+    }
+)
+```
+
+`customData` is a dictionary, so USD composes it key by key: each
+department layer of the asset adds its own entry under `departments`, and
+the composed prim lists every department that contributed, with the
+version that is loaded. The stamp is written in the asset's own layers and
+nowhere else, so a shot that brings in three assets answers the right
+asset for each prim. A shot export is not stamped: a shot owns no prim of
+its own, and the assets in it carry theirs. A layer that authors nothing
+on the asset root gets an `over` there, which defines nothing.
+
+The stamp sits beside the import nodes' metadata (`uri`, `instance`,
+`channel`, `animatable`, `inputs`, written by the importing workfile in
+its own layer; see above) and is separate from it:
+`prim_metadata.get_metadata` leaves the stamp out, so an import node that
+reads the metadata and writes it back never copies the stamp into a
+stronger layer.
+
+### Reading it
+
+`tumblepipe.pipe.usd.entity_stamp`
+([source](../python/tumblepipe/pipe/usd/entity_stamp.py)) needs no `hou`:
+
+| Function | Returns |
+|---|---|
+| `owning_entity(stage, prim_path)` | the `PrimEntity` of the prim or of its nearest stamped ancestor, or `None` |
+| `owning_entities(stage, prim_paths)` | `{prim path: PrimEntity or None}`, in the order given |
+| `distinct_entities(stage, prim_paths)` | one `PrimEntity` per entity, in the order first met; unknown prims left out |
+| `read_stamp(prim)` | the `PrimEntity` of this prim alone, or `None` |
+| `stamp_layer(layer, prim_path, entity_uri, department, version)` | writes the stamp into an `Sdf.Layer` |
+
+A `PrimEntity` carries `uri` (a `Uri`), `prim_path` (the stamped prim
+that answered), `departments` (`{department: version}`) and `source`:
+`"export"` when the asset's own stamp answered, `"import"` when only an
+import node's `uri` did. That fallback is what lets an asset exported
+before the stamp existed still answer wherever a TumblePipe import node
+brought it in; it lists no departments.
+
+`None` means unknown: geometry authored in the workfile, a path that
+names no prim, or an asset exported before the stamp that nothing tagged.
+A stage that mixes stamped and unstamped assets answers each prim on its
+own. Nothing is ever read from prim names or paths. An asset gets the
+stamp the next time each of its departments is exported; nothing rewrites
+old versions.
+
+In Houdini, `tumblepipe.pipe.houdini.selection_entities`
+([source](../python/tumblepipe/pipe/houdini/selection_entities.py)) reads
+the current LOP selection (the viewport and the Scene Graph Tree share
+it): `selected_entities()`, `selected_entity()` (the one entity, or
+`None` for none or several), `selected_entity_departments()` and
+`open_selected_workfile(department, new_instance=False)`, which the
+[Alt+D radial](radial-menus.md#altd-the-selected-assets-workfiles) calls.
+
 ## Dropped-metadata guard
 
 Because a consumer only sees a tracked asset through its `customData`,

@@ -25,7 +25,14 @@ These keys of ``render`` reach a render, through the shot's root layer
   limits, ``dicingqualityscale``, ``enabledof``, ``enablemblur``), each only
   when an entity level (the project, all shots, a sequence, the shot) pins
   it: a key only the pipeline defaults hold keeps the value of the
-  project's render defaults layer (:func:`unset_default`).
+  project's render defaults layer (:func:`unset_default`);
+- ``aovs``: the AOVs every shot under the level renders, a list of standard
+  AOV names (:data:`AOV_NAMES`, the toggles of ``th::render_vars``), also
+  only when an entity level pins it. The root layer adds each as a
+  RenderVar beside the ones the project's render defaults layer already
+  has. A level's list replaces the list of the levels before it, as the
+  store merges lists: a sequence that pins ``aovs`` names all of its own.
+  A shot adds more with ``th::render_vars`` in its render department.
 
 The Entity Editor offers all of them (:data:`FIELDS`, grouped as
 :data:`SECTIONS`). The rest of ``render`` (``overscan``, the dicing camera
@@ -85,7 +92,26 @@ SSS_LIMIT = f'{RENDER}.ssslimit'
 DOF = f'{RENDER}.enabledof'
 MBLUR = f'{RENDER}.enablemblur'
 KARMA_FIELDS = tuple(f'{RENDER}.{key}' for key in KARMA)
-FIELDS = IMAGE_FIELDS + KARMA_FIELDS
+
+#: The ``render`` key naming the AOVs the root layer adds, and its field.
+AOVS_KEY = 'aovs'
+AOVS = f'{RENDER}.{AOVS_KEY}'
+#: The standard AOVs it may name, as ``th::render_vars`` lists them: the
+#: names of ``pipe.usd.standard_aovs.AOVS`` (config may not import pipe;
+#: ``tests/test_project_aovs.py`` holds the two equal).
+AOV_NAMES = (
+    'beauty', 'beauty_mse', 'samples', 'albedo', 'albedo_mse', 'normal',
+    'normal_mse', 'uv', 'position', 'depth', 'diffuse', 'specular',
+    'emission', 'volume', 'diffuse_direct', 'diffuse_indirect',
+    'specular_direct', 'specular_indirect', 'transmission', 'sss', 'coat',
+    'unshadowed', 'shadow', 'ao', 'motionvectors', 'velocity',
+    'cryptoprimitives', 'cryptomaterials',
+)
+#: What an empty list reads as: the level renders no AOVs of its own.
+NO_AOVS = 'none'
+#: The fields the root layer authors only when an entity level pins them.
+PINNED_FIELDS = KARMA_FIELDS + (AOVS,)
+FIELDS = IMAGE_FIELDS + KARMA_FIELDS + (AOVS,)
 
 #: How the Entity Editor's Render settings panel groups them.
 SECTIONS = (
@@ -93,6 +119,7 @@ SECTIONS = (
     ('Quality', (SAMPLES, DICING)),
     ('Ray limits', (DIFFUSE_LIMIT, REFLECTION_LIMIT, REFRACTION_LIMIT, VOLUME_LIMIT, SSS_LIMIT)),
     ('Effects', (DOF, MBLUR)),
+    ('AOVs', (AOVS,)),
 )
 
 LABELS = {
@@ -108,6 +135,7 @@ LABELS = {
     SSS_LIMIT: 'SSS limit',
     DOF: 'Depth of field',
     MBLUR: 'Motion blur',
+    AOVS: 'AOVs',
 }
 
 #: Short names for the Shots table's Render column, which lists what a row
@@ -116,7 +144,7 @@ SHORT = {
     APPLY: 'apply', RESOLUTION: 'res', CAMERA: 'cam', SAMPLES: 'samples',
     DICING: 'dicing', DIFFUSE_LIMIT: 'diffuse', REFLECTION_LIMIT: 'reflect',
     REFRACTION_LIMIT: 'refract', VOLUME_LIMIT: 'volume', SSS_LIMIT: 'sss',
-    DOF: 'dof', MBLUR: 'mblur',
+    DOF: 'dof', MBLUR: 'mblur', AOVS: 'aovs',
 }
 
 # ── the levels ───────────────────────────────────────────
@@ -136,10 +164,10 @@ def is_karma(name: str) -> bool:
 
 def unset_default(name: str, source: str) -> bool:
     """Whether a value of ``name`` that comes from ``source`` reaches no
-    render: a Karma setting only the pipeline defaults hold. The root
-    layer leaves it to the project's render defaults layer, so the editor
-    shows it as not set, and typing that same value pins it."""
-    return is_karma(name) and source == DEFAULTS_LEVEL
+    render: a Karma setting, or the AOVs, only the pipeline defaults hold.
+    The root layer leaves it to the project's render defaults layer, so the
+    editor shows it as not set, and typing that same value pins it."""
+    return name in PINNED_FIELDS and source == DEFAULTS_LEVEL
 
 
 def weaker_levels(level: str) -> str:
@@ -300,10 +328,43 @@ def valid_camera(value) -> str | None:
     return text.rstrip('/') or None
 
 
+def valid_aovs(value) -> list[str] | None:
+    """``value`` as ``render.aovs`` holds it: a list of standard AOV names,
+    each once, in :data:`AOV_NAMES` order (an empty list is one); else
+    None."""
+    if not isinstance(value, (list, tuple)):
+        return None
+    if not all(isinstance(entry, str) and entry in AOV_NAMES for entry in value):
+        return None
+    asked = set(value)
+    return [name for name in AOV_NAMES if name in asked]
+
+
+def _parse_aovs(value, label: str) -> list[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise ValueError(f'{label} takes AOV names, like albedo, depth; or "{NO_AOVS}"')
+        if text.casefold() == NO_AOVS:
+            return []
+        value = [part.casefold() for part in re.split(r'[,\s]+', text) if part]
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f'{label} takes a list of AOV names, not "{value}"')
+    unknown = [str(entry) for entry in value if not (isinstance(entry, str) and entry in AOV_NAMES)]
+    if unknown:
+        raise ValueError(
+            f'{label}: no standard AOV named {", ".join(unknown)}. '
+            f'The AOVs of th::render_vars: {", ".join(AOV_NAMES)}'
+        )
+    return valid_aovs(value)
+
+
 def parse(name: str, value) -> object:
     """``value`` (typed text, or a value as stored) as ``name`` stores it.
     Raises ValueError for one the root layer could not use."""
     label = LABELS.get(name, name)
+    if name == AOVS:
+        return _parse_aovs(value, label)
     if name == APPLY:
         if isinstance(value, bool):
             return value
@@ -396,6 +457,11 @@ def format_value(name: str, value) -> str:
     if name == RESOLUTION:
         found = valid_resolution(value)
         return f'{found[0]} x {found[1]}' if found else str(value)
+    if name == AOVS:
+        found = valid_aovs(value)
+        if found is None:
+            return str(value)
+        return ', '.join(found) if found else NO_AOVS
     if is_karma(name):
         found = valid_karma(name, value)
         if found is None:
@@ -445,15 +511,16 @@ def preset_text(label: str, size: tuple[int, int]) -> str:
 
 def effect(values: Mapping[str, object], karma: Mapping[str, object] | None = None) -> str:
     """What a shot whose settings resolve to ``values`` renders with, in
-    a sentence or two for the editor. ``karma``: the Karma settings a level
-    pins (none from the pipeline defaults alone), which the root layer
-    authors too when applied."""
+    a sentence or two for the editor. ``karma``: the Karma settings and
+    the AOVs a level pins (none from the pipeline defaults alone), which
+    the root layer authors too when applied."""
     pinned = [
         f'{LABELS[name].lower()} {format_value(name, value)}'
         for name in KARMA_FIELDS
         if name in (karma or {}) and valid_karma(name, (karma or {})[name]) is not None
         for value in ((karma or {})[name],)
     ]
+    aovs = valid_aovs((karma or {}).get(AOVS)) or []
     if values.get(APPLY) is not True:
         text = (
             'Not applied: renders use the RenderSettings in the scene. The '
@@ -461,7 +528,25 @@ def effect(values: Mapping[str, object], karma: Mapping[str, object] | None = No
         )
         if pinned:
             text += ' The Karma settings set here wait for Apply to render.'
+        if aovs:
+            text += ' The AOVs set here wait for Apply to render.'
         return text
+    if aovs:
+        adds = (
+            f'adds the AOVs {", ".join(aovs)} to the ones the project\'s '
+            f'render defaults have; a shot adds more on th::render_vars.'
+        )
+        text = _effect_settings(values, pinned)
+        if text == _NOTHING_TO_AUTHOR:
+            return f'The root layer {adds}'
+        return f'{text} It {adds}'
+    return _effect_settings(values, pinned)
+
+
+_NOTHING_TO_AUTHOR = 'Applied, but there is no valid resolution or camera to author.'
+
+
+def _effect_settings(values: Mapping[str, object], pinned: list[str]) -> str:
     resolution = valid_resolution(values.get(RESOLUTION))
     camera = valid_camera(values.get(CAMERA))
     parts = []
@@ -475,5 +560,5 @@ def effect(values: Mapping[str, object], karma: Mapping[str, object] | None = No
     if not parts:
         if pinned:
             return f'The root layer sets {", ".join(pinned)}.'
-        return 'Applied, but there is no valid resolution or camera to author.'
+        return _NOTHING_TO_AUTHOR
     return 'The root layer ' + ' and '.join(parts) + '.' + also
