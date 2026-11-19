@@ -93,6 +93,24 @@ Both come from the `tt_prepare` hook, which runs on every launch:
 - **TumblePipe — project not configured** — see the previous entry;
   **Launch anyway** opens Houdini without a pipeline.
 
+### A project's menu in TumbleTrove Desktop has no Open Cinedex
+
+The project's menu lists the actions of the TumblePipe that project was last
+launched with on this machine, not of the newest one installed. So two
+projects side by side can show different lists:
+
+- **Edits** in place of **Open Cinedex**: the project was last launched with
+  TumblePipe 1.95 to 1.104. It is the same action under its older name, and
+  it opens that older version's editor.
+- neither: the project was last launched with a TumblePipe older than 1.95,
+  which had no editor.
+- no TumblePipe actions at all: the project was never launched on this
+  machine, or TumblePipe is not one of its packages.
+
+Launch the project once. The Desktop then installs the newest TumblePipe the
+project can use (a project pinned to an older version stays on it), and the
+menu shows **Open Cinedex**.
+
 ### Cinedex's Open in Houdini starts a new Houdini instead of using mine
 
 Cinedex opens the workfile in your Houdini only when that Houdini started
@@ -465,6 +483,19 @@ across the change dropped every frame from the change on, so the render
 held the last pose before it. A render or export starting after the change
 looked right. Update TumblePipe and publish the shot again: every frame now
 keeps its own pose and topology.
+
+### A shape the rig hides on some frames is hidden for the whole shot after `th::animate`
+
+A rig shows and hides a shape frame by frame (TumbleRig's TH Visibility
+writes `usdvisibility`). Up to 1.112.0 `th::animate` took the visibility of
+the first frame for the whole shot (1.112.1 reads each frame's), and up to
+1.112.2 a shape the rig left out of some frames was hidden on every frame
+of an exported range. The names
+`visibility` and `usdvisibility` are not a mismatch: the first is the USD
+attribute, the second the SOP attribute it is read from. Update
+TumblePipe: the scene needs no change, and the stage follows the rig on
+the next cook. An animation layer published before the update has the
+wrong visibility in it, so export those shots again.
 
 ### The export refused: "outside the export folder", "do not exist", "carry no pipeline metadata"
 

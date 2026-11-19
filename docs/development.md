@@ -891,7 +891,17 @@ The tests:
   the editor's `Engine` (one EXR source per run of frames on disk), draws
   the timeline with `tracks.rs` (`editable: false`) and the display bar
   with `display::display_bar`, and rescans the folder every 2 s so a
-  landing frame fills its gap. `glyph.rs` draws the transport icons. The
+  landing frame fills its gap. `glyph.rs` draws the transport icons, each
+  rasterised once into an image (not a canvas: canvas geometry puts the
+  whole window's scene pass at 4x multisampling); its proptests check that
+  each glyph is its own shape inside its square and that a back glyph is
+  its forward one mirrored. `editor/transport.rs` is the editor's transport
+  bar under the picture: each button is a row of the Playback menu found by
+  its label, so it sends that row's message, is greyed when the row is and
+  names the row's shortcut (its proptests: the seven buttons in order, pause
+  shown exactly while playing, a button's key sends the button's message,
+  the scrub bar asks only for frames of the cut). Add a transport action as
+  a Playback menu row first, then name it in `transport::ROWS`. The
   Farm Manager's *Preview in Cinedex* passes `--fps` and `--expect` from
   `farm.manager.frames_preview.launch_options`; the frame list is read by
   `th_playlist::frame_list` (no steps in `FrameRanges`, so a separate
@@ -917,10 +927,49 @@ The tests:
   change a `th_edit` op through its history, one user action one step) and
   the pure helpers; `tracks.rs` draws the rows and turns drags into ops
   (move, trim, Alt for slip and roll, the top band for fades);
+  `tracks/reach.rs` holds a dragged edge, slip or roll to what the clip's
+  source has (`Resolved::available`, the `Sources` answer the document
+  judges ops by, read when the source resolves) and to a clip of one frame,
+  since `th_edit` refuses an op that goes past it whole (its proptests: no
+  drag makes an op the document refuses, and a clip trimmed down drags back
+  out to every frame it showed); `tracks/lanes.rs` is where the rows are,
+  each `RowView` with a height of its own (its proptests: every point is in
+  the row drawn there, and a dragged header edge resizes only its row), and
+  `editor/track_rows.rs` keeps the heights per user in `tracks.json` beside
+  `layout.json` (view state, never in the edit; it round-trips any layout
+  and loads any JSON as heights within the rows' limits), and decides which
+  tracks have a row (`shown`, from a `Focus`: View > Hide Audio Tracks,
+  kept in `tracks.json`, and the track soloed by a double-click on its
+  name, for the session). Both are the view's only: there is no mute or
+  enable state in `th_edit`, and none was added, so every track plays
+  whatever is shown; `Editor::refocused` drops clips without a row from the
+  selection and Select All takes only shown tracks, so nothing unseen is
+  deleted. Its proptests: the rows are exactly what the focus leaves, a
+  second double-click restores them, and a solo goes with its track. The
+  spare layer (`spare`) is a `RowView` for the video track one past the
+  top, shown while the top track holds a clip; it is never in the
+  document. A clip moved onto it comes from the tracks as a `Move` to a
+  track that is not there, and `landing` puts an `AddTrack` before it in
+  the same undo step (proptests: there is one empty layer over the used
+  ones, a clip dropped on it lands on a new top track and nothing else
+  changes, and no other drag makes a track). `editor/timeline_menu.rs` is
+  the menu a right press off the clips opens (the tracks send
+  `Message::TimelineMenu` with the frame and row, not taking the press, so
+  the `context_menu` around them opens with its rows the next frame, as the
+  clip's take menu does): its rows are read from a small `State` and send
+  messages the editor already has, the "here" ones wrapped in
+  `Message::At(frame, ..)`, which parks the playhead first (proptests:
+  nothing that changes the cut on a read-only edit, every "here" row at
+  the frame clicked, tracks added on top and only empty ones removed, no
+  two rows alike). There is no Paste row: Cinedex has no clipboard;
   `editor/clip_fields.rs` is the strip of the selected clip's fades and
-  opacity as typed numbers (#60), its proptests that a typed fade or
-  opacity makes exactly the op that sets it and shows back as typed, and
-  that anything else is refused. `look.rs`
+  opacity and its transform (X, Y, Scale, Rotate, Reset) as typed numbers
+  (#60), its proptests that a typed fade, opacity or part of the transform
+  makes exactly the op that sets it and shows back as typed, that Reset is
+  the op back to the identity, and that anything else is refused;
+  `placing.rs` turns a clip's transform into the blend's `Placement` and
+  sizes the picture the viewer blends transformed clips into (the edit's
+  shape). `look.rs`
   holds every colour the window draws with (untinted greys, amber only for
   the present moment, a muted hue per department for clips); draw with its
   tokens, not colour literals, and its tests keep text readable on them;
@@ -1011,7 +1060,20 @@ The tests:
   and read as 1 when missing (`document`'s proptest: an edit at full
   opacity is byte for byte what it was; `serde_json`'s `float_roundtrip`
   so a number reads back as written), set by `SetOpacity` (0 to 1, video
-  only, a proptest), and a join of clips at two opacities is refused;
+  only, a proptest), and a join of clips at two opacities is refused; a
+  video clip's `transform` (`Transform`: `x` right and `y` up in picture
+  heights, `scale` of the fitted picture, `rotation` in degrees
+  anticlockwise; fitted, then scaled and turned about the centre, then
+  moved) is likewise written only when it is not the identity and read as
+  the identity when missing (proptest: byte for byte), set by
+  `SetTransform` (video only, refused out of `Transform`'s limits or not
+  finite), a join of clips with two transforms is refused, and `picture`
+  keeps the tracks under a transformed clip as layers whatever its
+  opacity, since it may not cover the picture. `th_media::composite::
+  dissolve_placed` draws it (`Placement::apply` / `invert`, bilinear, one
+  pixel of edge cover; a layer as fitted takes `dissolve`'s own path, bit
+  for bit) for the viewer (`Editor::dissolved`), Export Movie and Render
+  Edit (`render::picture`), so all three place a clip alike;
   `takes` picks a take for a rule (a named
   layer no take fits falls back to the rule with its layer open, a
   proptest; `document`'s proptest round-trips a rule with and without a
@@ -1023,7 +1085,9 @@ The tests:
   every transition has an item each side; other fades and opacities as
   markers; a proptest checks exactly the fades over nothing become
   transitions at their clips' edges and every track stays well formed
-  OTIO) and names each movie
+  OTIO; a dissolve that would cut the clip before it shorter than that
+  clip's own fade in, or than the dissolve it came down with, is not moved
+  down: seed pinned in `proptest-regressions/otio.txt`) and names each movie
   for the publish to link (`movie_links`, `relink`: Resolve takes
   same-named movies for one). Its properties: every movie gets one name no
   other has in any case, plain characters with its extension, the same
@@ -1095,6 +1159,23 @@ The tests:
   `src/cinedex/rustfmt.toml`, so run `cargo fmt` before committing.
 
 Commit any new seeds proptest writes under `proptest-regressions/`.
+
+Two test modules hold what no single feature's tests can. `edit/src/cross_tests.rs` runs every op over arbitrary edits: each clip
+keeps its transform and opacity, undo and redo give the document's bytes
+back, and a document without transforms is byte for byte what it was
+before the field. `cinedex/src/editor/wiring_tests.rs` builds a headless
+`Editor` (`Editor::with`, no speaker, prefs in a temp folder) on
+`scripts/project_template` and sends pointer events through the real
+`Tracks::update` at pixels computed from the drawn rows: what the view
+shows never changes the cut, no drag takes a clip away, a drop on the
+spare layer and a sequence put in are one undo step each, and each row of
+the timeline's menu does what its label says.
+
+The properties of 1.113's features were checked by mutation: 160 small
+wrong edits to the new code, one at a time, each of which must fail a
+test. 64 did not at first; the properties above, and those added beside
+each module, are what catches them now. Do the same for a new feature:
+a property that no wrong edit fails holds nothing.
 
 **Regenerating the bindings** (after an FFmpeg bump, for a new platform, or
 when `th_media` starts using another FFmpeg item) needs libclang

@@ -100,6 +100,7 @@ impl Editor {
             }
             "save" => return self.agent_save(call, text("name"), text("note").unwrap_or_default()),
             "publish" => (self.agent_publish_preview(), Command::none()),
+            "export_timeline" => return self.agent_export_timeline(call, params),
             // Answered by the endpoint itself, never handed over.
             _ => (Err(refused(format!("{method} is answered by the endpoint"))), Command::none()),
         };

@@ -1,6 +1,7 @@
 //! The panel sizes Cinedex remembers for this user between sessions: the
-//! bins' width, the timeline's height, and whether either is folded to a
-//! strip. One small JSON file per user, on local disk:
+//! bins' width, the timeline's height, whether either is folded to a
+//! strip, and whether the bins show as a grid of thumbnails or a list. One
+//! small JSON file per user, on local disk:
 //! `%LOCALAPPDATA%/tumblepipe/cinedex/layout.json` on Windows,
 //! `$XDG_CONFIG_HOME` (or `~/.config`) on Linux, `~/Library/Application
 //! Support` on macOS, beside TumblePipe's other per-user files.
@@ -34,11 +35,13 @@ pub struct Layout {
     pub timeline_height: Option<f32>,
     /// The timeline is folded to a strip.
     pub timeline_collapsed: bool,
+    /// The bins show as a grid of thumbnails; else as a list.
+    pub bins_grid: bool,
 }
 
 impl Default for Layout {
     fn default() -> Self {
-        Self { bins_width: BINS_WIDTH, bins_collapsed: false, timeline_height: None, timeline_collapsed: false }
+        Self { bins_width: BINS_WIDTH, bins_collapsed: false, timeline_height: None, timeline_collapsed: false, bins_grid: false }
     }
 }
 
@@ -59,6 +62,7 @@ impl Layout {
             bins_collapsed: flag("bins_collapsed", default.bins_collapsed),
             timeline_height: believed(value.get("timeline_height").and_then(Value::as_f64), TIMELINE_RANGE),
             timeline_collapsed: flag("timeline_collapsed", default.timeline_collapsed),
+            bins_grid: flag("bins_grid", default.bins_grid),
         }
     }
 
@@ -68,6 +72,7 @@ impl Layout {
             "bins_collapsed": self.bins_collapsed,
             "timeline_height": self.timeline_height,
             "timeline_collapsed": self.timeline_collapsed,
+            "bins_grid": self.bins_grid,
         })
     }
 }
@@ -127,14 +132,20 @@ mod tests {
     use proptest::prelude::*;
 
     fn layout() -> impl Strategy<Value = Layout> {
-        (BINS_RANGE.0..=BINS_RANGE.1, any::<bool>(), proptest::option::of(TIMELINE_RANGE.0..=TIMELINE_RANGE.1), any::<bool>()).prop_map(
-            |(bins_width, bins_collapsed, timeline_height, timeline_collapsed)| Layout {
+        (
+            BINS_RANGE.0..=BINS_RANGE.1,
+            any::<bool>(),
+            proptest::option::of(TIMELINE_RANGE.0..=TIMELINE_RANGE.1),
+            any::<bool>(),
+            any::<bool>(),
+        )
+            .prop_map(|(bins_width, bins_collapsed, timeline_height, timeline_collapsed, bins_grid)| Layout {
                 bins_width,
                 bins_collapsed,
                 timeline_height,
                 timeline_collapsed,
-            },
-        )
+                bins_grid,
+            })
     }
 
     /// Any JSON value a hand-edited or older file might hold for a field.
@@ -162,15 +173,18 @@ mod tests {
 
         #[test]
         fn any_file_loads_as_sizes_within_reason(
-            bins in field(), bins_collapsed in field(), timeline in field(), timeline_collapsed in field(),
+            bins in field(), bins_collapsed in field(), timeline in field(), timeline_collapsed in field(), bins_grid in field(),
         ) {
             let value = json!({
                 "bins_width": bins,
                 "bins_collapsed": bins_collapsed,
                 "timeline_height": timeline,
                 "timeline_collapsed": timeline_collapsed,
+                "bins_grid": bins_grid,
             });
             let layout = Layout::from_json(&value);
+            // The view is the file's when it says one, else the list.
+            prop_assert_eq!(layout.bins_grid, bins_grid.as_bool().unwrap_or(false));
             prop_assert!(layout.bins_width >= BINS_RANGE.0 && layout.bins_width <= BINS_RANGE.1);
             if let Some(height) = layout.timeline_height {
                 prop_assert!(height >= TIMELINE_RANGE.0 && height <= TIMELINE_RANGE.1);
@@ -187,6 +201,11 @@ mod tests {
         assert_eq!(load(&path), Layout::default());
         std::fs::write(&path, b"{ not json").unwrap();
         assert_eq!(load(&path), Layout::default());
+        // A file from before the grid view (1.112.0) opens as a list, its
+        // sizes kept.
+        std::fs::write(&path, br#"{"bins_width": 300.0, "bins_collapsed": true, "timeline_height": null, "timeline_collapsed": false}"#)
+            .unwrap();
+        assert_eq!(load(&path), Layout { bins_width: 300.0, bins_collapsed: true, ..Layout::default() });
     }
 
     #[test]

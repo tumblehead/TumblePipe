@@ -5,8 +5,9 @@
 //!
 //! What a frame shows is what the editor shows (`th_edit::picture`): the
 //! top-most playable clip, blended through its fades over the tracks below,
-//! each picture fitted into the edit's resolution and a render taken through
-//! the config's default display and view. A slug, a shot without a take or a
+//! each picture fitted into the edit's resolution, then placed by its
+//! clip's transform, and a render taken through the config's default
+//! display and view. A slug, a shot without a take or a
 //! frame its media has not is black. What it hears is the editor's mix: a
 //! shot clip's playblast sound under it, audio clips at their level.
 //!
@@ -23,7 +24,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use th_edit::document::{Frame as EditFrame, Source, WorkingEdit};
-use th_edit::picture::{Playable, layers_at};
+use th_edit::picture::{Layer, Playable, layers_at};
+use th_media::composite::Placed;
 use th_media::sound::{Voice, mix};
 use th_media::{ExrView, Frame, Media, MovieDecoder, Pixels};
 
@@ -167,7 +169,7 @@ pub(crate) fn open_sources<'a>(
 pub(crate) fn picture(edit: &WorkingEdit, sources: &mut Sources, at: usize) -> Result<Frame, String> {
     let [width, height] = edit.resolution;
     let layers = layers_at(edit, at as EditFrame, &*sources);
-    let mut pictures: Vec<(Frame, f32, Option<Arc<Lut>>)> = Vec::new();
+    let mut pictures: Vec<(Frame, Option<Arc<Lut>>)> = Vec::new();
     for layer in &layers {
         let clip = &edit.video[layer.track].clips[layer.clip];
         let i = sources.index(&clip.source).expect("every clip's source is opened");
@@ -175,13 +177,25 @@ pub(crate) fn picture(edit: &WorkingEdit, sources: &mut Sources, at: usize) -> R
         let media = Arc::clone(opened.resolved.media.as_ref().expect("a playable source has media"));
         let index = media.index_at(layer.frame, opened.resolved.first).expect("a playable frame has a picture");
         let frame = decode(&media, index, &mut opened.decoder).map_err(|e| format!("{} frame {index}: {e}", describe(&clip.source)))?;
-        pictures.push((frame, layer.opacity, opened.lut.clone()));
+        pictures.push((frame, opened.lut.clone()));
     }
-    let input: Vec<(&Frame, f32)> = pictures.iter().map(|(f, o, _)| (f, *o)).collect();
-    Ok(th_media::composite::dissolve(width, height, &input, |layer, rgb| match &pictures[layer].2 {
+    Ok(blend(width, height, &layers, &pictures))
+}
+
+/// `layers` (bottom first) blended into a `width` x `height` picture of
+/// display code values: each one's frame (`pictures`, a render's with the
+/// display transform it is shown through) at its opacity, where its
+/// clip's transform puts it.
+fn blend(width: u32, height: u32, layers: &[Layer], pictures: &[(Frame, Option<Arc<Lut>>)]) -> Frame {
+    let input: Vec<Placed> = layers
+        .iter()
+        .zip(pictures)
+        .map(|(layer, (frame, _))| Placed { frame, opacity: layer.opacity, placement: crate::placing::placement(layer.transform) })
+        .collect();
+    th_media::composite::dissolve_placed(width, height, &input, |layer, rgb| match &pictures[layer].1 {
         Some(lut) => lut.sample(rgb),
         None => rgb,
-    }))
+    })
 }
 
 /// `picture` (display code values, as [`picture`] makes them) as packed
@@ -341,6 +355,69 @@ mod tests {
             for (got, want) in sound.samples.iter().zip(samples) {
                 let want = want.min(32767.0 / 32768.0);
                 prop_assert!((got - want).abs() <= 0.5 / 32768.0 + 1e-6, "{} read back as {}", want, got);
+            }
+        }
+    }
+
+    fn solid(width: u32, height: u32, pixels: &[[u8; 3]]) -> Frame {
+        let data = (0..(width * height) as usize).flat_map(|i| pixels[i % pixels.len()]).collect::<Vec<u8>>();
+        let data = data.as_chunks::<3>().0.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+        Frame { width, height, pixels: Arc::new(Pixels::Rgba8(data)) }
+    }
+
+    fn pixel_of(picture: &Frame, x: u32, y: u32) -> [u8; 3] {
+        let Pixels::Rgba8(data) = &*picture.pixels else { panic!("a picture is in code values") };
+        let at = ((y * picture.width + x) * 4) as usize;
+        [data[at], data[at + 1], data[at + 2]]
+    }
+
+    proptest! {
+        /// A rendered frame puts each clip where its transform says, as
+        /// the edit document has it (picture heights, right and up): a
+        /// clip moved by whole pixels shows each of its pixels that far
+        /// right and up at its opacity, and the track below around it
+        /// (black when there is none). A clip as fitted hides what is
+        /// below it.
+        #[test]
+        fn a_rendered_frame_places_each_clip_by_its_transform(
+            size in (1u32..7, 1u32..7),
+            seed in prop::collection::vec(prop::array::uniform3(any::<u8>()), 36),
+            by in (-6i32..7, -6i32..7),
+            under in prop::option::of(prop::array::uniform3(any::<u8>())),
+            opacity in prop::sample::select(vec![1.0f32, 0.5]),
+        ) {
+            use th_edit::Transform;
+            let (w, h) = size;
+            let top = solid(w, h, &seed[..(w * h) as usize]);
+            let transform = Transform { x: f64::from(by.0) / f64::from(h), y: f64::from(by.1) / f64::from(h), ..Transform::IDENTITY };
+            let mut layers = Vec::new();
+            let mut pictures = Vec::new();
+            if let Some(c) = under {
+                layers.push(Layer { track: 0, clip: 0, frame: 0, opacity: 1.0, transform: Transform::IDENTITY });
+                pictures.push((solid(w, h, &[c]), None));
+            }
+            layers.push(Layer { track: 1, clip: 0, frame: 0, opacity, transform });
+            pictures.push((top.clone(), None));
+            let picture = blend(w, h, &layers, &pictures);
+            let below = under.unwrap_or([0, 0, 0]);
+            for y in 0..h as i32 {
+                for x in 0..w as i32 {
+                    // Right is +x; up is +y, so the pixel came from below.
+                    let (fx, fy) = (x - by.0, y + by.1);
+                    let got = pixel_of(&picture, x as u32, y as u32);
+                    let covered = (0..w as i32).contains(&fx) && (0..h as i32).contains(&fy);
+                    // As fitted and not whole, it fades over what is below;
+                    // moved away, what is below (or black) is all there is.
+                    let want = if covered {
+                        let own = pixel_of(&top, fx as u32, fy as u32);
+                        [0, 1, 2].map(|k| f64::from(own[k]) * f64::from(opacity) + f64::from(below[k]) * (1.0 - f64::from(opacity)))
+                    } else {
+                        below.map(f64::from)
+                    };
+                    for k in 0..3 {
+                        prop_assert!((f64::from(got[k]) - want[k]).abs() <= 1.0, "{:?} at {},{} moved by {:?}: {:?}", got, x, y, by, want);
+                    }
+                }
             }
         }
     }

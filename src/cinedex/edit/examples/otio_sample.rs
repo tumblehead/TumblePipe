@@ -52,7 +52,7 @@ fn render(name: &str) -> FrozenSource {
 }
 
 fn clip(at: i64, duration: i64, source_in: i64, source: FrozenSource, fade_in: i64) -> VideoClip<FrozenSource> {
-    VideoClip { at, duration, source_in, source, fade_in, fade_out: 0, opacity: 1.0 }
+    VideoClip { at, duration, source_in, source, fade_in, fade_out: 0, opacity: 1.0, transform: Default::default() }
 }
 
 fn main() {

@@ -320,7 +320,16 @@ mod tests {
         let mut out = Vec::new();
         for (name, duration, gap) in clips {
             at += gap;
-            out.push(VideoClip { at, duration: *duration, source_in: 1001, source: shot(name), fade_in: 0, fade_out: 0, opacity: 1.0 });
+            out.push(VideoClip {
+                at,
+                duration: *duration,
+                source_in: 1001,
+                source: shot(name),
+                fade_in: 0,
+                fade_out: 0,
+                opacity: 1.0,
+                transform: Default::default(),
+            });
             at += duration;
         }
         Track { name: "V1".into(), clips: out }
@@ -403,6 +412,7 @@ mod tests {
                 fade_in: 0,
                 fade_out: 0,
                 opacity: 1.0,
+                transform: Default::default(),
             });
             at += duration;
         }
@@ -457,6 +467,7 @@ mod tests {
                     fade_in: 0,
                     fade_out: 0,
                     opacity: 1.0,
+                    transform: Default::default(),
                 };
                 Op::Insert { track: TrackRef::video(0), clip: NewClip::Video(new) }
             }
@@ -561,6 +572,7 @@ mod tests {
             fade_in: 0,
             fade_out: 0,
             opacity: 1.0,
+            transform: Default::default(),
         };
         let mut edit = edit(vec![Track { name: "V1".into(), clips: vec![clip(0, "A"), clip(10, "B"), clip(20, "A"), clip(30, "C")] }]);
         let mut looping = Loop::over(&edit, &[(0, 2)]).unwrap();
@@ -586,6 +598,7 @@ mod tests {
             fade_in: 0,
             fade_out: 0,
             opacity: 1.0,
+            transform: Default::default(),
         };
         let mut edit = edit(vec![Track { name: "V1".into(), clips: vec![clip(0, 20, "A"), clip(20, 20, "B")] }]);
         let mut looping = Loop::over(&edit, &[(0, 0), (0, 1)]).unwrap();

@@ -140,6 +140,7 @@ pub(crate) fn clips(reel: &Reel, fps: u32) -> Vec<Clip> {
             lead: 0,
             tail: 0,
             opacity: 1.0,
+            transform: Default::default(),
             rate: (fps as i32, 1),
         })
         .collect()
@@ -488,10 +489,11 @@ impl FramesView {
                     missing: !run.present,
                     department: None,
                     preview: None,
+                    room: None,
                 }
             })
             .collect();
-        vec![RowView { track: TrackRef::video(0), name: "Frames".into(), clips }]
+        vec![RowView { track: TrackRef::video(0), name: "Frames".into(), clips, height: tracks::ROW, solo: false, spare: false }]
     }
 
     fn toolbar(&self) -> Element<Message> {
@@ -545,6 +547,10 @@ impl FramesView {
             on_drag: || Message::Ignore,
             on_op: |_| Message::Ignore,
             on_menu: |_| Message::Ignore,
+            on_row_height: |_, _| Message::Ignore,
+            on_solo: |_| Message::Ignore,
+            on_context: |_, _| Message::Ignore,
+            note: None,
             editable: false,
         };
         let height = program.height();

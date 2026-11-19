@@ -46,6 +46,10 @@ pub(super) struct State {
     pub burnins: bool,
     /// View > Show (#57): None, the cut; else the kind every shot plays as.
     pub show: Option<TakeKind>,
+    /// The audio tracks have no rows (View > Hide Audio Tracks).
+    pub audio_hidden: bool,
+    /// Some track has no row: one is soloed, or the audio is hidden.
+    pub focused: bool,
     /// The cut's end, one past its last frame: where Go to End parks, so
     /// an Insert there appends (#25).
     pub end: usize,
@@ -103,6 +107,7 @@ fn file_menu(s: &State) -> Vec<Entry> {
         item("New S&hot…", Message::Open(OpenDialog::NewShot), s.writable, None),
         item("&Import Media…", Message::Open(OpenDialog::Import), s.free, None),
         item("Export &Movie…", Message::Export(ExportMessage::Open), s.free, None),
+        item("Export &Timeline…", Message::Timeline(super::timeline_dialog::TimelineMessage::Open), s.free, None),
     ]);
     if !cfg!(target_os = "macos") {
         menu.extend([Entry::Separator, item("E&xit", Message::CloseRequested, true, None)]);
@@ -173,6 +178,10 @@ fn view_menu(s: &State) -> Vec<Entry> {
         // The only thing that rescales the tracks besides opening an edit
         // (`timeline_view`): drags, trims and retimes leave the scale alone.
         item("&Fit Timeline", Message::FitTimeline, s.free, letter('f', NONE)),
+        // Which tracks have a row (`track_rows`): the view's only, every
+        // track still plays. A double-click on a track's name solos it.
+        item(if s.audio_hidden { "Show &Audio Tracks" } else { "Hide &Audio Tracks" }, Message::HideAudio(!s.audio_hidden), s.free, None),
+        item("Show All &Tracks", Message::ShowAllTracks, s.free && s.focused, None),
         Entry::Separator,
         item("&Refresh", Message::Refresh, s.free, letter('r', COMMAND)),
     ]
@@ -278,6 +287,8 @@ impl Editor {
             playing: self.playing,
             burnins: self.burnins,
             show: self.show,
+            audio_hidden: self.track_layout.audio_hidden,
+            focused: self.solo.is_some() || self.track_layout.audio_hidden,
             end: self.end(),
         }
     }
@@ -302,7 +313,7 @@ mod tests {
 
     fn state() -> impl Strategy<Value = State> {
         let show = proptest::option::of(prop_oneof![Just(TakeKind::Render), Just(TakeKind::Playblast)]);
-        (any::<[bool; 7]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
+        (any::<[bool; 8]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
             free: b[0],
             writable: b[0] && b[1],
             named: b[2],
@@ -311,6 +322,8 @@ mod tests {
             playing: b[4],
             burnins: b[5],
             show,
+            audio_hidden: b[6],
+            focused: b[6] || b[7],
             end,
         })
     }
@@ -449,6 +462,35 @@ mod tests {
             prop_assert_eq!((*menu, *enabled, keys.is_none()), ("&File", state.free, true));
         }
 
+        /// View > Hide Audio Tracks sends the other of what is: it hides
+        /// shown audio rows and shows hidden ones, a read-only edit's too
+        /// (it changes no edit). Show All Tracks is there to press exactly
+        /// while some track has no row.
+        #[test]
+        fn the_audio_rows_item_sends_the_other_state(state in state()) {
+            let rows = items(&state);
+            let audio: Vec<&Row> = rows.iter().filter(|r| r.2.starts_with("HideAudio(")).collect();
+            prop_assert_eq!(audio.len(), 1);
+            prop_assert_eq!(&audio[0].2, &format!("{:?}", Message::HideAudio(!state.audio_hidden)));
+            prop_assert_eq!(audio[0].1.starts_with("Show"), state.audio_hidden);
+            prop_assert_eq!(audio[0].3, state.free);
+            let all: Vec<&Row> = rows.iter().filter(|r| r.2 == "ShowAllTracks").collect();
+            prop_assert_eq!(all.len(), 1);
+            prop_assert_eq!(all[0].3, state.free && state.focused);
+        }
+
+        /// File > Export Timeline… is there whenever no dialog is open, a
+        /// read-only (published) edit too, right after Export Movie….
+        #[test]
+        fn export_timeline_is_offered_whenever_free(state in state()) {
+            let all = items(&state);
+            let at = all.iter().position(|r| r.2 == "Timeline(Open)").expect("File > Export Timeline…");
+            let (menu, label, _, enabled, keys) = &all[at];
+            prop_assert_eq!((*menu, *label, *enabled, keys.is_none()), ("&File", "Export &Timeline…", state.free, true));
+            prop_assert_eq!(&all[at - 1].2, "Export(Open)");
+            prop_assert_eq!(all.iter().filter(|r| r.2 == "Timeline(Open)").count(), 1);
+        }
+
         /// No two items show the same shortcut.
         #[test]
         fn no_two_items_share_a_shortcut(state in state()) {
@@ -495,6 +537,8 @@ mod tests {
             playing: false,
             burnins: true,
             show: None,
+            audio_hidden: false,
+            focused: false,
             end: 99,
         };
         let letters: Vec<char> = headings(&state)

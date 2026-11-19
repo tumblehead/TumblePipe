@@ -292,7 +292,16 @@ mod tests {
         let slug = Source::Slug { text: "title".into() };
         edit.video.push(Track {
             name: "V1".into(),
-            clips: vec![VideoClip { at: 0, duration: 24, source_in: 0, source: slug, fade_in: 0, fade_out: 0, opacity: 1.0 }],
+            clips: vec![VideoClip {
+                at: 0,
+                duration: 24,
+                source_in: 0,
+                source: slug,
+                fade_in: 0,
+                fade_out: 0,
+                opacity: 1.0,
+                transform: Default::default(),
+            }],
         });
         edit
     }
@@ -344,7 +353,16 @@ mod tests {
         let slug = FrozenSource::Slug { text: "title".into() };
         edit.video.push(Track {
             name: "V1".into(),
-            clips: vec![VideoClip { at: 0, duration: 24, source_in: 0, source: slug, fade_in: 0, fade_out: 0, opacity: 1.0 }],
+            clips: vec![VideoClip {
+                at: 0,
+                duration: 24,
+                source_in: 0,
+                source: slug,
+                fade_in: 0,
+                fade_out: 0,
+                opacity: 1.0,
+                transform: Default::default(),
+            }],
         });
         assert_eq!(publish(&project, "Main", &edit, "for review").unwrap(), "v0001");
         // An unfinished version (no context.json) is skipped, and the next
@@ -383,7 +401,16 @@ mod tests {
                 media: th_playlist::Media::Movie { path: movie.to_string_lossy().into_owned() },
             };
             let source = FrozenSource::Shot { shot: format!("entity:/shots/S/{shot}"), take: Some(take) };
-            clips.push(VideoClip { at: i as i64 * 10, duration: 10, source_in: 1001, source, fade_in: 0, fade_out: 0, opacity: 1.0 });
+            clips.push(VideoClip {
+                at: i as i64 * 10,
+                duration: 10,
+                source_in: 1001,
+                source,
+                fade_in: 0,
+                fade_out: 0,
+                opacity: 1.0,
+                transform: Default::default(),
+            });
         }
         edit.video.push(Track { name: "V1".into(), clips });
         publish(&project, "Main", &edit, "").unwrap();
@@ -423,6 +450,15 @@ mod tests {
         rest.replace("%20", " ").replace("%23", "#").replace("%25", "%")
     }
 
+    /// `path` as the `file:` URL a publish wrote for it up to Cinedex
+    /// 1.112.0: forward slashes, only `%`, a space and `#` escaped, a drive
+    /// letter after `file:///`.
+    fn url_before(path: &str) -> String {
+        let slashed = path.replace('\\', "/");
+        let escaped = slashed.replace('%', "%25").replace(' ', "%20").replace('#', "%23");
+        if escaped.starts_with('/') { format!("file://{escaped}") } else { format!("file:///{escaped}") }
+    }
+
     /// An edit of shot clips playing `movies` (indices into the files
     /// `make_movies` wrote), each a playblast of shot `S/0<n>0`.
     fn edit_of(clips: &[(usize, usize)], movies: &[PathBuf]) -> FrozenEdit {
@@ -440,7 +476,16 @@ mod tests {
                     media: th_playlist::Media::Movie { path: movies[movie].to_string_lossy().into_owned() },
                 };
                 let source = FrozenSource::Shot { shot: format!("entity:/shots/S/0{shot}0"), take: Some(take) };
-                VideoClip { at: i as i64 * 10, duration: 10, source_in: 1001, source, fade_in: 0, fade_out: 0, opacity: 1.0 }
+                VideoClip {
+                    at: i as i64 * 10,
+                    duration: 10,
+                    source_in: 1001,
+                    source,
+                    fade_in: 0,
+                    fade_out: 0,
+                    opacity: 1.0,
+                    transform: Default::default(),
+                }
             })
             .collect();
         edit.video.push(Track { name: "V1".into(), clips });
@@ -492,6 +537,55 @@ mod tests {
             }
             let held: std::collections::BTreeSet<_> = std::fs::read_dir(out.join("media")).unwrap().map(|e| e.unwrap().file_name()).collect();
             prop_assert_eq!(held, referred);
+        }
+
+        /// A publish from a project on an ordinary path (letters, digits,
+        /// `_`, `-`, `.`, `~`, spaces, `#` and `%`, on a drive or a POSIX
+        /// root) refers to its movies by the very URLs it did before UNC
+        /// and non-ASCII paths got URLs of their own (Cinedex up to
+        /// 1.112.0, `url_before`): what Resolve opened then it opens now.
+        /// And a clip that is moved, scaled or turned is published as
+        /// that: the document reads back as the edit, and the OTIO keeps
+        /// the transform in the clip's metadata.
+        #[test]
+        fn a_publish_on_an_ordinary_path_refers_to_its_movies_as_it_always_did(
+            show in "[A-Za-z0-9_~-]{1,4}[ .#%~a-z0-9]{0,6}[a-z0-9#%~]",
+            clips in prop::collection::vec((0usize..3, 0usize..3), 1..5),
+            moved in prop::collection::vec(prop::option::of((-10f64..=10.0, 0.01f64..=100.0, -3600f64..=3600.0)), 5),
+        ) {
+            let (dir, made) = make_project();
+            let root = dir.path().join(&show);
+            std::fs::rename(&made, &root).unwrap();
+            let project = Project::open(&root, &root).unwrap();
+            let movies = make_movies(dir.path(), 3);
+            let mut edit = edit_of(&clips, &movies);
+            for (clip, moved) in edit.video[0].clips.iter_mut().zip(&moved) {
+                if let Some((x, scale, rotation)) = *moved {
+                    clip.transform = th_edit::Transform { x, y: -x / 2.0, scale, rotation };
+                }
+            }
+            publish(&project, "Main", &edit, "").unwrap();
+            prop_assert_eq!(&load_published(&project, "Main", "v0001").unwrap(), &edit);
+            let out = export_dir(&project, "Main").unwrap().join("v0001");
+            let ordinary = |c: char| c.is_ascii_alphanumeric() || "_-.~ #%/\\:".contains(c);
+            if !out.to_string_lossy().chars().all(ordinary) {
+                // This machine's temporary folder is not on an ordinary path.
+                return Ok(());
+            }
+            let otio: Value = serde_json::from_str(&std::fs::read_to_string(out.join("Main_edit_v0001.otio")).unwrap()).unwrap();
+            let links = th_edit::otio::movie_links(&edit);
+            let items = otio["tracks"]["children"][0]["children"].as_array().unwrap().clone();
+            let shown: Vec<&Value> = items.iter().filter(|c| c["OTIO_SCHEMA"] == "Clip.2").collect();
+            prop_assert_eq!(shown.len(), edit.video[0].clips.len());
+            for (item, clip) in shown.iter().zip(&edit.video[0].clips) {
+                let own = item["metadata"]["tumblepipe"]["media"]["path"].as_str().unwrap();
+                let link = out.join("media").join(&links[own]);
+                let url = item["media_references"]["DEFAULT_MEDIA"]["target_url"].as_str().unwrap();
+                prop_assert_eq!(url, url_before(&link.to_string_lossy()));
+                let kept = item["metadata"]["tumblepipe"].get("transform").cloned();
+                let want = (!clip.transform.is_identity()).then(|| serde_json::to_value(clip.transform).unwrap());
+                prop_assert_eq!(kept, want);
+            }
         }
 
         /// A publish whose movie is gone fails, and leaves no finished

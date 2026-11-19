@@ -39,7 +39,7 @@ into one file, and the full import's layer, stronger than `apply`'s, hid
 `apply`'s samples (or, chosen by a switch from that frame on, was dropped
 whole); the export held the first pose from the change on. Every frame
 also samples the static import's other varying attributes (topology,
-displayColor, visibility: `sample_defaults`), as a SOP Import with animated
+displayColor: `sample_defaults`), as a SOP Import with animated
 topology does, so frames before a change keep their own topology once
 later frames sample theirs. On a changed frame a prim the first frame had
 takes only the attributes it had then, and those of them the full import
@@ -59,6 +59,21 @@ the world, not the character, once the meshes stopped being subdivided
 (v1.106.0; a subdivision surface ignores authored normals). Normals of any
 other kind (per primitive, per detail) cannot follow; the node warns.
 
+Visibility follows too. A rig that shows and hides a shape (TumbleRig's TH
+Visibility) writes `usdvisibility` on its primitives every frame, which a
+SOP Import turns into the prim's USD `visibility`. The static import did
+that once, so up to 1.112.0 the first frame's visibility held for the shot:
+a shape hidden at the first frame never appeared, one hidden later never
+hid (1.112.1 sampled each frame's where the rig wrote it). `apply` reads each frame's (`read_visibility`) and samples it on every
+prim, every frame (`author_visibility`): where the dive says nothing, what
+the prim has without it (`visibility_bases`). Every frame, because a prim
+sampled only where it is hidden is read as hidden on every frame of a saved
+range: a shape missing on a frame whose topology changed is made invisible
+there, which hid it for the shot when no other frame had a sample. A prim
+that first appears on a changed frame is sampled on every changed frame the
+same way (sampled only where the dive said something of it, it read the
+nearest such frame's on the changed frames that said nothing).
+
 Widths follow as well. The imports read `width` and `pscale` (left out of
 their Attributes pattern up to 1.109, every curve got the missing width,
 0.01), and `apply` copies each frame's (`read_widths`) onto the curves and
@@ -70,15 +85,6 @@ gives the others the attribute's default, 0 as a rule: there
 `normalize_widths` writes each shape's own as point width onto the merged
 geometry, in the static import's (`rest_gate`) and in the frame
 `full_import` imports (`current_widths`), so every frame agrees.
-
-Visibility follows too. TumbleRig's Apex Visibility shows and hides pieces
-(a replacement head, say) by writing the `usdvisibility` prim attribute
-every frame, which a SOP Import maps to USD `visibility`. Up to 1.112 only
-the static import read it, at the first frame, and `sample_defaults` held
-that on every frame: a piece hidden at the first frame was exported hidden
-all shot. `apply` now samples each frame's (`read_visibility`,
-`author_visibility`), read at each prim's first point; rigs without the
-attribute read and author nothing.
 
 Only shapes with somewhere to go reach the imports (`points_sops/placed`,
 `placed_shapes`). A Scene Invoke whose Shapes pattern is wider than
@@ -472,83 +478,124 @@ def read_points(geo, unpacked_node=None, vertex_normals=False, widths=False,
     }
 
 
+# --- visibility --------------------------------------------------------------
+#
+# A SOP Import authors a prim's USD `visibility` from `usdvisibility`: on the
+# primitives (the prim's first primitive decides), the points or the detail;
+# `invisible` hides, any other value shows, an empty one authors nothing.
+# TumbleRig's TH Visibility writes it on the primitives it switches, every
+# frame.
 VISIBILITY = 'usdvisibility'
 
 
-def _point_sources(geo, unpacked_node=None):
-    """The geometries `read_points` reads `geo`'s points from, in its
-    order: `geo` itself, its packed shapes, or `unpacked_node`'s cook."""
-    if not _has_packed(geo):
-        return [geo]
-    leaves = _packed_leaves(geo)
-    if leaves is not None:
-        return leaves
-    if unpacked_node is None:
-        raise hou.NodeError('th::animate: no unpacked copy of the dive to read.')
-    return [unpacked_node.geometry()]
-
-
-def read_visibility(sources, firsts) -> list | None:
-    """This frame's visibility of each mapped prim, from the `usdvisibility`
-    prim attribute the SOP Import maps to USD `visibility` (TumbleRig's
-    Apex Visibility writes it every frame): 'invisible' or 'inherited' per
-    entry of `firsts` (each prim's first dive point number, -1 for a prim
-    without points), read off the first primitive using that point; None
-    for a prim whose shape has no such attribute (nothing to author). None
-    in place of the list when no shape has it (most rigs): nothing at all
-    to author, and nothing read."""
-    flags = [geo.findPrimAttrib(VISIBILITY) is not None for geo in sources]
-    if not any(flags):
+def said_visibility(value):
+    """What a SOP Import authors for a `usdvisibility` of `value`: None for
+    an empty one, 'invisible', else 'inherited'."""
+    if not value:
         return None
-    starts = np.cumsum([0] + [geo.intrinsicValue('pointcount') for geo in sources])
-    values = []
-    for number in firsts:
-        number = int(number)
-        if number < 0 or number >= starts[-1]:
-            values.append(None)
-            continue
-        which = int(np.searchsorted(starts, number, side='right')) - 1
-        if not flags[which]:
-            values.append(None)
-            continue
-        point = sources[which].point(number - int(starts[which]))
-        prims = point.prims() if point is not None else ()
-        if not prims:
-            values.append(None)
-            continue
-        value = prims[0].attribValue(VISIBILITY)
-        values.append('invisible' if value == 'invisible' else 'inherited')
-    return values
+    return 'invisible' if value == 'invisible' else 'inherited'
 
 
-def first_points(mapping) -> np.ndarray:
-    """Each mapped prim's first dive point number (-1: no points), the
-    point `read_visibility` reads the prim's visibility at."""
-    bounds, index = mapping['bounds'], mapping['index']
-    return np.array([
-        int(index[bounds[i]]) if bounds[i + 1] > bounds[i] else -1
-        for i in range(len(mapping['paths']))
-    ], dtype=np.int64)
+def _is_string(attrib) -> bool:
+    return attrib is not None and _enum_name(attrib.dataType()) == 'String'
 
 
-def author_visibility(layer, mapping, values, frame) -> None:
-    """Sample `visibility` at `frame` on each mapped prim `values` (from
-    `read_visibility`) has a value for. The static import read the first
-    frame's only, and `sample_defaults` would hold that on every frame: a
-    piece Apex Visibility hid at the first frame stayed hidden all shot,
-    one it showed stayed shown."""
-    if values is None:
-        return
+def _visibility_reader(geo):
+    """A function from a point's number in `geo` to the `usdvisibility` of
+    the shape it is in (of the first primitive using the point, of the point
+    itself, or the detail's); None when `geo` has no such attribute."""
+    if _is_string(geo.findPrimAttrib(VISIBILITY)):
+        def of_prim(number):
+            prims = geo.point(number).prims()
+            return prims[0].attribValue(VISIBILITY) if prims else ''
+        return of_prim
+    if _is_string(geo.findPointAttrib(VISIBILITY)):
+        return lambda number: geo.point(number).attribValue(VISIBILITY)
+    if _is_string(geo.findGlobalAttrib(VISIBILITY)):
+        value = geo.attribValue(VISIBILITY)
+        return lambda number: value
+    return None
+
+
+def read_visibility(geo, mapping, unpacked_node=None):
+    """What `geo` (the dive's frame, laid out as `read_points` reads it)
+    says of each mapped prim's visibility: 'invisible', 'inherited', or None
+    where it says nothing (`said_visibility` of the `usdvisibility` where
+    the prim's first point is). None when no shape has `usdvisibility`: the
+    frame says nothing at all, and nothing more is read. Only for a frame
+    with the first frame's topology: the points are found by number."""
+    if not _has_packed(geo):
+        sources = [geo]
+    else:
+        sources = _packed_leaves(geo)
+        if sources is None:
+            if unpacked_node is None:
+                raise hou.NodeError('th::animate: no unpacked copy of the dive to read.')
+            sources = [unpacked_node.geometry()]
+    readers = [_visibility_reader(source) for source in sources]
+    if not any(reader is not None for reader in readers):
+        return None
+    starts = np.cumsum([0] + [source.intrinsicValue('pointcount') for source in sources])
+    index, bounds = mapping['index'], mapping['bounds']
+    said = []
+    for i in range(len(mapping['paths'])):
+        value = None
+        if bounds[i + 1] > bounds[i]:
+            number = int(index[int(bounds[i])])
+            if 0 <= number < starts[-1]:
+                source = int(np.searchsorted(starts, number, side='right')) - 1
+                if readers[source] is not None:
+                    value = said_visibility(readers[source](number - int(starts[source])))
+        said.append(value)
+    return said
+
+
+def visibility_bases(stage, layer, paths, frame) -> list:
+    """The visibility of each prim at `paths` on a frame where the dive
+    says nothing of it. 'inherited' when the static import authored its
+    visibility (the first frame said something; `layer`, apply's, has it as
+    a default): a SOP Import of a frame that says nothing authors none.
+    Else what `stage`, the stage coming into th::animate (None without one),
+    has for it at `frame`: th::animate's layer is the stronger, and what is
+    under it keeps its say (a mesh the asset hides stays hidden)."""
+    bases = []
+    for path in paths:
+        base = 'inherited'
+        own = layer.GetAttributeAtPath(path.AppendProperty('visibility'))
+        if stage is not None and (own is None or not own.HasInfo('default')):
+            prim = stage.GetPrimAtPath(path)
+            attr = prim.GetAttribute('visibility') if prim else None
+            if attr and attr.HasAuthoredValue() and attr.Get(frame) == 'invisible':
+                base = 'invisible'
+        bases.append(base)
+    return bases
+
+
+def author_visibility(layer, paths, said, bases, frame) -> None:
+    """A visibility sample at `frame` on every prim at `paths` that has none
+    there yet: what the dive says of it this frame (`said`:
+    `read_visibility`; None when it says nothing of any), else `bases`
+    (`visibility_bases`).
+
+    On every prim, every frame, whatever the first frame had: a prim hidden
+    on a few frames and sampled only on those is read as hidden on all of
+    them, once a USD ROP has put the range in one file. Up to 1.112 the
+    visibility was the static import's, the first frame's, on every frame
+    (hidden at the first frame: hidden for the shot), and a shape missing on
+    a frame whose topology changed was made invisible at that frame alone,
+    so for the shot."""
     from pxr import Sdf
     with Sdf.ChangeBlock():
-        for path, value in zip(mapping['paths'], values):
-            if value is None:
+        for i, path in enumerate(paths):
+            attr_path = path.AppendProperty('visibility')
+            if layer.QueryTimeSample(attr_path, frame) is not None:
                 continue
-            spec = layer.GetPrimAtPath(path) or Sdf.CreatePrimInLayer(layer, path)
-            attr = layer.GetAttributeAtPath(path.AppendProperty('visibility')) or Sdf.AttributeSpec(
-                spec, 'visibility', Sdf.ValueTypeNames.Token, Sdf.VariabilityVarying,
-            )
-            layer.SetTimeSample(attr.path, frame, value)
+            if layer.GetAttributeAtPath(attr_path) is None:
+                spec = layer.GetPrimAtPath(path) or Sdf.CreatePrimInLayer(layer, path)
+                Sdf.AttributeSpec(spec, 'visibility', Sdf.ValueTypeNames.Token,
+                                  Sdf.VariabilityVarying)
+            value = said[i] if said is not None else None
+            layer.SetTimeSample(attr_path, frame, value or bases[i])
 
 
 def point_count(geo) -> int:
@@ -914,20 +961,33 @@ def apply(lop_node) -> None:
                        widths=mode, missing=missing_width(static_node))
     frame = hou.frame()
     paths = list(mapping['paths'])
+    said = None
     try:
         author_frame(layer, mapping, read['P'], read['N'], frame, expected,
                      read['vN'],
                      rest_vertex_count(sops) if per_vertex or mode == 'vertex' else None,
                      widths=read['W'], widths_per_vertex=mode == 'vertex')
+        said = read_visibility(geo, mapping, sops.node(CURRENT))
     except TopologyChanged:
+        # the full import brings this frame's visibility with it
         paths += author_full_frame(layer, _full_layer(lop_node), paths, frame)
-    else:
-        if 'firsts' not in mapping:
-            mapping['firsts'] = first_points(mapping)
-        author_visibility(layer, mapping, read_visibility(
-            _point_sources(geo, sops.node(CURRENT)), mapping['firsts'],
-        ), frame)
+    # The prims a changed frame made too (`said` is None there, so it never
+    # indexes them): one the dive hid on some changed frames and said
+    # nothing of on others was sampled on the first alone, and hidden on both.
+    author_visibility(
+        layer, paths, said,
+        visibility_bases(_incoming_stage(lop_node), layer, paths, frame), frame)
     sample_defaults(layer, paths, frame)
+
+
+def _incoming_stage(lop_node):
+    """The stage coming into th::animate (`IN_stage`), which its own layer
+    goes over; None without one."""
+    incoming = lop_node.node('../IN_stage')
+    try:
+        return incoming.stage() if incoming is not None else None
+    except hou.Error:
+        return None
 
 
 def _full_layer(lop_node):
@@ -958,8 +1018,9 @@ def _sample_at(layer, path, frame):
     return attr.default if attr is not None and attr.HasInfo('default') else None
 
 
-#: What `author_frame` writes on every frame whatever the first frame had.
-ALWAYS_AUTHORED = frozenset({'points', 'extent'})
+#: What `apply` writes on every frame whatever the first frame had
+#: (`author_frame`, `author_visibility`).
+ALWAYS_AUTHORED = frozenset({'points', 'extent', 'visibility'})
 
 
 def author_full_frame(layer, source, mapped_paths, frame) -> list:
@@ -1024,6 +1085,8 @@ def author_full_frame(layer, source, mapped_paths, frame) -> list:
             for attr in dest.attributes:
                 if attr.name in authored or attr.variability != Sdf.VariabilityVarying:
                     continue
+                if attr.name == 'visibility':  # `author_visibility` samples it
+                    continue
                 layer.SetTimeSample(attr.path, frame, Sdf.ValueBlock())
         imported = {src.path for src in found}
         for path in mapped_paths:
@@ -1040,8 +1103,9 @@ def author_full_frame(layer, source, mapped_paths, frame) -> list:
 def sample_defaults(layer, paths, frame) -> None:
     """Every varying attribute of the prims at `paths` in `layer` that has
     a default and no time sample (the static import's topology,
-    displayColor, visibility, frozen normals, ...) sampled at `frame` with
-    its default. A frame whose topology changed samples them
+    displayColor, frozen normals, ...) sampled at `frame` with
+    its default (visibility has a sample by now: `author_visibility`). A
+    frame whose topology changed samples them
     (`author_full_frame`); once one does, every frame must, or USD reads the
     frames before it with that frame's topology (time samples hide a
     default)."""

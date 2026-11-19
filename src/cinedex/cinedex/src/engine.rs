@@ -35,6 +35,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
+use th_edit::document::Transform;
 use th_media::{Error, ExrView, Frame, FrameBuffer, FrameKey, Media, MovieDecoder, Proxy};
 
 /// Frames ahead of the playhead the workers fill.
@@ -83,6 +84,10 @@ pub struct Clip {
     /// How much of it shows over the tracks below outside its fades, 0 to
     /// 1 (the edit clip's opacity, #60).
     pub opacity: f32,
+    /// Where its picture sits in the edit's (the edit clip's transform).
+    /// One that is not the identity may not cover the picture, so the
+    /// tracks below it show whatever its opacity.
+    pub transform: Transform,
     /// Frames per second as a ratio.
     pub rate: (i32, i32),
 }
@@ -92,7 +97,20 @@ impl Clip {
     /// the start of the bottom track (`Timeline::end_to_end` places it).
     #[cfg(test)]
     pub fn cut(source: usize, frames: usize, rate: (i32, i32)) -> Self {
-        Self { source, track: 0, at: 0, frames, first: 0, fade_in: 0, fade_out: 0, lead: 0, tail: 0, opacity: 1.0, rate }
+        Self {
+            source,
+            track: 0,
+            at: 0,
+            frames,
+            first: 0,
+            fade_in: 0,
+            fade_out: 0,
+            lead: 0,
+            tail: 0,
+            opacity: 1.0,
+            transform: Transform::IDENTITY,
+            rate,
+        }
     }
 
     /// The position after its last frame.
@@ -183,6 +201,8 @@ pub struct Layer {
     pub key: FrameKey,
     /// How much of it shows over the layers below.
     pub opacity: f32,
+    /// Where its picture sits in the edit's.
+    pub transform: Transform,
 }
 
 /// The clips placed on their tracks. Clips of one track never overlap.
@@ -265,7 +285,8 @@ impl Timeline {
 
     /// The picture layers of `position`, bottom first: the top-most clip
     /// whose source `plays`, and under it, while it fades, what the same
-    /// rule gives for the tracks below. Empty: black.
+    /// rule gives for the tracks below; a clip with a transform shows them
+    /// around it too, as `th_edit::picture` has it. Empty: black.
     pub fn layers(&self, position: usize, plays: impl Fn(usize) -> bool) -> Vec<Layer> {
         let mut out = Vec::new();
         for clip in self.covering(position) {
@@ -275,8 +296,8 @@ impl Timeline {
                 continue;
             }
             let opacity = c.opacity(position);
-            out.push(Layer { clip, key: c.key(position), opacity });
-            if opacity >= 1.0 {
+            out.push(Layer { clip, key: c.key(position), opacity, transform: c.transform });
+            if opacity >= 1.0 && c.transform.is_identity() {
                 break;
             }
         }
@@ -996,17 +1017,33 @@ mod tests {
     fn stack(sources: usize) -> impl Strategy<Value = Timeline> {
         // Opacity (#60): mostly whole, some half, some none.
         let opacity = prop::sample::select(vec![1.0f32, 1.0, 1.0, 0.5, 0.0]);
-        let clip = ((0usize..30, 1usize..80, 0usize..20, 0..sources, 0usize..8, 0usize..8), opacity);
+        // A transform now and then: the clip does not cover the picture.
+        let transform =
+            prop::sample::select(vec![Transform::IDENTITY, Transform::IDENTITY, Transform { scale: 0.5, ..Transform::IDENTITY }]);
+        let clip = ((0usize..30, 1usize..80, 0usize..20, 0..sources, 0usize..8, 0usize..8), opacity, transform);
         prop::collection::vec(prop::collection::vec(clip, 0..4), 1..4)
             .prop_map(|tracks| {
                 let mut clips = Vec::new();
                 for (track, t) in tracks.into_iter().enumerate() {
                     let mut at = 0;
-                    for ((gap, frames, first, source, fade_in, fade_out), opacity) in t {
+                    for ((gap, frames, first, source, fade_in, fade_out), opacity, transform) in t {
                         at += gap;
                         let fade_in = fade_in.min(frames);
                         let fade_out = fade_out.min(frames - fade_in);
-                        clips.push(Clip { source, track, at, frames, first, fade_in, fade_out, lead: 0, tail: 0, opacity, rate: (24, 1) });
+                        clips.push(Clip {
+                            source,
+                            track,
+                            at,
+                            frames,
+                            first,
+                            fade_in,
+                            fade_out,
+                            lead: 0,
+                            tail: 0,
+                            opacity,
+                            transform,
+                            rate: (24, 1),
+                        });
                         at += frames;
                     }
                 }
@@ -1095,7 +1132,7 @@ mod tests {
                 let key = timeline.key(p);
                 prop_assert!(key.index < frames[key.source], "position {} maps into {:?}, past its clip", p, key);
                 prop_assert_eq!(timeline.positions(key).collect::<Vec<_>>(), vec![p]);
-                prop_assert_eq!(timeline.layers(p, |_| true), vec![Layer { clip: key.source, key, opacity: 1.0 }]);
+                prop_assert_eq!(timeline.layers(p, |_| true), vec![Layer { clip: key.source, key, opacity: 1.0, transform: Default::default() }]);
             }
             for (clip, &n) in frames.iter().enumerate() {
                 if n > 0 {
@@ -1109,7 +1146,8 @@ mod tests {
         /// one under it shows through the fade of the one above; outside a
         /// fade (or its clip's opacity) there is one layer, whole. A clip at
         /// no opacity is not there; one at some shows that much of itself,
-        /// times its fade (#60).
+        /// times its fade (#60). A clip with a transform is placed by it,
+        /// and whatever its opacity the clip under it is a layer too.
         #[test]
         fn the_top_playing_clip_shows((sources, timeline) in timelines(), at in 0usize..300, plays in prop::collection::vec(any::<bool>(), 5)) {
             let plays = |s: usize| plays[s % sources.max(1)];
@@ -1123,13 +1161,24 @@ mod tests {
                 prop_assert_eq!(l.key, FrameKey { source: c.source, index: c.first + at - c.at });
                 prop_assert!(l.opacity > 0.0 && l.opacity <= c.opacity);
                 prop_assert!((l.opacity - c.opacity * c.fade(at)).abs() < 1e-6);
+                prop_assert_eq!(l.transform, c.transform);
             }
             for pair in layers.windows(2) {
-                prop_assert!(pair[1].opacity < 1.0);
+                prop_assert!(pair[1].opacity < 1.0 || !pair[1].transform.is_identity());
                 prop_assert!(timeline.clips[pair[0].clip].track < timeline.clips[pair[1].clip].track);
             }
-            if layers.last().is_some_and(|l| l.opacity >= 1.0) {
+            if layers.last().is_some_and(|l| l.opacity >= 1.0 && l.transform.is_identity()) {
                 prop_assert_eq!(layers.len(), 1);
+            }
+            // Under a layer that is not whole, or is transformed, the next
+            // playing clip down is there.
+            if let Some(bottom) = layers.first().filter(|l| l.opacity < 1.0 || !l.transform.is_identity()) {
+                let track = timeline.clips[bottom.clip].track;
+                let under = (0..timeline.clips.len()).any(|i| {
+                    let c = &timeline.clips[i];
+                    c.track < track && c.covers(at) && plays(c.source) && c.opacity > 0.0
+                });
+                prop_assert!(!under, "a clip under the bottom layer is missing");
             }
         }
 
@@ -1657,6 +1706,7 @@ mod tests {
                 lead: 0,
                 tail: 0,
                 opacity: 1.0,
+                transform: Default::default(),
                 rate: (24, 1),
             },
             Clip {
@@ -1670,6 +1720,7 @@ mod tests {
                 lead: 0,
                 tail: 0,
                 opacity: 1.0,
+                transform: Default::default(),
                 rate: (24, 1),
             },
         ];

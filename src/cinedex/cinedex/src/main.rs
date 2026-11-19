@@ -31,6 +31,8 @@
 mod agent;
 mod app_icon;
 mod audio;
+mod bin_thumbs;
+mod bins;
 mod board;
 mod burnin;
 mod colour;
@@ -49,6 +51,9 @@ mod live;
 mod live_view;
 mod look;
 mod mcp;
+mod missing;
+mod modified;
+mod placing;
 mod previews;
 mod raise;
 mod reel;

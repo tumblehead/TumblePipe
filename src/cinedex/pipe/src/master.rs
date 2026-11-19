@@ -268,7 +268,7 @@ mod tests {
     }
 
     fn clip(at: Frame, duration: Frame, source_in: Frame, source: Source) -> VideoClip<Source> {
-        VideoClip { at, duration, source_in, source, fade_in: 0, fade_out: 0, opacity: 1.0 }
+        VideoClip { at, duration, source_in, source, fade_in: 0, fade_out: 0, opacity: 1.0, transform: Default::default() }
     }
 
     fn edit(tracks: Vec<Vec<VideoClip<Source>>>) -> WorkingEdit {

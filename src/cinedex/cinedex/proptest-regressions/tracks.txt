@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 73dbdf7a7b8ca712a2608996c3a73cb9b3b30112d71ec600aec03e246bedc1ec # shrinks to rows = [RowView { track: TrackRef { kind: Video, index: 0 }, name: "", clips: [], height: 24.0, solo: false, spare: false }, RowView { track: TrackRef { kind: Audio, index: 0 }, name: "", clips: [ClipView { at: 0, duration: 1, fade_in: 0, fade_out: 0, name: "", detail: "", thumbnail: None, selected: false, missing: false, department: None, preview: None, room: None }], height: 24.0, solo: false, spare: false }], stage = Stage { origin: (0.0, 0.0), px: 4.0 }, from = Index(0), edge = 0, under = Gone(Index(0)), dx = 0, to = Index(0)

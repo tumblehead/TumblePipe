@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ffea35b6154744837fbcfc6bcab855ec2c7496b16671f5a027d2005ee103d0cd # shrinks to edit = Edit { fps: 24, resolution: [1920, 1080], start_timecode: "01:00:00:00", video: [Track { name: "V1", clips: [] }], audio: [], markers: [] }, looks = [], read_only = false, stage = ((0, 0), 4), row = Index(0), frame = Index(768614336404564651), within = 0.05, place = 2, mark = 0, picked = false, choice = Index(0)

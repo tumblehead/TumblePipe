@@ -1,12 +1,15 @@
 //! The clip fields (#60): the selected clip's fades as typed frame counts,
 //! beside the drag handles on its top band, and a video clip's opacity as
-//! a percentage. A field shows the clip's value until something is typed
-//! into it; Enter sets what was typed, as one op (`SetFades`,
-//! `SetOpacity`) through the document's history, refused (the status says
-//! why) rather than clamped, as every op is.
+//! a percentage and its transform (how far right and up it is moved, in
+//! percent of the picture's height, its scale in percent and its rotation
+//! in degrees, anticlockwise; Reset puts it back as fitted). A field shows
+//! the clip's value until something is typed into it; Enter sets what was
+//! typed, as one op (`SetFades`, `SetOpacity`, `SetTransform`) through the
+//! document's history, refused (the status says why) rather than clamped,
+//! as every op is.
 
 use primer::prelude::*;
-use th_edit::document::{Clip, ClipRef, Frame, Source, TrackKind, WorkingEdit};
+use th_edit::document::{Clip, ClipRef, Frame, Source, TrackKind, Transform, WorkingEdit};
 use th_edit::ops::Op;
 
 use super::{Editor, Message};
@@ -19,16 +22,100 @@ pub enum ClipField {
     FadeIn,
     FadeOut,
     Opacity,
+    /// The transform's: right and up in percent of the picture's height,
+    /// the scale in percent, the rotation in degrees.
+    X,
+    Y,
+    Scale,
+    Rotation,
+}
+
+impl ClipField {
+    /// The fields in the order the row shows them.
+    pub(crate) const ALL: [ClipField; 7] =
+        [ClipField::FadeIn, ClipField::FadeOut, ClipField::Opacity, ClipField::X, ClipField::Y, ClipField::Scale, ClipField::Rotation];
+
+    /// Whether it is one of the transform's.
+    pub(crate) fn of_transform(self) -> bool {
+        matches!(self, ClipField::X | ClipField::Y | ClipField::Scale | ClipField::Rotation)
+    }
+
+    /// Whether only a video clip has it.
+    pub(crate) fn video_only(self) -> bool {
+        self == ClipField::Opacity || self.of_transform()
+    }
+
+    /// What it is called in a refusal.
+    fn name(self) -> &'static str {
+        match self {
+            ClipField::FadeIn | ClipField::FadeOut => "a fade",
+            ClipField::Opacity => "an opacity",
+            ClipField::X | ClipField::Y => "a position",
+            ClipField::Scale => "a scale",
+            ClipField::Rotation => "a rotation",
+        }
+    }
+
+    /// The least and most a transform field takes, as typed.
+    fn limits(self) -> (f64, f64) {
+        match self {
+            ClipField::X | ClipField::Y => (-Transform::MAX_MOVE * 100.0, Transform::MAX_MOVE * 100.0),
+            ClipField::Scale => (Transform::MIN_SCALE * 100.0, Transform::MAX_SCALE * 100.0),
+            ClipField::Rotation => (-Transform::MAX_ROTATION, Transform::MAX_ROTATION),
+            ClipField::Opacity => (0.0, 100.0),
+            ClipField::FadeIn | ClipField::FadeOut => (0.0, 1_000_000.0),
+        }
+    }
+}
+
+/// `field` of `transform` as its field shows it: percent, or degrees.
+fn transform_value(transform: &Transform, field: ClipField) -> f64 {
+    match field {
+        ClipField::X => transform.x * 100.0,
+        ClipField::Y => transform.y * 100.0,
+        ClipField::Scale => transform.scale * 100.0,
+        _ => transform.rotation,
+    }
+}
+
+/// `transform` with `field` set to `value` (as typed: percent, or degrees).
+fn with_value(transform: Transform, field: ClipField, value: f64) -> Transform {
+    match field {
+        ClipField::X => Transform { x: value / 100.0, ..transform },
+        ClipField::Y => Transform { y: value / 100.0, ..transform },
+        ClipField::Scale => Transform { scale: value / 100.0, ..transform },
+        _ => Transform { rotation: value, ..transform },
+    }
+}
+
+/// A number to a tenth, without a trailing `.0` (and no `-0`).
+pub(crate) fn tenths(value: f64) -> String {
+    let tenths = (value * 10.0).round() / 10.0;
+    if tenths == 0.0 {
+        "0".to_owned()
+    } else if tenths.fract() == 0.0 {
+        format!("{tenths:.0}")
+    } else {
+        format!("{tenths:.1}")
+    }
+}
+
+/// The op that puts `clip` back as fitted: None when it is already, or is
+/// no video clip.
+pub(crate) fn reset_op(edit: &WorkingEdit, clip: ClipRef) -> Option<Op<Source>> {
+    let (.., transform) = numbers(edit, clip)?;
+    (clip.track.kind == TrackKind::Video && !transform.is_identity()).then_some(Op::SetTransform { clip, transform: Transform::IDENTITY })
 }
 
 /// What `field` of `clip` holds now: frames for a fade, a percentage for
 /// an opacity (an audio clip's is 100). None: no such clip.
 pub(crate) fn field_text(edit: &WorkingEdit, clip: ClipRef, field: ClipField) -> Option<String> {
-    let (fade_in, fade_out, opacity) = numbers(edit, clip)?;
+    let (fade_in, fade_out, opacity, transform) = numbers(edit, clip)?;
     Some(match field {
         ClipField::FadeIn => fade_in.to_string(),
         ClipField::FadeOut => fade_out.to_string(),
         ClipField::Opacity => percent(opacity),
+        _ => tenths(transform_value(&transform, field)),
     })
 }
 
@@ -36,7 +123,7 @@ pub(crate) fn field_text(edit: &WorkingEdit, clip: ClipRef, field: ClipField) ->
 /// what the clip has already; an error when `text` is no value of that
 /// field. Whether it fits the clip is the op's to say.
 pub(crate) fn field_op(edit: &WorkingEdit, clip: ClipRef, field: ClipField, text: &str) -> Result<Option<Op<Source>>, String> {
-    let (fade_in, fade_out, opacity) = numbers(edit, clip).ok_or("that clip is gone")?;
+    let (fade_in, fade_out, opacity, transform) = numbers(edit, clip).ok_or("that clip is gone")?;
     let text = text.trim();
     match field {
         ClipField::FadeIn | ClipField::FadeOut => {
@@ -60,19 +147,42 @@ pub(crate) fn field_op(edit: &WorkingEdit, clip: ClipRef, field: ClipField, text
             let new = number / 100.0;
             Ok((percent(new) != percent(opacity)).then_some(Op::SetOpacity { clip, opacity: new }))
         }
+        ClipField::X | ClipField::Y | ClipField::Scale | ClipField::Rotation => {
+            if clip.track.kind != TrackKind::Video {
+                return Err("only a video clip has a transform".into());
+            }
+            let (min, max) = field.limits();
+            let unit = if field == ClipField::Rotation { '\u{b0}' } else { '%' };
+            let number: f64 = text
+                .strip_suffix(unit)
+                .unwrap_or(text)
+                .trim()
+                .parse()
+                .ok()
+                .filter(|v: &f64| (min..=max).contains(v))
+                .ok_or_else(|| format!("{text:?}: {} is a number from {} to {}", field.name(), tenths(min), tenths(max)))?;
+            // What the field shows already is no change.
+            let shown = tenths(transform_value(&transform, field));
+            Ok((tenths(number) != shown).then_some(Op::SetTransform { clip, transform: with_value(transform, field, number) }))
+        }
     }
 }
 
 /// `field` as a ladder number: its value is what the field shows (`typed`,
 /// else the clip's own `shown`), its limits and default those of a fade
-/// (whole frames, 0 or more, default 0) or an opacity (0 to 100 %, to a
-/// tenth, default 100).
+/// (whole frames, 0 or more, default 0), an opacity (0 to 100 %, to a
+/// tenth, default 100) or a part of the transform (to a tenth; default: as
+/// fitted, so no move, 100 % and no turn).
 pub(crate) fn field_number(field: ClipField, typed: &str, shown: &str) -> Number {
-    let parse = |t: &str| t.trim().strip_suffix('%').unwrap_or(t.trim()).trim().parse::<f64>().ok();
+    let parse = |t: &str| t.trim().trim_end_matches(['%', '\u{b0}']).trim().parse::<f64>().ok();
     let value = parse(typed).or_else(|| parse(shown)).unwrap_or(0.0);
     match field {
         ClipField::FadeIn | ClipField::FadeOut => Number { value, min: 0.0, max: 1_000_000.0, decimals: 0, default: 0.0 },
         ClipField::Opacity => Number { value, min: 0.0, max: 100.0, decimals: 1, default: 100.0 },
+        _ => {
+            let (min, max) = field.limits();
+            Number { value, min, max, decimals: 1, default: transform_value(&Transform::IDENTITY, field) }
+        }
     }
 }
 
@@ -81,6 +191,7 @@ pub(crate) fn field_value_text(field: ClipField, value: f64) -> String {
     match field {
         ClipField::FadeIn | ClipField::FadeOut => format!("{}", value.round() as Frame),
         ClipField::Opacity => percent(value / 100.0),
+        _ => tenths(value),
     }
 }
 
@@ -90,10 +201,13 @@ pub(crate) fn percent(opacity: f64) -> String {
     if tenths.fract() == 0.0 { format!("{tenths:.0}") } else { format!("{tenths:.1}") }
 }
 
-fn numbers(edit: &WorkingEdit, clip: ClipRef) -> Option<(Frame, Frame, f64)> {
+fn numbers(edit: &WorkingEdit, clip: ClipRef) -> Option<(Frame, Frame, f64, Transform)> {
+    fn of<C: Clip>(c: &C) -> (Frame, Frame, f64, Transform) {
+        (c.fade_in(), c.fade_out(), c.opacity(), c.transform())
+    }
     match clip.track.kind {
-        TrackKind::Video => edit.video.get(clip.track.index)?.clips.get(clip.index).map(|c| (c.fade_in(), c.fade_out(), c.opacity())),
-        TrackKind::Audio => edit.audio.get(clip.track.index)?.clips.get(clip.index).map(|c| (c.fade_in(), c.fade_out(), c.opacity())),
+        TrackKind::Video => edit.video.get(clip.track.index)?.clips.get(clip.index).map(of),
+        TrackKind::Audio => edit.audio.get(clip.track.index)?.clips.get(clip.index).map(of),
     }
 }
 
@@ -129,9 +243,17 @@ impl Editor {
         }
     }
 
-    /// The selected clip's fades and opacity, as fields; with no one clip
-    /// selected, the same fields greyed and the hint to select one.
+    /// The selected clip's fades, opacity and transform, as fields; with
+    /// no one clip selected, the same fields greyed and the hint to select
+    /// one.
     pub(super) fn clip_fields(&self) -> Element<Message> {
+        let (fields, reset, hint) = self.clip_fields_shown();
+        fields_row(fields, reset, hint)
+    }
+
+    /// What the fields row shows: each field (in [`ClipField::ALL`]'s
+    /// order), the op Reset sends, and the hint at its end.
+    pub(super) fn clip_fields_shown(&self) -> ([FieldShown; 7], Option<Op<Source>>, &'static str) {
         let clip = self.field_clip();
         let shown = |which: ClipField| -> FieldShown {
             let Some(clip) = clip else { return FieldShown::default() };
@@ -140,19 +262,21 @@ impl Editor {
                 Some((c, f, typed)) if *c == clip && *f == which => typed.clone(),
                 _ => own.clone(),
             };
-            // An audio clip has no opacity: its field stays, greyed.
-            let enabled = which != ClipField::Opacity || clip.track.kind == TrackKind::Video;
+            // An audio clip has no opacity or transform: the fields stay,
+            // greyed. Nor does a published edit take typing.
+            let enabled = !self.doc.read_only() && (!which.video_only() || clip.track.kind == TrackKind::Video);
             FieldShown { value, shown: own, enabled }
         };
         let hint = if clip.is_some() { HINT_SELECTED } else { HINT_NONE };
-        fields_row([shown(ClipField::FadeIn), shown(ClipField::FadeOut), shown(ClipField::Opacity)], hint)
+        let reset = clip.filter(|_| !self.doc.read_only()).and_then(|clip| reset_op(&self.doc.edit, clip));
+        (ClipField::ALL.map(shown), reset, hint)
     }
 }
 
 /// The hint at the row's end with one clip selected, and with none (or
 /// several).
 pub(crate) const HINT_SELECTED: &str = "Enter sets a field, middle-drag steps it";
-pub(crate) const HINT_NONE: &str = "Select one clip to type its fades and opacity";
+pub(crate) const HINT_NONE: &str = "Select one clip to type its fades, opacity and transform";
 
 /// One clip field as the row shows it: the text in it (typed, else the
 /// clip's), the clip's own value, and whether it takes typing.
@@ -163,15 +287,17 @@ pub(crate) struct FieldShown {
     pub enabled: bool,
 }
 
-/// The fields row: fade in, fade out and opacity, always the same widgets
+/// The fields row: fade in, fade out, opacity and the transform (X, Y,
+/// scale, rotation, and Reset, which sends `reset` and is greyed without
+/// one: nothing to reset, or no video clip), always the same widgets
 /// in the same places at [`CLIP_FIELDS_HEIGHT`](super::panels::CLIP_FIELDS_HEIGHT),
 /// so selecting a clip, clearing the selection or dragging never moves the
 /// tracks under it (2026-11-16: the row was swapped for a shorter line with
 /// nothing selected, and the tracks jumped). A field that takes no typing
 /// is greyed, with no value ladder.
-pub(crate) fn fields_row(fields: [FieldShown; 3], hint: &str) -> Element<Message> {
+pub(crate) fn fields_row(fields: [FieldShown; 7], reset: Option<Op<Source>>, hint: &str) -> Element<Message> {
     let label = |w: &str| text(w.to_owned()).font_size(12.0).color(look::quiet());
-    let [fade_in, fade_out, opacity] = fields;
+    let [fade_in, fade_out, opacity, x, y, scale, rotation] = fields;
     let field = |id: &'static str, which: ClipField, f: FieldShown| -> Element<Message> {
         let input = text_input(Id::new(id), f.value.clone()).font_size(12.0).width(Length::fixed(56.0));
         if !f.enabled {
@@ -201,6 +327,16 @@ pub(crate) fn fields_row(fields: [FieldShown; 3], hint: &str) -> Element<Message
         .push(field("opacity field", ClipField::Opacity, opacity))
         .push(label("%"))
         .push(space(Length::fixed(12.0), Length::Shrink))
+        .push(tooltip(Id::new("transform x tip"), label("X"), "How far right the clip is moved, in percent of the picture's height"))
+        .push(field("transform x field", ClipField::X, x))
+        .push(tooltip(Id::new("transform y tip"), label("Y"), "How far up the clip is moved, in percent of the picture's height"))
+        .push(field("transform y field", ClipField::Y, y))
+        .push(tooltip(Id::new("transform scale tip"), label("Scale"), "The clip's size in percent: 100 fits the picture"))
+        .push(field("transform scale field", ClipField::Scale, scale))
+        .push(tooltip(Id::new("transform rotation tip"), label("Rotate"), "Degrees the clip is turned, anticlockwise"))
+        .push(field("transform rotation field", ClipField::Rotation, rotation))
+        .push(tooltip(Id::new("transform reset tip"), reset_button(reset), "Put the clip back as fitted: not moved, scaled or turned"))
+        .push(space(Length::fixed(12.0), Length::Shrink))
         .push(label(hint));
     container(fields)
         .padding(Padding::from([3.0, 14.0]))
@@ -209,6 +345,19 @@ pub(crate) fn fields_row(fields: [FieldShown; 3], hint: &str) -> Element<Message
         .align_y(Vertical::Center)
         .background(look::panel())
         .into()
+}
+
+/// Reset, greyed without an op to send. Out of keyboard focus, so the
+/// player's keys keep working after a click.
+fn reset_button(reset: Option<Op<Source>>) -> Element<Message> {
+    let colour = if reset.is_some() { look::text() } else { look::quiet() };
+    let button = look::button(Id::new("transform reset"), text("Reset").font_size(12.0).color(colour))
+        .padding(Padding::from([3.0, 8.0]))
+        .focusable(false);
+    match reset {
+        Some(op) => button.on_press(move || Message::Edit(op.clone())).into(),
+        None => button.into(),
+    }
 }
 
 #[cfg(test)]
@@ -260,9 +409,10 @@ mod tests {
 
     /// The height the fields row lays out at, in a window `width` wide, and
     /// the height its widgets ask for inside it.
-    fn row_heights(fields: [FieldShown; 3], hint: &str, width: f32) -> (f32, f32) {
+    fn row_heights(fields: [FieldShown; 7], reset: bool, hint: &str, width: f32) -> (f32, f32) {
         use primer::widget::custom::{LayoutCtx, Limits, StateStore, Widget};
-        let element = fields_row(fields, hint);
+        let clip = ClipRef { track: TrackRef::video(0), index: 0 };
+        let element = fields_row(fields, reset.then_some(Op::SetTransform { clip, transform: Transform::IDENTITY }), hint);
         let (theme, store) = (Theme::dark(), StateStore::new());
         let node =
             element.layout(&Limits::new(Size::ZERO, Size::new(width, 1000.0)), LayoutCtx { measurer: &Mono, store: &store, theme: &theme });
@@ -275,24 +425,24 @@ mod tests {
     }
 
     proptest! {
-        /// The fields row is one height whatever is selected: one video clip,
-        /// one audio clip (opacity greyed), none or several (all greyed, the
-        /// hint to select one), whatever the values and the window's width;
-        /// and what it holds fits inside it, so nothing is cut off.
+        /// The fields row is one height whatever is selected: one video clip
+        /// (with a transform to reset or none), one audio clip (opacity and
+        /// transform greyed), none or several (all greyed, the hint to
+        /// select one), whatever the values and the window's width; and
+        /// what it holds fits inside it, so nothing is cut off.
         #[test]
         fn the_fields_row_never_changes_height(
-            values in prop::collection::vec("[0-9]{0,6}", 3),
+            values in prop::collection::vec("-?[0-9]{0,6}", 7),
             selected in 0usize..3,
+            reset in any::<bool>(),
             width in 200f32..4000.0,
         ) {
-            let fields = |enabled: [bool; 3]| -> [FieldShown; 3] {
-                [shown(&values[0], enabled[0]), shown(&values[1], enabled[1]), shown(&values[2], enabled[2])]
-            };
-            let (none, none_inner) = row_heights([FieldShown::default(), FieldShown::default(), FieldShown::default()], HINT_NONE, width);
+            let fields = |enabled: [bool; 7]| -> [FieldShown; 7] { std::array::from_fn(|i| shown(&values[i], enabled[i])) };
+            let (none, none_inner) = row_heights(std::array::from_fn(|_| FieldShown::default()), false, HINT_NONE, width);
             let (h, inner) = match selected {
-                0 => row_heights(fields([true; 3]), HINT_SELECTED, width),
-                1 => row_heights(fields([true, true, false]), HINT_SELECTED, width),
-                _ => row_heights(fields([false; 3]), HINT_NONE, width),
+                0 => row_heights(fields([true; 7]), reset, HINT_SELECTED, width),
+                1 => row_heights(fields([true, true, false, false, false, false, false]), false, HINT_SELECTED, width),
+                _ => row_heights(fields([false; 7]), false, HINT_NONE, width),
             };
             prop_assert_eq!(h, super::super::panels::CLIP_FIELDS_HEIGHT);
             prop_assert_eq!(none, h);
@@ -351,7 +501,7 @@ mod tests {
         #[test]
         fn a_ladder_value_is_text_the_field_takes(
             start in prop::sample::select(vec!["0", "12", "100", "37.5", "", "junk"]),
-            field in prop::sample::select(vec![ClipField::FadeIn, ClipField::FadeOut, ClipField::Opacity]),
+            field in prop::sample::select(ClipField::ALL.to_vec()),
             path in prop::collection::vec((-400f32..400.0, -80f32..80.0), 1..8),
         ) {
             let edit = edit(400, (0, 0), 0.5);
@@ -367,7 +517,84 @@ mod tests {
                 prop_assert_eq!(field_number(field, &text, &shown).value, value);
             }
             let reset = field_value_text(field, number.reset());
-            prop_assert_eq!(reset, if field == ClipField::Opacity { "100" } else { "0" });
+            prop_assert_eq!(reset, if matches!(field, ClipField::Opacity | ClipField::Scale) { "100" } else { "0" });
+        }
+
+        /// A transform field typed as a number (percent of the picture's
+        /// height, percent of the fitted size, degrees; with or without its
+        /// unit) sets that part of the video clip's transform and keeps the
+        /// others, and shows back as typed to a tenth; out of its range, no
+        /// number, or on an audio clip, it is refused before any op. What
+        /// the field shows already makes no op. Reset is the op that puts
+        /// the clip back as fitted, there exactly while it is not, and
+        /// after it every field shows its default.
+        #[test]
+        fn a_typed_transform_field_sets_that_part(
+            start in (-300i64..300, -300i64..300, 1i64..4000, -3600i64..3600),
+            field in prop::sample::select(vec![ClipField::X, ClipField::Y, ClipField::Scale, ClipField::Rotation]),
+            typed in -120_000i64..120_000,
+            unit in any::<bool>(),
+            fitted in any::<bool>(),
+        ) {
+            let mut edit = edit(10, (0, 0), 1.0);
+            let clip = ClipRef { track: TrackRef::video(0), index: 0 };
+            let begin = if fitted {
+                Transform::IDENTITY
+            } else {
+                Transform { x: start.0 as f64 / 1000.0, y: start.1 as f64 / 1000.0, scale: start.2 as f64 / 1000.0 + 0.01, rotation: start.3 as f64 / 10.0 }
+            };
+            edit.video[0].clips[0].transform = begin;
+            prop_assert_eq!(reset_op(&edit, clip).is_some(), !begin.is_identity());
+            let value = typed as f64 / 10.0;
+            let suffix = match (unit, field) {
+                (false, _) => "",
+                (true, ClipField::Rotation) => "\u{b0}",
+                (true, _) => "%",
+            };
+            let text = format!(" {}{suffix} ", tenths(value));
+            let result = field_op(&edit, clip, field, &text);
+            let (min, max) = match field {
+                ClipField::Scale => (1.0, 10_000.0),
+                ClipField::Rotation => (-3600.0, 3600.0),
+                _ => (-1000.0, 1000.0),
+            };
+            if !(min..=max).contains(&value) {
+                prop_assert!(result.is_err(), "{} taken", text);
+            } else {
+                let before = field_text(&edit, clip, field).unwrap();
+                match result.unwrap() {
+                    None => prop_assert_eq!(&before, &tenths(value)),
+                    Some(op) => {
+                        prop_assert_ne!(&before, &tenths(value));
+                        let next = apply(&edit, &op, &Anything).unwrap();
+                        prop_assert_eq!(field_text(&next, clip, field), Some(tenths(value)));
+                        let (was, now) = (begin, next.video[0].clips[0].transform);
+                        let want = match field {
+                            ClipField::X => Transform { x: value / 100.0, ..was },
+                            ClipField::Y => Transform { y: value / 100.0, ..was },
+                            ClipField::Scale => Transform { scale: value / 100.0, ..was },
+                            _ => Transform { rotation: value, ..was },
+                        };
+                        prop_assert_eq!(now, want);
+                        let reset = reset_op(&next, clip);
+                        prop_assert_eq!(reset.is_some(), !now.is_identity());
+                        if let Some(reset) = reset {
+                            let fitted = apply(&next, &reset, &Anything).unwrap();
+                            prop_assert_eq!(fitted.video[0].clips[0].transform, Transform::IDENTITY);
+                            for (which, default) in [(ClipField::X, "0"), (ClipField::Y, "0"), (ClipField::Scale, "100"), (ClipField::Rotation, "0")] {
+                                prop_assert_eq!(field_text(&fitted, clip, which), Some(default.to_string()));
+                            }
+                            prop_assert_eq!(reset_op(&fitted, clip), None);
+                        }
+                    }
+                }
+            }
+            for bad in ["", "x", "1,5", "--2", "nan", "inf"] {
+                prop_assert!(field_op(&edit, clip, field, bad).is_err(), "{:?} taken", bad);
+            }
+            let audio = ClipRef { track: TrackRef::audio(0), index: 0 };
+            prop_assert!(field_op(&edit, audio, field, "50").is_err());
+            prop_assert_eq!(reset_op(&edit, audio), None);
         }
 
         /// An opacity typed as a percentage, with or without `%`, sets the

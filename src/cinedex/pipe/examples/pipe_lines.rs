@@ -1,8 +1,9 @@
 //! Answers questions about a project, one JSON request per stdin line and
 //! one JSON reply per stdout line, for `tests/test_pipe_parity.py` and
 //! `tests/test_live_parity.py`, `tests/test_previews_parity.py` and
-//! `tests/test_frame_list_parity.py` and `tests/test_expect_parity.py`, which
-//! ask Python the same and compare.
+//! `tests/test_frame_list_parity.py`, `tests/test_expect_parity.py` and
+//! `tests/test_edit_document_parity.py`, which ask Python the same and
+//! compare.
 //!
 //! The project is the one the request names (`project`, `pipeline`,
 //! `config`), else the one the environment names (`TH_PROJECT_PATH`,
@@ -225,6 +226,31 @@ fn live_answer(request: &Value) -> Option<Result<Value, String>> {
                 text(request, "output")?,
             )?;
             Ok(json!(args))
+        })(),
+        // The working edit document Cinedex saves for one video track of
+        // `clips` (`at`, `duration`, `source_in`, `shot`, `opacity`, and a
+        // `transform` of `x`, `y`, `scale`, `rotation`, or null for a
+        // clip as fitted): its JSON text, refused as Cinedex refuses it.
+        "edit_document" => (|| {
+            use th_edit::document::{Rule, Source, Track, Transform, VideoClip, WorkingEdit};
+            let fps = u32::try_from(int(request, "fps")?).map_err(|e| e.to_string())?;
+            let mut edit = WorkingEdit::new(fps, [1920, 1080], "01:00:00:00");
+            let mut clips = Vec::new();
+            for clip in request.get("clips").and_then(Value::as_array).ok_or("request has no 'clips'")? {
+                let source = Source::Shot { shot: text(clip, "shot")?.to_string(), take: Rule::best() };
+                let mut made = VideoClip::new(int(clip, "at")?, int(clip, "duration")?, int(clip, "source_in")?, source);
+                made.opacity = clip.get("opacity").and_then(Value::as_f64).ok_or("a clip has no 'opacity'")?;
+                if let Some(transform) = clip.get("transform").filter(|t| !t.is_null()) {
+                    let number = |key: &str| transform.get(key).and_then(Value::as_f64).ok_or(format!("a transform has no '{key}'"));
+                    made.transform = Transform { x: number("x")?, y: number("y")?, scale: number("scale")?, rotation: number("rotation")? };
+                }
+                clips.push(made);
+            }
+            edit.video.push(Track { name: "V1".into(), clips });
+            match edit.problem() {
+                Some(problem) => Err(problem),
+                None => Ok(json!(edit.to_json())),
+            }
         })(),
         _ => return None,
     };

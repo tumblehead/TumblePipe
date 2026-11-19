@@ -79,10 +79,24 @@ workfile of the shot:
 
 The editor's status line says which happened.
 
-A shot with no take its rule picks (a planned shot, or one with nothing
-made yet) plays as an empty clip saying so; it still has its length in the
-cut. While a take opens, which can take a few seconds on the file server,
-its clip says **Opening…**.
+A shot with no take its rule picks plays as an empty, hatched clip; it
+still has its length in the cut. The clip says why in a few words, and the
+viewer says it in a sentence, with what to do about it, when the playhead
+is on the clip (up to 1.112.0 the clip said only "No take fits its rule"):
+
+| The clip says | It means |
+| --- | --- |
+| **No playblast or render yet** | Nothing of the shot has been published: no playblast, and no render with every frame. |
+| **Render not finished, no playblast** | As above, but a render is on disk with frames missing: it is still going, or stopped short. It shows by itself once every frame is there. |
+| **Only check renders so far** | The shot has only check renders (Farm Submit's Step) or Frame List renders. Those are never shown by themselves: right-click the clip and choose a version. |
+| **Nothing from lighting yet** | The clip is set to a department that has no playblast or finished render of this shot. Right-click > **Best available** shows what the shot has. |
+| **No render yet**, **No playblast yet**, **Render not finished** | The clip is set to a source (render or playblast) the shot has none of yet. |
+| **v0012 is not there** | The clip is pinned to a version that was removed, or to a render that no longer has every frame. Choose another version. |
+| **Planned: made when the edit is published** | A planned shot (**New shot…**): the project gets it when the master edit is published. |
+| **Cannot play: …** | The take was found but would not open; the words after say why. When its file is simply gone it says **its file is not on disk** and the path (moved or deleted, or the share is offline). |
+
+While a take opens, which can take a few seconds on the file server, its
+clip says **Opening…**.
 
 ### Renders of a frame list
 
@@ -356,6 +370,10 @@ talks to any of your editors. Its tools:
 - **publish**: a preview only (`dry_run`). For the master edit it lists
   the shot changes the publish would write (shots made, ranges set, shots
   retired). Publishing itself is done in the window.
+- **export_timeline**: the cut as a timeline file for Resolve or Premiere
+  Pro, as [File > Export Timeline…](#export-to-resolve-premiere) writes
+  it: `path`, `format` (`fcp7xml` or `otio`), `collect_media`, `sequences`.
+  It answers what was carried and what was dropped or approximated.
 - **events**: what happened since the agent last asked (edits, saves,
   publishes, takes changing, Live view), waiting up to 25 seconds for
   something new.
@@ -373,7 +391,21 @@ this machine's live playblasts over the shots' takes, on by default; see
 [Live playblasts](#live-playblasts)), **Burn-ins**, the loop of a
 [Live view](#live-view) while there is one, and the timecode. A ticked
 box is filled light, an unticked one an empty frame. Under
-the picture are the display, view and exposure.
+the picture are the transport bar and, below it, the display, view and
+exposure.
+
+The transport bar plays the cut without the keyboard. Its buttons, left to
+right: go to start, previous edit point, one frame back, play (pause while
+playing), one frame forward, next edit point, go to end. Each does exactly
+what its key and its **Playback** menu item do, and its tooltip names the
+key. Beside them is a scrub bar over the whole cut (drag it to move the
+playhead, as on the ruler), then the playhead's timecode and its edit frame
+of the cut's length (`45 / 200`; frames count from 0). With the timeline
+folded away (see [Making room](#making-room)) the bar is enough to play and
+scrub. The buttons do not keep the keyboard: after a click, Space still
+plays. The editor has no loop of its own (only a [Live view](#live-view)
+loops), so the bar has no loop button; the [preview
+window](#the-preview-window) has one.
 
 The actions are in the menu bar: on macOS the one at the top of the screen,
 and on Windows and Linux a bar drawn at the top of the window (press a
@@ -381,7 +413,8 @@ title, or Alt with its underlined letter, or F10). **File** (open,
 save, publish, the master edit, new shot, import media), **Edit** (undo,
 redo, split, lift, ripple delete, marker, selection, and putting the bin's
 pick in the cut), **Playback** (play, step, jump by a second or to an edit
-point, the start and end) and **View** (burn-ins, and **Refresh**, which
+point, the start and end) and **View** (burn-ins, fitting the timeline,
+which tracks have a row, and **Refresh**, which
 reads every shot's takes and the bins again). Each item shows its
 shortcut, and is greyed while it does not apply: while a dialog is open, or
 the cut's actions on a published edit. With a menu open, an item's
@@ -399,8 +432,40 @@ moves on, on every track) or **Overlay** (it goes over what is there).
 Either moves the playhead to the end of what it put, so picking SH010,
 SH020 and SH030 and pressing Insert after each builds the cut in that
 order (up to 1.101.0 the playhead stayed put and the cut came out
-backwards). Double-clicking an item inserts it. A movie brings its sound onto an audio
-track.
+backwards). Double-clicking an item inserts it. Double-clicking a
+sequence's name inserts every shot of the sequence, one after the other
+from the playhead, in name order with numbers read as numbers (`sh9`
+before `sh10`, `061` between `060` and `070`); the whole run is one step of
+undo (up to 1.112.0 it inserted the sequence's first shot only). A shot
+with nothing to play yet goes in like any other, as an empty clip of its
+length. The bins list shots in that same order. With **Shift** held, a
+double-click overlays instead of inserting: Shift+double-click a shot or
+media item lays it over what is at the playhead, and Shift+double-click a
+sequence's name lays all its shots over the cut, back to back on one track
+(the lowest with room for the whole run, a new one on top when none has).
+Enter and Shift+Enter in a bin list you clicked in do the same. The Insert
+and Overlay buttons say so when you hover them. A movie brings its sound
+onto an audio track.
+
+Each shot and media item has a thumbnail: a shot's is the
+first frame of its best available take (what a double-click puts in the
+cut), a media item's the first frame of its newest version. A shot with
+nothing to play has no picture, and its row says why in the same words its
+clip would (see the table above). Thumbnails are read as their rows come on
+screen, a few at a time and never on the window's own thread, so a project
+of hundreds of shots on a slow file server opens and scrolls as before and
+the pictures fill in; one that was read is kept until Cinedex closes. A
+shot's is read again when it gets a new playblast or render, and
+**View > Refresh** reads all of them again.
+
+Tick **Grid** above the bin to see it as a grid of thumbnails, each
+sequence's name over its shots, as many tiles a line as the bins' width
+holds (drag the line beside the bins to make them larger); untick it for
+the list. Cinedex remembers the choice. The grid works as the list does:
+click a tile to pick it for **Insert** and **Overlay**, double-click to
+insert it, Shift+double-click to overlay it, and the same on a sequence's
+name for all its shots. Nothing is dragged from a bin to the timeline, in
+either view.
 
 Under the picture are the tracks: a ruler, then the video tracks (the top
 track on top), then the audio tracks. Each clip shows its first frame, its
@@ -416,11 +481,38 @@ clip being dragged.
   last clip parks on the cut's end (one past its last frame), where an
   Insert appends.
 - Click a clip to select it; Shift or Ctrl-click adds it or takes it out.
+- Right-click where there is no clip (empty track, the ruler, a track's
+  name) for the timeline's menu. On a frame: **Add Marker Here** (or
+  **Remove Marker Here**), **New Shot Here…**, and with a pick in the bins
+  **Insert Bin Pick Here** and **Overlay Bin Pick Here**; each parks the
+  playhead on the frame you clicked first, then does what its menu bar
+  entry does there. **Add Video Track** and **Add Audio Track** put an
+  empty track on top of its kind, and an empty track's row offers
+  **Remove Track** (not for the last track of its kind). On a track's row:
+  **Solo** it and, once dragged, **Reset Track Height**. Always: hide or
+  show the audio tracks, **Select All** and **Fit Timeline**. A published
+  edit offers only the rows that change nothing. (Right-click a shot's
+  clip for its takes, as before. There is no Paste: the editor has no
+  copy yet.)
 - Drag a clip to move it, onto another track of its kind too. With Alt held
   it slips: the clip stays and the frames in it move.
+- Over the top video track there is always one empty layer more, its name
+  faint (*Drag a clip here for a new layer*). Drag a clip onto it and it
+  becomes a track of the edit, with the next empty layer over it, so you
+  never run out of layers. Undo takes the clip back and the track away in
+  one step. The empty layer is only shown: it is not saved in the edit
+  until a clip is on it. (A published edit, which cannot change, has none,
+  and neither has a soloed track.)
 - Drag a clip's edge to trim it; what follows moves with it. With Alt held
   the cut rolls: the clip and its neighbour change together and the length
-  holds.
+  holds. A trim throws nothing away: the clip only shows less of its shot
+  or media, and dragging the edge back out shows the frames again. An edge
+  goes out as far as there is footage (a shot's frame range with its roll,
+  a media item's frames) and stops there: a red bar on the edge, hatching
+  past it, and *no more footage* beside the frame count. A slip and a roll
+  stop the same way. (Up to 1.112.0 a drag past the footage was undone
+  whole when you let go, so a trimmed clip dragged out too far snapped back
+  to its trimmed length.)
 - Drag along a clip's top band to fade it in (left half) or out (right
   half). Where a clip on a higher track fades over one below, the two
   dissolve; over nothing, it fades from or to black.
@@ -442,11 +534,27 @@ clip being dragged.
   100% shows the tracks below through it, as inside a fade; at 0% it is not
   seen at all. The edit file writes `opacity` only for a clip under 100%,
   so an edit at full opacity reads in an editor from before it.
+- The same strip holds a video clip's **transform**: **X** and **Y** move
+  it right and up, in percent of the picture's height (so 50 in X moves it
+  half the picture's height to the right, at any resolution); **Scale** is
+  its size in percent, 100 fitting the picture; **Rotate** turns it, in
+  degrees, anticlockwise. The clip is first fitted into the edit's picture
+  as always, then scaled and turned about the picture's centre, then
+  moved. **Reset** puts it back as fitted. Each change is one step of
+  undo. Around a clip that is moved, scaled or turned, the tracks below
+  show (black where there are none), in the viewer, in **Export Movie**
+  and in a farm **Render Edit** alike. X and Y take -1000 to 1000, Scale 1
+  to 10000, Rotate -3600 to 3600; anything else is refused. The edit file
+  writes `transform` only for a clip that has one, so an edit without
+  reads in a Cinedex from before it. Playing a clip with a transform is
+  blended on the CPU, as a dissolve is, so it can play slower than a clip
+  as fitted.
 - Middle-drag one of these fields to step it, as in Houdini: a column of
-  steps (100, 10, 1, and 0.1 for the opacity) opens at the pointer. Move up
+  steps (100, 10, 1, and 0.1 for the opacity and the transform) opens at the pointer. Move up
   or down to pick a step, then left or right to change the value one step
   at a time. Letting go sets it, as one step of undo. Ctrl + middle-click
-  puts the field back to its default: no fade, 100% opacity. The
+  puts the field back to its default: no fade, 100% opacity, no move or
+  turn, 100% scale. The
   **Frames** field of **New shot…** steps the same way (its default is 48).
 
 Every change is one step of undo, however many clips it moves.
@@ -515,15 +623,34 @@ The bins and the timeline can be resized to make room for the picture:
   strip with three dots. Click the strip to bring them back at the size
   they had.
 - A timeline lower than its tracks scrolls them.
+- Drag the bottom edge of a track's name (the pointer turns into a resize
+  arrow there) to make that track taller or lower, from 24 to 240 pixels:
+  a taller track shows a larger picture on its clips, a low one only their
+  names. The other tracks keep their heights.
+- **View > Hide Audio Tracks** takes the audio tracks' rows away, so the
+  timeline is the video tracks alone; **Show Audio Tracks** brings them
+  back. It is remembered like the sizes.
+- Double-click a track's name to *solo* it: only that track's row shows
+  (its name says *solo*). Double-click it again, or **View > Show All
+  Tracks**, for every track. A solo lasts until you close the editor.
+
+Hiding and soloing change only which rows you see, as in the picture
+nothing is muted: every track still plays, is saved and published, and
+moves with an insert or a ripple delete. A line under the rows says what is
+hidden ("2 audio tracks hidden"). Clips without a row are not selected
+(**Select All** takes only the clips you see), so Delete never removes
+something hidden.
 
 The sizes are remembered for you: the next Cinedex you open, in any project,
-opens with them. A window smaller than when you set them squeezes the panels
+opens with them (a track's height by its place: V1, V2, A1, in every edit;
+they are kept in `tracks.json` beside `layout.json`). A window smaller than when you set them squeezes the panels
 to fit, and they are back at your size when the window is large again. On
 the board (**Board** in the toolbar) the line above the timeline works the
-same way. The sizes are kept in `layout.json` in a `tumblepipe/cinedex`
+same way. The sizes, and whether the bins show as a grid or a list, are
+kept in `layout.json` in a `tumblepipe/cinedex`
 folder of your own (`%LOCALAPPDATA%` on Windows, `~/.config` on Linux,
 `~/Library/Application Support` on macOS); delete it to start from the
-default sizes again.
+default sizes, and the list, again.
 
 ## Saving and publishing
 
@@ -551,9 +678,14 @@ A publish also writes the edit as OpenTimelineIO (`.otio`, which Resolve
 imports). Dissolves become transitions, and so do fades from and to black
 (a fade with nothing on the tracks below it): a cross dissolve between the
 clip and a gap; how Resolve imports those fades has not been checked
-yet. A fade over clips below, and an opacity under 100%, are
+yet. A dissolve cuts the clip before it where the dissolve starts; when
+that would leave the clip shorter than its own fade in, the dissolve is
+left out and noted instead (up to 1.112 it was written, and the track was
+not well formed). A fade over clips below, an opacity under 100% and a transform are
 not in it: the clips stay as they are, and a yellow marker says what was
-left out. Its movies
+left out. (The opacity and the transform are kept in the clip's
+`tumblepipe` metadata, so they are not lost from the file; Resolve does
+not read them.) Its movies
 are linked into the version's `media/` folder under names of their own,
 such as `S_010_animation_playblast_v0003.mp4` (hard links, copies where a
 link cannot be made), and the `.otio` refers to those. Resolve takes movies
@@ -621,6 +753,100 @@ another FFmpeg (it needs openh264 and AAC). With none, the dialog says so and
 does not export. A live playblast never goes into a movie: a shot shows its
 take, as in Render Edit. The viewer's exposure and burn-ins are not part of
 the movie.
+
+### Export to Resolve / Premiere
+
+**File > Export Timeline…** writes the cut as a timeline that DaVinci
+Resolve and Adobe Premiere Pro import: the clips still as clips, each
+referring to its own playblast or render, to go on cutting or to grade. It
+exports the edit as it is in the window, saved or not, published or working,
+every take as the version it shows now. Nothing in the project is written or
+changed. Neither import has been checked in Resolve or Premiere yet (see
+[what is not verified](#what-is-not-verified)).
+
+The dialog asks for:
+
+- **Format**. **Final Cut Pro 7 XML (Resolve, Premiere)**, the default, is
+  the one both read. **OpenTimelineIO (Resolve)** is the `.otio` a publish
+  writes, of the edit as it is now.
+- **File**: the edit's name and version (`Main_v0003.xml`) in your Videos
+  folder or the folder you last exported to; type another or **Browse…**.
+- **Collect media beside the file**: hard-links every movie the cut plays
+  into `<name>_media` beside the file, each under a name of its own
+  (`S_010_animation_playblast_v0003.mp4`), and the timeline refers to
+  those. Hard links take no extra disk space and leave the originals alone,
+  but only work on the drive the media is on: a movie that cannot be linked
+  is referred to where it is (never copied), and the summary says so. On
+  for OpenTimelineIO (Resolve's OTIO import takes movies that share a file
+  name for one movie, and every playblast is `vNNNN.mp4`), off for XML.
+  EXR sequences are never collected.
+- **Image sequences written for** (XML only): **Resolve** or **Premiere
+  Pro**. The two refer to an EXR sequence differently: for Resolve the file
+  is named with its frame range (`beauty.[1001-1100].exr`), for Premiere it
+  is the first frame (`beauty.1001.exr`).
+
+The file is written under a temporary name (`Main_v0003.xml.partial`) and
+only replaces the file once it is whole. When it is done the dialog lists
+what was carried and, in yellow, everything that was dropped or
+approximated, each with the clips it happened to.
+
+| In the cut | Final Cut Pro 7 XML | OpenTimelineIO |
+|---|---|---|
+| Tracks | One to one, bottom first. Track names are not carried | One to one, with their names |
+| Clip | A clip named after its shot (or media item), on its frames | The same, named shot, department and version |
+| Gap | A gap | A gap |
+| Fade in or out | A one-sided Cross Dissolve on the clip's own track, whatever is below | A dissolve only for a plain dissolve or a fade over nothing; any other is left out, with a yellow marker |
+| Opacity | An Opacity filter | Left out, with a yellow marker |
+| Transform (moved, scaled or turned) | Left out: the clip is as fitted, and the summary names it | Left out, with a yellow marker (kept in the clip's metadata) |
+| A shot's sound (its playblast's) | An audio clip linked to the picture, on a track of its own after the edit's audio tracks | Not carried: it comes with the movie when Resolve links it |
+| Audio clip | A clip | A clip |
+| Audio level | An Audio Levels filter (at most +12 dB) | Only in the clip's metadata |
+| Audio fade | A one-sided Cross Fade | Only in the clip's metadata |
+| Marker | A sequence marker | A red marker |
+| Shot with no take yet | An offline clip, to relink later | A missing reference |
+| Slug | A gap, and a marker over it with its text | A generator clip |
+| Stacked render layers | The bottom layer only | The bottom layer only |
+| [Check render](#check-renders) | Referred to; it will not play at speed | The same |
+| Media not on disk | Referred to as written; offline until it is there | The same |
+| A clip running past its movie's frames | Shortened to them | As written |
+| Resolution, frame rate, start timecode | The sequence's | The timeline's (resolution only in its metadata) |
+
+To import the XML:
+
+- **Resolve**: **File > Import > Timeline…** (Ctrl+Shift+I), pick the
+  `.xml`. Keep **Automatically import source clips into media pool** on and
+  set the timeline resolution and frame rate to the edit's when it asks.
+  Clips that come in offline: right-click them in the media pool, **Relink
+  Selected Clips…**, and point at the folder.
+- **Premiere Pro**: **File > Import…**, pick the `.xml`. It makes a bin
+  with the sequence and its clips. Offline clips: right-click, **Link
+  Media…**. An EXR sequence may come in as a still of its first frame; if
+  it does, import the frames yourself (**File > Import…**, the first frame,
+  **Image Sequence** ticked) and replace the still's footage with it.
+
+To import the `.otio`, in Resolve: **File > Import > Timeline…**.
+
+**Paths are this machine's.** The timeline refers to every file by the path
+it has here (`file://localhost/P:/Show/...`, or `file://server/share/...`
+for a network path), so it links by itself only where the project is at the
+same path: the same drive letter on Windows, the same mount on macOS or
+Linux. Opened on a machine that sees the project elsewhere (a Mac reading
+`P:/` as `/Volumes/Projects`), every clip comes in offline and is relinked
+by pointing the NLE at the folder once. Collected media has the same limit:
+the links are beside the file, at this machine's path to it.
+
+A playblast made before playblasts recorded their start frame is counted
+from its shot's first frame with roll, which is where it starts unless the
+shot's range has changed since.
+
+#### What is not verified
+
+Neither format's import has been run in Resolve or Premiere Pro. In
+particular: how each takes a one-sided dissolve over a clip on a track
+below, the linked sound clips (one stereo clip item per clip), image
+sequences in either NLE's form, and clips offline for media that is not
+there. The file itself is checked: well formed, every clip on the frames
+the edit shows, every path reading back from its URL.
 
 ### The master edit
 

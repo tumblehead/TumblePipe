@@ -37,8 +37,8 @@ use primer::keyboard::{Key, Modifiers};
 use primer::prelude::*;
 use primer::subscription::{self, time};
 use serde_json::{Value, json};
-use th_edit::document::{ClipRef, Frame as EditFrame, FrozenSource, Source, TakeKind, TrackKind, TrackRef, WorkingEdit};
-use th_edit::ops::{Op, Refused};
+use th_edit::document::{ClipRef, Frame as EditFrame, FrozenSource, Source, TakeKind, TrackKind, TrackRef, Transform, WorkingEdit};
+use th_edit::ops::{Available, Op, Refused, Sources as _};
 use th_media::sound::Sound;
 use th_media::{ExrView, Frame, FrameKey, Media, Proxy};
 use th_pipe::Project;
@@ -66,11 +66,18 @@ use crate::tracks::{self, ClipView, RowView, Tracks};
 use crate::video::{Picture, Video};
 
 mod agent;
+mod bin_panel;
 mod clip_fields;
 mod export_dialog;
 mod menu_bar;
 mod panels;
+mod timeline_dialog;
+mod timeline_menu;
 mod timeline_view;
+mod track_rows;
+mod transport;
+#[cfg(test)]
+mod wiring_tests;
 
 /// The status line's height under everything: a 13 px line and its padding,
 /// as it was laid out when it came and went.
@@ -135,8 +142,12 @@ pub struct Resolved {
     pub(crate) sound: Option<Arc<Sound>>,
     /// The frame number of the media's index 0.
     pub(crate) first: EditFrame,
-    /// Why nothing plays, when nothing does (a slug, a planned shot, no take).
+    /// Why nothing plays, when nothing does (a slug, a planned shot, no
+    /// take: `missing`), in the few words a clip has room for.
     nothing: Option<String>,
+    /// The same in a sentence, with what to do about it, when there is
+    /// more to say than `nothing` does.
+    explained: Option<String>,
     /// The shot's live playblasts on this machine: when one is going it
     /// plays over the take its rule picks (never published). Boxed: most
     /// sources have none, and an entry is moved about.
@@ -147,6 +158,10 @@ pub struct Resolved {
     /// The kind View > Show asked for (#57) when the shot has no take of
     /// it, so the clip shows its cut's take: its name says so.
     lacks: Option<TakeKind>,
+    /// The frames the source has, as the document judges an op by
+    /// (`th_edit::ops::Sources`): how far a clip of it trims out
+    /// (`tracks::room`).
+    available: Option<Available>,
 }
 
 impl Resolved {
@@ -158,9 +173,12 @@ impl Resolved {
             sound: None,
             first: 0,
             nothing: Some(why.into()),
+            explained: None,
             live: Box::default(),
             under: None,
             lacks: None,
+            // A slug and a planned shot have any frame.
+            available: Some(Available::Any),
         }
     }
 }
@@ -196,8 +214,15 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
             let project = paths.open()?;
             let uri = th_pipe::Uri::parse_address(shot).map_err(|e| e.to_string())?;
             if !project.config.exists(&uri).map_err(|e| e.to_string())? {
-                return Ok(Resolved::nothing("Planned: made when the edit is published"));
+                return Ok(Resolved {
+                    explained: Some(
+                        "A planned shot: it is made, with this length, when the master edit is published. Until then it has nothing to play."
+                            .into(),
+                    ),
+                    ..Resolved::nothing("Planned: made when the edit is published")
+                });
             }
+            let available = Some(EditSources::new(&project, fps).available(source));
             let takes = EditSources::new(&project, fps).takes(shot)?;
             let (picked, none) = th_edit::takes::pick_shown(&takes, rule, show);
             let lacks = show.filter(|_| none);
@@ -207,8 +232,16 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                 (LiveWatch::default(), None)
             };
             let Some(chosen) = live_take.as_ref().or(picked.map(|t| &takes[t])) else {
-                return Ok(Resolved { takes, live: Box::new(watch), ..Resolved::nothing("No take fits its rule") });
+                // Say which of the few reasons it is (`missing`); a render
+                // on its way is looked for only now, for a shot with nothing.
+                let unfinished = crate::missing::unfinished_renders(&project, &uri);
+                let (label, explained) = match crate::missing::why(&takes, rule) {
+                    Some(reason) => (reason.label(unfinished), Some(reason.explain(unfinished))),
+                    None => ("Nothing to play".into(), None),
+                };
+                return Ok(Resolved { takes, live: Box::new(watch), explained, available, ..Resolved::nothing(label) });
             };
+            let open = |media: &th_playlist::Media| open_media(media, rate_of(fps)).map_err(|e| crate::missing::open_failure(media, e));
             let first = th_pipe::timeline::get_frame_range(&project.config, &uri)?.map_or(1001, |r| r.full_range().first_frame);
             let rate = (fps as i32, 1);
             // A live playblast shows the department's latest playblast where
@@ -219,10 +252,10 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                     Ok(opened) => (opened, Some(u)),
                     Err(e) => {
                         eprintln!("cinedex: the take under the live playblast: {e}");
-                        (open_media(&chosen.media, rate)?, None)
+                        (open(&chosen.media)?, None)
                     }
                 },
-                _ => (open_media(&chosen.media, rate)?, None),
+                _ => (open(&chosen.media)?, None),
             };
             let heard = under.map_or(&chosen.media, |u| &takes[u].media);
             let sound = match heard {
@@ -241,14 +274,17 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                 sound: sound.map(Arc::new),
                 first,
                 nothing: None,
+                explained: None,
                 live: Box::new(watch),
                 under,
                 lacks,
+                available,
             })
         }
         Source::Media { item, version } => {
             let project = paths.open()?;
             let found = EditSources::new(&project, fps).item(item, version)?;
+            let available = Some(EditSources::new(&project, fps).available(source));
             let path = th_pipe::storage::slashed(&found.path);
             let take = Take {
                 label: format!("{item} {}", found.version),
@@ -270,12 +306,19 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                 sound,
                 first: 0,
                 nothing: None,
+                explained: None,
                 live: Box::default(),
                 under: None,
                 lacks: None,
+                available,
             })
         }
     }
+}
+
+/// A project rate as media take it.
+fn rate_of(fps: u32) -> (i32, i32) {
+    (fps as i32, 1)
 }
 
 /// How wide the display row's strip of a stack's layers is when they
@@ -294,6 +337,9 @@ struct Entry {
     again: bool,
 }
 
+// Nearly every entry is Ready, and there is one a source of the cut: boxing
+// it would save nothing.
+#[allow(clippy::large_enum_variant)]
 enum EntryState {
     Resolving,
     /// `view` and `hidden` are the viewer's AOV and stack layer choices
@@ -328,6 +374,15 @@ impl Entry {
                 (None, Some(t)) => format!("{}{}", resolved.takes[t].label, lacks_note(resolved.lacks)),
                 (None, None) => String::new(),
             },
+        }
+    }
+
+    /// [`Self::detail`] where there is room for a sentence (the viewer's
+    /// card): why nothing plays and what to do about it, when it knows.
+    fn explain(&self) -> String {
+        match self.resolved().filter(|r| r.live.playing().is_none()).and_then(|r| r.explained.clone()) {
+            Some(explained) => explained,
+            None => self.detail(),
         }
     }
 
@@ -401,38 +456,6 @@ fn load_bins(paths: &ProjectPaths, fps: u32) -> Result<BinData, String> {
         shot_starts.insert(sequence, start);
     }
     Ok(BinData { shots, media: items, master: master::master_edit(&project)?, shot_starts })
-}
-
-/// A row of a bin: a sequence's name over its shots, or something to put
-/// in the cut (`index` in the bin's shots or media).
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum BinRow {
-    Sequence(String),
-    Item { index: usize, name: String, detail: String },
-}
-
-impl BinRow {
-    fn item(&self) -> Option<usize> {
-        match self {
-            BinRow::Item { index, .. } => Some(*index),
-            BinRow::Sequence(_) => None,
-        }
-    }
-}
-
-/// `shots` (sorted by sequence, as [`editing::project_shots`] lists them)
-/// as bin rows: each sequence's name, then its shots.
-fn shot_rows(shots: &[BinShot]) -> Vec<BinRow> {
-    let mut out = Vec::new();
-    for (index, shot) in shots.iter().enumerate() {
-        if index == 0 || shots[index - 1].sequence != shot.sequence {
-            out.push(BinRow::Sequence(shot.sequence.clone()));
-        }
-        let frames = shot.last - shot.first + 1;
-        let detail = format!("{frames} frames, {}–{}", shot.first, shot.last);
-        out.push(BinRow::Item { index, name: shot.name.clone(), detail });
-    }
-    out
 }
 
 /// A field of a dialog.
@@ -524,6 +547,8 @@ enum Dialog {
     Busy(String),
     /// File > Export movie… (`editor/export_dialog.rs`).
     Export(export_dialog::ExportDialog),
+    /// File > Export Timeline… (`editor/timeline_dialog.rs`).
+    Timeline(timeline_dialog::TimelineDialog),
 }
 
 #[derive(Debug, Clone)]
@@ -556,6 +581,13 @@ pub enum Message {
     Marker,
     Resolved(usize, Result<Resolved, String>),
     ClipMenu(ClipRef),
+    /// A right press on the timeline off the clips, just before its menu
+    /// opens (`timeline_menu`): the frame under it (None on a track's
+    /// name) and the track of its row.
+    TimelineMenu(Option<usize>, Option<TrackRef>),
+    /// Park the playhead on a frame, then do what acts at the playhead
+    /// (the timeline menu's "here" rows).
+    At(usize, Box<Message>),
     /// A take for the menu's clips: by index of the menu clip's takes, or
     /// None for the best available.
     Take(ClipRef, Option<usize>, bool),
@@ -599,6 +631,8 @@ pub enum Message {
     /// Put the bin's pick at the playhead: inserted (rippling), or over what
     /// is there.
     BinPut(bool),
+    /// The bins panel's own (`editor/bin_panel.rs`).
+    Bin(bin_panel::BinMessage),
     Open(OpenDialog),
     /// Open an edit (`entity:/edits/<name>[@vNNNN]`) in a window of its own.
     OpenEdit(String),
@@ -618,6 +652,8 @@ pub enum Message {
     Imported(Result<String, String>),
     /// File > Export movie… and its dialog.
     Export(export_dialog::ExportMessage),
+    /// File > Export Timeline… and its dialog.
+    Timeline(timeline_dialog::TimelineMessage),
     Display(usize),
     View(usize),
     Exposure(f32),
@@ -625,6 +661,17 @@ pub enum Message {
     /// View > Fit Timeline (F): the tracks span the cut and a second past
     /// it again (`timeline_view`).
     FitTimeline,
+    /// The bottom edge of a track's header was dragged: its row is this
+    /// tall now (remembered for this user, `track_rows`).
+    RowHeight(TrackRef, f32),
+    /// A track's name was double-clicked: show only its row, or, when it
+    /// is the one shown, every track's again. The view's only.
+    Solo(TrackRef),
+    /// View > Hide Audio Tracks: the audio tracks have no rows (remembered
+    /// for this user). The view's only: they still play.
+    HideAudio(bool),
+    /// View > Show All Tracks: no solo, and the audio tracks' rows back.
+    ShowAllTracks,
     /// The bins panel or the timeline was resized, folded or restored
     /// (remembered for this user, `layout_prefs`).
     BinsPanel(SplitChange),
@@ -663,7 +710,8 @@ pub enum OpenDialog {
 
 /// The frame on screen and the layers it was made of.
 struct Shown {
-    layers: Vec<(FrameKey, u32)>,
+    /// Each layer's frame, its opacity's bits and its transform.
+    layers: Vec<(FrameKey, u32, Transform)>,
     picture: Picture,
     source: usize,
 }
@@ -688,9 +736,14 @@ pub struct Editor {
     /// field, the text.
     clip_draft: Option<(ClipRef, clip_fields::ClipField, String)>,
     menu_clip: Option<ClipRef>,
+    /// The right-click off the clips the timeline's menu is for: the frame
+    /// under it (None on a track's name) and the track of its row.
+    menu_empty: Option<(Option<usize>, Option<TrackRef>)>,
     bins: BinData,
     bin_tab: usize,
     bin_pick: Option<usize>,
+    /// The bins' thumbnails and grid presses (`editor/bin_panel.rs`).
+    bin_state: bin_panel::BinState,
     /// 0 the cut, 1 the board.
     mode: usize,
     board: Option<Board>,
@@ -759,6 +812,12 @@ pub struct Editor {
     /// The edit frames the tracks' width spans: fitted to the cut when it
     /// opens and on View > Fit Timeline, never by an edit (`timeline_view`).
     timeline_view: timeline_view::TimelineView,
+    /// How tall each track's row is, remembered for this user beside the
+    /// panel sizes. The view's only: never in the edit.
+    track_layout: track_rows::TrackLayout,
+    /// The one track the timeline shows (its name was double-clicked),
+    /// this session. The view's only: every track still plays.
+    solo: Option<TrackRef>,
 }
 
 fn waker(slot: &Arc<Mutex<Option<Sender<Message>>>>) -> impl Fn() + Send + 'static {
@@ -774,8 +833,23 @@ impl Editor {
     /// Edit `doc` of the project at `paths`, shown through `colour`;
     /// `recovered` is an autosave newer than it, offered back at start.
     pub fn new(paths: ProjectPaths, ocio: String, doc: Document, colour: Colour, recovered: Option<WorkingEdit>) -> Self {
+        let speaker = Speaker::open().map_err(|e| eprintln!("cinedex: no sound: {e}")).ok();
+        Self::with(paths, ocio, doc, colour, recovered, speaker, Some(layout_prefs::path()))
+    }
+
+    /// [`Self::new`] with its sound out and the file its panel sizes are
+    /// kept in given: the tests' editor has no speaker, and its prefs are
+    /// not this user's. No `layout_path` keeps them for the session only.
+    fn with(
+        paths: ProjectPaths,
+        ocio: String,
+        doc: Document,
+        colour: Colour,
+        recovered: Option<WorkingEdit>,
+        speaker: Option<Speaker>,
+        layout_path: Option<PathBuf>,
+    ) -> Self {
         let (display, view) = colour.default();
-        let layout_path = layout_prefs::path();
         let journal_key = th_pipe::events::project_key(&paths.config);
         let shared_journal = crate::journal::Shared::new(&paths.config, journal_key.clone());
         let engine = Engine::start(vec![Content::none()], Timeline::new(Vec::new()), BUFFER_BYTES);
@@ -803,9 +877,11 @@ impl Editor {
             selection: BTreeSet::new(),
             clip_draft: None,
             menu_clip: None,
+            menu_empty: None,
             bins: BinData::default(),
             bin_tab: 0,
             bin_pick: None,
+            bin_state: bin_panel::BinState::default(),
             mode: 0,
             board: None,
             board_loading: false,
@@ -834,15 +910,17 @@ impl Editor {
             quit_after_save: false,
             wake_slot,
             clock: (Instant::now(), 0),
-            speaker: Speaker::open().map_err(|e| eprintln!("cinedex: no sound: {e}")).ok(),
+            speaker,
             recovered,
             autosaved: None,
             events: rpc::Events::new(),
             endpoint: rpc::EndpointSlot::default(),
             agent_save: None,
             previews: Default::default(),
-            layout: layout_prefs::load(&layout_path),
-            layout_path: Some(layout_path),
+            layout: layout_path.as_deref().map(layout_prefs::load).unwrap_or_default(),
+            track_layout: layout_path.as_deref().map(|path| track_rows::load(&track_rows::path(path))).unwrap_or_default(),
+            solo: None,
+            layout_path,
             timeline_view,
         }
     }
@@ -862,7 +940,58 @@ impl Editor {
     /// The timeline's height: the user's, else enough for the clip fields
     /// and every track.
     fn timeline_height(&self) -> f32 {
-        self.layout.timeline_height.unwrap_or_else(|| panels::fitted_timeline_height(self.doc.edit.video.len() + self.doc.edit.audio.len()))
+        self.layout.timeline_height.unwrap_or_else(|| {
+            let rows: f32 = self.spare_track().iter().chain(&self.shown_tracks()).map(|&t| self.track_layout.height(t)).sum();
+            panels::fitted_to_rows(rows + if self.tracks_note().is_some() { tracks::NOTE } else { 0.0 })
+        })
+    }
+
+    /// Which tracks have a row: all, the soloed one, or all but the audio.
+    fn focus(&self) -> track_rows::Focus {
+        track_rows::Focus { solo: self.solo, audio_hidden: self.track_layout.audio_hidden }
+    }
+
+    /// The tracks the timeline shows a row for, top first.
+    fn shown_tracks(&self) -> Vec<TrackRef> {
+        track_rows::shown(self.doc.edit.video.len(), self.doc.edit.audio.len(), self.focus())
+    }
+
+    /// The spare layer's track: one past the top video track, shown as an
+    /// empty row while the top one is used (`track_rows::spare`). Never a
+    /// track of the edit.
+    fn spare_track(&self) -> Option<TrackRef> {
+        let edit = &self.doc.edit;
+        track_rows::spare(edit.video.len(), track_rows::top_used(edit), self.focus(), !self.doc.read_only(), edit.audio.len())
+    }
+
+    /// What the rows leave out, for the line under them.
+    fn tracks_note(&self) -> Option<String> {
+        track_rows::note(self.doc.edit.video.len(), self.doc.edit.audio.len(), self.focus())
+    }
+
+    /// The rows changed (a solo, the audio hidden): a clip without a row is
+    /// no longer selected, so Delete never takes out what is not seen.
+    fn refocused(&mut self) {
+        let shown = self.shown_tracks();
+        self.selection.retain(|c| shown.contains(&c.track));
+    }
+
+    /// Remember a track's row height for this user, as [`Self::set_layout`]
+    /// does the panels'.
+    fn set_row_height(&mut self, track: TrackRef, height: f32) {
+        if (self.track_layout.height(track) - tracks::row_height(height)).abs() < 0.5 {
+            return;
+        }
+        self.track_layout.set_height(track, height);
+        self.save_track_layout();
+    }
+
+    fn save_track_layout(&self) {
+        if let Some(path) = self.layout_path.as_deref().map(track_rows::path)
+            && let Err(e) = track_rows::save(&path, &self.track_layout)
+        {
+            eprintln!("cinedex: the tracks' layout was not saved to {}: {e}", path.display());
+        }
     }
 
     fn fps(&self) -> u32 {
@@ -1028,6 +1157,7 @@ impl Editor {
         self.timeline = self.engine.set_timeline(self.engine_timeline());
         self.engine.set_playhead(self.position);
         self.selection.retain(|c| clip_exists(&self.doc.edit, *c));
+        self.solo = track_rows::kept_solo(self.solo, self.doc.edit.video.len(), self.doc.edit.audio.len());
         self.place_sounds();
         self.shown = None;
         self.refresh_shown();
@@ -1175,7 +1305,7 @@ impl Editor {
 
     fn refresh_shown(&mut self) {
         let layers = self.engine.layers(self.position);
-        let wanted: Vec<(FrameKey, u32)> = layers.iter().map(|l| (l.key, l.opacity.to_bits())).collect();
+        let wanted: Vec<(FrameKey, u32, Transform)> = layers.iter().map(|l| (l.key, l.opacity.to_bits(), l.transform)).collect();
         if !self.reshow && self.shown.as_ref().is_some_and(|s| s.layers == wanted) {
             return;
         }
@@ -1184,7 +1314,9 @@ impl Editor {
             return;
         }
         let top = layers.last().unwrap().key.source;
-        let blended = layers.len() > 1 || layers[0].opacity < 1.0;
+        // One whole clip as fitted goes to the screen as it is; anything
+        // blended or transformed is made into one picture first.
+        let blended = layers.len() > 1 || layers[0].opacity < 1.0 || !layers[0].transform.is_identity();
         let picture = if blended {
             self.dissolved(&layers).map(|f| (f, None))
         } else {
@@ -1210,8 +1342,19 @@ impl Editor {
         let luts: Vec<Option<Arc<Lut>>> = layers.iter().map(|l| self.lut_of(l.key.source)).collect();
         let top = frames.last()?;
         let gain = 2f32.powf(self.display.exposure);
-        let input: Vec<(&Frame, f32)> = frames.iter().zip(layers).map(|(f, l)| (f, l.opacity)).collect();
-        Some(th_media::composite::dissolve(top.width, top.height, &input, |layer, rgb| match &luts[layer] {
+        let input: Vec<th_media::composite::Placed> = frames
+            .iter()
+            .zip(layers)
+            .map(|(frame, l)| th_media::composite::Placed { frame, opacity: l.opacity, placement: crate::placing::placement(l.transform) })
+            .collect();
+        // A transform places a clip in the edit's picture, so that is the
+        // picture's shape then; else the top frame's own, as it was.
+        let (width, height) = if layers.iter().any(|l| !l.transform.is_identity()) {
+            crate::placing::canvas(self.doc.edit.resolution, frames.iter().map(|f| (f.width, f.height)))
+        } else {
+            (top.width, top.height)
+        };
+        Some(th_media::composite::dissolve_placed(width, height, &input, |layer, rgb| match &luts[layer] {
             Some(lut) => lut.sample(rgb.map(|c| c * gain)),
             None => rgb,
         }))
@@ -1226,7 +1369,7 @@ impl Editor {
         match (&entry.state, &clip.source) {
             (_, Source::Slug { text }) => Some(text.clone()),
             (EntryState::Ready { resolved, .. }, _) if resolved.media.is_some() => None,
-            _ => Some(format!("{}: {}", source_name(&clip.source), entry.detail())),
+            _ => Some(format!("{}: {}", source_name(&clip.source), entry.explain())),
         }
     }
 
@@ -1252,6 +1395,7 @@ impl Editor {
                 *lut = display.lut(media);
             }
         }
+        self.bin_thumbs_redisplay();
         let sources: Vec<usize> = self.proxies.keys().copied().collect();
         for source in sources {
             let handle = self.proxy_handle(source, &self.proxies[&source].0);
@@ -1349,21 +1493,7 @@ impl Editor {
             self.status = Some(("Pick a shot or media item in the bins first".into(), true));
             return Command::none();
         };
-        let at = self.position as EditFrame;
-        let (video, audio) = match self.bin_tab {
-            0 => match self.bins.shots.get(pick) {
-                Some(shot) => (Some(shot.clip(at)), None),
-                None => return Command::none(),
-            },
-            _ => match self.bins.media.get(pick) {
-                Some(item) => item.clips(at),
-                None => return Command::none(),
-            },
-        };
-        let track = self.targets().first().map(|c| c.track).filter(|t| t.kind == TrackKind::Video).map_or(0, |t| t.index);
-        let end = editing::put_end(video.as_ref(), audio.as_ref());
-        let ops = editing::put(&self.doc.edit, video, audio, track, overlay);
-        self.edit_then_park(&ops, end)
+        self.bin_put_target(&crate::bins::Target::Item(pick), overlay)
     }
 
     /// [`Self::edit`], then, when it was done, the playhead to `end` (the
@@ -1379,55 +1509,74 @@ impl Editor {
 
     fn rows(&self) -> Vec<RowView> {
         let edit = &self.doc.edit;
-        tracks::row_order(edit.video.len(), edit.audio.len())
-            .into_iter()
-            .map(|track| {
-                let views = |source: &Source, at, duration, fade_in, fade_out, index| {
-                    let entry = self.entry_of(source).map(|i| &self.entries[i]);
-                    ClipView {
-                        at,
-                        duration,
-                        fade_in,
-                        fade_out,
-                        name: match entry.and_then(Entry::layer_note) {
-                            Some(note) => format!("{} · {note}", source_name(source)),
-                            None => source_name(source),
-                        },
-                        detail: entry.map(Entry::detail).unwrap_or_default(),
-                        thumbnail: self
-                            .entry_of(source)
-                            .and_then(|i| self.proxies.get(&(i + 1)))
-                            .and_then(|p| p.1.clone())
-                            .filter(|_| track.kind == TrackKind::Video),
-                        selected: self.selection.contains(&ClipRef { track, index }),
-                        missing: entry.is_some_and(Entry::missing),
-                        department: entry.and_then(Entry::department),
-                        preview: self.previews.clip_badge(source, entry.and_then(Entry::resolved).map(|r| r.takes.as_slice())),
-                    }
-                };
-                let (name, clips) = match track.kind {
-                    TrackKind::Video => {
-                        let t = &edit.video[track.index];
-                        (
-                            t.name.clone(),
-                            t.clips.iter().enumerate().map(|(i, c)| views(&c.source, c.at, c.duration, c.fade_in, c.fade_out, i)).collect(),
-                        )
-                    }
-                    TrackKind::Audio => {
-                        let t = &edit.audio[track.index];
-                        (
-                            t.name.clone(),
-                            t.clips.iter().enumerate().map(|(i, c)| views(&c.source, c.at, c.duration, c.fade_in, c.fade_out, i)).collect(),
-                        )
-                    }
-                };
-                RowView { track, name, clips }
-            })
-            .collect()
+        // The spare layer first: an empty row over the top video track.
+        let spare = self.spare_track().map(|track| RowView {
+            track,
+            name: track_rows::video_name(track.index),
+            clips: Vec::new(),
+            height: self.track_layout.height(track),
+            solo: false,
+            spare: true,
+        });
+        let rows = self.shown_tracks().into_iter().map(|track| {
+            let views = |source: &Source, at, duration, source_in, fade_in, fade_out, index| {
+                let entry = self.entry_of(source).map(|i| &self.entries[i]);
+                let available = entry.and_then(Entry::resolved).and_then(|r| r.available);
+                ClipView {
+                    at,
+                    duration,
+                    fade_in,
+                    fade_out,
+                    name: match entry.and_then(Entry::layer_note) {
+                        Some(note) => format!("{} · {note}", source_name(source)),
+                        None => source_name(source),
+                    },
+                    detail: entry.map(Entry::detail).unwrap_or_default(),
+                    thumbnail: self
+                        .entry_of(source)
+                        .and_then(|i| self.proxies.get(&(i + 1)))
+                        .and_then(|p| p.1.clone())
+                        .filter(|_| track.kind == TrackKind::Video),
+                    selected: self.selection.contains(&ClipRef { track, index }),
+                    missing: entry.is_some_and(Entry::missing),
+                    department: entry.and_then(Entry::department),
+                    preview: self.previews.clip_badge(source, entry.and_then(Entry::resolved).map(|r| r.takes.as_slice())),
+                    room: available.and_then(|a| tracks::room(a, source_in, duration)),
+                }
+            };
+            let (name, clips) = match track.kind {
+                TrackKind::Video => {
+                    let t = &edit.video[track.index];
+                    (
+                        t.name.clone(),
+                        t.clips
+                            .iter()
+                            .enumerate()
+                            .map(|(i, c)| views(&c.source, c.at, c.duration, c.source_in, c.fade_in, c.fade_out, i))
+                            .collect(),
+                    )
+                }
+                TrackKind::Audio => {
+                    let t = &edit.audio[track.index];
+                    (
+                        t.name.clone(),
+                        t.clips
+                            .iter()
+                            .enumerate()
+                            .map(|(i, c)| views(&c.source, c.at, c.duration, c.source_in, c.fade_in, c.fade_out, i))
+                            .collect(),
+                    )
+                }
+            };
+            RowView { track, name, clips, height: self.track_layout.height(track), solo: self.solo == Some(track), spare: false }
+        });
+        spare.into_iter().chain(rows).collect()
     }
 
-    fn tracks_view(&self) -> Element<Message> {
-        let program = Tracks {
+    /// The tracks as the timeline shows them, each gesture on them wired
+    /// to the message it sends.
+    fn tracks_program(&self) -> Tracks<Message> {
+        Tracks {
             rows: self.rows(),
             markers: self.doc.edit.markers.iter().map(|m| m.at).collect(),
             // Not the cut's length: the span only an explicit fit sets, so
@@ -1440,8 +1589,16 @@ impl Editor {
             on_drag: || Message::Drag,
             on_op: Message::Edit,
             on_menu: Message::ClipMenu,
+            on_row_height: Message::RowHeight,
+            on_solo: Message::Solo,
+            on_context: Message::TimelineMenu,
+            note: self.tracks_note(),
             editable: true,
-        };
+        }
+    }
+
+    fn tracks_view(&self) -> Element<Message> {
+        let program = self.tracks_program();
         let height = program.height().max(tracks::RULER + tracks::ROW);
         let view = tracks::track_view(Id::new("edit tracks"), program, height);
         // A timeline dragged lower than its tracks scrolls them.
@@ -1493,6 +1650,12 @@ impl Editor {
                     });
                     menu = menu.submenu("Open in Houdini", rows);
                 }
+            }
+        }
+        // A right-click off the clips: what the timeline does there.
+        if let Some((frame, track)) = self.menu_empty {
+            for (label, message) in timeline_menu::entries(&self.timeline_menu_state(frame, track)) {
+                menu = menu.item(label, move || message.clone());
             }
         }
         menu.into()
@@ -1558,84 +1721,6 @@ impl Editor {
             .push(tooltip(Id::new("burnins tip"), burnins, "B"))
             .push(text(editing::timecode(self.position as EditFrame, &self.doc.edit)).font_size(20.0).color(look::now()));
         container(tools).padding(Padding::from([8.0, 14.0])).width(Length::Fill).background(look::panel()).into()
-    }
-
-    /// The Shots bin lists each sequence's shots under its name; the Media
-    /// bin its items. Each row is a name and, quieter, what it is.
-    fn bins_view(&self) -> Element<Message> {
-        // Out of keyboard focus, as are the panel's buttons: a click on them
-        // must leave the arrows, Home/End and Space to the timeline (on_key).
-        let tabs = segmented(Id::new("bin tabs"), self.bin_tab).push("Shots").push("Media").on_select(Message::BinTab).focusable(false);
-        let rows: Vec<BinRow> = match self.bin_tab {
-            0 => shot_rows(&self.bins.shots),
-            _ => self
-                .bins
-                .media
-                .iter()
-                .enumerate()
-                .map(|(i, m)| BinRow::Item { index: i, name: m.item.clone(), detail: m.describe() })
-                .collect(),
-        };
-        let count = rows.iter().filter(|r| matches!(r, BinRow::Item { .. })).count();
-        let rows = Arc::new(rows);
-        let list = {
-            let rows = Arc::clone(&rows);
-            let pick = Arc::clone(&rows);
-            let shown = self.bin_pick.filter(|&p| p < count).and_then(|p| rows.iter().position(|r| r.item() == Some(p)));
-            indexed_list(Id::new(if self.bin_tab == 0 { "shot bin" } else { "media bin" }), rows.len(), 36.0, move |i| match &rows[i] {
-                BinRow::Sequence(name) => container(text(name.clone()).font_size(12.0).color(look::quiet()))
-                    .padding(Padding { top: 14.0, right: 8.0, bottom: 0.0, left: 8.0 })
-                    .into(),
-                BinRow::Item { name, detail, .. } => column()
-                    .push(text(name.clone()).font_size(13.0).color(look::text()))
-                    .push(text(detail.clone()).font_size(11.0).color(look::quiet()))
-                    .spacing(1.0)
-                    .padding(Padding { top: 2.0, right: 8.0, bottom: 2.0, left: 18.0 })
-                    .into(),
-            })
-            .selected(shown)
-            // A sequence's name picks its first shot.
-            .on_select(move |i| Message::BinPick(pick[i..].iter().find_map(BinRow::item).unwrap_or(0)))
-            .on_activate(|_| Message::BinPut(false))
-            .width(Length::Fill)
-            .height(Length::Fill)
-        };
-        let writable = !self.doc.read_only();
-        let put = |id: &'static str, label: &str, overlay: bool| {
-            let b = look::button(Id::new(id), text(label.to_owned()).font_size(12.0)).padding(Padding::from([3.0, 8.0])).focusable(false);
-            if writable { b.on_press(move || Message::BinPut(overlay)) } else { b }
-        };
-        let mut actions = row().spacing(6.0).push(put("insert", "Insert", false)).push(put("overlay", "Overlay", true));
-        if self.bin_tab == 0 && writable {
-            actions = actions.push(
-                look::button(Id::new("new shot"), text("New shot…").font_size(12.0))
-                    .padding(Padding::from([3.0, 8.0]))
-                    .on_press(|| Message::Open(OpenDialog::NewShot))
-                    .focusable(false),
-            );
-        }
-        if self.bin_tab == 1 {
-            actions = actions.push(
-                look::button(Id::new("import"), text("Import…").font_size(12.0))
-                    .padding(Padding::from([3.0, 8.0]))
-                    .on_press(|| Message::Open(OpenDialog::Import))
-                    .focusable(false),
-            );
-        }
-        let mut page = column().spacing(8.0).padding(Padding::from([10.0, 10.0])).push(tabs);
-        if count == 0 {
-            let empty = if self.bin_tab == 0 {
-                "The project has no shots yet: New shot… plans one in the cut"
-            } else {
-                "No media yet: Import… copies a file in"
-            };
-            page = page.push(text(empty).font_size(12.0).color(look::quiet()));
-        }
-        container(page.push(list).push(actions).height(Length::Fill))
-            .background(look::panel())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
     }
 
     /// The board: a row per shot under its sequence's name, a column per
@@ -1985,6 +2070,7 @@ impl Editor {
         if changes.as_ref().is_some_and(Vec::is_empty) {
             return Command::none();
         }
+        self.bin_thumbs_changed(changes.as_deref());
         let shots = self.shot_entries();
         let plan = crate::journal::plan(changes.as_deref(), &self.journal_key, std::process::id(), &shots, self.show_live);
         let indices: Vec<usize> = if plan.all { shots.iter().map(|(i, _)| *i).collect() } else { plan.entries.into_iter().collect() };
@@ -2487,6 +2573,7 @@ fn dialog_element(dialog: &Dialog, title: &str) -> Element<Message> {
         }
         Dialog::Busy(what) => page = page.push(heading(what)),
         Dialog::Export(export) => return export_dialog::element(export),
+        Dialog::Timeline(timeline) => return timeline_dialog::element(timeline),
     }
     container(page.push(buttons)).surface().border_radius(6.0).into()
 }
@@ -2588,9 +2675,14 @@ impl Application for Editor {
             },
             Message::Drag => {}
             Message::SelectAll => {
+                // Every clip that has a row: a hidden track's are not seen,
+                // so not selected (Delete would take them out unseen).
                 let edit = &self.doc.edit;
-                self.selection =
-                    edit.tracks().flat_map(|track| (0..edit.spans(track).len()).map(move |index| ClipRef { track, index })).collect();
+                self.selection = self
+                    .shown_tracks()
+                    .into_iter()
+                    .flat_map(|track| (0..edit.spans(track).len()).map(move |index| ClipRef { track, index }))
+                    .collect();
             }
             Message::ClearSelection => self.selection.clear(),
             Message::Edit(op) => {
@@ -2607,7 +2699,8 @@ impl Application for Editor {
                     return command;
                 }
                 let moved = matches!(op, Op::Move { .. });
-                let command = self.edit(&[op]);
+                // A clip let go on the spare layer makes its track first.
+                let command = self.edit(&track_rows::landing(&self.doc.edit, op));
                 if moved {
                     self.selection.clear();
                 }
@@ -2615,13 +2708,17 @@ impl Application for Editor {
             }
             Message::ClipField(field, text) => self.type_into(field, text),
             Message::ClipFieldSet(field) => return self.set_field(field),
+            // What the status said was of the cut before: a refusal left
+            // there would read as being of what the undo just did.
             Message::Undo => {
                 if self.doc.undo() {
+                    self.status = None;
                     return self.changed();
                 }
             }
             Message::Redo => {
                 if self.doc.redo() {
+                    self.status = None;
                     return self.changed();
                 }
             }
@@ -2659,7 +2756,21 @@ impl Application for Editor {
                     return self.refresh_entry(index);
                 }
             }
-            Message::ClipMenu(clip) => self.menu_clip = Some(clip),
+            Message::ClipMenu(clip) => {
+                self.menu_clip = Some(clip);
+                self.menu_empty = None;
+            }
+            Message::TimelineMenu(frame, track) => {
+                self.menu_clip = None;
+                self.menu_empty = Some((frame, track));
+            }
+            Message::At(frame, then) => {
+                // As a click there: park the playhead, then act at it.
+                self.set_playing(false);
+                self.move_to(frame.min(self.end()));
+                self.leave_loop_outside();
+                return self.update(*then);
+            }
             Message::Take(clip, take, pin) => return self.change_take(clip, take, pin),
             Message::TakeStep(axis, delta) => return self.take_step(axis, delta),
             Message::TakeLayer(clip, layer) => return self.change_layer(clip, layer),
@@ -2745,8 +2856,10 @@ impl Application for Editor {
             }
             Message::BinPick(pick) => self.bin_pick = Some(pick),
             Message::BinPut(overlay) => return self.bin_put(overlay),
+            Message::Bin(message) => return self.bin_message(message),
             Message::Open(which) => self.open_dialog(which),
             Message::Export(m) => return self.export_update(m),
+            Message::Timeline(m) => return self.timeline_update(m),
             Message::Text(f, value) => {
                 let taken = if matches!(self.dialog, Some(Dialog::NewShot { .. })) { self.taken_shot_names() } else { Vec::new() };
                 match (&mut self.dialog, f) {
@@ -2820,6 +2933,7 @@ impl Application for Editor {
                     self.open_dialog(OpenDialog::Save);
                 }
                 Some(Dialog::Export(_)) => return self.export_update(export_dialog::ExportMessage::Start),
+                Some(Dialog::Timeline(_)) => return self.timeline_update(timeline_dialog::TimelineMessage::Start),
                 // Open: each edit has its own buttons; Enter picks none.
                 Some(Dialog::OpenEdit { .. } | Dialog::Busy(_)) | None => {}
             },
@@ -2840,7 +2954,10 @@ impl Application for Editor {
                 _ => {}
             },
             Message::Dismiss => {
-                if !matches!(self.dialog, Some(Dialog::Busy(_))) && !export_dialog::holds(&self.dialog) {
+                if !matches!(self.dialog, Some(Dialog::Busy(_)))
+                    && !export_dialog::holds(&self.dialog)
+                    && !timeline_dialog::holds(&self.dialog)
+                {
                     self.dialog = None;
                     self.quit_after_save = false;
                 }
@@ -2939,6 +3056,23 @@ impl Application for Editor {
             Message::Exposure(stops) => self.display.exposure = stops,
             Message::Burnins(on) => self.burnins = on,
             Message::FitTimeline => self.fit_timeline(),
+            Message::RowHeight(track, height) => self.set_row_height(track, height),
+            Message::Solo(track) => {
+                self.solo = track_rows::toggle_solo(self.solo, track);
+                self.refocused();
+            }
+            Message::HideAudio(hidden) => {
+                self.track_layout.audio_hidden = hidden;
+                self.save_track_layout();
+                self.refocused();
+            }
+            Message::ShowAllTracks => {
+                self.solo = None;
+                if self.track_layout.audio_hidden {
+                    self.track_layout.audio_hidden = false;
+                    self.save_track_layout();
+                }
+            }
             Message::BinsPanel(change) => {
                 let mut layout = self.layout;
                 if let SplitSize::First(width) = change.size {
@@ -2965,7 +3099,7 @@ impl Application for Editor {
             }
             Message::Show(show) => return self.set_show(show),
             Message::PollLive => return self.poll_live(),
-            Message::PollJournal => return self.poll_journal(),
+            Message::PollJournal => return Command::batch([self.poll_journal(), self.bin_thumbs_pump()]),
             Message::PollPreviews => return crate::previews::poll(Message::Previews),
             Message::Previews(ready) => self.previews = ready,
             Message::SharedJournal(changes) => {
@@ -2973,6 +3107,7 @@ impl Application for Editor {
                 return self.apply_journal(Some(changes));
             }
             Message::Refresh => {
+                self.bin_thumbs_changed(None);
                 let shots = self.shot_entries().into_iter().map(|(i, _)| i).collect();
                 return Command::batch([self.refresh_entries(shots), self.refresh_bins()]);
             }
@@ -3083,7 +3218,8 @@ impl Application for Editor {
         let middle: Element<Message> = if self.mode == 1 {
             self.board_view()
         } else {
-            let viewer = column().push(layers).push(self.display_controls()).width(Length::Fill).height(Length::Fill);
+            let viewer =
+                column().push(layers).push(self.transport_bar()).push(self.display_controls()).width(Length::Fill).height(Length::Fill);
             panels::bins_split(self.bins_view(), viewer, &self.layout, Message::BinsPanel).into()
         };
         let timeline = column().push(self.clip_fields()).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);

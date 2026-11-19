@@ -566,6 +566,19 @@ depth. At the item depth (`/<category>/<item>`) the kind is set but not the
 type, and BasisCurves are left alone: a skeleton the rig outputs as curves
 (for CFX) is exported as curves, not as an Xform.
 
+Visibility is animated too. A shape the rig hides on some frames (a
+`usdvisibility` of `invisible` on its primitives, points or detail, which is
+what TumbleRig's TH Visibility writes; the SOP attribute is `usdvisibility`,
+the USD one it becomes `visibility`) is invisible on the stage on those
+frames and visible on the others, live and in the published layer. Every
+geometry prim the node animates gets a `visibility` sample on every frame:
+what the rig says, and where it says nothing `inherited`, or `invisible` when
+the incoming stage hides that prim (a mesh the asset hides stays hidden). A
+shape the rig leaves out of some frames is invisible on those. Up to 1.112.0
+the first frame's visibility held for the whole shot (hidden at the first
+frame: never shown; hidden later: never hidden), and up to 1.112.2 a shape
+left out of some frames was hidden on every frame of the published layer.
+
 The posed geometry is world space (each rig starts at its layout
 placement, see [`th::import_rig`](assets.md#thimport_rig-sop)), so the
 transforms are rewritten to keep it there: the prims above the geometry

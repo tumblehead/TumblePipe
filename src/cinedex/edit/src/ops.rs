@@ -15,7 +15,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::document::{AudioClip, Clip, ClipRef, Edit, Frame, Marker, TrackKind, TrackRef, VideoClip};
+use crate::document::{AudioClip, Clip, ClipRef, Edit, Frame, Marker, TrackKind, TrackRef, Transform, VideoClip};
 
 /// The source frames a clip may show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,6 +133,13 @@ pub enum Op<S> {
         clip: ClipRef,
         opacity: f64,
     },
+    /// Where a video clip's picture sits in the edit's: moved, scaled and
+    /// turned ([`Transform`]); [`Transform::IDENTITY`] puts it back as
+    /// fitted.
+    SetTransform {
+        clip: ClipRef,
+        transform: Transform,
+    },
     /// An audio clip's level.
     SetGain {
         clip: ClipRef,
@@ -248,6 +255,19 @@ fn change<S: Clone + PartialEq>(edit: &mut Edit<S>, op: &Op<S>) -> Result<(), Re
             c.opacity = *opacity;
             Ok(())
         }
+        Op::SetTransform { clip, transform } => {
+            if clip.track.kind != TrackKind::Video {
+                return refuse("only a video clip has a transform");
+            }
+            if let Some(why) = transform.problem() {
+                return refuse(why);
+            }
+            let clips =
+                &mut edit.video.get_mut(clip.track.index).ok_or_else(|| Refused(format!("no video track {}", clip.track.index)))?.clips;
+            let c = clips.get_mut(clip.index).ok_or_else(|| Refused(format!("no clip {}", clip.index)))?;
+            c.transform = *transform;
+            Ok(())
+        }
         Op::SetGain { clip, gain_db } => {
             if clip.track.kind != TrackKind::Audio {
                 return refuse("only an audio clip has a level");
@@ -356,6 +376,8 @@ trait ClipList<S> {
     fn same_source(&self, a: usize, b: usize) -> bool;
     /// Whether clips `a` and `b` show at the same opacity.
     fn same_opacity(&self, a: usize, b: usize) -> bool;
+    /// Whether clips `a` and `b` sit alike in the picture.
+    fn same_transform(&self, a: usize, b: usize) -> bool;
     fn set_source(&mut self, index: usize, source: S);
 }
 
@@ -406,6 +428,9 @@ impl<S: Clone + PartialEq, C: Clip<Source = S>> ClipList<S> for Vec<C> {
     #[allow(clippy::float_cmp)]
     fn same_opacity(&self, a: usize, b: usize) -> bool {
         self[a].opacity() == self[b].opacity()
+    }
+    fn same_transform(&self, a: usize, b: usize) -> bool {
+        self[a].transform() == self[b].transform()
     }
     fn set_source(&mut self, index: usize, source: S) {
         self[index].set_source(source);
@@ -641,6 +666,9 @@ fn join<S>(clips: &mut dyn ClipList<S>, i: usize) -> Result<(), Refused> {
     if !clips.same_opacity(i, i + 1) {
         return refuse("a join would lose an opacity: the clips are at different ones");
     }
+    if !clips.same_transform(i, i + 1) {
+        return refuse("a join would lose a transform: the clips sit differently in the picture");
+    }
     clips.set(i, ClipView { duration: left.duration + right.duration, fade_out: right.fade_out, ..left });
     clips.remove(i + 1);
     Ok(())
@@ -674,7 +702,7 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn vclip(at: Frame, duration: Frame, source_in: Frame, source: Source) -> VideoClip<Source> {
-        VideoClip { at, duration, source_in, source, fade_in: 0, fade_out: 0, opacity: 1.0 }
+        VideoClip::new(at, duration, source_in, source)
     }
 
     pub(crate) fn aclip(at: Frame, duration: Frame, source_in: Frame, source: Source) -> AudioClip<Source> {
@@ -927,6 +955,51 @@ pub(crate) mod tests {
         }
     }
 
+    proptest! {
+        /// Set Transform sets one video clip's transform and nothing else;
+        /// out of its limits, or on an audio clip, it is refused. The edit
+        /// then reads back from JSON as itself, the identity puts the clip
+        /// back as it was (an edit that never had a transform, byte for
+        /// byte), and a clip split while transformed joins back only with
+        /// its own: a join of clips that sit differently is refused, as it
+        /// would lose one.
+        #[test]
+        fn set_transform_sets_one_clip_and_the_identity_resets_it(
+            edit in edits(),
+            t in any::<prop::sample::Index>(),
+            c in any::<prop::sample::Index>(),
+            transform in crate::document::tests::transforms(),
+            broken in prop::sample::select(vec![None, Some(0.0f64), Some(f64::NAN), Some(1e6)]),
+            at in 0i64..200,
+        ) {
+            let Some(clip) = pick(&edit, t, c) else { return Ok(()) };
+            let asked = match broken {
+                Some(scale) => Transform { scale, ..transform },
+                None => transform,
+            };
+            let result = apply(&edit, &Op::SetTransform { clip, transform: asked }, &Lengths);
+            if clip.track.kind == TrackKind::Audio || broken.is_some() {
+                prop_assert!(result.is_err(), "{:?} took {:?}", clip, asked);
+                return Ok(());
+            }
+            let next = result.unwrap();
+            let mut want = edit.clone();
+            want.video[clip.track.index].clips[clip.index].transform = transform;
+            prop_assert_eq!(&next, &want);
+            prop_assert_eq!(&Edit::<Source>::parse(&next.to_json()).unwrap(), &next);
+            let reset = apply(&next, &Op::SetTransform { clip, transform: Transform::IDENTITY }, &Lengths).unwrap();
+            prop_assert_eq!(&reset, &edit);
+            prop_assert_eq!(reset.to_json(), edit.to_json());
+            if let Ok(split) = apply(&next, &Op::Split { clip, at }, &Lengths) {
+                prop_assert_eq!(&apply(&split, &Op::Join { clip }, &Lengths).unwrap(), &next);
+                let right = ClipRef { index: clip.index + 1, ..clip };
+                let other = Transform { scale: if transform.scale == 2.0 { 3.0 } else { 2.0 }, ..transform };
+                let apart = apply(&split, &Op::SetTransform { clip: right, transform: other }, &Lengths).unwrap();
+                prop_assert!(apply(&apart, &Op::Join { clip }, &Lengths).is_err(), "clips that sit differently joined");
+            }
+        }
+    }
+
     /// An op to try, as data: [`choose`] makes it an op of the edit it is
     /// tried on.
     #[derive(Debug, Clone)]
@@ -967,7 +1040,17 @@ pub(crate) mod tests {
                     6 => Op::Join { clip },
                     7 => Op::SetFades { clip, fade_in: delta.abs() / 2, fade_out: delta.abs() / 3 },
                     // Out of range at either end now and then: refused.
-                    9 => Op::SetOpacity { clip, opacity: (delta + 18) as f64 / 36.0 },
+                    9 if at % 2 == 0 => Op::SetOpacity { clip, opacity: (delta + 18) as f64 / 36.0 },
+                    // Now and then the identity, and a scale of none: refused.
+                    9 => Op::SetTransform {
+                        clip,
+                        transform: Transform {
+                            x: delta as f64 / 40.0,
+                            y: 0.0,
+                            scale: (delta + 20) as f64 / 20.0,
+                            rotation: (at % 7) as f64 * 15.0,
+                        },
+                    },
                     _ => Op::Move { clip, to: clip.track, at },
                 })
             }

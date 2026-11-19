@@ -40,6 +40,21 @@ fn op_defs() -> Value {
         properties.insert("op".into(), json!({"const": name}));
         json!({"type": "object", "description": description, "properties": properties, "required": required, "additionalProperties": false})
     };
+    // A clip's transform, as the edit file has it.
+    let transform = || {
+        json!({
+            "type": "object",
+            "description": "where a video clip's picture sits, after it is fitted into the edit's: scaled and turned about the centre, then moved",
+            "properties": {
+                "x": {"type": "number", "description": "how far right it is moved, in picture heights (0: centred)"},
+                "y": {"type": "number", "description": "how far up it is moved, in picture heights (0: centred)"},
+                "scale": {"type": "number", "description": "its size, of the fitted picture (1: fitted)"},
+                "rotation": {"type": "number", "description": "degrees it is turned, anticlockwise (0: upright)"},
+            },
+            "required": ["x", "y", "scale", "rotation"],
+            "additionalProperties": false,
+        })
+    };
     let clip_fields = |audio: bool| {
         let mut fields = json!({
             "at": {"type": "integer", "description": "edit frame it starts on (from 0)"},
@@ -56,6 +71,8 @@ fn op_defs() -> Value {
         if !audio {
             // Optional: 1 (whole) when left out, as the edit file has it.
             fields["opacity"] = json!({"type": "number", "minimum": 0, "maximum": 1});
+            // Optional: as fitted when left out.
+            fields["transform"] = transform();
         }
         json!({"type": "object", "properties": fields, "required": required, "additionalProperties": false})
     };
@@ -137,6 +154,7 @@ fn op_defs() -> Value {
             op("set_fades", "a clip's fades, in frames", json!({"clip": clip, "fade_in": {"type": "integer", "minimum": 0}, "fade_out": {"type": "integer", "minimum": 0}})),
             op("set_source", "show another source in the same span (a shot's other take: change its take rule); its frames must be there", json!({"clip": clip, "source": {"$ref": "#/$defs/source"}})),
             op("set_opacity", "a video clip's opacity, 0 to 1 (1: whole)", json!({"clip": clip, "opacity": {"type": "number", "minimum": 0, "maximum": 1}})),
+            op("set_transform", "a video clip's transform: where its picture sits (x 0, y 0, scale 1, rotation 0 puts it back as fitted)", json!({"clip": clip, "transform": transform()})),
             op("set_gain", "an audio clip's level in decibels", json!({"clip": clip, "gain_db": {"type": "number"}})),
             op("add_marker", "a marker at edit frame `at`", json!({"at": int, "note": {"type": "string"}})),
             op("remove_marker", "remove a marker by its index (get_edit lists them)", json!({"index": index})),
@@ -251,6 +269,23 @@ pub(crate) const TOOLS: &[Tool] = &[
         destructive: false,
     },
     Tool {
+        name: "export_timeline",
+        description: "Write the edit as it is now (saved or not, every take the version it shows) as a timeline file for an NLE, as File > Export Timeline… does: Final Cut Pro 7 XML (\"fcp7xml\", the default: DaVinci Resolve and Adobe Premiere Pro import it) or OpenTimelineIO (\"otio\": Resolve). `path` is the file to write (its folder must exist; a file there is replaced; the format's extension is added when it has none). collect_media hard-links the movies under names of their own into a `<name>_media` folder beside the file and refers to those (default: true for otio, false for fcp7xml). `sequences` is which NLE image sequences are written for in fcp7xml (\"resolve\", the default, or \"premiere\"). Changes nothing in the project. Answers the path, what was carried, and notes on everything dropped or approximated (shots with no take, slugs, layer stacks, media not on disk).",
+        schema: || {
+            object(
+                json!({
+                    "path": {"type": "string", "description": "the file to write, with its folder"},
+                    "format": {"enum": ["fcp7xml", "otio"], "default": "fcp7xml"},
+                    "collect_media": {"type": "boolean"},
+                    "sequences": {"enum": ["resolve", "premiere"], "default": "resolve"},
+                }),
+                &["path"],
+            )
+        },
+        read_only: false,
+        destructive: false,
+    },
+    Tool {
         name: "events",
         description: "The editor's events after number `after` (edit_changed, saved, published, view, take_changed, opened), waiting up to wait_ms (at most 25000) for one when there is none yet. Pass the answer's `next` as the following call's `after`; `lost` says some were dropped (only the last 256 are kept).",
         schema: || {
@@ -326,7 +361,7 @@ pub(crate) fn params_problem(tool: &Tool, params: &Value) -> Option<String> {
 mod tests {
     use super::*;
     use proptest::prelude::*;
-    use th_edit::document::{AudioClip, ClipRef, Rule, Source, TakeKind, TrackKind, TrackRef, Version, VersionRule, VideoClip};
+    use th_edit::document::{AudioClip, ClipRef, Rule, Source, TakeKind, TrackKind, TrackRef, Transform, Version, VersionRule, VideoClip};
     use th_edit::ops::{Edge, NewClip, Op};
 
     fn sources() -> impl Strategy<Value = Source> {
@@ -360,6 +395,7 @@ mod tests {
             |(source, t, i, n, d, audio, gain)| {
                 let track = TrackRef { kind: if audio { TrackKind::Audio } else { TrackKind::Video }, index: t };
                 let clip = ClipRef { track, index: i };
+                let moved = Transform { x: n as f64 / 100.0, y: gain / 10.0, scale: d as f64 / 40.0, rotation: n as f64 };
                 let new = if audio {
                     NewClip::Audio(AudioClip {
                         at: n.abs(),
@@ -379,6 +415,7 @@ mod tests {
                         fade_in: 2,
                         fade_out: 0,
                         opacity: if d % 2 == 0 { 0.5 } else { 1.0 },
+                        transform: if d % 3 == 0 { moved } else { Transform::IDENTITY },
                     })
                 };
                 let all = vec![
@@ -395,6 +432,7 @@ mod tests {
                     Op::SetFades { clip, fade_in: d, fade_out: d / 2 },
                     Op::SetSource { clip, source },
                     Op::SetOpacity { clip, opacity: d as f64 / 100.0 },
+                    Op::SetTransform { clip, transform: moved },
                     Op::SetGain { clip, gain_db: gain },
                     Op::AddMarker { at: n, note: "note".into() },
                     Op::RemoveMarker { index: i },
@@ -415,6 +453,7 @@ mod tests {
                         | Op::Join { .. }
                         | Op::SetFades { .. }
                         | Op::SetOpacity { .. }
+                        | Op::SetTransform { .. }
                         | Op::SetSource { .. }
                         | Op::SetGain { .. }
                         | Op::AddMarker { .. }

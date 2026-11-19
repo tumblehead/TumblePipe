@@ -22,6 +22,7 @@ use th_media::{FrameRanges, Media};
 use th_pipe::Project;
 use th_pipe::media::{ItemVersion, Measure};
 
+use crate::bins::natural_cmp;
 use crate::engine::Clip;
 
 /// Where the document lives.
@@ -139,6 +140,7 @@ pub fn of_shots(shots: &[(String, Frame, Frame)], fps: u32, resolution: [u32; 2]
                 fade_in: 0,
                 fade_out: 0,
                 opacity: 1.0,
+                transform: Default::default(),
             };
             at += duration;
             clip
@@ -209,6 +211,7 @@ pub fn engine_clips(edit: &WorkingEdit, bound: impl Fn(&Source) -> Option<Bound>
                     lead: (a - from) as usize,
                     tail: (to - z) as usize,
                     opacity: c.opacity as f32,
+                    transform: c.transform,
                     rate,
                 });
             }
@@ -258,11 +261,13 @@ impl BinShot {
             fade_in: 0,
             fade_out: 0,
             opacity: 1.0,
+            transform: Default::default(),
         }
     }
 }
 
-/// The project's shots with a frame range, by sequence and name.
+/// The project's shots with a frame range, by sequence and name, in natural
+/// order (`bins::natural_cmp`: `sh9` before `sh10`).
 pub fn project_shots(project: &Project) -> Result<Vec<BinShot>, String> {
     let shots = th_pipe::Uri::parse("entity:/shots").map_err(|e| e.to_string())?;
     let mut out = Vec::new();
@@ -280,7 +285,7 @@ pub fn project_shots(project: &Project) -> Result<Vec<BinShot>, String> {
             last: play.last_frame,
         });
     }
-    out.sort_by(|a, b| (&a.sequence, &a.name).cmp(&(&b.sequence, &b.name)));
+    out.sort_by(|a, b| natural_cmp(&a.sequence, &b.sequence).then_with(|| natural_cmp(&a.name, &b.name)));
     Ok(out)
 }
 
@@ -329,6 +334,7 @@ impl BinItem {
             fade_in: 0,
             fade_out: 0,
             opacity: 1.0,
+            transform: Default::default(),
         });
         let audio = self.sound.map(|n| self.frames.unwrap_or(n)).filter(|&n| n > 0).map(|duration| AudioClip {
             at,
@@ -1025,7 +1031,7 @@ mod tests {
                 at += gap;
                 let fade_in = fade_in.min(duration);
                 let fade_out = fade_out.min(duration - fade_in);
-                track.push(VideoClip { at, duration, source_in, source: shot(names[s]), fade_in, fade_out, opacity: 1.0 });
+                track.push(VideoClip { at, duration, source_in, source: shot(names[s]), fade_in, fade_out, opacity: 1.0, transform: Default::default() });
                 at += duration;
             }
             edit.video.push(Track { name: "V1".into(), clips: track.clone() });
@@ -1059,18 +1065,23 @@ mod tests {
 
         /// The editor's picture is the farm render's (#60): at every frame
         /// the engine's layers are `th_edit::picture`'s, clip for clip, and
-        /// each shows as much of itself, its opacity times its fade; a clip
-        /// of a multi-range render (#86) is transparent in its gaps and its
-        /// pieces fade as the whole clip does.
+        /// each shows as much of itself, its opacity times its fade, where
+        /// its transform puts it (the tracks under a transformed clip are
+        /// layers in both); a clip of a multi-range render (#86) is
+        /// transparent in its gaps and its pieces fade as the whole clip
+        /// does.
         #[test]
         fn the_engine_blends_as_the_edit_does(
             tracks in prop::collection::vec(
-                prop::collection::vec((0i64..6, 1i64..20, 0i64..6, 0i64..6, prop::sample::select(vec![1.0f64, 1.0, 0.75, 0.5, 0.0])), 0..4),
+                prop::collection::vec(
+                    (0i64..6, 1i64..20, 0i64..6, 0i64..6, prop::sample::select(vec![1.0f64, 1.0, 0.75, 0.5, 0.0]), prop::sample::select(vec![0.0f64, 0.0, 0.25])),
+                    0..4,
+                ),
                 1..4,
             ),
             list in prop::option::of(frame_list()),
         ) {
-            use th_edit::document::Clip as _;
+            use th_edit::document::{Clip as _, Transform};
             use th_edit::picture::{Playable, layers_at};
             struct Every(Option<FrameRanges>);
             impl Playable<Source> for Every {
@@ -1082,11 +1093,12 @@ mod tests {
             for (t, clips) in tracks.iter().enumerate() {
                 let mut at = 0;
                 let mut track = Vec::new();
-                for &(gap, duration, fade_in, fade_out, opacity) in clips {
+                for &(gap, duration, fade_in, fade_out, opacity, x) in clips {
                     at += gap;
                     let fade_in = fade_in.min(duration);
                     let fade_out = fade_out.min(duration - fade_in);
-                    track.push(VideoClip { at, duration, source_in: 1001, source: shot("010"), fade_in, fade_out, opacity });
+                    let transform = Transform { x, rotation: x * 90.0, ..Transform::IDENTITY };
+                    track.push(VideoClip { at, duration, source_in: 1001, source: shot("010"), fade_in, fade_out, opacity, transform });
                     at += duration;
                 }
                 edit.video.push(Track { name: format!("V{}", t + 1), clips: track });
@@ -1103,10 +1115,10 @@ mod tests {
                 (track, edit.video[track].clips.iter().position(|c| c.covers(at)).expect("an engine clip is in an edit clip"))
             };
             for at in 0..edit.length() {
-                let want: Vec<((usize, usize), u32)> =
-                    layers_at(&edit, at, &every).iter().map(|l| ((l.track, l.clip), l.opacity.to_bits())).collect();
-                let got: Vec<((usize, usize), u32)> =
-                    timeline.layers(at as usize, |_| true).iter().map(|l| (named(l.clip, at), l.opacity.to_bits())).collect();
+                let want: Vec<((usize, usize), u32, Transform)> =
+                    layers_at(&edit, at, &every).iter().map(|l| ((l.track, l.clip), l.opacity.to_bits(), l.transform)).collect();
+                let got: Vec<((usize, usize), u32, Transform)> =
+                    timeline.layers(at as usize, |_| true).iter().map(|l| (named(l.clip, at), l.opacity.to_bits(), l.transform)).collect();
                 prop_assert_eq!(got, want, "frame {}", at);
             }
         }

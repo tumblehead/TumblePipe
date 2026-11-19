@@ -12,9 +12,11 @@
 //! a fade in; the transition over its last frames, then a gap, for a fade
 //! out. The gap is there even when it is no frames long (the clip at frame
 //! 0, or touching the next clip), so every transition has an item on each
-//! side. Any other fade is not in the timeline, nor is an opacity under 1:
-//! the clips stay top wins, and a marker says so. Every clip carries what
-//! it is in its `tumblepipe` metadata. Every frame of the timeline shows
+//! side. Any other fade is not in the timeline, nor is an opacity under 1
+//! or a transform: the clips stay top wins, as fitted, and a marker says so.
+//! Every clip carries what it is in its `tumblepipe` metadata (its
+//! `opacity` and `transform` there as the edit file has them, so nothing
+//! of the edit is lost in the file). Every frame of the timeline shows
 //! the clip the edit shows, outside fades.
 
 use serde_json::{Value, json};
@@ -77,7 +79,8 @@ struct Placed<'a> {
 /// The video tracks as written: each a list of clips in order, the plain
 /// dissolves moved onto the track below and the outgoing clip cut where
 /// the dissolve starts, the fades over nothing taken as fades from and to
-/// black. Every fade left over, and every opacity under 1, adds a note.
+/// black. Every fade left over, every opacity under 1 and every transform
+/// adds a note.
 fn video_tracks<'a>(edit: &'a FrozenEdit, notes: &mut Vec<(Frame, Frame, String)>) -> Vec<Vec<Placed<'a>>> {
     let mut tracks: Vec<Vec<Placed>> = edit
         .video
@@ -94,6 +97,7 @@ fn video_tracks<'a>(edit: &'a FrozenEdit, notes: &mut Vec<(Frame, Frame, String)
                         fade_in: c.fade_in,
                         fade_out: c.fade_out,
                         opacity: c.opacity,
+                        transform: c.transform,
                     },
                     dissolve: 0,
                     from_black: 0,
@@ -124,6 +128,12 @@ fn video_tracks<'a>(edit: &'a FrozenEdit, notes: &mut Vec<(Frame, Frame, String)
         let lower = &tracks[tl];
         let Some(il) = lower.iter().position(|p| p.clip.at < start && p.clip.end() == start + n) else { continue };
         if lower[il].clip.fade_out > 0 || lower.iter().any(|p| p.clip.at >= start + n && p.clip.at < end) {
+            continue;
+        }
+        // Cut where the dissolve starts, the outgoing clip must still last
+        // as long as what reaches into its own start: its fade in, or the
+        // dissolve it came down with. Else the fade stays a note.
+        if start - lower[il].clip.at < lower[il].clip.fade_in.max(lower[il].dissolve) {
             continue;
         }
         let mut incoming = tracks[tu].remove(iu);
@@ -167,6 +177,9 @@ fn video_tracks<'a>(edit: &'a FrozenEdit, notes: &mut Vec<(Frame, Frame, String)
                 let percent = (c.opacity * 100.0).round();
                 notes.push((c.at, c.duration, format!("opacity {percent}%: not in this timeline")));
             }
+            if !c.transform.is_identity() {
+                notes.push((c.at, c.duration, "transform (moved, scaled or turned): not in this timeline".to_owned()));
+            }
         }
     }
     notes.sort_by_key(|n| n.0);
@@ -195,6 +208,9 @@ fn video_track(name: &str, items: &[Placed], fps: u32) -> Value {
         let mut extra = json!({"fade_in": c.fade_in + p.from_black, "fade_out": c.fade_out + p.to_black});
         if c.opacity < 1.0 {
             extra["opacity"] = json!(c.opacity);
+        }
+        if !c.transform.is_identity() {
+            extra["transform"] = json!(c.transform);
         }
         children.push(clip_json(c.source, c.source_in, c.duration, fps, extra));
         open = p.to_black > 0;
@@ -350,11 +366,13 @@ fn reference(media: &Media, fps: u32) -> Value {
 }
 
 /// `path` as a `file:` URL: forward slashes, a drive letter after
-/// `file:///`, spaces and `%` escaped.
+/// `file:///`, a UNC path's server as the host (`file://server/share/x`),
+/// and every byte outside the unreserved set percent-encoded as UTF-8 (a
+/// space is `%20`), as Python's `Path.as_uri` writes one. A path of plain
+/// letters, digits, `_`, `-`, `.`, spaces, `#` and `%` on a drive or a
+/// POSIX root has the URL it always had here.
 pub fn file_url(path: &str) -> String {
-    let slashed = path.replace('\\', "/");
-    let escaped = slashed.replace('%', "%25").replace(' ', "%20").replace('#', "%23");
-    if escaped.starts_with('/') { format!("file://{escaped}") } else { format!("file:///{escaped}") }
+    crate::timeline_export::url(path, "")
 }
 
 /// A name of its own for every movie `edit` plays, by its path:
@@ -499,7 +517,9 @@ mod tests {
                 if cursor <= at && at < cursor + duration {
                     if item["OTIO_SCHEMA"] == "Clip.2" {
                         let mut meta = item["metadata"]["tumblepipe"].clone();
-                        meta.as_object_mut().unwrap().retain(|k, _| k != "fade_in" && k != "fade_out" && k != "opacity");
+                        meta.as_object_mut()
+                            .unwrap()
+                            .retain(|k, _| k != "fade_in" && k != "fade_out" && k != "opacity" && k != "transform");
                         return Some((meta, start + (at - cursor)));
                     }
                     break;
@@ -537,6 +557,8 @@ mod tests {
         assert_eq!(file_url("P:/Show/a b.mov"), "file:///P:/Show/a%20b.mov");
         assert_eq!(file_url("/mnt/show/x.mov"), "file:///mnt/show/x.mov");
         assert_eq!(file_url(r"C:\a\b.mov"), "file:///C:/a/b.mov");
+        assert_eq!(file_url("//nas01/proj/a b.mov"), "file://nas01/proj/a%20b.mov");
+        assert_eq!(file_url("P:/Blå/x.mov"), "file:///P:/Bl%C3%A5/x.mov");
     }
 
     /// Movies that share a file name get names of their own (Resolve takes
@@ -557,7 +579,16 @@ mod tests {
             }),
         };
         let mut edit = FrozenEdit::new(24, [1920, 1080], "01:00:00:00");
-        let clip = |at, source| VideoClip { at, duration: 10, source_in: 1001, source, fade_in: 0, fade_out: 0, opacity: 1.0 };
+        let clip = |at, source| VideoClip {
+            at,
+            duration: 10,
+            source_in: 1001,
+            source,
+            fade_in: 0,
+            fade_out: 0,
+            opacity: 1.0,
+            transform: Default::default(),
+        };
         edit.video.push(Track {
             name: "V1".into(),
             clips: vec![
@@ -609,6 +640,7 @@ mod tests {
             fade_in: 0,
             fade_out: 0,
             opacity: 1.0,
+            transform: Default::default(),
         };
         edit.video.push(Track { name: "V1".into(), clips: vec![item(0, "P:/1/x.mp4"), item(10, "P:/2/x.mp4")] });
         let links = movie_links(&edit);
@@ -710,6 +742,7 @@ mod tests {
                         fade_in: 0,
                         fade_out: 0,
                         opacity: 1.0,
+                        transform: Default::default(),
                     });
                 }
             }
@@ -876,6 +909,42 @@ mod tests {
     }
 
     proptest! {
+        /// A transform is kept in its clip's metadata as the edit file has
+        /// it, number for number, and noted over the clip's span; a clip
+        /// as fitted carries none and adds no note. So the edit's
+        /// transforms read back out of the timeline.
+        #[test]
+        fn a_transform_is_noted_and_kept_in_the_clip(
+            given in prop::collection::vec(prop_oneof![1 => Just(crate::Transform::IDENTITY), 2 => crate::document::tests::transforms()], 1..5),
+        ) {
+            let mut edit = crate::WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
+            let mut clips = Vec::new();
+            for (i, transform) in given.iter().enumerate() {
+                let mut c = vclip(i as Frame * 10, 10, 0, mediate(i + 1));
+                c.transform = *transform;
+                clips.push(c);
+            }
+            edit.video.push(Track { name: "V1".into(), clips });
+            let otio = timeline(&freeze(&edit, &Fixed).unwrap(), "cut");
+            let v1 = otio["tracks"]["children"][0]["children"].as_array().unwrap();
+            prop_assert_eq!(v1.len(), given.len());
+            for (item, transform) in v1.iter().zip(&given) {
+                let kept = item["metadata"]["tumblepipe"].get("transform");
+                if transform.is_identity() {
+                    prop_assert!(kept.is_none(), "a clip as fitted carries a transform");
+                } else {
+                    let read: crate::Transform = serde_json::from_value(kept.unwrap().clone()).unwrap();
+                    prop_assert_eq!(read, *transform);
+                }
+            }
+            let noted: Vec<f64> = otio["tracks"]["markers"].as_array().unwrap().iter()
+                .filter(|m| m["name"].as_str().unwrap().starts_with("transform"))
+                .map(|m| m["marked_range"]["start_time"]["value"].as_f64().unwrap())
+                .collect();
+            let want: Vec<f64> = given.iter().enumerate().filter(|(_, t)| !t.is_identity()).map(|(i, _)| i as f64 * 10.0).collect();
+            prop_assert_eq!(noted, want);
+        }
+
         /// A fade with nothing on the tracks below it (#60) is a transition
         /// (Resolve's import of it is not yet checked): a fade in from
         /// black a gap, then a dissolve reaching its length into the clip, at the clip's start on its

@@ -6,9 +6,11 @@
 //! the tracks below (black when nothing): a dissolve is an upper clip
 //! fading in over a lower one, a fade to or from black one over nothing. A
 //! clip that cannot play (a shot with no take yet, a planned shot), or is
-//! at no opacity, is transparent. Audio tracks mix.
+//! at no opacity, is transparent. A clip with a transform (moved, scaled or
+//! turned) may not cover the picture, so the tracks below it show around
+//! it, whatever its opacity. Audio tracks mix.
 
-use crate::document::{Clip, Edit, Frame};
+use crate::document::{Clip, Edit, Frame, Transform};
 
 /// The engine's answer: can it show `source` at source frame `frame`?
 pub trait Playable<S> {
@@ -26,10 +28,20 @@ pub struct Layer {
     /// How much of it shows over the layers below: its clip's opacity
     /// times its fade (1 outside its fades).
     pub opacity: f32,
+    /// Where its clip's picture sits in the edit's.
+    pub transform: Transform,
+}
+
+impl Layer {
+    /// Whether nothing under it shows: whole, and as fitted.
+    pub fn hides_below(&self) -> bool {
+        self.opacity >= 1.0 && self.transform.is_identity()
+    }
 }
 
 /// The layers of edit frame `at`, bottom first: the last is the top-most
-/// playable clip; each one below shows through the one above's fade.
+/// playable clip; each one below shows through the one above's fade, or
+/// around the one above's transform.
 /// Empty: black.
 pub fn layers_at<S: Clone>(edit: &Edit<S>, at: Frame, playable: &impl Playable<S>) -> Vec<Layer> {
     let mut out = Vec::new();
@@ -42,8 +54,9 @@ pub fn layers_at<S: Clone>(edit: &Edit<S>, at: Frame, playable: &impl Playable<S
             continue;
         }
         let opacity = c.opacity as f32 * fade(c, at);
-        out.push(Layer { track, clip, frame, opacity });
-        if opacity >= 1.0 {
+        let layer = Layer { track, clip, frame, opacity, transform: c.transform };
+        out.push(layer);
+        if layer.hides_below() {
             break;
         }
     }
@@ -126,15 +139,19 @@ mod tests {
 
     proptest! {
         /// The top layer is the top-most playable clip at that frame; every
-        /// layer under it is there because the one above is fading; outside
-        /// fades and opacity there is exactly one layer, whole. A clip at
-        /// no opacity is transparent; each layer shows its clip's opacity
-        /// times its fade (#60).
+        /// layer under it is there because the one above is fading, or has
+        /// a transform (it may not cover the picture); outside fades,
+        /// opacity and transforms there is exactly one layer, whole. A clip
+        /// at no opacity is transparent; each layer shows its clip's
+        /// opacity times its fade (#60), where its clip's transform puts
+        /// it. Under a transformed clip the tracks below are there however
+        /// whole it is.
         #[test]
         fn the_top_playable_clip_shows(
             edit in edits(),
             at in 0i64..200,
             fades in prop::collection::vec((0i64..6, 0i64..6, prop::sample::select(vec![1.0f64, 1.0, 0.6, 0.25, 0.0])), 0..12),
+            moved in prop::collection::vec(prop_oneof![2 => Just(Transform::IDENTITY), 1 => crate::document::tests::transforms()], 0..12),
         ) {
             let mut edit = edit;
             let mut i = 0;
@@ -147,6 +164,9 @@ mod tests {
                         }
                         c.opacity = opacity;
                     }
+                    if let Some(&transform) = moved.get(i) {
+                        c.transform = transform;
+                    }
                     i += 1;
                 }
             }
@@ -156,18 +176,32 @@ mod tests {
             });
             prop_assert_eq!(layers.last().map(|l| (l.track, l.clip)), top);
             for pair in layers.windows(2) {
-                prop_assert!(pair[1].opacity < 1.0);
+                prop_assert!(pair[1].opacity < 1.0 || !pair[1].transform.is_identity());
                 prop_assert!(pair[0].track < pair[1].track);
             }
             for l in &layers {
                 let c = &edit.video[l.track].clips[l.clip];
                 prop_assert!(l.opacity > 0.0 && l.opacity <= 1.0);
                 prop_assert_eq!(l.opacity, c.opacity as f32 * fade(c, at));
+                prop_assert_eq!(l.transform, c.transform);
             }
             if let Some(last) = layers.last()
-                && last.opacity >= 1.0 {
+                && last.opacity >= 1.0 && last.transform.is_identity() {
                     prop_assert_eq!(layers.len(), 1);
                 }
+            // Every playable clip there, down to the first that hides the
+            // rest, is a layer: a transformed one hides nothing.
+            let mut want = Vec::new();
+            for (t, track) in edit.video.iter().enumerate().rev() {
+                let Some(c) = track.clips.iter().position(|c| c.covers(at) && c.opacity > 0.0 && matches!(c.source, Source::Media { .. })) else { continue };
+                want.push((t, c));
+                let clip = &track.clips[c];
+                if clip.opacity as f32 * fade(clip, at) >= 1.0 && clip.transform.is_identity() {
+                    break;
+                }
+            }
+            want.reverse();
+            prop_assert_eq!(layers.iter().map(|l| (l.track, l.clip)).collect::<Vec<_>>(), want);
         }
     }
 }

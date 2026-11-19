@@ -13,7 +13,8 @@
 //! 1001-based), so a clip shows `source_in ..= source_in + duration - 1`.
 //! Tracks are listed bottom first, and clips on one track never overlap.
 //! Every field is required and no other is allowed, but for a video clip's
-//! `opacity`, written only when it is not 1.
+//! `opacity`, written only when it is not 1, and its `transform`, written
+//! only when it moves, scales or turns the picture.
 
 use serde::{Deserialize, Deserializer, Serialize};
 use th_playlist::Media;
@@ -68,6 +69,72 @@ pub struct VideoClip<S> {
     /// editor from before opacity reads it.
     #[serde(default = "full", skip_serializing_if = "is_full")]
     pub opacity: f64,
+    /// Where its picture sits in the edit's. Written only when it is not
+    /// [`Transform::IDENTITY`], and read as that when it is not there: an
+    /// edit that transforms nothing is the bytes it always was, and an
+    /// editor from before transforms reads it.
+    #[serde(default, skip_serializing_if = "Transform::is_identity")]
+    pub transform: Transform,
+}
+
+/// Where a video clip's picture sits in the edit's picture. The clip is
+/// first fitted into the edit's picture whole and centred, as every clip
+/// is; then it is scaled and turned about the picture's centre, then moved.
+/// The units do not depend on anyone's resolution, so a proxy and the full
+/// picture agree.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Transform {
+    /// How far right it is moved, in picture heights (0.5 at 1080 lines:
+    /// 540 pixels).
+    pub x: f64,
+    /// How far up, in picture heights.
+    pub y: f64,
+    /// Its size, of the fitted picture: 1 as fitted, 0.5 half as wide and
+    /// as tall.
+    pub scale: f64,
+    /// Degrees it is turned, anticlockwise.
+    pub rotation: f64,
+}
+
+impl Transform {
+    /// As fitted: not moved, scaled or turned.
+    pub const IDENTITY: Transform = Transform { x: 0.0, y: 0.0, scale: 1.0, rotation: 0.0 };
+    /// The furthest a clip moves either way, in picture heights.
+    pub const MAX_MOVE: f64 = 10.0;
+    /// The smallest and largest scale.
+    pub const MIN_SCALE: f64 = 0.01;
+    pub const MAX_SCALE: f64 = 100.0;
+    /// The most a clip turns either way, in degrees (ten turns).
+    pub const MAX_ROTATION: f64 = 3600.0;
+
+    /// Whether it leaves the clip as fitted.
+    #[allow(clippy::float_cmp)]
+    pub fn is_identity(&self) -> bool {
+        *self == Transform::IDENTITY
+    }
+
+    /// What makes it no transform, if anything: a number that is none, or
+    /// out of range.
+    pub fn problem(&self) -> Option<String> {
+        let within = |value: f64, min: f64, max: f64| value.is_finite() && (min..=max).contains(&value);
+        if !within(self.x, -Self::MAX_MOVE, Self::MAX_MOVE) || !within(self.y, -Self::MAX_MOVE, Self::MAX_MOVE) {
+            return Some(format!("a position of {}, {}: it is within {} picture heights", self.x, self.y, Self::MAX_MOVE));
+        }
+        if !within(self.scale, Self::MIN_SCALE, Self::MAX_SCALE) {
+            return Some(format!("a scale of {}: it is {} to {}", self.scale, Self::MIN_SCALE, Self::MAX_SCALE));
+        }
+        if !within(self.rotation, -Self::MAX_ROTATION, Self::MAX_ROTATION) {
+            return Some(format!("a rotation of {} degrees: it is within {}", self.rotation, Self::MAX_ROTATION));
+        }
+        None
+    }
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Transform::IDENTITY
+    }
 }
 
 /// A clip's opacity when its document gives none.
@@ -83,9 +150,9 @@ fn is_full(opacity: &f64) -> bool {
 }
 
 impl<S> VideoClip<S> {
-    /// A clip of `source` at `at`, no fades, at full opacity.
+    /// A clip of `source` at `at`, no fades, at full opacity, as fitted.
     pub fn new(at: Frame, duration: Frame, source_in: Frame, source: S) -> Self {
-        VideoClip { at, duration, source_in, source, fade_in: 0, fade_out: 0, opacity: FULL }
+        VideoClip { at, duration, source_in, source, fade_in: 0, fade_out: 0, opacity: FULL, transform: Transform::IDENTITY }
     }
 }
 
@@ -258,6 +325,8 @@ pub trait Clip: Clone {
     fn fade_out(&self) -> Frame;
     /// A video clip's opacity; an audio clip's is 1.
     fn opacity(&self) -> f64;
+    /// A video clip's transform; an audio clip's is the identity.
+    fn transform(&self) -> Transform;
     fn set_at(&mut self, at: Frame);
     fn set_duration(&mut self, duration: Frame);
     fn set_source_in(&mut self, source_in: Frame);
@@ -281,7 +350,7 @@ pub trait Clip: Clone {
 }
 
 macro_rules! clip_impl {
-    ($clip:ident, $c:ident => $opacity:expr) => {
+    ($clip:ident, $c:ident => $opacity:expr, $transform:expr) => {
         impl<S: Clone> Clip for $clip<S> {
             type Source = S;
             fn at(&self) -> Frame {
@@ -306,6 +375,10 @@ macro_rules! clip_impl {
                 let $c = self;
                 $opacity
             }
+            fn transform(&self) -> Transform {
+                let $c = self;
+                $transform
+            }
             fn set_at(&mut self, at: Frame) {
                 self.at = at;
             }
@@ -326,8 +399,8 @@ macro_rules! clip_impl {
     };
 }
 
-clip_impl!(VideoClip, c => c.opacity);
-clip_impl!(AudioClip, _c => FULL);
+clip_impl!(VideoClip, c => c.opacity, c.transform);
+clip_impl!(AudioClip, _c => FULL, Transform::IDENTITY);
 
 /// Video or audio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -447,6 +520,9 @@ impl<S: Clone> Edit<S> {
             if let Some((i, c)) = track.clips.iter().enumerate().find(|(_, c)| !(0.0..=1.0).contains(&c.opacity)) {
                 return Some(format!("{} clip {i} has an opacity of {}", self.video[t].name, c.opacity));
             }
+            if let Some((i, why)) = track.clips.iter().enumerate().find_map(|(i, c)| Some((i, c.transform.problem()?))) {
+                return Some(format!("{} clip {i} has {why}", self.video[t].name));
+            }
         }
         if let Some(marker) = self.markers.iter().find(|m| m.at < 0) {
             return Some(format!("a marker at {}", marker.at));
@@ -461,8 +537,8 @@ impl<S: Clone> Edit<S> {
         for t in &self.video {
             let mut clips = Vec::with_capacity(t.clips.len());
             for c in &t.clips {
-                let VideoClip { at, duration, source_in, fade_in, fade_out, opacity, .. } = *c;
-                clips.push(VideoClip { at, duration, source_in, source: f(&c.source)?, fade_in, fade_out, opacity });
+                let VideoClip { at, duration, source_in, fade_in, fade_out, opacity, transform, .. } = *c;
+                clips.push(VideoClip { at, duration, source_in, source: f(&c.source)?, fade_in, fade_out, opacity, transform });
             }
             video.push(Track { name: t.name.clone(), clips });
         }
@@ -533,7 +609,7 @@ pub fn timecode_frames(timecode: &str, fps: u32) -> Result<Frame, String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const WORKING: &str = r#"{
@@ -659,6 +735,90 @@ mod tests {
             edit.video[1].clips[0].opacity = bad;
             prop_assert!(edit.problem().is_some_and(|why| why.contains("opacity")));
             prop_assert!(WorkingEdit::parse(&edit.to_json()).is_err());
+        }
+    }
+
+    /// A transform within its limits.
+    pub(crate) fn transforms() -> impl Strategy<Value = Transform> {
+        let whole = prop_oneof![Just(0.0f64), Just(0.25), Just(-0.5), -10.0f64..=10.0];
+        let scale = prop_oneof![Just(1.0f64), Just(0.5), Just(2.0), 0.01f64..=100.0];
+        let turn = prop_oneof![Just(0.0f64), Just(90.0), Just(-45.0), -3600.0f64..=3600.0];
+        (whole.clone(), whole, scale, turn).prop_map(|(x, y, scale, rotation)| Transform { x, y, scale, rotation })
+    }
+
+    proptest! {
+        /// A video clip's transform is written only when it is not the
+        /// identity, and reads back as itself to the bit: an edit that
+        /// transforms nothing writes no `transform` at all (the bytes an
+        /// editor from before transforms wrote, and reads), one written
+        /// without it reads as the identity, and so does the identity
+        /// written out by hand. Over other sources (frozen, as a publish
+        /// holds it) it is the same transform.
+        #[test]
+        fn a_transform_is_written_only_when_it_is_not_the_identity(
+            given in prop::collection::vec(prop_oneof![1 => Just(Transform::IDENTITY), 2 => transforms()], 3),
+        ) {
+            let mut edit = WorkingEdit::parse(WORKING).unwrap();
+            let whole = edit.to_json();
+            prop_assert!(!whole.contains("transform"), "{}", whole);
+            for (t, transform) in given.iter().enumerate() {
+                edit.video[t].clips[0].transform = *transform;
+            }
+            let json = edit.to_json();
+            prop_assert_eq!(json.matches("\"transform\"").count(), given.iter().filter(|t| !t.is_identity()).count());
+            let back = WorkingEdit::parse(&json).unwrap();
+            prop_assert_eq!(&back, &edit);
+            let bits = |t: &Transform| [t.x, t.y, t.scale, t.rotation].map(f64::to_bits);
+            for (t, transform) in given.iter().enumerate() {
+                if !transform.is_identity() {
+                    prop_assert_eq!(bits(&back.video[t].clips[0].transform), bits(transform));
+                }
+            }
+            if given.iter().all(Transform::is_identity) {
+                prop_assert_eq!(&json, &whole);
+            }
+            let explicit = WORKING.replacen(
+                r#""fade_in": 12, "fade_out": 0}"#,
+                r#""fade_in": 12, "fade_out": 0, "transform": {"x": 0.0, "y": 0, "scale": 1.0, "rotation": -0.0}}"#,
+                1,
+            );
+            prop_assert_ne!(&explicit, WORKING);
+            let read = WorkingEdit::parse(&explicit).unwrap();
+            prop_assert_eq!(&read, &WorkingEdit::parse(WORKING).unwrap());
+            prop_assert_eq!(read.to_json(), whole);
+            let kept = edit.try_map(|s| Ok::<_, ()>(s.clone())).unwrap();
+            prop_assert_eq!(&kept, &edit);
+        }
+
+        /// A transform out of its limits, or with a number that is none,
+        /// is no edit; nor is one with a field missing or added.
+        #[test]
+        fn a_transform_out_of_range_is_no_edit(
+            good in transforms(),
+            which in 0usize..4,
+            bad in prop::sample::select(vec![f64::NAN, f64::INFINITY, -f64::INFINITY, 1e9, -1e9]),
+            tiny in prop::sample::select(vec![0.0f64, -1.0, 0.009, 100.5]),
+        ) {
+            let mut edit = WorkingEdit::parse(WORKING).unwrap();
+            prop_assert_eq!(good.problem(), None);
+            let mut broken = good;
+            match which {
+                0 => broken.x = bad,
+                1 => broken.y = bad,
+                2 => broken.scale = tiny,
+                _ => broken.rotation = bad,
+            }
+            prop_assert!(broken.problem().is_some(), "{:?}", broken);
+            edit.video[1].clips[0].transform = broken;
+            prop_assert!(edit.problem().is_some());
+            for transform in [r#"{"x": 0.1, "y": 0, "scale": 1}"#, r#"{"x": 0.1, "y": 0, "scale": 1, "rotation": 0, "skew": 1}"#, "null"] {
+                let json = WORKING.replacen(
+                    r#""fade_in": 12, "fade_out": 0}"#,
+                    &format!(r#""fade_in": 12, "fade_out": 0, "transform": {transform}}}"#),
+                    1,
+                );
+                prop_assert!(WorkingEdit::parse(&json).is_err(), "{} parsed", transform);
+            }
         }
     }
 

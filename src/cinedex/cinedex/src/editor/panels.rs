@@ -32,8 +32,15 @@ pub(super) const CLIP_FIELDS_HEIGHT: f32 = 34.0;
 
 /// The timeline's height before the user drags it: the clip fields and
 /// `tracks` tracks (one at least).
+#[cfg(test)]
 pub(super) fn fitted_timeline_height(tracks: usize) -> f32 {
-    CLIP_FIELDS_HEIGHT + tracks::RULER + tracks.max(1) as f32 * tracks::ROW
+    fitted_to_rows(tracks.max(1) as f32 * tracks::ROW)
+}
+
+/// The same for rows `rows` pixels tall in all, each at the height the
+/// user gave it (`track_rows`).
+pub(super) fn fitted_to_rows(rows: f32) -> f32 {
+    CLIP_FIELDS_HEIGHT + tracks::RULER + rows.max(tracks::ROW_MIN)
 }
 
 /// The bins beside the viewer, at this user's width, folded or not.
@@ -151,7 +158,7 @@ mod tests {
         for bins_collapsed in [false, true] {
             for timeline_collapsed in [false, true] {
                 for timeline_height in [None, Some(300.0)] {
-                    let layout = Layout { bins_width: 260.0, bins_collapsed, timeline_height, timeline_collapsed };
+                    let layout = Layout { bins_width: 260.0, bins_collapsed, timeline_height, timeline_collapsed, ..Layout::default() };
                     let split = body(&layout, 3);
                     let node = lay(&split, &store, 1600.0, 900.0);
                     let found = handles(&split, &node, &store);
@@ -262,7 +269,7 @@ mod tests {
     /// laid-out split with room to spare.
     fn thicknesses() -> (f32, f32) {
         let store = StateStore::new();
-        let open = Layout { bins_width: 260.0, bins_collapsed: false, timeline_height: Some(200.0), timeline_collapsed: false };
+        let open = Layout { bins_width: 260.0, timeline_height: Some(200.0), ..Layout::default() };
         let folded = Layout { bins_collapsed: true, ..open };
         let divider = spans(&body(&open, 1), &store, 2000.0, 2000.0).bins_handle;
         let strip = spans(&body(&folded, 1), &store, 2000.0, 2000.0).bins_handle;
