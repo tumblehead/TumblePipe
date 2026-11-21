@@ -12,6 +12,27 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.117.0 — 2026-11-21
+
+### Features
+- feat(cinedex): shots with work on the farm show it on their timeline clips, and a right-click opens the job in the Farm Manager (`9f11474f`)
+- feat(cinedex): Live and Burn-ins sit on the player and the timer on the timeline, beside what they affect (`b5fad3d5`)
+
+### Fixes
+- fix(textures): a texture dropped into LOPs leaves wiring to TumbleTrove, so it follows the Wire dropped assets setting and never fails across networks (`22849b81`)
+- fix(collapse): assets instanced through a shot's Root render their copies on the farm, not their deactivated prototype (`260b0755`)
+
+### Documentation
+- docs: the farm job readers' and Root copies' new properties (`65d6b990`)
+- docs: shots on the farm in Cinedex, and which assets the farm's flatten makes copies of (`89765c63`)
+- docs(development): how Cinedex shows farm jobs on its clips and opens them in the Farm Manager (`6f6f075a`)
+- docs(changelog): v1.116.0 (`25e4706e`)
+
+### Tests
+- test(textures): the texture drop verify drops as the browser does, catalog then TumbleTrove's wire, and a selection elsewhere no longer fails it (`9081dfb5`)
+- test(farm_jobs): keep the proptest regression seeds (`d74a660e`)
+- test: farm job dates agree across Deadline and the local queue, documents read back, and a Root's copies follow the layer's kind (`20bb38e2`)
+
 ## v1.116.0 — 2026-11-21
 
 ### Features

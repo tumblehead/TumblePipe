@@ -590,6 +590,14 @@ trait Paint {
     fn raise(&mut self);
 }
 
+/// What a clip paints above the clips' level ([`Tracks::paint`]): a bar, a
+/// badge (its ground, words and their colour) or a dot.
+enum Over {
+    Rect(Rectangle, Color),
+    Tag(Rectangle, Color, String, Color),
+    Dot(Rectangle, Color),
+}
+
 fn outline(p: &mut impl Paint, r: Rectangle, thick: f32, color: Color) {
     p.rect(Point::new(r.x, r.y), Size::new(r.width, thick), color);
     p.rect(Point::new(r.x, r.y + r.height - thick), Size::new(r.width, thick), color);
@@ -831,6 +839,12 @@ impl<Message> Tracks<Message> {
             }
         }
 
+        // The badges (Preview ready, the farm's state) and the farm's line,
+        // painted just above this level: a level draws its quads under its
+        // images, so on a clip with nothing to play the hatching striped
+        // over a badge's ground and the line (live test, 2026-11-21, a
+        // Queued badge on a shot not rendered yet). Their words were above.
+        let mut over: Vec<Over> = Vec::new();
         let mut top = RULER;
         for row in &self.rows {
             let tall = row.height;
@@ -878,23 +892,21 @@ impl<Message> Tracks<Message> {
                 if let (TrackKind::Video, Some(words)) = (row.track.kind, c.preview)
                     && let Some(tag) = badge_box(rect, 86.0)
                 {
-                    p.rect(Point::new(tag.x, tag.y), Size::new(tag.width, tag.height), look::now());
-                    p.text(words.to_owned(), tag, H::Center, V::Center, 10.0, look::surround());
+                    over.push(Over::Tag(tag, look::now(), words.to_owned(), look::surround()));
                     right = tag.x - INSET;
                 }
                 if let (TrackKind::Video, Some(status)) = (row.track.kind, c.farm) {
                     let end = if c.preview.is_some() { right } else { right - INSET };
                     let marks = crate::farm_jobs::marks(rect, end, status);
                     let (fill, words) = crate::farm_jobs::colour(status);
-                    p.rect(Point::new(marks.line.x, marks.line.y), Size::new(marks.line.width, marks.line.height), fill);
+                    over.push(Over::Rect(marks.line, fill));
                     match marks.badge {
                         Some(crate::farm_jobs::Badge::Word(tag)) => {
-                            p.rect(Point::new(tag.x, tag.y), Size::new(tag.width, tag.height), fill);
-                            p.text(status.word().to_owned(), tag, H::Center, V::Center, 10.0, words);
+                            over.push(Over::Tag(tag, fill, status.word().to_owned(), words));
                             right = tag.x - INSET;
                         }
                         Some(crate::farm_jobs::Badge::Dot(dot)) => {
-                            p.fill(&Path::circle(Point::new(dot.x + dot.width / 2.0, dot.y + dot.height / 2.0), dot.width / 2.0), fill);
+                            over.push(Over::Dot(dot, fill));
                             right = dot.x - INSET;
                         }
                         None => {}
@@ -922,7 +934,8 @@ impl<Message> Tracks<Message> {
             for strip in self.rendering.iter().filter(|s| s.track == row.track) {
                 for (x, wide, there) in crate::rendering::bars(strip, |frame| self.x(frame, w)) {
                     let y = top + tall - 2.0 - crate::rendering::STRIP;
-                    p.rect(Point::new(x, y), Size::new(wide, crate::rendering::STRIP), if there { look::now() } else { look::surround() });
+                    let bar = Rectangle { x, y, width: wide, height: crate::rendering::STRIP };
+                    over.push(Over::Rect(bar, if there { look::now() } else { look::surround() }));
                 }
             }
             top += tall;
@@ -934,6 +947,18 @@ impl<Message> Tracks<Message> {
         }
 
         p.raise();
+        for o in over {
+            match o {
+                Over::Rect(r, color) => p.rect(Point::new(r.x, r.y), Size::new(r.width, r.height), color),
+                Over::Tag(tag, ground, words, ink) => {
+                    p.rect(Point::new(tag.x, tag.y), Size::new(tag.width, tag.height), ground);
+                    p.text(words, tag, H::Center, V::Center, 10.0, ink);
+                }
+                Over::Dot(dot, color) => {
+                    p.fill(&Path::circle(Point::new(dot.x + dot.width / 2.0, dot.y + dot.height / 2.0), dot.width / 2.0), color);
+                }
+            }
+        }
         let marker = look::mark();
         for &m in &self.markers {
             let x = self.x(m, w) + slot / 2.0;
@@ -1419,6 +1444,83 @@ mod tests {
         fn text(&mut self, _: String, _: Rectangle, _: H, _: V, _: f32, _: Color) {}
         fn image(&mut self, _: &ImageHandle, _: Rectangle) {}
         fn raise(&mut self) {}
+    }
+
+    /// A painter that keeps, per level, the order of its hatchings and quads:
+    /// `Nodes` draws a level's quads under its images, so a quad painted
+    /// after a hatching in the same level still ends up under its stripes.
+    #[derive(Default)]
+    struct Order {
+        level: usize,
+        hatched: Vec<(usize, Rectangle)>,
+        /// Quads that would sit under a hatching painted before them.
+        striped: Vec<Rectangle>,
+    }
+
+    impl Paint for Order {
+        fn rect(&mut self, top_left: Point, size: Size, _: Color) {
+            let r = Rectangle::new(top_left, size);
+            let overlaps = |h: &Rectangle| r.x < h.x + h.width && h.x < r.x + r.width && r.y < h.y + h.height && h.y < r.y + r.height;
+            if self.hatched.iter().any(|(level, h)| *level == self.level && overlaps(h)) {
+                self.striped.push(r);
+            }
+        }
+        fn hatch(&mut self, r: Rectangle, _: Color) {
+            self.hatched.push((self.level, r));
+        }
+        fn fill(&mut self, _: &Path, _: Color) {}
+        fn stroke(&mut self, _: &Path, _: Stroke) {}
+        fn text(&mut self, _: String, _: Rectangle, _: H, _: V, _: f32, _: Color) {}
+        fn image(&mut self, _: &ImageHandle, _: Rectangle) {}
+        fn raise(&mut self) {
+            self.level += 1;
+        }
+    }
+
+    proptest! {
+        /// Nothing a clip paints over itself is striped by the hatching of a
+        /// clip with nothing to play: the farm's line and badge and the
+        /// Preview ready badge sit above it. A Queued badge on a shot not
+        /// rendered yet was crossed out (live test, 2026-11-21).
+        #[test]
+        fn nothing_drawn_over_a_clip_is_under_its_hatching(
+            clips in prop::collection::vec((0i64..30, 1i64..120, any::<bool>(), any::<bool>(), proptest::option::of(0usize..8)), 1..8),
+            width in 200f32..3000.0,
+            height in ROW_MIN..=ROW_MAX,
+        ) {
+            // A track's clips never overlap: each starts after a gap past the last.
+            let mut end = 0;
+            let views: Vec<ClipView> = clips
+                .iter()
+                .map(|&(gap, duration, missing, preview, farm)| {
+                    let at = end + gap;
+                    end = at + duration;
+                    ClipView {
+                        missing,
+                        preview: preview.then_some("Preview ready"),
+                        farm: farm.map(|n| th_pipe::farm_jobs::Status::ALL[n]),
+                        name: "SH010".into(),
+                        ..view(at, duration, 0, 0)
+                    }
+                })
+                .collect();
+            // A render on its way over each clip (a hatched clip keeps its
+            // hatching until the render is done, its strip along the bottom).
+            let strips: Vec<crate::rendering::Strip> = views
+                .iter()
+                .map(|c| crate::rendering::Strip {
+                    track: TrackRef::video(0),
+                    expected: vec![(c.at, c.at + c.duration)],
+                    there: vec![(c.at, c.at + c.duration / 2)],
+                })
+                .collect();
+            let row = RowView { track: TrackRef::video(0), name: "V1".into(), clips: views, height, solo: false, spare: false, color: None };
+            let mut tracks = tracks_of(vec![row], Vec::new(), 600);
+            tracks.rendering = strips;
+            let mut painted = Order::default();
+            tracks.paint(&Pointer::default(), &mut painted, width, tracks.height());
+            prop_assert!(painted.striped.is_empty(), "under the hatching: {:?}", painted.striped);
+        }
     }
 
     fn tracks_of(rows: Vec<RowView>, markers: Vec<EditFrame>, total: usize) -> Tracks<()> {

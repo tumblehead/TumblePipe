@@ -154,6 +154,14 @@ pub fn start(launch: &Launch) -> Result<(), String> {
         command.env("PYTHONPATH", joined);
     }
     command.env("PYTHONUTF8", "1");
+    // Houdini's python.exe is a console program: without this Windows opens
+    // an empty console window beside Farm Submit or the Farm Manager.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
     command.spawn().map(drop).map_err(|e| format!("{}: {e}", launch.program.display()))
 }
 

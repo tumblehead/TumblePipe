@@ -1650,17 +1650,31 @@ farm, and a way to the job). The design:
   the clip at any width and height by a property). Colours are the UI
   convention's state tones from primer's `Theme`: rendering `info`,
   suspended `warning`, failed `danger`, queued and waiting `text_muted`;
-  words on them in the tracks' dark surround.
+  words on them in the tracks' dark surround. The line, the badges
+  (Preview ready too) and a render's progress strip are painted one level
+  above the clips (`tracks::Over`): a level draws its quads under its
+  images, so on a clip with nothing to play the hatching striped over
+  them. The live test after 1.117.0 found a Queued badge crossed out on a
+  shot not rendered yet; `nothing_drawn_over_a_clip_is_under_its_hatching`
+  holds it.
 - *The right-click.* On a clip whose shot has a job: **Show Farm Job in
   Farm Manager (state)** starts the Farm Manager in Houdini's Python as
   Farm Submit is started (`farm_submit::manager_launch`, needs `$HFS`):
   `python -m tumblepipe.farm.manager --job <id>`, a new argument that
   calls the window's existing `select_job` (a Deadline id or
-  `local:<batch>/<index>`; the job comes into view even under a filter,
-  a failed one at its error). Where Houdini's Python is not found only
+  `local:<batch>/<index>`; the job comes into view under any filter,
+  *Only mine* and *Only this project* included, a failed one at its
+  error). Where Houdini's Python is not found only
   **Copy Farm Job ID** is offered, which is always there. The standalone
   window is its own process: a Farm Manager already open in Houdini is
-  not reused.
+  not reused. Its `python.exe` starts with `CREATE_NO_WINDOW` on
+  Windows, as Farm Submit's does, so no empty console opens beside it.
+
+  Live-tested after 1.117.0 (Houdini 22.0.429's Python, a real Deadline
+  job): the window opened on nothing, because *Only mine* (on whenever the
+  user is known) hid a colleague's job, and an empty console opened with
+  it. Both fixed in 1.117.1; `scripts/verify_jobs_popover.py` checks the
+  filters.
 
 Tests: `pipe/src/farm_jobs.rs` (every shot shows its newest batch's most
 urgent job, other projects and non-shots never show, the newest

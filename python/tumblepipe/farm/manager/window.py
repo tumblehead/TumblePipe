@@ -824,12 +824,18 @@ class ManagerWindow(QWidget):
     def _select_now(self, job_id: str) -> bool:
         """Select ``job_id``'s row now; ``False`` when it is not on the list."""
         if job_id not in self._job_items:
-            # Hide finished, a search or the source would keep a finished
-            # job out of the list.
-            widgets = (self._hide_finished, self._search, self._source)
+            # Hide finished, a search, the source, Only mine or Only this
+            # project would keep the job out of the list. Only mine is on
+            # whenever the user is known, so Cinedex's Show Farm Job on a
+            # shot a colleague submitted opened on nothing until it was
+            # cleared here too.
+            widgets = (self._hide_finished, self._search, self._source,
+                       self._mine, self._this_project)
             for widget in widgets:
                 widget.blockSignals(True)
             self._hide_finished.setChecked(False)
+            self._mine.setChecked(False)
+            self._this_project.setChecked(False)
             self._search.clear()
             wanted = rows.LOCAL if job_id.startswith('local:') else rows.FARM
             if self._source.currentData() not in (None, wanted):

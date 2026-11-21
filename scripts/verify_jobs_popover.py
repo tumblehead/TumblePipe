@@ -292,6 +292,25 @@ def main() -> int:
     pump(app, 0.3)
     check('select_job selects a finished job Hide finished hid',
           failed is not None and win.selected_job_id() == failed.select_id, win.selected_job_id())
+    # Only mine (on whenever the user is known) and Only this project hide
+    # a colleague's job and another project's: Cinedex's Show Farm Job
+    # opened on nothing for a shot someone else submitted.
+    win._jobs.clearSelection()
+    win._current_job = None
+    win._user, win._project = 'someone-else', 'OtherProject'
+    win._mine.setEnabled(True)
+    win._mine.setChecked(True)
+    win._this_project.setEnabled(True)
+    win._this_project.setChecked(True)
+    win._sync_jobs()  # both were already ticked: no toggle, so re-read the filters
+    pump(app, 0.3)
+    hidden = failed is not None and failed.select_id not in win._job_items
+    win.select_job(failed.select_id if failed else '')
+    pump(app, 0.3)
+    check('select_job selects a job Only mine and Only this project hid',
+          hidden and win.selected_job_id() == failed.select_id
+          and not win._mine.isChecked() and not win._this_project.isChecked(),
+          f'hidden={hidden} selected={win.selected_job_id()!r}')
     win.select_job('local:not-read-yet/0')
     check('an unknown job is held until a read brings it in',
           win._pending_select == 'local:not-read-yet/0'
