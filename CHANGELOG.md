@@ -12,6 +12,22 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.117.1 — 2026-11-21
+
+### Fixes
+- fix(cinedex): a farm badge, the Preview ready badge and a render's strip on a clip with nothing to play are no longer striped by its hatching (`f6564b02`)
+- fix(cinedex): Farm Submit and Show Farm Job open no empty console window on Windows (`0f855121`)
+- fix(farm-manager): opening on a job clears Only mine and Only this project too, so Cinedex's Show Farm Job selects a colleague's job (`96f751dc`)
+
+### Documentation
+- docs(development): the clip badges paint above the hatching, found in the live test (`06bf2c2d`)
+- docs(development): Show Farm Job's live test, the filters it clears and its hidden console (`c8660220`)
+- docs(changelog): the HDA parms v1.117.0 shipped (`2fb3f241`)
+- docs(changelog): v1.117.0 (`bdef8d77`)
+
+### Tests
+- test(cinedex): keep the hatching property's regression seeds (`87d86d2b`)
+
 ## v1.117.0 — 2026-11-21
 
 ### Features

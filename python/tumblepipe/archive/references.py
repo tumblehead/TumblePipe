@@ -16,9 +16,11 @@ archive does not have them.
 
 Recording references at save time (``hou.fileReferences``) costs every
 artist save; reading at archive time costs nothing until someone archives.
-Only text is read: plain ``.hip`` (``.hiplc`` / ``.hipnc`` are encoded and
-skipped, and counted) of the latest workfile per department, and ``.usda``
-files among the archived exports. A crate ``.usd`` is binary and skipped.
+Only text is read: the latest workfile per department (``.hip``, and a
+``.hiplc`` / ``.hipnc``, whose sections are the same text behind their own
+headers; one in a form ``archive.hipfile`` does not know is skipped, and
+counted), and ``.usda`` files among the archived exports. A crate ``.usd``
+is binary and skipped.
 """
 
 from collections import defaultdict
@@ -26,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import re
 
+from tumblepipe.archive.hipfile import readable
 from tumblepipe.archive.inventory import Item, Kind
 from tumblepipe.archive.longpath import long_path
 
@@ -49,7 +52,7 @@ class ReferenceReport:
     #: archive files naming a project file by its absolute location
     absolute_inside: set[str] = field(default_factory=set)
     files_read: int = 0
-    encoded_skipped: int = 0
+    unreadable_skipped: int = 0
 
 
 def anchorless(text: str) -> str:
@@ -136,12 +139,12 @@ def scan_references(plan, read_bytes=None) -> ReferenceReport:
 
     for item in scenes:
         name = f'{roots.get(item.root).prefix}/{item.rel}'
-        if item.kind == Kind.WORKFILE and not item.rel.lower().endswith('.hip'):
-            report.encoded_skipped += 1
-            continue
         try:
             data = read_bytes(item)
         except OSError:
+            continue
+        if item.kind == Kind.WORKFILE and not readable(data, item.rel):
+            report.unreadable_skipped += 1
             continue
         report.files_read += 1
         for match in _PATH.finditer(data):
@@ -214,9 +217,9 @@ def warnings_for(report: ReferenceReport, project_path: Path) -> list[str]:
             f'absolute path ({project_path}); they find them only when the project '
             'is restored at that same path.'
         )
-    if report.encoded_skipped:
+    if report.unreadable_skipped:
         warnings.append(
-            f'{report.encoded_skipped} latest workfile(s) are .hiplc/.hipnc, which '
+            f'{report.unreadable_skipped} latest workfile(s) are .hiplc/.hipnc in a form that '
             'cannot be read for file paths; check them in Houdini.'
         )
     return warnings

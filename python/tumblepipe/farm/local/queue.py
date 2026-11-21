@@ -61,7 +61,10 @@ RESUME = 'resume'
 RETRY = 'retry'
 CANCEL = 'cancel'
 REMOVE = 'remove'
-COMMANDS = (SUSPEND, RESUME, RETRY, CANCEL, REMOVE)
+# The Farm Manager's Render again (#92): some tasks, whatever their state,
+# queued again (their receipts deleted first, manager.render_again).
+REQUEUE = 'requeue'
+COMMANDS = (SUSPEND, RESUME, RETRY, CANCEL, REMOVE, REQUEUE)
 
 # Which task states each command moves, and to what.
 _TRANSITIONS = {
@@ -69,6 +72,7 @@ _TRANSITIONS = {
     RESUME: ({SUSPENDED}, QUEUED),
     RETRY: ({FAILED, CANCELLED}, QUEUED),
     CANCEL: ({QUEUED, RENDERING, SUSPENDED}, CANCELLED),
+    REQUEUE: ({QUEUED, RENDERING, SUSPENDED, COMPLETED, FAILED, CANCELLED}, QUEUED),
 }
 
 
@@ -333,8 +337,12 @@ def next_task(batch: dict, state: dict) -> tuple[int, int] | None:
     return None
 
 
-def apply_command(batch: dict, state: dict, command: str, job: int | None) -> list[tuple[int, int]]:
-    """Apply ``command`` to ``job`` (every job when None) in ``state``.
+def apply_command(
+    batch: dict, state: dict, command: str, job: int | None,
+    tasks: list[int] | None = None,
+    ) -> list[tuple[int, int]]:
+    """Apply ``command`` to ``job`` (every job when None) in ``state``,
+    to its ``tasks`` only when given.
 
     Returns the tasks it moved out of ``rendering``: the runner must stop
     their processes. ``remove`` changes no state; the runner deletes the
@@ -351,6 +359,8 @@ def apply_command(batch: dict, state: dict, command: str, job: int | None) -> li
         if job is not None and index != job:
             continue
         for task_index, task in enumerate(state['jobs'][str(index)]['tasks']):
+            if tasks is not None and task_index not in tasks:
+                continue
             if task['status'] not in sources:
                 continue
             if task['status'] == RENDERING:
@@ -366,8 +376,12 @@ def apply_command(batch: dict, state: dict, command: str, job: int | None) -> li
 _REQUEST_COUNTER = itertools.count()
 
 
-def request(folder: Path, command: str, job: int | None = None) -> Path:
-    """Ask the runner to apply ``command`` to ``job`` of the batch in ``folder``.
+def request(
+    folder: Path, command: str, job: int | None = None,
+    tasks: list[int] | None = None,
+    ) -> Path:
+    """Ask the runner to apply ``command`` to ``job`` of the batch in
+    ``folder`` (to its ``tasks`` only, when given).
 
     Requests apply in name order. Windows' clock can give two requests made
     in a row the same time, so a per-process sequence number orders those.
@@ -376,7 +390,10 @@ def request(folder: Path, command: str, job: int | None = None) -> Path:
         raise ValueError(f'Unknown command: {command!r}')
     name = f'{time.time_ns():020d}_{os.getpid():08d}_{next(_REQUEST_COUNTER):08d}.json'
     path = Path(folder) / CONTROL_DIR / name
-    write_json(path, {'command': command, 'job': job})
+    write_json(path, {
+        'command': command, 'job': job,
+        **({} if tasks is None else {'tasks': [int(t) for t in tasks]}),
+    })
     return path
 
 

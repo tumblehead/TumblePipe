@@ -23,8 +23,8 @@ def plan(roots, inventory, settings: Settings) -> CategoryPlan:
     out.notes.append(f'Read {export_plan.hips_read} latest workfile(s) for pinned versions.')
     if export_plan.hips_unreadable:
         out.notes.append(
-            f'{len(export_plan.hips_unreadable)} latest workfile(s) are .hiplc/.hipnc and cannot be '
-            'read: versions they pin are NOT protected.'
+            f'{len(export_plan.hips_unreadable)} latest workfile(s) are .hiplc/.hipnc in a form that '
+            'cannot be read: versions they pin are NOT protected.'
         )
     out.errors = list(export_plan.errors)
     return out

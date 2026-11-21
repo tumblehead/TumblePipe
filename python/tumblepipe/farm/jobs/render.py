@@ -6,6 +6,7 @@ import json
 from tumblepipe.farm.deadline import farm_job, schedule_frames
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import render as render_spec
+from tumblepipe.farm.specs import repair as repair_spec
 
 
 def build(config, paths, staging_path):
@@ -25,6 +26,9 @@ def build(config, paths, staging_path):
         context['render_pass'] = config['render_pass']
     if 'slap_comp' in config:
         context['slap_comp'] = config['slap_comp']
+    # Into version (#92): render over frames whose receipts exist
+    if config.get(repair_spec.OVERWRITE_KEY):
+        context[repair_spec.OVERWRITE_KEY] = True
     # A multi-range render's tasks are its blocks (#84)
     context.update(frame_ranges.context_entry(config))
     job = farm_job('render', context, staging_path,

@@ -569,8 +569,12 @@ pub struct Workfiles {
 impl Workfiles {
     pub fn read(roots: &ProjectRoots, keys: &[&str], watch: &Watch<'_>) -> Result<Workfiles, String> {
         let latest = crate::hip::latest_workfiles(roots);
+        // Every latest workfile is read (`.hip`, `.hiplc`, `.hipnc`); one in a
+        // form `hip::readable` does not know comes back unread (None).
+        let name = |w: &crate::hip::LatestWorkfile| w.path.file_name().map(crate::fsx::name_of).unwrap_or_default();
         let readable = |w: &crate::hip::LatestWorkfile| {
-            w.path.file_name().map(crate::fsx::name_of).unwrap_or_default().to_lowercase().ends_with(".hip")
+            let lower = name(w).to_lowercase();
+            lower.ends_with(".hip") || lower.ends_with(".hiplc") || lower.ends_with(".hipnc")
         };
         let sizes: Vec<u64> = crate::fsx::par_map(&latest, watch.threads, |w| if readable(w) { crate::fsx::lsize(&w.path) } else { 0 });
         let total: usize = latest.iter().filter(|w| readable(w)).count();
@@ -580,11 +584,17 @@ impl Workfiles {
             if !readable(workfile) || watch.cancelled() {
                 return WorkfileRead { workfile: workfile.clone(), read: None };
             }
-            let text = crate::hip::read_text_metered(&workfile.path, &|n| {
+            let bytes = crate::hip::read_bytes_metered(&workfile.path, &|n| {
                 meter.add(0, n);
                 !watch.cancelled()
             });
             meter.add(1, 0);
+            if let Ok(bytes) = &bytes
+                && !crate::hip::readable(bytes, &name(workfile))
+            {
+                return WorkfileRead { workfile: workfile.clone(), read: None };
+            }
+            let text = bytes.map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
             let read = Some(text.map_err(|error| format!("{}: {error}", workfile.path.display())).map(|text| {
                 let own = crate::hip::workfile_entity(&workfile.purpose, &workfile.parts);
                 HipFacts {

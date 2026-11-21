@@ -8,9 +8,15 @@ last, or the Preview Frames List, ``farm.specs.preview_frames``)
 cross-channel chain: sync to the edit, slapcomp, its mp4 and notify.
 Each channel keeps its own version counter.
 
+A *repair* (Farm Submit's Into version, ``farm.specs.repair``, #92) renders
+the listed frames into a version that exists: its render and denoise
+overwrite those frames and leave the version's ``context.json`` as it is,
+and the review chain then runs over the version's own range.
+
 Config: ``specs.render_pipeline``.
 """
 
+from dataclasses import replace
 from pathlib import Path
 import logging
 
@@ -21,6 +27,7 @@ from tumblepipe.farm.jobs import render as render_job
 from tumblepipe.farm.pipelines import post_render
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import repair as repair_spec
 from tumblepipe.farm.specs.preview_frames import CONFIG_KEY as PREVIEW_FRAMES_KEY
 from tumblepipe.pipe import render_layers, slap_comp
 from tumblepipe.pipe.paths import (
@@ -89,6 +96,23 @@ def _shot(config: dict, staging_path: Path) -> post_render.Shot:
     )
 
 
+def _review_shot(shot: post_render.Shot, repair: dict | None) -> post_render.Shot:
+    """The shot the review chain runs over: a repair's version's own range,
+    step, ranges and published state (#92), else the render's."""
+    if repair is None:
+        return shot
+    ranges = frame_ranges.from_config(repair)
+    return replace(
+        shot,
+        first_frame = repair['first_frame'],
+        last_frame = repair['last_frame'],
+        step_size = repair['step_size'],
+        frame_ranges = ranges,
+        check_render = not repair['published'] and not ranges,
+        preview_frames = None,
+    )
+
+
 def _cut_range(settings: dict) -> tuple[int, int] | None:
     cut_range = settings.get('cut_range')
     return None if cut_range is None else (cut_range[0], cut_range[1])
@@ -124,9 +148,13 @@ def _receipt_path(shot, render_department, channel, version_name=None) -> Path:
 
 
 def _render_job(
-    config, shot, paths, channel, aov_names, task_key, version_name=None
+    config, shot, paths, channel, aov_names, task_key, version_name=None,
+    repair=False
     ) -> tuple[Job, str]:
-    """A channel's render (partial: the preview frames) and the version it writes."""
+    """A channel's render (partial: the preview frames) and the version it
+    writes. A ``repair`` (#92) renders into ``version_name`` over the frames
+    there and leaves its ``context.json``, which records the version's own
+    range, as it is."""
     settings = config['settings']
     render_department = settings['render_department_name']
     receipt_path = _receipt_path(shot, render_department, channel, version_name)
@@ -154,7 +182,8 @@ def _render_job(
             ).items()
         },
         # A multi-range full render: only its ranges, in blocks (#84)
-        **({} if partial else shot.frame_ranges_entry)
+        **({} if partial else shot.frame_ranges_entry),
+        **({repair_spec.OVERWRITE_KEY: True} if repair else {})
     )
     if render_pass is not None:
         job_config['render_pass'] = render_pass
@@ -172,18 +201,20 @@ def _render_job(
         job_config['slap_comp'] = path_str(bundled)
         job_config['title'] += f' + slap comp {published.version_name}'
     job = render_job.build(job_config, job_paths, shot.staging_path)
-    post_render.write_framestack_context(
-        shot, receipt_path, render_department, channel, version_name
-    )
+    if not repair:
+        post_render.write_framestack_context(
+            shot, receipt_path, render_department, channel, version_name
+        )
     return job, version_name
 
 
 def _denoise_job(
     config, shot, channel, aov_names, task_key, render_version_name,
-    version_name=None
+    version_name=None, repair=False
     ) -> tuple[Job, str]:
     """A channel's denoise of its render version, and the version it writes:
-    ``version_name`` (the partial denoise's, for the full one), else the
+    ``version_name`` (the partial denoise's, for the full one; a repair's
+    denoise version, #92, whose context it leaves as it is), else the
     channel's next denoise version."""
     render_department = config['settings']['render_department_name']
     receipt_path = _receipt_path(shot, DENOISE_DEPARTMENT, channel, version_name)
@@ -214,14 +245,16 @@ def _denoise_job(
             ).items()
         },
         # The frames the render rendered (#84)
-        **({} if partial else shot.frame_ranges_entry)
+        **({} if partial else shot.frame_ranges_entry),
+        **({repair_spec.OVERWRITE_KEY: True} if repair else {})
     ), dict(), shot.staging_path)
     # What it denoises, so a comp's "best" can tell this version from a
     # stale one once a newer render lands (pipe.comp.is_stale)
-    post_render.write_framestack_context(
-        shot, receipt_path, DENOISE_DEPARTMENT, channel, version_name,
-        reads = {channel: dict(department=render_department, version=render_version_name)},
-    )
+    if not repair:
+        post_render.write_framestack_context(
+            shot, receipt_path, DENOISE_DEPARTMENT, channel, version_name,
+            reads = {channel: dict(department=render_department, version=render_version_name)},
+        )
     return job, version_name
 
 
@@ -254,6 +287,17 @@ def build(
     render_versions = {}
     denoise_versions = {}
     terminal_jobs = []
+
+    # Into version (#92): the full render goes into these versions
+    repair = settings.get(repair_spec.CONFIG_KEY)
+    if repair is not None:
+        if 'partial_render' in tasks:
+            raise ValueError('Into version renders no preview')
+        for channel, entry in repair['versions'].items():
+            render_versions[channel] = entry['render']
+            if 'denoise' in entry:
+                denoise_versions[channel] = entry['denoise']
+    review_shot = _review_shot(shot, repair)
 
     # Partial: the preview frames of each channel, posted
     if 'partial_render' in tasks:
@@ -293,7 +337,7 @@ def build(
         for channel in channel_names:
             job, version_name = _render_job(
                 config, shot, paths, channel, aov_names, 'full_render',
-                render_versions.get(channel)
+                render_versions.get(channel), repair is not None
             )
             render_deps = (
                 [f'partial_render_{channel}'] if 'partial_render' in tasks
@@ -302,31 +346,37 @@ def build(
             _add(f'full_render_{channel}', job, render_deps)
             review_job, review_version = f'full_render_{channel}', version_name
             if full['denoise']:
+                if repair is not None and channel not in denoise_versions:
+                    raise ValueError(
+                        f'Into version: {channel}/{version_name} has no denoise '
+                        'version to repair'
+                    )
                 # Into the partial denoise's version, as the full render
                 # goes into the partial render's: one version per submit
                 # (QA 2026-11-10: the full denoise took the next version,
                 # leaving a three-frame denoise version beside it).
                 job, review_version = _denoise_job(
                     config, shot, channel, aov_names, 'full_render', version_name,
-                    denoise_versions.get(channel)
+                    denoise_versions.get(channel), repair is not None
                 )
                 _add(f'full_denoise_{channel}', job, [review_job])
                 review_job = f'full_denoise_{channel}'
             review_versions[channel] = review_version
             review_jobs.append(review_job)
+            # A repair's review is of its whole version (#92)
             _add(f'layer_mp4_{channel}', post_render.layer_mp4_job(
-                shot, review_department, channel, review_version, full['priority']
+                review_shot, review_department, channel, review_version, full['priority']
             ), [review_job])
 
         # The slapcomp stacks the channels in the render settings' order,
         # each at its own version.
         slapcomp_channels = render_settings['channel_names']
         terminal_jobs = post_render.add_review_chain(
-            jobs, deps, shot,
+            jobs, deps, review_shot,
             render_department = review_department,
             input_paths = {
                 channel: _aov_paths(
-                    shot, review_department, channel,
+                    review_shot, review_department, channel,
                     review_versions[channel], aov_names
                 )
                 for channel in slapcomp_channels
@@ -354,8 +404,9 @@ def build(
                     ],
                     user_name = settings['user_name'],
                     purpose = settings['purpose'],
-                    first_frame = settings['first_frame'],
-                    last_frame = settings['last_frame'],
+                    # A repair comps its whole version (#92)
+                    first_frame = review_shot.first_frame,
+                    last_frame = review_shot.last_frame,
                     temp_path = temp_path,
                     paths = paths,
                 ),

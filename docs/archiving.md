@@ -86,7 +86,7 @@ Reading the project ends with a list of things worth a look:
   cached again, like a sim nobody can re-run.
 - **Folders left out as not pipeline data**, with their sizes.
 - **File paths outside the project** that the archived scenes use. The latest
-  workfile of each department (plain `.hip`) and every archived `.usda` are
+  workfile of each department (`.hip`, `.hiplc` or `.hipnc`) and every archived `.usda` are
   read for absolute paths. A path outside the project means the file isn't in
   the archive. A path is placed by the project's folder name, so `P:/<project>`,
   `W:/projects/<project>` and `//server/share/projects/<project>` all count as
@@ -98,8 +98,10 @@ Reading the project ends with a list of things worth a look:
   `//TRUENAS/production/projects/<project>/…` texture paths lookdev exports
   write. They're archived, but the scene only finds them when the project is
   restored at that same path.
-- `.hiplc` / `.hipnc` latest workfiles. These are encoded and can't be read
-  for paths, so check them in Houdini.
+- `.hiplc` / `.hipnc` latest workfiles that can't be read for paths. Indie
+  and Apprentice workfiles are read like a `.hip` (the same text sections,
+  each behind a `HouLC`/`HouNC` header in place of cpio's); only one in a
+  form the reader doesn't know is listed here, so check it in Houdini.
 
 ## The archive
 
@@ -255,7 +257,7 @@ goes only when none of these is true:
 A check render (Farm Submit's Step) is never the shot's render, so it goes
 by age alone, under the same guards.
 
-Only plain `.hip` workfiles can be read, as for exports. A DaVinci Resolve
+Workfiles are read as for exports (`.hip`, `.hiplc` and `.hipnc`). A DaVinci Resolve
 project is not read either: if a grade reads frames straight from the
 render root, at a version older than the newest two, mark that version
 with `.keep` first.
@@ -344,9 +346,12 @@ that:
 | a **current staged build** uses it | the newest staged build of every shot, asset and Root pins exact versions of its layers and of the staged assets it brings in, and those pins are followed too |
 | a **latest workfile** pins it | the newest `.hip` in every department folder is read for the versions its nodes are set to (`th::import_layer` always loads the exact version it was set to; the other import nodes can be set to one) |
 
-Only plain `.hip` workfiles can be read: `.hiplc` and `.hipnc` are encoded.
-The listing says how many latest workfiles it could not read; versions they
-pin are not protected. An older workfile's pins are not read either: open it
+`.hip`, `.hiplc` (Indie) and `.hipnc` (Apprentice) workfiles are all read:
+a `.hiplc` / `.hipnc` holds the same text sections as a `.hip`, each behind
+a `HouLC`/`HouNC` header in place of cpio's. One in any other form (no such
+header, or a first section that is not text) is not guessed at: the listing
+says how many latest workfiles it could not read, and versions they pin are
+not protected. An older workfile's pins are not read either: open it
 on latest, or re-export what it needs.
 
 `--context` narrows it to shots, assets or a path under them

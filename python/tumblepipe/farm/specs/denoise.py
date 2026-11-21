@@ -21,11 +21,15 @@ config = {
     'force_cpu': 'bool',        # optional; OIDN on a CPU device (default: DEFAULT_FORCE_CPU)
     'receipt_path': 'string',   # '.####.json' frame pattern
     'input_paths': {'aov': 'string'},   # per-AOV '.####.exr' patterns
-    'output_paths': {'aov': 'string'}
+    'output_paths': {'aov': 'string'},
+    'overwrite': 'bool'         # optional (#92, farm.specs.repair): denoise
+                                # the task's frames even when their receipts
+                                # exist; the context carries it when true
 }
 """
 
 from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import repair
 from tumblepipe.farm.checks import (
     check_bool,
     check_str,
@@ -63,6 +67,7 @@ def is_valid_context(config) -> bool:
     if not check_bool(config, 'force_cpu'): return False
     if not valid_step(config): return False
     if not frame_ranges.valid_context_entry(config): return False
+    if not repair.check_overwrite(config): return False
     return True
 
 
@@ -73,4 +78,5 @@ def is_valid_config(config) -> bool:
     if not frame_ranges.valid_entry(config, explicit_frames=True): return False
     # Optional here: absent means DEFAULT_FORCE_CPU.
     if 'force_cpu' in config and not isinstance(config['force_cpu'], bool): return False
+    if not repair.check_overwrite(config): return False
     return _valid_paths(config)

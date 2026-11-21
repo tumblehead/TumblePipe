@@ -253,15 +253,63 @@ pub fn workfile_entity(purpose: &str, parts: &[String]) -> Option<Vec<String>> {
     Some(out)
 }
 
+/// `archive.hipfile.readable`: whether a workfile's bytes are read. A
+/// `.hip` always; a `.hiplc` / `.hipnc` when it starts with a licensed
+/// section header (`HouLC`/`HouNC`, 0x1a, 8-64 hex digits, a 1-256 byte
+/// section name, NUL) and the first 64 bytes after it are plain text: the
+/// same text sections as a `.hip`'s, each behind a header of its own in
+/// place of cpio's. Any other form is not read, and counted unreadable.
+pub fn readable(bytes: &[u8], name: &str) -> bool {
+    let lower = name.to_lowercase();
+    let suffix = lower.rsplit_once('.').map(|(_, s)| s).unwrap_or("");
+    if suffix == "hip" {
+        return true;
+    }
+    if suffix != "hiplc" && suffix != "hipnc" {
+        return false;
+    }
+    let Some(end) = licensed_header(bytes) else { return false };
+    let mut first = &bytes[end..bytes.len().min(end + 64)];
+    // A short first section ends at the next section's header.
+    for magic in [b"HouLC\x1a", b"HouNC\x1a"] {
+        if let Some(at) = first.windows(magic.len()).position(|w| w == magic) {
+            first = &first[..at];
+        }
+    }
+    !first.is_empty() && first.iter().all(|&b| matches!(b, 9 | 10 | 13) || (32..127).contains(&b) || b >= 128)
+}
+
+/// Where the licensed section header at the start of `bytes` ends (just
+/// past its NUL), as the regex `Hou(?:LC|NC)\x1a[0-9a-f]{8,64}[^\x00\n]{1,256}\x00`
+/// matches it; None when there is none.
+fn licensed_header(bytes: &[u8]) -> Option<usize> {
+    if !(bytes.starts_with(b"HouLC\x1a") || bytes.starts_with(b"HouNC\x1a")) {
+        return None;
+    }
+    let rest = &bytes[6..];
+    let stop = rest.iter().position(|&b| b == 0 || b == b'\n')?;
+    if rest[stop] != 0 {
+        return None;
+    }
+    let segment = &rest[..stop];
+    let hex = segment.iter().take_while(|&&b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)).count();
+    // the key takes 8..=min(64, hex) of the run, the name the rest (1..=256)
+    let longest = hex.min(64);
+    if hex < 8 || segment.len() < 9 || segment.len() - longest > 256 {
+        return None;
+    }
+    Some(6 + stop + 1)
+}
+
 /// A workfile's text, as Python reads it (`read_bytes().decode('utf-8',
 /// 'replace')`).
 pub fn read_text(path: &Path) -> std::io::Result<String> {
     std::fs::read(path).map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
-/// [`read_text`] a megabyte at a time, `more(bytes)` told after each; it
+/// A file's bytes a megabyte at a time, `more(bytes)` told after each; it
 /// answers false to stop (an `Interrupted` error).
-pub fn read_text_metered(path: &Path, more: &dyn Fn(u64) -> bool) -> std::io::Result<String> {
+pub fn read_bytes_metered(path: &Path, more: &dyn Fn(u64) -> bool) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
     let mut file = std::fs::File::open(path)?;
     let mut bytes = Vec::new();
@@ -278,7 +326,7 @@ pub fn read_text_metered(path: &Path, more: &dyn Fn(u64) -> bool) -> std::io::Re
             return Err(std::io::Error::new(std::io::ErrorKind::Interrupted, "cancelled"));
         }
     }
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -287,6 +335,34 @@ mod tests {
 
     fn s(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|p| p.to_string()).collect()
+    }
+
+    /// `archive.hipfile.readable` (test_hipfile pins Python's; the parity run
+    /// draws both forms): a `.hiplc` / `.hipnc` reads in Houdini's licensed
+    /// layout only.
+    #[test]
+    fn licensed_workfiles() {
+        let start = b"fplayback -i on -r off\nfps 24\n";
+        let file =
+            |magic: &[u8], key: &str, name: &str, first: &[u8]| [magic, b"\x1a", key.as_bytes(), name.as_bytes(), b"\x00", first].concat();
+        let key = "1033600baa067e1658609a7e5963";
+        assert!(readable(&file(b"HouLC", key, ".start", start), "a_v0001.hiplc"));
+        assert!(readable(&file(b"HouNC", key, ".start", start), "a_v0001.HIPNC"));
+        // a short first section ends at the next header
+        let two = [file(b"HouLC", key, ".start", b"fps 24\n"), file(b"HouLC", key, ".variables", b"set -g A = 1\n")].concat();
+        assert!(readable(&two, "a.hiplc"));
+        // any other form is not read
+        assert!(!readable(start, "a.hiplc"));
+        assert!(!readable(&file(b"HouXX", key, ".start", start), "a.hiplc"));
+        assert!(!readable(&file(b"HouLC", "abc123", ".start", start), "a.hiplc"));
+        assert!(!readable(&file(b"HouLC", &key.to_uppercase(), ".start", start), "a.hiplc"));
+        assert!(!readable(&file(b"HouLC", key, ".start\n", start), "a.hiplc"));
+        assert!(!readable(&file(b"HouLC", key, ".start", &[1, 2, 3, 0, 255]), "a.hiplc"));
+        assert!(!readable(&file(b"HouLC", key, &"x".repeat(257), start), "a.hiplc"));
+        assert!(readable(&file(b"HouLC", key, &"x".repeat(256), start), "a.hiplc"));
+        // a .hip always reads; another name never
+        assert!(readable(&[0, 1, 2], "a.hip"));
+        assert!(!readable(&file(b"HouLC", key, ".start", start), "a.txt"));
     }
 
     #[test]

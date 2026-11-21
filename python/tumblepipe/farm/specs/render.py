@@ -21,9 +21,11 @@ config = {
         'depth': 'path/to/depth.####.exr'
     },
     'render_pass': '/Render/Passes/characters',  # optional: husk --pass
-    'slap_comp': 'slapcomp/sq010_sh010_slapcomp_v0002.bgeo.sc'
+    'slap_comp': 'slapcomp/sq010_sh010_slapcomp_v0002.bgeo.sc',
                     # optional: husk --slap-comp, relative to the job's data
                     # dir (pipe.slap_comp); only with tile_count 1
+    'overwrite': True   # optional (#92, farm.specs.repair): render the
+                        # task's frames even when their receipts exist
 }
 
 context = {     # what the worker reads; Deadline appends the frame span
@@ -35,11 +37,13 @@ context = {     # what the worker reads; Deadline appends the frame span
     'input_path': ...,
     'output_paths': {...},
     'render_pass': ...,     # optional
-    'slap_comp': ...        # optional
+    'slap_comp': ...,       # optional
+    'overwrite': True       # optional
 }
 """
 
 from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import repair
 from tumblepipe.farm.checks import (
     check_int,
     check_str,
@@ -69,6 +73,7 @@ def is_valid_context(config) -> bool:
         if config['tile_count'] != 1: return False
     if not valid_step(config): return False
     if not frame_ranges.valid_context_entry(config): return False
+    if not repair.check_overwrite(config): return False
     return True
 
 

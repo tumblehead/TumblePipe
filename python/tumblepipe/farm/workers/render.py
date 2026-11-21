@@ -46,7 +46,8 @@ def main(
     receipt_path: Path,
     output_paths: dict[str, Path],
     render_pass: str | None = None,
-    slap_comp_path: Path | None = None
+    slap_comp_path: Path | None = None,
+    overwrite: bool = False
     ) -> int:
 
     # Check that OCIO has been set
@@ -61,11 +62,12 @@ def main(
         for frame_index in render_range
     ]
 
-    # Find missing output receipts
+    # Find missing output receipts. Into version (#92) renders frames
+    # whose receipts exist: a frame being repaired has one.
     missing_receipt_paths = [
         output_receipt_path
         for output_receipt_path in receipt_paths
-        if not output_receipt_path.exists()
+        if overwrite or not output_receipt_path.exists()
     ]
 
     # Check if all receipts already exist
@@ -295,7 +297,8 @@ def from_config(config: dict, frame_span: BlockRange) -> int:
             for aov_name, aov_path in config['output_paths'].items()
         },
         config.get('render_pass'),
-        None if 'slap_comp' not in config else job_data_dir() / config['slap_comp']
+        None if 'slap_comp' not in config else job_data_dir() / config['slap_comp'],
+        bool(config.get('overwrite', False))
     )
 
 if __name__ == '__main__':

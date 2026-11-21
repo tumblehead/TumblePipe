@@ -197,7 +197,7 @@ fn is_version_parm(name: &str) -> bool {
     name == "pins" || name.strip_prefix("version").is_some_and(|rest| rest.chars().all(py::is_digit))
 }
 
-/// The render versions a plain `.hip` names (`renders.hip_pins`): every
+/// The render versions a workfile's text names (`renders.hip_pins`): every
 /// exact version in a node's `version` or `pins` parm, of every entity that
 /// node names. Any department and layer of it.
 pub fn hip_pins(text: &str, own: Option<&[String]>) -> HashSet<Pin> {
@@ -469,7 +469,7 @@ fn pinned(
     notes.push(format!("Read {read} latest workfile(s) for the render versions they name."));
     if unreadable > 0 {
         notes.push(format!(
-            "{unreadable} latest workfile(s) are .hiplc/.hipnc and cannot be read: render versions they name are NOT protected."
+            "{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: render versions they name are NOT protected."
         ));
     }
 

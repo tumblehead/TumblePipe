@@ -444,10 +444,26 @@ Desktop (`python -m tumblepipe.farm.manager`).
   twice; *Resume* brings them back) or leave them. It is refused for a
   job that is rendering or completed, for a non-HPM job, and when one of
   the jobs waits on another unfinished farm job outside that batch.
+- **Render again:** a task rendered a bad frame (a GPU glitch, say).
+  Select its task (or several: Shift- and Ctrl-click), right-click ▸
+  *Render again…* (#92). Those tasks render again into the same version,
+  from the same job files, and so do the frames of them in the jobs of the
+  batch that follow (denoise, slapcomp, mp4s, notify, comp). Every frame
+  worker skips a frame whose receipt (`*.####.json`) exists, so their
+  receipts are deleted first: all the selected tasks' receipts, and in each
+  job that follows only the receipts of the frames rendered again (a
+  denoise of 20 frames denoises the one frame again). A job without
+  per-frame receipts (an mp4, a notify, a sync) runs all of its tasks
+  again. The jobs that follow wait for the jobs they depend on again
+  (Deadline `PendJob`; the local queue waits by itself). The dialog names
+  the jobs and task counts first. Works for local and farm jobs. To render
+  frames again after the job is gone, use Farm Submit's
+  [Into](asset-browser/submit-jobs.md#repairing-frames).
 - **Right-click menus:** on a job, the same actions plus *Open job folder*,
   *Open output folder*, *Preview in Cinedex*, *Copy job ID* and *Copy name*.
-  On a task, *Open log folder*, *Copy log*, *Copy frames*, *Copy error*, and
-  the job actions (they act on the whole job, as on Deadline).
+  On a task, *Open log folder*, *Copy log*, *Copy frames*, *Copy error*,
+  *Render again…*, and the job actions (they act on the whole job, as on
+  Deadline).
 - **Preview in Cinedex:** right-click a job ▸ *Preview in Cinedex* plays its
   rendered frames in Cinedex's [preview window](asset-browser/play-shots.md#the-preview-window)
   (`cinedex --frames <folder>`; it needs `$OCIO`, as Play does): Play and

@@ -44,6 +44,7 @@ from pathlib import Path
 
 from tumblepipe import naming, prune_exports
 from tumblepipe.archive.inventory import Kind, _file_version
+from tumblepipe.archive.hipfile import read_workfile_text
 from tumblepipe.archive.longpath import long_path
 from tumblepipe.cleanup.core import (
     KEEP_FILE, RECENT_DAYS, Category, CategoryPlan, Entry, Settings, age_days, delete_entries, recently_written,
@@ -146,7 +147,8 @@ _PATH = re.compile(r'(?<![A-Za-z0-9_])render/[^"\'\s<>|*?]+?/v\d{4,}(?![0-9])')
 
 
 def hip_pins(text: str, own: tuple[str, ...] | None) -> set[Pin]:
-    """The render versions a plain ``.hip`` names: every exact version in a
+    """The render versions a workfile's text names (``archive.hipfile``):
+    every exact version in a
     node's ``version`` parm (``th::import_render``) or ``pins`` parm (an
     all-channels import the farm froze: ``channel:department:version``), of
     every entity that node names (``from_context``: the workfile's own,
@@ -306,13 +308,13 @@ def pinned(roots, units: dict[str, Unit], notes: list[str], errors: list[str]) -
     by_workfile: set[str] = set()
     read = unreadable = 0
     for purpose, parts, path in prune_exports.latest_workfiles(roots):
-        if not path.name.lower().endswith('.hip'):
-            unreadable += 1
-            continue
         try:
-            text = long_path(path).read_bytes().decode('utf-8', 'replace')
+            text = read_workfile_text(path)
         except OSError as error:
             errors.append(f'{path}: {error}')
+            continue
+        if text is None:
+            unreadable += 1
             continue
         read += 1
         own = prune_exports._workfile_entity(purpose, parts)
@@ -321,7 +323,7 @@ def pinned(roots, units: dict[str, Unit], notes: list[str], errors: list[str]) -
     notes.append(f'Read {read} latest workfile(s) for the render versions they name.')
     if unreadable:
         notes.append(
-            f'{unreadable} latest workfile(s) are .hiplc/.hipnc and cannot be read: '
+            f'{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: '
             'render versions they name are NOT protected.'
         )
 

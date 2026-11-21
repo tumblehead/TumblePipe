@@ -297,6 +297,12 @@ The Warnings column says, per row, what the submission would run into:
   daily` (`…, Copy to edit skipped` with **Copy to edit** ticked) — a
   [stepped render](#stepped-renders) (the Render's **Step** above 1). A
   warning, not a block.
+- `<n> frames (…) into <version> of each channel, over the frames there;
+  its mp4s and slapcomp run again over the whole version` — **Into** is
+  set: a [repair](#repairing-frames). A warning, not a block.
+- `Into version renders the Frame list into an existing version: …`,
+  `… untick Preview`, `… set the Step to 1` — **Into** is set without a
+  **Frame list**, beside **Preview**, or on a **Step** above 1. **Blocks**.
 - `Comp follows a published render, and stepped renders are not
   published: …` — Comp is ticked beside a stepped render. **Blocks**:
   untick Comp, or set the Render's **Step** to 1.
@@ -494,6 +500,7 @@ pixel samples: more is cleaner and slower.
 | **Frames** (first → last) | `frame_start` / `frame_end` | *required* — omitted, and the entity fails with "no frame range configured" | |
 | **Step** (beside **Frames**) | — | 1 | Render every Nth frame: the range from its first frame (rolls included), or each **Frame list** range from its own first. Above 1 it is a [stepped render](#stepped-renders), a check render that is not published. Remembered for the next opening once set; ↺ goes back to 1. Hidden on the Assets tab: a turntable renders on the studio's own step. |
 | **Frame list** | — | empty: every frame, first → last | Render only some stretches of the shot: ranges and single frames, separated by spaces, e.g. `1001-1030 1040-1055 1100-1200` (commas are taken too). A [frame timeline](#frame-timelines) under the field picks them with the mouse. Each must lie inside the rendered range (**Frames** with the rolls). Ranges are sorted, and ranges that overlap or touch merge (`1001-1030 1031-1040` is `1001-1040`); the note under the field shows the frame count. **One range** renders exactly as **Frames** set to it, with no rolls added, and publishes as usual. **Two or more** make a [multi-range render](#multi-range-renders). A word that is not a frame or a range, a range written backwards (`1030-1001`) or one past the shot **blocks** the row (see [Warnings](#warnings)). One list for the whole submission, as the Preview frames list. Hidden on the Assets tab: a turntable renders the studio's frames. Not remembered for the next opening. |
+| **Into** | — | New version | Where the render writes: **New version** (a new version of each channel, as always), **Latest version**, or a version picked from the menu (the versions the ticked rows' channels have, newest first, read as the menu opens). Anything but New version [renders the Frame list into that version](#repairing-frames), over the frames there. The note under it says what it renders where. Hidden on the Assets tab. Not remembered for the next opening. |
 | **Pre / Post roll** | `roll_start` / `roll_end` | 0 / 0 | **Extends** the rendered range: `first - pre … last + post`. |
 | **Pool** | `farm.default_pool` | `general` | |
 | **Pri / Tiles** | `farm.priority` / `farm.tile_count` | 50 / 4 | Priority orders full renders among themselves and is capped at 70; see [Farm priorities](#farm-priorities). A preview always runs at 80. An entity with a [published slap comp](../nodes/lighting-and-rendering.md#slap-comps) renders only with Tiles 1: husk would run it on each tile, so Submit refuses that entity otherwise. |
@@ -624,6 +631,42 @@ It is a check render, for looking at lighting across a shot cheaply:
 - The note under the **Frame list** counts the frames on the step, and the
   [Warnings](#warnings) column says `every Nth frame (<n> frames): stepped
   renders are not published, no daily`.
+
+#### Repairing frames
+
+When a frame of a render comes out wrong (a GPU glitch, say), render just
+that frame again into the same version (#92), instead of rendering it as
+a new version and copying it over by hand:
+
+1. Type the frames in the **Frame list** (`1047`, or `1047 1102-1104`).
+2. Set **Into** to **Latest version**, or pick the version.
+3. Submit.
+
+The render renders those frames into that version of every checked
+channel, overwriting them; every other frame of the version stays as it
+is. With **Denoise** ticked, the denoise version made from that render
+version is repaired the same way. The version's own `context.json` is
+left alone, so the version reads exactly as before: complete, published
+or a check render, whatever it was. After the frames, the version's review
+mp4s, its slapcomp (a new slapcomp version) and, with **Comp** ticked, the
+comp run again over the **whole** version, as they did for the original
+render. **Copy to edit** and **Comp** follow the version: on for a
+published version (even when the Frame list has several ranges), off for
+a multi-range or stepped one.
+
+The submit reads the versions on disk and refuses, naming what is wrong:
+a channel without that version, a version with no `context.json` (not
+made by a farm render), frames the version does not hold (outside its
+range, off its step, or between its ranges), channels whose versions cover
+different frames (repair them one channel at a time), and **Denoise**
+ticked when no denoise version was made from it (untick **Denoise** to
+repair the render only; the submit log then warns that the denoise
+version keeps the old frames, and a comp's best pass reads it). Into
+needs a **Frame list**, **Step** 1 and no **Preview**.
+
+If the job that rendered the frame is still in the Farm Manager,
+[Render again](../deadline.md#the-farm-manager) on its task does the same
+from the same job files.
 
 #### An asset's turntable
 

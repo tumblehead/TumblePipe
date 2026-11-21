@@ -64,6 +64,7 @@ from tumblepipe.config.department_off import read_disabled_departments
 # Frame List readings.
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import preview_frames
+from tumblepipe.farm.specs import repair
 
 # Sentinel: this field has no fallback constant. When it resolves to
 # neither an exception, a pinned form value, nor an entity property, the
@@ -189,6 +190,12 @@ FIELDS: tuple[Field, ...] = (
     # shot's render. Above 1 the render is a check render, never published
     # (:func:`step_disabled`).
     Field('render_step', 'render', 'Step', prop=None, default=1, kind='int'),
+    # Into version (#92, gabriel/Magnus 2026-11-21): '' renders new
+    # versions; ``latest`` or a version name renders the Frame list into
+    # that existing version (farm.specs.repair). A batch field: the same
+    # target goes to every ticked shot.
+    Field('into_version', 'render', 'Into version', prop=None,
+          default=repair.TARGET_NEW, kind='str'),
     # Entity fields. The four frame keys are REQUIRED: this is the fix.
     Field('first_frame', 'render', 'First', prop='frame_start',
           default=REQUIRED, kind='int', preflight=True),
@@ -860,7 +867,10 @@ def entity_warnings(
                     f"made is missing from the comp"
                 )
 
-    warnings.extend(frame_list_warnings(resolved))
+    if into_version(resolved) == repair.TARGET_NEW:
+        warnings.extend(frame_list_warnings(resolved))
+    else:
+        warnings.extend(repair_warnings(resolved))
     if not turntable:
         warnings.extend(step_warnings(resolved))
     warnings.extend(preview_frame_warnings(properties, resolved))
@@ -929,17 +939,100 @@ def frame_list_note(text: str | None, step: int = 1) -> str:
     )
 
 
+def into_version(resolved: dict) -> str:
+    """The row's Into version (#92): '' for new versions, ``latest`` or a
+    version name for a repair; '' when the render is off."""
+    target = resolved.get('into_version')
+    if not resolved.get('render') or not isinstance(target, str):
+        return repair.TARGET_NEW
+    return target
+
+
+def repair_errors(resolved: dict) -> list[str]:
+    """Why the row's Into version cannot go with its other settings, read
+    without the disk (``farm.specs.repair.setup_problems``, which
+    ``batch_submit`` refuses the same way); a repair reaching for a version
+    that is not there is refused at the submit, which reads the disk."""
+    target = into_version(resolved)
+    if not repair.is_repair(target):
+        return []
+    ranges, error = frame_list(resolved)
+    if error is not None:
+        return []       # entity_errors names the list's own problem
+    return repair.setup_problems(
+        target, ranges,
+        preview=resolved.get('render_mode') in PREVIEW_RENDER_MODES,
+        step=render_step(resolved),
+    )
+
+
+def repair_warnings(resolved: dict) -> list[str]:
+    """The Warnings-column line of a repair: which frames go into which
+    version, and what runs again after them."""
+    target = into_version(resolved)
+    ranges, error = frame_list(resolved)
+    if not repair.is_repair(target) or error is not None or not ranges:
+        return []
+    again = 'its mp4s and slapcomp'
+    if resolved.get('comp'):
+        again += ' and the comp'
+    return [
+        f"{frame_ranges.summary(ranges)} ({frame_ranges.format_ranges(ranges)}) "
+        f"into {_into_where(target)} of each channel, over the frames there; "
+        f"{again} run again over the "
+        "whole version"
+    ]
+
+
+def _into_where(target: str) -> str:
+    """``the newest version`` for ``latest``, else the version's name."""
+    return 'the newest version' if target == repair.TARGET_LATEST else target
+
+
+def into_note(target: str | None, frame_list_text: str | None) -> str:
+    """The line under Farm Submit's Into version: what it does with the
+    Frame list typed."""
+    if not repair.is_repair(target or ''):
+        return 'Renders into a new version of each channel.'
+    try:
+        ranges = frame_ranges.normalise(frame_ranges.parse(frame_list_text))
+    except frame_ranges.FrameListError:
+        ranges = ()
+    if not ranges:
+        return repair.NEEDS_FRAME_LIST + '.'
+    return (
+        f"Renders {frame_ranges.summary(ranges)} into {_into_where(target)} of each channel, "
+        "over the frames there (denoised too with Denoise); the version's "
+        "mp4s, slapcomp and Comp then run again over the whole version."
+    )
+
+
+def version_choices(versions_per_row: Sequence[Sequence[str]]) -> list[str]:
+    """The version names Farm Submit's Into version offers: every name any
+    ticked row's channels have, newest first. A name only some rows have
+    is offered too; the submit refuses it for the rows without it."""
+    names = {
+        name for names in versions_per_row for name in names
+        if repair.is_version_name(name)
+    }
+    return sorted(names, key=lambda name: int(name[1:]), reverse=True)
+
+
 #: The Render settings a multi-range render ignores (``batch_submit`` drops
 #: them), which Farm Submit turns off while such a list is typed.
 MULTI_RANGE_IGNORED = ('copy_to_edit',)
 
 
-def frame_list_disabled(text: str | None) -> dict[str, str]:
+def frame_list_disabled(text: str | None, target: str | None = None) -> dict[str, str]:
     """``{setting key: why}`` for the Render settings a Frame List of
     ``text`` makes the submit ignore: none for no list, one range or text
     that cannot be read (the row's errors say that), else the ones a
     multi-range render ignores (:data:`MULTI_RANGE_IGNORED`), so the dialog
-    shows them off with the reason instead of dropping them silently."""
+    shows them off with the reason instead of dropping them silently.
+    Into version (``target``, #92) keeps them on: its version stays as
+    published as it was, so the version decides at the submit."""
+    if repair.is_repair(target or ''):
+        return {}
     try:
         ranges = frame_ranges.normalise(frame_ranges.parse(text))
     except frame_ranges.FrameListError:
@@ -1171,7 +1264,11 @@ def entity_errors(
     ranges, frame_list_error = frame_list(resolved)
     if frame_list_error is not None:
         errors.append(frame_list_error)
-    if frame_ranges.is_multi(ranges) and resolved.get('comp'):
+    # Into version (#92): a repair keeps its version as published as it
+    # was, so a multi-range list beside a Comp is the version's to decide.
+    errors.extend(repair_errors(resolved))
+    repairing = repair.is_repair(into_version(resolved))
+    if frame_ranges.is_multi(ranges) and resolved.get('comp') and not repairing:
         errors.append(
             f"Comp follows a published render, and "
             f"{frame_ranges.NOT_PUBLISHED}: untick Comp, or render one range"

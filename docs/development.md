@@ -906,8 +906,9 @@ workspace:
   `deadlinecommand` (`$DEADLINE_PATH`, else the platform's install), as
   `tumblepipe.apps.deadline` does. Python stays the reference:
   `tests/test_cleanup_parity.py` (minigun) draws random projects (exports
-  with staged layers, renders, caches and their workfiles, `.hip`/`.hiplc`
-  workfiles and backups, edits, job folders, `_deleted` stamps) and holds
+  with staged layers, renders, caches and their workfiles, `.hip` workfiles
+  and `.hiplc`/`.hipnc` ones in Houdini's licensed layout or a form neither
+  reads (`tests/_hip_forms.py`), backups, edits, job folders, `_deleted` stamps) and holds
   the plan, the apply (the files left and the log), the window's texts, the
   command line, Deadline's listing, layer references and name readings to
   it, through the line protocol of `cleanup/examples/cleanup_lines.rs`.

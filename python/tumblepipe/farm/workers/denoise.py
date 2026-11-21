@@ -254,7 +254,8 @@ def main(
     receipt_path: Path,
     input_paths: dict[str, Path],
     output_paths: dict[str, Path],
-    force_cpu: bool
+    force_cpu: bool,
+    overwrite: bool = False
     ) -> int:
 
     # Check that OCIO has been set. idenoise needs no colour config, but an
@@ -272,10 +273,12 @@ def main(
         frame_file(receipt_path, frame_index)
         for frame_index in render_range
     ]
+    # Into version (#92) denoises frames whose receipts exist: a frame
+    # being repaired has one.
     missing_receipt_paths = [
         output_receipt_path
         for output_receipt_path in receipt_paths
-        if not output_receipt_path.exists()
+        if overwrite or not output_receipt_path.exists()
     ]
     if len(missing_receipt_paths) == 0:
         print('Output receipts already exist')
@@ -431,7 +434,8 @@ def from_config(config: dict, frame_span: BlockRange) -> int:
             aov_name: Path(aov_path)
             for aov_name, aov_path in config['output_paths'].items()
         },
-        config['force_cpu']
+        config['force_cpu'],
+        bool(config.get('overwrite', False))
     )
 
 if __name__ == '__main__':

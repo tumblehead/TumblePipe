@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from tumblepipe import naming, prune_exports
+from tumblepipe.archive.hipfile import read_workfile_text
 from tumblepipe.archive.longpath import long_path
 from tumblepipe.archive.roots import WORKFILE_PURPOSES
 from tumblepipe.cleanup.core import (
@@ -126,7 +127,8 @@ def list_units(inventory) -> dict[tuple[str, str], Unit]:
 
 
 def hip_names(text: str) -> tuple[set[tuple[str, str]], set[str]]:
-    """What a plain ``.hip`` names: ``(cache name, version)`` for every node
+    """What a workfile's text names (``archive.hipfile``): ``(cache name,
+    version)`` for every node
     holding a ``name`` parm and an exact ``version`` parm (``th::cache``),
     and every ``cache/<name>/vNNNN`` a path in it runs into."""
     pairs: set[tuple[str, str]] = set()
@@ -186,13 +188,13 @@ def named_by_workfiles(roots, units: dict, notes: list[str], errors: list[str]) 
     named: set[tuple[str, str]] = set()
     read = unreadable = 0
     for _purpose, _parts, path in prune_exports.latest_workfiles(roots):
-        if not path.name.lower().endswith('.hip'):
-            unreadable += 1
-            continue
         try:
-            text = long_path(path).read_bytes().decode('utf-8', 'replace')
+            text = read_workfile_text(path)
         except OSError as error:
             errors.append(f'{path}: {error}')
+            continue
+        if text is None:
+            unreadable += 1
             continue
         read += 1
         pairs, paths = hip_names(text)
@@ -202,7 +204,7 @@ def named_by_workfiles(roots, units: dict, notes: list[str], errors: list[str]) 
     notes.append(f'Read {read} latest workfile(s) for the cache versions they name.')
     if unreadable:
         notes.append(
-            f'{unreadable} latest workfile(s) are .hiplc/.hipnc and cannot be read: '
+            f'{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: '
             'cache versions they name are NOT protected.'
         )
     return named

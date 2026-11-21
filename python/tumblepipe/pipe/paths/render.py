@@ -432,3 +432,24 @@ def get_render_context(
         if render is None: continue
         renders[department_name] = render
     return RenderContext(renders = renders)
+
+def list_render_versions(
+    entity_uri: Uri,
+    render_department_name: str,
+    render_layer_name: str,
+    purpose: str = 'render'
+    ) -> dict[str, Optional[dict]]:
+    """``{version name: its context.json}`` of one render layer's versions,
+    oldest first; a version folder whose context is missing or unreadable
+    maps to None. What Farm Submit's Into version picks from and checks
+    against (``farm.specs.repair``, #92)."""
+    versions: dict[str, Optional[dict]] = {}
+    for version_path in list_version_paths(_render_dir(
+        entity_uri, render_department_name, render_layer_name, purpose
+    )):
+        try:
+            context = load_json(version_path / 'context.json')
+        except (OSError, ValueError):
+            context = None
+        versions[version_path.name] = context if isinstance(context, dict) else None
+    return versions

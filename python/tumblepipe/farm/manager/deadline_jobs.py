@@ -105,6 +105,20 @@ def control(command: str, job_ids: list[str]) -> str:
     return _command(COMMANDS[command], ','.join(job_ids), envelope=False)
 
 
+def requeue_tasks(job_id: str, task_ids) -> str:
+    """Requeue some tasks of a job (Render again, ``manager.render_again``).
+    Never an empty list: ``RequeueJobTasks`` without one requeues them all."""
+    ids = [str(int(task_id)) for task_id in task_ids]
+    if not ids:
+        raise ValueError(f'no task of {job_id} to requeue')
+    return _command('RequeueJobTasks', job_id, ','.join(ids), envelope=False)
+
+
+def pend(job_id: str) -> str:
+    """Put a job back to wait for the jobs it depends on (``PendJob``)."""
+    return _command('PendJob', job_id, envelope=False)
+
+
 # ── reports ───────────────────────────────────────────────
 
 @dataclass(frozen=True)

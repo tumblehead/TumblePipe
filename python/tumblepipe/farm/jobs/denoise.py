@@ -6,6 +6,7 @@ import json
 from tumblepipe.farm.deadline import farm_job, schedule_frames
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import denoise as denoise_spec
+from tumblepipe.farm.specs import repair as repair_spec
 
 
 def build(config, paths, staging_path):
@@ -27,7 +28,10 @@ def build(config, paths, staging_path):
         # specs.denoise.DEFAULT_FORCE_CPU for why the GPU is not used.
         force_cpu = config.get('force_cpu', denoise_spec.DEFAULT_FORCE_CPU),
         # A multi-range denoise's tasks are its blocks (#84)
-        **frame_ranges.context_entry(config)
+        **frame_ranges.context_entry(config),
+        # Into version (#92): denoise over frames whose receipts exist
+        **({repair_spec.OVERWRITE_KEY: True}
+           if config.get(repair_spec.OVERWRITE_KEY) else {})
     ), staging_path,
         name = config['title'],
         pool = config['pool_name'],

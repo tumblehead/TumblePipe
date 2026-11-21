@@ -23,7 +23,8 @@ config = {
         'copy_to_edit': 'bool',
         'cut_range': ['int', 'int'],            # optional (specs.render_pipeline)
         'preview_frame_list': ['int'],          # optional (specs.render_pipeline)
-        'frame_ranges': [['int', 'int']]        # optional (specs.render_pipeline, #84)
+        'frame_ranges': [['int', 'int']],       # optional (specs.render_pipeline, #84)
+        'repair': {...}                         # optional (specs.render_pipeline, #92)
     },
     'composite': {...},     # optional: the re-comp after the render (specs.composite.valid_recomp)
     'tasks': {
@@ -45,7 +46,6 @@ houdini_config = {
 }
 """
 
-from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs.composite import valid_recomp
 from tumblepipe.farm.checks import (
     check_bool,
@@ -56,7 +56,10 @@ from tumblepipe.farm.checks import (
     valid_entity,
     valid_frame_range,
 )
+from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import repair
 from tumblepipe.farm.specs.render_pipeline import (
+    comp_follows,
     valid_render_settings,
     valid_render_tasks,
 )
@@ -80,10 +83,14 @@ def is_valid_config(config) -> bool:
     tasks = config.get('tasks')
     if not valid_render_tasks(tasks): return False
     if not _valid_stage(tasks.get('stage')): return False
+    if not repair.valid_entry(settings, tasks): return False
     if 'composite' in config:
         if not valid_recomp(config['composite']): return False
+        if repair.CONFIG_KEY in settings:
+            # A repair's version decides whether it is published (#92)
+            if not comp_follows(settings): return False
         # A multi-range render is not published: no comp follows it (#84).
-        if frame_ranges.CONFIG_KEY in settings: return False
+        elif frame_ranges.CONFIG_KEY in settings: return False
     return True
 
 

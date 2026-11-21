@@ -37,6 +37,8 @@ config = {
         'preview_frame_list': ['int'],  # optional: specs.render_pipeline.valid_preview_frame_list
         'frame_ranges': [['int', 'int']],  # optional, shots only: a multi-range
                                          # render (farm.specs.frame_ranges, #84)
+        'repair': {...},                 # optional, shots only: into existing
+                                         # versions (farm.specs.repair, #92)
         'composite': {...},              # optional: specs.composite.valid_recomp
         'turntable': 'bool',             # optional: an asset's turntable (#53)
         'step_size': 'int'               # optional (default 1): a turntable's
@@ -62,6 +64,7 @@ frames sit on that step, and it carries no composite.
 """
 
 from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import repair
 from tumblepipe.farm.specs.composite import valid_recomp
 from tumblepipe.farm.checks import (
     valid_entity,
@@ -75,6 +78,7 @@ from tumblepipe.farm.checks import (
 from tumblepipe.farm.specs.playblast import DEFAULT_LOOK, valid_look
 from tumblepipe.farm.specs.render_pipeline import (
     RENDER_TASK_KEYS,
+    comp_follows,
     valid_cut_range,
     valid_preview_frame_list,
 )
@@ -114,17 +118,20 @@ def _valid_render(render):
     step = render.get('step_size', 1)
     if step < 1: return False
     if not valid_preview_frame_list(render, step): return False
+    if not repair.valid_entry(
+        dict(render, step_size=step), task_keys
+    ): return False
     if render.get('turntable'):
-        # A turntable renders the studio's frames, never a frame list.
+        # A turntable renders the studio's frames, never a frame list, and
+        # whole versions, never into an existing one (#92).
         if frame_ranges.CONFIG_KEY in render: return False
+        if repair.CONFIG_KEY in render: return False
         # A turntable is an asset's: no shot comp follows it.
         return 'composite' not in render
     if 'composite' in render:
         if not valid_recomp(render['composite']): return False
-        # A multi-range render is not published: no comp follows it.
-        if frame_ranges.CONFIG_KEY in render: return False
-        # Nor a stepped one (Farm Submit's Step): its frames have gaps.
-        if step > 1: return False
+        # A comp follows a published render (#84, the Step, #92)
+        if not comp_follows(dict(render, step_size=step)): return False
     return True
 
 

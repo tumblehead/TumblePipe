@@ -117,6 +117,7 @@ from .farm_submit_ui import (
 from .frame_timeline import FrameTimeline
 from . import tooltips
 from tumblepipe.farm.submit import frame_selection
+from tumblepipe.farm.specs import repair as repair_spec
 from tumblepipe.farm.submit.review import ReviewRow
 
 log = logging.getLogger(__name__)
@@ -541,6 +542,22 @@ def _combo_index(box: QComboBox, value: str) -> int:
     label), else as its text."""
     index = box.findData(value)
     return index if index >= 0 else box.findText(value)
+
+
+class _RefreshingComboBox(QComboBox):
+    """A combo that asks ``refresh`` to fill its items as its menu opens:
+    Into version's versions are read from disk only when looked at."""
+
+    def __init__(self, refresh, parent=None):
+        super().__init__(parent)
+        self._refresh = refresh
+
+    def showPopup(self) -> None:  # noqa: N802 (Qt's name)
+        try:
+            self._refresh()
+        except Exception:
+            logging.exception('Could not list the versions to render into')
+        super().showPopup()
 
 
 class _CheckableComboBox(QComboBox):
@@ -2504,6 +2521,40 @@ class _ContextPane(QWidget):
         )
         form.addRow("", self._rnd_frame_timeline)
         form.addRow("", self._rnd_frame_list_note)
+        # Into version (#92, gabriel/Magnus 2026-11-21): repair frames in a
+        # version that exists instead of rendering a new one. The versions
+        # are read when the menu opens, from the ticked rows' channels.
+        self._rnd_into = _RefreshingComboBox(self._refresh_into_versions)
+        for target in (repair_spec.TARGET_NEW, repair_spec.TARGET_LATEST):
+            self._rnd_into.addItem(repair_spec.target_label(target), target)
+        self._rnd_into.setToolTip(
+            "New version: the render writes a new version of each channel. "
+            "Latest version, or a version picked here: the render renders "
+            "the Frame list into that version, over the frames there (a "
+            "glitched frame, say), and leaves its other frames as they are. "
+            "With Denoise it repairs the denoise version of it too. Then "
+            "the version's mp4s, slapcomp and Comp run again over the whole "
+            "version. Needs a Frame list, Step 1 and no Preview."
+        )
+        self._rnd_into_note = QLabel(resolve.into_note('', ''))
+        self._rnd_into_note.setWordWrap(True)
+        self._rnd_into_note.setStyleSheet(f"color: {TEXT_SECONDARY};")
+
+        def _into_noted(*_a):
+            self._rnd_into_note.setText(resolve.into_note(
+                self._into_target(), self._rnd_frame_list.text(),
+            ))
+            self._apply_frame_list_disabled()
+
+        def _into_changed(*_a):
+            _into_noted()
+            self._changed()
+
+        self._rnd_into.currentIndexChanged.connect(_into_changed)
+        self._rnd_frame_list.textChanged.connect(_into_noted)
+        into_row = self._row(self._rnd_into)
+        form.addRow("Into:", into_row)
+        form.addRow("", self._rnd_into_note)
         self._rnd_pre = self._spin('pre_roll', 0, 1000)
         self._rnd_post = self._spin('post_roll', 0, 1000)
         rolls_row = self._row(
@@ -2555,7 +2606,8 @@ class _ContextPane(QWidget):
             for row in (
                 self._rnd_camera, frames_row, self._rnd_frame_list,
                 self._rnd_frame_timeline,
-                self._rnd_frame_list_note, rolls_row, denoise_row, modes_row,
+                self._rnd_frame_list_note, into_row, self._rnd_into_note,
+                rolls_row, denoise_row, modes_row,
             ):
                 form.setRowVisible(row, False)
             frames = turntable.farm_frames()
@@ -3059,12 +3111,55 @@ class _ContextPane(QWidget):
             'preview_frame_list': self._rnd_preview_list.text(),
             # An asset's turntable renders the studio's frames (hidden there)
             'frame_list': '' if self._context == 'assets' else self._rnd_frame_list.text(),
+            # ... and whole versions (#92: Into version is hidden there)
+            'into_version': self._into_target(),
         })
         if self._comp_copy_edit is not None:
             values['comp_copy_to_edit'] = self._comp_copy_edit.isChecked()
             values['comp_preview'] = self._comp_preview.isChecked()
             values['comp_preview_frame_list'] = self._comp_preview_list.text()
         return values
+
+    def _into_target(self) -> str:
+        """The Into version picked (#92): '' for new versions; always ''
+        on an asset's tab, where a turntable renders whole versions."""
+        if self._context == 'assets':
+            return repair_spec.TARGET_NEW
+        target = self._rnd_into.currentData()
+        return target if isinstance(target, str) else repair_spec.TARGET_NEW
+
+    def _refresh_into_versions(self) -> None:
+        """Offer the versions the ticked rows' channels have (#92), read
+        from disk as the menu opens, keeping the current pick."""
+        from tumblepipe.pipe.paths.render import list_render_versions
+        from tumblepipe.util.uri import Uri
+
+        current = self._into_target()
+        per_row = []
+        for uri, settings, _warnings, _errors in self._resolved_rows():
+            department = settings.get('render_department')
+            if not settings.get('render') or not isinstance(department, str):
+                continue
+            for channel in resolve.channel_list(settings):
+                try:
+                    per_row.append(list(list_render_versions(
+                        Uri.parse(uri), department, channel,
+                    )))
+                except (OSError, ValueError) as e:
+                    logging.warning(f"Into version: cannot list {uri} {channel}: {e}")
+        names = resolve.version_choices(per_row)
+        if current and current not in names and repair_spec.is_version_name(current):
+            names.append(current)
+        self._rnd_into.blockSignals(True)
+        try:
+            while self._rnd_into.count() > 2:
+                self._rnd_into.removeItem(2)
+            for name in names:
+                self._rnd_into.addItem(name, name)
+            index = self._rnd_into.findData(current)
+            self._rnd_into.setCurrentIndex(max(0, index))
+        finally:
+            self._rnd_into.blockSignals(False)
 
     def _render_step(self) -> int:
         """The Render's Step; 1 on an asset's tab (a turntable renders on
@@ -3081,7 +3176,9 @@ class _ContextPane(QWidget):
             return {}
         return {
             **resolve.step_disabled(self._render_step()),
-            **resolve.frame_list_disabled(self._rnd_frame_list.text()),
+            **resolve.frame_list_disabled(
+                self._rnd_frame_list.text(), self._into_target(),
+            ),
         }
 
     def _apply_frame_list_disabled(self) -> None:

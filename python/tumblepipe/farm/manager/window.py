@@ -38,7 +38,7 @@ from tumbletrove.asset_browser.core.theme import (
 )
 
 from tumblepipe.farm.local import queue, runner
-from tumblepipe.farm.manager import cleanup, frames_preview, machine, rows
+from tumblepipe.farm.manager import cleanup, frames_preview, machine, render_again, rows
 from tumblepipe.util import desktop
 
 log = logging.getLogger(__name__)
@@ -673,6 +673,8 @@ class ManagerWindow(QWidget):
         tree.setAlternatingRowColors(True)
         tree.setUniformRowHeights(True)
         tree.setItemDelegateForColumn(T_PROGRESS, ProgressDelegate(tree))
+        # Several tasks at once for Render again (#92); the log shows the first.
+        tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         header = tree.header()
         # Fixed columns narrow enough that the Error column, the one worth
         # reading, keeps the spare width instead of scrolling off the side.
@@ -958,6 +960,15 @@ class ManagerWindow(QWidget):
             self._refresh_farm()
         elif kind == 'run_here':
             self._confirm_run_here(result)
+        elif kind == 'render_again_plan':
+            self._confirm_render_again(result)
+        elif kind == 'render_again':
+            if result:
+                runner.ensure_running(self._root)
+            self._say(f'{render_again.LABEL}: {key[1]} task{"s" if key[1] != 1 else ""} queued again')
+            self._refresh_local()
+            if self._farm_available:
+                self._refresh_farm()
         elif kind == 'job_failure':
             self._job_failures[key[1]] = rows.job_failure_text(result)
             job = self._current_job
@@ -977,6 +988,14 @@ class ManagerWindow(QWidget):
 
     def _on_future_failed(self, key: tuple, error: Exception) -> None:
         kind = key[0]
+        if kind in ('render_again_plan', 'render_again'):
+            self._say(f'{render_again.LABEL}: not done', error=True)
+            QMessageBox.warning(
+                self, 'Farm Manager',
+                f'{render_again.LABEL} stopped:\n\n{error}'
+                + ('\n\nThe steps before it were done.' if kind == 'render_again' else ''),
+            )
+            return
         if kind == 'run_here':
             self._say('Run on this machine: not possible', error=True)
             QMessageBox.warning(self, 'Farm Manager', f'It cannot run on this machine:\n\n{error}')
@@ -1331,6 +1350,11 @@ class ManagerWindow(QWidget):
         index = items[0].data(T_TASK, KEY_ROLE)
         return next((t for t in self._tasks if t.index == index), None)
 
+    def _selected_tasks(self) -> list[rows.TaskRow]:
+        """Every selected task, in the list's order."""
+        picked = {item.data(T_TASK, KEY_ROLE) for item in self._task_tree.selectedItems()}
+        return [task for task in self._tasks if task.index in picked]
+
     def _on_task_selection(self) -> None:
         self._show_task_log()
         self._update_actions()
@@ -1633,6 +1657,16 @@ class ManagerWindow(QWidget):
         if task.error:
             menu.addAction('Copy error', lambda: _copy(task.error))
         menu.addSeparator()
+        # Render again (#92): these tasks into the same version, and the
+        # jobs that follow them
+        job = self._current_job
+        tasks = self._selected_tasks()
+        label = render_again.LABEL + (f' ({len(tasks)} tasks)…' if len(tasks) > 1 else '…')
+        again = menu.addAction(label, lambda: self._render_again(job, tasks))
+        again.setEnabled(bool(tasks) and job.source in (rows.LOCAL, rows.FARM))
+        again.setToolTip(render_again.TOOLTIP)
+        menu.setToolTipsVisible(True)
+        menu.addSeparator()
         # Suspend, retry and cancel work on the whole job, on Deadline's
         # job menu as here.
         self._add_job_actions(menu, ' job')
@@ -1722,6 +1756,40 @@ class ManagerWindow(QWidget):
         if clicked is suspend:
             ids = the_plan.ids
             self._submit(('farm_control', 'suspend', len(ids)), _farm_control, 'suspend', ids)
+
+    def _render_again(self, job: rows.JobRow, tasks: list[rows.TaskRow]) -> None:
+        """Plan Render again off the GUI thread (it reads the batch's tasks
+        and contexts); the plan comes back to :meth:`_confirm_render_again`."""
+        if job is None or not tasks:
+            return
+        self._say(f'{render_again.LABEL}: reading what follows {job.name}…')
+        self._submit(
+            ('render_again_plan', job.id), _plan_render_again,
+            job, list(tasks), list(self._local_rows) + list(self._farm_rows),
+        )
+
+    def _confirm_render_again(self, the_plan: render_again.Plan) -> None:
+        names = '\n'.join(
+            f'  {part.row.name}: {len(part.tasks)} task{"s" if len(part.tasks) != 1 else ""}'
+            for part in the_plan.parts[:12]
+        )
+        more = f'\n  … and {len(the_plan.parts) - 12} more' if len(the_plan.parts) > 12 else ''
+        box = QMessageBox(self)
+        box.setWindowTitle('Farm Manager')
+        box.setIcon(QMessageBox.Question)
+        box.setText(f'{render_again.LABEL}: {render_again.summary(the_plan)}?\n\n{names}{more}')
+        box.setInformativeText(
+            f'{the_plan.receipt_count} receipt{"s" if the_plan.receipt_count != 1 else ""} '
+            'are deleted first, so the workers render those frames again into the '
+            'same version. The jobs after the first wait for it again.'
+        )
+        go = box.addButton(render_again.LABEL, QMessageBox.AcceptRole)
+        box.addButton(QMessageBox.Cancel)
+        box.setDefaultButton(go)
+        box.exec()
+        if box.clickedButton() is not go:
+            return
+        self._submit(('render_again', the_plan.task_count), _carry_out_render_again, the_plan)
 
     def _local_action(self, command: str, selected: list[rows.JobRow]) -> None:
         if command == queue.REMOVE:
@@ -1854,6 +1922,50 @@ def _fetch_farm_jobs():
 def _fetch_farm_tasks(job_id: str):
     from tumblepipe.farm.manager import deadline_jobs
     return deadline_jobs.fetch_tasks(job_id)
+
+
+def _tasks_of(row: rows.JobRow) -> list[rows.TaskRow]:
+    if row.source == rows.LOCAL:
+        return rows.local_task_rows(Path(row.folder), row.job_index)
+    from tumblepipe.farm.manager import deadline_jobs
+    return deadline_jobs.fetch_tasks(row.id)
+
+
+def _plan_render_again(job: rows.JobRow, tasks: list[rows.TaskRow], all_rows: list[rows.JobRow]):
+    return render_again.plan(
+        job, tasks, all_rows,
+        tasks_of=_tasks_of,
+        context_of=lambda row: rows.read_job_context(row.data_dir, row.arguments),
+        exists=Path.exists,
+    )
+
+
+def _carry_out_render_again(the_plan: render_again.Plan) -> bool:
+    """Carry out Render again; True when a local batch has work again."""
+    local = False
+
+    def _requeue(row: rows.JobRow, task_ids: tuple[int, ...]) -> None:
+        nonlocal local
+        if row.source == rows.LOCAL:
+            queue.request(Path(row.folder), queue.REQUEUE, row.job_index, list(task_ids))
+            local = True
+        else:
+            from tumblepipe.farm.manager import deadline_jobs
+            deadline_jobs.requeue_tasks(row.id, task_ids)
+
+    def _wait(row: rows.JobRow) -> None:
+        # The local runner waits for a job's dependencies by itself.
+        if row.source == rows.FARM:
+            from tumblepipe.farm.manager import deadline_jobs
+            deadline_jobs.pend(row.id)
+
+    render_again.carry_out(
+        the_plan,
+        delete=lambda path: path.unlink(missing_ok=True),
+        requeue=_requeue,
+        wait=_wait,
+    )
+    return local
 
 
 def _plan_run_here(job_id: str):

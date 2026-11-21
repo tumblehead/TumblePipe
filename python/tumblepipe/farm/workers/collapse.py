@@ -64,6 +64,7 @@ def _submit_render(config, result, output_dir) -> None:
         preview_frame_list=render.get('preview_frame_list'),
         frame_ranges=render.get('frame_ranges'),
         step_size=render.get('step_size', 1),
+        repair=render.get('repair'),
     ), paths)
 
 

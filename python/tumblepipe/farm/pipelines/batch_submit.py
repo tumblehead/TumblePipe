@@ -46,11 +46,13 @@ from tumblepipe.farm.pipelines import composite as composite_pipeline
 from tumblepipe.farm.specs import composite as composite_spec
 from tumblepipe.farm.pipelines import preview
 from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import repair as repair_spec
 from tumblepipe.farm.specs import preview_frames
 from tumblepipe.pipe import comp
 from tumblepipe.pipe import render_layers
 from tumblepipe.pipe import slap_comp
 from tumblepipe.pipe import turntable
+from tumblepipe.pipe.paths.render import list_render_versions
 from tumblepipe.farm.pipelines import publish as publish_pipeline
 from tumblepipe.farm.pipelines._batch import batch_title, new_batch
 
@@ -170,6 +172,72 @@ def _log_preview_warnings(entity_uri, kind: str, preview) -> None:
         logging.warning(f"{entity_uri} {kind}: {warning}")
 
 
+def _plan_repair(
+    entity_uri, target, listed, channels, render_department, denoise, *,
+    preview: bool, step: int, turntable: bool,
+    ) -> dict | None:
+    """The ``repair`` entry of Farm Submit's Into version (#92), None for a
+    new version; raises :class:`BatchSubmitError` saying why it cannot be
+    done. Reads the versions on disk, so it checks what the dialog could
+    only pick from."""
+    if target is None or target == repair_spec.TARGET_NEW:
+        return None
+    if not isinstance(target, str):
+        raise BatchSubmitError(f"{entity_uri}: Into version {target!r} is not a version")
+    problems = repair_spec.setup_problems(
+        target, listed, preview=preview, step=step, turntable=turntable,
+    )
+    if problems:
+        raise BatchSubmitError(f"{entity_uri}: {'; '.join(problems)}")
+    denoise_department = render_pipeline.DENOISE_DEPARTMENT
+    denoise_versions = {
+        channel: list_render_versions(entity_uri, denoise_department, channel)
+        for channel in channels
+    }
+    try:
+        entry = repair_spec.plan(
+            target, listed, channels,
+            render_department=render_department,
+            denoise=denoise,
+            render_versions={
+                channel: list_render_versions(entity_uri, render_department, channel)
+                for channel in channels
+            },
+            denoise_versions=denoise_versions,
+        )
+    except repair_spec.RepairError as e:
+        raise BatchSubmitError(f"{entity_uri}: {e}") from e
+    left = repair_spec.unrepaired_denoise(
+        channels, render_department=render_department, repair=entry,
+        denoise_versions=denoise_versions,
+    )
+    if left:
+        logging.warning(
+            f"{entity_uri}: Denoise is off, so {', '.join(left)} keeps the old "
+            "frames, and a comp's best pass reads it: tick Denoise to repair it too"
+        )
+    return entry
+
+
+def _repair_publishes(entry: dict) -> bool:
+    """Whether a repaired version is the shot's render: complete over its
+    range (no ranges of its own) and not a check render."""
+    return entry['published'] and frame_ranges.CONFIG_KEY not in entry
+
+
+def _repair_targets(entry: dict) -> str:
+    """``default/v0001, fg/v0003``: the versions a repair renders into."""
+    return ', '.join(
+        f"{channel}/{versions['render']}"
+        for channel, versions in entry['versions'].items()
+    )
+
+
+def _repair_entry(entry: dict | None) -> dict:
+    """``{'repair': entry}`` for a farm config, ``{}`` for new versions."""
+    return {} if entry is None else {repair_spec.CONFIG_KEY: entry}
+
+
 def _read_frame_list(entity_uri, text, first_frame: int, last_frame: int, turntable: bool):
     """The normalised ranges of a render's Frame List (#84) inside its
     ``first_frame``..``last_frame`` (rolls included), empty when none was
@@ -279,6 +347,15 @@ def submit_entity_batch(config: dict) -> list[str]:
                                   check render, never published (as a
                                   multi-range one). A turntable takes 1
                                   (it renders on the studio's step).
+                                  Optional into_version (str, default
+                                  '': new versions; ``latest`` or a
+                                  version name, ``farm.specs.repair``,
+                                  #92): render the Frame List into that
+                                  existing version of every channel,
+                                  over the frames there; needs a Frame
+                                  List, no preview, Step 1. The version
+                                  stays as published as it was, so Copy
+                                  to edit and Comp follow it.
                 - Playblast section: pb_department, pb_pool, pb_priority,
                                      pb_res, pb_look
                                      (specs.playblast.valid_look)
@@ -445,6 +522,8 @@ def submit_entity_batch(config: dict) -> list[str]:
     # An asset renders as a turntable, on the studio's frames: the dialog's
     # range and rolls are a shot's (an asset has none).
     asset_turntable = do_render and entity_context == 'assets'
+    # Into version's repair (#92), read once the Frame List is
+    repair_entry = None
     turntable_frames = None
     if asset_turntable:
         turntable_frames = turntable.farm_frames()
@@ -495,7 +574,32 @@ def submit_entity_batch(config: dict) -> list[str]:
         if listed:
             first_frame, last_frame = frame_ranges.span(listed)
             cut_range = [first_frame, last_frame]
-        if frame_ranges_entry:
+        # Into version (#92): the listed frames go into existing versions,
+        # which stay as published as they were.
+        repair_entry = _plan_repair(
+            entity_uri, settings.get('into_version', repair_spec.TARGET_NEW),
+            listed, channels, render_department, denoise,
+            preview='partial_render' in render_task_keys, step=render_step,
+            turntable=asset_turntable,
+        )
+        if repair_entry is not None:
+            logging.info(
+                f"{entity_uri}: rendering {frame_ranges.format_ranges(listed)} "
+                f"into {_repair_targets(repair_entry)}"
+            )
+            if not _repair_publishes(repair_entry):
+                if copy_to_edit:
+                    logging.warning(
+                        f"{entity_uri}: Copy to edit skipped: the version is not "
+                        "the shot's render"
+                    )
+                    copy_to_edit = False
+                if do_comp:
+                    raise BatchSubmitError(
+                        f"{entity_uri}: Comp follows a published render, and the "
+                        "version rendered into is not one: untick Comp"
+                    )
+        elif frame_ranges_entry:
             logging.info(
                 f"{entity_uri}: rendering {frame_ranges.format_ranges(listed)} "
                 f"({frame_ranges.summary(listed)}); {frame_ranges.NOT_PUBLISHED}"
@@ -514,7 +618,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                 )
         # A stepped shot render is a check render, never published
         # (pipelines.render.is_check_render): the same as a multi-range one.
-        if render_step > 1 and not asset_turntable:
+        if render_step > 1 and not asset_turntable and repair_entry is None:
             logging.info(
                 f"{entity_uri}: rendering every {render_step} frames; "
                 f"{frame_ranges.STEPPED_NOT_PUBLISHED}"
@@ -591,7 +695,10 @@ def submit_entity_batch(config: dict) -> list[str]:
     # may not reach past it: it reads that render.
     comp_range = None
     if do_comp:
-        if do_render:
+        if do_render and repair_entry is not None:
+            # A repair comps its whole version (#92)
+            follows = (repair_entry['first_frame'], repair_entry['last_frame'])
+        elif do_render:
             follows = (first_frame, last_frame)
         else:
             follows = _rendered_range(entity_uri)
@@ -835,6 +942,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         cut_range=cut_range,
                         **preview_entry,
                         **frame_ranges_entry,
+                        **_repair_entry(repair_entry),
                     )
                     if comp_block is not None:
                         collapse_config['render']['composite'] = comp_block
@@ -871,6 +979,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         cut_range=cut_range,
                         preview_frame_list=preview_entry.get(preview_frames.CONFIG_KEY),
                         frame_ranges=frame_ranges_entry.get(frame_ranges.CONFIG_KEY),
+                        repair=repair_entry,
                     )
                     try:
                         render_pipeline.build(
@@ -913,6 +1022,7 @@ def submit_entity_batch(config: dict) -> list[str]:
                         cut_range=cut_range,
                         **preview_entry,
                         **frame_ranges_entry,
+                        **_repair_entry(repair_entry),
                     ),
                     **({} if comp_block is None else {'composite': comp_block}),
                     tasks={

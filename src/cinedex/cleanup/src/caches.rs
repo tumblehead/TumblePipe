@@ -134,7 +134,7 @@ fn list_units(inventory: &Inventory) -> (Vec<Key>, HashMap<Key, Unit>) {
     (order, units)
 }
 
-/// What a plain `.hip` names: `(cache name, version)` of every node with a
+/// What a workfile's text names (`hip::readable`): `(cache name, version)` of every node with a
 /// `name` and an exact `version` parm, and every `cache/<name>/vNNNN` a
 /// path in it runs into (`hip_names`).
 pub fn hip_names(text: &str) -> (HashSet<(String, String)>, HashSet<String>) {
@@ -275,7 +275,7 @@ fn named_by_workfiles(
     notes.push(format!("Read {read} latest workfile(s) for the cache versions they name."));
     if unreadable > 0 {
         notes.push(format!(
-            "{unreadable} latest workfile(s) are .hiplc/.hipnc and cannot be read: cache versions they name are NOT protected."
+            "{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: cache versions they name are NOT protected."
         ));
     }
     named

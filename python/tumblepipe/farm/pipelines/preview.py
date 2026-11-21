@@ -413,8 +413,12 @@ def render_config(
     preview_frame_list: list[int] | None = None,
     frame_ranges: list[list[int]] | None = None,
     step_size: int = 1,
+    repair: dict | None = None,
 ) -> dict:
     """The ``render/job.py`` config for a direct render of collapsed inputs.
+
+    ``repair`` (``farm.specs.repair``, #92) renders the frames into existing
+    versions instead of new ones; None for new versions.
 
     ``frame_ranges`` (``farm.specs.frame_ranges``, #84) makes it a
     multi-range render of only those frames; None renders first..last.
@@ -446,6 +450,7 @@ def render_config(
                else dict(preview_frame_list=list(preview_frame_list))),
             **({} if not frame_ranges
                else dict(frame_ranges=[list(pair) for pair in frame_ranges])),
+            **({} if repair is None else dict(repair=dict(repair))),
         ),
         tasks={
             task_key: dict(

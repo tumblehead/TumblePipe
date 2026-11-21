@@ -28,10 +28,13 @@ config = {
                                        # order, inside the range and on the
                                        # step (farm.specs.preview_frames); absent:
                                        # first, middle and last of the cut
-        'frame_ranges': [['int', 'int']]  # optional (#84): a multi-range
+        'frame_ranges': [['int', 'int']],  # optional (#84): a multi-range
                                        # render, only these frames of
                                        # first..last (farm.specs.frame_ranges);
                                        # never published, never comped
+        'repair': {...}                # optional (#92): render these frames
+                                       # into existing versions
+                                       # (farm.specs.repair); full_render only
     },
     'tasks': {                  # either or both
         'partial_render': {'priority': 'int', 'denoise': 'bool', 'channel_name': 'string'},
@@ -59,6 +62,7 @@ from tumblepipe.farm.checks import (
     valid_entity,
 )
 from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import repair
 from tumblepipe.farm.specs.preview_frames import (
     CONFIG_KEY as PREVIEW_FRAMES_KEY,
     valid_frame_list,
@@ -101,7 +105,25 @@ def valid_render_settings(settings) -> bool:
     if not valid_cut_range(settings): return False
     if not valid_preview_frame_list(settings, settings['step_size']): return False
     if not frame_ranges.valid_entry(settings): return False
+    if not repair.valid_entry(settings): return False
     return True
+
+
+def comped_span(settings: dict) -> dict:
+    """The frames a comp after this render comps: a repair's version's
+    (``farm.specs.repair``, #92), else the render's own settings."""
+    return settings.get(repair.CONFIG_KEY, settings)
+
+
+def comp_follows(settings: dict) -> bool:
+    """Whether a comp may follow the render of ``settings``: it reads a
+    published render. A multi-range render is not published (#84), nor a
+    stepped one (Farm Submit's Step: its frames have gaps). A repair (#92)
+    leaves its version as published as it was, so its version decides."""
+    span = comped_span(settings)
+    if repair.CONFIG_KEY in settings and not span['published']: return False
+    if frame_ranges.CONFIG_KEY in span: return False
+    return span.get('step_size', 1) <= 1
 
 
 def valid_preview_frame_list(block, step: int = 1) -> bool:
@@ -136,18 +158,17 @@ def is_valid_config(config) -> bool:
     if not is_str_dict(settings.get('input_paths')): return False
     if not check_bool(settings, 'copy_to_edit'): return False
     if not valid_render_tasks(config.get('tasks')): return False
+    if not repair.valid_entry(settings, config['tasks']): return False
     if 'composite' in config:
         from tumblepipe.farm.specs.composite import valid_recomp
         if not valid_recomp(config['composite']): return False
         # The re-comp follows the full render; a preview-only render has none.
         if 'full_render' not in config['tasks']: return False
-        # A multi-range render is not published: no comp follows it (#84).
-        if frame_ranges.CONFIG_KEY in settings: return False
-        # Nor a stepped one (Farm Submit's Step): its frames have gaps.
-        if settings['step_size'] > 1: return False
-        # It comps the frames this render makes, so its own frames (when it
-        # names any) lie inside the render's.
+        if not comp_follows(settings): return False
+        # It comps the frames this render makes (a repair's version's, #92),
+        # so its own frames (when it names any) lie inside them.
+        span = comped_span(settings)
         block = config['composite']
-        if block.get('first_frame', settings['first_frame']) < settings['first_frame']: return False
-        if block.get('last_frame', settings['last_frame']) > settings['last_frame']: return False
+        if block.get('first_frame', span['first_frame']) < span['first_frame']: return False
+        if block.get('last_frame', span['last_frame']) > span['last_frame']: return False
     return True

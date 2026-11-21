@@ -6,8 +6,9 @@
 //! `context.json` is there), at least `keep` newer finished versions of
 //! the same export exist, no current staged build names it (followed
 //! through the `.usda` layers of what it names), and no latest workfile
-//! pins it. `.hiplc`/`.hipnc` workfiles cannot be read; the listing says
-//! how many there were and that their pins are not protected.
+//! pins it. A `.hiplc`/`.hipnc` is read as a `.hip` is, but one in a form
+//! `hip::readable` does not know is not; the listing says how many there
+//! were and that their pins are not protected.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -235,7 +236,7 @@ fn is_label(name: &str) -> bool {
 /// `(entity parts, version name, department or None)`.
 pub type Pin = (Vec<String>, String, Option<String>);
 
-/// What a plain `.hip` pins, and the exact version folders its URIs name
+/// What a workfile's text pins (`hip::readable`), and the exact version folders its URIs name
 /// (`prune_exports.hip_pins`). More is kept than strictly needed (the
 /// version of that entity in every channel), never less.
 pub fn hip_pins(text: &str, own: Option<&[String]>) -> Result<(HashSet<Pin>, HashSet<Unit>), String> {
@@ -445,7 +446,7 @@ pub fn plan(
     out.notes.push(format!("Read {} latest workfile(s) for pinned versions.", export_plan.hips_read));
     if !export_plan.hips_unreadable.is_empty() {
         out.notes.push(format!(
-            "{} latest workfile(s) are .hiplc/.hipnc and cannot be read: versions they pin are NOT protected.",
+            "{} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: versions they pin are NOT protected.",
             export_plan.hips_unreadable.len()
         ));
     }

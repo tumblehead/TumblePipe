@@ -18,9 +18,10 @@ dead weight. A version folder is pruned only when all of these hold:
 - no **latest workfile** pins it. ``th::import_layer`` always loads the
   exact version it was set to, and ``import_asset`` and the other import
   nodes can be set to one, so the newest ``.hip`` in every department
-  folder is read for the versions its nodes name. Only plain ``.hip`` can
-  be read: ``.hiplc`` / ``.hipnc`` are encoded, and the listing says how
-  many there were and that their pins are not protected.
+  folder is read for the versions its nodes name: a ``.hip``, or a
+  ``.hiplc`` / ``.hipnc`` (the same text, read by ``archive.hipfile``). One
+  in a form that cannot be read is counted, and the listing says how many
+  there were and that their pins are not protected.
 
 Staged builds themselves (``_staged``) are pointer scenes, a few KB each,
 and are never pruned; nor is anything under ``export/other`` (farm job
@@ -46,6 +47,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from tumblepipe import naming
+from tumblepipe.archive.hipfile import read_workfile_text
 from tumblepipe.archive.inventory import Kind, scan
 from tumblepipe.archive.longpath import long_path
 from tumblepipe.archive.roots import ProjectRoots, project_roots
@@ -304,7 +306,8 @@ Pin = tuple[tuple[str, ...], str, 'str | None']
 
 
 def hip_pins(text: str, own: tuple[str, ...] | None) -> tuple[set[Pin], set[tuple[str, ...]]]:
-    """What a plain ``.hip`` pins: ``(entity parts, version name,
+    """What a workfile's text pins (a ``.hip``, or a ``.hiplc`` /
+    ``.hipnc`` through ``archive.hipfile``): ``(entity parts, version name,
     department or None)``, and exact version folders (from URIs carrying
     ``version=``).
 
@@ -396,13 +399,13 @@ def make_plan(
             for depth in range(1, len(unit)):
                 units_by_entity_version[(unit[:depth], unit[-1])].append(unit)
         for purpose, parts, path in latest_workfiles(roots):
-            if not path.name.lower().endswith('.hip'):
-                plan.hips_unreadable.append(f'{purpose}/{"/".join(parts)}/{path.name}')
-                continue
             try:
-                text = long_path(path).read_bytes().decode('utf-8', 'replace')
+                text = read_workfile_text(path)
             except OSError as error:
                 plan.errors.append(f'{path}: {error}')
+                continue
+            if text is None:
+                plan.hips_unreadable.append(f'{purpose}/{"/".join(parts)}/{path.name}')
                 continue
             plan.hips_read += 1
             own = _workfile_entity(purpose, parts)
@@ -502,7 +505,7 @@ def summary(plan: Plan) -> list[str]:
     lines.append(f'Read {plan.hips_read} latest workfile(s) for pinned versions.')
     if plan.hips_unreadable:
         lines.append(
-            f'{len(plan.hips_unreadable)} latest workfile(s) are .hiplc/.hipnc and cannot be read: '
+            f'{len(plan.hips_unreadable)} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: '
             'versions they pin are NOT protected. Save them as .hip to protect them, or prune '
             'only where they are not.'
         )

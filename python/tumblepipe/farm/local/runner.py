@@ -223,8 +223,13 @@ class Runner:
                 continue
             for path, data in requests:
                 command, job = data.get('command'), data.get('job')
+                tasks = data.get('tasks')
+                if tasks is not None and not (
+                    isinstance(tasks, list) and all(isinstance(t, int) for t in tasks)
+                ):
+                    tasks = []      # unreadable: touch no task
                 try:
-                    stopped = queue.apply_command(batch, state, command, job)
+                    stopped = queue.apply_command(batch, state, command, job, tasks)
                 except ValueError as error:
                     self._log(f'{folder.name}: ignoring request {path.name}: {error}')
                 else:
