@@ -77,7 +77,9 @@ def plan(roots, inventory, settings: Settings, *, now: float | None = None) -> C
             current[(item.root, department)].append((version, number, item))
     for group in current.values():
         group.sort(key=lambda entry: entry[:2])
-        kept = group[len(group) - settings.keep_backups:] if settings.keep_backups else []
+        # Never a negative start: `group[-2:]` of three backups with five to
+        # keep would keep only two of them.
+        kept = group[max(len(group) - settings.keep_backups, 0):] if settings.keep_backups else []
         kept_rels = {item.rel for _v, _n, item in kept}
         for _version, _number, item in group:
             if item.rel in kept_rels:

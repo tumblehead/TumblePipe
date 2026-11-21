@@ -49,3 +49,6 @@
 *.exr    binary
 *.usd    binary
 *.usdc   binary
+
+# The player's media fixtures: movies and sound, whatever bytes they hold.
+src/cinedex/media/tests/fixtures/** binary

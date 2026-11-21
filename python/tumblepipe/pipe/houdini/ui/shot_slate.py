@@ -1,7 +1,11 @@
 """The shot slate: which shot the camera you look through is on.
 
 A small see-through chip under the bottom-right corner of the camera's frame,
-in any Scene Viewer looking through a camera of a TumblePipe workfile::
+in any Scene Viewer looking through a camera of a TumblePipe workfile: a
+Solaris camera (the USD camera prim the viewport looks through, e.g. the
+shot's ``/cameras/render_camera``; its frame is read from the prim at the
+playhead) or an /obj camera (workfiles made before the animation template
+stopped making ``/obj/anim_camera`` still have one)::
 
     010/0020   43/96   animation v0003   multishot anim_010     [-] [x]
 
@@ -14,12 +18,15 @@ and [x] on the chip, a double-click swaps full and mini. Settings > Projects
 
 Which shot (first match):
 
-1. the camera node's user data ``th_shot`` (a shot URI pinned on it)
-2. its own Import Shot LOP: a ``lopimportcam``'s ``loppath``, or a
-   ``cameraimport`` up the camera node's inputs (``<lop>:<prim>``), walked
-   up the LOP's inputs
-3. a member of the open Multi named in the camera node's name (the
-   template's ``anim_camera_<seq>_<shot>``)
+1. the camera node's user data ``th_shot`` (a shot URI pinned on it; for a
+   Solaris camera, on the LOP the viewer shows)
+2. its own Import Shot LOP: for a Solaris camera the LOP the viewer shows,
+   for an /obj one a ``lopimportcam``'s ``loppath`` or a ``cameraimport`` up
+   the camera node's inputs (``<lop>:<prim>``); walked up the LOP's inputs,
+   and from inside an HDA up the HDAs holding it
+3. a member of the open Multi named in the node's name (a Multi's LOPs end
+   in ``_<seq>_<shot>``, as did the old template's
+   ``anim_camera_<seq>_<shot>``)
 4. the workfile, when it is a shot's
 5. on a shared-timeline Multi, the member under the playhead
 
@@ -28,9 +35,11 @@ On a shared timeline every member is moved by its offset
 the member's offset.
 
 Other packages draw their own cameras through :func:`register_camera_source`
-(TumbleRig's camera rig, whose Animate camera is not an /obj node).
+(TumbleRig's camera rig, whose Animate camera is neither an /obj node nor a
+prim on the viewer's stage).
 
-Nothing here cooks a node. The workfile context, the group and the shot
+Nothing here cooks a node of its own: a Solaris camera is read from the
+stage the viewer already shows. The workfile context, the group and the shot
 ranges are read once per hip (and every few seconds after, the timeline
 starts can move); outside a TumblePipe workfile the slate draws nothing.
 """
@@ -293,10 +302,28 @@ def lop_shot(lop):
     return None
 
 
-def _source_lop(node):
-    """The LOP a camera node reads: a lopimportcam's loppath, or a Camera
-    Import up the node's inputs."""
+def lop_shot_up(lop):
+    """:func:`lop_shot` of ``lop``, else of the LOPs holding it: inside an
+    HDA (th::animate's own nodes) the inputs stop at the HDA's edge, and the
+    HDA's own inputs lead on to the Import Shot."""
     import hou
+    n = lop
+    while n is not None:
+        if isinstance(n, hou.LopNode):
+            u = lop_shot(n)
+            if u:
+                return u
+        n = n.parent()
+    return None
+
+
+def _source_lop(node):
+    """The LOP a camera node reads: the node itself when it is a LOP (a
+    Solaris camera: the LOP the viewer shows), a lopimportcam's loppath, or
+    a Camera Import up the node's inputs."""
+    import hou
+    if isinstance(node, hou.LopNode):
+        return node
     if node.type().name() == 'lopimportcam' and node.parm('loppath') is not None:
         return node.node(node.parm('loppath').evalAsString())
     todo, seen = list(node.inputs()) if hasattr(node, 'inputs') else [], set()
@@ -329,7 +356,7 @@ def camera_shot(node):
             res = (own, 'pinned on the camera')
         else:
             lop = _source_lop(node)
-            u = lop_shot(lop) if lop is not None else None
+            u = lop_shot_up(lop) if lop is not None else None
             if u:
                 res = (u, 'its Import Shot')
             else:
@@ -390,7 +417,8 @@ def register_camera_source(fn):
     """Let a package place the slate for cameras the slate can't see itself.
 
     ``fn(scene_viewer)`` answers for one viewer: None (not mine: the slate
-    looks for an /obj camera itself), False (mine, no slate here), or
+    looks for an /obj camera or a USD camera prim itself), False (mine, no
+    slate here), or
     ``{'node': <camera node to find the shot from>, 'rect': (x0, y0, x1,
     y1) the frame in the viewport widget, 'widget': <the viewport widget>}``.
     """
@@ -406,11 +434,17 @@ def unregister_camera_source(fn):
 def gate_rect(vp, widget, xform, focal, aperture, resx, resy, pixelaspect=1.0):
     """A camera's frame in viewport-widget coordinates (x0, y0, x1, y1, y
     down), its corners projected through the viewport."""
+    aspect = resx * max(pixelaspect, 1e-4) / max(resy, 1)
+    return _frame_rect(vp, widget, xform, focal, aperture, aspect)
+
+
+def _frame_rect(vp, widget, xform, focal, aperture, aspect):
+    """:func:`gate_rect` by the frame's width over height."""
     import hou
     rows = xform.asTupleOfTuples()
     X, Y, Z = (hou.Vector3(rows[i][:3]) for i in range(3))
     P = hou.Vector3(xform.extractTranslates())
-    aspect = resx * max(pixelaspect, 1e-4) / max(resy, 1)
+    aspect = max(float(aspect), 1e-4)
     hw = 0.5 * aperture / max(focal, 1e-3)
     hh = hw / aspect
     dpr = float(widget.devicePixelRatioF())
@@ -461,7 +495,9 @@ def _viewport_widget(sv):
 
 
 def _obj_camera(sv, widget):
-    """{'node', 'rect', 'widget'} for a viewer looking through an /obj camera."""
+    """{'node', 'rect', 'widget'} for a viewer looking through an /obj camera
+    (a workfile made before the animation template stopped making
+    ``/obj/anim_camera``, or a camera an artist made)."""
     import hou
     vp = sv.curViewport()
     cam = vp.camera()
@@ -471,6 +507,114 @@ def _obj_camera(sv, widget):
     rect = gate_rect(vp, widget, cam.worldTransform(), ev('focal', 50.0), ev('aperture', 41.4214),
                      int(ev('resx', 1920)), int(ev('resy', 1080)), ev('aspect', 1.0))
     return {'node': cam, 'rect': rect, 'widget': widget}
+
+
+# -- a Solaris camera: the USD camera prim the viewport looks through --------------
+
+USD_LENS_DEFAULTS = (50.0, 20.955, 15.2908)
+"""UsdGeomCamera's own focalLength, horizontalAperture, verticalAperture."""
+
+
+def lens(focal, h_aperture, v_aperture):
+    """(focal, aperture, aspect) to frame a USD camera by: its focal length,
+    its horizontal aperture and the aperture's width over height, as a
+    ``lopimportcam`` lifts them. A missing or non-positive value takes
+    UsdGeomCamera's default."""
+    def ok(v, d):
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return d
+        return v if v > 0 and v == v and v != float('inf') else d
+    f = ok(focal, USD_LENS_DEFAULTS[0])
+    h = ok(h_aperture, USD_LENS_DEFAULTS[1])
+    v = ok(v_aperture, USD_LENS_DEFAULTS[2])
+    return f, h, h / v
+
+
+def usd_camera(stage, prim_path, frame):
+    """A camera prim of ``stage`` at ``frame``: {'path', 'xform' (its world
+    matrix, four rows, translation last), 'focal', 'aperture', 'aspect'},
+    or None when ``prim_path`` is no camera there. Pure USD: reads the
+    composed stage, cooks nothing."""
+    if stage is None or not prim_path:
+        return None
+    from pxr import Sdf, Usd, UsdGeom
+    try:
+        prim = stage.GetPrimAtPath(Sdf.Path(str(prim_path)))
+    except Exception:
+        return None
+    if not prim or not prim.IsA(UsdGeom.Camera):
+        return None
+    cam = UsdGeom.Camera(prim)
+    t = Usd.TimeCode(float(frame))
+    focal, aperture, aspect = lens(cam.GetFocalLengthAttr().Get(t),
+                                   cam.GetHorizontalApertureAttr().Get(t),
+                                   cam.GetVerticalApertureAttr().Get(t))
+    m = cam.ComputeLocalToWorldTransform(t)
+    xform = tuple(tuple(float(x) for x in m.GetRow(i)) for i in range(4))
+    return {'path': str(prim.GetPath()), 'xform': xform, 'focal': focal,
+            'aperture': aperture, 'aspect': aspect}
+
+
+def _viewer_lop(sv):
+    """The LOP a Scene Viewer shows: the display node of the LOP network it
+    is in, or of the nearest one above it (a viewer inside th::animate's
+    dive shows the LOP that holds it)."""
+    import hou
+    lop_cat = hou.lopNodeTypeCategory()
+    n = sv.pwd()
+    while n is not None:
+        try:
+            if n.childTypeCategory() == lop_cat:
+                d = n.displayNode()
+                if d is not None:
+                    return d
+            if isinstance(n, hou.LopNode):
+                return n
+        except Exception:
+            pass
+        n = n.parent()
+    return None
+
+
+def _viewer_stage(sv, lop):
+    """The stage the viewer shows (``SceneViewer.stage()``), else ``lop``'s,
+    which the viewer has cooked to draw it."""
+    stage = None
+    try:
+        fn = getattr(sv, 'stage', None)
+        stage = fn() if fn is not None else None
+    except Exception:
+        stage = None
+    if stage is None and lop is not None:
+        try:
+            stage = lop.stage()
+        except Exception:
+            stage = None
+    return stage
+
+
+def _lop_camera(sv, widget):
+    """{'node' (the LOP the viewer shows), 'rect', 'widget', 'camera' (the
+    prim)} for a viewer looking through a USD camera prim; the shot is found
+    from the LOP, the frame from the prim."""
+    import hou
+    vp = sv.curViewport()
+    if vp.camera() is not None:
+        return None
+    path = getattr(vp, 'cameraPath', lambda: '')()
+    if not path or not str(path).startswith('/') or hou.node(str(path)) is not None:
+        return None
+    lop = _viewer_lop(sv)
+    if lop is None:
+        return None
+    cam = usd_camera(_viewer_stage(sv, lop), path, hou.frame())
+    if cam is None:
+        return None
+    rect = _frame_rect(vp, widget, hou.Matrix4(cam['xform']), cam['focal'], cam['aperture'],
+                       cam['aspect'])
+    return {'node': lop, 'rect': rect, 'widget': widget, 'camera': cam['path']}
 
 
 # -- the chip -----------------------------------------------------------------------
@@ -695,7 +839,9 @@ def tick():
                     continue
                 if spec is None:
                     widget = _viewport_widget(t)
-                    spec = _obj_camera(t, widget) if widget is not None else None
+                    spec = None
+                    if widget is not None:
+                        spec = _obj_camera(t, widget) or _lop_camera(t, widget)
                 if not spec:
                     continue
                 s = slate(spec['node'])

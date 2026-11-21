@@ -18,9 +18,12 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// Extensions of what the library takes, lower case: movies and sound.
-pub const MEDIA: &[&str] =
-    &["mov", "mp4", "m4v", "mkv", "avi", "webm", "mxf", "wav", "mp3", "aac", "flac", "ogg", "m4a", "aif", "aiff", "opus"];
+/// Extensions of what the library takes, lower case: movies and sound,
+/// each in a container the player's FFmpeg demuxes (`.ci/build_ffmpeg.py`).
+pub const MEDIA: &[&str] = &[
+    "mov", "mp4", "m4v", "mkv", "avi", "webm", "mxf", "ts", "m2ts", "mts", "ogv", "wav", "mp3", "aac", "flac", "ogg", "oga", "m4a", "aif",
+    "aiff", "opus",
+];
 /// Extensions of single pictures, which come as numbered sequences.
 pub const STILLS: &[&str] = &["exr", "jpg", "jpeg", "png", "tif", "tiff", "dpx", "tga", "bmp"];
 

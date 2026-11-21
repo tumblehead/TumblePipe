@@ -106,6 +106,40 @@ fn matrix_of(decoded: &ff::AVFrame) -> (YuvMatrix, bool) {
     (matrix, full_range)
 }
 
+/// Whether `stream` is a cover picture (an attached picture: an mp3's album
+/// art), which is no video.
+///
+/// # Safety
+/// `stream` is a stream of an open input.
+unsafe fn is_cover(stream: *const ff::AVStream) -> bool {
+    unsafe { (*stream).disposition & ff::AV_DISPOSITION_ATTACHED_PIC != 0 }
+}
+
+/// What to say of `what` ("video", "audio") streams in `codecs` the player
+/// has no decoder for: "video codec av1 is not supported". None when there
+/// are none.
+pub fn unsupported(what: &str, codecs: &[String]) -> Option<String> {
+    let (last, rest) = codecs.split_last()?;
+    Some(if rest.is_empty() {
+        format!("{what} codec {last} is not supported")
+    } else {
+        format!("{what} codecs {} and {last} are not supported", rest.join(", "))
+    })
+}
+
+/// Why the file at `path` gives the player neither picture nor sound when
+/// it is the codecs: "video codec av1 is not supported, audio codec dts is
+/// not supported". None when it does not open, or nothing in it is in a
+/// codec the player lacks (it has no streams, or only a cover picture).
+pub fn undecodable(path: &str) -> Option<String> {
+    let input = Input::open_file(path).ok()?;
+    let parts: Vec<String> = [("video", ff::AVMEDIA_TYPE_VIDEO), ("audio", ff::AVMEDIA_TYPE_AUDIO)]
+        .into_iter()
+        .filter_map(|(what, kind)| unsupported(what, &input.undecodable(kind)))
+        .collect();
+    (!parts.is_empty()).then(|| parts.join(", "))
+}
+
 /// An open media file and one of its streams (video, unless asked for
 /// another).
 pub(crate) struct Input {
@@ -120,12 +154,15 @@ impl Input {
         Self::open_stream(path, ff::AVMEDIA_TYPE_VIDEO)
     }
 
-    /// `path`'s best stream of `kind` (an `AVMediaType`).
-    pub(crate) fn open_stream(path: &str, kind: ff::AVMediaType) -> std::result::Result<Self, String> {
+    /// `path` opened, its streams probed.
+    fn open_file(path: &str) -> std::result::Result<Self, String> {
         let c_path = CString::new(path).map_err(|_| "the path contains a NUL".to_owned())?;
         let mut input = Input { format: ptr::null_mut(), stream_index: -1, decoder: ptr::null() };
         unsafe {
             let code = ff::avformat_open_input(&mut input.format, c_path.as_ptr(), ptr::null(), ptr::null_mut());
+            if code == ff::AVERROR_INVALIDDATA {
+                return Err(format!("not a kind of file the player reads, or a damaged one ({})", ff_error(code)));
+            }
             if code < 0 {
                 return Err(ff_error(code));
             }
@@ -133,18 +170,52 @@ impl Input {
             if code < 0 {
                 return Err(ff_error(code));
             }
+        }
+        Ok(input)
+    }
+
+    /// `path`'s best stream of `kind` (an `AVMediaType`). A video stream
+    /// that is only a cover picture (an mp3's album art) is none.
+    pub(crate) fn open_stream(path: &str, kind: ff::AVMediaType) -> std::result::Result<Self, String> {
+        let mut input = Self::open_file(path)?;
+        let what = if kind == ff::AVMEDIA_TYPE_AUDIO { "audio" } else { "video" };
+        unsafe {
             let index = ff::av_find_best_stream(input.format, kind, -1, -1, &mut input.decoder, 0);
             if index < 0 || input.decoder.is_null() {
-                let what = if kind == ff::AVMEDIA_TYPE_AUDIO { "audio" } else { "video" };
-                return Err(format!("no decodable {what} stream ({})", ff_error(index)));
+                let why = unsupported(what, &input.undecodable(kind)).unwrap_or_else(|| ff_error(index));
+                return Err(format!("no decodable {what} stream ({why})"));
             }
             input.stream_index = index;
+            if is_cover(input.stream()) {
+                let why = unsupported(what, &input.undecodable(kind)).unwrap_or_else(|| "only a cover picture".into());
+                return Err(format!("no decodable {what} stream ({why})"));
+            }
         }
         Ok(input)
     }
 
     pub(crate) fn stream(&self) -> *mut ff::AVStream {
         unsafe { *(*self.format).streams.add(self.stream_index as usize) }
+    }
+
+    /// The names of the codecs of its streams of `kind` this FFmpeg has no
+    /// decoder for, each once, cover pictures left out.
+    fn undecodable(&self, kind: ff::AVMediaType) -> Vec<String> {
+        let mut names = Vec::new();
+        unsafe {
+            for i in 0..(*self.format).nb_streams as usize {
+                let stream = *(*self.format).streams.add(i);
+                let par = (*stream).codecpar;
+                if (*par).codec_type != kind || is_cover(stream) || !ff::avcodec_find_decoder((*par).codec_id).is_null() {
+                    continue;
+                }
+                let name = CStr::from_ptr(ff::avcodec_get_name((*par).codec_id)).to_string_lossy().into_owned();
+                if !names.contains(&name) {
+                    names.push(name);
+                }
+            }
+        }
+        names
     }
 
     /// The file's metadata value for `key` (exact case), if it has one.
@@ -346,6 +417,22 @@ impl MovieDecoder {
         Ok(())
     }
 
+    /// Back to the file's first byte, so decoding starts at its first
+    /// frame: for a seek that landed past its keyframe. MPEG-TS and MPEG-PS
+    /// have no index, so a timestamp seek there is a guess by bytes; a mov
+    /// or Matroska seek is exact (and mov cannot seek by bytes).
+    fn rewind(&mut self) -> std::result::Result<(), String> {
+        unsafe {
+            let code = ff::av_seek_frame(self.input.format, -1, 0, ff::AVSEEK_FLAG_BYTE);
+            if code < 0 {
+                return Err(ff_error(code));
+            }
+            ff::avcodec_flush_buffers(self.codec);
+        }
+        self.position = None;
+        Ok(())
+    }
+
     /// Decode frame `index`, handing it and every frame decoded on the way to
     /// `keep` (so the caller can buffer them), and return it. Stops with
     /// [`Error::Cancelled`] once `wanted` says the frame is no longer wanted
@@ -362,18 +449,30 @@ impl MovieDecoder {
         if !resume {
             self.seek_to(keyframe).map_err(|message| Error::Decode { index, message })?;
         }
+        let mut rewound = false;
         loop {
             if !wanted() {
                 return Err(Error::Cancelled { index });
             }
-            let (at, frame) = self.next_frame().map_err(|message| Error::Decode { index, message })?;
-            keep(at, &frame);
-            if at >= index {
-                if at != index {
-                    return Err(Error::Decode { index, message: format!("decoder skipped to frame {at}") });
+            // A seek that guessed wrong lands mid-picture (the decoder
+            // refuses the data) or past the frame: once more from the start.
+            let problem = match self.next_frame() {
+                Ok((at, frame)) => {
+                    keep(at, &frame);
+                    if at == index {
+                        return Ok(frame);
+                    }
+                    if at < index {
+                        continue;
+                    }
+                    format!("decoder skipped to frame {at}")
                 }
-                return Ok(frame);
+                Err(message) => message,
+            };
+            if rewound || self.rewind().is_err() {
+                return Err(Error::Decode { index, message: problem });
             }
+            rewound = true;
         }
     }
 

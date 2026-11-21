@@ -12,6 +12,20 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.115.0 — 2026-11-19
+
+### Features
+- feat(animate): an Attributes folder on th::animate says which attributes come to the stage, so a problem attribute needs no release (`b9fbc14b`)
+- feat(render): a project can name AOVs that every shot renders, added by each shot's root layer (`d2a07a0c`)
+- feat(cinedex): the preview window picks the AOV shown and steps through earlier versions (`d739dc3c`)
+- feat(export): asset exports stamp the entity on the asset prim, and Alt+D over a Solaris viewport opens a department workfile of the selected asset (`babf8535`)
+
+### Fixes
+- fix(animate): a mesh whose parts the rig hides one by one loses only the hidden part, not all or none of it (`96e9474c`)
+
+### Documentation
+- docs(changelog): v1.114.2, and the HDA parms v1.114.2 shipped (`f63476ee`)
+
 ## v1.114.2 — 2026-11-19
 
 ### Fixes

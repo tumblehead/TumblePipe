@@ -192,10 +192,16 @@ tool: **Clean Up Project** in TumbleTrove Desktop's Scripts panel. A project
 only grows (every export, render and save adds a version), and on
 HideAndReek 1.6 TB of its 2.5 TB was nothing anyone would open again.
 
-Tick what to look at, set what each keeps, and press **List**. The window
-reads the project once and shows, per category, what would go and what
-stays, each with its reason. Nothing is deleted until you press **Delete…**
-and confirm; changing a setting needs a new listing first. Everything
+The window opens on the project it was launched for. The rules on the left
+say what counts as old in each category; press **Scan** and it reads the
+whole project under them, showing its progress as it goes (**Indexing**,
+then **Sizing**, each category filling up as it finds things). It then
+shows, per category, what would go and what stays, each with its reason,
+and a coloured bar of each category's share of the space freed. Untick a
+category to leave it out. Nothing is deleted until you press **Purge** and
+confirm; changing a rule after a scan asks for a new scan first. A running
+purge can be paused, resumed or stopped: it stops between items, what went
+stays gone, and the window scans again to show what is left. Everything
 removed is written to `export/other/logs/cleanup-<date>.log`.
 
 | Category | What goes | What always stays |
@@ -207,18 +213,24 @@ removed is written to `export/other/logs/cleanup-<date>.log`.
 | **Farm job folders** | folders neither Deadline nor the local farm can run from again | anything requeueable ([below](#pruning-farm-job-folders)) |
 | **Deleted entities** | `_deleted/<date>-<time>/` folders older than 30 days | anything else in a `_deleted` folder |
 
-From a shell, where it lists unless given `--apply`:
+From a shell, where it lists unless given `--apply`, the package's
+`bin/<platform>/cleanup` (the program the window is) or the Python it was
+ported from take the same arguments and print the same listing:
 
 ```
+cleanup                      [project] [--only renders,backups] [--context shots/sq010]
 python -m tumblepipe.cleanup [project] [--only renders,backups] [--context shots/sq010]
                              [--keep-exports 3] [--keep-renders 2] [--check-render-days 14]
                              [--keep-caches 2] [--keep-backups 5] [--backup-days 7] [--deleted-days 30]
                              [--job-days 2] [--local-job-days 14] [--apply]
 ```
 
-`--context` (in the window, the *of* menu) narrows exports, renders,
-caches and backups to shots, assets or a path under them; job folders and
-deleted entities are of the whole project.
+`cleanup` with no arguments, or with `--gui`, opens the window instead.
+
+`--context` narrows exports, renders, caches and backups to shots, assets
+or a path under them; job folders and deleted entities are of the whole
+project. It is for the shell only: the window always scans the whole
+project.
 
 Playblasts, dailies, turntables, the grade's mattes and workfile versions
 are not touched.
@@ -315,7 +327,7 @@ those folders and writes their names to
 
 Every export writes a new version folder, and nothing removes the old ones:
 on HideAndReek, 2,000 export versions held 157 GB. The export category of
-**Clean Up Project** lists what can go and deletes it when you confirm; on
+**Clean Up Project** finds what can go and purges it when you confirm; on
 its own, from a shell:
 
 ```
@@ -348,6 +360,7 @@ Each version deleted is written to `export/other/logs/prune-<date>.log`.
 ## From a shell
 
 ```
+cleanup                              [project] [--only exports,renders,caches,backups,jobs,deleted] [--apply]
 python -m tumblepipe.cleanup         [project] [--only exports,renders,caches,backups,jobs,deleted] [--apply]
 python -m tumblepipe.prune [jobs]    [project] [--apply] [--min-age-days 2]
 python -m tumblepipe.prune exports   [project] [--keep 3] [--context shots] [--apply]
@@ -362,4 +375,6 @@ python -m tumblepipe.archive rebuild [restored project] [--dry-run] [--hython PA
 `project` defaults to `$TH_PROJECT_PATH`. `plan` reads the project and writes
 nothing. `--list` also writes every file with its decision and reason, as
 tab-separated text. Put TumblePipe's `python/` folder on `PYTHONPATH`;
-nothing else is needed, and Houdini isn't (except for `rebuild`).
+nothing else is needed, and Houdini isn't (except for `rebuild`). `cleanup`
+is a program of its own, in the package's `bin/<platform>/` folder, and
+needs neither.

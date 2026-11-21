@@ -150,6 +150,14 @@ pub enum Step {
     /// A customised template is left alone and named in the run's
     /// [`Report::templates`].
     CompTemplateLayout,
+    /// v27 — v12 again, for the animation template: it no longer makes
+    /// `/obj/anim_camera` (a Multi's `anim_camera_<seq>_<shot>`), a LOP
+    /// Import Camera of `camera_edit`. The workfile is Solaris only: the
+    /// animator looks through the stage's `/cameras/render_camera`, and the
+    /// shot slate reads that prim. Workfiles made before keep their /obj
+    /// camera, which still works. A customised template is left alone and
+    /// named in the run's [`Report::templates`].
+    AnimationIsSolarisOnly,
 }
 
 /// The convention modules a project owns, loaded and executed by
@@ -194,7 +202,7 @@ fn is_project_drive_temp_line(line: &str) -> bool {
 }
 
 /// Every registered step, in the order they bring a project forward.
-pub const STEPS: [Step; 26] = [
+pub const STEPS: [Step; 27] = [
     Step::ConventionToPackage,
     Step::RefreshTemplates,
     Step::AddEntityDepartments,
@@ -221,6 +229,7 @@ pub const STEPS: [Step; 26] = [
     Step::CompositeWithoutBuildComp,
     Step::TemplateFixesFromQa,
     Step::CompTemplateLayout,
+    Step::AnimationIsSolarisOnly,
 ];
 
 impl Step {
@@ -253,6 +262,7 @@ impl Step {
             Step::CompositeWithoutBuildComp => 24,
             Step::TemplateFixesFromQa => 25,
             Step::CompTemplateLayout => 26,
+            Step::AnimationIsSolarisOnly => 27,
         }
     }
 
@@ -330,6 +340,9 @@ impl Step {
             }
             Step::CompTemplateLayout => {
                 "refresh the stock _config/templates: the composite reads left to right, a Multi's members in rows, notes on the first only"
+            }
+            Step::AnimationIsSolarisOnly => {
+                "refresh the stock _config/templates: the animation workfile is Solaris only, no /obj/anim_camera"
             }
         }
     }
@@ -530,7 +543,8 @@ impl Step {
             | Step::LayoutInAnimate
             | Step::AnimationCopiesLayoutKeys
             | Step::TemplateFixesFromQa
-            | Step::CompTemplateLayout => {
+            | Step::CompTemplateLayout
+            | Step::AnimationIsSolarisOnly => {
                 let v9_pending = match current_version(project_path) {
                     Ok(at) => at < Step::RefreshTemplatesAgain.version(),
                     Err(why) => return Readiness::Blocked(why),
@@ -1083,6 +1097,8 @@ impl Step {
             Step::TemplateFixesFromQa => refresh_stock_templates(&cfg, template_dir),
             // Same plan again, for the composite template's rows per member.
             Step::CompTemplateLayout => refresh_stock_templates(&cfg, template_dir),
+            // Same plan again, for the animation template without an /obj camera.
+            Step::AnimationIsSolarisOnly => refresh_stock_templates(&cfg, template_dir),
             Step::AddGroomDepartment => {
                 // Both halves are planned before either is written. The
                 // template goes down first: a pool naming groom with no
@@ -1346,7 +1362,8 @@ impl Step {
             | Step::AnimationCopiesLayoutKeys
             | Step::AddGroomDepartment
             | Step::TemplateFixesFromQa
-            | Step::CompTemplateLayout => stock_refresh_notes(cfg, template_dir),
+            | Step::CompTemplateLayout
+            | Step::AnimationIsSolarisOnly => stock_refresh_notes(cfg, template_dir),
             Step::CompositeWithoutBuildComp => {
                 let relative: PathBuf = COMPOSITE.split('/').collect();
                 let path = cfg.join("templates").join(relative).join("template.py");
@@ -4070,6 +4087,7 @@ mod tests {
             (Step::CompositeWithoutBuildComp, Readiness::Ready),
             (Step::TemplateFixesFromQa, Readiness::Blocked(_)),
             (Step::CompTemplateLayout, Readiness::Blocked(_)),
+            (Step::AnimationIsSolarisOnly, Readiness::Blocked(_)),
         ] = preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
@@ -4180,7 +4198,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let target = tmp.path().join("fresh");
         crate::scaffold_project(&packaged_scaffold(), &target, "fresh", 24).unwrap();
-        assert_eq!(latest_version(), 26);
+        assert_eq!(latest_version(), 27);
         assert_eq!(current_version(&target).unwrap(), latest_version());
         assert!(pending(&target).unwrap().is_empty());
         assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
@@ -4586,7 +4604,9 @@ mod tests {
         assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let animation = std::fs::read_to_string(&path).unwrap();
         assert_eq!(animation, packaged_text("shots/animation"));
-        assert!(animation.contains("anim_camera.parm('loppath').set(camera_edit_node.path())"));
+        // Since v27 the packaged template makes no /obj camera at all
+        assert!(!animation.contains("set('/stage/import_shot')"));
+        assert!(!animation.contains("lopimportcam"));
     }
 
     /// v19 brings a project on the previous stock layout template
@@ -4713,6 +4733,7 @@ mod tests {
                 (Step::CompositeWithoutBuildComp, Ok(())),
                 (Step::TemplateFixesFromQa, Ok(())),
                 (Step::CompTemplateLayout, Ok(())),
+                (Step::AnimationIsSolarisOnly, Ok(())),
             ]
         );
         assert_eq!(current_version(dir.path()).unwrap(), latest_version());
@@ -4836,6 +4857,7 @@ mod tests {
                 (Step::CompositeWithoutBuildComp, Ok(())),
                 (Step::TemplateFixesFromQa, Ok(())),
                 (Step::CompTemplateLayout, Ok(())),
+                (Step::AnimationIsSolarisOnly, Ok(())),
             ]
         );
         assert_eq!(current_version(dir.path()).unwrap(), latest_version());
@@ -4979,6 +5001,7 @@ mod tests {
                 (Step::CompositeWithoutBuildComp, Ok(())),
                 (Step::TemplateFixesFromQa, Ok(())),
                 (Step::CompTemplateLayout, Ok(())),
+                (Step::AnimationIsSolarisOnly, Ok(())),
             ]
         );
         assert_eq!(current_version(dir.path()).unwrap(), latest_version());
@@ -5292,7 +5315,7 @@ mod tests {
             .filter(|n| n.path == animation && n.outcome == TemplateOutcome::LeftCustomised)
             .map(|n| n.step.version())
             .collect();
-        assert_eq!(sat_out, vec![14, 15, 16, 18, 19, 20, 21, 25, 26]);
+        assert_eq!(sat_out, vec![14, 15, 16, 18, 19, 20, 21, 25, 26, 27]);
         assert_eq!(std::fs::read_to_string(&animation).unwrap(), customised);
         // The composite: left alone by the stock refreshes before v24, then
         // replaced by v24 with its original kept, and current from then on.
@@ -5326,7 +5349,7 @@ mod tests {
             .collect();
         assert_eq!(animation_lines.len(), 1, "{lines:#?}");
         assert!(
-            animation_lines[0].contains("not refreshed by v14, v15, v16, v18, v19, v20, v21, v25, v26"),
+            animation_lines[0].contains("not refreshed by v14, v15, v16, v18, v19, v20, v21, v25, v26, v27"),
             "{lines:#?}"
         );
         assert!(
@@ -5357,7 +5380,11 @@ mod tests {
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(
             report.applied,
-            vec![(Step::TemplateFixesFromQa, Ok(())), (Step::CompTemplateLayout, Ok(()))]
+            vec![
+                (Step::TemplateFixesFromQa, Ok(())),
+                (Step::CompTemplateLayout, Ok(())),
+                (Step::AnimationIsSolarisOnly, Ok(())),
+            ]
         );
         assert_eq!(report.templates, Vec::new());
         assert!(!report.templates_need_attention());
@@ -5389,8 +5416,15 @@ mod tests {
             std::fs::write(&path, &text).unwrap();
             let report = migrate(dir.path(), &scaffold).unwrap();
             assert!(report.is_ok(), "{report:?}");
-            assert_eq!(report.applied, vec![(Step::CompTemplateLayout, Ok(()))]);
-            let notes: Vec<_> = report.templates.iter().filter(|n| n.path == path).collect();
+            assert_eq!(
+                report.applied,
+                vec![(Step::CompTemplateLayout, Ok(())), (Step::AnimationIsSolarisOnly, Ok(()))]
+            );
+            let notes: Vec<_> = report
+                .templates
+                .iter()
+                .filter(|n| n.path == path && n.step == Step::CompTemplateLayout)
+                .collect();
             assert_eq!(notes.len(), 1, "{notes:?}");
             assert_eq!(notes[0].step, Step::CompTemplateLayout);
             assert_eq!(notes[0].outcome, expected);
@@ -5404,7 +5438,50 @@ mod tests {
         }
     }
 
-    /// The stock refreshes that carry nothing but templates (v25, v26),
+    // ── v27: the animation workfile is Solaris only ──
+
+    /// A v26 project's stock animation template, the one that made
+    /// `/obj/anim_camera`, is brought up to the packaged one, which makes no
+    /// /obj node; a customised one is left byte for byte and named.
+    #[test]
+    fn v27_refreshes_the_stock_animation_template_and_leaves_a_customised_one() {
+        let animation = packaged_text("shots/animation");
+        assert!(!animation.contains("lopimportcam"));
+        assert!(!animation.contains("hou.node('/obj')"));
+        let previous = shipped_templates()
+            .into_iter()
+            .find(|(_, file, _)| file.ends_with("49d11950b3.py"))
+            .unwrap()
+            .2;
+        assert!(previous.contains("createNode('lopimportcam', 'anim_camera')"));
+        let scaffold = packaged_scaffold();
+        for (text, expected) in [
+            (previous.replace('\n', "\r\n"), TemplateOutcome::Refreshed),
+            (previous.clone(), TemplateOutcome::Refreshed),
+            (format!("{previous}# ours\n"), TemplateOutcome::LeftCustomised),
+        ] {
+            let dir = project(Some(26));
+            let path = project_template(dir.path(), "shots/animation");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, &text).unwrap();
+            let report = migrate(dir.path(), &scaffold).unwrap();
+            assert!(report.is_ok(), "{report:?}");
+            assert_eq!(report.applied, vec![(Step::AnimationIsSolarisOnly, Ok(()))]);
+            let notes: Vec<_> = report.templates.iter().filter(|n| n.path == path).collect();
+            assert_eq!(notes.len(), 1, "{notes:?}");
+            assert_eq!(notes[0].step, Step::AnimationIsSolarisOnly);
+            assert_eq!(notes[0].outcome, expected);
+            let after = std::fs::read_to_string(&path).unwrap();
+            if expected == TemplateOutcome::Refreshed {
+                assert_eq!(newlines::normalize(&after), animation);
+                assert_eq!(newlines::style_of(&after), newlines::style_of(&text));
+            } else {
+                assert_eq!(after, text);
+            }
+        }
+    }
+
+    /// The stock refreshes that carry nothing but templates (v25 to v27),
     /// each run on its own from the version before it.
     mod stock_refresh_props {
         use super::*;
@@ -5580,6 +5657,14 @@ mod tests {
                 kinds in prop::collection::vec((held(), any::<bool>()), 20),
             ) {
                 refreshes_stock_and_reports_customised(Step::CompTemplateLayout, &kinds)?;
+            }
+
+            /// v27, from a v26 project.
+            #[test]
+            fn v27_refreshes_stock_and_reports_customised(
+                kinds in prop::collection::vec((held(), any::<bool>()), 20),
+            ) {
+                refreshes_stock_and_reports_customised(Step::AnimationIsSolarisOnly, &kinds)?;
             }
         }
     }

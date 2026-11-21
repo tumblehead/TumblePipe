@@ -272,6 +272,17 @@ pub struct Video {
     /// Exposure in stops, applied to scene-linear frames before the display
     /// transform.
     pub exposure: f32,
+    /// The picture mirrored left to right (`flip`), for viewing only.
+    pub flipped: bool,
+}
+
+impl Video {
+    /// The shader's `display` uniform: the exposure's gain, the shaper's
+    /// log2 range, and whether the picture is mirrored (`flip`).
+    fn display(&self) -> [f32; 4] {
+        let (lo, hi) = crate::colour::SHAPER;
+        [self.exposure.exp2(), lo, hi, crate::flip::uniform(self.flipped)]
+    }
 }
 
 impl ShaderProgram for Video {
@@ -314,13 +325,12 @@ impl ShaderProgram for Video {
             None => pipeline.params[2] = 0.0,
         }
         let resolution = viewport.physical_size();
-        let (lo, hi) = crate::colour::SHAPER;
         let uniforms = Uniforms {
             resolution: [resolution.width as f32, resolution.height as f32],
             frame_size,
             bounds: [bounds.x, bounds.y, bounds.width, bounds.height],
             params: pipeline.params,
-            display: [self.exposure.exp2(), lo, hi, 0.0],
+            display: self.display(),
         };
         queue.write_buffer(&pipeline.uniforms, 0, bytemuck::bytes_of(&uniforms));
     }
@@ -347,5 +357,17 @@ mod tests {
         let capabilities = wgpu::naga::valid::Capabilities::empty();
         wgpu::naga::valid::Validator::new(flags, capabilities).validate(&module).expect("video.wgsl validates");
         assert!(source.contains("u.params.w > 2.5"), "the data mode float_mode(false) asks for");
+    }
+
+    proptest::proptest! {
+        /// The shader is told the exposure as a gain, the shaper's range,
+        /// and to mirror the picture exactly while it is flipped.
+        #[test]
+        fn the_display_uniform_carries_the_flip(exposure in -8f32..8.0, flipped in proptest::prelude::any::<bool>()) {
+            let display = Video { picture: None, exposure, flipped }.display();
+            let (lo, hi) = crate::colour::SHAPER;
+            proptest::prop_assert_eq!(display, [exposure.exp2(), lo, hi, crate::flip::uniform(flipped)]);
+            proptest::prop_assert_eq!(display[3] == 1.0, flipped);
+        }
     }
 }

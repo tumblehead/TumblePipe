@@ -35,7 +35,7 @@ pub use exr_sequence::{ExrHeader, ExrLayer, ExrSequence, ExrView, LayerKind, lay
 pub use frame::{Frame, Pixels, YuvMatrix};
 pub use jpg_sequence::{JpgSequence, decode_jpg};
 pub use media::{Media, Under};
-pub use movie::{MovieDecoder, MovieIndex, START_FRAME_KEY, is_rgba_format, parse_start_frame};
+pub use movie::{MovieDecoder, MovieIndex, START_FRAME_KEY, is_rgba_format, parse_start_frame, undecodable, unsupported};
 pub use th_playlist::frame_ranges::{FRAME_RANGES_KEY, FrameRanges, Run};
 pub use thumbnail::{Proxy, Thumbnail, fit, proxy};
 

@@ -1,0 +1,4 @@
+// The Windows executable's icon (`build.rs`): Explorer, the taskbar and
+// the title bar show it; `src/app_icon.rs` puts it on the windows too.
+// Drawn by scripts/cleanup_icon.py.
+1 ICON "cleanup.ico"

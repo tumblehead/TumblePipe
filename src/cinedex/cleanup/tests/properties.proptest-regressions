@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc d3ab3998b70d0c5baa3ec71f03ca81d0eb9795b49e19a29ed6f000838c0898c7 # shrinks to stamps = 1, drawn = [(0, (["cache", "a", "v0001", "context.json"], false), 2)], k = 0
+cc 1f1030ad709ce852789b90c9eaf87ee7c40d6164c4c3c0628c28b309f2bc5550 # shrinks to stamps = 1, backups = 2, drawn = [(0, (["s", "pyvenv.cfg"], false), 0)], k = 0

@@ -4,10 +4,10 @@
 //! A [`Sound`] is stereo f32 at the file's own rate, read once: a review's
 //! audio is minutes long (a five minute stereo track is 58 MB as f32), and
 //! holding it whole makes every seek and scrub exact and free. Mono plays on
-//! both sides; more channels than two keep the first two. A WAV file is read
-//! here (the vendored FFmpeg has no WAV demuxer); a movie's audio stream goes
-//! through FFmpeg, its samples converted from whatever format the decoder
-//! gives.
+//! both sides; more channels than two keep the first two. A PCM or float
+//! WAV file is read here; any other file's audio (a movie's track, mp3, flac,
+//! ogg, a compressed WAV) goes through FFmpeg, its samples converted from
+//! whatever format the decoder gives.
 //!
 //! [`mix`] renders the voices at an output rate: each clip's sound from its
 //! in point, resampled linearly, at its gain, through its fades. Pure: the
@@ -45,7 +45,14 @@ impl Sound {
         let is_wav = Path::new(path).extension().is_some_and(|e| e.eq_ignore_ascii_case("wav"));
         if is_wav {
             let bytes = std::fs::read(path).map_err(|e| fail(e.to_string()))?;
-            return parse_wav(&bytes).map(Some).map_err(fail);
+            return match parse_wav(&bytes) {
+                Ok(sound) => Ok(Some(sound)),
+                // One this does not read (ADPCM, A-law, RF64): FFmpeg's.
+                Err(wav) => match decode(path) {
+                    Ok(Some(sound)) => Ok(Some(sound)),
+                    _ => Err(fail(wav)),
+                },
+            };
         }
         decode(path).map_err(fail)
     }

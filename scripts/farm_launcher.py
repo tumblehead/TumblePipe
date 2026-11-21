@@ -33,7 +33,8 @@ to scripts; until it does, submissions made from here carry no user name.
 (``tumblepipe.farm.manager``: local and farm jobs, their logs), the project
 archive window (``tumblepipe.archive.app``) on its Archive or Restore tab,
 ``rebuild``, which re-makes a restored project's left-out caches in hython,
-``cleanup``, the Clean Up Project window (``tumblepipe.cleanup.app``;
+``cleanup``, the Clean Up Project window (the package's ``cleanup``
+executable, ``$TH_CLEANUP`` for a dev build, else ``tumblepipe.cleanup.app``;
 ``prune`` still opens it), or
 ``edits``, the editor on the project's master edit, else on every shot
 (``tumblepipe.editor_app``).
@@ -69,6 +70,38 @@ APPS = {
     'prune': ('tumblepipe.cleanup.app',),
     'edits': ('tumblepipe.editor_app',),
 }
+
+#: The windows that are a native executable of the package's
+#: (``bin/<platform>/``, built by ``.ci/build_player.py``), as the
+#: executable and the variable naming a dev build of it. The Python window
+#: in ``APPS`` runs where the executable is not there (a source checkout
+#: that has not built it).
+BINARIES = {
+    'cleanup': ('cleanup', 'TH_CLEANUP'),
+    'prune': ('cleanup', 'TH_CLEANUP'),
+}
+
+
+def package_platform(system: str = sys.platform) -> str | None:
+    """The ``bin/`` folder of this platform's executables."""
+    return {'win32': 'windows-x86_64', 'darwin': 'macos-aarch64', 'linux': 'linux-x86_64'}.get(system)
+
+
+def native_app(app: str, env: dict, root: Path = PACKAGE_ROOT, system: str = sys.platform) -> Path | None:
+    """The executable ``app`` runs as: its dev build when the variable
+    names one, else the package's; None when ``app`` has none or it is not
+    built (the Python window then runs)."""
+    if app not in BINARIES:
+        return None
+    name, override = BINARIES[app]
+    given = env.get(override, '').strip()
+    if given:
+        return Path(given)
+    folder = package_platform(system)
+    if folder is None:
+        return None
+    exe = root / 'bin' / folder / (name + ('.exe' if system == 'win32' else ''))
+    return exe if exe.is_file() else None
 
 _VAR = re.compile(r'\$\{(\w+)\}|\$(\w+)')
 
@@ -383,6 +416,10 @@ def main(argv: list[str] | None = None) -> int:
         command = [str(python), str(Path(args.run).resolve())]
     elif args.app == 'farm':
         command = [str(python), '-m', 'tumblepipe.farm_app', '--context', args.context]
+    elif (native := native_app(args.app, env)) is not None:
+        # The executable opens its window with no arguments, on
+        # TH_PROJECT_PATH from the replayed packages.
+        command = [str(native)]
     else:
         command = [str(python), '-m', *APPS[args.app]]
 

@@ -197,6 +197,13 @@ Multi's workfile open; use New from Template to start one*. That scene's
 nodes are pinned to its own entity, and in a Multi workfile they would
 resolve to nothing.
 
+A crash file of a Multi's workfile counts as the Multi's: after a crash, open
+the `crash.<name>_<user>_<pid>.hiplc` Houdini saved and use **New from
+Current** on the Multi's row to save it as the next version. The crash file
+sits in Houdini's temp folder, not the workfile folder, so the scene's own
+context options (`@entity`, `@department`, `@version`, which every pipeline
+save writes) say whose workfile it was.
+
 Only a workfile created from the Multi's own rows is a Multi workfile. A
 multi-shot scene built in a *shot's* department — even a shot named after
 the Multi — belongs to that shot, and exporting from it finds no tasks for

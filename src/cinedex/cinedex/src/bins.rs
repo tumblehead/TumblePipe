@@ -316,6 +316,41 @@ pub fn grid_columns(width: f32) -> usize {
     (((width + TILE_GAP) / (TILE_MIN + TILE_GAP)).floor() as usize).max(1)
 }
 
+/// A grid tile's line of words under its picture, and its padding.
+pub const TILE_WORDS: f32 = 18.0;
+pub const TILE_PADDING: f32 = 3.0;
+/// What of the grid's own width is not tiles: the list's scrollbar.
+pub const GRID_GUTTER: f32 = 10.0;
+
+/// How the grid's tiles are laid out in a grid `width` wide.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GridGeometry {
+    /// Tiles a line.
+    pub columns: usize,
+    /// A tile's width.
+    pub tile_wide: f32,
+    /// The height of a tile's picture (16:9 inside its padding).
+    pub picture_tall: f32,
+    /// A line of tiles' height, the gap under it included.
+    pub line_tall: f32,
+}
+
+/// The grid's tiles in a grid `width` wide: the width the grid is laid out
+/// at, not the width the bins were last saved at, so the tiles follow the
+/// panel while its handle is dragged (Primer's split shows a drag's width
+/// itself and reports it only on release) and nothing jumps when it is let
+/// go. The lines fill the width less [`GRID_GUTTER`], [`TILE_MIN`] at the
+/// narrowest.
+pub fn grid_geometry(width: f32) -> GridGeometry {
+    let width = if width.is_finite() { width } else { TILE_MIN };
+    let wide = (width - GRID_GUTTER).max(TILE_MIN);
+    let columns = grid_columns(wide);
+    let tile_wide = (wide - (columns - 1) as f32 * TILE_GAP) / columns as f32;
+    let picture_tall = ((tile_wide - 2.0 * TILE_PADDING) * 9.0 / 16.0).round();
+    let line_tall = picture_tall + TILE_WORDS + 2.0 * TILE_PADDING + TILE_GAP;
+    GridGeometry { columns, tile_wide, picture_tall, line_tall }
+}
+
 /// A line of the grid view: a sequence's name, or up to a line's worth of
 /// items (indices into the rows they were made from).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -725,6 +760,42 @@ mod tests {
                 prop_assert!(needs(columns) <= width + 1e-3);
             }
             prop_assert!(needs(columns + 1) > width - 1e-3);
+        }
+
+        /// The tiles fill the grid's width (less its gutter) exactly, each
+        /// at least the narrowest, as many a line as fit; and a wider grid
+        /// never holds fewer tiles a line, so dragging the bins wider only
+        /// ever adds a column.
+        #[test]
+        fn the_tiles_fill_the_width_they_are_laid_out_in(width in 0f32..4000.0, more in 0f32..400.0) {
+            let at = grid_geometry(width);
+            let wide = (width - GRID_GUTTER).max(TILE_MIN);
+            prop_assert_eq!(at.columns, grid_columns(wide));
+            let filled = at.columns as f32 * at.tile_wide + (at.columns - 1) as f32 * TILE_GAP;
+            prop_assert!((filled - wide).abs() <= 1e-2, "{} tiles fill {} of {}", at.columns, filled, wide);
+            prop_assert!(at.tile_wide >= TILE_MIN - 1e-3);
+            prop_assert!(at.picture_tall >= 0.0 && at.line_tall > at.picture_tall);
+            prop_assert!(grid_geometry(width + more).columns >= at.columns);
+        }
+
+        /// The geometry is the width's alone: the same width, the same
+        /// tiles, whatever the bins were saved at (the grid once snapped on
+        /// release, built from the saved width while a drag showed another).
+        #[test]
+        fn the_same_width_lays_the_same_tiles(width in 0f32..4000.0) {
+            prop_assert_eq!(grid_geometry(width), grid_geometry(width));
+            prop_assert_eq!(grid_geometry(f32::NAN), grid_geometry(TILE_MIN));
+        }
+
+        /// A tile's picture is 16:9 inside its padding, to the nearest whole
+        /// pixel, and a line of tiles is the picture, its line of words,
+        /// the padding above and below, and the gap to the next line.
+        #[test]
+        fn a_tile_is_a_sixteen_by_nine_picture_over_its_words(width in 0f32..4000.0) {
+            let at = grid_geometry(width);
+            let inside = at.tile_wide - 2.0 * TILE_PADDING;
+            prop_assert!((at.picture_tall - inside * 9.0 / 16.0).abs() <= 0.5 + 1e-3, "{:?}", at);
+            prop_assert!((at.line_tall - (at.picture_tall + TILE_WORDS + 2.0 * TILE_PADDING + TILE_GAP)).abs() < 1e-3, "{:?}", at);
         }
     }
 

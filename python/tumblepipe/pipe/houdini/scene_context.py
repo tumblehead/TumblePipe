@@ -61,3 +61,22 @@ def entity_in_contexts(
 def scene_entity_uri(*, contexts: tuple[str, ...] | None) -> Uri | None:
     """The open workfile's entity, when it is one under ``contexts``."""
     return entity_in_contexts(scene_context(), contexts=contexts)
+
+
+def loaded_scene_context() -> Context | None:
+    """Whose workfile the open scene is, also for a scene opened from
+    outside its workfile folder.
+
+    :func:`scene_context` reads the hip's path, which says nothing for a
+    crash file Houdini saved to its temp folder. Then the scene's own
+    context options (written by every pipeline save) name the workfile it
+    came from. For saving the scene on as a new workfile (New from Current):
+    the provenance and the retarget need the old context. The th:: nodes
+    keep asking :func:`scene_context`, so a scene that is not a workfile on
+    disk does not publish as one.
+    """
+    context = scene_context()
+    if context is not None:
+        return context
+    from tumblepipe.pipe.houdini.context_options import context_from_options
+    return context_from_options()

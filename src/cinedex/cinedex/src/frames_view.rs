@@ -59,6 +59,7 @@ use crate::engine::{Clip, Content, Engine, Timeline};
 use crate::glyph::{self, Glyph};
 use crate::layer_view;
 use crate::look;
+use crate::menu_words::{self, Line, Roomy};
 use crate::previews::open_frames;
 use crate::reel::{Fill, Group, Reel, Run, Tick, Transport};
 use crate::take_menu::marked_row;
@@ -140,6 +141,8 @@ pub(crate) enum Message {
     Seek(usize),
     Last,
     Loop,
+    /// View > Flip Horizontally (Shift+H): the picture mirrored, or back.
+    Flip,
     Display(usize),
     View(usize),
     Exposure(f32),
@@ -194,6 +197,9 @@ pub(crate) struct FramesView {
     engine: Engine,
     opened: Vec<Opened>,
     transport: Transport,
+    /// The picture is mirrored left to right (`flip`), for this window's
+    /// session only.
+    flipped: bool,
     /// The picture on screen and the frame it is.
     shown: Option<(FrameKey, Picture)>,
     frames_shown: u64,
@@ -262,6 +268,9 @@ pub(crate) fn play_tip(playing: bool) -> &'static str {
 /// What a key does in the window (the menu shows the same keys; Up is a
 /// second play and pause, as Space).
 pub(crate) fn key_message(key: &Key, modifiers: Modifiers) -> Option<Message> {
+    if crate::flip::is_key(key, modifiers) {
+        return Some(Message::Flip);
+    }
     let command = modifiers.command();
     match key {
         Key::Named(Named::ArrowRight) if command => Some(Message::Edge(1)),
@@ -295,7 +304,7 @@ const ALT: Modifiers = Modifiers { alt: true, ..Modifiers::NONE };
 type Row3 = (&'static str, Message, Option<(Key, Modifiers)>);
 
 /// The menus: (title, rows), None rows being separators.
-fn headings(playing: bool, looping: bool) -> Vec<(&'static str, Vec<Option<Row3>>)> {
+fn headings(playing: bool, looping: bool, flipped: bool) -> Vec<(&'static str, Vec<Option<Row3>>)> {
     let named = |n: Named, m: Modifiers| Some((Key::Named(n), m));
     let mut file = Vec::new();
     if !cfg!(target_os = "macos") {
@@ -321,7 +330,14 @@ fn headings(playing: bool, looping: bool) -> Vec<(&'static str, Vec<Option<Row3>
                 Some((if looping { "\u{2713} &Loop" } else { "&Loop" }, Message::Loop, Some((Key::Character('l'), NONE)))),
             ],
         ),
-        ("&View", vec![Some(("&Refresh", Message::Refresh, Some((Key::Character('r'), Modifiers::COMMAND))))]),
+        (
+            "&View",
+            vec![
+                Some((crate::flip::menu_label(flipped), Message::Flip, Some((Key::Character(crate::flip::KEY.0), crate::flip::KEY.1)))),
+                None,
+                Some(("&Refresh", Message::Refresh, Some((Key::Character('r'), Modifiers::COMMAND)))),
+            ],
+        ),
         (
             VERSION_MENU,
             vec![
@@ -364,6 +380,7 @@ impl FramesView {
             engine,
             opened: vec![Opened::default(); groups],
             transport,
+            flipped: false,
             shown: None,
             frames_shown: 0,
             failed_at: HashMap::new(),
@@ -777,11 +794,15 @@ impl FramesView {
             .align_y(Vertical::Center)
             .push(look::tick_box(Id::new("loop"), self.transport.looping, |_| Message::Loop).focusable(false))
             .push(text("Loop").font_size(13.0).color(look::quiet()));
-        let tools = row()
+        let mut tools = row()
             .spacing(24.0)
             .align_y(Vertical::Center)
             .push(text(title).font_size(15.0).color(look::text()))
-            .push(space(Length::Fill, Length::Shrink))
+            .push(space(Length::Fill, Length::Shrink));
+        if self.flipped {
+            tools = tools.push(crate::flip::chip(Message::Flip));
+        }
+        let tools = tools
             .push(transport)
             .push(tooltip(Id::new("loop tip"), looping, "Play round from the end to the start (L)"))
             .push(text(rate).font_size(13.0).color(rate_colour))
@@ -840,6 +861,7 @@ impl FramesView {
             on_gesture: |_| Message::Ignore,
             first: 0.0,
             on_view: |_| Message::Ignore,
+            cut: 0,
             gap: None,
             note: None,
             editable: false,
@@ -848,6 +870,18 @@ impl FramesView {
         tracks::track_view(Id::new("frames timeline"), program, height).into()
     }
 
+    /// The window's menus ([`menus_of`]).
+    fn menus(&self) -> Vec<(&'static str, Vec<Option<Line<Message>>>)> {
+        menus_of(self.transport.playing, self.transport.looping, self.flipped, &self.beside.versions, self.beside.version())
+    }
+
+    /// The picture as the video view draws it: the frame shown, at the
+    /// exposure, mirrored while flipped (`flip`).
+    fn video(&self) -> Video {
+        Video { picture: self.shown.as_ref().map(|(_, p)| p.clone()), exposure: self.display.exposure, flipped: self.flipped }
+    }
+
+    /// The menus as the platform's menu bar (macOS's).
     fn menu_bar(&self) -> Menu<Message> {
         let mut bar = Menu::new();
         if cfg!(target_os = "macos") {
@@ -855,14 +889,12 @@ impl FramesView {
                 MenuItem::button("Quit Cinedex", Message::Quit).accelerator(Accelerator::new(Key::Character('q'), Modifiers::COMMAND));
             bar = bar.app_submenu("Cinedex", Menu::new().push(quit));
         }
-        let versions = &self.beside.versions;
-        for (label, rows) in headings(self.transport.playing, self.transport.looping) {
-            let steps = label != VERSION_MENU || versions.len() > 1;
-            let mut menu = rows.into_iter().fold(Menu::new(), |menu, row| {
-                menu.push(match row {
+        for (title, lines) in self.menus() {
+            let menu = lines.into_iter().fold(Menu::new(), |menu, line| {
+                menu.push(match line {
                     None => MenuItem::separator(),
-                    Some((label, message, keys)) => {
-                        let item = MenuItem::button(label, message).enabled(steps);
+                    Some(Line { label, message, enabled, keys }) => {
+                        let item = MenuItem::button(label, message).enabled(enabled);
                         // On macOS only Command chords go to the menu: a bare
                         // key stays the window's (as the editor's menu has it).
                         match keys.filter(|(_, m)| !cfg!(target_os = "macos") || m.command()) {
@@ -872,16 +904,53 @@ impl FramesView {
                     }
                 })
             });
-            if label == VERSION_MENU && !versions.is_empty() {
-                menu = menu.push(MenuItem::separator());
-                for (i, row) in version_menu_rows(versions, self.beside.version()).into_iter().enumerate() {
-                    menu = menu.push(MenuItem::button(row, Message::Version(i)));
-                }
-            }
-            bar = bar.submenu(label, menu);
+            bar = bar.submenu(title, menu);
         }
         bar
     }
+
+    /// The menus as a bar across the top of the window, on Windows and
+    /// Linux: where Primer would put its own (`menu_words`), drawn so no
+    /// title loses its last letter.
+    fn menu_row(&self) -> Element<Message> {
+        menu_row_of(self.menus())
+    }
+}
+
+/// The menus, each its title and rows (`None` a separator): the
+/// [`headings`], the Version menu's steps greyed with one version or none,
+/// and `versions` listed under them, the one `shown` ticked.
+#[allow(clippy::type_complexity)]
+fn menus_of(
+    playing: bool,
+    looping: bool,
+    flipped: bool,
+    versions: &[VersionRow],
+    shown: Option<&str>,
+) -> Vec<(&'static str, Vec<Option<Line<Message>>>)> {
+    headings(playing, looping, flipped)
+        .into_iter()
+        .map(|(title, rows)| {
+            let enabled = title != VERSION_MENU || versions.len() > 1;
+            let mut lines: Vec<Option<Line<Message>>> = rows
+                .into_iter()
+                .map(|row| row.map(|(label, message, keys)| Line { label: label.to_owned(), message, enabled, keys }))
+                .collect();
+            if title == VERSION_MENU && !versions.is_empty() {
+                lines.push(None);
+                for (i, label) in version_menu_rows(versions, shown).into_iter().enumerate() {
+                    lines.push(Some(Line { label, message: Message::Version(i), enabled: true, keys: None }));
+                }
+            }
+            (title, lines)
+        })
+        .collect()
+}
+
+/// `menus` as a bar drawn in the window, its words given room.
+fn menu_row_of(menus: Vec<(&'static str, Vec<Option<Line<Message>>>)>) -> Element<Message> {
+    let menus = menus.into_iter().map(|(title, lines)| (title.to_owned(), menu_words::rows(lines))).collect();
+    Roomy::words(menu_words::bar(Id::new("frames menus"), menus).0).into()
 }
 
 impl Application for FramesView {
@@ -959,6 +1028,7 @@ impl Application for FramesView {
                 self.after_move();
             }
             Message::Loop => self.transport.looping = !self.transport.looping,
+            Message::Flip => self.flipped = !self.flipped,
             Message::Display(index) => {
                 if self.display.pick_display(index) {
                     self.set_display();
@@ -1038,8 +1108,10 @@ impl Application for FramesView {
         key_message(&key, modifiers)
     }
 
+    /// The platform's menu bar (macOS's), or none where the window draws
+    /// the menus itself (`menu_row`).
     fn menu(&self) -> Option<Menu<Message>> {
-        Some(self.menu_bar())
+        (!menu_words::in_window()).then(|| self.menu_bar())
     }
 
     fn subscription(&self) -> Subscription<Message> {
@@ -1058,8 +1130,7 @@ impl Application for FramesView {
     }
 
     fn view(&self, _window: window::Id) -> Element<Message> {
-        let picture = self.shown.as_ref().map(|(_, p)| p.clone());
-        let video = shader(Video { picture, exposure: self.display.exposure }).width(Length::Fill).height(Length::Fill).redraw(false);
+        let video = shader(self.video()).width(Length::Fill).height(Length::Fill).redraw(false);
         let mut layers = stack().push(video).width(Length::Fill).height(Length::Fill);
         if let Some((words, colour)) = self.card() {
             layers = layers.push(
@@ -1070,9 +1141,15 @@ impl Application for FramesView {
                     .align_y(Vertical::Center),
             );
         }
+        // A right-click on the picture: what the view of it can do.
+        let layers =
+            Roomy::menus(context_menu(Id::new("viewer menu"), layers).item(crate::flip::context_label(self.flipped), || Message::Flip));
         let bar = display_bar(&self.display, self.choosers(), Message::Display, Message::View, Message::Exposure);
-        let mut page =
-            column().push(self.toolbar()).push(layers).push(bar).push(self.timeline_view()).width(Length::Fill).height(Length::Fill);
+        let mut page = column();
+        if menu_words::in_window() {
+            page = page.push(self.menu_row());
+        }
+        let mut page = page.push(self.toolbar()).push(layers).push(bar).push(self.timeline_view()).width(Length::Fill).height(Length::Fill);
         if let Some(words) = &self.status {
             page = page.push(
                 container(text(words.clone()).font_size(13.0).color(look::error()))
@@ -1246,11 +1323,137 @@ mod tests {
         assert!(key_message(&Key::Character('x'), NONE).is_none());
     }
 
+    /// View > Flip Horizontally is there in the preview window too, ticked
+    /// exactly while flipped, and Shift+H (not H) sends it.
+    #[test]
+    fn the_view_menu_flips_the_picture() {
+        for flipped in [false, true] {
+            let menus = headings(false, true, flipped);
+            let (_, view) = menus.iter().find(|(title, _)| *title == "&View").expect("a View menu");
+            let flips: Vec<&Row3> = view.iter().flatten().filter(|row| matches!(row.1, Message::Flip)).collect();
+            assert_eq!(flips.len(), 1);
+            assert_eq!(flips[0].0, crate::flip::menu_label(flipped));
+        }
+        let shift = Modifiers { shift: true, ..NONE };
+        assert!(matches!(key_message(&Key::Character('H'), shift), Some(Message::Flip)));
+        assert!(key_message(&Key::Character('h'), NONE).is_none());
+    }
+
+    /// A preview window on two frames that sit nowhere in the pipeline,
+    /// shown through the project template's colour.
+    fn window() -> FramesView {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/project_template");
+        let ocio = root.join("_config/ocio/tumblehead.ocio").to_string_lossy().replace('\\', "/");
+        let colour = Colour::open(&ocio).expect("the template's OCIO config");
+        let source = Source { path: PathBuf::from("R:/b/beauty.1001.exr"), fill: Fill::Span };
+        FramesView::new(source, reel(&[1001, 1002], &Fill::Span), colour, 24)
+    }
+
+    /// The words the window's toolbar draws.
+    fn toolbar_words(view: &FramesView) -> Vec<String> {
+        use primer::widget::custom::{Ctx, Cursor, Layout, LayoutCtx, Limits, StateStore, Widget};
+        let toolbar = view.toolbar();
+        let (store, theme) = (StateStore::new(), Theme::dark());
+        let measurer = crate::menu_words::tests::OddText;
+        let node = toolbar
+            .layout(&Limits::new(Size::ZERO, Size::new(2400.0, 80.0)), LayoutCtx { measurer: &measurer, store: &store, theme: &theme });
+        let ctx = Ctx { cursor: Cursor::Unavailable, theme: &theme, store: &store, measurer: &measurer, visible: node.bounds() };
+        let mut drawn = Vec::new();
+        crate::menu_words::tests::texts(&toolbar.draw(Layout::new(&node), ctx), &mut drawn);
+        drawn.into_iter().map(|text| text.content).collect()
+    }
+
+    /// Flip Horizontally flips the picture and back: the video view is
+    /// told, the View menu ticks it, and the toolbar's chip shows exactly
+    /// while it is flipped. The window's menus are its own bar off macOS,
+    /// Primer given none to stack above it.
+    #[test]
+    fn flip_mirrors_the_picture_and_says_so() {
+        let mut view = window();
+        assert_eq!(Application::menu(&view).is_none(), menu_words::in_window());
+        for flipped in [true, false, true] {
+            drop(view.update(Message::Flip));
+            assert_eq!((view.flipped, view.video().flipped), (flipped, flipped));
+            let menus = view.menus();
+            let (_, rows) = menus.iter().find(|(title, _)| *title == "&View").expect("a View menu");
+            assert!(rows.iter().flatten().any(|line| line.label == crate::flip::menu_label(flipped)));
+            assert_eq!(toolbar_words(&view).iter().any(|words| words == crate::flip::CHIP), flipped);
+        }
+    }
+
+    /// Versions as the Version menu lists them, of every state.
+    fn versions(count: usize) -> Vec<VersionRow> {
+        let states = [
+            VersionState::Complete,
+            VersionState::Partial { frames: 37, of: Some(240) },
+            VersionState::Partial { frames: 1, of: None },
+            VersionState::Missing,
+        ];
+        (0..count)
+            .map(|i| VersionRow {
+                version: format!("v{:04}", count - i),
+                path: PathBuf::new(),
+                state: states[i % states.len()],
+                check: i % 3 == 1,
+            })
+            .collect()
+    }
+
+    proptest! {
+        /// The Version menu's steps can be chosen only with two versions
+        /// or more; the versions are listed under them past a line, each
+        /// choosable, the one shown ticked; no other menu is greyed.
+        #[test]
+        fn the_version_menu_lists_the_versions_past_its_steps(playing: bool, looping: bool, flipped: bool, count in 0usize..6, shown in prop::option::of(0usize..6)) {
+            let versions = versions(count);
+            let shown = shown.map(|n| format!("v{n:04}"));
+            for (title, lines) in menus_of(playing, looping, flipped, &versions, shown.as_deref()) {
+                let steps = headings(playing, looping, flipped).into_iter().find(|h| h.0 == title).expect("the same menus").1.len();
+                prop_assert!(lines[..steps].iter().flatten().all(|line| line.enabled == (title != VERSION_MENU || count > 1)), "{}", title);
+                if title == VERSION_MENU && count > 0 {
+                    prop_assert!(lines[steps].is_none(), "a line before the versions");
+                    let listed: Vec<String> = lines[steps + 1..].iter().flatten().map(|line| line.label.clone()).collect();
+                    prop_assert_eq!(listed, version_menu_rows(&versions, shown.as_deref()));
+                    prop_assert!(lines[steps + 1..].iter().all(|line| line.as_ref().is_some_and(|line| line.enabled)));
+                } else {
+                    prop_assert_eq!(lines.len(), steps);
+                }
+            }
+        }
+
+        /// With the fonts the player draws with, at the common window
+        /// scales and any between, each title of a preview window's menus
+        /// and each row of each menu it opens (its words and its shortcut,
+        /// the versions listed included) draws whole on its one line,
+        /// inside its title or menu, a row's words ending before its
+        /// shortcut.
+        #[test]
+        fn the_preview_menus_draw_whole_at_any_scale(
+            playing: bool, looping: bool, flipped: bool, count in 0usize..5, scale in crate::menu_words::tests::scale(),
+        ) {
+            use crate::menu_words::tests::{drawn_whole, open, still, with_real};
+            let versions = versions(count);
+            let shown = versions.first().map(|v| v.version.clone());
+            with_real(|real| {
+                let theme = still(crate::display::theme());
+                let menus = menus_of(playing, looping, flipped, &versions, shown.as_deref());
+                let opens: Vec<bool> = menus.iter().map(|(_, lines)| !lines.is_empty()).collect();
+                let mut bar = menu_row_of(menus);
+                for (index, _) in opens.iter().enumerate().filter(|(_, opens)| **opens) {
+                    let opened = open(&mut bar, index, real, &theme);
+                    prop_assert!(!opened.words.is_empty());
+                    drawn_whole(real, &opened, scale)?;
+                }
+                Ok(())
+            })?;
+        }
+    }
+
     /// Every menu row's key sends the row's message.
     #[test]
     fn the_menu_shows_the_keys_that_work() {
         for playing in [false, true] {
-            for (_, rows) in headings(playing, playing) {
+            for (_, rows) in headings(playing, playing, playing) {
                 for (label, message, keys) in rows.into_iter().flatten() {
                     let Some((key, modifiers)) = keys else { continue };
                     let sent = key_message(&key, modifiers);

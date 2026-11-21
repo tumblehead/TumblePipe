@@ -7,9 +7,9 @@
 //!
 //! On macOS the menu is the global menu bar. On Windows and Linux the player is
 //! built without Primer's `os` feature (the native Windows bar ignores the
-//! theme, and Linux's would need GTK), and Primer draws the same declaration
-//! inside the window instead, as a themed bar above the editor: the `&` in a
-//! label is its access letter there,
+//! theme, and Linux's would need GTK), and the editor draws the same
+//! headings inside the window instead, at the start of its toolbar's row
+//! (`menu_row`): the `&` in a label is its access letter there,
 //! and the shortcuts are hints, the keys being [`key_message`]'s either way.
 //! Every item is greyed while a dialog is open, as the keys are then, and
 //! the ones that change the cut while the edit is read-only.
@@ -20,6 +20,7 @@ use primer::menu::{Accelerator, Menu, MenuItem};
 use super::export_dialog::ExportMessage;
 use super::{Editor, Message, OpenDialog};
 use crate::editing::Origin;
+use crate::flip;
 use crate::take_menu::TakeAxis;
 use th_edit::document::TakeKind;
 
@@ -50,6 +51,8 @@ pub(super) struct State {
     pub audio_hidden: bool,
     /// Some track has no row: one is soloed, or the audio is hidden.
     pub focused: bool,
+    /// View > Flip Horizontally: the picture is mirrored (`flip`).
+    pub flipped: bool,
     /// The cut's end, one past its last frame: where Go to End parks, so
     /// an Insert there appends (#25).
     pub end: usize,
@@ -165,6 +168,8 @@ fn view_menu(s: &State) -> Vec<Entry> {
     let mark = |show: Option<TakeKind>, plain: &'static str, marked: &'static str| if s.show == show { marked } else { plain };
     vec![
         item(label, Message::Burnins(!s.burnins), s.free, letter('b', NONE)),
+        // The view's only, as the burn-ins are: never saved or exported.
+        item(flip::menu_label(s.flipped), Message::Flip(!s.flipped), s.free, letter(flip::KEY.0, flip::KEY.1)),
         Entry::Separator,
         // View > Show (#57): the view's only, never saved.
         item(mark(None, "Show As &Cut", "\u{2713} Show As &Cut"), Message::Show(None), s.free, None),
@@ -211,6 +216,9 @@ pub(super) const ALSO_PLAYS: (Key, Modifiers) = (Key::Named(Named::ArrowUp), NON
 pub(super) fn key_message(state: &State, key: Key, modifiers: Modifiers) -> Option<Message> {
     if !state.free {
         return None;
+    }
+    if flip::is_key(&key, modifiers) {
+        return Some(Message::Flip(!state.flipped));
     }
     let command = modifiers.command();
     let bare = !command && !modifiers.alt;
@@ -303,6 +311,7 @@ impl Editor {
             show: self.show,
             audio_hidden: self.track_layout.audio_hidden,
             focused: self.solo.is_some() || self.track_layout.audio_hidden,
+            flipped: self.flipped,
             end: self.end(),
         }
     }
@@ -327,7 +336,7 @@ mod tests {
 
     fn state() -> impl Strategy<Value = State> {
         let show = proptest::option::of(prop_oneof![Just(TakeKind::Render), Just(TakeKind::Playblast)]);
-        (any::<[bool; 8]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
+        (any::<[bool; 9]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
             free: b[0],
             writable: b[0] && b[1],
             named: b[2],
@@ -338,6 +347,7 @@ mod tests {
             show,
             audio_hidden: b[6],
             focused: b[6] || b[7],
+            flipped: b[8],
             end,
         })
     }
@@ -541,6 +551,24 @@ mod tests {
             prop_assert_eq!(all.iter().filter(|r| r.2 == "Timeline(Open)").count(), 1);
         }
 
+        /// View > Flip Horizontally is there once, ticked exactly while the
+        /// picture is flipped, sends the other state, and can be pressed
+        /// whenever no dialog is open, a read-only edit's too (it changes
+        /// no edit); Shift+H sends the same, and H alone nothing.
+        #[test]
+        fn flip_horizontally_toggles_the_view(state in state()) {
+            let rows: Vec<Row> = items(&state).into_iter().filter(|r| r.2.starts_with("Flip(")).collect();
+            prop_assert_eq!(rows.len(), 1);
+            let (menu, label, message, enabled, keys) = &rows[0];
+            prop_assert_eq!((*menu, *enabled), ("&View", state.free));
+            prop_assert_eq!(label.starts_with('\u{2713}'), state.flipped);
+            prop_assert_eq!(message, &format!("{:?}", Message::Flip(!state.flipped)));
+            prop_assert_eq!(keys.clone(), Some((Key::Character('h'), SHIFT)));
+            let sent = key_message(&state, Key::Character('H'), SHIFT).map(|m| format!("{m:?}"));
+            prop_assert_eq!(sent, state.free.then(|| message.clone()));
+            prop_assert!(key_message(&state, Key::Character('h'), NONE).is_none());
+        }
+
         /// No two items show the same shortcut.
         #[test]
         fn no_two_items_share_a_shortcut(state in state()) {
@@ -589,6 +617,7 @@ mod tests {
             show: None,
             audio_hidden: false,
             focused: false,
+            flipped: false,
             end: 99,
         };
         let letters: Vec<char> = headings(&state)

@@ -35,7 +35,7 @@ use std::time::{Duration, Instant};
 
 use primer::keyboard::Modifiers;
 use primer::prelude::*;
-use primer::widget::custom::{Cursor, Event, mouse};
+use primer::widget::custom::{Cursor, Event, Sizing, mouse};
 use th_edit::document::{Frame as EditFrame, TrackKind};
 use th_pipe::edits::EditSources;
 
@@ -43,6 +43,7 @@ use super::{Editor, Message, OpenDialog};
 use crate::bin_drag::{self, Drag, Landing, Lanes, Over};
 use crate::bin_thumbs::{self, Loaded, Shown, ThumbKey, Thumbs};
 use crate::bins::{self, BinRow, Clips, GridRow, Target};
+use crate::by_width::by_width;
 use crate::display::Display;
 use crate::layout_prefs;
 use crate::look;
@@ -71,12 +72,6 @@ const GRID_TIP: &str = "Show the bin as a grid of thumbnails, or as a list. Reme
 /// A list row's height, and its thumbnail's size (16:9).
 pub(super) const LIST_ROW: f32 = 26.0;
 const LIST_THUMB: (f32, f32) = (39.0, 22.0);
-/// What of the bins' width is not the grid's tiles: the panel's padding
-/// and the list's scrollbar.
-const GRID_CHROME: f32 = 30.0;
-/// A tile's line of words under its picture, and its padding.
-const TILE_WORDS: f32 = 18.0;
-const TILE_PADDING: f32 = 3.0;
 /// A sequence's name on its line of the grid.
 pub(super) const GRID_HEADING: f32 = 30.0;
 /// How long the pointer rests on a row before its tip shows.
@@ -848,26 +843,32 @@ impl Editor {
 
     /// The bin on screen as a grid: each sequence's name on a line, then
     /// its shots as tiles (a thumbnail over a name), as many a line as the
-    /// bins' width holds. The same windowed list as [`Self::bin_list`], a
+    /// grid's width holds. The same windowed list as [`Self::bin_list`], a
     /// line of tiles a row, so only the lines on screen are built and only
     /// their thumbnails read. A press on a tile picks it, two put it in the
     /// cut (Shift: over it), as a double-click in the list does.
+    ///
+    /// The lines are built for the width the grid is laid out at
+    /// ([`by_width`]), not the bins' saved width: while the panel's handle
+    /// is dragged the split shows the dragged width and reports it only on
+    /// release, so a grid built from the saved width kept its columns all
+    /// through the drag and jumped to new ones when the handle was let go.
     fn bin_grid(&self, rows: &Arc<Vec<BinRow>>, keys: &Arc<Vec<ThumbKey>>, pictures: &Arc<Vec<Picture>>) -> Element<Message> {
-        let wide = (self.layout.bins_width - GRID_CHROME).max(bins::TILE_MIN);
-        let columns = bins::grid_columns(wide);
-        let tile_wide = (wide - (columns - 1) as f32 * bins::TILE_GAP) / columns as f32;
-        let picture_tall = ((tile_wide - 2.0 * TILE_PADDING) * 9.0 / 16.0).round();
-        let line_tall = picture_tall + TILE_WORDS + 2.0 * TILE_PADDING + bins::TILE_GAP;
-        let lines = Arc::new(bins::grid_rows(rows, columns));
-        let heights = Arc::clone(&lines);
         let (rows, keys, pictures, seen) = (Arc::clone(rows), Arc::clone(keys), Arc::clone(pictures), self.bin_state.thumbs.seen.clone());
-        let (tab, picked, folded) = (self.bin_tab, self.bin_picked(), self.bin_state.folded.clone());
+        let (tab, picked, folded) = (self.bin_tab, Arc::new(self.bin_picked()), Arc::new(self.bin_state.folded.clone()));
         let watch = self.bin_watch();
-        let watched = move |target: Target, content: Element<Message>| -> Element<Message> {
-            sense(content).on(move |event, bounds, cursor, modifiers| row_event(&target, watch, event, bounds, cursor, modifiers)).into()
-        };
-        let press = |target: Target| move || Message::Bin(BinMessage::Press(target.clone(), false));
-        let list =
+        let grid = by_width(Sizing::FILL, move |width| {
+            let bins::GridGeometry { columns, picture_tall, line_tall, .. } = bins::grid_geometry(width);
+            let lines = Arc::new(bins::grid_rows(&rows, columns));
+            let heights = Arc::clone(&lines);
+            let (rows, keys, pictures, seen) = (Arc::clone(&rows), Arc::clone(&keys), Arc::clone(&pictures), seen.clone());
+            let (picked, folded) = (Arc::clone(&picked), Arc::clone(&folded));
+            let watched = move |target: Target, content: Element<Message>| -> Element<Message> {
+                sense(content)
+                    .on(move |event, bounds, cursor, modifiers| row_event(&target, watch, event, bounds, cursor, modifiers))
+                    .into()
+            };
+            let press = |target: Target| move || Message::Bin(BinMessage::Press(target.clone(), false));
             indexed_list(Id::new(if tab == 0 { "shot grid" } else { "media grid" }), lines.len(), line_tall, move |i| match &lines[i] {
                 GridRow::Sequence(at) => {
                     let BinRow::Sequence(name) = &rows[*at] else { return space(Length::Fill, Length::Fill).into() };
@@ -900,7 +901,7 @@ impl Editor {
                             .push(text(name.clone()).font_size(12.0).color(look::text()));
                         let tile = button(Id::new(format!("bin tile {tab} {index}")), tile)
                             .background(if picked.contains(index) { look::rule() } else { Color::TRANSPARENT })
-                            .padding(TILE_PADDING)
+                            .padding(bins::TILE_PADDING)
                             .width(Length::Fill)
                             .height(Length::fixed(line_tall - bins::TILE_GAP))
                             .focusable(false)
@@ -919,8 +920,10 @@ impl Editor {
                 GridRow::Tiles(_) => line_tall,
             })
             .width(Length::Fill)
-            .height(Length::Fill);
-        modified(list, with_keys).into()
+            .height(Length::Fill)
+            .into()
+        });
+        modified(grid, with_keys).into()
     }
 }
 

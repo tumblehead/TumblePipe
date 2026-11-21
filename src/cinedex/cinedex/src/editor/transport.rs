@@ -161,7 +161,7 @@ mod tests {
 
     fn state() -> impl Strategy<Value = State> {
         let show = proptest::option::of(prop_oneof![Just(TakeKind::Render), Just(TakeKind::Playblast)]);
-        (any::<[bool; 8]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
+        (any::<[bool; 9]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
             free: b[0],
             writable: b[0] && b[1],
             named: b[2],
@@ -171,6 +171,7 @@ mod tests {
             burnins: b[5],
             audio_hidden: b[6],
             focused: b[6] || b[7],
+            flipped: b[8],
             show,
             end,
         })

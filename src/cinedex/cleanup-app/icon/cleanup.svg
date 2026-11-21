@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Clean Up Project</title>
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="#4a4a4a"/>
+  <rect x="14" y="14" width="228" height="228" rx="42" fill="#1e1e1e"/>
+  <rect x="44" y="52" width="168" height="24" rx="6" fill="#e1e1e1"/>
+  <rect x="44" y="88" width="168" height="24" rx="6" fill="#e1e1e1"/>
+  <rect x="44" y="124" width="168" height="24" rx="6" fill="#969696"/>
+  <rect x="44" y="160" width="168" height="24" rx="6" fill="#6c6c6c"/>
+  <rect x="44" y="196" width="168" height="24" rx="6" fill="#4a4a4a"/>
+  <polygon points="20,118 74.4,118 206.4,228 20,228" fill="#1e1e1e"/>
+  <polygon points="46.4,118 66.4,118 198.4,228 178.4,228" fill="#2bae86"/>
+</svg>

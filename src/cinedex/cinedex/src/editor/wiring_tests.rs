@@ -1549,6 +1549,7 @@ fn a_render_on_its_way_shows_on_its_shots_clips() {
     assert!(bench.editor.tracks_program().rendering.is_empty());
 }
 
+mod flip_and_menus;
 mod picks;
 
 mod track_menu;

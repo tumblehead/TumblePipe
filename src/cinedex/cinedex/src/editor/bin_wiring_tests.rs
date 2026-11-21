@@ -98,6 +98,10 @@ struct Screen {
     store: StateStore,
     clipboard: Kept,
     modifiers: Modifiers,
+    /// The bins' width on screen, when it is not the saved one: a drag of
+    /// the panel's handle in progress, which the split shows itself and
+    /// reports only on release.
+    dragged: Option<f32>,
 }
 
 /// The bins panel's height here: every row of these tests on screen.
@@ -105,7 +109,7 @@ const PANEL_TALL: f32 = 1400.0;
 
 impl Screen {
     fn new() -> Self {
-        Screen { store: StateStore::new(), clipboard: Kept::default(), modifiers: Modifiers::NONE }
+        Screen { store: StateStore::new(), clipboard: Kept::default(), modifiers: Modifiers::NONE, dragged: None }
     }
 
     /// `view` laid out `size` big takes `event` with the pointer at `at`;
@@ -128,8 +132,13 @@ impl Screen {
         said
     }
 
+    /// The bins' width on screen.
+    fn wide(&self, editor: &Editor) -> f32 {
+        self.dragged.unwrap_or(editor.layout.bins_width)
+    }
+
     fn bins(&mut self, editor: &mut Editor, event: Event, at: Point) -> Vec<String> {
-        let size = Size::new(editor.layout.bins_width, PANEL_TALL);
+        let size = Size::new(self.wide(editor), PANEL_TALL);
         self.deliver(editor, false, size, &event, at)
     }
 
@@ -155,7 +164,7 @@ impl Screen {
     /// whole panel and each row says when it is on it.
     fn item_rects(&mut self, editor: &mut Editor) -> BTreeMap<usize, Rectangle> {
         let mut rects = BTreeMap::new();
-        let wide = editor.layout.bins_width;
+        let wide = self.wide(editor);
         let mut y = 1.0;
         while y < PANEL_TALL {
             let mut x = 14.0;
@@ -287,6 +296,37 @@ proptest! {
         prop_assert_eq!(back, all, "unfolded, the rows are where they were");
         let bench = bench.reopened(&edit);
         prop_assert!(bench.editor.bin_state.folded.is_empty(), "unfolding was not remembered");
+    }
+
+    /// The grid's tiles follow the width the bins are shown at, not the
+    /// one they were saved at: while the panel's handle is dragged (the
+    /// split shows the drag and reports it only on release) the tiles are
+    /// already where the release leaves them, as many a line as that width
+    /// holds, so nothing snaps when the handle is let go.
+    #[test]
+    fn the_grid_follows_the_bins_as_they_are_dragged(
+        sizes in prop::collection::vec(1usize..5, 1..3), saved in 180f32..900.0, dragged in 240f32..900.0,
+    ) {
+        let shots = bin_of(&sizes);
+        let edit = empty_cut();
+        let mut bench = Bench::new(&edit, false);
+        bench.editor.bins.shots = shots.clone();
+        bench.send(Message::Bin(BinMessage::Grid(true)));
+        bench.editor.layout.bins_width = saved;
+        let mut screen = Screen::new();
+        screen.dragged = Some(dragged);
+        let during = screen.item_rects(&mut bench.editor);
+        prop_assert_eq!(during.keys().copied().collect::<Vec<_>>(), (0..shots.len()).collect::<Vec<_>>(), "every shot has a tile");
+        // The first sequence's first line: as many tiles as the width holds.
+        let columns = crate::bins::grid_geometry(dragged - 20.0).columns;
+        let first_line = during.values().filter(|r| (r.y - during[&0].y).abs() < 0.5).count();
+        prop_assert_eq!(first_line, columns.min(sizes[0]), "{} wide shows {} a line", dragged, first_line);
+        prop_assert!(during.values().all(|r| r.x + r.width <= dragged), "a tile is past the bins' edge");
+        // Released: the width is saved, and the tiles stay where they were.
+        bench.editor.layout.bins_width = dragged;
+        screen.dragged = None;
+        let after = screen.item_rects(&mut bench.editor);
+        prop_assert_eq!(after, during, "the tiles moved when the drag was let go");
     }
 
     /// A row shows its name; what else it is comes when the pointer has
@@ -864,7 +904,10 @@ proptest! {
     /// files that made nothing put nothing.
     #[test]
     fn an_import_says_what_became_of_every_file(
-        made in prop::collection::btree_set("[a-z]{3,6}", 0..4), not in prop::collection::vec(("[a-z]{2,5}\\.txt", "[a-z ]{3,12}"), 0..3),
+        // Item names the pipeline takes: `aux`, `con`, `nul` and `prn` are
+        // Windows device names, refused by the import below.
+        made in prop::collection::btree_set("[a-z]{3,6}".prop_filter("a Windows device name", |n| th_pipe::naming::is_valid_entity_name(n)), 0..4),
+        not in prop::collection::vec(("[a-z]{2,5}\\.txt", "[a-z ]{3,12}"), 0..3),
         frame in 0i64..12, insert in any::<bool>(), dropped in any::<bool>(), read_only in prop::bool::weighted(0.2),
     ) {
         let edit = cut_of(&[vec![(2, 6)]]);

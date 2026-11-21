@@ -13,7 +13,7 @@ use crate::db;
 ///
 /// A newer project is refused: a future migration may change the shape of
 /// the files TumblePipe here writes, and it cannot tell which ones did.
-pub const CONFIG_LAYOUT_VERSION: u32 = 26;
+pub const CONFIG_LAYOUT_VERSION: u32 = 27;
 
 /// The oldest `_config/` layout this reads and writes: the last one
 /// that changed the shape of `_config/db/` or `storage.json`.
@@ -21,14 +21,15 @@ pub const CONFIG_LAYOUT_VERSION: u32 = 26;
 /// An older project would not fail on its own -- it would be read and
 /// written wrongly (before v13 the publish channels were stored as
 /// `variants`, so a channel added here would be invisible to the pipeline)
-/// -- so it is refused up front with the fix. v14 to v26 refreshed
+/// -- so it is refused up front with the fix. v14 to v27 refreshed
 /// department templates, moved WSL paths out of `storage.json` values
 /// (v17), added the `groom` department to the pool (v21), moved the
 /// group schema under `schemas:/groups/<context>` (v22) and added the
 /// `edits` context (v23: a storage purpose, a department context, schemas
 /// and the `entity:/edits` root, all new keys); v24 refreshed only the
-/// composite template, v25 the stock department templates and v26 them again
-/// for the composite layout; none changed a shape
+/// composite template, v25 the stock department templates, v26 them again
+/// for the composite layout and v27 for the animation template's /obj
+/// camera; none changed a shape
 /// TumblePipe here touches. Edits themselves need v23. When TumblePipe adds a migration, bump
 /// [`CONFIG_LAYOUT_VERSION`], and this too if the new step changes a shape.
 pub const OLDEST_LAYOUT_VERSION: u32 = 13;
@@ -517,5 +518,26 @@ mod tests {
         assert!(matches!(detect(&root).unwrap_err(), ProjectError::MissingStorage));
         fs::write(root.join("_config").join(STORAGE_FILE), "[]").unwrap();
         assert!(matches!(detect(&root).unwrap_err(), ProjectError::BadStorage(_)));
+    }
+
+    /// The layout this knows is the one the newest migration ends at
+    /// (`th_project_core::migration::STEPS`, one step a version), the one
+    /// TumblePipe's Python names, and the one the project template carries:
+    /// a migration added without bumping it here would refuse every
+    /// project it migrated.
+    #[test]
+    fn the_layout_is_the_newest_migrations() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let read = |path: &str| fs::read_to_string(repo.join(path)).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let number = |text: &str, after: &str, until: char| -> u32 {
+            let at = text.find(after).unwrap_or_else(|| panic!("no {after:?}")) + after.len();
+            text[at..].split(until).next().unwrap().trim().parse().unwrap_or_else(|e| panic!("{after:?}: {e}"))
+        };
+        let migration = read("src/wizard/core/src/migration.rs");
+        assert_eq!(number(&migration, "pub const STEPS: [Step;", ']'), CONFIG_LAYOUT_VERSION, "the migration's steps");
+        let python = read("python/tumblepipe/config/layout.py");
+        assert_eq!(number(&python, "\nCONFIG_LAYOUT_VERSION =", '\n'), CONFIG_LAYOUT_VERSION, "tumblepipe.config.layout");
+        let template: Value = serde_json::from_str(&read("scripts/project_template/_config/version.json")).unwrap();
+        assert_eq!(template["version"], CONFIG_LAYOUT_VERSION, "the project template's version.json");
     }
 }

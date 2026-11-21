@@ -672,7 +672,7 @@ left exactly as it was, rather than stamped part-way at the last step that
 happened to succeed.
 
 A migration never replaces a file without preserving the original — the one
-exception is a template a stock refresh (v12, v14–v16, v18–v21, v24–v26) recognises as a version the scaffold shipped, which
+exception is a template a stock refresh (v12, v14–v16, v18–v21, v24–v27) recognises as a version the scaffold shipped, which
 holds nothing of the project's. Which of the two it does depends on how
 load-bearing the file is:
 
@@ -904,7 +904,7 @@ load-bearing the file is:
   so looking through it showed layout's camera without the keys the
   animator set on `camera_edit`. It now reads `camera_edit`. Workfiles made
   before v18 keep their camera; point its **LOP Path** at `camera_edit` to
-  get the same.
+  get the same. Since v27 the template makes no /obj camera at all.
 
 - **Layout in Animate in the layout template (v19).** v12's refresh again,
   for the `shots/layout` template: with the project setting *Layout in
@@ -988,6 +988,19 @@ load-bearing the file is:
   byte and named in the run's output; a template the project lacks is
   installed. Comps already built keep their layout: the template only
   places nodes when a workfile is created.
+
+- **The animation workfile is Solaris only (v27).** A stock refresh, as
+  v12, for the `shots/animation` template: it no longer makes
+  `/obj/anim_camera` (in a Multi, `anim_camera_<seq>_<shot>`), the LOP
+  Import Camera that lifted `/cameras/render_camera` out of `camera_edit`.
+  The animator looks through the stage's `/cameras/render_camera` itself
+  (in the Scene Viewer's camera menu), downstream of `camera_edit`, so the
+  view still shows the animator's camera keys; the shot slate reads its
+  frame from that prim. Workfiles made before v27 keep their /obj camera,
+  and it keeps working (the slate reads it as before); nothing deletes it,
+  and it can be deleted by hand. A stock copy of the template is replaced
+  with the packaged one, no backup; a customised copy is left byte for
+  byte and named in the run's output.
 
 #### What a run says about the templates
 

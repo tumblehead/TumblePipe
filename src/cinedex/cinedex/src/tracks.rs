@@ -225,6 +225,10 @@ pub struct Tracks<Message> {
     pub first: f64,
     /// The wheel over the tracks asks for another view of them.
     pub on_view: fn(ViewChange) -> Message,
+    /// How many times the cut's clips have changed: a drag keeps the count
+    /// it was pressed at and is dropped once the count moves on, however
+    /// alike the clip now at its place ([`Tracks::held`]).
+    pub cut: u64,
     pub playhead: usize,
     /// Buffered frames as half-open ranges.
     pub buffered: Vec<(usize, usize)>,
@@ -376,6 +380,11 @@ impl<Message> Tracks<Message> {
     /// dragging, an agent's edit): the drag is then dropped, never painted
     /// from or let go on whatever clip is at that place now.
     fn held(&self, grab: &Grab) -> Option<usize> {
+        // The span alone does not tell: a Shift+Delete of the clip pulls
+        // the next one into its index and, as long, over its frames.
+        if grab.cut != self.cut {
+            return None;
+        }
         let row = self.rows.iter().position(|r| !r.spare && r.track == grab.clip.track)?;
         let clip = self.rows[row].clips.get(grab.clip.index)?;
         ((clip.at, clip.duration) == grab.span).then_some(row)
@@ -520,6 +529,8 @@ pub struct Grab {
     /// the cut has changed ([`Tracks::held`]).
     clip: ClipRef,
     span: (EditFrame, EditFrame),
+    /// [`Tracks::cut`] when it was taken.
+    cut: u64,
     part: Part,
     from_x: f32,
     /// Ctrl (Cmd on macOS) is held now: a body drag pushes what follows.
@@ -1091,8 +1102,14 @@ impl<Message> Tracks<Message> {
                         let additive = state.modifiers.shift || state.modifiers.command();
                         let clip = ClipRef { track: self.rows[row].track, index };
                         let taken = &self.rows[row].clips[index];
-                        state.grab =
-                            Some(Grab { clip, span: (taken.at, taken.duration), part, from_x: local.x, push: state.modifiers.command() });
+                        state.grab = Some(Grab {
+                            clip,
+                            span: (taken.at, taken.duration),
+                            cut: self.cut,
+                            part,
+                            from_x: local.x,
+                            push: state.modifiers.command(),
+                        });
                         state.at = (local.x, local.y);
                         if state.modifiers.shift && !state.modifiers.command() {
                             return (Status::Captured, Some((self.on_gesture)(Gesture::Range(clip))));
@@ -1400,6 +1417,7 @@ mod tests {
             on_gesture: |_| (),
             first: 0.0,
             on_view: |_| (),
+            cut: 0,
             gap: None,
             note: None,
             editable: true,
@@ -1436,7 +1454,7 @@ mod tests {
             if grabbed && any_clip {
                 let taken = &tracks.rows[1].clips[0];
                 let clip = ClipRef { track: TrackRef::video(0), index: 0 };
-                state.grab = Some(Grab { clip, span: (taken.at, taken.duration), part: Part::Body, from_x: 100.0, push: false });
+                state.grab = Some(Grab { clip, span: (taken.at, taken.duration), cut: 0, part: Part::Body, from_x: 100.0, push: false });
                 state.at = (140.0, RULER + 10.0);
             }
             let mut painted = Geometry::default();
@@ -1494,6 +1512,7 @@ mod tests {
             on_gesture: Sent::Gesture,
             first: 0.0,
             on_view: Sent::View,
+            cut: 0,
             gap: None,
             note: note.then(|| "1 audio track hidden".to_owned()),
             editable: true,

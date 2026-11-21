@@ -12,7 +12,8 @@ struct Uniforms {
     // 2 = display RGBA code values (straight alpha) in `linear_rgba`'s slot;
     // 3 = float data (depth, ids) in `linear_rgba`'s slot, shown as written.
     params: vec4<f32>,
-    // x: exposure gain; y, z: the shaper's log2 range.
+    // x: exposure gain; y, z: the shaper's log2 range; w: 1 = mirrored left
+    // to right (Flip Horizontally, `flip.rs`), 0 = not.
     display: vec4<f32>,
 };
 
@@ -38,7 +39,9 @@ fn vs_main(@builtin(vertex_index) vertex: u32) -> VertexOut {
     let pixel = origin + corner * size;
     var out: VertexOut;
     out.position = vec4<f32>(pixel.x / u.resolution.x * 2.0 - 1.0, 1.0 - pixel.y / u.resolution.y * 2.0, 0.0, 1.0);
-    out.uv = corner;
+    // Flipped, the picture's left edge samples the frame's right edge
+    // (`flip::sample_x`).
+    out.uv = vec2<f32>(corner.x + (1.0 - 2.0 * corner.x) * u.display.w, corner.y);
     return out;
 }
 

@@ -163,8 +163,9 @@ the TumblePipe pipeline radial in a network editor, **Alt+R** the recipes and
    rather than having a URI baked in. The `animation` template is shaped
    differently — `import_shot` → a `camera_edit` on `/cameras/render_camera`
    → `animate_shot` (a `th::animate` whose dive already imports the rigs the
-   shot uses and wires APEX scene-animate/invoke nodes) → `export_shot`, plus
-   an `anim_camera` LOP Import Camera under `/obj`. Every department has its
+   shot uses and wires APEX scene-animate/invoke nodes) → `export_shot`. It
+   is Solaris only: look through `/cameras/render_camera` in the viewer's
+   camera menu (there is no /obj camera). Every department has its
    own template; see [Department templates](configuration.md#department-templates)
    and [Workfiles](asset-browser/workfiles.md).
 4. **Work, then Save.** The **Save** quick action writes the *next* version

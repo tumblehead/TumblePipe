@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.115.0"
+version = "1.116.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -259,10 +259,15 @@ python = "3.11"
 label = "Restore Archive"
 description = "Check a TumblePipe archive and unpack it into a folder"
 
-# project-cleanup: the Clean Up Project window (tumblepipe.cleanup.app): lists, per
-# category (old export, render and cache versions, Houdini backups, farm
-# job folders, deleted entities), what it would delete, then deletes it when
-# confirmed. The same library runs headless as `python -m tumblepipe.cleanup`.
+# project-cleanup: the Clean Up Project window, the package's
+# bin/<platform>/cleanup (src/cinedex/cleanup-app, built with Cinedex):
+# lists, per category (old export, render and cache versions, Houdini
+# backups, farm job folders, deleted entities), what it would delete, then
+# deletes it when confirmed. The launcher gives it the project's
+# environment (TH_PROJECT_PATH), and runs the Python window
+# (tumblepipe.cleanup.app) where the executable is not built. With
+# arguments the executable is the command line, as
+# `python -m tumblepipe.cleanup` is.
 [scripts.project-cleanup]
 cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app cleanup"
 python = "3.11"

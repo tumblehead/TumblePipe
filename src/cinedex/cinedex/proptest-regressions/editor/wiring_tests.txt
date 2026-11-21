@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc ffea35b6154744837fbcfc6bcab855ec2c7496b16671f5a027d2005ee103d0cd # shrinks to edit = Edit { fps: 24, resolution: [1920, 1080], start_timecode: "01:00:00:00", video: [Track { name: "V1", clips: [] }], audio: [], markers: [] }, looks = [], read_only = false, stage = ((0, 0), 4), row = Index(0), frame = Index(768614336404564651), within = 0.05, place = 2, mark = 0, picked = false, choice = Index(0)
+cc 50afde634a70338ff86561c4902df14705331cccf72320068d66f32fbd3c0176 # shrinks to a Head drag of V2.1 with Shift+Delete pressed mid-drag: V2.2 rippled into its index and frames, and the drag landed on it (key = 1, dx = -1)

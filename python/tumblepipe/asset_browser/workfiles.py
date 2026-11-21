@@ -891,12 +891,12 @@ class WorkfileManager:
                 raise ValueError(f"No Multi {entity_uri} in this project")
             # Only a Multi's scene forks into a Multi: a shot's or asset's
             # nodes pinned to it would be switched to from_context, which
-            # resolves to nothing in a Multi workfile.
-            import hou
-
-            from tumblepipe.pipe.paths import get_workfile_context
-            hip_str = hou.hipFile.path()
-            open_ctx = get_workfile_context(Path(hip_str)) if hip_str else None
+            # resolves to nothing in a Multi workfile. A crash file of a
+            # Multi's workfile counts: its context options name the Multi.
+            from tumblepipe.pipe.houdini.scene_context import (
+                loaded_scene_context,
+            )
+            open_ctx = loaded_scene_context()
             if open_ctx is None or open_ctx.entity_uri.purpose != 'groups':
                 raise ValueError(
                     "New from Current on a Multi needs a Multi's workfile "
@@ -918,8 +918,9 @@ class WorkfileManager:
         def _do_save() -> None:
             try:
                 import hou
-                from tumblepipe.pipe.paths import (
-                    reserve_next_hip_file_path, get_workfile_context,
+                from tumblepipe.pipe.paths import reserve_next_hip_file_path
+                from tumblepipe.pipe.houdini.scene_context import (
+                    loaded_scene_context,
                 )
                 from tumblepipe.pipe.context import (
                     save_context, save_entity_context,
@@ -938,10 +939,9 @@ class WorkfileManager:
 
                 # The current scene's context (None for a scene that is
                 # not a pipeline workfile) records from_version provenance.
-                hip_str = hou.hipFile.path()
-                prev_ctx = (
-                    get_workfile_context(Path(hip_str)) if hip_str else None
-                )
+                # Read before the save: a crash file's context options name
+                # its old workfile only until save_hip_file replaces them.
+                prev_ctx = loaded_scene_context()
 
                 next_path.parent.mkdir(parents=True, exist_ok=True)
                 # Houdini may rewrite the extension (Education/Apprentice

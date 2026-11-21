@@ -77,3 +77,37 @@ def apply(context: Context | None) -> None:
     for name in MANAGED:
         if name in current and name not in wanted:
             hou.removeContextOption(name)
+
+
+def context_from_options() -> Context | None:
+    """The workfile the open scene's context options name; None without them.
+
+    The options travel inside the hip, so they still say whose workfile a
+    scene is when its path no longer does: Houdini's crash file
+    (``crash.<name>_<user>_<pid>.hiplc`` in its temp folder) is not
+    versioned and has no ``context.json`` beside it. Opening such a file
+    leaves the options alone (:func:`apply` of None touches nothing), so they
+    name the workfile that crashed. None when ``entity`` or ``department`` is
+    missing or ``entity`` is not a URI.
+    """
+    from tumblepipe.util.uri import Uri
+
+    names = set(hou.contextOptionNames())
+    if 'entity' not in names or 'department' not in names:
+        return None
+    entity = hou.contextOption('entity')
+    department = hou.contextOption('department')
+    if not isinstance(entity, str) or not isinstance(department, str):
+        return None
+    if not entity or not department:
+        return None
+    try:
+        entity_uri = Uri.parse(entity)
+    except ValueError:
+        return None
+    version = hou.contextOption('version') if 'version' in names else None
+    return Context(
+        entity_uri=entity_uri,
+        department_name=department,
+        version_name=version if isinstance(version, str) and version else None,
+    )

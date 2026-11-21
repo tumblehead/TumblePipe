@@ -56,10 +56,12 @@ use crate::colour::{Colour, Lut};
 use crate::display::{Display, open_live_over, open_media, theme};
 use crate::editing::{self, BinShot, Bound, Document, Origin};
 use crate::engine::{Content, Engine, Layer, Timeline};
+use crate::flip;
 use crate::layer_view;
 use crate::layout_prefs;
 use crate::live::{Change as LiveChange, LiveWatch};
 use crate::look;
+use crate::menu_words::Roomy;
 use crate::rpc::{self, Refusal};
 use crate::take_menu;
 use crate::tracks::{self, ClipView, RowView, Tracks};
@@ -75,6 +77,7 @@ mod clip_fields;
 mod export_dialog;
 mod gestures;
 mod menu_bar;
+mod menu_row;
 mod panels;
 mod rendering_watch;
 mod timeline_dialog;
@@ -699,6 +702,9 @@ pub enum Message {
     View(usize),
     Exposure(f32),
     Burnins(bool),
+    /// View > Flip Horizontally (Shift+H): the picture mirrored, or not
+    /// (`flip`). The view's only, never saved.
+    Flip(bool),
     /// View > Fit Timeline (F): the tracks span the cut and a second past
     /// it again (`timeline_view`).
     FitTimeline,
@@ -783,6 +789,8 @@ pub struct Editor {
     gap: Option<ClipRef>,
     /// The cut as of its last change: what the picks are followed from.
     seen: WorkingEdit,
+    /// How many times the cut's clips have changed (`Tracks::cut`).
+    clip_changes: u64,
     /// Text typed into a clip field (#60) and not set yet: the clip, the
     /// field, the text.
     clip_draft: Option<(ClipRef, clip_fields::ClipField, String)>,
@@ -811,6 +819,9 @@ pub struct Editor {
     /// The last thing said (a refused op, a save), and whether it is an error.
     status: Option<(String, bool)>,
     burnins: bool,
+    /// The picture is mirrored left to right (`flip`): for this window's
+    /// session only, never in the edit, an export or a burn-in.
+    flipped: bool,
     /// Play the shots' live playblasts from this machine over their takes.
     show_live: bool,
     /// View > Show (#57): the kind every shot plays as, None for the cut's
@@ -933,6 +944,7 @@ impl Editor {
             anchor: None,
             gap: None,
             seen,
+            clip_changes: 0,
             clip_draft: None,
             menu_clip: None,
             menu_empty: None,
@@ -950,6 +962,7 @@ impl Editor {
             dialog,
             status: None,
             burnins: true,
+            flipped: false,
             show_live: true,
             show: None,
             live_polls: 0,
@@ -1648,6 +1661,7 @@ impl Editor {
             on_gesture: Message::Tracks,
             first: self.timeline_view.first(),
             on_view: Message::TimelineView,
+            cut: self.clip_changes,
             gap: self.gap,
             note: self.tracks_note(),
             editable: true,
@@ -1729,6 +1743,9 @@ impl Editor {
                     menu = menu.item(label, move || message.clone());
                 }
             }
+            // The view's, not the clip's: the picture mirrored (`flip`).
+            let (label, flip) = self.flip_row();
+            menu = menu.item(label, move || flip.clone());
         }
         // A right-click off the clips: what the timeline does there.
         if let Some((frame, track)) = self.menu_empty {
@@ -1743,25 +1760,43 @@ impl Editor {
         }
         // Under the tracks: the whole timeline in little, to scroll by.
         column()
-            .push(menu)
+            .push(Roomy::menus(menu))
             .push(tracks::overview::overview_view(Id::new("tracks overview"), self.overview()))
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
     }
 
-    /// The edit's name, then, at the right, the view's switches and the
+    /// The picture as the video view draws it: the frame shown, at the
+    /// exposure, mirrored while flipped (`flip`).
+    fn video(&self) -> Video {
+        Video { picture: self.shown.as_ref().map(|s| s.picture.clone()), exposure: self.display.exposure, flipped: self.flipped }
+    }
+
+    /// The right-click menus' Flip Horizontally row (on the picture and on
+    /// a shot's clip): its words, ticked while flipped, and what it sends.
+    fn flip_row(&self) -> (&'static str, Message) {
+        (flip::context_label(self.flipped), Message::Flip(!self.flipped))
+    }
+
+    /// The window's one row above the panels: on Windows and Linux the
+    /// menus first (`menu_row`; on macOS they are the global menu bar),
+    /// then Cut|Board, then, at the right, the view's switches and the
     /// timecode: the one large thing, in the accent, because it is where the
-    /// playhead is now. The actions are the menu bar's (the global one on
-    /// macOS, drawn in the window on Windows and Linux) and their keys.
+    /// playhead is now. The edit's name (its version, `*` while it has
+    /// unsaved changes) is the window's title (`windows`), not said here
+    /// again.
     fn toolbar(&self) -> Element<Message> {
         let modes = segmented(Id::new("modes"), self.mode).push("Cut").push("Board").on_select(Message::Mode).focusable(false);
-        let mut tools = row()
-            .spacing(24.0)
-            .align_y(Vertical::Center)
-            .push(text(self.doc.title()).font_size(15.0).color(look::text()))
-            .push(modes)
-            .push(space(Length::Fill, Length::Shrink));
+        let mut tools = row().spacing(24.0).align_y(Vertical::Center);
+        let padding = if menu_row::in_window() {
+            tools = tools.push(self.menu_row());
+            // The bar's titles have room of their own around their words.
+            Padding { top: 4.0, right: 14.0, bottom: 4.0, left: 4.0 }
+        } else {
+            Padding::from([8.0, 14.0])
+        };
+        let mut tools = tools.push(modes).push(space(Length::Fill, Length::Shrink));
         if let Origin::Working { name, .. } = &self.doc.origin {
             let is_master = self.bins.master.as_deref() == Some(name.as_str());
             let master = row()
@@ -1805,11 +1840,14 @@ impl Editor {
                 "View > Show plays every shot as this, for viewing only: saving and publishing keep the cut's takes. Click to show the cut (V steps through)",
             ));
         }
+        if self.flipped {
+            tools = tools.push(flip::chip(Message::Flip(false)));
+        }
         tools = tools
             .push(tooltip(Id::new("live tip"), live, "Live playblasts from this machine play over the shots' takes as they render"))
             .push(tooltip(Id::new("burnins tip"), burnins, "B"))
             .push(text(editing::timecode(self.position as EditFrame, &self.doc.edit)).font_size(20.0).color(look::now()));
-        container(tools).padding(Padding::from([8.0, 14.0])).width(Length::Fill).background(look::panel()).into()
+        container(tools).padding(padding).width(Length::Fill).background(look::panel()).into()
     }
 
     /// The board: a row per shot under its sequence's name, a column per
@@ -3182,6 +3220,7 @@ impl Application for Editor {
             }
             Message::Exposure(stops) => self.display.exposure = stops,
             Message::Burnins(on) => self.burnins = on,
+            Message::Flip(on) => self.flipped = on,
             Message::FitTimeline => self.fit_timeline(),
             Message::TimelineView(change) => self.timeline_view = timeline_view::viewed(self.timeline_view, change),
             Message::ScrollTo(first) => self.timeline_view = self.timeline_view.scrolled_to(first),
@@ -3281,8 +3320,11 @@ impl Application for Editor {
         menu_bar::key_message(&self.menu_state(), key, modifiers)
     }
 
+    /// The platform's menu bar (macOS's), or none where the toolbar's row
+    /// draws the menus itself (`menu_row`): given one there, Primer would
+    /// stack a bar of its own above the view.
     fn menu(&self) -> Option<primer::menu::Menu<Message>> {
-        Some(self.menu_bar())
+        (!menu_row::in_window()).then(|| self.menu_bar())
     }
 
     fn on_close_requested(&self, _window: window::Id) -> Option<Message> {
@@ -3335,9 +3377,10 @@ impl Application for Editor {
     }
 
     fn view(&self, _window: window::Id) -> Element<Message> {
-        let picture = self.shown.as_ref().map(|s| s.picture.clone());
-        let video = shader(Video { picture, exposure: self.display.exposure }).width(Length::Fill).height(Length::Fill).redraw(false);
+        let video = shader(self.video()).width(Length::Fill).height(Length::Fill).redraw(false);
         let mut layers = stack().push(video).width(Length::Fill).height(Length::Fill);
+        // The burn-ins go over the picture unmirrored, so they still read
+        // when it is flipped (`flip`).
         if let Some(burnin) = self.burnin() {
             layers = layers.push(canvas(burnin).width(Length::Fill).height(Length::Fill));
         }
@@ -3348,6 +3391,9 @@ impl Application for Editor {
             layers = layers
                 .push(container(words).width(Length::Fill).height(Length::Fill).align_x(Horizontal::Center).align_y(Vertical::Center));
         }
+        // A right-click on the picture: what the view of it can do.
+        let (label, flip) = self.flip_row();
+        let layers = Roomy::menus(context_menu(Id::new("viewer menu"), layers).item(label, move || flip.clone()));
         // The panels resize (`editor/panels.rs`): drag a handle, double-
         // click it to fold the panel to a strip, click the strip to bring it
         // back. The handles stay out of keyboard focus, so the player's keys

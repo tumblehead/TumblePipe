@@ -9,7 +9,10 @@
 # testable headless; `cinedex` is the Primer app on top.
 [workspace]
 resolver = "3"
-members = ["cinedex", "edit", "ffmpeg-sys", "media", "pipe", "playlist"]
+#
+# `cleanup` (th_cleanup) is the Clean Up Project tool's logic, a port of
+# tumblepipe.cleanup that links no FFmpeg, OCIO or GUI.
+members = ["cinedex", "cleanup", "cleanup-app", "edit", "ffmpeg-sys", "media", "pipe", "playlist"]
 
 [workspace.package]
 version = "0.1.0"
@@ -23,6 +26,7 @@ th_media = { path = "media" }
 th_playlist = { path = "playlist" }
 th_pipe = { path = "pipe" }
 th_edit = { path = "edit" }
+th_cleanup = { path = "cleanup" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # In-house UI framework (wgpu + winit). Pinned by revision: Primer is not
@@ -30,7 +34,7 @@ serde_json = "1"
 # and tray icons): on Linux that feature links GTK and libxdo, which artists'
 # machines would then need installed. cinedex/Cargo.toml turns it on for
 # macOS only, where the editor's menu is the global menu bar.
-primer = { git = "http://10.100.36.15:3000/soren-n/primer.git", rev = "3f67035a4ab3ec8df69770e177cb5b13f5fed58f", default-features = false }
+primer = { git = "http://10.100.36.15:3000/soren-n/primer.git", rev = "edbd5f2a7703920955d067a18f19bb0ef54d4cc5", default-features = false }
 exr = "1.74"
 half = { version = "2", features = ["bytemuck"] }
 thiserror = "2"

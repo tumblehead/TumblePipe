@@ -383,6 +383,17 @@ widget stacks involved are pure PySide6:
   PySide6, takes no licence):
   `PYTHONPATH="$HFS/python313/lib/site-packages-forced" "$HFS/python313/python.exe" scripts/verify_archive_app.py`.
 
+- `verify_cleanup_app.py` — the Python Clean Up Project window (the
+  fallback where the `cleanup` executable is not built), offscreen: fills
+  its overview from a made-up listing (total, a banner per warning, a row
+  per category opening to reasons, biggest-first groups and errors), goes
+  stale when a setting changes, then lists a small real project, deletes
+  nothing on Back from the confirmation card and exactly the listing on
+  Delete. A path argument saves a screenshot. Needs tumbletrove's Python:
+  `uv run --no-project --python 3.12 --with pyside6 --with usd-core python scripts/verify_cleanup_app.py`
+  with `PYTHONPATH=python;$TUMBLETROVE_PYTHON` (the preflight `qt` stage
+  runs it so).
+
 - `verify_window_front.py` — bringing a kept window to the front
   (`tumblepipe.util.window_front`), on real windows offscreen: Qt's own
   `show()`, `raise_()` and `activateWindow()` leave a minimised window
@@ -697,9 +708,10 @@ workspace:
   premultiplied in scene linear (`ExrSequence::decode_with_alpha_while`
   reads a layer's own `A`). `composite::dissolve` blends frames of any
   size and kind through an edit's fades, in display code values. `sound`
-  decodes a file's audio whole to stereo f32 (WAV read in Rust, the vendored
-  FFmpeg having no WAV demuxer; a movie's track through FFmpeg, formats
-  converted in Rust, no swresample) and `mix`es voices with in points, gain
+  decodes a file's audio whole to stereo f32 (a PCM or float WAV read in
+  Rust; anything else, a movie's track, mp3, flac, ogg or a compressed WAV,
+  through FFmpeg, its formats converted in Rust, never through swresample)
+  and `mix`es voices with in points, gain
   and fades, resampling linearly. It links no GUI, so it is tested
   headless.
 - `playlist` (`th_playlist`): a shot's takes and their media, as
@@ -881,6 +893,216 @@ workspace:
   Python (found under `$HFS` as `scripts/farm_launcher.py` finds it), which
   opens the Farm Submit window ticked on those shots. Nothing in Cinedex
   submits; in tests the launch is recorded and nothing is started.
+- `cleanup` (`th_cleanup`): Clean Up Project's rules, a port of
+  `python/tumblepipe/cleanup` with no FFmpeg, OCIO or GUI: the six
+  categories' plans and applies, the overview the window shows, the
+  command line and the log, with the same decisions, reasons, notes and
+  output text. Export layers' references are read with the pure-Rust
+  `openusd` crate (`usd.rs`: `.usda` and `.usdc`, every asset path a layer
+  authors, as `UsdUtils.ExtractExternalReferences` lists them); a layer
+  pxr would refuse is refused (a usda list missing its commas, which
+  `openusd` alone would read, among them), and any layer that cannot be
+  read keeps every cache, as Python does. Job folders ask Deadline through
+  `deadlinecommand` (`$DEADLINE_PATH`, else the platform's install), as
+  `tumblepipe.apps.deadline` does. Python stays the reference:
+  `tests/test_cleanup_parity.py` (minigun) draws random projects (exports
+  with staged layers, renders, caches and their workfiles, `.hip`/`.hiplc`
+  workfiles and backups, edits, job folders, `_deleted` stamps) and holds
+  the plan, the apply (the files left and the log), the window's texts, the
+  command line, Deadline's listing, layer references and name readings to
+  it, through the line protocol of `cleanup/examples/cleanup_lines.rs`.
+  `cleanup/tests/properties.rs` holds the crate's own properties, among
+  them that a parallel walk lists exactly what a sequential one does and
+  that a scan with parallel reads and its categories at once makes exactly
+  the sequential plan (its progress never going back), that a
+  cancelled scan makes no plan, and that a purge stopped after k items
+  handles exactly min(k, all) and leaves every later category untouched
+  and unlogged (`a_stop_leaves_later_categories_untouched`, with backups
+  seeded so at least two categories have items: a drawn `pyvenv.cfg`
+  would make its folders an environment and hide them). In
+  `cleanup-app`, `progress.rs` checks that Indexing only rises and is
+  never full early and that Sizing is full exactly when all six are
+  done, and `app_icon.rs` that `_NET_WM_ICON` packs every pixel as ARGB.
+  A scan is bound by the share, not the CPU. Measured read-only on
+  HideAndReek (2.5 TB, 478k files, a 100 Mbit/s link) before the change:
+  listing the files 46 s (the render root 33 s of it), sorting them with
+  their records 18 s, and each of exports, renders and caches reading the
+  72 latest workfiles (844 MB) for itself, 74 s each, 4.3 minutes in all.
+  So `make_plan_watched` reads the workfiles once for every category
+  (`core::Workfiles`, each category's own reading of the text kept), lists
+  folders `core::THREADS` (8) at a time (`fsx::walk_files_threads`: the
+  folders listed in parallel, then walked from the listings in the
+  sequential order, so files and errors come out identical; the render
+  root went 33 s → 19 s at 8, 18.5 s at 16, 22 s at 4), reads render
+  records, recent-write checks and job and `_deleted` folder sizes through
+  `fsx::par_map` (results in input order), and in the window runs the six
+  categories at once. The workfiles themselves are wire-bound (74 s at 1,
+  4, 8 or 16 at once), so they read two at a time, after the listing (read
+  beside it they took the bandwidth and the listing went from 25 s to
+  98 s, for 5 s saved in all). The whole scan: 4.3 minutes before, 183 s
+  with one read at a time and the categories in turn (the shared workfile
+  read alone), 138 s at 4, 137 s at 8 and 131 s at 16 with the categories
+  at once; 8 it is, the gain past it being noise on a share others use.
+  A `core::Watch` carries
+  the cancel flag and the reports: `core::Progress` (step, done of total,
+  bytes of total, and what the category has found to purge so far, items
+  and bytes), throttled per `Meter` to ten a second plus each step's
+  first and last, from atomics so concurrent reads report one rising
+  count. A category's finds are a tally in the `Watch` (`Meter::found`,
+  as each item is known to go: a `_deleted` stamp or job folder once
+  measured, a render version once its recent-write check clears it, an
+  export once the layers are followed; caches and backups only at their
+  end), set to its plan's exact figures as it finishes, so it only rises
+  and ends where the results start (`parallel_scans_match` checks both).
+  `make_plan` (the command line, the parity example) is the same
+  scan with its categories in turn and its lines unchanged. A purge is
+  steered the same way: `core::apply_steered(plan, log, &Steer)` takes
+  an `AtomicU8` control (`RUN`, `PAUSE`, `STOP`), checked only between
+  items (`each_item`: an item, a version folder or file as before, is
+  never cut short; a pause waits before the next, a stop ends there and
+  leaves the categories not reached untouched, no log header either), and
+  reports each category's `Removal` (items handled, removed, bytes) at
+  most ten a second plus its last word. Each removed item is logged as
+  it goes (an unbuffered append), so after a stop the log names exactly
+  what went. `core::apply` (the command line) runs it never paused, its
+  output unchanged; `stopped_purges_end_between_items` and
+  `paused_purges_hold_then_resume` check both.
+- `cleanup-app` (`th_cleanup_app`, executable `cleanup`): the Clean Up
+  Project window in Primer, and with arguments the command line of
+  `python -m tumblepipe.cleanup`. `build_player.py` ships it as
+  `bin/<platform>/cleanup` beside Cinedex; `scripts/farm_launcher.py --app
+  cleanup` runs it (a dev build named by `$TH_CLEANUP`), and the Python
+  window where it is not built. The project is the one given on launch
+  (`cleanup --gui <project>`, else `$TH_PROJECT_PATH`, which the launcher's
+  replayed packages set): the window title names it ("Clean Up Project —
+  <name>"; the path is shown nowhere), and there is no field to type
+  another and no scope to pick (a scan covers shots and assets alike; the
+  command line keeps `--context`). Started without a project (no folder
+  with `_config`) the results side is an `empty_state` "No project" with
+  no Scan and no button row. The window is the Tumblehead UI Convention on
+  `Theme::default()` with Primer's convention components, no toolbar and
+  no status line. The left side is pure rules: `section("Rules")`, each
+  category's name as a small heading (its rule in a tooltip), its number
+  fields after a right-aligned label column. Nothing reads the project
+  until **Scan**: before the first scan the results side is an
+  `empty_state` ("Scan the project", what a scan does, no button of its
+  own). The bottom-right `button_row` is, in every state, [Scan] [Purge],
+  Scan directly left of Purge: `Scan`, the window's one Primary, before
+  the first scan, `Scan Again` (Secondary) after, `Cancel` while a scan
+  runs (the convention's Cancel: a scan changes nothing, so stopping it
+  leaves nothing changed; the window goes back to the last scan's
+  results, or none, and the stopped scan's threads end within a read),
+  disabled while purging. Closing the window mid-scan cancels it too
+  (`Drop`). The Danger button reads just "Purge"; the count and size
+  are the Confirm's. It is disabled before a scan, while one runs, while
+  purging, when the rules changed, when nothing goes and when nothing is
+  ticked, and only the last says so beside it ("Nothing ticked to
+  purge."): the empty states, the scan block and the stale notice
+  already say the others. Every empty state is centred both ways in the
+  results pane above the button row (`loose.rs`: a column hands a `Fill`
+  child tight limits, which stacks an `empty_state`'s contents at the
+  top; the pane loosens them within its bounded share, and with
+  `.width(share, min, max)` lays a fixed-width child out and centres it
+  itself).
+  A scan always runs every category, off the window's thread
+  (`th_cleanup::core::make_plan_watched` reports fine progress and hands
+  each category's plan over as it finishes, from its threads; a 100 ms
+  poll reads them and redraws). From 300 ms in (`SHOW_DELAY` only keeps a
+  quicker scan from flashing) the results side is only a block centred
+  both ways in the pane (60% of it wide, 240 to 420 px; no headline, no
+  notices, no table): two labelled phase bars, **Indexing** (listing,
+  sorting, reading the workfiles; its count "18,402 files") and
+  **Sizing** (the six categories at once; "3 of 6 categories · 640 GB"),
+  each a determinate `progress_bar` 8 px thick on an outlined track (the
+  bare `bg_field` track did not read on the page), weighted by the
+  measured steps (`progress.rs`; a listing's unknown total guessed from
+  the last scan's file count), never going back and never full before its
+  phase is done. The running phase's bar is `.live(true)`; Sizing sits
+  still at 0 until Indexing ends; a finished phase is full, still, with a
+  check. Under them, a little apart, the six categories in their usual
+  order: a swatch in the category's colour, its name, its finds on the
+  right ("47 items · 7.3 GB") and under them a 6 px bar in its colour as
+  long as its bytes found against the largest category's so far (so the
+  bars rescale as totals grow), live while it runs, settled with a check
+  once done (its figures then its plan's), an empty track and a muted
+  name with "Waiting" before it starts. Last, muted, "m:ss elapsed". The
+  poll redraws every 100 ms, so the clock moves even while one read on
+  the share says nothing; parked (reduced motion, the window not in
+  front) only the sweeps stop, the counts and clock still change. When
+  the scan is done the results replace the block. Each scan has a
+  generation and only the newest one's result is shown.
+  A rule changed after a scan marks it stale: a warning `notice` ("The
+  rules changed since this scan.") with a `Scan Again` link, and Purge
+  disabled. The results: what can be freed (headline in `text`, counting
+  only what is ticked), under it a full-width stacked bar (`bars.rs`: a
+  segment per category that frees anything, as wide as its share, at
+  least 3 px, a tooltip naming it, grey while unticked), warnings as
+  `notice(Warning)` led by their first sentence, failures as a danger
+  `notice` that stays until dismissed, and a tree table (`results.rs`):
+  Purge · Category (a `checkbox` per category, all ticked after a scan,
+  disabled and blank where nothing goes; a colour swatch; the name) · a
+  bar per category relative to the largest · Found · To purge · Frees
+  (unit chosen from the largest value, B to TB, named in the header),
+  numbers right-aligned, an em dash for an empty cell. Unticking changes
+  the headline, the bars and Purge at once, with no scan, and leaves the
+  row dimmed. Each category has one colour, `theme.dept[i]`, the same in
+  the stacked bar, its row bar and its swatch. `empty_state` when there
+  is nothing to purge. The Confirm (`sheet` in a `Modal`, `button_row`
+  Cancel then Purge; Esc and Enter both cancel) lists only the ticked
+  categories, and Purge purges only those. While it purges the results
+  side is only a block centred like the scan's: one bar, `Purging` (by
+  the bytes removed of those chosen, live while it runs; "1,240 of 3,812
+  items · 640 GB of 1.6 TB"), the chosen categories only, each a bar in
+  its colour filling over its own total as its items go ("47 of 180
+  items · 7.3 GB freed", a check once all are handled), and "m:ss
+  elapsed". The bottom row is then `Pause` (`Resume` while paused) and
+  `Stop`, both Secondary (the convention's Stop: what went stays gone);
+  Scan and Purge are not there. Paused, the bar says `Paused`, nothing
+  sweeps and the clock holds; Stop says `Stopping…`, disables both and
+  ends after the item under way. Closing the window mid-purge is a Stop
+  (`on_close_requested` keeps the window until the item under way is
+  done and logged, then quits with no scan); a window dropped mid-purge
+  stops it and waits for that item too. Then the window scans once more
+  on its own, and what went is a `notice(Success)` at the top of the
+  results ("Purged N items, freed X.", or "Stopped after purging N of M
+  items, freed X.", an info notice "Stopped before anything was purged."
+  when nothing went; the log behind "Show details"; items left with an
+  error make it the danger notice instead), until dismissed or the next
+  Scan or Purge. "Purge", not "Delete":
+  the convention's verb for destroying for good. `elide.rs` cuts a long
+  tree line with an ellipsis, which Primer's `Text` does not do.
+  `cleanup-app/src/view_tests.rs` lays the real window out at 1180×780
+  and 760×560 with Primer's fonts, lowers its drawing as the renderer
+  does, wheels the rules top to bottom and sends keys to the Confirm taken
+  from the modal's overlay: names whole on one line, every number field
+  on one left edge, no words overlapping, nothing scanned on open and
+  Scan the one Primary, Scan directly left of Purge on one row before and
+  after a scan and when stale at both sizes with nothing drawn under it,
+  a purge's success as a success notice, no project field or scope and the title naming
+  the project, no Scan without a project, a scan covering every category
+  and enabling Purge, unticking changing the totals and greying the bars
+  without a scan, one colour per category everywhere, the stale notice
+  disabling Purge, a real scan replayed showing exactly two bars, Indexing
+  then Sizing, and no table (the running one live, Sizing empty until
+  Indexing ends, neither going back nor full early, a finished one full
+  with a check, every category's finds only rising) and then its results,
+  the scan block centred both ways at both sizes, scripted finds filling
+  each category's bar in its colour (the results' colour) in proportion to
+  the largest, in the usual order, muted until started, a check once
+  done, the clock ticking with
+  no report at all (frames at 1:01 and 1:03 differ), Cancel in Scan's
+  place leaving no plan and Purge off, a purge of temp `_deleted` stamps
+  showing only its block and Pause and Stop, removing nothing while
+  paused (its clock held) and every chosen item once resumed with counts
+  only rising, a Stop after k items leaving exactly the first k gone and
+  logged and the rest on disk with its notice, a stop before any item
+  saying so, closing mid-purge ending after the item under way and
+  quitting without a scan, a dropped window waiting for the purge, the
+  Confirm listing only what is ticked, Enter
+  never purging, notices for warnings and failures, Purge labelled just
+  "Purge" with no reason beside it that the window says elsewhere (only
+  "Nothing ticked to purge."), and every empty state centred both ways in
+  the results pane at both sizes.
 
 Primer is a git dependency that cargo fetches from 3db Gitea
 over plain HTTP (`http://10.100.36.15:3000/...`), pinned in
@@ -893,6 +1115,15 @@ credentials, so the studio network is all a build needs; CI needs no key.
 Studio; the Windows build worker has MSYS2 in `C:\msys64`. The player's
 build looks for FFmpeg there, or in `TH_FFMPEG_DIR`. Because FFmpeg is LGPL, it ships as
 separate shared libraries beside `cinedex`, never linked statically.
+Its decoders are FFmpeg's own, none needing a library: H.264, HEVC, ProRes,
+DNxHD, MJPEG, VP8/VP9, MPEG-1/2/4 Part 2, H.263, Theora, QuickTime Animation
+and raw video; AAC, MP3, MP2, FLAC, ALAC, Vorbis, Opus, AC-3/E-AC-3, PCM and
+WAV ADPCM; in mov/mp4, Matroska/WebM, AVI, MXF, MPEG-TS, Ogg, WAV, AIFF,
+FLAC, MP3 and ADTS AAC files. Opus needs swresample, which ships with the
+others. AV1 does not decode: its software decoders are libraries (libdav1d)
+the build leaves out, and the player names the codec when it refuses one.
+`build-ffmpeg-<platform>/install/.build-complete` holds a hash of the tag and
+the configure flags, so a change to the lists rebuilds it on the next build.
 
 **Packaging.** `.ci/build_player.py --platform <platform>` runs as the
 `build-player` prepack script. It builds FFmpeg when there is none, then
@@ -927,7 +1158,12 @@ set PATH=%CD%\..\..\build-ffmpeg-windows-x86_64\install\bin;%PATH%
 cargo test --workspace
 cargo run --release -p cinedex -- --project P:/show --ocio %OCIO%
 cargo run --release -p cinedex -- --project P:/show --ocio %OCIO% --shots entity:/shots/A/010 entity:/shots/A/020
+cargo run --release -p th_cleanup_app -- --gui P:/show
+cargo test -p th_cleanup -p th_cleanup_app
 ```
+
+`th_cleanup` and `th_cleanup_app` build without FFmpeg or OpenColorIO, so
+those two need none of the environment above.
 
 The tests:
 
@@ -1044,7 +1280,12 @@ The tests:
   embeds `icon/cinedex.ico` as the Windows executable's resource
   (`embed-resource`), and `app_icon.rs` sets it on each window at run time
   (Windows `WM_SETICON`, X11 `_NET_WM_ICON`, the macOS dock icon; Wayland
-  takes its icon from a `.desktop` file, which is not installed). The editor reads the batches every 5 s off the UI
+  takes its icon from a `.desktop` file, which is not installed). Clean Up
+  Project's icon (`cleanup-app/icon/`, its sibling: the same tile, version
+  slabs cut by a jade sweep) is made the same way by
+  `scripts/cleanup_icon.py` (`test_cleanup_icon`), with its own `build.rs`
+  and `app_icon.rs` (a copy of Cinedex's, called from the window's view).
+  The editor reads the batches every 5 s off the UI
   thread (`Message::PollPreviews`) and `tracks.rs` draws the **Preview
   ready** badge on a shot clip while one of its previews is of a
   department and version it has no take of. The Farm Manager's **Open in
@@ -1951,7 +2192,7 @@ created and runs its own copy from then on: "New workfile from template"
 loads `<project>/_config/templates/<context>/<department>/template.py`, not
 the package's. **Editing a packaged template changes new projects only.** An
 existing project gets the change only when a numbered refresh step brings it
-(v2, v9, v12, v14–v16, v18–v21, v24–v26 so far), so a fix nobody migrates is a fix nobody has: the
+(v2, v9, v12, v14–v16, v18–v21, v24–v27 so far), so a fix nobody migrates is a fix nobody has: the
 rig/blendshape dive fix shipped in 1.77.0 and the animation template's
 `KeyError: 'uri'` fix both sat in the scaffold, unseen by every project past
 v12, until v14.

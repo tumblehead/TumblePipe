@@ -96,6 +96,15 @@ impl Editor {
     /// The cut changed (an edit, an undo, a redo): what is picked follows
     /// its clips from the cut as it was.
     pub(super) fn follow_picks(&mut self) {
+        // A clip held on the tracks is let go of once any clip changed: a
+        // Shift+Delete or an undo can leave another clip at its place and
+        // over its frames, which the drag must never land on. A marker or
+        // a track's name changes no clip, and the drag goes on.
+        if self.seen.video.iter().map(|t| &t.clips).ne(self.doc.edit.video.iter().map(|t| &t.clips))
+            || self.seen.audio.iter().map(|t| &t.clips).ne(self.doc.edit.audio.iter().map(|t| &t.clips))
+        {
+            self.clip_changes += 1;
+        }
         self.follow_tracks();
         self.selection = kept(&self.seen, &self.doc.edit, &self.selection);
         self.anchor = self.anchor.and_then(|a| followed(&self.seen, &self.doc.edit, a));

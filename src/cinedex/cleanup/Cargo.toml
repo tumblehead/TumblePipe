@@ -1,0 +1,22 @@
+[package]
+name = "th_cleanup"
+description = "Clean Up Project's rules in Rust: what a project no longer needs (old export, render and cache versions, Houdini backups, farm job folders, deleted entities), listed, and deleted once confirmed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+th_pipe.workspace = true
+# Key order as Python reads it: an edit document's pins and a manifest are
+# walked in file order.
+serde_json = { workspace = true, features = ["preserve_order"] }
+chrono.workspace = true
+# The export layers' asset paths (sublayers, references, payloads, asset
+# values, clips), read from .usda and .usdc alike: what Python asks
+# pxr.UsdUtils.ExtractExternalReferences. Pure Rust, no USD install.
+openusd = "0.8.0"
+
+[dev-dependencies]
+proptest.workspace = true
+tempfile.workspace = true

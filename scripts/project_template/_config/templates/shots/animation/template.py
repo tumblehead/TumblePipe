@@ -1,5 +1,4 @@
 import loputils
-import hou
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.config import layout_animate
@@ -78,7 +77,9 @@ def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     # Scrape the assets (check if stage is available)
     rig_imports = _scrape_rig_imports(import_node.native())
 
-    # Create the camera edit node
+    # Create the camera edit node. The animator looks through the stage's
+    # /cameras/render_camera (Solaris only, no /obj camera): downstream of
+    # camera_edit it carries the animator's camera keys
     camera_edit_node = _edit_camera(scene_node, 'camera_edit', '/cameras/render_camera')
     camera_edit_node.setInput(0, import_node.native())
 
@@ -86,12 +87,6 @@ def _create_entity(scene_node, entity_uri: Uri, department_name: str):
     animate_node = ns.create_node(scene_node, 'animate_shot', ns.Node, 'animate')
     animate_node.setInput(0, camera_edit_node)
     _build_animate_dive(animate_node, rig_imports, entity_uri)
-
-    # Create animation camera: it reads camera_edit, so looking through it
-    # shows the animator's camera keys, not only layout's camera
-    anim_camera = hou.node('/obj').createNode('lopimportcam', 'anim_camera')
-    anim_camera.parm('loppath').set(camera_edit_node.path())
-    anim_camera.parm('primpath').set('/cameras/render_camera')
 
     # Create the export node
     export_node = export_layer.create(scene_node, 'export_shot')
@@ -125,11 +120,6 @@ def _create_group(scene_node, group_uri: Uri, department_name: str):
         animate_node.setInput(0, camera_edit_node)
         _build_animate_dive(animate_node, rig_imports, member_uri)
         _add_member_playblast(animate_node, member_uri)
-
-        # Create animation camera: it reads the member's camera_edit
-        anim_camera = hou.node('/obj').createNode('lopimportcam', f'anim_camera_{member_name}')
-        anim_camera.parm('loppath').set(camera_edit_node.path())
-        anim_camera.parm('primpath').set('/cameras/render_camera')
 
         # Create the export node
         export_node = export_layer.create(scene_node, f'export_shot_{member_name}')

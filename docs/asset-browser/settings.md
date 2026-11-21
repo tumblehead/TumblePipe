@@ -78,12 +78,21 @@ switch full and mini, as does a double-click; **[x]** tucks it into the dot,
 and a click on the dot brings it back. Hovering the chip names the shot's
 URI and how it was found.
 
+It shows for a Solaris camera, the USD camera prim the viewer looks
+through (such as the shot's `/cameras/render_camera`), whose frame it reads
+from the prim at the playhead, and for an /obj camera (workfiles made before
+the animation template stopped making `/obj/anim_camera` still have one).
+
 Which shot the camera is on, first match:
 
-1. a shot pinned on the camera node (user data `th_shot`);
-2. the camera's own `th::import_shot`: a LOP Import Camera's LOP path, or a
-   Camera Import up the camera node's inputs, followed up the LOP's inputs;
-3. in a Multi, a member named in the camera node's name (the template's
+1. a shot pinned on the camera node, or for a Solaris camera on the LOP the
+   viewer shows (user data `th_shot`);
+2. the camera's own `th::import_shot`: for a Solaris camera, the LOP the
+   viewer shows; for an /obj camera, a LOP Import Camera's LOP path or a
+   Camera Import up the camera node's inputs; followed up the LOP's inputs,
+   and from inside an HDA (`th::animate`'s dive) up the HDA's;
+3. in a Multi, a member named in the node's name (a Multi's LOPs end in
+   `_<sequence>_<shot>`, as did the old template's
    `anim_camera_<sequence>_<shot>`);
 4. the workfile's shot;
 5. on a [shared timeline](multis-and-roots.md#shared-timeline), the member

@@ -590,7 +590,11 @@ pub fn measure(file: &Path) -> Result<Measure, String> {
     let seconds = match (&frames, &sound) {
         (Some((n, (num, den))), _) => *n as f64 * f64::from(*den) / f64::from(*num),
         (None, Some(s)) => s.seconds(),
-        (None, None) => return Err(format!("{path}: no picture or sound the player can read")),
+        // Named when it is the codecs: "video codec av1 is not supported".
+        (None, None) => {
+            let why = th_media::undecodable(&path).unwrap_or_else(|| "no picture or sound the player can read".into());
+            return Err(format!("{path}: {why}"));
+        }
     };
     Ok(Measure { frames, seconds, sound: sound.is_some() })
 }
@@ -663,6 +667,23 @@ mod tests {
     fn items_are_named_from_their_files() {
         assert_eq!(item_name_of("\"C:/refs/cut_v3 final.mov\""), "cutv3final");
         assert_eq!(item_name_of("music.wav"), "music");
+    }
+
+    fn media_fixture(name: &str) -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../media/tests/fixtures").join(name)
+    }
+
+    /// An mp3 imports as sound (its cover picture is no movie), an MPEG-4
+    /// Part 2 movie as frames, and a movie in a codec the player lacks is
+    /// refused naming the codec.
+    #[test]
+    fn imports_measure_audio_and_older_movies_and_name_a_missing_codec() {
+        let mp3 = measure(&media_fixture("tone_cover.mp3")).unwrap();
+        assert!(mp3.frames.is_none() && mp3.sound && (mp3.seconds - 1.0).abs() < 0.08, "{mp3:?}");
+        let movie = measure(&media_fixture("grey_ramp_mpeg4.mp4")).unwrap();
+        assert_eq!(movie.frames, Some((12, (24, 1))));
+        let err = measure(&media_fixture("grey_ramp_av1.mp4")).unwrap_err();
+        assert!(err.ends_with("grey_ramp_av1.mp4: video codec av1 is not supported"), "{err}");
     }
 
     fn apply_all(edit: &WorkingEdit, ops: &[Op<Source>]) -> WorkingEdit {
