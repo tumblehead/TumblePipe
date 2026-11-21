@@ -92,6 +92,10 @@ mod wiring_tests;
 /// The status line's height under everything: a 13 px line and its padding,
 /// as it was laid out when it came and went.
 const STATUS_HEIGHT: f32 = 29.0;
+/// The player's strip over the picture, where Live and Burn-ins are.
+const PLAYER_HEADER_HEIGHT: f32 = 28.0;
+/// The timer's size: the window's one large word.
+const TIMER_SIZE: f32 = 20.0;
 
 /// Decoded frames kept in memory (see `th_media::FrameBuffer`).
 const BUFFER_BYTES: usize = 4 << 30;
@@ -735,6 +739,11 @@ pub enum Message {
     /// Read the local farm's ready preview frames (#75), and what they were.
     PollPreviews,
     Previews(crate::previews::Ready),
+    /// Ask the farm which shots have jobs (`farm_jobs`), and what it said.
+    PollFarm,
+    FarmJobs(th_pipe::farm_jobs::ShotJobs),
+    /// A clip's farm job row: the Farm Manager on it, or its id copied.
+    FarmJob(crate::farm_jobs::Act),
     /// A look at the cut's unfinished renders is back (`rendering`).
     Rendering(crate::rendering::Found),
     /// The project's shared journal's new changes (#78).
@@ -867,6 +876,11 @@ pub struct Editor {
     agent_save: Option<rpc::Call>,
     /// The shots with preview frames ready on this machine (#75).
     previews: crate::previews::Ready,
+    /// The shots with jobs on the farm, and whether the farm is being
+    /// asked now (one read at a time: a slow `deadlinecommand` must not
+    /// pile reads up).
+    farm_jobs: th_pipe::farm_jobs::ShotJobs,
+    farm_asking: bool,
     /// The unfinished render each of the cut's shots waits for.
     rendering: crate::rendering::Watch,
     /// The panel sizes, remembered for this user between sessions.
@@ -988,6 +1002,8 @@ impl Editor {
             endpoint: rpc::EndpointSlot::default(),
             agent_save: None,
             previews: Default::default(),
+            farm_jobs: Default::default(),
+            farm_asking: false,
             rendering: Default::default(),
             layout: layout_path.as_deref().map(layout_prefs::load).unwrap_or_default(),
             track_layout: layout_path.as_deref().map(|path| track_rows::load(&track_rows::path(path))).unwrap_or_default(),
@@ -1605,6 +1621,7 @@ impl Editor {
                     missing: entry.is_some_and(Entry::missing),
                     department: entry.and_then(Entry::department),
                     preview: self.previews.clip_badge(source, entry.and_then(Entry::resolved).map(|r| r.takes.as_slice())),
+                    farm: self.farm_job_of(source).map(|job| job.status),
                     room: available.and_then(|a| tracks::room(a, source_in, duration)),
                 }
             };
@@ -1743,6 +1760,9 @@ impl Editor {
                     menu = menu.item(label, move || message.clone());
                 }
             }
+            for (label, message) in self.farm_job_rows(source) {
+                menu = menu.item(label, move || message.clone());
+            }
             // The view's, not the clip's: the picture mirrored (`flip`).
             let (label, flip) = self.flip_row();
             menu = menu.item(label, move || flip.clone());
@@ -1781,11 +1801,13 @@ impl Editor {
 
     /// The window's one row above the panels: on Windows and Linux the
     /// menus first (`menu_row`; on macOS they are the global menu bar),
-    /// then Cut|Board, then, at the right, the view's switches and the
-    /// timecode: the one large thing, in the accent, because it is where the
-    /// playhead is now. The edit's name (its version, `*` while it has
-    /// unsaved changes) is the window's title (`windows`), not said here
-    /// again.
+    /// then Cut|Board, then, at the right, the master edit tick and the
+    /// chips of what the view is doing. Live and Burn-ins are on the player
+    /// (`player_header`) and the timer on the timeline (`timeline_header`),
+    /// beside what they affect, so checking a timing is not a look across
+    /// the window to its corner (Remy, 2026-11-21). The edit's name (its
+    /// version, `*` while it has unsaved changes) is the window's title
+    /// (`windows`), not said here again.
     fn toolbar(&self) -> Element<Message> {
         let modes = segmented(Id::new("modes"), self.mode).push("Cut").push("Board").on_select(Message::Mode).focusable(false);
         let mut tools = row().spacing(24.0).align_y(Vertical::Center);
@@ -1806,16 +1828,6 @@ impl Editor {
                 .push(text("Master edit").font_size(13.0).color(look::quiet()));
             tools = tools.push(tooltip(Id::new("master tip"), master, "Publishing the master edit sets the shots' frame ranges"));
         }
-        let burnins = row()
-            .spacing(6.0)
-            .align_y(Vertical::Center)
-            .push(look::tick_box(Id::new("burnins"), self.burnins, Message::Burnins).focusable(false))
-            .push(text("Burn-ins").font_size(13.0).color(look::quiet()));
-        let live = row()
-            .spacing(6.0)
-            .align_y(Vertical::Center)
-            .push(look::tick_box(Id::new("live"), self.show_live, Message::ShowLive).focusable(false))
-            .push(text("Live").font_size(13.0).color(look::quiet()));
         if let Some((start, end)) = self.loop_range() {
             let span = format!(
                 "Loop {}–{}  ✕",
@@ -1843,11 +1855,62 @@ impl Editor {
         if self.flipped {
             tools = tools.push(flip::chip(Message::Flip(false)));
         }
-        tools = tools
-            .push(tooltip(Id::new("live tip"), live, "Live playblasts from this machine play over the shots' takes as they render"))
-            .push(tooltip(Id::new("burnins tip"), burnins, "B"))
-            .push(text(editing::timecode(self.position as EditFrame, &self.doc.edit)).font_size(20.0).color(look::now()));
+        // With the timeline folded away the timer has no panel of its own to
+        // sit on: it comes back here, at the row's end, where it was.
+        if self.layout.timeline_collapsed {
+            tools = tools.push(self.timer());
+        }
         container(tools).padding(padding).width(Length::Fill).background(look::panel()).into()
+    }
+
+    /// The timer: the playhead's timecode, the one large thing, in the
+    /// accent, because it is where the playhead is now. It heads the
+    /// timeline, left of the clip fields and over the tracks' names, beside
+    /// the playhead it reads (`timeline_header`); in the toolbar only while
+    /// the timeline is folded away.
+    fn timer(&self) -> Element<Message> {
+        text(editing::timecode(self.position as EditFrame, &self.doc.edit)).font_size(TIMER_SIZE).color(look::now()).into()
+    }
+
+    /// The timeline's top row: the timer, then the clip fields, one
+    /// [`CLIP_FIELDS_HEIGHT`](panels::CLIP_FIELDS_HEIGHT) tall. The timer
+    /// comes first so that a narrow window cuts off the end of the fields,
+    /// never the timer.
+    fn timeline_header(&self) -> Element<Message> {
+        let timer = container(self.timer())
+            .padding(Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 14.0 })
+            .height(Length::fixed(panels::CLIP_FIELDS_HEIGHT))
+            .align_y(Vertical::Center)
+            .background(look::panel());
+        row().push(timer).push(self.clip_fields()).width(Length::Fill).into()
+    }
+
+    /// The player's top strip, over the picture: Live and Burn-ins, the two
+    /// switches of what the picture shows, at its right. Only the two, so
+    /// they fit the narrowest the viewer is let be (`panels::VIEWER_MIN`).
+    fn player_header(&self) -> Element<Message> {
+        let switch = |id: &'static str, on: bool, send: fn(bool) -> Message, words: &'static str| {
+            row()
+                .spacing(6.0)
+                .align_y(Vertical::Center)
+                .push(look::tick_box(Id::new(id), on, send).focusable(false))
+                .push(text(words).font_size(13.0).color(look::quiet()))
+        };
+        let live = switch("live", self.show_live, Message::ShowLive, "Live");
+        let burnins = switch("burnins", self.burnins, Message::Burnins, "Burn-ins");
+        let switches = row()
+            .spacing(24.0)
+            .align_y(Vertical::Center)
+            .push(space(Length::Fill, Length::Shrink))
+            .push(tooltip(Id::new("live tip"), live, "Live playblasts from this machine play over the shots' takes as they render"))
+            .push(tooltip(Id::new("burnins tip"), burnins, "B"));
+        container(switches)
+            .padding(Padding::from([0.0, 14.0]))
+            .width(Length::Fill)
+            .height(Length::fixed(PLAYER_HEADER_HEIGHT))
+            .align_y(Vertical::Center)
+            .background(look::panel())
+            .into()
     }
 
     /// The board: a row per shot under its sequence's name, a column per
@@ -3275,6 +3338,17 @@ impl Application for Editor {
             Message::PollPreviews => return Command::batch([crate::previews::poll(Message::Previews), self.poll_rendering()]),
             Message::Rendering(found) => self.rendering.apply(found),
             Message::Previews(ready) => self.previews = ready,
+            Message::PollFarm => {
+                if !self.farm_asking {
+                    self.farm_asking = true;
+                    return crate::farm_jobs::poll(self.project_name(), Message::FarmJobs);
+                }
+            }
+            Message::FarmJobs(jobs) => {
+                self.farm_asking = false;
+                self.farm_jobs = jobs;
+            }
+            Message::FarmJob(act) => self.farm_job_act(act),
             Message::SharedJournal(changes) => {
                 let changes = self.shared_journal.arrived(changes);
                 return self.apply_journal(Some(changes));
@@ -3360,6 +3434,7 @@ impl Application for Editor {
             rpc,
             time::every(JOURNAL_EVERY, || Message::PollJournal),
             time::every(PREVIEWS_EVERY, || Message::PollPreviews),
+            time::every(crate::farm_jobs::EVERY, || Message::PollFarm),
         ]);
         if self.show_live && self.entries.iter().any(|e| e.resolved().is_some_and(|r| r.live.playing().is_some())) {
             autosave = Subscription::batch([autosave, time::every(LIVE_EVERY, || Message::PollLive)]);
@@ -3401,11 +3476,16 @@ impl Application for Editor {
         let middle: Element<Message> = if self.mode == 1 {
             self.board_view()
         } else {
-            let viewer =
-                column().push(layers).push(self.transport_bar()).push(self.display_controls()).width(Length::Fill).height(Length::Fill);
+            let viewer = column()
+                .push(self.player_header())
+                .push(layers)
+                .push(self.transport_bar())
+                .push(self.display_controls())
+                .width(Length::Fill)
+                .height(Length::Fill);
             panels::bins_split(self.bins_view(), viewer, &self.layout, Message::BinsPanel).into()
         };
-        let timeline = column().push(self.clip_fields()).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);
+        let timeline = column().push(self.timeline_header()).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);
         let body = panels::timeline_split(middle, timeline, self.timeline_height(), self.layout.timeline_collapsed, Message::TimelinePanel);
         // The status line is always there, empty when there is nothing to
         // say: a refused drag putting it up (and the next edit taking it

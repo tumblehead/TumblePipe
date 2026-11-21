@@ -45,6 +45,7 @@ mod editor;
 mod engine;
 mod export;
 mod export_settings;
+mod farm_jobs;
 mod farm_submit;
 mod flip;
 mod frames_view;

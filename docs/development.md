@@ -1268,6 +1268,16 @@ The tests:
   shown exactly while playing, a button's key sends the button's message,
   the scrub bar asks only for frames of the cut). Add a transport action as
   a Playback menu row first, then name it in `transport::ROWS`. The
+  window's controls sit beside what they affect: `Editor::toolbar` keeps
+  the menus (`menu_row`), Cut|Board, the master edit tick and the view's
+  chips; `Editor::player_header` is the strip over the picture with
+  **Live** and **Burn-ins** (Cut only: the board has no picture);
+  `Editor::timeline_header` heads the timeline with the timer (the
+  playhead's timecode at `TIMER_SIZE`) left of the clip fields, and the
+  toolbar draws the timer only while the timeline is folded.
+  `editor/wiring_tests/placement.rs` lays the whole window out and draws it
+  (any cut, either mode, either panel folded, 520 px wide up) and holds
+  each to its panel, whole and over no other word. The
   Farm Manager's *Preview in Cinedex* passes `--fps` and `--expect` from
   `farm.manager.frames_preview.launch_options`; the frame list is read by
   `th_playlist::frame_list` (no steps in `FrameRanges`, so a separate
@@ -1600,6 +1610,71 @@ before the field. `cinedex/src/editor/wiring_tests.rs` builds a headless
 shows never changes the cut, no drag takes a clip away, a drop on the
 spare layer and a sequence put in are one undo step each, and each row of
 the timeline's menu does what its label says.
+
+**Farm jobs on the timeline** (Remy's RFE: which shots are queued on the
+farm, and a way to the job). The design:
+
+- *Which jobs.* Deadline's and this machine's local farm queue's, read by
+  `th_pipe::farm_jobs` (no GUI, its own proptests) as the Farm Manager
+  reads them: Deadline through `deadlinecommand -Json GetJobs`
+  (`deadline_jobs.fetch_jobs`, `rows.farm_job_row`), found through
+  `$DEADLINE_PATH` with the same `deadline_command` and timed, windowless
+  runner Clean Up Project's job folders use (`th_cleanup::jobs` now calls
+  them from there); the local queue from its `batches/<id>/batch.json`
+  and `state.json`, states resolved as `queue.job_statuses` does. States
+  in the Farm Manager's words: rendering, queued, pending (shown as
+  "Waiting", on another job), suspended and failed show; completed,
+  cancelled and unknown do not.
+- *Job to clip.* A job's project and entity are its stamp
+  (`farm.stamp`: `TumblePipeProject`/`TumblePipeEntity`, Deadline's
+  `Props.ExDic`, a local job's `extra_info`), else its batch name's
+  first word and the entity URI in it (`rows.row_project`,
+  `rows.row_entity`); the project is the project folder's name
+  (`get_project_name`). Only shots (`entity:/shots/<seq>/<shot>`, a query
+  or trailing slash ignored) map, to every clip of that shot, whatever
+  department or layer the clip plays: a render of the shot is news for an
+  animation playblast's clip too. Jobs do not say a department reliably,
+  so the menu row names the job instead. Of a shot's jobs the newest
+  batch decides (its latest job's submission time); its most urgent job
+  speaks for it: failed, rendering, suspended, queued, waiting. A newest
+  batch that ended shows nothing, even over an older failure.
+- *Refresh.* Every 15 s (`farm_jobs::EVERY`) on Primer's blocking pool,
+  one read at a time (`farm_asking`): a slow `deadlinecommand` delays
+  the next read, never drawing, and is killed after 30 s
+  (`DEADLINE_TIMEOUT`). No Deadline, a refusal, a timeout or no queue
+  folder each add no jobs; there is no error, only no badges.
+- *What a clip shows.* A 2 px line in the state's colour along the top of
+  the clip, at any width, and with room a badge at its top right (left
+  of the Preview ready badge) saying the state, or a dot of that colour
+  where the word would crowd the name (`farm_jobs::marks`, held inside
+  the clip at any width and height by a property). Colours are the UI
+  convention's state tones from primer's `Theme`: rendering `info`,
+  suspended `warning`, failed `danger`, queued and waiting `text_muted`;
+  words on them in the tracks' dark surround.
+- *The right-click.* On a clip whose shot has a job: **Show Farm Job in
+  Farm Manager (state)** starts the Farm Manager in Houdini's Python as
+  Farm Submit is started (`farm_submit::manager_launch`, needs `$HFS`):
+  `python -m tumblepipe.farm.manager --job <id>`, a new argument that
+  calls the window's existing `select_job` (a Deadline id or
+  `local:<batch>/<index>`; the job comes into view even under a filter,
+  a failed one at its error). Where Houdini's Python is not found only
+  **Copy Farm Job ID** is offered, which is always there. The standalone
+  window is its own process: a Farm Manager already open in Houdini is
+  not reused.
+
+Tests: `pipe/src/farm_jobs.rs` (every shot shows its newest batch's most
+urgent job, other projects and non-shots never show, the newest
+submission wins, an unreachable farm shows nothing, local states as the
+runner gives them, Deadline documents and local batches read; one
+instant read from a Deadline date (UTC) and from a local batch's
+`submitted` (local time, no zone) is the same second, so the newest
+batch is chosen truly across the two farms; later dates read later and
+junk reads 0; drawn `GetJobs` documents read back, an unbatched job a
+batch of its own; any `deadlinecommand` output reads without a panic),
+`cinedex/src/farm_jobs.rs` (marks inside the clip, rows only for a clip
+with a job), `farm_submit.rs` (the Farm Manager's launch), the wiring test
+`clips_show_their_shots_farm_job_and_offer_it`, and
+`test_farm_manager_states.job_argument` for `--job`.
 
 The properties of 1.113's features were checked by mutation: 160 small
 wrong edits to the new code, one at a time, each of which must fail a

@@ -72,7 +72,7 @@ destination question is not asked:
 
 | Drop into | You get |
 |---|---|
-| LOPs | A [`th::import_texture`](../nodes/assets.md#thimport_texture-lop) pinned to the newest version, wired to the selected node |
+| LOPs | A [`th::import_texture`](../nodes/assets.md#thimport_texture-lop) pinned to the newest version, wired below the selected node when exactly one is selected in that network (TumbleTrove's *Wire dropped assets into the selected node* setting, on by default) |
 | `/mat`, a material network or a Material Library's inside | A MaterialX material with every map wired into the surface |
 | Inside a material | The maps, wired into its standard surface |
 | Copernicus | A File COP on the base colour |

@@ -4,8 +4,9 @@ Publishes an asset's texture set on a throwaway project, scans it into a
 card (``asset_browser.texture_sets``) and drops it (``TextureSetManager.
 on_drop``) into each place a card can go:
 
-- LOPs: a ``th::import_texture`` pinned to the newest version, wired to
-  the selected node;
+- LOPs: a ``th::import_texture`` pinned to the newest version, left
+  unwired by the catalog and wired to the selected node by TumbleTrove's
+  auto_wire (0.67), as the browser does after a drop;
 - ``/mat``: a MaterialX material whose images read the published files
   through ``$TH_EXPORT_PATH`` (never a copy);
 - Copernicus: a File COP on the base colour;
@@ -52,6 +53,7 @@ from tumblepipe.api import api  # noqa: E402
 from tumblepipe.asset_browser import texture_sets as TS  # noqa: E402
 from tumblepipe.pipe import textures as T  # noqa: E402
 from tumblepipe.util.uri import Uri  # noqa: E402
+from tumbletrove.asset_browser.core.auto_wire import child_ids, wire_drop  # noqa: E402
 from tumbletrove.asset_browser.core.drop import DropContext  # noqa: E402
 
 FAILED = []
@@ -100,13 +102,25 @@ def drop(network, context, selected=()):
 stage = hou.node('/stage')
 prim = stage.createNode('primitive', 'chair_prim')
 prim.parm('primpath').set('/chair')
-check('LOP drop handled', manager.on_drop(detail, drop(stage, 'lop', [prim])))
+# As the browser drops a card: the catalog places, then TumbleTrove wires
+# the one selected node into what the drop made (auto_wire, 0.67).
+lop_drop = drop(stage, 'lop', [prim])
+before = child_ids(stage)
+check('LOP drop handled', manager.on_drop(detail, lop_drop))
 imports = [n for n in stage.children() if n.type().name().startswith('th::import_texture')]
 check('LOP drop makes an import_texture', len(imports) == 1)
 if imports:
     node = imports[0]
     check('pinned to the newest version', node.parm('version').eval() == 'v0001')
+    check('the catalog leaves the wiring to TumbleTrove',
+          not node.inputs() or node.inputs()[0] is None)
+    wire_drop(lop_drop, before)
     check('wired to the selected node', node.inputs() and node.inputs()[0] == prim)
+
+# A selection in another network once failed the drop (setInput raised).
+elsewhere = hou.node('/obj').createNode('geo', 'elsewhere')
+check('LOP drop with a node selected elsewhere handled',
+      manager.on_drop(detail, drop(stage, 'lop', [elsewhere])))
 
 mat = hou.node('/mat')
 before = set(mat.children())

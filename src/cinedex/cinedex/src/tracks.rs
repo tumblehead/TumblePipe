@@ -85,6 +85,10 @@ pub struct ClipView {
     /// Its shot's badge when preview frames are ready on this machine (#75,
     /// `previews`), drawn at the clip's top right.
     pub preview: Option<&'static str>,
+    /// The state of its shot's job on the farm, when the shot has one to
+    /// show (`farm_jobs`): a line along the clip's top and, with room, a
+    /// badge left of the preview badge.
+    pub farm: Option<th_pipe::farm_jobs::Status>,
     /// The frames its source has that it does not show ([`room`]): how far
     /// its edges drag out. None: any (a slug), or not known yet.
     pub room: Option<Room>,
@@ -878,6 +882,24 @@ impl<Message> Tracks<Message> {
                     p.text(words.to_owned(), tag, H::Center, V::Center, 10.0, look::surround());
                     right = tag.x - INSET;
                 }
+                if let (TrackKind::Video, Some(status)) = (row.track.kind, c.farm) {
+                    let end = if c.preview.is_some() { right } else { right - INSET };
+                    let marks = crate::farm_jobs::marks(rect, end, status);
+                    let (fill, words) = crate::farm_jobs::colour(status);
+                    p.rect(Point::new(marks.line.x, marks.line.y), Size::new(marks.line.width, marks.line.height), fill);
+                    match marks.badge {
+                        Some(crate::farm_jobs::Badge::Word(tag)) => {
+                            p.rect(Point::new(tag.x, tag.y), Size::new(tag.width, tag.height), fill);
+                            p.text(status.word().to_owned(), tag, H::Center, V::Center, 10.0, words);
+                            right = tag.x - INSET;
+                        }
+                        Some(crate::farm_jobs::Badge::Dot(dot)) => {
+                            p.fill(&Path::circle(Point::new(dot.x + dot.width / 2.0, dot.y + dot.height / 2.0), dot.width / 2.0), fill);
+                            right = dot.x - INSET;
+                        }
+                        None => {}
+                    }
+                }
                 let room = right - left - INSET;
                 if room >= 10.0 {
                     let line = |y: f32, tall: f32| Rectangle { x: left, y: rect.y + y, width: room, height: tall };
@@ -1293,6 +1315,7 @@ mod tests {
             missing: false,
             department: None,
             preview: None,
+            farm: None,
             room: None,
         }
     }

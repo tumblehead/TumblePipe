@@ -235,11 +235,14 @@ def place(entry: TextureSetEntry, detail, drop, *, pin: bool = False) -> bool:
 
         from tumblepipe.pipe.houdini.lops import import_texture
 
+        # Not wired here: TumbleTrove wires a drop's one selected node into
+        # the one node it made (auto_wire, 0.67), honouring the artist's
+        # *Wire dropped assets* setting. Wiring the first selected node
+        # ourselves ignored that setting, picked arbitrarily among several,
+        # and failed the drop when the selection sat in another network.
         node = import_texture.place(drop.network, entry.ref.name,
                                     entry.ref.owner_uri,
                                     version=entry.version if pin else None)
-        if drop.selected_nodes:
-            node.setInput(0, drop.selected_nodes[0])
         return finish_placement(node, f'import_{entry.ref.name}', drop,
                                 f'Imported {entry.ref.name} {entry.version}')
     if drop.context not in ('vop', 'cop'):

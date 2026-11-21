@@ -1551,6 +1551,7 @@ fn a_render_on_its_way_shows_on_its_shots_clips() {
 
 mod flip_and_menus;
 mod picks;
+mod placement;
 
 mod track_menu;
 mod view;

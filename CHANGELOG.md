@@ -12,6 +12,53 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.116.0 — 2026-11-21
+
+### Features
+- feat(cleanup): a purge shows its progress and can be paused, resumed and stopped between items (`092556d7`)
+- feat(cleanup): Clean Up Project has an application icon, Cinedex's sibling (`a3211938`)
+- feat(cleanup): a scan shows two bars, Indexing and Sizing, and the six categories filling up as they find what goes (`b3ce90ad`)
+- feat(cleanup): a scan shows what it is reading as it reads, can be cancelled, and reads the share in parallel (`2ca34342`)
+- feat(cleanup): Clean Up Project scans only when asked, streams its progress, shows each category's share in colour, and works on the launch project only (`043309ce`)
+- feat(cleanup): the Clean Up Project window follows the UI convention, lists on its own, and asks once before purging (`a97e6e9d`)
+- feat(cleanup): the Clean Up Project window in Rust, the cleanup binary (`da6827c9`)
+- feat(cleanup): th_cleanup, the Clean Up Project rules ported to Rust (`90d53f07`)
+- feat(cinedex): Flip Horizontally mirrors the picture to check a pose, for viewing only (`c1781b1d`)
+- feat(templates): the animation workfile is Solaris only, no /obj/anim_camera (layout v27) (`27b72903`)
+- feat(slate): the shot slate shows under a Solaris camera, read from its USD prim (`3a98006e`)
+- feat(cleanup): Clean Up Project wears the Farm Submit look and shows the listing as an overview, warnings on top (`99d26ccd`)
+- feat(cinedex): the menus share the toolbar's row with Cut|Board, and the edit's name is said only in the title bar (`1d0c7d40`)
+
+### Fixes
+- fix(cleanup): the Confirm is short: the size in its title, one sentence, Cancel and Purge (`9904dff5`)
+- fix(cleanup): Purge says just "Purge", reasons said elsewhere are not repeated, and empty states sit centred (`150de874`)
+- fix(cleanup): Scan sits directly left of Purge in every state, and the status line is gone (`8212915a`)
+- fix(cinedex): a Shift+Delete or undo pressed mid-drag drops the drag, never lands it on the clip pulled into its place (`734e9660`)
+- fix(cinedex): a menu title's words get room only up to what they need, so on primer 0.20.1 they stay inside their title (`f939eab0`)
+- fix(cleanup): a card's title is never squeezed by its summary, and a tick reads as ticked (`ba64cd08`)
+- fix(cleanup): every category card is drawn, not only the first; banners leave the tree its room (`97dc3d1f`)
+- fix(cinedex): no menu title loses its last letter, "Edit" showed as "Edi" (`28f18cf7`)
+- fix(workfiles): New from Current on a Multi takes the Multi's crash file (`53193ea5`)
+- fix(cinedex): mp3, flac, ogg, compressed WAV and MPEG-4/VP8/MPEG-2 movies import, and a missing codec is named (`e415c3f5`)
+- fix(cinedex): the Shots grid follows the bins while their handle is dragged, so nothing snaps on release (`aabfc89c`)
+
+### Documentation
+- docs(designs): shared slap comps, export, import into shots, farm stack (`8d71bc75`)
+- docs(cleanup): the user guide describes the window as it is: Scan, untick, Purge, Pause and Stop (`1aa99757`)
+- docs(cleanup): Clean Up Project is the cleanup executable, its Rust port (`af29499d`)
+- docs(changelog): v1.115.0, and the HDA parms v1.115.0 shipped (`6f767108`)
+
+### Tests
+- test: the ladder coverage check looks for Clean Up's spin boxes where they are now (`d34ad87d`)
+- test(cleanup): properties for a stop across categories, the scan bars and the Linux icon (`0d2951f9`)
+- test(media,pipe): undecodable names each codec once and both kinds; the layout matches the newest migration (`530124cd`)
+- test(cinedex): the menus, Flip and the bins' grid are pinned by properties that fail when they break (`8b1972bf`)
+- test(ci): FFmpeg flags ship what the player loads, every cinedex extension has its demuxer, a build marks its install (`5765c780`)
+- test(context): context options read back name their workfile; incomplete ones name none (`24a46046`)
+- test(slate): a Solaris camera is framed by its prim from the viewer's LOP; /obj aspect pinned (`a76008fd`)
+- test(cleanup): pin the overview's caps (200 groups, 50 errors), the 'Read ' prefix and every word it shows (`363aa710`)
+- test(cleanup): th_cleanup's parity with the Python cleanup, and its own properties (`219aadce`)
+
 ## v1.115.0 — 2026-11-19
 
 ### Features

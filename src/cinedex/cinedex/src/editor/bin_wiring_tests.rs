@@ -1063,3 +1063,58 @@ fn a_clips_menu_copies_its_uri_and_opens_the_farms_window() {
     assert_eq!(launch.args, ["-m", "tumblepipe.farm_app", "--context", "shots", "--entity", uri]);
     assert_eq!(bench.editor.doc.edit, edit);
 }
+
+/// The farm's jobs on the timeline (`farm_jobs`): a shot's clip shows the
+/// state of its shot's job and offers the job on a right-click; a slug, or
+/// a shot with no job (or another project's), shows and offers nothing.
+/// Show Farm Job opens the Farm Manager on that job id and nothing else,
+/// Copy puts the id on the clipboard; neither changes the cut. One read of
+/// the farm at a time.
+#[test]
+fn clips_show_their_shots_farm_job_and_offer_it() {
+    use th_pipe::farm_jobs::{Job, ShotJobs, Source as Farm, Status};
+    let mut edit = cut_of(&[vec![(0, 5), (0, 5), (0, 5), (0, 5)]]);
+    let shots = ["entity:/shots/S1/sh1", "entity:/shots/S1/sh2", "entity:/shots/S1/sh3"];
+    for (clip, shot) in edit.video[0].clips.iter_mut().zip(shots) {
+        clip.source = Source::Shot { shot: shot.into(), take: th_edit::document::Rule::best() };
+    }
+    let mut bench = Bench::new(&edit, true);
+    let project = bench.editor.project_name();
+    assert_eq!(project, "project_template");
+    let job = |id: &str, project: &str, shot: &str, status| Job {
+        source: Farm::Deadline,
+        id: id.into(),
+        batch_key: format!("deadline:{id}"),
+        batch: String::new(),
+        name: "render".into(),
+        project: project.into(),
+        entity: shot.into(),
+        status,
+        submitted: 1,
+    };
+    let jobs = [job("6720aa", &project, shots[0], Status::Rendering), job("6720bb", "Other", shots[1], Status::Failed)];
+    bench.send(Message::FarmJobs(ShotJobs::of(&project, &jobs)));
+
+    let rows = bench.editor.rows();
+    let clips = &rows.iter().find(|r| r.track == TrackRef::video(0)).expect("V1").clips;
+    assert_eq!(clips.iter().map(|c| c.farm).collect::<Vec<_>>(), [Some(Status::Rendering), None, None, None]);
+    let offered: Vec<Vec<(String, Message)>> = edit.video[0].clips.iter().map(|c| bench.editor.farm_job_rows(&c.source)).collect();
+    assert_eq!(offered.iter().map(Vec::len).collect::<Vec<_>>(), [2, 0, 0, 0], "rows only on the clip whose shot has a job");
+    assert!(offered[0][0].0.starts_with(crate::farm_jobs::SHOW));
+    assert_eq!(offered[0][1].0, crate::farm_jobs::COPY);
+
+    bench.send(offered[0][0].1.clone());
+    let launch = bench.editor.bin_state.more.launched.take().expect("the Farm Manager");
+    assert_eq!(launch.args, ["-m", "tumblepipe.farm.manager", "--job", "6720aa"]);
+    bench.send(offered[0][1].1.clone());
+    assert_eq!(bench.editor.bin_state.more.copy.as_deref(), Some("6720aa"));
+    assert_eq!(bench.editor.doc.edit, edit, "the cut is untouched");
+
+    // One read at a time: a second tick while one is out asks nothing.
+    bench.send(Message::PollFarm);
+    assert!(bench.editor.farm_asking);
+    assert!(bench.editor.update(Message::PollFarm).is_empty(), "no second read while one is out");
+    bench.send(Message::FarmJobs(ShotJobs::default()));
+    assert!(!bench.editor.farm_asking);
+    assert!(edit.video[0].clips.iter().all(|c| bench.editor.farm_job_rows(&c.source).is_empty()), "no farm, no rows");
+}

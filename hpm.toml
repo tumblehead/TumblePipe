@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.116.0"
+version = "1.117.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -73,8 +73,10 @@ HOUDINI_DSO_PATH = { method = "prepend", value = "$HPM_PACKAGE_ROOT/dso/$HOUDINI
 # The asset browser catalog, documentation, workfile context and package menu
 # are TumbleTrove's SDK; the network menus are Radial's. TumblePipe calls both
 # directly, so it requires the versions whose API it is written against.
+# 0.67: TumbleTrove wires a drop's selected node into what the drop made, so
+# TumblePipe's drops leave that wiring to it.
 [dependencies]
-"tumbletrove/tumbletrove" = ">=0.66"
+"tumbletrove/tumbletrove" = ">=0.67"
 "tumbletrove/radial" = ">=0.19"
 # Mesh Lasso, Mesh Carver and Mesh Blender (th::mesh_*::1.0) moved to hModel
 # under the same type names; scenes holding them load because it comes along.

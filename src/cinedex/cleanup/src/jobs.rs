@@ -8,10 +8,8 @@
 //! than `local_job_days`. When Deadline cannot be asked nothing goes.
 
 use std::collections::{HashMap, HashSet};
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::Value;
 
@@ -183,63 +181,15 @@ pub fn parse_jobs(text: &str) -> HashMap<String, Vec<String>> {
 }
 
 /// This machine's `deadlinecommand`, found as `tumblepipe.apps.deadline`
-/// finds it: in `$DEADLINE_PATH`, which must exist.
-pub fn deadline_command() -> Option<PathBuf> {
-    let raw = std::env::var("DEADLINE_PATH").ok()?;
-    let raw = py::strip_chars(py::strip(&raw), "\"");
-    if raw.is_empty() {
-        return None;
-    }
-    let bin = PathBuf::from(raw.replace('\\', "/"));
-    if !bin.exists() {
-        return None;
-    }
-    let command = bin.join(if cfg!(windows) { "deadlinecommand.exe" } else { "deadlinecommand" });
-    command.is_file().then_some(command)
-}
-
-/// Text as Python's `text=True` reads it: UTF-8 with replacements, line
-/// ends made `\n`.
-fn universal(bytes: &[u8]) -> String {
-    String::from_utf8_lossy(bytes).replace("\r\n", "\n").replace('\r', "\n")
-}
+/// finds it: in `$DEADLINE_PATH`, which must exist. Shared with the
+/// editor's farm badges (`th_pipe::farm_jobs`).
+pub use th_pipe::farm_jobs::deadline_command;
 
 /// Every TumblePipe (HPM plugin) job Deadline holds, by job folder
 /// (`prune.query_deadline`). The error says why there is none.
 pub fn query_deadline(command: &Path, timeout: Duration) -> Result<HashMap<String, Vec<String>>, String> {
-    let mut child = Command::new(command)
-        .args(["-GetJobsFilter", "PluginName=HPM"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    let mut stdout = child.stdout.take().expect("piped");
-    let mut stderr = child.stderr.take().expect("piped");
-    let out_reader = std::thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let _ = stdout.read_to_end(&mut buffer);
-        buffer
-    });
-    let err_reader = std::thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let _ = stderr.read_to_end(&mut buffer);
-        buffer
-    });
-    let started = Instant::now();
-    let status = loop {
-        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-            break status;
-        }
-        if started.elapsed() > timeout {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(format!("it did not answer in {} seconds", timeout.as_secs()));
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    };
-    let stdout = universal(&out_reader.join().unwrap_or_default());
-    let stderr = universal(&err_reader.join().unwrap_or_default());
+    let th_pipe::farm_jobs::Output { status, stdout, stderr } =
+        th_pipe::farm_jobs::run(command, &["-GetJobsFilter", "PluginName=HPM"], timeout)?;
     if !status.success() {
         let code = status.code().map_or_else(|| "by a signal".to_string(), |c| c.to_string());
         let detail: String = py::strip(&stderr).chars().take(300).collect();

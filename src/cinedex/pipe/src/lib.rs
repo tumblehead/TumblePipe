@@ -1,7 +1,8 @@
 //! TumblePipe's pipeline in Rust, for the editor (`cinedex`) and
 //! tumblepipe-mcp: URIs, storage, the config database, departments,
 //! versions, review media discovery, department workfiles, live
-//! playblasts, and creating and retiring entities.
+//! playblasts, creating and retiring entities, and which shots have jobs
+//! on the farm (`farm_jobs`).
 //!
 //! The Python package (`python/tumblepipe`) is the specification: each
 //! module names what it ports, and `tests/test_pipe_parity.py` drives both
@@ -16,6 +17,7 @@ pub mod edit_files;
 pub mod edits;
 pub mod entities;
 pub mod events;
+pub mod farm_jobs;
 pub mod groups;
 pub mod houdini_link;
 pub mod io;

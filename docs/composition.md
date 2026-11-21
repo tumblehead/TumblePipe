@@ -516,6 +516,18 @@ farm stage-task graph), and the batch-submit direct-render flatten,
 which composes the staged stage at submission time to bake real orders
 into its static defs.
 
+The farm's flatten (`pipe.usd.collapse`) learns which assets have copies
+from each layer's `context.json` (`instances.collect_instance_info_from_context`):
+the assets its outputs record, and for a Root's layer (`uri` starting
+`scenes:`) the Root's own `parameters.assets` too. An asset placed in a
+shot only through its Root is in no department export's list (they leave
+Root assets out on purpose), so before 1.117 the flatten authored no copies
+of it and the farm rendered the bare prototype, where the session's
+`import_shot` duplicates it from the same Root count and deactivates it.
+`tests/test_usd_instances.py` holds the rule as a model over drawn
+`context.json` shapes (`recorded_copies_follow_the_layers_kind`) and
+composes a Root build end to end (`root_asset_prototype_is_deactivated`).
+
 The rule is: **an order that composed is returned verbatim.** Only when
 none composed is one derived (ops with composed values, in
 XformCommonAPI order, pivot inverted last) — that derivation exists solely for values the

@@ -206,6 +206,7 @@ mod tests {
                 missing: false,
                 department: None,
                 preview: None,
+                farm: None,
                 room: room(Ranges.available(&c.source), c.source_in, c.duration),
             })
             .collect()

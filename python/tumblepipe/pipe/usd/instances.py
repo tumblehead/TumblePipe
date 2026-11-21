@@ -131,13 +131,45 @@ def asset_uri_to_prim_path(asset_uri: str) -> tuple[str, str, str]:
     return category, asset_name, f'/{category}/{asset_name}'
 
 
+#: The URI purpose of a Root (``scenes:/...``), as its export's context.json
+#: names it.
+ROOT_URI_PREFIX = 'scenes:'
+
+
+def _recorded_asset_entries(context_data: dict) -> list[dict]:
+    """The asset entries a context.json records copies for.
+
+    A department export lists its assets per output. A Root's export
+    (``export_scene_version``) lists them at the top level, under its own
+    ``scenes:`` URI: a shot's Root owns its assets' counts, and the
+    department exports deliberately leave those assets out
+    (export_layer's scrape skips them). Reading only the outputs gave the
+    flatten no copies of a Root asset at all, and no deactivated
+    prototype: the farm rendered the bare prototype, which the session's
+    import_shot duplicates and deactivates from the same Root count.
+
+    A staged build's own top-level list is not read: it is a snapshot of
+    the counts the layers it composes already record, and the flatten
+    follows those layers to their latest exports.
+    """
+    entries = [
+        asset_entry
+        for output in context_data.get('outputs', [])
+        for asset_entry in output.get('parameters', {}).get('assets', [])
+    ]
+    if str(context_data.get('uri', '')).startswith(ROOT_URI_PREFIX):
+        entries += context_data.get('parameters', {}).get('assets', [])
+    return entries
+
+
 def collect_instance_info_from_context(layer_path: str) -> dict[str, list[str]]:
     """Instance names per asset prim path, from the context.json beside a layer.
 
     Maps an asset prim path (``/CHAR/cupAndBall``) to its copies' names.
     A layer with no context.json beside it (a project config template such
     as ``root_default_prims.usda``) records no instances, so that is {} —
-    every pipeline export and staged build writes one.
+    every pipeline export and staged build writes one. A Root's layer
+    records its assets' counts too (``_recorded_asset_entries``).
     """
     instances_by_asset = defaultdict(list)
 
@@ -146,28 +178,27 @@ def collect_instance_info_from_context(layer_path: str) -> dict[str, list[str]]:
         return instances_by_asset
     context_data = load_json(context_path)
 
-    for output in context_data.get('outputs', []):
-        for asset_entry in output.get('parameters', {}).get('assets', []):
-            asset_uri = asset_entry['asset']
-            instance_count = asset_entry.get('instances', 1)
+    for asset_entry in _recorded_asset_entries(context_data):
+        asset_uri = asset_entry['asset']
+        instance_count = asset_entry.get('instances', 1)
 
-            # The base name comes from the asset URI, never from the entry's
-            # 'instance' field. That field records whichever instance prim
-            # the export scrape happened to walk first, and the prototype is
-            # deactivated so the walk skips it — a set whose first live copy
-            # was Haybale9 recorded 'Haybale9' as the base and regenerated
-            # Haybale90..Haybale929: 30 phantoms referencing the prototype
-            # with no placement, stacked at the origin. Every other point
-            # that re-establishes instances already derives the base from
-            # the URI (import_asset, import_shot, import_layer); agreeing
-            # with them also heals the context.json files already written
-            # with the wrong name, without a re-export.
-            _, asset_name, prim_path = asset_uri_to_prim_path(asset_uri)
-            # All instances get a numeric suffix: MiniFig0, MiniFig1,
-            # MiniFig2 — matching the prim paths import_asset defines.
-            # The prototype (MiniFig) is the original asset prim.
-            for i in range(instance_count):
-                instances_by_asset[prim_path].append(f"{asset_name}{i}")
+        # The base name comes from the asset URI, never from the entry's
+        # 'instance' field. That field records whichever instance prim
+        # the export scrape happened to walk first, and the prototype is
+        # deactivated so the walk skips it — a set whose first live copy
+        # was Haybale9 recorded 'Haybale9' as the base and regenerated
+        # Haybale90..Haybale929: 30 phantoms referencing the prototype
+        # with no placement, stacked at the origin. Every other point
+        # that re-establishes instances already derives the base from
+        # the URI (import_asset, import_shot, import_layer); agreeing
+        # with them also heals the context.json files already written
+        # with the wrong name, without a re-export.
+        _, asset_name, prim_path = asset_uri_to_prim_path(asset_uri)
+        # All instances get a numeric suffix: MiniFig0, MiniFig1,
+        # MiniFig2 — matching the prim paths import_asset defines.
+        # The prototype (MiniFig) is the original asset prim.
+        for i in range(instance_count):
+            instances_by_asset[prim_path].append(f"{asset_name}{i}")
 
     return instances_by_asset
 

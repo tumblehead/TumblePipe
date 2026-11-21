@@ -755,6 +755,7 @@ impl FramesView {
                     missing: !run.present,
                     department: None,
                     preview: None,
+                    farm: None,
                     room: None,
                 }
             })

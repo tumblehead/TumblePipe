@@ -1,4 +1,6 @@
-//! Opening the pipeline's Farm Submit window on some shots.
+//! Opening the pipeline's Farm Submit window on some shots, and its Farm
+//! Manager on one job ([`manager_launch`], a clip's farm badge's
+//! right-click, `farm_jobs`).
 //!
 //! Cinedex submits nothing itself. **Farm Submit…** starts the window the
 //! Render quick action opens in Houdini (`python -m tumblepipe.farm_app`)
@@ -111,12 +113,32 @@ pub fn launch(hfs: Option<&Path>, shots: &[String], disk: &impl Disk) -> Result<
     if uris.is_empty() {
         return Err(NO_SHOTS.into());
     }
-    let program = houdini_python(hfs, disk)?;
     let mut args: Vec<String> = ["-m", "tumblepipe.farm_app", "--context", "shots"].map(String::from).into();
     for uri in uris {
         args.push("--entity".into());
         args.push(uri.clone());
     }
+    in_houdini_python(hfs, args, disk)
+}
+
+pub const NO_HOUDINI_MANAGER: &str =
+    "the Farm Manager needs Houdini: HFS is not set (start Cinedex from TumbleTrove Desktop or from Houdini)";
+
+/// What opens the Farm Manager on the job `job_id` (a Deadline job id or
+/// a local `local:<batch>/<index>`), selected and scrolled to
+/// (`python -m tumblepipe.farm.manager --job <id>`), with Houdini at
+/// `hfs`. Opening it changes nothing on the farm.
+pub fn manager_launch(hfs: Option<&Path>, job_id: &str, disk: &impl Disk) -> Result<Launch, String> {
+    let hfs = hfs.filter(|h| !h.as_os_str().is_empty()).ok_or(NO_HOUDINI_MANAGER)?;
+    if job_id.trim().is_empty() {
+        return Err("no farm job to show".into());
+    }
+    in_houdini_python(hfs, ["-m", "tumblepipe.farm.manager", "--job", job_id.trim()].map(String::from).into(), disk)
+}
+
+/// `args` run by Houdini's Python under `hfs`, with its PySide6 on the path.
+fn in_houdini_python(hfs: &Path, args: Vec<String>, disk: &impl Disk) -> Result<Launch, String> {
+    let program = houdini_python(hfs, disk)?;
     let python_path = forced_site_packages(&program, disk);
     Ok(Launch { program, args, python_path })
 }
@@ -263,6 +285,28 @@ mod tests {
             let expected: Vec<String> = once.iter().flat_map(|uri| ["--entity".to_owned(), uri.clone()]).collect();
             prop_assert_eq!(&launch.args[4..], &expected[..]);
         }
+
+        /// The Farm Manager opens in the same Python on exactly the job
+        /// asked for, and nothing else: no argument acts on the farm.
+        #[test]
+        fn the_farm_manager_opens_on_the_job_given(
+            layout in 0usize..3, minors in prop::collection::btree_set(9u32..15, 1..4), forced in any::<bool>(),
+            job in prop_oneof!["[0-9a-f]{24}", "local:[0-9]{8}_[0-9]{6}_[0-9a-f]{6}/[0-9]{1,2}"],
+        ) {
+            let (disk, hfs, python, site) = install(layout, &minors, forced);
+            let launch = manager_launch(Some(&hfs), &job, &disk).unwrap();
+            prop_assert_eq!(&launch.program, &python);
+            prop_assert_eq!(&launch.python_path, &if forced { vec![site] } else { Vec::new() });
+            prop_assert_eq!(launch.args, vec!["-m".to_owned(), "tumblepipe.farm.manager".into(), "--job".into(), job]);
+        }
+    }
+
+    #[test]
+    fn the_farm_manager_without_houdini_or_a_job_says_why() {
+        let (disk, hfs, ..) = install(1, &[11].into(), true);
+        assert_eq!(manager_launch(None, "6720aa", &disk), Err(NO_HOUDINI_MANAGER.into()));
+        assert_eq!(manager_launch(Some(Path::new("")), "6720aa", &disk), Err(NO_HOUDINI_MANAGER.into()));
+        assert!(manager_launch(Some(&hfs), " ", &disk).is_err());
     }
 
     #[test]

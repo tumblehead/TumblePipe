@@ -146,8 +146,8 @@ the cut as renders or as playblasts without changing a clip (#57):
 
 **V** steps through the three. A shot with no take of that kind keeps its
 cut's take, and its clip says so: `animation v0004  (no render)`. While
-renders or playblasts show, a **Showing renders** chip sits by the
-playhead's timecode; click it to go back to the cut. Live playblasts play
+renders or playblasts show, a **Showing renders** chip sits in the
+toolbar; click it to go back to the cut. Live playblasts play
 over playblasts and the cut, never over renders.
 
 It is the view's only: the edit's rules do not change, so saving, publishing
@@ -379,6 +379,31 @@ same transport and a timeline under the picture:
 Cinedex has an icon of its own (a film strip with an amber playhead) in the
 taskbar, the title bar and Alt+Tab, on Windows, macOS and Linux (X11).
 
+### Shots on the farm
+
+A shot with a job on the farm (Deadline, or this machine's queue) shows it
+on every one of its clips, whatever department or layer the clip plays: a
+thin coloured line along the top of the clip and, where there is room, a
+badge at its top right saying **Rendering**, **Queued**, **Waiting** (on
+another job), **Suspended** or **Failed** (a dot of that colour when the
+clip is too narrow for the word). The editor asks the farm every 15
+seconds, so a job submitted or finished shows within about that.
+
+Only the shot's newest submission counts. When it has finished the shot
+shows nothing, even if an older one failed; of the jobs in that submission
+the most urgent speaks for it (failed, then rendering, suspended, queued,
+waiting).
+
+Right-click a clip with a job:
+
+- **Show Farm Job in Farm Manager** opens the Farm Manager as its own
+  window, with that job selected (a failed job at its error). It needs
+  Houdini to be installed, and does not reuse a Farm Manager already open
+  in Houdini.
+- **Copy Farm Job ID** puts the job's id on the clipboard.
+
+No farm reachable shows no badges, and no error.
+
 ### Live view
 
 Pressing **Live** in Houdini also shows the shot in the editor, on the
@@ -479,14 +504,25 @@ read-only for agents too.
 
 ## The window
 
-Over the picture is the toolbar: the edit's name and version (with `*`
-while it has unsaved changes), **Master edit** (see below), **Live** (play
-this machine's live playblasts over the shots' takes, on by default; see
-[Live playblasts](#live-playblasts)), **Burn-ins**, the loop of a
-[Live view](#live-view) while there is one, and the timecode. A ticked
-box is filled light, an unticked one an empty frame. Under
-the picture are the transport bar and, below it, the display, view and
-exposure.
+At the top of the window is the toolbar: the menus (on Windows and Linux),
+**Cut** | **Board**, **Master edit** (see below), the loop of a
+[Live view](#live-view) while there is one, and the chips of what the view
+is doing (**Showing renders**, **Flipped**). The edit's name and version
+(with `*` while it has unsaved changes) are in the window's title.
+
+The switches of what the picture shows sit on the player, in the strip
+right over the picture, at its right: **Live** (play this machine's live
+playblasts over the shots' takes, on by default; see
+[Live playblasts](#live-playblasts)) and **Burn-ins** (also **B** and
+**View > Show Burn-ins**). On the board, where no picture is shown, the
+strip is not there either. A ticked box is filled light, an unticked one
+an empty frame. Under the picture are the transport bar and, below it, the
+display, view and exposure.
+
+The playhead's timecode, large and in amber, heads the timeline, at its
+left over the tracks' names and beside the clip fields, so a timing is
+read where the playhead is. With the timeline folded away (see
+[Making room](#making-room)) it moves to the right end of the toolbar.
 
 The transport bar plays the cut without the keyboard. Its buttons, left to
 right: go to start, previous edit point, one frame back, play (pause while

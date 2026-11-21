@@ -259,6 +259,44 @@ impl Editor {
         });
     }
 
+    /// The project the farm's jobs are stamped with: its folder's name
+    /// (Python's `get_project_name`).
+    pub(in crate::editor) fn project_name(&self) -> String {
+        self.paths.root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    }
+
+    /// The farm job a clip of `source` shows (`farm_jobs`): only a shot's.
+    pub(in crate::editor) fn farm_job_of(&self, source: &Source) -> Option<&th_pipe::farm_jobs::ShotJob> {
+        let Source::Shot { shot, .. } = source else { return None };
+        self.farm_jobs.get(shot)
+    }
+
+    /// The right-click rows for a clip of `source` whose shot has a farm
+    /// job; none for any other clip.
+    pub(in crate::editor) fn farm_job_rows(&self, source: &Source) -> Vec<(String, Message)> {
+        crate::farm_jobs::menu_rows(self.farm_job_of(source), manager_here())
+            .into_iter()
+            .map(|(label, act)| (label, Message::FarmJob(act)))
+            .collect()
+    }
+
+    /// Do a farm job row: open the Farm Manager on the job, or copy its id.
+    pub(in crate::editor) fn farm_job_act(&mut self, act: crate::farm_jobs::Act) {
+        match act {
+            crate::farm_jobs::Act::Copy(id) => {
+                self.status = Some((format!("Copied farm job ID {id}"), false));
+                self.bin_state.more.copy = Some(id);
+            }
+            crate::farm_jobs::Act::Show(id) => {
+                let started = manager_launch(&id).and_then(|launch| self.farm_start(launch));
+                self.status = Some(match started {
+                    Ok(()) => (format!("The Farm Manager is opening on job {id}"), false),
+                    Err(e) => (format!("Farm Manager not opened: {e}"), true),
+                });
+            }
+        }
+    }
+
     pub(in crate::editor) fn bin_act(&mut self, act: Act, target: &Target) -> Command<Message> {
         let (names, uris) = self.bin_menu_names(target);
         if names.is_empty() {
@@ -372,6 +410,22 @@ fn farm_launch(shots: &[String]) -> Result<farm_submit::Launch, String> {
 fn farm_launch(shots: &[String]) -> Result<farm_submit::Launch, String> {
     let hfs = std::env::var_os("HFS").map(PathBuf::from);
     farm_submit::launch(hfs.as_deref(), shots, &farm_submit::RealDisk)
+}
+
+#[cfg(test)]
+fn manager_launch(job: &str) -> Result<farm_submit::Launch, String> {
+    farm_submit::manager_launch(Some(std::path::Path::new("/hfs")), job, &farm_submit::TestDisk)
+}
+
+#[cfg(not(test))]
+fn manager_launch(job: &str) -> Result<farm_submit::Launch, String> {
+    let hfs = std::env::var_os("HFS").map(PathBuf::from);
+    farm_submit::manager_launch(hfs.as_deref(), job, &farm_submit::RealDisk)
+}
+
+/// Whether the Farm Manager can be opened from here: where Farm Submit can.
+fn manager_here() -> bool {
+    farm_here()
 }
 
 /// Whether Farm Submit can be opened from here: Houdini's Python is found
