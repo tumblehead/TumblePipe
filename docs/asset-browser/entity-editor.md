@@ -82,6 +82,16 @@ while the others scroll sideways. **Shift+wheel** scrolls a table sideways,
 as does the plain wheel when all its rows fit; a click on a cell that is
 only partly in view selects it without scrolling it under the pointer.
 
+**Flat lists.** On a project that lists its assets (or shots) flat
+(Settings > **Flat asset list (no categories)** / **Flat shot list (no
+sequences)**, see [Settings](settings.md#flat-asset-and-shot-lists)), that
+tab has no **Category** (**Sequence**) column, no category (sequence) rows,
+no dropdown to pick one and no **New Category…** (**New Sequence…**): its
+rows are one list, by name. New rows go into the project's hidden category
+(sequence), and a new or renamed name is refused when any category
+(sequence) of the project already has it, in any case, as **New Asset** /
+**New Shot** refuse it in the browser.
+
 ### Sequence and category rows
 
 Each sequence (or category) has a row of its own, shaded, above its shots
@@ -476,6 +486,12 @@ before Apply: Apply creates the assets first.
 into the category or sequence shown. A line whose frames are not whole
 numbers, or a line of column titles, is skipped and named.
 
+On a [flat list](#the-sheets), **Add Shots…** asks no **Sequence** (its
+names continue after every shot of the project, and its Root's first entry
+is **Inherit**), **Add Assets…** asks no category, and **Paste as New**
+puts every pasted row in the hidden category or sequence, whatever
+category or sequence a line names.
+
 **New Sequence…** (Shots tab) or **New Category…** (Assets tab) asks for a
 name and adds an empty one, created on Apply. The dropdown above the sheet
 switches to it, shown as *sq030 (new)*, so **Add Shots…** or **Add
@@ -583,4 +599,9 @@ import would do (`[ADD SEQ]`, `[ADD]`, `[ERROR]` lines, the dry run the
 command line prints) before **Import N Shots** writes exactly that. The
 header row is found by its column names (`Sequence`, `ShotName`, `Start`,
 `End`) wherever it sits in the sheet; a sheet without one is refused with
-the names it needs.
+the names it needs. On a project that lists its shots flat (Settings >
+**Flat shot list (no sequences)**) the `Sequence` column is not needed: a
+row needs only `ShotName`, `Start` and `End`, and every shot goes into the
+project's hidden sequence, whatever sequence a row names. A shot some
+sequence already has is skipped, and one that differs from it only by case
+is an `[ERROR]`.

@@ -302,6 +302,7 @@ mod tests {
                 fade_out: 0,
                 opacity: 1.0,
                 transform: Default::default(),
+                original: None,
             }],
         });
         edit
@@ -364,6 +365,7 @@ mod tests {
                 fade_out: 0,
                 opacity: 1.0,
                 transform: Default::default(),
+                original: None,
             }],
         });
         assert_eq!(publish(&project, "Main", &edit, "for review").unwrap(), "v0001");
@@ -412,6 +414,7 @@ mod tests {
                 fade_out: 0,
                 opacity: 1.0,
                 transform: Default::default(),
+                original: None,
             });
         }
         edit.video.push(Track { name: "V1".into(), clips, color: None });
@@ -487,6 +490,7 @@ mod tests {
                     fade_out: 0,
                     opacity: 1.0,
                     transform: Default::default(),
+                    original: None,
                 }
             })
             .collect();

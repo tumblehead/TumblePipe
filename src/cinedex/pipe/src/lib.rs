@@ -18,6 +18,7 @@ pub mod edits;
 pub mod entities;
 pub mod events;
 pub mod farm_jobs;
+pub mod flat_entities;
 pub mod groups;
 pub mod houdini_link;
 pub mod io;
@@ -32,6 +33,7 @@ pub mod preview_place;
 pub mod previews;
 pub mod project;
 pub mod shared_journal;
+pub mod shot_audio;
 pub mod shot_sync;
 pub mod storage;
 #[cfg(any(test, feature = "testing"))]

@@ -106,8 +106,10 @@ impl ClipId {
 /// Each clip of the cut is at most one of them (a piece slipped or trimmed
 /// onto the frames of the next is still itself). The pairs are taken best
 /// first: the clip showing most of the id's frames; on a tie (frames shown
-/// twice) the one starting nearest its first frame, then the nearest to
-/// where it was, then the one on its own track; an id whose clips were all
+/// twice) the one starting nearest its first frame, then the one ending
+/// nearest its last (the clip that is it, not a longer one that only shows
+/// its frames too), then the nearest to where it was, then the one on its
+/// own track; an id whose clips were all
 /// taken so gets one when the id that took it can do with another. Then
 /// each takes the clips
 /// left on its track that continue it in its source.
@@ -119,7 +121,8 @@ fn resolve(ids: &[ClipId], edit: &WorkingEdit) -> Vec<Option<(usize, Vec<usize>)
         .flat_map(|(k, id)| clips().map(move |(t, i, c)| (k, id, t, i, c)))
         .filter(|(_, id, _, _, c)| id.overlap(c) > 0)
         .map(|(k, id, t, i, c)| {
-            let key = (Reverse(id.overlap(c)), (c.source_in - id.source_in).abs(), (c.at - id.at).abs(), t != id.track);
+            let ends_off = (c.source_in + c.duration - id.source_in - id.duration).abs();
+            let key = (Reverse(id.overlap(c)), (c.source_in - id.source_in).abs(), ends_off, (c.at - id.at).abs(), t != id.track);
             (key, k, t, i)
         })
         .collect();
@@ -329,6 +332,7 @@ mod tests {
                 fade_out: 0,
                 opacity: 1.0,
                 transform: Default::default(),
+                original: None,
             });
             at += duration;
         }
@@ -413,6 +417,7 @@ mod tests {
                 fade_out: 0,
                 opacity: 1.0,
                 transform: Default::default(),
+                original: None,
             });
             at += duration;
         }
@@ -468,6 +473,7 @@ mod tests {
                     fade_out: 0,
                     opacity: 1.0,
                     transform: Default::default(),
+                    original: None,
                 };
                 Op::Insert { track: TrackRef::video(0), clip: NewClip::Video(new) }
             }
@@ -573,6 +579,7 @@ mod tests {
             fade_out: 0,
             opacity: 1.0,
             transform: Default::default(),
+            original: None,
         };
         let mut edit =
             edit(vec![Track { name: "V1".into(), clips: vec![clip(0, "A"), clip(10, "B"), clip(20, "A"), clip(30, "C")], color: None }]);
@@ -600,6 +607,7 @@ mod tests {
             fade_out: 0,
             opacity: 1.0,
             transform: Default::default(),
+            original: None,
         };
         let mut edit = edit(vec![Track { name: "V1".into(), clips: vec![clip(0, 20, "A"), clip(20, 20, "B")], color: None }]);
         let mut looping = Loop::over(&edit, &[(0, 0), (0, 1)]).unwrap();
@@ -649,5 +657,44 @@ mod tests {
         }
         // C0 at 0, C1 899-908 at 2, C1 910-916 at 12.
         assert_eq!(looping.span(), (0, 19));
+    }
+
+    /// A split, the first piece slipped on over the second's frames and
+    /// moved to V2, then an insert that splits it there: its new second
+    /// half (922-928) starts on the second piece's first frame and sits
+    /// nearer where that piece was than the piece itself does. The second
+    /// piece still keeps its own clip (it shows exactly its frames, the
+    /// half more), so the loop still ends where it does (found by the loop
+    /// prop, 2026-11-22).
+    #[test]
+    fn a_piece_keeps_its_own_clip_over_a_longer_one_with_its_frames() {
+        let mut edit = cut(&[(38, 0, 900), (25, 2, 900)]);
+        let mut looping = shot_view(&edit, "entity:/shots/S/C0", None).unwrap().looping;
+        assert_eq!(looping.span(), (0, 65));
+        let c1 = ClipRef { track: TrackRef::video(0), index: 1 };
+        let n3 = VideoClip {
+            at: 56,
+            duration: 4,
+            source_in: 1001,
+            source: shot("N3"),
+            fade_in: 0,
+            fade_out: 0,
+            opacity: 1.0,
+            transform: Default::default(),
+            original: None,
+        };
+        let changes = [
+            Op::Split { clip: c1, at: 62 },
+            Op::Slip { clip: c1, delta: 6 },
+            Op::Move { clip: c1, to: TrackRef::video(1), at: 40 },
+            Op::Insert { track: TrackRef::video(0), clip: NewClip::Video(n3) },
+        ];
+        for change in &changes {
+            edit = ops::apply(&edit, change, &AllFrames).unwrap();
+            assert!(looping.follow(&edit));
+        }
+        // C0 at 0, N3 at 56 and C1 922-925 at 66 on V1; C1 906-922 at 40
+        // and 922-928 at 60 on V2.
+        assert_eq!(looping.span(), (0, 69));
     }
 }

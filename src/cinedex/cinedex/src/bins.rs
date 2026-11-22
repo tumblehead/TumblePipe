@@ -10,6 +10,11 @@
 //!
 //! The grid view lays the same rows out as tiles ([`grid_rows`]): a
 //! sequence's name on a line of its own, then its shots, so many a line.
+//!
+//! A project that lists its shots flat (`flat_shots` on `config:/project`,
+//! `th_pipe::flat_entities`) has one hidden sequence: its Shots bin lists
+//! the shots by name with no sequence names ([`bin_shot_rows`],
+//! [`flat_order`]).
 
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
@@ -104,6 +109,22 @@ pub fn shot_rows(shots: &[BinShot], folded: &BTreeSet<String>) -> Vec<BinRow> {
         out.push(BinRow::Item { index, name: shot.name.clone(), detail: shot_detail(shot) });
     }
     out
+}
+
+/// The Shots bin's rows: [`shot_rows`], or with `flat` (the project lists
+/// its shots flat) the shots alone, in `shots`' order, no sequence names to
+/// head or fold them.
+pub fn bin_shot_rows(shots: &[BinShot], folded: &BTreeSet<String>, flat: bool) -> Vec<BinRow> {
+    if !flat {
+        return shot_rows(shots, folded);
+    }
+    shots.iter().enumerate().map(|(index, shot)| BinRow::Item { index, name: shot.name.clone(), detail: shot_detail(shot) }).collect()
+}
+
+/// `shots` in a flat Shots bin's order: by name, naturally, then by
+/// sequence (a project that turned flat late may have two of one name).
+pub fn flat_order(shots: &mut [BinShot]) {
+    shots.sort_by(|a, b| natural_cmp(&a.name, &b.name).then_with(|| natural_cmp(&a.sequence, &b.sequence)));
 }
 
 /// What a shot is besides its name: how long, and from which frame to
@@ -796,6 +817,29 @@ mod tests {
             let inside = at.tile_wide - 2.0 * TILE_PADDING;
             prop_assert!((at.picture_tall - inside * 9.0 / 16.0).abs() <= 0.5 + 1e-3, "{:?}", at);
             prop_assert!((at.line_tall - (at.picture_tall + TILE_WORDS + 2.0 * TILE_PADDING + TILE_GAP)).abs() < 1e-3, "{:?}", at);
+        }
+    }
+
+    proptest! {
+        /// A flat Shots bin lists every shot once, by name, with no
+        /// sequence names, folded sequences or not; not flat, the rows are
+        /// `shot_rows`'.
+        #[test]
+        fn a_flat_bin_lists_shots_without_sequences(
+            picks in prop::collection::vec((0usize..3, name()), 0..8),
+            fold in any::<bool>(),
+        ) {
+            let mut shots: Vec<BinShot> = picks.iter().map(|(s, n)| bin_shot(&format!("S{s}"), n, 5)).collect();
+            flat_order(&mut shots);
+            for pair in shots.windows(2) {
+                prop_assert_ne!(natural_cmp(&pair[0].name, &pair[1].name), Ordering::Greater);
+            }
+            let folded: BTreeSet<String> = if fold { shots.iter().map(|s| s.sequence.clone()).collect() } else { BTreeSet::new() };
+            let rows = bin_shot_rows(&shots, &folded, true);
+            let only_items = rows.iter().all(|r| r.item().is_some());
+            prop_assert!(only_items, "a flat bin listed a sequence name: {:?}", rows);
+            prop_assert_eq!(rows.iter().filter_map(BinRow::item).collect::<Vec<_>>(), (0..shots.len()).collect::<Vec<_>>());
+            prop_assert_eq!(bin_shot_rows(&shots, &folded, false), shot_rows(&shots, &folded));
         }
     }
 

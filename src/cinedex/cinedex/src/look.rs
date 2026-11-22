@@ -109,6 +109,17 @@ pub fn missing() -> Color {
 pub fn hatch() -> Color {
     grey(58)
 }
+/// The hairline round every clip, so clips that touch read as two: light
+/// over any body colour, a department's or a sound's.
+pub fn clip_edge() -> Color {
+    Color::from_rgba8(255, 255, 255, 46)
+}
+/// The edge of a clip with nothing to play: its ground is near the
+/// track's, so its edge is what says where it starts and ends (Remy,
+/// 2026-11-22: shots not rendered yet ran into one another).
+pub fn missing_edge() -> Color {
+    grey(104)
+}
 
 /// A button on the panels: the neutral fill. primer's default intent fills
 /// a button with the theme's accent, which here is the grey that marks what

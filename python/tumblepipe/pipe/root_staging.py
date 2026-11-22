@@ -14,8 +14,9 @@ someone ran Stage Root & Rebuild Shots by hand.
   a shot uses it (or it is a parent of one a shot uses) and it has never
   been exported;
 - a shot gets a new root layer when it has none, or its newest one names
-  another Root than the shot now points at, or carries other render
-  settings than its configuration now resolves to;
+  another Root than the shot now points at, or records another frame range
+  (rolls included) or fps, or carries other render settings than its
+  configuration now resolves to;
 - a shot is built when it got a new root layer or has no staged build at
   all (a new shot: import_shot imports nothing without one). One graph
   scan serves every build.

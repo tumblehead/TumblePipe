@@ -75,6 +75,7 @@ mod bin_panel;
 #[cfg(test)]
 mod bin_wiring_tests;
 mod clip_fields;
+mod clip_menu;
 pub(crate) mod document_io;
 pub(crate) mod entries;
 mod export_dialog;
@@ -188,6 +189,9 @@ pub enum Message {
     SelectAll,
     ClearSelection,
     Edit(Op<Source>),
+    /// Several ops of one gesture, one undo step (a clip dragged in
+    /// between clips of its track, `tracks::reorder`).
+    Edits(Vec<Op<Source>>),
     /// Text typed into a clip field (#60).
     ClipField(clip_fields::ClipField, String),
     /// Enter in a clip field: set what was typed.
@@ -199,7 +203,9 @@ pub enum Message {
     RippleDelete,
     Marker,
     Resolved(usize, Result<Resolved, String>),
-    ClipMenu(ClipRef),
+    /// A right press on a clip, just before its menu opens: the clip and
+    /// the edit frame under the press (`clip_menu`).
+    ClipMenu(ClipRef, usize),
     /// A right press on the timeline off the clips, just before its menu
     /// opens (`timeline_menu`): the frame under it (None on a track's
     /// name) and the track of its row.
@@ -273,6 +279,10 @@ pub enum Message {
     Open(OpenDialog),
     /// Open an edit (`entity:/edits/<name>[@vNNNN]`) in a window of its own.
     OpenEdit(String),
+    /// A clip's Convert to Shot… (`range_shot`, `convert_shot`).
+    ConvertToShot(ClipRef),
+    /// A clip swapped with the clip it replaced (`convert_shot`).
+    SwapOriginal(ClipRef),
     Text(Field, String),
     Confirm,
     /// The second choice of a dialog that has one (Discard; New shot's
@@ -377,7 +387,9 @@ pub struct Editor {
     /// Text typed into a clip field (#60) and not set yet: the clip, the
     /// field, the text.
     clip_draft: Option<(ClipRef, clip_fields::ClipField, String)>,
-    menu_clip: Option<ClipRef>,
+    /// The clip right-clicked the clip menu is for, and the edit frame
+    /// under the click (`clip_menu`).
+    menu_clip: Option<(ClipRef, usize)>,
     /// The right-click off the clips the timeline's menu is for: the frame
     /// under it (None on a track's name) and the track of its row.
     menu_empty: Option<(Option<usize>, Option<TrackRef>)>,
@@ -959,6 +971,7 @@ impl Editor {
             on_select: Message::Select,
             on_drag: || Message::Drag,
             on_op: Message::Edit,
+            on_ops: Message::Edits,
             on_menu: Message::ClipMenu,
             on_row_height: Message::RowHeight,
             on_solo: Message::Solo,
@@ -998,7 +1011,7 @@ impl Editor {
         // A timeline dragged lower than its tracks scrolls them.
         let view = scrollable(Id::new("tracks scroll"), view).width(Length::Fill).height(Length::Fill);
         let mut menu = context_menu(Id::new("clip menu"), view);
-        if let Some(clip) = self.menu_clip
+        if let Some((clip, _)) = self.menu_clip
             && let Some(source @ Source::Shot { .. }) = clip_source(&self.doc.edit, clip)
             && let Some(resolved) = self.entry_of(source).and_then(|i| self.entries[i].resolved())
         {
@@ -1056,6 +1069,13 @@ impl Editor {
             // The view's, not the clip's: the picture mirrored (`flip`).
             let (label, flip) = self.flip_row();
             menu = menu.item(label, move || flip.clone());
+        }
+        // Any clip's: Convert to Shot… and the swap back (`convert_shot`),
+        // then what the edit does to it (`clip_menu`).
+        if let Some(state) = self.menu_clip.and_then(|(clip, frame)| self.clip_menu_state(clip, frame)) {
+            for (label, message) in clip_menu::clip_rows(&self.doc.edit, &state) {
+                menu = menu.item(label, move || message.clone());
+            }
         }
         // A right-click off the clips: what the timeline does there.
         if let Some((frame, track)) = self.menu_empty {
@@ -1355,7 +1375,10 @@ impl Editor {
     /// playhead, inserted; or, with `place` (an Alt+drag's frames), laid
     /// there (`range_shot`). With `now` the shot is made first.
     fn new_shot(&mut self, sequence: &str, name: &str, frames: &str, place: Option<range_shot::Place>, now: bool) -> Command<Message> {
-        let (sequence, name) = (sequence.trim(), name.trim());
+        // A flat project's every new shot goes into its implicit sequence,
+        // whatever the dialog was given (`flat_entities`).
+        let flat = self.bins.flat_shots.clone();
+        let (sequence, name) = (flat.as_deref().unwrap_or(sequence).trim(), name.trim());
         for (what, value) in [("sequence", sequence), ("shot", name)] {
             if let Some(problem) = th_pipe::naming::entity_name_problem(value) {
                 self.status = Some((format!("{value:?}: a {what}'s name {problem}"), true));
@@ -1370,6 +1393,17 @@ impl Editor {
         if self.bins.shots.iter().any(|s| s.uri == uri) {
             self.status = Some((format!("{sequence}/{name} exists: pick it in the Shots bin"), true));
             return Command::none();
+        }
+        // A flat list shows every shot by name alone: no two may share one
+        // in any case, whichever sequence holds them, as the Asset
+        // Browser's New Shot refuses (`creation_check`). The planned shots
+        // the edit names count too: the master's publish makes them.
+        if flat.is_some() {
+            let paths: Vec<Vec<String>> = self.taken_shot_names().into_iter().map(|(s, n)| vec!["shots".to_owned(), s, n]).collect();
+            if let Ok(Some(holder)) = th_pipe::flat_entities::name_taken("shots", name, &paths) {
+                self.status = Some((format!("A shot {name:?} exists (in {holder}, by another case or the same): pick another name"), true));
+                return Command::none();
+            }
         }
         let first = self.bins.shot_start(sequence);
         let Some((first, last)) = th_pipe::shot_sync::new_shot_frames(first, frames) else { return Command::none() };
@@ -1392,10 +1426,15 @@ impl Editor {
         Command::batch([self.edit_then_park(&ops, end), refresh])
     }
 
-    /// Every shot's (sequence, name): the project's, and the planned ones
-    /// the edit names, for the name New shot… offers.
+    /// Every shot's (sequence, name): the project's (with a frame range or
+    /// not: one without is in no bin but holds its name), and the planned
+    /// ones the edit names, for the name New shot… offers.
     fn taken_shot_names(&self) -> Vec<(String, String)> {
         let mut taken: Vec<(String, String)> = self.bins.shots.iter().map(|s| (s.sequence.clone(), s.name.clone())).collect();
+        taken.extend(self.bins.shot_paths.iter().filter_map(|p| match p.as_slice() {
+            [_, sequence, name] => Some((sequence.clone(), name.clone())),
+            _ => None,
+        }));
         for clip in self.doc.edit.video.iter().flat_map(|t| &t.clips) {
             if let Source::Shot { shot, .. } = &clip.source
                 && let Some(planned) = editing::shot_of_uri(shot)
@@ -1597,6 +1636,7 @@ impl Application for Editor {
                 // A clip let go on the spare layer makes its track first.
                 return self.edit(&track_rows::landing(&self.doc.edit, op));
             }
+            Message::Edits(ops) => return self.edit(&ops),
             Message::ClipField(field, text) => self.type_into(field, text),
             Message::ClipFieldSet(field) => return self.set_field(field),
             // What the status said was of the cut before: a refusal left
@@ -1652,8 +1692,15 @@ impl Application for Editor {
                     return self.refresh_entry(index);
                 }
             }
-            Message::ClipMenu(clip) => {
-                self.menu_clip = Some(clip);
+            Message::ClipMenu(clip, frame) => {
+                // Picked as a click picks it, so the menu's Delete rows
+                // act on it (and on the others picked with it).
+                if !self.selection.contains(&clip) {
+                    self.selection = BTreeSet::from([clip]);
+                    self.anchor = Some(clip);
+                }
+                self.gap = None;
+                self.menu_clip = Some((clip, frame));
                 self.menu_empty = None;
             }
             Message::TimelineMenu(frame, track) => {
@@ -1860,6 +1907,8 @@ impl Application for Editor {
                 return Command::batch([self.refresh_entries(shots), self.refresh_bins()]);
             }
             Message::Autosave => self.autosave(),
+            Message::ConvertToShot(clip) => self.convert_to_shot(clip),
+            Message::SwapOriginal(clip) => return self.swap_original(clip),
             Message::OpenEdit(edit) => {
                 self.dialog = None;
                 let started = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {

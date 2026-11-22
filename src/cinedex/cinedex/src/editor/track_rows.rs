@@ -389,6 +389,7 @@ pub(crate) mod tests {
                         fade_out: 0,
                         opacity: 1.0,
                         transform: Default::default(),
+                        original: None,
                     };
                     at += duration;
                     clip

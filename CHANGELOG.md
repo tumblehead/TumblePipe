@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.120.3 — 2026-11-22
+
+### Fixes
+- fix(farm-manager): closing the window no longer prints a traceback (`3b0cc20f`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.120.2 (`5ceb92f9`)
+- chore(changelog): leave the PR #95 merges out of the notes (`3e9cad07`)
+
 ## v1.120.2 — 2026-11-22
 
 ### Fixes

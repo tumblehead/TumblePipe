@@ -67,7 +67,7 @@ from .detail import DetailSectionBuilder
 from .discovery import EntityIndex, ProjectBuckets
 from .drops import DropRouter
 from .edit_ops import EditOps
-from .entity_ops import EntityOps
+from .entity_ops import EntityOps, creation_scope
 from .hover import AssetHover
 from .houdini import ProjectActivator
 from .libraries import LibraryIndex, is_library_owner
@@ -85,6 +85,32 @@ from .types import DeptVersionStore, projects_json_path
 from .workfiles import WorkfileManager
 
 log = logging.getLogger(__name__)
+
+
+def bucket_list_columns(
+    columns: list[ListColumn], scope: str, flat_assets: bool, flat_shots: bool,
+) -> list[ListColumn]:
+    """The list ``columns`` with the bucket column (key ``category``) made
+    to fit ``scope`` (``entity_ops.creation_scope``): Sequence (key
+    ``sequence``, what a shot card carries) in a shots scope, Category
+    elsewhere, and left out when that kind is flat
+    (``config.flat_entities``), whose cards carry no bucket: an empty
+    column is noise. Unscoped (a project's row), the column is a
+    Category one, left out only when both kinds are flat."""
+    if scope == "shots":
+        flat, key, label = flat_shots, "sequence", "Sequence"
+    elif scope == "assets":
+        flat, key, label = flat_assets, "category", "Category"
+    else:
+        flat, key, label = flat_assets and flat_shots, "category", "Category"
+    out = []
+    for column in columns:
+        if column.key == "category":
+            if flat:
+                continue
+            column = dataclasses.replace(column, key=key, label=label)
+        out.append(column)
+    return out
 
 
 class PipelineCatalog(Catalog):
@@ -1261,7 +1287,13 @@ class PipelineCatalog(Catalog):
         (#55, ``edits.list_columns_for``), else :meth:`get_list_columns`.
         An older TumbleTrove never asks, and shows :meth:`get_list_columns`
         everywhere, as before."""
-        return edits.list_columns_for(tags, self.get_list_columns())
+        columns = edits.list_columns_for(tags, self.get_list_columns())
+        project = self._ops._resolve_project_from_tags(tags)
+        return bucket_list_columns(
+            columns, creation_scope(tags),
+            flat_assets=self._ops._flat_bucket(project, "assets") is not None,
+            flat_shots=self._ops._flat_bucket(project, "shots") is not None,
+        )
 
     # ── Cache invalidation ────────────────────────────────
 

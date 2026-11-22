@@ -519,6 +519,48 @@ written to the project.
   Like a Multi's, the bookmarks are temporary: Houdini does not save them
   in the hip, so run it again after reopening the scene.
 
+### The edit's sound in a shot scene
+
+The TumblePipe shelf's **Load Audio from Edit** lets a shot's workfile
+play the cut's sound (its dialogue, music, effects), so the animation can
+be timed against it. Open the shot's workfile and click it:
+
+- It asks which of the [master edit](play-shots.md#the-master-edit)'s
+  audio tracks to mix, all of them ticked (untick all but the dialogue,
+  say). The list names each track as the editor does (`A2` for one with no
+  name). A scene that is not a shot's workfile, a project with no master
+  edit, a master edit with no saved or published version, or one with no
+  audio tracks is told so, and nothing is made.
+- It reads the master edit's newest version, as **Import Edit to
+  Timeline** does: its newest saved working version, else its latest
+  published one. The message names which.
+- It mixes those tracks over the shot's frames, roll included (what the
+  playbar covers), as a farm **Render Edit** mixes them: each clip at its
+  level, through its fades. The shot's frames are placed by its clip in
+  the edit, so past the clip's ends you hear the edit around the cut (the
+  next shot's dialogue running over); before the edit's first frame,
+  silence. Only the audio tracks are mixed: the shots' own playblast sound
+  under their clips is left out, since the scene plays that already.
+- The mix is a 48 kHz 16-bit stereo WAV under the edit's renders,
+  `render:/edits/<edit>/audio/<version>/<SEQ>_<SHOT>_<tracks>.wav`, where
+  `<version>` is `vNNNN` for a published version and `vNNNN_working` for a
+  working one, and `<tracks>` is `all` or the tracks picked (`dialog-fx`).
+  Running it again for the same version and tracks overwrites it.
+- It sets Houdini's Audio Panel to that file, playing from the shot's
+  first frame with no offset, in timeline mode (it plays and scrubs with
+  the playbar). The Audio Panel is saved with the hip, so the sound stays
+  with the workfile.
+- The message names the edit version, the tracks, how many clips sound
+  over the shot's frames (none: the file is silent) and the file. It warns
+  when the scene plays at another fps than the edit is cut at: the sound
+  starts on the shot's first frame but drifts from the picture after it.
+
+It is refused, with the reason, when the shot is not in the master edit,
+or is in it twice (which clip's sound it should have is not clear). Run it
+again after the cut or its sound changes: the scene keeps playing the file
+it was given. The mix is made by Cinedex (`cinedex --shot-audio`, see
+[Running it by hand](play-shots.md#running-it-by-hand)).
+
 ## Dragging into Houdini
 
 Drop targets and what gets built

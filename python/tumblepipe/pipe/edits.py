@@ -25,6 +25,8 @@ a form can ask them as the artist types.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from collections.abc import Collection, Mapping
 from pathlib import Path
 
@@ -381,3 +383,133 @@ def first_shot_uri(name: str, client=None) -> Uri | None:
     if uri.purpose != 'entity' or len(uri.segments) != 3 or uri.segments[0] != 'shots':
         return None
     return uri
+
+
+# ── The edit a shot preview opens (Auguu, 2026-11-22) ──────────────────
+#
+# Play on shot cards used to open an untitled edit of them, so an artist
+# with a saved cut had to find it again in File > Open every time. Now it
+# opens the edit the shots are in, on the first of them (as Live view):
+# the master edit when it holds them all, else the edit holding them all
+# that was opened or saved last. With no edit holding them all it is the
+# untitled edit as before; File > Open still lists every edit.
+
+#: The file Cinedex notes each edit it opens in, beside its layout file
+#: (``recent_edits.rs`` in ``src/cinedex``): ``{"<project root>": {"<edit>":
+#: <seconds since 1970>}}``, the root spelled with forward slashes.
+RECENT_EDITS_FILE = 'recent_edits.json'
+
+
+def document_shots(document: Mapping) -> frozenset[str]:
+    """Every shot (``entity:/shots/<sequence>/<shot>``) an edit document
+    plays: the shot clips of its video tracks. Empty for a document not
+    shaped like an edit."""
+    shots = set()
+    tracks = document.get('video') if isinstance(document, Mapping) else None
+    for track in tracks if isinstance(tracks, list) else ():
+        clips = track.get('clips') if isinstance(track, Mapping) else None
+        for clip in clips if isinstance(clips, list) else ():
+            source = clip.get('source') if isinstance(clip, Mapping) else None
+            if isinstance(source, Mapping) and source.get('kind') == 'shot':
+                shot = source.get('shot')
+                if isinstance(shot, str) and shot:
+                    shots.add(shot)
+    return frozenset(shots)
+
+
+def preview_edit(
+    shots: Collection[str],
+    master: str | None,
+    edits: Mapping[str, tuple[Collection[str], float]],
+) -> str | None:
+    """The edit a preview of ``shots`` opens, of ``edits`` (each edit's
+    name to the shots it plays and when it was last used, in seconds):
+    the ``master`` edit when it plays every one of them, else the edit
+    playing every one that was used last (the lower name on a tie); None
+    when no edit plays them all, or there are no shots."""
+    wanted = set(shots)
+    if not wanted:
+        return None
+    holding = {name: used for name, (played, used) in edits.items() if wanted <= set(played)}
+    if master is not None and master in holding:
+        return master
+    if not holding:
+        return None
+    return min(holding, key=lambda name: (-holding[name], name))
+
+
+def _project_spelling(path: str) -> str:
+    """A project root spelled one way whichever way it was given (slashes,
+    a trailing one, case)."""
+    return str(path).replace('\\', '/').rstrip('/').lower()
+
+
+def recent_edits_path(environ=None, platform: str | None = None) -> Path:
+    """This user's file of the edits Cinedex opened (:data:`RECENT_EDITS_FILE`),
+    in Cinedex's prefs folder: ``%LOCALAPPDATA%/tumblepipe/cinedex`` on
+    Windows, ``~/Library/Application Support/tumblepipe/cinedex`` on macOS,
+    ``$XDG_CONFIG_HOME`` (or ``~/.config``) ``/tumblepipe/cinedex`` on Linux."""
+    environ = os.environ if environ is None else environ
+    platform = sys.platform if platform is None else platform
+    home = Path(environ.get('HOME') or environ.get('USERPROFILE') or Path.home())
+    if platform.startswith('win'):
+        base = Path(environ.get('LOCALAPPDATA') or home / 'AppData' / 'Local')
+    elif platform == 'darwin':
+        base = home / 'Library' / 'Application Support'
+    else:
+        base = Path(environ.get('XDG_CONFIG_HOME') or home / '.config')
+    return base / 'tumblepipe' / 'cinedex' / RECENT_EDITS_FILE
+
+
+def recent_opens(value, project: str) -> dict[str, float]:
+    """When each edit of ``project`` (its root) was last opened, as the
+    file's JSON ``value`` says; nothing it says that is not a time."""
+    if not isinstance(value, Mapping):
+        return {}
+    spelled = _project_spelling(project)
+    opens: dict[str, float] = {}
+    for key, edits in value.items():
+        if not isinstance(key, str) or _project_spelling(key) != spelled or not isinstance(edits, Mapping):
+            continue
+        for name, at in edits.items():
+            if isinstance(name, str) and not isinstance(at, bool) and isinstance(at, (int, float)):
+                opens[name] = max(opens.get(name, 0.0), float(at))
+    return opens
+
+
+def load_recent_opens(project: str, path: Path | None = None) -> dict[str, float]:
+    """:func:`recent_opens` of the file at ``path`` (this user's, by
+    default); nothing when there is none or it does not read."""
+    path = recent_edits_path() if path is None else path
+    try:
+        value = json.loads(path.read_bytes().decode('utf-8'))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return {}
+    return recent_opens(value, project)
+
+
+def edit_for_shots(shots: Collection[Uri], project: str, client=None, recent: Path | None = None) -> str | None:
+    """The edit of the project at ``project`` that a preview of ``shots``
+    opens (:func:`preview_edit`): each edit's newest document read for its
+    shots, last used being the later of when Cinedex last opened it
+    (:func:`load_recent_opens`, the file at ``recent``) and when that
+    document was written. An edit whose document does not read is left
+    out; a ``master_edit`` naming no edit counts as none."""
+    client = _client(client)
+    try:
+        master = master_edit(client)
+    except ValueError:
+        master = None
+    opens = load_recent_opens(project, recent)
+    edits: dict[str, tuple[frozenset[str], float]] = {}
+    for name in list_edits(client):
+        path = document_path(name, client)
+        if path is None:
+            continue
+        try:
+            document = json.loads(path.read_bytes().decode('utf-8'))
+            written = path.stat().st_mtime
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
+        edits[name] = (document_shots(document), max(written, opens.get(name, 0.0)))
+    return preview_edit([str(shot) for shot in shots], master, edits)

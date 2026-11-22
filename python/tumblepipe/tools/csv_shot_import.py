@@ -10,6 +10,11 @@ imported nothing from a sheet laid out differently). The browser's Shots
 section offers the same import as **Import Shots from CSV…**, showing this
 plan before it writes.
 
+A project that lists its shots flat (``config.flat_entities``) needs no
+Sequence column: every shot goes into the project's implicit sequence,
+whatever sequence a row names, and a shot name any sequence has is skipped
+(a case variant of one refused), as New Shot refuses it.
+
 Usage:
     python -m tumblepipe.tools.csv_shot_import "path/to/shots.csv" --dry-run
     python -m tumblepipe.tools.csv_shot_import "path/to/shots.csv"
@@ -30,35 +35,44 @@ COL_START = 'Start'
 COL_END = 'End'
 #: The columns a row must name to be the header row.
 REQUIRED_COLUMNS = (COL_SEQUENCE, COL_SHOT_NAME, COL_START, COL_END)
+#: The columns a flat shot list's sheet must name: no Sequence.
+FLAT_REQUIRED_COLUMNS = (COL_SHOT_NAME, COL_START, COL_END)
 
 
 class NoHeaderRow(ValueError):
     """The sheet has no row naming every required column."""
 
 
-def header_index(all_rows: list[list[str]]) -> int | None:
+def required_columns(flat: bool = False) -> tuple[str, ...]:
+    """The columns the header row must name: no Sequence for a flat shot
+    list (``config.flat_entities``)."""
+    return FLAT_REQUIRED_COLUMNS if flat else REQUIRED_COLUMNS
+
+
+def header_index(all_rows: list[list[str]], flat: bool = False) -> int | None:
     """The first row holding every required column name (cells stripped)."""
+    required = set(required_columns(flat))
     for index, row in enumerate(all_rows):
-        if set(REQUIRED_COLUMNS) <= {cell.strip() for cell in row}:
+        if required <= {cell.strip() for cell in row}:
             return index
     return None
 
 
-def parse_csv(csv_path: Path) -> list[dict]:
+def parse_csv(csv_path: Path, flat: bool = False) -> list[dict]:
     """The rows after the header row, each keyed by the header's names.
 
-    Raises :class:`NoHeaderRow` when no row names Sequence, ShotName, Start
-    and End: a sheet laid out some other way must say so, not import
-    nothing.
+    Raises :class:`NoHeaderRow` when no row names Sequence (unless
+    ``flat``), ShotName, Start and End: a sheet laid out some other way
+    must say so, not import nothing.
     """
     with open(csv_path, 'r', encoding='utf-8-sig', newline='') as f:
         all_rows = list(csv.reader(f))
 
-    header_row = header_index(all_rows)
+    header_row = header_index(all_rows, flat)
     if header_row is None:
         raise NoHeaderRow(
             f'{Path(csv_path).name} has no header row naming the columns '
-            + ', '.join(REQUIRED_COLUMNS)
+            + ', '.join(required_columns(flat))
         )
     headers = [cell.strip() for cell in all_rows[header_row]]
 
@@ -70,14 +84,16 @@ def parse_csv(csv_path: Path) -> list[dict]:
     return rows
 
 
-def is_valid_shot_row(row: dict) -> bool:
-    """Check if row is a valid shot (not a sequence header or empty row)."""
+def is_valid_shot_row(row: dict, flat: bool = False) -> bool:
+    """Check if row is a valid shot (not a sequence header or empty row).
+    ``flat``: the shots go into the implicit sequence, so a row needs no
+    sequence of its own."""
     sequence = row.get(COL_SEQUENCE, '').strip()
     shot_name = row.get(COL_SHOT_NAME, '').strip()
     start = row.get(COL_START, '').strip()
     end = row.get(COL_END, '').strip()
 
-    if not sequence or not shot_name:
+    if not shot_name or not (sequence or flat):
         return False
     if ' - ' in sequence:  # Skip sequence headers like "sq010 - Introduction"
         return False
@@ -99,16 +115,21 @@ class SheetPlan:
 
 
 def plan_sheet(csv_path: Path, config) -> SheetPlan:
-    """Read the sheet and plan it against ``config``; writes nothing."""
-    rows = parse_csv(csv_path)
+    """Read the sheet and plan it against ``config``; writes nothing. A
+    flat shot list (``config.flat_entities``) puts every shot into its
+    implicit sequence (``shot_batch.plan``'s ``flat_bucket``)."""
+    from tumblepipe.config import flat_entities
+    bucket = flat_entities.flat_bucket_in(config, 'shots')
+    flat = bucket is not None
+    rows = parse_csv(csv_path, flat)
     shot_rows = [
         shot_batch.ShotRow(
-            row[COL_SEQUENCE].strip(), row[COL_SHOT_NAME].strip(),
+            row.get(COL_SEQUENCE, '').strip(), row[COL_SHOT_NAME].strip(),
             int(row[COL_START]), int(row[COL_END]),
         )
-        for row in rows if is_valid_shot_row(row)
+        for row in rows if is_valid_shot_row(row, flat)
     ]
-    plan = shot_batch.plan(shot_rows, shot_batch.snapshot(config))
+    plan = shot_batch.plan(shot_rows, shot_batch.snapshot(config), flat_bucket=bucket)
     return SheetPlan(plan, len(rows), len(shot_rows))
 
 

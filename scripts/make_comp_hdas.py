@@ -196,7 +196,7 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             label   "Version"
             type    string
             default {{ "latest" }}
-            help    "latest: the newest complete version. Pinning a version needs a concrete department. A check render (Farm Submit's Step) is listed as v#### (check, every Nth): it is read only when picked here, never by latest."
+            help    "latest: the newest complete version. Pinning a version needs a concrete department. A check render (Farm Submit's Step) is listed as v#### (check, every Nth): latest reads one only when there is no complete version (a complete version wins over a newer check render)."
             menu {{
                 [ "from tumblepipe.pipe.houdini.cops import import_render" ]
                 [ "" ]
@@ -503,25 +503,30 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
 # th::import_render 2.0's outputs (Remy, 2026-11-22: "a cleaner, working
 # import render node"): one beauty (named rgba, labelled beauty; for all
 # channels the channels laid over each other), the AOV cables, a cable of
-# each channel's beauty named after the channel (layers), then the scene's.
-# Kept equal to cops.import_render.OUTPUTS_V2 by
-# tests/test_import_render_outputs.py.
+# each channel's beauty named after the channel (layers), the scene's, then
+# every other AOV (extra; Antoine, 2026-11-22: appended, so a wire saved on
+# the outputs before it stays put). Kept equal to
+# cops.import_render.OUTPUTS_V2 by tests/test_import_render_outputs.py.
 IMPORT_RENDER_V2_OUTPUTS = (
     [('rgba', 'beauty', 'RGBA'),
      ('lpe', 'lpe', 'Cable'), ('aov', 'aov', 'Cable'), ('matte', 'matte', 'Cable'),
      ('cryptomaterials', 'cryptomaterials', 'Cable'),
      ('cryptoprimitives', 'cryptoprimitives', 'Cable'),
      ('layers', 'layers', 'Cable'),
-     ('geometry', 'geometry', 'Geometry'), ('camera', 'camera', 'Metadata')]
+     ('geometry', 'geometry', 'Geometry'), ('camera', 'camera', 'Metadata'),
+     ('extra', 'extra', 'Cable')]
 )
 IMPORT_RENDER_V2_HELP = (
     "A shot's finished render, top to bottom: the beauty (with Channel * every "
     "channel's beauty laid over each other, the last on top), cables of the light "
-    "groups (lpe, a light mix's), the other AOVs (aov), the mattes, ramps and "
+    "groups and LPE splits (lpe: a light mix's groups, and diffuse/specular key, "
+    "dome, direct and indirect), the geometry and camera data (aov: albedo, normal, "
+    "depth as Mono, uv, position), the mattes, ramps and "
     "holdouts (matte) and each cryptomatte's rank planes, whole, for a Cryptomatte "
     "COP's crypto1 (cryptomaterials, cryptoprimitives), a cable of each channel's "
-    "beauty named after the channel (layers), then the staged geometry (geometry) "
-    "and the shot's render camera (camera) for a Rasterize Geometry. AOV Outputs "
+    "beauty named after the channel (layers), the staged geometry (geometry) "
+    "and the shot's render camera (camera) for a Rasterize Geometry, then every "
+    "other AOV (extra: transmission, sss, emission, shadow, ...). AOV Outputs "
     "gives each pass an output named after it. Under the node: what each channel "
     "reads, or that it has no render yet."
 )

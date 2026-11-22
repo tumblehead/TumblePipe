@@ -646,8 +646,9 @@ It is a check render, for looking at lighting across a shot cheaply:
   ([Check renders](play-shots.md#check-renders)). Its stepped frame range
   alone never tells it apart (its frames are complete on its step); only
   `published` does. A `th::import_render` reads one when you pick it in
-  its **Version** menu (`v0014 (check, every 5th)`), holding each rendered
-  frame over the gaps
+  its **Version** menu (`v0014 (check, every 5th)`), or on `latest` when
+  the channel has no published render yet, holding each rendered frame
+  over the gaps
   ([Reading a check render](../nodes/comp.md#reading-a-check-render)); such
   a comp is for looking at, and is not sent to the farm.
 - The note under the **Frame list** counts the frames on the step, and the

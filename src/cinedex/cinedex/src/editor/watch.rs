@@ -25,6 +25,15 @@ pub struct BinData {
     /// The frame a new shot starts on, by sequence
     /// ([`master::new_shot_start`]); `""` for a sequence not made yet.
     shot_starts: std::collections::BTreeMap<String, EditFrame>,
+    /// The project lists its shots flat (`th_pipe::flat_entities`): its
+    /// implicit sequence, where New shot puts every new shot. The Shots bin
+    /// shows no sequence names, its shots by name
+    /// ([`bins::bin_shot_rows`](crate::bins::bin_shot_rows)).
+    pub(super) flat_shots: Option<String>,
+    /// Every shot entity's URI segments (`["shots", seq, name]`), with a
+    /// frame range or not: what a flat project's new shot may not be named
+    /// (`flat_entities::name_taken`).
+    pub(super) shot_paths: Vec<Vec<String>>,
 }
 
 impl BinData {
@@ -34,9 +43,15 @@ impl BinData {
     }
 }
 
-fn load_bins(paths: &ProjectPaths, fps: u32) -> Result<BinData, String> {
+pub(super) fn load_bins(paths: &ProjectPaths, fps: u32) -> Result<BinData, String> {
     let project = paths.open()?;
-    let shots = editing::project_shots(&project)?;
+    let mut shots = editing::project_shots(&project)?;
+    let flat_shots = th_pipe::flat_entities::flat_bucket_in(&project.config, "shots")?;
+    if flat_shots.is_some() {
+        crate::bins::flat_order(&mut shots);
+    }
+    let all = th_pipe::Uri::parse("entity:/shots").map_err(|e| e.to_string())?;
+    let shot_paths = project.config.list_entity_uris(&all, true).map_err(|e| e.to_string())?.into_iter().map(|u| u.segments).collect();
     let mut items = Vec::new();
     for item in media::list_items(&project)? {
         if let Some(last) = media::item_versions(&project, &item)?.pop() {
@@ -45,11 +60,11 @@ fn load_bins(paths: &ProjectPaths, fps: u32) -> Result<BinData, String> {
     }
     let mut shot_starts = std::collections::BTreeMap::new();
     shot_starts.insert(String::new(), master::new_shot_start(&project, "")?);
-    for sequence in shots.iter().map(|s| s.sequence.clone()).collect::<BTreeSet<_>>() {
+    for sequence in shots.iter().map(|s| s.sequence.clone()).chain(flat_shots.clone()).collect::<BTreeSet<_>>() {
         let start = master::new_shot_start(&project, &sequence)?;
         shot_starts.insert(sequence, start);
     }
-    Ok(BinData { shots, media: items, master: master::master_edit(&project)?, shot_starts })
+    Ok(BinData { shots, media: items, master: master::master_edit(&project)?, shot_starts, flat_shots, shot_paths })
 }
 
 impl Editor {

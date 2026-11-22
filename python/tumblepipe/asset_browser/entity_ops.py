@@ -26,7 +26,7 @@ from tumblepipe.pipe.houdini.ui.report import (
     report_failure, reporting, run_in_background, run_on_main_thread,
 )
 
-from tumblepipe.config import shot_batch
+from tumblepipe.config import flat_entities, shot_batch
 
 from . import creation_check
 from . import edits as edits
@@ -242,6 +242,11 @@ class EntityOps:
         recipe = CreationOption(recipes.CREATE_OPTION, "New Recipe...", "puzzle")
         edit = CreationOption(edits.CREATE_OPTION, "New Edit...", edits.ICON)
         scope = creation_scope(tags)
+        # A flat kind (config.flat_entities) has no category / sequence
+        # level to make one in.
+        project = self._resolve_project_from_tags(tags)
+        flat_assets = self._flat_bucket(project, "assets") is not None
+        flat_shots = self._flat_bucket(project, "shots") is not None
         if scope == "group":
             return [multi]
         if scope == "scene":
@@ -254,13 +259,21 @@ class EntityOps:
         if scope == "edits":
             return [edit]
         if scope == "assets":
+            if flat_assets:
+                return [asset, editor, multi, root]
             return [asset, editor, category, multi, root]
         if scope == "shots":
             options = [shot, editor, sequence, csv_import, multi, root]
+            if flat_shots:
+                options.remove(sequence)
             # On one sequence (its sidebar row, or the view narrowed to
             # it): play its shots in the editor (#26). An action, not a
             # creation, so it leads the list.
-            if any(t.startswith("sequence:") for t in tags):
+            # A flat shot list has no sequence rows: its Shots section
+            # plays every shot instead (not a Multi's member drill, whose
+            # own Play in Cinedex plays its members).
+            section = flat_shots and not any(t.startswith("group:") for t in tags)
+            if any(t.startswith("sequence:") for t in tags) or section:
                 options.insert(0, CreationOption(PLAY_SEQUENCE, "Play in Cinedex", "play"))
             return options
         # Unscoped (a project's own row, the catalog's root): New Edit...
@@ -292,6 +305,22 @@ class EntityOps:
             return projects[0].name
         return ""
 
+    def _flat_bucket(self, proj_name: str, kind: str) -> str | None:
+        """The implicit bucket of ``kind`` (``"assets"`` / ``"shots"``) when
+        project ``proj_name`` lists it flat (``config.flat_entities``), else
+        None: also when no project is named or its config cannot be read
+        (the form then shows the bucket field as for any project)."""
+        if not proj_name:
+            return None
+        proj = self._registry.get(proj_name)
+        if proj is None:
+            return None
+        try:
+            return flat_entities.flat_bucket_in(proj.store(), kind)
+        except Exception:
+            log.exception("Reading the flat setting of %s", proj_name)
+            return None
+
     def creation_fields(self, option_id, tags=frozenset()):
         from tumbletrove.asset_browser.api.catalog import CreationField
         projects = [p.name for p in self._registry.all()]
@@ -322,6 +351,9 @@ class EntityOps:
             )
             if seq:
                 self._playback.play_sequence(default_proj, seq)
+            elif self._flat_bucket(default_proj, "shots") is not None:
+                # A flat shot list's Shots section: every shot.
+                self._playback.play_all_shots(default_proj)
             return []
 
         if option_id == IMPORT_SHOTS_CSV:
@@ -345,6 +377,11 @@ class EntityOps:
             )
             self.open_entity_editor(default_proj, kind, group)
             return []
+
+        if option_id == "new_asset" and self._flat_bucket(default_proj, "assets"):
+            # A flat asset list: the asset goes into the project's implicit
+            # category, filled in by validate_creation and create.
+            return self._name_and_project_fields(projects, default_proj)
 
         if option_id == "new_asset":
             fields = [
@@ -397,6 +434,7 @@ class EntityOps:
             fields = [
                 CreationField("name", "Name", required=True),
             ]
+            flat_seq = self._flat_bucket(default_proj, "shots")
             seqs = (
                 self._buckets.sequences(default_proj)
                 if default_proj else self._buckets.all_sequences()
@@ -406,14 +444,17 @@ class EntityOps:
                 if t.startswith("sequence:"):
                     default_seq = t.split(":", 1)[1]
                     break
-            fields.append(CreationField(
-                "sequence", "Sequence",
-                field_type="dropdown",
-                choices=tuple(seqs),
-                default=default_seq,
-                allow_new=False,
-                readonly=bool(default_seq),
-            ))
+            # A flat shot list has no Sequence field: the shot goes into
+            # the project's implicit sequence, filled in on create.
+            if flat_seq is None:
+                fields.append(CreationField(
+                    "sequence", "Sequence",
+                    field_type="dropdown",
+                    choices=tuple(seqs),
+                    default=default_seq,
+                    allow_new=False,
+                    readonly=bool(default_seq),
+                ))
             fields.append(CreationField(
                 "frame_start", "Frame Start",
                 field_type="int", default="1001",
@@ -509,6 +550,28 @@ class EntityOps:
         return []
 
     @staticmethod
+    def _name_and_project_fields(projects, default_proj):
+        """A Name field, and a Project dropdown when several are registered."""
+        from tumbletrove.asset_browser.api.catalog import CreationField
+        fields = [CreationField("name", "Name", required=True)]
+        if len(projects) > 1:
+            fields.append(CreationField(
+                "project", "Project",
+                field_type="dropdown",
+                choices=tuple(projects),
+                default=default_proj,
+            ))
+        return fields
+
+    def _flat_fields(self, option_id, fields, proj_name):
+        """``(fields, bucket)``: ``fields`` with a flat kind's implicit
+        bucket filled in (``creation_check.with_flat_bucket``), and that
+        bucket, None when the kind is not flat."""
+        root = creation_check.entity_root(option_id)
+        bucket = self._flat_bucket(proj_name, root) if root else None
+        return creation_check.with_flat_bucket(option_id, fields, bucket), bucket
+
+    @staticmethod
     def _entity_paths(client) -> set[tuple[str, ...]]:
         """Every entity of the client's project, as URI segment tuples."""
         return {
@@ -558,8 +621,10 @@ class EntityOps:
             )
             return {"name": problem} if problem else {}
         client = self._clients.get(proj_name)
+        fields, bucket = self._flat_fields(option_id, fields, proj_name)
         return creation_check.creation_problems(
             option_id, fields, self._entity_paths(client),
+            flat=bucket is not None,
         )
 
     def create(self, option_id, fields):
@@ -599,6 +664,11 @@ class EntityOps:
         if option_id == edits.CREATE_OPTION:
             return self._edit_ops.create_edit(proj_name, client, fields)
 
+        # A flat asset / shot list: the form had no Category / Sequence, so
+        # the project's implicit one is filled in. add_entity makes the
+        # bucket too if it was deleted.
+        fields, flat_bucket = self._flat_fields(option_id, fields, proj_name)
+
         # The dialog asks validate_creation as the artist types (#29);
         # this refuses by the same rule (creation_check), so the two
         # cannot disagree. A bucket name belongs to one kind only (card
@@ -608,6 +678,7 @@ class EntityOps:
         def _refused() -> bool:
             problems = creation_check.creation_problems(
                 option_id, fields, self._entity_paths(client),
+                flat=flat_bucket is not None,
             )
             if problems:
                 hou.ui.displayMessage("\n".join(problems.values()))
@@ -914,6 +985,7 @@ class EntityOps:
                 repack=on_project(lambda uri: self.repack_timeline(client.config, uri)),
                 load_layout=load_layout,
                 save_layout=save_layout,
+                flat_bucket=lambda kind: self._flat_bucket(project_name, kind),
             ),
             parent=hou.qt.mainWindow(),
             kind=kind,

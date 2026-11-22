@@ -168,15 +168,19 @@ beauty of the channel read, or on **All channels** every channel's beauty
 laid over each other back to front, the last on top, as the template
 stacks them (a premultiplied over, so their alpha is kept); then a cable
 per kind of AOV, each field named after its AOV (never a beauty): `lpe`,
-the `beauty_<tag>` light groups (a light mix's input); `aov`, the data
-AOVs (`albedo`, `normal`, `depth`, `uv`, `position`); `matte`, the
+the `beauty_<tag>` light groups (a light mix's input) and the LPE splits
+(`diffuse_key`, `specular_dome`, `diffuse_direct`, ...); `aov`, the data
+AOVs (`albedo`, `normal`, `depth` as Mono, `uv`, `position`); `matte`, the
 `objid_*` mattes and `ramp_*` ramps (`th::mattes`), `holdout_*` holdouts
 and any cryptomatte without a cable of its own; `cryptomaterials` and
 `cryptoprimitives`, one cable per cryptomatte `th::render_vars` renders;
 `layers`, each channel's beauty as a field named after the channel (one
-field on a one-channel import), for grading a channel on its own; and last
+field on a one-channel import), for grading a channel on its own;
 `geometry` and `camera`, the shot's staged geometry and render camera for
-a Rasterize Geometry (an embedded `th::import_scene`). Which cable an AOV
+a Rasterize Geometry (an embedded `th::import_scene`); and last `extra`,
+every other AOV the render has (`transmission`, `sss`, `emission`,
+motion vectors, ...; not on a 1.0 node). An `alpha` AOV and the `*_mse`
+variance passes are never read. Which cable an AOV
 rides is `pipe.comp.aov_cable`. `geometry` and `camera` are empty until
 the scene imports: **Update** imports it, a workfile open only while one
 of them is wired, and `camera` opens once its camera cooks, so a missing
@@ -388,7 +392,8 @@ Submit asks for) runs the same jobs here instead, in the background (see
   `beauty_*` light groups, `objid_*`, `holdout_*`, `ramp_*`, `albedo`, `normal`,
   `depth`, `uv`, `position` and `crypto*` cryptomattes (one file each: the
   rank planes `<name>NN` and the manifest in its header) are picked up when
-  present. Use the next
+  present, and any other AOV rides `th::import_render`'s `extra` output
+  (an `alpha` AOV and `*_mse` variance passes are never read). Use the next
   free `v####` for each new render.
 
 ## The shot camera in comp

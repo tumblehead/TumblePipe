@@ -312,8 +312,10 @@ struct Hand {
     pointer: Pointer,
     origin: (f32, f32),
     px: f32,
-    /// Ctrl (Cmd) goes down while an edge is held: it stays a trim.
-    ctrl_on_edges: bool,
+    /// Ctrl (Cmd) is not held while an edge is dragged: it snaps to the
+    /// clips of the other rows, the playhead and the markers. Held (the
+    /// default here), the edge goes exactly as far as the pointer.
+    snap_edges: bool,
     now: Instant,
 }
 
@@ -327,7 +329,7 @@ impl Hand {
             pointer: Pointer::default(),
             origin: (f32::from(x), f32::from(y)),
             px: f32::from(px),
-            ctrl_on_edges: false,
+            snap_edges: false,
             now: Instant::now(),
         }
     }
@@ -411,9 +413,11 @@ impl Hand {
         self.hold_alt(editor, alt);
         let from = self.grip_point(editor, clip, grip);
         self.press(editor, from);
-        if grip == Grip::Push || (self.ctrl_on_edges && matches!(grip, Grip::Head | Grip::Tail)) {
-            // Ctrl (Cmd) pressed once the clip is held: a push from here on.
-            self.hold(editor, Modifiers::COMMAND);
+        let edge = matches!(grip, Grip::Head | Grip::Tail | Grip::RollHead | Grip::RollTail);
+        if grip == Grip::Push || (edge && !self.snap_edges) {
+            // Ctrl (Cmd) pressed once the clip is held: a push from here
+            // on, or an edge that goes free of the snap points.
+            self.hold(editor, Modifiers { alt, ..Modifiers::COMMAND });
         }
         let to = Point::new(from.x + self.px * dx as f32, row_y.map_or(from.y, |y| self.origin.1 + y));
         self.move_to(editor, to);
@@ -580,7 +584,7 @@ proptest! {
             Some(ClipRef { track, index })
         });
         if let Some(clip) = under {
-            prop_assert_eq!(said, Some(format!("{:?}", Message::ClipMenu(clip))));
+            prop_assert_eq!(said, Some(format!("{:?}", Message::ClipMenu(clip, frame))));
             return Ok(());
         }
         prop_assert_eq!(said, Some(format!("{:?}", Message::TimelineMenu(at, track))));
@@ -703,6 +707,53 @@ proptest! {
         }
     }
 
+    /// A right-click on any clip (a sound's too: up to 1.120 its menu was
+    /// an empty popup) picks it and opens a menu with rows; on a published
+    /// cut none of them changes it, and on one that can change, whichever
+    /// is chosen is taken (never "Not done"), changes the cut and is one
+    /// undo step.
+    #[test]
+    fn a_right_click_on_any_clip_offers_what_the_edit_does_to_it(
+        edit in cut(), read_only in any::<bool>(), stage in hand(), pick in any::<Index>(), within in any::<Index>(),
+        playhead in any::<Index>(), choice in any::<Index>(),
+    ) {
+        let mut bench = Bench::new(&edit, read_only);
+        let all: Vec<TrackRef> = edit.tracks().collect();
+        let shown = clip_refs(&edit, &all);
+        prop_assume!(!shown.is_empty());
+        let clip = *pick.get(&shown);
+        let (at, end) = edit.spans(clip.track)[clip.index];
+        let frame = (at + within.index((end - at) as usize) as EditFrame) as usize;
+        prop_assume!(frame < bench.editor.tracks_program().total);
+        bench.send(Message::Seek(playhead.index(edit.length() as usize + 1)));
+        let mut hand = Hand::new(stage);
+        let rows = bench.editor.rows();
+        let row = rows.iter().position(|r| !r.spare && r.track == clip.track).expect("every track has a row");
+        let point = hand.over(frame as EditFrame, Hand::row_y(&bench.editor, row, 0.5));
+        let said = hand.right_press(&mut bench.editor, point);
+        prop_assert_eq!(said, Some(format!("{:?}", Message::ClipMenu(clip, frame))));
+        prop_assert!(bench.editor.selection.contains(&clip), "the clip right-clicked is not picked");
+        let state = bench.editor.clip_menu_state(clip, frame).expect("the clip is there");
+        let entries = clip_menu::entries(&state);
+        prop_assert!(!entries.is_empty());
+        let changes = |message: &Message| matches!(message, Message::Edit(_) | Message::Lift | Message::RippleDelete | Message::CloseGap(_));
+        if read_only {
+            prop_assert!(!entries.iter().any(|(_, m)| changes(m)), "a published cut is offered a change");
+        }
+        let before = bench.edit().clone();
+        let (label, message) = choice.get(&entries).clone();
+        let changing = changes(&message);
+        bench.send(message);
+        if changing {
+            prop_assert_eq!(bench.refusal(), None, "{} was refused", label);
+            prop_assert!(bench.edit() != &before, "{} did nothing", label);
+            bench.send(Message::Undo);
+            prop_assert_eq!(bench.edit(), &before, "{} was not one undo step", label);
+        } else {
+            prop_assert_eq!(bench.edit(), &before, "{} changed the cut", label);
+        }
+    }
+
     /// A drag of a clip's edge, its body, a slip or a roll, on any cut and
     /// whichever tracks have a row, the playhead anywhere: an edge or a
     /// slip is always taken (never "Not done"); a roll is taken when the
@@ -733,7 +784,14 @@ proptest! {
         let before = clips(&edit);
         let name = before.iter().find(|c| c.1 == clip.track && c.2 == at).unwrap().0.clone();
 
-        let mut hand = Hand { ctrl_on_edges: ctrl, ..Hand::new(stage) };
+        // Without Ctrl a trim's edge snaps: to the playhead, the markers
+        // and the ends of the clips of the other rows.
+        let snap = !ctrl && matches!(grip, Grip::Head | Grip::Tail);
+        let reach = (8.0 / f32::from(stage.1)).round() as EditFrame;
+        let mut points = vec![bench.editor.position as EditFrame];
+        points.extend(edit.markers.iter().map(|m| m.at));
+        points.extend(before.iter().filter(|c| c.1 != clip.track && view.rows(&edit).contains(&c.1)).flat_map(|c| [c.2, c.2 + c.3]));
+        let mut hand = Hand { snap_edges: snap, ..Hand::new(stage) };
         hand.drag(&mut bench.editor, clip, grip, dx, None);
         let after = clips(bench.edit());
         let refused = bench.refusal().map(str::to_owned);
@@ -743,7 +801,19 @@ proptest! {
         match grip {
             Grip::Head | Grip::Tail => {
                 prop_assert_eq!(&refused, &None, "an edge drag was refused");
-                let longer = if grip == Grip::Tail { dx.max(1 - duration) } else { (-dx).max(1 - duration) };
+                let free = if grip == Grip::Tail { dx.max(1 - duration) } else { (-dx).max(1 - duration) };
+                let got = now(&name);
+                prop_assert_eq!(got.len(), 1);
+                let longer = got[0].3 - duration;
+                if snap && longer != free {
+                    // Snapped: the edge is on a point within reach of the
+                    // pointer, or held at a frame long.
+                    let (asked, edge) = if grip == Grip::Tail { (end + dx, end + longer) } else { (at + dx, at - longer) };
+                    let on_point = points.contains(&edge) && (edge - asked).abs() <= reach;
+                    prop_assert!(on_point || longer == 1 - duration, "the edge went to {} for {} ({:?}, reach {})", edge, asked, points, reach);
+                } else {
+                    prop_assert_eq!(longer, free);
+                }
                 prop_assert_eq!(now(&name), vec![(name.clone(), clip.track, at, duration + longer)]);
                 if longer != 0 {
                     ripple = Some((longer, trim_place(grip == Grip::Tail, at, end, longer)));
@@ -795,7 +865,11 @@ proptest! {
                 // on a clip: it goes where it was let go when those frames
                 // are free and nothing is near enough to snap to, else on a
                 // snap point within 8 pixels or the nearest free place
-                // beside what is in the way. Nothing else moves.
+                // beside what is in the way. Let go on other clips of its
+                // track, it goes in between them (`tracks::reorder`): the
+                // clips between where it was and where it goes move over
+                // by one shift, never more than its length, to make room.
+                // Nothing of another track moves.
                 prop_assert_eq!(&refused, &None, "a move was refused");
                 let to = at + dx;
                 let free = |to: EditFrame| to >= 0 && own.iter().enumerate().all(|(i, &(a, e))| i == clip.index || e <= to || a >= to + duration);
@@ -803,9 +877,18 @@ proptest! {
                 prop_assert_eq!(landed.len(), 1);
                 let got = landed[0].2;
                 prop_assert_eq!(&landed[0], &(name.clone(), clip.track, got, duration));
-                prop_assert!(free(got), "the clip landed on another, at {}", got);
-                let others = |all: &[Known]| all.iter().filter(|c| c.0 != name).cloned().collect::<Vec<_>>();
-                prop_assert_eq!(others(&after), others(&before));
+                let elsewhere = |all: &[Known]| all.iter().filter(|c| c.1 != clip.track).cloned().collect::<Vec<_>>();
+                prop_assert_eq!(elsewhere(&after), elsewhere(&before));
+                // The others of its track: each where it was, or moved by
+                // the one shift, no more than the clip's length.
+                let shifts: BTreeSet<EditFrame> = before
+                    .iter()
+                    .filter(|c| c.1 == clip.track && c.0 != name)
+                    .map(|c| now(&c.0)[0].2 - c.2)
+                    .filter(|&by| by != 0)
+                    .collect();
+                prop_assert!(shifts.len() <= 1, "the clips making room moved apart: {:?}", shifts);
+                prop_assert!(shifts.iter().all(|by| by.abs() <= duration), "{:?} for a clip {} long", shifts, duration);
                 // What it may snap to: the cut's start, the playhead, and
                 // the ends of every other clip that has a row.
                 let reach = if dx == 0 { 0 } else { (8.0 / hand.px).round() as EditFrame };
@@ -814,13 +897,16 @@ proptest! {
                 let near = points.iter().any(|&p| (p - to).abs() <= reach || (p - to - duration).abs() <= reach);
                 if free(to) && !near {
                     prop_assert_eq!(got, to, "free frames, nothing to snap to");
+                    prop_assert!(shifts.is_empty(), "a move onto free frames moved others");
                 }
-                // No free place is much nearer than where it landed.
-                let nearest = (0..400).filter(|&d| free(to - d) || free(to + d)).min().unwrap();
-                prop_assert!((got - to).abs() <= nearest + 2 * reach, "landed {} from {}, a free place was {} away", got - to, to, nearest);
+                if free(to) && shifts.is_empty() {
+                    // Snapped at most, and kept off the clips beside it.
+                    prop_assert!((got - to).abs() <= 2 * reach, "landed {} from {}", got - to, to);
+                }
                 if got != to {
+                    let own_after: Vec<(EditFrame, EditFrame)> = bench.edit().spans(clip.track);
                     let on_point = points.contains(&got) || points.contains(&(got + duration));
-                    let beside = own.iter().enumerate().any(|(i, &(a, e))| i != clip.index && (e == got || a == got + duration));
+                    let beside = own_after.iter().any(|&(a, e)| (e == got || a == got + duration) && (a, e) != (got, got + duration));
                     prop_assert!(on_point || beside || got == 0, "it landed at {} for no reason", got);
                 }
             }
@@ -921,6 +1007,10 @@ proptest! {
         let from = hand.grip_point(&bench.editor, clip, grip);
         let pressed = hand.press(&mut bench.editor, from);
         prop_assert!(pressed.is_some_and(|m| m.starts_with("Select(Some(")));
+        if grip != Grip::Body {
+            // An edge free of the snap points (the marker put below is one).
+            hand.hold(&mut bench.editor, Modifiers::COMMAND);
+        }
         let state = bench.editor.menu_state();
         let pressed_key = match key {
             0 => menu_bar::key_message(&state, Key::Named(Named::Delete), Modifiers::NONE),
@@ -1549,7 +1639,9 @@ fn a_render_on_its_way_shows_on_its_shots_clips() {
     assert!(bench.editor.tracks_program().rendering.is_empty());
 }
 
+mod clip_rows;
 mod dialogs;
+mod flat_new_shot;
 mod flip_and_menus;
 mod picks;
 mod placement;

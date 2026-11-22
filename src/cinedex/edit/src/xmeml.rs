@@ -1411,6 +1411,7 @@ mod tests {
                             fade_out,
                             opacity,
                             transform: Default::default(),
+                            original: None,
                         })
                         .collect();
                     edit.video.push(Track { name: format!("V{}", i + 1), clips, color: (i % 2 == 1).then(|| "teal".to_owned()) });

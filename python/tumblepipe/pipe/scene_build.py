@@ -21,7 +21,7 @@ from tumblepipe.config.scene import (
     get_scene_by_uri,
     get_inherited_scene_ref,
 )
-from tumblepipe.config.timeline import get_frame_range, require_fps
+from tumblepipe.config.timeline import get_fps, get_frame_range, require_fps
 from tumblepipe.config.renderer import get_entity_render_settings, get_pinned_render_settings
 from tumblepipe.pipe.usd import render_overrides
 from tumblepipe.pipe.usd.render_overrides import RenderOverride
@@ -41,7 +41,7 @@ from tumblepipe.pipe.usd.sublayer_refs import (
     generate_scene_sublayer_uri,
     generate_staged_sublayer_uri,
 )
-from tumblepipe.pipe.usd.usda import generate_usda_content
+from tumblepipe.pipe.usd.usda import generate_usda_content, recorded_timing, shot_timing
 
 
 def root_chain(scene_uri: Uri) -> list[Uri]:
@@ -150,9 +150,39 @@ def shot_project_aovs(shot_uri: Uri) -> tuple[str, ...]:
     return override.aovs if override is not None else ()
 
 
+def planned_root_timing(shot_uri: Uri) -> dict | None:
+    """The timing metadata the shot's next root layer carries
+    (:func:`shot_timing`); None when the shot has no frame range or fps,
+    which :func:`generate_root_version` refuses anyway."""
+    frame_range = get_frame_range(shot_uri)
+    fps = get_fps(shot_uri)
+    if frame_range is None or fps is None:
+        return None
+    return shot_timing(frame_range, fps)
+
+
+def root_timing_is_stale(shot_uri: Uri, version_path: Path) -> bool:
+    """True when the root layer in ``version_path`` records another frame
+    range or fps than the shot's configuration now resolves to.
+
+    Remy, 2026-11-22: the stage range read 1001-1100 (a new shot's default)
+    after the shot's range was set: nothing regenerated the root layer when
+    only its timing changed, and the LOP stage takes its time codes from
+    it. A shot without a frame range or fps is never stale on timing: a new
+    root layer could not be written for it."""
+    planned = planned_root_timing(shot_uri)
+    if planned is None:
+        return False
+    layer = version_path / get_root_layer_file_name(shot_uri, version_path.name)
+    if not layer.is_file():
+        return True
+    return recorded_timing(layer.read_text(encoding='utf-8')) != planned
+
+
 def root_layer_is_stale(shot_uri: Uri) -> bool:
     """True when the shot has no root layer, or its newest one names
-    another Root than the shot (or its sequence) now points at, or carries
+    another Root than the shot (or its sequence) now points at, or records
+    another frame range or fps (:func:`root_timing_is_stale`), or carries
     another render override than its config now asks for, or carries its
     override inline (written before the override had a layer of its own,
     where the farm's collapse dropped it)."""
@@ -161,6 +191,8 @@ def root_layer_is_stale(shot_uri: Uri) -> bool:
         return True
     scene_ref, _ = get_inherited_scene_ref(shot_uri)
     if shot_root(shot_uri) != scene_ref:
+        return True
+    if root_timing_is_stale(shot_uri, version_path):
         return True
     planned = planned_render_override(shot_uri)
     if shot_render_override(shot_uri) != planned:
@@ -310,16 +342,14 @@ def generate_root_version(shot_uri: Uri) -> Path:
     layer_file_name = get_root_layer_file_name(shot_uri, version_name)
     output_path = version_path / layer_file_name
 
-    # Get full frame range (including roll)
-    full_range = frame_range.full_range()
-
-    # Generate USDA content with sublayers and timing metadata
+    # The shot's range, rolls included (see shot_timing): the LOP stage
+    # import_shot builds takes its time codes from this layer, and
+    # root_timing_is_stale compares them with the configuration.
+    timing = shot_timing(frame_range, fps)
     usda_content = generate_usda_content(
         layer_paths=layer_refs,
         relative_to=output_path.parent,
-        fps=fps,
-        start_frame=full_range.first_frame,
-        end_frame=full_range.last_frame
+        **timing,
     )
 
     # Write files

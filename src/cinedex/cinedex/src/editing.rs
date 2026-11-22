@@ -141,6 +141,7 @@ pub fn of_shots(shots: &[(String, Frame, Frame)], fps: u32, resolution: [u32; 2]
                 fade_out: 0,
                 opacity: 1.0,
                 transform: Default::default(),
+                original: None,
             };
             at += duration;
             clip
@@ -260,6 +261,7 @@ impl BinShot {
             fade_out: 0,
             opacity: 1.0,
             transform: Default::default(),
+            original: None,
         }
     }
 }
@@ -333,6 +335,7 @@ impl BinItem {
             fade_out: 0,
             opacity: 1.0,
             transform: Default::default(),
+            original: None,
         });
         let audio = self.sound.map(|n| self.frames.unwrap_or(n)).filter(|&n| n > 0).map(|duration| AudioClip {
             at,
@@ -480,6 +483,22 @@ pub fn next_shot_name(taken: &[(String, String)], sequence: &str) -> String {
     // there is this one in any case.
     let number = next_ten(highest);
     format!("{prefix}{number:0>width$}")
+}
+
+/// New shot's sequence and the name it offers, `taken` being every shot's
+/// (sequence, name): `sequence` and its next free name; or, in a project
+/// that lists its shots flat (`flat`, its implicit sequence), that sequence
+/// and a name above every shot's of the project, whichever sequence holds
+/// it, so it is no shot's name in any case (a flat list shows them all
+/// side by side, as `flat_entities.name_taken` has it).
+pub fn offered_shot(taken: &[(String, String)], sequence: &str, flat: Option<&str>) -> (String, String) {
+    match flat {
+        None => (sequence.to_owned(), next_shot_name(taken, sequence)),
+        Some(bucket) => {
+            let all: Vec<(String, String)> = taken.iter().map(|(_, name)| (bucket.to_owned(), name.clone())).collect();
+            (bucket.to_owned(), next_shot_name(&all, bucket))
+        }
+    }
 }
 
 /// A dialog field that offers a value until the user types one: New shot's
@@ -793,6 +812,32 @@ mod tests {
     }
 
     proptest! {
+        /// In a flat project New shot offers its implicit sequence, and a
+        /// good name that no shot of any sequence has in any case
+        /// (`flat_entities::name_taken` finds no holder); not flat, it is
+        /// the sequence asked and that sequence's next free name.
+        #[test]
+        fn a_flat_projects_new_shot_is_offered_a_name_no_sequence_has(
+            taken in prop::collection::vec((prop::sample::select(vec!["SQ010", "SQ020", "SHOTS"]), prop_oneof![
+                (prop::sample::select(vec!["SH", "sh", "", "Shot"]), 0u64..400, 2usize..5).prop_map(|(p, n, w)| format!("{p}{n:0w$}")),
+                "[A-Za-z]{1,5}".prop_map(|s| s),
+            ]), 0..12),
+            sequence in prop::sample::select(vec!["SQ010", "SQ020", "SQ030"]),
+            flat in prop::option::of(prop::sample::select(vec!["SHOTS", "SQ010", "ALL"])),
+        ) {
+            let taken: Vec<(String, String)> = taken.into_iter().map(|(s, n)| (s.to_owned(), n)).collect();
+            let (offered_in, name) = offered_shot(&taken, sequence, flat);
+            prop_assert!(th_pipe::naming::entity_name_problem(&name).is_none(), "{} is not a good name", name);
+            match flat {
+                None => prop_assert_eq!((offered_in.as_str(), name), (sequence, next_shot_name(&taken, sequence))),
+                Some(bucket) => {
+                    prop_assert_eq!(offered_in.as_str(), bucket);
+                    let paths: Vec<Vec<String>> = taken.iter().map(|(s, n)| vec!["shots".into(), s.clone(), n.clone()]).collect();
+                    prop_assert_eq!(th_pipe::flat_entities::name_taken("shots", &name, &paths).unwrap(), None, "{} is taken", name);
+                }
+            }
+        }
+
         /// The name offered is never one taken in the sequence (in any
         /// case), is a good entity name, and is in the commonest style of
         /// the sequence's shots (else the project's): their letters and at
@@ -1067,7 +1112,7 @@ mod tests {
                 at += gap;
                 let fade_in = fade_in.min(duration);
                 let fade_out = fade_out.min(duration - fade_in);
-                track.push(VideoClip { at, duration, source_in, source: shot(names[s]), fade_in, fade_out, opacity: 1.0, transform: Default::default() });
+                track.push(VideoClip { at, duration, source_in, source: shot(names[s]), fade_in, fade_out, opacity: 1.0, transform: Default::default(), original: None });
                 at += duration;
             }
             edit.video.push(Track { name: "V1".into(), clips: track.clone(), color: None });
@@ -1134,7 +1179,7 @@ mod tests {
                     let fade_in = fade_in.min(duration);
                     let fade_out = fade_out.min(duration - fade_in);
                     let transform = Transform { x, rotation: x * 90.0, ..Transform::IDENTITY };
-                    track.push(VideoClip { at, duration, source_in: 1001, source: shot("010"), fade_in, fade_out, opacity, transform });
+                    track.push(VideoClip { at, duration, source_in: 1001, source: shot("010"), fade_in, fade_out, opacity, transform, original: None });
                     at += duration;
                 }
                 edit.video.push(Track { name: format!("V{}", t + 1), clips: track, color: None });

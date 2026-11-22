@@ -5,6 +5,62 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.121.0
+
+### `comp.resolve_render` can return a check render for `latest`
+
+`resolve_render(..., version="latest")` used to raise `NotRendered` when a
+department had only check renders (Farm Submit's **Step** above 1). It now
+falls back to the newest check render that has all of its stepped frames,
+when no department asked has a complete version (Antoine, 2026-11-22). A
+complete render still wins over a newer check render; `Resolved.newer_check`
+names the one skipped. A tool of your own that treats any `Resolved` as the
+shot's final render checks `check_render_refusal` first, as Submit Composite
+does. `NotRendered`'s message now ends in "(nor a check render)".
+
+### th::import_render 2.0 has a tenth output, `extra`
+
+The new `extra` cable comes after `camera`, so existing wires keep their
+place. It carries every AOV no other output takes (transmission, sss,
+emission, shadow, plain diffuse and specular, motion vectors, custom names).
+Depth now reads as Mono. The diffuse/specular key, dome, direct and
+indirect splits ride `lpe`. `beauty_mse` is no longer treated as a light
+group; it is skipped with the other `*_mse` variance passes. `dive_plan`
+gained `extras=True`; pass `extras=False` for a 1.0-shaped plan. 1.0 nodes
+get no `extra` output and read no extras, but their depth is Mono too.
+
+### Edits with converted clips need Cinedex 1.121.0
+
+A clip made by **Convert to Shot** stores its animatic in the clip's new
+`original` field. Older Cinedex versions refuse to open a working edit
+that has one (the document format rejects unknown fields). Edits without
+converted clips save byte-for-byte as before, and a publish drops
+`original`, so published versions open anywhere. **Join with Next Clip** is
+refused when only one of the two clips has an original, or when their
+originals don't continue each other.
+
+### A shot's root layer is rewritten when its range or fps changes
+
+The shot root layer always carried the shot's frame range (with rolls) and
+fps, but was never rewritten after the first time. It is now regenerated
+when they differ from the config: at Entity Editor Apply, Database Editor
+Save, workfile creation and staged builds. Expect a new root layer version
+on shots whose range was edited since they were created. Edits made
+elsewhere (for example the tumblepipe MCP's `set_shot_frame_range`) catch up
+at the next build or editor sync.
+
+### Flat asset and shot lists
+
+`config:/project` may now hold `flat_assets` and/or `flat_shots`, each the
+name of a hidden category or sequence. Entity URIs keep their depth
+(`entity:/shots/<bucket>/<shot>`), so code that reads URIs is unaffected.
+Code that creates entities in a flat project puts them in that bucket and
+refuses a name any bucket of the kind already holds (by casefold); see
+`tumblepipe.config.flat_entities`. The tumblepipe MCP's `create_asset` and
+`create_shot` don't know the setting yet: pass the bucket as the category
+or sequence. In every project, the Asset Browser's list view of shots now
+shows a **Sequence** column where it showed an always-empty Category one.
+
 ## v1.120.1
 
 ### Farm Submit's `department` no longer pins the Render cut

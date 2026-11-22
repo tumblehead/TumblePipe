@@ -18,7 +18,7 @@ by who a change reaches:
 |---|---|---|
 | **Your projects** | you only | Which projects your browser lists and merges into one grid. |
 | **Behaviour** | you only | Four toggles. |
-| **Project defaults** | everyone on the selected project | Its [department pool](#the-department-pool-editor) and [Layout in Animate](#layout-in-animate-beta). Owners and admins only. |
+| **Project defaults** | everyone on the selected project | Its [department pool](#the-department-pool-editor), [Layout in Animate](#layout-in-animate-beta) and [flat asset / shot lists](#flat-asset-and-shot-lists). Owners and admins only. |
 
 ### Your projects
 
@@ -128,6 +128,41 @@ camera rig layout gets is a package's choice
 [`shot_rigs.py`](../../python/tumblepipe/pipe/houdini/shot_rigs.py)):
 TumbleRig registers its `th::apex_camera`; without one, SideFX's own camera
 rig. The APEX LOPs it builds on are Beta in Houdini 22.0.
+
+## Flat asset and shot lists
+
+For a tiny project that wants no CHAR / PROP / SET and no sequences, under
+**Project defaults**: **Flat asset list (no categories)** and **Flat shot list
+(no sequences)**. With one on, every new asset (shot) goes into one category
+(sequence) the browser does not show: the sidebar's Assets (Shots) section
+has no category (sequence) rows and lists every asset (shot) itself, New
+Asset (New Shot) asks no Category (Sequence), New Category (New Sequence) is
+not offered, and cards show no Category (Sequence). A name is then refused
+when any category (sequence) already has it, since the list has nothing else
+to tell two apart.
+
+The rest of the pipeline follows the same setting. The list view has no
+Category (Sequence) column. The Entity Editor's Assets (Shots) tab has no
+Category (Sequence) column, no category (sequence) rows and no picker for
+them, no New Category… (New Sequence…), and Add Assets… (Add Shots…) and
+Paste as New put the new rows in the hidden bucket. **Import Shots from
+CSV…** needs no Sequence column: every shot goes into the hidden sequence,
+and a shot some sequence already has is skipped (one differing from it only
+by case is refused). The Shots section's own right-click menu has **Play
+in Cinedex**, which plays every shot, and Cinedex's Shots bin lists the
+shots by name with no sequence names. Cinedex's **New shot** (in the Shots
+bin, **Convert to Shot…**, an Alt+drag on the timeline) has no Sequence
+field: it offers a name above every shot of the project and refuses one any
+shot has, in any case.
+
+Entities keep their two-level URIs (`entity:/shots/<sequence>/<shot>`), so
+paths on disk, exports, farm jobs and Cinedex work unchanged. The hidden
+bucket is the project's only category (sequence) when it has exactly one (a
+project that keeps all its shots in `000` goes on using it), else `ASSETS`
+(`SHOTS`). Stored as `flat_assets` / `flat_shots` on `config:/project`, the
+bucket's name ([`config.flat_entities`](../../python/tumblepipe/config/flat_entities.py));
+a project that never set them is not flat. Turning one off shows the
+categories (sequences) again; nothing moves.
 
 ## The department pool editor
 

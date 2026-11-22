@@ -285,22 +285,7 @@ pub(crate) fn write_mix(edit: &WorkingEdit, sources: &Sources, fps: u32, first: 
     let mut place =
         |source: &Source, at: EditFrame, duration: EditFrame, source_in: EditFrame, gain_db: f64, fades: (EditFrame, EditFrame)| {
             let Some(i) = sources.index(source) else { return };
-            let resolved = &sources.opened[i].resolved;
-            let Some(sound) = resolved.sound.as_deref() else { return };
-            // As the editor places it (`Editor::place_sounds`).
-            let skip = (resolved.first - source_in).max(0);
-            if skip >= duration {
-                return;
-            }
-            voices.push(Voice {
-                sound,
-                at: (at + skip) as f64 / fps,
-                length: (duration - skip) as f64 / fps,
-                offset: (source_in + skip - resolved.first) as f64 / fps,
-                gain: 10f64.powf(gain_db / 20.0) as f32,
-                fade_in: (fades.0 - skip).max(0) as f64 / fps,
-                fade_out: fades.1 as f64 / fps,
-            });
+            voices.extend(voice(&sources.opened[i].resolved, at, duration, source_in, gain_db, fades, fps));
         };
     for c in edit.video.iter().flat_map(|t| &t.clips) {
         if matches!(c.source, Source::Shot { .. }) {
@@ -314,22 +299,68 @@ pub(crate) fn write_mix(edit: &WorkingEdit, sources: &Sources, fps: u32, first: 
         return Ok(false);
     }
     let (start, total) = mix_span(first, frames, fps);
+    write_wav(&voices, start as i64, total, path)?;
+    Ok(true)
+}
+
+/// A clip's sound placed on the edit, as the editor places it
+/// (`Editor::place_sounds`): the clip at `at` for `duration` frames from
+/// its source frame `source_in`, at `gain_db`, through its `fades` (in and
+/// out, in frames), at `fps`. None when its source has no sound there.
+pub(crate) fn voice(
+    resolved: &Resolved,
+    at: EditFrame,
+    duration: EditFrame,
+    source_in: EditFrame,
+    gain_db: f64,
+    fades: (EditFrame, EditFrame),
+    fps: f64,
+) -> Option<Voice<'_>> {
+    let sound = resolved.sound.as_deref()?;
+    let skip = (resolved.first - source_in).max(0);
+    if skip >= duration {
+        return None;
+    }
+    Some(Voice {
+        sound,
+        at: (at + skip) as f64 / fps,
+        length: (duration - skip) as f64 / fps,
+        offset: (source_in + skip - resolved.first) as f64 / fps,
+        gain: 10f64.powf(gain_db / 20.0) as f32,
+        fade_in: (fades.0 - skip).max(0) as f64 / fps,
+        fade_out: fades.1 as f64 / fps,
+    })
+}
+
+/// The mix of `voices` from sample frame `start` at [`AUDIO_RATE`] (the
+/// edit's frame 0 is sample 0; before it is silence), `total` sample
+/// frames of it, written to `path` as a 16-bit stereo WAV.
+pub(crate) fn write_wav(voices: &[Voice], start: i64, total: u64, path: &Path) -> Result<(), String> {
     let file = File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut out = BufWriter::new(file);
     let fail = |e: std::io::Error| format!("{}: {e}", path.display());
     out.write_all(&wav_header(total, AUDIO_RATE)).map_err(fail)?;
+    // Before the edit's frame 0: silence, sample for sample.
+    let silent = total.min(start.min(0).unsigned_abs());
+    let zeros = [0u8; 4 * 4096];
+    let mut left = silent;
+    while left > 0 {
+        let n = left.min(4096);
+        out.write_all(&zeros[..(n * 4) as usize]).map_err(fail)?;
+        left -= n;
+    }
+    let begin = start.max(0) as u64;
     let mut chunk = vec![0f32; 2 * 4096];
     let mut from = 0u64;
-    while from < total {
-        let n = (total - from).min(4096) as usize;
+    while from < total - silent {
+        let n = (total - silent - from).min(4096) as usize;
         let samples = &mut chunk[..n * 2];
-        mix(&voices, AUDIO_RATE, start + from, samples);
+        mix(voices, AUDIO_RATE, begin + from, samples);
         let bytes: Vec<u8> = samples.iter().flat_map(|s| pcm16(*s).to_le_bytes()).collect();
         out.write_all(&bytes).map_err(fail)?;
         from += n as u64;
     }
-    out.flush().map_err(fail)?;
-    Ok(true)
+    out.flush().map_err(fail)
 }
 
 /// The sample frames of the mix that `frames` edit frames from `first` are,

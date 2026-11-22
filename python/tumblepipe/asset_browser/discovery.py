@@ -104,6 +104,18 @@ class ProjectBuckets:
         )
 
 
+def flat_kind(proj, kind: str) -> bool:
+    """Whether ``proj`` lists ``kind`` (``"assets"`` / ``"shots"``) flat
+    (``config.flat_entities``): its cards then show no Category / Sequence,
+    the implicit bucket being one the artist never picked. The bucket tag
+    stays, so filters and Multis that name it keep working."""
+    from tumblepipe.config import flat_entities
+    try:
+        return flat_entities.is_flat_in(proj.store(), kind)
+    except Exception:
+        return False
+
+
 # ── Entity facts a detail (and the scene's timeline) reads ────────────
 
 
@@ -396,10 +408,12 @@ class EntityIndex:
         }
         if kind == "assets":
             tags = {"type:asset", f"category:{bucket}"}
-            metadata["category"] = bucket
+            if not flat_kind(proj, kind):
+                metadata["category"] = bucket
         else:
             tags = {"type:shot", f"sequence:{bucket}"}
-            metadata["sequence"] = bucket
+            if not flat_kind(proj, kind):
+                metadata["sequence"] = bucket
             fr = entity_frame_range(self._catalog_id, proj.store(), asset_id, uri)
             metadata["frame_range"] = (
                 f"{fr.start_frame}-{fr.end_frame}"
@@ -496,11 +510,13 @@ class EntityIndex:
         }
         if kind == "assets":
             tags |= {"type:asset", f"category:{bucket}"}
-            metadata["category"] = bucket
+            if not flat_kind(proj, kind):
+                metadata["category"] = bucket
             metadata["channels"] = entity_channels(self._catalog_id, proj.store(), asset_id, uri)
         else:
             tags |= {"type:shot", f"sequence:{bucket}"}
-            metadata["sequence"] = bucket
+            if not flat_kind(proj, kind):
+                metadata["sequence"] = bucket
             fr = entity_frame_range(self._catalog_id, proj.store(), asset_id, uri)
             if fr is not None:
                 if fr.start_frame is not None:

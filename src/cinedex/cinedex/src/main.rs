@@ -7,6 +7,7 @@
 //! cinedex [--project <root>] [--ocio <config>] --shots <shot uri>...
 //! cinedex [--project <root>] [--ocio <config>]
 //! cinedex [--project <root>] [--ocio <config>] --render entity:/edits/<name>@vNNNN --out <dir>
+//! cinedex [--project <root>] --shot-audio entity:/edits/<name>[@vNNNN] --shot <shot uri> --out <wav> [--tracks <name,...>] [--first <frame> --last <frame>]
 //! cinedex [--project <root>] --mcp
 //! cinedex [--ocio <config>] --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]
 //! ```
@@ -17,6 +18,9 @@
 //! untitled edit of every shot of the project (as is an edit never saved);
 //! `--render`, no window: the published version's frames, mix
 //! and `render.json` written into `--out` for the farm (see `render`);
+//! `--shot-audio`, no window: the edit's audio tracks (all, or `--tracks`)
+//! over the shot's frames mixed into the WAV `--out`, a JSON summary
+//! printed, for the shot's Houdini scene (see `shot_audio`);
 //! `--mcp`, no window: an MCP server on stdin/stdout giving an agent the
 //! running players' commands (see `mcp` and `agent`);
 //! `--frames`, a window of rendered frames (#75): a local farm batch's ready
@@ -41,6 +45,7 @@ mod burnin;
 mod burnin_raster;
 mod by_width;
 mod colour;
+mod convert_shot;
 mod display;
 mod editing;
 mod editor;
@@ -69,12 +74,14 @@ mod open_dialog;
 mod placing;
 mod previews;
 mod raise;
+mod recent_edits;
 mod reel;
 mod render;
 mod rendering;
 mod reveal;
 mod save_dialog;
 mod sense;
+mod shot_audio;
 use th_pipe::player_rpc as rpc;
 mod take_menu;
 mod tracks;
@@ -130,7 +137,7 @@ impl Application for Failed {
     }
 }
 
-const USAGE: &str = "usage: cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>... | --render entity:/edits/<name>@vNNNN --out <dir> | --mcp | --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]]";
+const USAGE: &str = "usage: cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>... | --render entity:/edits/<name>@vNNNN --out <dir> | --shot-audio entity:/edits/<name>[@vNNNN] --shot <shot uri> --out <wav> [--tracks <name,...>] [--first <frame> --last <frame>] | --mcp | --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]]";
 
 /// What the arguments ask the editor for.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -154,6 +161,14 @@ struct Args {
     /// The frames `--frames` should have (a render's frame list): those
     /// not on disk yet show as gaps.
     expect: Option<Vec<i64>>,
+    /// The edit whose sound `--shot-audio` mixes for `shot`.
+    shot_audio: Option<String>,
+    shot: Option<String>,
+    /// The audio tracks it mixes (none: all).
+    tracks: Vec<String>,
+    /// The shot frames it covers.
+    first: Option<i64>,
+    last: Option<i64>,
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -181,6 +196,11 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
                 out.expect = Some(th_playlist::frame_list::parse_frame_list(&value("--expect")?).map_err(|e| format!("--expect {e}"))?)
             }
             "--at" => out.at = Some(value("--at")?.parse().map_err(|_| "--at wants a frame number".to_string())?),
+            "--shot-audio" => out.shot_audio = Some(value("--shot-audio")?),
+            "--shot" => out.shot = Some(value("--shot")?),
+            "--tracks" => out.tracks.extend(value("--tracks")?.split(',').map(str::trim).filter(|t| !t.is_empty()).map(str::to_owned)),
+            "--first" => out.first = Some(value("--first")?.parse().map_err(|_| "--first wants a frame number".to_string())?),
+            "--last" => out.last = Some(value("--last")?.parse().map_err(|_| "--last wants a frame number".to_string())?),
             "--shots" => {
                 out.shots.extend(args.by_ref());
                 if out.shots.is_empty() {
@@ -192,6 +212,28 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     }
     if out.edit.is_some() && !out.shots.is_empty() {
         return Err("--edit and --shots do not go together".into());
+    }
+    if out.shot_audio.is_some() {
+        if out.shot.is_none() || out.out.is_none() {
+            return Err("--shot-audio wants --shot and --out".into());
+        }
+        if out.first.is_some() != out.last.is_some() {
+            return Err("--first and --last go together".into());
+        }
+        if out.edit.is_some()
+            || !out.shots.is_empty()
+            || out.render.is_some()
+            || out.mcp
+            || out.frames.is_some()
+            || out.view.is_some()
+            || out.ocio.is_some()
+        {
+            return Err("--shot-audio opens no window: only --project, --shot, --out, --tracks, --first and --last go with it".into());
+        }
+        return Ok(out);
+    }
+    if out.shot.is_some() || !out.tracks.is_empty() || out.first.is_some() || out.last.is_some() {
+        return Err("--shot, --tracks, --first and --last go with --shot-audio".into());
     }
     if out.render.is_some() != out.out.is_some() {
         return Err("--render and --out go together".into());
@@ -243,6 +285,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let project = args.project.clone().or_else(|| std::env::var_os("TH_PROJECT_PATH").filter(|v| !v.is_empty()).map(PathBuf::from));
         mcp::run(project.as_deref())?;
         return Ok(());
+    }
+    if let (Some(edit), Some(shot), Some(out)) = (&args.shot_audio, &args.shot, &args.out) {
+        let root = args.project.clone().or_else(|| std::env::var_os("TH_PROJECT_PATH").filter(|v| !v.is_empty()).map(PathBuf::from));
+        let made = root.ok_or_else(|| "no --project and $TH_PROJECT_PATH is not set".to_string()).and_then(|root| {
+            let frames = args.first.zip(args.last);
+            shot_audio::export(&editor::ProjectPaths::at(&root), edit, shot, frames, &args.tracks, out)
+        });
+        match made {
+            Ok(summary) => {
+                println!("{summary}");
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("cinedex: {e}");
+                std::process::exit(1);
+            }
+        }
     }
     if let (Some(edit), Some(out)) = (&args.render, &args.out) {
         let rendered = paths_and_ocio().and_then(|(paths, ocio)| {
@@ -296,6 +355,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (paths, ocio) = paths_and_ocio()?;
         let colour = Colour::open(&ocio).map_err(|e| format!("the OCIO config: {e}"))?;
         let (doc, recovered) = editor::document_io::open_document(&paths, args.edit.as_deref(), &args.shots)?;
+        // Play in Houdini opens the edit used last (`recent_edits`).
+        if let editing::Origin::Working { name, .. } | editing::Origin::Published { name, .. } = &doc.origin {
+            let file = recent_edits::path(&layout_prefs::path());
+            if let Err(e) = recent_edits::note(&file, &th_pipe::storage::slashed(&paths.root), name) {
+                eprintln!("cinedex: the edit opened was not noted in {}: {e}", file.display());
+            }
+        }
         let editor = editor::Editor::new(paths, ocio, doc, colour, recovered);
         Ok::<_, String>(match args.view.clone() {
             Some(shot) => editor.with_view(shot, args.at),
@@ -361,6 +427,20 @@ mod tests {
         assert!(args("--frames D:/f --expect x").is_err());
         assert!(args("--fps 25").is_err(), "--fps wants --frames");
         assert!(args("--edit entity:/edits/Main --expect 1-2").is_err());
+        let a = args("--project P:/show --shot-audio entity:/edits/Main@v0002 --shot entity:/shots/A/010 --out D:/a.wav --tracks Dialog,,A2 --first 993 --last 1100").unwrap();
+        assert_eq!((a.shot_audio.as_deref(), a.shot.as_deref()), (Some("entity:/edits/Main@v0002"), Some("entity:/shots/A/010")));
+        assert_eq!(
+            (a.tracks, a.first, a.last, a.out),
+            (vec!["Dialog".to_string(), "A2".into()], Some(993), Some(1100), Some(PathBuf::from("D:/a.wav")))
+        );
+        assert!(args("--shot-audio entity:/edits/Main --out D:/a.wav").is_err(), "no --shot");
+        assert!(args("--shot-audio entity:/edits/Main --shot entity:/shots/A/010").is_err(), "no --out");
+        assert!(
+            args("--shot-audio entity:/edits/Main --shot entity:/shots/A/010 --out D:/a.wav --first 1").is_err(),
+            "--first wants --last"
+        );
+        assert!(args("--shot-audio entity:/edits/Main --shot entity:/shots/A/010 --out D:/a.wav --ocio c.ocio").is_err());
+        assert!(args("--render entity:/edits/Main@v0002 --out D:/r --tracks Dialog").is_err(), "--tracks wants --shot-audio");
     }
 
     /// What Open starts another window with reads back as that edit of

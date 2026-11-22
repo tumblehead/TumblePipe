@@ -101,6 +101,9 @@ pub(super) enum Dialog {
         frames: String,
         place: Option<super::range_shot::Place>,
         now: bool,
+        /// The project lists its shots flat: `sequence` is its implicit
+        /// sequence, and the dialog shows no Sequence field.
+        flat: bool,
     },
     Import {
         path: String,
@@ -262,29 +265,25 @@ fn dialog_element(dialog: &Dialog, title: &str) -> Element<Message> {
                 buttons = buttons.push(choice("ok", "Publish", Message::Confirm)).push(choice("cancel", "Cancel", Message::Dismiss));
             }
         }
-        Dialog::NewShot { sequence, name, frames, place, now } => {
+        Dialog::NewShot { sequence, name, frames, place, now, flat } => {
             page = page.push(heading("New shot"));
             if let Some(place) = place {
                 page = page.push(label(&super::range_shot::place_words(place)));
             }
-            page = page
-                .push(
-                    row()
-                        .spacing(8.0)
-                        .align_y(Vertical::Center)
-                        .push(look::tick_box(Id::new("new shot now"), *now, Message::NewShotNow))
-                        .push(
-                            text("Create the shot now (else it is planned: made when the master edit is published)")
-                                .font_size(12.0)
-                                .color(look::text()),
-                        ),
-                )
-                .push(label("Sequence"))
-                .push(field("sequence", sequence, Field::Sequence, "S"))
-                .push(label("Shot"))
-                .push(field("name", &name.text, Field::Name, "SH010"))
-                .push(label("Frames"))
-                .push(crate::ladder::ladder(
+            page = page.push(
+                row().spacing(8.0).align_y(Vertical::Center).push(look::tick_box(Id::new("new shot now"), *now, Message::NewShotNow)).push(
+                    text("Create the shot now (else it is planned: made when the master edit is published)")
+                        .font_size(12.0)
+                        .color(look::text()),
+                ),
+            );
+            // A flat project's shots have no sequence to pick: every new
+            // one goes into its implicit sequence (`flat_entities`).
+            if !*flat {
+                page = page.push(label("Sequence")).push(field("sequence", sequence, Field::Sequence, "S"));
+            }
+            page = page.push(label("Shot")).push(field("name", &name.text, Field::Name, "SH010")).push(label("Frames")).push(
+                crate::ladder::ladder(
                     Id::new("frames ladder"),
                     field("frames", frames, Field::Frames, "48"),
                     crate::ladder::Number {
@@ -296,8 +295,13 @@ fn dialog_element(dialog: &Dialog, title: &str) -> Element<Message> {
                     },
                     |v| Message::Text(Field::Frames, format!("{}", v.round() as i64)),
                     None,
-                ));
+                ),
+            );
             buttons = match place {
+                // Convert to Shot: the clip there is a placeholder already.
+                Some(p) if p.replaces => buttons
+                    .push(choice("ok", if *now { "Create Shot" } else { "Plan Shot" }, Message::Confirm))
+                    .push(choice("cancel", "Cancel", Message::Dismiss)),
                 // Over the swept frames: a shot, or a placeholder of them.
                 Some(_) => buttons
                     .push(choice("ok", if *now { "Create Shot" } else { "Plan Shot" }, Message::Confirm))
@@ -374,10 +378,17 @@ impl Editor {
                 None => return,
             },
             OpenDialog::NewShot => {
-                let sequence = self.bin_pick.and_then(|p| self.bins.shots.get(p)).or(self.bins.shots.first()).map(|s| s.sequence.clone());
-                let sequence = sequence.unwrap_or_default();
-                let name = editing::Offered::new(editing::next_shot_name(&self.taken_shot_names(), &sequence));
-                Dialog::NewShot { sequence, name, frames: "48".into(), place: None, now: false }
+                let picked = self.bin_pick.and_then(|p| self.bins.shots.get(p)).or(self.bins.shots.first()).map(|s| s.sequence.clone());
+                let flat = self.bins.flat_shots.clone();
+                let (sequence, name) = editing::offered_shot(&self.taken_shot_names(), &picked.unwrap_or_default(), flat.as_deref());
+                Dialog::NewShot {
+                    sequence,
+                    name: editing::Offered::new(name),
+                    frames: "48".into(),
+                    place: None,
+                    now: false,
+                    flat: flat.is_some(),
+                }
             }
         });
     }
@@ -583,6 +594,8 @@ impl Editor {
                     (Some(Dialog::SaveAs { name, .. }), Field::Name) => *name = value,
                     (Some(Dialog::RenameTrack { name, .. }), Field::Name) => *name = value,
                     (Some(Dialog::NewShot { name, .. }), Field::Name) => name.type_text(value),
+                    // A flat project's has no Sequence field: nothing to type.
+                    (Some(Dialog::NewShot { flat: true, .. }), Field::Sequence) => {}
                     (Some(Dialog::NewShot { sequence, name, .. }), Field::Sequence) => {
                         name.follow(editing::next_shot_name(&taken, &value));
                         *sequence = value;
@@ -621,7 +634,7 @@ impl Editor {
                     return self.publish(note, ticked);
                 }
                 Some(Dialog::RenameTrack { track, name, others, .. }) => return self.rename_track(track, name, &others),
-                Some(Dialog::NewShot { sequence, name, frames, place, now }) => {
+                Some(Dialog::NewShot { sequence, name, frames, place, now, .. }) => {
                     return self.new_shot(&sequence, &name.text, &frames, place, now);
                 }
                 Some(Dialog::Import { path, item, note }) => {

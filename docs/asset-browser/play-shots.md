@@ -7,8 +7,12 @@ playblast as it is, a render through the project's OCIO config.
 
 Right-click a shot card and choose **Play in Cinedex** (the menu's first
 catalog entry), or select several shots and choose **Play N Shots in
-Cinedex**, to open them back to back in the editor as an
-untitled edit. Nothing in the project changes until you save it, and
+Cinedex**, to open them in the editor. When an edit of the project holds
+every one of them, it opens on that edit, playing the first of them in
+place (as [Live view](#live-view) does): the master edit when it holds
+them, else the edit holding them that you opened or saved last. Otherwise
+they open back to back as an untitled edit. Either way **File > Open…**
+lists every edit. Nothing in the project changes until you save, and
 Resolve is not involved.
 
 The toolbar's **Open Timeline** button plays the whole sequence of the
@@ -630,6 +634,11 @@ The chevron before a sequence's name folds that sequence's shots away, and
 brings them back; Cinedex remembers which sequences you folded, per
 project, for next time. A folded sequence's name still works for all its
 shots: double-click it to insert them, Shift+double-click to overlay them.
+On a project that lists its shots flat (Settings > **Flat shot list (no
+sequences)**, see [Settings](settings.md#flat-asset-and-shot-lists)) the
+Shots bin has no sequence names to head or fold the shots: it lists every
+shot by its name alone, in name order (numbers read as numbers), in the
+list and in the grid.
 
 **Ctrl**-click (**Cmd** on macOS) adds a row to the picked ones, or takes
 it out. Insert and Overlay then put all of them, in the bin's order, as
@@ -687,8 +696,11 @@ flat line while its sound is still being read). A
 shot's clip is coloured by the department its take comes from (every
 animation take the same muted blue, say), so the cut shows at a glance how
 far each shot has got; a clip with nothing to play is hatched, and says
-why. The ruler marks the markers, the playhead, and in a lighter strip the
-frames already decoded. Amber means *now*: the playhead, the timecode, a
+why. Every clip has a thin light edge, so two touching clips of the same
+colour still show where one ends and the next starts; a clip with nothing
+to play yet (not rendered, say) has a brighter grey edge, which reads
+against the hatching of a neighbour. The ruler marks the markers, the
+playhead, and in a lighter strip the frames already decoded. Amber means *now*: the playhead, the timecode, a
 clip being dragged.
 
 - Click or drag on the ruler to seek; a click on empty track seeks too. A
@@ -748,22 +760,69 @@ clip being dragged.
   undo (a deleted track comes back with its clips, name and colour).
   Always: hide or
   show the audio tracks, **Select All** and **Fit Timeline**. A published
-  edit offers only the rows that change nothing. (Right-click a shot's
-  clip for its takes, as before. There is no Paste: the editor has no
+  edit offers only the rows that change nothing. (A right-click on a clip
+  opens the clip's own menu, below. There is no Paste: the editor has no
   copy yet.)
+- Right-click a clip, any clip (a shot's, a media item's, a slug, a
+  sound), for what the edit can do to it. The right-click selects the clip
+  first, as a click does: a clip that was not selected becomes the only
+  one, and one that was keeps the selection it is part of. The rows, each
+  only where it applies:
+  - **Split Here**, at the frame you clicked, when that is not the clip's
+    first frame; **Split at Playhead** too, when the playhead is over the
+    clip at another frame.
+  - **Delete** and **Ripple Delete**, as the Delete and Shift+Delete keys:
+    they act on the selection, and say how much of it there is when more
+    than the one clip is selected (**Delete 3 Clips**).
+  - **Join with Next Clip**, when the clip after it continues it (the
+    same source, the frames running on).
+  - **Close Gap Before**, when there are empty frames before the clip on
+    its track: as **Close Gap** on the gap, the clip and those after it on
+    its track move earlier by the gap's length.
+  - **Reset Level to 0 dB (now -6.0 dB)**, on a sound whose level is not
+    0 dB.
+  - **Go to Clip Start** and **Go to Clip's Last Frame** park the
+    playhead there.
+
+  A shot's clip keeps its own rows above these, as before (its takes,
+  **Reveal folder**, **Open in Houdini** and the rest); a clip that is not
+  a shot offers **Convert to Shot…** above them, and a converted clip its
+  swap row (see [An animatic clip made a shot](#the-master-edit)). A
+  published edit, which cannot change, offers of these only the two Go to
+  rows. Each change is one step of undo. There is no mute or disable row:
+  a clip has no such switch in the edit. (Up to 1.120.3 only a shot's clip
+  had a right-click menu: on any other clip it opened empty.)
 - Drag a clip to move it, onto another track of its kind too. With Alt held
   it slips: the clip stays and the frames in it move. A moved clip
   **snaps**: when its start or its end comes within 8 pixels of the cut's
   start, the playhead, a marker or an edge of a clip that stays, it lands
   exactly there (the nearest wins; a line shows where). And it always
-  **lands**: where another clip is in the way, it goes beside it, butted
-  against the nearest free place it fits (as near either way, the one
-  nearer where it came from). The clip drawn under the pointer is where it
-  will land, and the tag beside it says *snapped* or *beside the clip
-  there*. Several selected clips dragged along their own tracks move
+  **lands**: dragged along its own track onto other clips, it goes in
+  between them (below); dragged onto another track, or as one of several
+  selected clips, where another clip is in the way it goes beside it,
+  butted against the nearest free place it fits (as near either way, the
+  one nearer where it came from). The clip drawn under the pointer is
+  where it will land, and the tag beside it says *snapped* or *beside the
+  clip there*. Several selected clips dragged along their own tracks move
   together, by one distance, and keep their spacing. A click that does not
   drag never moves a clip. (Up to 1.112.2 a move onto another clip was
   refused, and the clip went back.)
+- A single clip dragged along its own track and let go on other clips is
+  **inserted** among them, to change the order. Past the middle of a clip
+  it goes after that clip, before the middle it goes before it. The clips
+  between where it was and where it goes move over to make room, all by
+  the same distance: as far as it overlaps the clip it now sits beside,
+  never more than its own length, so they only move into the room it left
+  and nothing past its old place moves. Clips that touched swap and still
+  touch, the gaps between the clips that move stay as they were, the track
+  keeps its length, and no other track moves. While you drag, the places
+  the clips that make room will take are outlined, and the tag says so
+  ("+40 · in between, 2 clips make room"). Letting go on free frames (the
+  clip fits there) or onto another track moves the clip as above, as does
+  a drag of one of several selected clips. Only the clips it passes move;
+  to move every clip after a place, push (Ctrl, below). One step of undo. (Up to 1.120.3 a drop between
+  two clips with too little room between them went to the nearest free
+  place instead.)
 - Hold **Ctrl** while dragging a clip's body to **push**: the clip and
   every clip after it on its track move together, so room opens (or
   closes) before it. It stops at the clip before it and at the cut's
@@ -798,6 +857,15 @@ clip being dragged.
   stop the same way. (Up to 1.112.0 a drag past the footage was undone
   whole when you let go, so a trimmed clip dragged out too far snapped back
   to its trimmed length.)
+- A trimmed or rolled edge **snaps** too: when it comes within 8 pixels of
+  the start or end of a clip on another row, the playhead or a marker, it
+  goes exactly there (the nearest wins). The clips on its own row are not
+  snapped to, since they move with the trim. A line shows where it
+  snapped, as for a move, and the tag adds *snapped*. Hold **Ctrl**
+  (**Cmd** on macOS) while you drag the edge to trim freely, without
+  snapping. Where the footage runs out before the snap point, the edge
+  stops at the footage, not snapped (*no more footage*). (Up to 1.120.3
+  only a move snapped.)
 - Drag along a clip's top band to fade it in (left half) or out (right
   half). Where a clip on a higher track fades over one below, the two
   dissolve; over nothing, it fades from or to black.
@@ -1236,6 +1304,12 @@ still offers its range). Nothing is written for slugs, media, planned
 shots, any other edit, or a published version; turn it off and the
 publish offers the ranges as before.
 
+**The cut's sound in a shot's scene.** The TumblePipe shelf's **Load Audio
+from Edit**, in a shot's workfile, mixes the master edit's audio tracks
+(the ones you pick) over the shot's frames and sets the mix as the scene's
+audio, so the animation is timed against the cut's dialogue. See
+[The edit's sound in a shot scene](index.md#the-edits-sound-in-a-shot-scene).
+
 **A new shot from the timeline.** Hold **Alt** and drag along an empty
 stretch of a video track: an amber outline shows the frames, with how many.
 Let go, and **New shot** opens over them: its **Frames** are the frames
@@ -1252,6 +1326,27 @@ above with room. The clip is one step of undo; a shot made stays made
 (retire it from the master's publish or the Entity Editor). A drag without
 Alt is still the box select, and Alt on a clip still slips or rolls it.
 
+**An animatic clip made a shot.** Map the film out as a 2D animatic first
+(media or slugs on a video track), then right-click a clip that is not a
+shot and choose **Convert to Shot…**: the same **New shot** dialog opens
+over that clip's frames. **Create Shot** (or **Plan Shot**) puts the new
+shot's clip in the animatic clip's place, on its track at its frame,
+keeping its fades; one step of undo. The animatic clip is not lost: the
+shot clip keeps it, saved with the edit, and its right-click offers **Swap
+to Original Clip**, which puts the animatic back in the shot clip's span
+(the animatic's right-click then offers **Swap Back to Shot**). The
+animatic follows what is done to the shot clip: split it and each half
+swaps back to its own part of the animatic; trim, roll, slip or move it
+and the animatic is trimmed, rolled, slipped or moved with it. **Join with
+Next Clip** joins two halves whose animatics continue each other, and is
+refused when it would lose one (the other clip has none, or another). A
+publish keeps only what plays, not the clip a clip replaced.
+
+On a project that lists its shots flat (Settings > **Flat shot list (no sequences)**), New
+shot has no **Sequence** field: every new shot goes into the project's
+hidden sequence, offered a name no shot has, and a name any shot already
+has (in any case) is refused.
+
 ## Running it by hand
 
 The editor ships inside the TumblePipe package, as
@@ -1260,6 +1355,7 @@ The editor ships inside the TumblePipe package, as
 ```
 cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>...]
 cinedex [--project <root>] --mcp
+cinedex [--project <root>] --shot-audio entity:/edits/<name>[@vNNNN] --shot <shot uri> --out <wav> [--tracks <name,...>] [--first <frame> --last <frame>]
 cinedex [--ocio <config>] --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]
 ```
 
@@ -1271,6 +1367,26 @@ the project as an untitled edit. The project is `--project`, else
 missing, or the edit does not open, the window says why. `--view` opens the
 edit as [Live view](#live-view) shows a shot, `--at` at that shot frame.
 `--mcp` opens no window: see [Driving it from Claude](#driving-it-from-claude).
+`--shot-audio` opens no window either: it mixes the edit's sound over a
+shot into a WAV, what **Load Audio from Edit** runs (see
+[The edit's sound in a shot scene](index.md#the-edits-sound-in-a-shot-scene)).
+The edit is its newest working version, or with `@vNNNN` that published
+version (an edit never saved has no sound and is refused). `--shot` is the
+shot (`entity:/shots/SQ010/SH020`), which must have one clip in the edit
+(none, or two, is refused). `--tracks` picks the audio tracks by name or
+by place (`A1` is the first audio track; case ignored), comma-separated;
+without it every audio track is mixed, and a word naming no track is
+refused with the tracks the edit has. `--first` and `--last` (together)
+are the shot frames to cover; without them the shot's range with its
+roll, else its clip's frames. The WAV (48 kHz, 16-bit, stereo) starts on
+the first of those frames; its folders are made. It mixes as a farm
+Render Edit does (each clip's level and fades), the audio tracks only,
+never the shots' own playblast sound. It prints a summary as one line of
+JSON: `edit`, `version`, `published`, `shot`, `first`, `last`,
+`edit_first` (the edit frame the first frame lands on), `fps`, `rate`,
+`samples`, `tracks` (the names mixed), `clips` (how many sound in the
+window) and `out`. No option but these and `--project` goes with it (no
+`--ocio`).
 `--frames` opens [the preview window](#the-preview-window) on frames, and
 no edit: given a local farm batch folder (one holding `batch.json`, under
 `batches/` in the local farm's folder), the preview frames its runner

@@ -38,9 +38,10 @@ mod marks;
 pub mod overview;
 pub mod picks;
 mod reach;
+pub mod reorder;
 pub mod sweep;
 pub mod tags;
-pub use landing::{Landing, Moving};
+pub use landing::Moving;
 #[cfg(test)]
 pub use lanes::ROW_MAX;
 pub use lanes::{ROW_MIN, row_height};
@@ -250,8 +251,11 @@ pub struct Tracks<Message> {
     /// The pointer moved while it holds a clip: redraw its outline.
     pub on_drag: fn() -> Message,
     pub on_op: fn(Op<Source>) -> Message,
+    /// A drag let go that is several ops, one undo step: a clip put in
+    /// between clips of its track ([`reorder`]).
+    pub on_ops: fn(Vec<Op<Source>>) -> Message,
     /// A right press on a clip, just before the take menu opens.
-    pub on_menu: fn(ClipRef) -> Message,
+    pub on_menu: fn(ClipRef, usize) -> Message,
     /// The bottom edge of a track's header was dragged: the track, and the
     /// height its row is now.
     pub on_row_height: fn(TrackRef, f32) -> Message,
@@ -414,13 +418,13 @@ impl<Message> Tracks<Message> {
         ((clip.at, clip.duration) == grab.span).then_some(row)
     }
 
-    /// The rectangle a drag in progress would leave its clip in, and how
-    /// far the drag went; None when its clip is no longer held.
-    fn ghost(&self, grab: &Grab, width: f32, cursor_x: f32, cursor_y: f32) -> Option<(Rectangle, Reach, Option<Landing>)> {
+    /// The rectangle a drag in progress would leave its clip in, and where
+    /// the drag leaves things; None when its clip is no longer held.
+    fn ghost(&self, grab: &Grab, width: f32, cursor_x: f32, cursor_y: f32) -> Option<(Rectangle, Dragged)> {
         let held = self.held(grab)?;
         let c = &self.rows[held].clips[grab.clip.index];
-        let (reach, row, landing) = self.dragged(grab, held, cursor_x, cursor_y, width);
-        let dx = reach.dx;
+        let dragged = self.dragged(grab, held, cursor_x, cursor_y, width);
+        let dx = dragged.reach.dx;
         let (mut at, mut end) = (c.at, c.at + c.duration);
         match grab.part() {
             Part::Push => {
@@ -440,8 +444,9 @@ impl<Message> Tracks<Message> {
         }
         // Scrolled out on the left, it is held at the names' column.
         let (x0, x1) = (self.x(at.max(0), width).max(HEADER), self.x(end.max(at.max(0) + 1), width).max(HEADER));
+        let row = dragged.row;
         let ghost = Rectangle { x: x0, y: self.row_top(row) + 1.0, width: (x1 - x0).max(2.0), height: self.rows[row].height - 2.0 };
-        Some((ghost, reach, landing))
+        Some((ghost, dragged))
     }
 
     /// The row a body drag of `grab` (held on row `held`) lands on with
@@ -451,12 +456,20 @@ impl<Message> Tracks<Message> {
         self.row_at(cursor_y).filter(|&r| self.rows[r].track.kind == grab.clip.track.kind).unwrap_or(held)
     }
 
+    /// How many frames [`landing::SNAP_PIXELS`] is at this zoom.
+    fn snap_reach(&self, width: f32) -> EditFrame {
+        let pixels_a_frame = (width - HEADER).max(1.0) / self.total.max(1) as f32;
+        (landing::SNAP_PIXELS / pixels_a_frame).round() as EditFrame
+    }
+
     /// Where a body drag of `grab` by `dx` frames onto row `target` lands
     /// ([`landing`]): snapped to the cut's start, the playhead, the
     /// markers and the other clips' ends, then fitted among the clips that
     /// stay. Let go on its own row, a selected clip takes the rest of the
-    /// selection with it.
-    fn landing(&self, grab: &Grab, held: usize, target: usize, dx: EditFrame, width: f32) -> Landing {
+    /// selection with it. A clip dragged alone along its own row onto
+    /// other clips goes in between them, those it passed making room
+    /// ([`reorder`]).
+    fn landing(&self, grab: &Grab, held: usize, target: usize, dx: EditFrame, width: f32) -> Dragged {
         let dragged = &self.rows[held].clips[grab.clip.index];
         let together = target == held && dragged.selected && self.rows.iter().flat_map(|r| &r.clips).filter(|c| c.selected).count() > 1;
         let moves = |r: usize, i: usize| (r == held && i == grab.clip.index) || (together && self.rows[r].clips[i].selected);
@@ -476,50 +489,90 @@ impl<Message> Tracks<Message> {
         let mut points: Vec<EditFrame> = vec![0, self.playhead as EditFrame];
         points.extend(&self.markers);
         points.extend(staying.iter().flatten().flat_map(|&(at, end)| [at, end]));
-        let pixels_a_frame = (width - HEADER).max(1.0) / self.total.max(1) as f32;
         // A clip not dragged along (a click, or a drag straight up to
         // another row) snaps to nothing: a click never moves a clip.
-        let reach = if dx == 0 { 0 } else { (landing::SNAP_PIXELS / pixels_a_frame).round() as EditFrame };
-        landing::land(&moving, &staying, &points, reach, dx)
+        let reach = if dx == 0 { 0 } else { self.snap_reach(width) };
+        if target == held && !together {
+            let (asked, point) = landing::snapped(moving[0], &points, reach, dx);
+            if !landing::fits(&moving, &staying, asked)
+                && let Some(placed) = reorder::reorder(&self.row_spans()[held], grab.clip.index, dragged.at + asked)
+            {
+                let delta = placed[grab.clip.index] - dragged.at;
+                return Dragged {
+                    reach: Reach { dx: delta, stop: None },
+                    row: target,
+                    snapped: point.filter(|_| delta == asked),
+                    bumped: false,
+                    placed: Some(placed),
+                };
+            }
+        }
+        let landed = landing::land(&moving, &staying, &points, reach, dx);
+        Dragged { reach: Reach { dx: landed.delta, stop: None }, row: target, snapped: landed.snapped, bumped: landed.bumped, placed: None }
     }
 
-    /// How far the drag in progress has taken its clip, held on row
-    /// `held`, the row it would land on, and for a body drag where it
-    /// lands.
-    fn dragged(&self, grab: &Grab, held: usize, cursor_x: f32, cursor_y: f32, width: f32) -> (Reach, usize, Option<Landing>) {
-        let reach = self.reach(grab, held, cursor_x, width);
+    /// Where the drag in progress, of the clip held on row `held`, leaves
+    /// things: how far it has taken its clip, the row it would land on,
+    /// and for a body drag where it lands.
+    fn dragged(&self, grab: &Grab, held: usize, cursor_x: f32, cursor_y: f32, width: f32) -> Dragged {
+        let (reach, snapped) = self.reach(grab, held, cursor_x, width);
         if grab.part() != Part::Body {
-            return (reach, held, None);
+            return Dragged { reach, row: held, snapped, bumped: false, placed: None };
         }
         let target = self.target_row(grab, held, cursor_y);
-        let landing = self.landing(grab, held, target, reach.dx, width);
-        (Reach { dx: landing.delta, stop: None }, target, Some(landing))
+        self.landing(grab, held, target, reach.dx, width)
     }
 
     fn frames_dragged(&self, grab: &Grab, cursor_x: f32, width: f32) -> EditFrame {
         (self.frame_at(cursor_x, width) - self.frame_at(grab.from_x, width)).round() as EditFrame
     }
 
+    /// `dx` for a drag of `grab`'s edge (a trim's or a roll's) on row
+    /// `held`, snapped to the ends of the clips of the other rows, the
+    /// playhead and the markers within [`landing::SNAP_PIXELS`]; and the
+    /// point it snapped to. With Ctrl (Cmd) held the edge goes free; any
+    /// other part goes as dragged.
+    fn edge_snap(&self, grab: &Grab, held: usize, dx: EditFrame, width: f32) -> (EditFrame, Option<EditFrame>) {
+        let c = &self.rows[held].clips[grab.clip.index];
+        let edge = match grab.part() {
+            Part::Head | Part::RollHead => c.at,
+            Part::Tail | Part::RollTail => c.at + c.duration,
+            _ => return (dx, None),
+        };
+        if grab.push || dx == 0 {
+            return (dx, None);
+        }
+        let mut points: Vec<EditFrame> = vec![self.playhead as EditFrame];
+        points.extend(&self.markers);
+        let others = self.rows.iter().enumerate().filter(|(r, row)| *r != held && !row.spare).flat_map(|(_, row)| &row.clips);
+        points.extend(others.flat_map(|o| [o.at, o.at + o.duration]));
+        landing::snapped_edge(edge, &points, self.snap_reach(width), dx)
+    }
+
     /// How far the drag in progress has taken its clip, on row `held`
-    /// ([`Self::held`]): the pointer's frames, held where the footage ends
-    /// ([`reach`]).
-    fn reach(&self, grab: &Grab, held: usize, cursor_x: f32, width: f32) -> Reach {
+    /// ([`Self::held`]): the pointer's frames, an edge snapped
+    /// ([`Self::edge_snap`]), held where the footage ends ([`reach`]); and
+    /// the point the edge snapped to, unless the footage held it short.
+    fn reach(&self, grab: &Grab, held: usize, cursor_x: f32, width: f32) -> (Reach, Option<EditFrame>) {
         let row = &self.rows[held];
-        drag_op(grab.part(), row.track, &row.clips, grab.clip.index, self.frames_dragged(grab, cursor_x, width), None).1
+        let (dx, snapped) = self.edge_snap(grab, held, self.frames_dragged(grab, cursor_x, width), width);
+        let reach = drag_op(grab.part(), row.track, &row.clips, grab.clip.index, dx, None).1;
+        (reach, snapped.filter(|_| reach.dx == dx))
     }
 
     /// The words under a drag's outline: how far it went and what moves
     /// with it ([`tags`]).
-    fn drag_words(&self, grab: &Grab, held: usize, reach: Reach, landing: Option<Landing>) -> String {
+    fn drag_words(&self, grab: &Grab, held: usize, dragged: &Dragged) -> String {
         let row = &self.rows[held];
         let c = &row.clips[grab.clip.index];
         let after = row.clips.len() - grab.clip.index - 1;
-        let dx = reach.dx;
+        let Reach { dx, stop } = dragged.reach;
+        let snapped = if dragged.snapped.is_some() { " \u{b7} snapped" } else { "" };
         match grab.part() {
             Part::Slip => format!("slip {:+}", -dx),
             Part::FadeIn => format!("fade {dx:+}"),
             Part::FadeOut => format!("fade {:+}", -dx),
-            Part::Push => tags::push_words(dx, after, reach.stop == Some(Stop::Clip)),
+            Part::Push => tags::push_words(dx, after, stop == Some(Stop::Clip)),
             part @ (Part::Head | Part::Tail) => {
                 let out = tags::taken_out(part == Part::Head, c.at, c.at + c.duration, dx);
                 let staying: Vec<&str> = self
@@ -533,16 +586,59 @@ impl<Message> Tracks<Message> {
                     })
                     .map(|(_, other)| other.name.as_str())
                     .collect();
-                tags::trim_words(dx, after, &staying)
+                format!("{}{snapped}", tags::trim_words(dx, after, &staying))
             }
-            Part::Body => match landing {
-                Some(Landing { bumped: true, .. }) => format!("{dx:+} \u{b7} beside the clip there"),
-                Some(Landing { snapped: Some(_), .. }) => format!("{dx:+} \u{b7} snapped"),
-                _ => format!("{dx:+}"),
+            Part::Body => match &dragged.placed {
+                Some(placed) => {
+                    let making_room =
+                        placed.iter().zip(&row.clips).enumerate().filter(|(i, (p, o))| *i != grab.clip.index && **p != o.at).count();
+                    match making_room {
+                        0 => format!("{dx:+}{snapped}"),
+                        1 => format!("{dx:+} \u{b7} in between, 1 clip makes room{snapped}"),
+                        n => format!("{dx:+} \u{b7} in between, {n} clips make room{snapped}"),
+                    }
+                }
+                None if dragged.bumped => format!("{dx:+} \u{b7} beside the clip there"),
+                None => format!("{dx:+}{snapped}"),
             },
-            Part::RollHead | Part::RollTail => format!("{dx:+}"),
+            Part::RollHead | Part::RollTail => format!("{dx:+}{snapped}"),
         }
     }
+
+    /// What letting go of `grab`, held on row `held`, with the pointer at
+    /// local `(x, y)` sends: the op of the drag, or a body drag in between
+    /// clips of its row as the moves that make it ([`reorder`]).
+    fn let_go(&self, grab: &Grab, held: usize, x: f32, y: f32, width: f32) -> Option<Message> {
+        let row = &self.rows[held];
+        if grab.part() != Part::Body {
+            let (reach, _) = self.reach(grab, held, x, width);
+            return drag_op(grab.part(), row.track, &row.clips, grab.clip.index, reach.dx, None).0.map(self.on_op);
+        }
+        // A move lands where there is room for it ([`landing`]).
+        let target = self.target_row(grab, held, y);
+        let dragged = self.landing(grab, held, target, self.frames_dragged(grab, x, width), width);
+        if let Some(placed) = dragged.placed {
+            let ops = reorder::rearrange_ops(row.track, &self.row_spans()[held], &placed);
+            return (!ops.is_empty()).then(|| (self.on_ops)(ops));
+        }
+        op_for(Part::Body, grab.clip, &row.clips[grab.clip.index], dragged.reach.dx, Some(self.rows[target].track)).map(self.on_op)
+    }
+}
+
+/// Where a drag in progress leaves things.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Dragged {
+    /// How far the clip (or its edge) goes, and what held it short.
+    reach: Reach,
+    /// The row it lands on.
+    row: usize,
+    /// The point it snapped to.
+    snapped: Option<EditFrame>,
+    /// A body drag's place was taken: it landed beside it.
+    bumped: bool,
+    /// A body drag in between clips of its row ([`reorder`]): where every
+    /// clip of the row starts once it is let go.
+    placed: Option<Vec<EditFrame>>,
 }
 
 /// A press held on a clip.
@@ -557,7 +653,8 @@ pub struct Grab {
     cut: u64,
     part: Part,
     from_x: f32,
-    /// Ctrl (Cmd on macOS) is held now: a body drag pushes what follows.
+    /// Ctrl (Cmd on macOS) is held now: a body drag pushes what follows,
+    /// and a dragged edge goes free of the snap points.
     push: bool,
 }
 
@@ -637,10 +734,20 @@ enum Over {
 }
 
 fn outline(p: &mut impl Paint, r: Rectangle, thick: f32, color: Color) {
-    p.rect(Point::new(r.x, r.y), Size::new(r.width, thick), color);
-    p.rect(Point::new(r.x, r.y + r.height - thick), Size::new(r.width, thick), color);
-    p.rect(Point::new(r.x, r.y), Size::new(thick, r.height), color);
-    p.rect(Point::new(r.x + r.width - thick, r.y), Size::new(thick, r.height), color);
+    for side in sides(r, thick) {
+        p.rect(Point::new(side.x, side.y), Size::new(side.width, side.height), color);
+    }
+}
+
+/// The four sides of `r`, `thick` pixels wide, inside it: top, bottom,
+/// left, right.
+fn sides(r: Rectangle, thick: f32) -> [Rectangle; 4] {
+    [
+        Rectangle { height: thick, ..r },
+        Rectangle { y: r.y + r.height - thick, height: thick, ..r },
+        Rectangle { width: thick, ..r },
+        Rectangle { x: r.x + r.width - thick, width: thick, ..r },
+    ]
 }
 
 /// One level of [`Nodes`]: its quads, images and words, and its geometry.
@@ -918,6 +1025,16 @@ impl<Message> Tracks<Message> {
                 if c.missing {
                     p.hatch(rect, look::hatch());
                 }
+                // Its edges, over the hatching: where it starts and ends
+                // reads against a clip touching it, rendered or not.
+                // An end scrolled out of sight has no edge: it does not end
+                // there.
+                let edge = if c.missing { look::missing_edge() } else { look::clip_edge() };
+                let [top_side, bottom, left, right] = sides(rect, 1.0);
+                let ends = [(self.x(c.at, w) >= HEADER, left), (self.x(c.at + c.duration, w) <= w, right)];
+                over.extend(
+                    [top_side, bottom].into_iter().chain(ends.into_iter().filter(|e| e.0).map(|e| e.1)).map(|side| Over::Rect(side, edge)),
+                );
                 if row.track.kind == TrackKind::Audio {
                     self.paint_wave(p, c, rect, w);
                 }
@@ -1054,14 +1171,29 @@ impl<Message> Tracks<Message> {
         }
 
         if let Some(grab) = &state.grab
-            && let Some((ghost, Reach { dx, stop }, landing)) = self.ghost(grab, w, state.at.0, state.at.1)
+            && let Some((ghost, dragged)) = self.ghost(grab, w, state.at.0, state.at.1)
         {
+            let Reach { dx, stop } = dragged.reach;
             outline(p, ghost, 2.0, look::now());
-            if let Some(point) = landing.and_then(|l| l.snapped).filter(|&point| self.x(point, w) >= HEADER) {
+            if let Some(point) = dragged.snapped.filter(|&point| (HEADER..=w).contains(&self.x(point, w))) {
                 // The line it snapped to, down every row.
                 p.rect(Point::new(self.x(point, w) - 0.5, RULER), Size::new(1.0, h - RULER), look::now());
             }
-            let mut words = self.held(grab).map(|held| self.drag_words(grab, held, Reach { dx, stop }, landing)).unwrap_or_default();
+            if let (Some(placed), Some(held)) = (&dragged.placed, self.held(grab)) {
+                // Put in between clips: where the clips making room go.
+                let top = self.row_top(held);
+                let row = &self.rows[held];
+                for (i, (c, &to)) in row.clips.iter().zip(placed).enumerate() {
+                    let (x0, x1) = (self.x(to, w), self.x(to + c.duration, w));
+                    if i != grab.clip.index
+                        && to != c.at
+                        && let Some((x0, x1)) = Self::seen(x0, (x1 - 1.0).max(x0 + 1.0), w)
+                    {
+                        outline(p, Rectangle { x: x0, y: top + 1.0, width: x1 - x0, height: row.height - 3.0 }, 1.0, look::now());
+                    }
+                }
+            }
+            let mut words = self.held(grab).map(|held| self.drag_words(grab, held, &dragged)).unwrap_or_default();
             let mut colour = look::now();
             if stop == Some(Stop::Footage) {
                 // The edge is at the end of its source's frames: a bar on
@@ -1268,7 +1400,10 @@ impl<Message> Tracks<Message> {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) if !self.editable => (Status::Ignored, None),
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => match cursor.position_relative_to(bounds) {
                 Some(local) => match self.hit(local.x, local.y, w, false) {
-                    Some((row, index, _)) => (Status::Ignored, Some((self.on_menu)(ClipRef { track: self.rows[row].track, index }))),
+                    Some((row, index, _)) => (
+                        Status::Ignored,
+                        Some((self.on_menu)(ClipRef { track: self.rows[row].track, index }, self.position_at(local.x, w))),
+                    ),
                     // Not taken: the menu around the tracks opens on it.
                     None => {
                         let (frame, track) =
@@ -1330,17 +1465,7 @@ impl<Message> Tracks<Message> {
                 // The cut changed under the pointer: the drag is dropped.
                 let Some(held) = self.held(&grab) else { return (Status::Captured, None) };
                 let local = cursor.position_relative_to(bounds).map_or(state.at, |p| (p.x, p.y));
-                let dx = self.frames_dragged(&grab, local.0, w);
-                let row = &self.rows[held];
-                let op = if grab.part() == Part::Body {
-                    // A move lands where there is room for it ([`landing`]).
-                    let target = self.target_row(&grab, held, local.1);
-                    let landing = self.landing(&grab, held, target, dx, w);
-                    op_for(Part::Body, grab.clip, &row.clips[grab.clip.index], landing.delta, Some(self.rows[target].track))
-                } else {
-                    drag_op(grab.part(), row.track, &row.clips, grab.clip.index, dx, None).0
-                };
-                (Status::Captured, op.map(self.on_op))
+                (Status::Captured, self.let_go(&grab, held, local.0, local.1, w))
             }
             _ => (Status::Ignored, None),
         }
@@ -1635,7 +1760,8 @@ mod tests {
             on_select: |_, _, _| (),
             on_drag: || (),
             on_op: |_| (),
-            on_menu: |_| (),
+            on_ops: |_| (),
+            on_menu: |_, _| (),
             on_row_height: |_, _| (),
             on_solo: |_| (),
             on_context: |_, _| (),
@@ -1707,7 +1833,8 @@ mod tests {
         Select(Option<ClipRef>, bool, usize),
         Drag,
         Op(Op<Source>),
-        Menu(ClipRef),
+        Ops(Vec<Op<Source>>),
+        Menu(ClipRef, usize),
         RowHeight(TrackRef, f32),
         Solo(TrackRef),
         Context(Option<usize>, Option<TrackRef>),
@@ -1730,6 +1857,7 @@ mod tests {
             on_select: Sent::Select,
             on_drag: || Sent::Drag,
             on_op: Sent::Op,
+            on_ops: Sent::Ops,
             on_menu: Sent::Menu,
             on_row_height: Sent::RowHeight,
             on_solo: Sent::Solo,
@@ -1868,7 +1996,7 @@ mod tests {
             let track = (!rows[r].spare).then_some(rows[r].track);
             match clip_over(&rows[r], frame) {
                 Some(clip) => {
-                    prop_assert_eq!(press(RIGHT, x, y), Some(Sent::Menu(clip)));
+                    prop_assert_eq!(press(RIGHT, x, y), Some(Sent::Menu(clip, at)));
                     prop_assert_eq!(press(LEFT, x, y), Some(Sent::Select(Some(clip), false, at)));
                 }
                 None => {
@@ -1969,7 +2097,7 @@ mod tests {
             let track = (!rows[r].spare).then_some(rows[r].track);
             match clip_over(&rows[r], frame) {
                 Some(clip) => {
-                    prop_assert_eq!(press(RIGHT, x, y), Some(Sent::Menu(clip)));
+                    prop_assert_eq!(press(RIGHT, x, y), Some(Sent::Menu(clip, frame as usize)));
                     prop_assert_eq!(press(LEFT, x, y), Some(Sent::Select(Some(clip), false, frame as usize)));
                 }
                 None => prop_assert_eq!(press(RIGHT, x, y), Some(Sent::Context(Some(frame as usize), track))),
@@ -2061,6 +2189,20 @@ mod tests {
             }
             if dx == 0 && onto == r {
                 prop_assert_eq!(&sent, &None, "a click moved a clip");
+            }
+            // Alone along its own row onto other clips: it goes in between
+            // them, the clips it passed making room ([`reorder`]).
+            let (asked, _) = landing::snapped(moving[0], &points, reach, dx);
+            let spans: Vec<(EditFrame, EditFrame)> = rows[r].clips.iter().map(|c| (c.at, c.at + c.duration)).collect();
+            // (Asked before frame 0 and free from there: not a reorder.)
+            if onto == r
+                && !together
+                && !landing::fits(&moving, &staying, asked)
+                && let Some(placed) = reorder::reorder(&spans, index, c.at + asked)
+            {
+                let ops = reorder::rearrange_ops(clip.track, &spans, &placed);
+                prop_assert_eq!(sent, (!ops.is_empty()).then_some(Sent::Ops(ops)));
+                return Ok(());
             }
             let landed = landing::land(&moving, &staying, &points, reach, dx);
             let (at, end) = (c.at + landed.delta, c.at + c.duration + landed.delta);
@@ -2161,10 +2303,56 @@ mod tests {
                     };
                     prop_assert_eq!(named, clip);
                 }
+                // A clip put in between clips of its row: moves of that
+                // row's clips, the held one among them.
+                Some(Sent::Ops(ops)) => {
+                    prop_assert!(still, "the held clip is gone, yet the drag made {:?}", ops);
+                    prop_assert!(ops.iter().all(|op| matches!(op, Op::Move { clip: moved, to, .. } if moved.track == clip.track && *to == clip.track)), "{:?}", ops);
+                }
                 Some(other) => return Err(TestCaseError::fail(format!("a release sent {other:?}"))),
             }
             // Either way the clip is let go: the next move drags nothing.
             prop_assert_eq!(stage.send(&tracks, &mut state, mouse::Event::CursorMoved { position: over }, over, now), None);
+        }
+
+        /// A clip's edge dragged near the end of a clip on another track
+        /// goes onto it, by the head or the tail, and the line it snapped
+        /// to is drawn; with Ctrl (Cmd) held it goes exactly as far as the
+        /// pointer.
+        #[test]
+        fn an_edge_snaps_to_a_clip_on_another_track_unless_ctrl_is_held(
+            stage in stage(), target in 45i64..90, off in -8i64..=8, tail in any::<bool>(), ctrl in any::<bool>(),
+        ) {
+            // V2 over V1: the clip dragged is 10 to 40 on V2, the clip on
+            // V1 ends at `target`. Nothing else is near: the playhead is
+            // at 0.
+            let reach = (landing::SNAP_PIXELS / stage.px).round() as EditFrame;
+            let off = off.clamp(-reach, reach);
+            let (edge, x) = if tail { (40, HEADER + stage.px * 40.0 - 1.0) } else { (10, HEADER + stage.px * 10.0 + 0.5) };
+            // A head goes onto an end at 13 to 37: inside the clip, and far
+            // from frame 0.
+            let target = if tail { target } else { 13 + (target - 45) % 25 };
+            let rows = vec![row_of(TrackRef::video(1), &vec![(10, 30)], 46), row_of(TrackRef::video(0), &vec![(0, target)], 46)];
+            let tracks = sending(rows.clone(), false);
+            let dx = target - edge + off;
+            let now = std::time::Instant::now();
+            let mut state = Pointer::default();
+            let y = stage.y(&rows, 0, 0.5);
+            stage.send(&tracks, &mut state, LEFT, stage.point(x, y), now);
+            if ctrl {
+                let held = Event::Keyboard(keyboard::Event::ModifiersChanged(keyboard::Modifiers::COMMAND));
+                tracks.update(&mut state, &held, stage.bounds(&tracks), Cursor::Unavailable, now);
+            }
+            let over = stage.point(x + stage.px * dx as f32, y);
+            stage.send(&tracks, &mut state, mouse::Event::CursorMoved { position: over }, over, now);
+            let width = HEADER + stage.px * TOTAL as f32;
+            let (_, dragged) = tracks.ghost(state.grab.as_ref().expect("held"), width, over.x - stage.origin.0, over.y - stage.origin.1).expect("a ghost");
+            let sent = stage.send(&tracks, &mut state, UP, over, now);
+            let delta = if ctrl { dx } else { target - edge };
+            let clip = ClipRef { track: TrackRef::video(1), index: 0 };
+            let expected = (delta != 0).then_some(Sent::Op(Op::Trim { clip, edge: if tail { Edge::Tail } else { Edge::Head }, delta }));
+            prop_assert_eq!(sent, expected);
+            prop_assert_eq!(dragged.snapped, (!ctrl).then_some(target));
         }
     }
 

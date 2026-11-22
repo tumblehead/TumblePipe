@@ -106,7 +106,7 @@ proptest! {
             return Ok(());
         };
         prop_assert!(now, "a sweep's shot is made now unless unticked");
-        prop_assert_eq!(place, Some(Place { track: track.index, at, frames: end - at }));
+        prop_assert_eq!(place, Some(Place { track: track.index, at, frames: end - at, replaces: false }));
         prop_assert_eq!(frames, (end - at).to_string());
         prop_assert_eq!(name.text, "SH010");
         if plan {
@@ -176,7 +176,7 @@ fn create_shot_makes_the_shot_with_the_swept_frames() {
     let v1 = editor.rows().iter().position(|r| !r.spare).unwrap();
     sweep(&mut hand, &mut editor, v1, 50, 73);
     let Some(Dialog::NewShot { place, name, sequence, .. }) = editor.dialog.clone() else { panic!("no New shot: {:?}", editor.dialog) };
-    assert_eq!(place, Some(Place { track: 0, at: 50, frames: 24 }));
+    assert_eq!(place, Some(Place { track: 0, at: 50, frames: 24, replaces: false }));
     assert_eq!((sequence.as_str(), name.text.as_str()), ("S", "SH020"), "the next shot in the project's naming");
     drop(editor.update(Message::Confirm));
     assert_eq!(editor.status.as_ref().filter(|s| s.1), None);
@@ -262,4 +262,52 @@ fn no_sync_off_the_master_or_when_turned_off() {
         })));
         assert_eq!(editor.doc.edit.video[0].clips[0].duration, 42);
     }
+}
+
+/// Remy's Convert to Shot (2026-11-22): on an animatic clip it opens New
+/// shot over the clip's frames, no Placeholder; Create Shot makes the shot
+/// of the clip's length and puts its clip in the animatic's place, keeping
+/// the animatic; the shot clip's Swap puts the animatic back where the
+/// shot clip is, and an undo the shot clip. A shot clip has no Convert,
+/// and a read-only edit neither row.
+#[test]
+fn convert_to_shot_replaces_the_animatic_and_keeps_it() {
+    let mut edit = WorkingEdit::new(24, [1920, 1080], "01:00:00:00");
+    let mut panel = VideoClip::new(48, 30, 0, Source::Slug { text: "panel 2".into() });
+    panel.fade_in = 4;
+    edit.video.push(Track { name: "V1".into(), clips: vec![shot_clip(0, 48, 1001, "SH010"), panel.clone()], color: None });
+    let (_dir, mut editor, root) = on_disk(&edit, &[("SH010", 1001, 1048)], true);
+    let (shot, animatic) = (ClipRef { track: TrackRef::video(0), index: 0 }, ClipRef { track: TrackRef::video(0), index: 1 });
+    let rows = |editor: &Editor, clip| crate::convert_shot::rows(&editor.doc.edit, clip, !editor.doc.read_only());
+    assert!(rows(&editor, shot).is_empty(), "a shot clip has no Convert to Shot");
+    assert_eq!(rows(&editor, animatic).len(), 1);
+    drop(editor.update(Message::ConvertToShot(animatic)));
+    let Some(Dialog::NewShot { place, frames, now, name, .. }) = editor.dialog.clone() else { panic!("no New shot: {:?}", editor.dialog) };
+    assert_eq!(place, Some(Place { track: 0, at: 48, frames: 30, replaces: true }));
+    assert_eq!((frames.as_str(), now, name.text.as_str()), ("30", true, "SH020"));
+    assert_eq!(editor.doc.edit, edit, "opening the dialog changed the cut");
+    drop(editor.update(Message::Alternate));
+    assert_eq!(editor.doc.edit, edit, "no Placeholder in place of a clip");
+    drop(editor.update(Message::Confirm));
+    assert_eq!(editor.status.as_ref().filter(|s| s.1), None);
+    assert_eq!(range_on_disk(&root, "SH020"), Some((1001, 1030)), "a shot of the clip's length");
+    let converted = editor.doc.edit.video[0].clips[1].clone();
+    assert_eq!((converted.at, converted.duration, converted.source_in, converted.fade_in), (48, 30, 1001, 4));
+    assert!(matches!(&converted.source, Source::Shot { shot, .. } if shot == "entity:/shots/S/SH020"));
+    assert_eq!(converted.original.as_deref(), Some(&panel));
+    assert_eq!(editor.doc.edit.video[0].clips.len(), 2, "the animatic replaced, not kept beside");
+    let labels: Vec<String> = rows(&editor, animatic).into_iter().map(|(l, _)| l).collect();
+    assert_eq!(labels, vec!["Swap to Original Clip".to_owned()]);
+    // Swap back: the animatic where the shot clip is, keeping the shot clip.
+    drop(editor.update(Message::SwapOriginal(animatic)));
+    let back = editor.doc.edit.video[0].clips[1].clone();
+    assert_eq!(VideoClip { original: None, ..back.clone() }, panel);
+    assert!(matches!(back.original.as_deref().map(|o| &o.source), Some(Source::Shot { .. })));
+    drop(editor.update(Message::Undo));
+    assert_eq!(editor.doc.edit.video[0].clips[1], converted, "an undo puts the shot clip back");
+    // Read-only: nothing offered.
+    let mut read_only = Bench::new(&edit, true);
+    assert!(crate::convert_shot::rows(&read_only.editor.doc.edit, animatic, !read_only.editor.doc.read_only()).is_empty());
+    drop(read_only.editor.update(Message::ConvertToShot(animatic)));
+    assert!(read_only.editor.dialog.is_none());
 }

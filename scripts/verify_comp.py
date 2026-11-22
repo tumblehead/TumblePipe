@@ -197,7 +197,8 @@ def stage_shot(shot_uri):
     chars = {'beauty': CHARS_BEAUTY, 'objid_hero': (1.0,), 'depth': (5.0, 5.0, 5.0)}
     for group, share in CHARS_GROUPS.items():
         chars[group] = tuple(c * share for c in CHARS_BEAUTY[:3])
-    chars['velocity'] = (0.0, 0.0, 0.0)   # not a comp AOV: must stay out
+    # An extra (Antoine, 2026-11-22): a 2.0 reads it on extra, a 1.0 not at all.
+    chars['velocity'] = (0.0, 0.0, 0.0)
     stage(shot_uri, 'render', 'chars', 'v0001', True, chars)
 
 
@@ -276,21 +277,21 @@ def check_single(template, shot_uri, label):
     check(f'{label}: chars resolves to render v0001 (no denoise)',
           imports['chars'].get_resolved() == ('render', 'v0001'),
           imports['chars'].parm('version_label').eval())
-    check(f'{label}: the chars cables carry exactly the comp AOVs, no beauty',
-          imports['chars'].get_fields() == ['beauty_key', 'beauty_rim', 'depth', 'objid_hero'],
+    check(f'{label}: the chars cables carry every AOV, an extra too, no beauty',
+          imports['chars'].get_fields() == ['beauty_key', 'beauty_rim', 'depth', 'objid_hero', 'velocity'],
           str(imports['chars'].get_fields()))
     want_labels = ['beauty', 'lpe', 'aov', 'matte', 'cryptomaterials', 'cryptoprimitives',
-                   'layers', 'geometry', 'camera']
+                   'layers', 'geometry', 'camera', 'extra']
     check(f'{label}: the template makes 2.0 imports',
           all(n.native().type().name() == 'th::import_render::2.0' for n in imports.values()),
           str([n.native().type().name() for n in imports.values()]))
-    check(f'{label}: the outputs are beauty, lpe, aov, matte, the cryptomattes, layers, geometry, camera',
+    check(f'{label}: the outputs are beauty, lpe, aov, matte, the cryptomattes, layers, geometry, camera, extra',
           list(imports['chars'].native().outputLabels()) == want_labels,
           str(imports['chars'].native().outputLabels()))
     want_cables = {comp.LPES: ['beauty_key', 'beauty_rim'], comp.MATTES: ['objid_hero'],
-                   comp.AOVS: ['depth']}
+                   comp.AOVS: ['depth'], comp.EXTRAS: ['velocity']}
     got_cables = {cable: pack_fields(imports['chars'], cable) for cable in want_cables}
-    check(f'{label}: light groups ride lpe, the matte matte, depth aov',
+    check(f'{label}: light groups ride lpe, the matte matte, depth aov, velocity extra',
           got_cables == want_cables, str(got_cables))
     beauties = imports['chars'].native().node(
         f'{import_render.DIVE}/{import_render.BEAUTIES_PACK}')
@@ -489,7 +490,7 @@ def check_channel_switch(shot_uri, label):
     copy.set_channel_name('chars')
     copy.execute()
     check(f'{label}: the copy switched to chars reads chars (same render v0001)',
-          copy.get_fields() == ['beauty_key', 'beauty_rim', 'depth', 'objid_hero'],
+          copy.get_fields() == ['beauty_key', 'beauty_rim', 'depth', 'objid_hero', 'velocity'],
           str(copy.get_fields()))
     close(f'{label}: the copy outputs the chars beauty', render_average(copy.native(), 0), CHARS_BEAUTY)
     copy.native().destroy()
@@ -812,7 +813,7 @@ def check_all_channels(shot_uri, label):
     want_unpacks = {
         import_render.LPE: (['chars_beauty_key', 'chars_beauty_rim'], ['RGB', 'RGB']),
         import_render.MATTE: (['chars_objid_hero'], ['Mono']),
-        import_render.AOV: (['chars_depth'], ['RGB']),
+        import_render.AOV: (['chars_depth'], ['Mono']),
     }
     for name, (fields, types) in want_unpacks.items():
         unpack = node.find_unpack(name)

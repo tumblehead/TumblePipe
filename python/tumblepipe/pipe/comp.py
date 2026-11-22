@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence
 
 from tumblepipe import naming
-from tumblepipe.pipe.aovs import is_cryptomatte_aov, is_matte_aov, is_ramp_aov
+from tumblepipe.pipe.aovs import is_cryptomatte_aov, is_data_aov, is_matte_aov, is_ramp_aov
 
 # The render department a comp writes, and the cross-channel layer of a
 # render department's version (the render chain's slapcomp; the composite
@@ -56,49 +56,82 @@ class CompError(Exception):
 
 
 class NotRendered(CompError):
-    """A channel has no complete render in the departments asked (yet): an
-    all-channels import leaves such a channel out instead of failing."""
+    """A channel has no render a comp can read in the departments asked
+    (yet), neither complete nor a check render: an all-channels import
+    leaves such a channel out instead of failing."""
 
 
 ###############################################################################
 # AOVs
 ###############################################################################
+# The LPE splits of the beauty a comp reads beside its light groups, on
+# import_render's lpe output (Antoine, 2026-11-22): key and dome light by
+# lobe, and direct and indirect by lobe. A light mix's rows stay the light
+# groups alone (:func:`light_groups`).
+LPE_AOV_NAMES = (
+    'diffuse_key', 'specular_key', 'diffuse_dome', 'specular_dome',
+    'diffuse_direct', 'specular_direct', 'diffuse_indirect', 'specular_indirect',
+)
+# The geometry and camera data a comp reads on the aov output.
+DATA_AOV_NAMES = ('albedo', 'normal', 'depth', 'uv', 'position')
+# Never read: the comp's alpha is the beauty's, and a variance pass
+# (``<aov>_mse``) is the denoiser's input, not a picture.
+SKIPPED_AOV_NAMES = ('alpha',)
+VARIANCE_SUFFIX = '_mse'
+
+
 def aov_included(aov_name: str) -> bool:
-    """Whether a comp reads an AOV at all (it rides import_render's cable)."""
+    """Whether a comp reads an AOV at all (it rides one of import_render's
+    cables, :func:`aov_cable`): every AOV but an ``alpha`` and the variance
+    passes. An AOV the comp has no cable of its own for is an *extra*
+    (transmission, sss, emission, shadow, ...)."""
     name = aov_name.lower()
-    if name.startswith(LIGHT_GROUP_PREFIX): return True
-    if name.startswith('objid_'): return True
-    if name.startswith('holdout_'): return True
-    if is_ramp_aov(name): return True
-    if is_cryptomatte_aov(name): return True
-    return name in (BEAUTY, 'albedo', 'normal', 'depth', 'uv', 'position')
+    if name in SKIPPED_AOV_NAMES: return False
+    if name.endswith(VARIANCE_SUFFIX): return False
+    return True
+
+
+def is_lpe_aov(aov_name: str) -> bool:
+    """Whether an AOV rides import_render's lpe output: a light group
+    (``beauty_<tag>``) or one of :data:`LPE_AOV_NAMES`."""
+    name = aov_name.lower()
+    if name.startswith(LIGHT_GROUP_PREFIX) and len(name) > len(LIGHT_GROUP_PREFIX):
+        return True
+    return name in LPE_AOV_NAMES
 
 
 def aov_signature(aov_name: str) -> str:
     """The COP data type an AOV is read as (a File COP's ``type#`` token).
 
-    The beauty is RGBA (its A is the channel's alpha); light groups, albedo,
-    normals, depth and position RGB; uv a vector2; mattes, holdouts and
-    ramps one channel; a cryptomatte's rank planes RGBA (two id/coverage
-    pairs each, see :func:`expand_cryptomattes`).
+    The beauty is RGBA (its A is the channel's alpha); the LPEs, albedo,
+    normals and position RGB; depth one channel (Mono: Antoine, 2026-11-22;
+    a denoised depth is three equal channels, so Mono reads the same
+    value); uv a vector2; mattes, holdouts and ramps one channel; a
+    cryptomatte's rank planes RGBA (two id/coverage pairs each, see
+    :func:`expand_cryptomattes`); any other AOV (an extra) RGB.
     """
     name = aov_name.lower()
+    if not aov_included(name):
+        raise ValueError(f'the comp reads no AOV named {aov_name!r}')
     if name == BEAUTY: return 'vector4'
     if is_cryptomatte_aov(name): return 'vector4'
-    if name.startswith(LIGHT_GROUP_PREFIX): return 'vector'
+    if is_lpe_aov(name): return 'vector'
     if name.startswith('objid_'): return 'float'
     if name.startswith('holdout_'): return 'float'
     if is_ramp_aov(name): return 'float'
-    if name in ('albedo', 'normal', 'depth', 'position'): return 'vector'
+    if name == 'depth': return 'float'
     if name == 'uv': return 'vector2'
-    raise ValueError(f'the comp reads no AOV named {aov_name!r}')
+    return 'vector'
 
 
 def is_colour_aov(aov_name: str) -> bool:
-    """Whether an AOV is colour (the beauty and its light groups), read in
-    the scene's colour space; everything else is data, read raw."""
+    """Whether an AOV is colour, read in the scene's colour space: the
+    beauty, the LPEs (:func:`is_lpe_aov`) and the extras ``pipe.aovs``
+    names colour (emission, transmission, sss, shadow, ...). Everything
+    else is data, read raw (albedo too, as ever)."""
     name = aov_name.lower()
-    return name == BEAUTY or name.startswith(LIGHT_GROUP_PREFIX)
+    if name == BEAUTY or is_lpe_aov(name): return True
+    return aov_cable(name) == EXTRAS and not is_data_aov(name)
 
 
 @dataclass(frozen=True)
@@ -228,23 +261,31 @@ AOVS = 'aovs'
 CRYPTOMATERIALS = 'cryptomaterials'
 CRYPTOPRIMITIVES = 'cryptoprimitives'
 CRYPTO_CABLES = (CRYPTOMATERIALS, CRYPTOPRIMITIVES)
-AOV_CABLES = (LPES, MATTES, AOVS) + CRYPTO_CABLES
+# Every AOV no other cable takes (Antoine, 2026-11-22): 2.0's extra output,
+# its last (appended, so a wire on the others stays put). A 1.0 node has no
+# such output and reads none of them (:func:`dive_plan`'s ``extras``).
+EXTRAS = 'extras'
+AOV_CABLES = (LPES, MATTES, AOVS) + CRYPTO_CABLES + (EXTRAS,)
 
 
 def aov_cable(aov_name: str) -> str:
     """Which of import_render's cables an AOV it reads rides.
 
     ``lpes``: a light group, ``beauty_<tag>`` (th::lpe_tags names an LPE
-    tag's AOV so; what :func:`light_groups` finds and a light mix grades).
+    tag's AOV so; what :func:`light_groups` finds and a light mix grades),
+    and the LPE splits :data:`LPE_AOV_NAMES` (``diffuse_key``,
+    ``specular_dome``, ``diffuse_direct``, ...).
     ``cryptomaterials`` / ``cryptoprimitives``: the rank planes of that
     cryptomatte (``cryptomaterials00``, ``01``, ...). ``mattes``: what
     th::mattes renders (``objid_*`` mattes, ``ramp_*`` distance ramps),
     ``holdout_*`` holdouts and any other cryptomatte's planes. ``aovs``:
-    everything else (albedo, normal, depth, uv, position). The beauty rides
-    none: it is on the channel's output.
+    the geometry and camera data, :data:`DATA_AOV_NAMES` (albedo, normal,
+    depth, uv, position). ``extras``: everything else (transmission, sss,
+    emission, shadow, motion vectors, ...). The beauty rides none: it is on
+    the channel's output. Case never matters.
     """
     name = aov_name.lower()
-    if name.startswith(LIGHT_GROUP_PREFIX) and len(name) > len(LIGHT_GROUP_PREFIX):
+    if is_lpe_aov(name):
         return LPES
     if is_cryptomatte_aov(name):
         var = name.rstrip('0123456789')
@@ -253,7 +294,9 @@ def aov_cable(aov_name: str) -> str:
         return MATTES
     if is_matte_aov(name) or is_ramp_aov(name):
         return MATTES
-    return AOVS
+    if name in DATA_AOV_NAMES:
+        return AOVS
+    return EXTRAS
 
 
 ###############################################################################
@@ -393,8 +436,13 @@ class Resolved:
     version: str
     aovs: dict
     # The version's step when it is a check render (:func:`check_step_of`):
-    # only ever a version picked by hand, never ``latest``.
+    # a version picked by hand, or ``latest`` when no department asked has
+    # a complete version (:func:`resolve_render`).
     check_step: Optional[int] = None
+    # ``latest`` read a complete version, but the department has a newer
+    # check render: ``(version, step)``, which the label names (the
+    # Version menu offers it by hand).
+    newer_check: Optional[tuple[str, int]] = None
 
     @property
     def fields(self) -> list[str]:
@@ -410,7 +458,11 @@ class Resolved:
     def label(self) -> str:
         version = self.version if self.check_step is None else \
             check_version_label(self.version, self.check_step)
-        return f'{self.department} {version}, {len(self.fields)} AOVs'
+        label = f'{self.department} {version}, {len(self.fields)} AOVs'
+        if self.newer_check is not None:
+            newer = check_version_label(*self.newer_check)
+            label += f'; newer check render {newer} not read (pick it in Version)'
+        return label
 
 
 def _complete_versions(render, channel: str) -> list[str]:
@@ -430,13 +482,15 @@ def list_versions(renders: Mapping, department: str, channel: str) -> list[str]:
 
 
 def check_step_of(layer) -> Optional[int]:
-    """The step of ``layer`` when it is a check render a comp can read by
-    hand: not published (Farm Submit's **Step**), and every frame it
-    records on its step on disk. None for anything else.
+    """The step of ``layer`` when it is a check render a comp can read: not
+    published (Farm Submit's **Step**), and every frame it records on its
+    step on disk. None for anything else.
 
-    A check render is never a *complete* version (:func:`list_versions`),
-    so ``latest`` never reads it; an import pinned to it by hand does, and
-    holds each rendered frame over the gaps (``pipe.hold_frames``).
+    A check render is never a *complete* version (:func:`list_versions`).
+    ``latest`` reads one only when there is no complete version to read
+    (:func:`resolve_render`); an import pinned to one by hand reads it too.
+    Either way it holds each rendered frame over the gaps
+    (``pipe.hold_frames``).
     """
     is_published = getattr(layer, 'is_published', None)
     if is_published is None or is_published(): return None
@@ -490,7 +544,8 @@ def check_render_refusal(reads: Iterable[Resolved]) -> Optional[str]:
     )
     return (
         f'reads a check render ({named}); a check render is not comped on '
-        'the farm: pick a published version'
+        'the farm: render the channel in full (Step 1), or pick a '
+        'published version'
     )
 
 
@@ -552,19 +607,46 @@ def layer_newest(department: str, version: str, layer, channel: str) -> Newest:
     return Newest(department, version, submitted, source)
 
 
-def _newest(renders: Mapping, department: str, channel: str) -> Optional[Newest]:
-    versions = list_versions(renders, department, channel)
+def _check_names(renders: Mapping, department: str, channel: str) -> list[str]:
+    """The check renders of ``channel`` a department has, newest first, by
+    name (:func:`list_check_versions`)."""
+    return [version for version, _ in list_check_versions(renders, department, channel)]
+
+
+def _newest(renders: Mapping, department: str, channel: str,
+            versions_of=list_versions) -> Optional[Newest]:
+    versions = versions_of(renders, department, channel)
     if not versions: return None
     layer = renders[department].layers[channel][versions[0]]
     return layer_newest(department, versions[0], layer, channel)
 
 
-def _fresh_candidates(renders: Mapping, candidates: list[str], channel: str) -> list[str]:
+def _fresh_candidates(renders: Mapping, candidates: list[str], channel: str,
+                      versions_of=list_versions) -> list[str]:
     """``candidates`` (highest first) without the departments whose newest
-    version a lower department's supersedes."""
-    newest = [n for n in (_newest(renders, d, channel) for d in candidates) if n]
+    version (of those ``versions_of`` lists) a lower department's
+    supersedes."""
+    newest = [n for n in (_newest(renders, d, channel, versions_of) for d in candidates) if n]
     fresh = set(best_departments(newest))
     return [d for d in candidates if d in fresh or d not in {n.department for n in newest}]
+
+
+def _read(renders: Mapping, channel: str, department: str, version: str,
+          check_step: Optional[int] = None,
+          newer_check: Optional[tuple[str, int]] = None) -> Resolved:
+    """:class:`Resolved` for ``department``'s ``version`` of ``channel``."""
+    layer = renders[department].layers[channel][version]
+    return Resolved(
+        channel = channel,
+        department = department,
+        version = version,
+        aovs = expand_cryptomattes({
+            label: aov for label, aov in layer.aovs.items()
+            if aov_included(label)
+        }),
+        check_step = check_step,
+        newer_check = newer_check,
+    )
 
 
 def resolve_render(
@@ -580,10 +662,22 @@ def resolve_render(
     ``renders`` maps a render department to its ``Render`` (missing when it
     never rendered); ``render_department_names`` is the project's render
     departments in pipeline order. ``department`` is ``best`` (the highest
-    readable department with a complete version) or one readable
-    department; ``version`` is ``latest`` (its newest complete version) or a
-    ``v####`` of it, which must be complete. A pin needs a concrete
-    department, so ``best`` with a pin is refused.
+    readable department with a version to read) or one readable department;
+    ``version`` is ``latest`` or a ``v####`` of it, which must be complete
+    or a check render. A pin needs a concrete department, so ``best`` with
+    a pin is refused.
+
+    ``latest`` is the newest *complete* version, of the highest department
+    that has one (``best``). Only when no department asked has a complete
+    version does it read the newest check render (Farm Submit's **Step**:
+    every Nth frame, whole on its step), its department picked the same
+    way, and the import holds its frames over the gaps (Antoine,
+    2026-11-22: a stepped first render read as nothing at all). A complete
+    render is preferred over a newer check render: a check render is a
+    look, never the shot's comp (a submit refuses it,
+    :func:`check_render_refusal`), so it never takes ``latest`` from a
+    finished render; the label names the newer check render instead
+    (:attr:`Resolved.newer_check`), which the Version menu offers by hand.
     """
     readable = readable_departments(render_department_names)
     if department == BEST:
@@ -600,38 +694,42 @@ def resolve_render(
                 f'({", ".join(readable) or "none"})'
             )
         candidates = [department]
+    if version != LATEST:
+        (candidate,) = candidates
+        if version in list_versions(renders, candidate, channel):
+            return _read(renders, channel, candidate, version)
+        # Picked by hand, a check render is read too (its frames held over
+        # its gaps).
+        check_step = dict(list_check_versions(renders, candidate, channel)).get(version)
+        if check_step is None:
+            raise CompError(
+                f'{candidate} {version} of channel "{channel}" is not a '
+                'complete render'
+            )
+        return _read(renders, channel, candidate, version, check_step)
+    complete, checks = candidates, candidates
     if department == BEST:
-        candidates = _fresh_candidates(renders, candidates, channel)
-    for candidate in candidates:
+        complete = _fresh_candidates(renders, candidates, channel)
+        checks = _fresh_candidates(renders, candidates, channel, _check_names)
+    for candidate in complete:
         versions = list_versions(renders, candidate, channel)
-        check_step = None
-        if version == LATEST:
-            if not versions: continue
-            version_name = versions[0]
-        else:
-            if version not in versions:
-                # Picked by hand, a check render is read too (its frames
-                # held over its gaps); latest never is.
-                check_step = dict(list_check_versions(renders, candidate, channel)).get(version)
-                if check_step is None:
-                    raise CompError(
-                        f'{candidate} {version} of channel "{channel}" is not a '
-                        'complete render'
-                    )
-            version_name = version
-        layer = renders[candidate].layers[channel][version_name]
-        return Resolved(
-            channel = channel,
-            department = candidate,
-            version = version_name,
-            aovs = expand_cryptomattes({
-                label: aov for label, aov in layer.aovs.items()
-                if aov_included(label)
-            }),
-            check_step = check_step,
-        )
+        if not versions: continue
+        newer = [
+            (name, step) for name, step in list_check_versions(renders, candidate, channel)
+            if naming.get_version_code(name) > naming.get_version_code(versions[0])
+        ]
+        return _read(renders, channel, candidate, versions[0],
+                     newer_check = newer[0] if newer else None)
+    for candidate in checks:
+        found = list_check_versions(renders, candidate, channel)
+        if not found: continue
+        name, step = found[0]
+        return _read(renders, channel, candidate, name, step)
     where = ' or '.join(reversed(candidates)) or 'any render department'
-    raise NotRendered(f'channel "{channel}" has no complete render in {where} yet')
+    raise NotRendered(
+        f'channel "{channel}" has no complete render in {where} yet '
+        '(nor a check render)'
+    )
 
 
 def resolve_channels(
@@ -721,7 +819,8 @@ class DivePlan:
         return {field: aov_signature(BEAUTY) for field in self.beauty_fields}
 
 
-def dive_plan(aovs_by_channel: Mapping[str, Iterable[str]], all_channels: bool) -> DivePlan:
+def dive_plan(aovs_by_channel: Mapping[str, Iterable[str]], all_channels: bool,
+              extras: bool = True) -> DivePlan:
     """The import's network for what it reads (``{channel: AOV labels}``,
     in the shot's channel order).
 
@@ -730,8 +829,15 @@ def dive_plan(aovs_by_channel: Mapping[str, Iterable[str]], all_channels: bool) 
     :func:`layer_field`, the cable every channel's AOVs
     (:func:`all_channels_fields`), ``rgba`` the beauties over each other.
     Either way the ``beauties`` cable carries each channel's beauty, named
-    after the channel.
+    after the channel. Without ``extras`` (a 1.0 node, which has no extra
+    output) the AOVs of the :data:`EXTRAS` cable are not read at all.
     """
+    if not extras:
+        aovs_by_channel = {
+            channel: [label for label in labels
+                      if label == BEAUTY or aov_cable(label) != EXTRAS]
+            for channel, labels in aovs_by_channel.items()
+        }
     files = []
     beauties = []
     beauty_fields = []
@@ -972,8 +1078,9 @@ def read_ranges(renders: Mapping, reads: Mapping[str, Mapping]) -> dict[str, Opt
 def best_reads(renders: Mapping, render_department_names: Iterable[str],
                channels: Iterable[str]) -> dict[str, dict]:
     """What a default import (``best``, ``latest``) of each channel reads
-    now, as :func:`provenance` records it; a channel with no complete
-    render is left out."""
+    now, as :func:`provenance` records it; a channel with nothing to read
+    is left out (one with only a check render is not: ``latest`` reads
+    it)."""
     departments = list(render_department_names)
     reads: dict[str, dict] = dict()
     for channel in channels:

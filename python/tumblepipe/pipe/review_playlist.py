@@ -33,9 +33,12 @@ labels end in ``(check, every <n>th)`` (:func:`check_label`); a shot never
 opens on one, but each stays there to pick by hand.
 
 Nothing here writes to the project. ``play_shots`` starts the editor on
-shots, end to end in an untitled edit (Magnus's ask: pick shots, play them
-back to back, Resolve untouched), and ``open_edit`` on an edit; the
-editor's output goes to ``PLAYER_LOG``.
+shots: on the edit that holds them all when one does (the master edit
+first, else the one used last: ``pipe.edits.edit_for_shots``), showing the
+first of them as Live view does (Auguu, 2026-11-22: his saved cut, not an
+untitled edit); else end to end in an untitled edit (Magnus's ask: pick
+shots, play them back to back, Resolve untouched). ``open_edit`` starts it
+on an edit; the editor's output goes to ``PLAYER_LOG``.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -458,13 +461,42 @@ def _current_project() -> str:
         raise ValueError('$TH_PROJECT_PATH is not set: which project to open is unknown')
     return project
 
+def preview_arguments(
+    player: Path, project: str, ocio: str, entity_uris: list[Uri], edit: str | None,
+) -> list[str]:
+    """The command line of Play on ``entity_uris``: the edit ``edit`` (its
+    name) showing the first of them as Live view does (``view_arguments``),
+    or with no edit an untitled edit of them (``editor_arguments``)."""
+    if not entity_uris:
+        raise ValueError('Nothing to play: no shot')
+    if edit is None:
+        return editor_arguments(player, project, ocio, entity_uris)
+    return view_arguments(player, project, ocio, Uri.parse(f'entity:/edits/{edit}'), str(entity_uris[0]), None)
+
+def _preview_edit(entity_uris: list[Uri], project: str) -> str | None:
+    """The edit Play on ``entity_uris`` opens (``pipe.edits.edit_for_shots``);
+    None, the untitled edit, when none holds them or the edits do not read
+    (Play must still play)."""
+    try:
+        from tumblepipe.pipe.edits import edit_for_shots
+        return edit_for_shots(entity_uris, project)
+    except Exception as error:  # noqa: BLE001 - the untitled edit still plays them
+        print(f'Could not look for an edit holding the shots ({error}): playing them untitled', file=sys.stderr)
+        return None
+
 def play_shots(entity_uris: list[Uri]) -> None:
-    """Start the editor on ``entity_uris``, end to end in an untitled edit of
-    the current project (``$TH_PROJECT_PATH``). The editor finds each shot's
-    takes; one with nothing made yet shows as an empty clip saying so.
-    Raises when there is no player, no OCIO config, no project or no shot."""
+    """Start the editor on ``entity_uris`` in the current project
+    (``$TH_PROJECT_PATH``): on the edit that holds them all, showing the
+    first (:func:`_preview_edit`), else end to end in an untitled edit.
+    The editor finds each shot's takes; one with nothing made yet shows as
+    an empty clip saying so. Raises when there is no player, no OCIO
+    config, no project or no shot."""
+    if not entity_uris:
+        raise ValueError('Nothing to play: no shot')
     player = find_player()
-    _start(player, editor_arguments(player, _current_project(), project_ocio(), entity_uris))
+    project = _current_project()
+    ocio = project_ocio()
+    _start(player, preview_arguments(player, project, ocio, entity_uris, _preview_edit(entity_uris, project)))
 
 def open_edit(edit_uri: Uri, version: str | None = None) -> None:
     """Start the editor on the edit ``edit_uri`` of the current project

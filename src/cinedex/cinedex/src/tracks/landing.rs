@@ -71,6 +71,20 @@ pub fn snapped(dragged: Moving, points: &[Frame], reach: Frame, delta: Frame) ->
     }
 }
 
+/// `delta` for a dragged edge (a trim's or a roll's) that is at frame
+/// `edge` before the drag, snapped: the shift that puts it on the nearest
+/// of `points` within `reach` frames of where `delta` takes it (the
+/// earlier point when two are as near), and that point; else `delta` as
+/// asked. The edge then still stops where the footage ends
+/// ([`super::reach`]), which can take it off the point.
+pub fn snapped_edge(edge: Frame, points: &[Frame], reach: Frame, delta: Frame) -> (Frame, Option<Frame>) {
+    let to = edge + delta;
+    match points.iter().map(|&p| ((p - to).abs(), p)).filter(|c| c.0 <= reach).min() {
+        Some((_, point)) => (point - edge, Some(point)),
+        None => (delta, None),
+    }
+}
+
 /// Where `moving` lands when dragged `delta` frames: snapped to `points`
 /// within `reach` frames (the dragged clip is `moving[0]`), then fitted
 /// among the clips that stay (see the module's rules).
@@ -191,6 +205,33 @@ mod tests {
             let (asked, point) = snapped(moving[0], &points, reach, delta);
             if fits(&moving, &staying, asked) {
                 prop_assert_eq!(landing, Landing { delta: asked, snapped: point, bumped: false });
+            }
+        }
+    }
+
+    proptest! {
+        /// A dragged edge goes on the nearest point within reach of where
+        /// the pointer takes it, the earlier of two as near; with none in
+        /// reach it goes as far as the pointer.
+        #[test]
+        fn an_edge_snaps_to_the_nearest_point_in_reach(
+            edge in 0i64..200, points in prop::collection::vec(0i64..300, 0..6), reach in 0i64..8, delta in -100i64..100,
+        ) {
+            let (to, point) = snapped_edge(edge, &points, reach, delta);
+            let asked = edge + delta;
+            let nearest = points.iter().map(|&p| (p - asked).abs()).min();
+            match point {
+                None => {
+                    prop_assert_eq!(to, delta);
+                    prop_assert!(nearest.is_none_or(|n| n > reach));
+                }
+                Some(p) => {
+                    prop_assert_eq!(edge + to, p);
+                    prop_assert!(points.contains(&p));
+                    prop_assert_eq!(Some((p - asked).abs()), nearest);
+                    prop_assert!((p - asked).abs() <= reach);
+                    prop_assert!(!points.iter().any(|&q| q < p && (q - asked).abs() == (p - asked).abs()), "an earlier point was as near");
+                }
             }
         }
     }

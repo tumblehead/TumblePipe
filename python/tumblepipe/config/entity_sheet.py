@@ -878,15 +878,22 @@ class Sheet:
     workfiles live in a folder named after it. ``channel_exports`` names
     the channels a stored shot has department exports under
     (``pipe.render_layers.was_exported``): Layers that leave one out are a
-    problem, since that channel's renders read those exports."""
+    problem, since that channel's renders read those exports.
+
+    ``flat_group`` is the project's implicit bucket when it lists this kind
+    flat (``config.flat_entities``): a new row given no group goes into it,
+    and a new or renamed entity may not take a name any group of the kind
+    holds (by casefold), as the browser's New Shot / New Asset refuse it."""
 
     def __init__(
         self, base: Base, rename_blocker: Callable[[Uri], str] | None = None,
         multi_rename_blocker: Callable[[Uri], str] | None = None,
         channel_exports: Callable[[Uri], Iterable[str]] | None = None,
+        flat_group: str | None = None,
     ) -> None:
         self.base = base
         self.kind = base.kind
+        self.flat_group = flat_group or None
         self._rename_blocker = rename_blocker
         self._multi_rename_blocker = multi_rename_blocker
         self._channel_exports = channel_exports
@@ -2103,8 +2110,9 @@ class Sheet:
         root = edits.get(ROOT)
         if root is not None and not self.root_exists(root):
             raise ValueError(f"No Root named '{root_path(root)}'")
+        group = group.strip() or (self.flat_group or '')
         self._changing()
-        row = Row(self._next_id, None, group.strip(), name.strip(), edits)
+        row = Row(self._next_id, None, group, name.strip(), edits)
         self._next_id += 1
         self._insert(row)
         return row.id
@@ -2214,10 +2222,35 @@ class Sheet:
         for row in self._rows:
             if row.retire or not row.touched:
                 continue
-            reason = self._row_problem(row, known, new_spelling, claimed)
+            reason = self._row_problem(row, known, new_spelling, claimed) \
+                or self._flat_problem(row)
             if reason:
                 found[row.id] = reason
         return found
+
+    def _flat_problem(self, row: Row) -> str:
+        """On a flat kind (``flat_group``), why a new or renamed ``row`` may
+        not have its name: an entity of another group has it (a stored one
+        keeps it until Apply moves it), or a new or renamed row above takes
+        it in another group. The flat list shows no group to tell two
+        ``010`` apart. Clashes within one group are :meth:`_row_problem`'s."""
+        if self.flat_group is None or not (row.is_new or row.renamed):
+            return ''
+        fold = row.name.casefold()
+        item = self.kind.item.capitalize()
+        for other in self._rows:
+            origin = other.origin
+            if other is not row and origin is not None and origin.group != row.group \
+                    and origin.name.casefold() == fold:
+                return f"{item} '{row.name}' already exists (in {origin.group})"
+        for other in self._rows:
+            if other is row:
+                return ''
+            if other.retire or not (other.is_new or other.renamed):
+                continue
+            if other.group != row.group and other.name.casefold() == fold:
+                return f"{item} '{row.name}' is also a new name above (in {other.group})"
+        return ''
 
     def _row_problem(self, row, known, new_spelling, claimed) -> str:
         kind = self.kind
@@ -2513,6 +2546,7 @@ class Sheet:
         """
         sheet = Sheet(
             base, self._rename_blocker, self._multi_rename_blocker, self._channel_exports,
+            flat_group=self.flat_group,
         )
         sheet._new_groups = [g for g in self._new_groups if g not in base.groups]
         notes = []

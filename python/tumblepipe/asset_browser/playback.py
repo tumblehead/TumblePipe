@@ -32,6 +32,19 @@ def sequence_shots(entity_uris, sequence: str) -> list:
     )
 
 
+def project_shots(entity_uris) -> list:
+    """Every shot among *entity_uris*, in name order (then sequence, for
+    two of one name): what Play in Cinedex on a flat shot list's Shots
+    section plays (``config.flat_entities``), the order that list shows."""
+    return sorted(
+        (
+            uri for uri in entity_uris
+            if len(uri.segments) == 3 and uri.segments[0] == "shots"
+        ),
+        key=lambda uri: (uri.segments[2], uri.segments[1]),
+    )
+
+
 def timeline_sequence(selected_uri, view_tags) -> str | None:
     """The sequence Open Timeline plays: the selected card's when it is a
     shot (``entity:/shots/<sequence>/<shot>``), else the sequence the view
@@ -131,6 +144,34 @@ class Playback:
                 )
 
         run_in_background("Play Sequence", _work, _done)
+
+    def play_all_shots(self, project_name: str) -> None:
+        """Open every shot of *project_name* in the editor, in name order
+        (``project_shots``): Play in Cinedex on a flat shot list's Shots
+        section, which has no sequence rows. A project with no shot says so."""
+        from tumblepipe.pipe import review_playlist
+
+        proj = self._registry.get(project_name)
+        if proj is None:
+            raise ValueError(f"{project_name} is not a registered project")
+
+        def _work() -> int:
+            client = self._clients.get(project_name)  # it blocks: the Client builds
+            shots = project_shots(client.config.list_entity_uris(None, closure=True))
+            if shots:
+                self._activator.activate(proj)
+                review_playlist.play_shots(shots)
+            return len(shots)
+
+        def _done(count) -> None:
+            if not count:
+                import hou
+                hou.ui.setStatusMessage(
+                    f"{project_name} has no shots to play",
+                    severity=hou.severityType.Warning,
+                )
+
+        run_in_background("Play Shots", _work, _done)
 
     def _sequence_shots(self, project_name: str, sequence: str) -> list:
         """The shots of *sequence* in *project_name*, in name order: what

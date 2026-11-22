@@ -28,6 +28,21 @@ if TYPE_CHECKING:
     from .recipes import RecipeManager
 
 
+def flat_kinds(proj) -> tuple[bool, bool]:
+    """Whether ``proj`` lists its assets, and its shots, flat
+    (``config.flat_entities``). An unreadable config reads as not flat:
+    the sidebar then shows the buckets, as for any project."""
+    from tumblepipe.config import flat_entities
+    try:
+        store = proj.store()
+        return (
+            flat_entities.is_flat_in(store, "assets"),
+            flat_entities.is_flat_in(store, "shots"),
+        )
+    except Exception:
+        return False, False
+
+
 class Sidebar:
     """Builds the collections tree."""
 
@@ -162,10 +177,19 @@ class Sidebar:
         # gets no subheader: an empty "Multis" row is noise in a project
         # that doesn't use them, and "New Multi..." is already on the
         # Assets / Shots headers' own menus.
+        # A flat kind (config.flat_entities) lists its entities without the
+        # category / sequence level: no bucket rows, the section itself
+        # (``type:asset`` / ``type:shot``) shows them all and carries the
+        # count.
+        flat_assets, flat_shots = flat_kinds(proj)
         cats = self._buckets.categories(proj.name)
         cat_children = [asset_multis] if asset_multis.children else []
+        asset_total = 0
         for cat in cats:
             count = self._index.count(proj.name, "assets", cat)
+            asset_total += count
+            if flat_assets:
+                continue
             cat_children.append(Collection(
                 id=f"{proj.name}:category:{cat}",
                 label=cat,
@@ -179,12 +203,17 @@ class Sidebar:
             tag=f"{project_tag}+type:asset",
             icon="box",
             children=tuple(cat_children),
+            count=asset_total if flat_assets else 0,
         ))
 
         seqs = self._buckets.sequences(proj.name)
         seq_children = [shot_multis] if shot_multis.children else []
+        shot_total = 0
         for seq in seqs:
             count = self._index.count(proj.name, "shots", seq)
+            shot_total += count
+            if flat_shots:
+                continue
             # default_view="list": shots browse better as list rows —
             # their department deck items expand inline in pipeline
             # (catalog) order, one row per department.
@@ -202,6 +231,7 @@ class Sidebar:
             tag=f"{project_tag}+type:shot",
             icon="clapperboard",
             children=tuple(seq_children),
+            count=shot_total if flat_shots else 0,
             default_view="list",
         ))
 

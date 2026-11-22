@@ -6,6 +6,7 @@
   <toolshelf name="tumblepipe" label="TumblePipe">
     <memberTool name="tumblepipe_live_playblast"/>
     <memberTool name="tumblepipe_import_edit"/>
+    <memberTool name="tumblepipe_load_edit_audio"/>
   </toolshelf>
 
   <tool name="tumblepipe_live_playblast" label="Live Playblast" icon="MISC_python">
@@ -28,6 +29,20 @@ cut-out. For checking a cut's ranges against the shots: nothing is written
 to the project. A re-run replaces the bookmarks it made and keeps your own.]]></helpText>
     <script scriptType="python"><![CDATA[from tumblepipe.pipe.houdini import edit_timeline
 edit_timeline.import_edit_dialog()]]></script>
+  </tool>
+
+  <tool name="tumblepipe_load_edit_audio" label="Load Audio from Edit" icon="MISC_python">
+    <helpText><![CDATA[= Load Audio from Edit =
+
+In a shot's workfile: asks which of the master edit's audio tracks to hear
+(all of them preselected; dialogue alone, for one), mixes them over the
+shot's frames, roll included, as the edit plays them (each clip's gain and
+fades), and sets the mix as the scene's audio, from the shot's first frame.
+Past the shot's clip you hear the edit around the cut. The WAV is written
+under the edit's renders, named after the edit version it came from; the
+Audio Panel is saved with the scene. Run it again after the cut changes.]]></helpText>
+    <script scriptType="python"><![CDATA[from tumblepipe.pipe.houdini import shot_audio
+shot_audio.load_audio_dialog()]]></script>
   </tool>
 
   <!-- Tab menu only (COP networks): not on the shelf, since it needs the

@@ -2,19 +2,25 @@
 
 The comp's ``import_shot``. It reads one render department's version of one
 channel of a shot, or every channel. A th::import_render::2.0 (today's;
-Remy, 2026-11-22: "a cleaner, working import render node") has nine
+Remy, 2026-11-22: "a cleaner, working import render node") has ten
 outputs, top to bottom:
 
     beauty           the beauty (output name ``rgba``); for all channels the
                      channels' beauties laid over each other, last on top
-    lpe              a cable of the light groups (``beauty_<tag>``), a light mix's
-    aov              a cable of the other AOVs (albedo, normal, depth, uv, ...)
+    lpe              a cable of the light groups (``beauty_<tag>``), a light
+                     mix's, and the LPE splits (diffuse_key, specular_dome,
+                     diffuse_direct, ...: ``pipe.comp.LPE_AOV_NAMES``)
+    aov              a cable of the geometry and camera data (albedo, normal,
+                     depth (Mono), uv, position)
     matte            a cable of the mattes, distance ramps and holdouts
     cryptomaterials  a cable of the cryptomaterials rank planes, all of them }
     cryptoprimitives a cable of the cryptoprimitives rank planes            } crypto1
     layers           a cable of each channel's beauty, named after its channel
     geometry         the staged scene's geometry  } th::import_scene, inside the
     camera           the shot's render camera     } node, for a Rasterize Geometry
+    extra            a cable of every other AOV (transmission, sss, emission,
+                     shadow, ...; Antoine, 2026-11-22), last so the wires on
+                     the outputs above stay put
 
 Each cable field is named after its AOV (``layers``: its channel); which
 cable an AOV rides is ``pipe.comp.aov_cable``. The beauty is in no AOV
@@ -111,8 +117,10 @@ worker sets every import to None: a farm comp writes the shot's own frames.
 A frame the render does not have reads as empty, so a pre-roll cooks.
 **Missing Frames** (``pipe.hold_frames``; Remy, 2026-11-18) can hold the
 nearest rendered frame instead, and does by default for a check render
-(Farm Submit's Step: every Nth frame), which the Version menu offers by
-hand (``latest`` never reads one). The frames a version has are those its
+(Farm Submit's Step: every Nth frame). The Version menu offers check
+renders by hand, and ``latest`` reads the newest one when the channel has
+no complete render to read (a complete render wins over a newer check
+render; ``pipe.comp.resolve_render``). The frames a version has are those its
 ``context.json`` records, so the File COPs' file names carry the nearest
 frame as HScript arithmetic (:func:`frame_token`): no cook lists a
 directory. What was built is kept in ``held``; changing the setting
@@ -151,8 +159,9 @@ HELD_PARM = 'held'
 #
 #   th::import_render::2.0 (LAYOUT_V2, today's; Remy 2026-11-22, "a
 #   cleaner import render node"): rgba (labelled ``beauty``), the AOV
-#   cables, ``layers`` (each channel's beauty, by channel name), then the
-#   scene's. Nine outputs, each always meaningful.
+#   cables, ``layers`` (each channel's beauty, by channel name), the
+#   scene's, then ``extra`` (every other AOV; Antoine 2026-11-22, appended
+#   so a wire saved on the nine before it stays on its output).
 #   th::import_render::1.0 on LAYOUT_V1 (#67): rgba .. rgba8, a beauty per
 #   channel read (the rest empty), the AOV cables, the scene's. Scenes saved
 #   with it keep it, and it keeps working.
@@ -169,8 +178,9 @@ LPE, AOV, MATTE, LAYERS = 'lpe', 'aov', 'matte', 'layers'
 CRYPTO_OUTPUT_NAMES = comp.CRYPTO_CABLES
 CABLE_OUTPUT_NAMES = (LPE, AOV, MATTE) + CRYPTO_OUTPUT_NAMES
 SCENE_OUTPUT_NAMES = ('geometry', 'camera')
+EXTRA = 'extra'  # 2.0's last output: the AOVs no other cable takes
 OUTPUTS_V1 = CHANNEL_OUTPUT_NAMES + CABLE_OUTPUT_NAMES + SCENE_OUTPUT_NAMES
-OUTPUTS_V2 = ('rgba',) + CABLE_OUTPUT_NAMES + (LAYERS,) + SCENE_OUTPUT_NAMES
+OUTPUTS_V2 = ('rgba',) + CABLE_OUTPUT_NAMES + (LAYERS,) + SCENE_OUTPUT_NAMES + (EXTRA,)
 # The outputs an import saved before #67 had (``rgba`` then laid the
 # channels over each other, ``aovs`` carried every AOV, ``beauties`` each
 # channel's beauty).
@@ -188,13 +198,15 @@ RGBA_OUTPUT = OUTPUTS.index('rgba')
 LPES_OUTPUT = OUTPUTS.index(LPE)
 AOVS_OUTPUT = OUTPUTS.index(AOV)
 MATTES_OUTPUT = OUTPUTS.index(MATTE)
+EXTRA_OUTPUT = OUTPUTS.index(EXTRA)
 LAYERS_OUTPUT = OUTPUTS.index(LAYERS)
 GEOMETRY_OUTPUT = OUTPUTS.index('geometry')
 CAMERA_OUTPUT = OUTPUTS.index('camera')
 # Each cable's output name (the AOV cables are named as in pipe.comp; the
 # beauties cable is 2.0's ``layers``).
 CABLE_OUTPUT_OF = {comp.LPES: LPE, comp.AOVS: AOV, comp.MATTES: MATTE,
-                   **{cable: cable for cable in comp.CRYPTO_CABLES}}
+                   **{cable: cable for cable in comp.CRYPTO_CABLES},
+                   comp.EXTRAS: EXTRA}
 BEAUTIES_CABLE = 'beauties'
 # Each AOV cable's output on today's node.
 CABLE_OUTPUTS = {cable: OUTPUTS.index(name) for cable, name in CABLE_OUTPUT_OF.items()}
@@ -423,7 +435,7 @@ DIVE_COLUMNS = {'file': 0, 'cache': 1, 'switch': 2, 'pack': 3, 'outputs': 4}
 
 def _CABLES_IN_OUTPUT_ORDER() -> list[str]:
     cable_of = {name: cable for cable, name in CABLE_OUTPUT_OF.items()}
-    return [cable_of[name] for name in CABLE_OUTPUT_NAMES]
+    return [cable_of[name] for name in CABLE_OUTPUT_NAMES + (EXTRA,)]
 
 
 def dive_rows(plan) -> list[str]:
@@ -475,7 +487,8 @@ DIVE = 'dive'
 PACK = 'pack'
 BEAUTIES_PACK = 'beauties'  # a dive built before #67 had it
 CABLE_PACKS = {comp.AOVS: PACK, comp.LPES: 'lpes', comp.MATTES: 'mattes',
-               **{cable: cable for cable in comp.CRYPTO_CABLES}}
+               **{cable: cable for cable in comp.CRYPTO_CABLES},
+               comp.EXTRAS: comp.EXTRAS}
 SCENE = 'scene'
 # Whether the scene imported, and its camera cooks: the geometry and camera
 # outputs read the embedded import_scene only then (Copernicus cooks every
@@ -508,7 +521,7 @@ AOV_CACHE_TOGGLES = (CACHE_PARM, CACHE_AOVS_PARM)
 # beauty outputs and 2.0's rgba and layers carry beauties).
 CACHE_TOGGLES = {
     **{name: BEAUTY_CACHE_TOGGLES for name in CHANNEL_OUTPUT_NAMES + (LAYERS,)},
-    **{name: AOV_CACHE_TOGGLES for name in CABLE_OUTPUT_NAMES},
+    **{name: AOV_CACHE_TOGGLES for name in CABLE_OUTPUT_NAMES + (EXTRA,)},
 }
 
 
@@ -557,12 +570,12 @@ DIVE_OUTPUTS = ((('rgba', 'vector4'), ('aovs', 'cable'), ('beauties', 'cable'),
                  ('lpes', 'cable'), ('mattes', 'cable'))
                 + tuple((name, 'vector4') for name in CHANNEL_OUTPUT_NAMES[1:])
                 + tuple((name, 'cable') for name in CRYPTO_OUTPUT_NAMES)
-                + (('over', 'vector4'),))
+                + (('over', 'vector4'), (comp.EXTRAS, 'cable')))
 DIVE_INDEX = {label: index for index, (label, _) in enumerate(DIVE_OUTPUTS)}
 _CABLE_SOURCES = {LPE: 'lpes', AOV: 'aovs', MATTE: 'mattes',
                   **{name: name for name in CRYPTO_OUTPUT_NAMES}}
 DIVE_SOURCES_V1 = {**{name: name for name in CHANNEL_OUTPUT_NAMES}, **_CABLE_SOURCES}
-DIVE_SOURCES_V2 = {'rgba': 'over', **_CABLE_SOURCES, LAYERS: 'beauties'}
+DIVE_SOURCES_V2 = {'rgba': 'over', **_CABLE_SOURCES, LAYERS: 'beauties', EXTRA: comp.EXTRAS}
 LAYOUT_DIVE_SOURCES = {LAYOUT_V1: DIVE_SOURCES_V1, LAYOUT_V2: DIVE_SOURCES_V2}
 DIVE_SOURCES = DIVE_SOURCES_V2
 
@@ -1192,10 +1205,11 @@ class ImportRender(TimeOffsetNode, EntityNode):
         key = comp.build_key(
             shot_uri, {c: (r.department, r.version) for c, r in reads.items()}
         )
-        plan = comp.dive_plan(
-            {c: r.aovs for c, r in reads.items()}, self.is_all_channels()
-        )
         v2 = self.is_v2()
+        # A 1.0 node has no extra output, so reads none of its AOVs.
+        plan = comp.dive_plan(
+            {c: r.aovs for c, r in reads.items()}, self.is_all_channels(), extras=v2
+        )
         previous_slots = self.get_channel_outputs()
         if v2:
             slots, overflow = None, []
@@ -1219,7 +1233,9 @@ class ImportRender(TimeOffsetNode, EntityNode):
         self._update_labels(label)
         if v2:
             self._write_comment(status_comment(
-                {c: (r.department, r.version) for c, r in reads.items()}, skipped))
+                {c: (r.department, r.version if r.check_step is None
+                     else comp.check_version_label(r.version, r.check_step))
+                 for c, r in reads.items()}, skipped))
         else:
             self.show_output_names(slots, list(reads), overflow)
         if rebuilt:
@@ -1259,7 +1275,11 @@ class ImportRender(TimeOffsetNode, EntityNode):
             if previous is not None and previous != current and same_channel:
                 label += f' (was {previous[1] if previous[0] == current[0] else " ".join(previous)})'
             return label
-        versions = sorted({f'{r.department} {r.version}' for r in reads.values()})
+        versions = sorted({
+            f'{r.department} {r.version}' if r.check_step is None
+            else f'{r.department} {comp.check_version_label(r.version, r.check_step)}'
+            for r in reads.values()
+        })
         noun = 'channel' if len(reads) == 1 else 'channels'
         label = f'{len(reads)} {noun}: ' + ', '.join(versions)
         if skipped:
@@ -1349,7 +1369,9 @@ class ImportRender(TimeOffsetNode, EntityNode):
         for cable in comp.AOV_CABLES:
             cable_fields = list(plan.cable_fields(cable))
             pack = _pack(dive, CABLE_PACKS[cable], [files[f] for f in cable_fields], cable_fields)
-            outputs.setInput(DIVE_INDEX[sources[CABLE_OUTPUT_OF[cable]]], pack, 0)
+            # Every pack is built (has_packs), but 1.0 has no extra output.
+            if CABLE_OUTPUT_OF[cable] in sources:
+                outputs.setInput(DIVE_INDEX[sources[CABLE_OUTPUT_OF[cable]]], pack, 0)
         beauty_of = dict(zip(plan.beauty_fields, plan.beauties))
         if slots is None:
             pack = _pack(dive, BEAUTIES_PACK, [files[b] for b in plan.beauties],
@@ -1503,9 +1525,11 @@ _UNPACKS = {
     **{cable: (f'th_import_render_{cable}', f'_{cable}',
                (comp.COLUMN_STRIDE, -(3 + step) * comp.ROW))
        for step, cable in enumerate(comp.CRYPTO_CABLES)},
-    # 2.0 only: each channel's beauty, by channel name.
+    # 2.0 only: each channel's beauty, by channel name; every other AOV.
     LAYERS: ('th_import_render_layers', '_layers',
              (comp.COLUMN_STRIDE, -(3 + len(comp.CRYPTO_CABLES)) * comp.ROW)),
+    EXTRA: ('th_import_render_extra', '_extra',
+            (comp.COLUMN_STRIDE, -(4 + len(comp.CRYPTO_CABLES)) * comp.ROW)),
 }
 
 

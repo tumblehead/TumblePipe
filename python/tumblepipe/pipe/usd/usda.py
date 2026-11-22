@@ -140,6 +140,33 @@ def parse_usda_metadata(content: str) -> dict:
     return metadata
 
 
+def shot_timing(frame_range, fps: float) -> dict:
+    """The timing metadata a shot's root layer carries for ``frame_range``
+    (a ``config.timeline.FrameRange``) at ``fps``, keyed as
+    :func:`parse_usda_metadata` reads it back.
+
+    The time codes span the rolls too (``full_range``): a Sublayer LOP with
+    no input copies its first file's root metadata onto the LOP stage, and
+    import_shot loads the shot's root layer first, so this range is what a
+    playbar the stage drives shows. Without the rolls it would cut the
+    pre-roll a simulation or an animator needs, which the playbar
+    import_shot sets (``playbar.set_frame_range``) does include.
+    """
+    full = frame_range.full_range()
+    return {
+        'fps': fps,
+        'start_frame': full.first_frame,
+        'end_frame': full.last_frame,
+    }
+
+
+def recorded_timing(content: str) -> dict:
+    """The timing metadata ``content`` records, keyed as :func:`shot_timing`
+    returns it (a value is None when the file does not author it)."""
+    metadata = parse_usda_metadata(content)
+    return {key: metadata[key] for key in ('fps', 'start_frame', 'end_frame')}
+
+
 def parse_sublayers(content: str) -> list[str]:
     """The ``subLayers`` asset paths in USDA ``content``, in file order.
 

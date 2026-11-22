@@ -189,6 +189,19 @@ fn live_answer(request: &Value) -> Option<Result<Value, String>> {
                 Err(problem) => json!({"refused": problem.code(), "plain": plain}),
             }
         }),
+        // The implicit bucket `config:/project`'s `properties` name for
+        // `kind` (`flat_entities::bucket_from`), or null when not flat.
+        "flat_bucket_from" => text(request, "kind").and_then(|kind| {
+            th_pipe::flat_entities::bucket_from(request.get("properties").and_then(Value::as_object), kind).map(|b| json!(b))
+        }),
+        // The bucket holding an entity of `kind` named `name` by casefold
+        // among `entities` (each a list of URI segments), or null
+        // (`flat_entities::name_taken`): a flat kind's New Shot / New Asset.
+        "flat_name_taken" => text(request, "kind").and_then(|kind| {
+            let entities: Vec<Vec<String>> =
+                serde_json::from_value(request.get("entities").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
+            th_pipe::flat_entities::name_taken(kind, text(request, "name")?, &entities).map(|b| json!(b))
+        }),
         // A job's frame list as `cinedex --expect` reads it: its frames.
         "expect_frames" => text(request, "text").and_then(th_playlist::frame_list::parse_frame_list).map(|frames| json!(frames)),
         // A Frame List movie's `frame_ranges` tag as Cinedex reads it (#86):
@@ -281,6 +294,7 @@ fn answer(request: &Value) -> Result<Value, String> {
         "resolve" => json!(slashed(&project.storage.resolve(&uri(request)?).map_err(|e| e.to_string())?)),
         "properties" => json!(config.get_properties(&uri(request)?).map_err(err)?),
         "own_properties" => json!(config.get_own_properties(&uri(request)?).map_err(err)?),
+        "flat_bucket" => json!(th_pipe::flat_entities::flat_bucket_in(config, text(request, "kind")?)?),
         "schema_uri" => json!(config.get_entity_schema_uri(&uri(request)?).map_err(err)?.map(|u| u.to_string())),
         "terminal" => json!(config.is_terminal_entity(&uri(request)?).map_err(err)?),
         "list" => {

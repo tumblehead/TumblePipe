@@ -338,7 +338,10 @@ def cascade_counts(col: Collection) -> Collection:
     Multis are left out of the sum: a Multi's members are shots or assets
     already counted under their sequence or category, so Assets read 9 for
     six assets once a Multi held three of them. A Multis subheader keeps
-    its own count, the number of Multis it lists, not their members.
+    its own count, the number of Multis it lists, not their members. A
+    collection whose children are all Multis keeps its own count too: a
+    flat Assets / Shots section (``config.flat_entities``) has no bucket
+    rows to sum and counts its entities itself.
     """
     import dataclasses
     if not col.children:
@@ -347,7 +350,7 @@ def cascade_counts(col: Collection) -> Collection:
     counted = [c for c in cascaded_children if not _is_multi(c)]
     if not counted and _is_multi(col):
         return dataclasses.replace(col, children=cascaded_children)
-    total = sum(c.count for c in counted)
+    total = sum(c.count for c in counted) if counted else col.count
     return dataclasses.replace(col, children=cascaded_children, count=total)
 
 

@@ -1313,5 +1313,59 @@ check('they resolve the sequence\'s Root', all(
 
 window.close()
 app.processEvents()
+
+# ── A flat shot list (config.flat_entities) ────────────────────────────────
+
+# sq020 holds a shot no other sequence has, which a flat list then refuses.
+config.add_entity(SHOTS / 'sq020' / 'SH090', {})
+flat_window = ee.EntityEditorWindow(ee.EntityEditorSource(
+    project='verify', config=config,
+    retire=entity_files.delete_entity, rename=entity_files.rename_entity,
+    rename_blocker=lambda uri: '', on_applied=lambda: None,
+    flat_bucket=lambda kind: 'sq010' if kind == 'shots' else None,
+), kind='shots')
+flat_window.show()
+app.processEvents()
+fshots, fassets = flat_window.panes['shots'], flat_window.panes['assets']
+frozen = fshots.table.frozen_view()
+check('flat: no sequence rows', not any(
+    isinstance(fshots.model.row_at(i), ee.GroupKey) for i in range(fshots.model.rowCount())
+))
+check('flat: the Sequence column is hidden, in the frozen view too',
+      fshots.table.isColumnHidden(0) and frozen.isColumnHidden(0) and not frozen.isColumnHidden(1))
+check('flat: the frozen columns are the names alone',
+      fshots.table.frozen_width() == fshots.table.columnWidth(1),
+      (fshots.table.frozen_width(), fshots.table.columnWidth(1)))
+check('flat: no sequence picker, no New Sequence…',
+      fshots._group_filter.isHidden() and fshots.new_group_button.isHidden())
+menu_columns = [a.data() for a in fshots.header_menu().actions() if a.data()]
+check('flat: the header menu offers no Sequence column', es.GROUP not in menu_columns, menu_columns)
+check('flat: a hidden Sequence is not remembered as hidden',
+      es.GROUP not in fshots.column_layout()[1])
+fshots.reset_columns()
+check('flat: Reset Columns keeps the Sequence hidden', fshots.table.isColumnHidden(0))
+listed = [fshots.model.row_at(i).name for i in range(fshots.model.rowCount())]
+check('flat: every shot, by name', listed == sorted(listed, key=es.natural_key)
+      and len(listed) == len(fshots.sheet.rows), listed)
+check('flat: the Assets tab is not flat',
+      not fassets.table.isColumnHidden(0) and not fassets._group_filter.isHidden()
+      and not fassets.new_group_button.isHidden())
+add = ee.AddShotsDialog(fshots, fshots.flat_group)
+check('flat: Add Shots asks no Sequence', not add.layout().isRowVisible(0))
+check('flat: Add Shots adds into the implicit sequence',
+      bool(add.rows()) and all(r[0] == 'sq010' for r in add.rows()), add.rows())
+taken = {r.name for r in fshots.sheet.rows}
+check('flat: Add Shots offers names no shot has', not taken & {r[1] for r in add.rows()}, add.rows())
+add.close()
+fshots.paste_new('sq999, SH777\nSH090')
+pasted = {r.name: r for r in fshots.sheet.rows if r.is_new}
+check('flat: Paste as New puts rows in the implicit sequence, a pasted one too',
+      {r.group for r in pasted.values()} == {'sq010'}, {n: r.group for n, r in pasted.items()})
+problems = fshots.sheet.problems()
+check('flat: a name another sequence has is refused',
+      'sq020' in problems.get(pasted['SH090'].id, ''), problems)
+check('flat: a new name is fine', pasted['SH777'].id not in problems, problems)
+flat_window.close()
+app.processEvents()
 print('ALL OK' if not failures else f'{len(failures)} FAILED: {failures}')
 sys.exit(1 if failures else 0)

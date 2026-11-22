@@ -428,6 +428,23 @@ staged build yet. Shots without a Root are never touched. Source:
 [`root_staging.py`](../python/tumblepipe/pipe/root_staging.py),
 [`scene_build.py`](../python/tumblepipe/pipe/scene_build.py).
 
+### A shot's root layer carries its frame range
+
+The root layer authors `startTimeCode` / `endTimeCode` (the shot's range,
+**rolls included**) and `framesPerSecond` / `timeCodesPerSecond` (the
+shot's fps, else the project's). import_shot loads the root layer as its
+Sublayer LOP's first file, and a Sublayer LOP with no input copies its first
+file's root metadata onto the LOP stage (**Set Stage Metadata: Auto**), so
+this is the range the stage reports, and the range a playbar set to follow
+the stage shows; in a Multi each member's import_shot carries its own shot's
+range. A root layer that records another range or fps than the shot's
+configuration is stale (`root_timing_is_stale`): the editors' sync and the
+next build write a new one. Before 2026-11-22 a range edit never made it
+stale, so a shot kept the 1001-1100 it was created with. On a Multi's
+**shared timeline** the stage still reports the member's *own* range: the
+Sublayer LOP moves the layers by the member's time offset but copies the
+metadata unmoved.
+
 ### Nesting is not containment
 
 "Tower in Arena in Set" describes the *bookkeeping*, not the stage. A

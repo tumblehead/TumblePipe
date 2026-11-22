@@ -440,6 +440,7 @@ mod tests {
                         fade_out: 0,
                         opacity: if d % 2 == 0 { 0.5 } else { 1.0 },
                         transform: if d % 3 == 0 { moved } else { Transform::IDENTITY },
+                        original: None,
                     })
                 };
                 let all = vec![

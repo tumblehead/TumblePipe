@@ -106,6 +106,7 @@ fn video_tracks<'a>(edit: &'a FrozenEdit, notes: &mut Vec<(Frame, Frame, String)
                         fade_out: c.fade_out,
                         opacity: c.opacity,
                         transform: c.transform,
+                        original: None,
                     },
                     dissolve: 0,
                     from_black: 0,
@@ -596,6 +597,7 @@ mod tests {
             fade_out: 0,
             opacity: 1.0,
             transform: Default::default(),
+            original: None,
         };
         edit.video.push(Track {
             color: None,
@@ -650,6 +652,7 @@ mod tests {
             fade_out: 0,
             opacity: 1.0,
             transform: Default::default(),
+            original: None,
         };
         edit.video.push(Track { name: "V1".into(), clips: vec![item(0, "P:/1/x.mp4"), item(10, "P:/2/x.mp4")], color: None });
         let links = movie_links(&edit);
@@ -752,6 +755,7 @@ mod tests {
                         fade_out: 0,
                         opacity: 1.0,
                         transform: Default::default(),
+                        original: None,
                     });
                 }
             }

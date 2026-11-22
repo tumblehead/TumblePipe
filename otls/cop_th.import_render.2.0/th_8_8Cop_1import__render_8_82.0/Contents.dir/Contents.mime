@@ -135,7 +135,7 @@ Content-Type: text/plain
 
 comment ""
 position 8 0
-connectornextid 9
+connectornextid 10
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
@@ -151,6 +151,7 @@ inputsNamed3
 6 	dive 2 1 "input7"
 7 	geometry_out 2 1 "input8"
 8 	camera_out 2 1 "input9"
+9 	dive 15 1 "input10"
 }
 inputs
 {
@@ -163,6 +164,7 @@ inputs
 6 	dive 2 1
 7 	geometry_out 0 1
 8 	camera_out 0 1
+9 	dive 15 1
 }
 stat
 {
@@ -208,7 +210,7 @@ Content-Type: text/plain
 
 comment ""
 position 0 0
-connectornextid 15
+connectornextid 16
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault off exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
@@ -227,6 +229,7 @@ outputsNamed3
 12 "output13"
 13 "output14"
 14 "output15"
+15 "output16"
 }
 inputsNamed3
 {
@@ -254,7 +257,7 @@ Content-Type: text/plain
 version 0.8
 cablerenamebylabel	[ 0	locks=0 ]	(	"off"	)
 inputs	[ 0	locks=0 ]	(	0	)
-outputs	[ 0	locks=0 ]	(	15	)
+outputs	[ 0	locks=0 ]	(	16	)
 outputlabel1	[ 0	locks=0 ]	(	rgba	)
 outputtype1	[ 0	locks=0 ]	(	"vector4"	)
 outputlabel2	[ 0	locks=0 ]	(	aovs	)
@@ -285,6 +288,8 @@ outputlabel14	[ 0	locks=0 ]	(	cryptoprimitives	)
 outputtype14	[ 0	locks=0 ]	(	"cable"	)
 outputlabel15	[ 0	locks=0 ]	(	over	)
 outputtype15	[ 0	locks=0 ]	(	"vector4"	)
+outputlabel16	[ 0	locks=0 ]	(	extras	)
+outputtype16	[ 0	locks=0 ]	(	"cable"	)
 }
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY

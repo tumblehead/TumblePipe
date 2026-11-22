@@ -13,9 +13,11 @@ renders, with hoiiotool):
 
 - **Outputs.** import_render.create makes a 2.0, whose outputs are beauty,
   lpe, aov, matte, cryptomaterials, cryptoprimitives, layers, geometry,
-  camera (no rgba N); every output cooks.
-- **One channel per layer.** beauty has the layer's pixels; the lpe, aov
-  and matte cables carry its passes by name; layers carries its beauty
+  camera, extra (no rgba N); every output cooks.
+- **One channel per layer.** beauty has the layer's pixels; the lpe, aov,
+  matte and extra cables carry its passes by name (a light group and an
+  LPE split on lpe, depth on aov as one channel, transmission on extra;
+  Antoine, 2026-11-22); layers carries its beauty
   named after the channel; the comment under the node names what it reads
   (``chars: denoise v0001``).
 - **All channels.** beauty is the layers laid over each other in the shot's
@@ -67,7 +69,7 @@ COLOURS = {
 }
 LAYERS = list(COLOURS)
 V2_LABELS = ['beauty', 'lpe', 'aov', 'matte', 'cryptomaterials', 'cryptoprimitives',
-             'layers', 'geometry', 'camera']
+             'layers', 'geometry', 'camera', 'extra']
 check = vc.check
 
 
@@ -75,7 +77,8 @@ def stage_shot():
     shot = vc.add_shot('SH100', LAYERS)
     for layer, colour in COLOURS.items():
         aovs = {'beauty': colour, 'beauty_key': colour[:3], 'depth': (5.0, 5.0, 5.0),
-                f'objid_{layer}': (1.0,)}
+                f'objid_{layer}': (1.0,), 'diffuse_key': colour[:3],
+                'transmission': (0.25, 0.25, 0.25)}
         vc.stage(shot, 'render', layer, 'v0001', True, aovs)
         if layer == 'chars':
             # A denoise: the beauty bare R,G,B,A (the C plane).
@@ -123,7 +126,7 @@ def check_outputs(node, label, layers):
     native = node.native()
     check(f'{label}: the node cooks with no error', not cook_errors(native),
           str(native.errors()))
-    check(f'{label}: the outputs are beauty, the cables, layers, geometry, camera',
+    check(f'{label}: the outputs are beauty, the cables, layers, geometry, camera, extra',
           list(native.outputLabels()) == V2_LABELS, str(native.outputLabels()))
     want = COLOURS[layers[0]]
     for layer in layers[1:]:
@@ -134,16 +137,34 @@ def check_outputs(node, label, layers):
           f'got {got}, want {want}')
     prefix = (lambda layer: f'{layer}_') if node.is_all_channels() else (lambda layer: '')
     want_cables = {
-        import_render.LPES_OUTPUT: [f'{prefix(layer)}beauty_key' for layer in layers],
+        import_render.LPES_OUTPUT: [f'{prefix(layer)}{name}' for layer in layers
+                                    for name in ('beauty_key', 'diffuse_key')],
         import_render.AOVS_OUTPUT: [f'{prefix(layer)}depth' for layer in layers],
         import_render.MATTES_OUTPUT: [f'{prefix(layer)}objid_{layer}' for layer in layers],
         import_render.LAYERS_OUTPUT: list(layers),
+        import_render.EXTRA_OUTPUT: [f'{prefix(layer)}transmission' for layer in layers],
     }
     for output, fields in want_cables.items():
         name = import_render.OUTPUTS[output]
         names = cable_names(native, output)
         check(f'{label}: the {name} cable carries each pass by name',
               sorted(names or []) == sorted(fields), f'got {names}, want {fields}')
+    aovs = native.cable(import_render.AOVS_OUTPUT)
+    for layer in layers:
+        depth = f'{prefix(layer)}depth'
+        got = None
+        if aovs is not None and depth in aovs.wireNames():
+            got = [aovs.layer(depth).computeAverage(c)
+                   for c in range(aovs.layer(depth).channelCount())]
+        check(f'{label}: {depth} is Mono, its depth', close(got, (5.0,)), f'got {got}')
+    extra = native.cable(import_render.EXTRA_OUTPUT)
+    for layer in layers:
+        name = f'{prefix(layer)}transmission'
+        got = None
+        if extra is not None and name in extra.wireNames():
+            got = [extra.layer(name).computeAverage(c) for c in range(3)]
+        check(f'{label}: extra field {name} is its transmission',
+              close(got, (0.25, 0.25, 0.25)), f'got {got}')
     cable = native.cable(import_render.LAYERS_OUTPUT)
     for layer in layers:
         got = None
@@ -162,7 +183,8 @@ def check_reads_nothing(node, label, want_comment):
           empty(layer_average(native, import_render.RGBA_OUTPUT)))
     check(f'{label}: every cable is empty',
           all(not cable_names(native, import_render.OUTPUTS.index(name))
-              for name in import_render.CABLE_OUTPUT_NAMES + (import_render.LAYERS,)))
+              for name in import_render.CABLE_OUTPUT_NAMES
+              + (import_render.LAYERS, import_render.EXTRA)))
     check(f'{label}: the comment says so', native.comment() == want_comment,
           repr(native.comment()))
     check(f'{label}: the network editor shows the comment',
@@ -297,8 +319,10 @@ def main():
     execute(one)
     one.parm(import_render.UNPACK_PARM).set(1)
     execute(one)
-    for name, want in ((import_render.LPE, ['beauty_key']), (import_render.AOV, ['depth']),
-                       (import_render.MATTE, ['objid_chars']), (import_render.LAYERS, ['chars'])):
+    for name, want in ((import_render.LPE, ['beauty_key', 'diffuse_key']),
+                       (import_render.AOV, ['depth']),
+                       (import_render.MATTE, ['objid_chars']), (import_render.LAYERS, ['chars']),
+                       (import_render.EXTRA, ['transmission'])):
         unpack = one.find_unpack(name)
         labels = list(unpack.outputLabels()) if unpack is not None else None
         check(f'AOV Outputs: a Cable Unpack on {name}, its outputs named after the passes',

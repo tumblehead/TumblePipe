@@ -121,8 +121,9 @@ else:
     grid.set_assets(cards)
     app.processEvents()
     header = [tree.headerItem().text(i) for i in range(tree.columnCount())]
-    check('other scopes keep the catalog columns (Category, Depts)',
-          'Category' in header and 'Depts' in header and 'Master' not in header, header)
+    # A shots scope names its bucket column Sequence (catalog.bucket_list_columns).
+    check('other scopes keep the catalog columns (Sequence, Depts)',
+          'Sequence' in header and 'Depts' in header and 'Master' not in header, header)
 
 # ── #62: the card menu ───────────────────────────────────────────────
 by_name = {c.name: c for c in cards}

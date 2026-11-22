@@ -260,9 +260,10 @@ fn change<S: Clone + PartialEq>(edit: &mut Edit<S>, op: &Op<S>) -> Result<(), Re
             }
             track_exists(edit, *to)?;
             let mut taken = take(edit, *clip)?;
+            // Through the setter: a video clip's kept clip moves with it.
             match &mut taken {
-                NewClip::Video(c) => c.at = *at,
-                NewClip::Audio(c) => c.at = *at,
+                NewClip::Video(c) => c.set_at(*at),
+                NewClip::Audio(c) => c.set_at(*at),
             }
             place(edit, *to, taken)
         }
@@ -475,6 +476,11 @@ trait ClipList<S> {
     /// Whether clips `a` and `b` sit alike in the picture.
     fn same_transform(&self, a: usize, b: usize) -> bool;
     fn set_source(&mut self, index: usize, source: S);
+    /// Whether the clips that clips `a` and `b` (`b` continuing `a`) keep
+    /// to swap back to ([`VideoClip::original`]) are one clip joined: both
+    /// none, or the same source at the same opacity and transform, `b`'s
+    /// from the source frame after `a`'s last.
+    fn originals_continue(&self, a: usize, b: usize) -> bool;
 }
 
 /// A clip's numbers.
@@ -530,6 +536,21 @@ impl<S: Clone + PartialEq, C: Clip<Source = S>> ClipList<S> for Vec<C> {
     }
     fn set_source(&mut self, index: usize, source: S) {
         self[index].set_source(source);
+    }
+    #[allow(clippy::float_cmp)]
+    fn originals_continue(&self, a: usize, b: usize) -> bool {
+        match (self[a].original(), self[b].original()) {
+            (None, None) => true,
+            (Some(x), Some(y)) => {
+                x.source() == y.source()
+                    && x.opacity() == y.opacity()
+                    && x.transform() == y.transform()
+                    && x.source_in() + self[a].duration() == y.source_in()
+                    && x.original().is_none()
+                    && y.original().is_none()
+            }
+            _ => false,
+        }
     }
 }
 
@@ -852,6 +873,9 @@ fn join<S>(clips: &mut dyn ClipList<S>, i: usize) -> Result<(), Refused> {
     }
     if !clips.same_transform(i, i + 1) {
         return refuse("a join would lose a transform: the clips sit differently in the picture");
+    }
+    if !clips.originals_continue(i, i + 1) {
+        return refuse("a join would lose the clip one of them replaced (Swap to Original): theirs do not continue each other");
     }
     clips.set(i, ClipView { duration: left.duration + right.duration, fade_out: right.fade_out, ..left });
     clips.remove(i + 1);

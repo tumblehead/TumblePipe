@@ -18,16 +18,18 @@ the composite template makes one per shot channel. Outputs of
 | Output | Type | What it is |
 |---|---|---|
 | **beauty** (`rgba`) | RGBA | The beauty of the channel read (its A is the channel's alpha); on **All channels** every channel's beauty laid over each other, back to front, the last on top |
-| **lpe** | Cable | The light groups (`beauty_<tag>`, the LPE tags' AOVs): a light mix's input |
-| **aov** | Cable | Every other AOV the comp reads: `albedo`, `normal`, `depth`, `uv`, `position` |
+| **lpe** | Cable | The light groups (`beauty_<tag>`, the LPE tags' AOVs): a light mix's input; and the LPE splits when the render has them: `diffuse_key`, `specular_key`, `diffuse_dome`, `specular_dome`, `diffuse_direct`, `specular_direct`, `diffuse_indirect`, `specular_indirect` (a light mix's rows stay the light groups) |
+| **aov** | Cable | The geometry and camera data: `albedo`, `normal`, `depth` (Mono, one channel), `uv`, `position` |
 | **matte** | Cable | The `objid_*` mattes and `ramp_*` distance ramps (`th::mattes`), `holdout_*` holdouts, and any cryptomatte other than the two below |
 | **cryptomaterials** | Cable | Every rank plane of the `cryptomaterials` cryptomatte (`cryptomaterials00`, `01`, `02`), whole: wire it straight into a Cryptomatte COP's **crypto1** |
 | **cryptoprimitives** | Cable | The same for `cryptoprimitives` |
 | **layers** | Cable | Each channel's beauty, a field named after the channel (one field on a one-channel import); **AOV Outputs** unpacks it into an output per channel |
 | **geometry** | Geometry | The shot's staged geometry, for a Rasterize Geometry's `geometry` (the Scene folder, below) |
 | **camera** | Metadata | The shot's render camera, for a Rasterize Geometry's `camera_ref` |
+| **extra** | Cable | Every other AOV the render has: `transmission`, `sss`, `emission`, `shadow`, `diffuse`, `specular`, `coat`, motion vectors, an AOV of your own, ... (RGB; colour passes in the scene's colour space). Last, so a wire on the outputs above it stays put (Antoine, 2026-11-22); a `th::import_render::1.0` has no such output and does not read them |
 
-Each AOV cable field is named after its AOV; only `layers` carries
+An `alpha` AOV (the comp's alpha is the beauty's) and the variance passes
+(`*_mse`, the denoiser's inputs) are never read. Each AOV cable field is named after its AOV; only `layers` carries
 beauties. Which cable an AOV rides is `pipe.comp.aov_cable`. What it
 resolves and refuses is
 in [Compositing → `th::import_render`](../compositing.md#thimport_render).
@@ -80,10 +82,17 @@ Location** in MPlay to tell which.
 
 A render made with Farm Submit's **Step**
 ([stepped renders](../asset-browser/submit-jobs.md#stepped-renders)) has
-only every Nth frame, and is never the shot's render: `latest` and `best`
-skip it. To look at one in a comp, set a concrete **Department** and pick
-it in **Version**, where it is listed as `v0014 (check, every 5th)`;
-**Reads** then says `render v0014 (check, every 5th), 10 AOVs`.
+only every Nth frame, and is never the shot's render. `latest` and `best`
+read one only when the channel has no complete render in any department
+they look at: a first look at a shot rendered with Step 2 reads at once,
+as `render v0001 (check, every 2nd), 10 AOVs`. Once a complete render is
+there it wins, even over a newer check render (a check render is a look,
+not the shot's comp); **Reads** then names the newer check render
+(`render v0003, 10 AOVs; newer check render v0004 (check, every 2nd) not
+read (pick it in Version)`). To look at any check render, set a concrete
+**Department** and pick it in **Version**, where it is listed as `v0014
+(check, every 5th)`; **Reads** then says `render v0014 (check, every
+5th), 10 AOVs`.
 
 Its gaps would be black, so on **Missing Frames ▸ Automatic** the node
 holds each rendered frame over them: every scene frame shows the nearest
@@ -100,20 +109,22 @@ then show its first or last frame instead of black.
   cooks, so holding costs nothing on a network share.
 - With a **Time Offset**, the frame held is the nearest to the scene's
   frame less the offset.
-- All channels read `latest` only, so they never read a check render;
-  **Hold Nearest Frame** still holds each channel's first and last frame.
+- All channels read `latest` only, so each channel reads a check render
+  only when it has no complete one; **Hold Nearest Frame** still holds
+  each channel's first and last frame.
 - **A comp that reads a check render is not sent to the farm.** Submit
   (and a re-comp from Farm Submit) stops with `reads a check render
   (default: render v0014 (check, every 5th)); a check render is not comped
-  on the farm: pick a published version`: a comp of held frames would
-  otherwise be published as the shot's comp.
+  on the farm: render the channel in full (Step 1), or pick a published
+  version`: a comp of held frames would otherwise be published as the
+  shot's comp.
 
 | Label | Default | What it does |
 |---|---|---|
 | Shot | `from_context` | Shots only (*Select Shot*); the label under it shows what resolved. In a Multi's workfile the template pins it to the member |
 | Channel | `default` | A menu of the shot's channels, then **All channels** (`*`): every channel in this one node (below) |
-| Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render), unless the denoise was made from an older render than the newest one (a render with Denoise off); or one department |
-| Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department). A [check render](#reading-a-check-render) is listed too, as `v0014 (check, every 5th)`: it is read only when you pick it, never by `latest` |
+| Department | `best` | `best` = the highest render department below `composite` with a complete version (denoise, else render; with no complete version anywhere, the highest with a [check render](#reading-a-check-render)), unless the denoise was made from an older render than the newest one (a render with Denoise off); or one department |
+| Version | `latest` | `latest` = the department's newest complete version, or a `v####` (needs a concrete Department). A [check render](#reading-a-check-render) is listed too, as `v0014 (check, every 5th)`: `latest` reads one only when there is no complete version |
 | Reads | | What resolved (`denoise v0004, 10 AOVs`), from what when it moved, or why nothing did; for All channels, which channel is on which output (also under the node, its comment) |
 | Time Offset | From Multi | Moves the shot's renders to where the shot sits in this scene: frame F reads the render's frame F minus the offset. **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** keeps the render on its own frames; **Manual** uses **Offset Frames**. The farm always comps each shot on its own frames, whatever this says |
 | Offset Frames | `0` | Manual only |
@@ -125,7 +136,7 @@ then show its first or last frame instead of black.
 | Cache › Cache AOVs Too | off | Caches the AOV reads as well (the cables): far more memory, every AOV of every frame played |
 | Cache › Max Frames | `250` | How many frames each read keeps |
 | Cache › Clear Cache | | Empties every cache of the node: the next play reads from disk again |
-| Outputs › AOV Outputs | off | Keeps a Cable Unpack beside the node for each cable that has fields (`<node>_lpe`, `<node>_aov`, `<node>_matte`, `<node>_cryptomaterials`, `<node>_cryptoprimitives`), with one typed output per field, and keeps its fields in step when the version changes. Turning it off removes the unpacks unless something reads them |
+| Outputs › AOV Outputs | off | Keeps a Cable Unpack beside the node for each cable that has fields (`<node>_lpe`, `<node>_aov`, `<node>_matte`, `<node>_cryptomaterials`, `<node>_cryptoprimitives`, `<node>_extra`), with one typed output per field, and keeps its fields in step when the version changes. Turning it off removes the unpacks unless something reads them |
 
 Buttons: **Update** re-resolves (opening the workfile does it too, for an
 import on `latest`) and imports the scene; **Open Location** opens the resolved version's folder;

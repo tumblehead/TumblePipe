@@ -349,6 +349,30 @@ class PipelineSettingsWidget(QWidget):
             self._on_layout_animate_toggled
         )
         outer.addWidget(self._layout_animate_checkbox)
+
+        # Flat asset / shot lists (config.flat_entities): a tiny project
+        # without CHAR / PROP / SET or sequences.
+        self._flat_checkboxes = {}
+        for kind, label, tip in (
+            ("assets", "Flat asset list (no categories)",
+             "New assets all go into one category the browser does not "
+             "show: no category rows in the sidebar, no Category in New "
+             "Asset. Existing categories and their assets stay where they "
+             "are; turning this off shows the categories again."),
+            ("shots", "Flat shot list (no sequences)",
+             "New shots all go into one sequence the browser does not "
+             "show: no sequence rows in the sidebar, no Sequence in New "
+             "Shot. A project that keeps all its shots in one sequence "
+             "goes on using it. Turning this off shows the sequences "
+             "again."),
+        ):
+            box = QCheckBox(label)
+            box.setToolTip(tip)
+            box.toggled.connect(
+                lambda checked, kind=kind: self._on_flat_toggled(kind, checked)
+            )
+            outer.addWidget(box)
+            self._flat_checkboxes[kind] = box
         self._defaults_project = None
 
         # Farm pools and priority presets (#34): Farm Submit offers only
@@ -441,6 +465,23 @@ class PipelineSettingsWidget(QWidget):
         except Exception as exc:
             report_failure("Saving Layout in Animate", exc)
 
+    def _on_flat_toggled(self, kind: str, checked: bool) -> None:
+        """A flat asset / shot list on or off for the selected project,
+        written at once like Layout in Animate; the sidebars and New Asset
+        / New Shot follow."""
+        project = self._defaults_project
+        if project is None:
+            return
+        from tumblepipe.config import flat_entities
+        try:
+            flat_entities.set_flat_in(project.store(), kind, bool(checked))
+        except Exception as exc:
+            report_failure("Saving the flat list setting", exc)
+            return
+        self._catalog.invalidate_cache()
+        self._catalog._refresh.sidebar()
+        self._catalog._refresh.grid()
+
     def _show_layout_animate(self, project, editable: bool) -> None:
         """The Layout in Animate checkbox for ``project`` (None: off and
         disabled), read from that project's own config."""
@@ -457,6 +498,23 @@ class PipelineSettingsWidget(QWidget):
         box.setChecked(on)
         box.blockSignals(False)
         box.setEnabled(project is not None and editable)
+        self._show_flat(project, editable)
+
+    def _show_flat(self, project, editable: bool) -> None:
+        """The flat asset / shot list checkboxes for ``project`` (None: off
+        and disabled), read from that project's own config."""
+        from tumblepipe.config import flat_entities
+        for kind, box in self._flat_checkboxes.items():
+            on = False
+            if project is not None:
+                try:
+                    on = flat_entities.is_flat_in(project.store(), kind)
+                except Exception as exc:
+                    report_failure("Reading the flat list setting", exc)
+            box.blockSignals(True)
+            box.setChecked(on)
+            box.blockSignals(False)
+            box.setEnabled(project is not None and editable)
 
     def _on_prompt_note_toggled(self, checked: bool) -> None:
         """Persist the version-note prompt pref immediately on toggle.

@@ -655,7 +655,7 @@ impl Editor {
     /// The rows of the bin on screen.
     fn bin_rows(&self) -> Vec<BinRow> {
         match self.bin_tab {
-            0 => bins::shot_rows(&self.bins.shots, &self.bin_state.folded),
+            0 => bins::bin_shot_rows(&self.bins.shots, &self.bin_state.folded, self.bins.flat_shots.is_some()),
             _ => self
                 .bins
                 .media

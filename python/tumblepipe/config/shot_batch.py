@@ -31,7 +31,7 @@ shots still go into one named before it.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Iterable
 
@@ -307,14 +307,36 @@ def name_problem(kind: str, name: str) -> str:
     return ''
 
 
-def plan(rows: Iterable[ShotRow], project: ProjectShots) -> Plan:
-    """What :func:`create` does with each of ``rows``, in order."""
+def plan(
+    rows: Iterable[ShotRow], project: ProjectShots, flat_bucket: str | None = None,
+) -> Plan:
+    """What :func:`create` does with each of ``rows``, in order.
+
+    ``flat_bucket``: the project lists its shots flat
+    (``config.flat_entities``) and this is its implicit sequence. Every row
+    goes into it, whatever sequence it names (one the list would never
+    show), and a name is taken across sequences, as New Shot refuses it: a
+    shot some sequence already has is skipped, a case variant of one
+    refused.
+    """
     planned: list[PlannedShot] = []
     # Spellings this list introduces: a new sequence's first spelling, and
     # each sequence's shots (existing and earlier rows), by casefold.
     new_sequences: dict[str, str] = {}
     listed: dict[str, dict[str, int]] = {}
+    # A flat list: every existing shot by spelling, and by casefold, with
+    # its sequence.
+    flat_exact: dict[str, str] = {}
+    flat_folded: dict[str, tuple[str, str]] = {}
+    if flat_bucket is not None:
+        for sequence in sorted(project.shots):
+            for name in sorted(project.shots[sequence]):
+                flat_exact.setdefault(name, sequence)
+                flat_folded.setdefault(name.casefold(), (sequence, name))
     for index, row in enumerate(rows):
+        if flat_bucket is not None:
+            row = replace(row, sequence=flat_bucket)
+
         def invalid(reason: str) -> None:
             planned.append(PlannedShot(row, Status.INVALID, reason))
 
@@ -328,6 +350,17 @@ def plan(rows: Iterable[ShotRow], project: ProjectShots) -> Plan:
         if None not in (row.frame_start, row.frame_end)                 and row.frame_end < row.frame_start:
             invalid(f'Ends ({row.frame_end}) before it starts ({row.frame_start})')
             continue
+        if flat_bucket is not None:
+            # A flat list shows no sequence: a name any sequence has is taken.
+            if row.shot in flat_exact:
+                planned.append(PlannedShot(
+                    row, Status.EXISTS, f'{flat_exact[row.shot]}/{row.shot} already exists',
+                ))
+                continue
+            holder = flat_folded.get(row.shot.casefold())
+            if holder is not None:
+                invalid(f"Shot '{row.shot}' differs only by case from '{holder[1]}' (in {holder[0]})")
+                continue
         category = next(
             (c for c in project.categories
              if c.casefold() == row.sequence.casefold()),

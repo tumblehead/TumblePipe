@@ -256,6 +256,12 @@ class EntityEditorSource:
     columns): ``load_layout`` reads what was remembered and ``save_layout``
     keeps it (``PipelinePrefs.entity_editor``, shaped by
     ``entity_editor_layout``).
+
+    ``flat_bucket`` names the implicit category (``'assets'``) or sequence
+    (``'shots'``) when the project lists that kind flat
+    (``config.flat_entities.flat_bucket_in``), else None. Its tab then shows
+    no Category / Sequence: no column, no group rows, no group picker, no
+    New Category / New Sequence, and new rows go into the bucket.
     """
     project: str
     config: object
@@ -279,6 +285,7 @@ class EntityEditorSource:
     repack: Callable[[Uri], object] = lambda uri: None
     load_layout: Callable[[], dict] = dict
     save_layout: Callable[[dict], None] = lambda data: None
+    flat_bucket: Callable[[str], str | None] = lambda kind: None
 
 
 def _hint(text: str = '') -> QLabel:
@@ -377,6 +384,8 @@ class _Table(QTableView):
         self._clicked = QPersistentModelIndex()
         self._frozen: QTableView | None = None
         self._frozen_count = 0
+        # Frozen columns not shown at all (a flat kind's group column).
+        self._frozen_hidden: set[int] = set()
 
     # ── Frozen leading columns (#40) ──────────────────────
 
@@ -435,10 +444,20 @@ class _Table(QTableView):
         """The width the frozen columns cover, 0 when none are frozen."""
         return sum(self.columnWidth(i) for i in range(self._frozen_count))
 
+    def hide_frozen_column(self, column: int) -> None:
+        """Hide frozen ``column`` in both views, for good (a flat kind's
+        group column): the frozen width then leaves it out."""
+        self._frozen_hidden.add(column)
+        self.setColumnHidden(column, True)
+        if self._frozen is not None:
+            self._sync_frozen_columns()
+
     def _sync_frozen_columns(self, *_args) -> None:
         frozen = self._frozen
         for column in range(self.model().columnCount()):
-            frozen.setColumnHidden(column, column >= self._frozen_count)
+            frozen.setColumnHidden(
+                column, column >= self._frozen_count or column in self._frozen_hidden,
+            )
             if column < self._frozen_count:
                 frozen.setColumnWidth(column, self.columnWidth(column))
         self._place_frozen()
@@ -543,6 +562,13 @@ class _SheetModel(QAbstractTableModel):
     def _layout(self) -> list:
         # Natural order by name, as a reload lists them: a row just added
         # sits among its neighbours, not after the last one.
+        if self.sheet.flat_group is not None:
+            # A flat kind: no group rows, every entity in one list by name
+            # (a project that turned flat late still has several groups).
+            return [row.id for row in sorted(
+                self.sheet.rows,
+                key=lambda row: (es.natural_key(row.name), es.natural_key(row.group)),
+            )]
         keys = []
         for group in self.sheet.sorted_groups():
             keys.append(GroupKey(group))
@@ -1733,6 +1759,10 @@ class AddShotsDialog(QDialog):
         row.addWidget(self._sequence, 1)
         row.addWidget(self._sequence_note, 1)
         form.addRow('Sequence', row)
+        # A flat shot list asks no sequence: the shots go into its implicit
+        # one, which the caller passed as ``sequence``.
+        self._flat = pane.flat_group is not None
+        form.setRowVisible(0, not self._flat)
 
         names = QHBoxLayout()
         self._pattern = QLineEdit(shot_batch.DEFAULT_PATTERN)
@@ -1805,6 +1835,9 @@ class AddShotsDialog(QDialog):
     def _on_sequence_changed(self, *_args) -> None:
         sequence = self.sequence()
         existing = self._sheet.names_in(sequence) if sequence else set()
+        if getattr(self, '_flat', False):
+            # A flat list: the next free names follow every shot shown.
+            existing = {row.name for row in self._sheet.rows} | existing
         if not sequence:
             self._sequence_note.setText('')
         elif sequence in self._sheet.base.groups:
@@ -1829,9 +1862,10 @@ class AddShotsDialog(QDialog):
     def _name_inherit(self) -> None:
         """The Inherit entry names the Root the sequence gives its shots."""
         root = self._sheet.group_inherited(self.sequence()).values.get(es.ROOT)
+        source = 'Inherit' if getattr(self, '_flat', False) else 'Inherit from the sequence'
         self._root.setItemText(0, (
-            f'Inherit from the sequence ({root_label(root)})' if isinstance(root, str)
-            else 'Inherit from the sequence (no Root)'
+            f'{source} ({root_label(root)})' if isinstance(root, str)
+            else f'{source} (no Root)'
         ))
 
     def _names(self) -> list[str]:
@@ -1887,6 +1921,10 @@ class AddAssetsDialog(QDialog):
         self._category.setCurrentText(category)
         self._category.currentTextChanged.connect(self._update)
         form.addRow('Category', self._category)
+        # A flat asset list asks no category: the assets go into its
+        # implicit one, which the caller passed as ``category``.
+        self._flat = pane.flat_group is not None
+        form.setRowVisible(0, not self._flat)
         self._names = QLineEdit()
         self._names.setPlaceholderText('e.g. tree rock bush, or tree, rock, bush')
         self._names.textChanged.connect(self._update)
@@ -1923,6 +1961,8 @@ class AddAssetsDialog(QDialog):
             self._preview.setText('Pick a category first')
         elif not names:
             self._preview.setText('Type the asset names')
+        elif self._flat:
+            self._preview.setText(_plural(len(names), 'asset'))
         else:
             new = '' if category in self._sheet.base.groups else ' (a new category)'
             self._preview.setText(f'{_plural(len(names), "asset")} in {category}{new}')
@@ -2581,9 +2621,16 @@ class _SheetPane(QWidget):
             c for c in self.columns if c in kind.values or c == es.LENGTH
         )
         source = window.source
+        # The implicit bucket of a flat kind (config.flat_entities): no
+        # Category / Sequence shown, new rows go into it.
+        try:
+            self.flat_group: str | None = source.flat_bucket(kind.key)
+        except Exception:
+            self.flat_group = None
         self.sheet = es.Sheet(
             es.load(source.config, kind), source.rename_blocker,
             source.multi_rename_blocker, source.channel_exports,
+            flat_group=self.flat_group,
         )
         self._errors: list[str] = []
         self._build_ui()
@@ -2617,6 +2664,8 @@ class _SheetPane(QWidget):
         self._group_filter.setToolTip(f'Show one {kind.group}, or all of them.')
         self._group_filter.currentIndexChanged.connect(self._apply_filter)
         top.addWidget(self._group_filter)
+        # A flat kind has no groups to pick from.
+        self._group_filter.setVisible(self.flat_group is None)
         self._search = QLineEdit()
         self._search.setPlaceholderText(f'Filter {kind.item}s')
         self._search.setClearButtonEnabled(True)
@@ -2666,6 +2715,9 @@ class _SheetPane(QWidget):
         # The group and name stay in view while the columns to their
         # right scroll (#40).
         table.freeze_columns(FROZEN_COLUMNS)
+        if self.flat_group is not None:
+            # A flat kind shows no Category / Sequence column.
+            table.hide_frozen_column(self.columns.index(es.GROUP))
         # Columns drag to a new place and hide from the header's menu,
         # remembered per tab; the frozen group and name stay first.
         self._arranging = False
@@ -2705,10 +2757,13 @@ class _SheetPane(QWidget):
                 f'line, as name; {kind.group}, name; name, start, end; or '
                 f'{kind.group}, name, start, end.',
         ))
-        actions.addWidget(_button(
+        self.new_group_button = _button(
             f'New {kind.group.capitalize()}…', self.new_group,
             tip=f'A new, empty {kind.group}, created on Apply.',
-        ))
+        )
+        # A flat kind has no category / sequence level to add to.
+        self.new_group_button.setVisible(self.flat_group is None)
+        actions.addWidget(self.new_group_button)
         # The edits to selected rows, kept apart from adding, with Retire
         # last: the one that removes.
         actions.addSpacing(scaled(24))
@@ -2775,8 +2830,16 @@ class _SheetPane(QWidget):
         hidden ones."""
         header = self.table.horizontalHeader()
         order = [self.columns[header.logicalIndex(v)] for v in range(header.count())]
-        hidden = {c for i, c in enumerate(self.columns) if header.isSectionHidden(i)}
+        hidden = {
+            c for i, c in enumerate(self.columns)
+            if header.isSectionHidden(i) and not self._flat_hidden(c)
+        }
         return order, hidden
+
+    def _flat_hidden(self, name: str) -> bool:
+        """The group column of a flat kind: hidden for good, never one the
+        artist hid (so not remembered, nor offered in the header menu)."""
+        return name == es.GROUP and self.flat_group is not None
 
     def set_column_layout(self, order: list[str], hidden: set[str]) -> None:
         header = self.table.horizontalHeader()
@@ -2787,7 +2850,7 @@ class _SheetPane(QWidget):
                 if current != visual:
                     header.moveSection(current, visual)
             for i, name in enumerate(self.columns):
-                header.setSectionHidden(i, name in hidden)
+                header.setSectionHidden(i, name in hidden or self._flat_hidden(name))
         finally:
             self._arranging = False
         self._column_state = (list(order), set(hidden))
@@ -2837,6 +2900,8 @@ class _SheetPane(QWidget):
         menu = QMenu(self)
         order, hidden = self.column_layout()
         for name in order:
+            if self._flat_hidden(name):
+                continue
             action = menu.addAction(self.model.headerData(
                 self.columns.index(name), Qt.Horizontal, Qt.DisplayRole))
             action.setCheckable(True)
@@ -3132,7 +3197,10 @@ class _SheetPane(QWidget):
                 values = {}
                 if row.frame_start is not None:
                     values = {es.FRAME_START: row.frame_start, es.FRAME_END: row.frame_end}
-                added.append(self.sheet.add(row.sequence, row.shot, values))
+                # A flat kind puts every new row in its implicit bucket, a
+                # pasted group too: it would be one the list never shows.
+                group = self.flat_group if self.flat_group is not None else row.sequence
+                added.append(self.sheet.add(group, row.shot, values))
         self.edit(change)
         self.select_cells([(row_id, 1) for row_id in added])
         if added:
@@ -3216,6 +3284,9 @@ class _SheetPane(QWidget):
 
     def add_dialog(self, group: str | None = None) -> None:
         group = group if group is not None else self.proxy.group
+        if self.flat_group is not None:
+            # A flat kind: the dialog asks no category / sequence.
+            group = self.flat_group
         dialog = (
             AddShotsDialog(self, group) if self.kind is es.SHOTS_KIND
             else AddAssetsDialog(self, group)
@@ -3561,7 +3632,8 @@ class _SheetPane(QWidget):
     def focus(self, group: str = '', name: str = '') -> None:
         """Show ``group`` ('' for all) with ``name`` selected."""
         self._fill_group_filter()
-        found = self._group_filter.findData(group)
+        # A flat kind's picker is hidden: always the whole list.
+        found = self._group_filter.findData(group) if self.flat_group is None else 0
         self._group_filter.setCurrentIndex(max(found, 0))
         if name:
             row = next((r for r in self.sheet.rows if r.group == group and r.name == name), None)

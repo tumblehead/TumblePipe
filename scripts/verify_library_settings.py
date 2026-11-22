@@ -16,8 +16,10 @@ out and not removable; Add… on a folder without ``library.json`` asks for a
 name and writes it; Add… on a named library lists it as is; a bad name is
 refused with nothing listed; Remove; another project's list is its own;
 Apply writes ``library_paths`` to ``projects.json`` and the catalog's
-sidebar then has the library's section. Prints OK/FAIL per check; exits 1
-on any FAIL.
+sidebar then has the library's section; the Flat asset / shot list
+checkboxes follow the project-defaults gate, Flat shot list writes
+``flat_shots`` and the sidebar's Shots section drops its sequence rows.
+Prints OK/FAIL per check; exits 1 on any FAIL.
 """
 
 import json
@@ -160,6 +162,33 @@ check("another project shows only its own libraries",
 select_project(launched)
 check('switching back keeps the unapplied list',
       [r[2] for r in rows()] == [None, bare_lib.as_posix()], rows())
+
+# Flat asset / shot lists: enabled exactly as Layout in Animate is (the
+# project-defaults gate), written at once, and the sidebar follows.
+from tumblepipe.config import flat_entities  # noqa: E402
+
+flat_boxes = widget._flat_checkboxes
+editable = widget._layout_animate_checkbox.isEnabled()
+check('the flat list checkboxes follow the project-defaults gate, off at first',
+      all(b.isEnabled() == editable and not b.isChecked() for b in flat_boxes.values()))
+if editable:
+    store = catalog._registry.get(launched).store()
+    flat_boxes['shots'].setChecked(True)
+    app.processEvents()
+    bucket = flat_entities.flat_bucket_in(store, 'shots')
+    def walk(cols):
+        for c in cols:
+            yield c
+            yield from walk(c.children or ())
+    shots = next(c for c in walk(catalog.get_collections())
+                 if c.id == f'{launched}:shots_section')
+    check('Flat shot list writes flat_shots and the Shots section lists no sequence',
+          bucket is not None
+          and not [c for c in shots.children if c.kind == 'sequence']
+          and flat_entities.flat_bucket_in(store, 'assets') is None, (bucket, shots))
+    flat_boxes['shots'].setChecked(False)
+    app.processEvents()
+    check('turning it off drops flat_shots', not flat_entities.is_flat_in(store, 'shots'))
 
 if len(sys.argv) > 1:
     widget.grab().save(sys.argv[1])

@@ -462,6 +462,7 @@ mod tests {
             fade_out: 0,
             opacity: 1.0,
             transform: Default::default(),
+            original: None,
         };
         edit.video.push(Track { name: "V1".into(), clips: vec![clip(0, half, "A"), clip(half, frames - half, "B")], color: None });
         edit

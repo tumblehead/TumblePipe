@@ -84,6 +84,22 @@ pub struct VideoClip<S> {
     /// editor from before transforms reads it.
     #[serde(default, skip_serializing_if = "Transform::is_identity")]
     pub transform: Transform,
+    /// The clip this one replaced, kept to swap back to: an animatic clip
+    /// converted to a shot (Remy's RFE, 2026-11-22; Cinedex's
+    /// `convert_shot`), or the shot clip an animatic was swapped back from.
+    /// Written only when there is one, so an edit without is the bytes it
+    /// always was. A publish freezes what plays, not this
+    /// ([`Edit::try_map`] leaves it out). It is kept in the clip's span and
+    /// fades, its source in step with the clip's ([`Clip`]'s setters), and
+    /// a join whose two kept clips do not continue each other is refused.
+    #[serde(default = "no_original", skip_serializing_if = "Option::is_none")]
+    pub original: Option<Box<VideoClip<S>>>,
+}
+
+/// A clip's [`VideoClip::original`] when its document gives none (a named
+/// default: a bare `default` would ask every source type for one).
+fn no_original<S>() -> Option<Box<VideoClip<S>>> {
+    None
 }
 
 /// Where a video clip's picture sits in the edit's picture. The clip is
@@ -161,7 +177,17 @@ fn is_full(opacity: &f64) -> bool {
 impl<S> VideoClip<S> {
     /// A clip of `source` at `at`, no fades, at full opacity, as fitted.
     pub fn new(at: Frame, duration: Frame, source_in: Frame, source: S) -> Self {
-        VideoClip { at, duration, source_in, source, fade_in: 0, fade_out: 0, opacity: FULL, transform: Transform::IDENTITY }
+        VideoClip {
+            at,
+            duration,
+            source_in,
+            source,
+            fade_in: 0,
+            fade_out: 0,
+            opacity: FULL,
+            transform: Transform::IDENTITY,
+            original: None,
+        }
     }
 }
 
@@ -342,6 +368,12 @@ pub trait Clip: Clone {
     fn set_fades(&mut self, fade_in: Frame, fade_out: Frame);
     fn set_source(&mut self, source: Self::Source);
 
+    /// The clip it replaced, kept to swap back to ([`VideoClip::original`]);
+    /// an audio clip keeps none.
+    fn original(&self) -> Option<&Self> {
+        None
+    }
+
     /// The edit frame after its last.
     fn end(&self) -> Frame {
         self.at() + self.duration()
@@ -358,8 +390,24 @@ pub trait Clip: Clone {
     }
 }
 
+/// What a video clip's setters do to the clip it keeps
+/// ([`VideoClip::original`]): the same, so the kept clip is always in the
+/// clip's span and fades, and its source runs in step with the clip's (a
+/// trim, slip, roll or split that moves where the clip starts in its
+/// source moves the kept clip's start as far). Swapping then puts the kept
+/// clip back exactly where, and as far in, as the clip is now, whatever
+/// was done to it since (Cinedex's `convert_shot`).
+macro_rules! keep_in_step {
+    (VideoClip, $self:ident, $kept:ident => $body:expr) => {
+        if let Some($kept) = $self.original.as_deref_mut() {
+            $body;
+        }
+    };
+    (AudioClip, $self:ident, $kept:ident => $body:expr) => {};
+}
+
 macro_rules! clip_impl {
-    ($clip:ident, $c:ident => $opacity:expr, $transform:expr) => {
+    ($clip:ident, $c:ident => $opacity:expr, $transform:expr, $original:expr) => {
         impl<S: Clone> Clip for $clip<S> {
             type Source = S;
             fn at(&self) -> Frame {
@@ -390,12 +438,16 @@ macro_rules! clip_impl {
             }
             fn set_at(&mut self, at: Frame) {
                 self.at = at;
+                keep_in_step!($clip, self, kept => kept.at = at);
             }
             fn set_duration(&mut self, duration: Frame) {
                 self.duration = duration;
+                keep_in_step!($clip, self, kept => kept.duration = duration);
             }
             fn set_source_in(&mut self, source_in: Frame) {
+                let _by = source_in - self.source_in;
                 self.source_in = source_in;
+                keep_in_step!($clip, self, kept => kept.source_in += _by);
             }
             fn set_source(&mut self, source: S) {
                 self.source = source;
@@ -403,13 +455,18 @@ macro_rules! clip_impl {
             fn set_fades(&mut self, fade_in: Frame, fade_out: Frame) {
                 self.fade_in = fade_in;
                 self.fade_out = fade_out;
+                keep_in_step!($clip, self, kept => (kept.fade_in, kept.fade_out) = (fade_in, fade_out));
+            }
+            fn original(&self) -> Option<&Self> {
+                let $c = self;
+                $original
             }
         }
     };
 }
 
-clip_impl!(VideoClip, c => c.opacity, c.transform);
-clip_impl!(AudioClip, _c => FULL, Transform::IDENTITY);
+clip_impl!(VideoClip, c => c.opacity, c.transform, c.original.as_deref());
+clip_impl!(AudioClip, _c => FULL, Transform::IDENTITY, None);
 
 /// Video or audio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -547,7 +604,19 @@ impl<S: Clone> Edit<S> {
             let mut clips = Vec::with_capacity(t.clips.len());
             for c in &t.clips {
                 let VideoClip { at, duration, source_in, fade_in, fade_out, opacity, transform, .. } = *c;
-                clips.push(VideoClip { at, duration, source_in, source: f(&c.source)?, fade_in, fade_out, opacity, transform });
+                // The clip it replaced is not carried over: a publish
+                // freezes what plays, and nothing plays it.
+                clips.push(VideoClip {
+                    at,
+                    duration,
+                    source_in,
+                    source: f(&c.source)?,
+                    fade_in,
+                    fade_out,
+                    opacity,
+                    transform,
+                    original: None,
+                });
             }
             video.push(Track { name: t.name.clone(), clips, color: t.color.clone() });
         }
@@ -875,5 +944,158 @@ pub(crate) mod tests {
         assert!(WorkingEdit::parse(&fades).unwrap_err().contains("fades"));
         let names = WORKING.replacen(r#""name": "V3""#, r#""name": "V1""#, 1);
         assert!(WorkingEdit::parse(&names).unwrap_err().contains("twice"));
+    }
+
+    /// An edit as an editor from before Convert to Shot (2fb3c8d2) wrote
+    /// it: a video clip's fields of then, with their rules of then.
+    mod before_originals {
+        use super::*;
+
+        #[derive(Serialize)]
+        struct Clip<'a, S> {
+            at: Frame,
+            duration: Frame,
+            source_in: Frame,
+            source: &'a S,
+            fade_in: Frame,
+            fade_out: Frame,
+            #[serde(skip_serializing_if = "crate::document::is_full")]
+            opacity: f64,
+            #[serde(skip_serializing_if = "Transform::is_identity")]
+            transform: Transform,
+        }
+
+        #[derive(Serialize)]
+        struct Then<'a, S> {
+            fps: u32,
+            resolution: [u32; 2],
+            start_timecode: &'a str,
+            video: Vec<Track<Clip<'a, S>>>,
+            audio: &'a [Track<AudioClip<S>>],
+            markers: &'a [Marker],
+        }
+
+        /// `edit` written as then.
+        pub(super) fn json<S: Serialize>(edit: &Edit<S>) -> String {
+            let video = edit
+                .video
+                .iter()
+                .map(|t| Track {
+                    name: t.name.clone(),
+                    color: t.color.clone(),
+                    clips: t
+                        .clips
+                        .iter()
+                        .map(|c| Clip {
+                            at: c.at,
+                            duration: c.duration,
+                            source_in: c.source_in,
+                            source: &c.source,
+                            fade_in: c.fade_in,
+                            fade_out: c.fade_out,
+                            opacity: c.opacity,
+                            transform: c.transform,
+                        })
+                        .collect(),
+                })
+                .collect();
+            let then = Then {
+                fps: edit.fps,
+                resolution: edit.resolution,
+                start_timecode: &edit.start_timecode,
+                video,
+                audio: &edit.audio,
+                markers: &edit.markers,
+            };
+            serde_json::to_string_pretty(&then).unwrap()
+        }
+    }
+
+    /// An edit of every kind of clip, at opacities, transforms and fades of
+    /// all sorts, and none keeping a clip it replaced.
+    fn plain_edits() -> impl Strategy<Value = WorkingEdit> {
+        let look = (prop_oneof![Just(FULL), Just(0.5), Just(0.0), 0.0f64..=1.0], prop_oneof![Just(Transform::IDENTITY), transforms()]);
+        (crate::ops::tests::edits(), prop::collection::vec((look, 0i64..3, 0i64..3), 20)).prop_map(|(mut edit, looks)| {
+            let clips = edit.video.iter_mut().flat_map(|t| t.clips.iter_mut());
+            for (clip, ((opacity, transform), fade_in, fade_out)) in clips.zip(looks.into_iter().cycle()) {
+                (clip.opacity, clip.transform) = (opacity, transform);
+                if fade_in + fade_out <= clip.duration {
+                    (clip.fade_in, clip.fade_out) = (fade_in, fade_out);
+                }
+            }
+            edit
+        })
+    }
+
+    /// `plain_edits` with some video clips keeping another clip of the
+    /// edit (any source, opacity and transform) as the one they replaced.
+    fn edits_with_originals() -> impl Strategy<Value = WorkingEdit> {
+        (plain_edits(), prop::collection::vec(prop::option::of(any::<prop::sample::Index>()), 20)).prop_map(|(mut edit, keeps)| {
+            let all: Vec<VideoClip<Source>> = edit.video.iter().flat_map(|t| t.clips.clone()).collect();
+            let clips = edit.video.iter_mut().flat_map(|t| t.clips.iter_mut());
+            for (clip, keep) in clips.zip(keeps) {
+                if let Some(which) = keep {
+                    let mut kept = which.get(&all).clone();
+                    (kept.at, kept.duration, kept.fade_in, kept.fade_out) = (clip.at, clip.duration, clip.fade_in, clip.fade_out);
+                    clip.original = Some(Box::new(kept));
+                }
+            }
+            edit
+        })
+    }
+
+    /// `edit` with no clip keeping another.
+    fn without_originals(edit: &WorkingEdit) -> WorkingEdit {
+        let mut out = edit.clone();
+        for clip in out.video.iter_mut().flat_map(|t| t.clips.iter_mut()) {
+            clip.original = None;
+        }
+        out
+    }
+
+    proptest! {
+        /// Saved edits stay compatible: an edit where no clip keeps the
+        /// clip it replaced is written to the byte as an editor from before
+        /// Convert to Shot wrote it (no `original` key anywhere), reads
+        /// back as itself, and writes the same again.
+        #[test]
+        fn an_edit_without_originals_is_written_as_before(edit in plain_edits()) {
+            let json = edit.to_json();
+            prop_assert!(!json.contains("\"original\""), "{}", json);
+            prop_assert_eq!(&json, &before_originals::json(&edit));
+            let back = WorkingEdit::parse(&json).unwrap();
+            prop_assert_eq!(&back, &edit);
+            prop_assert_eq!(back.to_json(), json);
+        }
+
+        /// An edit whose clips keep the clips they replaced reads back
+        /// exactly, kept clips and all, and writes the same again; one
+        /// `original` key per clip that keeps one; without them it is the
+        /// bytes of before.
+        #[test]
+        fn an_edit_with_originals_round_trips_exactly(edit in edits_with_originals()) {
+            let json = edit.to_json();
+            let keeping = edit.video.iter().flat_map(|t| &t.clips).filter(|c| c.original.is_some()).count();
+            prop_assert_eq!(json.matches("\"original\"").count(), keeping);
+            let back = WorkingEdit::parse(&json).unwrap();
+            prop_assert_eq!(&back, &edit);
+            prop_assert_eq!(back.to_json(), json.clone());
+            prop_assert_eq!(without_originals(&edit).to_json(), before_originals::json(&edit));
+        }
+
+        /// A publish freezes what plays: freezing (and any `try_map`)
+        /// leaves out every kept clip and changes nothing else, so an edit
+        /// freezes as it does with none kept; thawed, it is that edit's
+        /// thaw.
+        #[test]
+        fn freezing_drops_originals_and_nothing_else(edit in edits_with_originals()) {
+            let plain = without_originals(&edit);
+            let mapped = edit.try_map(|s| Ok::<_, ()>(s.clone())).unwrap();
+            prop_assert_eq!(&mapped, &plain);
+            let frozen = crate::freeze::freeze(&edit, &crate::freeze::tests::Fixed).unwrap();
+            prop_assert_eq!(&frozen, &crate::freeze::freeze(&plain, &crate::freeze::tests::Fixed).unwrap());
+            prop_assert!(!frozen.to_json().contains("\"original\""));
+            prop_assert_eq!(crate::freeze::thaw(&frozen), crate::freeze::thaw(&crate::freeze::freeze(&plain, &crate::freeze::tests::Fixed).unwrap()));
+        }
     }
 }
