@@ -590,6 +590,20 @@ pub struct Pointer {
     sweep: Option<((f32, f32), usize, bool)>,
 }
 
+impl Pointer {
+    /// Before `event` reaches the tracks: the keys held are the window's,
+    /// `held`, not only the last change the tracks were told of. A dialog
+    /// over the tracks takes the change of a key let go while it is open,
+    /// so the Alt of an Alt+drag let go after New shot opened stayed held
+    /// here and the next trim rolled. A change itself is left to `update`,
+    /// which redraws a held clip's outline for it.
+    fn follow_keys(&mut self, event: &Event, held: keyboard::Modifiers) {
+        if !matches!(event, Event::Keyboard(keyboard::Event::ModifiersChanged(_))) {
+            self.modifiers = held;
+        }
+    }
+}
+
 /// The gap between the hatching's lines on a clip with nothing to play.
 const HATCH: f32 = 7.0;
 
@@ -803,7 +817,9 @@ impl<Message> Widget<Message> for TrackView<Message> {
         let bounds = layout.bounds();
         let cursor = shell.cursor();
         let now = shell.store().now();
+        let held = shell.modifiers();
         let state = shell.store_mut().state_mut::<Pointer>(&self.id);
+        state.follow_keys(event, held);
         let (status, message) = self.tracks.update(state, event, bounds, cursor, now);
         if status == Status::Captured
             && matches!(event, Event::Mouse(mouse::Event::ButtonPressed(_)))
@@ -2158,5 +2174,21 @@ mod tests {
         assert!((hatch_coverage(HATCH, 0.0) - 1.0).abs() < 1e-6);
         assert_eq!(hatch_coverage(HATCH / 2.0, 0.0), 0.0);
         const { assert!(HATCH_TILE_WIDE % HATCH == 0.0 && HATCH_TILE_TALL % HATCH == 0.0) };
+    }
+
+    /// An Alt let go while a dialog had the keys (the New shot an Alt+drag
+    /// opens) is not still held at the next press: the press takes the
+    /// window's keys. A change of keys is still the tracks' own to take.
+    #[test]
+    fn a_press_takes_the_window_keys_not_a_stale_alt() {
+        let alt = keyboard::Modifiers { alt: true, ..keyboard::Modifiers::NONE };
+        let mut state = Pointer { modifiers: alt, ..Pointer::default() };
+        state.follow_keys(&Event::Keyboard(keyboard::Event::ModifiersChanged(keyboard::Modifiers::NONE)), alt);
+        assert!(state.modifiers.alt, "a change is left to update");
+        let press = Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left));
+        state.follow_keys(&press, keyboard::Modifiers::NONE);
+        assert_eq!(state.modifiers, keyboard::Modifiers::NONE);
+        state.follow_keys(&press, alt);
+        assert!(state.modifiers.alt, "an Alt held at the press holds");
     }
 }

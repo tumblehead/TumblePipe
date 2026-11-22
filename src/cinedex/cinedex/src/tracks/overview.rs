@@ -101,7 +101,11 @@ pub fn ended(grip: Grip, x: f32, span: usize, first: f64, shown: usize, least: u
         Grip::Head => {
             let end = (first + shown as f64).min(span as f64);
             let start = at.min(end - least as f64).max(0.0);
-            (start, ((end - start).round() as usize).clamp(least, span))
+            let shown = ((end - start).round() as usize).clamp(least, span);
+            // The first frame from the end, not the pointer: rounding the
+            // count against a pointer frame moved the end by up to half a
+            // frame on every move of a drag, so a long drag crept it.
+            ((end - shown as f64).max(0.0), shown)
         }
         Grip::Tail => {
             let end = at.max(first + least as f64).min(span as f64);
@@ -378,13 +382,31 @@ mod tests {
             if head {
                 prop_assert!((new_first + new_shown as f64 - end).abs() <= 0.5, "the tail moved");
                 if at <= end - least as f64 {
-                    prop_assert!((new_first - at).abs() < 1e-6, "the head is not under the pointer");
+                    prop_assert!((new_first - at).abs() <= 0.5 + 1e-9, "the head is not under the pointer");
                 }
             } else {
                 prop_assert_eq!(new_first, end, "the head moved");
                 if at >= first + least as f64 {
                     prop_assert!((new_first + new_shown as f64 - at).abs() <= 0.5, "the tail is not under the pointer");
                 }
+            }
+        }
+
+        /// A drag of the left end over many moves, each fed the view the
+        /// one before it made, keeps the last frame shown where it was (it
+        /// crept by up to half a frame a move, as the editor showed).
+        #[test]
+        fn a_long_head_drag_does_not_creep_the_tail(
+            span in 50usize..5000, first in 0f64..1.0, shown in 0f64..1.0, xs in prop::collection::vec(0f32..1200.0, 1..40), width in 400f32..2000.0,
+        ) {
+            let least = 8;
+            let shown = ((span as f64 * shown) as usize).clamp(least, span);
+            let first = (first * (span - shown) as f64).round();
+            let end = first + shown as f64;
+            let (mut f, mut s) = (first, shown);
+            for x in xs {
+                (f, s) = ended(Grip::Head, x, span, f, s, least, width);
+                prop_assert!((f + s as f64 - end).abs() < 1e-6, "the tail moved to {} from {}", f + s as f64, end);
             }
         }
 

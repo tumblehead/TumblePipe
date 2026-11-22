@@ -12,6 +12,32 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.120.1 — 2026-11-22
+
+### Chores
+- chore(changelog): v1.120.0 failed at CI (pre-Flux secrets); its notes ship as v1.120.1 (`2f95d40f`)
+
+## v1.120.0 — 2026-11-22
+
+### Features
+- feat(import-render): th::import_render 2.0, one beauty and a layers cable; reads on drop, says why it is empty (`a14133cf`)
+- feat(farm-submit): stale explained, editable Camera, Up to on the latest enabled department (`66c4e808`)
+- feat(cinedex): Alt+drag on empty track makes a shot of that length; master trims sync shot frames (`561d3e8b`)
+- feat(pipe): shot_sync, a master trim's shot frames written under a range and mtime guard (`5cf62e06`)
+- feat(cinedex): audio clips show their waveform on the timeline (`9a4e116e`)
+- feat(radial): Alt+D department jump everywhere in an asset department, with the Browser's icons and an Autosave toggle (`536618bf`)
+- feat(farm-manager): see and change a farm job's priority (`00fc7f80`)
+- feat(farm-manager): Preview in Cinedex before the first frame lands (`3609fda9`)
+
+### Fixes
+- fix(farm-manager): the Priority editor has the value ladder like every number field (`5893ddea`)
+- fix(radial): the department jump reads the workfile through scene_context and turns a Multi away (`c51dedb7`)
+- fix(farm): a farm publish runs the export nodes the session would, never a bypassed one (`58275b1b`)
+- fix(cinedex): the strip under the tracks is a working scrollbar (`938a2ba9`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.119.0 (`6c53b4d6`)
+
 ## v1.119.0 — 2026-11-22
 
 ### Breaking Changes
