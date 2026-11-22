@@ -12,6 +12,22 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.118.0 — 2026-11-21
+
+### Features
+- feat(farm): repair frames, Farm Submit's Into version and the Farm Manager's Render again (#92) (`1f43f800`)
+
+### Fixes
+- fix(cleanup): read .hiplc and .hipnc workfiles, so the versions they pin are protected (`75617a7d`)
+- fix(farm-manager): Render again requeues each following job after every job it waits on (#92) (`665877da`)
+
+### Documentation
+- docs(cleanup): the workfile readers read .hiplc and .hipnc too, said everywhere (`8b038ccf`)
+- docs(changelog): v1.117.1, and the HDA parms it shipped (`88264fd7`)
+
+### Tests
+- test(farm-submit): a headless harness for Into and Render again (#92) (`b24ac965`)
+
 ## v1.117.1 — 2026-11-21
 
 ### Fixes

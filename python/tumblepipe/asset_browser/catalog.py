@@ -1187,12 +1187,16 @@ class PipelineCatalog(Catalog):
             if scene_ctx is None:
                 return None
             from tumblepipe.pipe.paths import latest_export_path
-            path = latest_export_path(
-                scene_ctx.entity_uri, "default", scene_ctx.department_name,
+
+            def _published_at(uri):
+                path = latest_export_path(
+                    uri, "default", scene_ctx.department_name,
+                )
+                return None if path is None else path.stat().st_mtime
+
+            return last_published_html(
+                scene_ctx.entity_uri, _published_at, format_age_html,
             )
-            if path is None:
-                return format_age_html("Last published", None)
-            return format_age_html("Last published", path.stat().st_mtime)
 
         if action_id == "farm_manager":
             import datetime as dt
@@ -1651,6 +1655,35 @@ def _choice_item(label: str, action, checked: bool):
     if "checked" in {f.name for f in dataclasses.fields(MenuItem)}:
         return MenuItem(label, action, checked=checked)
     return (("✓ " if checked else "") + label, action)
+
+
+def last_published_html(entity_uri, published_at, format_age_html) -> str:
+    """The Publish button's hover: when the open scene's work was last
+    published.
+
+    ``published_at(uri)`` is the mtime of ``uri``'s latest export of the
+    scene's department, or None when it has none. A Multi's workfile names
+    the Multi (``groups:/shots/<name>``), but its publish writes each member
+    shot's export and nothing under the Multi: looking the Multi itself up
+    said "never" after every publish. A Multi's time is its newest member's,
+    with the members never published named after it.
+    """
+    from tumblepipe.config.groups import get_group, is_group_uri
+
+    if not is_group_uri(entity_uri):
+        return format_age_html("Last published", published_at(entity_uri))
+    group = get_group(entity_uri)
+    members = list(group.members) if group is not None else []
+    times = {str(member): published_at(member) for member in members}
+    known = [t for t in times.values() if t is not None]
+    text = format_age_html("Last published", max(known) if known else None)
+    never = [
+        "/".join(member.segments[1:]) for member in members
+        if times[str(member)] is None
+    ]
+    if known and never:
+        text += "<br>Never published: " + ", ".join(never)
+    return text
 
 
 def _watch_farm(catalog):
