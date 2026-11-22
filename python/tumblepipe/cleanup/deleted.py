@@ -50,7 +50,7 @@ def _size(path: Path) -> int:
     return total
 
 
-def plan(roots, _inventory, settings: Settings, *, now: float | None = None) -> CategoryPlan:
+def plan(roots, _inventory, settings: Settings, *, workfiles, now: float | None = None) -> CategoryPlan:
     out = CategoryPlan('deleted', 'Deleted entities', 'folder')
     now = time.time() if now is None else now
     holders = {root.purpose: root.path / ARCHIVE_DIR for root in roots.roots}

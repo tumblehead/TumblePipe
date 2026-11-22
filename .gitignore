@@ -46,10 +46,10 @@ otls/backup/
 # Per-developer Claude Code harness state.
 .claude/
 
-# Startup-generated radial menus — tumblepipe.startup (re)writes or removes
-# these per session from the live Recipes.hda / asset-browser favorites.
-# Gitignoring also keeps them out of hpm archives (no .hpmignore re-include);
-# the authored tumblepipe_pipeline.json stays tracked and shipped.
+# Radial menus older TumblePipe versions generated here at startup (they now go
+# to the user's own folder, pipe.houdini.radial.user_menu_dir). Ignored so a
+# stale copy in a checkout never reaches an hpm archive; the authored
+# tumblepipe_pipeline.json stays tracked and shipped.
 radial_menus/tumblepipe_recipes.json
 radial_menus/tumblepipe_asset_favorites.json
 

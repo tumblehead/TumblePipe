@@ -1,15 +1,18 @@
 //! The C ABI the shim calls. `cpp/th_delegate_core.h` declares the same
-//! structs and functions; keep the two in step.
+//! structs, functions and return codes. Both sides assert each struct's
+//! size and its last field's offset (here at compile time, there with
+//! `static_assert`), and `the_header_mirrors_the_abi` checks the header's
+//! fields, numbers and codes are these.
 
-use crate::math::{Mat4, Vec3};
+use crate::blur::{self, Blur, Lens};
 use crate::composite::Shading;
 use crate::lights::{LightShape, SceneLight, SceneLights};
-use crate::blur::{self, Blur, Lens};
+use crate::math::{Mat4, Vec3};
 use crate::raster::{self, Frame, Mesh, MeshKey};
 use crate::texture::Texture;
 use crate::{ffi_guard, TH_CANCELLED, TH_ERR_ARGS, TH_OK};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::slice;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// One image of a texture set: `tile` is the UDIM number, 0 for a plain
 /// texture.
@@ -77,7 +80,11 @@ pub struct ThMeshView {
 /// `opaque` (the frame's [`ThFrame::opaque`], th:transparency "off") every
 /// view is opaque, whatever its transparency.
 pub(crate) fn opacity_of(transparency: f32, opaque: bool) -> f32 {
-    if opaque || transparency.is_nan() { 1.0 } else { (1.0 - transparency).clamp(0.0, 1.0) }
+    if opaque || transparency.is_nan() {
+        1.0
+    } else {
+        (1.0 - transparency).clamp(0.0, 1.0)
+    }
 }
 
 /// Borrowed geometry of one basis curves or points prim and every instance
@@ -222,21 +229,44 @@ pub struct ThLight {
     pub length: f32,
 }
 
+// The layout the header asserts too (64-bit targets only): a field added,
+// dropped or moved on one side fails the build instead of reading garbage
+// at render time.
+const _: () = {
+    use std::mem::{offset_of, size_of};
+    assert!(size_of::<ThTextureTile>() == 16 && offset_of!(ThTextureTile, texture) == 8);
+    assert!(size_of::<ThMeshView>() == 152 && offset_of!(ThMeshView, cull) == 144);
+    assert!(size_of::<ThCurvesView>() == 128 && offset_of!(ThCurvesView, transform_key_count) == 120);
+    assert!(size_of::<ThLight>() == 184 && offset_of!(ThLight, length) == 176);
+    assert!(size_of::<ThFrame>() == 848 && offset_of!(ThFrame, opaque) == 840);
+};
+
 /// The frame's scene lights (`crate::lights::SceneLights`): none (so the
 /// fixed rig) when `f` asks for the headlight or has no light of a known
 /// kind.
+///
+/// # Safety
+/// `f.lights` null or valid for `f.light_count` lights.
 pub(crate) unsafe fn scene_lights(f: &ThFrame) -> SceneLights {
     if f.lighting == 1 || f.lights.is_null() || f.light_count == 0 {
         return SceneLights::NONE;
     }
-    let lights: Vec<SceneLight> = slice::from_raw_parts(f.lights, f.light_count as usize)
+    // SAFETY: the caller's contract above.
+    let lights: Vec<SceneLight> = unsafe { view(f.lights, f.light_count as usize) }
         .iter()
         .filter_map(|l| {
             let shape = LightShape::from_abi(l.kind)?;
             let tint = if l.temperature > 0.0 { crate::lights::blackbody(l.temperature) } else { [1.0; 3] };
             let radiance = [0, 1, 2].map(|c| l.color[c] * tint[c] * l.intensity);
-            Some(SceneLight::placed(shape, radiance, l.normalize != 0, l.point != 0, l.angle,
-                                    [l.radius, l.width, l.height, l.length], &l.transform))
+            Some(SceneLight::placed(
+                shape,
+                radiance,
+                l.normalize != 0,
+                l.point != 0,
+                l.angle,
+                [l.radius, l.width, l.height, l.length],
+                &l.transform,
+            ))
         })
         .collect();
     SceneLights::new(&lights)
@@ -270,8 +300,7 @@ pub(crate) fn linear_depth(f: &ThFrame) -> impl Fn(f32) -> f32 {
 /// `ids`: the caller wants the picking ids (the CPU path always makes
 /// them; the GPU path only when asked, with an extra pass). `smooth`: the
 /// meshes' kept smooth normals, by mesh, for the CPU path.
-fn render(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], cache: Option<&ThCache>, ids: bool,
-          gpu: bool) -> raster::Image {
+fn render(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], cache: Option<&ThCache>, ids: bool, gpu: bool) -> raster::Image {
     // A check for a new GPU or driver: TH_PLAYBLAST_COMPARE=1 draws every
     // mesh alone, small, both ways and reports the meshes whose pictures
     // differ. On HideAndReek/010 (RTX 3070) the only one is a set mesh whose
@@ -282,7 +311,13 @@ fn render(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], cache: Opt
         for (i, m) in meshes.iter().enumerate() {
             let one = std::slice::from_ref(m);
             let (cpu, gpu) = (raster::render(&small, one), crate::gpu::render(&small, one, None, false));
-            let gpu = match gpu { Ok(g) => g, Err(e) => { eprintln!("mesh {i}: GPU error {e}"); continue } };
+            let gpu = match gpu {
+                Ok(g) => g,
+                Err(e) => {
+                    eprintln!("mesh {i}: GPU error {e}");
+                    continue;
+                }
+            };
             let cov = |d: &[f32]| d.iter().filter(|&&z| z < 1.0).count();
             let diff = cpu.color.iter().zip(&gpu.color).filter(|(a, b)| (0..3).any(|c| (a[c] - b[c]).abs() > 0.02)).count();
             if diff > 20 {
@@ -297,13 +332,12 @@ fn render(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], cache: Opt
     if gpu {
         use std::sync::atomic::{AtomicBool, Ordering};
         static REPORTED: AtomicBool = AtomicBool::new(false);
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            crate::gpu::render(frame, meshes, cache.map(|c| &c.gpu), ids)
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| crate::gpu::render(frame, meshes, cache.map(|c| &c.gpu), ids)));
         let error = match result {
             Ok(Ok(image)) => return image,
             Ok(Err(error)) => error,
-            Err(_) => "the GPU path panicked".to_string(),
+            Err(payload) => format!("the GPU path panicked: {}", panic_message(payload.as_ref())),
         };
         if !REPORTED.swap(true, Ordering::Relaxed) {
             eprintln!("hdThPlayblast: GPU unavailable, drawing on the CPU: {error}");
@@ -315,6 +349,12 @@ fn render(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], cache: Opt
         Some(c) => raster::render_kept(frame, meshes, smooth, &mut c.cpu.lock().unwrap_or_else(|e| e.into_inner())),
         None => raster::render_kept(frame, meshes, smooth, &mut raster::Scratch::default()),
     }
+}
+
+/// What a caught panic said: its `&str` or `String` payload, else a stand-in.
+#[cfg(feature = "gpu")]
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload.downcast_ref::<&str>().copied().or_else(|| payload.downcast_ref::<String>().map(String::as_str)).unwrap_or("no message")
 }
 
 /// The blur a frame asks for: none at 0 or 1 blur samples; motion blur when
@@ -355,14 +395,45 @@ pub extern "C" fn th_cache_create() -> *mut ThCache {
 pub unsafe extern "C" fn th_cache_free(cache: *mut ThCache) {
     if !cache.is_null() {
         ffi_guard(|| {
-            drop(Box::from_raw(cache));
+            // SAFETY: from th_cache_create's Box, freed once (the contract).
+            drop(unsafe { Box::from_raw(cache) });
             TH_OK
         });
     }
 }
 
-unsafe fn opt_slice<'a, T>(ptr: *const f32, count: usize) -> Option<&'a [T]> {
-    (!ptr.is_null() && count > 0).then(|| slice::from_raw_parts(ptr as *const T, count))
+/// The `count` values at `ptr`; empty when `ptr` is null or `count` is 0.
+/// `count` is in `T`s: an xyz point is one [`Vec3`], a matrix one [`Mat4`].
+///
+/// # Safety
+/// A non-null `ptr` with a non-zero `count` must point at `count`
+/// initialised, aligned `T`s left unchanged for `'a`.
+unsafe fn view<'a, T>(ptr: *const T, count: usize) -> &'a [T] {
+    if ptr.is_null() || count == 0 {
+        &[]
+    } else {
+        // SAFETY: non-null and non-empty, so the caller's contract holds.
+        unsafe { slice::from_raw_parts(ptr, count) }
+    }
+}
+
+/// As [`view`], for writing.
+///
+/// # Safety
+/// A non-null `ptr` with a non-zero `count` must be valid for writes of
+/// `count` aligned `T`s, used by nothing else for `'a`.
+unsafe fn view_mut<'a, T>(ptr: *mut T, count: usize) -> &'a mut [T] {
+    if ptr.is_null() || count == 0 {
+        &mut []
+    } else {
+        // SAFETY: non-null and non-empty, so the caller's contract holds.
+        unsafe { slice::from_raw_parts_mut(ptr, count) }
+    }
+}
+
+/// `values`, or None when there are none: an optional per-corner array.
+fn given<T>(values: &[T]) -> Option<&[T]> {
+    (!values.is_empty()).then_some(values)
 }
 
 /// Shrink and keep a decoded texture. `pixels` is `width * height` linear
@@ -378,7 +449,8 @@ pub unsafe extern "C" fn th_texture_create(pixels: *const f32, width: u32, heigh
             return TH_ERR_ARGS;
         }
         let (w, h) = (width as usize, height as usize);
-        let texels = slice::from_raw_parts(pixels as *const [f32; 4], w * h);
+        // SAFETY: `width * height` rgba texels at `pixels` (the contract).
+        let texels = unsafe { view(pixels.cast::<[f32; 4]>(), w * h) };
         out = Box::into_raw(Box::new(Texture::from_linear(texels, w, h)));
         TH_OK
     });
@@ -390,7 +462,11 @@ pub unsafe extern "C" fn th_texture_create(pixels: *const f32, width: u32, heigh
 #[no_mangle]
 pub unsafe extern "C" fn th_texture_free(texture: *mut Texture) {
     if !texture.is_null() {
-        drop(Box::from_raw(texture));
+        ffi_guard(|| {
+            // SAFETY: from th_texture_create's Box, freed once (the contract).
+            drop(unsafe { Box::from_raw(texture) });
+            TH_OK
+        });
     }
 }
 
@@ -412,7 +488,9 @@ pub unsafe extern "C" fn th_render(
     depth: *mut f32,
     cache: *const ThCache,
 ) -> i32 {
-    render_into(frame, meshes, mesh_count, std::ptr::null(), 0, color, depth, std::ptr::null_mut(), std::ptr::null(), cache)
+    // SAFETY: th_render's contract is render_into's, without curves, ids or
+    // a cancel flag.
+    unsafe { render_into(frame, meshes, mesh_count, std::ptr::null(), 0, color, depth, std::ptr::null_mut(), std::ptr::null(), cache) }
 }
 
 /// [`th_render`] for a viewport. Also writes `ids` (may be null): per
@@ -437,7 +515,8 @@ pub unsafe extern "C" fn th_render_ids(
     cancel: *const AtomicU32,
     cache: *const ThCache,
 ) -> i32 {
-    render_into(frame, meshes, mesh_count, std::ptr::null(), 0, color, depth, ids, cancel, cache)
+    // SAFETY: th_render_ids' contract is render_into's, without curves.
+    unsafe { render_into(frame, meshes, mesh_count, std::ptr::null(), 0, color, depth, ids, cancel, cache) }
 }
 
 /// [`th_render_ids`] with basis curves and points as well ([`ThCurvesView`],
@@ -461,7 +540,8 @@ pub unsafe extern "C" fn th_render_scene(
     cancel: *const AtomicU32,
     cache: *const ThCache,
 ) -> i32 {
-    render_into(frame, meshes, mesh_count, curves, curves_count, color, depth, ids, cancel, cache)
+    // SAFETY: th_render_scene's contract is render_into's.
+    unsafe { render_into(frame, meshes, mesh_count, curves, curves_count, color, depth, ids, cancel, cache) }
 }
 
 /// One instance of a curves view, made for a frame: the geometry, its
@@ -479,6 +559,9 @@ struct MadeStrokes {
 /// geometry at the shutter's opening (its points through its first
 /// transform key) and closing (its closing points through its last), cut
 /// alike so the two line up.
+///
+/// # Safety
+/// Every pointer in `views` null or valid for the counts it is given with.
 unsafe fn make_strokes(frame: &Frame, views: &[ThCurvesView]) -> Vec<MadeStrokes> {
     use crate::curves::{expand, Camera, Interp, Kind, Strokes, Wrap};
     let camera = Camera::of(frame);
@@ -490,8 +573,10 @@ unsafe fn make_strokes(frame: &Frame, views: &[ThCurvesView]) -> Vec<MadeStrokes
         }
         let kind = Kind::from_abi(v.kind, v.basis);
         let n = v.point_count as usize;
-        let points = slice::from_raw_parts(v.points as *const Vec3, n);
-        let counts = int_slice(v.curve_vertex_counts, v.curve_count);
+        // SAFETY: the caller's contract (as for every view of `v` below).
+        let points = unsafe { view(v.points.cast::<Vec3>(), n) };
+        // SAFETY: as above.
+        let counts = unsafe { view(v.curve_vertex_counts, v.curve_count as usize) };
         if kind != Kind::Points && counts.is_empty() {
             continue;
         }
@@ -500,35 +585,49 @@ unsafe fn make_strokes(frame: &Frame, views: &[ThCurvesView]) -> Vec<MadeStrokes
             wrap: Wrap::from_abi(v.wrap),
             points,
             counts,
-            widths: if v.widths.is_null() { &[] } else { slice::from_raw_parts(v.widths, v.width_count as usize) },
+            // SAFETY: as above.
+            widths: unsafe { view(v.widths, v.width_count as usize) },
             width_interp: Interp::from_abi(v.width_interp),
-            colors: opt_slice(v.colors, v.color_count as usize).unwrap_or(&[]),
+            // SAFETY: as above.
+            colors: unsafe { view(v.colors.cast::<Vec3>(), v.color_count as usize) },
             color_interp: Interp::from_abi(v.color_interp),
         };
         let tc = v.transform_count as usize;
-        let transforms = slice::from_raw_parts(v.transforms as *const Mat4, tc);
+        // SAFETY: as above.
+        let transforms = unsafe { view(v.transforms.cast::<Mat4>(), tc) };
         let kc = v.transform_key_count as usize;
-        let keys: &[Mat4] = if moving && !v.transform_keys.is_null() && (2..=blur::MAX_KEYS).contains(&kc) {
-            slice::from_raw_parts(v.transform_keys as *const Mat4, kc * tc)
+        let keys: &[Mat4] = if moving && (2..=blur::MAX_KEYS).contains(&kc) {
+            // SAFETY: as above.
+            unsafe { view(v.transform_keys.cast::<Mat4>(), kc * tc) }
         } else {
             &[]
         };
-        let close_points = if moving { opt_slice::<Vec3>(v.points_close, n) } else { None };
+        // SAFETY: as above.
+        let close_points = if moving { given(unsafe { view(v.points_close.cast::<Vec3>(), n) }) } else { None };
         for (i, transform) in transforms.iter().enumerate() {
             let (open_m, close_m) = if keys.is_empty() { (transform, transform) } else { (&keys[i], &keys[(kc - 1) * tc + i]) };
             let (made, plan) = expand(&strokes, points, open_m, &camera, None);
             if made.triangles.is_empty() {
                 continue;
             }
-            let close = (close_points.is_some() || !keys.is_empty()).then(|| {
-                expand(&strokes, close_points.unwrap_or(points), close_m, &camera, Some(&plan)).0.points
-            }).filter(|c| c.len() == made.points.len());
+            let close = (close_points.is_some() || !keys.is_empty())
+                .then(|| expand(&strokes, close_points.unwrap_or(points), close_m, &camera, Some(&plan)).0.points)
+                .filter(|c| c.len() == made.points.len());
             out.push(MadeStrokes { view: j, instance: i, base_color: v.base_color, made, close });
         }
     }
     out
 }
 
+/// What th_render, th_render_ids and th_render_scene do.
+///
+/// # Safety
+/// `frame` null or valid; `meshes` and `curves` null or valid for their
+/// counts, and every pointer in them null or valid for the counts it is
+/// given with; `color` null or valid for `width * height * 4` writes,
+/// `depth` for `width * height`, `ids` for `width * height * 2`; `cancel`
+/// null or valid for the whole call; `cache` null or from
+/// [`th_cache_create`], used by one call at a time.
 #[allow(clippy::too_many_arguments)]
 unsafe fn render_into(
     frame: *const ThFrame,
@@ -543,17 +642,20 @@ unsafe fn render_into(
     cache: *const ThCache,
 ) -> i32 {
     ffi_guard(|| {
-        let _scope = crate::cancel::Scope::new(cancel);
-        let cancelled = || !cancel.is_null() && (*cancel).load(Ordering::Relaxed) != 0;
-        if frame.is_null() || color.is_null() || (meshes.is_null() && mesh_count > 0)
-            || (curves.is_null() && curves_count > 0) {
+        // SAFETY: `cancel` null or valid for the whole call (the contract).
+        let _scope = unsafe { crate::cancel::Scope::new(cancel) };
+        // SAFETY: as above.
+        let cancelled = || unsafe { cancel.as_ref() }.is_some_and(|c| c.load(Ordering::Relaxed) != 0);
+        if frame.is_null() || color.is_null() || (meshes.is_null() && mesh_count > 0) || (curves.is_null() && curves_count > 0) {
             return TH_ERR_ARGS;
         }
-        let f = &*frame;
+        // SAFETY: non-null, and valid by the contract.
+        let f = unsafe { &*frame };
         if f.width == 0 || f.height == 0 {
             return TH_ERR_ARGS;
         }
-        let views = if mesh_count > 0 { slice::from_raw_parts(meshes, mesh_count as usize) } else { &[] };
+        // SAFETY: `mesh_count` views at `meshes` (the contract).
+        let views = unsafe { view(meshes, mesh_count as usize) };
         // The views drawn, and where each sits in `meshes` (for `ids`).
         let (kept, views): (Vec<i32>, Vec<&ThMeshView>) = views
             .iter()
@@ -561,27 +663,36 @@ unsafe fn render_into(
             .filter(|(_, v)| !v.points.is_null() && !v.triangles.is_null() && !v.transforms.is_null())
             .map(|(i, v)| (i as i32, v))
             .unzip();
-        let points = |v: &ThMeshView| slice::from_raw_parts(v.points as *const Vec3, v.point_count as usize);
-        let triangles = |v: &ThMeshView| slice::from_raw_parts(v.triangles as *const [u32; 3], v.triangle_count as usize);
+        // SAFETY: a view's pointers are valid for its counts (the contract).
+        let points = |v: &ThMeshView| unsafe { view(v.points.cast::<Vec3>(), v.point_count as usize) };
+        // SAFETY: as above.
+        let triangles = |v: &ThMeshView| unsafe { view(v.triangles.cast::<[u32; 3]>(), v.triangle_count as usize) };
         // Owned here (or by the cache), borrowed by the meshes below.
         let started = std::time::Instant::now();
         let requests: Vec<Option<crate::normals::Request>> = views
             .iter()
-            .map(|v| v.corner_normals.is_null().then(|| crate::normals::Request {
-                key: (v.key != 0).then_some(MeshKey { id: v.key, version: v.version }),
-                points: points(v),
-                triangles: triangles(v),
-                smooth: v.polygonal == 0,
-            }))
+            .map(|v| {
+                v.corner_normals.is_null().then(|| crate::normals::Request {
+                    key: (v.key != 0).then_some(MeshKey { id: v.key, version: v.version }),
+                    points: points(v),
+                    triangles: triangles(v),
+                    smooth: v.polygonal == 0,
+                })
+            })
             .collect();
         let (normals, made) = {
             let mut own = crate::normals::Cache::default();
-            let mut kept = cache.as_ref().map(|c| c.normals.lock().unwrap_or_else(|e| e.into_inner()));
+            // SAFETY: `cache` null or a live ThCache (the contract).
+            let mut kept = unsafe { cache.as_ref() }.map(|c| c.normals.lock().unwrap_or_else(|e| e.into_inner()));
             kept.as_deref_mut().unwrap_or(&mut own).normals(&requests)
         };
         if std::env::var_os("TH_PLAYBLAST_TIMING").is_some() {
-            eprintln!("hdThPlayblast: cusp and smooth normals {} ms ({} meshes worked out, {} kept)",
-                      started.elapsed().as_millis(), made.computed, made.kept);
+            eprintln!(
+                "hdThPlayblast: cusp and smooth normals {} ms ({} meshes worked out, {} kept)",
+                started.elapsed().as_millis(),
+                made.computed,
+                made.kept
+            );
         }
         // Cusp normals go in as the mesh's corner normals; smooth ones, per
         // point, alongside.
@@ -600,42 +711,51 @@ unsafe fn render_into(
             ao: f.ao != 0,
             blur: blur_of(f),
             alpha: f.alpha != 0,
-            lights: scene_lights(f),
+            // SAFETY: `f.lights` valid for `f.light_count` (the contract).
+            lights: unsafe { scene_lights(f) },
         };
         // Curves and points, made for this frame: after the meshes, each
         // instance a mesh of its own in world space.
-        let curve_views = if curves_count > 0 { slice::from_raw_parts(curves, curves_count as usize) } else { &[] };
+        // SAFETY: `curves_count` views at `curves` (the contract).
+        let curve_views = unsafe { view(curves, curves_count as usize) };
         let started = std::time::Instant::now();
-        let strokes = make_strokes(&render_frame, curve_views);
+        // SAFETY: each curves view's pointers are valid for its counts (the contract).
+        let strokes = unsafe { make_strokes(&render_frame, curve_views) };
         if !curve_views.is_empty() && std::env::var_os("TH_PLAYBLAST_TIMING").is_some() {
-            eprintln!("hdThPlayblast: curves and points {} ms ({} views, {} triangles)", started.elapsed().as_millis(),
-                      curve_views.len(), strokes.iter().map(|s| s.made.triangles.len()).sum::<usize>());
+            eprintln!(
+                "hdThPlayblast: curves and points {} ms ({} views, {} triangles)",
+                started.elapsed().as_millis(),
+                curve_views.len(),
+                strokes.iter().map(|s| s.made.triangles.len()).sum::<usize>()
+            );
         }
         let mut list = Vec::with_capacity(views.len() + strokes.len());
         for (v, n) in views.iter().zip(&normals) {
             let tris = v.triangle_count as usize;
-            let tiles = if v.tiles.is_null() { &[][..] } else { slice::from_raw_parts(v.tiles, v.tile_count as usize) };
+            // SAFETY: the contract (as for every view of `v` below).
+            let tiles = unsafe { view(v.tiles, v.tile_count as usize) };
+            // SAFETY: as above.
+            let corners = |values: *const f32| unsafe { view(values.cast::<[f32; 3]>(), tris * 3) };
             list.push(Mesh {
                 points: points(v),
                 triangles: triangles(v),
-                corner_normals: opt_slice(v.corner_normals, tris * 3)
-                    .or(n.as_deref().filter(|n| v.polygonal != 0 && !n.is_empty())),
-                corner_colors: opt_slice(v.corner_colors, tris * 3),
-                corner_uvs: opt_slice(v.corner_uvs, tris * 3),
+                corner_normals: given(corners(v.corner_normals)).or(n.as_deref().filter(|n| v.polygonal != 0 && !n.is_empty())),
+                corner_colors: given(corners(v.corner_colors)),
+                // SAFETY: as above.
+                corner_uvs: given(unsafe { view(v.corner_uvs.cast::<[f32; 2]>(), tris * 3) }),
                 base_color: v.base_color,
-                tiles: tiles
-                    .iter()
-                    .filter(|t| !t.texture.is_null())
-                    .map(|t| (t.tile, &*t.texture))
-                    .collect(),
-                transforms: slice::from_raw_parts(v.transforms as *const Mat4, v.transform_count as usize),
+                // SAFETY: a non-null tile's texture is a live th_texture_create one (the contract).
+                tiles: tiles.iter().filter(|t| !t.texture.is_null()).map(|t| (t.tile, unsafe { &*t.texture })).collect(),
+                // SAFETY: as above.
+                transforms: unsafe { view(v.transforms.cast::<Mat4>(), v.transform_count as usize) },
                 key: (v.key != 0).then_some(MeshKey { id: v.key, version: v.version }),
-                points_close: opt_slice(v.points_close, v.point_count as usize),
-                transform_keys: if v.transform_keys.is_null() || v.transform_key_count < 2 {
+                // SAFETY: as above.
+                points_close: given(unsafe { view(v.points_close.cast::<Vec3>(), v.point_count as usize) }),
+                transform_keys: if v.transform_key_count < 2 {
                     &[]
                 } else {
-                    slice::from_raw_parts(v.transform_keys as *const Mat4,
-                                          v.transform_key_count as usize * v.transform_count as usize)
+                    // SAFETY: as above.
+                    unsafe { view(v.transform_keys.cast::<Mat4>(), v.transform_key_count as usize * v.transform_count as usize) }
                 },
                 opacity: opacity_of(v.transparency, f.opaque != 0),
                 cull: raster::Cull::from_abi(v.cull),
@@ -645,21 +765,17 @@ unsafe fn render_into(
             list.push(crate::curves::mesh(&s.made, s.close.as_deref(), s.base_color));
             smooth.push(None);
         }
-        let image = render(
-            &render_frame,
-            &list,
-            &smooth,
-            cache.as_ref(),
-            !ids.is_null(),
-            f.gpu != 0,
-        );
+        // SAFETY: as for `kept` above.
+        let image = render(&render_frame, &list, &smooth, unsafe { cache.as_ref() }, !ids.is_null(), f.gpu != 0);
         if cancelled() {
             return TH_CANCELLED;
         }
         let n = f.width as usize * f.height as usize;
-        slice::from_raw_parts_mut(color as *mut [f32; 4], n).copy_from_slice(&image.color);
+        // SAFETY: non-null, valid for `n` rgba texels (the contract).
+        unsafe { view_mut(color.cast::<[f32; 4]>(), n) }.copy_from_slice(&image.color);
         if !depth.is_null() {
-            let out = slice::from_raw_parts_mut(depth, n);
+            // SAFETY: valid for `n` writes (the contract).
+            let out = unsafe { view_mut(depth, n) };
             if f.linear_depth != 0 {
                 let linear = linear_depth(f);
                 for (o, &d) in out.iter_mut().zip(&image.depth) {
@@ -670,7 +786,8 @@ unsafe fn render_into(
             }
         }
         if !ids.is_null() {
-            let out = slice::from_raw_parts_mut(ids as *mut [i32; 2], n);
+            // SAFETY: valid for `n` pairs of ints (the contract).
+            let out = unsafe { view_mut(ids.cast::<[i32; 2]>(), n) };
             if image.ids.len() == n {
                 let meshes_drawn = kept.len();
                 for (o, &[m, i]) in out.iter_mut().zip(&image.ids) {
@@ -689,70 +806,6 @@ unsafe fn render_into(
         }
         TH_OK
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn render_rejects_bad_arguments_and_draws_an_empty_scene() {
-        let frame = ThFrame {
-            width: 8, height: 4,
-            world_to_clip: crate::math::IDENTITY, view_to_world: crate::math::IDENTITY,
-            samples: 1, shading: 0, ao: 1,
-            blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0,
-        };
-        let mut color = vec![0.0f32; 8 * 4 * 4];
-        let mut depth = vec![0.0f32; 8 * 4];
-        unsafe {
-            assert_eq!(th_render(std::ptr::null(), std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null()), TH_ERR_ARGS);
-            assert_eq!(th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null()), TH_OK);
-        }
-        assert!(depth.iter().all(|&d| d == 1.0));
-        assert!(color.chunks(4).all(|p| p[3] == 1.0 && p[0] > 0.1));
-    }
-
-    #[test]
-    fn caches_are_created_and_freed_and_null_is_no_cache() {
-        let frame = ThFrame {
-            width: 8, height: 4,
-            world_to_clip: crate::math::IDENTITY, view_to_world: crate::math::IDENTITY,
-            samples: 1, shading: 0, ao: 1,
-            blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-            focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0,
-        };
-        let mut color = vec![0.0f32; 8 * 4 * 4];
-        unsafe {
-            let cache = th_cache_create();
-            assert!(!cache.is_null());
-            assert_eq!(th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), cache), TH_OK);
-            th_cache_free(cache);
-            th_cache_free(std::ptr::null_mut());
-        }
-    }
-
-    #[test]
-    fn textures_round_trip_through_the_abi() {
-        let px = vec![0.5f32; 16 * 16 * 4];
-        unsafe {
-            let t = th_texture_create(px.as_ptr(), 16, 16);
-            assert!(!t.is_null());
-            assert!(th_texture_create(std::ptr::null(), 16, 16).is_null());
-            th_texture_free(t);
-        }
-    }
-}
-
-unsafe fn int_slice<'a>(ptr: *const i32, count: u32) -> &'a [i32] {
-    if ptr.is_null() || count == 0 {
-        &[]
-    } else {
-        slice::from_raw_parts(ptr, count as usize)
-    }
 }
 
 /// The normals the core draws a mesh with when it has none of its own, one
@@ -779,16 +832,21 @@ pub unsafe extern "C" fn th_mesh_normals(
     corner_normals: *mut f32,
 ) -> i32 {
     ffi_guard(|| {
-        if (points.is_null() && point_count > 0) || (triangles.is_null() && triangle_count > 0)
-            || (corner_normals.is_null() && triangle_count > 0) {
+        if (points.is_null() && point_count > 0)
+            || (triangles.is_null() && triangle_count > 0)
+            || (corner_normals.is_null() && triangle_count > 0)
+        {
             return TH_ERR_ARGS;
         }
         if triangle_count == 0 {
             return TH_OK;
         }
-        let pts: &[Vec3] = if point_count == 0 { &[] } else { slice::from_raw_parts(points as *const Vec3, point_count as usize) };
-        let tris = slice::from_raw_parts(triangles as *const [u32; 3], triangle_count as usize);
-        let out = slice::from_raw_parts_mut(corner_normals as *mut Vec3, tris.len() * 3);
+        // SAFETY: `point_count` xyz triples at `points` (the contract).
+        let pts = unsafe { view(points.cast::<Vec3>(), point_count as usize) };
+        // SAFETY: `triangle_count` index triples at `triangles` (the contract).
+        let tris = unsafe { view(triangles.cast::<[u32; 3]>(), triangle_count as usize) };
+        // SAFETY: non-null, valid for a normal per corner (the contract).
+        let out = unsafe { view_mut(corner_normals.cast::<Vec3>(), tris.len() * 3) };
         out.copy_from_slice(&mesh_normals(pts, tris, polygonal != 0));
         TH_OK
     })
@@ -836,30 +894,240 @@ pub unsafe extern "C" fn th_triangulate(
         if corners.is_null() || faces.is_null() || (points.is_null() && point_count > 0) {
             return TH_ERR_ARGS;
         }
-        let pts: &[Vec3] = if point_count == 0 {
-            &[]
-        } else {
-            slice::from_raw_parts(points as *const Vec3, point_count as usize)
+        // SAFETY: each of the four pointers null or valid for its count (the
+        // contract).
+        let (pts, counts, indices, holes) = unsafe {
+            (
+                view(points.cast::<Vec3>(), point_count as usize),
+                view(counts, count_n as usize),
+                view(indices, index_n as usize),
+                view(holes, hole_n as usize),
+            )
         };
-        let Some((tris, fs)) = crate::triangulate::triangulate(
-            pts,
-            int_slice(counts, count_n),
-            int_slice(indices, index_n),
-            int_slice(holes, hole_n),
-            left_handed != 0,
-        ) else {
+        let Some((tris, fs)) = crate::triangulate::triangulate(pts, counts, indices, holes, left_handed != 0) else {
             return TH_ERR_ARGS;
         };
         if tris.len() > capacity as usize {
             return TH_ERR_ARGS;
         }
-        let out_c = slice::from_raw_parts_mut(corners, tris.len() * 3);
-        for (dst, t) in out_c.as_chunks_mut::<3>().0.iter_mut().zip(&tris) {
-            dst.copy_from_slice(t);
-        }
-        slice::from_raw_parts_mut(faces, fs.len()).copy_from_slice(&fs);
+        // SAFETY: non-null and valid for `3 * capacity` writes, and
+        // `tris.len()` is at most `capacity` (the contract).
+        let out_c = unsafe { view_mut(corners.cast::<[u32; 3]>(), tris.len()) };
+        out_c.copy_from_slice(&tris);
+        // SAFETY: non-null and valid for `capacity` writes; one face per triangle.
+        unsafe { view_mut(faces, fs.len()) }.copy_from_slice(&fs);
         written = tris.len() as u32;
         TH_OK
     });
     written
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The number in `header` right after `before`.
+    fn number_after(header: &str, before: &str) -> usize {
+        let at = header.find(before).unwrap_or_else(|| panic!("th_delegate_core.h has no `{before}`")) + before.len();
+        header[at..].chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap()
+    }
+
+    /// The body of `struct name { ... }` in `source`, its comments dropped.
+    fn struct_body(source: &str, open: &str) -> Vec<String> {
+        let start = source.find(open).unwrap_or_else(|| panic!("no `{open}`")) + open.len();
+        let end = start + source[start..].find("\n}").unwrap();
+        source[start..end].lines().map(|l| l.split("//").next().unwrap().trim().to_string()).filter(|l| !l.is_empty()).collect()
+    }
+
+    /// The fields the header declares in `struct name`, as (name, C type):
+    /// `float base_color[3]` is ("base_color", "float[3]").
+    fn header_fields(header: &str, name: &str) -> Vec<(String, String)> {
+        struct_body(header, &format!("struct {name} {{"))
+            .iter()
+            .map(|decl| {
+                let decl = decl.trim_end_matches(';');
+                let (ty, field) = decl.rsplit_once([' ', '*']).unwrap();
+                let ty = format!("{}{}", ty.trim(), if decl[ty.len()..].starts_with('*') { "*" } else { "" });
+                match field.split_once('[') {
+                    Some((field, len)) => (field.to_string(), format!("{ty}[{len}")),
+                    None => (field.to_string(), ty),
+                }
+            })
+            .collect()
+    }
+
+    /// The fields ffi.rs declares in `struct name`, as (name, the C type
+    /// the header must give it).
+    fn rust_fields(name: &str) -> Vec<(String, String)> {
+        let c = |rust: &str| -> String {
+            match rust {
+                "u32" => "uint32_t".into(),
+                "i32" => "int32_t".into(),
+                "u64" => "uint64_t".into(),
+                "f32" => "float".into(),
+                "f64" => "double".into(),
+                "Texture" => "ThTexture".into(),
+                other => other.into(),
+            }
+        };
+        struct_body(include_str!("ffi.rs"), &format!("pub struct {name} {{"))
+            .iter()
+            .filter(|l| l.starts_with("pub "))
+            .map(|l| {
+                let (field, ty) = l.trim_start_matches("pub ").trim_end_matches(',').split_once(": ").unwrap();
+                let ty = if let Some(to) = ty.strip_prefix("*const ") {
+                    format!("{} const*", c(to))
+                } else if let Some((elem, len)) = ty.strip_prefix('[').and_then(|a| a.strip_suffix(']')).and_then(|a| a.split_once("; ")) {
+                    format!("{}[{len}]", c(elem))
+                } else {
+                    c(ty)
+                };
+                (field.to_string(), ty)
+            })
+            .collect()
+    }
+
+    /// The header declares exactly the functions this file exports, so the
+    /// build's symbol check (.ci/build_delegate.py, which reads them from the
+    /// header) looks for every one.
+    #[test]
+    fn the_header_declares_every_export() {
+        let header = include_str!("../cpp/th_delegate_core.h");
+        let declared: std::collections::BTreeSet<&str> = header
+            .lines()
+            .filter(|l| !l.starts_with("//") && !l.starts_with(' '))
+            .filter_map(|l| l.split_whitespace().find(|w| w.starts_with("th_") && w.contains('(')))
+            .map(|w| w.split('(').next().unwrap())
+            .collect();
+        let exported: std::collections::BTreeSet<&str> = include_str!("ffi.rs")
+            .split("pub unsafe extern \"C\" fn ")
+            .chain(include_str!("ffi.rs").split("pub extern \"C\" fn "))
+            .filter(|s| s.starts_with("th_"))
+            .map(|s| s.split('(').next().unwrap())
+            .collect();
+        assert_eq!(declared.len(), 9, "{declared:?}");
+        assert_eq!(declared, exported);
+    }
+
+    /// The header the shim compiles against says what this crate does: the
+    /// return codes, each struct's fields (names and types, in order: a
+    /// field widened into padding moves neither the size nor the last
+    /// offset), and each struct's size and last field's offset, which the
+    /// header's static_asserts hold the C++ side to.
+    #[test]
+    fn the_header_mirrors_the_abi() {
+        use std::mem::{offset_of, size_of};
+        let header = include_str!("../cpp/th_delegate_core.h");
+        let codes = [
+            ("TH_OK", crate::TH_OK),
+            ("TH_ERR_ARGS", crate::TH_ERR_ARGS),
+            ("TH_ERR_PANIC", crate::TH_ERR_PANIC),
+            ("TH_CANCELLED", TH_CANCELLED),
+        ];
+        for (name, value) in codes {
+            assert_eq!(number_after(header, &format!("constexpr int32_t {name} = ")), value as usize, "{name}");
+        }
+        let layouts = [
+            ("ThTextureTile", "texture", size_of::<ThTextureTile>(), offset_of!(ThTextureTile, texture)),
+            ("ThMeshView", "cull", size_of::<ThMeshView>(), offset_of!(ThMeshView, cull)),
+            ("ThCurvesView", "transform_key_count", size_of::<ThCurvesView>(), offset_of!(ThCurvesView, transform_key_count)),
+            ("ThLight", "length", size_of::<ThLight>(), offset_of!(ThLight, length)),
+            ("ThFrame", "opaque", size_of::<ThFrame>(), offset_of!(ThFrame, opaque)),
+        ];
+        assert_eq!(header.matches("static_assert(sizeof(Th").count(), layouts.len(), "one layout assert per struct");
+        for (name, last, size, offset) in layouts {
+            let fields = header_fields(header, name);
+            assert_eq!(fields, rust_fields(name), "{name}'s fields");
+            assert_eq!(fields.last().map(|(f, _)| f.as_str()), Some(last), "{name}'s last field");
+            assert_eq!(number_after(header, &format!("sizeof({name}) == ")), size, "sizeof({name})");
+            assert_eq!(number_after(header, &format!("offsetof({name}, {last}) == ")), offset, "offsetof({name}, {last})");
+        }
+    }
+
+    #[test]
+    fn render_rejects_bad_arguments_and_draws_an_empty_scene() {
+        let frame = ThFrame {
+            width: 8,
+            height: 4,
+            world_to_clip: crate::math::IDENTITY,
+            view_to_world: crate::math::IDENTITY,
+            samples: 1,
+            shading: 0,
+            ao: 1,
+            blur_samples: 0,
+            motion: 0,
+            camera_keys: 0,
+            cameras: [0.0; 64],
+            focal_length: 0.0,
+            f_stop: 0.0,
+            focus_distance: 0.0,
+            alpha: 0,
+            gpu: 0,
+            linear_depth: 0,
+            lights: std::ptr::null(),
+            light_count: 0,
+            lighting: 0,
+            opaque: 0,
+        };
+        let mut color = vec![0.0f32; 8 * 4 * 4];
+        let mut depth = vec![0.0f32; 8 * 4];
+        // SAFETY: a null frame, or a live one with buffers sized for it.
+        unsafe {
+            assert_eq!(
+                th_render(std::ptr::null(), std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null()),
+                TH_ERR_ARGS
+            );
+            assert_eq!(th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null()), TH_OK);
+        }
+        assert!(depth.iter().all(|&d| d == 1.0));
+        assert!(color.chunks(4).all(|p| p[3] == 1.0 && p[0] > 0.1));
+    }
+
+    #[test]
+    fn caches_are_created_and_freed_and_null_is_no_cache() {
+        let frame = ThFrame {
+            width: 8,
+            height: 4,
+            world_to_clip: crate::math::IDENTITY,
+            view_to_world: crate::math::IDENTITY,
+            samples: 1,
+            shading: 0,
+            ao: 1,
+            blur_samples: 0,
+            motion: 0,
+            camera_keys: 0,
+            cameras: [0.0; 64],
+            focal_length: 0.0,
+            f_stop: 0.0,
+            focus_distance: 0.0,
+            alpha: 0,
+            gpu: 0,
+            linear_depth: 0,
+            lights: std::ptr::null(),
+            light_count: 0,
+            lighting: 0,
+            opaque: 0,
+        };
+        let mut color = vec![0.0f32; 8 * 4 * 4];
+        // SAFETY: a live frame and buffer; the cache is freed once.
+        unsafe {
+            let cache = th_cache_create();
+            assert!(!cache.is_null());
+            assert_eq!(th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), cache), TH_OK);
+            th_cache_free(cache);
+            th_cache_free(std::ptr::null_mut());
+        }
+    }
+
+    #[test]
+    fn textures_round_trip_through_the_abi() {
+        let px = vec![0.5f32; 16 * 16 * 4];
+        // SAFETY: 16 x 16 live texels, or null; the texture is freed once.
+        unsafe {
+            let t = th_texture_create(px.as_ptr(), 16, 16);
+            assert!(!t.is_null());
+            assert!(th_texture_create(std::ptr::null(), 16, 16).is_null());
+            th_texture_free(t);
+        }
+    }
 }

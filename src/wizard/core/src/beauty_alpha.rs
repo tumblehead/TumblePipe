@@ -213,21 +213,14 @@ fn scan_prims(b: &[u8]) -> Result<Vec<Prim>, String> {
         let name = text(b, j + 1, name_end - 1).to_string();
         j = skip_trivia(b, name_end);
         if j < b.len() && b[j] == b'(' {
-            let close = find_close(b, j)
-                .ok_or_else(|| format!("prim \"{name}\" has unbalanced ( … ) metadata"))?;
+            let close = find_close(b, j).ok_or_else(|| format!("prim \"{name}\" has unbalanced ( … ) metadata"))?;
             j = skip_trivia(b, close + 1);
         }
         if j >= b.len() || b[j] != b'{' {
             return Err(format!("prim \"{name}\" has no {{ … }} body where one was expected"));
         }
-        let body_close =
-            find_close(b, j).ok_or_else(|| format!("prim \"{name}\" has an unbalanced body"))?;
-        let parent = prims
-            .iter()
-            .rev()
-            .find(|p| p.body_open < start && start < p.body_close)
-            .map(|p| p.path.clone())
-            .unwrap_or_default();
+        let body_close = find_close(b, j).ok_or_else(|| format!("prim \"{name}\" has an unbalanced body"))?;
+        let parent = prims.iter().rev().find(|p| p.body_open < start && start < p.body_close).map(|p| p.path.clone()).unwrap_or_default();
         prims.push(Prim {
             specifier: word.to_string(),
             type_name,
@@ -244,11 +237,7 @@ fn scan_prims(b: &[u8]) -> Result<Vec<Prim>, String> {
 /// `(literal start, literal end, value)` of each string-valued declaration
 /// of attribute `attr` directly in `prim`'s body. Any other form (no value,
 /// time samples, a connection, a non-string value) is an error.
-fn string_attribute(
-    b: &[u8],
-    prim: &Prim,
-    attr: &str,
-) -> Result<Vec<(usize, usize, String)>, String> {
+fn string_attribute(b: &[u8], prim: &Prim, attr: &str) -> Result<Vec<(usize, usize, String)>, String> {
     let mut out = Vec::new();
     for (start, end) in identifiers(b, prim.body_open + 1, prim.body_close)? {
         if text(b, start, end) != attr {
@@ -314,13 +303,10 @@ fn element_deletion(b: &[u8], list_open: usize, list_close: usize, start: usize,
     let ls = line_start(b, start);
     let rest_from = comma_after.map_or(end, |c| c + 1);
     let le = line_end(b, rest_from.min(list_close));
-    let own_line = ls > list_open
-        && blank(b, ls, start)
-        && le < list_close
-        && {
-            let tail = skip_trivia(b, rest_from);
-            tail >= le
-        };
+    let own_line = ls > list_open && blank(b, ls, start) && le < list_close && {
+        let tail = skip_trivia(b, rest_from);
+        tail >= le
+    };
     if own_line {
         // Drop the whole line; a last element also takes the comma before it
         let delete_to = (le + 1).min(b.len());
@@ -342,7 +328,7 @@ fn element_deletion(b: &[u8], list_open: usize, list_close: usize, start: usize,
 }
 
 fn apply_deletions(original: &str, mut spans: Vec<(usize, usize, String)>) -> String {
-    spans.sort_by(|a, b| b.0.cmp(&a.0));
+    spans.sort_by_key(|(start, _, _)| std::cmp::Reverse(*start));
     let mut out = original.to_string();
     for (from, to, with) in spans {
         out.replace_range(from..to, &with);
@@ -367,8 +353,7 @@ fn root_defaults_edit_inner(original: &str) -> Result<Option<String>, String> {
     let prims = scan_prims(b)?;
     let alphas: Vec<&Prim> = prims.iter().filter(|p| p.name == ALPHA_VAR).collect();
     let beauties: Vec<&Prim> = prims.iter().filter(|p| p.name == BEAUTY_VAR).collect();
-    let is_render_var_def =
-        |p: &Prim| p.specifier == "def" && p.type_name.as_deref() == Some("RenderVar");
+    let is_render_var_def = |p: &Prim| p.specifier == "def" && p.type_name.as_deref() == Some("RenderVar");
 
     if alphas.len() > 1 || alphas.iter().any(|p| !is_render_var_def(p)) {
         return Err(format!(
@@ -387,9 +372,7 @@ fn root_defaults_edit_inner(original: &str) -> Result<Option<String>, String> {
         ));
     }
     if beauties.len() > 1 || !is_render_var_def(beauties[0]) {
-        return Err(format!(
-            "its \"{BEAUTY_VAR}\" is not a single `def RenderVar \"{BEAUTY_VAR}\"`"
-        ));
+        return Err(format!("its \"{BEAUTY_VAR}\" is not a single `def RenderVar \"{BEAUTY_VAR}\"`"));
     }
     let beauty = beauties[0];
 
@@ -410,9 +393,8 @@ fn root_defaults_edit_inner(original: &str) -> Result<Option<String>, String> {
             return Err(format!("the {BEAUTY_VAR} RenderVar declares `{attr}` more than once"));
         }
         for (from, to, value) in decls {
-            let rgba = rgba_type(&value).ok_or_else(|| {
-                format!("the {BEAUTY_VAR} RenderVar's `{attr}` is \"{value}\", not a colour v10 knows")
-            })?;
+            let rgba =
+                rgba_type(&value).ok_or_else(|| format!("the {BEAUTY_VAR} RenderVar's `{attr}` is \"{value}\", not a colour v10 knows"))?;
             if rgba != value {
                 edits.push((from, to, format!("\"{rgba}\"")));
             }
@@ -449,8 +431,7 @@ fn root_defaults_edit_inner(original: &str) -> Result<Option<String>, String> {
             }
             let v = skip_trivia(b, k + 1);
             if v < b.len() && b[v] == b'<' {
-                let close = b[v..].iter().position(|&c| c == b'>').map(|n| v + n)
-                    .ok_or("an unterminated orderedVars target")?;
+                let close = b[v..].iter().position(|&c| c == b'>').map(|n| v + n).ok_or("an unterminated orderedVars target")?;
                 if target_is_alpha(text(b, v + 1, close), &alpha.path)? {
                     return Err(format!(
                         "orderedVars is the single target <{}>; with the alpha removed the \
@@ -477,8 +458,7 @@ fn root_defaults_edit_inner(original: &str) -> Result<Option<String>, String> {
                 if b[i] != b'<' {
                     return Err("an orderedVars list holds something other than <targets>".into());
                 }
-                let t_end = b[i..close].iter().position(|&c| c == b'>').map(|n| i + n)
-                    .ok_or("an unterminated orderedVars target")?;
+                let t_end = b[i..close].iter().position(|&c| c == b'>').map(|n| i + n).ok_or("an unterminated orderedVars target")?;
                 if target_is_alpha(text(b, i + 1, t_end), &alpha.path)? {
                     let span = element_deletion(b, v, close, i, t_end + 1).ok_or_else(|| {
                         format!(
@@ -547,11 +527,7 @@ fn check_migrated(text_: &str) -> Result<(), String> {
         let k = skip_trivia(b, end);
         if k < b.len() && b[k] == b'=' {
             let v = skip_trivia(b, k + 1);
-            let stop = if v < b.len() && b[v] == b'[' {
-                find_close(b, v).ok_or("an unbalanced orderedVars list")?
-            } else {
-                line_end(b, v)
-            };
+            let stop = if v < b.len() && b[v] == b'[' { find_close(b, v).ok_or("an unbalanced orderedVars list")? } else { line_end(b, v) };
             if text(b, v, stop).contains(&format!("/{ALPHA_VAR}>")) {
                 return Err("an orderedVars target still names the alpha".into());
             }
@@ -869,10 +845,7 @@ mod tests {
 
     #[test]
     fn a_target_that_cannot_be_matched_refuses() {
-        let before = BEFORE.replace(
-            "</scene/Render/Products/Vars/alpha>",
-            "</Render/Products/Vars/alpha>",
-        );
+        let before = BEFORE.replace("</scene/Render/Products/Vars/alpha>", "</Render/Products/Vars/alpha>");
         refused(root_defaults_edit(&before));
     }
 
@@ -884,14 +857,8 @@ mod tests {
                 "[</scene/Render/Products/Vars/beauty>, </scene/Render/Products/Vars/alpha>, </scene/Render/Products/Vars/albedo>]",
                 "[</scene/Render/Products/Vars/beauty>, </scene/Render/Products/Vars/albedo>]",
             ),
-            (
-                "[</scene/Render/Products/Vars/beauty>, </scene/Render/Products/Vars/alpha>]",
-                "[</scene/Render/Products/Vars/beauty>]",
-            ),
-            (
-                "[</scene/Render/Products/Vars/alpha>, </scene/Render/Products/Vars/beauty>]",
-                "[</scene/Render/Products/Vars/beauty>]",
-            ),
+            ("[</scene/Render/Products/Vars/beauty>, </scene/Render/Products/Vars/alpha>]", "[</scene/Render/Products/Vars/beauty>]"),
+            ("[</scene/Render/Products/Vars/alpha>, </scene/Render/Products/Vars/beauty>]", "[</scene/Render/Products/Vars/beauty>]"),
         ] {
             let before = BEFORE.replace(list, &format!("                rel orderedVars = {inline}\n"));
             let after = changed(root_defaults_edit(&before));
@@ -924,8 +891,8 @@ mod tests {
     fn a_beauty_only_file_still_goes_rgba() {
         let start = BEFORE.find("\n                def RenderVar \"alpha\"").unwrap();
         let end = BEFORE.find("\n\n                def RenderVar \"albedo\"").unwrap() + 1;
-        let before = format!("{}{}", &BEFORE[..start], &BEFORE[end..])
-            .replace("                    </scene/Render/Products/Vars/alpha>,\n", "");
+        let before =
+            format!("{}{}", &BEFORE[..start], &BEFORE[end..]).replace("                    </scene/Render/Products/Vars/alpha>,\n", "");
         assert_eq!(changed(root_defaults_edit(&before)), AFTER);
     }
 
@@ -942,10 +909,7 @@ mod tests {
         assert_eq!(context_json_edit(&after), Edit::Unchanged);
 
         let multi = "{\n  \"aov_names\": [\n    \"beauty\",\n    \"alpha\"\n  ]\n}\n";
-        assert_eq!(
-            changed(context_json_edit(multi)),
-            "{\n  \"aov_names\": [\n    \"beauty\"\n  ]\n}\n"
-        );
+        assert_eq!(changed(context_json_edit(multi)), "{\n  \"aov_names\": [\n    \"beauty\"\n  ]\n}\n");
         let only = "{\"aov_names\": [\"alpha\"]}";
         assert_eq!(changed(context_json_edit(only)), "{\"aov_names\": []}");
         refused(context_json_edit("{ not json"));

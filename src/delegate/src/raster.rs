@@ -182,7 +182,11 @@ pub struct Image {
 }
 
 pub(crate) fn srgb_to_linear(v: f32) -> f32 {
-    if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    if v <= 0.040_45 {
+        v / 12.92
+    } else {
+        ((v + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 /// Smooth vertex normals for a mesh that authored none: each triangle's
@@ -226,10 +230,12 @@ pub fn cusp_normals(points: &[Vec3], triangles: &[[u32; 3]], cusp_degrees: f32) 
     // Unit face normals; None for a degenerate or out-of-range triangle.
     let unit: Vec<Option<Vec3>> = face
         .iter()
-        .map(|f| f.and_then(|n| {
-            let len = math::dot(n, n).sqrt();
-            (len > 1e-20).then(|| math::scale(n, 1.0 / len))
-        }))
+        .map(|f| {
+            f.and_then(|n| {
+                let len = math::dot(n, n).sqrt();
+                (len > 1e-20).then(|| math::scale(n, 1.0 / len))
+            })
+        })
         .collect();
 
     // The triangles around each point, in triangle order (compressed rows).
@@ -317,12 +323,8 @@ struct Corner {
 
 fn lerp_corner(a: &Corner, b: &Corner, t: f32) -> Corner {
     let l3 = |x: Vec3, y: Vec3| math::add(x, math::scale(math::sub(y, x), t));
-    let mut clip = [0.0; 4];
-    for i in 0..4 {
-        clip[i] = a.clip[i] + (b.clip[i] - a.clip[i]) * t;
-    }
     Corner {
-        clip,
+        clip: std::array::from_fn(|i| a.clip[i] + (b.clip[i] - a.clip[i]) * t),
         world: l3(a.world, b.world),
         normal: l3(a.normal, b.normal),
         color: l3(a.color, b.color),
@@ -417,7 +419,11 @@ impl Edges {
     fn new(s: &[[f32; 4]; 3], area: f32) -> Edges {
         let line = |a: [f32; 4], b: [f32; 4]| {
             let (a, b) = ([a[0], a[1]], [b[0], b[1]]);
-            if (a[0], a[1]) < (b[0], b[1]) { (a, b, area.signum()) } else { (b, a, -area.signum()) }
+            if (a[0], a[1]) < (b[0], b[1]) {
+                (a, b, area.signum())
+            } else {
+                (b, a, -area.signum())
+            }
         };
         Edges { lines: [line(s[1], s[2]), line(s[2], s[0]), line(s[0], s[1])] }
     }
@@ -459,8 +465,7 @@ impl Raster<'_> {
     /// corner k's attributes being `corner(k)`: fetched only once one of a
     /// triangle's samples passes the depth test, as most of a dense mesh's
     /// triangles that reach a sample's box cover none or lie behind.
-    fn draw(&self, band: &mut Band, mesh: &Mesh, clip: &[[f32; 4]], corner: impl Fn(usize) -> Corner,
-            id: [i32; 2], cull: Cull) {
+    fn draw(&self, band: &mut Band, mesh: &Mesh, clip: &[[f32; 4]], corner: impl Fn(usize) -> Corner, id: [i32; 2], cull: Cull) {
         let rows = band.depth[0].len() / self.width;
         let (w, h) = (self.width as f32, self.height as f32);
         let [ox_lo, ox_hi, oy_lo, oy_hi] = self.spread;
@@ -468,18 +473,12 @@ impl Raster<'_> {
         let mut screen = [[0.0f32; 4]; 4];
         for (s, c) in screen.iter_mut().zip(clip) {
             let iw = 1.0 / c[3];
-            *s = [
-                (c[0] * iw * 0.5 + 0.5) * w,
-                (0.5 - c[1] * iw * 0.5) * h,
-                c[2] * iw * 0.5 + 0.5,
-                iw,
-            ];
+            *s = [(c[0] * iw * 0.5 + 0.5) * w, (0.5 - c[1] * iw * 0.5) * h, c[2] * iw * 0.5 + 0.5, iw];
         }
         for i in 1..clip.len().saturating_sub(1) {
             let idx = [0, i, i + 1];
             let s = idx.map(|k| screen[k]);
-            let area = (s[1][0] - s[0][0]) * (s[2][1] - s[0][1])
-                - (s[2][0] - s[0][0]) * (s[1][1] - s[0][1]);
+            let area = (s[1][0] - s[0][0]) * (s[2][1] - s[0][1]) - (s[2][0] - s[0][0]) * (s[1][1] - s[0][1]);
             if area.abs() < 1e-12 || !area.is_finite() || cull.culls(area) {
                 continue;
             }
@@ -534,11 +533,7 @@ impl Raster<'_> {
                         let (p0, p1, p2) = (p0 / sum, p1 / sum, p2 / sum);
                         let mix3 = |f: fn(&Corner) -> Vec3| {
                             let (a, b, c) = (f(corners[0]), f(corners[1]), f(corners[2]));
-                            [
-                                a[0] * p0 + b[0] * p1 + c[0] * p2,
-                                a[1] * p0 + b[1] * p1 + c[1] * p2,
-                                a[2] * p0 + b[2] * p1 + c[2] * p2,
-                            ]
+                            [a[0] * p0 + b[0] * p1 + c[0] * p2, a[1] * p0 + b[1] * p1 + c[1] * p2, a[2] * p0 + b[2] * p1 + c[2] * p2]
                         };
                         let (u0, u1, u2) = (corners[0].uv, corners[1].uv, corners[2].uv);
                         let c = Corner {
@@ -546,10 +541,7 @@ impl Raster<'_> {
                             world: mix3(|c| c.world),
                             normal: mix3(|c| c.normal),
                             color: mix3(|c| c.color),
-                            uv: [
-                                u0[0] * p0 + u1[0] * p1 + u2[0] * p2,
-                                u0[1] * p0 + u1[1] * p1 + u2[1] * p2,
-                            ],
+                            uv: [u0[0] * p0 + u1[0] * p1 + u2[0] * p2, u0[1] * p0 + u1[1] * p1 + u2[1] * p2],
                         };
                         let rgb = self.albedo(mesh, &c);
                         if let Some(glass) = &self.glass {
@@ -560,8 +552,7 @@ impl Raster<'_> {
                             let nd = self.view.buffer_normal(c.normal, c.world);
                             let v = self.view.towards_eye(c.world);
                             let p = self.view.camera_point(c.world);
-                            let lit = composite::light(glass.shading, rgb, [nd[0], nd[1], nd[2]], v, p,
-                                                       &glass.lighting);
+                            let lit = composite::light(glass.shading, rgb, [nd[0], nd[1], nd[2]], v, p, &glass.lighting);
                             let a = mesh.opacity;
                             let s = &mut band.accum[k][at];
                             *s = [s[0] + lit[0] * a, s[1] + lit[1] * a, s[2] + lit[2] * a, s[3] + a];
@@ -660,8 +651,13 @@ impl SampleGrid {
 /// at all: behind the camera, off screen, or so small it falls between
 /// samples (most of a dense shot's triangles at playblast size).
 #[cfg(test)]
-pub(crate) fn triangle_bands(clip: [[f32; 4]; 3], width: usize, height: usize, band_rows: usize,
-                             grid: &SampleGrid) -> Option<(usize, usize)> {
+pub(crate) fn triangle_bands(
+    clip: [[f32; 4]; 3],
+    width: usize,
+    height: usize,
+    band_rows: usize,
+    grid: &SampleGrid,
+) -> Option<(usize, usize)> {
     screen_bounds(clip, width, height).and_then(|b| bounds_bands(b, width, height, band_rows, grid))
 }
 
@@ -714,8 +710,7 @@ fn screen_bounds(clip: [[f32; 4]; 3], width: usize, height: usize) -> Option<[f3
 
 /// The bands a triangle with screen `bounds` can touch through `grid`, or
 /// None when no sample of the grid falls inside them.
-fn bounds_bands([x0, x1, y0, y1]: [f32; 4], width: usize, height: usize, band_rows: usize,
-                grid: &SampleGrid) -> Option<(usize, usize)> {
+fn bounds_bands([x0, x1, y0, y1]: [f32; 4], width: usize, height: usize, band_rows: usize, grid: &SampleGrid) -> Option<(usize, usize)> {
     let (w, h) = (width as f32, height as f32);
     // The samples inside the bounds, then their pixels, clamped to the image.
     let (Some((sx0, sx1)), Some((sy0, sy1))) = (grid.span(0, x0, x1), grid.span(1, y0, y1)) else {
@@ -747,43 +742,47 @@ type Bands = Vec<Vec<(u32, u32)>>;
 /// are found once and looked up in every grid, so the bands of grid g are
 /// exactly those binning through g alone gives.
 #[allow(clippy::too_many_arguments)]
-fn bin(instances: &[Inst], which: &[usize], meshes: &[Mesh], width: usize, height: usize,
-       band_rows: usize, band_count: usize, grids: &[SampleGrid]) -> Vec<Bands> {
-    let chunks: Vec<(usize, usize)> = which
-        .iter()
-        .flat_map(|&i| (0..meshes[instances[i].mesh].triangles.len()).step_by(BIN_CHUNK).map(move |t| (i, t)))
-        .collect();
+fn bin(
+    instances: &[Inst],
+    which: &[usize],
+    meshes: &[Mesh],
+    width: usize,
+    height: usize,
+    band_rows: usize,
+    band_count: usize,
+    grids: &[SampleGrid],
+) -> Vec<Bands> {
+    let chunks: Vec<(usize, usize)> =
+        which.iter().flat_map(|&i| (0..meshes[instances[i].mesh].triangles.len()).step_by(BIN_CHUNK).map(move |t| (i, t))).collect();
     let next = AtomicUsize::new(0);
     // Per chunk (by its index), per grid, its bands' triangles.
     let parts: Mutex<Vec<(usize, Vec<Bands>)>> = Mutex::new(Vec::new());
-    pool::each_thread(&|| {
-        loop {
-            let c = next.fetch_add(1, Ordering::Relaxed);
-            if c >= chunks.len() {
-                break;
+    pool::each_thread(&|| loop {
+        let c = next.fetch_add(1, Ordering::Relaxed);
+        if c >= chunks.len() {
+            break;
+        }
+        let mut local: Vec<Bands> = vec![vec![Vec::new(); band_count]; grids.len()];
+        let (i, start) = chunks[c];
+        let inst = &instances[i];
+        let triangles = &meshes[inst.mesh].triangles;
+        let end = (start + BIN_CHUNK).min(triangles.len());
+        for (t, tri) in triangles.iter().enumerate().take(end).skip(start) {
+            let vi = tri.map(|v| v as usize);
+            if vi.iter().any(|&v| v >= inst.clip.len()) {
+                continue;
             }
-            let mut local: Vec<Bands> = vec![vec![Vec::new(); band_count]; grids.len()];
-            let (i, start) = chunks[c];
-            let inst = &instances[i];
-            let triangles = &meshes[inst.mesh].triangles;
-            let end = (start + BIN_CHUNK).min(triangles.len());
-            for (t, tri) in triangles.iter().enumerate().take(end).skip(start) {
-                let vi = tri.map(|v| v as usize);
-                if vi.iter().any(|&v| v >= inst.clip.len()) {
-                    continue;
-                }
-                let Some(bounds) = screen_bounds(vi.map(|v| inst.clip[v]), width, height) else { continue };
-                for (grid, bands) in grids.iter().zip(&mut local) {
-                    if let Some((b0, b1)) = bounds_bands(bounds, width, height, band_rows, grid) {
-                        for band in bands.iter_mut().take(b1.min(band_count - 1) + 1).skip(b0) {
-                            band.push((i as u32, t as u32));
-                        }
+            let Some(bounds) = screen_bounds(vi.map(|v| inst.clip[v]), width, height) else { continue };
+            for (grid, bands) in grids.iter().zip(&mut local) {
+                if let Some((b0, b1)) = bounds_bands(bounds, width, height, band_rows, grid) {
+                    for band in bands.iter_mut().take(b1.min(band_count - 1) + 1).skip(b0) {
+                        band.push((i as u32, t as u32));
                     }
                 }
             }
-            if local.iter().flatten().any(|b| !b.is_empty()) {
-                parts.lock().unwrap().push((c, local));
-            }
+        }
+        if local.iter().flatten().any(|b| !b.is_empty()) {
+            parts.lock().unwrap().push((c, local));
         }
     });
     let mut parts = parts.into_inner().unwrap();
@@ -827,9 +826,11 @@ fn merge(a: &[(u32, u32)], b: &[(u32, u32)]) -> Vec<(u32, u32)> {
 /// points.
 fn bounds_of(points: &[Vec3]) -> Option<(Vec3, Vec3)> {
     let first = *points.first()?;
-    Some(points.iter().fold((first, first), |(lo, hi), p| {
-        (std::array::from_fn(|k| lo[k].min(p[k])), std::array::from_fn(|k| hi[k].max(p[k])))
-    }))
+    Some(
+        points
+            .iter()
+            .fold((first, first), |(lo, hi), p| (std::array::from_fn(|k| lo[k].min(p[k])), std::array::from_fn(|k| hi[k].max(p[k])))),
+    )
 }
 
 /// Whether a box (`bounds_of`, object space) through `xform` then
@@ -874,8 +875,7 @@ fn normal_count(mesh: &Mesh, smooth: Option<&[Vec3]>) -> usize {
 /// World positions of `points` and the mesh's normals through `xform`,
 /// into `world` and `normals` ([`normal_count`] of them): what a pass
 /// draws that does not depend on its camera.
-fn world_into(mesh: &Mesh, smooth: Option<&[Vec3]>, points: &[Vec3], xform: &Mat4, world: &mut [Vec3],
-              normals: &mut [Vec3]) {
+fn world_into(mesh: &Mesh, smooth: Option<&[Vec3]>, points: &[Vec3], xform: &Mat4, world: &mut [Vec3], normals: &mut [Vec3]) {
     for (o, &p) in world.iter_mut().zip(points) {
         *o = math::transform_point(p, xform);
     }
@@ -896,11 +896,17 @@ fn world_of(mesh: &Mesh, smooth: Option<&[Vec3]>, points: &[Vec3], xform: &Mat4)
 /// An instance's vertices for a pass of its own, into `clip`, `world` and
 /// `normals`: at `close`'s moment of the shutter when its points move.
 #[allow(clippy::too_many_arguments)]
-fn transform_into(mesh: &Mesh, smooth: Option<&[Vec3]>, xform: &Mat4, world_to_clip: &Mat4,
-                  close: Option<(&[Vec3], f32)>, clip: &mut [[f32; 4]], world: &mut [Vec3], normals: &mut [Vec3]) {
-    let moved: Option<Vec<Vec3>> = close.map(|(close, s)| {
-        mesh.points.iter().zip(close).map(|(&a, &b)| blur::point_at(a, b, s)).collect()
-    });
+fn transform_into(
+    mesh: &Mesh,
+    smooth: Option<&[Vec3]>,
+    xform: &Mat4,
+    world_to_clip: &Mat4,
+    close: Option<(&[Vec3], f32)>,
+    clip: &mut [[f32; 4]],
+    world: &mut [Vec3],
+    normals: &mut [Vec3],
+) {
+    let moved: Option<Vec<Vec3>> = close.map(|(close, s)| mesh.points.iter().zip(close).map(|(&a, &b)| blur::point_at(a, b, s)).collect());
     let points = moved.as_deref().unwrap_or(mesh.points);
     clip_into(points, xform, world_to_clip, clip);
     world_into(mesh, smooth, points, xform, world, normals);
@@ -909,8 +915,14 @@ fn transform_into(mesh: &Mesh, smooth: Option<&[Vec3]>, xform: &Mat4, world_to_c
 /// [`transform_into`] into vectors of its own: what a pass makes of an
 /// instance, for the tests.
 #[cfg(test)]
-fn transform_instance(mesh_index: usize, mesh: &Mesh, smooth: Option<&[Vec3]>, xform: &Mat4, world_to_clip: &Mat4,
-                      close: Option<(&[Vec3], f32)>) -> InstanceVerts {
+fn transform_instance(
+    mesh_index: usize,
+    mesh: &Mesh,
+    smooth: Option<&[Vec3]>,
+    xform: &Mat4,
+    world_to_clip: &Mat4,
+    close: Option<(&[Vec3], f32)>,
+) -> InstanceVerts {
     let n = mesh.points.len();
     let mut v = InstanceVerts {
         mesh: mesh_index,
@@ -982,8 +994,11 @@ impl Scratch {
     /// Keep `samples` for a later frame, in place of the least recent of
     /// two; not a buffer over [`KEEP_BYTES`].
     fn keep(&mut self, samples: Samples) {
-        let bytes = samples.depth.len() * (16 + 16 + 4) + samples.ids.len() * 8
-            + samples.accum.capacity() * 16 + samples.reveal.capacity() * 4 + samples.near.capacity() * 4;
+        let bytes = samples.depth.len() * (16 + 16 + 4)
+            + samples.ids.len() * 8
+            + samples.accum.capacity() * 16
+            + samples.reveal.capacity() * 4
+            + samples.near.capacity() * 4;
         if bytes > KEEP_BYTES {
             return;
         }
@@ -1072,21 +1087,24 @@ pub fn render(frame: &Frame, meshes: &[Mesh]) -> Image {
 /// [`render`] with what a delegate keeps between frames: each mesh's
 /// smooth point normals where it has them (`smooth`, by mesh; the rest are
 /// worked out here) and the buffers of earlier frames (`scratch`).
-pub(crate) fn render_kept(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], scratch: &mut Scratch)
-                          -> Image {
+pub(crate) fn render_kept(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], scratch: &mut Scratch) -> Image {
     let made = smooth_missing(meshes, smooth);
     let smooth = smooth_of(meshes, smooth, &made);
     if !blur::active(frame, meshes) {
         let offsets = composite::sample_offsets(frame.samples);
         let mut samples = scratch.samples(frame.width, frame.height, &offsets);
-        let pass = Pass {
-            layers: 0..offsets.len(),
-            world_to_clip: frame.world_to_clip,
-            view: View::new(&frame.view_to_world),
-            time: None,
-        };
-        render_passes(frame, meshes, &smooth, &offsets, std::slice::from_ref(&pass), &mut [Shared::off(), Shared::off()],
-                      VERTEX_BUDGET, &mut samples, &mut scratch.arena);
+        let pass = Pass { layers: 0..offsets.len(), world_to_clip: frame.world_to_clip, view: View::new(&frame.view_to_world), time: None };
+        render_passes(
+            frame,
+            meshes,
+            &smooth,
+            &offsets,
+            std::slice::from_ref(&pass),
+            &mut [Shared::off(), Shared::off()],
+            VERTEX_BUDGET,
+            &mut samples,
+            &mut scratch.arena,
+        );
         let image = composite::resolve(frame, &samples);
         scratch.keep(samples);
         return image;
@@ -1110,8 +1128,7 @@ pub(crate) fn render_blurred_with(frame: &Frame, meshes: &[Mesh], share: bool, b
     blurred(frame, meshes, &smooth_of(meshes, &[], &made), share, budget, &mut Scratch::default())
 }
 
-fn blurred(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], share: bool, budget: usize,
-           scratch: &mut Scratch) -> Image {
+fn blurred(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], share: bool, budget: usize, scratch: &mut Scratch) -> Image {
     let offsets = composite::sample_offsets(frame.samples);
     let plan = blur::Plan::new(frame, offsets.len());
     let new_shared = || if share { Shared::new(meshes, &plan, budget) } else { Shared::off() };
@@ -1131,8 +1148,7 @@ fn blurred(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], share: bo
                 })
                 .collect();
             let mut samples = scratch.samples(frame.width, frame.height, &offsets);
-            render_passes(frame, meshes, smooth, &offsets, &passes, &mut shared, budget, &mut samples,
-                          &mut scratch.arena);
+            render_passes(frame, meshes, smooth, &offsets, &passes, &mut shared, budget, &mut samples, &mut scratch.arena);
             let image = composite::resolve(frame, &samples);
             scratch.keep(samples);
             image
@@ -1144,9 +1160,8 @@ fn blurred(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], share: bo
 /// The smooth point normals of the meshes that draw with them (no corner
 /// normals) and are not in `given`, by mesh, a mesh at a time on the pool.
 fn smooth_missing(meshes: &[Mesh], given: &[Option<&[Vec3]>]) -> Vec<Option<Vec<Vec3>>> {
-    let missing: Vec<usize> = (0..meshes.len())
-        .filter(|&m| meshes[m].corner_normals.is_none() && given.get(m).copied().flatten().is_none())
-        .collect();
+    let missing: Vec<usize> =
+        (0..meshes.len()).filter(|&m| meshes[m].corner_normals.is_none() && given.get(m).copied().flatten().is_none()).collect();
     let mut out: Vec<Option<Vec<Vec3>>> = (0..meshes.len()).map(|_| None).collect();
     for (m, normals) in missing.iter().zip(par_map(&missing, |&m| smooth_normals(meshes[m].points, meshes[m].triangles))) {
         out[*m] = Some(normals);
@@ -1156,8 +1171,7 @@ fn smooth_missing(meshes: &[Mesh], given: &[Option<&[Vec3]>]) -> Vec<Option<Vec<
 
 /// Each mesh's smooth point normals, from `given` or `made`
 /// ([`smooth_missing`]); none for a mesh with corner normals.
-fn smooth_of<'a>(meshes: &[Mesh], given: &[Option<&'a [Vec3]>], made: &'a [Option<Vec<Vec3>>])
-                 -> Vec<Option<&'a [Vec3]>> {
+fn smooth_of<'a>(meshes: &[Mesh], given: &[Option<&'a [Vec3]>], made: &'a [Option<Vec<Vec3>>]) -> Vec<Option<&'a [Vec3]>> {
     (0..meshes.len())
         .map(|m| match meshes[m].corner_normals {
             Some(_) => None,
@@ -1170,16 +1184,20 @@ fn smooth_of<'a>(meshes: &[Mesh], given: &[Option<&'a [Vec3]>], made: &'a [Optio
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) fn render_buffer(frame: &Frame, meshes: &[Mesh]) -> Samples {
     let offsets = composite::sample_offsets(frame.samples);
-    let pass = Pass {
-        layers: 0..offsets.len(),
-        world_to_clip: frame.world_to_clip,
-        view: View::new(&frame.view_to_world),
-        time: None,
-    };
+    let pass = Pass { layers: 0..offsets.len(), world_to_clip: frame.world_to_clip, view: View::new(&frame.view_to_world), time: None };
     let made = smooth_missing(meshes, &[]);
     let mut samples = Samples::empty(frame.width, frame.height, offsets.clone());
-    render_passes(frame, meshes, &smooth_of(meshes, &[], &made), &offsets, std::slice::from_ref(&pass),
-                  &mut [Shared::off(), Shared::off()], VERTEX_BUDGET, &mut samples, &mut Arena::default());
+    render_passes(
+        frame,
+        meshes,
+        &smooth_of(meshes, &[], &made),
+        &offsets,
+        std::slice::from_ref(&pass),
+        &mut [Shared::off(), Shared::off()],
+        VERTEX_BUDGET,
+        &mut samples,
+        &mut Arena::default(),
+    );
     samples
 }
 
@@ -1200,17 +1218,23 @@ pub(crate) struct Pass {
 /// are any, its see-through ones over them ([`Surface`]), each with its own
 /// of `shared` (opaque, glass).
 #[allow(clippy::too_many_arguments)]
-fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all_offsets: &[(f32, f32)],
-                 passes: &[Pass], shared: &mut [Shared; 2], budget: usize, samples: &mut Samples,
-                 arena: &mut Arena) {
+fn render_passes(
+    frame: &Frame,
+    meshes: &[Mesh],
+    smooth: &[Option<&[Vec3]>],
+    all_offsets: &[(f32, f32)],
+    passes: &[Pass],
+    shared: &mut [Shared; 2],
+    budget: usize,
+    samples: &mut Samples,
+    arena: &mut Arena,
+) {
     let glass = any_glass(meshes);
     samples.glass(glass);
     let [opaque_shared, glass_shared] = shared;
-    render_surface(frame, meshes, smooth, all_offsets, passes, Surface::Opaque, opaque_shared, budget, samples,
-                   arena);
+    render_surface(frame, meshes, smooth, all_offsets, passes, Surface::Opaque, opaque_shared, budget, samples, arena);
     if glass {
-        render_surface(frame, meshes, smooth, all_offsets, passes, Surface::Glass, glass_shared, budget, samples,
-                       arena);
+        render_surface(frame, meshes, smooth, all_offsets, passes, Surface::Glass, glass_shared, budget, samples, arena);
     }
 }
 
@@ -1220,9 +1244,18 @@ fn render_passes(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all
 /// batch is made; each layer so takes the batches, and the triangles in
 /// them, in the same order whatever is shared.
 #[allow(clippy::too_many_arguments)]
-fn render_surface(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], all_offsets: &[(f32, f32)],
-                  passes: &[Pass], surface: Surface, shared: &mut Shared, budget: usize, samples: &mut Samples,
-                  arena: &mut Arena) {
+fn render_surface(
+    frame: &Frame,
+    meshes: &[Mesh],
+    smooth: &[Option<&[Vec3]>],
+    all_offsets: &[(f32, f32)],
+    passes: &[Pass],
+    surface: Surface,
+    shared: &mut Shared,
+    budget: usize,
+    samples: &mut Samples,
+    arena: &mut Arena,
+) {
     let (w, h) = (frame.width, frame.height);
     if w == 0 || h == 0 {
         return;
@@ -1233,10 +1266,8 @@ fn render_surface(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], al
     let band_rows = 16usize.max(h / (threads() * 8)).min(h.max(1));
     let plane = w * h;
     let jobs = jobs(meshes, surface);
-    let glass = (surface == Surface::Glass).then(|| Glass {
-        shading: frame.shading,
-        lighting: Lighting::new(&frame.lights, &frame.view_to_world),
-    });
+    let glass =
+        (surface == Surface::Glass).then(|| Glass { shading: frame.shading, lighting: Lighting::new(&frame.lights, &frame.view_to_world) });
     let every_mesh: Vec<usize> = (0..meshes.len()).collect();
     let bounds = par_map(&every_mesh, |&m| bounds_of(meshes[m].points));
     // A mesh every pass draws at its `points` and `transforms`.
@@ -1285,10 +1316,8 @@ fn render_surface(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], al
         let is_still: Vec<bool> = batch.clone().map(|j| still(jobs[j].0)).collect();
         if shared.on && same_clip && shared.bins.is_none() {
             let placeholder = |j: usize| Inst { mesh: jobs[j].0, clip: &[], world: &[], normals: &[] };
-            let insts: Vec<Inst> = batch
-                .clone()
-                .map(|j| shared.verts[j].as_ref().map_or_else(|| placeholder(j), InstanceVerts::view))
-                .collect();
+            let insts: Vec<Inst> =
+                batch.clone().map(|j| shared.verts[j].as_ref().map_or_else(|| placeholder(j), InstanceVerts::view)).collect();
             let which: Vec<usize> = (0..batch.len()).filter(|&k| is_still[k]).collect();
             let grids: Vec<SampleGrid> = passes.iter().map(|p| SampleGrid::new(&all_offsets[p.layers.clone()])).collect();
             shared.bins = Some(bin(&insts, &which, meshes, w, h, band_rows, band_count, &grids));
@@ -1326,14 +1355,17 @@ fn render_surface(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], al
                         && bounds[m].is_some_and(|b| outside(b, &meshes[m].transforms[inst], &pass.world_to_clip))
                 })
                 .collect();
-            let todo: Vec<usize> =
-                batch.clone().filter(|&j| !(still(jobs[j].0) && same_clip) && !culled[j - batch.start]).collect();
+            let todo: Vec<usize> = batch.clone().filter(|&j| !(still(jobs[j].0) && same_clip) && !culled[j - batch.start]).collect();
             let lens: Vec<[usize; 3]> = todo
                 .iter()
                 .map(|&j| {
                     let m = jobs[j].0;
                     let n = meshes[m].points.len();
-                    if still(m) { [n, 0, 0] } else { [n, n, normal_count(&meshes[m], smooth[m])] }
+                    if still(m) {
+                        [n, 0, 0]
+                    } else {
+                        [n, n, normal_count(&meshes[m], smooth[m])]
+                    }
                 })
                 .collect();
             let totals = lens.iter().fold([0; 3], |a, l| [a[0] + l[0], a[1] + l[1], a[2] + l[2]]);
@@ -1417,20 +1449,32 @@ fn render_surface(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], al
             };
             let t2 = std::time::Instant::now();
             let layers = pass.layers.clone();
-            let mut albedo: Vec<_> = samples.albedo.chunks_mut(plane).skip(layers.start).take(layers.len())
-                .map(|l| l.chunks_mut(band_rows * w)).collect();
-            let mut normal: Vec<_> = samples.normal.chunks_mut(plane).skip(layers.start).take(layers.len())
-                .map(|l| l.chunks_mut(band_rows * w)).collect();
-            let mut depth: Vec<_> = samples.depth.chunks_mut(plane).skip(layers.start).take(layers.len())
-                .map(|l| l.chunks_mut(band_rows * w)).collect();
+            let mut albedo: Vec<_> =
+                samples.albedo.chunks_mut(plane).skip(layers.start).take(layers.len()).map(|l| l.chunks_mut(band_rows * w)).collect();
+            let mut normal: Vec<_> =
+                samples.normal.chunks_mut(plane).skip(layers.start).take(layers.len()).map(|l| l.chunks_mut(band_rows * w)).collect();
+            let mut depth: Vec<_> =
+                samples.depth.chunks_mut(plane).skip(layers.start).take(layers.len()).map(|l| l.chunks_mut(band_rows * w)).collect();
             let mut ids = (layers.start == 0).then(|| samples.ids.chunks_mut(band_rows * w));
             // See-through surfaces add to their own sums (and the nearest
             // depth the ids saw); the opaque ones touch neither.
             let drawing_glass = raster.glass.is_some();
-            let mut accum: Vec<_> = samples.accum.chunks_mut(plane).skip(layers.start).take(layers.len())
-                .filter(|_| drawing_glass).map(|l| l.chunks_mut(band_rows * w)).collect();
-            let mut reveal: Vec<_> = samples.reveal.chunks_mut(plane).skip(layers.start).take(layers.len())
-                .filter(|_| drawing_glass).map(|l| l.chunks_mut(band_rows * w)).collect();
+            let mut accum: Vec<_> = samples
+                .accum
+                .chunks_mut(plane)
+                .skip(layers.start)
+                .take(layers.len())
+                .filter(|_| drawing_glass)
+                .map(|l| l.chunks_mut(band_rows * w))
+                .collect();
+            let mut reveal: Vec<_> = samples
+                .reveal
+                .chunks_mut(plane)
+                .skip(layers.start)
+                .take(layers.len())
+                .filter(|_| drawing_glass)
+                .map(|l| l.chunks_mut(band_rows * w))
+                .collect();
             let mut near = (drawing_glass && layers.start == 0).then(|| samples.near.chunks_mut(band_rows * w));
             let bands: Vec<(Band, &[(u32, u32)])> = bins
                 .iter()
@@ -1482,11 +1526,16 @@ fn render_surface(frame: &Frame, meshes: &[Mesh], smooth: &[Option<&[Vec3]>], al
     }
     // The C++ shim's TH_PLAYBLAST_TIMING line counts this inside "render".
     if std::env::var_os("TH_PLAYBLAST_TIMING").is_some() {
-        eprintln!("hdThPlayblast: raster{} {} ms at {} samples a pixel{}: transform {} ms, bin {} ms, fill {} ms",
-                  if surface == Surface::Glass { " (see-through)" } else { "" },
-                  started.elapsed().as_millis(), all_offsets.len(),
-                  if passes.len() > 1 { format!(" in {} passes", passes.len()) } else { String::new() },
-                  transforming.as_millis(), binning.as_millis(), filling.as_millis());
+        eprintln!(
+            "hdThPlayblast: raster{} {} ms at {} samples a pixel{}: transform {} ms, bin {} ms, fill {} ms",
+            if surface == Surface::Glass { " (see-through)" } else { "" },
+            started.elapsed().as_millis(),
+            all_offsets.len(),
+            if passes.len() > 1 { format!(" in {} passes", passes.len()) } else { String::new() },
+            transforming.as_millis(),
+            binning.as_millis(),
+            filling.as_millis()
+        );
     }
 }
 
@@ -1503,25 +1552,44 @@ mod tests {
         world_to_view[14] = -5.0;
         let (n, f) = (0.1f64, 100.0f64);
         let proj: Mat4 = [
-            1.0, 0.0, 0.0, 0.0, //
-            0.0, 1.0, 0.0, 0.0, //
-            0.0, 0.0, -(f + n) / (f - n), -1.0, //
-            0.0, 0.0, -2.0 * f * n / (f - n), 0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0, //
+            0.0,
+            1.0,
+            0.0,
+            0.0, //
+            0.0,
+            0.0,
+            -(f + n) / (f - n),
+            -1.0, //
+            0.0,
+            0.0,
+            -2.0 * f * n / (f - n),
+            0.0,
         ];
         (math::mul(&world_to_view, &proj), view_to_world)
     }
 
     fn quad() -> (Vec<Vec3>, Vec<[u32; 3]>) {
-        (
-            vec![[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]],
-            vec![[0, 1, 2], [0, 2, 3]],
-        )
+        (vec![[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]], vec![[0, 1, 2], [0, 2, 3]])
     }
 
     fn frame(size: usize) -> Frame {
         let (world_to_clip, view_to_world) = camera();
-        Frame { width: size, height: size, world_to_clip, view_to_world, samples: 1,
-                shading: Shading::Lit, ao: true, blur: Blur::OFF, alpha: false, lights: SceneLights::NONE }
+        Frame {
+            width: size,
+            height: size,
+            world_to_clip,
+            view_to_world,
+            samples: 1,
+            shading: Shading::Lit,
+            ao: true,
+            blur: Blur::OFF,
+            alpha: false,
+            lights: SceneLights::NONE,
+        }
     }
 
     #[test]
@@ -1529,9 +1597,19 @@ mod tests {
         let (points, triangles) = quad();
         let transforms = [math::IDENTITY];
         let mesh = Mesh {
-            points: &points, triangles: &triangles, corner_normals: None,
-            corner_colors: None, corner_uvs: None, base_color: [1.0, 0.0, 0.0],
-            tiles: Vec::new(), transforms: &transforms, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing,
+            points: &points,
+            triangles: &triangles,
+            corner_normals: None,
+            corner_colors: None,
+            corner_uvs: None,
+            base_color: [1.0, 0.0, 0.0],
+            tiles: Vec::new(),
+            transforms: &transforms,
+            key: None,
+            points_close: None,
+            transform_keys: &[],
+            opacity: 1.0,
+            cull: crate::raster::Cull::Nothing,
         };
         let img = render(&frame(64), &[mesh]);
         // Quad half-width 1 at distance 5, 90 degree fov: 1/5 of the half
@@ -1555,12 +1633,36 @@ mod tests {
         let red = [math::IDENTITY];
         let other = [up, near];
         let meshes = [
-            Mesh { points: &points, triangles: &triangles, corner_normals: None,
-                   corner_colors: None, corner_uvs: None, base_color: [1.0, 0.0, 0.0],
-                   tiles: Vec::new(), transforms: &red, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing},
-            Mesh { points: &points, triangles: &triangles, corner_normals: None,
-                   corner_colors: None, corner_uvs: None, base_color: [0.0, 0.0, 1.0],
-                   tiles: Vec::new(), transforms: &other, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing},
+            Mesh {
+                points: &points,
+                triangles: &triangles,
+                corner_normals: None,
+                corner_colors: None,
+                corner_uvs: None,
+                base_color: [1.0, 0.0, 0.0],
+                tiles: Vec::new(),
+                transforms: &red,
+                key: None,
+                points_close: None,
+                transform_keys: &[],
+                opacity: 1.0,
+                cull: crate::raster::Cull::Nothing,
+            },
+            Mesh {
+                points: &points,
+                triangles: &triangles,
+                corner_normals: None,
+                corner_colors: None,
+                corner_uvs: None,
+                base_color: [0.0, 0.0, 1.0],
+                tiles: Vec::new(),
+                transforms: &other,
+                key: None,
+                points_close: None,
+                transform_keys: &[],
+                opacity: 1.0,
+                cull: crate::raster::Cull::Nothing,
+            },
         ];
         let img = render(&frame(64), &meshes);
         assert!(img.color[32 * 64 + 32][2] > 0.5, "blue in front");
@@ -1575,9 +1677,21 @@ mod tests {
         let points = vec![[-50.0, -1.0, 10.0], [50.0, -1.0, 10.0], [50.0, -1.0, -50.0], [-50.0, -1.0, -50.0]];
         let triangles = vec![[0u32, 1, 2], [0, 2, 3]];
         let transforms = [math::IDENTITY];
-        let mesh = Mesh { points: &points, triangles: &triangles, corner_normals: None,
-                          corner_colors: None, corner_uvs: None, base_color: [0.0, 1.0, 0.0],
-                          tiles: Vec::new(), transforms: &transforms, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing};
+        let mesh = Mesh {
+            points: &points,
+            triangles: &triangles,
+            corner_normals: None,
+            corner_colors: None,
+            corner_uvs: None,
+            base_color: [0.0, 1.0, 0.0],
+            tiles: Vec::new(),
+            transforms: &transforms,
+            key: None,
+            points_close: None,
+            transform_keys: &[],
+            opacity: 1.0,
+            cull: crate::raster::Cull::Nothing,
+        };
         let img = render(&frame(64), &[mesh]);
         assert!(img.color[60 * 64 + 32][1] > 0.3, "floor visible below the horizon");
         assert_eq!(img.depth[4 * 64 + 32], 1.0, "nothing above it");
@@ -1607,20 +1721,42 @@ mod tests {
     fn anti_aliasing_keeps_the_frame_size() {
         let (points, triangles) = quad();
         let transforms = [math::IDENTITY];
-        let mesh = Mesh { points: &points, triangles: &triangles, corner_normals: None,
-                          corner_colors: None, corner_uvs: None, base_color: DEFAULT_ALBEDO,
-                          tiles: Vec::new(), transforms: &transforms, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing};
+        let mesh = Mesh {
+            points: &points,
+            triangles: &triangles,
+            corner_normals: None,
+            corner_colors: None,
+            corner_uvs: None,
+            base_color: DEFAULT_ALBEDO,
+            tiles: Vec::new(),
+            transforms: &transforms,
+            key: None,
+            points_close: None,
+            transform_keys: &[],
+            opacity: 1.0,
+            cull: crate::raster::Cull::Nothing,
+        };
         let mut f = frame(40);
         f.samples = 8;
         let img = render(&f, &[mesh]);
         assert_eq!(img.color.len(), 40 * 40);
     }
 
-
     fn quad_mesh<'a>(points: &'a [Vec3], triangles: &'a [[u32; 3]], transforms: &'a [Mat4]) -> Mesh<'a> {
         Mesh {
-            points, triangles, corner_normals: None, corner_colors: None, corner_uvs: None,
-            base_color: [1.0; 3], tiles: Vec::new(), transforms, key: None, points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing,
+            points,
+            triangles,
+            corner_normals: None,
+            corner_colors: None,
+            corner_uvs: None,
+            base_color: [1.0; 3],
+            tiles: Vec::new(),
+            transforms,
+            key: None,
+            points_close: None,
+            transform_keys: &[],
+            opacity: 1.0,
+            cull: crate::raster::Cull::Nothing,
         }
     }
 
@@ -1666,9 +1802,14 @@ mod tests {
             m[14] = z;
             m
         };
-        for (where_, x, y, z, skipped) in [("in view", 0.0, 0.0, 0.0, false), ("through the near plane", 0.0, 0.0, 5.0, false),
-                                         ("beside", 40.0, 0.0, 0.0, true), ("above", 0.0, 40.0, 0.0, true),
-                                         ("behind", 0.0, 0.0, 9.0, true), ("beyond far", 0.0, 0.0, -200.0, true)] {
+        for (where_, x, y, z, skipped) in [
+            ("in view", 0.0, 0.0, 0.0, false),
+            ("through the near plane", 0.0, 0.0, 5.0, false),
+            ("beside", 40.0, 0.0, 0.0, true),
+            ("above", 0.0, 40.0, 0.0, true),
+            ("behind", 0.0, 0.0, 9.0, true),
+            ("beyond far", 0.0, 0.0, -200.0, true),
+        ] {
             assert_eq!(outside(unit, &at(x, y, z), &world_to_clip), skipped, "{where_}");
         }
     }
@@ -1721,7 +1862,6 @@ mod tests {
             }
         }
     }
-
 
     proptest! {
         /// Binning once for several sample grids, each triangle's bounds

@@ -13,12 +13,14 @@
 //! in point, resampled linearly, at its gain, through its fades. Pure: the
 //! player's audio output calls it from the device's callback.
 
+#![warn(clippy::undocumented_unsafe_blocks)]
+
 use std::path::Path;
 use std::ptr;
 
 use th_ffmpeg_sys as ff;
 
-use crate::movie::{Input, ff_error};
+use crate::movie::{AvFrame, CodecCtx, Input, OpenError, Packet, ff_error};
 use crate::{Error, Result};
 
 /// A file's audio: stereo, interleaved (left, right), at `rate`.
@@ -189,8 +191,12 @@ unsafe fn append(frame: &ff::AVFrame, out: &mut Vec<f32>) -> std::result::Result
     };
     let used = channels.min(2);
     let planes: Vec<&[u8]> = if planar {
+        // SAFETY: a planar frame has a plane of `count` samples per channel
+        // (the caller's), and `used` is at most its channels.
         (0..used).map(|c| unsafe { std::slice::from_raw_parts(*frame.extended_data.add(c), count * width) }).collect()
     } else {
+        // SAFETY: a packed frame's one plane of `count` samples of every
+        // channel (the caller's).
         vec![unsafe { std::slice::from_raw_parts(*frame.extended_data, count * width * channels) }]
     };
     let mut one = [0f32; 2];
@@ -205,68 +211,59 @@ unsafe fn append(frame: &ff::AVFrame, out: &mut Vec<f32>) -> std::result::Result
     Ok(())
 }
 
-/// A movie's (or any file FFmpeg opens) audio stream, decoded whole.
+/// A movie's (or any file FFmpeg opens) audio stream, decoded whole; None
+/// when it has none the player can decode.
 fn decode(path: &str) -> std::result::Result<Option<Sound>, String> {
     let input = match Input::open_stream(path, ff::AVMEDIA_TYPE_AUDIO) {
         Ok(input) => input,
-        Err(e) if e.starts_with("no decodable") => return Ok(None),
-        Err(e) => return Err(e),
+        Err(OpenError::NoStream(_)) => return Ok(None),
+        Err(OpenError::File(e)) => return Err(e),
     };
+    let codec = CodecCtx::open(&input, None)?;
+    let mut packet = Packet::new()?;
+    let mut decoded = AvFrame::new()?;
     let mut samples = Vec::new();
-    let rate;
-    unsafe {
-        let mut codec = ff::avcodec_alloc_context3(input.decoder);
-        let mut packet = ff::av_packet_alloc();
-        let mut decoded = ff::av_frame_alloc();
-        let result = (|| -> std::result::Result<(), String> {
-            ff::avcodec_parameters_to_context(codec, (*input.stream()).codecpar);
-            let code = ff::avcodec_open2(codec, input.decoder, ptr::null_mut());
-            if code < 0 {
-                return Err(ff_error(code));
+    let mut ended = false;
+    loop {
+        // SAFETY: an open decoder context and an allocated frame.
+        let code = unsafe { ff::avcodec_receive_frame(codec.as_ptr(), decoded.as_ptr()) };
+        if code == 0 {
+            // SAFETY: a frame the audio decoder just produced.
+            let appended = unsafe { append(decoded.get(), &mut samples) };
+            decoded.unref();
+            appended?;
+            continue;
+        }
+        if code == ff::AVERROR_EOF {
+            break;
+        }
+        if code != ff::AVERROR_EAGAIN {
+            return Err(ff_error(code));
+        }
+        if ended {
+            break;
+        }
+        // SAFETY: the open input and an allocated packet.
+        let read = unsafe { ff::av_read_frame(input.format(), packet.as_ptr()) };
+        if read == ff::AVERROR_EOF {
+            // SAFETY: an open decoder context; no packet asks it to flush.
+            unsafe { ff::avcodec_send_packet(codec.as_ptr(), ptr::null()) };
+            ended = true;
+            continue;
+        }
+        if read < 0 {
+            return Err(ff_error(read));
+        }
+        if packet.stream_index() == input.stream_index() {
+            // SAFETY: an open decoder context and a packet just read.
+            let sent = unsafe { ff::avcodec_send_packet(codec.as_ptr(), packet.as_ptr()) };
+            if sent < 0 && sent != ff::AVERROR_EAGAIN {
+                return Err(ff_error(sent));
             }
-            let mut ended = false;
-            loop {
-                let code = ff::avcodec_receive_frame(codec, decoded);
-                if code == 0 {
-                    let appended = append(&*decoded, &mut samples);
-                    ff::av_frame_unref(decoded);
-                    appended?;
-                    continue;
-                }
-                if code == ff::AVERROR_EOF {
-                    return Ok(());
-                }
-                if code != ff::AVERROR_EAGAIN {
-                    return Err(ff_error(code));
-                }
-                if ended {
-                    return Ok(());
-                }
-                let read = ff::av_read_frame(input.format, packet);
-                if read == ff::AVERROR_EOF {
-                    ff::avcodec_send_packet(codec, ptr::null());
-                    ended = true;
-                    continue;
-                }
-                if read < 0 {
-                    return Err(ff_error(read));
-                }
-                if (*packet).stream_index == input.stream_index {
-                    let sent = ff::avcodec_send_packet(codec, packet);
-                    if sent < 0 && sent != ff::AVERROR_EAGAIN {
-                        ff::av_packet_unref(packet);
-                        return Err(ff_error(sent));
-                    }
-                }
-                ff::av_packet_unref(packet);
-            }
-        })();
-        rate = (*codec).sample_rate.max(0) as u32;
-        ff::av_frame_free(&mut decoded);
-        ff::av_packet_free(&mut packet);
-        ff::avcodec_free_context(&mut codec);
-        result?;
+        }
+        packet.unref();
     }
+    let rate = codec.sample_rate();
     if rate == 0 {
         return Err("the audio stream has no sample rate".into());
     }

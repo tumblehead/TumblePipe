@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use th_edit::document::DEFAULT_START_FRAME;
+
 use crate::config::{Config, ConfigError, Properties};
 use crate::uri::Uri;
 
@@ -102,6 +104,13 @@ fn integer(properties: &Properties, key: &str) -> Result<i64, String> {
         Some(Value::Bool(b)) => Ok(*b as i64),
         other => Err(format!("{key} is {other:?}, not a number")),
     }
+}
+
+/// The first frame of `shot`, roll included: the frame a take's movie
+/// starts on when it records none; [`DEFAULT_START_FRAME`] for a shot
+/// with no range. A config that cannot be read is an error.
+pub fn shot_first_frame(config: &Config, shot: &Uri) -> Result<i64, String> {
+    Ok(get_frame_range(config, shot)?.map_or(DEFAULT_START_FRAME, |range| range.full_range().first_frame))
 }
 
 /// `entity`'s frame range (`get_frame_range`); None when it does not exist

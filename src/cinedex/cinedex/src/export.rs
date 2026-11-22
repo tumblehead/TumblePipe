@@ -269,7 +269,7 @@ pub fn export(request: &Request, progress: &Progress, mut wake: impl FnMut()) ->
         return Ok(None);
     }
     encoder.finish()?;
-    if let Err(e) = std::fs::rename(&partial, &request.output) {
+    if let Err(e) = th_pipe::io::replace_file(&partial, &request.output) {
         let _ = std::fs::remove_file(&partial);
         return Err(format!("{}: {e}", request.output.display()));
     }

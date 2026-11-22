@@ -47,27 +47,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from tumblepipe import naming
-from tumblepipe.archive.hipfile import read_workfile_text
 from tumblepipe.archive.inventory import Kind, scan
 from tumblepipe.archive.longpath import long_path
 from tumblepipe.archive.roots import ProjectRoots, project_roots
+from tumblepipe.cleanup import hip
+from tumblepipe.cleanup.hip import CONTEXTS
 
-CONTEXTS = ('shots', 'assets')
 DEFAULT_KEEP = 3
 LOGS_DIR = ('other', 'logs')
 _SKIP_TOP = ('other',)
 _STAGED = '_staged'
 _ROOT = '_root'
 
-#: Folders inside a workfile folder that hold no workfiles.
-_NOT_WORKFILE_DIRS = frozenset({
-    'cache', 'lops_cache', 'backup', 'render', 'galleries', '_context',
-    '__pycache__',
-})
-_WORKFILE = re.compile(r'_(v\d{4})\.(hip|hiplc|hipnc)$', re.IGNORECASE)
-_PARM = re.compile(r'^(\w+)\t\[[^\]]*\]\t\(\t(.*)\t\)\s*$')
-_ENTITY = re.compile(r'entity:/((?:assets|shots)/[A-Za-z0-9_./-]+?)(?=[?"\s@]|$)')
-_PINNED_URI = re.compile(r'entity:/[^\s"@<>]+')
 _VERSION = re.compile(r'v\d{4,}')
 _REF = re.compile(rb'@([^@\r\n]+)@')
 
@@ -250,44 +241,6 @@ def staged_closure(
     return seen
 
 
-def latest_workfiles(roots: ProjectRoots) -> list[tuple[str, tuple[str, ...], Path]]:
-    """``(root purpose, folder parts, file)`` for the newest workfile in
-    every workfile folder of the assets, shots and groups roots."""
-    found = []
-    for purpose in ('assets', 'shots', 'groups'):
-        root = roots.get(purpose)
-        if root is None or not root.path.is_dir():
-            continue
-        others = {long_path(r.path) for r in roots.roots if r.path != root.path}
-        for dirpath, dirs, files in os.walk(long_path(root.path)):
-            here = Path(dirpath)
-            dirs[:] = [
-                d for d in dirs
-                if d not in _NOT_WORKFILE_DIRS and not d.startswith('.')
-                and here / d not in others
-            ]
-            newest = None
-            for name in files:
-                match = _WORKFILE.search(name)
-                if match is None:
-                    continue
-                code = naming.get_version_code(match.group(1).lower())
-                if newest is None or code > newest[0]:
-                    newest = (code, name)
-            if newest is not None:
-                parts = here.relative_to(long_path(root.path)).parts
-                found.append((purpose, tuple(parts), here / newest[1]))
-    return found
-
-
-def _workfile_entity(purpose: str, parts: tuple[str, ...]) -> tuple[str, ...] | None:
-    """The entity a workfile folder (``<…entity>/<department>``) is for,
-    as export parts; None for a Multi's (it covers several)."""
-    if purpose not in CONTEXTS or len(parts) < 2:
-        return None
-    return (purpose, *parts[:-1])
-
-
 _ROW = re.compile(r'(\d+)(?!.*\d)')
 # Parms that only show a value: ``*_label`` (a node on latest shows what it
 # resolved to there) and import_shot's Layer Stack rows (``layer_3_version``,
@@ -324,11 +277,27 @@ def hip_pins(text: str, own: tuple[str, ...] | None) -> tuple[set[Pin], set[tupl
     """
     pins: set[Pin] = set()
     exact: set[tuple[str, ...]] = set()
-    entities: dict[int | None, set[tuple[str, ...]]] = {}
-    versions: dict[int | None, set[str]] = {}
-    departments: dict[int | None, str] = {}
-
-    def flush():
+    for block in hip.node_blocks(text):
+        entities: dict[int | None, set[tuple[str, ...]]] = {}
+        versions: dict[int | None, set[str]] = {}
+        departments: dict[int | None, str] = {}
+        for name, value in block:
+            if _LABEL.search(name):
+                continue
+            row = _row(name)
+            for uri in hip.pinned_uris(value):
+                if 'version=' in uri:
+                    exact.update(ref_units(uri, ()))
+            for entity in hip.entities(value):
+                entities.setdefault(row, set()).add(entity)
+            lowered = name.lower()
+            if 'entity' in lowered and value.startswith('from_context') and own is not None:
+                entities.setdefault(row, set()).add(own)
+            if ('department' in lowered or lowered.startswith('dept')) and re.fullmatch(r'[A-Za-z0-9_]+', value) \
+                    and value != 'from_context':
+                departments[row] = value
+            if _VERSION.fullmatch(value) and naming.is_valid_version_name(value):
+                versions.setdefault(row, set()).add(value)
         everyone = set().union(*entities.values()) if entities else set()
         for row, names in versions.items():
             # The row's own entity, else the node's, else any it names.
@@ -336,33 +305,6 @@ def hip_pins(text: str, own: tuple[str, ...] | None) -> tuple[set[Pin], set[tupl
             department = departments.get(row)
             for entity in targets:
                 pins.update((entity, v, department) for v in names)
-
-    for line in text.splitlines():
-        if line.startswith('}') or line.startswith('{'):
-            flush()
-            entities, versions, departments = {}, {}, {}
-            continue
-        match = _PARM.match(line)
-        if match is None:
-            continue
-        name, value = match.group(1), match.group(2).strip().strip('"')
-        if _LABEL.search(name):
-            continue
-        row = _row(name)
-        for uri in _PINNED_URI.findall(value):
-            if 'version=' in uri:
-                exact.update(ref_units(uri, ()))
-        for entity in _ENTITY.findall(value):
-            entities.setdefault(row, set()).add(tuple(entity.strip('/').split('/')))
-        lowered = name.lower()
-        if 'entity' in lowered and value.startswith('from_context') and own is not None:
-            entities.setdefault(row, set()).add(own)
-        if ('department' in lowered or lowered.startswith('dept')) and re.fullmatch(r'[A-Za-z0-9_]+', value) \
-                and value != 'from_context':
-            departments[row] = value
-        if _VERSION.fullmatch(value) and naming.is_valid_version_name(value):
-            versions.setdefault(row, set()).add(value)
-    flush()
     return pins, exact
 
 
@@ -380,10 +322,12 @@ def _in_context(version: Version, context: str | None) -> bool:
 
 def make_plan(
     roots: ProjectRoots, keep: int = DEFAULT_KEEP, context: str | None = None,
-    *, read_workfiles: bool = True, inventory=None,
+    *, workfiles: hip.Workfiles | None = None, inventory=None,
 ) -> Plan:
     """A verdict for every export version of the shots and assets (those
-    under ``context``, a context or a path like ``shots/sq010``)."""
+    under ``context``, a context or a path like ``shots/sq010``).
+    ``workfiles`` are the project's latest workfiles as Clean Up shares
+    them between its categories; the standalone command reads its own."""
     if keep < 1:
         raise ValueError('keep at least one version')
     export_path = roots.get('export').path
@@ -392,36 +336,34 @@ def make_plan(
     known = {tuple(v.rel.split('/')) for v in (*exports, *staged)}
 
     start = {tuple(v.rel.split('/')) for v in current_staged(staged)}
+    if workfiles is None:
+        workfiles = hip.Workfiles(roots)
     pinned_by_workfile: set[tuple[str, ...]] = set()
-    if read_workfiles:
-        units_by_entity_version: dict[tuple[tuple[str, ...], str], list[tuple[str, ...]]] = defaultdict(list)
-        for unit in known:
-            for depth in range(1, len(unit)):
-                units_by_entity_version[(unit[:depth], unit[-1])].append(unit)
-        for purpose, parts, path in latest_workfiles(roots):
-            try:
-                text = read_workfile_text(path)
-            except OSError as error:
-                plan.errors.append(f'{path}: {error}')
-                continue
-            if text is None:
-                plan.hips_unreadable.append(f'{purpose}/{"/".join(parts)}/{path.name}')
-                continue
-            plan.hips_read += 1
-            own = _workfile_entity(purpose, parts)
-            pins, exact = hip_pins(text, own)
-            for entity, version, department in pins:
-                for unit in units_by_entity_version.get((entity, version), ()):
-                    # A department narrows it to that department's layers
-                    # (``root``: the shot's root layer), but never away
-                    # from a staged build: import_shot's version is its
-                    # staged build's, set beside the department it works in.
-                    within = unit[len(entity):-1]
-                    if department is None or department in within or _STAGED in within or (
-                        department == 'root' and _ROOT in within
-                    ):
-                        pinned_by_workfile.add(unit)
-            pinned_by_workfile.update(u for u in exact if u in known)
+    units_by_entity_version: dict[tuple[tuple[str, ...], str], list[tuple[str, ...]]] = defaultdict(list)
+    for unit in known:
+        for depth in range(1, len(unit)):
+            units_by_entity_version[(unit[:depth], unit[-1])].append(unit)
+    for read in workfiles.reads():
+        if read.unreadable:
+            plan.hips_unreadable.append(read.workfile.label)
+            continue
+        if read.error is not None:
+            plan.errors.append(read.error)
+            continue
+        plan.hips_read += 1
+        pins, exact = hip_pins(read.text, read.workfile.entity)
+        for entity, version, department in pins:
+            for unit in units_by_entity_version.get((entity, version), ()):
+                # A department narrows it to that department's layers
+                # (``root``: the shot's root layer), but never away
+                # from a staged build: import_shot's version is its
+                # staged build's, set beside the department it works in.
+                within = unit[len(entity):-1]
+                if department is None or department in within or _STAGED in within or (
+                    department == 'root' and _ROOT in within
+                ):
+                    pinned_by_workfile.add(unit)
+        pinned_by_workfile.update(u for u in exact if u in known)
     staged_used = staged_closure(export_path, start, known)
     workfile_used = staged_closure(export_path, pinned_by_workfile, known)
 

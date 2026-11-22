@@ -66,7 +66,7 @@ def _show_stage_in_network_editors() -> None:
         pane_tab.setPwd(stage)
 
 
-def _stamp_multi_range(entity_uri) -> None:
+def _stamp_multi_range(store, entity_uri) -> None:
     """A new Multi workfile's playbar (#39): a Multi resolves no entity
     range of its own, so an assets Multi opened at Houdini's 1-240 while a
     single asset's opened at its 1001 range. It now starts at its shared
@@ -77,10 +77,10 @@ def _stamp_multi_range(entity_uri) -> None:
     from tumblepipe.config import groups as grp_mod
     from tumblepipe.config import multi_timeline
     from tumblepipe.pipe.houdini import playbar
-    group = grp_mod.get_group(entity_uri)
+    group = grp_mod.get_group_in(store, entity_uri)
     if group is None:
         return
-    span = multi_timeline.creation_span(group)
+    span = multi_timeline.creation_span_in(store, group)
     if span is not None:
         playbar.set_frame_range(span)
 
@@ -114,7 +114,7 @@ def _frame_stage() -> None:
         log.warning("Framing the new workfile's stage: %s", exc)
 
 
-def _stage_shot_roots(entity_uri) -> None:
+def _stage_shot_roots(store, entity_uri) -> None:
     """Bring a new workfile's shots up to date with their Roots.
 
     A shot workfile's own shot, a shots Multi's members; nothing for an
@@ -127,7 +127,7 @@ def _stage_shot_roots(entity_uri) -> None:
         return
     if entity_uri.purpose == 'groups':
         from tumblepipe.config import groups as grp_mod
-        group = grp_mod.get_group(entity_uri)
+        group = grp_mod.get_group_in(store, entity_uri)
         shots = [] if group is None else list(group.members)
     else:
         shots = [entity_uri]
@@ -138,16 +138,17 @@ def _stage_shot_roots(entity_uri) -> None:
         log.warning("Staging %s's Root before the template: %s", uri, why)
 
 
-def _turned_off(entity_uri, dept: str, refresh_cb=None) -> bool:
-    """Whether ``dept`` is turned off on ``entity_uri`` (#64); if so, say
-    why nothing is made, as a warning rather than a failure.
+def _turned_off(store, entity_uri, dept: str, refresh_cb=None) -> bool:
+    """Whether ``dept`` is turned off on ``entity_uri`` (#64) in the
+    project config ``store``; if so, say why nothing is made, as a warning
+    rather than a failure.
 
     Nothing new is made for a department turned off on a shot: its
     existing workfiles stay on disk and still open, but a new version
     would publish into a layer the shot's build leaves out.
     """
-    from tumblepipe.config.department import disabled_message, is_department_disabled
-    if not is_department_disabled(entity_uri, dept):
+    from tumblepipe.config.department import disabled_message, is_department_disabled_in
+    if not is_department_disabled_in(store, entity_uri, dept):
         return False
     message = disabled_message(entity_uri, dept)
     log.info("%s", message)
@@ -449,7 +450,7 @@ class WorkfileManager:
         if uri is None:
             return True
         from .drops import latest_exports, publishes_usd
-        return publishes_usd(latest_exports(uri, dept))
+        return publishes_usd(latest_exports(proj.store(), uri, dept))
 
     def get_latest_export_mtime(self, asset_id: str, dept: str):
         """Return the latest export folder's mtime for ``dept`` as a
@@ -744,7 +745,7 @@ class WorkfileManager:
                         # with no staged build, or the old Root's assets for
                         # one whose Root changed: bring its files up to date
                         # first.
-                        _stage_shot_roots(entity_uri)
+                        _stage_shot_roots(client.config, entity_uri)
                         from tumblepipe.pipe.houdini import playbar
                         from tumblepipe.pipe.houdini.scene_imports import (
                             refresh_scene_imports,
@@ -771,7 +772,7 @@ class WorkfileManager:
                     self._scene.apply_scene_timeline(
                         asset_id, force_frame_range=True,
                     )
-                    _stamp_multi_range(entity_uri)
+                    _stamp_multi_range(client.config, entity_uri)
                     _frame_stage()
                     hou.hipFile.save(next_path.as_posix())
                 except BaseException:
@@ -844,7 +845,7 @@ class WorkfileManager:
         entity_uri = self._resolver.registered_uri_for(asset_id)
         if entity_uri is None:
             return
-        if _turned_off(entity_uri, dept, refresh_cb):
+        if _turned_off(proj.store(), entity_uri, dept, refresh_cb):
             return
         # A department a Multi covers belongs to the Multi: its workfile is
         # the Multi's (department_workspace routes the save there), so the
@@ -887,7 +888,7 @@ class WorkfileManager:
             # holds.
             from tumblepipe.config import groups as grp_mod
             entity_uri = uris.group(self._split_group_id(asset_id)[1])
-            if grp_mod.get_group(entity_uri) is None:
+            if grp_mod.get_group_in(proj.store(), entity_uri) is None:
                 raise ValueError(f"No Multi {entity_uri} in this project")
             # Only a Multi's scene forks into a Multi: a shot's or asset's
             # nodes pinned to it would be switched to from_context, which
@@ -912,7 +913,7 @@ class WorkfileManager:
             entity_uri = self._resolver.registered_uri_for(asset_id)
             if entity_uri is None:
                 return
-            if _turned_off(entity_uri, dept, refresh_cb):
+            if _turned_off(proj.store(), entity_uri, dept, refresh_cb):
                 return
 
         def _do_save() -> None:

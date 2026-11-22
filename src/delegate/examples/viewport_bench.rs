@@ -16,9 +16,7 @@
 //! picking ids out (a viewer with no id buffer bound).
 
 use std::time::Instant;
-use th_delegate_core::ffi::{
-    th_cache_create, th_cache_free, th_render_ids, ThFrame, ThMeshView,
-};
+use th_delegate_core::ffi::{th_cache_create, th_cache_free, th_render_ids, ThFrame, ThMeshView};
 use th_delegate_core::math::{self, Mat4};
 
 struct MeshData {
@@ -130,32 +128,52 @@ fn scene(kind: &str) -> Vec<MeshData> {
     let mut rng = Lcg(7);
     let mut out = Vec::new();
     let (p, t) = grid(ground, 120.0);
-    out.push(MeshData { points: p, triangles: t, colors: None, transforms: math::IDENTITY.to_vec(),
-                        polygonal: true, base: [0.4, 0.45, 0.35] });
+    out.push(MeshData {
+        points: p,
+        triangles: t,
+        colors: None,
+        transforms: math::IDENTITY.to_vec(),
+        polygonal: true,
+        base: [0.4, 0.45, 0.35],
+    });
     let (sp, st) = sphere(sphere_res.0, sphere_res.1, 1.0);
     for _ in 0..spheres {
         let colors = (rng.next() < 0.5).then(|| corner_colors(st.len() / 3, &mut rng));
-        let xf = translate_scale(rng.next() * 80.0 - 40.0, 1.0 + rng.next() * 3.0, rng.next() * 80.0 - 40.0,
-                                 0.5 + rng.next() * 2.0, rng.next() * 6.0);
-        out.push(MeshData { points: sp.clone(), triangles: st.clone(), colors, transforms: xf.to_vec(),
-                            polygonal: false, base: [0.6, 0.5, 0.4] });
+        let xf = translate_scale(
+            rng.next() * 80.0 - 40.0,
+            1.0 + rng.next() * 3.0,
+            rng.next() * 80.0 - 40.0,
+            0.5 + rng.next() * 2.0,
+            rng.next() * 6.0,
+        );
+        out.push(MeshData {
+            points: sp.clone(),
+            triangles: st.clone(),
+            colors,
+            transforms: xf.to_vec(),
+            polygonal: false,
+            base: [0.6, 0.5, 0.4],
+        });
     }
     let (bp, bt) = boxed(40, 2.0);
     for _ in 0..boxes {
-        let xf = translate_scale(rng.next() * 80.0 - 40.0, 1.0, rng.next() * 80.0 - 40.0, 0.5 + rng.next() * 3.0,
-                                 rng.next() * 6.0);
-        out.push(MeshData { points: bp.clone(), triangles: bt.clone(), colors: None, transforms: xf.to_vec(),
-                            polygonal: true, base: [0.7, 0.7, 0.75] });
+        let xf = translate_scale(rng.next() * 80.0 - 40.0, 1.0, rng.next() * 80.0 - 40.0, 0.5 + rng.next() * 3.0, rng.next() * 6.0);
+        out.push(MeshData {
+            points: bp.clone(),
+            triangles: bt.clone(),
+            colors: None,
+            transforms: xf.to_vec(),
+            polygonal: true,
+            base: [0.7, 0.7, 0.75],
+        });
     }
     // One instanced rock.
     let (rp, rt) = sphere(32, 16, 0.4);
     let mut xfs = Vec::new();
     for _ in 0..rocks {
-        xfs.extend(translate_scale(rng.next() * 110.0 - 55.0, 0.2, rng.next() * 110.0 - 55.0,
-                                   0.3 + rng.next(), rng.next() * 6.0));
+        xfs.extend(translate_scale(rng.next() * 110.0 - 55.0, 0.2, rng.next() * 110.0 - 55.0, 0.3 + rng.next(), rng.next() * 6.0));
     }
-    out.push(MeshData { points: rp, triangles: rt, colors: None, transforms: xfs, polygonal: true,
-                        base: [0.5, 0.48, 0.45] });
+    out.push(MeshData { points: rp, triangles: rt, colors: None, transforms: xfs, polygonal: true, base: [0.5, 0.48, 0.45] });
     out
 }
 
@@ -170,21 +188,31 @@ fn camera(angle: f64, w: usize, h: usize) -> ([f64; 16], [f64; 16]) {
     let back = norm([eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]]);
     let right = norm(cross([0.0, 1.0, 0.0], back));
     let up = cross(back, right);
-    let view_to_world: Mat4 = [
-        right[0], right[1], right[2], 0.0, up[0], up[1], up[2], 0.0, back[0], back[1], back[2], 0.0, eye[0], eye[1],
-        eye[2], 1.0,
-    ];
+    let view_to_world: Mat4 =
+        [right[0], right[1], right[2], 0.0, up[0], up[1], up[2], 0.0, back[0], back[1], back[2], 0.0, eye[0], eye[1], eye[2], 1.0];
     let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
     let world_to_view: Mat4 = [
-        right[0], up[0], back[0], 0.0, right[1], up[1], back[1], 0.0, right[2], up[2], back[2], 0.0,
-        -dot(right, eye), -dot(up, eye), -dot(back, eye), 1.0,
+        right[0],
+        up[0],
+        back[0],
+        0.0,
+        right[1],
+        up[1],
+        back[1],
+        0.0,
+        right[2],
+        up[2],
+        back[2],
+        0.0,
+        -dot(right, eye),
+        -dot(up, eye),
+        -dot(back, eye),
+        1.0,
     ];
     let (n, f) = (0.1f64, 1000.0f64);
     let fy = 1.0 / (25f64.to_radians()).tan();
     let fx = fy * h as f64 / w as f64;
-    let proj: Mat4 = [
-        fx, 0.0, 0.0, 0.0, 0.0, fy, 0.0, 0.0, 0.0, 0.0, -(f + n) / (f - n), -1.0, 0.0, 0.0, -2.0 * f * n / (f - n), 0.0,
-    ];
+    let proj: Mat4 = [fx, 0.0, 0.0, 0.0, 0.0, fy, 0.0, 0.0, 0.0, 0.0, -(f + n) / (f - n), -1.0, 0.0, 0.0, -2.0 * f * n / (f - n), 0.0];
     (math::mul(&world_to_view, &proj), view_to_world)
 }
 
@@ -224,13 +252,19 @@ fn main() {
             points_close: std::ptr::null(),
             transform_keys: std::ptr::null(),
             transform_key_count: 0,
-            transparency: 0.0, cull: 0,
+            transparency: 0.0,
+            cull: 0,
         })
         .collect();
     let tris: usize = meshes.iter().map(|m| m.triangles.len() / 3).sum();
     let drawn: usize = meshes.iter().map(|m| m.triangles.len() / 3 * m.transforms.len() / 16).sum();
-    eprintln!("scene {kind}: {} meshes, {:.2}M triangles ({:.2}M drawn), built in {} ms; {w}x{h}",
-              views.len(), tris as f64 / 1e6, drawn as f64 / 1e6, built.elapsed().as_millis());
+    eprintln!(
+        "scene {kind}: {} meshes, {:.2}M triangles ({:.2}M drawn), built in {} ms; {w}x{h}",
+        views.len(),
+        tris as f64 / 1e6,
+        drawn as f64 / 1e6,
+        built.elapsed().as_millis()
+    );
 
     let cache = th_cache_create();
     let mut color = vec![0.0f32; w * h * 4];
@@ -244,15 +278,40 @@ fn main() {
         for k in 0..frames + 1 {
             let (world_to_clip, view_to_world) = camera(k as f64 * 0.05, w, h);
             let frame = ThFrame {
-                width: w as u32, height: h as u32, world_to_clip, view_to_world, samples, shading: 0, ao,
-                blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64], focal_length: 0.0, f_stop: 0.0,
-                focus_distance: 0.0, alpha: 1, gpu: gpu as u32, linear_depth: 0,
-                lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0,
+                width: w as u32,
+                height: h as u32,
+                world_to_clip,
+                view_to_world,
+                samples,
+                shading: 0,
+                ao,
+                blur_samples: 0,
+                motion: 0,
+                camera_keys: 0,
+                cameras: [0.0; 64],
+                focal_length: 0.0,
+                f_stop: 0.0,
+                focus_distance: 0.0,
+                alpha: 1,
+                gpu: gpu as u32,
+                linear_depth: 0,
+                lights: std::ptr::null(),
+                light_count: 0,
+                lighting: 0,
+                opaque: 0,
             };
             let started = Instant::now();
             let status = unsafe {
-                th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(),
-                              if want_ids { ids.as_mut_ptr() } else { std::ptr::null_mut() }, std::ptr::null(), cache)
+                th_render_ids(
+                    &frame,
+                    views.as_ptr(),
+                    views.len() as u32,
+                    color.as_mut_ptr(),
+                    depth.as_mut_ptr(),
+                    if want_ids { ids.as_mut_ptr() } else { std::ptr::null_mut() },
+                    std::ptr::null(),
+                    cache,
+                )
             };
             assert_eq!(status, 0, "the core failed");
             let ms = started.elapsed().as_secs_f64() * 1000.0;
@@ -264,9 +323,14 @@ fn main() {
         }
         times.sort_by(f64::total_cmp);
         let covered = depth.iter().filter(|&&d| d < 1.0).count();
-        eprintln!("{label}: median {:.1} ms, min {:.1}, max {:.1} over {} frames ({:.0}% of pixels covered)",
-                  times[times.len() / 2], times[0], times[times.len() - 1], times.len(),
-                  100.0 * covered as f64 / (w * h) as f64);
+        eprintln!(
+            "{label}: median {:.1} ms, min {:.1}, max {:.1} over {} frames ({:.0}% of pixels covered)",
+            times[times.len() / 2],
+            times[0],
+            times[times.len() - 1],
+            times.len(),
+            100.0 * covered as f64 / (w * h) as f64
+        );
     }
     unsafe { th_cache_free(cache) };
 }

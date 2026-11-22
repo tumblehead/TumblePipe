@@ -58,7 +58,7 @@ reset_default_client()
 
 import tumblepipe.pipe.houdini.nodes as ns  # noqa: E402
 from tumblepipe.pipe.houdini import prim_metadata  # noqa: E402
-from tumblepipe.pipe.houdini.lops import import_asset, import_layer  # noqa: E402
+from tumblepipe.pipe.houdini import import_metadata  # noqa: E402
 from tumblepipe.pipe.houdini.sops import import_rigs  # noqa: E402
 from tumblepipe.pipe.paths import get_rig_export_path  # noqa: E402
 from tumblepipe.pipe.paths.naming import entity_stem  # noqa: E402
@@ -131,9 +131,9 @@ def shot_stage():
                              ("/PROP/ball", BALL), ("/PROP/crate", CRATE)):
         # import_asset's script tags the asset's own prim path; point it
         # at each copy
-        generated = import_asset._metadata_script(asset)
+        generated = import_metadata.asset_script(asset)
         generated = generated.replace(
-            f'"{"/" + "/".join(asset.segments[1:])}"', f'"{prim_path}"')
+            repr("/" + "/".join(asset.segments[1:])), repr(prim_path))
         lines.append(generated)
     script.parm("python").set("\n".join(lines))
     return script
@@ -165,7 +165,7 @@ def check_stamps(lop) -> None:
         "metadata = prim_metadata.get_metadata(prim)",
         "metadata['animatable'] = False",
         "prim_metadata.set_metadata(prim, metadata)",
-        import_layer._metadata_update_script(
+        import_metadata.layer_inputs_script(
             Uri.parse("entity:/shots/SQ010/SH010"), "layout", "v0001",
             [{"asset": str(BALL)}]
         ),

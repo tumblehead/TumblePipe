@@ -23,8 +23,10 @@ thread_local! {
 #[derive(Clone, Copy)]
 pub(crate) struct Token(*const AtomicU32);
 
-// The flag is an atomic, read only, and outlives every render using it.
+// SAFETY: the flag is an atomic, read only, and outlives every render
+// using it.
 unsafe impl Send for Token {}
+// SAFETY: as above.
 unsafe impl Sync for Token {}
 
 impl Token {
@@ -68,6 +70,7 @@ mod tests {
         assert!(!Token::current().is_set());
         let flag = AtomicU32::new(0);
         {
+            // SAFETY: `flag` outlives the scope.
             let _scope = unsafe { Scope::new(&flag) };
             let token = Token::current();
             assert!(!token.is_set());

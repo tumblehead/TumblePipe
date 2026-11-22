@@ -40,6 +40,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from tumblepipe.util.io import write_bytes_atomic
 
 FRAME_PATTERN = 'frame.$F4.jpg'
 STATE_FILE = 'live.json'
@@ -132,20 +133,8 @@ def frame_order(first: int, last: int, step: int, current: int) -> list[int]:
 
 
 def write_state(folder: Path, state: dict) -> None:
-    """Write live.json atomically: a temp file in the folder, then a rename,
-    so the player never reads half of it."""
-    folder = Path(folder)
-    folder.mkdir(parents=True, exist_ok=True)
-    temp = folder / f'.{STATE_FILE}.{os.getpid()}.{threading.get_ident()}.tmp'
-    temp.write_bytes(json.dumps(state, indent=1).encode('utf-8'))
-    for attempt in range(20):
-        try:
-            os.replace(temp, folder / STATE_FILE)
-            return
-        except PermissionError:
-            # Windows refuses the rename while a reader has the file open.
-            time.sleep(0.01 * (attempt + 1))
-    os.replace(temp, folder / STATE_FILE)
+    """Write live.json atomically, so the player never reads half of it."""
+    write_bytes_atomic(Path(folder) / STATE_FILE, json.dumps(state, indent=1).encode('utf-8'))
 
 
 def read_state(folder: Path) -> dict | None:

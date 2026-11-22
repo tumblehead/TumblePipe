@@ -35,6 +35,8 @@ import uuid
 from pathlib import Path
 from typing import Iterable
 
+from tumblepipe.util.io import write_bytes_atomic
+
 ROOT_ENV = 'TH_LOCAL_FARM_DIR'
 BATCH_VERSION = 1
 
@@ -105,19 +107,7 @@ def now() -> str:
 
 def write_json(path: Path, data) -> None:
     """Replace ``path`` with ``data`` in one step, so a reader sees old or new."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_name(f'.{path.name}.{uuid.uuid4().hex[:8]}.tmp')
-    temp.write_text(json.dumps(data, indent=1), encoding='utf-8')
-    for attempt in range(20):
-        try:
-            os.replace(temp, path)
-            return
-        except PermissionError:
-            # Windows refuses to replace a file a reader has open.
-            if attempt == 19:
-                temp.unlink(missing_ok=True)
-                raise
-            time.sleep(0.05)
+    write_bytes_atomic(path, json.dumps(data, indent=1).encode('utf-8'))
 
 
 def _write_pending(path: Path) -> bool:

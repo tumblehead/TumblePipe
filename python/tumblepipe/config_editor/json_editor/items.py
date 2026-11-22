@@ -638,60 +638,11 @@ class FieldBasicItem(QStandardItem, QObject):
         return value_item.to_json()
 
 
-class FieldObjectItem(QStandardItem, QObject):
-    change = Signal(object)
-
-    def __init__(
-        self,
-        key: str,
-        origin: FieldOrigin = FieldOrigin.LOCAL,
-        inherited_data: dict = None
-    ):
-        QStandardItem.__init__(self)
-        QObject.__init__(self)
-
-        # Members
-        self._key = key
-        self._origin = origin
-        self._inherited_data = inherited_data or {}
-        self._fields = dict()
-
-        # Inherited fields are read-only
-        if origin == FieldOrigin.INHERITED:
-            self.setEditable(False)
-        else:
-            # Enable drag (as field) and drop (as object container)
-            flags = self.flags()
-            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
-            self.setFlags(flags)
-
-    def path(self) -> JsonPath:
-        return _parent(self).path() / self._key
-
-    def __contains__(self, key: str):
-        assert isinstance(key, str), f"Expected str, got {type(key)}"
-        return key in self._fields
-
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                return self._key
-            case Qt.DisplayRole:
-                return f"{self._key}:"
-            case Qt.ForegroundRole:
-                if self._origin == FieldOrigin.INHERITED:
-                    return QBrush(INHERITED_FG)
-                if self._origin in PINNED:
-                    return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                if self._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
+class _ObjectRows:
+    """The row operations of a JSON object's item, keyed by field name:
+    ``FieldObjectItem`` (an object under a key) and ``IndexObjectItem``
+    (an object in an array). The class gives ``change``, ``_fields``,
+    ``_origin`` and ``path()``."""
 
     def _add_field(
         self,
@@ -839,119 +790,12 @@ class FieldObjectItem(QStandardItem, QObject):
             )
         )
 
-    def set_value(self, values: dict[str, JsonValue], inherited_data: dict = None):
-        # Clear existing fields
-        for key in self._fields.keys():
-            field_item = self._fields[key]
-            field_item.change.disconnect(self.change)
-            self.removeRow(field_item.row())
-        self._fields.clear()
 
-        # Update inherited data
-        inherited = inherited_data if inherited_data is not None else self._inherited_data
-        self._inherited_data = inherited
-
-        # If parent is INHERITED, all children are INHERITED too
-        if self._origin == FieldOrigin.INHERITED:
-            for key in values.keys():
-                value = values[key]
-                # Pass same value as inherited_value for nested objects
-                inherited_sub = value if isinstance(value, dict) else None
-                self._add_field(key, value, FieldOrigin.INHERITED, inherited_sub, notify=False)
-            return
-
-        # Order: inherited keys first (in their order), then local-only keys (in their order)
-        ordered_keys = list(inherited.keys()) + [k for k in values.keys() if k not in inherited]
-
-        # Add fields with computed origins
-        for key in ordered_keys:
-            in_stored = key in values
-            in_inherited = key in inherited
-
-            inherited_value = inherited.get(key)
-            value = values[key] if in_stored else inherited_value
-            origin = field_origin(in_stored, in_inherited, value, inherited_value)
-
-            self._add_field(key, value, origin, inherited_value, notify=False)
-
-    def _on_key_changed(self, to_key: str):
-        _rename_field_key(self, to_key)
-
-    def _on_modify_action(self, action):
-        view = self.model().parent()
-        match action:
-            case "add":
-                return _add_field_action(view, self)
-            case "remove":
-                return _remove_field_action(view, self)
-            case _:
-                assert False, f"Unknown action: {action}"
-
-    def _on_type_changed(self, new_type):
-        _parent(self)._set_field(self._key, _default_value(new_type))
-
-    def _on_context_menu(self, position):
-        menu = QMenu()
-        _add_field_section(menu, self._on_modify_action)
-        if self._origin != FieldOrigin.INHERITED:
-            _change_type_section(menu, self, self._on_type_changed)
-            _remove_field_section(menu, self._on_modify_action)
-            _revert_field_section(menu, self)
-        menu.exec_(position)
-
-    def to_json(self):
-        # Only return non-inherited fields
-        return {
-            key: field_item.to_json()
-            for key, field_item in self._fields.items()
-            if field_item._origin != FieldOrigin.INHERITED
-        }
-
-
-class FieldArrayItem(QStandardItem, QObject):
-    change = Signal(object)
-
-    def __init__(self, key: str, origin: FieldOrigin = FieldOrigin.LOCAL):
-        QStandardItem.__init__(self)
-        QObject.__init__(self)
-
-        # Members
-        self._key = key
-        self._origin = origin
-        self._items = list()
-
-        # Inherited fields are read-only
-        if origin == FieldOrigin.INHERITED:
-            self.setEditable(False)
-        else:
-            # Enable drag (as field) and drop (for array items)
-            flags = self.flags()
-            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
-            self.setFlags(flags)
-
-    def path(self) -> JsonPath:
-        return _parent(self).path() / self._key
-
-    def data(self, role=None):
-        match role:
-            case Qt.EditRole:
-                return self._key
-            case Qt.DisplayRole:
-                return f"{self._key}:"
-            case Qt.ForegroundRole:
-                if self._origin == FieldOrigin.INHERITED:
-                    return QBrush(INHERITED_FG)
-                if self._origin in PINNED:
-                    return QBrush(OVERRIDE_FG)
-                return None
-            case Qt.FontRole:
-                if self._origin in PINNED:
-                    font = QFont()
-                    font.setBold(True)
-                    return font
-                return None
-            case _:
-                return super().data(role)
+class _ArrayRows:
+    """The row operations of a JSON array's item, by index:
+    ``FieldArrayItem`` (an array under a key) and ``IndexArrayItem`` (an
+    array in an array). The class gives ``change``, ``_items``,
+    ``_origin`` and ``path()``."""
 
     def _add_item(
         self,
@@ -1097,6 +941,176 @@ class FieldArrayItem(QStandardItem, QObject):
             )
         )
 
+
+class FieldObjectItem(_ObjectRows, QStandardItem, QObject):
+    change = Signal(object)
+
+    def __init__(
+        self,
+        key: str,
+        origin: FieldOrigin = FieldOrigin.LOCAL,
+        inherited_data: dict = None
+    ):
+        QStandardItem.__init__(self)
+        QObject.__init__(self)
+
+        # Members
+        self._key = key
+        self._origin = origin
+        self._inherited_data = inherited_data or {}
+        self._fields = dict()
+
+        # Inherited fields are read-only
+        if origin == FieldOrigin.INHERITED:
+            self.setEditable(False)
+        else:
+            # Enable drag (as field) and drop (as object container)
+            flags = self.flags()
+            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+            self.setFlags(flags)
+
+    def path(self) -> JsonPath:
+        return _parent(self).path() / self._key
+
+    def __contains__(self, key: str):
+        assert isinstance(key, str), f"Expected str, got {type(key)}"
+        return key in self._fields
+
+    def data(self, role=None):
+        match role:
+            case Qt.EditRole:
+                return self._key
+            case Qt.DisplayRole:
+                return f"{self._key}:"
+            case Qt.ForegroundRole:
+                if self._origin == FieldOrigin.INHERITED:
+                    return QBrush(INHERITED_FG)
+                if self._origin in PINNED:
+                    return QBrush(OVERRIDE_FG)
+                return None
+            case Qt.FontRole:
+                if self._origin in PINNED:
+                    font = QFont()
+                    font.setBold(True)
+                    return font
+                return None
+            case _:
+                return super().data(role)
+
+    def set_value(self, values: dict[str, JsonValue], inherited_data: dict = None):
+        # Clear existing fields
+        for key in self._fields.keys():
+            field_item = self._fields[key]
+            field_item.change.disconnect(self.change)
+            self.removeRow(field_item.row())
+        self._fields.clear()
+
+        # Update inherited data
+        inherited = inherited_data if inherited_data is not None else self._inherited_data
+        self._inherited_data = inherited
+
+        # If parent is INHERITED, all children are INHERITED too
+        if self._origin == FieldOrigin.INHERITED:
+            for key in values.keys():
+                value = values[key]
+                # Pass same value as inherited_value for nested objects
+                inherited_sub = value if isinstance(value, dict) else None
+                self._add_field(key, value, FieldOrigin.INHERITED, inherited_sub, notify=False)
+            return
+
+        # Order: inherited keys first (in their order), then local-only keys (in their order)
+        ordered_keys = list(inherited.keys()) + [k for k in values.keys() if k not in inherited]
+
+        # Add fields with computed origins
+        for key in ordered_keys:
+            in_stored = key in values
+            in_inherited = key in inherited
+
+            inherited_value = inherited.get(key)
+            value = values[key] if in_stored else inherited_value
+            origin = field_origin(in_stored, in_inherited, value, inherited_value)
+
+            self._add_field(key, value, origin, inherited_value, notify=False)
+
+    def _on_key_changed(self, to_key: str):
+        _rename_field_key(self, to_key)
+
+    def _on_modify_action(self, action):
+        view = self.model().parent()
+        match action:
+            case "add":
+                return _add_field_action(view, self)
+            case "remove":
+                return _remove_field_action(view, self)
+            case _:
+                assert False, f"Unknown action: {action}"
+
+    def _on_type_changed(self, new_type):
+        _parent(self)._set_field(self._key, _default_value(new_type))
+
+    def _on_context_menu(self, position):
+        menu = QMenu()
+        _add_field_section(menu, self._on_modify_action)
+        if self._origin != FieldOrigin.INHERITED:
+            _change_type_section(menu, self, self._on_type_changed)
+            _remove_field_section(menu, self._on_modify_action)
+            _revert_field_section(menu, self)
+        menu.exec_(position)
+
+    def to_json(self):
+        # Only return non-inherited fields
+        return {
+            key: field_item.to_json()
+            for key, field_item in self._fields.items()
+            if field_item._origin != FieldOrigin.INHERITED
+        }
+
+
+class FieldArrayItem(_ArrayRows, QStandardItem, QObject):
+    change = Signal(object)
+
+    def __init__(self, key: str, origin: FieldOrigin = FieldOrigin.LOCAL):
+        QStandardItem.__init__(self)
+        QObject.__init__(self)
+
+        # Members
+        self._key = key
+        self._origin = origin
+        self._items = list()
+
+        # Inherited fields are read-only
+        if origin == FieldOrigin.INHERITED:
+            self.setEditable(False)
+        else:
+            # Enable drag (as field) and drop (for array items)
+            flags = self.flags()
+            flags |= Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+            self.setFlags(flags)
+
+    def path(self) -> JsonPath:
+        return _parent(self).path() / self._key
+
+    def data(self, role=None):
+        match role:
+            case Qt.EditRole:
+                return self._key
+            case Qt.DisplayRole:
+                return f"{self._key}:"
+            case Qt.ForegroundRole:
+                if self._origin == FieldOrigin.INHERITED:
+                    return QBrush(INHERITED_FG)
+                if self._origin in PINNED:
+                    return QBrush(OVERRIDE_FG)
+                return None
+            case Qt.FontRole:
+                if self._origin in PINNED:
+                    font = QFont()
+                    font.setBold(True)
+                    return font
+                return None
+            case _:
+                return super().data(role)
+
     def set_value(self, values: list[JsonValue]):
         # Clear existing items
         for index in reversed(range(self.rowCount())):
@@ -1237,7 +1251,7 @@ class IndexBasicItem(QStandardItem, QObject):
         return value_item.to_json()
 
 
-class IndexObjectItem(QStandardItem, QObject):
+class IndexObjectItem(_ObjectRows, QStandardItem, QObject):
     change = Signal(object)
 
     def __init__(self, index: int, origin: FieldOrigin = FieldOrigin.LOCAL):
@@ -1285,152 +1299,6 @@ class IndexObjectItem(QStandardItem, QObject):
                 return None
             case _:
                 return super().data(role)
-
-    def _add_field(
-        self,
-        key: str,
-        value: JsonValue,
-        origin: FieldOrigin = FieldOrigin.LOCAL,
-        notify: bool = True
-    ):
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        # Create the row items
-        field_item = _field_item(key, value, origin)
-        field_item.change.connect(self.change)
-        value_item = _value_item(value)
-        type_item = _type_item(value)
-
-        # Insert the row into the model
-        self.insertRow(self.rowCount(), [field_item, value_item, type_item])
-        self._fields[key] = field_item
-
-        # Emit the change signal
-        if not notify:
-            return
-        self.change.emit(_change_field_insert(self.path(), key, value))
-
-    def _set_field(
-        self,
-        key: str,
-        value: JsonValue,
-        origin: FieldOrigin = FieldOrigin.LOCAL,
-        inherited_value: JsonValue = None,
-        notify: bool = True
-    ):
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        # Remove the item from the model
-        field_item = self._fields[key]
-        field_item.change.disconnect(self.change)
-        index = field_item.row()
-        self.removeRow(index)
-        del self._fields[key]
-
-        # Add the item to the model
-        field_item = _field_item(key, value, origin, inherited_value)
-        field_item.change.connect(self.change)
-        value_item = _value_item(value)
-        type_item = _type_item(value)
-        self.insertRow(index, [field_item, value_item, type_item])
-        self._fields[key] = field_item
-
-        # Rebuild _fields in row order (del + re-add pushed the key to the end)
-        new_fields = {}
-        for row in range(self.rowCount()):
-            child = self.child(row, 0)
-            if hasattr(child, '_key'):
-                new_fields[child._key] = child
-        self._fields = new_fields
-
-        # Emit the change signal
-        if not notify:
-            return
-        self.change.emit(_change_field_update(self.path(), key, value))
-
-    def _remove_field(self, key: str, notify: bool = True):
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        # Remove the item from the model
-        field_item = self._fields[key]
-        field_item.change.disconnect(self.change)
-        index = field_item.row()
-        self.removeRow(index)
-        del self._fields[key]
-
-        # Emit the change signal
-        if not notify:
-            return
-        self.change.emit(_change_field_remove(self.path(), key))
-
-    def _set_field_to_inherited(self, key: str, inherited_value: JsonValue, notify: bool = True):
-        """Revert an overridden field back to its inherited value."""
-        # Remove the current field
-        field_item = self._fields[key]
-        field_item.change.disconnect(self.change)
-        index = field_item.row()
-        self.removeRow(index)
-        del self._fields[key]
-
-        # Re-add as inherited field with inherited value
-        field_item = _field_item(key, inherited_value, FieldOrigin.INHERITED)
-        field_item.change.connect(self.change)
-        value_item = _value_item(inherited_value)
-        type_item = _type_item(inherited_value)
-        self.insertRow(index, [field_item, value_item, type_item])
-        self._fields[key] = field_item
-
-        # Emit change signal (removal of override)
-        if notify:
-            self.change.emit(_change_field_remove(self.path(), key))
-
-    def _reorder_field(self, from_key: str, to_key: str, notify: bool = True):
-        """Move field from_key to the position of to_key."""
-        if from_key == to_key:
-            return
-
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        # Get items
-        from_item = self._fields[from_key]
-        to_item = self._fields[to_key]
-
-        # Get rows
-        from_row = from_item.row()
-        to_row = to_item.row()
-
-        # Move in model using takeRow/insertRow
-        row_items = self.takeRow(from_row)
-        self.insertRow(to_row, row_items)
-
-        # Rebuild _fields dict in new order
-        new_fields = {}
-        for row in range(self.rowCount()):
-            child = self.child(row, 0)
-            if hasattr(child, '_key'):
-                new_fields[child._key] = child
-        self._fields = new_fields
-
-        # Emit change signal
-        if not notify:
-            return
-        self.change.emit(
-            _change_field_reorder(
-                self.path(),
-                from_key,
-                to_key,
-                from_item.to_json(),
-                to_item.to_json(),
-            )
-        )
 
     def set_value(self, values: dict[str, JsonValue]):
         # Clear existing fields
@@ -1490,7 +1358,7 @@ class IndexObjectItem(QStandardItem, QObject):
         }
 
 
-class IndexArrayItem(QStandardItem, QObject):
+class IndexArrayItem(_ArrayRows, QStandardItem, QObject):
     change = Signal(object)
 
     def __init__(self, index: int, origin: FieldOrigin = FieldOrigin.LOCAL):
@@ -1534,150 +1402,6 @@ class IndexArrayItem(QStandardItem, QObject):
                 return None
             case _:
                 return super().data(role)
-
-    def _add_item(
-        self,
-        value: JsonValue,
-        origin: FieldOrigin = FieldOrigin.LOCAL,
-        notify: bool = True
-    ):
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        # Create the row items
-        index = self.rowCount()
-        index_item = _index_item(index, value, origin)
-        index_item.change.connect(self.change)
-        value_item = _value_item(value)
-        type_item = _type_item(value)
-
-        # Insert the row into the model
-        self.insertRow(index, [index_item, value_item, type_item])
-        self._items.append(index_item)
-
-        # Emit the change signal
-        if not notify:
-            return
-        self.change.emit(_change_index_insert(self.path(), index, value))
-
-    def _set_item(self, index: int, value: JsonValue, notify: bool = True):
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        # Remove the item from the model
-        index_item = self._items[index]
-        index_item.change.disconnect(self.change)
-        self.removeRow(index)
-        del self._items[index]
-
-        # Add the item to the model
-        index_item = _index_item(index, value)
-        index_item.change.connect(self.change)
-        value_item = _value_item(value)
-        type_item = _type_item(value)
-        self.insertRow(index, [index_item, value_item, type_item])
-        self._items.insert(index, index_item)
-
-        # Emit the change signal
-        if not notify:
-            return
-        self.change.emit(_change_index_update(self.path(), index, value))
-
-    def _reorder_item(
-        self, from_index: int, to_index: int, notify: bool = True
-    ):
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        assert abs(from_index - to_index) == 1, (
-            f"Invalid reorder indices: {from_index} -> {to_index}"
-        )
-
-        # Move the item in the model
-        to_item = self._items[to_index]
-        from_item = self._items.pop(from_index)
-        self._items.insert(to_index, from_item)
-        row = self.takeRow(from_index)
-        self.insertRow(to_index, row)
-
-        # Re-index the items
-        for index, item in enumerate(self._items):
-            item._index = index
-
-        # Emit the change signal
-        if not notify:
-            return
-        self.change.emit(
-            _change_index_reorder(
-                self.path(),
-                from_index,
-                to_index,
-                from_item.to_json(),
-                to_item.to_json(),
-            )
-        )
-
-    def _remove_item(self, index: int, notify: bool = True):
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        # Remove the item from the model
-        index_item = self._items[index]
-        index_item.change.disconnect(self.change)
-        self.removeRow(index)
-        del self._items[index]
-
-        # Re-index the items
-        for position, item in enumerate(self._items):
-            item._index = position
-
-        # Emit the item removed signal
-        if not notify:
-            return
-        self.change.emit(_change_index_remove(self.path(), index))
-
-    def _move_item(self, from_index: int, to_index: int, notify: bool = True):
-        """Move item from from_index to to_index (can be non-adjacent)."""
-        if from_index == to_index:
-            return
-
-        # When modifying an inherited container, change origin to LOCAL
-        if notify and self._origin == FieldOrigin.INHERITED:
-            self._origin = FieldOrigin.LOCAL
-
-        # Get items for change signal
-        from_item = self._items[from_index]
-        to_item = self._items[to_index]
-
-        # Remove from old position
-        self._items.pop(from_index)
-        row = self.takeRow(from_index)
-
-        # Insert at new position (adjust if moving down)
-        insert_idx = to_index if from_index > to_index else to_index
-        self._items.insert(insert_idx, from_item)
-        self.insertRow(insert_idx, row)
-
-        # Re-index all items
-        for index, item in enumerate(self._items):
-            item._index = index
-
-        # Emit change signal
-        if not notify:
-            return
-        self.change.emit(
-            _change_index_reorder(
-                self.path(),
-                from_index,
-                to_index,
-                from_item.to_json(),
-                to_item.to_json(),
-            )
-        )
 
     def set_value(self, values: list[JsonValue]):
         # Clear existing items

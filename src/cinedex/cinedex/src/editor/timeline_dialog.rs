@@ -24,7 +24,8 @@ use th_media::sound::Sound;
 use th_pipe::Project;
 use th_pipe::edits::EditSources;
 
-use super::{Dialog, Editor, Message, ProjectPaths};
+use super::file_dialogs::Dialog;
+use super::{Editor, Message, ProjectPaths};
 use crate::export;
 use crate::look;
 use crate::rpc::{self, Call, Refusal};
@@ -220,13 +221,10 @@ impl Probe for DiskProbe<'_> {
     }
 
     /// As the editor counts a take's movie that records no start frame
-    /// (`super::resolve`): from the shot's range with its roll, 1001 when
-    /// it has none.
-    fn shot_first(&self, shot: &str) -> Frame {
-        th_pipe::Uri::parse_address(shot)
-            .ok()
-            .and_then(|uri| th_pipe::timeline::get_frame_range(&self.project.config, &uri).ok().flatten())
-            .map_or(1001, |range| range.full_range().first_frame as Frame)
+    /// (`super::entries::resolve`): `th_pipe::timeline::shot_first_frame`.
+    fn shot_first(&self, shot: &str) -> Result<Frame, String> {
+        let uri = th_pipe::Uri::parse_address(shot).map_err(|e| e.to_string())?;
+        th_pipe::timeline::shot_first_frame(&self.project.config, &uri)
     }
 }
 
@@ -267,13 +265,18 @@ fn same_path(a: &Path, b: &Path) -> bool {
 }
 
 /// Write `contents` as `output`: to a partial file beside it, renamed
-/// once it is whole.
+/// over it once it is whole, waiting out a program reading the old one
+/// ([`th_pipe::io::replace_file`]). A folder in its place is refused at
+/// once: no reader closing will ever let a file take its place.
 fn write_whole(output: &Path, contents: &[u8]) -> Result<(), String> {
+    if output.is_dir() {
+        return Err(format!("{}: a folder of that name is in the way", output.display()));
+    }
     let name = output.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let partial = output.with_file_name(format!("{name}.partial"));
     let fail = |e: std::io::Error| format!("{}: {e}", output.display());
     std::fs::write(&partial, contents).map_err(fail)?;
-    if let Err(e) = std::fs::rename(&partial, output) {
+    if let Err(e) = th_pipe::io::replace_file(&partial, output) {
         let _ = std::fs::remove_file(&partial);
         return Err(fail(e));
     }
@@ -651,8 +654,8 @@ mod tests {
         fn exists(&self, path: &str) -> bool {
             Path::new(path).is_file()
         }
-        fn shot_first(&self, _: &str) -> Frame {
-            1001
+        fn shot_first(&self, _: &str) -> Result<Frame, String> {
+            Ok(th_edit::document::DEFAULT_START_FRAME)
         }
     }
 
@@ -925,5 +928,28 @@ mod tests {
         assert!(holds(&setup(true)));
         assert!(!holds(&setup(false)) && !holds(&None));
         assert!(Format::Otio.collects() && !Format::Xml.collects());
+    }
+
+    /// Exporting over a timeline another program is reading (Resolve, an
+    /// editor; on Windows a file opened without FILE_SHARE_DELETE cannot
+    /// be renamed over) waits the reader out rather than failing.
+    #[cfg(windows)]
+    #[test]
+    fn exporting_over_a_timeline_being_read_waits_for_the_reader() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("cut.xml");
+        write_whole(&output, b"first").unwrap();
+        let reader = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(&output).unwrap();
+        let released = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            drop(reader);
+        });
+        let written = write_whole(&output, b"second");
+        released.join().unwrap();
+        written.unwrap();
+        assert_eq!(std::fs::read(&output).unwrap(), b"second");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }

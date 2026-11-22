@@ -90,6 +90,7 @@ from tumblepipe.farm.jobs import composite as composite_job
 from tumblepipe.farm.specs.composite import valid_recomp  # noqa: F401  (the render config's block)
 from tumblepipe.farm.specs.composite import valid_renders
 from tumblepipe.farm.specs.render_pipeline import valid_preview_frame_list
+from tumblepipe.farm.specs import submission
 from tumblepipe.farm.pipelines import post_render
 from tumblepipe.farm.specs.preview_frames import CONFIG_KEY as PREVIEW_FRAMES_KEY
 from tumblepipe.farm.specs.preview_frames import valid_frame_list
@@ -353,38 +354,6 @@ class RecompError(Exception):
     no range; the message says why."""
 
 
-def recomp_range(
-    block: dict,
-    first_frame: int,
-    last_frame: int,
-    *,
-    inside: bool = False,
-    ) -> tuple[int, int]:
-    """The first and last frame a re-comp scheduled as ``block`` comps.
-
-    ``first_frame``/``last_frame`` are the range it follows: the render's
-    (rolls included) when it is chained after one, else the shot's. The
-    block's own ``first_frame``/``last_frame`` replace either end. With
-    ``inside`` (a comp chained after a render) the comp may not reach past
-    the range it follows: those frames are not in the render it reads.
-    Raises :class:`RecompError` when the frames make no range.
-    """
-    first = block.get('first_frame', first_frame)
-    last = block.get('last_frame', last_frame)
-    if first > last:
-        raise RecompError(
-            f'the comp frames {first}-{last} end before they start'
-        )
-    if inside and (first < first_frame or last > last_frame):
-        raise RecompError(
-            f'the comp frames {first}-{last} reach outside the render\'s '
-            f'{first_frame}-{last_frame}; the comp reads the frames this '
-            'render makes, so comp inside them (or untick Render to comp '
-            'the renders on disk)'
-        )
-    return first, last
-
-
 def recomp_preview_frames(block: dict, first_frame: int, last_frame: int) -> list[int] | None:
     """The block's Preview Frames List (``preview_frame_list``, checked by the
     submitter against the comp's frames) if it still fits the
@@ -423,7 +392,7 @@ def recomp_config(
 
     ``first_frame``/``last_frame`` are the range the comp follows; the
     block's own frames, step and preview frames apply over it
-    (:func:`recomp_range`), as an export_comp's Frame Range, Step and
+    (``farm.specs.submission.comp_frames``), as an export_comp's Frame Range, Step and
     Preview Frames do for its own Submit."""
     from tumblepipe.pipe.paths import latest_complete_hip_file_path
     workfile = latest_complete_hip_file_path(shot_uri, COMPOSITE_DEPARTMENT)
@@ -499,7 +468,13 @@ def _chained_config(shot_uri, block, workfile: Path, exports: list[dict], *,
     """A re-comp's config of ``workfile`` (bundled with the job as it is
     now) and ``exports``, scheduled as ``block`` says."""
     import shutil
-    first_frame, last_frame = recomp_range(block, first_frame, last_frame)
+    follows = (first_frame, last_frame)
+    first_frame, last_frame = submission.comp_frames(
+        block.get('first_frame'), block.get('last_frame'), follows,
+    )
+    problems = submission.comp_frame_problems((first_frame, last_frame), follows, inside=False)
+    if problems:
+        raise RecompError(problems[0])
     shot_name = '_'.join(shot_uri.segments[1:])
     input_path = Path(RECOMP_INPUT) / f'{shot_name}{workfile.suffix}'
     staged = temp_path / input_path

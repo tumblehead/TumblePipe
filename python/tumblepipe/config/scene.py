@@ -22,6 +22,7 @@ Scenes support hierarchical organization:
 from dataclasses import dataclass
 
 from tumblepipe.api import api
+from tumblepipe.config.store import JsonConfigStore
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.entities import is_terminal_entity
 
@@ -72,7 +73,7 @@ class SceneTreeNode:
 # ---------------------------------------------------------------------------
 
 
-def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
+def add_scene_in(store: JsonConfigStore, path: str, assets: list[AssetEntry] | None = None) -> Uri:
     """
     Create a new scene.
 
@@ -104,21 +105,21 @@ def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
         for seg in segments[:i]:
             parent_uri = parent_uri / seg
 
-        parent_props = api.config.get_properties(parent_uri)
+        parent_props = store.get_properties(parent_uri)
         if parent_props is None:
             # Create parent as scene with empty assets
-            api.config.add_entity(parent_uri, dict(assets=[]))
+            store.add_entity(parent_uri, dict(assets=[]))
 
     # Build final scene URI
     scene_uri = SCENES_URI
     for segment in segments:
         scene_uri = scene_uri / segment
 
-    properties = api.config.get_properties(scene_uri)
+    properties = store.get_properties(scene_uri)
     if properties is not None:
         raise ValueError('Scene already exists')
 
-    api.config.add_entity(scene_uri, dict(
+    store.add_entity(scene_uri, dict(
         assets=[
             {'asset': entry.asset, 'instances': entry.instances, CHANNEL_KEY: entry.channel}
             for entry in assets
@@ -127,17 +128,17 @@ def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
     return scene_uri
 
 
-def remove_scene(scene_uri: Uri):
+def remove_scene_in(store: JsonConfigStore, scene_uri: Uri):
     """
     Delete a scene.
 
     Args:
         scene_uri: The scene URI to delete
     """
-    api.config.remove_entity(scene_uri)
+    store.remove_entity(scene_uri)
 
 
-def get_scene_by_uri(scene_uri: Uri) -> Scene | None:
+def get_scene_by_uri_in(store: JsonConfigStore, scene_uri: Uri) -> Scene | None:
     """
     Get a scene by its scene URI (``scenes:/...``).
 
@@ -147,7 +148,7 @@ def get_scene_by_uri(scene_uri: Uri) -> Scene | None:
     Returns:
         Scene object or None if not found
     """
-    properties = api.config.get_properties(scene_uri)
+    properties = store.get_properties(scene_uri)
     if properties is None:
         return None
 
@@ -169,7 +170,7 @@ def get_scene_by_uri(scene_uri: Uri) -> Scene | None:
     )
 
 
-def list_scenes() -> list[Scene]:
+def list_scenes_in(store: JsonConfigStore) -> list[Scene]:
     """
     List all scenes (flat list, any depth).
 
@@ -179,12 +180,12 @@ def list_scenes() -> list[Scene]:
     Returns:
         List of all Scene objects, including parent scenes
     """
-    tree_nodes = list_scene_tree()
+    tree_nodes = list_scene_tree_in(store)
     scenes = []
 
     def collect_scenes(node: SceneTreeNode):
         # Fetch scene directly to ensure we get all scenes including parents
-        scene = get_scene_by_uri(node.uri)
+        scene = get_scene_by_uri_in(store, node.uri)
         if scene is not None:
             scenes.append(scene)
         for child in node.children:
@@ -196,14 +197,14 @@ def list_scenes() -> list[Scene]:
     return scenes
 
 
-def list_scene_tree() -> list[SceneTreeNode]:
+def list_scene_tree_in(store: JsonConfigStore) -> list[SceneTreeNode]:
     """
     List scenes as a hierarchical tree.
 
     Returns:
         List of root SceneTreeNode objects
     """
-    entities = api.config.list_entities(SCENES_URI, closure=True)
+    entities = store.list_entities(SCENES_URI, closure=True)
 
     # Build a dict of uri_str -> entity for quick lookup
     entity_map = {str(e.uri): e for e in entities}
@@ -271,7 +272,7 @@ def list_scene_tree() -> list[SceneTreeNode]:
     return root_nodes
 
 
-def set_scene_assets(scene_uri: Uri, assets: list[AssetEntry]):
+def set_scene_assets_in(store: JsonConfigStore, scene_uri: Uri, assets: list[AssetEntry]):
     """
     Update a scene's assets with instance counts and channels.
 
@@ -282,17 +283,17 @@ def set_scene_assets(scene_uri: Uri, assets: list[AssetEntry]):
     Raises:
         ValueError: If scene does not exist
     """
-    own = api.config.get_own_properties(scene_uri)
+    own = store.get_own_properties(scene_uri)
     if own is None:
         raise ValueError('Scene does not exist')
     own['assets'] = [
         {'asset': entry.asset, 'instances': entry.instances, CHANNEL_KEY: entry.channel}
         for entry in assets
     ]
-    api.config.set_own_properties(scene_uri, own)
+    store.set_own_properties(scene_uri, own)
 
 
-def get_inherited_assets(scene_uri: Uri) -> list[tuple[AssetEntry, Uri]]:
+def get_inherited_assets_in(store: JsonConfigStore, scene_uri: Uri) -> list[tuple[AssetEntry, Uri]]:
     """
     Get all assets inherited from parent scenes.
 
@@ -315,7 +316,7 @@ def get_inherited_assets(scene_uri: Uri) -> list[tuple[AssetEntry, Uri]]:
         for seg in segments:
             parent_uri = parent_uri / seg
 
-        parent_scene = get_scene_by_uri(parent_uri)
+        parent_scene = get_scene_by_uri_in(store, parent_uri)
         if parent_scene and parent_scene.assets:
             for entry in parent_scene.assets:
                 inherited.append((entry, parent_uri))
@@ -323,7 +324,7 @@ def get_inherited_assets(scene_uri: Uri) -> list[tuple[AssetEntry, Uri]]:
     return inherited
 
 
-def find_shots_with_scene_ref(scene_uri: Uri) -> list[Uri]:
+def find_shots_with_scene_ref_in(store: JsonConfigStore, scene_uri: Uri) -> list[Uri]:
     """
     Find all shots that reference a specific scene (directly, not inherited).
 
@@ -333,7 +334,7 @@ def find_shots_with_scene_ref(scene_uri: Uri) -> list[Uri]:
     Returns:
         List of entity URIs that directly reference this scene
     """
-    shot_uris = api.config.list_entity_uris(
+    shot_uris = store.list_entity_uris(
         Uri.parse('entity:/shots'),
         closure=True
     )
@@ -342,7 +343,7 @@ def find_shots_with_scene_ref(scene_uri: Uri) -> list[Uri]:
     scene_uri_str = str(scene_uri)
 
     for shot_uri in shot_uris:
-        scene_ref = get_scene_ref(shot_uri)
+        scene_ref = get_scene_ref_in(store, shot_uri)
         if scene_ref and str(scene_ref) == scene_uri_str:
             affected.append(shot_uri)
 
@@ -353,7 +354,7 @@ def find_shots_with_scene_ref(scene_uri: Uri) -> list[Uri]:
 # Scene references on entities (shots, sequences)
 # ---------------------------------------------------------------------------
 
-def get_scene_ref(entity_uri: Uri) -> Uri | None:
+def get_scene_ref_in(store: JsonConfigStore, entity_uri: Uri) -> Uri | None:
     """
     Get scene reference for an entity (shot/sequence).
 
@@ -366,7 +367,7 @@ def get_scene_ref(entity_uri: Uri) -> Uri | None:
         get_properties merges those down, so reading it here would wrongly
         report an inherited ref as direct.
     """
-    properties = api.config.get_own_properties(entity_uri)
+    properties = store.get_own_properties(entity_uri)
     if properties is None:
         return None
     scene_str = properties.get('scene')
@@ -378,7 +379,7 @@ def get_scene_ref(entity_uri: Uri) -> Uri | None:
     return Uri.parse(scene_str)
 
 
-def set_scene_ref(entity_uri: Uri, scene_uri: Uri | None):
+def set_scene_ref_in(store: JsonConfigStore, entity_uri: Uri, scene_uri: Uri | None):
     """
     Set scene reference for an entity.
 
@@ -388,17 +389,17 @@ def set_scene_ref(entity_uri: Uri, scene_uri: Uri | None):
     """
     # Read the entity's OWN overrides: clearing must remove this entity's ref
     # and re-expose whatever it inherits, not pin the inherited one locally.
-    own = api.config.get_own_properties(entity_uri)
+    own = store.get_own_properties(entity_uri)
     if own is None:
         own = {}
     if scene_uri is None:
         own.pop('scene', None)
     else:
         own['scene'] = str(scene_uri)
-    api.config.set_own_properties(entity_uri, own)
+    store.set_own_properties(entity_uri, own)
 
 
-def get_inherited_scene_ref(entity_uri: Uri) -> tuple[Uri | None, Uri | None]:
+def get_inherited_scene_ref_in(store: JsonConfigStore, entity_uri: Uri) -> tuple[Uri | None, Uri | None]:
     """
     Get inherited scene reference by walking up hierarchy.
 
@@ -414,7 +415,7 @@ def get_inherited_scene_ref(entity_uri: Uri) -> tuple[Uri | None, Uri | None]:
           or None if it's set directly on the entity (not inherited)
     """
     # Check the entity itself first
-    scene_ref = get_scene_ref(entity_uri)
+    scene_ref = get_scene_ref_in(store, entity_uri)
     if scene_ref is not None:
         return (scene_ref, None)  # Not inherited, set directly
 
@@ -423,14 +424,14 @@ def get_inherited_scene_ref(entity_uri: Uri) -> tuple[Uri | None, Uri | None]:
         parent_segments = entity_uri.segments[:i]
         uri_str = f"{entity_uri.purpose}:/{'/'.join(parent_segments)}"
         parent_uri = Uri.parse(uri_str)
-        scene_ref = get_scene_ref(parent_uri)
+        scene_ref = get_scene_ref_in(store, parent_uri)
         if scene_ref is not None:
             return (scene_ref, parent_uri)  # Inherited from parent
 
     return (None, None)
 
 
-def get_scene(entity_uri: Uri):
+def get_scene_in(store: JsonConfigStore, entity_uri: Uri):
     """
     Get scene for an entity (shot/sequence).
 
@@ -444,19 +445,19 @@ def get_scene(entity_uri: Uri):
     Returns:
         Scene object with assets
     """
-    scene_ref, _ = get_inherited_scene_ref(entity_uri)
+    scene_ref, _ = get_inherited_scene_ref_in(store, entity_uri)
     if scene_ref is None:
         # No scene assigned - return empty Scene using entity as reference
         return Scene(uri=entity_uri, assets=[])
 
-    scene = get_scene_by_uri(scene_ref)
+    scene = get_scene_by_uri_in(store, scene_ref)
     if scene is None:
         return Scene(uri=scene_ref, assets=[])
 
     return scene
 
 
-def set_scene(entity_uri: Uri, assets: "list['AssetEntry'] | dict[Uri, 'AssetEntry']"):
+def set_scene_in(store: JsonConfigStore, entity_uri: Uri, assets: "list['AssetEntry']"):
     """
     Set scene assets for an entity.
 
@@ -465,40 +466,99 @@ def set_scene(entity_uri: Uri, assets: "list['AssetEntry'] | dict[Uri, 'AssetEnt
 
     Args:
         entity_uri: The entity URI (e.g., entity:/shots/010/010)
-        assets: A list[AssetEntry] (canonical). A legacy dict[Uri, AssetEntry]
-            is also accepted and normalised to its values — the dict keys are
-            redundant with AssetEntry.asset.
+        assets: The scene's assets.
     """
-    if isinstance(assets, dict):
-        assets = list(assets.values())
-
-    scene_ref, _ = get_inherited_scene_ref(entity_uri)
+    scene_ref, _ = get_inherited_scene_ref_in(store, entity_uri)
 
     # If no scene exists, create one based on entity path
     if scene_ref is None:
         # Create scene with path structure based on entity
         # entity:/shots/010/010 -> scenes:/shots_010_010
         scene_path = '_'.join(entity_uri.segments)
-        scene_ref = add_scene(scene_path)
-        set_scene_ref(entity_uri, scene_ref)
+        scene_ref = add_scene_in(store, scene_path)
+        set_scene_ref_in(store, entity_uri, scene_ref)
 
     # Save assets to the scene
-    set_scene_assets(scene_ref, assets)
+    set_scene_assets_in(store, scene_ref, assets)
 
 
-def list_available_assets() -> list[Uri]:
+def list_available_assets_in(store: JsonConfigStore) -> list[Uri]:
     """
     List all available assets for scene assignment.
 
     Returns:
         List of all asset URIs from the database
     """
-    with api.config.coherent():
-        asset_uris = api.config.list_entity_uris(
+    with store.coherent():
+        asset_uris = store.list_entity_uris(
             filter=Uri.parse('entity:/assets'),
             closure=True
         )
         return [
             uri for uri in asset_uris
-            if is_terminal_entity(api.config, uri)
+            if is_terminal_entity(store, uri)
         ]
+
+
+# --------------------------------------------------------------------------- #
+# The active project
+# --------------------------------------------------------------------------- #
+# The pipeline, the HDAs and the project templates work in the active project
+# and call these; the Asset Browser, which works on any project, calls the
+# ``_in`` cores with that project's store.
+
+
+def add_scene(path: str, assets: list[AssetEntry] | None = None) -> Uri:
+    return add_scene_in(api.config, path, assets)
+
+
+def remove_scene(scene_uri: Uri):
+    remove_scene_in(api.config, scene_uri)
+
+
+def get_scene_by_uri(scene_uri: Uri) -> Scene | None:
+    return get_scene_by_uri_in(api.config, scene_uri)
+
+
+def list_scenes() -> list[Scene]:
+    return list_scenes_in(api.config)
+
+
+def list_scene_tree() -> list[SceneTreeNode]:
+    return list_scene_tree_in(api.config)
+
+
+def set_scene_assets(scene_uri: Uri, assets: list[AssetEntry]):
+    set_scene_assets_in(api.config, scene_uri, assets)
+
+
+def get_inherited_assets(scene_uri: Uri) -> list[tuple[AssetEntry, Uri]]:
+    return get_inherited_assets_in(api.config, scene_uri)
+
+
+def find_shots_with_scene_ref(scene_uri: Uri) -> list[Uri]:
+    return find_shots_with_scene_ref_in(api.config, scene_uri)
+
+
+def get_scene_ref(entity_uri: Uri) -> Uri | None:
+    return get_scene_ref_in(api.config, entity_uri)
+
+
+def set_scene_ref(entity_uri: Uri, scene_uri: Uri | None):
+    set_scene_ref_in(api.config, entity_uri, scene_uri)
+
+
+def get_inherited_scene_ref(entity_uri: Uri) -> tuple[Uri | None, Uri | None]:
+    return get_inherited_scene_ref_in(api.config, entity_uri)
+
+
+def get_scene(entity_uri: Uri):
+    return get_scene_in(api.config, entity_uri)
+
+
+def set_scene(entity_uri: Uri, assets: "list['AssetEntry']"):
+    set_scene_in(api.config, entity_uri, assets)
+
+
+def list_available_assets() -> list[Uri]:
+    return list_available_assets_in(api.config)

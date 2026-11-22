@@ -144,8 +144,24 @@ const PATTERNS: [&[(i8, i8)]; 5] = [
     &[(4, 4), (-4, -4)],
     &[(-2, -6), (6, -2), (-6, 2), (2, 6)],
     &[(1, -3), (-1, 3), (5, 1), (-3, -5), (-5, 5), (-7, -1), (3, 7), (7, -7)],
-    &[(1, 1), (-1, -3), (-3, 2), (4, -1), (-5, -2), (2, 5), (5, 3), (3, -5),
-      (-2, 6), (0, -7), (-4, -6), (-6, 4), (-8, 0), (7, -4), (6, 7), (-7, -8)],
+    &[
+        (1, 1),
+        (-1, -3),
+        (-3, 2),
+        (4, -1),
+        (-5, -2),
+        (2, 5),
+        (5, 3),
+        (3, -5),
+        (-2, 6),
+        (0, -7),
+        (-4, -6),
+        (-6, 4),
+        (-8, 0),
+        (7, -4),
+        (6, 7),
+        (-7, -8),
+    ],
 ];
 
 /// The sample offsets, in pixels from the pixel centre (y down), of the
@@ -501,8 +517,17 @@ pub(crate) fn ambient_occlusion(samples: &Samples, proj: &Mat4) -> Vec<f32> {
 /// lighter. A phase reached only across onto another surface weighs, and
 /// counts, next to nothing.
 #[allow(clippy::too_many_arguments)]
-fn blur_pass(ao: &[f32], out: &mut [f32], normal: &[[f32; 4]], distance: &[f32], w: usize, h: usize,
-             radius: usize, across: bool, period: usize) {
+fn blur_pass(
+    ao: &[f32],
+    out: &mut [f32],
+    normal: &[[f32; 4]],
+    distance: &[f32],
+    w: usize,
+    h: usize,
+    radius: usize,
+    across: bool,
+    period: usize,
+) {
     let (stride, len) = if across { (1, w) } else { (w, h) };
     par_rows(out, w, |y, row| {
         for (x, out) in row.iter_mut().enumerate() {
@@ -603,11 +628,7 @@ pub fn resolve(frame: &Frame, samples: &Samples) -> Image {
     let started = std::time::Instant::now();
 
     // A cancelled frame is thrown away: skip the occlusion, its dearest part.
-    let ao = if frame.ao && !crate::cancel::Token::current().is_set() {
-        ambient_occlusion(samples, &proj)
-    } else {
-        vec![1.0; plane * n]
-    };
+    let ao = if frame.ao && !crate::cancel::Token::current().is_set() { ambient_occlusion(samples, &proj) } else { vec![1.0; plane * n] };
     let occluded = started.elapsed();
 
     let mut color = vec![[0.0f32; 4]; plane];
@@ -664,11 +685,7 @@ pub fn resolve(frame: &Frame, samples: &Samples) -> Image {
     });
     // The C++ shim's TH_PLAYBLAST_TIMING line counts this inside "render".
     if std::env::var_os("TH_PLAYBLAST_TIMING").is_some() {
-        eprintln!(
-            "hdThPlayblast: post pass {} ms, of which ambient occlusion {} ms",
-            started.elapsed().as_millis(),
-            occluded.as_millis()
-        );
+        eprintln!("hdThPlayblast: post pass {} ms, of which ambient occlusion {} ms", started.elapsed().as_millis(), occluded.as_millis());
     }
     Image { color, depth, ids: samples.ids.clone() }
 }
@@ -685,17 +702,41 @@ mod tests {
         let (sx, sy) = (focal / aspect, focal);
         if ortho {
             [
-                sx, 0.0, 0.0, 0.0, //
-                0.0, sy, 0.0, 0.0, //
-                0.0, 0.0, -2.0 / (f - n), 0.0, //
-                shift[0], shift[1], -(f + n) / (f - n), 1.0,
+                sx,
+                0.0,
+                0.0,
+                0.0, //
+                0.0,
+                sy,
+                0.0,
+                0.0, //
+                0.0,
+                0.0,
+                -2.0 / (f - n),
+                0.0, //
+                shift[0],
+                shift[1],
+                -(f + n) / (f - n),
+                1.0,
             ]
         } else {
             [
-                sx, 0.0, 0.0, 0.0, //
-                0.0, sy, 0.0, 0.0, //
-                shift[0], shift[1], -(f + n) / (f - n), -1.0, //
-                0.0, 0.0, -2.0 * f * n / (f - n), 0.0,
+                sx,
+                0.0,
+                0.0,
+                0.0, //
+                0.0,
+                sy,
+                0.0,
+                0.0, //
+                shift[0],
+                shift[1],
+                -(f + n) / (f - n),
+                -1.0, //
+                0.0,
+                0.0,
+                -2.0 * f * n / (f - n),
+                0.0,
             ]
         }
     }
@@ -757,5 +798,3 @@ mod tests {
         }
     }
 }
-
-

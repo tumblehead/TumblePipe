@@ -41,9 +41,8 @@ def preset_label(name: str, value: int, default: str | None) -> str:
 class FarmDefaultsEditor(QWidget):
     """A project's farm pools and priority presets, each with a default."""
 
-    def __init__(self, *, activator, parent=None) -> None:
+    def __init__(self, *, parent=None) -> None:
         super().__init__(parent)
-        self._activator = activator
         self._project = None
         self._editable = False
         self._pools: list[str] = []
@@ -143,13 +142,12 @@ class FarmDefaultsEditor(QWidget):
         self._pools, self._presets = [], []
         if self._project is not None:
             from tumblepipe.config import farm
-            from tumblepipe.api import api
             try:
-                self._activator.activate(self._project)
-                self._pools = [pool.name for pool in farm.list_pools()]
-                self._presets = [(p.name, p.value) for p in farm.list_priority_presets()]
-                default_pool = farm.get_default_pool()
-                root = api.config.get_properties(farm.ENTITY_ROOT_URI) or {}
+                store = self._project.store()
+                self._pools = [pool.name for pool in farm.list_pools_in(store)]
+                self._presets = [(p.name, p.value) for p in farm.list_priority_presets_in(store)]
+                default_pool = farm.get_default_pool_in(store)
+                root = store.get_properties(farm.ENTITY_ROOT_URI) or {}
                 default_preset = (root.get('farm') or {}).get('default_priority') or None
             except Exception as exc:
                 report_failure("Reading the project's farm settings", exc)
@@ -184,10 +182,10 @@ class FarmDefaultsEditor(QWidget):
             default.setEnabled(self._editable and selected)
 
     def _edit(self, what: str, change) -> None:
-        """Run one farm write against this project, then redraw."""
+        """Run one farm write, ``change(store)``, against this project's
+        store, then redraw."""
         try:
-            self._activator.activate(self._project)
-            change()
+            change(self._project.store())
         except Exception as exc:
             report_failure(what, exc)
         self._refresh()
@@ -211,7 +209,7 @@ class FarmDefaultsEditor(QWidget):
         if problem:
             QMessageBox.warning(self, "Add Farm Pool", problem)
             return
-        self._edit("Adding the farm pool", lambda: farm.add_pool(name))
+        self._edit("Adding the farm pool", lambda store: farm.add_pool_in(store, name))
         self._pool_list.setCurrentRow(self._pools.index(name) if name in self._pools else -1)
 
     def _on_remove_pool(self) -> None:
@@ -225,13 +223,13 @@ class FarmDefaultsEditor(QWidget):
             "Farm Submit stops offering it. The pool itself stays on the farm.",
         )
         if answer == QMessageBox.Yes:
-            self._edit("Removing the farm pool", lambda: farm.remove_pool(name))
+            self._edit("Removing the farm pool", lambda store: farm.remove_pool_in(store, name))
 
     def _on_default_pool(self) -> None:
         from tumblepipe.config import farm
         name = self._selected(self._pool_list, self._pools)
         if name is not None:
-            self._edit("Setting the default farm pool", lambda: farm.set_default_pool(name))
+            self._edit("Setting the default farm pool", lambda store: farm.set_default_pool_in(store, name))
 
     # ── Priority presets ──────────────────────────────
 
@@ -250,7 +248,7 @@ class FarmDefaultsEditor(QWidget):
         value, ok = QInputDialog.getInt(
             self, "Add Priority", f"Deadline priority for '{name}' (0-100):", 50, 0, 100)
         if ok:
-            self._edit("Adding the priority", lambda: farm.add_priority_preset(name, value))
+            self._edit("Adding the priority", lambda store: farm.add_priority_preset_in(store, name, value))
 
     def _on_remove_preset(self) -> None:
         from tumblepipe.config import farm
@@ -260,12 +258,12 @@ class FarmDefaultsEditor(QWidget):
         answer = QMessageBox.question(
             self, "Remove Priority", f"Remove the priority '{name}'?")
         if answer == QMessageBox.Yes:
-            self._edit("Removing the priority", lambda: farm.remove_priority_preset(name))
+            self._edit("Removing the priority", lambda store: farm.remove_priority_preset_in(store, name))
 
     def _on_default_preset(self) -> None:
         from tumblepipe.config import farm
         name = self._selected(self._preset_list, [n for n, _ in self._presets])
         if name is not None:
             self._edit("Setting the default priority",
-                       lambda: farm.set_default_priority_preset(name))
+                       lambda store: farm.set_default_priority_preset_in(store, name))
 

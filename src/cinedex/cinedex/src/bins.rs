@@ -414,7 +414,7 @@ mod press_tests {
 mod tests {
     use super::*;
     use proptest::prelude::*;
-    use th_edit::document::{Rule, TrackRef};
+    use th_edit::document::TrackRef;
     use th_edit::ops::Available;
 
     use crate::editing::{BinItem, Document, Origin, of_shots};
@@ -828,7 +828,6 @@ mod tests {
         assert_eq!(after.spans(TrackRef::audio(0)), [(0, 48), (48, 78)]);
         let none: [fn(Frame) -> Clips; 0] = [];
         assert_eq!(put_run(&edit, 0, 0, false, none, &Anything).unwrap(), (Vec::new(), None));
-        let _ = Rule::best();
     }
 
     /// One track's clips: each the gap before it and its length.

@@ -4,17 +4,14 @@ from pathlib import Path
 
 
 from tumblepipe.api import api
-from tumblepipe import naming
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
-from tumblepipe.config.channels import CHANNEL_KEY, read_published_channel
 from tumblepipe.pipe.usd.sublayer_refs import generate_staged_sublayer_uri
+from tumblepipe.pipe.houdini import import_metadata
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
-from tumblepipe.pipe.houdini.prim_metadata import ANIMATABLE_KEY
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
-from tumblepipe.pipe.usd.instances import copies_are_animated
 from tumblepipe.pipe.paths import (
     current_staged_path,
     list_version_paths
@@ -29,251 +26,6 @@ def _staged_context_assets(staged_file_path: Path) -> list[dict]:
     """
     context_data = load_json(staged_file_path.parent / 'context.json')
     return context_data['parameters']['assets']
-
-def _subasset_script_lines(
-    subassets: list[dict],
-    shot_uri: Uri | None = None,
-    shot_department: str | None = None,
-    inline: bool = False,
-    animated=copies_are_animated
-) -> list[str]:
-    """Script lines that re-establish each tracked sub-asset on import.
-
-    Exported layers carry no pipeline metadata (the layerbreak strips
-    everything the set workfile authored, including the Duplicate LOP's
-    defs and reference arcs), so the importing side must both tag every
-    sub-asset root and re-define multi-instance duplicates — otherwise
-    the duplicates compose as typeless overs (invisible in the session,
-    while the render-stage flatten regenerates them) and the untagged
-    roots trip the export drop-guard. Instance prims mirror the
-    Duplicate LOP's output and the render stage's instance definitions:
-    copies named {base}0..{base}N-1 referencing the base prim, base
-    deactivated. Placement op VALUES compose from the set layer's overs
-    (they survive the layerbreak in the localized sidecar) but their
-    xformOpOrder does not — it lived in the stripped Duplicate defs —
-    so each instance authors an order listing whichever placement ops
-    actually composed (CommonAPI ordering, pivot inverted last), with
-    an identity {base}_dup op as the no-placement fallback.
-
-    The base prim gets the same treatment: it is the prototype the
-    instances reference, but it never passes through the import node's
-    Transform LOP (that only runs on a directly imported root), so
-    without this it composes with no transform at all — importing a set
-    left a bare prototype where manually importing the same asset gave
-    the full CommonAPI op set.
-
-    Numbered duplicates AT or beyond the tracked count are deactivated:
-    the import node's persistent layer (which holds these re-established
-    defs) is localized into department exports as a sidecar, so a layer
-    exported while an inflated count was live carries the phantom defs
-    forever — composition would resurrect them on every import no matter
-    what the corrected count says (the paleindia six-towers relapse).
-    For a count of 1 the base prim is the instance, so every numbered
-    sibling is stale and the base is re-activated.
-    """
-    lines = []
-    if subassets:
-        lines.append('from pxr import UsdGeom, Gf')
-        lines.append('')
-    for asset_info in subassets:
-        asset_uri_raw = asset_info.get('asset')
-        if not asset_uri_raw:
-            continue
-        try:
-            sub_uri = Uri.parse(asset_uri_raw)
-            base_path = uri_to_prim_path(sub_uri)
-        except ValueError:
-            continue
-        base_name = sub_uri.segments[-1]
-        instances = asset_info.get('instances', 1)
-        channel = read_published_channel(asset_info, where=f"asset row {asset_uri_raw}")
-        inputs = list(asset_info.get('inputs', []))
-        if shot_uri is not None and shot_department is not None:
-            shot_entry = {
-                'uri': str(shot_uri),
-                'department': shot_department,
-                'version': 'initial'
-            }
-            if shot_entry not in inputs:
-                inputs.append(shot_entry)
-        animatable = False if inline else bool(animated(sub_uri))
-
-        # Deactivate stale numbered duplicates at/beyond the tracked
-        # count (see docstring). Runs before the wanted instances are
-        # (re)defined so a later legitimate def downstream still wins.
-        stale_threshold = instances if instances > 1 else 0
-        stale_cleanup = [
-            '    for sibling in list(base.GetParent().GetChildren()):',
-            '        sibling_name = sibling.GetName()',
-            f'        if not sibling_name.startswith("{base_name}"):',
-            '            continue',
-            f'        suffix = sibling_name[{len(base_name)}:]',
-            '        if not suffix.isdigit():',
-            '            continue',
-            f'        if int(suffix) >= {stale_threshold}:',
-            '            sibling.SetActive(False)',
-        ]
-
-        lines += [
-            f'# Sub-asset: {asset_uri_raw}',
-            f'base = root.GetPrimAtPath("{base_path}")',
-            'if base.IsValid():',
-        ]
-        lines += stale_cleanup
-        # Give the base the transform a direct import would have given it
-        # (see prim_queries.author_identity_placement_ops). Runs before the
-        # instances below are defined so the op set composes onto them
-        # through the internal reference — their own placement values,
-        # authored locally, still win over the referenced identities.
-        lines += [
-            '    if not prim_queries.apply_placement_op_order(base):',
-            '        prim_queries.author_identity_placement_ops(base)',
-        ]
-        if instances <= 1:
-            lines.append('    base.SetActive(True)')
-            if inline:
-                lines.append('    prim_metadata.mark_inlined(base)')
-            else:
-                lines += [
-                    '    prim_metadata.set_metadata(base, {',
-                    f"        'uri': '{asset_uri_raw}',",
-                    f"        'instance': '{base_name}',",
-                    f"        '{CHANNEL_KEY}': '{channel}',",
-                    f"        '{ANIMATABLE_KEY}': {animatable},",
-                    f"        'inputs': {inputs!r}",
-                    '    })',
-                ]
-        else:
-            parent_path = base_path.rsplit('/', 1)[0]
-            lines.append('    base.SetActive(False)')
-            for index in range(instances):
-                instance_prim_path = f'{parent_path}/{base_name}{index}'
-                instance_name = naming.get_instance_name(
-                    base_name, index
-                )
-                # The set layer's overs carry the placement op VALUES
-                # (translate/rotate/scale/pivot survive the layerbreak)
-                # but not the xformOpOrder that applies them — see
-                # prim_queries.apply_placement_op_order. When no placement
-                # composed, fall back to an identity {base}_dup op so
-                # layout tooling still has a transform surface. (The
-                # render stage's defs author none: the base above always
-                # carries an op set, which reaches them by reference.)
-                lines += [
-                    f'    inst = stage.DefinePrim("{instance_prim_path}")',
-                    '    inst.SetActive(True)',
-                    f'    inst.GetReferences().AddInternalReference("{base_path}")',
-                    '    if not prim_queries.apply_placement_op_order(inst):',
-                    f'        if not inst.GetAttribute("xformOp:transform:{base_name}_dup"):',
-                    '            dup_op = UsdGeom.Xformable(inst).AddTransformOp(',
-                    f'                UsdGeom.XformOp.PrecisionDouble, "{base_name}_dup"',
-                    '            )',
-                    '            dup_op.Set(Gf.Matrix4d(1))',
-                ]
-                if inline:
-                    lines.append('    prim_metadata.mark_inlined(inst)')
-                else:
-                    lines += [
-                        '    prim_metadata.set_metadata(inst, {',
-                        f"        'uri': '{asset_uri_raw}',",
-                        f"        'instance': '{instance_name}',",
-                        f"        '{CHANNEL_KEY}': '{channel}',",
-                        f"        '{ANIMATABLE_KEY}': {animatable},",
-                        f"        'inputs': {inputs!r}",
-                        '    })',
-                    ]
-        lines.append('')
-    return lines
-
-def _metadata_script(
-    asset_uri: Uri,
-    channel_name: str = 'default',
-    shot_uri: Uri | None = None,
-    shot_department: str | None = None,
-    subassets: list[dict] | None = None,
-    animated=copies_are_animated
-) -> str:
-    """
-    Generate Python script for setting asset metadata on the scene prim.
-
-    If shot_uri and shot_department are provided, adds a shot department
-    entry to the inputs array to track which department introduced this asset.
-    The channel is recorded so the export scrape can carry it into the
-    layer's context.json — staged builds re-reference each tracked asset's
-    staged file by that channel. Each asset is stamped with
-    ``animated(asset_uri)`` (see prim_metadata.ANIMATABLE_KEY).
-    """
-    prim_path = uri_to_prim_path(asset_uri)
-    entity_name = asset_uri.segments[-1]
-
-    # Build initial inputs list
-    inputs_str = '[]'
-    if shot_uri is not None and shot_department is not None:
-        # Add shot department entry to track source
-        inputs_str = f"[{{'uri': '{str(shot_uri)}', 'department': '{shot_department}', 'version': 'initial'}}]"
-
-    script = f'''import hou
-
-from tumblepipe.pipe.houdini import prim_metadata, prim_queries
-
-node = hou.pwd()
-stage = node.editableStage()
-root = stage.GetPseudoRoot()
-
-# Set metadata on scene prim
-prim = root.GetPrimAtPath("{prim_path}")
-if prim.IsValid():
-    metadata = {{
-        'uri': '{str(asset_uri)}',
-        'instance': '{entity_name}',
-        '{CHANNEL_KEY}': '{channel_name}',
-        '{ANIMATABLE_KEY}': {bool(animated(asset_uri))},
-        'inputs': {inputs_str}
-    }}
-    prim_metadata.set_metadata(prim, metadata)
-'''
-    subasset_lines = _subasset_script_lines(
-        subassets or [], shot_uri, shot_department, inline=False,
-        animated=animated
-    )
-    if subasset_lines:
-        script += '\n' + '\n'.join(subasset_lines)
-    return script
-
-def _inline_metadata_script(
-    asset_uri: Uri,
-    subassets: list[dict] | None = None
-) -> str:
-    """
-    Generate the metadata script for 'inline' import mode.
-
-    Replaces the pipeline metadata with an 'inlined' marker: the asset is
-    deliberately baked into the export (no layerbreak), so it must not be
-    scraped and re-referenced, and the publish guards must not read the
-    missing metadata as an accidental drop. Sub-asset roots (and their
-    re-defined instance prims) get the same marker — they bake into the
-    export together with the asset that tracks them. Targets only this
-    node's prims — assets flowing through from upstream nodes are
-    untouched.
-    """
-    prim_path = uri_to_prim_path(asset_uri)
-
-    script = f'''import hou
-
-from tumblepipe.pipe.houdini import prim_metadata, prim_queries
-
-node = hou.pwd()
-stage = node.editableStage()
-root = stage.GetPseudoRoot()
-
-prim = root.GetPrimAtPath("{prim_path}")
-if prim.IsValid():
-    prim_metadata.mark_inlined(prim)
-'''
-    subasset_lines = _subasset_script_lines(subassets or [], inline=True)
-    if subasset_lines:
-        script += '\n' + '\n'.join(subasset_lines)
-    return script
 
 def _expand_staged_layers(
     staged_path: Path,
@@ -523,12 +275,12 @@ class ImportAsset(EntityNode):
         # metadata for a marker so the export bakes the asset in instead of
         # re-referencing it. The staged context.json's tracked sub-assets
         # are covered too: their roots re-tagged and their multi-instance
-        # duplicates re-defined (see _subasset_script_lines).
+        # duplicates re-defined (see import_metadata._subasset_lines).
         subassets = _staged_context_assets(Path(resolved))
         if self.get_import_mode() == 'inline':
-            script = _inline_metadata_script(asset_uri, subassets)
+            script = import_metadata.asset_inline_script(asset_uri, subassets)
         else:
-            script = _metadata_script(
+            script = import_metadata.asset_script(
                 asset_uri, channel_name, shot_uri, shot_department, subassets
             )
         self.parm('metadata_python').set(script)

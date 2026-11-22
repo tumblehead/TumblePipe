@@ -33,7 +33,7 @@ use std::fmt::Display;
 
 use th_playlist::{Frames, Media};
 
-use crate::document::{AudioClip, Clip, Frame, FrozenEdit, FrozenSource, timecode_frames};
+use crate::document::{AudioClip, Clip, DEFAULT_START_FRAME, Frame, FrozenEdit, FrozenSource, timecode_frames};
 use crate::timeline_export::{Kind, Probe, Rate, Summary, clip_name, leaf, media_of, path_url};
 
 /// Which NLE an image sequence is written for: they do not read one the
@@ -315,13 +315,12 @@ impl<P: Probe> Writer<'_, P> {
             Some(Media::Movie { path }) => {
                 let written = self.options.links.get(path).unwrap_or(path).replace('\\', "/");
                 let file_name = written.rsplit('/').next().unwrap_or(&written).to_owned();
-                let fallback = shot.map_or(0, |s| self.probe.shot_first(s));
                 let fps = f64::from(self.rate.timebase);
                 let mut target = Target {
                     key: path.clone(),
                     name: file_name,
                     url: Some(path_url(&written)),
-                    first: fallback,
+                    first: 0,
                     step: 1,
                     frames: None,
                     rate: self.rate,
@@ -331,11 +330,17 @@ impl<P: Probe> Writer<'_, P> {
                 let Some(movie) = self.movie(path) else {
                     let kind = if self.probe.exists(path) { Kind::Unreadable } else { Kind::Missing };
                     self.summary.note(kind, &name);
+                    if let Some(shot) = shot {
+                        target.first = self.shot_first(shot, &name);
+                    }
                     return Some(target);
                 };
                 // A media item's frames count from 0, whatever it records.
-                if shot.is_some() {
-                    target.first = movie.start_frame.unwrap_or(fallback);
+                if let Some(shot) = shot {
+                    target.first = match movie.start_frame {
+                        Some(first) => first,
+                        None => self.shot_first(shot, &name),
+                    };
                 }
                 if audio {
                     if !movie.audio {
@@ -371,6 +376,15 @@ impl<P: Probe> Writer<'_, P> {
                 Some(target)
             }
         }
+    }
+
+    /// The frame `shot`'s take starts on when its movie records none; where
+    /// the pipeline cannot say, [`DEFAULT_START_FRAME`], noted.
+    fn shot_first(&mut self, shot: &str, name: &str) -> Frame {
+        self.probe.shot_first(shot).unwrap_or_else(|_| {
+            self.summary.note(Kind::ShotFirst, name);
+            DEFAULT_START_FRAME
+        })
     }
 
     /// A clip of `target` over `at .. at + duration` showing frame numbers
@@ -1052,8 +1066,8 @@ mod tests {
         fn exists(&self, path: &str) -> bool {
             !path.contains("gone")
         }
-        fn shot_first(&self, _: &str) -> Frame {
-            1001
+        fn shot_first(&self, shot: &str) -> Result<Frame, String> {
+            if shot.contains("broken") { Err(format!("{shot}: the config could not be read")) } else { Ok(1001) }
         }
     }
 
@@ -1081,6 +1095,40 @@ mod tests {
             layer: "default".into(),
             frames: Frames { directory: directory.into(), prefix: "beauty.".into(), suffix: ".exr".into(), padding: 4, first, last, step },
         }
+    }
+
+    /// A shot whose first frame the pipeline cannot give is counted from
+    /// DEFAULT_START_FRAME and named in the summary, where its movie
+    /// records no start frame or cannot be read; a movie that records its
+    /// start needs no shot range and is not noted.
+    #[test]
+    fn a_shot_range_that_cannot_be_read_is_noted() {
+        let mut edit = FrozenEdit::new(24, [1920, 1080], "01:00:00:00");
+        let movie_of = |path: &str| Media::Movie { path: path.into() };
+        edit.video.push(Track {
+            color: None,
+            name: "V1".into(),
+            clips: vec![
+                vclip(0, 10, 1003, shot("broken1", movie_of("P:/r/plain.mp4"))),
+                vclip(10, 10, 1003, shot("broken2", movie_of("P:/r/unreadable.mp4"))),
+                vclip(20, 10, 1003, shot("broken3", movie_of("P:/r/started.mp4"))),
+                vclip(30, 10, 1003, shot("010", movie_of("P:/r/plain.mp4"))),
+            ],
+        });
+        let mut disk = Disk::default();
+        disk.movies.insert("P:/r/plain.mp4".into(), movie(None, 40, false));
+        disk.movies.insert("P:/r/started.mp4".into(), movie(Some(1001), 40, false));
+        let options = Options { sequences: Sequences::Premiere, links: BTreeMap::new() };
+        let (xml, summary) = sequence(&edit, "cut", &disk, &options);
+        let v1 = &read(&xml).video[0];
+        let ins: Vec<Frame> = v1.iter().map(|c| c.r#in).collect();
+        assert_eq!(ins, [1003 - DEFAULT_START_FRAME, 1003 - DEFAULT_START_FRAME, 2, 2]);
+        assert_eq!(summary.notes.get(&Kind::ShotFirst).cloned().unwrap_or_default(), ["broken1", "broken2"]);
+        assert!(
+            summary.lines().iter().any(|l| l.starts_with("2 shot clips whose shot's frame range could not be read")),
+            "{:?}",
+            summary.lines()
+        );
     }
 
     #[test]

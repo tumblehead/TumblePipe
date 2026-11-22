@@ -23,11 +23,7 @@ pub fn dot(a: Vec3, b: Vec3) -> f32 {
 }
 
 pub fn cross(a: Vec3, b: Vec3) -> Vec3 {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
 
 pub fn normalize(a: Vec3) -> Vec3 {
@@ -71,8 +67,7 @@ pub fn transform_point(p: Vec3, m: &Mat4) -> Vec3 {
 /// that mirrors.
 pub fn det3(m: &Mat4) -> f64 {
     let a = |r: usize, c: usize| m[r * 4 + c];
-    a(0, 0) * (a(1, 1) * a(2, 2) - a(1, 2) * a(2, 1))
-        - a(0, 1) * (a(1, 0) * a(2, 2) - a(1, 2) * a(2, 0))
+    a(0, 0) * (a(1, 1) * a(2, 2) - a(1, 2) * a(2, 1)) - a(0, 1) * (a(1, 0) * a(2, 2) - a(1, 2) * a(2, 0))
         + a(0, 2) * (a(1, 0) * a(2, 1) - a(1, 1) * a(2, 0))
 }
 
@@ -87,9 +82,12 @@ pub fn normal_matrix(m: &Mat4) -> [f32; 9] {
     let cof = |r: usize, c: usize| {
         let rows: Vec<usize> = (0..3).filter(|&i| i != r).collect();
         let cols: Vec<usize> = (0..3).filter(|&i| i != c).collect();
-        let minor = a(rows[0], cols[0]) * a(rows[1], cols[1])
-            - a(rows[0], cols[1]) * a(rows[1], cols[0]);
-        if (r + c).is_multiple_of(2) { minor } else { -minor }
+        let minor = a(rows[0], cols[0]) * a(rows[1], cols[1]) - a(rows[0], cols[1]) * a(rows[1], cols[0]);
+        if (r + c).is_multiple_of(2) {
+            minor
+        } else {
+            -minor
+        }
     };
     let mut out = [0.0f32; 9];
     for r in 0..3 {
@@ -101,11 +99,7 @@ pub fn normal_matrix(m: &Mat4) -> [f32; 9] {
 }
 
 pub fn transform_normal(n: Vec3, m: &[f32; 9]) -> Vec3 {
-    [
-        n[0] * m[0] + n[1] * m[3] + n[2] * m[6],
-        n[0] * m[1] + n[1] * m[4] + n[2] * m[7],
-        n[0] * m[2] + n[1] * m[5] + n[2] * m[8],
-    ]
+    [n[0] * m[0] + n[1] * m[3] + n[2] * m[6], n[0] * m[1] + n[1] * m[4] + n[2] * m[7], n[0] * m[2] + n[1] * m[5] + n[2] * m[8]]
 }
 
 pub const IDENTITY: Mat4 = [
@@ -144,10 +138,7 @@ mod tests {
     #[test]
     fn normals_survive_non_uniform_scale() {
         // A 45 degree normal on a plane stretched 4x along x leans towards y.
-        let n = normalize(transform_normal(
-            normalize([1.0, 1.0, 0.0]),
-            &normal_matrix(&scale_m(4.0, 1.0, 1.0)),
-        ));
+        let n = normalize(transform_normal(normalize([1.0, 1.0, 0.0]), &normal_matrix(&scale_m(4.0, 1.0, 1.0))));
         assert!(n[1] > n[0] * 3.9, "{n:?}");
     }
 }

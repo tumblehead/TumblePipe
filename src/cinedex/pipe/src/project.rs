@@ -21,17 +21,11 @@ pub const CONFIG_LAYOUT_VERSION: u32 = 27;
 /// An older project would not fail on its own -- it would be read and
 /// written wrongly (before v13 the publish channels were stored as
 /// `variants`, so a channel added here would be invisible to the pipeline)
-/// -- so it is refused up front with the fix. v14 to v27 refreshed
-/// department templates, moved WSL paths out of `storage.json` values
-/// (v17), added the `groom` department to the pool (v21), moved the
-/// group schema under `schemas:/groups/<context>` (v22) and added the
-/// `edits` context (v23: a storage purpose, a department context, schemas
-/// and the `entity:/edits` root, all new keys); v24 refreshed only the
-/// composite template, v25 the stock department templates, v26 them again
-/// for the composite layout and v27 for the animation template's /obj
-/// camera; none changed a shape
-/// TumblePipe here touches. Edits themselves need v23. When TumblePipe adds a migration, bump
-/// [`CONFIG_LAYOUT_VERSION`], and this too if the new step changes a shape.
+/// -- so it is refused up front with the fix. No later step changed a shape
+/// TumblePipe here touches (docs/configuration.md, "Layout versioning and
+/// migration", describes each step); edits themselves need v23. When
+/// TumblePipe adds a migration, bump [`CONFIG_LAYOUT_VERSION`], and this
+/// too if the new step changes a shape.
 pub const OLDEST_LAYOUT_VERSION: u32 = 13;
 
 /// `_config/version.json`: `{ "version": <n> }`, the last migration taken.

@@ -13,7 +13,8 @@ use serde_json::{Value, json};
 use th_edit::document::WorkingEdit;
 use th_pipe::movie::{self, Codec, Quality};
 
-use super::{Dialog, Editor, Message, waker};
+use super::file_dialogs::Dialog;
+use super::{Editor, Message, waker};
 use crate::export::{self, Exported, Progress, Request, Shared};
 use crate::export_settings::{self, Form, Plan, Settings, SizeKind, SpanKind, Spans};
 use crate::look;

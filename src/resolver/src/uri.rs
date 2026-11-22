@@ -43,11 +43,7 @@ pub struct EntityUri {
 /// Neither present is the default channel. Both present is accepted only when
 /// they agree: disagreeing is unresolvable data, and picking either would be
 /// a guess with a wrong render behind it.
-pub fn channel_from_query(
-    channel: Option<String>,
-    legacy: Option<String>,
-    raw: &str,
-) -> ResolveResult<String> {
+pub fn channel_from_query(channel: Option<String>, legacy: Option<String>, raw: &str) -> ResolveResult<String> {
     match (channel, legacy) {
         (Some(c), Some(v)) if c != v => Err(ResolveError::Parse(format!(
             "{raw:?} carries both \"{CHANNEL_KEY}\"={c:?} and \"{LEGACY_CHANNEL_KEY}\"={v:?}, \
@@ -61,24 +57,17 @@ pub fn channel_from_query(
 
 impl EntityUri {
     pub fn parse(raw: &str) -> ResolveResult<Self> {
-        let body = strip_scheme(raw)
-            .ok_or_else(|| ResolveError::Parse(format!("not an entity URI: {raw:?}")))?;
+        let body = strip_scheme(raw).ok_or_else(|| ResolveError::Parse(format!("not an entity URI: {raw:?}")))?;
 
         let (path_part, query_part) = match body.split_once('?') {
             Some((p, q)) => (p, q),
             None => (body, ""),
         };
 
-        let segments: Vec<String> = path_part
-            .split('/')
-            .filter(|s| !s.is_empty())
-            .map(str::to_owned)
-            .collect();
+        let segments: Vec<String> = path_part.split('/').filter(|s| !s.is_empty()).map(str::to_owned).collect();
 
         if segments.len() < 2 {
-            return Err(ResolveError::Parse(format!(
-                "entity URI needs at least 2 path segments: {raw:?}"
-            )));
+            return Err(ResolveError::Parse(format!("entity URI needs at least 2 path segments: {raw:?}")));
         }
 
         let mut department: Option<String> = None;
@@ -116,19 +105,11 @@ impl EntityUri {
         let channel = channel_from_query(channel, legacy_channel, raw)?;
         let version = version.filter(|v| !v.is_empty() && v != "latest");
 
-        Ok(EntityUri {
-            segments,
-            department,
-            channel,
-            version,
-        })
+        Ok(EntityUri { segments, department, channel, version })
     }
 
     pub fn is_scene(&self) -> bool {
-        self.segments
-            .first()
-            .map(|s| s == "scenes")
-            .unwrap_or(false)
+        self.segments.first().map(|s| s == "scenes").unwrap_or(false)
     }
 }
 
@@ -144,10 +125,7 @@ mod tests {
 
     #[test]
     fn parses_department_uri() {
-        let u = EntityUri::parse(
-            "entity:/assets/SET/Arena?dept=lookdev&channel=default&version=v0013",
-        )
-        .unwrap();
+        let u = EntityUri::parse("entity:/assets/SET/Arena?dept=lookdev&channel=default&version=v0013").unwrap();
         assert_eq!(u.segments, vec!["assets", "SET", "Arena"]);
         assert_eq!(u.department.as_deref(), Some("lookdev"));
         assert_eq!(u.channel, "default");
@@ -194,26 +172,21 @@ mod tests {
 
     #[test]
     fn accepts_both_spellings_together_when_they_agree() {
-        let u = EntityUri::parse(
-            "entity:/assets/CHAR/Crowd?dept=lookdev&variant=cheering&channel=cheering",
-        )
-        .unwrap();
+        let u = EntityUri::parse("entity:/assets/CHAR/Crowd?dept=lookdev&variant=cheering&channel=cheering").unwrap();
         assert_eq!(u.channel, "cheering");
         assert_eq!(u.department.as_deref(), Some("lookdev"));
     }
 
     #[test]
     fn rejects_the_two_spellings_disagreeing() {
-        let err = EntityUri::parse("entity:/assets/CHAR/Crowd?variant=bg&channel=fg")
-            .expect_err("disagreeing spellings must not parse");
+        let err = EntityUri::parse("entity:/assets/CHAR/Crowd?variant=bg&channel=fg").expect_err("disagreeing spellings must not parse");
         let message = format!("{err}");
         assert!(message.contains("bg") && message.contains("fg"), "{message}");
     }
 
     #[test]
     fn rejects_any_unknown_query_key() {
-        let err = EntityUri::parse("entity:/assets/CHAR/Crowd?chanel=cheering")
-            .expect_err("a misspelled key must not be ignored");
+        let err = EntityUri::parse("entity:/assets/CHAR/Crowd?chanel=cheering").expect_err("a misspelled key must not be ignored");
         assert!(format!("{err}").contains("chanel"));
     }
 

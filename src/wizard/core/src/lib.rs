@@ -87,20 +87,15 @@ pub fn projects_in(path: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(path) else {
         return Vec::new();
     };
-    let mut projects: Vec<PathBuf> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|child| child.is_dir() && looks_like_project(child))
-        .collect();
+    let mut projects: Vec<PathBuf> =
+        entries.flatten().map(|entry| entry.path()).filter(|child| child.is_dir() && looks_like_project(child)).collect();
     projects.sort();
     projects
 }
 
 fn is_effectively_empty(path: &Path) -> bool {
     match std::fs::read_dir(path) {
-        Ok(entries) => entries.flatten().all(|entry| {
-            OS_LITTER.contains(&entry.file_name().to_string_lossy().as_ref())
-        }),
+        Ok(entries) => entries.flatten().all(|entry| OS_LITTER.contains(&entry.file_name().to_string_lossy().as_ref())),
         Err(_) => false,
     }
 }
@@ -110,9 +105,7 @@ fn is_effectively_empty(path: &Path) -> bool {
 /// `desktop_name` (`TT_PROJECT_NAME`) wins when the desktop passes it, and
 /// the folder's name stands in when it doesn't.
 pub fn project_name_for(desktop_name: Option<&str>, path: &Path) -> Option<String> {
-    desktop_name
-        .and_then(sanitize_project_name)
-        .or_else(|| sanitize_project_name(&path.file_name()?.to_string_lossy()))
+    desktop_name.and_then(sanitize_project_name).or_else(|| sanitize_project_name(&path.file_name()?.to_string_lossy()))
 }
 
 /// Drop everything but letters and digits (`Hide And Reek` -> `HideAndReek`);
@@ -137,9 +130,7 @@ pub fn expanduser(text: &str) -> PathBuf {
 }
 
 pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from)
+    std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from)
 }
 
 // ---------- the bundled template -------------------------------------------
@@ -180,11 +171,7 @@ pub fn template_dir_among(
     package_root: Option<&Path>,
     is_dir: impl Fn(&Path) -> bool,
 ) -> PathBuf {
-    let beside_exe = exe
-        .and_then(Path::parent)
-        .and_then(Path::parent)
-        .and_then(Path::parent)
-        .map(|root| root.join(TEMPLATE_REL));
+    let beside_exe = exe.and_then(Path::parent).and_then(Path::parent).and_then(Path::parent).map(|root| root.join(TEMPLATE_REL));
     let candidates = [
         explicit.map(Path::to_path_buf),
         beside_exe.clone(),
@@ -194,10 +181,7 @@ pub fn template_dir_among(
     if let Some(found) = candidates.iter().flatten().find(|p| is_dir(p)) {
         return found.clone();
     }
-    explicit
-        .map(Path::to_path_buf)
-        .or(beside_exe)
-        .unwrap_or_else(|| PathBuf::from(TEMPLATE_REL))
+    explicit.map(Path::to_path_buf).or(beside_exe).unwrap_or_else(|| PathBuf::from(TEMPLATE_REL))
 }
 
 // ---------- scaffolding -----------------------------------------------------
@@ -206,26 +190,16 @@ pub fn template_dir_among(
 /// `target` may be missing or an empty folder the user picked. On any failure
 /// the partial copy is removed so a retry starts clean — the folder itself
 /// too when this created it, only its contents when the user chose it.
-pub fn scaffold_project(
-    template_dir: &Path,
-    target: &Path,
-    project_name: &str,
-    fps: i64,
-) -> Result<(), String> {
+pub fn scaffold_project(template_dir: &Path, target: &Path, project_name: &str, fps: i64) -> Result<(), String> {
     if !template_dir.is_dir() {
-        return Err(format!(
-            "Bundled project template not found at {}. The TumblePipe package is incomplete.",
-            template_dir.display()
-        ));
+        return Err(format!("Bundled project template not found at {}. The TumblePipe package is incomplete.", template_dir.display()));
     }
 
     let existed = target.is_dir();
     let result = (|| -> Result<(), String> {
-        copy_template_tree(template_dir, target)
-            .map_err(|e| format!("Failed to copy template: {e}"))?;
+        copy_template_tree(template_dir, target).map_err(|e| format!("Failed to copy template: {e}"))?;
         for sub in TOP_LEVEL_DIRS {
-            std::fs::create_dir_all(target.join(sub))
-                .map_err(|e| format!("Failed to create '{sub}' directory: {e}"))?;
+            std::fs::create_dir_all(target.join(sub)).map_err(|e| format!("Failed to create '{sub}' directory: {e}"))?;
         }
         customize_template(target, project_name, fps)
     })();
@@ -251,11 +225,7 @@ fn remove_scaffold_from(target: &Path) {
             continue;
         }
         let path = entry.path();
-        let _ = if path.is_dir() {
-            std::fs::remove_dir_all(&path)
-        } else {
-            std::fs::remove_file(&path)
-        };
+        let _ = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
     }
 }
 
@@ -320,13 +290,8 @@ pub fn patch_config(config: &mut Value, fps: i64) {
 
 /// schemas.json: the fps default appears in two places.
 pub fn patch_schemas(schemas: &mut Value, fps: i64) {
-    ensure_object(schemas, &["children", "entity", "properties"])
-        .insert("fps".to_string(), json!(fps));
-    ensure_object(
-        schemas,
-        &["children", "config", "children", "project", "properties"],
-    )
-    .insert("fps".to_string(), json!(fps));
+    ensure_object(schemas, &["children", "entity", "properties"]).insert("fps".to_string(), json!(fps));
+    ensure_object(schemas, &["children", "config", "children", "project", "properties"]).insert("fps".to_string(), json!(fps));
 }
 
 /// Navigate/create a nested-object path and return the leaf object, creating
@@ -335,9 +300,7 @@ pub fn patch_schemas(schemas: &mut Value, fps: i64) {
 /// insert keeps an existing key's position, so patching a value that already
 /// exists never reorders the file.
 fn ensure_object<'a>(root: &'a mut Value, path: &[&str]) -> &'a mut serde_json::Map<String, Value> {
-    let mut cur = root
-        .as_object_mut()
-        .expect("config DB root must be a JSON object");
+    let mut cur = root.as_object_mut().expect("config DB root must be a JSON object");
     for key in path {
         cur = cur
             .entry((*key).to_string())
@@ -349,8 +312,7 @@ fn ensure_object<'a>(root: &'a mut Value, path: &[&str]) -> &'a mut serde_json::
 }
 
 pub fn load_json(path: &Path) -> Result<Value, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
     serde_json::from_str(&text).map_err(|e| format!("Invalid JSON in {}: {e}", path.display()))
 }
 
@@ -377,11 +339,7 @@ pub fn to_json_string(value: &Value) -> String {
 struct PythonFormatter<'a>(serde_json::ser::PrettyFormatter<'a>);
 
 impl serde_json::ser::Formatter for PythonFormatter<'_> {
-    fn write_string_fragment<W: ?Sized + std::io::Write>(
-        &mut self,
-        writer: &mut W,
-        fragment: &str,
-    ) -> std::io::Result<()> {
+    fn write_string_fragment<W: ?Sized + std::io::Write>(&mut self, writer: &mut W, fragment: &str) -> std::io::Result<()> {
         let mut units = [0u16; 2];
         for c in fragment.chars() {
             if c.is_ascii() && c != '\x7f' {
@@ -403,11 +361,7 @@ impl serde_json::ser::Formatter for PythonFormatter<'_> {
         self.0.end_array(w)
     }
 
-    fn begin_array_value<W: ?Sized + std::io::Write>(
-        &mut self,
-        w: &mut W,
-        first: bool,
-    ) -> std::io::Result<()> {
+    fn begin_array_value<W: ?Sized + std::io::Write>(&mut self, w: &mut W, first: bool) -> std::io::Result<()> {
         self.0.begin_array_value(w, first)
     }
 
@@ -423,11 +377,7 @@ impl serde_json::ser::Formatter for PythonFormatter<'_> {
         self.0.end_object(w)
     }
 
-    fn begin_object_key<W: ?Sized + std::io::Write>(
-        &mut self,
-        w: &mut W,
-        first: bool,
-    ) -> std::io::Result<()> {
+    fn begin_object_key<W: ?Sized + std::io::Write>(&mut self, w: &mut W, first: bool) -> std::io::Result<()> {
         self.0.begin_object_key(w, first)
     }
 
@@ -441,8 +391,7 @@ impl serde_json::ser::Formatter for PythonFormatter<'_> {
 }
 
 pub fn store_json(path: &Path, value: &Value) -> Result<(), String> {
-    std::fs::write(path, to_json_string(value))
-        .map_err(|e| format!("Could not write {}: {e}", path.display()))
+    std::fs::write(path, to_json_string(value)).map_err(|e| format!("Could not write {}: {e}", path.display()))
 }
 
 #[cfg(test)]
@@ -467,23 +416,20 @@ mod tests {
                         || (mask & 4 != 0 && p == from_env)
                         || (mask & 8 != 0 && p == cwd)
                 };
-                let got = template_dir_among(
-                    with_explicit.then_some(explicit.as_path()),
-                    Some(exe),
-                    Some(Path::new("/env")),
-                    exists,
-                );
+                let got = template_dir_among(with_explicit.then_some(explicit.as_path()), Some(exe), Some(Path::new("/env")), exists);
                 let order = [
                     (with_explicit && mask & 1 != 0, &explicit),
                     (mask & 2 != 0, &beside),
                     (mask & 4 != 0, &from_env),
                     (mask & 8 != 0, &cwd),
                 ];
-                let want = order
-                    .iter()
-                    .find(|(ok, _)| *ok)
-                    .map(|(_, p)| (*p).clone())
-                    .unwrap_or_else(|| if with_explicit { explicit.clone() } else { beside.clone() });
+                let want = order.iter().find(|(ok, _)| *ok).map(|(_, p)| (*p).clone()).unwrap_or_else(|| {
+                    if with_explicit {
+                        explicit.clone()
+                    } else {
+                        beside.clone()
+                    }
+                });
                 assert_eq!(got, want, "explicit={with_explicit} mask={mask:04b}");
             }
         }
@@ -540,10 +486,7 @@ mod tests {
         assert_eq!(classify_folder(&root.join("fresh")), FolderKind::NewProject);
         assert_eq!(classify_folder(&root.join("a").join("b")), FolderKind::ParentMissing);
         assert_eq!(classify_folder(&project.join("_config")), FolderKind::NotEmpty);
-        assert_eq!(
-            classify_folder(&project.join("_config").join("db").join("entity.json")),
-            FolderKind::NotADirectory
-        );
+        assert_eq!(classify_folder(&project.join("_config").join("db").join("entity.json")), FolderKind::NotADirectory);
     }
 
     #[test]

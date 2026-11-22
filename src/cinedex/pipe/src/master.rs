@@ -30,6 +30,7 @@ use crate::entities::{create_shot, delete_entity};
 use crate::groups::place_new_members;
 use crate::timeline::{get_fps, get_frame_range};
 use crate::uri::Uri;
+use th_edit::document::DEFAULT_START_FRAME;
 
 /// Where `master_edit` lives.
 pub const MASTER_NODE: &str = "config:/project";
@@ -193,7 +194,7 @@ pub fn changes(project: &Project, uses: &[ShotUse], previous: &[ShotUse], fps: i
 /// The frame a shot made in `sequence` starts on (a planned shot of the
 /// master edit, see [`Change::Create`]): the `frame_start` it would inherit
 /// there, from the sequence or, for a sequence not made yet, from
-/// `entity:/shots`; 1001 when the project sets none.
+/// `entity:/shots`; [`DEFAULT_START_FRAME`] when the project sets none.
 pub fn new_shot_start(project: &Project, sequence: &str) -> Result<Frame, String> {
     let mut places = vec!["entity:/shots".to_string()];
     if !sequence.is_empty() {
@@ -216,7 +217,7 @@ pub fn new_shot_start(project: &Project, sequence: &str) -> Result<Frame, String
             _ => {}
         }
     }
-    Ok(1001)
+    Ok(DEFAULT_START_FRAME)
 }
 
 /// Write `change` (`stamp` names a retire's archive folder, see

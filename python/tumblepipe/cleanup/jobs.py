@@ -24,7 +24,7 @@ def _ask_deadline() -> tuple[dict | None, str | None]:
         return None, f'Deadline could not be asked ({error}): no job folder will be deleted.'
 
 
-def plan(roots, _inventory, settings: Settings) -> CategoryPlan:
+def plan(roots, _inventory, settings: Settings, *, workfiles) -> CategoryPlan:
     jobs_path = export_path(roots).joinpath(*prune.JOBS_DIR)
     out = CategoryPlan('jobs', 'Farm job folders', 'folder')
     if not jobs_path.is_dir():

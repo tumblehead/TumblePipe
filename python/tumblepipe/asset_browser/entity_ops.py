@@ -7,7 +7,8 @@ and recipes), the Edit dialog, Delete, an empty bucket's removal, the
 description sidecar, Duplicate, Generate Master — and the actions that open
 something about one (Departments…, the Database Editor, the todos, the Farm
 Submit grid, an import node). The catalog routes container, recipe and node
-ids before anything reaches here.
+ids before anything reaches here. Edit cards' actions are
+:class:`.edit_ops.EditOps`, playing shots :class:`.playback.Playback`.
 """
 
 from __future__ import annotations
@@ -100,6 +101,8 @@ if TYPE_CHECKING:
     from .scene import SceneManager
     from .containers import ContainerManager
     from .workfiles import WorkfileManager
+    from .edit_ops import EditOps
+    from .playback import Playback
 
 
 def only_project(names: list[str]) -> str:
@@ -109,36 +112,6 @@ def only_project(names: list[str]) -> str:
     scope named no project, an extra dialog and click every time (#35).
     """
     return names[0] if len(names) == 1 else ""
-
-
-def sequence_shots(entity_uris, sequence: str) -> list:
-    """The shots of *sequence* among *entity_uris*, in name order: what
-    Play Sequence plays (#26)."""
-    return sorted(
-        (
-            uri for uri in entity_uris
-            if len(uri.segments) == 3
-            and uri.segments[0] == "shots" and uri.segments[1] == sequence
-        ),
-        key=lambda uri: uri.segments[2],
-    )
-
-
-def timeline_sequence(selected_uri, view_tags) -> str | None:
-    """The sequence Open Timeline plays: the selected card's when it is a
-    shot (``entity:/shots/<sequence>/<shot>``), else the sequence the view
-    is narrowed to (its ``sequence:<name>`` tag, a sequence's sidebar row),
-    else ``None`` (the master edit, else every shot)."""
-    if (
-        selected_uri is not None and len(selected_uri.segments) == 3
-        and selected_uri.segments[0] == "shots"
-    ):
-        return selected_uri.segments[1]
-    return next(
-        (t.partition(":")[2] for t in view_tags or ()
-         if t.startswith("sequence:") and t.partition(":")[2]),
-        None,
-    )
 
 
 def creation_scope(tags) -> str:
@@ -214,13 +187,17 @@ class EntityOps:
         recipes: "RecipeManager",
         refresh: "BrowserRefresh",
         invalidate_cache: Callable[[], None],
-        workfiles: "WorkfileManager | None" = None,
-        containers: "ContainerManager | None" = None,
+        workfiles: "WorkfileManager",
+        containers: "ContainerManager",
+        playback: "Playback",
+        edit_ops: "EditOps",
     ) -> None:
         self._catalog_id = catalog_id
         # A Multi's workfiles, for the Entity Editor's Multis tab.
         self._workfiles = workfiles
         self._containers = containers
+        self._playback = playback
+        self._edit_ops = edit_ops
         self._registry = registry
         self._clients = clients
         self._resolver = resolver
@@ -344,7 +321,7 @@ class EntityOps:
                 (t.partition(":")[2] for t in tags if t.startswith("sequence:")), "",
             )
             if seq:
-                self.play_sequence(default_proj, seq)
+                self._playback.play_sequence(default_proj, seq)
             return []
 
         if option_id == IMPORT_SHOTS_CSV:
@@ -575,10 +552,9 @@ class EntityOps:
             proj = self._registry.get(proj_name)
             if not name or proj is None:
                 return {}
-            self._activator.activate(proj)
             from tumblepipe.config import scene as scn_mod
             problem = creation_check.root_problem(
-                name, scn_mod.get_scene_by_uri(uris.scene(name)) is not None,
+                name, scn_mod.get_scene_by_uri_in(proj.store(), uris.scene(name)) is not None,
             )
             return {"name": problem} if problem else {}
         client = self._clients.get(proj_name)
@@ -621,7 +597,7 @@ class EntityOps:
             return None
 
         if option_id == edits.CREATE_OPTION:
-            return self._create_edit(proj_name, client, fields)
+            return self._edit_ops.create_edit(proj_name, client, fields)
 
         # The dialog asks validate_creation as the artist types (#29);
         # this refuses by the same rule (creation_check), so the two
@@ -696,8 +672,8 @@ class EntityOps:
                 {"frame_start": frame_start, "frame_end": frame_end},
             )
             # A shot made in a sequence a Multi lists joins that Multi.
-            from tumblepipe.config.groups import place_new_members
-            place_new_members([entity_uri])
+            from tumblepipe.config.groups import place_new_members_in
+            place_new_members_in(client.config, [entity_uri])
             self._index.invalidate(assets=False)
             return uris.asset_id_for(proj_name, entity_uri)
 
@@ -705,7 +681,7 @@ class EntityOps:
             context = fields.get("context", "shots").strip()
             from tumblepipe.config import groups as grp_mod
             group_uri = uris.group_in_context(context, name)
-            if grp_mod.get_group(group_uri) is not None:
+            if grp_mod.get_group_in(client.config, group_uri) is not None:
                 hou.ui.displayMessage(
                     f"Multi '{name}' already exists in {context}."
                 )
@@ -717,13 +693,13 @@ class EntityOps:
             # no rows, opens nothing, and reads as a folder of shots.
             # The Entity Editor's New Multi does the same. (The browser's
             # New Multi... opens the editor; this stays for scripts.)
-            from tumblepipe.config.department import list_departments
+            from tumblepipe.config.department import list_departments_in
             pool = [
-                d.name for d in list_departments(
-                    context, include_generated=False,
+                d.name for d in list_departments_in(
+                    client.config, context, include_generated=False,
                 )
             ]
-            grp_mod.add_group(context, name, [], pool)
+            grp_mod.add_group_in(client.config, context, name, [], pool)
             hou.ui.setStatusMessage(
                 f"Created Multi: {name} ({context}, covers "
                 f"{len(pool)} departments)",
@@ -734,12 +710,12 @@ class EntityOps:
         if option_id == "new_scene":
             from tumblepipe.config import scene as scn_mod
             problem = creation_check.root_problem(
-                name, scn_mod.get_scene_by_uri(uris.scene(name)) is not None,
+                name, scn_mod.get_scene_by_uri_in(proj.store(), uris.scene(name)) is not None,
             )
             if problem:
                 hou.ui.displayMessage(problem)
                 return None
-            scn_mod.add_scene(name)
+            scn_mod.add_scene_in(proj.store(), name)
             hou.ui.setStatusMessage(
                 f"Created Root: {name}",
                 severity=hou.severityType.Message,
@@ -770,7 +746,7 @@ class EntityOps:
         import hou
         from PySide6.QtWidgets import QInputDialog
 
-        from tumblepipe.config.groups import place_new_members
+        from tumblepipe.config.groups import place_new_members_in
         from tumblepipe.pipe import entity_files
         from tumblepipe.pipe.usd.instances import has_published_rig
 
@@ -833,7 +809,7 @@ class EntityOps:
         on_applied = self.editor_applied
 
         def place(written) -> None:
-            place_new_members(written)
+            place_new_members_in(client.config, written)
             # A Multi whose workfile is open, its Timeline just applied:
             # lay the session out now, not on the next open.
             try:
@@ -846,10 +822,10 @@ class EntityOps:
 
         def channel_exports(uri) -> list[str]:
             # The Layers editor keeps these: their renders read the exports.
-            from tumblepipe.config.channels import list_channels
+            from tumblepipe.config.channels import list_channels_in
             from tumblepipe.pipe.render_layers import was_exported
             return [
-                channel for channel in list_channels(uri)
+                channel for channel in list_channels_in(client.config, uri)
                 if channel != "default" and was_exported(uri, channel)
             ]
 
@@ -891,8 +867,6 @@ class EntityOps:
             return f"group:{project_name}:{'/'.join(uri.segments)}"
 
         def multi_workfiles(uri) -> dict:
-            if self._containers is None:
-                return {}
             from .types import latest_version
             return {
                 department: latest_version(versions)
@@ -902,14 +876,9 @@ class EntityOps:
             }
 
         def open_multi_workfile(uri, department) -> None:
-            if self._workfiles is not None:
-                self._workfiles.open_group_workfile(multi_id(uri), department)
+            self._workfiles.open_group_workfile(multi_id(uri), department)
 
         def new_multi_workfile(uri, department, done) -> None:
-            if self._workfiles is None:
-                done()
-                return
-
             def made() -> None:
                 done()
                 self._refresh.detail()
@@ -941,8 +910,8 @@ class EntityOps:
                 channel_exports=on_project(channel_exports),
                 selected_prims=selected_prims,
                 count_prims=on_project(count_prims),
-                overlaps=on_project(self._overlaps),
-                repack=on_project(self.repack_timeline),
+                overlaps=on_project(lambda: self._overlaps(client.config)),
+                repack=on_project(lambda uri: self.repack_timeline(client.config, uri)),
                 load_layout=load_layout,
                 save_layout=save_layout,
             ),
@@ -1169,7 +1138,7 @@ class EntityOps:
         proj = self._registry.get(project_name)
         if proj is not None:
             self._activator.activate(proj)
-        before = self._overlaps()
+        before = self._overlaps(client.config)
         try:
             # The dialog always resubmits every field it showed, and
             # :meth:`edit_fields` seeds those fields from the RESOLVED view — so a
@@ -1200,27 +1169,29 @@ class EntityOps:
                 cause=exc,
             ) from exc
         self._invalidate_cache()
-        self._warn_new_overlaps(before)
+        self._warn_new_overlaps(client.config, before)
         return True
 
-    def _overlaps(self) -> dict:
-        """The active project's shared-timeline overlaps, for a before and
-        after; {} when they cannot be read (the edit still goes ahead)."""
+    def _overlaps(self, store) -> dict:
+        """The shared-timeline overlaps of ``store``'s project, for a before
+        and after; {} when they cannot be read (the edit still goes ahead)."""
         from tumblepipe.config import multi_timeline
         try:
-            return multi_timeline.overlapping_multis()
+            return multi_timeline.overlapping_multis_in(store)
         except Exception:  # noqa: BLE001  a warning, never a blocker
             log.exception("Reading shared timelines")
             return {}
 
-    def _warn_new_overlaps(self, before: dict, parent=None) -> list[str]:
-        """Offer Repack for the Multis whose shots an edit made overlap;
-        never repacks unasked. The Multis repacked."""
+    def _warn_new_overlaps(self, store, before: dict, parent=None) -> list[str]:
+        """Offer Repack for the Multis of ``store``'s project whose shots an
+        edit made overlap; never repacks unasked. The Multis repacked."""
         from tumblepipe.config import multi_timeline
-        found = multi_timeline.new_overlaps(before, self._overlaps())
+        found = multi_timeline.new_overlaps(before, self._overlaps(store))
         if not found:
             return []
-        return self.offer_repack(parent, found, self.repack_timeline)
+        return self.offer_repack(
+            parent, found, lambda group_uri: self.repack_timeline(store, group_uri),
+        )
 
     @staticmethod
     def offer_repack(parent, found, repack) -> list[str]:
@@ -1228,10 +1199,11 @@ class EntityOps:
         from .timeline_repack import offer_repack
         return offer_repack(parent, found, repack)
 
-    def repack_timeline(self, group_uri) -> None:
-        """Repack a Multi of the active project, and its open workfile."""
+    def repack_timeline(self, store, group_uri) -> None:
+        """Repack a Multi of ``store``'s project, and its open workfile (the
+        project is the active one: the session reads it)."""
         from tumblepipe.config import multi_timeline
-        multi_timeline.repack(group_uri)
+        multi_timeline.repack_in(store, group_uri)
         self._invalidate_cache()
         try:
             from tumblepipe.pipe.houdini import multi_timeline as session
@@ -1421,7 +1393,7 @@ class EntityOps:
             return
 
         plan = duplicate.plan_duplicate(
-            source_uri, self._dept_scope.pool("assets"),
+            source_uri, self._dept_scope.pool(proj.name, "assets"),
         )
         properties = copy.deepcopy(client.config.get_own_properties(source_uri) or {})
         properties["name"] = new_name
@@ -1516,28 +1488,6 @@ class EntityOps:
                 severity=hou.severityType.Message,
             )
 
-    def play_shots(self, asset_ids: list[str]) -> None:
-        """Open the shots back to back in the editor, as an untitled edit
-        (``pipe.review_playlist.play_shots``), in their own project."""
-        from tumblepipe.pipe import review_playlist
-
-        projects = [self._resolver.project_for(aid) for aid in asset_ids]
-        if any(p is None for p in projects):
-            raise ValueError("A shot to play belongs to no registered project")
-        if len({p.name for p in projects}) != 1:
-            raise ValueError("The shots to play are of more than one project")
-
-        def _work() -> None:
-            # It blocks: the project's Client builds.
-            uris = [self._resolver.uri_for_ready(aid) for aid in asset_ids]
-            malformed = [aid for aid, uri in zip(asset_ids, uris) if uri is None]
-            if malformed:
-                raise ValueError(f"Not a shot: {', '.join(malformed)}")
-            self._activator.activate(projects[0])
-            review_playlist.play_shots(uris)
-
-        run_in_background("Play", _work, lambda _: None)
-
     def editor_applied(self) -> None:
         """The Entity Editor wrote the database: drop what the browser
         cached and show it again. The detail panels too: Apply changes
@@ -1550,309 +1500,12 @@ class EntityOps:
         self._refresh.grid()
         self._refresh.detail()
 
-    def play_shot_uris(self, project_name: str, uris: list) -> None:
-        """Open the shots *uris* of *project_name* back to back in the
-        editor, in the order given (a shots Multi's Play, #26)."""
-        from tumblepipe.pipe import review_playlist
-
-        proj = self._registry.get(project_name)
-        if proj is None:
-            raise ValueError(f"{project_name} is not a registered project")
-        uris = list(uris)
-        if not uris:
-            raise ValueError("No shots to play")
-
-        def _work() -> None:
-            self._clients.get(project_name)  # it blocks: the Client builds
-            self._activator.activate(proj)
-            review_playlist.play_shots(uris)
-
-        run_in_background("Play", _work, lambda _: None)
-
-    def play_sequence(self, project_name: str, sequence: str) -> None:
-        """Open every shot of *sequence* in the editor, in name order (the
-        sequence row's Play in Cinedex, #26). A sequence with no shot says so."""
-        from tumblepipe.pipe import review_playlist
-
-        proj = self._registry.get(project_name)
-        if proj is None:
-            raise ValueError(f"{project_name} is not a registered project")
-
-        def _work() -> int:
-            shots = self._sequence_shots(project_name, sequence)
-            if shots:
-                self._activator.activate(proj)
-                review_playlist.play_shots(shots)
-            return len(shots)
-
-        def _done(count) -> None:
-            if not count:
-                import hou
-                hou.ui.setStatusMessage(
-                    f"Sequence {sequence} has no shots to play",
-                    severity=hou.severityType.Warning,
-                )
-
-        run_in_background("Play Sequence", _work, _done)
-
-    def _sequence_shots(self, project_name: str, sequence: str) -> list:
-        """The shots of *sequence* in *project_name*, in name order: what
-        Play in Cinedex on a sequence and Open Timeline play. Blocks while
-        the project's Client builds."""
-        client = self._clients.get(project_name)
-        return sequence_shots(
-            client.config.list_entity_uris(None, closure=True), sequence,
-        )
-
-    def open_timeline(
-        self, selected_id: str | None, session_project: str | None,
-        done_cb: Callable[[], None] | None = None,
-        view_tags=frozenset(),
-    ) -> None:
-        """The toolbar's Open Timeline: play a whole sequence in the editor,
-        the sequence of the shot the browser has selected (its pane's card),
-        else the sequence the view is narrowed to (*view_tags*, a sequence's
-        sidebar row), with exactly the shots the sequence's Play in Cinedex
-        plays (``timeline_sequence``, ``_sequence_shots``); with neither,
-        the project's master edit, else every shot of the project
-        (``pipe.review_playlist.timeline_arguments``). The project is the
-        selected card's, else the view's, else the open scene's, else the
-        only registered one. The outcome goes to Houdini's status line, a
-        failure too (no message box, the button has no other place to say
-        it)."""
-        from tumblepipe.pipe import review_playlist
-
-        def _say(text: str, error: bool = False, warning: bool = False) -> None:
-            def _show() -> None:
-                import hou
-                hou.ui.setStatusMessage(
-                    text,
-                    severity=hou.severityType.Error if error
-                    else hou.severityType.Warning if warning
-                    else hou.severityType.Message,
-                )
-            run_on_main_thread(_show)
-
-        def _work() -> None:
-            try:
-                proj = None if selected_id is None else self._resolver.project_for(selected_id)
-                uri = None if proj is None else self._resolver.uri_for_ready(selected_id)
-                if proj is None:
-                    view_project = next(
-                        (t.partition(":")[2] for t in view_tags or ()
-                         if t.startswith("project:")), "",
-                    )
-                    proj = self._registry.get(view_project) if view_project else None
-                if proj is None and session_project:
-                    proj = self._registry.get(session_project)
-                if proj is None:
-                    every = list(self._registry.all())
-                    if len(every) != 1:
-                        raise ValueError(
-                            "select a shot or open a scene to say which project"
-                        )
-                    proj = every[0]
-                self._clients.get(proj.name)  # it blocks: the Client builds
-                sequence = timeline_sequence(uri, view_tags)
-                shots: list = []
-                if sequence is not None:
-                    shots = self._sequence_shots(proj.name, sequence)
-                    if not shots:
-                        # As the sequence's own Play in Cinedex says it.
-                        _say(f"Sequence {sequence} has no shots to play", warning=True)
-                        return
-                self._activator.activate(proj)
-                review_playlist.open_timeline(shots)
-                _say(
-                    f"Opened Cinedex on sequence {sequence}" if shots
-                    else "Opened Cinedex on the project's timeline"
-                )
-            except Exception as exc:  # noqa: BLE001 - reported on the status line
-                log.exception("Open Timeline failed")
-                _say(f"Open Timeline failed: {exc}", error=True)
-            finally:
-                if callable(done_cb):
-                    run_on_main_thread(done_cb)
-
-        import threading
-        threading.Thread(target=_work, name="th-bg: Open Timeline", daemon=True).start()
-
-    # ── Edits (see edits.py) ─────────────────────────────
-
-    def _edit_project(self, asset_id: str):
-        """The edit an edit card's id names, and its registered project."""
-        ref = edits.parse_id(asset_id)
-        if ref is None:
-            raise ValueError(f"Not an edit: {asset_id}")
-        proj = self._registry.get(ref.project)
-        if proj is None:
-            raise ValueError(f"Edit {ref.name} belongs to no registered project")
-        return ref, proj
-
-    def open_edit(self, asset_id: str, *, published: bool = False) -> None:
-        """Open the edit in the editor (``pipe.review_playlist.open_edit``),
-        in its own project: its newest working version (one never saved
-        opens empty, ready for its first Save), or with ``published`` its
-        latest published version, read-only."""
-        from tumblepipe.pipe import edits as pipe_edits
-        from tumblepipe.pipe import review_playlist
-
-        ref, proj = self._edit_project(asset_id)
-
-        def _work() -> None:
-            # It blocks: the project's Client builds, and the published
-            # versions are listed on the file server.
-            version = None
-            if published:
-                versions = pipe_edits.published_versions(
-                    ref.name, self._clients.get(ref.project),
-                )
-                if not versions:
-                    raise ValueError(f"Edit {ref.name} has no published version")
-                version = versions[-1]
-            self._activator.activate(proj)
-            review_playlist.open_edit(ref.uri, version)
-
-        run_in_background(
-            "Play Published" if published else "Open in Editor",
-            _work, lambda _: None,
-        )
-
-    def render_edit(self, asset_id: str) -> None:
-        """Open Farm Submit on its Edits tab with this edit's Render Edit
-        ticked (#28), in the edit's own project. The row offers the
-        edit's latest published version first."""
-        from tumblepipe.farm.submit import grid as farm_grid
-
-        ref, proj = self._edit_project(asset_id)
-        self._activator.activate(proj)
-        open_submit_jobs_dialog([ref.uri], [ref.name], farm_grid.EDITS)
-
-    def set_master_edit(self, asset_id: str, master: bool) -> None:
-        """Make the edit the project's master edit (``master``), or leave
-        the project without one; the cards follow."""
-        from tumblepipe.pipe import edits as pipe_edits
-
-        ref, _proj = self._edit_project(asset_id)
-
-        def _work() -> None:
-            pipe_edits.set_master_edit(
-                ref.name if master else None, self._clients.get(ref.project),
-            )
-
-        def _done(_result) -> None:
-            self._invalidate_cache()
-            self._refresh.grid()
-            self._refresh.detail()
-
-        run_in_background(
-            "Set as Master Edit" if master else "Clear Master Edit",
-            _work, _done,
-        )
-
-    def show_edit_on_timeline(self, asset_id: str) -> None:
-        """Show the edit on Houdini's timeline (#61,
-        ``pipe.houdini.edit_timeline``): the playbar spans it and each clip
-        gets a bookmark. Its newest document is read off the main thread,
-        in its own project; the playbar is set on the main thread."""
-        from tumblepipe.pipe import edit_timeline
-
-        ref, _proj = self._edit_project(asset_id)
-
-        def _work():
-            return edit_timeline.read_edit(ref.name, self._clients.get(ref.project))
-
-        def _done(edit) -> None:
-            import hou
-            from tumblepipe.pipe.houdini import edit_timeline as session
-            summary = session.show_document(edit)
-            hou.ui.setStatusMessage(
-                summary.split("\n", 1)[0], severity=hou.severityType.Message,
-            )
-            if "\n" in summary:
-                tell(summary)
-
-        run_in_background("Show on Houdini Timeline", _work, _done)
-
-    def _edits_changed(self) -> None:
-        """An edit was made, renamed or deleted: the Edits section (its
-        count, whether it is there at all), the grids and the detail
-        panels follow."""
-        self._invalidate_cache()
-        self._refresh.sidebar()
-        self._refresh.grid()
-        self._refresh.detail()
-
-    def _create_edit(self, proj_name: str, client, fields) -> str | None:
-        """New Edit...: the edit, with nothing saved yet (the editor opens it
-        empty, for its first Save); its card's id, or None when refused."""
-        from tumblepipe.pipe import edits as pipe_edits
-
-        name = str(fields.get("name") or "").strip()
-        problem = pipe_edits.name_problem(name, pipe_edits.list_edits(client))
-        if problem:
-            tell(problem)
-            return None
-        pipe_edits.create_edit(name, client)
-        # The browser re-populates the sidebar and re-queries after a
-        # create; the edit scan must not answer from before it.
-        self._invalidate_cache()
-        return edits.EditRef(proj_name, name).asset_id
-
-    def rename_edit(self, asset_id: str) -> None:
-        """Rename Edit...: ask for the new name and rename it
-        (``pipe.edits.rename_edit``), the master edit staying master. A
-        refusal (the name rule, a name taken, an edit with files on disk)
-        says why."""
-        from tumblepipe.pipe import edits as pipe_edits
-
-        ref, _proj = self._edit_project(asset_id)
-        new = ask_text("Rename Edit", f"New name for the edit {ref.name}:", ref.name)
-        new = (new or "").strip()
-        if not new or new == ref.name:
-            return
-        try:
-            pipe_edits.rename_edit(ref.name, new, self._clients.get(ref.project))
-        except ValueError as exc:
-            tell(str(exc))
-            return
-        self._edits_changed()
-
-    def delete_edit(self, asset_id: str) -> None:
-        """Delete Edit...: refused for the master edit; otherwise, once
-        confirmed, the edit goes and its folders move to ``_deleted/``
-        (``pipe.edits.delete_edit``), as an asset's or shot's do."""
-        from tumblepipe.pipe import edits as pipe_edits
-        from tumblepipe.pipe.entity_files import ARCHIVE_DIR, ArchiveError
-
-        ref, _proj = self._edit_project(asset_id)
-        client = self._clients.get(ref.project)
-        problem = pipe_edits.delete_problem(ref.name, pipe_edits.master_edit(client))
-        if problem:
-            tell(problem)
-            return
-        if not confirm(
-            "Delete Edit",
-            f"Delete the edit '{ref.name}'?\n\n"
-            "Its saved and published versions and rendered movies are not "
-            f"erased: they move to the {ARCHIVE_DIR} folder of their storage "
-            "roots, where they can be recovered.",
-        ):
-            return
-        try:
-            pipe_edits.delete_edit(ref.name, client)
-        except (ValueError, ArchiveError) as exc:
-            tell(str(exc))
-            return
-        self._edits_changed()
-
     def edit_departments(self, asset_id: str) -> None:
         """Choose which departments this shot or asset uses."""
         from .departments import EntityDepartmentsDialog
         EntityDepartmentsDialog(
             asset_id,
-            resolver=self._resolver, activator=self._activator,
-            index=self._index, refresh=self._refresh,
+            resolver=self._resolver, index=self._index, refresh=self._refresh,
             invalidate_cache=self._invalidate_cache,
         ).exec()
 
@@ -1865,9 +1518,8 @@ class EntityOps:
             return None
         if entity_uri.purpose != "entity" or entity_uri.segments[:1] != ["shots"]:
             return None
-        self._activator.activate(proj)
-        from tumblepipe.config.department import is_department_disabled
-        return is_department_disabled(entity_uri, dept)
+        from tumblepipe.config.department import is_department_disabled_in
+        return is_department_disabled_in(proj.store(), entity_uri, dept)
 
     def set_department_off(self, asset_id: str, dept: str, off: bool) -> None:
         """Turn ``dept`` off on the shot ``asset_id`` (``off``), or back on.
@@ -1882,9 +1534,8 @@ class EntityOps:
         entity_uri = self._resolver.registered_uri_for(asset_id)
         if proj is None or entity_uri is None:
             return
-        self._activator.activate(proj)
-        from tumblepipe.config.department import set_department_disabled
-        if not set_department_disabled(entity_uri, dept, off):
+        from tumblepipe.config.department import set_department_disabled_in
+        if not set_department_disabled_in(proj.store(), entity_uri, dept, off):
             return
         self._invalidate_cache()
         self._refresh.card(asset_id)
@@ -1930,17 +1581,22 @@ class EntityOps:
 
     def shot_has_direct_scene_ref(self, asset_id: str) -> bool:
         from tumblepipe.config import scene as scene_mod
+        proj = self._resolver.project_for(asset_id)
         uri = self._resolver.uri_for(asset_id)
-        if uri is None:
+        if proj is None or uri is None:
             return False
-        return scene_mod.get_scene_ref(uri) is not None
+        return scene_mod.get_scene_ref_in(proj.store(), uri) is not None
 
     def clear_shot_scene_ref(self, asset_id: str) -> None:
         from tumblepipe.config import scene as scene_mod
+        proj = self._resolver.project_for(asset_id)
         uri = self._resolver.uri_for(asset_id)
-        if uri is None:
+        if proj is None or uri is None:
             return
-        scene_mod.set_scene_ref(uri, None)
+        scene_mod.set_scene_ref_in(proj.store(), uri, None)
+        # The root layers are files of that project: it must be the
+        # active one for sync_roots to find them.
+        self._activator.activate(proj)
         # Its root layer still names the Root until it is regenerated.
         from tumblepipe.pipe.root_staging import sync_roots
         summary = sync_roots([uri]).summary()

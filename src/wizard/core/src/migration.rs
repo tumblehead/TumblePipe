@@ -162,11 +162,7 @@ pub enum Step {
 
 /// The convention modules a project owns, loaded and executed by
 /// `tumblepipe.api.Client` at construction.
-const CONVENTION_FILES: [&str; 3] = [
-    "naming_convention.py",
-    "storage_convention.py",
-    "config_convention.py",
-];
+const CONVENTION_FILES: [&str; 3] = ["naming_convention.py", "storage_convention.py", "config_convention.py"];
 
 /// The two lines that define the dead `kits` concept, which v6 drops.
 ///
@@ -232,7 +228,72 @@ pub const STEPS: [Step; 27] = [
     Step::AnimationIsSolarisOnly,
 ];
 
+/// How a step changes a project, for the steps that share a body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// Brings every stock department template up to the packaged one and
+    /// leaves a customised one alone ([`refresh_stock_templates`]).
+    StockRefresh,
+    /// Replaces every packaged template that differs, the original kept as
+    /// `.<suffix>` ([`refresh_templates`]).
+    ReplaceAll { suffix: &'static str },
+    /// A body of its own.
+    Bespoke,
+}
+
 impl Step {
+    /// Which body this step runs. Every step is listed, so a new one cannot
+    /// be added without saying which it is, and [`Step::readiness`],
+    /// [`Step::apply`] and the report's template notes all follow from it.
+    pub fn kind(self) -> Kind {
+        match self {
+            Step::RefreshTemplates => Kind::ReplaceAll { suffix: "bak" },
+            // v2 was the only template refresh, so a project past it never saw
+            // a scaffold template change again: HideAndReek sat on the packed
+            // Scene Invoke, the pre-promote_name rig and the old MODEL/LOOKDEV
+            // dive targets. Its own backup suffix, because v2 may already have
+            // left a `.bak` that must stay the true original.
+            Step::RefreshTemplatesAgain => Kind::ReplaceAll { suffix: "v9.bak" },
+            Step::RefreshStockTemplates => Kind::StockRefresh,
+            // v12 brought the stock templates up to the scaffold of its day;
+            // a template fixed since never reached a project past it. Same
+            // plan and the same rules: stock is replaced, customised is left
+            // alone unless it calls something removed.
+            Step::RefreshStockTemplatesAgain => Kind::StockRefresh,
+            // Same plan again, for the layout and blendshape template fixes.
+            Step::LayoutCameraFollowsResolution => Kind::StockRefresh,
+            // Same plan again, for the animation template's rig rows.
+            Step::AnimationRigsArePublished => Kind::StockRefresh,
+            // Same plan again, for the animation camera reading camera_edit.
+            Step::AnimationCameraReadsItsEdit => Kind::StockRefresh,
+            // Same plan again, for the layout template's Layout in Animate.
+            Step::LayoutInAnimate => Kind::StockRefresh,
+            // Same plan again, for the animation template's layout keys.
+            Step::AnimationCopiesLayoutKeys => Kind::StockRefresh,
+            // Same plan again, for the template fixes of the 2026-11 QA pass.
+            Step::TemplateFixesFromQa => Kind::StockRefresh,
+            // Same plan again, for the composite template's rows per member.
+            Step::CompTemplateLayout => Kind::StockRefresh,
+            // Same plan again, for the animation template without an /obj camera.
+            Step::AnimationIsSolarisOnly => Kind::StockRefresh,
+            Step::ConventionToPackage
+            | Step::AddEntityDepartments
+            | Step::SeedOcio
+            | Step::RelabelVariantsAsChannels
+            | Step::DropKitsFromStorageConvention
+            | Step::FixConventionImports
+            | Step::TempToLocalScratch
+            | Step::BeautyCarriesAlpha
+            | Step::ConventionsToData
+            | Step::ChannelKeys
+            | Step::ScratchOffWslPaths
+            | Step::AddGroomDepartment
+            | Step::GroupSchemaUnderRoots
+            | Step::EditsContext
+            | Step::CompositeWithoutBuildComp => Kind::Bespoke,
+        }
+    }
+
     /// The version this step brings the project *to*.
     pub fn version(self) -> u32 {
         match self {
@@ -266,7 +327,7 @@ impl Step {
         }
     }
 
-    /// One line for a UI or a log, matching the Python registry's wording.
+    /// One line for a UI or a log.
     pub fn description(self) -> &'static str {
         match self {
             Step::ConventionToPackage => {
@@ -403,11 +464,7 @@ pub fn pending(project_path: &Path) -> Result<Vec<Step>, String> {
 /// [`pending`], stopping at the step that reaches `last`.
 fn pending_through(project_path: &Path, last: u32) -> Result<Vec<Step>, String> {
     let at = current_version(project_path)?;
-    Ok(STEPS
-        .iter()
-        .copied()
-        .filter(|s| s.version() > at && s.version() <= last)
-        .collect())
+    Ok(STEPS.iter().copied().filter(|s| s.version() > at && s.version() <= last).collect())
 }
 
 /// Whether a step can run, decided before anything is written.
@@ -438,6 +495,21 @@ impl Step {
     /// Can this step run against this project? Reads only — never writes.
     pub fn readiness(self, project_path: &Path, template_dir: &Path) -> Readiness {
         let cfg = config_dir(project_path);
+        match self.kind() {
+            Kind::StockRefresh => return stock_refresh_readiness(project_path, &cfg, template_dir),
+            Kind::ReplaceAll { .. } => {
+                let source = scaffold_templates_dir(template_dir);
+                return if source.is_dir() {
+                    Readiness::Ready
+                } else {
+                    Readiness::Blocked(format!(
+                        "packaged templates not found at {} — the TumblePipe package is incomplete",
+                        source.display()
+                    ))
+                };
+            }
+            Kind::Bespoke => {}
+        }
         match self {
             Step::ConventionToPackage => {
                 let path = cfg.join("config_convention.py");
@@ -446,9 +518,7 @@ impl Step {
                     return Readiness::Ready;
                 }
                 match std::fs::read_to_string(&path) {
-                    Err(err) => {
-                        Readiness::Blocked(format!("cannot read {}: {err}", path.display()))
-                    }
+                    Err(err) => Readiness::Blocked(format!("cannot read {}: {err}", path.display())),
                     // Already the shim — the step is a no-op.
                     Ok(text) if text.contains("JsonConfigStore") => Readiness::Ready,
                     // The stock generic engine — safe to back up and replace.
@@ -458,17 +528,6 @@ impl Step {
                          customization — migrate it by hand",
                         path.display()
                     )),
-                }
-            }
-            Step::RefreshTemplates | Step::RefreshTemplatesAgain => {
-                let source = scaffold_templates_dir(template_dir);
-                if source.is_dir() {
-                    Readiness::Ready
-                } else {
-                    Readiness::Blocked(format!(
-                        "packaged templates not found at {} — the TumblePipe package is incomplete",
-                        source.display()
-                    ))
                 }
             }
             Step::AddEntityDepartments => {
@@ -530,30 +589,6 @@ impl Step {
                 Ok(_) => Readiness::Ready,
                 Err(why) => Readiness::Blocked(why),
             },
-            // Blocked when a customised template calls an API the package
-            // removed: replacing it would lose the studio's work, keeping it
-            // leaves "New workfile" broken, so its owner decides. A project
-            // still to run v9 is judged as v9 will leave it, since v9
-            // replaces every packaged template whatever it holds.
-            Step::RefreshStockTemplates
-            | Step::RefreshStockTemplatesAgain
-            | Step::LayoutCameraFollowsResolution
-            | Step::AnimationRigsArePublished
-            | Step::AnimationCameraReadsItsEdit
-            | Step::LayoutInAnimate
-            | Step::AnimationCopiesLayoutKeys
-            | Step::TemplateFixesFromQa
-            | Step::CompTemplateLayout
-            | Step::AnimationIsSolarisOnly => {
-                let v9_pending = match current_version(project_path) {
-                    Ok(at) => at < Step::RefreshTemplatesAgain.version(),
-                    Err(why) => return Readiness::Blocked(why),
-                };
-                match v12_plan(&cfg, template_dir, v9_pending) {
-                    Ok(_) => Readiness::Ready,
-                    Err(why) => Readiness::Blocked(why),
-                }
-            }
             // Blocked only when a record spells the channel both ways with
             // different values, or a database file is unreadable: keeping
             // either value would be a guess with a wrong render behind it.
@@ -574,14 +609,7 @@ impl Step {
                 if let Err(why) = v21_plan(&cfg) {
                     return Readiness::Blocked(why);
                 }
-                let v9_pending = match current_version(project_path) {
-                    Ok(at) => at < Step::RefreshTemplatesAgain.version(),
-                    Err(why) => return Readiness::Blocked(why),
-                };
-                match v12_plan(&cfg, template_dir, v9_pending) {
-                    Ok(_) => Readiness::Ready,
-                    Err(why) => Readiness::Blocked(why),
-                }
+                stock_refresh_readiness(project_path, &cfg, template_dir)
             }
             // Blocked when the schema tree is unreadable or misshapen.
             Step::GroupSchemaUnderRoots => match v22_plan(&cfg) {
@@ -600,23 +628,47 @@ impl Step {
                 Ok(_) => Readiness::Ready,
                 Err(why) => Readiness::Blocked(why),
             },
+            Step::RefreshTemplates
+            | Step::RefreshTemplatesAgain
+            | Step::RefreshStockTemplates
+            | Step::RefreshStockTemplatesAgain
+            | Step::LayoutCameraFollowsResolution
+            | Step::AnimationRigsArePublished
+            | Step::AnimationCameraReadsItsEdit
+            | Step::LayoutInAnimate
+            | Step::AnimationCopiesLayoutKeys
+            | Step::TemplateFixesFromQa
+            | Step::CompTemplateLayout
+            | Step::AnimationIsSolarisOnly => unreachable!("{self:?} is not a bespoke step"),
         }
     }
 }
 
+/// A stock template refresh's readiness ([`Kind::StockRefresh`], and v21's
+/// template half).
+///
+/// Blocked when a customised template calls an API the package removed:
+/// replacing it would lose the studio's work, keeping it leaves "New
+/// workfile" broken, so its owner decides. A project still to run v9 is
+/// judged as v9 will leave it, since v9 replaces every packaged template
+/// whatever it holds.
+fn stock_refresh_readiness(project_path: &Path, cfg: &Path, template_dir: &Path) -> Readiness {
+    let v9_pending = match current_version(project_path) {
+        Ok(at) => at < Step::RefreshTemplatesAgain.version(),
+        Err(why) => return Readiness::Blocked(why),
+    };
+    match v12_plan(cfg, template_dir, v9_pending) {
+        Ok(_) => Readiness::Ready,
+        Err(why) => Readiness::Blocked(why),
+    }
+}
+
 /// Readiness of every pending step, in order. Empty when nothing is pending.
-pub fn preflight(
-    project_path: &Path,
-    template_dir: &Path,
-) -> Result<Vec<(Step, Readiness)>, String> {
+pub fn preflight(project_path: &Path, template_dir: &Path) -> Result<Vec<(Step, Readiness)>, String> {
     preflight_through(project_path, template_dir, latest_version())
 }
 
-fn preflight_through(
-    project_path: &Path,
-    template_dir: &Path,
-    last: u32,
-) -> Result<Vec<(Step, Readiness)>, String> {
+fn preflight_through(project_path: &Path, template_dir: &Path, last: u32) -> Result<Vec<(Step, Readiness)>, String> {
     Ok(pending_through(project_path, last)?
         .into_iter()
         .map(|step| {
@@ -628,24 +680,15 @@ fn preflight_through(
 
 /// The first blocked step of a pending run, if any — what a caller shows the
 /// user instead of starting a migration that cannot finish.
-pub fn first_blocker(
-    project_path: &Path,
-    template_dir: &Path,
-) -> Result<Option<(Step, String)>, String> {
+pub fn first_blocker(project_path: &Path, template_dir: &Path) -> Result<Option<(Step, String)>, String> {
     first_blocker_through(project_path, template_dir, latest_version())
 }
 
-fn first_blocker_through(
-    project_path: &Path,
-    template_dir: &Path,
-    last: u32,
-) -> Result<Option<(Step, String)>, String> {
-    Ok(preflight_through(project_path, template_dir, last)?
-        .into_iter()
-        .find_map(|(step, readiness)| match readiness {
-            Readiness::Blocked(why) => Some((step, why)),
-            Readiness::Ready => None,
-        }))
+fn first_blocker_through(project_path: &Path, template_dir: &Path, last: u32) -> Result<Option<(Step, String)>, String> {
+    Ok(preflight_through(project_path, template_dir, last)?.into_iter().find_map(|(step, readiness)| match readiness {
+        Readiness::Blocked(why) => Some((step, why)),
+        Readiness::Ready => None,
+    }))
 }
 
 /// The per-project `config_convention.py` after v1: a thin shim, so engine
@@ -732,22 +775,16 @@ fn write_preserving(path: &Path, text: &str) -> Result<(), String> {
 fn write_preserving_as(path: &Path, text: &str, suffix: &str) -> Result<(), String> {
     let style = newlines::style_of_file(path);
     if let Ok(existing) = std::fs::read_to_string(path) {
-        let backup = path.with_file_name(format!(
-            "{}.{suffix}",
-            path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
-        ));
+        let backup = path.with_file_name(format!("{}.{suffix}", path.file_name().and_then(|n| n.to_str()).unwrap_or("file")));
         if !backup.exists() {
             // Byte-for-byte as it was, so the backup is a true original.
-            std::fs::write(&backup, existing)
-                .map_err(|e| format!("could not back up {}: {e}", path.display()))?;
+            std::fs::write(&backup, existing).map_err(|e| format!("could not back up {}: {e}", path.display()))?;
         }
     }
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("could not create {}: {e}", parent.display()))?;
     }
-    std::fs::write(path, newlines::apply(text, style))
-        .map_err(|e| format!("could not write {}: {e}", path.display()))
+    std::fs::write(path, newlines::apply(text, style)).map_err(|e| format!("could not write {}: {e}", path.display()))
 }
 
 /// `store_json`, but keeping the file's existing line-ending style.
@@ -768,9 +805,7 @@ fn find_files(root: &Path, name: Option<&str>, out: &mut Vec<PathBuf>) {
     for item in items {
         if item.is_dir() {
             find_files(&item, name, out);
-        } else if name.is_none_or(|want| {
-            item.file_name().and_then(|n| n.to_str()) == Some(want)
-        }) {
+        } else if name.is_none_or(|want| item.file_name().and_then(|n| n.to_str()) == Some(want)) {
             out.push(item);
         }
     }
@@ -786,8 +821,7 @@ fn find_files(root: &Path, name: Option<&str>, out: &mut Vec<PathBuf>) {
 fn ensure_temp_helper_import(lines: &mut Vec<String>) {
     let imports_helper = lines.iter().any(|line| {
         let trimmed = line.trim_start();
-        (trimmed.starts_with("from ") || trimmed.starts_with("import "))
-            && line.contains("default_temp_path")
+        (trimmed.starts_with("from ") || trimmed.starts_with("import ")) && line.contains("default_temp_path")
     });
     if imports_helper {
         return;
@@ -796,30 +830,19 @@ fn ensure_temp_helper_import(lines: &mut Vec<String>) {
     // where the line does, so appending to it would corrupt the import.
     let extendable = lines.iter().position(|line| {
         let trimmed = line.trim();
-        trimmed.starts_with("from tumblepipe.storage import")
-            && !trimmed.contains('#')
-            && !trimmed.ends_with('(')
+        trimmed.starts_with("from tumblepipe.storage import") && !trimmed.contains('#') && !trimmed.ends_with('(')
     });
     if let Some(index) = extendable {
         lines[index] = format!("{}, default_temp_path", lines[index].trim_end());
         return;
     }
-    let first_import = lines
-        .iter()
-        .position(|line| line.starts_with("from ") || line.starts_with("import "))
-        .unwrap_or(0);
-    lines.insert(
-        first_import,
-        "from tumblepipe.storage import default_temp_path".to_string(),
-    );
+    let first_import = lines.iter().position(|line| line.starts_with("from ") || line.starts_with("import ")).unwrap_or(0);
+    lines.insert(first_import, "from tumblepipe.storage import default_temp_path".to_string());
 }
 
 /// Rename the vocabulary in one label/tooltip string (v5).
 fn variants_to_channels(text: &str) -> String {
-    text.replace("Variants", "Channels")
-        .replace("Variant", "Channel")
-        .replace("variants", "channels")
-        .replace("variant", "channel")
+    text.replace("Variants", "Channels").replace("Variant", "Channel").replace("variants", "channels").replace("variant", "channel")
 }
 
 /// Relabel every column spec that drives the `variants` property. Returns
@@ -835,9 +858,7 @@ fn relabel_columns(node: &mut Value) -> bool {
             }
         }
         Value::Object(map) => {
-            let names_variants = |field: &str| {
-                map.get(field).and_then(|v| v.as_str()) == Some("variants")
-            };
+            let names_variants = |field: &str| map.get(field).and_then(|v| v.as_str()) == Some("variants");
             let drives_variants = names_variants("key") || names_variants("property_path");
             if drives_variants {
                 for field in ["label", "tooltip"] {
@@ -864,6 +885,11 @@ impl Step {
     /// no-op, so a part-migrated project can always be re-run to completion.
     pub fn apply(self, project_path: &Path, template_dir: &Path) -> Result<(), String> {
         let cfg = config_dir(project_path);
+        match self.kind() {
+            Kind::StockRefresh => return refresh_stock_templates(&cfg, template_dir),
+            Kind::ReplaceAll { suffix } => return refresh_templates(&cfg, template_dir, suffix),
+            Kind::Bespoke => {}
+        }
         match self {
             Step::ConventionToPackage => {
                 let path = cfg.join("config_convention.py");
@@ -878,26 +904,13 @@ impl Step {
                     }
                     // Unreachable behind preflight, but never clobber a
                     // customization even if a caller skipped the check.
-                    Ok(_) => Err(format!(
-                        "{} is not the stock config engine — migrate it by hand",
-                        path.display()
-                    )),
+                    Ok(_) => Err(format!("{} is not the stock config engine — migrate it by hand", path.display())),
                 }
             }
-            Step::RefreshTemplates => refresh_templates(&cfg, template_dir, "bak"),
-            // v2 was the only template refresh, so a project past it never saw
-            // a scaffold template change again: HideAndReek sat on the packed
-            // Scene Invoke, the pre-promote_name rig and the old MODEL/LOOKDEV
-            // dive targets. Its own backup suffix, because v2 may already have
-            // left a `.bak` that must stay the true original.
-            Step::RefreshTemplatesAgain => refresh_templates(&cfg, template_dir, "v9.bak"),
             Step::AddEntityDepartments => {
                 let path = cfg.join("db").join("schemas.json");
                 if !path.is_file() {
-                    return Err(format!(
-                        "{} not found — cannot add the schema default",
-                        path.display()
-                    ));
+                    return Err(format!("{} not found — cannot add the schema default", path.display()));
                 }
                 let mut data = load_json(&path)?;
                 let entity = data
@@ -909,9 +922,8 @@ impl Step {
                     .ok_or_else(|| format!("{} entity node is not an object", path.display()))?
                     .entry("properties")
                     .or_insert_with(|| Value::Object(Default::default()));
-                let properties = properties.as_object_mut().ok_or_else(|| {
-                    format!("{} entity properties is not an object", path.display())
-                })?;
+                let properties =
+                    properties.as_object_mut().ok_or_else(|| format!("{} entity properties is not an object", path.display()))?;
                 if properties.contains_key("departments") {
                     return Ok(()); // already declared — idempotent
                 }
@@ -923,10 +935,7 @@ impl Step {
             Step::SeedOcio => {
                 let source = scaffold_ocio_dir(template_dir);
                 if !source.is_dir() {
-                    return Err(format!(
-                        "packaged OCIO scaffold not found at {}",
-                        source.display()
-                    ));
+                    return Err(format!("packaged OCIO scaffold not found at {}", source.display()));
                 }
                 let target = cfg.join("ocio");
                 let mut found = Vec::new();
@@ -940,11 +949,9 @@ impl Step {
                         continue;
                     }
                     if let Some(parent) = dst.parent() {
-                        std::fs::create_dir_all(parent)
-                            .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+                        std::fs::create_dir_all(parent).map_err(|e| format!("could not create {}: {e}", parent.display()))?;
                     }
-                    std::fs::copy(&src, &dst)
-                        .map_err(|e| format!("could not seed {}: {e}", dst.display()))?;
+                    std::fs::copy(&src, &dst).map_err(|e| format!("could not seed {}: {e}", dst.display()))?;
                 }
                 Ok(())
             }
@@ -970,10 +977,7 @@ impl Step {
                 // Drop exactly those lines and leave every other one byte for
                 // byte, so a project's own path overrides survive untouched.
                 let normalized = newlines::normalize(&current);
-                let mut kept: Vec<&str> = normalized
-                    .lines()
-                    .filter(|line| !is_kits_line(line))
-                    .collect();
+                let mut kept: Vec<&str> = normalized.lines().filter(|line| !is_kits_line(line)).collect();
                 let trailing_newline = normalized.ends_with('\n');
                 if trailing_newline {
                     kept.push("");
@@ -996,9 +1000,7 @@ impl Step {
                     let Ok(current) = std::fs::read_to_string(&path) else {
                         continue; // this project does not have that convention
                     };
-                    let fixed = current
-                        .replace("from tumblehead.", "from tumblepipe.")
-                        .replace("import tumblehead.", "import tumblepipe.");
+                    let fixed = current.replace("from tumblehead.", "from tumblepipe.").replace("import tumblehead.", "import tumblepipe.");
                     if fixed == current {
                         continue; // already correct — idempotent
                     }
@@ -1030,12 +1032,10 @@ impl Step {
                     // root — either way, leave it alone.
                     return Ok(());
                 }
-                let mut lines: Vec<String> =
-                    normalized.lines().map(str::to_string).collect();
+                let mut lines: Vec<String> = normalized.lines().map(str::to_string).collect();
                 for line in lines.iter_mut() {
                     if is_project_drive_temp_line(line) {
-                        let indent: String =
-                            line.chars().take_while(|c| c.is_whitespace()).collect();
+                        let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
                         *line = format!("{indent}self.temp_path = default_temp_path()");
                     }
                 }
@@ -1068,7 +1068,6 @@ impl Step {
                 }
                 Ok(())
             }
-            Step::RefreshStockTemplates => refresh_stock_templates(&cfg, template_dir),
             Step::ChannelKeys => {
                 // Every file is planned before any is written, so a refusal
                 // leaves the database exactly as it was. Own backup suffix:
@@ -1078,27 +1077,6 @@ impl Step {
                 }
                 Ok(())
             }
-            // v12 brought the stock templates up to the scaffold of its day;
-            // a template fixed since never reached a project past it. Same
-            // plan and the same rules: stock is replaced, customised is left
-            // alone unless it calls something removed.
-            Step::RefreshStockTemplatesAgain => refresh_stock_templates(&cfg, template_dir),
-            // Same plan again, for the layout and blendshape template fixes.
-            Step::LayoutCameraFollowsResolution => refresh_stock_templates(&cfg, template_dir),
-            // Same plan again, for the animation template's rig rows.
-            Step::AnimationRigsArePublished => refresh_stock_templates(&cfg, template_dir),
-            // Same plan again, for the animation camera reading camera_edit.
-            Step::AnimationCameraReadsItsEdit => refresh_stock_templates(&cfg, template_dir),
-            // Same plan again, for the layout template's Layout in Animate.
-            Step::LayoutInAnimate => refresh_stock_templates(&cfg, template_dir),
-            // Same plan again, for the animation template's layout keys.
-            Step::AnimationCopiesLayoutKeys => refresh_stock_templates(&cfg, template_dir),
-            // Same plan again, for the template fixes of the 2026-11 QA pass.
-            Step::TemplateFixesFromQa => refresh_stock_templates(&cfg, template_dir),
-            // Same plan again, for the composite template's rows per member.
-            Step::CompTemplateLayout => refresh_stock_templates(&cfg, template_dir),
-            // Same plan again, for the animation template without an /obj camera.
-            Step::AnimationIsSolarisOnly => refresh_stock_templates(&cfg, template_dir),
             Step::AddGroomDepartment => {
                 // Both halves are planned before either is written. The
                 // template goes down first: a pool naming groom with no
@@ -1132,14 +1110,11 @@ impl Step {
                 Some(V24Write { path, text, backup: false }) => {
                     // Stock: what the scaffold shipped, nothing to keep.
                     let style = newlines::style_of_file(&path);
-                    std::fs::write(&path, newlines::apply(&text, style))
-                        .map_err(|e| format!("could not write {}: {e}", path.display()))
+                    std::fs::write(&path, newlines::apply(&text, style)).map_err(|e| format!("could not write {}: {e}", path.display()))
                 }
                 // Customised: the original is kept as `.v24.bak` (an
                 // existing one, from an earlier run, is never overwritten).
-                Some(V24Write { path, text, backup: true }) => {
-                    write_preserving_as(&path, &text, "v24.bak")
-                }
+                Some(V24Write { path, text, backup: true }) => write_preserving_as(&path, &text, "v24.bak"),
             },
             Step::ScratchOffWslPaths => {
                 // Own backup suffix: the `.v11.bak` v11 left is that step's
@@ -1151,6 +1126,18 @@ impl Step {
                 }
                 Ok(())
             }
+            Step::RefreshTemplates
+            | Step::RefreshTemplatesAgain
+            | Step::RefreshStockTemplates
+            | Step::RefreshStockTemplatesAgain
+            | Step::LayoutCameraFollowsResolution
+            | Step::AnimationRigsArePublished
+            | Step::AnimationCameraReadsItsEdit
+            | Step::LayoutInAnimate
+            | Step::AnimationCopiesLayoutKeys
+            | Step::TemplateFixesFromQa
+            | Step::CompTemplateLayout
+            | Step::AnimationIsSolarisOnly => unreachable!("{self:?} is not a bespoke step"),
         }
     }
 }
@@ -1202,9 +1189,7 @@ fn v17_plan(cfg: &Path) -> Result<Option<serde_json::Map<String, Value>>, String
 
 /// [`v17_plan`]'s rewrite of one table: the table with its WSL paths moved,
 /// or None when it has none.
-fn v17_table(
-    mut table: serde_json::Map<String, Value>,
-) -> Option<serde_json::Map<String, Value>> {
+fn v17_table(mut table: serde_json::Map<String, Value>) -> Option<serde_json::Map<String, Value>> {
     let mut changed = false;
     for (purpose, value) in table.iter_mut() {
         let Some(template) = value.as_str() else {
@@ -1217,8 +1202,7 @@ fn v17_table(
             conventions::LOCAL_SCRATCH.to_string()
         } else {
             let mut parts = relative.splitn(3, '/');
-            let (Some(users), Some(name), rest) = (parts.next(), parts.next(), parts.next())
-            else {
+            let (Some(users), Some(name), rest) = (parts.next(), parts.next(), parts.next()) else {
                 continue;
             };
             if !users.eq_ignore_ascii_case("users") || name.is_empty() {
@@ -1242,12 +1226,10 @@ fn v17_table(
 fn refresh_stock_templates(cfg: &Path, template_dir: &Path) -> Result<(), String> {
     for (path, text) in v12_plan(cfg, template_dir, false)? {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("could not create {}: {e}", parent.display()))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("could not create {}: {e}", parent.display()))?;
         }
         let style = newlines::style_of_file(&path);
-        std::fs::write(&path, newlines::apply(&text, style))
-            .map_err(|e| format!("could not write {}: {e}", path.display()))?;
+        std::fs::write(&path, newlines::apply(&text, style)).map_err(|e| format!("could not write {}: {e}", path.display()))?;
     }
     Ok(())
 }
@@ -1282,10 +1264,7 @@ pub struct TemplateNote {
 
 /// Where [`write_preserving_as`] keeps the original of `path`.
 fn backup_path(path: &Path, suffix: &str) -> PathBuf {
-    path.with_file_name(format!(
-        "{}.{suffix}",
-        path.file_name().and_then(|n| n.to_str()).unwrap_or("file")
-    ))
+    path.with_file_name(format!("{}.{suffix}", path.file_name().and_then(|n| n.to_str()).unwrap_or("file")))
 }
 
 /// Every packaged template, sorted, as (key under `templates/`, the
@@ -1327,11 +1306,7 @@ fn stock_refresh_notes(cfg: &Path, template_dir: &Path) -> Vec<(PathBuf, Templat
 
 /// What v2 / v9 ([`refresh_templates`]) is about to do: every packaged
 /// template that differs is replaced, its original kept as `.<suffix>`.
-fn replace_all_notes(
-    cfg: &Path,
-    template_dir: &Path,
-    suffix: &str,
-) -> Vec<(PathBuf, TemplateOutcome)> {
+fn replace_all_notes(cfg: &Path, template_dir: &Path, suffix: &str) -> Vec<(PathBuf, TemplateOutcome)> {
     let mut notes = Vec::new();
     for (_, dst, new_text) in packaged_for(cfg, template_dir) {
         let outcome = match std::fs::read_to_string(&dst) {
@@ -1350,20 +1325,14 @@ impl Step {
     /// before [`Step::apply`]). Empty for a step that touches none, and for
     /// a template that is already the packaged one.
     fn template_notes(self, cfg: &Path, template_dir: &Path) -> Vec<(PathBuf, TemplateOutcome)> {
+        match self.kind() {
+            Kind::StockRefresh => return stock_refresh_notes(cfg, template_dir),
+            Kind::ReplaceAll { suffix } => return replace_all_notes(cfg, template_dir, suffix),
+            Kind::Bespoke => {}
+        }
         match self {
-            Step::RefreshTemplates => replace_all_notes(cfg, template_dir, "bak"),
-            Step::RefreshTemplatesAgain => replace_all_notes(cfg, template_dir, "v9.bak"),
-            Step::RefreshStockTemplates
-            | Step::RefreshStockTemplatesAgain
-            | Step::LayoutCameraFollowsResolution
-            | Step::AnimationRigsArePublished
-            | Step::AnimationCameraReadsItsEdit
-            | Step::LayoutInAnimate
-            | Step::AnimationCopiesLayoutKeys
-            | Step::AddGroomDepartment
-            | Step::TemplateFixesFromQa
-            | Step::CompTemplateLayout
-            | Step::AnimationIsSolarisOnly => stock_refresh_notes(cfg, template_dir),
+            // Its template half is a stock refresh.
+            Step::AddGroomDepartment => stock_refresh_notes(cfg, template_dir),
             Step::CompositeWithoutBuildComp => {
                 let relative: PathBuf = COMPOSITE.split('/').collect();
                 let path = cfg.join("templates").join(relative).join("template.py");
@@ -1383,13 +1352,13 @@ impl Step {
                         .filter(|(key, _, _)| key == COMPOSITE)
                         .filter_map(|(_, dst, new_text)| {
                             let old = std::fs::read_to_string(&dst).ok()?;
-                            (newlines::normalize(&old) != new_text)
-                                .then(|| (path.clone(), TemplateOutcome::LeftCustomised))
+                            (newlines::normalize(&old) != new_text).then(|| (path.clone(), TemplateOutcome::LeftCustomised))
                         })
                         .collect(),
                     Err(_) => Vec::new(),
                 }
             }
+            // The other bespoke steps touch no template.
             _ => Vec::new(),
         }
     }
@@ -1429,10 +1398,7 @@ struct V24Write {
 fn v24_plan(cfg: &Path, template_dir: &Path) -> Result<Option<V24Write>, String> {
     let source = scaffold_templates_dir(template_dir);
     if !source.is_dir() {
-        return Err(format!(
-            "packaged templates not found at {} — the TumblePipe package is incomplete",
-            source.display()
-        ));
+        return Err(format!("packaged templates not found at {} — the TumblePipe package is incomplete", source.display()));
     }
     let relative: PathBuf = COMPOSITE.split('/').collect();
     let packaged = source.join(&relative).join("template.py");
@@ -1457,11 +1423,7 @@ fn v24_plan(cfg: &Path, template_dir: &Path) -> Result<Option<V24Write>, String>
     } else {
         return Ok(None);
     };
-    Ok(Some(V24Write {
-        path,
-        text: new_text,
-        backup,
-    }))
+    Ok(Some(V24Write { path, text: new_text, backup }))
 }
 
 /// The asset department v21 adds, and its properties: it publishes, and the
@@ -1484,18 +1446,11 @@ fn v21_plan(cfg: &Path) -> Result<Option<Value>, String> {
         return Ok(None);
     }
     let mut data = load_json(&path)?;
-    let Some(assets) = data
-        .get_mut("children")
-        .and_then(|c| c.get_mut("assets"))
-        .and_then(|a| a.get_mut("children"))
-    else {
+    let Some(assets) = data.get_mut("children").and_then(|c| c.get_mut("assets")).and_then(|a| a.get_mut("children")) else {
         return Ok(None);
     };
     let Value::Object(pool) = assets else {
-        return Err(format!(
-            "{}: the assets departments are not a JSON object",
-            path.display()
-        ));
+        return Err(format!("{}: the assets departments are not a JSON object", path.display()));
     };
     if pool.contains_key(GROOM) {
         return Ok(None);
@@ -1503,10 +1458,7 @@ fn v21_plan(cfg: &Path) -> Result<Option<Value>, String> {
     let names: Vec<String> = pool.keys().cloned().collect();
     let at = match names.iter().position(|n| n == "lookdev") {
         Some(at) => at,
-        None => names
-            .iter()
-            .rposition(|n| n == "model" || n == "blendshape")
-            .map_or(names.len(), |at| at + 1),
+        None => names.iter().rposition(|n| n == "model" || n == "blendshape").map_or(names.len(), |at| at + 1),
     };
     let groom = serde_json::json!({
         "properties": {
@@ -1553,18 +1505,11 @@ fn v22_plan(cfg: &Path) -> Result<Option<Value>, String> {
         return Ok(None);
     }
     let mut data = load_json(&path)?;
-    let Some(groups) = data
-        .get_mut("children")
-        .and_then(|c| c.get_mut("groups"))
-        .and_then(|g| g.get_mut("children"))
-    else {
+    let Some(groups) = data.get_mut("children").and_then(|c| c.get_mut("groups")).and_then(|g| g.get_mut("children")) else {
         return Ok(None);
     };
     let Value::Object(roots) = groups else {
-        return Err(format!(
-            "{}: the groups schemas are not a JSON object",
-            path.display()
-        ));
+        return Err(format!("{}: the groups schemas are not a JSON object", path.display()));
     };
     let Some(group) = roots.get(GROUP_SCHEMA).cloned() else {
         return Ok(None);
@@ -1574,19 +1519,11 @@ fn v22_plan(cfg: &Path) -> Result<Option<Value>, String> {
             continue;
         };
         let Value::Object(node) = node else {
-            return Err(format!(
-                "{}: the groups/{root} schema is not a JSON object",
-                path.display()
-            ));
+            return Err(format!("{}: the groups/{root} schema is not a JSON object", path.display()));
         };
-        let children = node
-            .entry("children")
-            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        let children = node.entry("children").or_insert_with(|| Value::Object(serde_json::Map::new()));
         let Value::Object(children) = children else {
-            return Err(format!(
-                "{}: the groups/{root} schema's children are not a JSON object",
-                path.display()
-            ));
+            return Err(format!("{}: the groups/{root} schema's children are not a JSON object", path.display()));
         };
         if children.is_empty() {
             children.insert(GROUP_SCHEMA.to_string(), group.clone());
@@ -1630,13 +1567,9 @@ fn v23_plan(cfg: &Path, template_dir: &Path) -> Result<Vec<(PathBuf, Value)>, St
         };
         if !table.contains_key(EDITS) {
             let scaffold = scaffold_storage_table(template_dir)?;
-            let template = scaffold.get(EDITS).cloned().ok_or_else(|| {
-                format!("the packaged {} has no `{EDITS}`", conventions::STORAGE_FILE)
-            })?;
-            out.push((
-                storage,
-                Value::Object(insert_after(table, "edit", EDITS, template)),
-            ));
+            let template =
+                scaffold.get(EDITS).cloned().ok_or_else(|| format!("the packaged {} has no `{EDITS}`", conventions::STORAGE_FILE))?;
+            out.push((storage, Value::Object(insert_after(table, "edit", EDITS, template))));
         }
     }
 
@@ -1677,13 +1610,7 @@ fn v23_plan(cfg: &Path, template_dir: &Path) -> Result<Vec<(PathBuf, Value)>, St
             "children": {}
         });
         let entity = add_edits_child(&path, &mut data, &["entity"], "assets", context("edit", edit))?;
-        let departments = add_edits_child(
-            &path,
-            &mut data,
-            &["departments"],
-            "shots",
-            context("department", department(false)),
-        )?;
+        let departments = add_edits_child(&path, &mut data, &["departments"], "shots", context("department", department(false)))?;
         if entity || departments {
             out.push((path, data));
         }
@@ -1702,12 +1629,7 @@ fn v23_plan(cfg: &Path, template_dir: &Path) -> Result<Vec<(PathBuf, Value)>, St
 
 /// `map` with `key: value` placed right after `after` (at the end when
 /// `after` is not there).
-fn insert_after(
-    map: serde_json::Map<String, Value>,
-    after: &str,
-    key: &str,
-    value: Value,
-) -> serde_json::Map<String, Value> {
+fn insert_after(map: serde_json::Map<String, Value>, after: &str, key: &str, value: Value) -> serde_json::Map<String, Value> {
     let mut out = serde_json::Map::new();
     let mut pending = Some(value);
     for (name, item) in map {
@@ -1729,13 +1651,7 @@ fn insert_after(
 /// after `after`): true when it was added, false when that node is missing
 /// or already has an `edits`. An error when the node or its children are
 /// not JSON objects.
-fn add_edits_child(
-    path: &Path,
-    data: &mut Value,
-    segments: &[&str],
-    after: &str,
-    node: Value,
-) -> Result<bool, String> {
+fn add_edits_child(path: &Path, data: &mut Value, segments: &[&str], after: &str, node: Value) -> Result<bool, String> {
     let mut at = data;
     for segment in segments {
         let Some(next) = at.get_mut("children").and_then(|c| c.get_mut(*segment)) else {
@@ -1743,22 +1659,13 @@ fn add_edits_child(
         };
         at = next;
     }
-    let where_ = if segments.is_empty() {
-        "the root".to_string()
-    } else {
-        format!("`{}`", segments.join("/"))
-    };
+    let where_ = if segments.is_empty() { "the root".to_string() } else { format!("`{}`", segments.join("/")) };
     let Value::Object(object) = at else {
         return Err(format!("{}: {where_} is not a JSON object", path.display()));
     };
-    let children = object
-        .entry("children")
-        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    let children = object.entry("children").or_insert_with(|| Value::Object(serde_json::Map::new()));
     let Value::Object(children) = children else {
-        return Err(format!(
-            "{}: the children of {where_} are not a JSON object",
-            path.display()
-        ));
+        return Err(format!("{}: the children of {where_} are not a JSON object", path.display()));
     };
     if children.contains_key(EDITS) {
         return Ok(false);
@@ -1766,6 +1673,9 @@ fn add_edits_child(
     *children = insert_after(std::mem::take(children), after, EDITS, node);
     Ok(true)
 }
+
+/// A file v10 edits, by name under `_config/usd/`, and its edit.
+type FileEdit = (&'static str, fn(&str) -> Edit);
 
 /// v10's edits to a project, as `(file, new LF text)`: empty when there is
 /// nothing to do, an error naming the file and the reason when either file
@@ -1775,10 +1685,8 @@ fn v10_edits(cfg: &Path) -> Result<Vec<(PathBuf, String)>, String> {
     let mut out = Vec::new();
     // The render vars every shot starts from, and the AOV list a farm job
     // falls back to when an export context names none
-    let files: [(&str, fn(&str) -> Edit); 2] = [
-        ("root_default_prims.usda", beauty_alpha::root_defaults_edit),
-        ("context.json", beauty_alpha::context_json_edit),
-    ];
+    let files: [FileEdit; 2] =
+        [("root_default_prims.usda", beauty_alpha::root_defaults_edit), ("context.json", beauty_alpha::context_json_edit)];
     for (name, edit) in files {
         let path = usd_dir.join(name);
         let Ok(current) = std::fs::read_to_string(&path) else {
@@ -1803,27 +1711,19 @@ fn v10_edits(cfg: &Path) -> Result<Vec<(PathBuf, String)>, String> {
 /// The packaged scaffold's storage table, which a new project starts from.
 fn scaffold_storage_table(template_dir: &Path) -> Result<serde_json::Map<String, Value>, String> {
     let path = template_dir.join("_config").join(conventions::STORAGE_FILE);
-    let Value::Object(table) = load_json(&path).map_err(|why| {
-        format!(
-            "packaged {} unreadable ({why}) — the TumblePipe package is incomplete",
-            path.display()
-        )
-    })?
+    let Value::Object(table) =
+        load_json(&path).map_err(|why| format!("packaged {} unreadable ({why}) — the TumblePipe package is incomplete", path.display()))?
     else {
         return Err(format!("packaged {} is not a JSON object", path.display()));
     };
-    conventions::validate_table(&table)
-        .map_err(|why| format!("packaged {} is invalid: {why}", path.display()))?;
+    conventions::validate_table(&table).map_err(|why| format!("packaged {} is invalid: {why}", path.display()))?;
     Ok(table)
 }
 
 /// v11's work for a project: `Ok(Some(table))` when `storage.json` is to be
 /// written, `Ok(None)` when the one already there stands, or why a module
 /// cannot be retired.
-fn v11_plan(
-    cfg: &Path,
-    template_dir: &Path,
-) -> Result<Option<serde_json::Map<String, Value>>, String> {
+fn v11_plan(cfg: &Path, template_dir: &Path) -> Result<Option<serde_json::Map<String, Value>>, String> {
     let scaffold = scaffold_storage_table(template_dir)?;
     let read = |name: &str| -> Result<Option<String>, String> {
         let path = cfg.join(name);
@@ -1856,25 +1756,22 @@ fn v11_plan(
     }
     let storage_json = cfg.join(conventions::STORAGE_FILE);
     match read("storage_convention.py")? {
-        Some(text) => conventions::storage_table(&text, &scaffold)
-            .map(Some)
-            .map_err(|why| {
-                format!(
-                    "{} cannot be turned into {}: {why}. Write {} by hand (start from the \
+        Some(text) => conventions::storage_table(&text, &scaffold).map(Some).map_err(|why| {
+            format!(
+                "{} cannot be turned into {}: {why}. Write {} by hand (start from the \
                      packaged scaffold's; docs/configuration.md lists the placeholders), \
                      delete the module, then launch again",
-                    cfg.join("storage_convention.py").display(),
-                    conventions::STORAGE_FILE,
-                    storage_json.display()
-                )
-            }),
+                cfg.join("storage_convention.py").display(),
+                conventions::STORAGE_FILE,
+                storage_json.display()
+            )
+        }),
         // A table of the project's own, from an earlier run or by hand
         None if storage_json.exists() => {
             let Value::Object(table) = load_json(&storage_json)? else {
                 return Err(format!("{} is not a JSON object", storage_json.display()));
             };
-            conventions::validate_table_before_v23(&table)
-                .map_err(|why| format!("{} is invalid: {why}", storage_json.display()))?;
+            conventions::validate_table_before_v23(&table).map_err(|why| format!("{} is invalid: {why}", storage_json.display()))?;
             Ok(None)
         }
         // No module and no table: the project resolved nothing, so it gets
@@ -1890,11 +1787,7 @@ fn retire(cfg: &Path, name: &str) -> Result<(), String> {
     let path = cfg.join(name);
     if path.exists() {
         let backup = cfg.join(format!("{name}.v11.bak"));
-        let moved = if backup.exists() {
-            std::fs::remove_file(&path)
-        } else {
-            std::fs::rename(&path, &backup)
-        };
+        let moved = if backup.exists() { std::fs::remove_file(&path) } else { std::fs::rename(&path, &backup) };
         moved.map_err(|e| format!("could not retire {}: {e}", path.display()))?;
     }
     let prefix = format!("{}.", name.trim_end_matches(".py"));
@@ -1903,8 +1796,7 @@ fn retire(cfg: &Path, name: &str) -> Result<(), String> {
     for file in compiled {
         let file_name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if file_name.starts_with(&prefix) && file_name.ends_with(".pyc") {
-            std::fs::remove_file(&file)
-                .map_err(|e| format!("could not remove {}: {e}", file.display()))?;
+            std::fs::remove_file(&file).map_err(|e| format!("could not remove {}: {e}", file.display()))?;
         }
     }
     Ok(())
@@ -1916,10 +1808,7 @@ fn retire(cfg: &Path, name: &str) -> Result<(), String> {
 fn refresh_templates(cfg: &Path, template_dir: &Path, backup_suffix: &str) -> Result<(), String> {
     let source = scaffold_templates_dir(template_dir);
     if !source.is_dir() {
-        return Err(format!(
-            "packaged templates not found at {}",
-            source.display()
-        ));
+        return Err(format!("packaged templates not found at {}", source.display()));
     }
     let target = cfg.join("templates");
     let mut found = Vec::new();
@@ -1927,8 +1816,7 @@ fn refresh_templates(cfg: &Path, template_dir: &Path, backup_suffix: &str) -> Re
     for src in found {
         let relative = src.strip_prefix(&source).map_err(|e| e.to_string())?;
         let dst = target.join(relative);
-        let new_text = std::fs::read_to_string(&src)
-            .map_err(|e| format!("could not read {}: {e}", src.display()))?;
+        let new_text = std::fs::read_to_string(&src).map_err(|e| format!("could not read {}: {e}", src.display()))?;
         match std::fs::read_to_string(&dst) {
             // Identical bar line endings — leave it, and leave its mtime
             // alone. Comparing raw bytes would rewrite and back up every CRLF
@@ -1952,17 +1840,10 @@ fn refresh_templates(cfg: &Path, template_dir: &Path, backup_suffix: &str) -> Re
 ///
 /// `v9_pending`: v9 is part of the same run, and it replaces every packaged
 /// template whatever it holds, so those are taken as already current.
-fn v12_plan(
-    cfg: &Path,
-    template_dir: &Path,
-    v9_pending: bool,
-) -> Result<Vec<(PathBuf, String)>, String> {
+fn v12_plan(cfg: &Path, template_dir: &Path, v9_pending: bool) -> Result<Vec<(PathBuf, String)>, String> {
     let source = scaffold_templates_dir(template_dir);
     if !source.is_dir() {
-        return Err(format!(
-            "packaged templates not found at {} — the TumblePipe package is incomplete",
-            source.display()
-        ));
+        return Err(format!("packaged templates not found at {} — the TumblePipe package is incomplete", source.display()));
     }
     let target = cfg.join("templates");
     let read = |path: &Path| -> Result<Option<String>, String> {
@@ -1985,10 +1866,7 @@ fn v12_plan(
         if v9_pending {
             continue;
         }
-        let new_text = newlines::normalize(
-            &std::fs::read_to_string(&src)
-                .map_err(|e| format!("could not read {}: {e}", src.display()))?,
-        );
+        let new_text = newlines::normalize(&std::fs::read_to_string(&src).map_err(|e| format!("could not read {}: {e}", src.display()))?);
         match read(&dst)? {
             None => writes.push((dst, new_text)),
             Some(old) if newlines::normalize(&old) == new_text => {}
@@ -2056,31 +1934,20 @@ const CHANNEL_NEW: &str = "channel";
 /// diff is that one line. Both present and equal folds to `new`; both
 /// present and different is pushed onto `clashes` with `where_` and left
 /// alone. Returns whether the map changed.
-fn rename_key(
-    map: &mut serde_json::Map<String, Value>,
-    old: &str,
-    new: &str,
-    where_: &str,
-    clashes: &mut Vec<String>,
-) -> bool {
+fn rename_key(map: &mut serde_json::Map<String, Value>, old: &str, new: &str, where_: &str, clashes: &mut Vec<String>) -> bool {
     let Some(old_value) = map.get(old) else {
         return false;
     };
     if let Some(new_value) = map.get(new) {
         if new_value != old_value {
-            clashes.push(format!(
-                "{where_}: \"{old}\" = {old_value} but \"{new}\" = {new_value}"
-            ));
+            clashes.push(format!("{where_}: \"{old}\" = {old_value} but \"{new}\" = {new_value}"));
             return false;
         }
         map.remove(old);
         return true;
     }
     let taken = std::mem::take(map);
-    *map = taken
-        .into_iter()
-        .map(|(key, value)| if key == old { (new.to_string(), value) } else { (key, value) })
-        .collect();
+    *map = taken.into_iter().map(|(key, value)| if key == old { (new.to_string(), value) } else { (key, value) }).collect();
     true
 }
 
@@ -2109,11 +1976,7 @@ fn rename_scene_entries(node: &mut Value, path: &str, clashes: &mut Vec<String>)
         return false;
     };
     let mut changed = false;
-    if let Some(Value::Array(assets)) = map
-        .get_mut("properties")
-        .and_then(|p| p.as_object_mut())
-        .and_then(|p| p.get_mut("assets"))
-    {
+    if let Some(Value::Array(assets)) = map.get_mut("properties").and_then(|p| p.as_object_mut()).and_then(|p| p.get_mut("assets")) {
         for (index, entry) in assets.iter_mut().enumerate() {
             if let Value::Object(entry) = entry {
                 let where_ = format!("{path} assets[{index}]");
@@ -2213,12 +2076,7 @@ fn v13_plan(cfg: &Path) -> Result<Vec<(PathBuf, Value)>, String> {
 fn template_key(root: &Path, file: &Path) -> String {
     file.parent()
         .and_then(|dir| dir.strip_prefix(root).ok())
-        .map(|dir| {
-            dir.components()
-                .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
-                .join("/")
-        })
+        .map(|dir| dir.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/"))
         .unwrap_or_default()
 }
 
@@ -2227,8 +2085,7 @@ fn write_version(config: &Path, version: u32) -> Result<(), String> {
     let path = config.join(VERSION_FILE);
     let style = newlines::style_of_file(&path);
     let text = newlines::apply(&format!("{{\n    \"version\": {version}\n}}\n"), style);
-    std::fs::write(&path, text)
-        .map_err(|e| format!("could not stamp {}: {e}", path.display()))
+    std::fs::write(&path, text).map_err(|e| format!("could not stamp {}: {e}", path.display()))
 }
 
 /// What a migration run did.
@@ -2255,12 +2112,7 @@ impl Report {
     /// Whether a person has something to do after the run: a customised
     /// template missed a fix, or one was replaced and its original kept.
     pub fn templates_need_attention(&self) -> bool {
-        self.templates.iter().any(|note| {
-            matches!(
-                note.outcome,
-                TemplateOutcome::LeftCustomised | TemplateOutcome::Replaced { .. }
-            )
-        })
+        self.templates.iter().any(|note| matches!(note.outcome, TemplateOutcome::LeftCustomised | TemplateOutcome::Replaced { .. }))
     }
 
     /// The template notes as lines for a log or a window, grouped by what
@@ -2298,19 +2150,12 @@ impl Report {
         }
         // What a later step wrote is not a customised template any more.
         customised.retain(|(path, _)| {
-            let last_left = self.templates.iter().rposition(|n| {
-                n.path == *path && n.outcome == TemplateOutcome::LeftCustomised
-            });
-            let last_written = self.templates.iter().rposition(|n| {
-                n.path == *path && n.outcome != TemplateOutcome::LeftCustomised
-            });
+            let last_left = self.templates.iter().rposition(|n| n.path == *path && n.outcome == TemplateOutcome::LeftCustomised);
+            let last_written = self.templates.iter().rposition(|n| n.path == *path && n.outcome != TemplateOutcome::LeftCustomised);
             last_left > last_written
         });
         let mut lines = Vec::new();
-        for (title, bucket) in [
-            ("templates installed (the project had none)", &installed),
-            ("stock templates refreshed", &refreshed),
-        ] {
+        for (title, bucket) in [("templates installed (the project had none)", &installed), ("stock templates refreshed", &refreshed)] {
             if bucket.is_empty() {
                 continue;
             }
@@ -2322,11 +2167,7 @@ impl Report {
         if !replaced.is_empty() {
             lines.push("templates replaced, the original kept beside them:".to_string());
             for (path, version, backup) in &replaced {
-                lines.push(format!(
-                    "  {} (v{version}); original: {}",
-                    path.display(),
-                    backup.display()
-                ));
+                lines.push(format!("  {} (v{version}); original: {}", path.display(), backup.display()));
             }
         }
         if !customised.is_empty() {
@@ -2359,19 +2200,9 @@ pub fn migrate(project_path: &Path, template_dir: &Path) -> Result<Report, Strin
 /// [`migrate`], stopping at the step that reaches `last`. The tests of a
 /// historical step use it to look at that step's output before a later step
 /// (v11 retires the convention modules v6-v8 edit) moves on from it.
-fn migrate_through(
-    project_path: &Path,
-    template_dir: &Path,
-    last: u32,
-) -> Result<Report, String> {
+fn migrate_through(project_path: &Path, template_dir: &Path, last: u32) -> Result<Report, String> {
     let from = current_version(project_path)?;
-    let mut report = Report {
-        from,
-        to: from,
-        applied: Vec::new(),
-        refused: None,
-        templates: Vec::new(),
-    };
+    let mut report = Report { from, to: from, applied: Vec::new(), refused: None, templates: Vec::new() };
 
     if let Some((step, why)) = first_blocker_through(project_path, template_dir, last)? {
         report.refused = Some((step, why));
@@ -2383,19 +2214,13 @@ fn migrate_through(
         // Read before the step writes: afterwards a refreshed template and
         // one that was current all along look the same.
         let notes = step.template_notes(&cfg, template_dir);
-        let result = step
-            .apply(project_path, template_dir)
-            .and_then(|()| write_version(&cfg, step.version()));
+        let result = step.apply(project_path, template_dir).and_then(|()| write_version(&cfg, step.version()));
         let ok = result.is_ok();
         report.applied.push((step, result));
         if !ok {
             break;
         }
-        report.templates.extend(notes.into_iter().map(|(path, outcome)| TemplateNote {
-            step,
-            path,
-            outcome,
-        }));
+        report.templates.extend(notes.into_iter().map(|(path, outcome)| TemplateNote { step, path, outcome }));
         report.to = step.version();
     }
     Ok(report)
@@ -2411,11 +2236,7 @@ mod tests {
         let cfg = dir.path().join("_config");
         std::fs::create_dir_all(cfg.join("db")).unwrap();
         if let Some(v) = version {
-            std::fs::write(
-                cfg.join(VERSION_FILE),
-                format!("{{\n    \"version\": {v}\n}}\n"),
-            )
-            .unwrap();
+            std::fs::write(cfg.join(VERSION_FILE), format!("{{\n    \"version\": {v}\n}}\n")).unwrap();
         }
         dir
     }
@@ -2458,8 +2279,7 @@ mod tests {
                 (1..=i64::MAX).prop_map(|v| (format!("{{\"version\": -{v}}}"), None)),
                 any::<u32>().prop_map(|v| (format!("{{\"version\": \"{v}\"}}"), None)),
                 any::<u32>().prop_map(|v| (format!("{{\"version\": {v}.5}}"), None)),
-                (u64::from(u32::MAX) + 1..=u64::MAX)
-                    .prop_map(|v| (format!("{{\"version\": {v}}}"), None)),
+                (u64::from(u32::MAX) + 1..=u64::MAX).prop_map(|v| (format!("{{\"version\": {v}}}"), None)),
                 "[^{]{0,40}".prop_map(|text| (text, None)),
             ]
         }
@@ -2537,11 +2357,7 @@ mod tests {
     fn a_customized_convention_is_blocked() {
         let dir = project(None);
         let template = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("_config").join("config_convention.py"),
-            "# hand-rolled, nothing like the stock engine\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("_config").join("config_convention.py"), "# hand-rolled, nothing like the stock engine\n").unwrap();
 
         let (step, why) = first_blocker(dir.path(), template.path()).unwrap().expect("must be blocked");
         assert_eq!(step, Step::ConventionToPackage);
@@ -2557,14 +2373,12 @@ mod tests {
         let ocio = dir.path().join("_config").join("ocio");
         std::fs::create_dir_all(&ocio).unwrap();
         std::fs::write(ocio.join("tumblehead.ocio"), "ocio_profile_version: 2\n").unwrap();
-        std::fs::write(dir.path().join("_config").join(conventions::STORAGE_FILE), SCAFFOLD_STORAGE)
-            .unwrap();
+        std::fs::write(dir.path().join("_config").join(conventions::STORAGE_FILE), SCAFFOLD_STORAGE).unwrap();
         dir
     }
 
     /// The packaged storage table.
-    const SCAFFOLD_STORAGE: &str =
-        include_str!("../../../../scripts/project_template/_config/storage.json");
+    const SCAFFOLD_STORAGE: &str = include_str!("../../../../scripts/project_template/_config/storage.json");
 
     /// The last step a test of v6-v8's edits to the convention modules runs:
     /// v11 retires those modules, so their output is looked at before it.
@@ -2619,11 +2433,7 @@ mod tests {
             "{\n    \"columns\": [\n        {\n            \"key\": \"variants\",\n            \"label\": \"Variants\",\n            \"property_path\": \"variants\",\n            \"tooltip\": \"Variants to render\"\n        }\n    ]\n}\n",
         )
         .unwrap();
-        std::fs::write(
-            dir.path().join("_config").join("config_convention.py"),
-            "class ProjectConfigConvention:\n    pass\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("_config").join("config_convention.py"), "class ProjectConfigConvention:\n    pass\n").unwrap();
         dir
     }
 
@@ -2682,11 +2492,7 @@ mod tests {
     fn a_blocked_run_writes_nothing_at_all() {
         let dir = project(None); // no db/schemas.json
         let template = scaffold();
-        std::fs::write(
-            dir.path().join("_config").join("config_convention.py"),
-            "class ProjectConfigConvention:\n    pass\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("_config").join("config_convention.py"), "class ProjectConfigConvention:\n    pass\n").unwrap();
 
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(!report.is_ok());
@@ -2700,9 +2506,7 @@ mod tests {
         assert!(!cfg.join(VERSION_FILE).exists());
         assert!(!cfg.join("config_convention.py.bak").exists());
         assert!(!cfg.join("templates").exists());
-        assert!(std::fs::read_to_string(cfg.join("config_convention.py"))
-            .unwrap()
-            .contains("class ProjectConfigConvention"));
+        assert!(std::fs::read_to_string(cfg.join("config_convention.py")).unwrap().contains("class ProjectConfigConvention"));
     }
 
     /// These files sit on a shared drive. Flipping their line endings would
@@ -2747,12 +2551,7 @@ mod tests {
             for name in ["config.json", "schemas.json"] {
                 let text = std::fs::read_to_string(db.join(name)).unwrap();
                 let crlf = text.contains("\r\n");
-                assert_eq!(
-                    crlf,
-                    style == "\r\n",
-                    "{name} changed line-ending style (wanted CRLF={})",
-                    style == "\r\n"
-                );
+                assert_eq!(crlf, style == "\r\n", "{name} changed line-ending style (wanted CRLF={})", style == "\r\n");
             }
             // version.json did not exist here, so it is a *new* file and gets
             // LF on every platform. Preservation is about not churning files
@@ -2761,11 +2560,7 @@ mod tests {
             assert!(!stamp.contains("\r\n"), "a new version.json should be LF");
 
             // Re-stamping an existing one keeps whatever it has.
-            std::fs::write(
-                cfg.join(VERSION_FILE),
-                "{\r\n    \"version\": 0\r\n}\r\n",
-            )
-            .unwrap();
+            std::fs::write(cfg.join(VERSION_FILE), "{\r\n    \"version\": 0\r\n}\r\n").unwrap();
             write_version(&cfg, 5).unwrap();
             let restamped = std::fs::read_to_string(cfg.join(VERSION_FILE)).unwrap();
             assert!(restamped.contains("\r\n"), "an existing CRLF stamp must stay CRLF");
@@ -2779,20 +2574,12 @@ mod tests {
     fn a_crlf_template_matching_the_scaffold_is_left_alone() {
         let dir = database_project();
         let template = scaffold();
-        let dst = dir
-            .path()
-            .join("_config")
-            .join("templates")
-            .join("assets")
-            .join("template.py");
+        let dst = dir.path().join("_config").join("templates").join("assets").join("template.py");
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
         std::fs::write(&dst, "# packaged\r\n").unwrap(); // same text, CRLF
 
         migrate(dir.path(), template.path()).unwrap();
-        assert!(
-            !dst.with_file_name("template.py.bak").exists(),
-            "a CRLF copy of an identical template must not be rewritten"
-        );
+        assert!(!dst.with_file_name("template.py.bak").exists(), "a CRLF copy of an identical template must not be rewritten");
         assert_eq!(std::fs::read_to_string(&dst).unwrap(), "# packaged\r\n");
     }
 
@@ -2846,10 +2633,7 @@ mod tests {
 
         let after = std::fs::read_to_string(&path).unwrap();
         assert!(!after.contains("kits_path"), "the kits line should be gone");
-        for kept in [
-            "_primary_path = Path('/mnt/c')",
-            "self.assets_path = Path('//studio/share/assets')",
-        ] {
+        for kept in ["_primary_path = Path('/mnt/c')", "self.assets_path = Path('//studio/share/assets')"] {
             assert!(after.contains(kept), "customization lost: {kept}");
         }
         // v7 runs in the same sweep and repoints the renamed package — that is
@@ -2892,11 +2676,7 @@ mod tests {
         let dir = database_project();
         let template = scaffold();
         let cfg = dir.path().join("_config");
-        std::fs::write(
-            cfg.join("naming_convention.py"),
-            "from tumblehead.naming import NamingConvention\n",
-        )
-        .unwrap();
+        std::fs::write(cfg.join("naming_convention.py"), "from tumblehead.naming import NamingConvention\n").unwrap();
         std::fs::write(
             cfg.join("storage_convention.py"),
             concat!(
@@ -2920,10 +2700,7 @@ mod tests {
         assert!(storage.contains("from tumblepipe.storage import StorageConvention"));
         assert!(storage.contains("import tumblepipe.api as api"));
         // A path that merely mentions the studio name is not an import.
-        assert!(
-            storage.contains("Path('//tumblehead/share')"),
-            "only the import prefix should move"
-        );
+        assert!(storage.contains("Path('//tumblehead/share')"), "only the import prefix should move");
         assert!(cfg.join("naming_convention.py.bak").exists());
     }
 
@@ -2932,17 +2709,10 @@ mod tests {
         let dir = database_project();
         let template = scaffold();
         let cfg = dir.path().join("_config");
-        std::fs::write(
-            cfg.join("naming_convention.py"),
-            "from tumblepipe.naming import NamingConvention\n",
-        )
-        .unwrap();
+        std::fs::write(cfg.join("naming_convention.py"), "from tumblepipe.naming import NamingConvention\n").unwrap();
 
         assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap().is_ok());
-        assert!(
-            !cfg.join("naming_convention.py.bak").exists(),
-            "an already-correct convention must not be rewritten or backed up"
-        );
+        assert!(!cfg.join("naming_convention.py.bak").exists(), "an already-correct convention must not be rewritten or backed up");
     }
 
     /// v8's payload: temp leaves the project drive, and the helper it now
@@ -2958,14 +2728,9 @@ mod tests {
         assert!(report.is_ok(), "{report:?}");
 
         let after = std::fs::read_to_string(&path).unwrap();
-        assert!(
-            after.contains("        self.temp_path = default_temp_path()"),
-            "temp was not repointed:\n{after}"
-        );
+        assert!(after.contains("        self.temp_path = default_temp_path()"), "temp was not repointed:\n{after}");
         assert!(!after.contains("_temp'"), "the old anchor survived:\n{after}");
-        assert!(after.contains(
-            "from tumblepipe.storage import StorageConvention, default_temp_path"
-        ));
+        assert!(after.contains("from tumblepipe.storage import StorageConvention, default_temp_path"));
         // Only the temp line moves — the sibling paths are a different
         // decision and stay where the project put them.
         for kept in [
@@ -3003,15 +2768,8 @@ mod tests {
         std::fs::write(&path, mine).unwrap();
 
         assert!(migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap().is_ok());
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            mine,
-            "a project's own scratch root must survive"
-        );
-        assert!(
-            !path.with_file_name("storage_convention.py.bak").exists(),
-            "a convention v8 has nothing to do to must not be rewritten"
-        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), mine, "a project's own scratch root must survive");
+        assert!(!path.with_file_name("storage_convention.py.bak").exists(), "a convention v8 has nothing to do to must not be rewritten");
     }
 
     /// Re-running a completed migration must not append the import twice.
@@ -3065,12 +2823,7 @@ mod tests {
     fn a_project_past_v2_gets_the_templates_refreshed_again() {
         let dir = database_project();
         let template = scaffold();
-        let dst = dir
-            .path()
-            .join("_config")
-            .join("templates")
-            .join("assets")
-            .join("template.py");
+        let dst = dir.path().join("_config").join("templates").join("assets").join("template.py");
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
         std::fs::write(&dst, "# stale\r\n").unwrap();
         std::fs::write(dst.with_file_name("template.py.bak"), "# v2 original\n").unwrap();
@@ -3080,14 +2833,8 @@ mod tests {
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, latest_version());
         assert_eq!(std::fs::read_to_string(&dst).unwrap(), "# packaged\r\n");
-        assert_eq!(
-            std::fs::read_to_string(dst.with_file_name("template.py.bak")).unwrap(),
-            "# v2 original\n"
-        );
-        assert_eq!(
-            std::fs::read_to_string(dst.with_file_name("template.py.v9.bak")).unwrap(),
-            "# stale\r\n"
-        );
+        assert_eq!(std::fs::read_to_string(dst.with_file_name("template.py.bak")).unwrap(), "# v2 original\n");
+        assert_eq!(std::fs::read_to_string(dst.with_file_name("template.py.v9.bak")).unwrap(), "# stale\r\n");
     }
 
     #[test]
@@ -3099,30 +2846,19 @@ mod tests {
         std::fs::write(ocio.join("tumblehead.ocio"), "MINE\n").unwrap();
 
         migrate(dir.path(), template.path()).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(ocio.join("tumblehead.ocio")).unwrap(),
-            "MINE\n"
-        );
+        assert_eq!(std::fs::read_to_string(ocio.join("tumblehead.ocio")).unwrap(), "MINE\n");
     }
 
     #[test]
     fn an_identical_template_is_left_alone_with_no_backup() {
         let dir = database_project();
         let template = scaffold();
-        let dst = dir
-            .path()
-            .join("_config")
-            .join("templates")
-            .join("assets")
-            .join("template.py");
+        let dst = dir.path().join("_config").join("templates").join("assets").join("template.py");
         std::fs::create_dir_all(dst.parent().unwrap()).unwrap();
         std::fs::write(&dst, "# packaged\n").unwrap(); // byte-identical to the scaffold
 
         migrate(dir.path(), template.path()).unwrap();
-        assert!(
-            !dst.with_file_name("template.py.bak").exists(),
-            "an identical template must not be rewritten or backed up"
-        );
+        assert!(!dst.with_file_name("template.py.bak").exists(), "an identical template must not be rewritten or backed up");
     }
 
     /// The render vars section of a project's `root_default_prims.usda` as
@@ -3215,10 +2951,7 @@ mod tests {
 
     #[test]
     fn v10_drops_the_alpha_var_and_makes_the_beauty_rgba() {
-        assert_eq!(
-            beauty_alpha::root_defaults_edit(ROOT_DEFAULTS_WITH_ALPHA),
-            Edit::Changed(ROOT_DEFAULTS_RGBA.to_string())
-        );
+        assert_eq!(beauty_alpha::root_defaults_edit(ROOT_DEFAULTS_WITH_ALPHA), Edit::Changed(ROOT_DEFAULTS_RGBA.to_string()));
         // Idempotent: a project already through it is left as it is
         assert_eq!(beauty_alpha::root_defaults_edit(ROOT_DEFAULTS_RGBA), Edit::Unchanged);
     }
@@ -3250,9 +2983,7 @@ mod tests {
     /// and a migrated one agree.
     #[test]
     fn v10_leaves_the_packaged_scaffold_unchanged() {
-        let scaffold = include_str!(
-            "../../../../scripts/project_template/_config/usd/root_default_prims.usda"
-        );
+        let scaffold = include_str!("../../../../scripts/project_template/_config/usd/root_default_prims.usda");
         assert_eq!(beauty_alpha::root_defaults_edit(scaffold), Edit::Unchanged);
         assert!(scaffold.contains("uniform token dataType = \"color4f\""));
         assert!(!scaffold.contains("\"alpha\""));
@@ -3307,23 +3038,12 @@ mod tests {
         let report = migrate_through(dir.path(), template.path(), BEFORE_V11).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, 10);
-        assert_eq!(
-            std::fs::read_to_string(usd.join("root_default_prims.usda")).unwrap(),
-            ROOT_DEFAULTS_RGBA.replace('\n', "\r\n")
-        );
-        assert_eq!(
-            std::fs::read_to_string(usd.join("root_default_prims.usda.v10.bak")).unwrap(),
-            crlf
-        );
+        assert_eq!(std::fs::read_to_string(usd.join("root_default_prims.usda")).unwrap(), ROOT_DEFAULTS_RGBA.replace('\n', "\r\n"));
+        assert_eq!(std::fs::read_to_string(usd.join("root_default_prims.usda.v10.bak")).unwrap(), crlf);
         let context = load_json(&usd.join("context.json")).unwrap();
-        assert_eq!(
-            context["outputs"][0]["parameters"]["aov_names"],
-            serde_json::json!(["beauty", "albedo", "normal"])
-        );
+        assert_eq!(context["outputs"][0]["parameters"]["aov_names"], serde_json::json!(["beauty", "albedo", "normal"]));
         // A text edit: the file keeps its own (non-serde) layout
-        assert!(std::fs::read_to_string(usd.join("context.json"))
-            .unwrap()
-            .contains("\"outputs\": [{\n"));
+        assert!(std::fs::read_to_string(usd.join("context.json")).unwrap().contains("\"outputs\": [{\n"));
         assert!(usd.join("context.json.v10.bak").is_file());
     }
 
@@ -3340,19 +3060,10 @@ mod tests {
     #[test]
     fn the_stock_engine_and_the_shim_are_both_ready() {
         let template = tempfile::tempdir().unwrap();
-        for text in [
-            "class ProjectConfigConvention:\n    pass\n",
-            "from tumblepipe.config.store import JsonConfigStore\n",
-        ] {
+        for text in ["class ProjectConfigConvention:\n    pass\n", "from tumblepipe.config.store import JsonConfigStore\n"] {
             let dir = project(None);
-            std::fs::write(
-                dir.path().join("_config").join("config_convention.py"),
-                text,
-            )
-            .unwrap();
-            assert!(Step::ConventionToPackage
-                .readiness(dir.path(), template.path())
-                .is_ready());
+            std::fs::write(dir.path().join("_config").join("config_convention.py"), text).unwrap();
+            assert!(Step::ConventionToPackage.readiness(dir.path(), template.path()).is_ready());
         }
     }
 
@@ -3381,16 +3092,10 @@ mod tests {
         let report = migrate_through(dir.path(), template.path(), 11).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, 11);
-        assert_eq!(
-            std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
-            SCAFFOLD_STORAGE
-        );
+        assert_eq!(std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(), SCAFFOLD_STORAGE);
         for (name, text) in fixtures {
             assert!(!cfg.join(name).exists(), "{name} was not retired");
-            assert_eq!(
-                std::fs::read_to_string(cfg.join(format!("{name}.v11.bak"))).unwrap(),
-                text
-            );
+            assert_eq!(std::fs::read_to_string(cfg.join(format!("{name}.v11.bak"))).unwrap(), text);
         }
         assert!(!pycache.join("storage_convention.cpython-311.pyc").exists());
         assert!(pycache.join("unrelated.cpython-311.pyc").exists());
@@ -3403,15 +3108,10 @@ mod tests {
         let dir = database_project();
         let template = scaffold();
         let cfg = dir.path().join("_config");
-        std::fs::write(
-            cfg.join("storage_convention.py"),
-            include_str!("../tests/fixtures/storage_convention_initial.py"),
-        )
-        .unwrap();
+        std::fs::write(cfg.join("storage_convention.py"), include_str!("../tests/fixtures/storage_convention_initial.py")).unwrap();
         std::fs::write(
             cfg.join("naming_convention.py"),
-            include_str!("../tests/fixtures/naming_convention_current.py")
-                .replace("from tumblepipe.", "from tumblehead."),
+            include_str!("../tests/fixtures/naming_convention_current.py").replace("from tumblepipe.", "from tumblehead."),
         )
         .unwrap();
         write_version(&cfg, 5).unwrap();
@@ -3420,10 +3120,7 @@ mod tests {
         let report = migrate(dir.path(), template.path()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         // v8 moved temp to local scratch before v11 read it
-        assert_eq!(
-            std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
-            SCAFFOLD_STORAGE
-        );
+        assert_eq!(std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(), SCAFFOLD_STORAGE);
         assert!(!cfg.join("storage_convention.py").exists());
     }
 
@@ -3444,14 +3141,8 @@ mod tests {
                     "        _home = _primary_path / 'users' / 'tumblehead'\n",
                 ),
             )
-            .replace(
-                "self.temp_path = default_temp_path()",
-                "self.temp_path = _home / 'th_temp' / project_name",
-            )
-            .replace(
-                "self.edit_path = self.project_path / 'edit'",
-                "self.edit_path = _secondary_path / 'Sources' / 'Buzz'",
-            )
+            .replace("self.temp_path = default_temp_path()", "self.temp_path = _home / 'th_temp' / project_name")
+            .replace("self.edit_path = self.project_path / 'edit'", "self.edit_path = _secondary_path / 'Sources' / 'Buzz'")
             .replace('\n', "\r\n");
         std::fs::write(cfg.join("storage_convention.py"), &mine).unwrap();
         write_version(&cfg, 10).unwrap();
@@ -3517,18 +3208,10 @@ mod tests {
         assert_eq!(table["edit"], "/mnt/e/Sources/Buzz", "a shared drive is the studio's call");
         assert_eq!(table["cache"], "{project_parent}/{project_name}_cache");
         let object = table.as_object().unwrap();
-        assert_eq!(
-            object.keys().map(String::as_str).collect::<Vec<_>>(),
-            conventions::PURPOSES.to_vec(),
-            "purposes keep their order"
-        );
+        assert_eq!(object.keys().map(String::as_str).collect::<Vec<_>>(), conventions::PURPOSES.to_vec(), "purposes keep their order");
         conventions::validate_table(object).unwrap();
         assert!(std::fs::read_to_string(&path).unwrap().contains("\r\n"), "CRLF kept");
-        assert_eq!(
-            std::fs::read_to_string(cfg.join("storage.json.v17.bak")).unwrap(),
-            original,
-            "the original keeps its bytes"
-        );
+        assert_eq!(std::fs::read_to_string(cfg.join("storage.json.v17.bak")).unwrap(), original, "the original keeps its bytes");
     }
 
     #[test]
@@ -3537,10 +3220,7 @@ mod tests {
         let template = scaffold();
         let cfg = dir.path().join("_config");
         assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
-        assert_eq!(
-            std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
-            SCAFFOLD_STORAGE
-        );
+        assert_eq!(std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(), SCAFFOLD_STORAGE);
         assert!(!cfg.join("storage.json.v17.bak").exists(), "nothing to back up");
     }
 
@@ -3554,11 +3234,7 @@ mod tests {
         write_version(&cfg, 16).unwrap();
         assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
         assert_eq!(std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(), once);
-        assert_eq!(
-            std::fs::read_to_string(cfg.join("storage.json.v17.bak")).unwrap(),
-            WSL_STORAGE,
-            "a re-run keeps the true original"
-        );
+        assert_eq!(std::fs::read_to_string(cfg.join("storage.json.v17.bak")).unwrap(), WSL_STORAGE, "a re-run keeps the true original");
     }
 
     /// A project coming from before v11 has no table at preflight; v11
@@ -3571,15 +3247,9 @@ mod tests {
         let mine = include_str!("../tests/fixtures/storage_convention_v8.py")
             .replace(
                 "        project_name = get_project_name()\n",
-                concat!(
-                    "        project_name = get_project_name()\n",
-                    "        _home = Path('/mnt/c') / 'users' / 'tumblehead'\n",
-                ),
+                concat!("        project_name = get_project_name()\n", "        _home = Path('/mnt/c') / 'users' / 'tumblehead'\n",),
             )
-            .replace(
-                "self.temp_path = default_temp_path()",
-                "self.temp_path = _home / 'th_temp' / project_name",
-            );
+            .replace("self.temp_path = default_temp_path()", "self.temp_path = _home / 'th_temp' / project_name");
         std::fs::write(cfg.join("storage_convention.py"), &mine).unwrap();
         write_version(&cfg, 10).unwrap();
 
@@ -3594,10 +3264,7 @@ mod tests {
         let dir = project_at_v16("{ not json");
         let template = scaffold();
         let report = migrate(dir.path(), template.path()).unwrap();
-        assert!(
-            matches!(report.refused, Some((Step::ScratchOffWslPaths, _))),
-            "{report:?}"
-        );
+        assert!(matches!(report.refused, Some((Step::ScratchOffWslPaths, _))), "{report:?}");
         assert_eq!(current_version(dir.path()).unwrap(), 16);
     }
 
@@ -3639,19 +3306,22 @@ mod tests {
         }
 
         fn tail() -> impl Strategy<Value = String> {
-            prop::collection::vec(
-                prop_oneof!["[a-z_]{1,6}", Just("{project_name}".to_string())],
-                1..4,
-            )
-            .prop_map(|parts| parts.join("/"))
+            prop::collection::vec(prop_oneof!["[a-z_]{1,6}", Just("{project_name}".to_string())], 1..4).prop_map(|parts| parts.join("/"))
         }
 
         fn shape() -> impl Strategy<Value = Shape> {
             let portable = (
                 prop::sample::select(vec![
-                    "{project_path}", "{project_parent}", "{home}", "{local_temp}",
-                    "{config_path}", "//studio/share", "D:/scratch", "/mnt/scratch",
-                    "/mnt/c2", "/srv",
+                    "{project_path}",
+                    "{project_parent}",
+                    "{home}",
+                    "{local_temp}",
+                    "{config_path}",
+                    "//studio/share",
+                    "D:/scratch",
+                    "/mnt/scratch",
+                    "/mnt/c2",
+                    "/srv",
                 ]),
                 tail(),
             )
@@ -3665,12 +3335,7 @@ mod tests {
                     _ => format!("/mnt/{d}"),
                 })
             });
-            let home = (
-                "[a-zA-Z]",
-                prop::sample::select(vec!["users", "Users", "USERS"]),
-                "[a-z][a-z0-9]{0,7}",
-                prop::option::of(tail()),
-            )
+            let home = ("[a-zA-Z]", prop::sample::select(vec!["users", "Users", "USERS"]), "[a-z][a-z0-9]{0,7}", prop::option::of(tail()))
                 .prop_map(|(d, users, name, rest)| Shape::Home {
                     template: match &rest {
                         Some(rest) => format!("/mnt/{d}/{users}/{name}/{rest}"),
@@ -3682,15 +3347,12 @@ mod tests {
         }
 
         fn table() -> impl Strategy<Value = Vec<(&'static str, Shape)>> {
-            prop::collection::vec(shape(), conventions::PURPOSES.len()).prop_map(|shapes| {
-                conventions::PURPOSES.iter().copied().zip(shapes).collect()
-            })
+            prop::collection::vec(shape(), conventions::PURPOSES.len())
+                .prop_map(|shapes| conventions::PURPOSES.iter().copied().zip(shapes).collect())
         }
 
         fn as_map(rows: &[(&str, Shape)]) -> serde_json::Map<String, Value> {
-            rows.iter()
-                .map(|(p, s)| (p.to_string(), Value::String(s.template().to_string())))
-                .collect()
+            rows.iter().map(|(p, s)| (p.to_string(), Value::String(s.template().to_string()))).collect()
         }
 
         proptest! {
@@ -3790,8 +3452,7 @@ mod tests {
             std::fs::write(cfg.join(name), &text).unwrap();
             write_version(&cfg, 10).unwrap();
 
-            let (step, why) =
-                first_blocker(dir.path(), template.path()).unwrap().expect("must be blocked");
+            let (step, why) = first_blocker(dir.path(), template.path()).unwrap().expect("must be blocked");
             assert_eq!(step, Step::ConventionsToData);
             assert!(why.contains(named), "{name}: {why}");
             let report = migrate(dir.path(), template.path()).unwrap();
@@ -3812,10 +3473,7 @@ mod tests {
         let cfg = dir.path().join("_config");
         write_version(&cfg, 10).unwrap();
         assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
-        assert_eq!(
-            std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(),
-            SCAFFOLD_STORAGE
-        );
+        assert_eq!(std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap(), SCAFFOLD_STORAGE);
 
         let own = SCAFFOLD_STORAGE.replace("{project_path}/edit", "//cutroom/edit");
         std::fs::write(cfg.join(conventions::STORAGE_FILE), &own).unwrap();
@@ -3842,17 +3500,11 @@ mod tests {
             .unwrap();
         write_version(&cfg, 10).unwrap();
         assert!(migrate(dir.path(), template.path()).unwrap().is_ok());
-        assert_eq!(
-            std::fs::read_to_string(cfg.join("storage_convention.py.v11.bak")).unwrap(),
-            original
-        );
+        assert_eq!(std::fs::read_to_string(cfg.join("storage_convention.py.v11.bak")).unwrap(), original);
         assert!(!cfg.join("storage_convention.py").exists());
         let twice = std::fs::read_to_string(cfg.join(conventions::STORAGE_FILE)).unwrap();
         assert_eq!(twice, once.replace("\"{project_path}/edit\"", "\"{project_path}/cut\""));
-        assert_eq!(
-            std::fs::read_to_string(cfg.join("storage.json.v11.bak")).unwrap(),
-            once
-        );
+        assert_eq!(std::fs::read_to_string(cfg.join("storage.json.v11.bak")).unwrap(), once);
     }
 
     /// The package refusing to ship without its own table blocks v11 rather
@@ -3861,8 +3513,7 @@ mod tests {
     fn v11_needs_the_packaged_table() {
         let dir = database_project();
         let template = scaffold();
-        std::fs::remove_file(template.path().join("_config").join(conventions::STORAGE_FILE))
-            .unwrap();
+        std::fs::remove_file(template.path().join("_config").join(conventions::STORAGE_FILE)).unwrap();
         write_version(&dir.path().join("_config"), 10).unwrap();
         let (step, why) = first_blocker(dir.path(), template.path()).unwrap().expect("must be blocked");
         assert_eq!(step, Step::ConventionsToData);
@@ -3873,21 +3524,13 @@ mod tests {
 
     /// The real packaged scaffold, which v12 refreshes from.
     fn packaged_scaffold() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("..")
-            .join("scripts")
-            .join("project_template")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..").join("..").join("scripts").join("project_template")
     }
 
     /// Every template the scaffold has shipped, as (directory under
     /// `templates/`, fixture file, text).
     fn shipped_templates() -> Vec<(String, PathBuf, String)> {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests")
-            .join("fixtures")
-            .join("templates");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join("templates");
         let mut files = Vec::new();
         find_files(&root, None, &mut files);
         files
@@ -3933,11 +3576,7 @@ mod tests {
     }
 
     fn packaged_text(relative: &str) -> String {
-        packaged_templates()
-            .into_iter()
-            .find(|(key, _)| key == relative)
-            .map(|(_, text)| text)
-            .unwrap()
+        packaged_templates().into_iter().find(|(key, _)| key == relative).map(|(_, text)| text).unwrap()
     }
 
     /// The fixtures and the STOCK table are the same set, so a row cannot be
@@ -4017,35 +3656,20 @@ mod tests {
         let own_department = "from tumblepipe.pipe.houdini.lops import import_shot\n";
         let old_animation = shipped_templates()
             .into_iter()
-            .find(|(relative, _, text)| {
-                relative == "shots/animation" && *text != packaged_text("shots/animation")
-            })
+            .find(|(relative, _, text)| relative == "shots/animation" && *text != packaged_text("shots/animation"))
             .unwrap()
             .2;
-        let dir = project_at_v11(&[
-            ("shots/render", &customised),
-            ("shots/stunts", own_department),
-            ("shots/animation", &old_animation),
-        ]);
+        let dir = project_at_v11(&[("shots/render", &customised), ("shots/stunts", own_department), ("shots/animation", &old_animation)]);
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(report.to, latest_version());
         let render = project_template(dir.path(), "shots/render");
         assert_eq!(std::fs::read_to_string(&render).unwrap(), customised);
-        assert_eq!(
-            std::fs::read_to_string(project_template(dir.path(), "shots/stunts")).unwrap(),
-            own_department
-        );
-        assert_eq!(
-            std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap(),
-            packaged_text("shots/animation")
-        );
+        assert_eq!(std::fs::read_to_string(project_template(dir.path(), "shots/stunts")).unwrap(), own_department);
+        assert_eq!(std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap(), packaged_text("shots/animation"));
         let mut files = Vec::new();
         find_files(&dir.path().join("_config").join("templates"), None, &mut files);
-        assert!(
-            files.iter().all(|f| f.file_name().unwrap() == "template.py"),
-            "nothing is backed up: {files:?}"
-        );
+        assert!(files.iter().all(|f| f.file_name().unwrap() == "template.py"), "nothing is backed up: {files:?}");
     }
 
     /// A customised template calling a removed API blocks the step, naming
@@ -4053,42 +3677,14 @@ mod tests {
     /// not even the stock template beside it.
     #[test]
     fn v12_blocks_a_customised_template_calling_a_removed_api() {
-        let old_render = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("572f2ad8d6.py"))
-            .unwrap()
-            .2;
+        let old_render = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("572f2ad8d6.py")).unwrap().2;
         let customised = format!("{old_render}\n# studio: tweaked\n");
         let own_department = "from tumblepipe.pipe.houdini.util import disable_layer_save_path\n";
-        let old_animation = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("cb38ffa938.py"))
-            .unwrap()
-            .2;
-        let dir = project_at_v11(&[
-            ("shots/render", &customised),
-            ("shots/stunts", own_department),
-            ("shots/animation", &old_animation),
-        ]);
+        let old_animation = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("cb38ffa938.py")).unwrap().2;
+        let dir = project_at_v11(&[("shots/render", &customised), ("shots/stunts", own_department), ("shots/animation", &old_animation)]);
         let preflight = preflight(dir.path(), &packaged_scaffold()).unwrap();
-        let [
-            (Step::RefreshStockTemplates, Readiness::Blocked(why)),
-            (Step::ChannelKeys, Readiness::Ready),
-            (Step::RefreshStockTemplatesAgain, Readiness::Blocked(_)),
-            (Step::LayoutCameraFollowsResolution, Readiness::Blocked(_)),
-            (Step::AnimationRigsArePublished, Readiness::Blocked(_)),
-            (Step::ScratchOffWslPaths, Readiness::Ready),
-            (Step::AnimationCameraReadsItsEdit, Readiness::Blocked(_)),
-            (Step::LayoutInAnimate, Readiness::Blocked(_)),
-            (Step::AnimationCopiesLayoutKeys, Readiness::Blocked(_)),
-            (Step::AddGroomDepartment, Readiness::Blocked(_)),
-            (Step::GroupSchemaUnderRoots, Readiness::Ready),
-            (Step::EditsContext, Readiness::Ready),
-            (Step::CompositeWithoutBuildComp, Readiness::Ready),
-            (Step::TemplateFixesFromQa, Readiness::Blocked(_)),
-            (Step::CompTemplateLayout, Readiness::Blocked(_)),
-            (Step::AnimationIsSolarisOnly, Readiness::Blocked(_)),
-        ] = preflight.as_slice()
+        let [(Step::RefreshStockTemplates, Readiness::Blocked(why)), (Step::ChannelKeys, Readiness::Ready), (Step::RefreshStockTemplatesAgain, Readiness::Blocked(_)), (Step::LayoutCameraFollowsResolution, Readiness::Blocked(_)), (Step::AnimationRigsArePublished, Readiness::Blocked(_)), (Step::ScratchOffWslPaths, Readiness::Ready), (Step::AnimationCameraReadsItsEdit, Readiness::Blocked(_)), (Step::LayoutInAnimate, Readiness::Blocked(_)), (Step::AnimationCopiesLayoutKeys, Readiness::Blocked(_)), (Step::AddGroomDepartment, Readiness::Blocked(_)), (Step::GroupSchemaUnderRoots, Readiness::Ready), (Step::EditsContext, Readiness::Ready), (Step::CompositeWithoutBuildComp, Readiness::Ready), (Step::TemplateFixesFromQa, Readiness::Blocked(_)), (Step::CompTemplateLayout, Readiness::Blocked(_)), (Step::AnimationIsSolarisOnly, Readiness::Blocked(_))] =
+            preflight.as_slice()
         else {
             panic!("v12 must be blocked: {preflight:?}");
         };
@@ -4110,16 +3706,10 @@ mod tests {
         assert!(!report.is_ok());
         assert!(report.applied.is_empty());
         assert_eq!(current_version(dir.path()).unwrap(), 11);
-        for (relative, text) in [
-            ("shots/render", customised.as_str()),
-            ("shots/stunts", own_department),
-            ("shots/animation", old_animation.as_str()),
-        ] {
-            assert_eq!(
-                std::fs::read_to_string(project_template(dir.path(), relative)).unwrap(),
-                text,
-                "{relative} was written"
-            );
+        for (relative, text) in
+            [("shots/render", customised.as_str()), ("shots/stunts", own_department), ("shots/animation", old_animation.as_str())]
+        {
+            assert_eq!(std::fs::read_to_string(project_template(dir.path(), relative)).unwrap(), text, "{relative} was written");
         }
     }
 
@@ -4131,10 +3721,7 @@ mod tests {
         std::fs::remove_file(project_template(dir.path(), "shots/render")).unwrap();
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
-        assert_eq!(
-            std::fs::read_to_string(project_template(dir.path(), "shots/render")).unwrap(),
-            packaged_text("shots/render")
-        );
+        assert_eq!(std::fs::read_to_string(project_template(dir.path(), "shots/render")).unwrap(), packaged_text("shots/render"));
     }
 
     /// A project still to run v9 is judged as v9 leaves it: v9 replaces every
@@ -4146,9 +3733,7 @@ mod tests {
         let render = project_template(dir.path(), "shots/render");
         std::fs::create_dir_all(render.parent().unwrap()).unwrap();
         std::fs::write(&render, "node.set_shot_uri(uri)\n").unwrap();
-        assert!(Step::RefreshStockTemplates
-            .readiness(dir.path(), &packaged_scaffold())
-            .is_ready());
+        assert!(Step::RefreshStockTemplates.readiness(dir.path(), &packaged_scaffold()).is_ready());
 
         let own = project_template(dir.path(), "shots/stunts");
         std::fs::create_dir_all(own.parent().unwrap()).unwrap();
@@ -4162,11 +3747,7 @@ mod tests {
 
     #[test]
     fn v12_is_idempotent() {
-        let old_layout = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("cb72b1129e.py"))
-            .unwrap()
-            .2;
+        let old_layout = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("cb72b1129e.py")).unwrap().2;
         let customised = "# ours\nfrom tumblepipe.pipe.houdini.lops import import_shot\n";
         let dir = project_at_v11(&[("shots/layout", &old_layout), ("shots/light", customised)]);
         let template = packaged_scaffold();
@@ -4174,10 +3755,7 @@ mod tests {
         let snapshot = |dir: &Path| {
             let mut files = Vec::new();
             find_files(&dir.join("_config").join("templates"), None, &mut files);
-            files
-                .into_iter()
-                .map(|f| (f.clone(), std::fs::read_to_string(&f).unwrap()))
-                .collect::<Vec<_>>()
+            files.into_iter().map(|f| (f.clone(), std::fs::read_to_string(&f).unwrap())).collect::<Vec<_>>()
         };
         let first = snapshot(dir.path());
 
@@ -4186,9 +3764,7 @@ mod tests {
         assert!(second.is_ok(), "{second:?}");
         assert_eq!(second.to, latest_version());
         assert_eq!(snapshot(dir.path()), first);
-        assert!(v12_plan(&dir.path().join("_config"), &template, false)
-            .unwrap()
-            .is_empty());
+        assert!(v12_plan(&dir.path().join("_config"), &template, false).unwrap().is_empty());
     }
 
     /// A project made from this package is born at the latest version, with
@@ -4201,9 +3777,7 @@ mod tests {
         assert_eq!(latest_version(), 27);
         assert_eq!(current_version(&target).unwrap(), latest_version());
         assert!(pending(&target).unwrap().is_empty());
-        assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false)
-            .unwrap()
-            .is_empty());
+        assert!(v12_plan(&config_dir(&target), &packaged_scaffold(), false).unwrap().is_empty());
         assert!(v13_plan(&config_dir(&target)).unwrap().is_empty());
     }
 
@@ -4354,11 +3928,7 @@ mod tests {
         assert!(entity_props.get("variants").is_none());
         // The discord `channels` node and its `channel` property are a
         // different thing that happens to share the word; untouched.
-        assert_eq!(
-            schemas["children"]["config"]["children"]["discord"]["children"]["channels"]
-                ["properties"]["channel"],
-            ""
-        );
+        assert_eq!(schemas["children"]["config"]["children"]["discord"]["children"]["channels"]["properties"]["channel"], "");
 
         let entity = load_json(&db.join("entity.json")).unwrap();
         let seq = &entity["children"]["shots"]["children"]["010"];
@@ -4452,17 +4022,10 @@ mod tests {
     fn v13_folds_agreeing_spellings_and_refuses_disagreeing_ones() {
         let dir = project(Some(12));
         let db = dir.path().join("_config").join("db");
-        std::fs::write(
-            db.join("entity.json"),
-            r#"{"properties": {"variants": ["bg"], "channels": ["bg"]}, "children": {}}"#,
-        )
-        .unwrap();
+        std::fs::write(db.join("entity.json"), r#"{"properties": {"variants": ["bg"], "channels": ["bg"]}, "children": {}}"#).unwrap();
         assert!(migrate(dir.path(), &packaged_scaffold()).unwrap().is_ok());
         let entity = load_json(&db.join("entity.json")).unwrap();
-        assert_eq!(
-            entity["properties"],
-            serde_json::json!({"channels": ["bg"]})
-        );
+        assert_eq!(entity["properties"], serde_json::json!({"channels": ["bg"]}));
 
         let dir = project(Some(12));
         let db = dir.path().join("_config").join("db");
@@ -4482,18 +4045,11 @@ mod tests {
     /// A customised template beside it is left as it is.
     #[test]
     fn v14_refreshes_a_stock_template_v12_left_behind() {
-        let shipped_at_v13 = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("67282f6a0f.py"))
-            .unwrap()
-            .2;
+        let shipped_at_v13 = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("67282f6a0f.py")).unwrap().2;
         assert!(shipped_at_v13.contains("asset_info['uri']"));
         let customised = "# studio layout\n";
         let dir = project(Some(13));
-        for (relative, text) in [
-            ("shots/animation", shipped_at_v13.replace('\n', "\r\n")),
-            ("shots/layout", customised.to_string()),
-        ] {
+        for (relative, text) in [("shots/animation", shipped_at_v13.replace('\n', "\r\n")), ("shots/layout", customised.to_string())] {
             let path = project_template(dir.path(), relative);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, text).unwrap();
@@ -4501,18 +4057,11 @@ mod tests {
         let report = migrate(dir.path(), &packaged_scaffold()).unwrap();
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(current_version(dir.path()).unwrap(), latest_version());
-        let animation =
-            std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
-        assert_eq!(
-            animation.replace("\r\n", "\n"),
-            packaged_text("shots/animation").replace("\r\n", "\n")
-        );
+        let animation = std::fs::read_to_string(project_template(dir.path(), "shots/animation")).unwrap();
+        assert_eq!(animation.replace("\r\n", "\n"), packaged_text("shots/animation").replace("\r\n", "\n"));
         assert!(animation.contains("\r\n"), "a CRLF template stays CRLF");
         assert!(!animation.contains("asset_info['uri']"));
-        assert_eq!(
-            std::fs::read_to_string(project_template(dir.path(), "shots/layout")).unwrap(),
-            customised
-        );
+        assert_eq!(std::fs::read_to_string(project_template(dir.path(), "shots/layout")).unwrap(), customised);
     }
 
     /// v15 brings a project on the previous stock layout template (e5a3cf17a6,
@@ -4520,11 +4069,7 @@ mod tests {
     /// (886fc6b725, which left `blshp` an Xform) up to the packaged ones.
     #[test]
     fn v15_refreshes_the_stock_layout_and_blendshape_templates() {
-        let shipped_at_v14 = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("e5a3cf17a6.py"))
-            .unwrap()
-            .2;
+        let shipped_at_v14 = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("e5a3cf17a6.py")).unwrap().2;
         assert!(!shipped_at_v14.contains("bind_aspect"));
         let dir = project(Some(14));
         let path = project_template(dir.path(), "shots/layout");
@@ -4534,21 +4079,10 @@ mod tests {
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(current_version(dir.path()).unwrap(), latest_version());
         let layout = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(
-            layout.replace("
-", "
-"),
-            packaged_text("shots/layout").replace("
-", "
-")
-        );
+        assert_eq!(layout.replace("\r\n", "\n"), packaged_text("shots/layout").replace("\r\n", "\n"));
         assert!(layout.contains("bind_aspect(camera_node, entity_uri)"));
 
-        let blendshape_at_v14 = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("886fc6b725.py"))
-            .unwrap()
-            .2;
+        let blendshape_at_v14 = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("886fc6b725.py")).unwrap().2;
         let dir = project(Some(14));
         let path = project_template(dir.path(), "assets/blendshape");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -4562,11 +4096,7 @@ mod tests {
     /// Multi) up to the packaged one.
     #[test]
     fn v16_refreshes_the_stock_animation_template() {
-        let shipped_at_v15 = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("b023f4189b.py"))
-            .unwrap()
-            .2;
+        let shipped_at_v15 = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("b023f4189b.py")).unwrap().2;
         assert!(!shipped_at_v15.contains("has_rig_export"));
         let dir = project(Some(15));
         let path = project_template(dir.path(), "shots/animation");
@@ -4588,11 +4118,7 @@ mod tests {
     /// packaged one, whose camera reads `camera_edit`.
     #[test]
     fn v18_refreshes_the_stock_animation_template() {
-        let shipped_at_v17 = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("80def61306.py"))
-            .unwrap()
-            .2;
+        let shipped_at_v17 = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("80def61306.py")).unwrap().2;
         assert!(shipped_at_v17.contains("set('/stage/import_shot')"));
         let dir = project(Some(17));
         let path = project_template(dir.path(), "shots/animation");
@@ -4613,11 +4139,7 @@ mod tests {
     /// (1ac12ada67, no Layout in Animate branch) up to the packaged one.
     #[test]
     fn v19_refreshes_the_stock_layout_template() {
-        let shipped_at_v18 = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("1ac12ada67.py"))
-            .unwrap()
-            .2;
+        let shipped_at_v18 = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("1ac12ada67.py")).unwrap().2;
         assert!(!shipped_at_v18.contains("layout_animate"));
         let dir = project(Some(18));
         let path = project_template(dir.path(), "shots/layout");
@@ -4636,11 +4158,7 @@ mod tests {
     /// (46f42da508, no layout keys in the dive) up to the packaged one.
     #[test]
     fn v20_refreshes_the_stock_animation_template() {
-        let shipped_at_v19 = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("46f42da508.py"))
-            .unwrap()
-            .2;
+        let shipped_at_v19 = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("46f42da508.py")).unwrap().2;
         assert!(!shipped_at_v19.contains("layout_keys_rows"));
         let dir = project(Some(19));
         let path = project_template(dir.path(), "shots/animation");
@@ -4672,45 +4190,26 @@ mod tests {
     /// The packaged pool as a v20 project has it: the scaffold's, without
     /// groom.
     fn pool_at_v20() -> Value {
-        let mut pool = load_json(
-            &packaged_scaffold().join("_config").join("db").join("departments.json"),
-        )
-        .unwrap();
-        pool["children"]["assets"]["children"]
-            .as_object_mut()
-            .unwrap()
-            .shift_remove(GROOM)
-            .expect("the scaffold pool has groom");
+        let mut pool = load_json(&packaged_scaffold().join("_config").join("db").join("departments.json")).unwrap();
+        pool["children"]["assets"]["children"].as_object_mut().unwrap().shift_remove(GROOM).expect("the scaffold pool has groom");
         pool
     }
 
     fn asset_departments(dir: &Path) -> Vec<String> {
         let pool = load_json(&dir.join("_config").join("db").join("departments.json")).unwrap();
-        pool["children"]["assets"]["children"]
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect()
+        pool["children"]["assets"]["children"].as_object().unwrap().keys().cloned().collect()
     }
 
     fn write_pool(dir: &Path, assets: &[&str]) {
         let mut children = serde_json::Map::new();
         for name in assets {
-            children.insert(
-                name.to_string(),
-                serde_json::json!({"properties": {"publishable": true}, "children": {}}),
-            );
+            children.insert(name.to_string(), serde_json::json!({"properties": {"publishable": true}, "children": {}}));
         }
         let pool = serde_json::json!({
             "properties": {},
             "children": {"assets": {"properties": {}, "children": children}}
         });
-        std::fs::write(
-            dir.join("_config").join("db").join("departments.json"),
-            crate::to_json_string(&pool),
-        )
-        .unwrap();
+        std::fs::write(dir.join("_config").join("db").join("departments.json"), crate::to_json_string(&pool)).unwrap();
     }
 
     /// v21 puts groom right before lookdev in a v20 project's pool, keeps
@@ -4737,21 +4236,11 @@ mod tests {
             ]
         );
         assert_eq!(current_version(dir.path()).unwrap(), latest_version());
-        assert_eq!(
-            asset_departments(dir.path()),
-            ["model", "blendshape", "groom", "lookdev", "rig"]
-        );
+        assert_eq!(asset_departments(dir.path()), ["model", "blendshape", "groom", "lookdev", "rig"]);
         let after = std::fs::read_to_string(&path).unwrap();
         assert!(!after.replace("\r\n", "").contains('\n'), "CRLF kept");
-        assert_eq!(
-            load_json(&path).unwrap(),
-            load_json(&packaged_scaffold().join("_config").join("db").join("departments.json"))
-                .unwrap()
-        );
-        assert_eq!(
-            std::fs::read_to_string(path.with_file_name("departments.json.v21.bak")).unwrap(),
-            original
-        );
+        assert_eq!(load_json(&path).unwrap(), load_json(&packaged_scaffold().join("_config").join("db").join("departments.json")).unwrap());
+        assert_eq!(std::fs::read_to_string(path.with_file_name("departments.json.v21.bak")).unwrap(), original);
         let groom = std::fs::read_to_string(project_template(dir.path(), "assets/groom")).unwrap();
         assert_eq!(groom, packaged_text("assets/groom"));
     }
@@ -4868,10 +4357,7 @@ mod tests {
         }
         let after = std::fs::read_to_string(&path).unwrap();
         assert!(!after.replace("\r\n", "").contains('\n'), "CRLF kept");
-        assert_eq!(
-            std::fs::read_to_string(path.with_file_name("schemas.json.v22.bak")).unwrap(),
-            original
-        );
+        assert_eq!(std::fs::read_to_string(path.with_file_name("schemas.json.v22.bak")).unwrap(), original);
 
         let dir = project(Some(21));
         let stock = serde_json::json!({"members": [], "departments": []});
@@ -4945,11 +4431,8 @@ mod tests {
         let packaged = packaged_scaffold().join("_config");
         let mut storage = load_json(&packaged.join(conventions::STORAGE_FILE)).unwrap();
         storage.as_object_mut().unwrap().shift_remove(EDITS);
-        std::fs::write(
-            dir.path().join("_config").join(conventions::STORAGE_FILE),
-            crate::to_json_string(&storage).replace('\n', "\r\n"),
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("_config").join(conventions::STORAGE_FILE), crate::to_json_string(&storage).replace('\n', "\r\n"))
+            .unwrap();
         let drop = |value: &mut Value, at: &[&str]| {
             let mut node = value;
             for segment in at {
@@ -5019,15 +4502,10 @@ mod tests {
             );
         }
         for (path, original) in &originals {
-            let backup = path.with_file_name(format!(
-                "{}.v23.bak",
-                path.file_name().unwrap().to_str().unwrap()
-            ));
+            let backup = path.with_file_name(format!("{}.v23.bak", path.file_name().unwrap().to_str().unwrap()));
             assert_eq!(&std::fs::read_to_string(backup).unwrap(), original);
         }
-        let storage_text =
-            std::fs::read_to_string(dir.path().join("_config").join(conventions::STORAGE_FILE))
-                .unwrap();
+        let storage_text = std::fs::read_to_string(dir.path().join("_config").join(conventions::STORAGE_FILE)).unwrap();
         assert!(!storage_text.replace("\r\n", "").contains('\n'), "CRLF kept");
     }
 
@@ -5079,11 +4557,8 @@ mod tests {
     /// a current one must have it.
     #[test]
     fn a_table_before_v23_may_lack_edits() {
-        let mut table = load_json(&packaged_scaffold().join("_config").join(conventions::STORAGE_FILE))
-            .unwrap()
-            .as_object()
-            .unwrap()
-            .clone();
+        let mut table =
+            load_json(&packaged_scaffold().join("_config").join(conventions::STORAGE_FILE)).unwrap().as_object().unwrap().clone();
         table.shift_remove(EDITS);
         assert!(conventions::validate_table_before_v23(&table).is_ok());
         assert!(conventions::validate_table(&table).is_err());
@@ -5099,9 +4574,7 @@ mod tests {
         assert!(!packaged.contains(BUILD_COMP), "the packaged template still names build_comp");
         assert!(templates::is_stock(COMPOSITE, &packaged));
         assert!(
-            shipped_templates()
-                .iter()
-                .any(|(relative, _, text)| relative == COMPOSITE && newlines::normalize(text) == packaged),
+            shipped_templates().iter().any(|(relative, _, text)| relative == COMPOSITE && newlines::normalize(text) == packaged),
             "no fixture under tests/fixtures/templates/{COMPOSITE}/ holds the packaged template"
         );
     }
@@ -5121,11 +4594,7 @@ mod tests {
         use proptest::prelude::*;
 
         fn composite_fixtures() -> Vec<String> {
-            shipped_templates()
-                .into_iter()
-                .filter(|(relative, _, _)| relative == COMPOSITE)
-                .map(|(_, _, text)| text)
-                .collect()
+            shipped_templates().into_iter().filter(|(relative, _, _)| relative == COMPOSITE).map(|(_, _, text)| text).collect()
         }
 
         /// Text of a studio's own, which never names build_comp.
@@ -5283,11 +4752,7 @@ mod tests {
     /// their own root prim, which is what v25 brings to existing projects.
     #[test]
     fn v25_the_packaged_sop_templates_name_their_root_prim() {
-        for (relative, root) in [
-            ("shots/effects", "/FX/$OS"),
-            ("shots/environment", "/SET/$OS"),
-            ("shots/crowd", "/CROWD/$OS"),
-        ] {
+        for (relative, root) in [("shots/effects", "/FX/$OS"), ("shots/environment", "/SET/$OS"), ("shots/crowd", "/CROWD/$OS")] {
             assert!(packaged_text(relative).contains(root), "{relative} lacks {root}");
         }
     }
@@ -5320,16 +4785,9 @@ mod tests {
         // The composite: left alone by the stock refreshes before v24, then
         // replaced by v24 with its original kept, and current from then on.
         let backup = composite.with_file_name("template.py.v24.bak");
-        let composite_notes: Vec<(u32, &TemplateOutcome)> = report
-            .templates
-            .iter()
-            .filter(|n| n.path == composite)
-            .map(|n| (n.step.version(), &n.outcome))
-            .collect();
-        assert_eq!(
-            composite_notes.last(),
-            Some(&(24, &TemplateOutcome::Replaced { backup: backup.clone() }))
-        );
+        let composite_notes: Vec<(u32, &TemplateOutcome)> =
+            report.templates.iter().filter(|n| n.path == composite).map(|n| (n.step.version(), &n.outcome)).collect();
+        assert_eq!(composite_notes.last(), Some(&(24, &TemplateOutcome::Replaced { backup: backup.clone() })));
         assert!(composite_notes[..composite_notes.len() - 1]
             .iter()
             .all(|(v, outcome)| *v < 24 && **outcome == TemplateOutcome::LeftCustomised));
@@ -5343,28 +4801,15 @@ mod tests {
 
         assert!(report.templates_need_attention());
         let lines = report.template_lines(&scaffold);
-        let animation_lines: Vec<&String> = lines
-            .iter()
-            .filter(|line| line.contains(&animation.display().to_string()))
-            .collect();
+        let animation_lines: Vec<&String> = lines.iter().filter(|line| line.contains(&animation.display().to_string())).collect();
         assert_eq!(animation_lines.len(), 1, "{lines:#?}");
-        assert!(
-            animation_lines[0].contains("not refreshed by v14, v15, v16, v18, v19, v20, v21, v25, v26, v27"),
-            "{lines:#?}"
-        );
-        assert!(
-            lines.iter().any(|line| line.contains(&backup.display().to_string())
-                && line.contains("(v24)")),
-            "{lines:#?}"
-        );
-        assert!(lines
-            .iter()
-            .any(|line| line.contains(&scaffold_templates_dir(&scaffold).display().to_string())));
+        assert!(animation_lines[0].contains("not refreshed by v14, v15, v16, v18, v19, v20, v21, v25, v26, v27"), "{lines:#?}");
+        assert!(lines.iter().any(|line| line.contains(&backup.display().to_string()) && line.contains("(v24)")), "{lines:#?}");
+        assert!(lines.iter().any(|line| line.contains(&scaffold_templates_dir(&scaffold).display().to_string())));
         // The composite was replaced in the end: it is not also listed as a
         // customised template left alone.
         assert!(
-            !lines.iter().any(|line| line.contains("not refreshed by")
-                && line.contains(&composite.display().to_string())),
+            !lines.iter().any(|line| line.contains("not refreshed by") && line.contains(&composite.display().to_string())),
             "{lines:#?}"
         );
     }
@@ -5380,11 +4825,7 @@ mod tests {
         assert!(report.is_ok(), "{report:?}");
         assert_eq!(
             report.applied,
-            vec![
-                (Step::TemplateFixesFromQa, Ok(())),
-                (Step::CompTemplateLayout, Ok(())),
-                (Step::AnimationIsSolarisOnly, Ok(())),
-            ]
+            vec![(Step::TemplateFixesFromQa, Ok(())), (Step::CompTemplateLayout, Ok(())), (Step::AnimationIsSolarisOnly, Ok(())),]
         );
         assert_eq!(report.templates, Vec::new());
         assert!(!report.templates_need_attention());
@@ -5399,32 +4840,20 @@ mod tests {
     #[test]
     fn v26_refreshes_the_stock_composite_and_leaves_a_customised_one() {
         assert!(packaged_text(COMPOSITE).contains("comp.multi_layout("));
-        let previous = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("3b8ef3376f.py"))
-            .unwrap()
-            .2;
+        let previous = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("3b8ef3376f.py")).unwrap().2;
         assert!(!previous.contains("multi_layout"));
         let scaffold = packaged_scaffold();
-        for (text, expected) in [
-            (previous.replace('\n', "\r\n"), TemplateOutcome::Refreshed),
-            ("# our comp\n".to_string(), TemplateOutcome::LeftCustomised),
-        ] {
+        for (text, expected) in
+            [(previous.replace('\n', "\r\n"), TemplateOutcome::Refreshed), ("# our comp\n".to_string(), TemplateOutcome::LeftCustomised)]
+        {
             let dir = project(Some(25));
             let path = project_template(dir.path(), COMPOSITE);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, &text).unwrap();
             let report = migrate(dir.path(), &scaffold).unwrap();
             assert!(report.is_ok(), "{report:?}");
-            assert_eq!(
-                report.applied,
-                vec![(Step::CompTemplateLayout, Ok(())), (Step::AnimationIsSolarisOnly, Ok(()))]
-            );
-            let notes: Vec<_> = report
-                .templates
-                .iter()
-                .filter(|n| n.path == path && n.step == Step::CompTemplateLayout)
-                .collect();
+            assert_eq!(report.applied, vec![(Step::CompTemplateLayout, Ok(())), (Step::AnimationIsSolarisOnly, Ok(()))]);
+            let notes: Vec<_> = report.templates.iter().filter(|n| n.path == path && n.step == Step::CompTemplateLayout).collect();
             assert_eq!(notes.len(), 1, "{notes:?}");
             assert_eq!(notes[0].step, Step::CompTemplateLayout);
             assert_eq!(notes[0].outcome, expected);
@@ -5448,11 +4877,7 @@ mod tests {
         let animation = packaged_text("shots/animation");
         assert!(!animation.contains("lopimportcam"));
         assert!(!animation.contains("hou.node('/obj')"));
-        let previous = shipped_templates()
-            .into_iter()
-            .find(|(_, file, _)| file.ends_with("49d11950b3.py"))
-            .unwrap()
-            .2;
+        let previous = shipped_templates().into_iter().find(|(_, file, _)| file.ends_with("49d11950b3.py")).unwrap().2;
         assert!(previous.contains("createNode('lopimportcam', 'anim_camera')"));
         let scaffold = packaged_scaffold();
         for (text, expected) in [
@@ -5503,8 +4928,7 @@ mod tests {
                 Just(Held::Missing),
                 Just(Held::Current),
                 any::<prop::sample::Index>().prop_map(Held::Stock),
-                prop::collection::vec("[ -~]{0,40}", 0..8)
-                    .prop_map(|lines| Held::Customised(format!("# ours\n{}\n", lines.join("\n")))),
+                prop::collection::vec("[ -~]{0,40}", 0..8).prop_map(|lines| Held::Customised(format!("# ours\n{}\n", lines.join("\n")))),
             ]
         }
 
@@ -5528,10 +4952,7 @@ mod tests {
         /// which stay byte for byte; nothing is backed up; the report names
         /// exactly what `step` did with each; and a second run changes
         /// nothing.
-        fn refreshes_stock_and_reports_customised(
-            step: Step,
-            kinds: &[(Held, bool)],
-        ) -> Result<(), TestCaseError> {
+        fn refreshes_stock_and_reports_customised(step: Step, kinds: &[(Held, bool)]) -> Result<(), TestCaseError> {
             let to = step.version();
             let from = to - 1;
             let packaged = packaged_templates();
@@ -5542,18 +4963,18 @@ mod tests {
             for ((relative, new_text), (kind, crlf)) in packaged.iter().zip(kinds.iter().cycle()) {
                 let path = project_template(dir.path(), relative);
                 let style = |text: &str| {
-                    if *crlf { newlines::apply(&newlines::normalize(text), "\r\n") }
-                    else { newlines::normalize(text) }
+                    if *crlf {
+                        newlines::apply(&newlines::normalize(text), "\r\n")
+                    } else {
+                        newlines::normalize(text)
+                    }
                 };
                 let (label, text) = match kind {
                     Held::Missing => ("installed", None),
                     Held::Current => ("current", Some(style(new_text))),
                     Held::Stock(index) => {
-                        let versions: Vec<&String> = shipped
-                            .iter()
-                            .filter(|(key, _, _)| key == relative)
-                            .map(|(_, _, text)| text)
-                            .collect();
+                        let versions: Vec<&String> =
+                            shipped.iter().filter(|(key, _, _)| key == relative).map(|(_, _, text)| text).collect();
                         let text = style(index.get(&versions));
                         if newlines::normalize(&text) == *new_text {
                             ("current", Some(text))
@@ -5603,10 +5024,7 @@ mod tests {
                     }
                     "refreshed" => {
                         prop_assert_eq!(&newlines::normalize(&after), new_text);
-                        prop_assert_eq!(
-                            newlines::style_of(&after),
-                            newlines::style_of(before.as_ref().unwrap())
-                        );
+                        prop_assert_eq!(newlines::style_of(&after), newlines::style_of(before.as_ref().unwrap()));
                         prop_assert_eq!(note, vec![&TemplateOutcome::Refreshed]);
                     }
                     _ => {
@@ -5616,10 +5034,7 @@ mod tests {
                 }
             }
             let after_first = snapshot(dir.path());
-            prop_assert!(
-                after_first.iter().all(|(f, _)| f.file_name().unwrap() == "template.py"),
-                "v{} backs nothing up", to
-            );
+            prop_assert!(after_first.iter().all(|(f, _)| f.file_name().unwrap() == "template.py"), "v{} backs nothing up", to);
             let customised = expected.iter().filter(|(_, label, _)| *label == "customised").count();
             prop_assert_eq!(report.templates_need_attention(), customised > 0);
             prop_assert_eq!(
@@ -5633,10 +5048,7 @@ mod tests {
             prop_assert!(second.is_ok(), "{:?}", second);
             prop_assert_eq!(snapshot(dir.path()), after_first);
             prop_assert_eq!(second.templates.len(), customised);
-            prop_assert!(second
-                .templates
-                .iter()
-                .all(|n| n.outcome == TemplateOutcome::LeftCustomised));
+            prop_assert!(second.templates.iter().all(|n| n.outcome == TemplateOutcome::LeftCustomised));
             Ok(())
         }
 
@@ -5666,6 +5078,146 @@ mod tests {
             ) {
                 refreshes_stock_and_reports_customised(Step::AnimationIsSolarisOnly, &kinds)?;
             }
+        }
+    }
+
+    /// What every step reports about the project's department templates,
+    /// and what a whole run leaves on disk.
+    mod step_reports {
+        use super::*;
+
+        /// Every file under `dir`, relative and `/`-separated, sorted.
+        fn tree(dir: &Path) -> Vec<(String, Vec<u8>)> {
+            let mut files = Vec::new();
+            find_files(dir, None, &mut files);
+            let mut tree: Vec<(String, Vec<u8>)> = files
+                .into_iter()
+                .map(|f| {
+                    let relative = f.strip_prefix(dir).unwrap().to_string_lossy().replace('\\', "/");
+                    (relative, std::fs::read(&f).unwrap())
+                })
+                .collect();
+            tree.sort();
+            tree
+        }
+
+        fn template_files(dir: &Path) -> Vec<(String, Vec<u8>)> {
+            tree(&dir.join("_config").join("templates"))
+        }
+
+        /// A project one version before `step`, holding for each packaged
+        /// template the oldest version the scaffold shipped (`oldest`) or
+        /// none.
+        fn project_before(step: Step, oldest: bool) -> tempfile::TempDir {
+            let dir = project(Some(step.version() - 1));
+            if oldest {
+                let shipped = shipped_templates();
+                for (relative, _) in packaged_templates() {
+                    let first = shipped.iter().find(|(key, _, _)| *key == relative).map(|(_, _, text)| text.clone()).unwrap();
+                    let path = project_template(dir.path(), &relative);
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(&path, first).unwrap();
+                }
+            }
+            dir
+        }
+
+        /// For every step, from a project one version before it with its
+        /// templates missing or the oldest stock ones: the report notes
+        /// exactly the templates the step changed, each under that step.
+        /// A refresh step whose report is missing makes the first set
+        /// non-empty and the second empty.
+        #[test]
+        fn every_step_reports_each_template_it_changes() {
+            let scaffold = packaged_scaffold();
+            let mut noted_steps = Vec::new();
+            for step in STEPS {
+                for oldest in [false, true] {
+                    let dir = project_before(step, oldest);
+                    let before = template_files(dir.path());
+                    let report = migrate_through(dir.path(), &scaffold, step.version()).unwrap();
+                    let after = template_files(dir.path());
+                    let changed: std::collections::BTreeSet<String> = after
+                        .iter()
+                        .filter(|(path, bytes)| !path.ends_with(".bak") && !before.contains(&(path.clone(), bytes.clone())))
+                        .map(|(path, _)| path.clone())
+                        .collect();
+                    let templates_root = dir.path().join("_config").join("templates");
+                    let noted: std::collections::BTreeSet<String> = report
+                        .templates
+                        .iter()
+                        .map(|n| {
+                            assert_eq!(n.step, step);
+                            n.path.strip_prefix(&templates_root).unwrap().to_string_lossy().replace('\\', "/")
+                        })
+                        .collect();
+                    assert_eq!(noted, changed, "v{} (oldest stock: {oldest}): {report:?}", step.version());
+                    // The backups it made are exactly the ones its notes name.
+                    let new_backups: std::collections::BTreeSet<String> = after
+                        .iter()
+                        .filter(|(path, _)| path.ends_with(".bak") && !before.iter().any(|(p, _)| p == path))
+                        .map(|(path, _)| path.clone())
+                        .collect();
+                    let named_backups: std::collections::BTreeSet<String> = report
+                        .templates
+                        .iter()
+                        .filter_map(|n| match &n.outcome {
+                            TemplateOutcome::Replaced { backup } => {
+                                Some(backup.strip_prefix(&templates_root).unwrap().to_string_lossy().replace('\\', "/"))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    assert_eq!(new_backups, named_backups, "v{} (oldest stock: {oldest})", step.version());
+                    if !noted.is_empty() {
+                        noted_steps.push(step.version());
+                    }
+                }
+            }
+            noted_steps.dedup();
+            // Every template step was seen doing something, so the check
+            // above was not vacuous for it.
+            assert_eq!(noted_steps, vec![2, 9, 12, 14, 15, 16, 18, 19, 20, 21, 24, 25, 26, 27]);
+        }
+
+        /// The golden record of [`whole_run_tree`]; regenerate with
+        /// `UPDATE_MIGRATION_GOLDEN=1 cargo test -p wizard-core whole_run`.
+        const GOLDEN: &str = "tests/fixtures/migration_whole_run.golden";
+
+        /// A v0 project with the stock convention modules and a config
+        /// database, migrated to the latest version against the test
+        /// scaffold: every file it then holds, backups included, as
+        /// `path fingerprint` lines.
+        fn whole_run_tree() -> String {
+            let dir = database_project();
+            let template = scaffold();
+            let cfg = dir.path().join("_config");
+            std::fs::write(cfg.join("storage_convention.py"), include_str!("../tests/fixtures/storage_convention_initial.py")).unwrap();
+            std::fs::write(
+                cfg.join("naming_convention.py"),
+                include_str!("../tests/fixtures/naming_convention_current.py").replace("from tumblepipe.", "from tumblehead."),
+            )
+            .unwrap();
+            let report = migrate(dir.path(), template.path()).unwrap();
+            assert!(report.is_ok(), "{report:?}");
+            assert_eq!(report.to, latest_version());
+            tree(dir.path())
+                .into_iter()
+                .map(|(path, bytes)| format!("{path} {:016x}\n", templates::fingerprint(&String::from_utf8_lossy(&bytes))))
+                .collect()
+        }
+
+        #[test]
+        fn whole_run_leaves_the_recorded_tree() {
+            let golden = Path::new(env!("CARGO_MANIFEST_DIR")).join(GOLDEN);
+            let got = whole_run_tree();
+            if std::env::var_os("UPDATE_MIGRATION_GOLDEN").is_some() {
+                std::fs::write(&golden, &got).unwrap();
+            }
+            let want = std::fs::read_to_string(&golden).unwrap();
+            assert_eq!(got, want);
+            // Broad enough to mean something: backups and data files both.
+            assert!(want.lines().count() > 8 && want.contains(".bak "), "{want}");
         }
     }
 }

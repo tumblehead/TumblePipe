@@ -12,7 +12,6 @@ serde.workspace = true
 # float_roundtrip: a clip's opacity and an audio clip's level read back as
 # the very number written (as th_pipe has it).
 serde_json = { workspace = true, features = ["float_roundtrip"] }
-thiserror.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

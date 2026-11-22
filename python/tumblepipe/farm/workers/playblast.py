@@ -20,15 +20,14 @@ from tumblepipe.apps.app import CommandFailed
 from tumblepipe.apps.houdini import HOUDINI_VERSION_ENV, Husk
 from tumblepipe.apps import mp4
 from tumblepipe.apps.viewport_renderer import VIEWPORT_DELEGATE, viewport_args, viewport_env
-from tumblepipe.pipe import review_events
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import get_base_env, print_env, job_data_dir
 from tumblepipe.farm.frames import (
     frame_file, playblast_frames_dir, HOUDINI_FRAME_TOKEN, PLAYBLAST_FRAMES_INFO,
 )
 from tumblepipe.farm.specs import playblast as playblast_spec
-from tumblepipe.farm.worker import ensure_dir, error, headline
-from tumblepipe.pipe.paths.review import release_playblast
+from tumblepipe.farm.worker import error, headline
+from tumblepipe.pipe.playblast_publish import PlayblastPublishError, publish_playblast
 
 # Karma XPU as a playblast, by default a clay look instead of the scene's
 # shading. It draws through CUDA/OptiX, so it needs a GPU but no GL context
@@ -370,23 +369,17 @@ def _playblast(
         if not temp_mp4_path.exists():
             return error(f'Failed to encode mp4: {temp_mp4_path}')
 
-        # Copy to every network destination (versioned playblast + rolling daily)
+        # Copy to every network destination (versioned playblast + rolling
+        # daily); the versioned movie's submit-time reservation goes, and this
+        # machine's player resolves the shot again (a farm worker's journal
+        # has no reader).
         headline('Copying files to network')
         for output_path in output_paths:
             print(f'Copying file: {output_path}')
-            ensure_dir(output_path.parent)
-            shutil.copyfile(temp_mp4_path, output_path)
-
-        # Verify copies landed
-        for output_path in output_paths:
-            if not output_path.exists():
-                return error(f'Output not copied: {output_path}')
-        # The versioned movie is there: its submit-time reservation goes.
-        for output_path in output_paths:
-            release_playblast(output_path)
-        # This machine's player resolves the shot again (a farm worker's
-        # journal has no reader).
-        review_events.announce_written(output_paths)
+        try:
+            publish_playblast(temp_mp4_path, output_paths)
+        except PlayblastPublishError as failure:
+            return error(str(failure))
 
     print('Success')
     return 0

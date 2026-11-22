@@ -18,7 +18,8 @@ use th_edit::ops::Op;
 
 use primer::prelude::*;
 
-use super::{Dialog, Editor, Message, OpenDialog, track_rows};
+use super::file_dialogs::{Dialog, OpenDialog};
+use super::{Editor, Message, track_rows};
 use crate::{look, tracks};
 
 /// What the menu depends on.

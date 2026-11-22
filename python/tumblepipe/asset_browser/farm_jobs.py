@@ -232,9 +232,7 @@ def announce(catalog, reports: list, *, in_front=houdini_in_front,
             target=notify, args=(said.title, said.line, said.folder),
             name="tumblepipe-farm-notify", daemon=True,
         ).start()
-    request = getattr(catalog, "request_quick_action_pulse", None)
-    if callable(request):
-        request(ACTION_ID)
+    catalog.request_quick_action_pulse(ACTION_ID)
     return said
 
 

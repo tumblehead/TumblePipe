@@ -52,8 +52,7 @@ impl Lens {
     /// not a positive distance, or anything not finite.
     pub fn of_camera(focal_length: f32, f_stop: f32, focus: f32) -> Option<Lens> {
         let radius = focal_length / (2.0 * f_stop);
-        (f_stop > 0.0 && radius > 0.0 && radius.is_finite() && focus > 0.0 && focus.is_finite())
-            .then_some(Lens { radius, focus })
+        (f_stop > 0.0 && radius > 0.0 && radius.is_finite() && focus > 0.0 && focus.is_finite()).then_some(Lens { radius, focus })
     }
 }
 
@@ -76,17 +75,15 @@ pub struct Blur {
 }
 
 impl Blur {
-    pub const OFF: Blur = Blur {
-        samples: 1,
-        motion: false,
-        cameras: [math::IDENTITY; MAX_KEYS],
-        camera_keys: 0,
-        lens: None,
-    };
+    pub const OFF: Blur = Blur { samples: 1, motion: false, cameras: [math::IDENTITY; MAX_KEYS], camera_keys: 0, lens: None };
 
     /// The camera keys in use, when the camera moves.
     fn camera_keys(&self) -> &[Mat4] {
-        if self.motion && self.camera_keys >= 2 { &self.cameras[..self.camera_keys.min(MAX_KEYS)] } else { &[] }
+        if self.motion && self.camera_keys >= 2 {
+            &self.cameras[..self.camera_keys.min(MAX_KEYS)]
+        } else {
+            &[]
+        }
     }
 }
 
@@ -101,9 +98,7 @@ impl Default for Blur {
 /// was, in one pass over every layer.
 pub fn active(frame: &Frame, meshes: &[Mesh]) -> bool {
     let b = &frame.blur;
-    b.lens.is_some()
-        || !b.camera_keys().is_empty()
-        || (b.motion && meshes.iter().any(|m| moves(m)))
+    b.lens.is_some() || !b.camera_keys().is_empty() || (b.motion && meshes.iter().any(|m| moves(m)))
 }
 
 /// Whether this mesh's points or transforms change over the shutter (with
@@ -123,7 +118,11 @@ pub(crate) fn closing_points<'a>(mesh: &Mesh<'a>) -> Option<&'a [Vec3]> {
 pub(crate) fn transform_keys<'a>(mesh: &Mesh<'a>) -> &'a [Mat4] {
     let n = mesh.transforms.len();
     let keys = mesh.transform_keys;
-    if n > 0 && keys.len() >= 2 * n && keys.len().is_multiple_of(n) && keys.len() / n <= MAX_KEYS { keys } else { &[] }
+    if n > 0 && keys.len() >= 2 * n && keys.len().is_multiple_of(n) && keys.len() / n <= MAX_KEYS {
+        keys
+    } else {
+        &[]
+    }
 }
 
 /// `a + (b - a) * t`, per element.
@@ -251,8 +250,7 @@ fn camera_between(a: &Mat4, b: &Mat4, t: f64) -> Mat4 {
 /// translation, no projection).
 pub(crate) fn affine_inverse(m: &Mat4) -> Mat4 {
     let a = |r: usize, c: usize| m[r * 4 + c];
-    let det = a(0, 0) * (a(1, 1) * a(2, 2) - a(1, 2) * a(2, 1))
-        - a(0, 1) * (a(1, 0) * a(2, 2) - a(1, 2) * a(2, 0))
+    let det = a(0, 0) * (a(1, 1) * a(2, 2) - a(1, 2) * a(2, 1)) - a(0, 1) * (a(1, 0) * a(2, 2) - a(1, 2) * a(2, 0))
         + a(0, 2) * (a(1, 0) * a(2, 1) - a(1, 1) * a(2, 0));
     let inv_det = if det.abs() > 1e-300 { 1.0 / det } else { 0.0 };
     let mut out = math::IDENTITY;
@@ -300,7 +298,11 @@ pub(crate) fn layer_count(requested: usize, per_chunk: usize) -> usize {
 
 /// `g`'s bits reversed over `bits` bits.
 fn bit_reverse(g: usize, bits: u32) -> usize {
-    if bits == 0 { 0 } else { g.reverse_bits() >> (usize::BITS - bits) }
+    if bits == 0 {
+        0
+    } else {
+        g.reverse_bits() >> (usize::BITS - bits)
+    }
 }
 
 /// Layer `g`'s shutter time of `n` (a power of two): its slot, bit
@@ -318,13 +320,8 @@ pub(crate) fn layer_time(g: usize, n: usize) -> f32 {
 /// of a column or row of the pixel took the same part of the shutter every
 /// chunk, and a thin thing moving across a pixel row smeared as dashes in
 /// alternate rows.
-const PAIRINGS: [&[usize]; 5] = [
-    &[0],
-    &[0, 1],
-    &[0, 1, 3, 2],
-    &[2, 0, 5, 7, 3, 4, 1, 6],
-    &[5, 3, 11, 8, 4, 0, 13, 1, 2, 7, 12, 15, 10, 14, 9, 6],
-];
+const PAIRINGS: [&[usize]; 5] =
+    [&[0], &[0, 1], &[0, 1, 3, 2], &[2, 0, 5, 7, 3, 4, 1, 6], &[5, 3, 11, 8, 4, 0, 13, 1, 2, 7, 12, 15, 10, 14, 9, 6]];
 
 /// The layer whose shutter slot (in [`layer_time`]'s order) sub-pixel offset
 /// `k` of chunk `c` takes, of chunks of `per_chunk`.
@@ -433,7 +430,11 @@ pub fn average(mut images: Vec<Image>, alpha: bool) -> Image {
 /// unblurred.
 pub fn layers(frame: &Frame, meshes: &[Mesh]) -> usize {
     let s = composite::sample_offsets(frame.samples).len();
-    if active(frame, meshes) { layer_count(frame.blur.samples, s) } else { s }
+    if active(frame, meshes) {
+        layer_count(frame.blur.samples, s)
+    } else {
+        s
+    }
 }
 
 #[cfg(test)]
@@ -465,9 +466,19 @@ mod tests {
         // Two instances, key-major: instance 1 moves the other way.
         let keys = [at(0.0), at(0.0), at(1.0), at(-1.0), at(5.0), at(-5.0)];
         let mesh = Mesh {
-            points: &points, triangles: &triangles, corner_normals: None, corner_colors: None, corner_uvs: None,
-            base_color: [1.0; 3], tiles: Vec::new(), transforms: &transforms, key: None,
-            points_close: None, transform_keys: &keys, opacity: 1.0, cull: crate::raster::Cull::Nothing,
+            points: &points,
+            triangles: &triangles,
+            corner_normals: None,
+            corner_colors: None,
+            corner_uvs: None,
+            base_color: [1.0; 3],
+            tiles: Vec::new(),
+            transforms: &transforms,
+            key: None,
+            points_close: None,
+            transform_keys: &keys,
+            opacity: 1.0,
+            cull: crate::raster::Cull::Nothing,
         };
         for (s, x) in [(0.0f32, 0.0), (0.25, 0.5), (0.5, 1.0), (0.75, 3.0), (1.0, 5.0)] {
             assert!((transform_at(&mesh, 0, s)[12] - x).abs() < 1e-9, "at {s}: {}", transform_at(&mesh, 0, s)[12]);
@@ -578,8 +589,8 @@ mod tests {
             prop_assert_eq!(end, b);
             let inv = affine_inverse(&m);
             let id = math::mul(&m, &inv);
-            for i in 0..16 {
-                prop_assert!((id[i] - math::IDENTITY[i]).abs() < 1e-9);
+            for (got, want) in id.iter().zip(math::IDENTITY.iter()) {
+                prop_assert!((got - want).abs() < 1e-9);
             }
         }
     }

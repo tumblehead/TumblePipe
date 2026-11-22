@@ -39,7 +39,8 @@ use primer::widget::custom::{Cursor, Event, Sizing, mouse};
 use th_edit::document::{Frame as EditFrame, TrackKind};
 use th_pipe::edits::EditSources;
 
-use super::{Editor, Message, OpenDialog};
+use super::file_dialogs::OpenDialog;
+use super::{Editor, Message};
 use crate::bin_drag::{self, Drag, Landing, Lanes, Over};
 use crate::bin_thumbs::{self, Loaded, Shown, ThumbKey, Thumbs};
 use crate::bins::{self, BinRow, Clips, GridRow, Target};

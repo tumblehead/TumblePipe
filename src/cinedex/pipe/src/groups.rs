@@ -148,7 +148,7 @@ pub fn resolve_members(config: &Config, stored: &[Uri]) -> Result<Vec<Uri>, Stri
 }
 
 /// `starts` with every unplaced member placed, in member order
-/// (`multi_timeline.place`): a placed member keeps its start, a start for a
+/// (`groups.place`): a placed member keeps its start, a start for a
 /// URI no longer a member is dropped; an unplaced member goes on the frame
 /// after the last frame any placed member reaches (rolls not counted), or on
 /// an empty timeline on its own start frame. A member without a frame range
@@ -223,7 +223,7 @@ fn truthy(value: &Value) -> bool {
 }
 
 /// Place the Multi's unplaced members when its timeline is shared
-/// (`multi_timeline.place_members`), pinning its timeline keys as
+/// (`groups.place_members`), pinning its timeline keys as
 /// `groups.set_timeline` does.
 pub fn place_members(config: &Config, group: &Uri) -> Result<(), String> {
     let Some(properties) = config.get_properties(group).map_err(|e| e.to_string())? else { return Ok(()) };

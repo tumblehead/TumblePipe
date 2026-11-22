@@ -90,7 +90,6 @@ from tumbletrove.asset_browser.core.theme import (
     TEXT_PRIMARY, TEXT_SECONDARY,
 )
 
-from tumblepipe.config.department_off import applied_departments, read_disabled_departments
 from tumblepipe.farm.submit import grid as grid
 from tumblepipe.farm.submit import remembered
 from tumblepipe.util.qt_lifetime import release_kept_references
@@ -98,6 +97,7 @@ from tumblepipe.farm.submit import review as submit_review
 from tumblepipe.farm.submit import status as farm_status
 from tumblepipe.farm.submit import camera as render_camera
 from tumblepipe.farm.submit import settings as resolve
+from tumblepipe.farm.specs import submission
 from tumblepipe.pipe.houdini.ui.report import report_failure
 from tumblepipe.pipe.usd.render_settings import PLAYBLAST_LIGHTS
 from tumblepipe.pipe import turntable
@@ -118,7 +118,6 @@ from .frame_timeline import FrameTimeline
 from . import tooltips
 from tumblepipe.farm.submit import frame_selection
 from tumblepipe.farm.specs import repair as repair_spec
-from tumblepipe.farm.submit.review import ReviewRow
 
 log = logging.getLogger(__name__)
 
@@ -133,17 +132,8 @@ FROM_SCENE_TEXT = "⟨from scene⟩"
 
 # Shown by an unset comp frame: nothing is sent, so the comp follows the
 # render's range, else what the renders on disk cover, else the shot's
-# (``batch_submit``; ``farm.submit.settings.comp_frames`` warns on the shot's).
+# (``farm.specs.submission.comp_follows``, read alike by the dialog and the farm).
 FULL_RANGE_TEXT = "⟨full range⟩"
-
-# The render_mode the Range checkboxes send, keyed by (preview, full range)
-# (batch_submit.RENDER_TASK_KEYS maps it to the render chains). Neither
-# ticked has no mode: submit refuses it.
-_RENDER_MODES = {
-    (False, True): 'full',
-    (True, False): 'first_middle_last',
-    (True, True): 'preview_then_full',
-}
 
 # Cell colours. The theme's own tokens where it has one; amber and green for
 # the two states that must be told apart at a glance (they also differ in
@@ -442,9 +432,11 @@ def _list_dept_names(context: str, *, only_publishable: bool, only_renderable: b
     Python-generated departments (which can't be exported from Houdini)
     and disabled ones.
     """
-    from tumblepipe.config.department import list_departments
-    depts = list_departments(
-        context, include_generated=False, include_disabled=False,
+    from tumblepipe.api import default_client
+    from tumblepipe.config.department import list_departments_in
+    depts = list_departments_in(
+        default_client().config, context,
+        include_generated=False, include_disabled=False,
     )
     if only_publishable:
         depts = [d for d in depts if d.publishable]
@@ -482,19 +474,21 @@ def _list_groups(context: str) -> list[tuple[str, list[object]]]:
     its members.
     """
     from tumblepipe.api import default_client
-    from tumblepipe.config.groups import list_groups
-    with default_client().config.coherent():
+    from tumblepipe.config.groups import list_groups_in
+    store = default_client().config
+    with store.coherent():
         groups = [
             (group.name, list(group.members))
-            for group in list_groups(context)
+            for group in list_groups_in(store, context)
         ]
     return sorted(groups, key=lambda item: item[0])
 
 
 def _group_members(group_uri) -> list[object]:
     """Member URIs of the Multi at ``group_uri``; empty when it is gone."""
-    from tumblepipe.config.groups import get_group
-    group = get_group(group_uri)
+    from tumblepipe.api import default_client
+    from tumblepipe.config.groups import get_group_in
+    group = get_group_in(default_client().config, group_uri)
     return list(group.members) if group is not None else []
 
 
@@ -1920,11 +1914,7 @@ class _ContextPane(QWidget):
                 old = self._statuses.get(uri)
                 if old is None:
                     continue
-                old.playblast_mtime = status.playblast_mtime
-                old.render_mtime = status.render_mtime
-                old.comp_workfile = status.comp_workfile
-                old.comp_mtime = status.comp_mtime
-                old.staged = status.staged
+                self._statuses[uri] = farm_status.merge_previews(old, status)
             else:
                 self._statuses[uri] = status
             self._apply_status(uri)
@@ -1944,52 +1934,17 @@ class _ContextPane(QWidget):
         status = self._statuses.get(uri)
         if status is None:
             return
-        props = self._props.get(uri, {})
-        # An asset renders its turntable on the studio's frames (#53).
-        has_range = self._context == 'assets' or (
-            resolve.nested(props, 'frame_start') is not None
-            and resolve.nested(props, 'frame_end') is not None
+        states = grid.row_states(
+            status, self._columns, self._props.get(uri, {}), self._publish_departments,
+            cuts={
+                grid.PLAYBLAST: self._cut(uri, 'pb_department'),
+                grid.RENDER: self._cut(uri, 'render_department'),
+            },
+            scene_comp=uri in self._scene_comps,
+            context=self._context,
         )
-        # Departments turned off on this entity (#64): not offered, and not
-        # part of what its previews compose.
-        off = read_disabled_departments(props)
-        departments = self._publish_departments
-        for column in self._columns:
-            key = (uri, column.key)
-            if status.error:
-                self._states[key] = grid.PENDING
-                continue
-            if column.kind == grid.PUBLISH and column.department in off:
-                self._states[key] = grid.OFF
-                continue
-            if column.kind == grid.PUBLISH:
-                self._states[key] = grid.publish_state(
-                    status.hip_mtimes.get(column.department),
-                    status.export_mtimes.get(column.department),
-                    shared=column.department in status.shared,
-                )
-                continue
-            if column.kind == grid.COMP:
-                # Against the render the Render column measures (its cut's
-                # newest version), so a new render shows the comp stale.
-                self._states[key] = grid.comp_state(
-                    status.comp_workfile, status.comp_mtime, status.render_mtime,
-                    scene=uri in self._scene_comps,
-                )
-                continue
-            field_key = 'pb_department' if column.kind == grid.PLAYBLAST else 'render_department'
-            cut = applied_departments(
-                grid.preview_cut(departments, self._cut(uri, field_key)), off,
-            )
-            preview = (
-                status.playblast_mtime if column.kind == grid.PLAYBLAST
-                else status.render_mtime
-            )
-            self._states[key] = grid.preview_state(
-                preview,
-                [status.export_mtimes.get(name) for name in cut],
-                available=has_range,
-            )
+        for key, state in states.items():
+            self._states[(uri, key)] = state
 
     # ── Forms ─────────────────────────────────────────────
 
@@ -2786,7 +2741,7 @@ class _ContextPane(QWidget):
             )
             render_step = frames.step
         else:
-            spans = [resolve.rendered_range(s) for _u, s, _w, _e in rows if s.get('render')]
+            spans = [submission.rolled_range(r.settings) for r in rows if r.settings.get('render')]
             view = frame_selection.view(spans, noun)
             # The Step: the Preview frames timeline picks only frames on it,
             # the Frame list's draws the frames each range renders.
@@ -2804,10 +2759,15 @@ class _ContextPane(QWidget):
         if comp_timeline is None:
             return
         spans, steps = [], set()
-        for uri, settings, _w, _e in rows:
+        for row in rows:
+            settings = row.settings
             if not settings.get('comp'):
                 continue
-            frames = resolve.comp_frames(self._props.get(uri, {}), settings)
+            status = self._statuses.get(row.uri)
+            frames = resolve.comp_frames(
+                self._props.get(row.uri, {}), settings,
+                None if status is None else status.rendered,
+            )
             spans.append(None if frames is None else frames[0])
             step = settings.get('comp_step')
             steps.add(step if isinstance(step, int) and step > 0 else 1)
@@ -2824,10 +2784,12 @@ class _ContextPane(QWidget):
         A project that lists no pools gets the free-text field instead, so
         a pool can still be named.
         """
+        from tumblepipe.api import default_client
         from tumblepipe.config import farm as farm_config
+        store = default_client().config
         try:
-            pools = [pool.name for pool in farm_config.list_pools()]
-            default_pool = farm_config.get_default_pool()
+            pools = [pool.name for pool in farm_config.list_pools_in(store)]
+            default_pool = farm_config.get_default_pool_in(store)
         except Exception:  # a config read must not stop the dialog opening
             log.exception("Could not read the project's farm pools")
             pools, default_pool = [], None
@@ -2975,7 +2937,7 @@ class _ContextPane(QWidget):
                 shown = resolve.scene_value_text(value, field.kind)
                 lines.append(f"{name}: {shown}  ({source})" if source else f"{name}: {shown}")
             text = resolve.scene_placeholder(values, field.kind)
-            attribute = render_camera.SCENE_SETTINGS[key]
+            attribute = resolve.RENDER_OVERRIDES[key]
             tip = (
                 f"Left unset, nothing is sent and the farm renders with the "
                 f"scene's {attribute}. Read from the latest published layers "
@@ -3136,7 +3098,8 @@ class _ContextPane(QWidget):
 
         current = self._into_target()
         per_row = []
-        for uri, settings, _warnings, _errors in self._resolved_rows():
+        for row in self._resolved_rows():
+            uri, settings = row.uri, row.settings
             department = settings.get('render_department')
             if not settings.get('render') or not isinstance(department, str):
                 continue
@@ -3162,24 +3125,16 @@ class _ContextPane(QWidget):
             self._rnd_into.blockSignals(False)
 
     def _render_step(self) -> int:
-        """The Render's Step; 1 on an asset's tab (a turntable renders on
-        the studio's step, and the field is hidden there)."""
-        if self._context == 'assets':
-            return 1
-        return max(1, self._rnd_step.value())
+        """The Render's Step field (``grid.render_step``)."""
+        return grid.render_step(self._context, self._rnd_step.value())
 
     def _render_disabled(self) -> dict[str, str]:
-        """``{key: why}`` for the Render settings the submit would ignore:
-        those a multi-range Frame List (``resolve.frame_list_disabled``) or
-        a Step above 1 (``resolve.step_disabled``) turn off."""
-        if self._context == 'assets':
-            return {}
-        return {
-            **resolve.step_disabled(self._render_step()),
-            **resolve.frame_list_disabled(
-                self._rnd_frame_list.text(), self._into_target(),
-            ),
-        }
+        """What the Render's Step, Frame list and Into version fields make
+        the submit ignore (``grid.render_disabled``)."""
+        return grid.render_disabled(
+            self._context, self._render_step(), self._rnd_frame_list.text(),
+            self._into_target(),
+        )
 
     def _apply_frame_list_disabled(self) -> None:
         """Disable what a multi-range Frame List or a Step above 1 makes the
@@ -3196,70 +3151,25 @@ class _ContextPane(QWidget):
 
     def _render_mode(self) -> str | None:
         """The render_mode the Range checkboxes ask for; None with neither ticked."""
-        return _RENDER_MODES.get(
+        return grid.RENDER_MODES.get(
             (self._rnd_preview.isChecked(), self._rnd_full.isChecked())
         )
 
     def _pinned_keys(self) -> list[str]:
         return [key for key, entry in self._fields.items() if entry.pinned]
 
-    def _resolved_rows(self) -> list[tuple[str, dict, list[str], list[str]]]:
-        """``(uri, settings, warnings, errors)`` for every ticked row, in grid order.
-
-        The single source of truth for the Warnings column and the submit,
-        so what the grid warns about is by construction what gets
-        submitted. ``errors`` are the blocking ones (``entity_errors``).
-        """
-        form = self._form_values()
-        pinned = self._pinned_keys()
-        rows = []
-        for uri in self._uris:
-            kinds = grid.row_kinds(uri, self._columns, self._ticks)
-            if not kinds:
-                continue
-            properties = self._props.get(uri, {})
-            settings = grid.finish_row_settings(
-                resolve.resolve_settings(
-                    properties, sections=kinds, form=form, pinned=pinned,
-                    fallbacks=self._fallbacks,
-                ),
-                grid.row_publish_departments(uri, self._columns, self._ticks),
-            )
-            assigned = list(properties.get('departments') or []) or None
-            requested = form[resolve.CHANNEL_LIST_KEY]
-            status = self._statuses.get(uri)
-            warnings = resolve.entity_warnings(
-                properties, settings, departments=assigned, requested=requested,
-                staged=None if status is None or status.error else status.staged,
-                turntable=self._context == 'assets',
-            )
-            errors = resolve.entity_errors(properties, settings, requested=requested)
-            # The open workfile comps this shot without a th::import_render
-            # (#80): the Comp comps that workfile, reading the Render beside it.
-            scene = self._scene_comps.get(uri)
-            if scene is not None and settings.get('comp'):
-                settings['comp_scene'] = scene.settings()
-                errors = errors + grid.scene_comp_errors(settings, scene.aovs)
-            missing = self._stale_upstream(uri, settings)
-            if missing:
-                warnings.insert(0, f"{', '.join(missing)} stale and not ticked")
-            rows.append((uri, settings, warnings, errors))
-        return rows
-
-    def _stale_upstream(self, uri: str, settings: dict) -> list[str]:
-        """Stale, unticked departments a ticked preview on ``uri`` composes."""
-        return grid.unpublished_upstream(
-            uri, self._columns, self._ticks, self._states,
-            cuts={
-                grid.PLAYBLAST: settings.get('pb_department'),
-                grid.RENDER: settings.get('render_department'),
-            },
+    def _resolved_rows(self) -> list[grid.ResolvedRow]:
+        """Every ticked row resolved from the form (``grid.resolve_rows``)."""
+        return grid.resolve_rows(
+            uris=self._uris, columns=self._columns, ticks=self._ticks,
+            states=self._states, properties=self._props, statuses=self._statuses,
+            scene_comps=self._scene_comps, form=self._form_values(),
+            pinned=self._pinned_keys(), fallbacks=self._fallbacks, context=self._context,
         )
 
     def _recompute_warnings(self) -> None:
-        # Blocking errors first, so an elided cell still shows them.
         rows = self._resolved_rows()
-        self._warnings = {uri: e + w for uri, _s, w, e in rows if e or w}
+        self._warnings = {row.uri: row.shown() for row in rows if row.shown()}
         # The timelines show the frames of the same rows the warnings read.
         self._update_timelines(rows)
 
@@ -3276,7 +3186,7 @@ class _ContextPane(QWidget):
         if not rows:
             self._dialog.notice("Nothing ticked", "Tick at least one cell before submitting.")
             return
-        renders = any(s.get('render') for _u, s, _w, _e in rows)
+        renders = any(row.settings.get('render') for row in rows)
         if renders and self._render_mode() is None:
             self._dialog.notice(
                 "No render range",
@@ -3300,32 +3210,12 @@ class _ContextPane(QWidget):
             self._dialog.notice("Can't submit yet", problem)
             return
 
-        steps = {uri: grid.row_steps(uri, self._columns, self._ticks) for uri, *_rest in rows}
-        stale = {uri: self._stale_upstream(uri, s) for uri, s, _w, _e in rows}
-        review = [
-            ReviewRow(
-                name=self._uri_objects[uri].segments[-1],
-                steps=steps[uri],
-                errors=list(errors),
-                stale=stale[uri],
-                # _resolved_rows puts the stale-upstream warning first, when it has one.
-                warnings=list(warnings[1:] if stale[uri] else warnings),
-            )
-            for uri, _s, warnings, errors in rows
-        ]
+        steps = {row.uri: grid.row_steps(row.uri, self._columns, self._ticks) for row in rows}
+        stale = {row.uri: list(row.stale) for row in rows}
+        names = {row.uri: self._uri_objects[row.uri].segments[-1] for row in rows}
+        review = [row.review(names[row.uri], steps[row.uri]) for row in rows]
         backend = self._dialog.backend()
-        configs = [
-            {
-                'entity': {
-                    'uri': uri,
-                    'name': self._uri_objects[uri].segments[-1],
-                    'context': self._context,
-                },
-                # The comp batch the form shows for this backend (#44).
-                'settings': grid.settings_for_backend(settings, backend),
-            }
-            for uri, settings, _w, _e in rows
-        ]
+        configs = [row.job_config(names[row.uri], self._context, backend) for row in rows]
         if submit_review.skips_review(review):
             self._dialog.start(configs, steps, self)
             return
@@ -3381,6 +3271,7 @@ class _EditsPane(QWidget):
         super().__init__(dialog)
         self._dialog = dialog
         from tumblepipe.pipe import edits as pipe_edits
+        from tumblepipe.api import default_client
         from tumblepipe.config import farm as farm_config
 
         opened = {str(uri) for uri in entity_uris}
@@ -3442,13 +3333,16 @@ class _EditsPane(QWidget):
 
         box = Section("Render Edit", KIND_COLOURS[EDIT_KIND])
         form = box.form()
-        self._pool = QLineEdit(farm_config.get_default_pool() or 'general')
+        store = default_client().config
+        self._pool = QLineEdit(farm_config.get_default_pool_in(store) or 'general')
         form.addRow("Pool:", self._pool)
         self._priority = QSpinBox()
         self._priority.setRange(0, 100)
-        self._priority.setValue(farm_config.get_default_priority())
+        self._priority.setValue(farm_config.get_default_priority_in(store))
         self._priority.setButtonSymbols(QAbstractSpinBox.NoButtons)
-        value_ladder_qt.install(self._priority, default=farm_config.get_default_priority)
+        value_ladder_qt.install(
+            self._priority, default=lambda: farm_config.get_default_priority_in(store),
+        )
         form.addRow("Priority:", self._priority)
         note = QLabel(
             "Renders the published version with the editor, sound included, "

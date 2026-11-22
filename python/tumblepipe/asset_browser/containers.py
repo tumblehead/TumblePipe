@@ -232,13 +232,12 @@ class ContainerManager:
         proj = self._registry.get(ref.project_name)
         if proj is None or not self._clients.is_ready(ref.project_name):
             return None
-        self._activator.activate(proj)
         from tumblepipe.config import groups as grp_mod
         from tumblepipe.config import multi_timeline
-        group = grp_mod.get_group(ref.uri)
+        group = grp_mod.get_group_in(proj.store(), ref.uri)
         if group is None or not group.shared_timeline:
             return None
-        return group, multi_timeline.overlapping(group)
+        return group, multi_timeline.overlapping_in(proj.store(), group)
 
     def play_members(self, collection_id: str) -> list | None:
         """A shots Multi's member URIs in the order they play (#26,
@@ -250,10 +249,9 @@ class ContainerManager:
         proj = self._registry.get(ref.project_name)
         if proj is None or not self._clients.is_ready(ref.project_name):
             return None
-        self._activator.activate(proj)
         from tumblepipe.config import groups as grp_mod
         from tumblepipe.config import multi_timeline
-        group = grp_mod.get_group(ref.uri)
+        group = grp_mod.get_group_in(proj.store(), ref.uri)
         if group is None:
             return None
         return multi_timeline.play_order(
@@ -270,7 +268,7 @@ class ContainerManager:
             raise ValueError(f"unknown project {ref.project_name!r}")
         self._activator.activate(proj)
         from tumblepipe.config import multi_timeline
-        multi_timeline.repack(ref.uri)
+        multi_timeline.repack_in(proj.store(), ref.uri)
         self._invalidate_cache()
         # The Multi's workfile open: lay the session out now.
         try:
@@ -293,11 +291,10 @@ class ContainerManager:
         proj = self._registry.get(proj_name)
         if proj is None or not self._clients.is_ready(proj_name):
             return items
-        self._activator.activate(proj)
         try:
             from tumblepipe.config import groups as grp_mod
             group_uri = uris.group(group_path)
-            group = grp_mod.get_group(group_uri)
+            group = grp_mod.get_group_in(proj.store(), group_uri)
         except Exception as exc:
             raise TagQueryError(
                 self._catalog_id,
@@ -323,11 +320,10 @@ class ContainerManager:
         proj = self._registry.get(proj_name)
         if proj is None or not self._clients.is_ready(proj_name):
             return items
-        self._activator.activate(proj)
         try:
             from tumblepipe.config import scene as scn_mod
             scene_uri = uris.scene(scene_path)
-            scene = scn_mod.get_scene_by_uri(scene_uri)
+            scene = scn_mod.get_scene_by_uri_in(proj.store(), scene_uri)
         except Exception as exc:
             raise TagQueryError(
                 self._catalog_id,
@@ -360,10 +356,9 @@ class ContainerManager:
         result: dict[str, list[Collection]] = {"assets": [], "shots": []}
         if not self._clients.is_ready(proj.name):
             return result
-        self._activator.activate(proj)
         from tumblepipe.config import groups as grp_mod
         for ctx in ("shots", "assets"):
-            for g in grp_mod.list_groups(ctx):
+            for g in grp_mod.list_groups_in(proj.store(), ctx):
                 name = g.uri.segments[-1] if g.uri.segments else str(g.uri)
                 group_id = f"group:{proj.name}:{ctx}/{name}"
                 # The leaf lands on the Multi ITSELF — its card, with
@@ -435,9 +430,8 @@ class ContainerManager:
         children: list[Collection] = []
         if not self._clients.is_ready(proj.name):
             return children
-        self._activator.activate(proj)
         from tumblepipe.config import scene as scn_mod
-        for s in scn_mod.list_scenes():
+        for s in scn_mod.list_scenes_in(proj.store()):
             path = "/".join(s.uri.segments) if s.uri.segments else str(s.uri)
             name = s.uri.segments[-1] if s.uri.segments else path
             children.append(Collection(
@@ -564,7 +558,7 @@ class ContainerManager:
             metadata=metadata,
         )
 
-    def _build_shot_staged(self, shot_uri) -> None:
+    def _build_shot_staged(self, store, shot_uri) -> None:
         """Build a shot's staged USD locally.
 
         Mirrors the legacy Scene Editor's ``_execute_build_local`` —
@@ -573,11 +567,11 @@ class ContainerManager:
         can surface the error in their status message.
         """
         from tumblepipe.pipe.paths import next_staged_file_path
-        from tumblepipe.config.timeline import get_frame_range
+        from tumblepipe.config.timeline import get_frame_range_in
         from tumblepipe.pipe.staged_build import build_staged
 
         output_path = next_staged_file_path(shot_uri)
-        frame_range = get_frame_range(shot_uri)
+        frame_range = get_frame_range_in(store, shot_uri)
         render_range = (
             frame_range.full_range() if frame_range else None
         )
@@ -635,9 +629,8 @@ class ContainerManager:
         proj = self._registry.get(project_name)
         if proj is None or not self._clients.is_ready(project_name):
             return []
-        self._activator.activate(proj)
         from tumblepipe.config import groups as grp_mod
-        grp = grp_mod.get_group(uris.group(path))
+        grp = grp_mod.get_group_in(proj.store(), uris.group(path))
         if grp is None:
             return []
         return list(grp.departments)
@@ -650,9 +643,8 @@ class ContainerManager:
         proj = self._registry.get(proj_name)
         if proj is None or not self._clients.is_ready(proj_name):
             return []
-        self._activator.activate(proj)
         from tumblepipe.config import groups as grp_mod
-        grp = grp_mod.get_group(uris.group(path))
+        grp = grp_mod.get_group_in(proj.store(), uris.group(path))
         if grp is None:
             return []
         return [
@@ -680,7 +672,7 @@ class ContainerManager:
         from tumblepipe.config import groups as grp_mod
         from tumblepipe.pipe import paths as paths_mod
         group_uri = uris.group(path)
-        grp = grp_mod.get_group(group_uri)
+        grp = grp_mod.get_group_in(proj.store(), group_uri)
         if grp is None:
             return {}
         result: dict = {}
@@ -845,7 +837,7 @@ class ContainerManager:
         if kind == "group":
             from tumblepipe.config import groups as grp_mod
             from tumblepipe.config import department as dept_mod
-            grp = grp_mod.get_group(uris.group(path))
+            grp = None if proj is None else grp_mod.get_group_in(proj.store(), uris.group(path))
             covered: list[str] = []
             if grp is not None:
                 member_count = len(grp.members)
@@ -865,13 +857,15 @@ class ContainerManager:
             metadata["department_versions"] = group_dept_versions
             metadata["covered_departments"] = covered
             ctx = GroupContainer(proj_name, path).context
-            metadata["known_departments"] = [
+            metadata["known_departments"] = [] if proj is None else [
                 d.name for d in
-                dept_mod.list_departments(ctx, include_generated=False)
+                dept_mod.list_departments_in(proj.store(), ctx, include_generated=False)
             ]
         elif kind == "scene":
             from tumblepipe.config import scene as scn_mod
-            scn = scn_mod.get_scene_by_uri(uris.scene(path))
+            scn = None if proj is None else scn_mod.get_scene_by_uri_in(
+                proj.store(), uris.scene(path),
+            )
             if scn is not None:
                 member_count = len(scn.assets)
 
@@ -905,14 +899,13 @@ class ContainerManager:
         proj = self._resolver.project_for(asset_id)
         if proj is None or not self._clients.is_ready(proj.name):
             return []
-        self._activator.activate(proj)
         entity_uri = self._resolver.uri_for(asset_id)
         from tumblepipe.config import groups as grp_mod
         from tumblepipe.config import scene as scn_mod
 
         result: list[tuple[str, str, str]] = []
         context = entity_uri.segments[0]
-        for g in grp_mod.list_groups(context):
+        for g in grp_mod.list_groups_in(proj.store(), context):
             if entity_uri in g.members:
                 path = "/".join(g.uri.segments)
                 result.append((
@@ -925,10 +918,12 @@ class ContainerManager:
         # ``scene_ref`` (a shot).
         assigned = None
         if context == "shots":
-            assigned = scn_mod.get_scene_ref(entity_uri)
+            assigned = scn_mod.get_scene_ref_in(proj.store(), entity_uri)
             if assigned is None:
-                assigned, _source = scn_mod.get_inherited_scene_ref(entity_uri)
-        for s in scn_mod.list_scenes():
+                assigned, _source = scn_mod.get_inherited_scene_ref_in(
+                    proj.store(), entity_uri,
+                )
+        for s in scn_mod.list_scenes_in(proj.store()):
             held = any(uris.parse(e.asset) == entity_uri for e in s.assets)
             if held or (assigned is not None and s.uri == assigned):
                 path = "/".join(s.uri.segments)
@@ -962,10 +957,9 @@ class ContainerManager:
             cache[proj_name] = coverage
             return coverage
 
-        self._activator.activate(proj)
         from tumblepipe.config import groups as grp_mod
         for ctx in ("shots", "assets"):
-            for g in grp_mod.list_groups(ctx):
+            for g in grp_mod.list_groups_in(proj.store(), ctx):
                 # The collection id, so the remove action plugs straight
                 # into ``remove_assets_from_collection``.
                 group_id = GroupContainer(
@@ -996,23 +990,23 @@ class ContainerManager:
         proj = self._registry.get(proj_name)
         if proj is None:
             return
-        self._activator.activate(proj)
         from tumblepipe.config import groups as grp_mod
         group_uri = uris.group(path)
-        grp = grp_mod.get_group(group_uri)
+        store = proj.store()
+        grp = grp_mod.get_group_in(store, group_uri)
         if grp is None:
             raise ValueError(f"Multi {group_id} no longer exists")
         current = set(grp.departments)
         if enabled and dept not in current:
             try:
-                grp_mod.add_department(group_uri, dept)
+                grp_mod.add_department_in(store, group_uri, dept)
             except ValueError:
                 # Refused (a member's dept is another Multi's): the
                 # toggle the artist just ticked goes back with the panel.
                 self._refresh.detail()
                 raise
         elif (not enabled) and dept in current:
-            grp_mod.remove_department(group_uri, dept)
+            grp_mod.remove_department_in(store, group_uri, dept)
         else:
             return  # already in target state, no-op
         self.invalidate_membership_cache()
@@ -1045,7 +1039,8 @@ class ContainerManager:
         added = 0
         skipped = 0
         skip_reasons: set[str] = set()
-        group = grp_mod.get_group(ref.uri)
+        store = self._store_of(ref)
+        group = grp_mod.get_group_in(store, ref.uri)
         ref_departments = group.departments if group is not None else []
         for aid in asset_ids:
             uri = self._resolver.uri_for(aid)
@@ -1056,14 +1051,15 @@ class ContainerManager:
                 continue
             # A shot already in a Multi covering one of these
             # departments: its workfile would be a guess.
-            clash = grp_mod.overlap(
+            clash = grp_mod.overlap_in(
+                store,
                 ref.context, [uri], list(ref_departments), ref.uri,
             )
             if clash:
                 skipped += 1
                 skip_reasons.add(clash)
                 continue
-            grp_mod.add_member(ref.uri, uri)
+            grp_mod.add_member_in(store, ref.uri, uri)
             added += 1
         return (added, skipped, skip_reasons)
 
@@ -1071,7 +1067,8 @@ class ContainerManager:
         self, ref: SceneContainer, asset_ids: list[str],
     ) -> tuple[int, int, set[str]]:
         from tumblepipe.config import scene as scn_mod
-        scene = scn_mod.get_scene_by_uri(ref.uri)
+        store = self._store_of(ref)
+        scene = scn_mod.get_scene_by_uri_in(store, ref.uri)
         if scene is None:
             raise ValueError(f"Root {ref.path!r} does not exist")
         added = 0
@@ -1098,7 +1095,7 @@ class ContainerManager:
             # Shots dropped on a Root set the shot's scene_ref (the
             # shot "uses" this Root as its root-layer source).
             if uri.segments[0] == "shots":
-                scn_mod.set_scene_ref(uri, ref.uri)
+                scn_mod.set_scene_ref_in(store, uri, ref.uri)
                 added += 1
                 shot_ref_changed_uris.append(uri)
                 continue
@@ -1114,13 +1111,14 @@ class ContainerManager:
             # user sees the change without re-selecting.
             self._refresh.detail()
         if new_entries != list(existing):
-            scn_mod.set_scene_assets(ref.uri, new_entries)
+            scn_mod.set_scene_assets_in(store, ref.uri, new_entries)
         return (added, skipped, skip_reasons)
 
     def _remove_assets_from_group(
         self, ref: GroupContainer, asset_ids: list[str],
     ) -> tuple[int, int]:
         from tumblepipe.config import groups as grp_mod
+        store = self._store_of(ref)
         removed = 0
         skipped = 0
         for aid in asset_ids:
@@ -1128,7 +1126,7 @@ class ContainerManager:
             if uri is None:
                 skipped += 1
                 continue
-            grp_mod.remove_member(ref.uri, uri)
+            grp_mod.remove_member_in(store, ref.uri, uri)
             removed += 1
         return (removed, skipped)
 
@@ -1146,11 +1144,12 @@ class ContainerManager:
         assets, ticked where the Root already holds them."""
         from tumbletrove.asset_browser.api.types import CreationField
         from tumblepipe.config import scene as scn_mod
-        scene = scn_mod.get_scene_by_uri(ref.uri)
+        store = self._store_of(ref)
+        scene = scn_mod.get_scene_by_uri_in(store, ref.uri)
         if scene is None:
             return []
         choices = tuple(
-            self._scene_asset_label(u) for u in scn_mod.list_available_assets()
+            self._scene_asset_label(u) for u in scn_mod.list_available_assets_in(store)
         )
         current = tuple(
             dict.fromkeys(self._scene_asset_label(e.asset) for e in scene.assets)
@@ -1175,7 +1174,8 @@ class ContainerManager:
         list changed.
         """
         from tumblepipe.config import scene as scn_mod
-        scene = scn_mod.get_scene_by_uri(ref.uri)
+        store = self._store_of(ref)
+        scene = scn_mod.get_scene_by_uri_in(store, ref.uri)
         if scene is None:
             raise ValueError(f"Root {ref.path!r} does not exist")
         wanted = list(dict.fromkeys(str(x) for x in labels))
@@ -1193,7 +1193,7 @@ class ContainerManager:
             (e.asset, e.instances, e.channel) for e in scene.assets
         ]:
             return False
-        scn_mod.set_scene_assets(ref.uri, new_assets)
+        scn_mod.set_scene_assets_in(store, ref.uri, new_assets)
         return True
 
     def _remove_assets_from_scene(
@@ -1201,7 +1201,8 @@ class ContainerManager:
     ) -> tuple[int, int]:
         """``(removed, skipped)``."""
         from tumblepipe.config import scene as scn_mod
-        scene = scn_mod.get_scene_by_uri(ref.uri)
+        store = self._store_of(ref)
+        scene = scn_mod.get_scene_by_uri_in(store, ref.uri)
         if scene is None:
             raise ValueError(f"Root {ref.path!r} does not exist")
         removed = 0
@@ -1220,8 +1221,8 @@ class ContainerManager:
             else:
                 drop_set.add(str(uri))
         for shot_uri in shot_uris_to_clear:
-            if scn_mod.get_scene_ref(shot_uri) == ref.uri:
-                scn_mod.set_scene_ref(shot_uri, None)
+            if scn_mod.get_scene_ref_in(store, shot_uri) == ref.uri:
+                scn_mod.set_scene_ref_in(store, shot_uri, None)
                 removed += 1
             else:
                 skipped += 1
@@ -1232,7 +1233,7 @@ class ContainerManager:
             else:
                 kept.append(entry)
         if len(kept) != len(scene.assets):
-            scn_mod.set_scene_assets(ref.uri, kept)
+            scn_mod.set_scene_assets_in(store, ref.uri, kept)
         if shot_uris_to_clear:
             # Shot detail panels show the assigned Root — refresh so
             # the user sees the change without re-selecting.
@@ -1300,9 +1301,8 @@ class ContainerManager:
         proj = self._registry.get(ref.project_name)
         if proj is None:
             return []
-        self._activator.activate(proj)
         from tumblepipe.config import scene as scn_mod
-        return list(scn_mod.find_shots_with_scene_ref(ref.uri))
+        return list(scn_mod.find_shots_with_scene_ref_in(proj.store(), ref.uri))
 
     def rebuild_root_assigned_shots(
         self, collection_id: str,
@@ -1329,7 +1329,7 @@ class ContainerManager:
         for shot_uri in shots:
             try:
                 generate_root_version(shot_uri)
-                self._build_shot_staged(shot_uri)
+                self._build_shot_staged(proj.store(), shot_uri)
             except Exception:
                 # Per-shot boundary: reported through ``failed``.
                 log.exception("Rebuilding %s failed", shot_uri)
@@ -1362,6 +1362,11 @@ class ContainerManager:
 
     # ── Collection lifecycle (the host routes these by the clicked row) ──
 
+    def _store_of(self, ref: ContainerRef):
+        """The config store of ``ref``'s project, which is registered:
+        every caller reached ``ref`` through :meth:`_activated`."""
+        return self._registry.get(ref.project_name).store()
+
     def _activated(self, collection_id: str) -> ContainerRef | None:
         """The parsed id with its project active; None when it names no
         container of a registered project."""
@@ -1381,10 +1386,10 @@ class ContainerManager:
         try:
             if isinstance(ref, GroupContainer):
                 from tumblepipe.config import groups as grp_mod
-                grp_mod.remove_group(ref.uri)
+                grp_mod.remove_group_in(self._store_of(ref), ref.uri)
             else:
                 from tumblepipe.config import scene as scn_mod
-                scn_mod.remove_scene(ref.uri)
+                scn_mod.remove_scene_in(self._store_of(ref), ref.uri)
         except Exception as exc:
             raise ConfigError(
                 self._catalog_id,
@@ -1497,13 +1502,13 @@ class ContainerManager:
             return None
         if isinstance(ref, GroupContainer):
             from tumblepipe.config import groups as grp_mod
-            container = grp_mod.get_group(ref.uri)
+            container = grp_mod.get_group_in(self._store_of(ref), ref.uri)
             count = len(container.members) if container is not None else 0
             # Other members' decks read the coverage too.
             self.invalidate_membership_cache()
         else:
             from tumblepipe.config import scene as scn_mod
-            container = scn_mod.get_scene_by_uri(ref.uri)
+            container = scn_mod.get_scene_by_uri_in(self._store_of(ref), ref.uri)
             count = len(container.assets) if container is not None else 0
         if container is None:
             return None

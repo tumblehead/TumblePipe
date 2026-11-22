@@ -310,17 +310,18 @@ impl JournalReader {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 thread_local! {
-    /// The journal this thread's announces go to in tests; none unless a
-    /// test names one, so the suite never writes the user's journal.
-    pub(crate) static TEST_JOURNAL: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+    /// The journal this thread's announces go to in tests (this crate's,
+    /// and other crates' through the `testing` feature); none unless a test
+    /// names one, so no suite writes the user's journal.
+    pub static TEST_JOURNAL: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
 }
 
 fn target() -> Option<PathBuf> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     return TEST_JOURNAL.with(|j| j.borrow().clone());
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "testing")))]
     Some(journal_path())
 }
 

@@ -16,6 +16,7 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.config.channels import CHANNEL_KEY, list_channels
 from tumblepipe.config.multi_timeline import shift_block_range
 from tumblepipe.config.timeline import require_fps
+from tumblepipe.pipe import export_targets
 from tumblepipe.pipe.houdini import prim_metadata, prim_queries
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
@@ -358,11 +359,44 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
         """
         return self._export_local(render_range)
 
+    # ── Targets (#91) ─────────────────────────────────────
+
+    TARGETS_MODE_PARM = 'targets_mode'
+    TARGETS_PARM = 'targets'
+
+    def get_targets_mode(self) -> str:
+        """The Targets menu; a node saved before it existed has the parm
+        missing, which is its own entity alone."""
+        parm = self.parm(self.TARGETS_MODE_PARM)
+        return parm.eval() if parm is not None else export_targets.ENTITY
+
+    def get_chosen_targets(self) -> list[Uri]:
+        parm = self.parm(self.TARGETS_PARM)
+        return export_targets.parse_chosen(parm.eval() if parm is not None else '')
+
+    def set_chosen_targets(self, uris) -> None:
+        self.parm(self.TARGETS_PARM).set(export_targets.format_chosen(uris))
+
+    def get_target_uris(self) -> list[Uri]:
+        """The entities the export writes to: the node's own entity unless
+        the Targets menu says otherwise. Raises when the entity does not
+        resolve."""
+        from tumblepipe.config.groups import children_of
+        return export_targets.resolve(
+            self.get_targets_mode(),
+            self.get_chosen_targets(),
+            self.require_entity_uri(),
+            lambda context: children_of(Uri.parse(f'entity:/{context}')),
+        )
+
     def _export_local(self, render_range=None):
         native = self.native()
 
         # Get parameters (each raises when it does not resolve)
         entity_uri = self.require_entity_uri()
+        targets = self.get_target_uris()
+        if targets != [entity_uri]:
+            return self._export_to_targets(targets, render_range)
         department_name = self.require_department_name()
         channel_name = self.get_channel_name()
         # A range set for this submit (#76) stands in for the node's own
@@ -430,41 +464,19 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             layout_keys = self._write_layout_keys(
                 temp_path, layer_file_name, time_offset
             )
-            layer_path = temp_path / layer_file_name
-            _embed_apex_files(layer_path)
-            if entity_uri.segments[0] == 'assets':
-                _retype_asset_structure(layer_path, entity_uri)
-            _stamp_entity(
-                layer_path, entity_uri, department_name, version_name
-            )
-            make_portable(layer_path)
-            _add_shared_sublayer(layer_path, entity_uri, department_name)
-
-            # The stage may have changed while exporting
-            root = self._input_stage(channel_name).GetPseudoRoot()
-            aov_names = [
-                aov_path.rsplit('/', 1)[-1].lower()
-                for aov_path in prim_queries.list_render_vars(root)
-            ]
-            save_layer_context(
-                target_path=temp_path,
-                entity_uri=entity_uri,
-                department_name=department_name,
-                version_name=version_name,
-                timestamp=timestamp.isoformat(),
-                user_name=user_name,
-                channel_name=channel_name,
+            self._finish_version(
+                temp_path, layer_file_name, entity_uri, department_name,
+                channel_name, version_path,
+                timestamp=timestamp, user_name=user_name,
+                asset_inputs=asset_inputs,
                 parameters=dict(
                     assets=_parameter_assets(assets_by_uri),
-                    aov_names=aov_names,
+                    aov_names=self._aov_names(channel_name),
                     # Provenance only: the layer is on the shot's frames.
                     **({'time_offset': time_offset} if time_offset else {}),
                     **({'layout_keys': layout_keys} if layout_keys else {}),
                 ),
-                inputs=list(map(json.loads, asset_inputs)),
-                producer=scene_producer(native.path())
             )
-            _copy_to_version(temp_path, version_path)
         announce_change(events.EXPORT, entity_uri, department_name)
 
         ns.set_node_comment(
@@ -478,6 +490,184 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             f"version={version_name}, output={version_path}"
         )
         return version_name
+
+    def _export_to_targets(self, targets: list[Uri], render_range=None):
+        """Export the layer once and write a version of it to each of
+        ``targets`` (#91): the Targets menu set to Chosen, All shots or
+        All assets.
+
+        The stage is cooked once, in this scene, over this node's frames
+        (the test shot's). Each target then gets a copy of it, shifted so
+        the node's first frame lands on the target's first frame, and goes
+        through the same per-entity steps as a single export: its own layer
+        name and version, the entity stamp, the shared sublayer, its own
+        context.json. Overrides on prims a target lacks are written as they
+        are; USD ignores them there. Layout keys are not written: they
+        belong to one shot's APEX Animate.
+        """
+        from tumblepipe.config.timeline import get_fps, get_export_frame_range
+
+        native = self.native()
+        source_uri = self.require_entity_uri()
+        department_name = self.require_department_name()
+        channel_name = self.get_channel_name()
+        refused = export_targets.problems(
+            source_uri, targets,
+            exists=lambda uri: api.config.get_properties(uri) is not None,
+            fps_of=get_fps,
+        )
+        if refused:
+            raise ExportLayerError(
+                f'{self.path()}: cannot export to these targets.\n'
+                + '\n'.join(refused)
+            )
+        node_range = self.get_frame_range()
+        if render_range is None:
+            render_range = node_range.full_range()
+        logger.info(
+            f"Starting export to {len(targets)} targets: source={source_uri}, "
+            f"dept={department_name}, channel={channel_name}, "
+            f"frames={render_range.first_frame}-{render_range.last_frame}"
+        )
+        time_offset = self.get_time_offset()
+        user_name = get_user_name()
+        timestamp = dt.datetime.now()
+
+        root = self._input_stage(channel_name).GetPseudoRoot()
+        expected_asset_uris = {
+            str(uri) for uri in list_expected_asset_uris(native)
+            if uri != source_uri
+        }
+        check_no_root_asset_imports(source_uri, expected_asset_uris)
+        # The stage is the source's: check it once, as a single export does.
+        scraped, _ = _scrape_assets(
+            root, source_uri, department_name, '', expected_asset_uris
+        )
+        check_no_dropped_assets(
+            root, source_uri, expected_asset_uris, set(scraped)
+        )
+        self.parm('set_metadata_fps').set(require_fps(source_uri))
+
+        root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
+        root_temp_path.mkdir(parents=True, exist_ok=True)
+        written = []
+        with TemporaryDirectory(dir=path_str(root_temp_path)) as cook_dir:
+            cook_path = Path(cook_dir)
+            cook_name = 'layer.usd'
+            self._write_layer(
+                cook_path, cook_name,
+                shift_block_range(render_range, time_offset),
+                self.get_batch_size(),
+            )
+            if time_offset != 0:
+                report_progress(f"moving frames back by {time_offset}")
+                shift_directory(cook_path, -time_offset)
+            # The stage may have changed while exporting
+            root = self._input_stage(channel_name).GetPseudoRoot()
+            aov_names = self._aov_names(channel_name)
+            for index, target_uri in enumerate(targets, 1):
+                report_progress(
+                    f"writing {target_uri} ({index} of {len(targets)})"
+                )
+                version_path = next_export_path(
+                    target_uri, channel_name, department_name
+                )
+                version_name = version_path.name
+                # Each target records its own export in the assets' inputs.
+                assets_by_uri, asset_inputs = _scrape_assets(
+                    root, target_uri, department_name, version_name,
+                    expected_asset_uris,
+                )
+                target_range = get_export_frame_range(target_uri)
+                shift = export_targets.frame_shift(
+                    node_range.start_frame,
+                    None if target_range is None else target_range.start_frame,
+                )
+                with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+                    temp_path = Path(temp_dir)
+                    shutil.copytree(cook_path, temp_path, dirs_exist_ok=True)
+                    layer_file_name = get_layer_file_name(
+                        target_uri, channel_name, department_name, version_name
+                    )
+                    (temp_path / cook_name).rename(temp_path / layer_file_name)
+                    if shift != 0:
+                        shift_directory(temp_path, shift)
+                    self._finish_version(
+                        temp_path, layer_file_name, target_uri,
+                        department_name, channel_name, version_path,
+                        timestamp=timestamp, user_name=user_name,
+                        asset_inputs=asset_inputs,
+                        parameters=dict(
+                            assets=_parameter_assets(assets_by_uri),
+                            aov_names=aov_names,
+                            # Provenance: where the layer was authored, and
+                            # how far its frames moved to land on this one.
+                            exported_from=str(source_uri),
+                            **({'frame_shift': shift} if shift else {}),
+                            **({'time_offset': time_offset} if time_offset else {}),
+                        ),
+                    )
+                announce_change(events.EXPORT, target_uri, department_name)
+                written.append(f'{target_uri} {version_name}')
+                logger.info(
+                    f"Exported {source_uri} to {target_uri}: dept="
+                    f"{department_name}, version={version_name}, "
+                    f"shift={shift}, output={version_path}"
+                )
+
+        ns.set_node_comment(
+            native,
+            f'last export: {len(written)} targets\n'
+            f'{timestamp.strftime("%Y-%m-%d %H:%M:%S")}\n'
+            f'by {user_name}'
+        )
+        return ', '.join(written)
+
+    def _aov_names(self, channel_name) -> list[str]:
+        """The render vars on the input stage, read again after the cook
+        (the stage may have changed while exporting): context.json's
+        ``aov_names``."""
+        root = self._input_stage(channel_name).GetPseudoRoot()
+        return [
+            aov_path.rsplit('/', 1)[-1].lower()
+            for aov_path in prim_queries.list_render_vars(root)
+        ]
+
+    def _finish_version(
+        self, temp_path: Path, layer_file_name: str, entity_uri: Uri,
+        department_name: str, channel_name: str, version_path: Path, *,
+        timestamp, user_name: str, asset_inputs, parameters: dict,
+    ):
+        """Make the exported folder ``temp_path`` a finished version of
+        ``entity_uri`` at ``version_path``: the steps every export runs on
+        its layer, a single export's and each target's alike.
+
+        Embeds the APEX scene files, gives an asset's structure its types,
+        stamps the entity, makes the paths portable, adds the shared
+        sublayer, writes context.json with ``parameters``, and copies it
+        all to the version (context.json last, which marks it finished).
+        """
+        layer_path = temp_path / layer_file_name
+        version_name = version_path.name
+        _embed_apex_files(layer_path)
+        if entity_uri.segments[0] == 'assets':
+            _retype_asset_structure(layer_path, entity_uri)
+        _stamp_entity(layer_path, entity_uri, department_name, version_name)
+        make_portable(layer_path)
+        _add_shared_sublayer(layer_path, entity_uri, department_name)
+        save_layer_context(
+            target_path=temp_path,
+            entity_uri=entity_uri,
+            department_name=department_name,
+            version_name=version_name,
+            timestamp=timestamp.isoformat(),
+            user_name=user_name,
+            channel_name=channel_name,
+            parameters=parameters,
+            inputs=list(map(json.loads, asset_inputs)),
+            producer=scene_producer(self.native().path())
+        )
+        _copy_to_version(temp_path, version_path)
 
     def _write_layout_keys(self,temp_path, layer_file_name, time_offset):
         """With Layout in Animate on and an APEX Animate LOP feeding this
@@ -748,6 +938,31 @@ def open_location(kwargs):
 def select(kwargs):
     """Entity button."""
     ExportLayer(kwargs['node']).pick_entity()
+
+
+def select_targets(kwargs):
+    """The Targets Browse... button: pick the shots or assets to export to
+    (Targets: Chosen), several at once. The picker opens on the node's own
+    kind of entity and starts from the current list."""
+    from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog
+
+    node = ExportLayer(kwargs['node'])
+    source = node.get_entity_uri()
+    kind = source.segments[0] if source is not None and source.segments else 'both'
+    dialog = EntitySelectorDialog(
+        api=api,
+        entity_filter=kind if kind in ('shots', 'assets') else 'both',
+        include_from_context=False,
+        title="Export To",
+        parent=hou.qt.mainWindow(),
+        multi_select=True,
+    )
+    if not dialog.exec_():
+        return
+    picked = [Uri.parse(raw) for raw in dialog.get_selected_uris()]
+    with hou.undos.group(f'Pick targets of {node.path()}'):
+        node.set_chosen_targets(picked)
+        node.parm(node.TARGETS_MODE_PARM).set(export_targets.CHOSEN)
 
 
 def validate(kwargs):

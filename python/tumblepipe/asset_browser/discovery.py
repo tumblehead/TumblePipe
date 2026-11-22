@@ -117,41 +117,42 @@ def _lookup(catalog_id: str, what: str, asset_id: str, fn, *args):
         ) from exc
 
 
-def entity_channels(catalog_id: str, asset_id: str, uri) -> list[str]:
-    """The entity's publish channel names."""
-    from tumblepipe.config.channels import list_channels
-    return list(_lookup(catalog_id, "channels", asset_id, list_channels, uri))
+def entity_channels(catalog_id: str, store, asset_id: str, uri) -> list[str]:
+    """The entity's publish channel names, read from its project's
+    ``store``."""
+    from tumblepipe.config.channels import list_channels_in
+    return list(_lookup(catalog_id, "channels", asset_id, list_channels_in, store, uri))
 
 
-def entity_frame_range(catalog_id: str, asset_id: str, uri):
+def entity_frame_range(catalog_id: str, store, asset_id: str, uri):
     """The entity's ``FrameRange``, or None when it has none. A Multi's id
     resolves no entity ``uri`` and has none: its scene keeps the range it
     has, and the FPS comes from the project."""
-    from tumblepipe.config.timeline import get_frame_range
+    from tumblepipe.config.timeline import get_frame_range_in
     if uri is None:
         return None
-    return _lookup(catalog_id, "frame range", asset_id, get_frame_range, uri)
+    return _lookup(catalog_id, "frame range", asset_id, get_frame_range_in, store, uri)
 
 
-def entity_fps(catalog_id: str, asset_id: str, uri):
+def entity_fps(catalog_id: str, store, asset_id: str, uri):
     """The entity's FPS (its own, else the project's it inherits), or None
     when neither is configured. A Multi's id resolves no entity ``uri``: its
     scene plays at the project's FPS."""
-    from tumblepipe.config.timeline import get_fps
+    from tumblepipe.config.timeline import get_fps_in
     from tumblepipe.util.uri import Uri
     if uri is None:
         uri = Uri.parse("config:/project")
-    return _lookup(catalog_id, "fps", asset_id, get_fps, uri)
+    return _lookup(catalog_id, "fps", asset_id, get_fps_in, store, uri)
 
 
-def entity_animatable(catalog_id: str, asset_id: str, uri) -> bool:
+def entity_animatable(catalog_id: str, store, asset_id: str, uri) -> bool:
     """Whether the entity is time-dependent (assets set ``animatable:
     false``; shots and unmarked entities are, and so is an id that
     resolves no entity ``uri``)."""
-    from tumblepipe.config.timeline import is_animatable
+    from tumblepipe.config.timeline import is_animatable_in
     if uri is None:
         return True
-    return _lookup(catalog_id, "animatable", asset_id, is_animatable, uri)
+    return _lookup(catalog_id, "animatable", asset_id, is_animatable_in, store, uri)
 
 
 @dataclasses.dataclass
@@ -341,7 +342,7 @@ class EntityIndex:
                     continue
                 # The pools, once per project rather than once per card.
                 pools = {
-                    kind: self._dept_scope.pool(kind) for kind in uris.ENTITY_KINDS
+                    kind: self._dept_scope.pool(proj.name, kind) for kind in uris.ENTITY_KINDS
                 }
                 for uri in entity_uris:
                     segments = uri.segments
@@ -399,7 +400,7 @@ class EntityIndex:
         else:
             tags = {"type:shot", f"sequence:{bucket}"}
             metadata["sequence"] = bucket
-            fr = entity_frame_range(self._catalog_id, asset_id, uri)
+            fr = entity_frame_range(self._catalog_id, proj.store(), asset_id, uri)
             metadata["frame_range"] = (
                 f"{fr.start_frame}-{fr.end_frame}"
                 if fr is not None
@@ -496,11 +497,11 @@ class EntityIndex:
         if kind == "assets":
             tags |= {"type:asset", f"category:{bucket}"}
             metadata["category"] = bucket
-            metadata["channels"] = entity_channels(self._catalog_id, asset_id, uri)
+            metadata["channels"] = entity_channels(self._catalog_id, proj.store(), asset_id, uri)
         else:
             tags |= {"type:shot", f"sequence:{bucket}"}
             metadata["sequence"] = bucket
-            fr = entity_frame_range(self._catalog_id, asset_id, uri)
+            fr = entity_frame_range(self._catalog_id, proj.store(), asset_id, uri)
             if fr is not None:
                 if fr.start_frame is not None:
                     metadata["frame_start"] = fr.start_frame
@@ -508,7 +509,7 @@ class EntityIndex:
                     metadata["frame_end"] = fr.end_frame
                 if fr.start_frame is not None and fr.end_frame is not None:
                     metadata["frame_total"] = fr.end_frame - fr.start_frame + 1
-            fps = entity_fps(self._catalog_id, asset_id, uri)
+            fps = entity_fps(self._catalog_id, proj.store(), asset_id, uri)
             if fps is not None:
                 metadata["fps"] = fps
         return AssetDetail(
@@ -553,7 +554,7 @@ class EntityIndex:
         self._activator.activate(proj)
         uri = self._resolver.uri_for_ready(asset_id)
         if departments is None:
-            departments = self._dept_scope.pool(uri.segments[0])
+            departments = self._dept_scope.pool(proj.name, uri.segments[0])
         result: dict[str, tuple[list[str], float]] = {}
         for dept in departments:
             _workfile_uri, workspace = department_workspace(uri, dept)

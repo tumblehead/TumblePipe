@@ -54,6 +54,7 @@ from tumbletrove.asset_browser.api.errors import (
 )
 from tumblepipe.api import get_user_name
 from tumblepipe.util import desktop
+from tumblepipe.util.io import write_bytes_atomic
 from tumbletrove.asset_browser.api.types import (
     Asset,
     AssetAction,
@@ -212,13 +213,9 @@ def read_entry(entry_dir: Path) -> dict | None:
 
 
 def write_entry(entry_dir: Path, meta: dict) -> None:
-    """Write ``entry.json`` atomically (tmp + replace)."""
-    entry_dir.mkdir(parents=True, exist_ok=True)
-    target = entry_dir / _ENTRY_FILE
-    tmp = target.with_suffix(".json.tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        json.dump({"kind": _KIND, "meta": meta}, fh, indent=2)
-    os.replace(tmp, target)
+    """Write ``entry.json`` atomically (:func:`write_bytes_atomic`)."""
+    document = json.dumps({"kind": _KIND, "meta": meta}, indent=2)
+    write_bytes_atomic(entry_dir / _ENTRY_FILE, document.encode("utf-8"))
 
 
 def recipes_root(project_path: str | os.PathLike) -> Path:

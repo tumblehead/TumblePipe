@@ -706,9 +706,6 @@ def stamp_acescg(input_path, output_path):
         '-o', path_str(output_path)
     ])
 
-def dwab_encode(input_path, output_path):
-    return encode(input_path, output_path, 'dwab:45')
-
 # The review look: ACEScg into the OCIO config's sRGB display, default view.
 DISPLAY_ARGS = ['--iscolorspace', 'acescg', '--ociodisplay', 'sRGB - Display', '']
 

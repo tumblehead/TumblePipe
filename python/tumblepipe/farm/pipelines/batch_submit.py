@@ -14,6 +14,7 @@ job builds a ``th::lookdev_studio`` workfile around the asset on the farm
 the dialog's.
 """
 
+from dataclasses import dataclass
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import logging
@@ -48,6 +49,8 @@ from tumblepipe.farm.pipelines import preview
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import repair as repair_spec
 from tumblepipe.farm.specs import preview_frames
+from tumblepipe.farm.specs import submission
+from tumblepipe.farm.submit import settings as submit_settings
 from tumblepipe.pipe import comp
 from tumblepipe.pipe import render_layers
 from tumblepipe.pipe import slap_comp
@@ -56,72 +59,20 @@ from tumblepipe.pipe.paths.render import list_render_versions
 from tumblepipe.farm.pipelines import publish as publish_pipeline
 from tumblepipe.farm.pipelines._batch import batch_title, new_batch
 
-# Mapping from submit-dialog settings keys to Karma/USD render setting
-# attribute paths, used to build overrides for render_settings.json. A key
-# reaches here only when the artist set it in the dialog: unset, the scene's
-# own render settings render (submit_settings.Field.override).
-# Attribute names are from the Karma schema (P:/buzz2/_config/usd/root_default_prims.usda)
-RENDER_OVERRIDE_MAP = {
-    'samples': 'karma:global:pathtracedsamples',       # int
-    'mblur': 'karma:object:mblur',                     # bool (object namespace)
-    'dof': 'karma:global:enable_dof',                  # bool (note underscore)
-    'denoise': None,                                   # Not a render setting (post-process)
-    'diffuse_limit': 'karma:object:diffuselimit',      # float (object namespace)
-    'reflection_limit': 'karma:object:reflectlimit',   # float (note: "reflect" not "reflection")
-    'refraction_limit': 'karma:object:refractlimit',   # float (note: "refract" not "refraction")
-    'volume_limit': 'karma:object:volumelimit',        # float (object namespace)
-    'sss_limit': 'karma:object:ssslimit',              # float (object namespace)
-}
-
-# Attributes that need float type conversion (stored as int in settings but float in Karma schema)
-FLOAT_ATTRIBUTES = {
-    'karma:object:diffuselimit',
-    'karma:object:reflectlimit',
-    'karma:object:refractlimit',
-    'karma:object:volumelimit',
-    'karma:object:ssslimit',
-}
-
-# The render chains each Range mode submits. With both, pipelines/render.py makes
-# every channel's full_render wait on its partial_render and reuse its
-# version: the first/middle/last check frames render (and go to Discord)
-# while the full range sits queued behind them.
-RENDER_TASK_KEYS = {
-    'full': ('full_render',),
-    'first_middle_last': ('partial_render',),
-    'preview_then_full': ('partial_render', 'full_render'),
-}
-
-
 class BatchSubmitError(Exception):
     """Error during batch submission."""
     pass
 
 
 def _build_render_overrides(settings: dict) -> dict:
-    """Build render overrides dict from job settings.
-
-    Maps settings keys to Karma/USD attribute paths using RENDER_OVERRIDE_MAP.
-    Skips entries with None USD path (e.g., denoise which is handled as post-process).
-    Converts limit values to float for correct USD type output.
-
-    Args:
-        settings: Job settings dict from submission dialog
-
-    Returns:
-        Dict mapping USD attribute paths to values
-    """
-    overrides = {}
-    for settings_key, usd_path in RENDER_OVERRIDE_MAP.items():
-        if usd_path is None:
-            continue  # Skip settings without USD attribute (e.g., denoise)
-        if settings_key in settings:
-            value = settings[settings_key]
-            # Convert to float for attributes that require float type
-            if usd_path in FLOAT_ATTRIBUTES and isinstance(value, int):
-                value = float(value)
-            overrides[usd_path] = value
-    return overrides
+    """``{Karma attribute: value}`` of the render overrides ``settings``
+    sends (``submit_settings.RENDER_OVERRIDES``). A key is there only when
+    the artist set it: unset, the scene's own render settings render."""
+    return {
+        attribute: settings[key]
+        for key, attribute in submit_settings.RENDER_OVERRIDES.items()
+        if key in settings
+    }
 
 
 def publish_department_names(
@@ -137,8 +88,9 @@ def publish_department_names(
     * ``pub_department`` — the old form's: every department up to this one,
       skipping the up-to-date ones at the front of the chain.
 
-    ``disabled`` are the departments turned off on the entity (#64): one
-    named explicitly is refused, and the "up to" chain walks past them.
+    ``disabled`` are the departments turned off on the entity (#64): the
+    "up to" chain walks past them (one ticked explicitly was refused before
+    this, ``farm.specs.submission``).
     """
     chosen = settings.get('pub_departments')
     if chosen is not None:
@@ -146,13 +98,6 @@ def publish_department_names(
         if unknown:
             raise BatchSubmitError(
                 f"Invalid publish department(s): {', '.join(unknown)}"
-            )
-        off = [name for name in department_names if name in set(chosen) & set(disabled)]
-        if off:
-            raise BatchSubmitError(
-                f"{', '.join(off)} {'is' if len(off) == 1 else 'are'} turned "
-                f"off on this entity: turn {'it' if len(off) == 1 else 'them'} "
-                f"back on before publishing"
             )
         wanted = set(chosen)
         return [name for name in department_names if name in wanted], False
@@ -238,63 +183,909 @@ def _repair_entry(entry: dict | None) -> dict:
     return {} if entry is None else {repair_spec.CONFIG_KEY: entry}
 
 
-def _read_frame_list(entity_uri, text, first_frame: int, last_frame: int, turntable: bool):
-    """The normalised ranges of a render's Frame List (#84) inside its
-    ``first_frame``..``last_frame`` (rolls included), empty when none was
-    typed; BatchSubmitError for text that cannot be read, a range past the
-    shot, or a list on an asset's turntable (it renders the studio's
-    frames)."""
-    if not text or not text.strip():
-        return ()
-    if turntable:
-        raise BatchSubmitError(
-            f"{entity_uri}: an asset's turntable renders the studio's frames; "
-            "clear the frame list"
-        )
-    try:
-        return frame_ranges.read(text, first_frame, last_frame)
-    except frame_ranges.FrameListError as e:
-        raise BatchSubmitError(f"{entity_uri}: {e}") from e
-
-
 def _rendered_range(entity_uri) -> tuple[int, int] | None:
     """The frames every channel's best render covers now (what a re-comp's
-    default imports read), None when none is rendered or a range is unknown."""
-    from tumblepipe.pipe import comp
+    default imports read), None when none is rendered or a range is unknown
+    (``comp.rendered_range``)."""
     from tumblepipe.pipe.paths import get_render_context
-    try:
-        renders = get_render_context(entity_uri, purpose='render').renders
-        departments = [d.name for d in list_departments('render')]
-        reads = comp.best_reads(renders, departments, list_channels(entity_uri))
-        return comp.covered_range(comp.read_ranges(renders, reads).values())
-    except Exception:
-        logging.warning(f"Could not read the rendered range of {entity_uri}", exc_info=True)
+    renders = get_render_context(entity_uri, purpose='render').renders
+    departments = [d.name for d in list_departments('render')]
+    return comp.rendered_range(renders, departments, list_channels(entity_uri))
+
+
+def _shot_range(entity_uri) -> tuple[int, int] | None:
+    """The shot's range with its rolls, None when it has none."""
+    shot_range = get_frame_range(entity_uri)
+    if shot_range is None:
         return None
+    full = shot_range.full_range()
+    return (full.first_frame, full.last_frame)
 
 
-def _check_preview_department(kind: str, name, department_names, renderable_names, disabled=()):
+def _check_preview_department(kind: str, name, department_names, renderable_names):
     """A render or playblast department must be real and renderable.
 
     The preview composes the pool prefix ending at this department, so a
     non-renderable pick has no layer to end on, and silently composing the
-    whole pool is the bug this prevents. A department turned off on the
-    entity (#64) has no layer in its build either.
+    whole pool is the bug this prevents. (One turned off on the entity, #64,
+    was refused before this: ``farm.specs.submission``.)
     """
     if name is None:
         raise BatchSubmitError(f"{kind} department not specified")
     if name not in department_names:
         raise BatchSubmitError(f"Invalid {kind.lower()} department: {name}")
-    if name in disabled:
-        raise BatchSubmitError(
-            f"{kind} department '{name}' is turned off on this entity: pick "
-            f"another, or turn it back on"
-        )
     if name not in renderable_names:
         raise BatchSubmitError(
             f"{kind} department '{name}' is not renderable. "
             f"Renderable departments: {', '.join(renderable_names)}"
         )
 
+
+# ── The resolve phase ─────────────────────────────────────
+
+@dataclass(frozen=True)
+class PublishPlan:
+    """The publish chain: ``departments`` in pool order, each after the one
+    before; ``skip_up_to_date`` (the old "up to" spelling) skips an
+    up-to-date prefix (``publish_department_names``)."""
+    pool: str
+    priority: int
+    departments: tuple[str, ...]
+    skip_up_to_date: bool
+
+
+@dataclass(frozen=True)
+class RenderPlan:
+    """A checked render: its frames with the rolls (``cut_range`` the cut,
+    where the check frames sit), the Frame List's and the Preview Frames
+    List's config entries, and the Karma overrides the artist set. A
+    ``turntable`` (an asset's, #53) renders the studio's frames on its step,
+    always through the collapse job; ``standalone`` renders through a farm
+    stage job. ``repair`` is Into version's entry (#92,
+    ``farm.specs.repair``), None for new versions."""
+    department: str
+    channels: list[str]
+    pool: str
+    priority: int
+    tile_count: int
+    first_frame: int
+    last_frame: int
+    cut_range: list[int]
+    step: int
+    batch_size: int
+    denoise: bool
+    copy_to_edit: bool
+    standalone: bool
+    task_keys: tuple[str, ...]
+    turntable: bool
+    preview_entry: dict
+    frame_ranges_entry: dict
+    overrides: dict
+    repair: dict | None = None
+
+
+@dataclass(frozen=True)
+class PlayblastPlan:
+    """A checked playblast (``specs.playblast.valid_look``)."""
+    department: str
+    pool: str
+    priority: int
+    res: list
+    look: dict
+
+
+@dataclass(frozen=True)
+class EntityPlan:
+    """One entity's submission, its settings checked (``_resolve``).
+    ``kinds`` are the ticked sections in submit order; ``comp`` is the
+    re-comp's block (``specs.composite.valid_recomp``) over ``comp_range``."""
+    uri: Uri
+    context: str
+    kinds: tuple[str, ...]
+    publish: PublishPlan | None
+    render: RenderPlan | None
+    playblast: PlayblastPlan | None
+    comp: dict | None
+    comp_range: tuple[int, int] | None
+
+
+def _kinds(settings: dict) -> tuple[str, ...]:
+    """The ticked sections, in the order the batch title names them."""
+    wanted = (
+        ('publish', settings['publish']),
+        ('render', settings['render']),
+        ('playblast', settings['playblast']),
+        ('comp', settings.get('comp', False)),
+    )
+    return tuple(kind for kind, on in wanted if on)
+
+
+def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> EntityPlan:
+    """Check ``settings`` for ``entity_uri`` and read what the builders need.
+
+    Every refusal of the settings is raised here (``BatchSubmitError``),
+    before the farm is contacted or a staging folder made: it reads the
+    project (channels, departments, frame ranges, renders and staged builds
+    on disk), never the farm. The builders refuse only what building finds:
+    a ticked department with no workfile, a preview input that cannot be
+    snapshotted, a comp workfile that cannot be read.
+    """
+    do_publish = 'publish' in kinds
+    do_render = 'render' in kinds
+    do_playblast = 'playblast' in kinds
+    do_comp = 'comp' in kinds
+
+    if do_publish:
+        pub_pool = settings['pub_pool']
+        pub_priority = settings['pub_priority']
+
+    if do_render:
+        render_department = settings.get('render_department')
+        channels = read_channel_names(settings)
+        render_pool = settings['render_pool']
+        render_priority = settings['render_priority']
+        tile_count = settings['tile_count']
+        # Refused now, not when the render jobs are built on the farm.
+        slap_comp_problem = slap_comp.tiles_problem(entity_uri, tile_count)
+        if slap_comp_problem is not None:
+            raise BatchSubmitError(slap_comp_problem)
+        first_frame = settings.get('first_frame')
+        last_frame = settings.get('last_frame')
+        pre_roll = settings['pre_roll']
+        post_roll = settings['post_roll']
+        batch_size = settings['batch_size']
+        # The Step (Remy, 2026-11-17): every Nth frame of the range, or of
+        # each Frame List range, from its first. Default 1, what a caller
+        # from before it got.
+        render_step = settings.get('render_step', 1)
+        if isinstance(render_step, bool) or not isinstance(render_step, int) or render_step < 1:
+            raise BatchSubmitError(
+                f"Invalid render step for {entity_uri}: {render_step!r} (a whole "
+                "number from 1)"
+            )
+        denoise = settings['denoise']
+        copy_to_edit = settings['copy_to_edit']
+        standalone = settings['standalone']
+        # 'first_middle_last' submits the partial_render chain (3 check
+        # frames + notify) instead of the full_render chain (all frames +
+        # slapcomp/mp4); 'preview_then_full' submits both, and the render
+        # pipeline holds each channel's full render until its partial render
+        # is done.
+        render_mode = settings['render_mode']
+        render_task_keys = submission.RENDER_TASK_KEYS.get(render_mode)
+        if render_task_keys is None:
+            raise BatchSubmitError(
+                f"Unknown render_mode {render_mode!r}: expected one of "
+                f"{', '.join(submission.RENDER_TASK_KEYS)}."
+            )
+
+    # The re-comp's schedule and frames (specs.composite.valid_recomp). It
+    # posts to the comp channel, as an export_comp's submit does. Step and
+    # preview frames default to what a v1.98.0 caller got (every frame, no
+    # preview); a first or last frame is sent only when the artist set one
+    # (a submit_settings override field), else the comp follows the range.
+    comp_block = None
+    if do_comp:
+        comp_block = dict(
+            pool_name=settings['comp_pool'],
+            priority=settings['comp_priority'],
+            batch_size=settings['comp_batch_size'],
+            copy_to_edit=settings['comp_copy_to_edit'],
+            channel_name='comp',
+            step_size=settings.get('comp_step', 1),
+            preview_frames=settings.get('comp_preview', False),
+        )
+        for key in ('first_frame', 'last_frame'):
+            if settings.get(f'comp_{key}') is not None:
+                comp_block[key] = settings[f'comp_{key}']
+        # A workfile comp with no th::import_render (#80, a slap comp in the
+        # render scene): Farm Submit saved the workfile with the submission
+        # (``comp_scene``), and it comps the render beside it.
+        if settings.get('comp_scene') is not None:
+            comp_block['scene'] = dict(settings['comp_scene'])
+
+    if do_playblast:
+        pb_department = settings.get('pb_department')
+        pb_pool = settings['pb_pool']
+        pb_priority = settings['pb_priority']
+        pb_res = settings['pb_res']
+        pb_look = settings['pb_look']
+
+    # A Multi owns no staged stage, frame range or channels — its members
+    # do. Without this, it got as far as the staged-file lookup and failed
+    # with "Publish the shot first", which no publish could ever satisfy.
+    if entity_uri.purpose == 'groups':
+        raise BatchSubmitError(
+            f"{entity_uri} is a Multi, not a shot or asset. Submit its "
+            "member entities instead (the Submit Jobs dialog does this "
+            "when opened from a Multi)."
+        )
+
+    # Playblast is a shots-only preview (mirrors the shot playblast HDAs). The
+    # dialog only offers the column for the shots context, but guard here too.
+    if do_playblast and entity_context != 'shots':
+        raise BatchSubmitError(
+            f"Playblast is only supported for shots, not '{entity_context}'"
+        )
+    if do_render and entity_context not in ('shots', 'assets'):
+        raise BatchSubmitError(
+            f"Render is only supported for shots and assets, not '{entity_context}'"
+        )
+
+    # A comp is a shot's.
+    if do_comp and entity_context != 'shots':
+        raise BatchSubmitError(
+            f"Comp is only supported for shots, not '{entity_context}'"
+        )
+
+    # A channel the entity does not define would still build (every
+    # department falls back to default) and render the default scene again
+    # under that name. The dialog only sends the checked channels each
+    # entity defines; this is the backstop for any other caller.
+    if do_render:
+        defined = list_channels(entity_uri)
+        undefined = [name for name in channels if name not in defined]
+        if undefined:
+            raise BatchSubmitError(
+                f"{entity_uri} does not define render channel"
+                f"{'s' if len(undefined) > 1 else ''} "
+                f"{', '.join(undefined)} (it defines: {', '.join(defined)}). "
+                f"Uncheck {'them' if len(undefined) > 1 else 'it'} for this "
+                f"entity, or add the channel to it first."
+            )
+
+    # An asset renders as a turntable, on the studio's frames: the dialog's
+    # range and rolls are a shot's (an asset has none).
+    asset_turntable = do_render and entity_context == 'assets'
+    # Into version's repair (#92), read once the Frame List is
+    repair_entry = None
+    turntable_frames = None
+    if asset_turntable:
+        turntable_frames = turntable.farm_frames()
+        first_frame, last_frame = turntable_frames.first, turntable_frames.last
+        pre_roll = post_roll = 0
+        if render_step != 1:
+            raise BatchSubmitError(
+                f"{entity_uri}: an asset's turntable renders on the studio's "
+                f"step ({turntable_frames.step}); set the render step to 1"
+            )
+        render_step = turntable_frames.step
+
+    if do_render and (first_frame is None or last_frame is None):
+        raise BatchSubmitError(
+            f"No frame range for {entity_uri}: submit 'first_frame' and "
+            f"'last_frame', or configure a frame range on the entity"
+        )
+
+    # Extend the render range by the handles. The submitter resolves pre_roll /
+    # post_roll per entity and ships them, but nothing here ever read them, so
+    # farm renders silently came out at the play range while the dialog showed
+    # handles as applied. Routed through FrameRange rather than plain
+    # arithmetic so the roll validation applies (a start_roll that would take
+    # the first frame to <= 0 raises rather than producing a bad range), and so
+    # this matches the playblast, which resolves its range through
+    # FrameRange.full_range() too.
+    if do_render:
+        try:
+            render_frame_range = FrameRange(
+                first_frame, last_frame, pre_roll, post_roll
+            ).full_range()
+        except ValueError as e:
+            raise BatchSubmitError(
+                f"Invalid frame range for {entity_uri}: {e}"
+            )
+        # The preview's check frames sit in the cut, not on the roll.
+        cut_range = [first_frame, last_frame]
+        first_frame = render_frame_range.first_frame
+        last_frame = render_frame_range.last_frame
+        frame_list_text = settings.get('frame_list', '')
+        if asset_turntable and frame_list_text and frame_list_text.strip():
+            raise BatchSubmitError(
+                f"{entity_uri}: an asset's turntable renders the studio's frames; "
+                "clear the frame list"
+            )
+
+    # What a Comp alone follows: the renders on disk (#43), else the shot.
+    rendered = shot = None
+    if do_comp and not do_render:
+        rendered = _rendered_range(entity_uri)
+        if rendered is None:
+            shot = _shot_range(entity_uri)
+
+    # Departments turned off on the entity (#64): never published, never a cut.
+    disabled = get_disabled_departments(entity_uri)
+
+    # The refusals Farm Submit showed before Submit (farm.specs.submission).
+    refusals = submission.problems(settings, off=disabled, rendered=rendered, shot=shot)
+    if refusals:
+        raise BatchSubmitError(f"{entity_uri}: {refusals[0]}")
+
+    if do_render:
+        # The Frame List (#84): only these frames of the range (rolls
+        # included). One range is an ordinary render of it; two or more
+        # are a multi-range render, which is never published.
+        listed = () if asset_turntable else submission.frame_list(settings)[0]
+        frame_ranges_entry = frame_ranges.config_entry(listed)
+        if listed:
+            first_frame, last_frame = frame_ranges.span(listed)
+            cut_range = [first_frame, last_frame]
+        # Into version (#92): the listed frames go into existing versions,
+        # which stay as published as they were.
+        repair_entry = _plan_repair(
+            entity_uri, settings.get('into_version', repair_spec.TARGET_NEW),
+            listed, channels, render_department, denoise,
+            preview='partial_render' in render_task_keys, step=render_step,
+            turntable=asset_turntable,
+        )
+        if repair_entry is not None:
+            logging.info(
+                f"{entity_uri}: rendering {frame_ranges.format_ranges(listed)} "
+                f"into {_repair_targets(repair_entry)}"
+            )
+            if not _repair_publishes(repair_entry):
+                if copy_to_edit:
+                    logging.warning(
+                        f"{entity_uri}: Copy to edit skipped: the version is not "
+                        "the shot's render"
+                    )
+                    copy_to_edit = False
+                if do_comp:
+                    raise BatchSubmitError(
+                        f"{entity_uri}: Comp follows a published render, and the "
+                        "version rendered into is not one: untick Comp"
+                    )
+        elif frame_ranges_entry:
+            logging.info(
+                f"{entity_uri}: rendering {frame_ranges.format_ranges(listed)} "
+                f"({frame_ranges.summary(listed)}); {frame_ranges.NOT_PUBLISHED}"
+            )
+            if copy_to_edit:
+                logging.warning(
+                    f"{entity_uri}: Copy to edit skipped: "
+                    f"{frame_ranges.NOT_PUBLISHED}"
+                )
+                copy_to_edit = False
+        # A stepped shot render is a check render, never published
+        # (pipelines.render.is_check_render): the same as a multi-range one.
+        if render_step > 1 and not asset_turntable and repair_entry is None:
+            logging.info(
+                f"{entity_uri}: rendering every {render_step} frames; "
+                f"{frame_ranges.STEPPED_NOT_PUBLISHED}"
+            )
+            if copy_to_edit:
+                logging.warning(
+                    f"{entity_uri}: Copy to edit skipped: "
+                    f"{frame_ranges.STEPPED_NOT_PUBLISHED}"
+                )
+                copy_to_edit = False
+        # The Preview Frames List, read against the frames this render
+        # makes (rolls included, every frame); the dialog's Warnings column
+        # showed the same drops (submit_settings.preview_frame_warnings).
+        preview_entry = {}
+        if 'partial_render' in render_task_keys:
+            render_preview = preview_frames.parse(
+                settings.get('preview_frame_list', ''), first_frame, last_frame,
+                render_step,
+            )
+            if frame_ranges_entry:
+                render_preview = preview_frames.inside_ranges(render_preview, listed)
+            _log_preview_warnings(entity_uri, 'render', render_preview)
+            preview_entry = preview_frames.config_entry(render_preview)
+
+    if comp_block is not None and 'scene' in comp_block:
+        scene = comp_block['scene']
+        problems = comp.scene_comp_problems(
+            do_render,
+            do_render and 'full_render' in render_task_keys,
+            channels if do_render else [],
+            scene.get('aovs') or [],
+        )
+        if problems:
+            raise BatchSubmitError(f"{entity_uri}: {'; '.join(problems)}")
+        if not scene.get('path'):
+            raise BatchSubmitError(
+                f"{entity_uri}: the comp's workfile was not saved with the "
+                "submission; submit it from Farm Submit in that workfile"
+            )
+    # The comp's frames (submission.comp_follows): the frames the render beside
+    # it makes, else what the renders on disk cover, else the shot's; each end
+    # replaced by a frame the artist set (checked with the refusals above).
+    comp_range = None
+    if do_comp:
+        if do_render and repair_entry is not None:
+            # A repair comps its whole version (#92), which only the disk
+            # knows, so its comp frames are checked here, not with the
+            # refusals Farm Submit shares.
+            follows = (repair_entry['first_frame'], repair_entry['last_frame'])
+        else:
+            follows = submission.comp_follows(settings, rendered, shot)
+        if follows is None:
+            raise BatchSubmitError(f"No frame range for {entity_uri}")
+        comp_range = submission.comp_frames(
+            settings.get('comp_first_frame'), settings.get('comp_last_frame'), follows,
+        )
+        if repair_entry is not None:
+            problems = submission.comp_frame_problems(comp_range, follows, inside=True)
+            if problems:
+                raise BatchSubmitError(f"{entity_uri}: {problems[0]}")
+        if comp_block['preview_frames']:
+            comp_preview = preview_frames.parse(
+                settings.get('comp_preview_frame_list', ''), *comp_range,
+                comp_block['step_size'],
+            )
+            _log_preview_warnings(entity_uri, 'comp', comp_preview)
+            comp_block.update(preview_frames.config_entry(comp_preview))
+        if not composite_spec.valid_recomp(comp_block):
+            raise BatchSubmitError(
+                f"Invalid comp settings for {entity_uri}: the step and batch "
+                f"size must be at least 1 ({comp_block})"
+            )
+
+    # Get departments list
+    departments = list_departments(entity_context)
+    department_names = [d.name for d in departments]
+    renderable_names = [d.name for d in departments if d.renderable]
+
+    pub_dept_names, skip_up_to_date = [], False
+    if do_publish:
+        pub_dept_names, skip_up_to_date = publish_department_names(
+            settings, department_names, disabled
+        )
+    if do_render:
+        _check_preview_department(
+            'Render', render_department, department_names, renderable_names,
+        )
+    if do_playblast:
+        _check_preview_department(
+            'Playblast', pb_department, department_names, renderable_names,
+        )
+
+    # A turntable with nothing published before it renders the staged builds
+    # on disk: refused here, before the farm is contacted, when one is
+    # missing (the dialog's Warnings column said so before Submit). With a
+    # publish, the stage is built after it.
+    if asset_turntable and not do_publish:
+        missing = preview.unstaged_channels(entity_uri, channels)
+        if missing:
+            raise BatchSubmitError(
+                f"{entity_uri} has no staged build of channel"
+                f"{'s' if len(missing) > 1 else ''} {', '.join(missing)} "
+                "to put on the turntable: publish the asset first, or "
+                "tick a publish beside the render."
+            )
+
+    return EntityPlan(
+        uri=entity_uri,
+        context=entity_context,
+        kinds=kinds,
+        publish=PublishPlan(
+            pool=pub_pool,
+            priority=pub_priority,
+            departments=tuple(pub_dept_names),
+            skip_up_to_date=skip_up_to_date,
+        ) if do_publish else None,
+        render=RenderPlan(
+            department=render_department,
+            channels=channels,
+            pool=render_pool,
+            priority=render_priority,
+            tile_count=tile_count,
+            first_frame=first_frame,
+            last_frame=last_frame,
+            cut_range=cut_range,
+            step=render_step,
+            batch_size=batch_size,
+            denoise=denoise,
+            copy_to_edit=copy_to_edit,
+            standalone=standalone,
+            task_keys=tuple(render_task_keys),
+            turntable=asset_turntable,
+            preview_entry=preview_entry,
+            frame_ranges_entry=frame_ranges_entry,
+            overrides=_build_render_overrides(settings),
+            repair=repair_entry,
+        ) if do_render else None,
+        playblast=PlayblastPlan(
+            department=pb_department,
+            pool=pb_pool,
+            priority=pb_priority,
+            res=pb_res,
+            look=pb_look,
+        ) if do_playblast else None,
+        comp=comp_block,
+        comp_range=comp_range,
+    )
+
+
+# ── The builders ──────────────────────────────────────────
+
+def _publish_jobs(plan: EntityPlan, paths, temp_path, jobs, deps) -> str | None:
+    """Add the publish chain, each department after the one before; the
+    name of its last job, None when nothing publishes."""
+    if plan.publish is None:
+        return None
+    entity_uri = plan.uri
+    prev_job_name = None
+    # Exports are checked against the default channel's
+    channel_name = DEFAULT_CHANNEL
+    for dept_name in plan.publish.departments:
+        if not publish_pipeline.is_submissable(entity_uri, dept_name):
+            # The old "up to" spelling walks the whole chain, and an
+            # entity need not have a workfile in every department.
+            # A department ticked explicitly must have one.
+            if plan.publish.skip_up_to_date:
+                continue
+            raise BatchSubmitError(
+                f"No workfile to publish for {entity_uri}/{dept_name}"
+            )
+
+        # The old "up to" spelling skips an up-to-date prefix. A
+        # department named explicitly is published regardless.
+        if (
+            plan.publish.skip_up_to_date and prev_job_name is None
+            and not publish_pipeline.is_out_of_date(entity_uri, channel_name, dept_name)
+        ):
+            continue
+
+        job_name = f'publish_{dept_name}'
+        try:
+            job = publish_pipeline.create_publish_job(
+                entity_uri, dept_name, plan.publish.pool, plan.publish.priority,
+                paths, temp_path,
+            )
+        except ValueError as e:
+            raise BatchSubmitError(str(e)) from e
+        jobs[job_name] = job
+        deps[job_name] = [prev_job_name] if prev_job_name else []
+        prev_job_name = job_name
+    return prev_job_name
+
+
+def _preview_builds(plan: EntityPlan, last_publish, temp_path, jobs, deps) -> list[str]:
+    """What the previews wait on: nothing without a publish; after one, the
+    staged builds it makes stale, added here.
+
+    A preview after a publish reads the stage the publish produces, so the
+    staged build runs again (a first-ever department export or a newly
+    imported asset is absent from the old one) and the previews' input is
+    snapshotted on the farm once it has. The builds and the collapse after
+    the publish are its chain, so they run at its priority
+    (``publish_job.PRIORITY``): at the publish's own priority (which follows
+    the entity's farm.priority, like the render) they queued behind other
+    shots' renders and held this shot's render back.
+    """
+    if last_publish is None:
+        return []
+    if plan.render is None and plan.playblast is None:
+        return [last_publish]
+    # A pass-only render layer renders the default stage
+    # (pipe.render_layers), so it is the default channel that builds.
+    build_channels = (
+        render_layers.stage_channels(plan.uri, plan.render.channels)
+        if plan.render is not None else []
+    )
+    if plan.playblast is not None and DEFAULT_CHANNEL not in build_channels:
+        build_channels.append(DEFAULT_CHANNEL)
+    build_names = []
+    for build_channel in build_channels:
+        job_name = f'build_{build_channel}'
+        jobs[job_name] = build_pipeline.create({
+            'entity_uri': str(plan.uri),
+            'priority': publish_job.PRIORITY,
+            'pool_name': plan.publish.pool,
+            'channel_name': build_channel,
+        }, temp_path)
+        deps[job_name] = [last_publish]
+        build_names.append(job_name)
+    return build_names
+
+
+def _collapse_render(render: RenderPlan, comp_block: dict | None) -> dict:
+    """The collapse job's render: a turntable's on the studio's frames, else
+    a collapsed snapshot of the staged file with the overrides baked onto
+    its render-settings prim."""
+    if render.turntable:
+        return dict(
+            department=render.department,
+            channel_names=list(render.channels),
+            overrides=render.overrides,
+            task_keys=list(render.task_keys),
+            pool_name=render.pool,
+            priority=render.priority,
+            tile_count=render.tile_count,
+            first_frame=render.first_frame,
+            last_frame=render.last_frame,
+            step_size=render.step,
+            batch_size=render.batch_size,
+            # As the studio's own farm render: no denoise, no edit.
+            denoise=False,
+            copy_to_edit=False,
+            cut_range=render.cut_range,
+            turntable=True,
+            **render.preview_entry,
+        )
+    return dict(
+        department=render.department,
+        channel_names=list(render.channels),
+        overrides=render.overrides,
+        task_keys=list(render.task_keys),
+        pool_name=render.pool,
+        priority=render.priority,
+        tile_count=render.tile_count,
+        first_frame=render.first_frame,
+        last_frame=render.last_frame,
+        batch_size=render.batch_size,
+        # Sent only off step 1: a collapse job from before the Step names
+        # none (specs.collapse).
+        **({} if render.step == 1 else {'step_size': render.step}),
+        denoise=render.denoise,
+        copy_to_edit=render.copy_to_edit,
+        cut_range=render.cut_range,
+        **render.preview_entry,
+        **render.frame_ranges_entry,
+        **_repair_entry(render.repair),
+        **({} if comp_block is None else {'composite': comp_block}),
+    )
+
+
+def _collapse_config(plan: EntityPlan, after_publish: bool, user_name: str) -> dict | None:
+    """The farm-side snapshot for the direct render and/or the playblast
+    after a publish, None when neither takes one. A turntable always
+    snapshots on the farm: its workfile is built in hython there. A
+    standalone render's stage job composes on its own."""
+    render, playblast = plan.render, plan.playblast
+    collapses_render = render is not None and (render.turntable or not render.standalone)
+    if not (
+        (render is not None and render.turntable)
+        or (after_publish and (collapses_render or playblast is not None))
+    ):
+        return None
+    config = dict(
+        entity=dict(
+            uri=str(plan.uri),
+            department=render.department if render is not None else playblast.department,
+        ),
+        settings=dict(
+            user_name=user_name,
+            # A turntable with no publish has no publish pool.
+            pool_name=plan.publish.pool if plan.publish is not None else render.pool,
+            priority=publish_job.PRIORITY,
+        ),
+    )
+    if collapses_render:
+        config['render'] = _collapse_render(render, plan.comp)
+    if playblast is not None:
+        config['playblast'] = dict(
+            department=playblast.department,
+            pool_name=playblast.pool,
+            priority=playblast.priority,
+            res=list(playblast.res),
+            look=dict(playblast.look),
+        )
+    return config
+
+
+def _direct_render_jobs(
+    plan: EntityPlan, preview_deps, user_name, paths, temp_path, jobs, deps,
+) -> None:
+    """Render a snapshot of the staged file taken now, with the overrides
+    baked onto its render-settings prim (nothing published before it)."""
+    entity_uri, render = plan.uri, plan.render
+    try:
+        input_paths = preview.collapse_render_inputs(
+            entity_uri, render.channels, render.department,
+            render.overrides, temp_path, paths,
+        )
+    except preview.PreviewError as e:
+        raise BatchSubmitError(str(e)) from e
+    render_settings_path = preview.write_render_settings(
+        temp_path, paths, render.channels,
+        preview.aov_names(entity_uri, render.channels),
+    )
+    render_config = preview.render_config(
+        entity_uri,
+        department=render.department,
+        channels=render.channels,
+        input_paths=input_paths,
+        render_settings_path=render_settings_path,
+        user_name=user_name,
+        pool_name=render.pool,
+        priority=render.priority,
+        tile_count=render.tile_count,
+        first_frame=render.first_frame,
+        last_frame=render.last_frame,
+        step_size=render.step,
+        batch_size=render.batch_size,
+        denoise=render.denoise,
+        copy_to_edit=render.copy_to_edit,
+        task_keys=list(render.task_keys),
+        composite=plan.comp,
+        cut_range=render.cut_range,
+        preview_frame_list=render.preview_entry.get(preview_frames.CONFIG_KEY),
+        frame_ranges=render.frame_ranges_entry.get(frame_ranges.CONFIG_KEY),
+        repair=render.repair,
+    )
+    try:
+        render_pipeline.build(
+            render_config, paths, temp_path, jobs, deps,
+            depends_on=preview_deps,
+        )
+        logging.info(f"Added render jobs for {entity_uri}")
+    except Exception as e:
+        raise BatchSubmitError(f"Could not build render jobs for {entity_uri}: {e}") from e
+
+
+def _stage_render_job(plan: EntityPlan, preview_deps, user_name, temp_path, jobs, deps) -> None:
+    """A farm stage job builds the render stage, applying the overrides,
+    then submits the render itself. It composes when it runs, so after a
+    publish it only needs to wait for it."""
+    render = plan.render
+    render_settings_path = preview.write_render_settings(
+        temp_path, {}, render.channels,
+        preview.aov_names(plan.uri, render.channels),
+        overrides=render.overrides,
+    )
+    relative_render_settings_path = render_settings_path.relative_to(temp_path)
+
+    stage_config = dict(
+        entity=dict(
+            uri=str(plan.uri),
+            department=render.department
+        ),
+        settings=dict(
+            user_name=user_name,
+            purpose='render',
+            pool_name=render.pool,
+            channel_names=render.channels,
+            render_department_name=render.department,
+            render_settings_path=path_str(relative_render_settings_path),
+            tile_count=render.tile_count,
+            first_frame=render.first_frame,
+            last_frame=render.last_frame,
+            step_size=render.step,
+            batch_size=render.batch_size,
+            copy_to_edit=render.copy_to_edit,
+            cut_range=render.cut_range,
+            **render.preview_entry,
+            **render.frame_ranges_entry,
+            **_repair_entry(render.repair),
+        ),
+        **({} if plan.comp is None else {'composite': plan.comp}),
+        tasks={
+            'stage': dict(priority=render.priority, channel_name='exports'),
+            **{
+                task_key: dict(priority=render.priority, denoise=render.denoise, channel_name='renders')
+                for task_key in render.task_keys
+            }
+        }
+    )
+
+    # The stage job gates the render chain it submits, so it runs in that
+    # chain's band: with a preview it must not wait behind other shots' full
+    # renders.
+    stage_config['tasks']['stage']['priority'] = max(
+        task['priority']
+        for key, task in render_pipeline.banded_priorities(
+            stage_config['tasks']
+        ).items()
+        if key != 'stage'
+    )
+
+    # The stage job builds the render stages on the farm
+    stage_paths = {render_settings_path: relative_render_settings_path}
+    jobs['stage'] = stage_job.build(stage_config, stage_paths, temp_path)
+    deps['stage'] = list(preview_deps)
+
+
+def _render_jobs(
+    plan: EntityPlan, collapse, preview_deps, user_name, paths, temp_path, jobs, deps,
+) -> None:
+    """Add the render: a turntable, or a direct render after a publish, is
+    the collapse job's (``_collapse_config``); a direct render with nothing
+    published before it renders a snapshot taken now; a standalone render
+    is a farm stage job."""
+    render = plan.render
+    if render is None or render.turntable:
+        return
+    if render.standalone:
+        _stage_render_job(plan, preview_deps, user_name, temp_path, jobs, deps)
+    elif collapse is None:
+        _direct_render_jobs(plan, preview_deps, user_name, paths, temp_path, jobs, deps)
+
+
+def _playblast_job(
+    plan: EntityPlan, collapse, preview_deps, user_name, paths, temp_path, jobs, deps,
+) -> None:
+    """Add the playblast (a GL preview of the shot's staged stage): the
+    collapse job's after a publish, else of a snapshot taken now."""
+    playblast = plan.playblast
+    if playblast is None or collapse is not None:
+        return
+    entity_uri = plan.uri
+    try:
+        playblast_input = preview.collapse_playblast_input(
+            entity_uri, playblast.department, temp_path, paths,
+            light=playblast.look['light'],
+        )
+        playblast_config = preview.playblast_config(
+            entity_uri,
+            department=playblast.department,
+            input_path=playblast_input,
+            user_name=user_name,
+            pool_name=playblast.pool,
+            priority=playblast.priority,
+            res=playblast.res,
+            look=playblast.look,
+        )
+    except preview.PreviewError as e:
+        raise BatchSubmitError(str(e)) from e
+    try:
+        playblast_pipeline.build(
+            playblast_config, paths, temp_path, jobs, deps,
+            depends_on=preview_deps,
+        )
+        logging.info(f"Added playblast job for {entity_uri}")
+    except Exception as e:
+        raise BatchSubmitError(
+            f"Could not build playblast job for {entity_uri}: {e}"
+        ) from e
+
+
+def _comp_job(plan: EntityPlan, user_name, paths, temp_path, jobs, deps) -> None:
+    """A comp on its own: the shot's newest composite workfile over its
+    renders as they are now. With a render, the render chain carries it
+    (its config's composite block) and starts it after the denoise."""
+    if plan.comp is None or plan.render is not None:
+        return
+    try:
+        composite_pipeline.build(
+            composite_pipeline.recomp_config(
+                plan.uri, plan.comp,
+                user_name=user_name,
+                purpose='render',
+                first_frame=plan.comp_range[0],
+                last_frame=plan.comp_range[1],
+                temp_path=temp_path,
+                paths=paths,
+            ),
+            paths, temp_path, jobs, deps,
+            prefix='comp_',
+        )
+    except composite_pipeline.RecompError as e:
+        raise BatchSubmitError(str(e)) from e
+
+
+def _collapse_job(plan: EntityPlan, collapse, preview_deps, temp_path, jobs, deps) -> None:
+    """Add the collapse job ``_collapse_config`` made, after the previews' inputs."""
+    if collapse is None:
+        return
+    try:
+        jobs['collapse'] = collapse_job.build(collapse, {}, temp_path)
+        deps['collapse'] = list(preview_deps)
+    except Exception as e:
+        raise BatchSubmitError(
+            f"Could not build the collapse job for {plan.uri}: {e}"
+        ) from e
+
+
+def _finalize_batch(entity_uri, farm, batch, jobs, deps) -> list[str]:
+    """Submit ``jobs`` as ``batch``; the farm's job ids (none when no job
+    was added)."""
+    if not jobs:
+        logging.info(f"No jobs to submit for {entity_uri}")
+        return []
+
+    batch.add_jobs_with_deps(jobs, deps)
+
+    # Submit batch
+    jobs_dir = api.storage.resolve(Uri.parse('export:/other/jobs'))
+    job_ids = farm.submit(batch, jobs_dir)
+
+    logging.info(f"Submitted batch for {entity_uri}: {len(job_ids)} jobs")
+    return job_ids
+
+
+# ── The entry point ───────────────────────────────────────
 
 def submit_entity_batch(config: dict) -> list[str]:
     """
@@ -402,406 +1193,20 @@ def submit_entity_batch(config: dict) -> list[str]:
     if entity_context == 'edits':
         return edit_render_pipeline.submit(edit_render_pipeline.config_from_row(config))
 
-    do_publish = settings['publish']
-    do_render = settings['render']
-    do_playblast = settings['playblast']
-    do_comp = settings.get('comp', False)
-    if not do_publish and not do_render and not do_playblast and not do_comp:
+    kinds = _kinds(settings)
+    if not kinds:
         return []
-
-    # The publish job itself always runs at publish_job.PRIORITY. The builds
-    # and the collapse after it are the same chain and create the render
-    # batch, so they run there too: at pub_priority (which follows the
-    # entity's farm.priority, like the render) they queued behind other
-    # shots' renders and held this shot's render back.
-    chain_priority = publish_job.PRIORITY
-    if do_publish:
-        pub_pool = settings['pub_pool']
-        pub_priority = settings['pub_priority']
-
-    if do_render:
-        render_department = settings.get('render_department')
-        channels = read_channel_names(settings)
-        if not channels:
-            raise BatchSubmitError(f"No render channels for {entity_uri}")
-        render_pool = settings['render_pool']
-        render_priority = settings['render_priority']
-        tile_count = settings['tile_count']
-        # Refused now, not when the render jobs are built on the farm.
-        slap_comp_problem = slap_comp.tiles_problem(entity_uri, tile_count)
-        if slap_comp_problem is not None:
-            raise BatchSubmitError(slap_comp_problem)
-        first_frame = settings.get('first_frame')
-        last_frame = settings.get('last_frame')
-        pre_roll = settings['pre_roll']
-        post_roll = settings['post_roll']
-        batch_size = settings['batch_size']
-        # The Step (Remy, 2026-11-17): every Nth frame of the range, or of
-        # each Frame List range, from its first. Default 1, what a caller
-        # from before it got.
-        render_step = settings.get('render_step', 1)
-        if isinstance(render_step, bool) or not isinstance(render_step, int) or render_step < 1:
-            raise BatchSubmitError(
-                f"Invalid render step for {entity_uri}: {render_step!r} (a whole "
-                "number from 1)"
-            )
-        denoise = settings['denoise']
-        copy_to_edit = settings['copy_to_edit']
-        standalone = settings['standalone']
-        # 'first_middle_last' submits the partial_render chain (3 check
-        # frames + notify) instead of the full_render chain (all frames +
-        # slapcomp/mp4); 'preview_then_full' submits both, and the render
-        # pipeline holds each channel's full render until its partial render
-        # is done.
-        render_mode = settings['render_mode']
-        render_task_keys = RENDER_TASK_KEYS.get(render_mode)
-        if render_task_keys is None:
-            raise BatchSubmitError(
-                f"Unknown render_mode {render_mode!r}: expected one of "
-                f"{', '.join(RENDER_TASK_KEYS)}."
-            )
-
-    # The re-comp's schedule and frames (specs.composite.valid_recomp). It
-    # posts to the comp channel, as an export_comp's submit does. Step and
-    # preview frames default to what a v1.98.0 caller got (every frame, no
-    # preview); a first or last frame is sent only when the artist set one
-    # (a submit_settings override field), else the comp follows the range.
-    comp_block = None
-    if do_comp:
-        comp_block = dict(
-            pool_name=settings['comp_pool'],
-            priority=settings['comp_priority'],
-            batch_size=settings['comp_batch_size'],
-            copy_to_edit=settings['comp_copy_to_edit'],
-            channel_name='comp',
-            step_size=settings.get('comp_step', 1),
-            preview_frames=settings.get('comp_preview', False),
-        )
-        for key in ('first_frame', 'last_frame'):
-            if settings.get(f'comp_{key}') is not None:
-                comp_block[key] = settings[f'comp_{key}']
-        # A workfile comp with no th::import_render (#80, a slap comp in the
-        # render scene): Farm Submit saved the workfile with the submission
-        # (``comp_scene``), and it comps the render beside it.
-        if settings.get('comp_scene') is not None:
-            comp_block['scene'] = dict(settings['comp_scene'])
-
-    if do_playblast:
-        pb_department = settings.get('pb_department')
-        pb_pool = settings['pb_pool']
-        pb_priority = settings['pb_priority']
-        pb_res = settings['pb_res']
-        pb_look = settings['pb_look']
-
-    # A Multi owns no staged stage, frame range or channels — its members
-    # do. Without this, it got as far as the staged-file lookup and failed
-    # with "Publish the shot first", which no publish could ever satisfy.
-    if entity_uri.purpose == 'groups':
-        raise BatchSubmitError(
-            f"{entity_uri} is a Multi, not a shot or asset. Submit its "
-            "member entities instead (the Submit Jobs dialog does this "
-            "when opened from a Multi)."
-        )
-
-    # A channel the entity does not define would still build (every
-    # department falls back to default) and render the default scene again
-    # under that name. The dialog only sends the checked channels each
-    # entity defines; this is the backstop for any other caller.
-    if do_render:
-        defined = list_channels(entity_uri)
-        undefined = [name for name in channels if name not in defined]
-        if undefined:
-            raise BatchSubmitError(
-                f"{entity_uri} does not define render channel"
-                f"{'s' if len(undefined) > 1 else ''} "
-                f"{', '.join(undefined)} (it defines: {', '.join(defined)}). "
-                f"Uncheck {'them' if len(undefined) > 1 else 'it'} for this "
-                f"entity, or add the channel to it first."
-            )
-
-    # An asset renders as a turntable, on the studio's frames: the dialog's
-    # range and rolls are a shot's (an asset has none).
-    asset_turntable = do_render and entity_context == 'assets'
-    # Into version's repair (#92), read once the Frame List is
-    repair_entry = None
-    turntable_frames = None
-    if asset_turntable:
-        turntable_frames = turntable.farm_frames()
-        first_frame, last_frame = turntable_frames.first, turntable_frames.last
-        pre_roll = post_roll = 0
-        if render_step != 1:
-            raise BatchSubmitError(
-                f"{entity_uri}: an asset's turntable renders on the studio's "
-                f"step ({turntable_frames.step}); set the render step to 1"
-            )
-        render_step = turntable_frames.step
-
-    if do_render and (first_frame is None or last_frame is None):
-        raise BatchSubmitError(
-            f"No frame range for {entity_uri}: submit 'first_frame' and "
-            f"'last_frame', or configure a frame range on the entity"
-        )
-
-    # Extend the render range by the handles. The submitter resolves pre_roll /
-    # post_roll per entity and ships them, but nothing here ever read them, so
-    # farm renders silently came out at the play range while the dialog showed
-    # handles as applied. Routed through FrameRange rather than plain
-    # arithmetic so the roll validation applies (a start_roll that would take
-    # the first frame to <= 0 raises rather than producing a bad range), and so
-    # this matches the playblast, which resolves its range through
-    # FrameRange.full_range() too.
-    if do_render:
-        try:
-            render_frame_range = FrameRange(
-                first_frame, last_frame, pre_roll, post_roll
-            ).full_range()
-        except ValueError as e:
-            raise BatchSubmitError(
-                f"Invalid frame range for {entity_uri}: {e}"
-            )
-        # The preview's check frames sit in the cut, not on the roll.
-        cut_range = [first_frame, last_frame]
-        first_frame = render_frame_range.first_frame
-        last_frame = render_frame_range.last_frame
-        # The Frame List (#84): only these frames of the range (rolls
-        # included). One range is an ordinary render of it; two or more
-        # are a multi-range render, which is never published.
-        listed = _read_frame_list(
-            entity_uri, settings.get('frame_list', ''), first_frame, last_frame,
-            asset_turntable,
-        )
-        frame_ranges_entry = frame_ranges.config_entry(listed)
-        if listed:
-            first_frame, last_frame = frame_ranges.span(listed)
-            cut_range = [first_frame, last_frame]
-        # Into version (#92): the listed frames go into existing versions,
-        # which stay as published as they were.
-        repair_entry = _plan_repair(
-            entity_uri, settings.get('into_version', repair_spec.TARGET_NEW),
-            listed, channels, render_department, denoise,
-            preview='partial_render' in render_task_keys, step=render_step,
-            turntable=asset_turntable,
-        )
-        if repair_entry is not None:
-            logging.info(
-                f"{entity_uri}: rendering {frame_ranges.format_ranges(listed)} "
-                f"into {_repair_targets(repair_entry)}"
-            )
-            if not _repair_publishes(repair_entry):
-                if copy_to_edit:
-                    logging.warning(
-                        f"{entity_uri}: Copy to edit skipped: the version is not "
-                        "the shot's render"
-                    )
-                    copy_to_edit = False
-                if do_comp:
-                    raise BatchSubmitError(
-                        f"{entity_uri}: Comp follows a published render, and the "
-                        "version rendered into is not one: untick Comp"
-                    )
-        elif frame_ranges_entry:
-            logging.info(
-                f"{entity_uri}: rendering {frame_ranges.format_ranges(listed)} "
-                f"({frame_ranges.summary(listed)}); {frame_ranges.NOT_PUBLISHED}"
-            )
-            if copy_to_edit:
-                logging.warning(
-                    f"{entity_uri}: Copy to edit skipped: "
-                    f"{frame_ranges.NOT_PUBLISHED}"
-                )
-                copy_to_edit = False
-            if do_comp:
-                raise BatchSubmitError(
-                    f"{entity_uri}: Comp follows a published render, and "
-                    f"{frame_ranges.NOT_PUBLISHED}: untick Comp, or render "
-                    "one range"
-                )
-        # A stepped shot render is a check render, never published
-        # (pipelines.render.is_check_render): the same as a multi-range one.
-        if render_step > 1 and not asset_turntable and repair_entry is None:
-            logging.info(
-                f"{entity_uri}: rendering every {render_step} frames; "
-                f"{frame_ranges.STEPPED_NOT_PUBLISHED}"
-            )
-            if copy_to_edit:
-                logging.warning(
-                    f"{entity_uri}: Copy to edit skipped: "
-                    f"{frame_ranges.STEPPED_NOT_PUBLISHED}"
-                )
-                copy_to_edit = False
-            if do_comp:
-                raise BatchSubmitError(
-                    f"{entity_uri}: Comp follows a published render, and "
-                    f"{frame_ranges.STEPPED_NOT_PUBLISHED}: untick Comp, or "
-                    "set the render step to 1"
-                )
-        # The Preview Frames List, read against the frames this render
-        # makes (rolls included, every frame); the dialog's Warnings column
-        # showed the same drops (submit_settings.preview_frame_warnings).
-        preview_entry = {}
-        if 'partial_render' in render_task_keys:
-            render_preview = preview_frames.parse(
-                settings.get('preview_frame_list', ''), first_frame, last_frame,
-                render_step,
-            )
-            if frame_ranges_entry:
-                render_preview = preview_frames.inside_ranges(render_preview, listed)
-            _log_preview_warnings(entity_uri, 'render', render_preview)
-            preview_entry = preview_frames.config_entry(render_preview)
-
-    # Playblast is a shots-only preview (mirrors the shot playblast HDAs). The
-    # dialog only offers the column for the shots context, but guard here too.
-    if do_playblast and entity_context != 'shots':
-        raise BatchSubmitError(
-            f"Playblast is only supported for shots, not '{entity_context}'"
-        )
-    if do_render and entity_context not in ('shots', 'assets'):
-        raise BatchSubmitError(
-            f"Render is only supported for shots and assets, not '{entity_context}'"
-        )
-
-    # A comp is a shot's, and follows a render's full range: a preview-only
-    # render has no frames to comp.
-    if do_comp and entity_context != 'shots':
-        raise BatchSubmitError(
-            f"Comp is only supported for shots, not '{entity_context}'"
-        )
-    if comp_block is not None and 'scene' in comp_block:
-        scene = comp_block['scene']
-        problems = comp.scene_comp_problems(
-            do_render,
-            do_render and 'full_render' in render_task_keys,
-            channels if do_render else [],
-            scene.get('aovs') or [],
-        )
-        if problems:
-            raise BatchSubmitError(f"{entity_uri}: {'; '.join(problems)}")
-        if not scene.get('path'):
-            raise BatchSubmitError(
-                f"{entity_uri}: the comp's workfile was not saved with the "
-                "submission; submit it from Farm Submit in that workfile"
-            )
-    if do_comp and do_render and 'full_render' not in render_task_keys:
-        raise BatchSubmitError(
-            f"Comp follows the full render, and {entity_uri}'s render submits "
-            "only its check frames: choose a render mode with the full range, "
-            "or tick Comp on its own once the render is done."
-        )
-
-    # The comp's frames: the render's range (rolls included) when it follows
-    # one, else what the renders on disk cover (#43: the shot's range with
-    # roll comped 248 black frames over an 8-frame render), else the shot's;
-    # each end replaced by a frame the artist set. A comp after a render
-    # may not reach past it: it reads that render.
-    comp_range = None
-    if do_comp:
-        if do_render and repair_entry is not None:
-            # A repair comps its whole version (#92)
-            follows = (repair_entry['first_frame'], repair_entry['last_frame'])
-        elif do_render:
-            follows = (first_frame, last_frame)
-        else:
-            follows = _rendered_range(entity_uri)
-            if follows is None:
-                shot_range = get_frame_range(entity_uri)
-                if shot_range is None:
-                    raise BatchSubmitError(f"No frame range for {entity_uri}")
-                full = shot_range.full_range()
-                follows = (full.first_frame, full.last_frame)
-        try:
-            comp_range = composite_pipeline.recomp_range(
-                comp_block, *follows, inside=do_render,
-            )
-        except composite_pipeline.RecompError as e:
-            raise BatchSubmitError(f"{entity_uri}: {e}") from e
-        if comp_block['preview_frames']:
-            comp_preview = preview_frames.parse(
-                settings.get('comp_preview_frame_list', ''), *comp_range,
-                comp_block['step_size'],
-            )
-            _log_preview_warnings(entity_uri, 'comp', comp_preview)
-            comp_block.update(preview_frames.config_entry(comp_preview))
-        if not composite_spec.valid_recomp(comp_block):
-            raise BatchSubmitError(
-                f"Invalid comp settings for {entity_uri}: the step and batch "
-                f"size must be at least 1 ({comp_block})"
-            )
-
-    # Get departments list
-    departments = list_departments(entity_context)
-    department_names = [d.name for d in departments]
-    renderable_names = [d.name for d in departments if d.renderable]
-
-    # Departments turned off on the entity (#64): never published, never a cut.
-    disabled = get_disabled_departments(entity_uri)
-
-    pub_dept_names, skip_up_to_date = [], False
-    if do_publish:
-        pub_dept_names, skip_up_to_date = publish_department_names(
-            settings, department_names, disabled
-        )
-    if do_render:
-        _check_preview_department(
-            'Render', render_department, department_names, renderable_names,
-            disabled,
-        )
-    if do_playblast:
-        _check_preview_department(
-            'Playblast', pb_department, department_names, renderable_names,
-            disabled,
-        )
-
-    # A turntable with nothing published before it renders the staged builds
-    # on disk: refused here, before the farm is contacted, when one is
-    # missing (the dialog's Warnings column said so before Submit). With a
-    # publish, the stage is built after it.
-    if asset_turntable and not do_publish:
-        missing = preview.unstaged_channels(entity_uri, channels)
-        if missing:
-            raise BatchSubmitError(
-                f"{entity_uri} has no staged build of channel"
-                f"{'s' if len(missing) > 1 else ''} {', '.join(missing)} "
-                "to put on the turntable: publish the asset first, or "
-                "tick a publish beside the render."
-            )
+    plan = _resolve(entity_uri, entity_context, settings, kinds)
 
     # Deadline, or this machine's local farm (farm.backend)
     farm = get_farm()
 
-    # Create batch
-    user_name = get_user_name()
-    kinds = [
-        kind for kind, wanted in (
-            ('publish', do_publish),
-            ('render', do_render),
-            ('playblast', do_playblast),
-            ('comp', do_comp)
-        )
-        if wanted
-    ]
     # Stamped with the project and entity (farm.stamp), so the Farm Manager
     # and the next submit's clean-up know whose jobs these are.
-    batch = new_batch(batch_title(*kinds, entity_uri, user_name), entity_uri)
-
-    # Track job indices for dependencies
+    user_name = get_user_name()
+    batch = new_batch(batch_title(*plan.kinds, entity_uri, user_name), entity_uri)
     jobs = {}  # name -> Job
     deps = {}  # name -> [dep_names]
-    last_publish_job_name = None
-
-    # Helper to finalize and submit batch
-    def _finalize_batch():
-        if not jobs:
-            logging.info(f"No jobs to submit for {entity_uri}")
-            return []
-
-        batch.add_jobs_with_deps(jobs, deps)
-
-        # Submit batch
-        jobs_dir = api.storage.resolve(Uri.parse('export:/other/jobs'))
-        job_ids = farm.submit(batch, jobs_dir)
-
-        logging.info(f"Submitted batch for {entity_uri}: {len(job_ids)} jobs")
-        return job_ids
 
     # Create temp directory for staging files (used by both publish and render jobs)
     root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
@@ -810,315 +1215,15 @@ def submit_entity_batch(config: dict) -> list[str]:
     with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_path_str:
         temp_path = Path(temp_path_str)
         paths = {}  # Shared paths dict for bundling files
-
-        # Add publish jobs
-        if do_publish:
-            prev_job_name = None
-            # Exports are checked against the default channel's
-            channel_name = DEFAULT_CHANNEL
-            for dept_name in pub_dept_names:
-                if not publish_pipeline.is_submissable(entity_uri, dept_name):
-                    # The old "up to" spelling walks the whole chain, and an
-                    # entity need not have a workfile in every department.
-                    # A department ticked explicitly must have one.
-                    if skip_up_to_date:
-                        continue
-                    raise BatchSubmitError(
-                        f"No workfile to publish for {entity_uri}/{dept_name}"
-                    )
-
-                # The old "up to" spelling skips an up-to-date prefix. A
-                # department named explicitly is published regardless.
-                if (
-                    skip_up_to_date and prev_job_name is None
-                    and not publish_pipeline.is_out_of_date(entity_uri, channel_name, dept_name)
-                ):
-                    continue
-
-                job_name = f'publish_{dept_name}'
-                try:
-                    job = publish_pipeline.create_publish_job(entity_uri, dept_name, pub_pool, pub_priority, paths, temp_path)
-                except ValueError as e:
-                    raise BatchSubmitError(str(e)) from e
-                jobs[job_name] = job
-                deps[job_name] = [prev_job_name] if prev_job_name else []
-                prev_job_name = job_name
-                last_publish_job_name = job_name
-
-        render_overrides = _build_render_overrides(settings) if do_render else {}
-
-        # A preview after a publish reads the stage the publish produces, so
-        # the staged build runs again (a first-ever department export or a
-        # newly imported asset is absent from the old one) and the previews'
-        # input is snapshotted on the farm once it has.
-        preview_after_publish = last_publish_job_name is not None and (
-            do_render or do_playblast
+        last_publish = _publish_jobs(plan, paths, temp_path, jobs, deps)
+        after_publish = last_publish is not None and (
+            plan.render is not None or plan.playblast is not None
         )
-        preview_deps = [last_publish_job_name] if last_publish_job_name else []
-        if preview_after_publish:
-            # A pass-only render layer renders the default stage
-            # (pipe.render_layers), so it is the default channel that builds.
-            build_channels = (
-                render_layers.stage_channels(entity_uri, channels) if do_render else []
-            )
-            if do_playblast and DEFAULT_CHANNEL not in build_channels:
-                build_channels.append(DEFAULT_CHANNEL)
-            build_names = []
-            for build_channel in build_channels:
-                job_name = f'build_{build_channel}'
-                jobs[job_name] = build_pipeline.create({
-                    'entity_uri': str(entity_uri),
-                    'priority': chain_priority,
-                    'pool_name': pub_pool,
-                    'channel_name': build_channel,
-                }, temp_path)
-                deps[job_name] = [last_publish_job_name]
-                build_names.append(job_name)
-            preview_deps = build_names
-
-        # Farm-side snapshot for the direct render and/or the playblast. A
-        # turntable always snapshots on the farm: its workfile is built in
-        # hython there.
-        collapse_config = None
-        if asset_turntable or (
-            preview_after_publish and ((do_render and not standalone) or do_playblast)
-        ):
-            collapse_config = dict(
-                entity=dict(
-                    uri=str(entity_uri),
-                    department=render_department if do_render else pb_department,
-                ),
-                settings=dict(
-                    user_name=user_name,
-                    # A turntable with no publish has no publish pool.
-                    pool_name=pub_pool if do_publish else render_pool,
-                    priority=chain_priority,
-                ),
-            )
-
-        # Add stage + render jobs
-        if asset_turntable:
-            collapse_config['render'] = dict(
-                department=render_department,
-                channel_names=list(channels),
-                overrides=render_overrides,
-                task_keys=list(render_task_keys),
-                pool_name=render_pool,
-                priority=render_priority,
-                tile_count=tile_count,
-                first_frame=first_frame,
-                last_frame=last_frame,
-                step_size=turntable_frames.step,
-                batch_size=batch_size,
-                # As the studio's own farm render: no denoise, no edit.
-                denoise=False,
-                copy_to_edit=False,
-                cut_range=cut_range,
-                turntable=True,
-                **preview_entry,
-            )
-        elif do_render:
-            if not standalone:
-                # === DIRECT RENDER MODE (standalone=False) ===
-                # Render a collapsed snapshot of the staged file, with the
-                # overrides baked onto its render-settings prim.
-                if collapse_config is not None:
-                    collapse_config['render'] = dict(
-                        department=render_department,
-                        channel_names=list(channels),
-                        overrides=render_overrides,
-                        task_keys=list(render_task_keys),
-                        pool_name=render_pool,
-                        priority=render_priority,
-                        tile_count=tile_count,
-                        first_frame=first_frame,
-                        last_frame=last_frame,
-                        batch_size=batch_size,
-                        # Sent only off step 1: a collapse job from before
-                        # the Step names none (specs.collapse).
-                        **({} if render_step == 1 else {'step_size': render_step}),
-                        denoise=denoise,
-                        copy_to_edit=copy_to_edit,
-                        cut_range=cut_range,
-                        **preview_entry,
-                        **frame_ranges_entry,
-                        **_repair_entry(repair_entry),
-                    )
-                    if comp_block is not None:
-                        collapse_config['render']['composite'] = comp_block
-                else:
-                    try:
-                        input_paths = preview.collapse_render_inputs(
-                            entity_uri, channels, render_department,
-                            render_overrides, temp_path, paths,
-                        )
-                    except preview.PreviewError as e:
-                        raise BatchSubmitError(str(e)) from e
-                    render_settings_path = preview.write_render_settings(
-                        temp_path, paths, channels,
-                        preview.aov_names(entity_uri, channels),
-                    )
-                    render_config = preview.render_config(
-                        entity_uri,
-                        department=render_department,
-                        channels=channels,
-                        input_paths=input_paths,
-                        render_settings_path=render_settings_path,
-                        user_name=user_name,
-                        pool_name=render_pool,
-                        priority=render_priority,
-                        tile_count=tile_count,
-                        first_frame=first_frame,
-                        last_frame=last_frame,
-                        step_size=render_step,
-                        batch_size=batch_size,
-                        denoise=denoise,
-                        copy_to_edit=copy_to_edit,
-                        task_keys=list(render_task_keys),
-                        composite=comp_block,
-                        cut_range=cut_range,
-                        preview_frame_list=preview_entry.get(preview_frames.CONFIG_KEY),
-                        frame_ranges=frame_ranges_entry.get(frame_ranges.CONFIG_KEY),
-                        repair=repair_entry,
-                    )
-                    try:
-                        render_pipeline.build(
-                            render_config, paths, temp_path, jobs, deps,
-                            depends_on=preview_deps,
-                        )
-                        logging.info(f"Added render jobs for {entity_uri}")
-                    except Exception as e:
-                        raise BatchSubmitError(f"Could not build render jobs for {entity_uri}: {e}") from e
-            else:
-                # === STAGE + RENDER MODE (standalone=True) ===
-                # A farm stage job builds the render stage, applying the
-                # overrides, then submits the render itself. It composes when
-                # it runs, so after a publish it only needs to wait for it.
-                render_settings_path = preview.write_render_settings(
-                    temp_path, {}, channels,
-                    preview.aov_names(entity_uri, channels),
-                    overrides=render_overrides,
-                )
-                relative_render_settings_path = render_settings_path.relative_to(temp_path)
-
-                stage_config = dict(
-                    entity=dict(
-                        uri=str(entity_uri),
-                        department=render_department
-                    ),
-                    settings=dict(
-                        user_name=user_name,
-                        purpose='render',
-                        pool_name=render_pool,
-                        channel_names=channels,
-                        render_department_name=render_department,
-                        render_settings_path=path_str(relative_render_settings_path),
-                        tile_count=tile_count,
-                        first_frame=first_frame,
-                        last_frame=last_frame,
-                        step_size=render_step,
-                        batch_size=batch_size,
-                        copy_to_edit=copy_to_edit,
-                        cut_range=cut_range,
-                        **preview_entry,
-                        **frame_ranges_entry,
-                        **_repair_entry(repair_entry),
-                    ),
-                    **({} if comp_block is None else {'composite': comp_block}),
-                    tasks={
-                        'stage': dict(priority=render_priority, channel_name='exports'),
-                        **{
-                            task_key: dict(priority=render_priority, denoise=denoise, channel_name='renders')
-                            for task_key in render_task_keys
-                        }
-                    }
-                )
-
-                # The stage job gates the render chain it submits, so it runs
-                # in that chain's band: with a preview it must not wait behind
-                # other shots' full renders.
-                stage_config['tasks']['stage']['priority'] = max(
-                    task['priority']
-                    for key, task in render_pipeline.banded_priorities(
-                        stage_config['tasks']
-                    ).items()
-                    if key != 'stage'
-                )
-
-                # The stage job builds the render stages on the farm
-                stage_paths = {render_settings_path: relative_render_settings_path}
-                jobs['stage'] = stage_job.build(stage_config, stage_paths, temp_path)
-                deps['stage'] = list(preview_deps)
-
-        # Add playblast job (GL preview of the shot's staged stage)
-        if do_playblast:
-            if collapse_config is not None:
-                collapse_config['playblast'] = dict(
-                    department=pb_department,
-                    pool_name=pb_pool,
-                    priority=pb_priority,
-                    res=list(pb_res),
-                    look=dict(pb_look),
-                )
-            else:
-                try:
-                    playblast_input = preview.collapse_playblast_input(
-                        entity_uri, pb_department, temp_path, paths,
-                        light=pb_look['light'],
-                    )
-                    playblast_config = preview.playblast_config(
-                        entity_uri,
-                        department=pb_department,
-                        input_path=playblast_input,
-                        user_name=user_name,
-                        pool_name=pb_pool,
-                        priority=pb_priority,
-                        res=pb_res,
-                        look=pb_look,
-                    )
-                except preview.PreviewError as e:
-                    raise BatchSubmitError(str(e)) from e
-                try:
-                    playblast_pipeline.build(
-                        playblast_config, paths, temp_path, jobs, deps,
-                        depends_on=preview_deps,
-                    )
-                    logging.info(f"Added playblast job for {entity_uri}")
-                except Exception as e:
-                    raise BatchSubmitError(
-                        f"Could not build playblast job for {entity_uri}: {e}"
-                    ) from e
-
-        # A comp on its own: the shot's newest composite workfile over its
-        # renders as they are now. With a render, the render chain carries
-        # it (its config's composite block) and starts it after the denoise.
-        if do_comp and not do_render:
-            try:
-                composite_pipeline.build(
-                    composite_pipeline.recomp_config(
-                        entity_uri, comp_block,
-                        user_name=user_name,
-                        purpose='render',
-                        first_frame=comp_range[0],
-                        last_frame=comp_range[1],
-                        temp_path=temp_path,
-                        paths=paths,
-                    ),
-                    paths, temp_path, jobs, deps,
-                    prefix='comp_',
-                )
-            except composite_pipeline.RecompError as e:
-                raise BatchSubmitError(str(e)) from e
-
-        if collapse_config is not None:
-            try:
-                jobs['collapse'] = collapse_job.build(collapse_config, {}, temp_path)
-                deps['collapse'] = list(preview_deps)
-            except Exception as e:
-                raise BatchSubmitError(
-                    f"Could not build the collapse job for {entity_uri}: {e}"
-                ) from e
-
-        # Submit batch (within temp directory context so files can be copied)
-        return _finalize_batch()
-
+        preview_deps = _preview_builds(plan, last_publish, temp_path, jobs, deps)
+        collapse = _collapse_config(plan, after_publish, user_name)
+        _render_jobs(plan, collapse, preview_deps, user_name, paths, temp_path, jobs, deps)
+        _playblast_job(plan, collapse, preview_deps, user_name, paths, temp_path, jobs, deps)
+        _comp_job(plan, user_name, paths, temp_path, jobs, deps)
+        _collapse_job(plan, collapse, preview_deps, temp_path, jobs, deps)
+        # Submitted within the temp directory so its files can be copied.
+        return _finalize_batch(entity_uri, farm, batch, jobs, deps)

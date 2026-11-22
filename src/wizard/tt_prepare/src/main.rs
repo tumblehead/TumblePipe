@@ -39,9 +39,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use th_project_core::looks_like_project;
-use th_project_core::migration::{
-    self, config_dir, current_version, latest_version, pending, Readiness, Report, Step,
-};
+use th_project_core::migration::{self, config_dir, current_version, latest_version, pending, Readiness, Report, Step};
 
 /// Status colours matching tt_setup, chosen to contrast on both themes.
 const STATUS_ERROR: egui::Color32 = egui::Color32::from_rgb(0xe0, 0x6c, 0x75);
@@ -66,16 +64,30 @@ fn main() -> std::process::ExitCode {
         };
     }
 
-    // Whatever happens, say "no env var changes" and exit clean: this hook must
-    // never be the reason a launch fails.
-    let payload = "{\"envVars\":{}}";
-
-    if let Err(reason) = run(&parsed) {
-        eprintln!("tt_prepare: {reason}");
-    }
-
+    let (payload, code) = hook(|| run(&parsed));
     println!("{payload}");
-    std::process::ExitCode::SUCCESS
+    code
+}
+
+/// What the hook prints to stdout on every path: no env var changes.
+const HOOK_PAYLOAD: &str = "{\"envVars\":{}}";
+
+/// The launch-hook path around `run`: whatever happens, "no env var
+/// changes" and a clean exit, since this hook must never be the reason a
+/// launch fails. An error, or a panic (an `expect` in the migrator), goes to
+/// stderr instead.
+///
+/// The panic is caught as it unwinds out of `run`, and the migration lock's
+/// `Drop` runs on the way. `run` can open a window (eframe) when a person is
+/// there to answer it; a panic inside one of its callbacks may abort across
+/// the windowing FFI on macOS instead of unwinding, and that is not caught.
+fn hook(run: impl FnOnce() -> Result<(), String> + std::panic::UnwindSafe) -> (&'static str, std::process::ExitCode) {
+    match std::panic::catch_unwind(run) {
+        Ok(Ok(())) => {}
+        Ok(Err(reason)) => eprintln!("tt_prepare: {reason}"),
+        Err(_) => eprintln!("tt_prepare: stopped by an internal error (above); the launch goes on"),
+    }
+    (HOOK_PAYLOAD, std::process::ExitCode::SUCCESS)
 }
 
 /// `tt_prepare --migrate [--dry-run] [<project>]` — headless, for a person or a
@@ -119,10 +131,7 @@ fn run_cli(parsed: &Args) -> Result<(), String> {
     let _lock = Lock::acquire(&project)?;
     let report = migration::migrate(&project, &template)?;
     if let Some((step, why)) = &report.refused {
-        return Err(format!(
-            "refused before writing anything - v{} cannot run: {why}",
-            step.version()
-        ));
+        return Err(format!("refused before writing anything - v{} cannot run: {why}", step.version()));
     }
     for (step, result) in &report.applied {
         match result {
@@ -166,12 +175,7 @@ fn run(parsed: &Args) -> Result<(), String> {
     let step_count = steps.len();
 
     let at = current_version(&project)?;
-    eprintln!(
-        "tt_prepare: {} is at _config v{at}, {} step(s) behind v{}",
-        project.display(),
-        step_count,
-        latest_version()
-    );
+    eprintln!("tt_prepare: {} is at _config v{at}, {} step(s) behind v{}", project.display(), step_count, latest_version());
 
     if let Some(reason) = non_interactive_reason() {
         eprintln!(
@@ -181,12 +185,7 @@ fn run(parsed: &Args) -> Result<(), String> {
         return Ok(());
     }
 
-    let plan = Plan {
-        project,
-        template,
-        from: at,
-        to: latest_version(),
-    };
+    let plan = Plan { project, template, from: at, to: latest_version() };
     // A launch migrates rather than asking. The package reads exactly one
     // layout and refuses any other, so declining left a project nothing
     // could open, while the migration itself refuses before writing when a
@@ -198,10 +197,7 @@ fn run(parsed: &Args) -> Result<(), String> {
     }
     match migrate_now(&plan) {
         Ok(done) => {
-            eprintln!(
-                "tt_prepare: {} (anything replaced was backed up alongside as .bak)",
-                done.summary
-            );
+            eprintln!("tt_prepare: {} (anything replaced was backed up alongside as .bak)", done.summary);
             for line in &done.template_lines {
                 eprintln!("tt_prepare:   {line}");
             }
@@ -251,17 +247,11 @@ fn unconfigured_message(project: &Path) -> String {
 /// of showing the migration plan for a `_config` that does not exist.
 fn show_unconfigured(project: PathBuf) -> Result<(), String> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([560.0, 240.0])
-            .with_resizable(true),
+        viewport: egui::ViewportBuilder::default().with_inner_size([560.0, 240.0]).with_resizable(true),
         ..Default::default()
     };
-    eframe::run_native(
-        "TumblePipe — project not configured",
-        options,
-        Box::new(move |_cc| Ok(Box::new(Unconfigured { project }))),
-    )
-    .map_err(|e| format!("could not open the not-configured window: {e}"))?;
+    eframe::run_native("TumblePipe — project not configured", options, Box::new(move |_cc| Ok(Box::new(Unconfigured { project }))))
+        .map_err(|e| format!("could not open the not-configured window: {e}"))?;
     eprintln!("tt_prepare: launch continues without a configured project.");
     Ok(())
 }
@@ -289,10 +279,7 @@ impl eframe::App for Unconfigured {
             ui.heading("This project has not been configured for TumblePipe yet");
             ui.add_space(4.0);
             ui.label(format!("{}", self.project.display()));
-            ui.colored_label(
-                STATUS_ERROR,
-                "No _config/db/entity.json was found there.",
-            );
+            ui.colored_label(STATUS_ERROR, "No _config/db/entity.json was found there.");
             ui.separator();
             ui.label(
                 "In TumbleTrove Desktop, open the project, find the TumblePipe card and press \
@@ -308,8 +295,7 @@ impl eframe::App for Unconfigured {
 /// The desktop hands a hook only the `TT_*` context, so reading the manifest
 /// is what makes the migration window open at all.
 fn project_path() -> Result<PathBuf, String> {
-    th_project_core::project_location::configured_project_path()
-        .map_err(|why| format!("{why} — nothing to migrate"))
+    th_project_core::project_location::configured_project_path().map_err(|why| format!("{why} — nothing to migrate"))
 }
 
 #[cfg(test)]
@@ -375,10 +361,7 @@ fn non_interactive_reason() -> Option<&'static str> {
         }
     }
     // On X11/Wayland there is no window server to talk to without these.
-    if cfg!(target_os = "linux")
-        && std::env::var_os("DISPLAY").is_none()
-        && std::env::var_os("WAYLAND_DISPLAY").is_none()
-    {
+    if cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
         return Some("no display available");
     }
     None
@@ -499,17 +482,11 @@ fn show(plan: Plan, problem: Problem) -> Result<(), String> {
         Problem::Attention(_) => Ok(()),
     };
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([620.0, 360.0])
-            .with_resizable(true),
+        viewport: egui::ViewportBuilder::default().with_inner_size([620.0, 360.0]).with_resizable(true),
         ..Default::default()
     };
-    eframe::run_native(
-        "TumblePipe — project configuration",
-        options,
-        Box::new(move |_cc| Ok(Box::new(App { plan, problem }))),
-    )
-    .map_err(|e| format!("could not open the migration window: {e}"))?;
+    eframe::run_native("TumblePipe — project configuration", options, Box::new(move |_cc| Ok(Box::new(App { plan, problem }))))
+        .map_err(|e| format!("could not open the migration window: {e}"))?;
     result
 }
 
@@ -529,17 +506,10 @@ fn migrate_now(plan: &Plan) -> Result<Migrated, String> {
     let report: Report = migration::migrate(&plan.project, &plan.template)?;
 
     if let Some((step, why)) = &report.refused {
-        return Err(format!(
-            "refused before writing anything — {} cannot run: {why}",
-            step.description()
-        ));
+        return Err(format!("refused before writing anything — {} cannot run: {why}", step.description()));
     }
     if let Some((step, Err(why))) = report.applied.iter().find(|(_, r)| r.is_err()) {
-        return Err(format!(
-            "stopped at v{} ({}): {why}",
-            step.version(),
-            step.description()
-        ));
+        return Err(format!("stopped at v{} ({}): {why}", step.version(), step.description()));
     }
     Ok(Migrated {
         summary: format!("migrated _config v{} -> v{}", report.from, report.to),
@@ -566,10 +536,7 @@ impl eframe::App for App {
                 ui.heading("This project was migrated; some templates need a look");
                 ui.add_space(4.0);
                 ui.label(format!("{}", self.plan.project.display()));
-                ui.label(format!(
-                    "_config went from v{} to v{}. The project opens as usual.",
-                    self.plan.from, self.plan.to
-                ));
+                ui.label(format!("_config went from v{} to v{}. The project opens as usual.", self.plan.from, self.plan.to));
                 ui.separator();
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for line in lines {
@@ -587,17 +554,11 @@ impl eframe::App for App {
             ui.heading("This project could not be migrated");
             ui.add_space(4.0);
             ui.label(format!("{}", self.plan.project.display()));
-            ui.label(format!(
-                "_config is at v{}; this version of TumblePipe reads v{}.",
-                self.plan.from, self.plan.to
-            ));
+            ui.label(format!("_config is at v{}; this version of TumblePipe reads v{}.", self.plan.from, self.plan.to));
             ui.separator();
             match &self.problem {
                 Problem::Blocked(step, why) => {
-                    ui.colored_label(
-                        STATUS_ERROR,
-                        format!("Cannot migrate: {}", step.description()),
-                    );
+                    ui.colored_label(STATUS_ERROR, format!("Cannot migrate: {}", step.description()));
                     ui.add_space(4.0);
                     ui.label(why);
                     ui.add_space(6.0);
@@ -624,6 +585,18 @@ impl eframe::App for App {
 
 #[cfg(test)]
 mod tests {
+    /// Every outcome of `run`, a panic included, prints the empty payload
+    /// and exits 0.
+    #[test]
+    fn the_hook_survives_any_outcome_of_run() {
+        let outcomes: [fn() -> Result<(), String>; 3] = [|| Ok(()), || Err("no project".into()), || panic!("an expect failed")];
+        for run in outcomes {
+            let (payload, code) = super::hook(run);
+            assert_eq!(payload, "{\"envVars\":{}}");
+            assert_eq!(code, std::process::ExitCode::SUCCESS);
+        }
+    }
+
     use super::*;
 
     #[test]
@@ -670,11 +643,8 @@ mod tests {
         let why = project_path_from_manifest(&dir.path().join("hpm.toml")).unwrap_err();
         assert!(why.contains("not been configured"), "{why}");
         // ...and a value that needs expansion is refused rather than misread.
-        std::fs::write(
-            dir.path().join("hpm.toml"),
-            "[runtime]\nTH_PROJECT_PATH = { method = \"set\", value = \"$SHOWS/film\" }\n",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join("hpm.toml"), "[runtime]\nTH_PROJECT_PATH = { method = \"set\", value = \"$SHOWS/film\" }\n")
+            .unwrap();
         assert!(project_path_from_manifest(&dir.path().join("hpm.toml")).is_err());
     }
 
@@ -729,19 +699,11 @@ mod tests {
     #[test]
     fn an_unconfigured_project_is_refused_not_migrated() {
         let dir = tempfile::tempdir().unwrap();
-        let parsed = Args {
-            migrate: true,
-            dry_run: true,
-            project: Some(dir.path().to_path_buf()),
-            ..Default::default()
-        };
+        let parsed = Args { migrate: true, dry_run: true, project: Some(dir.path().to_path_buf()), ..Default::default() };
         let why = run_cli(&parsed).expect_err("an empty directory is not a project");
         assert!(why.contains("has not been configured"), "{why}");
         assert!(why.contains("Configure"), "{why}");
-        assert!(
-            !dir.path().join("_config").exists(),
-            "refusing must not scaffold anything"
-        );
+        assert!(!dir.path().join("_config").exists(), "refusing must not scaffold anything");
     }
 
     /// ...and the marker the gate keys on is the config database, not the

@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use th_playlist::Media;
 
-use crate::document::{Frame, FrozenEdit, FrozenSource};
+use crate::document::{DEFAULT_START_FRAME, Frame, FrozenEdit, FrozenSource};
 
 /// A frame rate as Final Cut Pro 7 XML has it: a whole `timebase`, and
 /// `ntsc` for that rate times 1000/1001 (23.976 is 24 with `ntsc`).
@@ -176,8 +176,9 @@ pub trait Probe {
     /// Whether the file at `path` is on disk.
     fn exists(&self, path: &str) -> bool;
     /// The first frame of `shot`'s range with its roll: the frame a take's
-    /// movie starts on when it records none.
-    fn shot_first(&self, shot: &str) -> Frame;
+    /// movie starts on when it records none; an error when the pipeline
+    /// cannot say.
+    fn shot_first(&self, shot: &str) -> Result<Frame, String>;
 }
 
 /// Something an export did not carry as it is in the edit.
@@ -195,6 +196,8 @@ pub enum Kind {
     Missing,
     /// A movie on disk that could not be read.
     Unreadable,
+    /// A shot whose first frame the pipeline could not give.
+    ShotFirst,
     /// A clip running past its media's first or last frame.
     Trimmed,
     /// A clip none of whose frames its media has.
@@ -282,6 +285,9 @@ impl Summary {
                     Kind::Unreadable => {
                         format!("{n} clip{s} whose movie could not be read: the in point is counted from the shot's first frame")
                     }
+                    Kind::ShotFirst => format!(
+                        "{n} shot clip{s} whose shot's frame range could not be read: the in point is counted from frame {DEFAULT_START_FRAME}"
+                    ),
                     Kind::Trimmed => format!("{n} clip{s} running past the frames the media has: shortened to them"),
                     Kind::Outside => format!("{n} clip{s} showing none of the frames the media has: written offline"),
                     Kind::FrameList => format!("{n} Frame List render{s}: the frames are not one run, the in point may be off"),

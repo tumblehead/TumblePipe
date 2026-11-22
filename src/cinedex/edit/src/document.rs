@@ -22,6 +22,10 @@ use th_playlist::Media;
 /// An edit frame, or a source frame.
 pub type Frame = i64;
 
+/// The frame a shot starts on when the project sets none
+/// (`edit_timeline.DEFAULT_START_FRAME`).
+pub const DEFAULT_START_FRAME: Frame = 1001;
+
 /// An edit: video tracks stacked bottom first (the top-most playable clip
 /// shows; fades blend over what is below), audio tracks mixed, markers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -44,25 +44,15 @@ pub const STORAGE_FILE: &str = "storage.json";
 /// `edits` (an edit's working versions) came with layout v23, which adds it
 /// to a table that lacks it; a table before then is checked with
 /// [`validate_table_before_v23`].
-pub const PURPOSES: [&str; 12] = [
-    "assets", "shots", "groups", "export", "cache", "render", "turntable", "temp", "proxy",
-    "preset", "edit", "edits",
-];
+pub const PURPOSES: [&str; 12] =
+    ["assets", "shots", "groups", "export", "cache", "render", "turntable", "temp", "proxy", "preset", "edit", "edits"];
 
 /// The purpose v23 adds, which a table written before it does not have.
 pub const EDITS: &str = "edits";
 
 /// The placeholders a path template may use, each filled in by the package
 /// when it loads the table. Mirrored by `tumblepipe.storage.VARIABLES`.
-pub const VARIABLES: [&str; 7] = [
-    "project_path",
-    "project_parent",
-    "project_name",
-    "pipeline_path",
-    "config_path",
-    "home",
-    "local_temp",
-];
+pub const VARIABLES: [&str; 7] = ["project_path", "project_parent", "project_name", "pipeline_path", "config_path", "home", "local_temp"];
 
 /// The purposes the launch environment fixes, with the convention attribute
 /// that held each and the only value that attribute may have had.
@@ -133,9 +123,7 @@ fn split_path_operators(expr: &str) -> Result<Vec<String>, String> {
                     current.push(c);
                 }
                 ')' => {
-                    depth = depth
-                        .checked_sub(1)
-                        .ok_or_else(|| format!("unbalanced `)` in `{expr}`"))?;
+                    depth = depth.checked_sub(1).ok_or_else(|| format!("unbalanced `)` in `{expr}`"))?;
                     current.push(c);
                 }
                 '/' if depth == 0 => {
@@ -175,19 +163,11 @@ fn string_literal(term: &str) -> Option<Result<String, String>> {
         return None;
     }
     if inner.contains('\\') {
-        return Some(Err(format!(
-            "`{term}` contains a backslash escape; write the path with forward slashes"
-        )));
+        return Some(Err(format!("`{term}` contains a backslash escape; write the path with forward slashes")));
     }
-    let text = if is_f {
-        inner.replace("{project_name}", "\u{0}")
-    } else {
-        inner.to_string()
-    };
+    let text = if is_f { inner.replace("{project_name}", "\u{0}") } else { inner.to_string() };
     if text.contains('{') || text.contains('}') {
-        return Some(Err(format!(
-            "`{term}` uses a placeholder other than {{project_name}}"
-        )));
+        return Some(Err(format!("`{term}` uses a placeholder other than {{project_name}}")));
     }
     Some(Ok(text.replace('\u{0}', "{project_name}")))
 }
@@ -201,11 +181,7 @@ struct Scope {
 }
 
 fn lookup<'a>(table: &'a [(String, String)], name: &str) -> Option<&'a str> {
-    table
-        .iter()
-        .rev()
-        .find(|(key, _)| key == name)
-        .map(|(_, value)| value.as_str())
+    table.iter().rev().find(|(key, _)| key == name).map(|(_, value)| value.as_str())
 }
 
 /// The parent of a template, as `Path.parent` would give it.
@@ -243,18 +219,11 @@ fn eval_term(term: &str, scope: &Scope) -> Result<String, String> {
             Some(name) => (name, true),
             None => (attr, false),
         };
-        let value = lookup(&scope.attrs, name)
-            .ok_or_else(|| format!("`self.{name}` is used before it is assigned"))?;
-        return if parent {
-            parent_of(value)
-        } else {
-            Ok(value.to_string())
-        };
+        let value = lookup(&scope.attrs, name).ok_or_else(|| format!("`self.{name}` is used before it is assigned"))?;
+        return if parent { parent_of(value) } else { Ok(value.to_string()) };
     }
     if is_identifier(term) {
-        return lookup(&scope.locals, term)
-            .map(str::to_string)
-            .ok_or_else(|| format!("`{term}` is not a name this reader knows"));
+        return lookup(&scope.locals, term).map(str::to_string).ok_or_else(|| format!("`{term}` is not a name this reader knows"));
     }
     Err(format!("`{term}` is not a path expression this reader knows"))
 }
@@ -269,13 +238,10 @@ fn eval_expr(expr: &str, scope: &Scope) -> Result<String, String> {
         // `Path('a') / '/b'` is `/b` in Python: a later absolute part
         // replaces everything before it. No real convention does that, and
         // honouring it silently would hide whatever was meant.
-        let absolute = part.starts_with('/')
-            || part.as_bytes().get(1) == Some(&b':')
-            || part.starts_with('{') && !part.starts_with("{project_name}");
+        let absolute =
+            part.starts_with('/') || part.as_bytes().get(1) == Some(&b':') || part.starts_with('{') && !part.starts_with("{project_name}");
         if absolute {
-            return Err(format!(
-                "`{expr}` joins an absolute path (`{term}`) onto another"
-            ));
+            return Err(format!("`{expr}` joins an absolute path (`{term}`) onto another"));
         }
         path = format!("{}/{}", path.trim_end_matches('/'), part);
     }
@@ -303,13 +269,10 @@ fn is_scaffolding(line: &str) -> bool {
         return true;
     }
     if let Some(rest) = line.strip_prefix("class ") {
-        return rest.ends_with("(StorageConvention):")
-            || rest.ends_with("(storage.StorageConvention):");
+        return rest.ends_with("(StorageConvention):") || rest.ends_with("(storage.StorageConvention):");
     }
     if let Some(call) = line.strip_prefix("return ") {
-        return call
-            .strip_suffix("()")
-            .is_some_and(is_identifier);
+        return call.strip_suffix("()").is_some_and(is_identifier);
     }
     false
 }
@@ -328,9 +291,7 @@ fn case_line(line: &str) -> Option<Result<(String, String), String>> {
     let rest = rest[end + 1..].trim_start();
     let parsed = (|| {
         let body = rest.strip_prefix(':')?.trim_start().strip_prefix("return self.")?;
-        let attr_end = body
-            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .unwrap_or(body.len());
+        let attr_end = body.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(body.len());
         let attr = &body[..attr_end];
         let tail = body[attr_end..].trim();
         let joined = "/ Path(*parts)";
@@ -355,10 +316,7 @@ fn case_line(line: &str) -> Option<Result<(String, String), String>> {
 /// packaged `storage.json`). Every other value is the module's own.
 pub fn storage_table(text: &str, scaffold: &Map<String, Value>) -> Result<Map<String, Value>, String> {
     let text = normalize(text);
-    let mut scope = Scope {
-        locals: Vec::new(),
-        attrs: Vec::new(),
-    };
+    let mut scope = Scope { locals: Vec::new(), attrs: Vec::new() };
     let mut cases: Vec<(String, String)> = Vec::new();
     let mut in_import = false;
     for (index, raw) in text.lines().enumerate() {
@@ -371,12 +329,7 @@ pub fn storage_table(text: &str, scaffold: &Map<String, Value>) -> Result<Map<St
         if in_import {
             if line == ")" {
                 in_import = false;
-            } else if !line
-                .split(',')
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
-                .all(is_identifier)
-            {
+            } else if !line.split(',').map(str::trim).filter(|name| !name.is_empty()).all(is_identifier) {
                 return Err(refuse("not an imported name".to_string()));
             }
             continue;
@@ -487,15 +440,11 @@ fn validate_table_except(table: &Map<String, Value>, optional: &[&str]) -> Resul
         if !PURPOSES.contains(&purpose.as_str()) {
             return Err(format!("`{purpose}` is not a storage purpose"));
         }
-        let template = template
-            .as_str()
-            .ok_or_else(|| format!("`{purpose}` is not a string"))?;
+        let template = template.as_str().ok_or_else(|| format!("`{purpose}` is not a string"))?;
         let mut rest = template;
         while let Some(open) = rest.find('{') {
             let after = &rest[open + 1..];
-            let close = after
-                .find('}')
-                .ok_or_else(|| format!("`{purpose}` has an unclosed `{{`"))?;
+            let close = after.find('}').ok_or_else(|| format!("`{purpose}` has an unclosed `{{`"))?;
             let name = &after[..close];
             if !VARIABLES.contains(&name) {
                 return Err(format!("`{purpose}` uses an unknown placeholder `{{{name}}}`"));
@@ -517,10 +466,7 @@ fn code_lines(text: &str) -> Vec<String> {
         .lines()
         .map(str::trim_end)
         .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
-        .map(|line| {
-            line.replace("from tumblehead.", "from tumblepipe.")
-                .replace("import tumblehead.", "import tumblepipe.")
-        })
+        .map(|line| line.replace("from tumblehead.", "from tumblepipe.").replace("import tumblehead.", "import tumblepipe."))
         .collect()
 }
 
@@ -601,11 +547,8 @@ pub fn naming_is_stock(text: &str) -> bool {
 }
 
 /// The code of v1's config shim, docstring aside.
-const SHIM_CODE: &str = concat!(
-    "from tumblepipe.config.store import JsonConfigStore\n",
-    "def create() -> JsonConfigStore:\n",
-    "    return JsonConfigStore()",
-);
+const SHIM_CODE: &str =
+    concat!("from tumblepipe.config.store import JsonConfigStore\n", "def create() -> JsonConfigStore:\n", "    return JsonConfigStore()",);
 
 /// Whether `text` is a `config_convention.py` the package can stand in for:
 /// v1's shim (whatever its docstring says), or the stock engine v1 turns
@@ -694,18 +637,12 @@ mod tests {
                     "        _home = _primary_path / 'users' / 'tumblehead'\n",
                 ),
             )
-            .replace(
-                "self.temp_path = default_temp_path()",
-                "self.temp_path = _home / 'th_temp' / project_name",
-            )
+            .replace("self.temp_path = default_temp_path()", "self.temp_path = _home / 'th_temp' / project_name")
             .replace(
                 "self.proxy_path = self.project_path.parent / f'{project_name}_proxy'",
                 "self.proxy_path = Path.home() / 'th_proxy' / project_name",
             )
-            .replace(
-                "self.edit_path = self.project_path / 'edit'",
-                "self.edit_path = Path('/mnt/z/') / project_name  # cut room",
-            );
+            .replace("self.edit_path = self.project_path / 'edit'", "self.edit_path = Path('/mnt/z/') / project_name  # cut room");
         let read = table(&text);
         assert_eq!(read["temp"], "/mnt/c/users/tumblehead/th_temp/{project_name}");
         assert_eq!(read["proxy"], "{home}/th_proxy/{project_name}");
@@ -720,11 +657,7 @@ mod tests {
 
     #[test]
     fn a_purpose_it_never_routes_gets_the_scaffold_location() {
-        let text: String = STOCK
-            .lines()
-            .filter(|line| !line.contains("'groups'"))
-            .map(|line| format!("{line}\n"))
-            .collect();
+        let text: String = STOCK.lines().filter(|line| !line.contains("'groups'")).map(|line| format!("{line}\n")).collect();
         assert_eq!(table(&text)["groups"], "{project_path}/groups");
     }
 
@@ -769,10 +702,7 @@ mod tests {
 
     #[test]
     fn a_moved_project_root_is_refused() {
-        let why = refused(&STOCK.replace(
-            "self.project_path = get_project_path()",
-            "self.project_path = Path('/elsewhere')",
-        ));
+        let why = refused(&STOCK.replace("self.project_path = get_project_path()", "self.project_path = Path('/elsewhere')"));
         assert!(why.contains("project:/"), "{why}");
     }
 
@@ -790,10 +720,7 @@ mod tests {
 
     #[test]
     fn placeholders_other_than_project_name_are_refused() {
-        let why = refused(&STOCK.replace(
-            "f'{project_name}_cache'",
-            "f'{project_name}_{user}_cache'",
-        ));
+        let why = refused(&STOCK.replace("f'{project_name}_cache'", "f'{project_name}_{user}_cache'"));
         assert!(why.contains("placeholder"), "{why}");
     }
 
@@ -802,9 +729,7 @@ mod tests {
         let current = include_str!("../tests/fixtures/naming_convention_current.py");
         assert!(naming_is_stock(current));
         assert!(naming_is_stock(&current.replace('\n', "\r\n")));
-        assert!(naming_is_stock(
-            &current.replace("from tumblepipe.naming", "from tumblehead.naming")
-        ));
+        assert!(naming_is_stock(&current.replace("from tumblepipe.naming", "from tumblehead.naming")));
         for stock in STOCK_NAMING {
             assert!(naming_is_stock(stock));
         }
@@ -818,10 +743,7 @@ mod tests {
         assert!(config_is_stock(shim));
         assert!(config_is_stock(&shim.replace('\n', "\r\n")));
         assert!(config_is_stock("class ProjectConfigConvention:\n    pass\n"));
-        let subclassed = shim.replace(
-            "    return JsonConfigStore()",
-            "    return MyStore()\n\nclass MyStore(JsonConfigStore):\n    pass",
-        );
+        let subclassed = shim.replace("    return JsonConfigStore()", "    return MyStore()\n\nclass MyStore(JsonConfigStore):\n    pass");
         assert!(!config_is_stock(&subclassed));
     }
 }

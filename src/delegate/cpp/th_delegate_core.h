@@ -1,8 +1,20 @@
-// C ABI of the Rust core (src/ffi.rs). Keep the two in step.
+// C ABI of the Rust core (src/ffi.rs). Both sides assert each struct's size
+// and its last field's offset (the static_asserts at the end; src/ffi.rs at
+// compile time), and the core's the_header_mirrors_the_abi test checks this
+// file's fields (names and types, in order), numbers and return codes are its
+// own.
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+
+// What th_render, th_render_ids, th_render_scene and th_mesh_normals return
+// (src/lib.rs).
+constexpr int32_t TH_OK = 0;         // done
+constexpr int32_t TH_ERR_ARGS = 1;   // a null pointer, or an empty image
+constexpr int32_t TH_ERR_PANIC = 2;  // the core panicked; the buffers are undefined
+constexpr int32_t TH_CANCELLED = 3;  // the cancel flag was set; nothing was written
 
 extern "C" {
 
@@ -127,8 +139,8 @@ struct ThFrame {
                                 // over the opaque ones, as before
 };
 
-// 0 = ok, 1 = bad arguments, 2 = the core panicked. `cache` may be null; one
-// call at a time per cache.
+// TH_OK, TH_ERR_ARGS or TH_ERR_PANIC. `cache` may be null; one call at a time
+// per cache.
 int32_t th_render(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_count,
                   float* color, float* depth, ThCache const* cache);
 
@@ -136,7 +148,8 @@ int32_t th_render(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_
 // 0 at the top, the index into `meshes` and the instance the texel's first
 // sample sees, -1 -1 for none, on the CPU and GPU paths. `cancel` (may be
 // null) is a 32-bit atomic read while drawing: set it non-zero from another
-// thread to give the frame up, and the call returns 3 having written nothing.
+// thread to give the frame up, and the call returns TH_CANCELLED having
+// written nothing.
 int32_t th_render_ids(ThFrame const* frame, ThMeshView const* meshes, uint32_t mesh_count,
                       float* color, float* depth, int32_t* ids, uint32_t const* cancel,
                       ThCache const* cache);
@@ -164,7 +177,8 @@ uint32_t th_triangulate(float const* points, uint32_t point_count,
 // xyz per triangle corner (9 * triangle_count floats): cusp normals for a
 // polygonal mesh, else smooth point normals at each corner (src/ffi.rs).
 // For a mesh drawn as one view per GeomSubset material: each view given the
-// whole mesh's normals meets the next without a crease. 0 ok, 1 null.
+// whole mesh's normals meets the next without a crease. TH_OK, TH_ERR_ARGS
+// for a null pointer, TH_ERR_PANIC.
 int32_t th_mesh_normals(float const* points, uint32_t point_count,
                         uint32_t const* triangles, uint32_t triangle_count, uint32_t polygonal,
                         float* corner_normals);
@@ -178,3 +192,10 @@ ThTexture* th_texture_create(float const* pixels, uint32_t width, uint32_t heigh
 void th_texture_free(ThTexture* texture);
 
 }  // extern "C"
+
+// The layout src/ffi.rs asserts (64-bit targets).
+static_assert(sizeof(ThTextureTile) == 16 && offsetof(ThTextureTile, texture) == 8, "ThTextureTile layout");
+static_assert(sizeof(ThMeshView) == 152 && offsetof(ThMeshView, cull) == 144, "ThMeshView layout");
+static_assert(sizeof(ThCurvesView) == 128 && offsetof(ThCurvesView, transform_key_count) == 120, "ThCurvesView layout");
+static_assert(sizeof(ThLight) == 184 && offsetof(ThLight, length) == 176, "ThLight layout");
+static_assert(sizeof(ThFrame) == 848 && offsetof(ThFrame, opaque) == 840, "ThFrame layout");

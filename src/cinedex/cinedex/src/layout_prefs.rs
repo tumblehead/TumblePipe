@@ -108,27 +108,13 @@ pub fn path() -> PathBuf {
 /// The layout saved at `path`; the default when there is none, or it does
 /// not read.
 pub fn load(path: &Path) -> Layout {
-    std::fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .map_or_else(Layout::default, |v| Layout::from_json(&v))
+    th_pipe::io::load_or_default(path, Layout::from_json)
 }
 
 /// Save `layout` at `path`, whole: written beside it and renamed over it,
 /// so a second Cinedex reading it never sees half a file.
 pub fn save(path: &Path, layout: Layout) -> std::io::Result<()> {
-    write_whole(path, &layout.to_json())
-}
-
-fn write_whole(path: &Path, value: &Value) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let partial = path.with_extension(format!("json.{}.partial", std::process::id()));
-    std::fs::write(&partial, serde_json::to_vec_pretty(value).map_err(std::io::Error::other)?)?;
-    std::fs::rename(&partial, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&partial);
-    })
+    th_pipe::io::store_pretty_json(path, &layout.to_json())
 }
 
 /// The file the folded sequences of the Shots bin are remembered in, beside
@@ -165,24 +151,73 @@ pub fn folded_into_json(value: Value, project: &str, folded: &BTreeSet<String>) 
     Value::Object(all)
 }
 
-fn read_json(path: &Path) -> Value {
-    std::fs::read(path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or(Value::Null)
-}
-
 /// The sequences folded in `project`, as the file at `path` says.
 pub fn load_folded(path: &Path, project: &str) -> BTreeSet<String> {
-    folded_from_json(&read_json(path), project)
+    th_pipe::io::load_or_default(path, |value| folded_from_json(value, project))
 }
 
 /// Remember `folded` for `project` in the file at `path`.
 pub fn save_folded(path: &Path, project: &str, folded: &BTreeSet<String>) -> std::io::Result<()> {
-    write_whole(path, &folded_into_json(read_json(path), project, folded))
+    let all = th_pipe::io::load_or_default(path, Value::clone);
+    th_pipe::io::store_pretty_json(path, &folded_into_json(all, project, folded))
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// The spec every prefs file's saver meets, `save` writing `json` to
+    /// the path it is given: into a folder it makes, whole, as serde_json's
+    /// pretty print of `json`, and nothing else beside it; saved again, the
+    /// same. (When it cannot be written, see [`nothing_left_when_blocked`].)
+    pub(crate) fn saved_whole(save: &dyn Fn(&Path) -> std::io::Result<()>, json: &Value) -> Result<(), TestCaseError> {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("nested");
+        let path = folder.join("prefs.json");
+        let pretty = serde_json::to_vec_pretty(json).unwrap();
+        for _ in 0..2 {
+            prop_assert!(save(&path).is_ok());
+            prop_assert_eq!(std::fs::read(&path).unwrap(), pretty.clone());
+            let names: Vec<_> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name()).collect();
+            prop_assert_eq!(names, vec![std::ffi::OsString::from("prefs.json")]);
+        }
+        Ok(())
+    }
+
+    /// The other half of the spec: where a folder is in the way, `save`
+    /// fails, leaving nothing behind. Not a property: on Windows the
+    /// failed rename is retried for th_pipe::io::REPLACE_TIMEOUT.
+    pub(crate) fn nothing_left_when_blocked(save: &dyn Fn(&Path) -> std::io::Result<()>) {
+        let dir = tempfile::tempdir().unwrap();
+        let blocked = dir.path().join("blocked.json");
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(save(&blocked).is_err());
+        let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("blocked.json")]);
+        assert_eq!(std::fs::read_dir(&blocked).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn nothing_is_left_when_the_layout_or_folded_file_is_blocked() {
+        nothing_left_when_blocked(&|path| save(path, Layout::default()));
+        nothing_left_when_blocked(&|path| save_folded(path, "p", &BTreeSet::from(["s".to_owned()])));
+    }
+
+    proptest! {
+        #[test]
+        fn the_layout_is_saved_whole(layout in layout()) {
+            saved_whole(&|path| save(path, layout), &layout.to_json())?;
+        }
+
+        #[test]
+        fn the_folded_sequences_are_saved_whole(
+            project in "[a-zA-Z0-9/:_ -]{0,12}", folded in prop::collection::btree_set("[a-zA-Z0-9_ ]{0,8}", 0..5),
+        ) {
+            let json = folded_into_json(Value::Null, &project, &folded);
+            saved_whole(&|path| save_folded(path, &project, &folded), &json)?;
+        }
+    }
 
     fn layout() -> impl Strategy<Value = Layout> {
         (

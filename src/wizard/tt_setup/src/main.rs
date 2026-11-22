@@ -49,8 +49,8 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use th_project_core::{
-    classify_folder, enclosing_project, expanduser, home_dir, project_name_for, projects_in,
-    sanitize_project_name, scaffold_project, FolderKind, TOP_LEVEL_DIRS,
+    classify_folder, enclosing_project, expanduser, home_dir, project_name_for, projects_in, sanitize_project_name, scaffold_project,
+    FolderKind, TOP_LEVEL_DIRS,
 };
 
 /// How many projects found inside a picked folder are offered as fixes.
@@ -77,9 +77,7 @@ fn main() -> ExitCode {
     let app_outcome = Arc::clone(&outcome);
 
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([680.0, 420.0])
-            .with_min_inner_size([560.0, 360.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([680.0, 420.0]).with_min_inner_size([560.0, 360.0]),
         // Leave follow_system_theme at its default (true) so the wizard adopts
         // the host light/dark theme — the reason the Qt version had to fight
         // the white banner panel.
@@ -167,12 +165,18 @@ struct WizardApp {
 /// What the accept button would do with the current path, or why it can't.
 enum Plan {
     Use(PathBuf),
-    Create { target: PathBuf, name: String },
+    Create {
+        target: PathBuf,
+        name: String,
+    },
     /// `fixes` are one-click replacements for the path. Users were unsure
     /// whether to pick the project folder or the folder it goes in, so the
     /// commonest wrong picks (the folder above a project, a folder inside
     /// one) name the folder they most likely meant.
-    Invalid { reason: String, fixes: Vec<Fix> },
+    Invalid {
+        reason: String,
+        fixes: Vec<Fix>,
+    },
 }
 
 struct Fix {
@@ -186,9 +190,7 @@ fn invalid(reason: impl Into<String>) -> Plan {
 
 impl WizardApp {
     fn new(template_dir: PathBuf, outcome: Arc<Mutex<Outcome>>) -> Self {
-        let desktop_name = std::env::var("TT_PROJECT_NAME")
-            .ok()
-            .filter(|name| !name.trim().is_empty());
+        let desktop_name = std::env::var("TT_PROJECT_NAME").ok().filter(|name| !name.trim().is_empty());
         Self {
             template_dir,
             outcome,
@@ -266,10 +268,9 @@ impl WizardApp {
              projects go in, pick the project's own folder instead.",
         );
         match new_folder {
-            Some(candidate) => fixes.push(Fix {
-                label: format!("Create a new project folder {} here", folder_name(&candidate)),
-                path: candidate,
-            }),
+            Some(candidate) => {
+                fixes.push(Fix { label: format!("Create a new project folder {} here", folder_name(&candidate)), path: candidate })
+            }
             None => reason.push_str(&format!(
                 " To start a new project here, add a new folder name to the end of the \
                  path, such as {}.",
@@ -282,14 +283,10 @@ impl WizardApp {
     fn accept(&mut self, ctx: &egui::Context, plan: Plan) {
         match plan {
             Plan::Use(path) => self.finish(ctx, path),
-            Plan::Create { target, name } => {
-                match scaffold_project(&self.template_dir, &target, &name, self.new_fps) {
-                    Ok(()) => self.finish(ctx, target),
-                    Err(err) => {
-                        self.error = Some(format!("Could not create the project:\n\n{err}"))
-                    }
-                }
-            }
+            Plan::Create { target, name } => match scaffold_project(&self.template_dir, &target, &name, self.new_fps) {
+                Ok(()) => self.finish(ctx, target),
+                Err(err) => self.error = Some(format!("Could not create the project:\n\n{err}")),
+            },
             Plan::Invalid { .. } => {}
         }
     }
@@ -372,8 +369,7 @@ impl WizardApp {
         let hint = self.example_path();
         ui.horizontal(|ui| {
             if ui.button("Browse…").clicked() {
-                let mut dialog = rfd::FileDialog::new()
-                    .set_title("Choose the project folder (not the folder above it)");
+                let mut dialog = rfd::FileDialog::new().set_title("Choose the project folder (not the folder above it)");
                 if let Some(start) = existing_start_dir(&self.path) {
                     dialog = dialog.set_directory(start);
                 }
@@ -381,11 +377,7 @@ impl WizardApp {
                     self.path = chosen.to_string_lossy().into_owned();
                 }
             }
-            let edited = ui.add(
-                egui::TextEdit::singleline(&mut self.path)
-                    .hint_text(hint)
-                    .desired_width(f32::INFINITY),
-            );
+            let edited = ui.add(egui::TextEdit::singleline(&mut self.path).hint_text(hint).desired_width(f32::INFINITY));
             if edited.changed() {
                 // The accept button was drawn from the path as it was before
                 // this keystroke; draw once more so it catches up.
@@ -402,10 +394,7 @@ impl WizardApp {
         match plan.as_ref() {
             None => {}
             Some(Plan::Use(path)) => {
-                ui.colored_label(
-                    STATUS_OK,
-                    format!("Existing TumblePipe project — TumblePipe will use {}.", path.display()),
-                );
+                ui.colored_label(STATUS_OK, format!("Existing TumblePipe project — TumblePipe will use {}.", path.display()));
             }
             Some(Plan::Create { target, name }) => {
                 let what = if target.is_dir() {
@@ -417,10 +406,7 @@ impl WizardApp {
                 ui.add_space(4.0);
                 ui.label("The project's files go directly inside it:");
                 ui.monospace(format!("{}", target.display()));
-                let children: Vec<String> = std::iter::once("_config")
-                    .chain(TOP_LEVEL_DIRS)
-                    .map(|dir| format!("{dir}/"))
-                    .collect();
+                let children: Vec<String> = std::iter::once("_config").chain(TOP_LEVEL_DIRS).map(|dir| format!("{dir}/")).collect();
                 ui.monospace(format!("    {}", children.join("  ")));
                 ui.add_space(8.0);
                 ui.label(format!("Project name (its farm pool): {name}"));
@@ -447,11 +433,7 @@ impl WizardApp {
 
     /// A hint in the path field that shows a project folder, not a root.
     fn example_path(&self) -> String {
-        let name = self
-            .desktop_name
-            .as_deref()
-            .and_then(sanitize_project_name)
-            .unwrap_or_else(|| "MyProject".into());
+        let name = self.desktop_name.as_deref().and_then(sanitize_project_name).unwrap_or_else(|| "MyProject".into());
         if cfg!(windows) {
             format!("e.g. P:\\Projects\\{name}")
         } else {

@@ -37,6 +37,7 @@ spellings, through that function, while every writer emits only ``channel``.
 import re
 
 from tumblepipe.api import api
+from tumblepipe.config.store import JsonConfigStore
 from tumblepipe.config.entities import get_entity_type  # noqa: F401  (re-export)
 from tumblepipe.naming import entity_name_problem
 from tumblepipe.util.uri import Uri
@@ -114,7 +115,7 @@ def read_channel_names(properties) -> list[str]:
     return list(properties.get(CHANNEL_PROPERTY) or [])
 
 
-def list_channels(entity_uri: Uri) -> list[str]:
+def list_channels_in(store: JsonConfigStore, entity_uri: Uri) -> list[str]:
     """Return channel names for an entity (asset or shot).
 
     The 'default' channel is always included as the first element,
@@ -127,7 +128,7 @@ def list_channels(entity_uri: Uri) -> list[str]:
     Returns:
         List of channel names, always starting with 'default'
     """
-    properties = api.config.get_properties(entity_uri)
+    properties = store.get_properties(entity_uri)
     if properties is None:
         return [DEFAULT_CHANNEL]
 
@@ -140,7 +141,7 @@ def list_channels(entity_uri: Uri) -> list[str]:
     return [DEFAULT_CHANNEL] + channels
 
 
-def add_channel(entity_uri: Uri, channel_name: str) -> None:
+def add_channel_in(store: JsonConfigStore, entity_uri: Uri, channel_name: str) -> None:
     """Add a channel to an entity.
 
     Args:
@@ -155,7 +156,7 @@ def add_channel(entity_uri: Uri, channel_name: str) -> None:
     if channel_name == DEFAULT_CHANNEL:
         raise ValueError(f"Cannot add '{DEFAULT_CHANNEL}' channel - it exists implicitly")
 
-    properties = api.config.get_properties(entity_uri)
+    properties = store.get_properties(entity_uri)
     if properties is None:
         raise ValueError(f'Entity not found: {entity_uri}')
 
@@ -168,12 +169,12 @@ def add_channel(entity_uri: Uri, channel_name: str) -> None:
     # computed above is the right basis (a channel layers on top of what is
     # inherited), but writing the whole resolved dict back would pin every
     # inherited key here and detach the entity from its parents.
-    own = api.config.get_own_properties(entity_uri) or {}
+    own = store.get_own_properties(entity_uri) or {}
     own[CHANNEL_PROPERTY] = channels
-    api.config.set_own_properties(entity_uri, own)
+    store.set_own_properties(entity_uri, own)
 
 
-def remove_channel(entity_uri: Uri, channel_name: str) -> None:
+def remove_channel_in(store: JsonConfigStore, entity_uri: Uri, channel_name: str) -> None:
     """Remove a channel from an entity.
 
     Args:
@@ -188,7 +189,7 @@ def remove_channel(entity_uri: Uri, channel_name: str) -> None:
     if channel_name == DEFAULT_CHANNEL:
         raise ValueError(f"Cannot remove '{DEFAULT_CHANNEL}' channel")
 
-    properties = api.config.get_properties(entity_uri)
+    properties = store.get_properties(entity_uri)
     if properties is None:
         raise ValueError(f'Entity not found: {entity_uri}')
 
@@ -201,9 +202,9 @@ def remove_channel(entity_uri: Uri, channel_name: str) -> None:
     # computed above is the right basis (a channel layers on top of what is
     # inherited), but writing the whole resolved dict back would pin every
     # inherited key here and detach the entity from its parents.
-    own = api.config.get_own_properties(entity_uri) or {}
+    own = store.get_own_properties(entity_uri) or {}
     own[CHANNEL_PROPERTY] = channels
-    api.config.set_own_properties(entity_uri, own)
+    store.set_own_properties(entity_uri, own)
 
 
 #: Entity property mapping a channel to the prims that make up its render
@@ -353,13 +354,13 @@ def channel_layers(channels: list[str], prims: dict[str, str]) -> list[tuple[str
     return layers
 
 
-def list_channel_layers(entity_uri: Uri) -> list[tuple[str, str | None]]:
+def list_channel_layers_in(store: JsonConfigStore, entity_uri: Uri) -> list[tuple[str, str | None]]:
     """:func:`channel_layers` for an entity, read from its config."""
-    properties = api.config.get_properties(entity_uri)
-    return channel_layers(list_channels(entity_uri), read_channel_prims(properties))
+    properties = store.get_properties(entity_uri)
+    return channel_layers(list_channels_in(store, entity_uri), read_channel_prims(properties))
 
 
-def has_channel(entity_uri: Uri, channel_name: str) -> bool:
+def has_channel_in(store: JsonConfigStore, entity_uri: Uri, channel_name: str) -> bool:
     """Check if an entity has a specific channel.
 
     Args:
@@ -369,4 +370,32 @@ def has_channel(entity_uri: Uri, channel_name: str) -> bool:
     Returns:
         True if the channel exists (including 'default'), False otherwise
     """
-    return channel_name in list_channels(entity_uri)
+    return channel_name in list_channels_in(store, entity_uri)
+
+
+# --------------------------------------------------------------------------- #
+# The active project
+# --------------------------------------------------------------------------- #
+# The pipeline, the HDAs and the project templates work in the active project
+# and call these; the Asset Browser, which works on any project, calls the
+# ``_in`` cores with that project's store.
+
+
+def list_channels(entity_uri: Uri) -> list[str]:
+    return list_channels_in(api.config, entity_uri)
+
+
+def add_channel(entity_uri: Uri, channel_name: str) -> None:
+    add_channel_in(api.config, entity_uri, channel_name)
+
+
+def remove_channel(entity_uri: Uri, channel_name: str) -> None:
+    remove_channel_in(api.config, entity_uri, channel_name)
+
+
+def list_channel_layers(entity_uri: Uri) -> list[tuple[str, str | None]]:
+    return list_channel_layers_in(api.config, entity_uri)
+
+
+def has_channel(entity_uri: Uri, channel_name: str) -> bool:
+    return has_channel_in(api.config, entity_uri, channel_name)

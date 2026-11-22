@@ -17,6 +17,8 @@ from pathlib import Path
 
 from tumbletrove.common.persistence import read_json, write_json
 
+from tumblepipe.config.store import JsonConfigStore, shared_store
+
 log = logging.getLogger(__name__)
 
 _VERSION = 1
@@ -39,6 +41,13 @@ class ProjectConfig:
     #: (see libraries.py). The launch environment's TH_LIBRARY_PATH comes
     #: before them and is never stored here.
     library_paths: list[str] = field(default_factory=list)
+
+    def store(self) -> JsonConfigStore:
+        """This project's config store: the process's one store for its
+        config folder, the one its Client (and ``api.config``, while it is
+        the active project) reads. Config calls about this project pass it,
+        so they reach this project whichever one is active."""
+        return shared_store(Path(self.config_path))
 
 
 def _library_paths(raw) -> list[str]:

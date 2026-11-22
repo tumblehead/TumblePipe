@@ -27,13 +27,7 @@ pub fn resolve(uri: &EntityUri) -> ResolveResult<String> {
         if dept == ROOT_DEPARTMENT {
             resolve_root(&base, &uri.segments, uri.version.as_deref())?
         } else {
-            resolve_department(
-                &base,
-                &uri.segments,
-                dept,
-                &uri.channel,
-                uri.version.as_deref(),
-            )?
+            resolve_department(&base, &uri.segments, dept, &uri.channel, uri.version.as_deref())?
         }
     } else {
         resolve_staged(&base, &uri.segments, &uri.channel, uri.version.as_deref())?
@@ -42,13 +36,7 @@ pub fn resolve(uri: &EntityUri) -> ResolveResult<String> {
     Ok(to_forward_slashes(path))
 }
 
-fn resolve_department(
-    base: &Path,
-    segments: &[String],
-    department: &str,
-    channel: &str,
-    version: Option<&str>,
-) -> ResolveResult<PathBuf> {
+fn resolve_department(base: &Path, segments: &[String], department: &str, channel: &str, version: Option<&str>) -> ResolveResult<PathBuf> {
     let mut dir = base.to_path_buf();
     for seg in segments {
         dir.push(seg);
@@ -69,12 +57,7 @@ fn resolve_department(
     Ok(version_dir.join(file_name))
 }
 
-fn resolve_staged(
-    base: &Path,
-    segments: &[String],
-    channel: &str,
-    version: Option<&str>,
-) -> ResolveResult<PathBuf> {
+fn resolve_staged(base: &Path, segments: &[String], channel: &str, version: Option<&str>) -> ResolveResult<PathBuf> {
     let mut dir = base.to_path_buf();
     for seg in segments {
         dir.push(seg);
@@ -87,20 +70,13 @@ fn resolve_staged(
 
     // Staged filenames drop the first segment (typically the entity type
     // like "assets") from the entity name.
-    let entity_name = segments
-        .get(1..)
-        .unwrap_or(&[])
-        .join("_");
+    let entity_name = segments.get(1..).unwrap_or(&[]).join("_");
     let file_name = format!("{entity_name}_{version_name}.usda");
 
     Ok(version_dir.join(file_name))
 }
 
-fn resolve_root(
-    base: &Path,
-    segments: &[String],
-    version: Option<&str>,
-) -> ResolveResult<PathBuf> {
+fn resolve_root(base: &Path, segments: &[String], version: Option<&str>) -> ResolveResult<PathBuf> {
     let mut dir = base.to_path_buf();
     for seg in segments {
         dir.push(seg);
@@ -116,11 +92,7 @@ fn resolve_root(
     Ok(version_dir.join(file_name))
 }
 
-fn resolve_scene(
-    base: &Path,
-    scene_segments: &[String],
-    version: Option<&str>,
-) -> ResolveResult<PathBuf> {
+fn resolve_scene(base: &Path, scene_segments: &[String], version: Option<&str>) -> ResolveResult<PathBuf> {
     if scene_segments.is_empty() {
         return Err(ResolveError::EmptyScenePath);
     }
@@ -148,9 +120,7 @@ fn pick_version(dir: &Path, requested: Option<&str>) -> ResolveResult<String> {
             return Ok(v.to_owned());
         }
     }
-    find_latest(dir).ok_or_else(|| ResolveError::NoVersions {
-        searched: to_forward_slashes(dir.to_path_buf()),
-    })
+    find_latest(dir).ok_or_else(|| ResolveError::NoVersions { searched: to_forward_slashes(dir.to_path_buf()) })
 }
 
 fn to_forward_slashes(path: PathBuf) -> String {

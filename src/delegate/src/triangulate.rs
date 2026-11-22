@@ -28,13 +28,7 @@ pub const EAR_CLIP_LIMIT: usize = 1024;
 /// came from. `holes` lists faces to leave out (USD `holeIndices`); `flip`
 /// reverses the winding (a left-handed mesh). None when the topology does
 /// not add up: a negative count, or counts that run past `indices`.
-pub fn triangulate(
-    points: &[Vec3],
-    counts: &[i32],
-    indices: &[i32],
-    holes: &[i32],
-    flip: bool,
-) -> Option<(Vec<[u32; 3]>, Vec<u32>)> {
+pub fn triangulate(points: &[Vec3], counts: &[i32], indices: &[i32], holes: &[i32], flip: bool) -> Option<(Vec<[u32; 3]>, Vec<u32>)> {
     let mut total = 0usize;
     let mut triangles = 0usize;
     for &n in counts {
@@ -59,9 +53,7 @@ pub fn triangulate(
         let n = n as usize;
         if n >= 3 && !hole[face] {
             face_points.clear();
-            face_points.extend(indices[start..start + n].iter().map(|&i| {
-                usize::try_from(i).ok().and_then(|i| points.get(i)).copied()
-            }));
+            face_points.extend(indices[start..start + n].iter().map(|&i| usize::try_from(i).ok().and_then(|i| points.get(i)).copied()));
             for [a, b, c] in polygon(&face_points) {
                 let (b, c) = if flip { (c, b) } else { (b, c) };
                 corners.push([(start + a) as u32, (start + b) as u32, (start + c) as u32]);
@@ -127,7 +119,8 @@ fn project(points: &[Option<Vec3>]) -> Option<Vec<[f64; 2]>> {
         normal[2] += (a[0] - b[0]) * (a[1] + b[1]);
     }
     let axis = (0..3).max_by(|&i, &j| normal[i].abs().total_cmp(&normal[j].abs()))?;
-    if !(normal[axis].abs() > 0.0) {
+    let size = normal[axis].abs();
+    if size.is_nan() || size == 0.0 {
         return None;
     }
     // The two kept axes in cyclic order make the area positive where the
@@ -173,7 +166,12 @@ fn ear_clip(q: &[[f64; 2]], eps: f64) -> Vec<[usize; 3]> {
             }
             !reflex.iter().any(|&r| {
                 let p = q[r];
-                r != a && r != b && r != c && p != q[a] && p != q[b] && p != q[c]
+                r != a
+                    && r != b
+                    && r != c
+                    && p != q[a]
+                    && p != q[b]
+                    && p != q[c]
                     && cross(q[a], q[b], p) >= -eps
                     && cross(q[b], q[c], p) >= -eps
                     && cross(q[c], q[a], p) >= -eps
@@ -222,6 +220,18 @@ mod tests {
         let tris = polygon(&dart);
         assert_eq!(tris.len(), 2);
         assert!(tris.iter().all(|t| t.contains(&1) && t.contains(&3)), "{tris:?}");
+    }
+
+    proptest::proptest! {
+        /// A face with no plane, every corner on one line in any order,
+        /// has no projection and is fanned from corner 0.
+        #[test]
+        fn a_face_with_no_plane_is_fanned(xs in proptest::collection::vec(-10.0f32..10.0, 4..=16)) {
+            let line: Vec<Option<Vec3>> = xs.iter().map(|&x| Some([x, 0.0, 0.0])).collect();
+            proptest::prop_assert!(project(&line).is_none());
+            let fan: Vec<[usize; 3]> = (1..xs.len() - 1).map(|i| [0, i, i + 1]).collect();
+            proptest::prop_assert_eq!(polygon(&line), fan);
+        }
     }
 
     /// A bad count or counts past the indices refuse; holes and short faces

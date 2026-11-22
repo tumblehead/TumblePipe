@@ -20,7 +20,8 @@ use th_pipe::edits::EditSources;
 use th_pipe::media;
 
 use super::bin_panel::BinMessage;
-use super::{Dialog, Editor, Message};
+use super::file_dialogs::Dialog;
+use super::{Editor, Message};
 use crate::bin_thumbs::ThumbKey;
 use crate::bins::{self, Target};
 use crate::farm_submit;
@@ -240,7 +241,6 @@ impl Editor {
 
     #[cfg(not(test))]
     fn farm_start(&mut self, launch: farm_submit::Launch) -> Result<(), String> {
-        let _ = &self.bin_state;
         farm_submit::start(&launch)
     }
 

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Callable
 from tumblepipe.pipe.houdini.ui.report import reporting
 from tumblepipe.farm.submit.settings import channel_list
 
+from . import containers as containers_mod
 from .dept_scope import off_label
 
 if TYPE_CHECKING:
@@ -459,14 +460,13 @@ class DetailSectionBuilder:
         proj = self._resolver.project_for(asset_id)
         if proj is None or not self._clients.is_ready(proj.name):
             return ("", False)
-        self._activator.activate(proj)
-        from tumblepipe.api import api
         from tumblepipe.config import entity_sheet as es
         from tumblepipe.config.channels import CHANNEL_PRIMS_PROPERTY, CHANNEL_PROPERTY
+        store = proj.store()
         shot_uri = self._resolver.uri_for(asset_id)
         try:
-            layers = es.Layers.of_properties(api.config.get_properties(shot_uri))
-            own = api.config.get_own_properties(shot_uri) or {}
+            layers = es.Layers.of_properties(store.get_properties(shot_uri))
+            own = store.get_own_properties(shot_uri) or {}
         except Exception:  # noqa: BLE001  a config that will not read
             return ("", False)
         label = layers.text()
@@ -483,13 +483,12 @@ class DetailSectionBuilder:
         proj = self._resolver.project_for(asset_id)
         if proj is None or not self._clients.is_ready(proj.name):
             return ("", False)
-        self._activator.activate(proj)
         from tumblepipe.config import scene as scene_mod
         shot_uri = self._resolver.uri_for(asset_id)
-        scene_uri = scene_mod.get_scene_ref(shot_uri)
+        scene_uri = scene_mod.get_scene_ref_in(proj.store(), shot_uri)
         inherited = scene_uri is None
         if inherited:
-            scene_uri, _source = scene_mod.get_inherited_scene_ref(shot_uri)
+            scene_uri, _source = scene_mod.get_inherited_scene_ref_in(proj.store(), shot_uri)
             if scene_uri is None:
                 return ("", False)
         return ("/".join(scene_uri.segments), inherited)
@@ -761,8 +760,12 @@ class DetailSectionBuilder:
         # departments it is scoped to, plus any that already have work (an
         # unassigned department with a workfile is flagged, never hidden).
         assigned_depts: set[str] = set()
+        project_name = (
+            containers_mod.parse(asset_id).project_name if is_multi
+            else asset_id.split("/", 1)[0]
+        )
         if is_multi:
-            all_depts = self._dept_scope.pool(ent_ctx)
+            all_depts = self._dept_scope.pool(project_name, ent_ctx)
             assigned_depts = set(all_depts)
         else:
             all_depts, assigned_depts = self._dept_scope.for_entity(
@@ -773,7 +776,7 @@ class DetailSectionBuilder:
         off_depts: set[str] = (
             set() if is_multi else self._dept_scope.turned_off(asset_id)
         )
-        dept_shorts = self._dept_scope.shorts(ent_ctx)
+        dept_shorts = self._dept_scope.shorts(project_name, ent_ctx)
         overrides = self._dept_versions.get(asset_id)
         scene_dv = self._scene.get_scene_dept_version(asset_id)
         active_dept = scene_dv[0] if scene_dv else None

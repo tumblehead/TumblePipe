@@ -266,7 +266,7 @@ def generate_instance_prim_definitions(
             # the composed placement values when known. Otherwise the
             # instance authors no transform at all and composes the
             # prototype's order and values through the reference, as the
-            # GUI import's copies do (util.apply_placement_op_order reads
+            # GUI import's copies do (prim_queries.apply_placement_op_order reads
             # the order through that same arc). An identity dup op here
             # used to override the referenced order: HideAndReek 010's two
             # Kangaroo copies, placed on the prototype, rendered at the
@@ -288,7 +288,7 @@ def generate_instance_prim_definitions(
             # Deactivate the original prototype so it doesn't render, but
             # give it the transform the instances reference: the prototype
             # is what they compose through, and the GUI import authors it
-            # (util.author_identity_placement_ops), so leaving it bare here
+            # (prim_queries.author_identity_placement_ops), so leaving it bare here
             # would diverge the farm from the session. Placement composed on
             # the prototype itself only needs its order applied.
             base_order = placement_orders.get(base_prim_path)

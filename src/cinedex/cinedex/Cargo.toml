@@ -58,6 +58,9 @@ default = ["sound"]
 sound = ["dep:cpal"]
 
 [dev-dependencies]
+# `testing`: announces go to th_pipe::events::TEST_JOURNAL (none unless a
+# test names one), so tests that write config never touch the user's journal.
+th_pipe = { workspace = true, features = ["testing"] }
 proptest.workspace = true
 tempfile.workspace = true
 exr.workspace = true

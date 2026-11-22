@@ -120,6 +120,14 @@ class ProjectActivator:
         is the dominant per-op cost (~100 ms — reads disk + execs
         project-config modules), so this guard makes back-to-back ops
         on the same project effectively free.
+
+        Config reads and writes do not need this: the browser passes a
+        project's own store (``ProjectConfig.store()``) to the config
+        modules. What still resolves through the active project is
+        ``api.storage`` and the pipe modules, which build workfile, export
+        and staged-build paths from ``TH_PROJECT_PATH``/``TH_EXPORT_PATH``,
+        and the Houdini session itself; those are what an activation is
+        for now.
         """
         if project is None:
             return

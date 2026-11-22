@@ -75,6 +75,7 @@ app = QApplication.instance() or QApplication(sys.argv)
 
 from tumblepipe.asset_browser import submit_jobs_dialog as sjd  # noqa: E402
 from tumblepipe.farm.specs import frame_ranges  # noqa: E402
+from tumblepipe.farm.submit import grid  # noqa: E402
 from tumblepipe.farm.submit import remembered  # noqa: E402
 from tumblepipe.asset_browser.frame_timeline import FrameTimeline  # noqa: E402
 
@@ -109,6 +110,11 @@ def build_pane(context: str):
     pane._comp_copy_edit = None
     box = pane._build_render_section()
     return pane, box, changes
+
+
+def _row(uri: str, settings: dict):
+    """A resolved row of ``settings`` with nothing to warn about."""
+    return grid.ResolvedRow(uri=uri, settings=settings, warnings=(), errors=(), stale=())
 
 
 def _row_visible(pane, widget) -> bool:
@@ -178,7 +184,7 @@ def main() -> int:
     check("a timeline sits under the Frame list field",
           isinstance(timeline, FrameTimeline) and _row_visible(pane, timeline))
     check("the timeline is one compact row", 28 <= timeline.height() <= 36, str(timeline.height()))
-    rows = [('a', {'render': True, 'first_frame': 1001, 'last_frame': 1100}, [], [])]
+    rows = [_row('a', {'render': True, 'first_frame': 1001, 'last_frame': 1100})]
     pane._update_timelines(rows)
     view = timeline.view()
     check("it shows the ticked shot's frames", (view.lo, view.hi, view.caption) == (1001, 1100, ''),
@@ -230,8 +236,8 @@ def main() -> int:
     check("unreadable text is never rewritten by the timeline", field.text() == '1001-1030 abc',
           field.text())
     pane._update_timelines([
-        ('a', {'render': True, 'first_frame': 1001, 'last_frame': 1100, 'pre_roll': 5}, [], []),
-        ('b', {'render': True, 'first_frame': 1001, 'last_frame': 1240}, [], []),
+        _row('a', {'render': True, 'first_frame': 1001, 'last_frame': 1100, 'pre_roll': 5}),
+        _row('b', {'render': True, 'first_frame': 1001, 'last_frame': 1240}),
     ])
     view = timeline.view()
     check("shots of different ranges show their union, rolls included, and say so",
@@ -271,7 +277,8 @@ def main() -> int:
     pane._comp_preview.setChecked(True)
     check("... and shows when ticked", _row_visible(pane, comp_holder))
     pane._props = {'c': {'frame_start': 1001, 'frame_end': 1048}}
-    pane._update_timelines([('c', {'comp': True, 'comp_step': 2}, [], [])])
+    pane._statuses = {}  # not scanned: no renders on disk read
+    pane._update_timelines([_row('c', {'comp': True, 'comp_step': 2})])
     ctl = pane._comp_preview_timeline
     ctl.apply(1001, 1006, False)
     check("a drag on the comp timeline adds only frames on the comp's step",

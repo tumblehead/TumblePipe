@@ -95,7 +95,8 @@ on an older one (a Save menu choice was a `MenuItem` with `checked` from
 0.65 and a `✓` in its label before, while the floor was 0.57), check each form with a stand-in for that
 SDK's type, and the real one in whichever form the installed SDK has:
 `test_save_timer.py` read `entry.checked` alone and failed on 0.64, where
-the entries are plain pairs.
+the entries are plain pairs. Once the floor passes the newer version,
+delete the older form and its stand-in (none is left at the 0.67 floor).
 
 A second class of silent break lives *between* the catalog's own modules:
 they reach each other through the catalog instance
@@ -210,8 +211,11 @@ uv run --no-project python .ci/preflight.py
 Stages: `lint` (ruff E9,F), `hdas`, `hdapy`, `hdapaths`, `reports`, `tests`,
 `rust`, `delegate`, `harness`, `qt`, `hython`.
 
-`rust` runs `cargo test --locked` in `src/resolver`, `src/wizard` and
-`src/delegate` (on Windows inside vcvars64's environment), then
+`rust` runs `cargo fmt --check`, clippy with `-D warnings` and
+`cargo test --locked` in `src/resolver`, `src/wizard` and `src/delegate` (on Windows inside vcvars64's environment), then the player
+workspace's crates that link no FFmpeg (`th_pipe`, `th_edit`,
+`th_playlist`, `th_cleanup`) on their own, so they run even where the player
+build cannot (`th_pipe` pins every copy of the config layout version), then
 `.ci/build_player.py --test` for the player workspace: `cargo fmt --check`,
 clippy with `-D warnings` and the whole workspace's tests, in the release
 build's FFmpeg and OpenColorIO environment. The first run in a fresh
@@ -535,13 +539,19 @@ the status bar instead.
 
 ### Where the logs are
 
-`tumblepipe.util.logging` installs a rotating file handler on `import
-tumblepipe`, so the traceback behind any of these dialogs is on disk:
+Each process's entry point calls `tumblepipe.util.logging.setup_logging()`
+once (`startup.bootstrap` in every Houdini session, `farm.worker.run` in
+every farm task, the `__main__` of each standalone tool), which adds a
+rotating file handler, so the traceback behind any of these dialogs is on
+disk:
 
 ```
-$TH_PROJECT_PATH/export/other/logs/$TH_USER.log   # project-wide
-<workspace>/_logs/$TH_USER.log                    # per-workspace
+$TH_PROJECT_PATH/export/other/logs/$TH_USER.log
 ```
+
+Importing `tumblepipe` configures nothing, and `setup_logging` leaves the
+handlers other packages installed alone. A new entry point must call it
+(`test_logging` checks every `__main__`).
 
 Warnings and errors are also echoed to the process console, which the
 Desktop launcher captures into its per-project Houdini log
@@ -1172,6 +1182,11 @@ The tests:
   their own number, in every order, and checks each frame, and that a decode
   no longer wanted stops. Set `TH_PLAYER_TEST_MOVIE` to a real playblast to
   also check that random access matches a straight decode byte for byte.
+  `media/tests/decoder_props.rs` checks that any decode order gives the
+  frames a forward pass does, and `media/tests/colour_props.rs` that
+  colour-card movies (8-bit 4:2:0 copied, 10-bit 4:2:2 through swscale)
+  decode to the colours they were made from, with the right matrix: the
+  grey ramps cannot show a Cb/Cr mix-up.
 - `media/tests/exr_props.rs` writes random EXRs with the `exr` crate and reads
   them back. They cover layers, multipart files, data windows, f16 and f32,
   the default view, channel picking, a missing frame (an error, never a
@@ -1597,7 +1612,7 @@ The tests:
   whole workspace through `.ci/build_player.py --test` (`cargo fmt
   --check`, `clippy -D warnings`, then `cargo test`), with the release
   build's FFmpeg, toolchain and OpenColorIO. Formatting follows
-  `src/cinedex/rustfmt.toml`, so run `cargo fmt` before committing.
+  `src/rustfmt.toml` (shared by every Rust crate here), so run `cargo fmt` before committing.
 
 Commit any new seeds proptest writes under `proptest-regressions/`.
 
@@ -2275,6 +2290,20 @@ Shift cooks its input at the other frame but stamps the samples there too,
 and a USD ROP writing through it collapses the range to a single sample.
 `VERIFY_KEEP=1` keeps the temp project. Exits 1 on any failure.
 
+## Export to several targets harness
+
+`scripts/verify_export_targets.py` drives `th::export_layer`'s
+[Targets](nodes/import-and-export.md#exporting-to-several-shots) (#91) in a
+throwaway project: a test shot (1001-1010) exported with Targets: Chosen to
+a shot at 1001 and one at 2001. It checks each target gets one version under
+its own layer name, with `exported_from` in its `context.json`; that the
+samples land on each target's first frame with the values cooked at the test
+shot's; that nothing is published to the test shot; that All shots writes
+every shot; and that an asset target is refused before anything is written.
+The target rules and the routing are `tests/test_export_targets.py`. The
+`hython` preflight stage runs it (`PREFLIGHT_HYTHON=verify_export_targets.py`
+runs it alone).
+
 ## Changing a department template
 
 A project copies `scripts/project_template/_config/templates/` when it is
@@ -2297,10 +2326,14 @@ So a template change comes with:
   version missing from the list reads as the studio's own and is never
   replaced. `cargo test` fails until the new version is listed.
 - **A refresh step, when existing projects need the change.** Add the next
-  numbered step to `src/wizard/core/src/migration.rs` that re-runs the stock
-  refresh (as v14 does), bump `CONFIG_LAYOUT_VERSION` in
-  `python/tumblepipe/config/layout.py` and the scaffold's
-  `_config/version.json` to match, and describe the step in
+  numbered step to `src/wizard/core/src/migration.rs` whose `Step::kind` is
+  `Kind::StockRefresh` (as v14's is): that one arm gives it its readiness,
+  its body and its lines in the template report. Bump `CONFIG_LAYOUT_VERSION` in
+  `python/tumblepipe/config/layout.py`, `CONFIG_LAYOUT_VERSION` in
+  `src/cinedex/pipe/src/project.rs` and the scaffold's
+  `_config/version.json` to match (`th_pipe`'s
+  `the_layout_is_the_newest_migrations` fails until all four agree), and
+  describe the step in
   [Configuration](configuration.md).
 - **An entry in `REMOVED_MODULES` / `REMOVED_CALLS`** when the change goes
   with removing an API the old templates call, so a customised template
@@ -2321,9 +2354,7 @@ knowing before any similar sweep:
   as `dict(variant_name=…)`. Rename the identifier and you have silently
   renamed an on-disk sidecar field and a submit↔worker JSON key that the
   reader still looks up by its old string. The same goes for anything
-  reached reflectively — `getattr(ctx, "variant_name")`, and
-  `pipe/houdini/rebuild.py`, which drives the wrappers from a table of
-  getter/setter **name strings**.
+  reached reflectively, such as `getattr(ctx, "variant_name")`.
 - **Check the new name is not already taken.** `channel_name` and `channels`
   were long-standing kwargs for Discord notify channels and for OIIO image
   channels (`farm/workers/notify.py`, `farm/pipelines/{playblast,composite}.py`,

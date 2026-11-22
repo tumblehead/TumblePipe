@@ -56,15 +56,11 @@ fn version_name() -> impl Strategy<Value = String> {
 
 /// Entity path segments under a non-scene context, at least two deep.
 fn entity_segments() -> impl Strategy<Value = Vec<String>> {
-    (
-        prop::sample::select(vec!["assets", "shots"]),
-        prop::collection::vec(token(), 1..4),
-    )
-        .prop_map(|(context, rest)| {
-            let mut segments = vec![context.to_owned()];
-            segments.extend(rest);
-            segments
-        })
+    (prop::sample::select(vec!["assets", "shots"]), prop::collection::vec(token(), 1..4)).prop_map(|(context, rest)| {
+        let mut segments = vec![context.to_owned()];
+        segments.extend(rest);
+        segments
+    })
 }
 
 fn build_uri(segments: &[String], query: &[(String, String)], slash: bool) -> String {
@@ -79,11 +75,7 @@ fn build_uri(segments: &[String], query: &[(String, String)], slash: bool) -> St
 }
 
 /// The query a writer would emit, as (key, value) pairs in writer order.
-fn query_pairs(
-    dept: &Option<String>,
-    channel: &Option<String>,
-    version: &Option<String>,
-) -> Vec<(String, String)> {
+fn query_pairs(dept: &Option<String>, channel: &Option<String>, version: &Option<String>) -> Vec<(String, String)> {
     let mut query = Vec::new();
     if let Some(d) = dept {
         query.push(("dept".to_owned(), d.clone()));

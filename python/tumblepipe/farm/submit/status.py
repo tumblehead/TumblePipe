@@ -16,8 +16,10 @@ the main thread, because a preview's staleness depends on its department
 cut, which the artist can change without a rescan of the publish columns.
 
 Only folder listings and one ``stat`` per latest version are read — never a
-USD layer or a ``context.json`` — because on a slow share every file
-operation counts.
+USD layer — because on a slow share every file operation counts. The one
+exception is a shot with a composite workfile: what its renders on disk
+cover (:attr:`RowStatus.rendered`, the range a Comp alone follows, read as the
+farm reads it) takes the renders' ``context.json`` files.
 """
 
 from __future__ import annotations
@@ -45,6 +47,11 @@ class CompProbe:
     workspace_dir: Path    # the composite workspace (a Multi's, when one covers it)
     hip_base: str          # '<workfile segments>_composite' before '_vNNNN'
     slapcomp_dir: Path     # render:/render/<shot>/composite/slapcomp
+    # (department, render:/render/<shot>/<department>) per render department,
+    # in pipeline order, and the shot's channels: what its renders on disk
+    # cover (pipe.comp.rendered_range).
+    render_dirs: tuple[tuple[str, Path], ...]
+    channels: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -71,8 +78,31 @@ class RowStatus:
     render_mtime: float | None = None
     comp_workfile: bool = False        # the shot has a composite workfile
     comp_mtime: float | None = None    # newest merged comp version folder
+    # What the renders on disk cover (pipe.comp.rendered_range), read for a
+    # shot with a composite workfile; None otherwise, or when none is.
+    rendered: tuple[int, int] | None = None
     staged: set[str] = field(default_factory=set)  # channels with a staged build
     error: str | None = None
+
+
+def merge_previews(old: RowStatus, new: RowStatus) -> RowStatus:
+    """A row's status after a scan of its preview folders only (``new``,
+    made when a preview cut changed): the publish half kept from ``old``, the
+    preview half from ``new``. A failed rescan's error stays on the row, so
+    its cells show the error rather than reading as never done."""
+    return RowStatus(
+        uri=old.uri,
+        hip_mtimes=old.hip_mtimes,
+        export_mtimes=old.export_mtimes,
+        shared=old.shared,
+        playblast_mtime=new.playblast_mtime,
+        render_mtime=new.render_mtime,
+        comp_workfile=new.comp_workfile,
+        comp_mtime=new.comp_mtime,
+        rendered=new.rendered,
+        staged=new.staged,
+        error=new.error or old.error,
+    )
 
 
 # ── main thread ───────────────────────────────────────────
@@ -94,8 +124,9 @@ def plan_probe(
 
     ``comp`` (shots) adds the Comp column's folders: the composite workspace
     (resolved like a publish department's, so a Multi's workfile counts, as
-    ``latest_complete_hip_file_path`` finds it for the re-comp) and the
-    merged comp's ``composite/slapcomp`` versions.
+    ``latest_complete_hip_file_path`` finds it for the re-comp), the merged
+    comp's ``composite/slapcomp`` versions, and each render department's
+    folder (what the renders on disk cover).
 
     An asset's Render column measures its turntable (#53), where a
     studio's farm render writes: ``turntable:/render/<asset>/render/main``
@@ -153,6 +184,8 @@ def plan_probe(
 
     comp_probe = None
     if comp:
+        from tumblepipe.config.channels import list_channels
+        from tumblepipe.config.department import list_departments
         from tumblepipe.pipe.comp import COMPOSITE_DEPARTMENT
         workfile_uri, workspace_dir = department_workspace(entity_uri, COMPOSITE_DEPARTMENT)
         comp_probe = CompProbe(
@@ -162,6 +195,13 @@ def plan_probe(
                 Uri.parse('render:/render') / entity_uri.segments
                 / COMPOSITE_DEPARTMENT / 'slapcomp'
             )),
+            render_dirs=tuple(
+                (department.name, Path(api.storage.resolve(
+                    Uri.parse('render:/render') / entity_uri.segments / department.name
+                )))
+                for department in list_departments('render')
+            ),
+            channels=tuple(list_channels(entity_uri)),
         )
 
     return RowProbe(
@@ -241,6 +281,22 @@ def _latest_mp4(probe: RowProbe, directory: Path | None) -> Path | None:
     )
 
 
+def _rendered(uri: str, comp: CompProbe) -> tuple[int, int] | None:
+    """What the renders in ``comp``'s render folders cover."""
+    from tumblepipe.pipe.comp import rendered_range
+    from tumblepipe.pipe.paths.render import read_render
+    from tumblepipe.util.uri import Uri
+    entity = Uri.parse(uri)
+    renders = {}
+    for department, folder in comp.render_dirs:
+        render = read_render(entity, folder, comp.channels)
+        if render is not None:
+            renders[department] = render
+    return rendered_range(
+        renders, [department for department, _folder in comp.render_dirs], comp.channels,
+    )
+
+
 def scan(probe: RowProbe) -> RowStatus:
     """Read the modification times :class:`RowStatus` carries. Filesystem only."""
     status = RowStatus(uri=probe.uri)
@@ -262,6 +318,8 @@ def scan(probe: RowProbe) -> RowStatus:
             status.comp_workfile = _latest_hip(probe, probe.comp) is not None
             comp = _latest_version_dir(probe, probe.comp.slapcomp_dir)
             status.comp_mtime = None if comp is None else _mtime(comp)
+            if status.comp_workfile:
+                status.rendered = _rendered(probe.uri, probe.comp)
         for channel, staged_dir in probe.staged:
             if _latest_version_dir(probe, staged_dir) is not None:
                 status.staged.add(channel)

@@ -37,97 +37,97 @@ pub const STOCK: [(&str, u64); 101] = [
     ("assets/blendshape", 0xcd06531206b5db8d), // ad76a88205
     ("assets/blendshape", 0x539bb05f156be3a9), // 7b1e9882de
     ("assets/blendshape", 0x5dd014bbec38a4b6), // 68d047deb7
-    ("assets/groom", 0xea5631f706384b7b), // 182b03a573
-    ("assets/groom", 0x95c82591b799ad3a), // 5b408566de
-    ("assets/groom", 0x9f379d30132e95aa), // 9354ce1601
-    ("assets/lookdev", 0x1b3f29bea006e0a5), // a52ecf9e17
-    ("assets/lookdev", 0x5760ea8fa74b4ae6), // 0445abd52a
-    ("assets/lookdev", 0x7d544393eea3ca05), // 89fb4b2835
-    ("assets/lookdev", 0x966b4257d1819a86), // 203617e2b5
-    ("assets/lookdev", 0xabdfa1baff88d653), // 199dedf97b
-    ("assets/lookdev", 0xac8f53b1cff5a4c0), // 93fb8328c1
-    ("assets/lookdev", 0xd75145e0ca70ff57), // 4e182c5f3e
-    ("assets/lookdev", 0x430b49ac311cbca1), // 230f273409
-    ("assets/lookdev", 0x09a8d68dd71a31ab), // 1d39635b39
-    ("assets/model", 0x34d8dae8309f9b10), // f53431d1cc
-    ("assets/model", 0x744cd703d57a3f75), // 4f5f9cf926
-    ("assets/model", 0x8901f1f6a57ede7d), // 8c37af36a9
-    ("assets/model", 0x8e1505ef83577a55), // ce7839d8fe
-    ("assets/model", 0x9118fa8b63a5310e), // 3f88abe8f8
-    ("assets/model", 0xc2c288d062ea8963), // c5d932fe8c
-    ("assets/model", 0xd2811dba2a653955), // 77e29414e8
-    ("assets/model", 0xf37711d269704509), // 82a0ed2d66
-    ("assets/rig", 0x0a5da7df4d0e68f3), // e3c23e69af
-    ("assets/rig", 0x12d69199fd4502a0), // 977efd09f4
-    ("assets/rig", 0x3a1cb5d903c40527), // 802cbd64c8
-    ("assets/rig", 0x582d833776ac44ee), // fd10172897
-    ("assets/rig", 0x598bfb13fe9c67f0), // 77e1f113c0
-    ("assets/rig", 0x86229cf9209def15), // 32b5911187
-    ("assets/rig", 0xa3d1d379078aa532), // ecf4742ba1
-    ("assets/rig", 0xb7ca50c09544e91e), // 8a42a5e842
-    ("assets/rig", 0xcbdc5d35d52a6bb4), // ac08bc8141
-    ("assets/rig", 0xe656c48d28c37e01), // ca34f0c471
-    ("assets/rig", 0xf2911593e5966d02), // 50fc88e3c3
-    ("assets/rig", 0xf03a909166575c14), // 82a88f54d1
-    ("shots/animation", 0x4f22585e6eed577c), // cb38ffa938
-    ("shots/animation", 0x54003ebb35343d6b), // 865cc7cb4c
-    ("shots/animation", 0x62d3572d1ccbe70c), // a57c0e9702
-    ("shots/animation", 0x70c2edb7abca4908), // 9832b75ab1
-    ("shots/animation", 0xb67174b916aaf246), // f2a640c76e
-    ("shots/animation", 0xcdf69e8eb8fbf116), // 0aa683c4f1
-    ("shots/animation", 0xd2797013b8ae247b), // 873b0c0315
-    ("shots/animation", 0xa7f395d4ff858163), // 67282f6a0f
-    ("shots/animation", 0x3fd0ad888044dc0a), // b023f4189b
-    ("shots/animation", 0x6dae60d826ff0c26), // fe7802c38f
-    ("shots/animation", 0xaff97601a315ed3b), // 90bed7d068
-    ("shots/animation", 0x4075a1bbe020e68c), // 80def61306
-    ("shots/animation", 0x4f772d0cb6c4c329), // 46f42da508
-    ("shots/animation", 0xc53eec4d2c731216), // 2bffa1bb37
-    ("shots/animation", 0x88c8069f084e2dda), // 7a4e585c7c
-    ("shots/animation", 0x380a029e3f73ed89), // 49d11950b3
-    ("shots/animation", 0x8a021cb12debcab7), // d0abc8cc84
-    ("shots/cfx", 0x093be277eb7c4136), // a85f94fadc
-    ("shots/cfx", 0x522c75d5c51911e3), // cc26004b79
-    ("shots/cfx", 0x7054507e41b63ef9), // 8ae1bb6533
-    ("shots/cfx", 0xa54bbc375cbc277d), // d5e0eb38cf
-    ("shots/composite", 0x013fd61f3df16d38), // 4058bd9ccd
-    ("shots/composite", 0x1c2bf4b91eed5cd8), // a1d0d7a925
-    ("shots/composite", 0x223b8564747dd224), // aeff1a962e
-    ("shots/composite", 0x4ddb6f31f1714475), // c47e24bc75
-    ("shots/composite", 0xb2789ca14695a633), // 5a3e6ef417
-    ("shots/composite", 0x502dc2aabf9bb501), // 73daaac492
-    ("shots/composite", 0x1b1944477f44a45e), // 3b8ef3376f
-    ("shots/composite", 0x2ffd159d91a51522), // a8f58297ac
-    ("shots/crowd", 0x6179daa29cda4014), // 7367b2fb66
-    ("shots/crowd", 0xa48d835191483bd7), // 9bfdf0b4b7
-    ("shots/crowd", 0xfc0906730461684f), // 8cb06b64b7
-    ("shots/crowd", 0xfeb667a023138b31), // 3f412f30a0
-    ("shots/crowd", 0x48da7d5de8e527a3), // d8d23c4f37
-    ("shots/effects", 0x1d66313972dca460), // dda0c6c711
-    ("shots/effects", 0x1e18e1cc5e040b43), // 4fb9d5c07c
-    ("shots/effects", 0x694b6444464210cd), // 0502b7692c
-    ("shots/effects", 0xca7144a1d45349af), // 4a84299b45
-    ("shots/effects", 0xfe1977461273b537), // d84505ccfe
+    ("assets/groom", 0xea5631f706384b7b),      // 182b03a573
+    ("assets/groom", 0x95c82591b799ad3a),      // 5b408566de
+    ("assets/groom", 0x9f379d30132e95aa),      // 9354ce1601
+    ("assets/lookdev", 0x1b3f29bea006e0a5),    // a52ecf9e17
+    ("assets/lookdev", 0x5760ea8fa74b4ae6),    // 0445abd52a
+    ("assets/lookdev", 0x7d544393eea3ca05),    // 89fb4b2835
+    ("assets/lookdev", 0x966b4257d1819a86),    // 203617e2b5
+    ("assets/lookdev", 0xabdfa1baff88d653),    // 199dedf97b
+    ("assets/lookdev", 0xac8f53b1cff5a4c0),    // 93fb8328c1
+    ("assets/lookdev", 0xd75145e0ca70ff57),    // 4e182c5f3e
+    ("assets/lookdev", 0x430b49ac311cbca1),    // 230f273409
+    ("assets/lookdev", 0x09a8d68dd71a31ab),    // 1d39635b39
+    ("assets/model", 0x34d8dae8309f9b10),      // f53431d1cc
+    ("assets/model", 0x744cd703d57a3f75),      // 4f5f9cf926
+    ("assets/model", 0x8901f1f6a57ede7d),      // 8c37af36a9
+    ("assets/model", 0x8e1505ef83577a55),      // ce7839d8fe
+    ("assets/model", 0x9118fa8b63a5310e),      // 3f88abe8f8
+    ("assets/model", 0xc2c288d062ea8963),      // c5d932fe8c
+    ("assets/model", 0xd2811dba2a653955),      // 77e29414e8
+    ("assets/model", 0xf37711d269704509),      // 82a0ed2d66
+    ("assets/rig", 0x0a5da7df4d0e68f3),        // e3c23e69af
+    ("assets/rig", 0x12d69199fd4502a0),        // 977efd09f4
+    ("assets/rig", 0x3a1cb5d903c40527),        // 802cbd64c8
+    ("assets/rig", 0x582d833776ac44ee),        // fd10172897
+    ("assets/rig", 0x598bfb13fe9c67f0),        // 77e1f113c0
+    ("assets/rig", 0x86229cf9209def15),        // 32b5911187
+    ("assets/rig", 0xa3d1d379078aa532),        // ecf4742ba1
+    ("assets/rig", 0xb7ca50c09544e91e),        // 8a42a5e842
+    ("assets/rig", 0xcbdc5d35d52a6bb4),        // ac08bc8141
+    ("assets/rig", 0xe656c48d28c37e01),        // ca34f0c471
+    ("assets/rig", 0xf2911593e5966d02),        // 50fc88e3c3
+    ("assets/rig", 0xf03a909166575c14),        // 82a88f54d1
+    ("shots/animation", 0x4f22585e6eed577c),   // cb38ffa938
+    ("shots/animation", 0x54003ebb35343d6b),   // 865cc7cb4c
+    ("shots/animation", 0x62d3572d1ccbe70c),   // a57c0e9702
+    ("shots/animation", 0x70c2edb7abca4908),   // 9832b75ab1
+    ("shots/animation", 0xb67174b916aaf246),   // f2a640c76e
+    ("shots/animation", 0xcdf69e8eb8fbf116),   // 0aa683c4f1
+    ("shots/animation", 0xd2797013b8ae247b),   // 873b0c0315
+    ("shots/animation", 0xa7f395d4ff858163),   // 67282f6a0f
+    ("shots/animation", 0x3fd0ad888044dc0a),   // b023f4189b
+    ("shots/animation", 0x6dae60d826ff0c26),   // fe7802c38f
+    ("shots/animation", 0xaff97601a315ed3b),   // 90bed7d068
+    ("shots/animation", 0x4075a1bbe020e68c),   // 80def61306
+    ("shots/animation", 0x4f772d0cb6c4c329),   // 46f42da508
+    ("shots/animation", 0xc53eec4d2c731216),   // 2bffa1bb37
+    ("shots/animation", 0x88c8069f084e2dda),   // 7a4e585c7c
+    ("shots/animation", 0x380a029e3f73ed89),   // 49d11950b3
+    ("shots/animation", 0x8a021cb12debcab7),   // d0abc8cc84
+    ("shots/cfx", 0x093be277eb7c4136),         // a85f94fadc
+    ("shots/cfx", 0x522c75d5c51911e3),         // cc26004b79
+    ("shots/cfx", 0x7054507e41b63ef9),         // 8ae1bb6533
+    ("shots/cfx", 0xa54bbc375cbc277d),         // d5e0eb38cf
+    ("shots/composite", 0x013fd61f3df16d38),   // 4058bd9ccd
+    ("shots/composite", 0x1c2bf4b91eed5cd8),   // a1d0d7a925
+    ("shots/composite", 0x223b8564747dd224),   // aeff1a962e
+    ("shots/composite", 0x4ddb6f31f1714475),   // c47e24bc75
+    ("shots/composite", 0xb2789ca14695a633),   // 5a3e6ef417
+    ("shots/composite", 0x502dc2aabf9bb501),   // 73daaac492
+    ("shots/composite", 0x1b1944477f44a45e),   // 3b8ef3376f
+    ("shots/composite", 0x2ffd159d91a51522),   // a8f58297ac
+    ("shots/crowd", 0x6179daa29cda4014),       // 7367b2fb66
+    ("shots/crowd", 0xa48d835191483bd7),       // 9bfdf0b4b7
+    ("shots/crowd", 0xfc0906730461684f),       // 8cb06b64b7
+    ("shots/crowd", 0xfeb667a023138b31),       // 3f412f30a0
+    ("shots/crowd", 0x48da7d5de8e527a3),       // d8d23c4f37
+    ("shots/effects", 0x1d66313972dca460),     // dda0c6c711
+    ("shots/effects", 0x1e18e1cc5e040b43),     // 4fb9d5c07c
+    ("shots/effects", 0x694b6444464210cd),     // 0502b7692c
+    ("shots/effects", 0xca7144a1d45349af),     // 4a84299b45
+    ("shots/effects", 0xfe1977461273b537),     // d84505ccfe
     ("shots/environment", 0x65a4ab9b587440b6), // 4d5108f9f5
     ("shots/environment", 0x889349d8b350e383), // 0bf9593376
     ("shots/environment", 0xa11ec97508c2af88), // 10c6322e61
     ("shots/environment", 0xacf4d3578c316251), // 5cffcb8b02
     ("shots/environment", 0xef11529ea7a8bd27), // 15814406da
     ("shots/environment", 0x1c4fea46e6233ef2), // cd9823b0f6
-    ("shots/layout", 0x1bb8e988a26aa63c), // cb72b1129e
-    ("shots/layout", 0x1da682d6e161acdc), // 747683f395
-    ("shots/layout", 0xf792f94ff804f1b9), // e5a3cf17a6
-    ("shots/layout", 0xca18ad510e7f6dfe), // 1ac12ada67
-    ("shots/layout", 0x632ac88f278d94d3), // bb6148239d
-    ("shots/light", 0x4675661a9c5030a7), // 7eea2924dc
-    ("shots/light", 0x6bb0f682ced4e021), // 33202b26a6
-    ("shots/light", 0xd1f2e0f072ade316), // 7438468120
-    ("shots/render", 0x1970854ffcacc2ae), // b44fe56de2
-    ("shots/render", 0x3252a8cd7f8ffe34), // a82352e8b0
-    ("shots/render", 0x6f2fed992f3c2c70), // 572f2ad8d6
-    ("shots/render", 0x75792c7f14f9ff8c), // 3faa1d4897
-    ("shots/render", 0x8485d2684bb534e1), // ff8e5e9a7b
-    ("shots/render", 0xededb9b93f029ac4), // c5404acd57
+    ("shots/layout", 0x1bb8e988a26aa63c),      // cb72b1129e
+    ("shots/layout", 0x1da682d6e161acdc),      // 747683f395
+    ("shots/layout", 0xf792f94ff804f1b9),      // e5a3cf17a6
+    ("shots/layout", 0xca18ad510e7f6dfe),      // 1ac12ada67
+    ("shots/layout", 0x632ac88f278d94d3),      // bb6148239d
+    ("shots/light", 0x4675661a9c5030a7),       // 7eea2924dc
+    ("shots/light", 0x6bb0f682ced4e021),       // 33202b26a6
+    ("shots/light", 0xd1f2e0f072ade316),       // 7438468120
+    ("shots/render", 0x1970854ffcacc2ae),      // b44fe56de2
+    ("shots/render", 0x3252a8cd7f8ffe34),      // a82352e8b0
+    ("shots/render", 0x6f2fed992f3c2c70),      // 572f2ad8d6
+    ("shots/render", 0x75792c7f14f9ff8c),      // 3faa1d4897
+    ("shots/render", 0x8485d2684bb534e1),      // ff8e5e9a7b
+    ("shots/render", 0xededb9b93f029ac4),      // c5404acd57
 ];
 
 /// Modules a template may no longer import, with what replaced each. A name
@@ -139,10 +139,7 @@ pub const REMOVED_MODULES: [(&str, &str); 12] = [
         "split into tumblepipe.pipe.houdini.nodes, .menus, .playbar, .prim_metadata \
          and .prim_queries",
     ),
-    (
-        "tumblepipe.pipe.houdini.sops.cache",
-        "now tumblepipe.pipe.houdini.cache: cache.create(parent, name, cache.SopCache)",
-    ),
+    ("tumblepipe.pipe.houdini.sops.cache", "now tumblepipe.pipe.houdini.cache: cache.create(parent, name, cache.SopCache)"),
     ("tumblepipe.pipe.houdini.lops.cache", "now tumblepipe.pipe.houdini.cache"),
     (
         "tumblepipe.pipe.houdini.lops.animate",
@@ -154,10 +151,7 @@ pub const REMOVED_MODULES: [(&str, &str); 12] = [
         "create the node with tumblepipe.pipe.houdini.nodes.create_node(parent, name, \
          nodes.Node, 'render_vars')",
     ),
-    (
-        "tumblepipe.pipe.houdini.lops.puzzle_mattes",
-        "th::puzzlemattes is retired: use tumblepipe.pipe.houdini.lops.mattes",
-    ),
+    ("tumblepipe.pipe.houdini.lops.puzzle_mattes", "th::puzzlemattes is retired: use tumblepipe.pipe.houdini.lops.mattes"),
     ("tumblepipe.config.variants", "now tumblepipe.config.channels (list_channels)"),
     ("tumblepipe.config.procedurals", "removed"),
     ("tumblepipe.pipe.usd", "removed"),
@@ -168,27 +162,12 @@ pub const REMOVED_MODULES: [(&str, &str); 12] = [
 /// Calls a template may no longer make, as text, with what replaced each.
 pub const REMOVED_CALLS: [(&str, &str); 8] = [
     (".parse_unsafe(", "Uri.parse(raw) (the only parser; it raises on a bad URI)"),
-    (
-        ".set_shot_uri(",
-        "pipeline nodes are entity nodes now: set_entity_uri(uri)",
-    ),
+    (".set_shot_uri(", "pipeline nodes are entity nodes now: set_entity_uri(uri)"),
     (".set_asset_uri(", "set_entity_uri(uri)"),
-    (
-        "hdaModule()._apply_entity",
-        "create_asset.wrap(node).set_entity_uri(uri) (tumblepipe.pipe.houdini.lops)",
-    ),
-    (
-        "hdaModule()._sync_variants",
-        "create_asset.wrap(node).sync_variants() (tumblepipe.pipe.houdini.lops)",
-    ),
-    (
-        "hdaModule()._update_labels",
-        "set the node's 'entity' parm; its callbacks refresh the labels",
-    ),
-    (
-        "hdaModule().execute",
-        "ImportModel(node).execute() (tumblepipe.pipe.houdini.sops.import_model)",
-    ),
+    ("hdaModule()._apply_entity", "create_asset.wrap(node).set_entity_uri(uri) (tumblepipe.pipe.houdini.lops)"),
+    ("hdaModule()._sync_variants", "create_asset.wrap(node).sync_variants() (tumblepipe.pipe.houdini.lops)"),
+    ("hdaModule()._update_labels", "set the node's 'entity' parm; its callbacks refresh the labels"),
+    ("hdaModule().execute", "ImportModel(node).execute() (tumblepipe.pipe.houdini.sops.import_model)"),
     ("th::puzzlemattes", "retired: place th::mattes (tumblepipe.pipe.houdini.lops.mattes)"),
 ];
 
@@ -207,9 +186,7 @@ pub fn fingerprint(text: &str) -> u64 {
 /// under `templates/`, `/`-separated) that the scaffold shipped.
 pub fn is_stock(relative: &str, text: &str) -> bool {
     let hash = fingerprint(text);
-    STOCK
-        .iter()
-        .any(|(path, stock)| *path == relative && *stock == hash)
+    STOCK.iter().any(|(path, stock)| *path == relative && *stock == hash)
 }
 
 /// The text with each `#` comment cut off. A `#` inside a string is cut too,
@@ -328,12 +305,7 @@ mod tests {
             "def f():\n    from tumblepipe.pipe.houdini import \\\n        util\n",
         ];
         for text in cases {
-            assert!(
-                removed_apis(text)
-                    .iter()
-                    .any(|f| f.contains("tumblepipe.pipe.houdini.util")),
-                "missed: {text}"
-            );
+            assert!(removed_apis(text).iter().any(|f| f.contains("tumblepipe.pipe.houdini.util")), "missed: {text}");
         }
     }
 

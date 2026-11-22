@@ -9,13 +9,11 @@ from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
 from tumblepipe.util.io import load_json
 from tumblepipe.config.channels import list_channels
+from tumblepipe.pipe.houdini import import_metadata
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.scene_context import entity_in_contexts, scene_context
-from tumblepipe.pipe.houdini.prim_metadata import ANIMATABLE_KEY
 from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
-from tumblepipe.pipe.usd.instances import copies_are_animated
-from tumblepipe.pipe.houdini.lops import import_asset
 import tumblepipe.pipe.context as ctx
 from tumblepipe.pipe.paths import (
     list_version_paths,
@@ -27,103 +25,6 @@ from tumblepipe.pipe.paths import (
 def _valid_version_path(path: Path) -> bool:
     context_path = path / 'context.json'
     return context_path.exists()
-
-def _metadata_update_script(
-    entity_uri: Uri,
-    department_name: str,
-    version_name: str,
-    assets: list[dict],
-    animated=copies_are_animated
-) -> str:
-    """
-    Generate Python script to update asset metadata inputs on scene prims.
-
-    For each asset in the imported layer, adds the current department/version
-    to the asset's inputs array (if not already present), and stamps
-    ``animated(asset_uri)`` over whatever the layer's export carried (see
-    prim_metadata.ANIMATABLE_KEY).
-    """
-    def _indent(lines):
-        return [f"    {line}" for line in lines]
-
-    header = [
-        'import hou',
-        '',
-        'from tumblepipe.pipe.houdini import prim_metadata',
-        '',
-        'node = hou.pwd()',
-        'stage = node.editableStage()',
-        'root = stage.GetPseudoRoot()',
-        '',
-        'def update(root):',
-    ]
-
-    content = []
-    for asset_info in assets:
-        asset_uri_str = asset_info['asset']
-        asset_uri = Uri.parse(asset_uri_str)
-        prim_path = uri_to_prim_path(asset_uri)
-
-        instance_name = asset_uri.segments[-1] if asset_uri.segments else ''
-        content.extend([
-            f"# Asset: {asset_uri_str}",
-            f"prim = root.GetPrimAtPath('{prim_path}')",
-            "if prim.IsValid():",
-            "    metadata = prim_metadata.get_metadata(prim)",
-            "    if metadata is None:",
-            f"        metadata = {{'uri': '{asset_uri_str}', 'instance': '{instance_name}', 'inputs': []}}",
-            "    prim_metadata.add_metadata_input(metadata, {",
-            f"        'uri': '{str(entity_uri)}',",
-            f"        'department': '{department_name}',",
-            f"        'version': '{version_name}',",
-            "    })",
-            f"    metadata['{ANIMATABLE_KEY}'] = {bool(animated(asset_uri))}",
-            "    prim_metadata.set_metadata(prim, metadata)",
-            "",
-        ])
-
-    footer = [
-        'update(root)',
-        '',
-    ]
-
-    script = header + _indent(content) + footer
-    return '\n'.join(script)
-
-def _inline_marker_script(assets: list[dict]) -> str:
-    """
-    Generate the metadata script for 'inline' import mode.
-
-    Marks each asset prim from the imported layer as 'inlined' instead of
-    updating its pipeline metadata: the layer content is deliberately baked
-    into the export, so its assets must not be scraped and re-referenced,
-    and the publish guards must not read the missing metadata as an
-    accidental drop. Targets only the assets recorded in the imported
-    layer's context.json — assets flowing through from upstream nodes are
-    untouched.
-    """
-    script_lines = [
-        'import hou',
-        '',
-        'from tumblepipe.pipe.houdini import prim_metadata',
-        '',
-        'node = hou.pwd()',
-        'stage = node.editableStage()',
-        'root = stage.GetPseudoRoot()',
-        '',
-    ]
-
-    for asset_info in assets:
-        asset_uri = Uri.parse(asset_info['asset'])
-        prim_path = uri_to_prim_path(asset_uri)
-        script_lines.extend([
-            f"prim = root.GetPrimAtPath('{prim_path}')",
-            'if prim.IsValid():',
-            '    prim_metadata.mark_inlined(prim)',
-            '',
-        ])
-
-    return '\n'.join(script_lines)
 
 def _resolve_pinned(uri: str) -> str | None:
     """Resolve a ``&version=``-pinned URI to exactly that version.
@@ -353,9 +254,11 @@ class ImportLayer(EntityNode):
                     # each asset prim so the export bakes the layer's assets
                     # in instead of re-referencing them.
                     if self.get_import_mode() == 'inline':
-                        script_parts.append(_inline_marker_script(assets))
+                        script_parts.append(import_metadata.inline_script([
+                            uri_to_prim_path(Uri.parse(a['asset'])) for a in assets
+                        ]))
                     else:
-                        script_parts.append(_metadata_update_script(
+                        script_parts.append(import_metadata.layer_inputs_script(
                             entity_uri, department_name, version_name, assets
                         ))
         root_script = self._root_metadata_script(entity_uri)
@@ -400,8 +303,8 @@ class ImportLayer(EntityNode):
             workfile_context.department_name if shot_uri is not None else None
         )
         if self.get_import_mode() == 'inline':
-            return import_asset._inline_metadata_script(entity_uri)
-        return import_asset._metadata_script(
+            return import_metadata.asset_inline_script(entity_uri)
+        return import_metadata.asset_script(
             entity_uri,
             channel_name=self.get_channel_name(),
             shot_uri=shot_uri,

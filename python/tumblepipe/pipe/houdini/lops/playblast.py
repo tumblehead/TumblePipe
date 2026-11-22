@@ -1,9 +1,5 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
-import shutil
-import os
-
-import hou
 
 from tumblepipe.api import path_str, api
 from tumblepipe.util.uri import Uri
@@ -12,9 +8,7 @@ from tumblepipe.config.groups import Group, get_group, is_group_uri
 from tumblepipe.config.multi_timeline import shift_block_range
 from tumblepipe.config.timeline import get_fps
 from tumblepipe.apps import mp4
-from tumblepipe.pipe import review_events
-from tumblepipe.util import events
-from tumblepipe.pipe.houdini import prim_queries
+from tumblepipe.pipe.playblast_publish import publish_playblast, reserved_next_playblast
 from tumblepipe.pipe.houdini import nodes as ns
 from tumblepipe.pipe.houdini import render_camera
 from tumblepipe.pipe.houdini import tumbleview
@@ -24,44 +18,17 @@ from tumblepipe.pipe.houdini.entity_node import (
     FROM_CONTEXT,
 )
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode
+from tumblepipe.pipe.houdini.playblast_node import DEFAULT_RES, PlayblastNodeMixin
 from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
 from tumblepipe.apps.deadline import log_progress
 from tumblepipe.pipe.paths import (
-    get_next_playblast_path,
-    get_latest_playblast_path,
     get_daily_path,
     get_layer_playblast_movie_path,
     playblast_version_of,
 )
 from tumblepipe.config.channels import CHANNEL_PRIMS_PROPERTY, list_channel_layers
 
-def resolve_camera_path(camera_name: str, camera_paths: list[str]) -> str | None:
-    """The stage camera a playblast's Camera parm names, or None.
-
-    Camera is a menu whose value starts empty, and Houdini shows an empty
-    menu parm as its first entry: the artist sees a camera picked and
-    presses Playblast (Magnus: "just try to click playblast, there is a
-    python error"). Empty is therefore the camera the menu shows, the first
-    one listed. The SOP playblast resolves its parm here too.
-    """
-    camera_names = [path.rsplit('/', 1)[-1] for path in camera_paths]
-    if camera_name == '':
-        return camera_paths[0] if camera_paths else None
-    if camera_name not in camera_names:
-        return None
-    return camera_paths[camera_names.index(camera_name)]
-
-
-def camera_error(camera_name: str, camera_names: list[str]) -> str:
-    if not camera_names:
-        return 'there is no camera on the stage: the shot has no camera published'
-    return (
-        f"camera '{camera_name}' is not a camera on the stage "
-        f"(cameras: {', '.join(camera_names)})"
-    )
-
-
-class Playblast(FrameRangeNode, TimeOffsetNode, EntityNode):
+class Playblast(PlayblastNodeMixin, FrameRangeNode, TimeOffsetNode, EntityNode):
 
     # A playblast renders one shot's camera into that shot's folder.
     ENTITY_CONTEXTS = ('shots',)
@@ -91,15 +58,6 @@ class Playblast(FrameRangeNode, TimeOffsetNode, EntityNode):
     def list_department_names(self) -> list[str]:
         return [FROM_CONTEXT] + self._shot_department_names()
 
-    def list_camera_paths(self):
-        root = self._get_stage_root()
-        if root is None: return []
-        return prim_queries.list_stage_cameras(root)
-
-    def list_camera_names(self):
-        camera_paths = self.list_camera_paths()
-        return [path.rsplit('/', 1)[-1] for path in camera_paths]
-
     def get_multi(self) -> Group | None:
         """The Multi whose folder this workfile lives in, if any.
 
@@ -113,26 +71,6 @@ class Playblast(FrameRangeNode, TimeOffsetNode, EntityNode):
         if context is None: return None
         if not is_group_uri(context.entity_uri): return None
         return get_group(context.entity_uri)
-
-    def get_camera_path(self):
-        camera_path = resolve_camera_path(
-            self.parm('camera').eval(), self.list_camera_paths()
-        )
-        if camera_path is None:
-            raise self._error(camera_error(
-                self.parm('camera').eval(), self.list_camera_names()
-            ))
-        return camera_path
-
-    def set_camera_name(self, camera_name):
-        if camera_name not in self.list_camera_names():
-            raise self._error(f"camera '{camera_name}' is not on the stage")
-        self.parm('camera').set(camera_name)
-
-    def _update_labels(self):
-        """Show what 'from_context' resolved to, as import_shot does."""
-        self.parm('entity_label').set(self._entity_label())
-        self.parm('department_label').set(self._department_label())
 
     def export(self):
 
@@ -163,8 +101,7 @@ class Playblast(FrameRangeNode, TimeOffsetNode, EntityNode):
         time_offset = self.get_time_offset()
         cache_range = shift_block_range(render_range, time_offset)
 
-        # Paths
-        output_playblast_path = get_next_playblast_path(shot_uri, department_name)
+        # Paths (the versioned movie's is reserved below, for the render)
         output_daily_path = get_daily_path(shot_uri, department_name)
 
         renderer = self.parm('renderer').evalAsString()
@@ -179,7 +116,10 @@ class Playblast(FrameRangeNode, TimeOffsetNode, EntityNode):
         # Work in a temporary directory
         root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
         root_temp_path.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+        with (
+            reserved_next_playblast(shot_uri, department_name) as output_playblast_path,
+            TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir,
+        ):
             temp_dir_path = Path(temp_dir)
 
             # Temp paths
@@ -249,15 +189,10 @@ class Playblast(FrameRangeNode, TimeOffsetNode, EntityNode):
                     ),
                 ))
 
-            # Copy to network
-            output_playblast_path.parent.mkdir(exist_ok=True, parents=True)
-            output_daily_path.parent.mkdir(exist_ok=True, parents=True)
-            for temp_mov_path, output_mov_path in layer_movies:
-                output_mov_path.parent.mkdir(exist_ok=True, parents=True)
-                shutil.copyfile(temp_mov_path, output_mov_path)
-            shutil.copyfile(temp_playblast_path, output_playblast_path)
-            shutil.copyfile(temp_playblast_path, output_daily_path)
-        review_events.announce(events.PLAYBLAST, shot_uri, department_name)
+            publish_playblast(
+                temp_playblast_path, [output_playblast_path, output_daily_path],
+                layer_movies,
+            )
 
     def _render_layers(self, shot_uri, renderer) -> list[tuple[str, str | None]]:
         """The render layers to playblast, bottom to top; [] when Render
@@ -344,42 +279,6 @@ class Playblast(FrameRangeNode, TimeOffsetNode, EntityNode):
             )
             raise self._error(message) from None
 
-    def view_latest(self):
-
-        # Parameters and paths
-        shot_uri = self.require_entity_uri()
-        department_name = self.require_department_name()
-        output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
-
-        # Open playblast
-        if output_playblast_path is None or not output_playblast_path.exists():
-            return hou.ui.displayMessage(
-                (
-                    f'No playblast found for {shot_uri}.\n'
-                    f'{output_playblast_path}'
-                ),
-                title='Playblast',
-                severity=hou.severityType.Message
-            )
-        os.startfile(path_str(output_playblast_path))
-    
-    def open_location(self):
-
-        # Parameters and paths
-        shot_uri = self.require_entity_uri()
-        department_name = self.require_department_name()
-        output_playblast_path = get_latest_playblast_path(shot_uri, department_name)
-        # No playblast yet: open the (not-yet-populated) output dir.
-        if output_playblast_path is None:
-            output_path = get_next_playblast_path(shot_uri, department_name).parent
-        else:
-            output_path = output_playblast_path.parent
-
-        # Create and open the directory containing the playblast
-        output_path.mkdir(parents=True, exist_ok=True)
-        hou.ui.showInFileBrowser(f'{path_str(output_path)}')
-
-
 def flipbook_blur(node, render_node) -> None:
     """Set the flipbook ROP's blurs from the node's Motion Blur, Depth of
     Field and Blur Samples (the images it averages for motion blur). Off
@@ -387,10 +286,6 @@ def flipbook_blur(node, render_node) -> None:
     render_node.parm('motionblur').set(int(node.parm('motion_blur').eval()))
     render_node.parm('motionblurframes').set(max(2, int(node.parm('blur_samples').eval())))
     render_node.parm('dof').set(int(node.parm('depth_of_field').eval()))
-
-
-#: The playblast size when the shot configures no render resolution.
-DEFAULT_RES = (1280, 720)
 
 
 def default_res(raw_node, axis: int) -> int:

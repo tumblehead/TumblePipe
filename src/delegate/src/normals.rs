@@ -214,12 +214,7 @@ mod tests {
     }
 
     fn step() -> impl Strategy<Value = Step> {
-        prop_oneof![
-            Just(Step::Absent),
-            Just(Step::Unkeyed),
-            Just(Step::Same),
-            (-0.7f32..0.7).prop_map(Step::Moved),
-        ]
+        prop_oneof![Just(Step::Absent), Just(Step::Unkeyed), Just(Step::Same), (-0.7f32..0.7).prop_map(Step::Moved),]
     }
 
     proptest! {

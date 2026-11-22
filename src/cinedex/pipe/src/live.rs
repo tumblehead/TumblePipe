@@ -348,13 +348,10 @@ pub fn fill_plan(first: i64, last: i64, available: &[i64]) -> Vec<(i64, i64)> {
 
 /// `frame` as a non-drop SMPTE timecode at `framerate` (`apps.mp4.frame_timecode`).
 pub fn frame_timecode(frame: i64, framerate: i64) -> Result<String, String> {
-    if frame < 0 || framerate <= 0 {
-        return Err(format!("No timecode for frame {frame} at {framerate} fps"));
+    match u32::try_from(framerate) {
+        Ok(fps) if frame >= 0 && fps > 0 => Ok(th_edit::timeline_export::timecode(frame, fps)),
+        _ => Err(format!("No timecode for frame {frame} at {framerate} fps")),
     }
-    let (seconds, frames) = (frame / framerate, frame % framerate);
-    let (minutes, seconds) = (seconds / 60, seconds % 60);
-    let (hours, minutes) = (minutes / 60, minutes % 60);
-    Ok(format!("{hours:02}:{minutes:02}:{seconds:02}:{frames:02}"))
 }
 
 /// hffmpeg's arguments that encode the JPG frames `pattern` names
@@ -523,6 +520,22 @@ fn sha1_hex(data: &[u8]) -> String {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    proptest! {
+        /// A playblast's timecode is the edit export's for its frame, and
+        /// none for a frame before 0 or a rate that is not positive.
+        #[test]
+        fn a_frame_timecode_is_the_exports(
+            frame in prop_oneof![-50i64..0, 0i64..20_000_000], framerate in prop_oneof![-3i64..=0, 1i64..241],
+        ) {
+            let made = frame_timecode(frame, framerate);
+            if frame < 0 || framerate <= 0 {
+                prop_assert!(made.is_err());
+            } else {
+                prop_assert_eq!(made, Ok(th_edit::timeline_export::timecode(frame, framerate as u32)));
+            }
+        }
+    }
 
     #[test]
     fn sha1_known_answers() {

@@ -1,113 +1,8 @@
-"""Renderer configuration for default render settings."""
-
-from dataclasses import dataclass
-from typing import Any
+"""Per-entity render settings, resolved through the config hierarchy."""
 
 from tumblepipe.api import api
+from tumblepipe.config import render_config
 from tumblepipe.util.uri import Uri
-
-RENDERER_URI = Uri.parse('config:/renderer')
-SETTINGS_URI = RENDERER_URI / 'settings'
-
-
-@dataclass(frozen=True)
-class RangeSetting:
-    """A numeric setting with min, max, and default values."""
-    default: int | float
-    min: int | float
-    max: int | float
-
-
-@dataclass(frozen=True)
-class RendererDefaults:
-    """Default renderer settings."""
-    tile_count: RangeSetting
-    batch_size: RangeSetting
-    timeout_minutes: RangeSetting
-    denoise: bool
-
-
-# The single source of truth for renderer defaults. Project config at
-# config:/renderer/settings overrides individual fields; everything that
-# wants a default reads it from here, not from inlined literals scattered
-# across the getters (where they silently masked the store-mismatch bug).
-DEFAULT_RENDERER = RendererDefaults(
-    tile_count=RangeSetting(default=4, min=1, max=16),
-    batch_size=RangeSetting(default=10, min=1, max=100),
-    timeout_minutes=RangeSetting(default=45, min=1, max=480),
-    denoise=True,
-)
-
-
-def _get_settings_data() -> dict:
-    """Stored renderer overrides, or {} if none are configured.
-
-    Reads through the same URI the writer uses (``config:/renderer/settings``,
-    persisted to db/config.json). ``None`` (path absent) means "no overrides
-    set" — the canonical case — so collapsing it to {} is correct here.
-    """
-    return api.config.get_properties(SETTINGS_URI) or {}
-
-
-def _overlay(base: RangeSetting, stored: dict) -> RangeSetting:
-    return RangeSetting(
-        default=stored.get('default', base.default),
-        min=stored.get('min', base.min),
-        max=stored.get('max', base.max),
-    )
-
-
-def get_renderer_defaults() -> RendererDefaults:
-    """Resolved renderer settings: project overrides on top of DEFAULT_RENDERER."""
-    props = _get_settings_data()
-    return RendererDefaults(
-        tile_count=_overlay(DEFAULT_RENDERER.tile_count, props.get('tile_count', {})),
-        batch_size=_overlay(DEFAULT_RENDERER.batch_size, props.get('batch_size', {})),
-        timeout_minutes=_overlay(DEFAULT_RENDERER.timeout_minutes, props.get('timeout_minutes', {})),
-        denoise=props.get('denoise', {}).get('default', DEFAULT_RENDERER.denoise),
-    )
-
-
-def get_tile_count_range() -> tuple[int, int, int]:
-    """Get tile count (min, max, default)."""
-    s = get_renderer_defaults().tile_count
-    return (s.min, s.max, s.default)
-
-
-def get_batch_size_range() -> tuple[int, int, int]:
-    """Get batch size (min, max, default)."""
-    s = get_renderer_defaults().batch_size
-    return (s.min, s.max, s.default)
-
-
-def get_timeout_range() -> tuple[int, int, int]:
-    """Get timeout in minutes (min, max, default)."""
-    s = get_renderer_defaults().timeout_minutes
-    return (s.min, s.max, s.default)
-
-
-def get_denoise_default() -> bool:
-    """Get default denoise setting."""
-    return get_renderer_defaults().denoise
-
-
-def set_renderer_setting(setting_name: str, values: dict[str, Any]):
-    """Set a renderer setting value.
-
-    Args:
-        setting_name: Name of the setting (e.g., 'tile_count', 'batch_size')
-        values: Dict with keys like 'default', 'min', 'max'
-    """
-    # Pin exactly the sub-values handed in, on top of whatever this node
-    # already pins. Reading the RESOLVED dict here would drag every schema
-    # default for every other setting onto the node as an override.
-    own = api.config.get_own_properties(SETTINGS_URI) or {}
-
-    if setting_name not in own:
-        own[setting_name] = {}
-
-    own[setting_name].update(values)
-    api.config.set_own_properties(SETTINGS_URI, own)
 
 
 def get_entity_render_settings(entity_uri: Uri) -> dict:
@@ -136,7 +31,6 @@ def get_pinned_render_settings(entity_uri: Uri, keys) -> dict:
     The merge is ``config.render_config.resolve``'s (the store's), so a
     level holding ``render`` as something other than an object (a broken
     hand edit) drops what the levels before it pinned."""
-    from tumblepipe.config import render_config
     levels = []
     for depth in range(len(entity_uri.segments) + 1):
         uri = Uri.parse(f"{entity_uri.purpose}:/{'/'.join(entity_uri.segments[:depth])}")

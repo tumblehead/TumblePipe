@@ -3,7 +3,7 @@
 Pools and priority presets are stored as properties on the entity root
 (``entity:/``) under the ``farm`` sub-object. Consumers that need other
 farm values (``default_pool``, per-entity overrides) read the property
-directly via ``api.config.get_properties`` — the config editor and the
+directly via ``get_properties`` — the config editor and the
 submit dialog both do — so this module only carries the mutating helpers
 whose invariants need enforcing (pool existence, priority ranges).
 """
@@ -11,6 +11,7 @@ whose invariants need enforcing (pool existence, priority ranges).
 from dataclasses import dataclass
 
 from tumblepipe.api import api
+from tumblepipe.config.store import JsonConfigStore
 from tumblepipe.util.uri import Uri
 
 ENTITY_ROOT_URI = Uri.parse('entity:/')
@@ -27,14 +28,14 @@ class PriorityPreset:
     value: int
 
 
-def _get_root_farm() -> dict:
+def _get_root_farm(store: JsonConfigStore) -> dict:
     """The root's resolved farm settings (schema defaults merged): for reads."""
-    props = api.config.get_properties(ENTITY_ROOT_URI) or {}
+    props = store.get_properties(ENTITY_ROOT_URI) or {}
     farm = props.get('farm')
     return dict(farm) if isinstance(farm, dict) else {}
 
 
-def _edit_root_farm(*keys: str) -> dict:
+def _edit_root_farm(store: JsonConfigStore, *keys: str) -> dict:
     """The root's OWN farm settings to edit and write back, with ``keys``
     seeded from the resolved value when the root does not pin them yet.
 
@@ -43,48 +44,48 @@ def _edit_root_farm(*keys: str) -> dict:
     changed, so a later default change never reached that project (QA
     2026-11-10). Only the keys an edit touches are pinned now.
     """
-    own = (api.config.get_own_properties(ENTITY_ROOT_URI) or {}).get('farm')
+    own = (store.get_own_properties(ENTITY_ROOT_URI) or {}).get('farm')
     farm = dict(own) if isinstance(own, dict) else {}
-    resolved = _get_root_farm()
+    resolved = _get_root_farm(store)
     for key in keys:
         if key not in farm and key in resolved:
             farm[key] = resolved[key]
     return farm
 
 
-def _write_root_farm(farm: dict) -> None:
+def _write_root_farm(store: JsonConfigStore, farm: dict) -> None:
     # Pin only the 'farm' sub-object onto the entity root's own properties.
     # The root is what every entity inherits from, so writing its resolved
     # dict back would pin the entire schema there permanently; callers pass
     # the own sub-object from _edit_root_farm for the same reason.
-    own = api.config.get_own_properties(ENTITY_ROOT_URI) or {}
+    own = store.get_own_properties(ENTITY_ROOT_URI) or {}
     own = dict(own)
     own['farm'] = farm
-    api.config.set_own_properties(ENTITY_ROOT_URI, own)
+    store.set_own_properties(ENTITY_ROOT_URI, own)
 
 
-def list_pools() -> list[Pool]:
+def list_pools_in(store: JsonConfigStore) -> list[Pool]:
     """List all available render pools."""
-    pools = _get_root_farm().get('pools', [])
+    pools = _get_root_farm(store).get('pools', [])
     return [Pool(name=p) for p in pools]
 
 
-def get_default_pool() -> str | None:
+def get_default_pool_in(store: JsonConfigStore) -> str | None:
     """The project's default render pool; None when none is set."""
-    return _get_root_farm().get('default_pool') or None
+    return _get_root_farm(store).get('default_pool') or None
 
 
-def set_default_pool(name: str) -> None:
+def set_default_pool_in(store: JsonConfigStore, name: str) -> None:
     """Make ``name`` (one of the project's pools) the default pool.
 
     Farm Submit preselects it. Settings > Project defaults > Farm is the
     caller (#34); it pins only ``default_pool``.
     """
-    farm = _edit_root_farm('pools', 'default_pool')
+    farm = _edit_root_farm(store, 'pools', 'default_pool')
     if name not in farm.get('pools', []):
         raise ValueError(f'Pool does not exist: {name}')
     farm['default_pool'] = name
-    _write_root_farm(farm)
+    _write_root_farm(store, farm)
 
 
 def pool_name_problem(name: str) -> str | None:
@@ -103,20 +104,20 @@ def pool_name_problem(name: str) -> str | None:
     return None
 
 
-def add_pool(name: str) -> None:
+def add_pool_in(store: JsonConfigStore, name: str) -> None:
     """Add a new render pool."""
-    farm = _edit_root_farm('pools')
+    farm = _edit_root_farm(store, 'pools')
     pools = list(farm.get('pools', []))
     if name in pools:
         raise ValueError(f'Pool already exists: {name}')
     pools.append(name)
     farm['pools'] = pools
-    _write_root_farm(farm)
+    _write_root_farm(store, farm)
 
 
-def remove_pool(name: str) -> None:
+def remove_pool_in(store: JsonConfigStore, name: str) -> None:
     """Remove a render pool."""
-    farm = _edit_root_farm('pools', 'default_pool')
+    farm = _edit_root_farm(store, 'pools', 'default_pool')
     pools = list(farm.get('pools', []))
     if name not in pools:
         raise ValueError(f'Pool does not exist: {name}')
@@ -124,20 +125,20 @@ def remove_pool(name: str) -> None:
     farm['pools'] = pools
     if farm.get('default_pool') == name:
         farm['default_pool'] = ''
-    _write_root_farm(farm)
+    _write_root_farm(store, farm)
 
 
-def list_priority_presets() -> list[PriorityPreset]:
+def list_priority_presets_in(store: JsonConfigStore) -> list[PriorityPreset]:
     """List all priority presets."""
-    presets = _get_root_farm().get('priorities', {})
+    presets = _get_root_farm(store).get('priorities', {})
     if not isinstance(presets, dict):
         return []
     return [PriorityPreset(name=n, value=v) for n, v in presets.items()]
 
 
-def get_default_priority() -> int:
+def get_default_priority_in(store: JsonConfigStore) -> int:
     """Get the default priority value, falling back to the schema default."""
-    farm = _get_root_farm()
+    farm = _get_root_farm(store)
     presets = farm.get('priorities', {}) if isinstance(farm.get('priorities'), dict) else {}
     default_name = farm.get('default_priority')
     if default_name and default_name in presets:
@@ -146,22 +147,22 @@ def get_default_priority() -> int:
     return farm.get('priority', 50)
 
 
-def add_priority_preset(name: str, value: int) -> None:
+def add_priority_preset_in(store: JsonConfigStore, name: str, value: int) -> None:
     """Add a new priority preset."""
     if not 0 <= value <= 100:
         raise ValueError('Priority value must be between 0 and 100')
-    farm = _edit_root_farm('priorities')
+    farm = _edit_root_farm(store, 'priorities')
     presets = dict(farm.get('priorities', {}) or {})
     if name in presets:
         raise ValueError(f'Priority preset already exists: {name}')
     presets[name] = value
     farm['priorities'] = presets
-    _write_root_farm(farm)
+    _write_root_farm(store, farm)
 
 
-def remove_priority_preset(name: str) -> None:
+def remove_priority_preset_in(store: JsonConfigStore, name: str) -> None:
     """Remove a priority preset."""
-    farm = _edit_root_farm('priorities', 'default_priority')
+    farm = _edit_root_farm(store, 'priorities', 'default_priority')
     presets = dict(farm.get('priorities', {}) or {})
     if name not in presets:
         raise ValueError(f'Priority preset does not exist: {name}')
@@ -169,16 +170,62 @@ def remove_priority_preset(name: str) -> None:
     farm['priorities'] = presets
     if farm.get('default_priority') == name:
         farm['default_priority'] = ''
-    _write_root_farm(farm)
+    _write_root_farm(store, farm)
 
 
-def set_default_priority_preset(name: str) -> None:
+def set_default_priority_preset_in(store: JsonConfigStore, name: str) -> None:
     """Set the default priority preset."""
-    farm = _edit_root_farm('priorities')
+    farm = _edit_root_farm(store, 'priorities')
     presets = farm.get('priorities', {}) or {}
     if name not in presets:
         raise ValueError(f'Priority preset does not exist: {name}')
     farm['default_priority'] = name
-    _write_root_farm(farm)
+    _write_root_farm(store, farm)
 
 
+# --------------------------------------------------------------------------- #
+# The active project
+# --------------------------------------------------------------------------- #
+# The pipeline, the HDAs and the project templates work in the active project
+# and call these; the Asset Browser, which works on any project, calls the
+# ``_in`` cores with that project's store.
+
+
+def list_pools() -> list[Pool]:
+    return list_pools_in(api.config)
+
+
+def get_default_pool() -> str | None:
+    return get_default_pool_in(api.config)
+
+
+def set_default_pool(name: str) -> None:
+    set_default_pool_in(api.config, name)
+
+
+def add_pool(name: str) -> None:
+    add_pool_in(api.config, name)
+
+
+def remove_pool(name: str) -> None:
+    remove_pool_in(api.config, name)
+
+
+def list_priority_presets() -> list[PriorityPreset]:
+    return list_priority_presets_in(api.config)
+
+
+def get_default_priority() -> int:
+    return get_default_priority_in(api.config)
+
+
+def add_priority_preset(name: str, value: int) -> None:
+    add_priority_preset_in(api.config, name, value)
+
+
+def remove_priority_preset(name: str) -> None:
+    remove_priority_preset_in(api.config, name)
+
+
+def set_default_priority_preset(name: str) -> None:
+    set_default_priority_preset_in(api.config, name)

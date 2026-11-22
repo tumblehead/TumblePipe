@@ -188,15 +188,6 @@ def _note(entry: EditEntry) -> str:
 MASTER_BADGE = 'MASTER'
 
 
-def badge_fields(is_master: bool, asset_fields) -> dict:
-    """The master edit's grid mark (#28): ``Asset.badge``, where the
-    installed TumbleTrove's ``Asset`` has that field (*asset_fields*, its
-    field names). An older one has no mark rather than a refused card."""
-    if is_master and 'badge' in asset_fields:
-        return {'badge': MASTER_BADGE}
-    return {}
-
-
 def card_fields(entry: EditEntry, catalog_id: str) -> dict:
     ref = entry.ref
     tags = {f'source:{catalog_id}', TYPE_TAG, f'project:{ref.project}', f'kind:{KIND}'}
@@ -210,7 +201,8 @@ def card_fields(entry: EditEntry, catalog_id: str) -> dict:
         catalog_id = catalog_id,
         kind = KIND,
         icon = ICON,
-        **badge_fields(entry.is_master, Asset.__dataclass_fields__),
+        # The master edit's grid mark (#28).
+        badge = MASTER_BADGE if entry.is_master else '',
         metadata = {
             'project': ref.project,
             'uri': str(ref.uri),
@@ -243,7 +235,7 @@ class EditManager(LibraryKind):
     """Edit scanning and cards for :class:`PipelineCatalog`, over the
     catalog's per-project clients: a library kind (``library_kinds.py``),
     though owned by a project, not a library. Its card menu and Open in
-    Editor are the catalog's (``menus.edit_items``, ``EntityOps.open_edit``),
+    Editor are the catalog's (``menus.edit_items``, ``EditOps.open_edit``),
     passed in; its Open Folder is the working folder (``asset_folder``), no drop
     and no edit fields. Rename and delete are its card menu's own entries
     (``menus.edit_items``), not the browser's generic Delete: a delete must

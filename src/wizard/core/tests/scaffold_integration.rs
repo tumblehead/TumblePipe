@@ -10,31 +10,18 @@ use std::path::{Path, PathBuf};
 
 fn template_dir() -> PathBuf {
     // core/ -> src/wizard/ -> src/ -> repo root -> scripts/project_template
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("scripts")
-        .join("project_template")
+    Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().parent().unwrap().parent().unwrap().join("scripts").join("project_template")
 }
 
 #[test]
 fn scaffolds_the_real_template() {
     let template = template_dir();
-    assert!(
-        template.is_dir(),
-        "real template missing at {}",
-        template.display()
-    );
+    assert!(template.is_dir(), "real template missing at {}", template.display());
 
     let tmp = tempfile::tempdir().unwrap();
     let target = tmp.path().join("testfilm");
 
-    th_project_core::scaffold_project(&template, &target, "testfilm", 48)
-        .expect("scaffold should succeed on the real template");
+    th_project_core::scaffold_project(&template, &target, "testfilm", 48).expect("scaffold should succeed on the real template");
 
     // Top-level dirs created.
     for sub in th_project_core::TOP_LEVEL_DIRS {

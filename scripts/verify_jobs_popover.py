@@ -151,25 +151,25 @@ def main() -> int:
 
     print('4. the button: its hover, menu and click')
     from tumblepipe.asset_browser import farm_jobs
-    from tumblepipe.asset_browser.catalog import PipelineCatalog
+    from tumblepipe.asset_browser.quick_actions import QuickActions
 
     opened: list[str] = []
     scene = SimpleNamespace(open_farm_manager=lambda refresh_cb=None, select='': opened.append(select))
     host = SimpleNamespace(_farm_activity=watcher, _scene=scene)
-    check('the hook gives the dot', PipelineCatalog.get_quick_action_dot(host, 'farm_manager') == 'danger')
-    check('no dot on another action', PipelineCatalog.get_quick_action_dot(host, 'save') == '')
+    check('the hook gives the dot', QuickActions.get_quick_action_dot(host, 'farm_manager') == 'danger')
+    check('no dot on another action', QuickActions.get_quick_action_dot(host, 'save') == '')
     check('the catalog gives the button no popover',
-          PipelineCatalog.get_quick_action_popover(host, 'farm_manager') is None)
+          QuickActions.get_quick_action_popover(host, 'farm_manager') is None)
 
     # The hover: the one summary, naming what ended since the artist looked.
-    hover = PipelineCatalog.get_quick_action_hover_html(host, 'farm_manager')
+    hover = QuickActions.get_quick_action_hover_html(host, 'farm_manager')
     check('the hover has the recent jobs once and the ended batches once',
           hover.count('Your jobs:') == 1 and hover.count(finished.HOVER_TITLE) == 1, hover)
     check('the hover names the failure before the finished batch',
           failed is not None and 0 <= hover.find('sh020') < hover.find('sh010'), hover)
 
     # The right-click menu: the click, then each ended batch's main action.
-    menu = PipelineCatalog.get_quick_action_menu_items(host, 'farm_manager')
+    menu = QuickActions.get_quick_action_menu_items(host, 'farm_manager')
     labels = [label for label, _action in menu]
     check('the menu is Open Farm Manager, a rule, then both batches, the failure first',
           labels[:2] == [farm_jobs.MENU_OPEN, farm_jobs.MENU_SEPARATOR]
@@ -181,7 +181,7 @@ def main() -> int:
     check("the failed batch's entry opens the Farm Manager at the failed job",
           failed is not None and opened == [failed.select_id], str(opened))
     check('which does not mark the batches seen',
-          PipelineCatalog.get_quick_action_dot(host, 'farm_manager') == 'danger')
+          QuickActions.get_quick_action_dot(host, 'farm_manager') == 'danger')
     opened.clear()
 
     # The click, through TumbleTrove's own quick actions bar where it has
@@ -191,14 +191,14 @@ def main() -> int:
     button = QPushButton()
     wiring = dict(
         button=button, label='Farm Manager', icon=None,
-        run=lambda: PipelineCatalog.execute_quick_action(host, 'farm_manager'),
-        menu_items=lambda: PipelineCatalog.get_quick_action_menu_items(host, 'farm_manager'),
+        run=lambda: QuickActions.execute_quick_action(host, 'farm_manager'),
+        menu_items=lambda: QuickActions.get_quick_action_menu_items(host, 'farm_manager'),
     )
     if hasattr(QuickActionsBar, 'activate'):
         entry = QuickActionEntry(
             **wiring, action_id='farm_manager',
-            popover=lambda: PipelineCatalog.get_quick_action_popover(host, 'farm_manager'),
-            popover_opened=lambda: PipelineCatalog.quick_action_popover_opened(host, 'farm_manager'),
+            popover=lambda: QuickActions.get_quick_action_popover(host, 'farm_manager'),
+            popover_opened=lambda: QuickActions.quick_action_popover_opened(host, 'farm_manager'),
         )
         bar = QuickActionsBar(lambda menu, items: None)
         bar.set_contents('', [entry])
@@ -222,8 +222,8 @@ def main() -> int:
         check('a click opens the Farm Manager (a TumbleTrove without popovers)', opened == ['', ''], str(opened))
     opened.clear()
     check('opening the Farm Manager from the button clears the dot',
-          PipelineCatalog.get_quick_action_dot(host, 'farm_manager') == '')
-    hover = PipelineCatalog.get_quick_action_hover_html(host, 'farm_manager')
+          QuickActions.get_quick_action_dot(host, 'farm_manager') == '')
+    hover = QuickActions.get_quick_action_hover_html(host, 'farm_manager')
     check('and the hover is the recent jobs alone',
           hover.count('Your jobs:') == 1 and finished.HOVER_TITLE not in hover, hover)
 
@@ -246,12 +246,14 @@ def main() -> int:
     check("Houdini's taskbar button is flashed when it is not in front", flashes == [1], str(flashes))
     notified.clear()
     flashes.clear()
-    farm_jobs.announce(SimpleNamespace(), ended, in_front=lambda: True, notify=notify,
+    pulses.clear()
+    farm_jobs.announce(SimpleNamespace(request_quick_action_pulse=pulses.append), ended,
+                       in_front=lambda: True, notify=notify,
                        status=lambda text, bad: None,
                        flash=lambda: flashes.append(1) or '')
     time.sleep(0.2)
-    check('no OS notification and no flash while Houdini is in front, no pulse without the hook',
-          notified == [] and flashes == [], f'{notified} {flashes}')
+    check('no OS notification and no flash while Houdini is in front, still one pulse',
+          notified == [] and flashes == [] and pulses == ['farm_manager'], f'{notified} {flashes} {pulses}')
     # The real flash, in a Qt application whose "Houdini main window" is a
     # widget of ours: alert() is asked for it, on the main thread.
     from PySide6.QtWidgets import QWidget

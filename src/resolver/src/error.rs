@@ -48,10 +48,7 @@ impl fmt::Display for ResolveError {
             ResolveError::EmptyScenePath => {
                 write!(f, "scene URI has no segments after 'scenes/'")
             }
-            ResolveError::InvalidLatestMode(v) => write!(
-                f,
-                "TH_RESOLVER_LATEST_MODE must be \"0\" or \"1\", got {v:?}"
-            ),
+            ResolveError::InvalidLatestMode(v) => write!(f, "TH_RESOLVER_LATEST_MODE must be \"0\" or \"1\", got {v:?}"),
             ResolveError::BufferTooSmall { needed, got } => {
                 write!(f, "output buffer too small: need {needed} got {got}")
             }

@@ -35,10 +35,10 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from tumblepipe import naming, prune_exports
-from tumblepipe.archive.hipfile import read_workfile_text
+from tumblepipe import naming
 from tumblepipe.archive.longpath import long_path
 from tumblepipe.archive.roots import WORKFILE_PURPOSES
+from tumblepipe.cleanup import hip
 from tumblepipe.cleanup.core import (
     KEEP_FILE, RECENT_DAYS, Category, CategoryPlan, Entry, Settings, delete_entries, recently_written,
     under_context, within,
@@ -132,26 +132,13 @@ def hip_names(text: str) -> tuple[set[tuple[str, str]], set[str]]:
     holding a ``name`` parm and an exact ``version`` parm (``th::cache``),
     and every ``cache/<name>/vNNNN`` a path in it runs into."""
     pairs: set[tuple[str, str]] = set()
-    names: set[str] = set()
-    versions: set[str] = set()
-
-    def flush():
+    for block in hip.node_blocks(text):
+        names = {value for name, value in block if name == 'name' and value}
+        versions = {
+            value for name, value in block
+            if name == 'version' and naming.is_valid_version_name(value)
+        }
         pairs.update((name, version) for name in names for version in versions)
-
-    for line in text.splitlines():
-        if line.startswith('}') or line.startswith('{'):
-            flush()
-            names, versions = set(), set()
-            continue
-        match = prune_exports._PARM.match(line)
-        if match is None:
-            continue
-        name, value = match.group(1), match.group(2).strip().strip('"')
-        if name == 'name' and value:
-            names.add(value)
-        elif name == 'version' and naming.is_valid_version_name(value):
-            versions.add(value)
-    flush()
     return pairs, path_tails(text)
 
 
@@ -181,23 +168,23 @@ def _named_by_paths(units: dict, paths: set[str]) -> set[tuple[str, str]]:
     return named
 
 
-def named_by_workfiles(roots, units: dict, notes: list[str], errors: list[str]) -> set[tuple[str, str]]:
+def named_by_workfiles(
+    workfiles: hip.Workfiles, units: dict, notes: list[str], errors: list[str],
+) -> set[tuple[str, str]]:
     by_pair: dict[tuple[str, str], list[Unit]] = defaultdict(list)
     for unit in units.values():
         by_pair[(unit.cache_name, unit.parts[-1])].append(unit)
     named: set[tuple[str, str]] = set()
     read = unreadable = 0
-    for _purpose, _parts, path in prune_exports.latest_workfiles(roots):
-        try:
-            text = read_workfile_text(path)
-        except OSError as error:
-            errors.append(f'{path}: {error}')
-            continue
-        if text is None:
+    for workfile in workfiles.reads():
+        if workfile.unreadable:
             unreadable += 1
             continue
+        if workfile.error is not None:
+            errors.append(workfile.error)
+            continue
         read += 1
-        pairs, paths = hip_names(text)
+        pairs, paths = hip_names(workfile.text)
         for pair in pairs:
             named.update(unit.key for unit in by_pair.get(pair, ()))
         named |= _named_by_paths(units, paths)
@@ -262,7 +249,9 @@ def _producer_workfile(context: dict, project_path: Path) -> bool:
     return long_path(Path(project_path) / workfile).is_file()
 
 
-def plan(roots, inventory, settings: Settings, *, now: float | None = None) -> CategoryPlan:
+def plan(
+    roots, inventory, settings: Settings, *, workfiles: hip.Workfiles, now: float | None = None,
+) -> CategoryPlan:
     out = CategoryPlan('caches', 'Old cache versions', 'version')
     out.payload = {root.purpose: root.path for root in roots.roots}
     if inventory is None:
@@ -299,7 +288,7 @@ def plan(roots, inventory, settings: Settings, *, now: float | None = None) -> C
 
     # Only worth reading the workfiles and the exports when something could go.
     if any(prune for prune, _reason in verdicts.values()):
-        by_workfile = named_by_workfiles(roots, units, out.notes, out.errors)
+        by_workfile = named_by_workfiles(workfiles, units, out.notes, out.errors)
         by_export = referenced_by_exports(roots, units, out.notes, out.errors)
         for key, (prune, _reason) in list(verdicts.items()):
             if not prune:

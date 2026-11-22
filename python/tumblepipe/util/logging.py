@@ -1,4 +1,9 @@
-"""Centralized file-based logging configuration for the pipeline."""
+"""Centralized file-based logging configuration for the pipeline.
+
+Nothing here runs on import: each process's entry point calls
+:func:`setup_logging` once (``startup.bootstrap`` for a Houdini session,
+``farm.worker.run`` for a farm task, the ``__main__`` of each standalone
+tool), so importing ``tumblepipe`` never touches the host's loggers."""
 
 import logging
 import os
@@ -9,11 +14,9 @@ from typing import Optional
 DEFAULT_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 DEFAULT_MAX_BYTES = 5 * 1024 * 1024  # 5MB
 DEFAULT_BACKUP_COUNT = 3
-LOG_DIR_NAME = "_logs"
 
 _initialized = False
 _project_handler: Optional[logging.Handler] = None
-_workspace_handler: Optional[logging.Handler] = None
 _console_handler: Optional[logging.Handler] = None
 
 
@@ -55,77 +58,65 @@ def _get_project_log_path() -> Optional[Path]:
     return project_path / 'export' / 'other' / 'logs' / _get_log_filename()
 
 
-def setup_logging(
-    workspace_path: Optional[Path] = None,
-    level: int = logging.INFO,
-    console: bool = False
-) -> None:
-    """Configure file-based logging for the pipeline.
+def _is_ci() -> bool:
+    """Woodpecker and other CI runs log nowhere on a share."""
+    return os.environ.get('CI') == 'true' or os.environ.get('WOODPECKER') == 'true'
+
+
+def setup_logging(level: int = logging.INFO, console: bool = False) -> None:
+    """Add TumblePipe's handlers to the root logger, once per process.
+
+    Handlers other packages installed stay. A later call only sets the root
+    level again. Skipped under CI.
 
     Args:
-        workspace_path: Optional workspace for workspace-specific logs
         level: Logging level (default: INFO)
         console: If True, log everything to the console too (default: False).
             Warnings and above reach the console regardless.
     """
-    global _initialized, _project_handler, _workspace_handler, _console_handler
+    global _initialized, _project_handler, _console_handler
 
+    if _is_ci():
+        return
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
+    if _initialized:
+        return
 
-    if not _initialized:
-        # Remove existing handlers
-        for handler in root_logger.handlers[:]:
-            root_logger.removeHandler(handler)
+    # Project-level file handler
+    project_log_path = _get_project_log_path()
+    if project_log_path:
+        _project_handler = _create_file_handler(project_log_path, level)
+        root_logger.addHandler(_project_handler)
 
-        # Project-level file handler
-        project_log_path = _get_project_log_path()
-        if project_log_path:
-            _project_handler = _create_file_handler(project_log_path, level)
-            root_logger.addHandler(_project_handler)
+    # Console handler: everything when requested or in dev mode, and
+    # warnings upward always. The process console is what the Desktop
+    # launcher captures into its per-project Houdini log, which is the
+    # file an artist can find and send in - a pipeline warning that
+    # exists only in export/other/logs on the share is invisible to
+    # them. INFO stays file-only so the console is not flooded.
+    console_level = (
+        level if console or os.environ.get('TH_DEV', '0') == '1'
+        else max(level, logging.WARNING)
+    )
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)
+    console_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT))
+    root_logger.addHandler(console_handler)
+    _console_handler = console_handler
 
-        # Console handler: everything when requested or in dev mode, and
-        # warnings upward always. The process console is what the Desktop
-        # launcher captures into its per-project Houdini log, which is the
-        # file an artist can find and send in - a pipeline warning that
-        # exists only in export/other/logs on the share is invisible to
-        # them. INFO stays file-only so the console is not flooded.
-        console_level = (
-            level if console or os.environ.get('TH_DEV', '0') == '1'
-            else max(level, logging.WARNING)
-        )
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(console_level)
-        console_handler.setFormatter(logging.Formatter(DEFAULT_FORMAT))
-        root_logger.addHandler(console_handler)
-        _console_handler = console_handler
-
-        _initialized = True
-
-    # Update workspace handler
-    if workspace_path:
-        if _workspace_handler:
-            root_logger.removeHandler(_workspace_handler)
-        workspace_log_path = workspace_path / LOG_DIR_NAME / _get_log_filename()
-        _workspace_handler = _create_file_handler(workspace_log_path, level)
-        root_logger.addHandler(_workspace_handler)
+    _initialized = True
 
 
 def get_log_paths() -> list[Path]:
-    """Every file this session is logging to, project handler first.
+    """Every file this session is logging to.
 
     For telling an artist where a failure's traceback landed: an error dialog
     that only says "check the log" is barely better than silence. Derived from
-    the live handlers rather than recomputed from the environment, so it names
-    the file actually being written - including the workspace log, whose path
-    moves as the loaded scene changes.
+    the live handler rather than recomputed from the environment, so it names
+    the file actually being written.
     """
-    paths: list[Path] = []
-    for handler in (_project_handler, _workspace_handler):
-        if handler is None:
-            continue
-        filename = getattr(handler, 'baseFilename', None)
-        if filename:
-            paths.append(Path(filename))
-    return paths
+    if _project_handler is None:
+        return []
+    return [Path(_project_handler.baseFilename)]
 

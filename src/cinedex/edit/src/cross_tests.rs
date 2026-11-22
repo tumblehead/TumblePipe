@@ -110,8 +110,8 @@ impl Probe for Whole {
     fn exists(&self, _: &str) -> bool {
         true
     }
-    fn shot_first(&self, _: &str) -> Frame {
-        1001
+    fn shot_first(&self, _: &str) -> Result<Frame, String> {
+        Ok(crate::document::DEFAULT_START_FRAME)
     }
 }
 

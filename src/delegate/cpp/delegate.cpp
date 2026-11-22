@@ -347,7 +347,7 @@ static_assert(sizeof(std::atomic<uint32_t>) == sizeof(uint32_t)
               "th_render_ids reads the cancel flag as a plain 32-bit atomic");
 
 // Draw `job` through `frame` into `out` (sized to the frame). The core's
-// status: 0 ok, 3 cancelled.
+// status: TH_OK, TH_CANCELLED, or an error.
 int32_t _Draw(_Job const& job, ThFrame const& asked, _Image* out,
               std::atomic<uint32_t> const* cancel, ThCache const* cache, std::mutex* cacheMutex)
 {
@@ -375,7 +375,7 @@ int32_t _Draw(_Job const& job, ThFrame const& asked, _Image* out,
                                  reinterpret_cast<uint32_t const*>(cancel), cache);
         out->coreMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
     }
-    if (status != 0) return status;
+    if (status != TH_OK) return status;
     if (!job.ids) {
         out->primId.clear();
         out->instanceId.clear();
@@ -491,7 +491,7 @@ private:
             int32_t const status = _Draw(*job, frame, &_spare, &_cancel, _cache, _cacheMutex);
             double const ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - started).count();
-            if (status == 0) {
+            if (status == TH_OK) {
                 _spare.final = final;
                 _spare.request = request;
                 if (final) _lastFinalMs.store(ms, std::memory_order_relaxed);
@@ -500,16 +500,16 @@ private:
                                  final ? "frame" : "draft", _spare.width, _spare.height, frame.samples,
                                  frame.ao ? " + AO" : "", job->views.size(), ms, _spare.coreMs);
                 }
-            } else if (status != 3) {
+            } else if (status != TH_CANCELLED) {
                 std::fprintf(stderr, "hdThPlayblast: the core failed to render (error %d)\n", status);
             }
             job.reset();  // before Stop may return
 
             lock.lock();
-            if (status == 0) {
+            if (status == TH_OK) {
                 std::swap(_latest, _spare);
                 ++_serial;
-            } else if (status != 3 && _request == request) {
+            } else if (status != TH_CANCELLED && _request == request) {
                 _next = _frames.size();  // the rest of the request would fail as well
             }
             _busy = false;
@@ -648,6 +648,41 @@ size_t _KeyCount(_XformSamples const& a, _Shutter const& s)
 GfMatrix4d _XformAt(_XformSamples const& a, float t, GfMatrix4d const& still)
 {
     return a.count > 0 ? a.Resample(t) : still;
+}
+
+// A prim's transforms at keys across the shutter into `keys` (16 doubles
+// each, key-major): its own (`still`, sampled as `xform`), times each of
+// its `instanceCount` instances' (`instancesAt` a key's moment) when
+// `instanced`, and keyed at least `instancerKeys` times for the instancer.
+// The key count when they move; 0 when they hold still, or when instances
+// came and went across the shutter, which is drawn still.
+size_t _TransformKeys(std::vector<double>* keys, _XformSamples const& xform, GfMatrix4d const& still, bool instanced,
+                      std::function<std::vector<GfMatrix4d>(float const*)> const& instancesAt,
+                      size_t instancerKeys, size_t instanceCount, _Shutter const& s)
+{
+    if (xform.count < 2 && instancerKeys < 3 && !instanced) return 0;
+    size_t const count = std::max(_KeyCount(xform, s), instancerKeys);
+    auto push = [keys](GfMatrix4d const& m) {
+        double const* d = m.GetArray();
+        keys->insert(keys->end(), d, d + 16);
+    };
+    keys->clear();
+    for (size_t k = 0; k < count; ++k) {
+        float const t = s.At(k, count);
+        GfMatrix4d const own = _XformAt(xform, t, still);
+        if (!instanced) {
+            push(own);
+            continue;
+        }
+        std::vector<GfMatrix4d> const at = instancesAt(&t);
+        if (at.size() != instanceCount) return 0;
+        for (GfMatrix4d const& inst : at) push(own * inst);
+    }
+    size_t const per = keys->size() / count;
+    for (size_t k = 1; k < count; ++k) {
+        if (!std::equal(keys->begin(), keys->begin() + per, keys->begin() + k * per)) return count;
+    }
+    return 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -791,6 +826,67 @@ VtArray<T> _AsArray(VtValue const& value)
         return VtArray<T>(1, value.UncheckedGet<T>());
     }
     return VtArray<T>();
+}
+
+// Points over the motion window: sampled (two to four samples), else
+// velocities (a second) and, with them, accelerations (a second squared),
+// one per point each. None when they hold still.
+struct _PointMotion
+{
+    HdTimeSampleArray<VtVec3fArray, 4> samples;
+    VtVec3fArray velocities;
+    VtVec3fArray accelerations;
+
+    _PointMotion() { samples.count = 0; }
+
+    bool Moves() const { return samples.count >= 2 || !velocities.empty(); }
+
+    // The points `t` frames from now (at `fps`): the samples resampled and
+    // made the points drawn by `prepare`, or `still` moved by the
+    // velocities and accelerations. `still` when a resampled set does not
+    // give one point each. Only for motion that Moves.
+    template <class Prepare>
+    VtVec3fArray At(VtVec3fArray const& still, float t, float fps, Prepare const& prepare) const
+    {
+        if (samples.count >= 2) {
+            VtVec3fArray p = prepare(samples.Resample(t));
+            return p.size() == still.size() ? p : still;
+        }
+        float const sec = t / fps;
+        VtVec3fArray p(still.size());
+        for (size_t i = 0; i < still.size(); ++i) {
+            GfVec3f const a = accelerations.empty() ? GfVec3f(0.0f) : accelerations[i];
+            p[i] = still[i] + velocities[i] * sec + a * (0.5f * sec * sec);
+        }
+        return p;
+    }
+};
+
+// The motion of prim `id`'s `count` points: `box`, its points sampled over
+// the window, when every sample made the points drawn by `prepare` gives
+// one each; else, with `readVelocities`, its velocities and accelerations
+// when it has one per point (accelerations only with velocities); else none.
+template <class Prepare>
+_PointMotion _ReadPointMotion(HdSceneDelegate* delegate, SdfPath const& id, HdTimeSampleArray<VtValue, 4> const& box,
+                              size_t count, Prepare const& prepare, bool readVelocities)
+{
+    _PointMotion out;
+    HdTimeSampleArray<VtVec3fArray, 4> sampled;
+    bool whole = box.count >= 2 && sampled.UnboxFrom(box);
+    for (size_t i = 0; whole && i < sampled.count; ++i) {
+        whole = prepare(sampled.values[i]).size() == count;
+    }
+    if (whole) {
+        out.samples = sampled;
+    } else if (readVelocities) {
+        VtVec3fArray const v = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->velocities));
+        if (v.size() == count) {
+            out.velocities = v;
+            VtVec3fArray const a = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->accelerations));
+            if (a.size() == count) out.accelerations = a;
+        }
+    }
+    return out;
 }
 
 // Primvar `name`'s values with its indices applied (one per face vertex for
@@ -1692,29 +1788,13 @@ private:
                  size_t instancerKeys, _Shutter const& s, size_t instanceCount) const
     {
         // Moved as authored (the coarse points), then refined as drawn.
-        size_t const n = _coarse.size();
-        bool const samples = _pointSamples.count >= 2;
-        if (samples || !_velocities.empty()) {
+        if (_motion.Moves()) {
             if (!(_motionFor == std::make_tuple(_version, s.open, s.close, s.fps))) {
                 _motionFor = std::make_tuple(_version, s.open, s.close, s.fps);
                 ++_motionVersion;
-                auto fill = [&](std::vector<float>& out, float t) {
-                    VtVec3fArray p;
-                    if (samples) {
-                        p = _pointSamples.Resample(t);
-                        if (p.size() != n) p = _coarse;
-                    } else {
-                        float const sec = t / s.fps;
-                        p.resize(n);
-                        for (size_t i = 0; i < n; ++i) {
-                            GfVec3f const a = _accelerations.empty() ? GfVec3f(0.0f) : _accelerations[i];
-                            p[i] = _coarse[i] + _velocities[i] * sec + a * (0.5f * sec * sec);
-                        }
-                    }
-                    out = _Drawn(p);
-                };
-                fill(_open, s.open);
-                fill(_close, s.close);
+                auto const asAuthored = [](VtVec3fArray const& p) { return p; };
+                _open = _Drawn(_motion.At(_coarse, s.open, s.fps, asAuthored));
+                _close = _Drawn(_motion.At(_coarse, s.close, s.fps, asAuthored));
             }
             if (_open != _close) {
                 view->points = _open.data();
@@ -1725,43 +1805,12 @@ private:
         }
 
         bool const instanced = !GetInstancerId().IsEmpty();
-        if (_xformSamples.count < 2 && instancerKeys < 3 && !instanced) return;
-        size_t const count = std::max(_KeyCount(_xformSamples, s), instancerKeys);
-        keys->clear();
-        for (size_t k = 0; k < count; ++k) {
-            float const t = s.At(k, count);
-            GfMatrix4d const own = _XformAt(_xformSamples, t, _transform);
-            std::vector<GfMatrix4d> const at = instanced ? instancesAt(&t) : std::vector<GfMatrix4d>{GfMatrix4d(1.0)};
-            if (instanced && at.size() != instanceCount) {
-                keys->clear();  // instances came and went: drawn still
-                return;
-            }
-            for (GfMatrix4d const& inst : at) {
-                GfMatrix4d const m = instanced ? own * inst : own;
-                double const* d = m.GetArray();
-                keys->insert(keys->end(), d, d + 16);
-            }
-        }
-        size_t const per = keys->size() / count;
-        bool moves = false;
-        for (size_t k = 1; k < count && !moves; ++k) {
-            moves = !std::equal(keys->begin(), keys->begin() + per, keys->begin() + k * per);
-        }
-        if (moves) {
+        if (size_t const count = _TransformKeys(keys, _xformSamples, _transform, instanced, instancesAt,
+                                                instancerKeys, instanceCount, s)) {
             view->transform_keys = keys->data();
             view->transform_key_count = static_cast<uint32_t>(count);
         }
     }
-
-    // The mesh's points over the motion window: sampled points (authored, or
-    // computed by skinning at each sample), else velocities (and
-    // accelerations).
-    struct _PointMotion
-    {
-        HdTimeSampleArray<VtVec3fArray, 4> samples;
-        VtVec3fArray velocities;
-        VtVec3fArray accelerations;
-    };
 
     // The points: computed (skinning, deformers) or authored; `computed`
     // gets the computation descriptors, for _ReadMotion.
@@ -1783,14 +1832,14 @@ private:
         return _AsArray<GfVec3f>(pointsValue);
     }
 
-    // The motion of `count` points over the window; none without `motion`.
+    // The motion of `count` points over the window: sampled points
+    // (authored, or computed by skinning at each sample), else velocities
+    // (and accelerations); none without `motion`.
     _PointMotion _ReadMotion(HdSceneDelegate* delegate, HdExtComputationPrimvarDescriptorVector const& computed,
                              size_t count, bool motion) const
     {
         SdfPath const& id = GetId();
-        _PointMotion out;
-        out.samples.count = 0;
-        if (!motion) return out;
+        if (!motion) return _PointMotion();
         HdTimeSampleArray<VtValue, 4> box;
         box.count = 0;
         if (!computed.empty()) {
@@ -1802,29 +1851,7 @@ private:
         } else {
             delegate->SamplePrimvar(id, HdTokens->points, -_motionWindow, _motionWindow, &box);
         }
-        HdTimeSampleArray<VtVec3fArray, 4> sampled;
-        bool whole = box.count >= 2 && sampled.UnboxFrom(box);
-        for (size_t i = 0; whole && i < sampled.count; ++i) {
-            whole = sampled.values[i].size() == count;
-        }
-        if (whole) {
-            out.samples = sampled;
-        } else {
-            VtVec3fArray const v = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->velocities));
-            if (v.size() == count) {
-                out.velocities = v;
-                VtVec3fArray const a = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->accelerations));
-                if (a.size() == count) out.accelerations = a;
-            }
-        }
-        return out;
-    }
-
-    void _SetMotion(_PointMotion const& m)
-    {
-        _pointSamples = m.samples;
-        _velocities = m.velocities;
-        _accelerations = m.accelerations;
+        return _ReadPointMotion(delegate, id, box, count, [](VtVec3fArray const& p) { return p; }, true);
     }
 
     static bool _SameBits(VtVec3fArray const& a, VtVec3fArray const& b)
@@ -1836,14 +1863,14 @@ private:
     // `m` is, bit for bit, the motion the mesh has.
     bool _SameMotion(_PointMotion const& m) const
     {
-        if (m.samples.count != _pointSamples.count) return false;
+        if (m.samples.count != _motion.samples.count) return false;
         for (size_t i = 0; i < m.samples.count; ++i) {
-            if (std::memcmp(&m.samples.times[i], &_pointSamples.times[i], sizeof(float)) != 0
-                || !_SameBits(m.samples.values[i], _pointSamples.values[i])) {
+            if (std::memcmp(&m.samples.times[i], &_motion.samples.times[i], sizeof(float)) != 0
+                || !_SameBits(m.samples.values[i], _motion.samples.values[i])) {
                 return false;
             }
         }
-        return _SameBits(m.velocities, _velocities) && _SameBits(m.accelerations, _accelerations);
+        return _SameBits(m.velocities, _motion.velocities) && _SameBits(m.accelerations, _motion.accelerations);
     }
 
     // Only the points are dirty: re-read them and their motion and keep
@@ -1865,17 +1892,28 @@ private:
         if (!_polygonal) _MeasureCage(points, _cageCounts, _cageIndices, &_cageBox, &_cageEdge);
         _points = _Drawn(points);
         if (_coreNormals) _MakeCoreNormals();
-        _SetMotion(m);
+        _motion = m;
         return true;
     }
 
     // The whole mesh's normals as the core would work them out (cusp or
     // smooth), one per corner, for a mesh drawn in parts (see Subsets).
+    // When the core fails, the mesh keeps no normals and each part gets its
+    // own (a crease where parts meet) rather than zeroed ones, which would
+    // draw it unlit.
     void _MakeCoreNormals()
     {
         _normals.assign(_triangles.size() * 3, 0.0f);
-        th_mesh_normals(_points.data(), static_cast<uint32_t>(_points.size() / 3), _triangles.data(),
-                        static_cast<uint32_t>(_triangles.size() / 3), _polygonal ? 1u : 0u, _normals.data());
+        int32_t const status = th_mesh_normals(_points.data(), static_cast<uint32_t>(_points.size() / 3), _triangles.data(),
+                                               static_cast<uint32_t>(_triangles.size() / 3), _polygonal ? 1u : 0u,
+                                               _normals.data());
+        if (status != TH_OK) {
+            TF_WARN("hdThPlayblast: the core could not work out a mesh's normals (error %d); "
+                    "its parts are smoothed apart", status);
+            _normals.clear();
+            _coreNormals = false;
+            return;
+        }
         _coreNormals = true;
     }
 
@@ -2164,7 +2202,7 @@ private:
         float const* drawnFloats = reinterpret_cast<float const*>(drawn.cdata());
         _points.assign(drawnFloats, drawnFloats + drawn.size() * 3);
 
-        _SetMotion(_ReadMotion(delegate, computed, points.size(), motion));
+        _motion = _ReadMotion(delegate, computed, points.size(), motion);
         _triangles.reserve(corners.size());
         for (uint32_t const c : corners) {
             _triangles.push_back(static_cast<uint32_t>(std::max(0, fvi[c])));
@@ -2195,9 +2233,7 @@ private:
 
     GfMatrix4d _transform{1.0};
     _XformSamples _xformSamples;
-    HdTimeSampleArray<VtVec3fArray, 4> _pointSamples;
-    VtVec3fArray _velocities;
-    VtVec3fArray _accelerations;
+    _PointMotion _motion;  // of the coarse points
     // The points at the last drawn shutter's opening and closing, and what
     // they were made for (version, open, close, fps).
     mutable std::vector<float> _open;
@@ -2344,14 +2380,14 @@ public:
         std::vector<GfMatrix4d> const instances = instancesAt(nullptr);
         bool const instanced = !this->GetInstancerId().IsEmpty();
         transforms->clear();
-        auto push = [](std::vector<double>* out, GfMatrix4d const& m) {
+        auto push = [transforms](GfMatrix4d const& m) {
             double const* d = m.GetArray();
-            out->insert(out->end(), d, d + 16);
+            transforms->insert(transforms->end(), d, d + 16);
         };
         if (!instanced) {
-            push(transforms, _transform);
+            push(_transform);
         } else {
-            for (GfMatrix4d const& inst : instances) push(transforms, _transform * inst);
+            for (GfMatrix4d const& inst : instances) push(_transform * inst);
         }
         if (transforms->empty()) return false;
 
@@ -2387,55 +2423,28 @@ public:
         size_t const n = _points.size() / 3;
         // Refilled only when rebuilt or the shutter changed: a background
         // frame may still be reading them.
-        if ((_pointSamples.count >= 2 || !_velocities.empty())
-            && !(_motionFor == std::make_tuple(_version, shutter.open, shutter.close, shutter.fps))) {
+        if (_motion.Moves() && !(_motionFor == std::make_tuple(_version, shutter.open, shutter.close, shutter.fps))) {
             _motionFor = std::make_tuple(_version, shutter.open, shutter.close, shutter.fps);
+            VtVec3fArray still(n);
+            std::memcpy(still.data(), _points.data(), n * sizeof(GfVec3f));
+            auto const deindexed = [this](VtVec3fArray const& p) { return _Deindexed(p); };
             auto fill = [&](std::vector<float>& out, float t) {
-                out.assign(_points.begin(), _points.end());
-                if (_pointSamples.count >= 2) {
-                    VtVec3fArray const p = _Deindexed(_pointSamples.Resample(t));
-                    if (p.size() == n) std::memcpy(out.data(), p.cdata(), n * sizeof(GfVec3f));
-                } else {
-                    float const sec = t / shutter.fps;
-                    for (size_t i = 0; i < n && i < _velocities.size(); ++i) {
-                        GfVec3f const a = i < _accelerations.size() ? _accelerations[i] : GfVec3f(0.0f);
-                        GfVec3f const d = _velocities[i] * sec + a * (0.5f * sec * sec);
-                        for (int k = 0; k < 3; ++k) out[i * 3 + k] += d[k];
-                    }
-                }
+                VtVec3fArray const p = _motion.At(still, t, shutter.fps, deindexed);
+                float const* f = reinterpret_cast<float const*>(p.cdata());
+                out.assign(f, f + n * 3);
             };
             fill(_open, shutter.open);
             fill(_close, shutter.close);
         }
-        if ((_pointSamples.count >= 2 || !_velocities.empty()) && _open.size() == _points.size() && _open != _close) {
+        if (_motion.Moves() && _open.size() == _points.size() && _open != _close) {
             view->points = _open.data();
             view->points_close = _close.data();
         }
         // The transforms at keys across it.
-        if (_xformSamples.count < 2 && instancerKeys < 3 && !instanced) return true;
-        size_t const count = std::max(_KeyCount(_xformSamples, shutter), instancerKeys);
-        keys->clear();
-        for (size_t k = 0; k < count; ++k) {
-            float const t = shutter.At(k, count);
-            GfMatrix4d const own = _XformAt(_xformSamples, t, _transform);
-            if (!instanced) {
-                push(keys, own);
-                continue;
-            }
-            std::vector<GfMatrix4d> const at = instancesAt(&t);
-            if (at.size() != instances.size()) {
-                keys->clear();  // instances came and went: drawn still
-                return true;
-            }
-            for (GfMatrix4d const& inst : at) push(keys, own * inst);
-        }
-        size_t const per = keys->size() / count;
-        for (size_t k = 1; k < count; ++k) {
-            if (!std::equal(keys->begin(), keys->begin() + per, keys->begin() + k * per)) {
-                view->transform_keys = keys->data();
-                view->transform_key_count = static_cast<uint32_t>(count);
-                break;
-            }
+        if (size_t const count = _TransformKeys(keys, _xformSamples, _transform, instanced, instancesAt,
+                                                instancerKeys, instances.size(), shutter)) {
+            view->transform_keys = keys->data();
+            view->transform_key_count = static_cast<uint32_t>(count);
         }
         return true;
     }
@@ -2472,9 +2481,7 @@ private:
         _widths.clear();
         _colors.clear();
         _indices = VtIntArray();
-        _pointSamples.count = 0;
-        _velocities = VtVec3fArray();
-        _accelerations = VtVec3fArray();
+        _motion = _PointMotion();
 
         _kind = 0;
         if constexpr (_curves) {
@@ -2534,21 +2541,10 @@ private:
         HdTimeSampleArray<VtValue, 4> box;
         box.count = 0;
         delegate->SamplePrimvar(id, HdTokens->points, -_motionWindow, _motionWindow, &box);
-        HdTimeSampleArray<VtVec3fArray, 4> sampled;
-        bool whole = box.count >= 2 && sampled.UnboxFrom(box);
-        for (size_t i = 0; whole && i < sampled.count; ++i) {
-            whole = _Deindexed(sampled.values[i]).size() == points.size();
-        }
-        if (whole) {
-            _pointSamples = sampled;
-        } else if (_indices.empty()) {
-            VtVec3fArray const v = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->velocities));
-            if (v.size() == points.size()) {
-                _velocities = v;
-                VtVec3fArray const a = _AsArray<GfVec3f>(delegate->Get(id, HdTokens->accelerations));
-                if (a.size() == points.size()) _accelerations = a;
-            }
-        }
+        // Velocities are per point, and indexed curves' points are per curve
+        // vertex: only curves without indices read them.
+        _motion = _ReadPointMotion(delegate, id, box, points.size(),
+                                   [this](VtVec3fArray const& p) { return _Deindexed(p); }, _indices.empty());
     }
 
     GfMatrix4d _transform{1.0};
@@ -2563,9 +2559,7 @@ private:
     uint32_t _widthInterp = 0;
     std::vector<float> _colors;
     uint32_t _colorInterp = 0;
-    HdTimeSampleArray<VtVec3fArray, 4> _pointSamples;
-    VtVec3fArray _velocities;
-    VtVec3fArray _accelerations;
+    _PointMotion _motion;  // of `_points`
     // The points at the last drawn shutter's opening and closing, and what
     // they were made for (version, open, close, fps).
     mutable std::vector<float> _open;
@@ -3003,7 +2997,7 @@ private:
         auto const gathered = std::chrono::steady_clock::now();
         _Image image;
         int32_t const status = _Draw(*job, frame, &image, nullptr, _cache, &_workers->cacheMutex);
-        if (status != 0) {
+        if (status != TH_OK) {
             TF_WARN("hdThPlayblast: the core failed to render (error %d)", status);
             return;
         }

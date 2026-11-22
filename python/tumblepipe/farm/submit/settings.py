@@ -65,6 +65,8 @@ from tumblepipe.config.department_off import read_disabled_departments
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import preview_frames
 from tumblepipe.farm.specs import repair
+from tumblepipe.farm.specs import submission
+from tumblepipe.pipe.usd.render_overrides import KARMA_SETTINGS
 
 # Sentinel: this field has no fallback constant. When it resolves to
 # neither an exception, a pinned form value, nor an entity property, the
@@ -121,6 +123,11 @@ class Field:
         derive: Reads the entity's value out of another property when
             ``prop`` carries none, before ``default`` (the playblast size
             from the shot's render resolution). None when nothing derives.
+        attribute: The Karma RenderSettings attribute a render override
+            sets on the farm (:data:`RENDER_OVERRIDES`), the one the
+            project's root layer authors for it
+            (``pipe.usd.render_overrides.KARMA_SETTINGS``). Only an
+            override has one; the comp's frames are overrides without.
     """
 
     key: str
@@ -132,6 +139,13 @@ class Field:
     preflight: bool = False
     override: bool = False
     derive: Callable[[dict], Any] | None = None
+    attribute: str | None = None
+
+    def __post_init__(self):
+        if self.attribute is not None and not self.override:
+            raise ValueError(
+                f"{self.key}: only an override sets a render attribute on the farm"
+            )
 
 
 def _resolution_axis(axis: int) -> Callable[[dict], Any]:
@@ -214,13 +228,16 @@ FIELDS: tuple[Field, ...] = (
     Field('batch_size', 'render', 'Batch', prop='farm.batch_size', default=10,
           kind='int'),
     # Overrides of the scene's render settings: sent only when pinned.
-    Field('samples', 'render', 'Samples', kind='int', override=True),
+    Field('samples', 'render', 'Samples', kind='int', override=True,
+          attribute=KARMA_SETTINGS['pathtracedsamples'].attribute),
     # Denoise is a farm post-process, not a scene setting, so it stays an
     # entity field.
     Field('denoise', 'render', 'Denoise', prop='render.enabledenoising',
           default=True, kind='bool'),
-    Field('mblur', 'render', 'Motion blur', kind='bool', override=True),
-    Field('dof', 'render', 'DOF', kind='bool', override=True),
+    Field('mblur', 'render', 'Motion blur', kind='bool', override=True,
+          attribute=KARMA_SETTINGS['enablemblur'].attribute),
+    Field('dof', 'render', 'DOF', kind='bool', override=True,
+          attribute=KARMA_SETTINGS['enabledof'].attribute),
 
     # ── Playblast (shots only) ────────────────────────────
     # The playblast cut mirrors the render cut, so it reads the same
@@ -306,6 +323,14 @@ PLAYBLAST_LOOK_KEYS = {
 
 FIELDS_BY_KEY: dict[str, Field] = {f.key: f for f in FIELDS}
 
+#: The render overrides and the Karma RenderSettings attribute each sets on
+#: the farm (``batch_submit`` authors them in the collapsed render layer's
+#: own opinions, over the scene's); the scene probe (``camera``) reads
+#: the same attributes for what an unset one renders with.
+RENDER_OVERRIDES: dict[str, str] = {
+    f.key: f.attribute for f in FIELDS if f.attribute is not None
+}
+
 SECTIONS = ('publish', 'render', 'playblast', 'comp')
 
 
@@ -313,11 +338,6 @@ def fields_for(sections: Sequence[str]) -> list[Field]:
     """Every field belonging to one of ``sections``, in table order."""
     wanted = set(sections)
     return [f for f in FIELDS if f.section in wanted]
-
-
-def entity_fields(sections: Sequence[str] = SECTIONS) -> list[Field]:
-    """Fields with a per-entity source — the ones that can read MIXED."""
-    return [f for f in fields_for(sections) if f.prop is not None]
 
 
 # ── value plumbing ────────────────────────────────────────
@@ -636,15 +656,6 @@ def skipped_channels(checked: Sequence[str], properties: dict) -> list[str]:
     return [name for name in checked if name not in defined]
 
 
-def _channel_list_text(names: Sequence[str]) -> str:
-    # Elide: a union pick across a wide batch can name twenty, and this
-    # lands in a table cell.
-    shown = ', '.join(names[:4])
-    if len(names) > 4:
-        shown += f", +{len(names) - 4} more"
-    return shown
-
-
 #: The key of a shot's render-layer patterns. A local copy of
 #: ``tumblepipe.config.channels.CHANNEL_PRIMS_PROPERTY``, for the same reason
 #: as ``DEFAULT_CHANNEL``.
@@ -793,6 +804,7 @@ def entity_warnings(
     requested: Sequence[str] | None = None,
     staged: Collection[str] | None = None,
     turntable: bool = False,
+    rendered: tuple[int, int] | None = None,
 ) -> list[str]:
     """Per-entity problems worth flagging *before* the submit loop fires.
 
@@ -814,6 +826,8 @@ def entity_warnings(
             skip :func:`unstaged_warnings`.
         turntable: The render is an asset's turntable (#53), on the
             studio's frames rather than a frame range of its own.
+        rendered: What its renders on disk cover (``status.RowStatus.rendered``),
+            None when none (or not read yet).
     """
     warnings: list[str] = []
 
@@ -829,7 +843,7 @@ def entity_warnings(
         if skipped and submitted:
             plural = 's' if len(skipped) > 1 else ''
             warnings.append(
-                f"channel{plural} {_channel_list_text(skipped)} will be "
+                f"channel{plural} {submission.channel_list_text(skipped)} will be "
                 f"skipped (not defined on this entity)"
             )
         # Only reachable through a per-entity exception: resolution itself
@@ -838,7 +852,7 @@ def entity_warnings(
         if missing:
             plural = 's' if len(missing) > 1 else ''
             warnings.append(
-                f"channel{plural} {_channel_list_text(missing)} not defined "
+                f"channel{plural} {submission.channel_list_text(missing)} not defined "
                 f"here; the farm will refuse {'them' if plural else 'it'}"
             )
         warnings.extend(
@@ -856,14 +870,15 @@ def entity_warnings(
         )
 
     if resolved.get('comp') and not resolved.get('render'):
-        frames = comp_frames(properties, resolved)
+        frames = comp_frames(properties, resolved, rendered)
         if frames is not None:
-            (first, last), (shot_first, shot_last) = frames
-            if first <= last and (first < shot_first or last > shot_last):
-                # Not blocked: renders on disk may run past the shot's range.
+            (first, last), (follow_first, follow_last) = frames
+            if first <= last and (first < follow_first or last > follow_last):
+                # Not blocked: a frame no render made comps empty.
+                what = "the renders' frames" if rendered is not None else "the shot's"
                 warnings.append(
-                    f"the comp frames {first}-{last} reach outside the "
-                    f"shot's {shot_first}-{shot_last}: a frame no render "
+                    f"the comp frames {first}-{last} reach outside {what} "
+                    f"{follow_first}-{follow_last}: a frame no render "
                     f"made is missing from the comp"
                 )
 
@@ -873,37 +888,8 @@ def entity_warnings(
         warnings.extend(repair_warnings(resolved))
     if not turntable:
         warnings.extend(step_warnings(resolved))
-    warnings.extend(preview_frame_warnings(properties, resolved))
+    warnings.extend(preview_frame_warnings(properties, resolved, rendered))
     return warnings
-
-
-def rendered_range(resolved: dict) -> tuple[int, int] | None:
-    """The frames a row's render covers, rolls included (what
-    ``batch_submit`` renders without a Frame List), None without a range."""
-    first, last = _int(resolved.get('first_frame')), _int(resolved.get('last_frame'))
-    if first is None or last is None:
-        return None
-    return (
-        first - (_int(resolved.get('pre_roll')) or 0),
-        last + (_int(resolved.get('post_roll')) or 0),
-    )
-
-
-def frame_list(resolved: dict) -> tuple[tuple[tuple[int, int], ...], str | None]:
-    """``(ranges, error)`` of a row's Frame List (#84), read as
-    ``batch_submit`` reads it (``frame_ranges.read`` against the rolled
-    range): the normalised ranges, empty when none is typed or the render
-    is off; ``error`` the reason the submit would refuse it, else None."""
-    text = resolved.get('frame_list')
-    if not resolved.get('render') or not isinstance(text, str) or not text.strip():
-        return (), None
-    span = rendered_range(resolved)
-    if span is None:
-        return (), None     # entity_warnings says there is no range
-    try:
-        return frame_ranges.read(text, *span), None
-    except frame_ranges.FrameListError as e:
-        return (), str(e)
 
 
 def frame_list_note(text: str | None, step: int = 1) -> str:
@@ -941,36 +927,25 @@ def frame_list_note(text: str | None, step: int = 1) -> str:
 
 def into_version(resolved: dict) -> str:
     """The row's Into version (#92): '' for new versions, ``latest`` or a
-    version name for a repair; '' when the render is off."""
-    target = resolved.get('into_version')
-    if not resolved.get('render') or not isinstance(target, str):
-        return repair.TARGET_NEW
-    return target
+    version name for a repair; '' when the render is off
+    (``farm.specs.submission.into_version``)."""
+    return submission.into_version(resolved)
 
 
 def repair_errors(resolved: dict) -> list[str]:
     """Why the row's Into version cannot go with its other settings, read
-    without the disk (``farm.specs.repair.setup_problems``, which
-    ``batch_submit`` refuses the same way); a repair reaching for a version
-    that is not there is refused at the submit, which reads the disk."""
-    target = into_version(resolved)
-    if not repair.is_repair(target):
-        return []
-    ranges, error = frame_list(resolved)
-    if error is not None:
-        return []       # entity_errors names the list's own problem
-    return repair.setup_problems(
-        target, ranges,
-        preview=resolved.get('render_mode') in PREVIEW_RENDER_MODES,
-        step=render_step(resolved),
-    )
+    without the disk: one of the refusals Farm Submit shares with the farm
+    (``farm.specs.submission.repair_problems``); a repair reaching for a
+    version that is not there is refused at the submit, which reads the
+    disk."""
+    return submission.repair_problems(resolved)
 
 
 def repair_warnings(resolved: dict) -> list[str]:
     """The Warnings-column line of a repair: which frames go into which
     version, and what runs again after them."""
     target = into_version(resolved)
-    ranges, error = frame_list(resolved)
+    ranges, error = submission.frame_list(resolved)
     if not repair.is_repair(target) or error is not None or not ranges:
         return []
     again = 'its mp4s and slapcomp'
@@ -1057,13 +1032,6 @@ def nth(step: int) -> str:
     return f"{step}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(step % 10, 'th')}"
 
 
-def render_step(resolved: dict) -> int:
-    """The row's render Step, 1 when unset or not a whole number above 0
-    (``batch_submit`` refuses those; the dialog's field cannot hold one)."""
-    step = _int(resolved.get('render_step'))
-    return step if step is not None and step > 0 else 1
-
-
 def step_disabled(step: int | None) -> dict[str, str]:
     """``{setting key: why}`` for the Render settings a shot render on
     ``step`` makes the submit ignore: none on step 1, else the ones a
@@ -1079,21 +1047,21 @@ def rendered_frames(resolved: dict) -> int | None:
     """How many frames a row's render makes on its step: its Frame list's
     ranges, else its rolled range; None without a range or with a list
     that cannot be read."""
-    ranges, error = frame_list(resolved)
+    ranges, error = submission.frame_list(resolved)
     if error is not None:
         return None
     if not ranges:
-        span = rendered_range(resolved)
+        span = submission.rolled_range(resolved)
         if span is None or span[0] > span[1]:
             return None
         ranges = (span,)
-    return frame_ranges.frame_count(ranges, render_step(resolved))
+    return frame_ranges.frame_count(ranges, submission.render_step(resolved))
 
 
 def step_warnings(resolved: dict) -> list[str]:
     """The Warnings-column line of a stepped shot render: how many frames
     it makes, and that it is not published (so skips Copy to edit)."""
-    step = render_step(resolved)
+    step = submission.render_step(resolved)
     if not resolved.get('render') or step <= 1:
         return []
     count = rendered_frames(resolved)
@@ -1109,7 +1077,7 @@ def step_warnings(resolved: dict) -> list[str]:
 def frame_list_warnings(resolved: dict) -> list[str]:
     """The Warnings-column line of a multi-range render: what it renders
     and that it is not published (and so skips Copy to edit)."""
-    ranges, _error = frame_list(resolved)
+    ranges, _error = submission.frame_list(resolved)
     if not frame_ranges.is_multi(ranges):
         return []
     text = (
@@ -1150,43 +1118,37 @@ def unstaged_warnings(resolved: dict, staged: Collection[str] | None) -> list[st
         return []
     plural = 's' if len(missing) > 1 else ''
     return [
-        f"channel{plural} {_channel_list_text(missing)} "
+        f"channel{plural} {submission.channel_list_text(missing)} "
         f"{'have' if plural else 'has'} no staged build to render: publish "
         f"first, or tick a publish on this row; the farm will refuse "
         f"{'them' if plural else 'it'}"
     ]
 
 
-#: The render modes that render the full range (``batch_submit`` builds a
-#: ``full_render`` for them), the ones a Comp can follow.
-FULL_RENDER_MODES = frozenset({'full', 'preview_then_full'})
-
-#: The render modes that render a preview first (a ``partial_render``).
-PREVIEW_RENDER_MODES = frozenset({'first_middle_last', 'preview_then_full'})
-
-
-def preview_frame_warnings(properties: dict, resolved: dict) -> list[str]:
+def preview_frame_warnings(
+    properties: dict,
+    resolved: dict,
+    rendered: tuple[int, int] | None = None,
+) -> list[str]:
     """What a row's Preview Frames Lists drop (``farm.specs.preview_frames.parse``),
     read as ``batch_submit`` reads them: the render's against its frames,
-    rolls included; the comp's against :func:`comp_frames` on its step. A
-    list only counts where its preview runs (Preview ticked). Without a
-    render the comp's frames here are the shot's, and the submit reads them
-    against what the renders on disk cover, so it may drop a little more or
-    less; it logs what it drops."""
+    rolls included; the comp's against :func:`comp_frames` on its step
+    (``rendered``: what the renders on disk cover). A list only counts where
+    its preview runs (Preview ticked)."""
     warnings: list[str] = []
     text = resolved.get('preview_frame_list')
     if (
         resolved.get('render') and isinstance(text, str) and text.strip()
-        and resolved.get('render_mode') in PREVIEW_RENDER_MODES
+        and resolved.get('render_mode') in submission.PREVIEW_RENDER_MODES
     ):
-        span = rendered_range(resolved)
+        span = submission.rolled_range(resolved)
         if span is not None and span[0] <= span[1]:
             # A Frame List narrows the frames to its span, and the frames
             # between its ranges are never rendered (#84).
-            ranges, _error = frame_list(resolved)
+            ranges, _error = submission.frame_list(resolved)
             if ranges:
                 span = frame_ranges.span(ranges)
-            preview = preview_frames.parse(text, *span, render_step(resolved))
+            preview = preview_frames.parse(text, *span, submission.render_step(resolved))
             if frame_ranges.is_multi(ranges):
                 preview = preview_frames.inside_ranges(preview, ranges)
             warnings.extend(f"render {warning}" for warning in preview.warnings)
@@ -1195,7 +1157,7 @@ def preview_frame_warnings(properties: dict, resolved: dict) -> list[str]:
         resolved.get('comp') and resolved.get('comp_preview')
         and isinstance(text, str) and text.strip()
     ):
-        frames = comp_frames(properties, resolved)
+        frames = comp_frames(properties, resolved, rendered)
         if frames is not None and frames[0][0] <= frames[0][1]:
             step = _int(resolved.get('comp_step')) or 1
             warnings.extend(
@@ -1209,35 +1171,34 @@ def _int(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def shot_range(properties: dict) -> tuple[int, int] | None:
+    """The shot's range with its rolls (``frame_start``..``frame_end``,
+    ``roll_start``/``roll_end``), None when it has none."""
+    first, last = _int(properties.get('frame_start')), _int(properties.get('frame_end'))
+    if first is None or last is None:
+        return None
+    return (
+        first - (_int(properties.get('roll_start')) or 0),
+        last + (_int(properties.get('roll_end')) or 0),
+    )
+
+
 def comp_frames(
     properties: dict,
     resolved: dict,
+    rendered: tuple[int, int] | None = None,
 ) -> tuple[tuple[int, int], tuple[int, int]] | None:
-    """``((first, last), (follow_first, follow_last))`` of a row's comp.
-
-    The range a comp follows is the render's, rolls included, when Render is
-    ticked beside it, else the shot's (its ``frame_start``..``frame_end``
-    and rolls); ``comp_first_frame``/``comp_last_frame`` replace either end
-    when the artist set one. ``batch_submit`` reads the same rule
-    (``pipelines.composite.recomp_range``). None when there is no range to
-    follow (the entity has none; the render warns for itself).
-    """
-    if resolved.get('render'):
-        first, last = _int(resolved.get('first_frame')), _int(resolved.get('last_frame'))
-        pre, post = resolved.get('pre_roll', 0), resolved.get('post_roll', 0)
-    else:
-        first, last = _int(properties.get('frame_start')), _int(properties.get('frame_end'))
-        pre, post = properties.get('roll_start', 0), properties.get('roll_end', 0)
-    if first is None or last is None:
+    """``((first, last), follows)`` of a row's comp, as the farm reads them
+    (``farm.specs.submission.comp_follows``): ``follows`` the frames the
+    render beside it makes, else ``rendered`` (what the renders on disk
+    cover, ``status.RowStatus.rendered``), else the shot's range; each end
+    replaced by a frame the artist set. None when there is no range to
+    follow (the entity has none; the render warns for itself)."""
+    follows = submission.comp_follows(resolved, rendered, shot_range(properties))
+    if follows is None:
         return None
-    follows = (first - (_int(pre) or 0), last + (_int(post) or 0))
-    own_first = _int(resolved.get('comp_first_frame'))
-    own_last = _int(resolved.get('comp_last_frame'))
-    return (
-        (follows[0] if own_first is None else own_first,
-         follows[1] if own_last is None else own_last),
-        follows,
-    )
+    own = (resolved.get('comp_first_frame'), resolved.get('comp_last_frame'))
+    return submission.comp_frames(*own, follows), follows
 
 
 def entity_errors(
@@ -1245,8 +1206,10 @@ def entity_errors(
     resolved: dict,
     *,
     requested: Sequence[str] | None = None,
+    rendered: tuple[int, int] | None = None,
 ) -> list[str]:
-    """Per-entity problems that must stop the submit.
+    """Per-entity problems that must stop the submit: the farm's own
+    refusals (``farm.specs.submission.problems``), read before Submit.
 
     Unlike :func:`entity_warnings`, the confirm step will not send a batch
     while any entity has one of these.
@@ -1255,96 +1218,16 @@ def entity_errors(
         properties: The entity's resolved properties.
         resolved: What :func:`resolve_settings` produced for it.
         requested: The channels checked for the batch.
+        rendered: What its renders on disk cover (``status.RowStatus.rendered``),
+            None when none (or not read yet).
     """
-    errors: list[str] = []
-    errors.extend(turned_off_errors(properties, resolved))
-    # batch_submit refuses a Frame List it cannot read, or one reaching
-    # past the render's range; a multi-range render is not published, so
-    # no comp may follow it (#84).
-    ranges, frame_list_error = frame_list(resolved)
-    if frame_list_error is not None:
-        errors.append(frame_list_error)
-    # Into version (#92): a repair keeps its version as published as it
-    # was, so a multi-range list beside a Comp is the version's to decide.
-    errors.extend(repair_errors(resolved))
-    repairing = repair.is_repair(into_version(resolved))
-    if frame_ranges.is_multi(ranges) and resolved.get('comp') and not repairing:
-        errors.append(
-            f"Comp follows a published render, and "
-            f"{frame_ranges.NOT_PUBLISHED}: untick Comp, or render one range"
-        )
-    if resolved.get('comp') and resolved.get('render') and render_step(resolved) > 1:
-        # batch_submit refuses it: the comp reads a published render.
-        errors.append(
-            f"Comp follows a published render, and {STEPPED_NOT_PUBLISHED}: "
-            "untick Comp, or set the render's Step to 1"
-        )
-    if resolved.get('comp') and resolved.get('render') and (
-        resolved.get('render_mode') not in FULL_RENDER_MODES
-    ):
-        # batch_submit refuses it: the comp follows the full render, and a
-        # preview-only render has no frames to comp.
-        errors.append(
-            "Comp waits for the full render: tick Full range in the Render "
-            "settings, or untick Render to comp the renders on disk"
-        )
-    if resolved.get('comp'):
-        frames = comp_frames(properties, resolved)
-        if frames is not None:
-            (first, last), (follow_first, follow_last) = frames
-            if first > last:
-                errors.append(
-                    f"the comp frames {first}-{last} end before they start"
-                )
-            elif resolved.get('render') and (
-                first < follow_first or last > follow_last
-            ):
-                # batch_submit refuses it: the comp reads this render.
-                errors.append(
-                    f"the comp frames {first}-{last} reach outside the "
-                    f"render's {follow_first}-{follow_last}: comp inside "
-                    f"them, or untick Render to comp the renders on disk"
-                )
-    if resolved.get('render'):
-        if not channel_list(resolved):
-            checked = list(requested or ())
-            if checked:
-                errors.append(
-                    f"defines none of the checked channels "
-                    f"({_channel_list_text(checked)}), so it has nothing "
-                    f"to render; check one of its channels or untick Render"
-                )
-            else:
-                errors.append("no channel checked to render")
-    return errors
-
-
-def turned_off_errors(properties: dict, resolved: dict) -> list[str]:
-    """A step aimed at a department turned off on the entity (#64).
-
-    ``batch_submit`` refuses each of them; the grid never offers an off
-    department's publish cell, so these are what is left: a Render or
-    Playblast cut, or a ``pub_departments`` from another caller.
-    """
-    off = read_disabled_departments(properties)
-    if not off:
-        return []
-    errors = []
-    for section, key, what in (
-        ('render', 'render_department', 'Render'),
-        ('playblast', 'pb_department', 'Playblast'),
-    ):
-        name = resolved.get(key)
-        if resolved.get(section) and name in off:
-            errors.append(
-                f"the {what} cut, {name}, is turned off on this shot: pick "
-                f"another department, or turn it back on"
-            )
-    if resolved.get('publish'):
-        for name in resolved.get('pub_departments') or ():
-            if name in off:
-                errors.append(f"{name} is turned off on this shot: not published")
-    return errors
+    return submission.problems(
+        resolved,
+        off=read_disabled_departments(properties),
+        rendered=rendered,
+        shot=shot_range(properties),
+        requested=requested,
+    )
 
 
 def _department_warning(

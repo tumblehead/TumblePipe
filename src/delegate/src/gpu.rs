@@ -181,10 +181,57 @@ struct PostLayer {
     index: [u32; 4],
 }
 
-/// The bytes of plain-old-data `repr(C)` values (f32 / i32 / u32 fields
-/// only, so no padding).
-fn bytes<T: Copy>(values: &[T]) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(values.as_ptr() as *const u8, std::mem::size_of_val(values)) }
+/// The bytes of `values`, to upload.
+fn bytes<T: Pod>(values: &[T]) -> &[u8] {
+    // SAFETY: `T: Pod` has no padding, so all `size_of_val(values)` bytes
+    // are initialised, and u8 has no alignment to meet.
+    unsafe { std::slice::from_raw_parts(values.as_ptr().cast::<u8>(), std::mem::size_of_val(values)) }
+}
+
+/// Values every byte of which is initialised: numbers, arrays of them, and
+/// `repr(C)` structs of 4-byte numbers with no padding, so [`bytes`] may
+/// read them. Private to this module, so implemented only here, and each
+/// struct's impl checks its size is the sum of its fields'.
+///
+/// # Safety
+/// An implementer has no padding bytes.
+unsafe trait Pod: Copy {}
+
+// SAFETY: 4-byte numbers, and arrays of them, have no padding.
+unsafe impl Pod for f32 {}
+// SAFETY: as above.
+unsafe impl Pod for [f32; 3] {}
+// SAFETY: as above.
+unsafe impl Pod for [f32; 4] {}
+// SAFETY: as above.
+unsafe impl Pod for [u32; 4] {}
+// SAFETY: bytes have no padding.
+unsafe impl Pod for [u8; 4] {}
+
+/// `Pod` for `repr(C)` structs given with their fields' types: the build
+/// fails unless the struct's size is the sum of its fields', so it has no
+/// padding.
+macro_rules! pod_structs {
+    ($($name:ident { $($field:ty),* $(,)? })*) => {$(
+        // SAFETY: repr(C) with no padding, as the assert beside it holds.
+        unsafe impl Pod for $name {}
+        const _: () = assert!(std::mem::size_of::<$name>() == 0 $(+ std::mem::size_of::<$field>())*);
+    )*};
+}
+
+pod_structs! {
+    Vertex { [f32; 3], [f32; 3], [f32; 3], [f32; 2] }
+    Instance { [[f32; 4]; 4], [[f32; 4]; 3], [[f32; 4]; 4] }
+    Globals {
+        [[f32; 4]; 4], [f32; 4], [f32; 4], [f32; 4], [f32; 4], [f32; 4],
+        [[f32; 4]; 3], [f32; 4], [u32; 4], [[[f32; 4]; 3]; MAX_LIGHTS],
+    }
+    MeshParams { [f32; 4], [i32; 4], [[i32; 4]; 25] }
+    PostGlobals {
+        [u32; 4], [u32; 4], [f32; 4], [f32; 4], [f32; 4], [f32; 4], [f32; 4], [f32; 4],
+        [[f32; 4]; 3], [f32; 4], [f32; 4], [[u32; 4]; 4], [[[f32; 4]; 3]; MAX_LIGHTS],
+    }
+    PostLayer { [f32; 4], [u32; 4] }
 }
 
 /// Numbers (and arrays of them) every bit pattern is a value of, as the
@@ -373,7 +420,15 @@ static GPU: OnceLock<Result<Mutex<Gpu>, String>> = OnceLock::new();
 
 fn gpu() -> Result<std::sync::MutexGuard<'static, Gpu>, String> {
     let gpu = GPU.get_or_init(|| Gpu::new().map(Mutex::new)).as_ref().map_err(Clone::clone)?;
-    gpu.lock().map_err(|_| "an earlier GPU frame panicked".to_string())
+    gpu.lock().map_err(|_| {
+        // The panic itself was reported with its frame; say once that it
+        // also pins every later frame to the CPU.
+        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("hdThPlayblast: an earlier GPU frame panicked, so the rest of this session draws on the CPU");
+        }
+        "an earlier GPU frame panicked".to_string()
+    })
 }
 
 /// Render `meshes` on the GPU, keeping their geometry in `cache` for the
@@ -388,23 +443,27 @@ pub fn render(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>, ids: bool) 
         eprintln!(
             "hdThPlayblast: GPU upload {} ms ({} meshes, {:.0} MB; {} kept on the card, {:.0} MB there), \
              raster {} ms at {} samples a pixel{}, post pass {} ms, read back {} ms",
-            stats.upload.as_millis(), stats.uploaded_meshes, mb(stats.uploaded_bytes), stats.cached_meshes,
-            mb(stats.resident_bytes), stats.raster.as_millis(), composite::sample_offsets(frame.samples).len(),
+            stats.upload.as_millis(),
+            stats.uploaded_meshes,
+            mb(stats.uploaded_bytes),
+            stats.cached_meshes,
+            mb(stats.resident_bytes),
+            stats.raster.as_millis(),
+            composite::sample_offsets(frame.samples).len(),
             if stats.chunks > 0 { format!(" in {} chunks", stats.chunks) } else { String::new() },
-            stats.post.as_millis(), stats.read_back.as_millis()
+            stats.post.as_millis(),
+            stats.read_back.as_millis()
         );
     }
     Ok(image)
 }
 
 #[cfg(test)]
-pub(crate) fn render_with_stats(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>)
-                                -> Result<(Image, Stats), String> {
+pub(crate) fn render_with_stats(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>) -> Result<(Image, Stats), String> {
     render_ids_with_stats(frame, meshes, cache, false)
 }
 
-pub(crate) fn render_ids_with_stats(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>, ids: bool)
-                                    -> Result<(Image, Stats), String> {
+pub(crate) fn render_ids_with_stats(frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>, ids: bool) -> Result<(Image, Stats), String> {
     gpu()?.scoped(frame, |gpu| {
         if !blur::active(frame, meshes) {
             let mut stats = gpu.draw(frame, meshes, cache, None, ids)?;
@@ -523,15 +582,17 @@ struct Targets {
 impl Targets {
     /// A pass drawing into layer `k`, clearing it first or not.
     fn pass<'e>(&self, encoder: &'e mut wgpu::CommandEncoder, clear: bool, k: usize) -> wgpu::RenderPass<'e> {
-        let attach = |view, clear_to: wgpu::Color| Some(wgpu::RenderPassColorAttachment {
-            view,
-            resolve_target: None,
-            depth_slice: None,
-            ops: wgpu::Operations {
-                load: if clear { wgpu::LoadOp::Clear(clear_to) } else { wgpu::LoadOp::Load },
-                store: wgpu::StoreOp::Store,
-            },
-        });
+        let attach = |view, clear_to: wgpu::Color| {
+            Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: if clear { wgpu::LoadOp::Clear(clear_to) } else { wgpu::LoadOp::Load },
+                    store: wgpu::StoreOp::Store,
+                },
+            })
+        };
         let [albedo, normal, depth] = &self.layer_views[k];
         // Nothing drawn: no colour at depth 1, no normal at distance 0.
         let far = wgpu::Color { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
@@ -556,15 +617,17 @@ impl Targets {
     /// and revealage, clearing them first (to nothing added, all revealed)
     /// or not, tested against the layer's opaque depth, which it keeps.
     fn glass_pass<'e>(&self, encoder: &'e mut wgpu::CommandEncoder, clear: bool, k: usize) -> wgpu::RenderPass<'e> {
-        let attach = |view, clear_to: wgpu::Color| Some(wgpu::RenderPassColorAttachment {
-            view,
-            resolve_target: None,
-            depth_slice: None,
-            ops: wgpu::Operations {
-                load: if clear { wgpu::LoadOp::Clear(clear_to) } else { wgpu::LoadOp::Load },
-                store: wgpu::StoreOp::Store,
-            },
-        });
+        let attach = |view, clear_to: wgpu::Color| {
+            Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: if clear { wgpu::LoadOp::Clear(clear_to) } else { wgpu::LoadOp::Load },
+                    store: wgpu::StoreOp::Store,
+                },
+            })
+        };
         let [accum, reveal] = &self.glass_views[k];
         let all = wgpu::Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -678,17 +741,11 @@ impl Batch<'_> {
         let started = Instant::now();
         let mut encoder = self.gpu.device.create_command_encoder(&Default::default());
         if !self.draws.is_empty() {
-            let (still, moved) = if self.glass {
-                (&self.gpu.glass, &self.gpu.glass_moving)
-            } else {
-                (&self.gpu.scene, &self.gpu.scene_moving)
-            };
+            let (still, moved) =
+                if self.glass { (&self.gpu.glass, &self.gpu.glass_moving) } else { (&self.gpu.scene, &self.gpu.scene_moving) };
             for (k, globals) in self.globals.iter().enumerate() {
-                let mut p = if self.glass {
-                    self.targets.glass_pass(&mut encoder, false, k)
-                } else {
-                    self.targets.pass(&mut encoder, false, k)
-                };
+                let mut p =
+                    if self.glass { self.targets.glass_pass(&mut encoder, false, k) } else { self.targets.pass(&mut encoder, false, k) };
                 p.set_bind_group(0, globals, &[]);
                 let mut current = None;
                 for d in &self.draws {
@@ -801,10 +858,7 @@ const INTEL: u32 = 0x8086;
 
 /// The high-performance adapter among `backends`, if any.
 fn adapter_of(backends: wgpu::Backends) -> Option<wgpu::Adapter> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-        backends,
-        ..wgpu::InstanceDescriptor::new_without_display_handle()
-    });
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends, ..wgpu::InstanceDescriptor::new_without_display_handle() });
     pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         compatible_surface: None,
@@ -840,16 +894,14 @@ impl Gpu {
         }
         eprintln!("hdThPlayblast: GPU {} ({:?})", info.name, info.backend);
         let limits = adapter.limits();
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("hdThPlayblast"),
-                required_features: wgpu::Features::empty(),
-                required_limits: limits.clone(),
-                memory_hints: wgpu::MemoryHints::Performance,
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
-                trace: wgpu::Trace::Off,
-            },
-        ))
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("hdThPlayblast"),
+            required_features: wgpu::Features::empty(),
+            required_limits: limits.clone(),
+            memory_hints: wgpu::MemoryHints::Performance,
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+            trace: wgpu::Trace::Off,
+        }))
         .map_err(|e| e.to_string())?;
         device.on_uncaptured_error(std::sync::Arc::new(|e| eprintln!("hdThPlayblast: GPU error: {e}")));
 
@@ -860,11 +912,7 @@ impl Gpu {
         let uniform = |binding, visibility, dynamic| wgpu::BindGroupLayoutEntry {
             binding,
             visibility,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: dynamic,
-                min_binding_size: None,
-            },
+            ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: dynamic, min_binding_size: None },
             count: None,
         };
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -963,38 +1011,46 @@ impl Gpu {
                 write_mask: wgpu::ColorWrites::ALL,
             }),
         ];
-        let one = |entry_point: &str, buffers: &[Option<wgpu::VertexBufferLayout>], fragment: &str,
-                   targets: &[Option<wgpu::ColorTargetState>], cull: Cull| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some(fragment),
-            layout: Some(&scene_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some(entry_point),
-                compilation_options: Default::default(),
-                buffers,
-            },
-            primitive: primitive(cull),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                // See-through surfaces are tested against the opaque depth
-                // and leave it as it is.
-                depth_write_enabled: Some(fragment != "fs_glass"),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some(fragment),
-                compilation_options: Default::default(),
-                targets,
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
-        let pipeline = |entry_point: &str, buffers: &[Option<wgpu::VertexBufferLayout>], fragment: &str,
-                        targets: &[Option<wgpu::ColorTargetState>]| -> Culled {
+        let one = |entry_point: &str,
+                   buffers: &[Option<wgpu::VertexBufferLayout>],
+                   fragment: &str,
+                   targets: &[Option<wgpu::ColorTargetState>],
+                   cull: Cull| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(fragment),
+                layout: Some(&scene_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some(entry_point),
+                    compilation_options: Default::default(),
+                    buffers,
+                },
+                primitive: primitive(cull),
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: DEPTH_FORMAT,
+                    // See-through surfaces are tested against the opaque depth
+                    // and leave it as it is.
+                    depth_write_enabled: Some(fragment != "fs_glass"),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(fragment),
+                    compilation_options: Default::default(),
+                    targets,
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipeline = |entry_point: &str,
+                        buffers: &[Option<wgpu::VertexBufferLayout>],
+                        fragment: &str,
+                        targets: &[Option<wgpu::ColorTargetState>]|
+         -> Culled {
             [Cull::Nothing, Cull::Back, Cull::Front].map(|cull| one(entry_point, buffers, fragment, targets, cull))
         };
         let scene = pipeline("vs", &buffers[..2], "fs", &color_targets);
@@ -1115,8 +1171,25 @@ impl Gpu {
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
-        Ok(Gpu { device, queue, scene, scene_moving, ids, ids_moving, glass, glass_moving, globals_layout, mesh_layout, post_layout, post, sum_layout, sum, sampler, limits,
-                 targets: None })
+        Ok(Gpu {
+            device,
+            queue,
+            scene,
+            scene_moving,
+            ids,
+            ids_moving,
+            glass,
+            glass_moving,
+            globals_layout,
+            mesh_layout,
+            post_layout,
+            post,
+            sum_layout,
+            sum,
+            sampler,
+            limits,
+            targets: None,
+        })
     }
 
     /// `body` under error scopes: a validation or out-of-memory error
@@ -1166,49 +1239,52 @@ impl Gpu {
             })
         };
         let texture = |format, usage| sized(format, usage, (w, h));
-        let read = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_DST;
+        let read = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST;
         let albedo = texture(COLOR_FORMAT, read);
         let normal = texture(COLOR_FORMAT, read);
         let depth_target = texture(DEPTH_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT);
-        let layer_view = |t: &wgpu::Texture, k: u32| t.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2),
-            base_array_layer: k,
-            array_layer_count: Some(1),
-            ..Default::default()
-        });
-        let layer_views = (0..layers as u32)
-            .map(|k| [layer_view(&albedo, k), layer_view(&normal, k), layer_view(&depth_target, k)])
-            .collect();
+        let layer_view = |t: &wgpu::Texture, k: u32| {
+            t.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: k,
+                array_layer_count: Some(1),
+                ..Default::default()
+            })
+        };
+        let layer_views =
+            (0..layers as u32).map(|k| [layer_view(&albedo, k), layer_view(&normal, k), layer_view(&depth_target, k)]).collect();
         let drawn = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
         let glass_size = if glass { (w, h) } else { (1, 1) };
         let accum = sized(ACCUM_FORMAT, drawn, glass_size);
         let reveal = sized(REVEAL_FORMAT, drawn, glass_size);
         let glass_views = (0..layers as u32).map(|k| [layer_view(&accum, k), layer_view(&reveal, k)]).collect();
-        let single = |format, usage| device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("ids"),
-            size: wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format,
-            usage,
-            view_formats: &[],
-        });
+        let single = |format, usage| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("ids"),
+                size: wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            })
+        };
         let ids = single(IDS_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC);
         let ids_view = ids.create_view(&Default::default());
         let ids_depth = single(DEPTH_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT).create_view(&Default::default());
-        let array_view = |t: &wgpu::Texture| t.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        });
+        let array_view = |t: &wgpu::Texture| {
+            t.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() })
+        };
 
-        let buffer = |label, size: usize, usage| device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some(label),
-            size: size.max(16) as u64,
-            usage,
-            mapped_at_creation: false,
-        });
+        let buffer = |label, size: usize, usage| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: size.max(16) as u64,
+                usage,
+                mapped_at_creation: false,
+            })
+        };
         let plane = w * h;
         let storage = wgpu::BufferUsages::STORAGE;
         let uniform = wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST;
@@ -1305,9 +1381,7 @@ impl Gpu {
     /// A texture array of `tiles` (layer i = tiles[i]), every layer resized
     /// to the largest; a 1x1 white layer when there are none.
     fn texture_view(&self, tiles: &[(i32, &Texture)]) -> wgpu::TextureView {
-        let (w, h) = tiles
-            .iter()
-            .fold((1, 1), |(w, h), (_, t)| (w.max(t.width), h.max(t.height)));
+        let (w, h) = tiles.iter().fold((1, 1), |(w, h), (_, t)| (w.max(t.width), h.max(t.height)));
         let layers = tiles.len().max(1);
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("tiles"),
@@ -1323,9 +1397,7 @@ impl Gpu {
             let texels: Vec<[u8; 4]> = match tiles.get(layer) {
                 None => vec![[255; 4]; w * h],
                 Some((_, t)) if t.width == w && t.height == h => t.texels().to_vec(),
-                Some((_, t)) => (0..w * h)
-                    .map(|i| t.texels()[(i / w) * t.height / h * t.width + (i % w) * t.width / w])
-                    .collect(),
+                Some((_, t)) => (0..w * h).map(|i| t.texels()[(i / w) * t.height / h * t.width + (i % w) * t.width / w]).collect(),
             };
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
@@ -1339,17 +1411,21 @@ impl Gpu {
                 wgpu::Extent3d { width: w as u32, height: h as u32, depth_or_array_layers: 1 },
             );
         }
-        texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        })
+        texture.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() })
     }
 
     /// A mesh's instances and material. Unblurred, one set of instances
     /// every layer draws; blurred (`layers`), one per layer, at its moment
     /// of the shutter (with `motion`) and through its camera.
-    fn mesh_resources(&self, index: usize, mesh: &Mesh, world_to_clip: &Mat4, cache: &mut CacheInner,
-                      layers: Option<&[LayerCamera]>, motion: bool) -> MeshResources {
+    fn mesh_resources(
+        &self,
+        index: usize,
+        mesh: &Mesh,
+        world_to_clip: &Mat4,
+        cache: &mut CacheInner,
+        layers: Option<&[LayerCamera]>,
+        motion: bool,
+    ) -> MeshResources {
         let instance = |m: &Mat4, world_to_clip: &Mat4| {
             let nm = math::normal_matrix(m);
             let nrow = |r: usize| [nm[r * 3], nm[r * 3 + 1], nm[r * 3 + 2], 0.0];
@@ -1361,10 +1437,12 @@ impl Gpu {
             Some(layers) => (
                 layers
                     .iter()
-                    .flat_map(|l| (0..count).map(move |i| {
-                        let m = if motion { blur::transform_at(mesh, i, l.time) } else { mesh.transforms[i] };
-                        instance(&m, &l.world_to_clip)
-                    }))
+                    .flat_map(|l| {
+                        (0..count).map(move |i| {
+                            let m = if motion { blur::transform_at(mesh, i, l.time) } else { mesh.transforms[i] };
+                            instance(&m, &l.world_to_clip)
+                        })
+                    })
                     .collect(),
                 count as u32,
             ),
@@ -1423,8 +1501,14 @@ impl Gpu {
     /// the picture in the targets' colour and depth. `chunk`: a blurred
     /// frame's chunk, each layer through its own camera.
     /// With `ids`, the picking ids too, of the first layer.
-    fn draw(&mut self, frame: &Frame, meshes: &[Mesh], cache: Option<&Cache>, chunk: Option<&[LayerCamera]>,
-            ids: bool) -> Result<Stats, String> {
+    fn draw(
+        &mut self,
+        frame: &Frame,
+        meshes: &[Mesh],
+        cache: Option<&Cache>,
+        chunk: Option<&[LayerCamera]>,
+        ids: bool,
+    ) -> Result<Stats, String> {
         let (w, h) = (frame.width, frame.height);
         let offsets = composite::sample_offsets(frame.samples);
         let layers = offsets.len();
@@ -1499,8 +1583,10 @@ impl Gpu {
         let resources: Vec<Option<MeshResources>> = meshes
             .iter()
             .enumerate()
-            .map(|(i, m)| (!m.transforms.is_empty() && !m.triangles.is_empty() && Surface::of(m).is_some())
-                .then(|| gpu.mesh_resources(i, m, &frame.world_to_clip, inner, chunk, motion)))
+            .map(|(i, m)| {
+                (!m.transforms.is_empty() && !m.triangles.is_empty() && Surface::of(m).is_some())
+                    .then(|| gpu.mesh_resources(i, m, &frame.world_to_clip, inner, chunk, motion))
+            })
             .collect();
         // The opaque meshes, then the see-through ones over them.
         let order: Vec<usize> = [Surface::Opaque, Surface::Glass]
@@ -1651,9 +1737,8 @@ impl Gpu {
         };
         for k in 0..layers {
             let at = k * plane..(k + 1) * plane;
-            let albedo: Vec<[f32; 4]> = samples.albedo[at.clone()].iter().zip(&samples.depth[at.clone()])
-                .map(|(a, &d)| [a[0], a[1], a[2], d])
-                .collect();
+            let albedo: Vec<[f32; 4]> =
+                samples.albedo[at.clone()].iter().zip(&samples.depth[at.clone()]).map(|(a, &d)| [a[0], a[1], a[2], d]).collect();
             write(&targets.albedo, bytes(&albedo), k);
             write(&targets.normal, bytes(&samples.normal[at]), k);
         }
@@ -1691,15 +1776,13 @@ impl Gpu {
             mode: [period as u32, frame.ao as u32, frame.shading.abi(), composite::AO_BLUR_PX as u32],
             scale: [unproject.scale.0, unproject.scale.1, unproject.inv.0, unproject.inv.1],
             proj: [unproject.p[0], unproject.p[1], unproject.p[2], unproject.p[3]],
-            proj_w: [unproject.p[4], unproject.p[5], (proj[5].abs() * h as f64 * 0.5) as f32,
-                     composite::AO_MAX_SCREEN * h as f32],
+            proj_w: [unproject.p[4], unproject.p[5], (proj[5].abs() * h as f64 * 0.5) as f32, composite::AO_MAX_SCREEN * h as f32],
             tiers01: [t0.0, t0.1, t1.0, t1.1],
             tier2: [t2.0, t2.1, 0.0, 0.0],
             ao: [composite::AO_FADE_PX.0, composite::AO_FADE_PX.1, composite::AO_GAIN, composite::AO_BIAS],
             light: lights.head,
             clay: [clay[0], clay[1], clay[2], 1.0 / layers as f32],
-            backdrop: [composite::BACKDROP_TOP, composite::BACKDROP_BOTTOM, frame.alpha as u32 as f32,
-                       glass as u32 as f32],
+            backdrop: [composite::BACKDROP_TOP, composite::BACKDROP_BOTTOM, frame.alpha as u32 as f32, glass as u32 as f32],
             pattern: cells,
             lamps: lights.lamps,
         };
@@ -1742,8 +1825,7 @@ impl Gpu {
     /// and the targets' ids with `ids`: one submission and one wait for all
     /// of them (the ids' own round trip was 2.5 ms of a viewport draft),
     /// each copied once from the mapped buffer into the image.
-    fn read_back_from(&self, color: &wgpu::Buffer, depth: &wgpu::Buffer, ids: bool, stats: &mut Stats)
-                      -> Result<Image, String> {
+    fn read_back_from(&self, color: &wgpu::Buffer, depth: &wgpu::Buffer, ids: bool, stats: &mut Stats) -> Result<Image, String> {
         let targets = self.targets.as_ref().ok_or("no targets")?;
         let (w, h) = (targets.size.0, targets.size.1);
         let plane = w * h;
@@ -1813,8 +1895,13 @@ impl Gpu {
 
     /// One `sum.wgsl` pass over slot-sized buffers: `dst` and `src` are
     /// colour and depth.
-    fn sum_pass(&self, encoder: &mut wgpu::CommandEncoder, pipeline: &wgpu::ComputePipeline,
-                dst: &[wgpu::Buffer; 2], src: [&wgpu::Buffer; 2]) {
+    fn sum_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        pipeline: &wgpu::ComputePipeline,
+        dst: &[wgpu::Buffer; 2],
+        src: [&wgpu::Buffer; 2],
+    ) {
         let targets = self.targets.as_ref().expect("a frame's targets");
         fn entry(binding: u32, buffer: &wgpu::Buffer) -> wgpu::BindGroupEntry<'_> {
             wgpu::BindGroupEntry { binding, resource: buffer.as_entire_binding() }
@@ -1822,8 +1909,7 @@ impl Gpu {
         let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sum"),
             layout: &self.sum_layout,
-            entries: &[entry(0, &targets.sum_params), entry(1, &dst[0]), entry(2, &dst[1]), entry(3, src[0]),
-                       entry(4, src[1])],
+            entries: &[entry(0, &targets.sum_params), entry(1, &dst[0]), entry(2, &dst[1]), entry(3, src[0]), entry(4, src[1])],
         });
         // 64 pixels a group, in rows of at most 65535 groups (sum.wgsl).
         let groups = (targets.size.0 * targets.size.1).div_ceil(64) as u32;
@@ -1848,12 +1934,14 @@ impl Gpu {
         let targets = self.targets.as_mut().expect("a frame's targets");
         let plane = targets.size.0 * targets.size.1;
         if targets.slots.len() == sum.len() {
-            let slot = |label, size: usize| device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(label),
-                size: size.max(16) as u64,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+            let slot = |label, size: usize| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(label),
+                    size: size.max(16) as u64,
+                    usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            };
             targets.slots.push([slot("sum color", plane * 16), slot("sum depth", plane * 4)]);
         }
         let targets = self.targets.as_ref().expect("a frame's targets");
@@ -1875,8 +1963,7 @@ impl Gpu {
     /// sum on the left, as [`blur::average`]'s odd one out is), times one
     /// over the count; alpha too with `alpha` (a transparent background),
     /// else 1. With `ids`, the ids the first chunk drew.
-    fn sum_finish(&mut self, mut sum: Vec<usize>, count: usize, alpha: bool, ids: bool, stats: &mut Stats)
-                  -> Result<Image, String> {
+    fn sum_finish(&mut self, mut sum: Vec<usize>, count: usize, alpha: bool, ids: bool, stats: &mut Stats) -> Result<Image, String> {
         assert_eq!(sum.iter().sum::<usize>(), count, "every chunk on the sum");
         let started = Instant::now();
         let targets = self.targets.as_ref().ok_or("no targets")?;
@@ -1923,19 +2010,40 @@ mod tests {
         world_to_view[14] = -5.0;
         let (n, f) = (0.1f64, 100.0f64);
         let proj: Mat4 = [
-            1.0, 0.0, 0.0, 0.0, //
-            0.0, 1.0, 0.0, 0.0, //
-            0.0, 0.0, -(f + n) / (f - n), -1.0, //
-            0.0, 0.0, -2.0 * f * n / (f - n), 0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0, //
+            0.0,
+            1.0,
+            0.0,
+            0.0, //
+            0.0,
+            0.0,
+            -(f + n) / (f - n),
+            -1.0, //
+            0.0,
+            0.0,
+            -2.0 * f * n / (f - n),
+            0.0,
         ];
         (math::mul(&world_to_view, &proj), view_to_world)
     }
 
     fn frame(w: usize, h: usize, samples: usize) -> Frame {
         let (world_to_clip, view_to_world) = camera();
-        Frame { width: w, height: h, world_to_clip, view_to_world, samples,
-                shading: composite::Shading::Lit, ao: true, blur: crate::blur::Blur::OFF, alpha: false,
-                lights: crate::lights::SceneLights::NONE }
+        Frame {
+            width: w,
+            height: h,
+            world_to_clip,
+            view_to_world,
+            samples,
+            shading: composite::Shading::Lit,
+            ao: true,
+            blur: crate::blur::Blur::OFF,
+            alpha: false,
+            lights: crate::lights::SceneLights::NONE,
+        }
     }
 
     fn encode(v: f32) -> i32 {
@@ -1966,16 +2074,16 @@ mod tests {
         assert_eq!(cpu.color.len(), gpu.color.len());
         let n = cpu.color.len() as f32;
         let over = |p: &[f32; 4], c: usize| if one_sample > 0.0 { p[c] + (1.0 - p[3]) * 0.5 } else { p[c] };
-        let alpha_off = |a: f32, b: f32| {
-            (linear8(a) - linear8(b)).abs() > STEPS && (a - b).abs() > one_sample + 1e-6
-        };
-        let color = cpu.color.iter().zip(&gpu.color)
-            .filter(|(a, b)| (0..3).any(|c| (encode(over(a, c)) - encode(over(b, c))).abs() > STEPS)
-                             || alpha_off(a[3], b[3]))
-            .count() as f32 / n;
-        let depth = cpu.depth.iter().zip(&gpu.depth)
-            .filter(|(a, b)| (**a < 1.0) != (**b < 1.0) || (**a - **b).abs() > 1e-3)
-            .count() as f32 / n;
+        let alpha_off = |a: f32, b: f32| (linear8(a) - linear8(b)).abs() > STEPS && (a - b).abs() > one_sample + 1e-6;
+        let color = cpu
+            .color
+            .iter()
+            .zip(&gpu.color)
+            .filter(|(a, b)| (0..3).any(|c| (encode(over(a, c)) - encode(over(b, c))).abs() > STEPS) || alpha_off(a[3], b[3]))
+            .count() as f32
+            / n;
+        let depth =
+            cpu.depth.iter().zip(&gpu.depth).filter(|(a, b)| (**a < 1.0) != (**b < 1.0) || (**a - **b).abs() > 1e-3).count() as f32 / n;
         (color, depth)
     }
 
@@ -1988,32 +2096,44 @@ mod tests {
     }
 
     fn quad() -> (Vec<Vec3>, Vec<[u32; 3]>) {
-        (
-            vec![[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]],
-            vec![[0, 1, 2], [0, 2, 3]],
-        )
+        (vec![[-1.0, -1.0, 0.0], [1.0, -1.0, 0.0], [1.0, 1.0, 0.0], [-1.0, 1.0, 0.0]], vec![[0, 1, 2], [0, 2, 3]])
     }
 
     fn mesh<'a>(points: &'a [Vec3], triangles: &'a [[u32; 3]], transforms: &'a [Mat4]) -> Mesh<'a> {
-        Mesh { points, triangles, corner_normals: None, corner_colors: None, corner_uvs: None,
-               base_color: [0.8, 0.3, 0.1], tiles: Vec::new(), transforms, key: None,
-               points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing}
+        Mesh {
+            points,
+            triangles,
+            corner_normals: None,
+            corner_colors: None,
+            corner_uvs: None,
+            base_color: [0.8, 0.3, 0.1],
+            tiles: Vec::new(),
+            transforms,
+            key: None,
+            points_close: None,
+            transform_keys: &[],
+            opacity: 1.0,
+            cull: crate::raster::Cull::Nothing,
+        }
     }
 
     /// `images` (colour and depth, `pixels` each) averaged on the card
     /// through the sum a blurred frame uses; alpha too with `alpha`.
     fn average_on_card(pixels: usize, images: &[(Vec<[f32; 4]>, Vec<f32>)], alpha: bool) -> Image {
-        gpu().expect("a GPU").scoped(&frame(pixels, 1, 1), |gpu| {
-            gpu.targets(pixels, 1, 1, false);
-            let mut sum = Vec::new();
-            for (color, depth) in images {
-                let targets = gpu.targets.as_ref().expect("made above");
-                gpu.queue.write_buffer(&targets.color, 0, bytes(color));
-                gpu.queue.write_buffer(&targets.depth, 0, bytes(depth));
-                gpu.sum_push(&mut sum);
-            }
-            gpu.sum_finish(sum, images.len(), alpha, false, &mut Stats::default())
-        }).unwrap_or_else(|e| panic!("GPU average failed: {e}"))
+        gpu()
+            .expect("a GPU")
+            .scoped(&frame(pixels, 1, 1), |gpu| {
+                gpu.targets(pixels, 1, 1, false);
+                let mut sum = Vec::new();
+                for (color, depth) in images {
+                    let targets = gpu.targets.as_ref().expect("made above");
+                    gpu.queue.write_buffer(&targets.color, 0, bytes(color));
+                    gpu.queue.write_buffer(&targets.depth, 0, bytes(depth));
+                    gpu.sum_push(&mut sum);
+                }
+                gpu.sum_finish(sum, images.len(), alpha, false, &mut Stats::default())
+            })
+            .unwrap_or_else(|e| panic!("GPU average failed: {e}"))
     }
 
     fn agrees((color, depth): (f32, f32)) {
@@ -2026,8 +2146,7 @@ mod tests {
         // Past one group of 64 pixels, and up to 9 chunks (not only powers
         // of two, though a frame's count is one).
         (1usize..200, 1usize..10).prop_flat_map(move |(pixels, count)| {
-            let image = prop::collection::vec(pixel.clone(), pixels)
-                .prop_map(|px| px.into_iter().unzip::<_, _, Vec<[f32; 4]>, Vec<f32>>());
+            let image = prop::collection::vec(pixel.clone(), pixels).prop_map(|px| px.into_iter().unzip::<_, _, Vec<[f32; 4]>, Vec<f32>>());
             (Just(pixels), prop::collection::vec(image, count))
         })
     }
@@ -2055,7 +2174,10 @@ mod tests {
         // Tilted, so the lights and specular vary across it.
         let mut tilt = IDENTITY;
         let (s, c) = (0.6f64.sin(), 0.6f64.cos());
-        tilt[0] = c; tilt[2] = -s; tilt[8] = s; tilt[10] = c;
+        tilt[0] = c;
+        tilt[2] = -s;
+        tilt[8] = s;
+        tilt[10] = c;
         let transforms = [tilt];
         agrees(compare(&frame(96, 64, 1), &[mesh(&points, &triangles, &transforms)]));
     }
@@ -2090,8 +2212,8 @@ mod tests {
         let mut textured = mesh(&points, &triangles, &transforms);
         textured.corner_uvs = Some(&uvs);
         textured.tiles = vec![(1001, &t1001), (1002, &t1002)];
-        let colors: Vec<Vec3> = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
-                                 [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 1.0, 0.0]].to_vec();
+        let colors: Vec<Vec3> =
+            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 1.0, 0.0]].to_vec();
         let mut right = IDENTITY;
         right[12] = 2.2;
         let shifted = [right];
@@ -2110,10 +2232,12 @@ mod tests {
         let f = frame(160, 120, 4);
         let cam = Camera::of(&f);
         let wavy: Vec<Vec3> = (0..10).map(|i| [-3.0 + 0.66 * i as f32, if i % 2 == 0 { -0.5 } else { 0.5 }, -1.0]).collect();
-        let ring: Vec<Vec3> = (0..8).map(|i| {
-            let a = i as f32 * std::f32::consts::TAU / 8.0;
-            [1.5 * a.cos(), 1.0 + 0.8 * a.sin(), 0.5]
-        }).collect();
+        let ring: Vec<Vec3> = (0..8)
+            .map(|i| {
+                let a = i as f32 * std::f32::consts::TAU / 8.0;
+                [1.5 * a.cos(), 1.0 + 0.8 * a.sin(), 0.5]
+            })
+            .collect();
         let polyline = [[-3.0f32, -2.0, 0.0], [-1.0, -1.2, 0.5], [1.0, -2.2, 0.0], [3.0, -1.5, -0.5]];
         let dots: Vec<Vec3> = (0..30).map(|i| [-3.0 + 0.2 * i as f32, 2.2 - 0.05 * i as f32, (i % 5) as f32 * 0.3]).collect();
         let dot_widths: Vec<f32> = (0..30).map(|i| if i % 3 == 0 { 0.0 } else { 0.05 + 0.01 * i as f32 }).collect();
@@ -2121,14 +2245,46 @@ mod tests {
         let wavy_widths: Vec<f32> = (0..10).map(|i| 0.02 + 0.03 * i as f32).collect();
         let red = [[0.9f32, 0.1, 0.1]];
         let sets = [
-            Strokes { kind: Kind::Cubic(Basis::Bspline), wrap: Wrap::Pinned, points: &wavy, counts: &[10],
-                      widths: &wavy_widths, width_interp: Interp::Vertex, colors: &[], color_interp: Interp::Constant },
-            Strokes { kind: Kind::Cubic(Basis::CatmullRom), wrap: Wrap::Periodic, points: &ring, counts: &[8],
-                      widths: &[], width_interp: Interp::Constant, colors: &red, color_interp: Interp::Constant },
-            Strokes { kind: Kind::Linear, wrap: Wrap::Nonperiodic, points: &polyline, counts: &[4],
-                      widths: &[0.15], width_interp: Interp::Constant, colors: &[], color_interp: Interp::Constant },
-            Strokes { kind: Kind::Points, wrap: Wrap::Nonperiodic, points: &dots, counts: &[],
-                      widths: &dot_widths, width_interp: Interp::Vertex, colors: &dot_colors, color_interp: Interp::Vertex },
+            Strokes {
+                kind: Kind::Cubic(Basis::Bspline),
+                wrap: Wrap::Pinned,
+                points: &wavy,
+                counts: &[10],
+                widths: &wavy_widths,
+                width_interp: Interp::Vertex,
+                colors: &[],
+                color_interp: Interp::Constant,
+            },
+            Strokes {
+                kind: Kind::Cubic(Basis::CatmullRom),
+                wrap: Wrap::Periodic,
+                points: &ring,
+                counts: &[8],
+                widths: &[],
+                width_interp: Interp::Constant,
+                colors: &red,
+                color_interp: Interp::Constant,
+            },
+            Strokes {
+                kind: Kind::Linear,
+                wrap: Wrap::Nonperiodic,
+                points: &polyline,
+                counts: &[4],
+                widths: &[0.15],
+                width_interp: Interp::Constant,
+                colors: &[],
+                color_interp: Interp::Constant,
+            },
+            Strokes {
+                kind: Kind::Points,
+                wrap: Wrap::Nonperiodic,
+                points: &dots,
+                counts: &[],
+                widths: &dot_widths,
+                width_interp: Interp::Vertex,
+                colors: &dot_colors,
+                color_interp: Interp::Vertex,
+            },
         ];
         let made: Vec<_> = sets.iter().map(|s| expand(s, s.points, &IDENTITY, &cam, None).0).collect();
         let meshes: Vec<Mesh> = made.iter().map(|m| mesh(m, None, [0.7, 0.7, 0.7])).collect();
@@ -2258,7 +2414,8 @@ mod tests {
         let transforms: Vec<Mat4> = (0..40_000)
             .map(|i| {
                 let mut m = IDENTITY;
-                m[0] = 0.01; m[5] = 0.01;
+                m[0] = 0.01;
+                m[5] = 0.01;
                 m[12] = (i % 200) as f64 * 0.02 - 2.0;
                 m[13] = (i / 200) as f64 * 0.02 - 2.0;
                 m
@@ -2310,11 +2467,19 @@ mod tests {
     /// kind about the boxes, facing any way.
     fn scene_lights() -> impl Strategy<Value = crate::lights::SceneLights> {
         use crate::lights::{LightShape, SceneLight, SceneLights};
-        let one = (0u32..6, [0.0f32..1.0, 0.0f32..1.0, 0.0f32..1.0], 0.2f32..3.0, any::<bool>(),
-                   [-4.0f32..4.0, -0.5f32..4.0, -6.0f32..5.0], -3.2f32..3.2, -1.5f32..1.5);
+        let one = (
+            0u32..6,
+            [0.0f32..1.0, 0.0f32..1.0, 0.0f32..1.0],
+            0.2f32..3.0,
+            any::<bool>(),
+            [-4.0f32..4.0, -0.5f32..4.0, -6.0f32..5.0],
+            -3.2f32..3.2,
+            -1.5f32..1.5,
+        );
         prop::option::of(prop::collection::vec(one, 1..=MAX_LIGHTS)).prop_map(|lights| {
             let Some(lights) = lights else { return SceneLights::NONE };
-            let made: Vec<SceneLight> = lights.into_iter()
+            let made: Vec<SceneLight> = lights
+                .into_iter()
                 .map(|(kind, color, intensity, normalize, at, yaw, pitch)| {
                     // The light's Z axis turned by yaw and pitch; it faces -Z.
                     let z = [yaw.sin() * pitch.cos(), pitch.sin(), yaw.cos() * pitch.cos()];
@@ -2330,8 +2495,7 @@ mod tests {
                     let shape = LightShape::from_abi(kind).unwrap();
                     // Point lights need more to show at a few units.
                     let gain = if matches!(shape, LightShape::Distant | LightShape::Dome) { 1.0 } else { 12.0 };
-                    SceneLight::placed(shape, math::scale(color, intensity * gain), normalize, false, 0.53,
-                                       [0.3, 1.0, 0.8, 1.0], &m)
+                    SceneLight::placed(shape, math::scale(color, intensity * gain), normalize, false, 0.53, [0.3, 1.0, 0.8, 1.0], &m)
                 })
                 .collect();
             SceneLights::new(&made)
@@ -2395,13 +2559,16 @@ mod tests {
             let buffer = raster::render_buffer(&f, &meshes);
             let cpu = composite::resolve(&f, &buffer);
             let gpu = resolve(&f, &buffer).expect("GPU post pass");
-            let worst = cpu.color.iter().zip(&gpu.color)
+            let worst = cpu
+                .color
+                .iter()
+                .zip(&gpu.color)
                 .map(|(a, b)| (0..3).map(|c| (encode(a[c]) - encode(b[c])).abs()).max().unwrap_or(0))
                 .max()
                 .unwrap_or(0);
-            let rms = (cpu.color.iter().zip(&gpu.color)
-                .map(|(a, b)| (0..3).map(|c| (a[c] - b[c]).powi(2)).sum::<f32>())
-                .sum::<f32>() / (cpu.color.len() * 3) as f32).sqrt();
+            let rms = (cpu.color.iter().zip(&gpu.color).map(|(a, b)| (0..3).map(|c| (a[c] - b[c]).powi(2)).sum::<f32>()).sum::<f32>()
+                / (cpu.color.len() * 3) as f32)
+                .sqrt();
             eprintln!("{samples} samples: worst {worst} steps, rms {rms:e}");
             assert!(worst <= 1, "{samples} samples: a pixel is {worst} steps off");
             assert!(rms < 1e-5, "{samples} samples: rms difference {rms}");
@@ -2493,8 +2660,9 @@ mod tests {
         let one = [IDENTITY];
         let (a, b) = (new_id(), new_id());
         let f = frame(32, 24, 1);
-        let (_, stats) = render_with_stats(&f, &[keyed(&points, &triangles, &one, a, 1), keyed(&points, &triangles, &one, b, 1)],
-                                           Some(&cache)).expect("GPU");
+        let (_, stats) =
+            render_with_stats(&f, &[keyed(&points, &triangles, &one, a, 1), keyed(&points, &triangles, &one, b, 1)], Some(&cache))
+                .expect("GPU");
         let both = stats.resident_bytes;
         let (_, stats) = render_with_stats(&f, &[keyed(&points, &triangles, &one, a, 1)], Some(&cache)).expect("GPU");
         assert_eq!((stats.cached_meshes, stats.resident_bytes), (1, both / 2));
@@ -2741,7 +2909,10 @@ mod tests {
             let meshes = [back(), Mesh { base_color: [0.9, 0.2, 0.1], opacity, ..mesh(&points, &triangles, &near) }];
             let cpu = raster::render(&f, &meshes);
             let gpu = render(&f, &meshes, None, false).unwrap();
-            let worst = cpu.color.iter().zip(&gpu.color)
+            let worst = cpu
+                .color
+                .iter()
+                .zip(&gpu.color)
                 .map(|(a, b)| (0..4).map(|c| (a[c] - b[c]).abs()).fold(0.0f32, f32::max))
                 .fold(0.0f32, f32::max);
             assert!(worst < 2e-3, "opacity {opacity}: off by {worst}");
@@ -2797,8 +2968,11 @@ mod tests {
     fn id_disagreements(cpu: &Image, gpu: &Image, meshes: &[Mesh]) -> usize {
         assert_eq!(gpu.ids.len(), cpu.ids.len(), "the GPU made ids for every pixel");
         for &[m, i] in &gpu.ids {
-            assert!((m == -1 && i == -1) || ((m as usize) < meshes.len() && (i as usize) < meshes[m as usize].transforms.len()),
-                    "id {:?} names nothing drawn", [m, i]);
+            assert!(
+                (m == -1 && i == -1) || ((m as usize) < meshes.len() && (i as usize) < meshes[m as usize].transforms.len()),
+                "id {:?} names nothing drawn",
+                [m, i]
+            );
         }
         cpu.ids.iter().zip(&gpu.ids).filter(|(a, b)| a != b).count()
     }

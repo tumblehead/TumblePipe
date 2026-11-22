@@ -9,7 +9,6 @@ workfile covers a member's department.
 
 from __future__ import annotations
 
-import dataclasses
 from typing import TYPE_CHECKING
 
 from tumbletrove.asset_browser.api.types import Asset, DeckItem
@@ -39,10 +38,6 @@ _OFF_DEPT_TOOLTIP = (
     "{short} — turned off on this entity: its layers stay out of the build\n"
     "Right-click > Enable department to turn it back on"
 )
-
-# TumbleTrove 0.50 added ``DeckItem.draggable``; an older build rejects
-# the keyword, and there the drop router's refusal is all there is.
-_HAS_DRAGGABLE = "draggable" in {f.name for f in dataclasses.fields(DeckItem)}
 
 # Group accent — matches ``TYPE_COLORS["group"]`` in the asset browser's
 # theme. The deck item tint where a Multi's workfile covers a member's
@@ -89,7 +84,9 @@ class DeckBuilder:
                 or self._group_context(asset.id)
                 or "shots"
             )
-            canonical = self._dept_scope.pool(ctx)
+            canonical = self._dept_scope.pool(
+                containers_mod.parse(asset.id).project_name, ctx,
+            )
             order = {name: i for i, name in enumerate(canonical)}
             sorted_depts = sorted(
                 covered,
@@ -182,7 +179,7 @@ class DeckBuilder:
         def _drag(dept: str) -> dict:
             # A dept published from SOPs (rig: a .bgeo.sc) has no layer
             # for a LOP drop to import, so its item does not drag (Magnus).
-            if _HAS_DRAGGABLE and not self._workfiles.exports_usd(asset.id, dept):
+            if not self._workfiles.exports_usd(asset.id, dept):
                 return {"draggable": False}
             return {}
 

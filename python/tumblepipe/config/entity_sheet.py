@@ -61,6 +61,7 @@ from tumblepipe.config.channels import (
     prim_pattern_problem, read_channel_names, read_channel_prims,
 )
 from tumblepipe.config.department_off import DISABLED_DEPARTMENTS
+from tumblepipe.config.department import list_departments_in
 from tumblepipe.config import render_config as rc
 from tumblepipe.config.shot_batch import (
     ASSETS_URI, SHOTS_URI, name_problem, same_but_case,
@@ -111,7 +112,6 @@ RENDER_PINS = 'render_pins'
 
 SCENES_URI = Uri.parse('scenes:/')
 GROUPS_URI = Uri.parse('groups:/')
-DEPARTMENTS_URI = Uri.parse('departments:/')
 #: How ``config.scene`` stores a Root's asset list entries.
 CHANNEL_KEY = 'channel'
 DEFAULT_CHANNEL = 'default'
@@ -658,19 +658,6 @@ def _load_multis(config, kind: Kind) -> tuple[MultiRecord, ...]:
     return tuple(found)
 
 
-def _load_pool(config, kind: Kind) -> tuple[str, ...]:
-    """``config.department.list_departments(kind, include_generated=False)``
-    on ``config``: what New Multi covers, in pipeline order."""
-    data = (config.root('departments') or {}).get('children', {})
-    pool = []
-    for name in data.get(kind.key, {}).get('children', {}):
-        props = config.get_properties(DEPARTMENTS_URI / kind.key / name) or {}
-        if props.get('generated', False) or not props.get('enabled', True):
-            continue
-        pool.append(name)
-    return tuple(pool)
-
-
 def load(config, kind: Kind = SHOTS_KIND) -> Base:
     """The project's ``kind`` entities, in database order, with what they
     inherit."""
@@ -713,7 +700,11 @@ def load(config, kind: Kind = SHOTS_KIND) -> Base:
             roots=_load_roots(config) if kind is SHOTS_KIND else {},
             assets=assets,
             multis=_load_multis(config, kind),
-            pool=_load_pool(config, kind),
+            # What New Multi covers, in pipeline order.
+            pool=tuple(
+                d.name for d in
+                list_departments_in(config, kind.key, include_generated=False)
+            ),
             group_own={
                 g: _own_fields(config, kind, kind.root / g, for_new_group) for g in groups
             },

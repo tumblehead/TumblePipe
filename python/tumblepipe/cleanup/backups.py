@@ -47,7 +47,7 @@ def backup_of(name: str) -> tuple[int, int] | None:
     return (int(match.group('version')), int(match.group('n'))) if match else None
 
 
-def plan(roots, inventory, settings: Settings, *, now: float | None = None) -> CategoryPlan:
+def plan(roots, inventory, settings: Settings, *, workfiles, now: float | None = None) -> CategoryPlan:
     out = CategoryPlan('backups', 'Houdini backups', 'file')
     out.payload = {root.purpose: root.path for root in roots.roots}
     if inventory is None:

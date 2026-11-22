@@ -7,7 +7,7 @@ dailies live in ``paths.review``.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Iterable, Optional
 from pathlib import Path
 
 from tumblepipe.api import api
@@ -373,11 +373,24 @@ def get_render(
         entity_uri.segments /
         render_department_name
     )
+    return read_render(entity_uri, render_department_path, list_channels(entity_uri), suffix)
+
+
+def read_render(
+    entity_uri: Uri,
+    render_department_path: Path,
+    channels: Iterable[str],
+    suffix: str = 'exr',
+    ) -> Optional[Render]:
+    """The ``Render`` in the render department folder at
+    ``render_department_path``, None when it never rendered: one layer per
+    channel of ``channels``, plus the slapcomp layer. Filesystem only (no
+    config read), so a worker thread can call it with paths resolved before."""
+    render_department_path = Path(render_department_path)
     if not render_department_path.exists(): return None
 
-    # Collect render layers (one per entity channel, plus the slapcomp layer)
     render_layers = dict()
-    render_layer_names = [*list_channels(entity_uri), 'slapcomp']
+    render_layer_names = [*channels, 'slapcomp']
     for render_layer_path in render_department_path.iterdir():
         render_layer_name = render_layer_path.name
         if render_layer_name not in render_layer_names: continue

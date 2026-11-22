@@ -19,7 +19,8 @@ use th_edit::document::{Frame as EditFrame, TrackRef};
 use th_pipe::edits::EditSources;
 use th_pipe::media;
 
-use super::{Dialog, Editor, Message, OpenDialog};
+use super::file_dialogs::{Dialog, OpenDialog};
+use super::{Editor, Message};
 use crate::bins::Target;
 use crate::editing::{self, BinItem};
 use crate::import_files::{self, Report};

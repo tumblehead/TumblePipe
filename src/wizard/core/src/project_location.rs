@@ -16,17 +16,11 @@ use std::path::{Path, PathBuf};
 /// The configured project folder: `TH_PROJECT_PATH`, else the
 /// `TH_PROJECT_PATH` recorded in `$TT_PROJECT_DIR/hpm.toml`.
 pub fn configured_project_path() -> Result<PathBuf, String> {
-    project_path_from(
-        std::env::var("TH_PROJECT_PATH").ok().as_deref(),
-        std::env::var("TT_PROJECT_DIR").ok().as_deref().map(Path::new),
-    )
+    project_path_from(std::env::var("TH_PROJECT_PATH").ok().as_deref(), std::env::var("TT_PROJECT_DIR").ok().as_deref().map(Path::new))
 }
 
 /// [`configured_project_path`] with the two variables passed in.
-pub fn project_path_from(
-    th_project_path: Option<&str>,
-    tt_project_dir: Option<&Path>,
-) -> Result<PathBuf, String> {
+pub fn project_path_from(th_project_path: Option<&str>, tt_project_dir: Option<&Path>) -> Result<PathBuf, String> {
     if let Some(value) = th_project_path {
         if !value.trim().is_empty() {
             return Ok(PathBuf::from(value));
@@ -45,10 +39,8 @@ pub fn project_path_from(
 /// value = "..." }`. Only a literal path is usable here — a value that refers
 /// to another variable would need an expansion the hooks cannot do.
 pub fn project_path_from_manifest(manifest: &Path) -> Result<PathBuf, String> {
-    let text = std::fs::read_to_string(manifest)
-        .map_err(|e| format!("cannot read {}: {e}", manifest.display()))?;
-    let doc: toml::Value = toml::from_str(&text)
-        .map_err(|e| format!("cannot parse {}: {e}", manifest.display()))?;
+    let text = std::fs::read_to_string(manifest).map_err(|e| format!("cannot read {}: {e}", manifest.display()))?;
+    let doc: toml::Value = toml::from_str(&text).map_err(|e| format!("cannot parse {}: {e}", manifest.display()))?;
     let entry = doc.get("runtime").and_then(|runtime| runtime.get("TH_PROJECT_PATH"));
     let value = match entry {
         Some(toml::Value::Table(table)) => table.get("value").and_then(|v| v.as_str()),
@@ -57,14 +49,8 @@ pub fn project_path_from_manifest(manifest: &Path) -> Result<PathBuf, String> {
     };
     match value {
         Some(v) if !v.trim().is_empty() && !v.contains('$') => Ok(PathBuf::from(v)),
-        Some(v) => Err(format!(
-            "TH_PROJECT_PATH in {} is {v:?}, which cannot be expanded here",
-            manifest.display()
-        )),
-        None => Err(format!(
-            "{} sets no TH_PROJECT_PATH — the project has not been configured",
-            manifest.display()
-        )),
+        Some(v) => Err(format!("TH_PROJECT_PATH in {} is {v:?}, which cannot be expanded here", manifest.display())),
+        None => Err(format!("{} sets no TH_PROJECT_PATH — the project has not been configured", manifest.display())),
     }
 }
 

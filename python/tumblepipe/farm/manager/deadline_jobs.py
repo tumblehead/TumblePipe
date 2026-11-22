@@ -19,8 +19,6 @@ import bz2
 import datetime as dt
 import json
 import re
-import subprocess
-import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,21 +57,15 @@ def parse_envelope(stdout: str):
 
 
 def _command(*args: str, envelope: bool = True) -> str:
-    """deadlinecommand's stdout alone: a warning on stderr must not break the JSON."""
-    from tumblepipe.apps.deadline import deadline_command
-    command = [str(deadline_command()), *args]
-    result = subprocess.run(
-        command, stdin=subprocess.DEVNULL, capture_output=True,
-        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
-        timeout=120,
-    )
-    stdout = result.stdout.decode('utf-8', errors='replace')
-    # A refused -Json read still prints its envelope, which says why.
-    if result.returncode != 0 and not (envelope and stdout.strip()):
-        stderr = result.stderr.decode('utf-8', errors='replace').strip()
-        why = stdout.strip() or stderr
-        raise DeadlineError(f'{" ".join(args)} exited with code {result.returncode}: {why}')
-    return stdout
+    """deadlinecommand's stdout (``apps.deadline.query``); raises when it
+    failed, unless it is a ``-Json`` read (``envelope``) that printed its
+    envelope, which says why."""
+    from tumblepipe.apps.deadline import deadline_command, query
+    answer = query(deadline_command(), *args, timeout=120)
+    if answer.code != 0 and not (envelope and answer.stdout.strip()):
+        why = answer.stdout.strip() or answer.stderr.strip()
+        raise DeadlineError(f'{" ".join(args)} exited with code {answer.code}: {why}')
+    return answer.stdout
 
 
 def read(verb: str, *args: str):

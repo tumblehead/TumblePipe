@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 
 from tumblepipe.api import api
+from tumblepipe.config.store import JsonConfigStore
 from tumblepipe.config.department_off import (  # noqa: F401  (re-exported)
     DISABLED_DEPARTMENTS,
     applied_departments,
@@ -56,7 +57,7 @@ def validate_name(name: str):
         )
 
 
-def list_department_names(context: str, include_disabled: bool = True) -> list[str]:
+def list_department_names_in(store: JsonConfigStore, context: str, include_disabled: bool = True) -> list[str]:
     """Department names for a context, in pool order.
 
     Pool order is the pipeline order — it decides USD sublayer strength and
@@ -65,7 +66,7 @@ def list_department_names(context: str, include_disabled: bool = True) -> list[s
     """
     return [
         d.name for d in
-        list_departments(context, include_disabled=include_disabled)
+        list_departments_in(store, context, include_disabled=include_disabled)
     ]
 
 
@@ -94,7 +95,8 @@ def department_names_up_to(
     return department_names[:department_names.index(department_name) + 1]
 
 
-def add_department(
+def add_department_in(
+    store: JsonConfigStore,
     context: str,
     name: str,
     independent: bool = False,
@@ -112,9 +114,9 @@ def add_department(
     """
     validate_name(name)
     department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
+    properties = store.get_properties(department_uri)
     if properties is not None: raise ValueError('Department already exists')
-    api.config.set_own_properties(department_uri, dict(
+    store.set_own_properties(department_uri, dict(
         independent = independent,
         publishable = publishable,
         renderable = renderable,
@@ -123,13 +125,13 @@ def add_department(
         short = short,
     ))
     if index is None: return
-    names = list_department_names(context)
+    names = list_department_names_in(store, context)
     names.remove(name)
     names.insert(max(0, min(index, len(names))), name)
-    reorder_departments(context, names)
+    reorder_departments_in(store, context, names)
 
 
-def reorder_departments(context: str, names: list[str]):
+def reorder_departments_in(store: JsonConfigStore, context: str, names: list[str]):
     """Set the pool order for a context.
 
     This is not cosmetic. Pool order is the pipeline order:
@@ -144,14 +146,14 @@ def reorder_departments(context: str, names: list[str]):
     entity. ``names`` must be a permutation of the context's departments,
     disabled ones included.
     """
-    api.config.reorder_children(DEPARTMENTS_URI / context, list(names))
+    store.reorder_children(DEPARTMENTS_URI / context, list(names))
 
-def remove_department(context: str, name: str):
+def remove_department_in(store: JsonConfigStore, context: str, name: str):
     department_uri = DEPARTMENTS_URI / context / name
-    api.config.remove_entity(department_uri)
+    store.remove_entity(department_uri)
 
 # The flags a department carries besides its name, in the order the pool
-# editor's form shows them; each has a set_<flag> writer below.
+# editor's form shows them; :func:`set_flag_in` writes one.
 FLAGS = ("independent", "publishable", "renderable", "generated", "enabled", "short")
 
 
@@ -175,82 +177,44 @@ def flag_changes(live, wanted) -> dict:
     return changes
 
 
-def set_independent(context: str, name: str, independent: bool):
+def set_flag_in(store: JsonConfigStore, context: str, name: str, flag: str, value):
+    """Pin one of :data:`FLAGS` on a department; nothing for a department
+    not in the pool."""
+    if flag not in FLAGS:
+        raise ValueError(f'Not a department flag: {flag!r}')
     department_uri = DEPARTMENTS_URI / context / name
     # Pin only this flag: reading the resolved dict and writing it back
     # would pin every schema default onto the department node.
-    if api.config.get_properties(department_uri) is None: return
-    own = api.config.get_own_properties(department_uri) or {}
-    own['independent'] = independent
-    api.config.set_own_properties(department_uri, own)
+    if store.get_properties(department_uri) is None: return
+    own = store.get_own_properties(department_uri) or {}
+    own[flag] = value
+    store.set_own_properties(department_uri, own)
 
-def set_publishable(context: str, name: str, publishable: bool):
-    department_uri = DEPARTMENTS_URI / context / name
-    # Pin only this flag: reading the resolved dict and writing it back
-    # would pin every schema default onto the department node.
-    if api.config.get_properties(department_uri) is None: return
-    own = api.config.get_own_properties(department_uri) or {}
-    own['publishable'] = publishable
-    api.config.set_own_properties(department_uri, own)
 
-def set_renderable(context: str, name: str, renderable: bool):
-    department_uri = DEPARTMENTS_URI / context / name
-    # Pin only this flag: reading the resolved dict and writing it back
-    # would pin every schema default onto the department node.
-    if api.config.get_properties(department_uri) is None: return
-    own = api.config.get_own_properties(department_uri) or {}
-    own['renderable'] = renderable
-    api.config.set_own_properties(department_uri, own)
-
-def is_renderable(context: str, name: str) -> bool:
+def is_renderable_in(store: JsonConfigStore, context: str, name: str) -> bool:
     """Check if a department is renderable."""
     department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
+    properties = store.get_properties(department_uri)
     if properties is None:
         raise KeyError(f'Department not found: {department_uri}')
     return properties['renderable']
 
-def set_generated(context: str, name: str, generated: bool):
-    """Set whether a department is generated (Python-only, not Houdini-exportable)."""
-    department_uri = DEPARTMENTS_URI / context / name
-    # Pin only this flag: reading the resolved dict and writing it back
-    # would pin every schema default onto the department node.
-    if api.config.get_properties(department_uri) is None: return
-    own = api.config.get_own_properties(department_uri) or {}
-    own['generated'] = generated
-    api.config.set_own_properties(department_uri, own)
 
-
-def set_enabled(context: str, name: str, enabled: bool):
-    """Set whether a department is enabled (active) or disabled (retired)."""
-    department_uri = DEPARTMENTS_URI / context / name
-    # Pin only this flag: reading the resolved dict and writing it back
-    # would pin every schema default onto the department node.
-    if api.config.get_properties(department_uri) is None: return
-    own = api.config.get_own_properties(department_uri) or {}
-    own['enabled'] = enabled
-    api.config.set_own_properties(department_uri, own)
-
-def is_enabled(context: str, name: str) -> bool:
+def is_enabled_in(store: JsonConfigStore, context: str, name: str) -> bool:
     """Check if a department is enabled."""
     department_uri = DEPARTMENTS_URI / context / name
-    properties = api.config.get_properties(department_uri)
+    properties = store.get_properties(department_uri)
     if properties is None:
         raise KeyError(f'Department not found: {department_uri}')
     return properties.get('enabled', True)
 
-def set_short(context: str, name: str, short: str | None):
-    """Set or clear the optional abbreviated label for a department."""
-    department_uri = DEPARTMENTS_URI / context / name
-    # Pin only this flag: reading the resolved dict and writing it back
-    # would pin every schema default onto the department node.
-    if api.config.get_properties(department_uri) is None: return
-    own = api.config.get_own_properties(department_uri) or {}
-    own['short'] = short
-    api.config.set_own_properties(department_uri, own)
 
-
-def list_departments(context: str, include_generated: bool = True, include_disabled: bool = False) -> list[Department]:
+def list_departments_in(
+    store: JsonConfigStore,
+    context: str,
+    include_generated: bool = True,
+    include_disabled: bool = False,
+    ) -> list[Department]:
     """
     List departments for a context (shots or assets).
 
@@ -260,7 +224,7 @@ def list_departments(context: str, include_generated: bool = True, include_disab
                           (useful for Houdini export menus)
         include_disabled: If True, includes disabled/retired departments
     """
-    departments_data = api.config.root('departments') or {}
+    departments_data = store.root('departments') or {}
     root_children = departments_data.get('children', {})
     context_data = root_children.get(context, {}).get('children', {})
     departments = []
@@ -268,7 +232,7 @@ def list_departments(context: str, include_generated: bool = True, include_disab
         # Resolve through get_properties so schema defaults fill in — the
         # raw cache node stores only sparse overrides, so default-valued
         # fields (independent/publishable/renderable) may be absent there.
-        props = api.config.get_properties(DEPARTMENTS_URI / context / dept_name)
+        props = store.get_properties(DEPARTMENTS_URI / context / dept_name)
         # independent/publishable/renderable come from the department
         # schema, so a config missing one is a broken config and raises.
         # generated/enabled/short are not in the schema: they are optional
@@ -315,17 +279,18 @@ def entity_context(entity_uri: Uri) -> str:
     return context
 
 
-def get_entity_departments(entity_uri: Uri) -> list[str]:
+def get_entity_departments_in(store: JsonConfigStore, entity_uri: Uri) -> list[str]:
     """The entity's raw department assignment ([] means "inherit the pool").
 
     This is the stored intent, resolved through the entity hierarchy — use
     ``list_entity_departments`` for the departments the entity actually has.
     """
-    properties = api.config.get_properties(entity_uri) or {}
+    properties = store.get_properties(entity_uri) or {}
     return list(properties.get('departments') or [])
 
 
-def list_entity_departments(
+def list_entity_departments_in(
+    store: JsonConfigStore,
     entity_uri: Uri,
     include_generated: bool = True,
     include_disabled: bool = False,
@@ -338,11 +303,11 @@ def list_entity_departments(
     brick the entities that referenced it.
     """
     context = entity_context(entity_uri)
-    pool = list_departments(context, include_generated, include_disabled)
-    assigned = get_entity_departments(entity_uri)
+    pool = list_departments_in(store, context, include_generated, include_disabled)
+    assigned = get_entity_departments_in(store, entity_uri)
     if not assigned:
         return pool
-    known = {d.name for d in list_departments(context, True, True)}
+    known = {d.name for d in list_departments_in(store, context, True, True)}
     for name in assigned:
         if name not in known:
             logger.warning(
@@ -353,37 +318,38 @@ def list_entity_departments(
     return [d for d in pool if d.name in wanted]
 
 
-def list_entity_department_names(
+def list_entity_department_names_in(
+    store: JsonConfigStore,
     entity_uri: Uri,
     include_generated: bool = True,
     include_disabled: bool = False,
     ) -> list[str]:
     return [
         d.name for d in
-        list_entity_departments(entity_uri, include_generated, include_disabled)
+        list_entity_departments_in(store, entity_uri, include_generated, include_disabled)
     ]
 
 
-def set_entity_departments(entity_uri: Uri, names: list[str]):
+def set_entity_departments_in(store: JsonConfigStore, entity_uri: Uri, names: list[str]):
     """Scope an entity to ``names``; an empty list restores "inherit the pool".
 
     Stored in pool order so the JSON reads like the pipeline, and rejected if
     it names a department the pool doesn't have.
     """
     context = entity_context(entity_uri)
-    properties = api.config.get_properties(entity_uri)
+    properties = store.get_properties(entity_uri)
     if properties is None:
         raise ValueError(f'Entity not found: {entity_uri}')
-    pool = list_department_names(context)
+    pool = list_department_names_in(store, context)
     unknown = [name for name in names if name not in pool]
     if unknown:
         raise ValueError(
             f'Not departments of the {context} pool: {", ".join(unknown)}'
         )
     # Pin only the assignment; the resolved dict carries the whole schema.
-    own = api.config.get_own_properties(entity_uri) or {}
+    own = store.get_own_properties(entity_uri) or {}
     own['departments'] = [name for name in pool if name in set(names)]
-    api.config.set_own_properties(entity_uri, own)
+    store.set_own_properties(entity_uri, own)
 
 
 # --------------------------------------------------------------------------- #
@@ -401,17 +367,17 @@ def set_entity_departments(entity_uri: Uri, names: list[str]):
 # the store reads and writes.
 
 
-def get_disabled_departments(entity_uri: Uri) -> list[str]:
+def get_disabled_departments_in(store: JsonConfigStore, entity_uri: Uri) -> list[str]:
     """The departments turned off on ``entity_uri`` (resolved, so a
     sequence's list reaches its shots); [] for an unknown entity."""
-    return read_disabled_departments(api.config.get_properties(entity_uri))
+    return read_disabled_departments(store.get_properties(entity_uri))
 
 
-def is_department_disabled(entity_uri: Uri, name: str) -> bool:
-    return name in get_disabled_departments(entity_uri)
+def is_department_disabled_in(store: JsonConfigStore, entity_uri: Uri, name: str) -> bool:
+    return name in get_disabled_departments_in(store, entity_uri)
 
 
-def set_department_disabled(entity_uri: Uri, name: str, off: bool) -> bool:
+def set_department_disabled_in(store: JsonConfigStore, entity_uri: Uri, name: str, off: bool) -> bool:
     """Turn department ``name`` off (``off``) or back on for ``entity_uri``.
 
     Returns False when nothing changed. Only the entity's own
@@ -419,19 +385,19 @@ def set_department_disabled(entity_uri: Uri, name: str, off: bool) -> bool:
     pinned. Turning off a department the pool does not have is refused.
     """
     context = entity_context(entity_uri)
-    properties = api.config.get_properties(entity_uri)
+    properties = store.get_properties(entity_uri)
     if properties is None:
         raise ValueError(f'Entity not found: {entity_uri}')
-    pool = list_department_names(context)
+    pool = list_department_names_in(store, context)
     if off and name not in pool:
         raise ValueError(f"'{name}' is not a department of the {context} pool")
     current = read_disabled_departments(properties)
     wanted = toggled_disabled_departments(pool, current, name, off)
     if wanted == current:
         return False
-    own = api.config.get_own_properties(entity_uri) or {}
+    own = store.get_own_properties(entity_uri) or {}
     own[DISABLED_DEPARTMENTS] = wanted
-    api.config.set_own_properties(entity_uri, own)
+    store.set_own_properties(entity_uri, own)
     return True
 
 
@@ -444,3 +410,114 @@ def disabled_message(entity_uri: Uri, name: str) -> str:
         f"Enable department (right-click the department in the browser) "
         f"or in the Entity Editor's Departments off column."
     )
+
+
+# --------------------------------------------------------------------------- #
+# The active project
+# --------------------------------------------------------------------------- #
+# The pipeline, the HDAs' menus and the project templates work in the active
+# project and call these; the Asset Browser, which works on any project,
+# calls the ``_in`` cores with that project's store.
+
+
+def list_department_names(context: str, include_disabled: bool = True) -> list[str]:
+    return list_department_names_in(api.config, context, include_disabled)
+
+
+def add_department(
+    context: str,
+    name: str,
+    independent: bool = False,
+    publishable: bool = True,
+    renderable: bool = False,
+    generated: bool = False,
+    enabled: bool = True,
+    short: str | None = None,
+    index: int | None = None,
+    ):
+    add_department_in(
+        api.config, context, name, independent, publishable, renderable,
+        generated, enabled, short, index,
+    )
+
+
+def reorder_departments(context: str, names: list[str]):
+    reorder_departments_in(api.config, context, names)
+
+
+def remove_department(context: str, name: str):
+    remove_department_in(api.config, context, name)
+
+
+def set_independent(context: str, name: str, independent: bool):
+    set_flag_in(api.config, context, name, 'independent', independent)
+
+
+def set_publishable(context: str, name: str, publishable: bool):
+    set_flag_in(api.config, context, name, 'publishable', publishable)
+
+
+def set_renderable(context: str, name: str, renderable: bool):
+    set_flag_in(api.config, context, name, 'renderable', renderable)
+
+
+def set_generated(context: str, name: str, generated: bool):
+    set_flag_in(api.config, context, name, 'generated', generated)
+
+
+def set_enabled(context: str, name: str, enabled: bool):
+    set_flag_in(api.config, context, name, 'enabled', enabled)
+
+
+def set_short(context: str, name: str, short: str | None):
+    set_flag_in(api.config, context, name, 'short', short)
+
+
+def is_renderable(context: str, name: str) -> bool:
+    return is_renderable_in(api.config, context, name)
+
+
+def is_enabled(context: str, name: str) -> bool:
+    return is_enabled_in(api.config, context, name)
+
+
+def list_departments(
+    context: str, include_generated: bool = True, include_disabled: bool = False,
+    ) -> list[Department]:
+    return list_departments_in(api.config, context, include_generated, include_disabled)
+
+
+def get_entity_departments(entity_uri: Uri) -> list[str]:
+    return get_entity_departments_in(api.config, entity_uri)
+
+
+def list_entity_departments(
+    entity_uri: Uri, include_generated: bool = True, include_disabled: bool = False,
+    ) -> list[Department]:
+    return list_entity_departments_in(
+        api.config, entity_uri, include_generated, include_disabled,
+    )
+
+
+def list_entity_department_names(
+    entity_uri: Uri, include_generated: bool = True, include_disabled: bool = False,
+    ) -> list[str]:
+    return list_entity_department_names_in(
+        api.config, entity_uri, include_generated, include_disabled,
+    )
+
+
+def set_entity_departments(entity_uri: Uri, names: list[str]):
+    set_entity_departments_in(api.config, entity_uri, names)
+
+
+def get_disabled_departments(entity_uri: Uri) -> list[str]:
+    return get_disabled_departments_in(api.config, entity_uri)
+
+
+def is_department_disabled(entity_uri: Uri, name: str) -> bool:
+    return is_department_disabled_in(api.config, entity_uri, name)
+
+
+def set_department_disabled(entity_uri: Uri, name: str, off: bool) -> bool:
+    return set_department_disabled_in(api.config, entity_uri, name, off)

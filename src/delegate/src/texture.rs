@@ -6,6 +6,8 @@
 //! more than that, and bytes keep a set of 4K textures to a few megabytes
 //! each instead of hundreds.
 
+use crate::raster::srgb_to_linear;
+
 /// Longest side kept, in texels.
 pub const MAX_SIZE: usize = 1024;
 
@@ -25,14 +27,6 @@ fn linear_to_srgb(v: f32) -> f32 {
         v * 12.92
     } else {
         1.055 * v.powf(1.0 / 2.4) - 0.055
-    }
-}
-
-fn srgb_to_linear(v: f32) -> f32 {
-    if v <= 0.040_45 {
-        v / 12.92
-    } else {
-        ((v + 0.055) / 1.055).powf(2.4)
     }
 }
 
@@ -135,9 +129,7 @@ mod tests {
         // Top half red, bottom half blue (tall enough that bilinear
         // filtering near v = 0.25 / 0.75 reads one colour only).
         let (w, h) = (2, 8);
-        let px: Vec<[f32; 4]> = (0..w * h)
-            .map(|i| if i < w * h / 2 { [1.0, 0.0, 0.0, 1.0] } else { [0.0, 0.0, 1.0, 1.0] })
-            .collect();
+        let px: Vec<[f32; 4]> = (0..w * h).map(|i| if i < w * h / 2 { [1.0, 0.0, 0.0, 1.0] } else { [0.0, 0.0, 1.0, 1.0] }).collect();
         let t = Texture::from_linear(&px, w, h);
         assert!(t.sample(0.5, 0.75)[0] > 0.9);
         assert!(t.sample(0.5, 0.25)[2] > 0.9);

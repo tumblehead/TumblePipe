@@ -21,8 +21,8 @@ use primer::keyboard::Named;
 use primer::widget::custom::{Cursor, Event, keyboard, mouse};
 use proptest::prelude::*;
 use proptest::sample::Index;
-use th_edit::document::{AudioClip, Track, VideoClip};
-use th_edit::ops::NewClip;
+use th_edit::document::{AudioClip, Track, Transform, VideoClip};
+use th_edit::ops::{Available, NewClip};
 
 use super::clip_fields::{ClipField, HINT_NONE, HINT_SELECTED};
 use super::*;
@@ -1549,6 +1549,7 @@ fn a_render_on_its_way_shows_on_its_shots_clips() {
     assert!(bench.editor.tracks_program().rendering.is_empty());
 }
 
+mod dialogs;
 mod flip_and_menus;
 mod picks;
 mod placement;

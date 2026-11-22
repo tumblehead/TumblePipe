@@ -222,10 +222,8 @@ pub fn engine_clips(edit: &WorkingEdit, bound: impl Fn(&Source) -> Option<Bound>
 
 /// Edit frame `frame` as a timecode, from the edit's start timecode.
 pub fn timecode(frame: Frame, edit: &WorkingEdit) -> String {
-    let fps = Frame::from(edit.fps.max(1));
-    let total = timecode_frames(&edit.start_timecode, edit.fps).unwrap_or(0) + frame.max(0);
-    let (seconds, frames) = (total / fps, total % fps);
-    format!("{:02}:{:02}:{:02}:{:02}", seconds / 3600, seconds / 60 % 60, seconds % 60, frames)
+    let start = timecode_frames(&edit.start_timecode, edit.fps).unwrap_or(0);
+    th_edit::timeline_export::timecode(start + frame.max(0), edit.fps)
 }
 
 /// Where clips start and end, in order, from frame 0: where Ctrl+Left and
@@ -648,6 +646,23 @@ mod tests {
         assert_eq!((clips[0].at, clips[0].duration, clips[0].source_in), (0, 40, 1001));
         assert_eq!((clips[1].at, clips[1].duration), (40, 10));
         assert_eq!(edit.length(), 50);
+    }
+
+    proptest! {
+        /// The timecode at a frame of the edit is the export's timecode of
+        /// the frames from midnight: the edit's start timecode plus the
+        /// frame (none before frame 0); an unreadable start counts from 0.
+        #[test]
+        fn a_frames_timecode_is_the_exports_from_the_start(
+            hours in 0i64..30, minutes in 0i64..60, seconds in 0i64..60, frames in 0i64..120,
+            fps in 1u32..121, frame in prop_oneof![-100i64..0, 0i64..2_000_000], readable in any::<bool>(),
+        ) {
+            let start = format!("{hours:02}:{minutes:02}:{seconds:02}:{:02}", frames % i64::from(fps));
+            let start = if readable { start } else { format!("{start}x") };
+            let edit = WorkingEdit::new(fps, [16, 9], &start);
+            let from = timecode_frames(&start, fps).unwrap_or(0);
+            prop_assert_eq!(timecode(frame, &edit), th_edit::timeline_export::timecode(from + frame.max(0), fps));
+        }
     }
 
     #[test]

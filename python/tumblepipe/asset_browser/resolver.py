@@ -77,6 +77,20 @@ class AssetResolver:
             return None
         return (parts[0], parts[1], parts[2])
 
+    def project_named(self, name: str) -> ProjectConfig | None:
+        """The registered project called ``name``, or None."""
+        return self._registry.get(name)
+
+    def project_of(self, asset_id: str) -> ProjectConfig | None:
+        """The registered project of an entity id (:meth:`project_for`) or
+        a container id (a Multi's ``group:<project>:...``, a scene's), or
+        None."""
+        from . import containers
+        ref = containers.parse(asset_id)
+        if ref is not None:
+            return self.project_named(ref.project_name)
+        return self.project_for(asset_id)
+
     def project_for(self, asset_id: str) -> ProjectConfig | None:
         """Look up the project by name from ``asset_id``'s first
         segment. No client build, no error if the project doesn't

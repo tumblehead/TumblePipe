@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 import platform
@@ -5,6 +6,8 @@ import os
 import logging
 import shutil
 import re
+import subprocess
+import sys
 
 from tumblepipe.api import path_str, get_user_name
 from tumblepipe.apps import app
@@ -161,6 +164,33 @@ def _get_deadline_path():
 def deadline_command():
     """This machine's ``deadlinecommand``; raises :class:`DeadlineNotInstalled`."""
     return _get_deadline_path()
+
+
+@dataclass(frozen=True)
+class Answer:
+    """What one ``deadlinecommand`` run printed, stdout and stderr apart."""
+    code: int
+    stdout: str
+    stderr: str
+
+
+def query(command, *args: str, timeout: float) -> Answer:
+    """Run ``command`` (a ``deadlinecommand``) with ``args`` and read its answer.
+
+    stdout and stderr stay apart: a warning Deadline prints on stderr must
+    not reach what the caller parses (``app.run`` merges them). No console
+    window opens on Windows, and it reads no stdin. UTF-8, undecodable
+    bytes replaced. Whether a non-zero exit is a refusal is the caller's to
+    say: a refused ``-Json`` read still prints the envelope that says why.
+    """
+    result = subprocess.run(
+        [str(command), *args],
+        stdin=subprocess.DEVNULL, capture_output=True,
+        text=True, encoding='utf-8', errors='replace',
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
+        timeout=timeout,
+    )
+    return Answer(result.returncode, result.stdout, result.stderr)
 
 def _get_repository_path(deadline_path):
     raw_path = app.run(

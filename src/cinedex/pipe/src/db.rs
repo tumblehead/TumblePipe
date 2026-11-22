@@ -71,8 +71,8 @@ pub fn read_with_mtime(db_dir: &Path, purpose: &str) -> Result<(Value, String), 
 
 /// Atomically write `data` to `<db_dir>/<purpose>.json` using a temp file in
 /// the same directory plus a rename, byte for byte as TumblePipe's store
-/// writes it ([`crate::io::store_json`]: `json.dump(indent=4)` with Python's
-/// ASCII escapes, `\r\n` lines on Windows), so a file both write never
+/// writes it ([`crate::io::python_text`]: `json.dump(indent=4)` with Python's
+/// ASCII escapes, LF lines and a final newline), so a file both write never
 /// churns. Returns the new mtime string.
 pub fn write_atomic(db_dir: &Path, purpose: &str, data: &Value) -> Result<String, DbError> {
     let file_name = format!("{purpose}.json");

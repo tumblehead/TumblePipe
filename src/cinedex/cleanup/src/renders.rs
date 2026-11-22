@@ -395,7 +395,6 @@ fn edit_files(roots: &ProjectRoots) -> Vec<PathBuf> {
 }
 
 struct Index<'a> {
-    units: &'a Units,
     by_version: HashMap<String, Vec<&'a Unit>>,
 }
 
@@ -405,7 +404,7 @@ impl<'a> Index<'a> {
         for unit in units.values() {
             by_version.entry(unit.name().to_string()).or_default().push(unit);
         }
-        Index { units, by_version }
+        Index { by_version }
     }
 
     fn matching(&self, pin: &Pin) -> Vec<String> {
@@ -433,7 +432,6 @@ impl<'a> Index<'a> {
             }
             out.push(unit.rel.clone());
         }
-        let _ = self.units;
         out
     }
 }

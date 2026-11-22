@@ -42,10 +42,10 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tumblepipe import naming, prune_exports
-from tumblepipe.archive.inventory import Kind, _file_version
-from tumblepipe.archive.hipfile import read_workfile_text
+from tumblepipe import naming
+from tumblepipe.archive.inventory import Kind, file_version
 from tumblepipe.archive.longpath import long_path
+from tumblepipe.cleanup import hip
 from tumblepipe.cleanup.core import (
     KEEP_FILE, RECENT_DAYS, Category, CategoryPlan, Entry, Settings, age_days, delete_entries, recently_written,
     under_context, within,
@@ -155,28 +155,16 @@ def hip_pins(text: str, own: tuple[str, ...] | None) -> set[Pin]:
     ``own``). Any department and layer of it: more is kept than strictly
     needed, never less."""
     pins: set[Pin] = set()
-    entities: set[tuple[str, ...]] = set()
-    versions: set[str] = set()
-
-    def flush():
+    for block in hip.node_blocks(text):
+        entities: set[tuple[str, ...]] = set()
+        versions: set[str] = set()
+        for name, value in block:
+            entities.update(hip.entities(value))
+            if 'entity' in name.lower() and value.startswith('from_context') and own is not None:
+                entities.add(own)
+            if _VERSION_PARM.match(name):
+                versions.update(_VERSION_TOKEN.findall(value))
         pins.update((entity, version, None, None) for entity in entities for version in versions)
-
-    for line in text.splitlines():
-        if line.startswith('}') or line.startswith('{'):
-            flush()
-            entities, versions = set(), set()
-            continue
-        match = prune_exports._PARM.match(line)
-        if match is None:
-            continue
-        name, value = match.group(1), match.group(2).strip().strip('"')
-        for entity in prune_exports._ENTITY.findall(value):
-            entities.add(tuple(entity.strip('/').split('/')))
-        if 'entity' in name.lower() and value.startswith('from_context') and own is not None:
-            entities.add(own)
-        if _VERSION_PARM.match(name):
-            versions.update(_VERSION_TOKEN.findall(value))
-    flush()
     return pins
 
 
@@ -302,23 +290,22 @@ class _Index:
         return out
 
 
-def pinned(roots, units: dict[str, Unit], notes: list[str], errors: list[str]) -> tuple[set[str], set[str]]:
+def pinned(
+    roots, workfiles: hip.Workfiles, units: dict[str, Unit], notes: list[str], errors: list[str],
+) -> tuple[set[str], set[str]]:
     """``(named by a latest workfile, named by an edit)``: version rels."""
     index = _Index(units)
     by_workfile: set[str] = set()
     read = unreadable = 0
-    for purpose, parts, path in prune_exports.latest_workfiles(roots):
-        try:
-            text = read_workfile_text(path)
-        except OSError as error:
-            errors.append(f'{path}: {error}')
-            continue
-        if text is None:
+    for workfile in workfiles.reads():
+        if workfile.unreadable:
             unreadable += 1
             continue
+        if workfile.error is not None:
+            errors.append(workfile.error)
+            continue
         read += 1
-        own = prune_exports._workfile_entity(purpose, parts)
-        for pin in hip_pins(text, own):
+        for pin in hip_pins(workfile.text, workfile.workfile.entity):
             by_workfile.update(index.matching(pin))
     notes.append(f'Read {read} latest workfile(s) for the render versions they name.')
     if unreadable:
@@ -474,7 +461,7 @@ def _movie_units(item, units: dict[str, Unit]) -> list[str]:
     (``playblast/<entity>/<dept>[/<layer>]/<stem>_vNNNN.mp4`` beside
     ``render/<entity>/<dept>/<layer>/vNNNN``)."""
     parts = item.rel.split('/')
-    version_name = _file_version(parts[-1])
+    version_name = file_version(parts[-1])
     middle = parts[1:-1]
     out = []
     for department in (middle, middle[:-1]):
@@ -486,14 +473,14 @@ def _movie_units(item, units: dict[str, Unit]) -> list[str]:
     return out
 
 
-def plan(roots, inventory, settings: Settings) -> CategoryPlan:
+def plan(roots, inventory, settings: Settings, *, workfiles: hip.Workfiles) -> CategoryPlan:
     out = CategoryPlan('renders', 'Old render versions', 'version')
     render_root = roots.get('render')
     if render_root is None or inventory is None:
         return out
     out.payload = render_root.path
     units, movies = list_units(inventory)
-    by_workfile, by_edit = pinned(roots, units, out.notes, out.errors)
+    by_workfile, by_edit = pinned(roots, workfiles, units, out.notes, out.errors)
     verdicts = decide(roots, units, settings, by_workfile, by_edit)
     for rel in sorted(units):
         if not in_context(rel, settings.context):

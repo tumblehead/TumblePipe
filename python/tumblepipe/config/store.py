@@ -842,18 +842,14 @@ def set_stamp_ttl(seconds: float) -> None:
     _stamp_ttl = float(seconds)
 
 
-def stamp_ttl() -> float:
-    """The current stamp window in seconds (0: off)."""
-    return _stamp_ttl
-
-
 # One store per config folder, shared by every Client of it. The browser
-# builds a Client per project and ``tumblepipe.api`` builds the active
-# project's own; with a store each, a coherent-read scope opened on the
-# browser's store did not cover the ``api.config`` reads under it (group
-# membership, workspaces), so each of those re-stamped the db files, and on
-# an SMB share that was the minutes-long browser load. One store also means
-# one parsed copy of each db file and one memo.
+# builds a Client per project and passes that project's store to the config
+# modules (``ProjectConfig.store()``); ``tumblepipe.api`` builds the active
+# project's own Client, whose ``api.config`` the pipe modules under a browser
+# action still read (workspaces, paths). With one store a coherent-read scope
+# opened on the browser's side covers those reads too instead of each
+# re-stamping the db files (on an SMB share that was a minutes-long browser
+# load), and there is one parsed copy of each db file and one memo.
 _shared_stores: dict[str, JsonConfigStore] = {}
 _shared_stores_lock = threading.Lock()
 

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from tumblepipe.util.uri import Uri
 from tumblepipe.api import api
+from tumblepipe.config.store import JsonConfigStore
 
 @dataclass(frozen=True)
 class BlockRange:
@@ -132,8 +133,8 @@ class FrameRange:
         if self.step_size != other.step_size: return False
         return True
 
-def get_frame_range(uri: Uri) -> FrameRange | None:
-    properties = api.config.get_properties(uri)
+def get_frame_range_in(store: JsonConfigStore, uri: Uri) -> FrameRange | None:
+    properties = store.get_properties(uri)
     if properties is None: return None
     if 'frame_start' not in properties: return None
     if 'frame_end' not in properties: return None
@@ -146,7 +147,7 @@ def get_frame_range(uri: Uri) -> FrameRange | None:
         properties['roll_end']
     )
 
-def is_animatable(uri: Uri) -> bool:
+def is_animatable_in(store: JsonConfigStore, uri: Uri) -> bool:
     """Whether an entity is time-dependent.
 
     Assets declare ``animatable: false`` in the schema; shots and any
@@ -156,11 +157,11 @@ def is_animatable(uri: Uri) -> bool:
     shots — production can change a shot's length) or left alone so the
     artist's saved range survives (non-animatable, e.g. assets).
     """
-    properties = api.config.get_properties(uri)
+    properties = store.get_properties(uri)
     if properties is None: return True
     return bool(properties.get('animatable', True))
 
-def get_export_frame_range(uri: Uri) -> FrameRange | None:
+def get_export_frame_range_in(store: JsonConfigStore, uri: Uri) -> FrameRange | None:
     """The frames an export or publish of *uri* writes.
 
     An animatable entity exports its whole authored range. A
@@ -169,13 +170,13 @@ def get_export_frame_range(uri: Uri) -> FrameRange | None:
     (assets default to 1001-1200), and writing 200 identical samples
     only made static exports slow.
     """
-    frame_range = get_frame_range(uri)
-    if frame_range is None or is_animatable(uri):
+    frame_range = get_frame_range_in(store, uri)
+    if frame_range is None or is_animatable_in(store, uri):
         return frame_range
     start = frame_range.start_frame
     return FrameRange(start, start, 0, 0)
 
-def get_fps(uri: Uri) -> int | None:
+def get_fps_in(store: JsonConfigStore, uri: Uri) -> int | None:
     """The fps of ``uri`` (an entity, which inherits the project's unless it
     sets its own, or ``config:/project``); None when none is configured.
 
@@ -183,19 +184,47 @@ def get_fps(uri: Uri) -> int | None:
     fps" got the project's, and a shot with its own fps went out at the
     wrong rate.
     """
-    properties = api.config.get_properties(uri)
+    properties = store.get_properties(uri)
     if properties is None: return None
     if 'fps' not in properties: return None
     return int(properties['fps'])
 
-def require_fps(uri: Uri) -> int:
+def require_fps_in(store: JsonConfigStore, uri: Uri) -> int:
     """:func:`get_fps`, raising when no fps is configured.
 
     For whatever cannot run without one -- an encode, a staged build, a
     comp -- so a shot that overrides the project fps plays at its own and a
     project that sets none fails instead of running at a guessed rate.
     """
-    fps = get_fps(uri)
+    fps = get_fps_in(store, uri)
     if fps is None:
         raise ValueError(f'No fps configured for {uri} or the project')
     return fps
+
+
+# --------------------------------------------------------------------------- #
+# The active project
+# --------------------------------------------------------------------------- #
+# The pipeline, the HDAs and the project templates work in the active project
+# and call these; the Asset Browser, which works on any project, calls the
+# ``_in`` cores with that project's store.
+
+
+def get_frame_range(uri: Uri) -> FrameRange | None:
+    return get_frame_range_in(api.config, uri)
+
+
+def is_animatable(uri: Uri) -> bool:
+    return is_animatable_in(api.config, uri)
+
+
+def get_export_frame_range(uri: Uri) -> FrameRange | None:
+    return get_export_frame_range_in(api.config, uri)
+
+
+def get_fps(uri: Uri) -> int | None:
+    return get_fps_in(api.config, uri)
+
+
+def require_fps(uri: Uri) -> int:
+    return require_fps_in(api.config, uri)

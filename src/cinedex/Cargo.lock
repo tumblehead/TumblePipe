@@ -4410,6 +4410,7 @@ dependencies = [
  "chrono",
  "openusd",
  "proptest",
+ "serde",
  "serde_json",
  "tempfile",
  "th_pipe",
@@ -4438,7 +4439,6 @@ dependencies = [
  "serde",
  "serde_json",
  "th_playlist",
- "thiserror 2.0.21",
 ]
 
 [[package]]

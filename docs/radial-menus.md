@@ -2,7 +2,7 @@
 
 TumblePipe's quick access to its nodes and actions is a set of radial menus
 that open over a network editor. They are registered at Houdini startup by
-`python/tumblepipe/startup.py` (called from `python3.13libs/pythonrc.py`),
+`python/tumblepipe/pipe/houdini/radial.py` (called from `python3.13libs/pythonrc.py`),
 and they all belong to the **radial** — the Qt radial that ships as its own
 package, `tumbleradial`.
 
@@ -22,8 +22,11 @@ with it.
 
 The shipped menu definitions live in the package's `radial_menus/`
 directory, which startup registers with the radial. `tumblepipe_pipeline.json`
-is the one static file; the recipes and favourites menus below are
-regenerated into the same directory on every launch.
+is the one static file. The recipes and favourites menus below are
+regenerated on every launch into your own folder, which startup registers
+too: `%LOCALAPPDATA%/tumblepipe/radial_menus` on Windows,
+`~/.local/share/tumblepipe/radial_menus` (or under `$XDG_DATA_HOME`) on Linux,
+and `~/Library/Application Support/tumblepipe/radial_menus` on macOS.
 
 ## Alt+T: the TumblePipe pipeline radial
 
@@ -67,7 +70,7 @@ render nodes in [Lighting and rendering](nodes/lighting-and-rendering.md).
 
 Key **Alt+R**, context `network`, label **Recipes**. This menu is not a
 shipped file: at startup TumblePipe reads the definitions in
-`otls/Recipes.hda` and writes `radial_menus/tumblepipe_recipes.json` with one
+`otls/Recipes.hda` and writes `tumblepipe_recipes.json` into your own radial menu folder (`%LOCALAPPDATA%/tumblepipe/radial_menus` on Windows, `~/.local/share/tumblepipe/radial_menus` on Linux, `~/Library/Application Support/tumblepipe/radial_menus` on macOS) with one
 slot per recipe, in the HDA's order, up to the ring's maximum of **9**. Each
 slot's label is the recipe's own label and its icon the recipe's icon; picking
 one places that recipe in the network editor and closes the radial.
@@ -92,7 +95,7 @@ clusters under `<project>/recipes/` — see
 Key **Alt+F**, context `network`, label **Asset Favorites**. Also generated
 at startup: TumblePipe collects the assets you have marked as favourites in
 the Asset Browser (the `__favorites__` collection of every catalog), takes
-the first **9**, and writes `radial_menus/tumblepipe_asset_favorites.json`
+the first **9**, and writes `tumblepipe_asset_favorites.json` (beside the recipes)
 with one star-icon slot per asset, labelled with the asset's name.
 
 Firing a slot **drops the asset into the network under the cursor** — the
@@ -102,6 +105,11 @@ slot falls back to the asset's first non-download action. The radial stays
 open afterwards, so several favourites can be dropped in one go. Failures
 go to the status bar: `asset '<id>' unavailable: …` when the catalog cannot
 resolve it, `no drop action for <name>` when nothing applies.
+
+Both generated menus are written only in a graphical session: hython and farm
+tasks write nothing. Your own folder is scanned before the package's, so a
+copy an older TumblePipe wrote into the package's `radial_menus/` is ignored
+(and can be deleted).
 
 Two limits: the list is read **once, at startup**, so a favourite added
 mid-session appears after the next launch; and with fewer than two

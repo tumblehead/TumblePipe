@@ -19,11 +19,11 @@ from pathlib import Path
 from typing import Callable
 import argparse
 import logging
-import sys
 import time
 
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.util.io import load_json
+from tumblepipe.util.logging import setup_logging
 
 
 class WorkerConfigError(ValueError):
@@ -39,15 +39,6 @@ def error(msg: str) -> int:
 def headline(title: str) -> None:
     """A section banner in the worker's log."""
     print(f' {title} '.center(80, '='))
-
-
-def configure_logging() -> None:
-    """Log everything to stdout, which Deadline captures as the task log."""
-    logging.basicConfig(
-        level = logging.DEBUG,
-        format = '%(message)s',
-        stream = sys.stdout
-    )
 
 
 def load_config(path: Path, is_valid: Callable[[dict], bool]) -> dict:
@@ -69,7 +60,7 @@ def run(
     False), loads and validates the config, and calls ``main(config,
     BlockRange(first, last))`` -- or ``main(config)`` without frames.
     """
-    configure_logging()
+    setup_logging()
     parser = argparse.ArgumentParser()
     parser.add_argument('config_path', type=Path)
     if frames:

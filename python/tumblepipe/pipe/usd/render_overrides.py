@@ -50,7 +50,7 @@ Precedence, weakest first: the defaults layer < this root layer < the
 shot's department layers (a Karma Render Settings or th::render_settings
 node in a workfile authors on the same prim in its export, which sits above
 the root layer in the staged build) < Farm Submit's per-job overrides
-(``farm.pipelines.batch_submit.RENDER_OVERRIDE_MAP``, authored in the
+(``farm.submit.settings.RENDER_OVERRIDES``, authored in the
 collapsed render layer's own opinions, the strongest there are). The farm's
 motion blur and depth of field overrides author the same attributes as
 ``enablemblur`` / ``enabledof`` here, so they win over them.

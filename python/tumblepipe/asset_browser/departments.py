@@ -94,10 +94,9 @@ class DepartmentPoolEditor(QWidget):
     """
 
     def __init__(
-        self, *, activator, refresh, invalidate_cache, parent=None,
+        self, *, refresh, invalidate_cache, parent=None,
     ) -> None:
         super().__init__(parent)
-        self._activator = activator
         self._refresh = refresh
         self._invalidate_cache = invalidate_cache
         self._project = None
@@ -126,9 +125,6 @@ class DepartmentPoolEditor(QWidget):
         if project is None:
             self._working = {c: [] for c in CONTEXTS}
         else:
-            # Every config read and write has to resolve against this
-            # project, not whichever one happens to be active.
-            self._activator.activate(project)
             self._working = {c: self._load(c) for c in CONTEXTS}
         self._original = {c: [d.name for d in depts]
                           for c, depts in self._working.items()}
@@ -146,7 +142,7 @@ class DepartmentPoolEditor(QWidget):
     # ── Load ──────────────────────────────────────────
 
     def _load(self, context: str) -> list[_Dept]:
-        from tumblepipe.config.department import list_departments
+        from tumblepipe.config.department import list_departments_in
         return [
             _Dept(
                 name=d.name,
@@ -159,7 +155,7 @@ class DepartmentPoolEditor(QWidget):
             )
             # Disabled departments are exactly what this dialog exists to
             # bring back, so it is the one reader that must see them.
-            for d in list_departments(context, include_disabled=True)
+            for d in list_departments_in(self._project.store(), context, include_disabled=True)
         ]
 
     # ── UI ────────────────────────────────────────────
@@ -525,22 +521,22 @@ class DepartmentPoolEditor(QWidget):
     def _commit(self) -> None:
         from tumblepipe.config import department as dept_mod
 
-        self._activator.activate(self._project)
+        store = self._project.store()
         for context in CONTEXTS:
             working = self._working[context]
             live = {
                 d.name: d for d in
-                dept_mod.list_departments(context, include_disabled=True)
+                dept_mod.list_departments_in(store, context, include_disabled=True)
             }
             wanted = {d.name for d in working}
 
             for name in live.keys() - wanted:
-                dept_mod.remove_department(context, name)
+                dept_mod.remove_department_in(store, context, name)
 
             for dept in working:
                 if dept.name not in live:
-                    dept_mod.add_department(
-                        context, dept.name,
+                    dept_mod.add_department_in(
+                        store, context, dept.name,
                         independent=dept.independent,
                         publishable=dept.publishable,
                         renderable=dept.renderable,
@@ -551,11 +547,11 @@ class DepartmentPoolEditor(QWidget):
                     continue
                 changes = dept_mod.flag_changes(live[dept.name], dept)
                 for flag, value in changes.items():
-                    getattr(dept_mod, f"set_{flag}")(context, dept.name, value)
+                    dept_mod.set_flag_in(store, context, dept.name, flag, value)
 
             # Order last: the adds above appended, so this is what actually
             # places them.
-            dept_mod.reorder_departments(context, [d.name for d in working])
+            dept_mod.reorder_departments_in(store, context, [d.name for d in working])
 
 
 class EntityDepartmentsDialog(QDialog):
@@ -572,11 +568,10 @@ class EntityDepartmentsDialog(QDialog):
     """
 
     def __init__(
-        self, asset_id: str, *, resolver, activator, index, refresh,
+        self, asset_id: str, *, resolver, index, refresh,
         invalidate_cache, parent=None,
     ) -> None:
         super().__init__(parent)
-        self._activator = activator
         self._refresh = refresh
         self._invalidate_cache = invalidate_cache
         self._asset_id = asset_id
@@ -585,18 +580,18 @@ class EntityDepartmentsDialog(QDialog):
         self._entity_uri = resolver.uri_for(asset_id)
         if project is None or self._entity_uri is None:
             raise ValueError(f"Not a pipeline entity: {asset_id}")
-        activator.activate(project)
         self._project = project
 
         from tumblepipe.config.department import (
-            get_entity_departments, list_departments,
+            get_entity_departments_in, list_departments_in,
         )
+        store = project.store()
         self._context = self._entity_uri.segments[0]
         self._pool = [
             d.name for d in
-            list_departments(self._context, include_generated=False)
+            list_departments_in(store, self._context, include_generated=False)
         ]
-        assigned = get_entity_departments(self._entity_uri)
+        assigned = get_entity_departments_in(store, self._entity_uri)
         # No assignment means "inherit the pool" — show that as everything
         # ticked, which is also how the user turns it back off.
         self._checked = set(assigned) if assigned else set(self._pool)
@@ -669,14 +664,13 @@ class EntityDepartmentsDialog(QDialog):
             )
             return
 
-        from tumblepipe.config.department import set_entity_departments
+        from tumblepipe.config.department import set_entity_departments_in
         # Everything ticked == inherit the pool. Stored as an empty list,
         # which resolves as "inherit", so the entity picks up departments
         # added to the pool later.
         names = [] if set(selected) == set(self._pool) else selected
         try:
-            self._activator.activate(self._project)
-            set_entity_departments(self._entity_uri, names)
+            set_entity_departments_in(self._project.store(), self._entity_uri, names)
         except Exception as exc:
             report_failure(f"Setting the departments of {self._entity_uri}", exc)
             return

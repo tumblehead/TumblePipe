@@ -195,7 +195,6 @@ class AssetHover:
         from tumbletrove.asset_browser.core.theme import (
             BORDER, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
         )
-        from tumblepipe.config.department import list_departments
 
         context = "shots" if type_tag == "shot" else "assets"
         raw_depts = metadata.get("departments")
@@ -209,10 +208,9 @@ class AssetHover:
             card=True,
         )
         by_name = {
-            d.name: d for d in list_departments(
-                context, include_generated=False,
+            d.name: d for d in self._dept_scope.departments(
+                asset.id.split("/", 1)[0], context,
             )
-            if d.enabled
         }
         all_depts = [by_name[name] for name in shown if name in by_name]
         if not all_depts:

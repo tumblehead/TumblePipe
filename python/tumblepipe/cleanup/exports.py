@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from tumblepipe import prune_exports
+from tumblepipe.cleanup import hip
 from tumblepipe.cleanup.core import Category, CategoryPlan, Entry, Settings
 
 
-def plan(roots, inventory, settings: Settings) -> CategoryPlan:
+def plan(roots, inventory, settings: Settings, *, workfiles: hip.Workfiles) -> CategoryPlan:
     export_plan = prune_exports.make_plan(
-        roots, settings.keep_exports, settings.context, inventory=inventory,
+        roots, settings.keep_exports, settings.context, workfiles=workfiles, inventory=inventory,
     )
     out = CategoryPlan('exports', 'Old export versions', 'version', payload=export_plan)
     for verdict in export_plan.verdicts:

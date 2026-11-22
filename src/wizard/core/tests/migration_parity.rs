@@ -59,10 +59,7 @@ fn run_relabel(config_json: &str) -> String {
     let template = scaffold();
     let report = migrate(project.path(), template.path()).unwrap();
     assert!(report.is_ok(), "migration failed: {report:?}");
-    assert!(
-        report.applied.iter().any(|(s, _)| *s == Step::RelabelVariantsAsChannels),
-        "the relabel step did not run"
-    );
+    assert!(report.applied.iter().any(|(s, _)| *s == Step::RelabelVariantsAsChannels), "the relabel step did not run");
     std::fs::read_to_string(project.path().join("_config").join("db").join("config.json")).unwrap()
 }
 
@@ -93,9 +90,7 @@ fn relabelled_output_keeps_pythons_formatting() {
         "}\n",
     );
     let expected = with_v13(
-        &input
-            .replace("\"label\": \"Variants\"", "\"label\": \"Channels\"")
-            .replace("\"Variants to render\"", "\"Channels to render\""),
+        &input.replace("\"label\": \"Variants\"", "\"label\": \"Channels\"").replace("\"Variants to render\"", "\"Channels to render\""),
     );
 
     let actual = run_relabel(input);
@@ -110,10 +105,7 @@ fn relabelled_output_keeps_pythons_formatting() {
 /// Python migrator already produced on the live share.
 #[test]
 fn matches_the_python_migrator_on_a_real_project() {
-    let (Ok(input_path), Ok(expected_path)) = (
-        std::env::var("TT_PARITY_INPUT"),
-        std::env::var("TT_PARITY_EXPECTED"),
-    ) else {
+    let (Ok(input_path), Ok(expected_path)) = (std::env::var("TT_PARITY_INPUT"), std::env::var("TT_PARITY_EXPECTED")) else {
         eprintln!("TT_PARITY_INPUT / TT_PARITY_EXPECTED unset — skipping the real-project check");
         return;
     };
@@ -126,8 +118,5 @@ fn matches_the_python_migrator_on_a_real_project() {
     if let Ok(out) = std::env::var("TT_PARITY_ACTUAL_OUT") {
         std::fs::write(out, &actual).unwrap();
     }
-    assert_eq!(
-        actual, expected,
-        "Rust output differs from what Python wrote to the live project"
-    );
+    assert_eq!(actual, expected, "Rust output differs from what Python wrote to the live project");
 }

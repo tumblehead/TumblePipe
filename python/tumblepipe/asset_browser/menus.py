@@ -23,7 +23,9 @@ from .types import latest_version
 if TYPE_CHECKING:
     from .containers import ContainerManager
     from .discovery import EntityIndex
+    from .edit_ops import EditOps
     from .entity_ops import EntityOps
+    from .playback import Playback
     from .refresh import BrowserRefresh
     from .resolver import AssetResolver
     from .scene import SceneManager
@@ -182,6 +184,8 @@ class PipelineMenus:
         resolver: "AssetResolver",
         index: "EntityIndex",
         ops: "EntityOps",
+        edit_ops: "EditOps",
+        playback: "Playback",
         workfiles: "WorkfileManager",
         scene: "SceneManager",
         containers: "ContainerManager",
@@ -191,6 +195,8 @@ class PipelineMenus:
         self._resolver = resolver
         self._index = index
         self._ops = ops
+        self._edit_ops = edit_ops
+        self._playback = playback
         self._workfiles = workfiles
         self._scene = scene
         self._containers = containers
@@ -317,7 +323,7 @@ class PipelineMenus:
         return sections(play, work, editors, details, membership)
 
     def _play_shots(self, shots: list[Asset]) -> None:
-        self._ops.play_shots([a.id for a in shots])
+        self._playback.play_shots([a.id for a in shots])
 
     def edit_items(self, asset: Asset) -> list:
         """An edit card's right-click items. Built from the card (the menu
@@ -328,7 +334,7 @@ class PipelineMenus:
         items: list = [
             MenuItem(
                 "Open in Editor",
-                lambda: self._ops.open_edit(asset_id),
+                lambda: self._edit_ops.open_edit(asset_id),
                 tooltip=(
                     f"Open working version {meta['working']}" if meta.get("working")
                     else "Never saved: it opens empty, for its first Save"
@@ -338,19 +344,19 @@ class PipelineMenus:
         if meta.get("published"):
             items.append(MenuItem(
                 "Play Published",
-                lambda: self._ops.open_edit(asset_id, published=True),
+                lambda: self._edit_ops.open_edit(asset_id, published=True),
                 tooltip=f"Open the latest published version ({meta['published']}), read-only",
             ))
             items.append(MenuItem(
                 "Render Edit…",
-                lambda: self._ops.render_edit(asset_id),
+                lambda: self._edit_ops.render_edit(asset_id),
                 tooltip="Render a published version into a movie: Farm Submit, "
                         "on its Edits tab, with this edit ticked",
             ))
         if (meta.get("working") or meta.get("published")) and _in_houdini():
             items.append(MenuItem(
                 "Show on Houdini Timeline",
-                lambda: self._ops.show_edit_on_timeline(asset_id),
+                lambda: self._edit_ops.show_edit_on_timeline(asset_id),
                 tooltip="Set the playbar to the edit's length with a bookmark "
                         "per clip, to check its ranges against the shots "
                         "(the newest version; nothing is saved)",
@@ -364,19 +370,19 @@ class PipelineMenus:
             ))
             items.append((
                 "Clear Master Edit",
-                lambda: self._ops.set_master_edit(asset_id, False),
+                lambda: self._edit_ops.set_master_edit(asset_id, False),
             ))
         else:
             items.append(MenuItem(
                 "Set as Master Edit",
-                lambda: self._ops.set_master_edit(asset_id, True),
+                lambda: self._edit_ops.set_master_edit(asset_id, True),
                 tooltip="Make this the cut the shots' frame ranges follow",
             ))
         # Rename and delete (#62): each asks, and refuses with the reason.
         items.append(SEPARATOR)
         items.append(MenuItem(
             "Rename Edit…",
-            lambda: self._ops.rename_edit(asset_id),
+            lambda: self._edit_ops.rename_edit(asset_id),
             tooltip=(
                 "Rename this edit; one with saved or published versions "
                 "can't be (Save As under the new name in the editor)"
@@ -384,7 +390,7 @@ class PipelineMenus:
         ))
         items.append(MenuItem(
             "Delete Edit…",
-            lambda: self._ops.delete_edit(asset_id),
+            lambda: self._edit_ops.delete_edit(asset_id),
             tooltip=(
                 "The master edit can't be deleted: Clear Master Edit first"
                 if meta.get("master") else

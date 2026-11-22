@@ -36,7 +36,8 @@ def main() -> int:
     from tumblepipe.asset_browser.farm_defaults import FarmDefaultsEditor
     from tumblepipe.config import farm
 
-    activator = SimpleNamespace(activate=lambda project: None)
+    from tumblepipe.api import api
+    project = SimpleNamespace(store=lambda: api.config)
     failures = []
 
     def check(ok, what):
@@ -44,8 +45,8 @@ def main() -> int:
         if not ok:
             failures.append(what)
 
-    editor = FarmDefaultsEditor(activator=activator)
-    editor.set_project(object(), editable=True)
+    editor = FarmDefaultsEditor()
+    editor.set_project(project, editable=True)
     editor._on_add_pool()
     check('rnd' in [pool.name for pool in farm.list_pools()], 'Add... writes the pool')
     editor._pool_list.setCurrentRow(editor._pools.index('rnd'))
@@ -62,8 +63,8 @@ def main() -> int:
           and farm.get_default_pool() is None,
           'removing the default pool clears the default')
 
-    read_only = FarmDefaultsEditor(activator=activator)
-    read_only.set_project(object(), editable=False, note='read only')
+    read_only = FarmDefaultsEditor()
+    read_only.set_project(project, editable=False, note='read only')
     check(not any(b.isEnabled() for b in read_only._pool_buttons + read_only._preset_buttons),
           'a read-only project greys out every button')
 

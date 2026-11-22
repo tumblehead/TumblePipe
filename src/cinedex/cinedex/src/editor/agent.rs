@@ -134,7 +134,7 @@ impl Editor {
             "playing": self.playing,
             "loop": self.loop_range().map(|(start, end)| json!({"start": start, "end": end})),
             "live": self.show_live,
-            "show": super::show_word(self.show),
+            "show": super::entries::show_word(self.show),
             "can_undo": self.doc.can_undo(),
             "can_redo": self.doc.can_redo(),
             "selection": self.selection.iter().map(|c| clip_ref(*c)).collect::<Vec<_>>(),

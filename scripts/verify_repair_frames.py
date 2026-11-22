@@ -109,8 +109,12 @@ def main() -> int:
     check("the form sends latest", pane._into_target() == 'latest')
 
     # 3. The menu lists the versions on disk, newest first, keeping the pick
-    rows = [('entity:/shots/010/sh010', {'render': True, 'render_department': 'render',
-                                         'channels': ['default']}, [], [])]
+    from tumblepipe.farm.submit.grid import ResolvedRow
+    rows = [ResolvedRow(
+        uri='entity:/shots/010/sh010',
+        settings={'render': True, 'render_department': 'render', 'channels': ['default']},
+        warnings=(), errors=(), stale=(),
+    )]
     pane._resolved_rows = lambda: rows
     import tumblepipe.pipe.paths.render as render_paths
     saved = render_paths.list_render_versions

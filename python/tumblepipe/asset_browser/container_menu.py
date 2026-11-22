@@ -70,7 +70,7 @@ class ContainerMenu:
         self._containers = manager
         # A Multi card's Open in Entity Editor (EntityOps), for Add Entity.
         self._open_entity_editor = open_entity_editor
-        # EntityOps.play_shot_uris(project, uris), for a shots Multi's Play.
+        # Playback.play_shot_uris(project, uris), for a shots Multi's Play.
         self._play_shots = play_shots
 
     def kind_label(self, kind: str) -> str:

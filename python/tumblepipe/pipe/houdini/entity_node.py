@@ -56,12 +56,60 @@ class EntityNodeError(ns.NodeError):
     parm, and says how to fix it."""
 
 
-class EntityNode(ns.Node):
+class ImportOptions:
+    """The department menu and exclusion, the layerbreak and the import
+    mode: what EntityNode shares with import_assets, whose rows each name
+    their own entity. A class using it says how its departments narrow
+    (``scoped_departments``)."""
 
     # Knobs for the default list_department_names(): which department
     # context to list and which boolean department flag to filter on.
     DEPARTMENT_CONTEXT: str = 'assets'
     DEPARTMENT_FILTER: str = 'publishable'
+
+    def list_department_names(self):
+        """The departments the node offers. Nodes with a 'department' parm
+        override this to lead with 'from_context'; this default lists the
+        departments the 'departments' exclusion parm offers."""
+        return [
+            d.name for d in self.scoped_departments(self.DEPARTMENT_CONTEXT)
+            if getattr(d, self.DEPARTMENT_FILTER)
+        ]
+
+    def get_exclude_department_names(self):
+        return list(filter(len, self.parm('departments').eval().split()))
+
+    def set_exclude_department_names(self, exclude_department_names):
+        """Exclude whichever of ``exclude_department_names`` this node's
+        entity has. Narrowing is the point, not a fallback: import_assets
+        hands its node-level exclusion (a union over every row's asset) to
+        each row's import_asset, and a department an asset lacks has nothing
+        to exclude."""
+        department_names = self.list_department_names()
+        self.parm('departments').set(' '.join([
+            department_name
+            for department_name in exclude_department_names
+            if department_name in department_names
+        ]))
+
+    # Layerbreak / import mode
+
+    def get_include_layerbreak(self) -> bool:
+        return bool(self.parm('include_layerbreak').eval())
+
+    def set_include_layerbreak(self, include_layerbreak: bool):
+        self.parm('include_layerbreak').set(int(include_layerbreak))
+
+    def get_import_mode(self) -> str:
+        """'reference' (pipeline metadata + layerbreak) or 'inline' (baked
+        into the export)."""
+        return self.parm('import_mode').evalAsString()
+
+    def set_import_mode(self, import_mode: str):
+        self.parm('import_mode').set(import_mode)
+
+
+class EntityNode(ImportOptions, ns.Node):
 
     # Which entity contexts the 'from_context' sentinel is allowed to
     # resolve to. None accepts both. Nodes that only ever address one side
@@ -265,15 +313,6 @@ class EntityNode(ns.Node):
             )
         return list_departments(context, include_generated=include_generated)
 
-    def list_department_names(self):
-        """The departments the node offers. Nodes with a 'department' parm
-        override this to lead with 'from_context'; this default lists the
-        departments the 'departments' exclusion parm offers."""
-        return [
-            d.name for d in self.scoped_departments(self.DEPARTMENT_CONTEXT)
-            if getattr(d, self.DEPARTMENT_FILTER)
-        ]
-
     def get_department_name(self) -> str | None:
         """The 'department' parm resolved; None when 'from_context' is unset.
 
@@ -319,22 +358,6 @@ class EntityNode(ns.Node):
         self.parm('department').set(department_name)
         self._update_labels()
 
-    def get_exclude_department_names(self):
-        return list(filter(len, self.parm('departments').eval().split()))
-
-    def set_exclude_department_names(self, exclude_department_names):
-        """Exclude whichever of ``exclude_department_names`` this node's
-        entity has. Narrowing is the point, not a fallback: import_assets
-        hands its node-level exclusion (a union over every row's asset) to
-        each row's import_asset, and a department an asset lacks has nothing
-        to exclude."""
-        department_names = self.list_department_names()
-        self.parm('departments').set(' '.join([
-            department_name
-            for department_name in exclude_department_names
-            if department_name in department_names
-        ]))
-
     # Channels
 
     def list_channel_names(self) -> list[str]:
@@ -370,22 +393,6 @@ class EntityNode(ns.Node):
                 "version is empty. Pick a version, or 'latest'."
             )
         return version_name
-
-    # Layerbreak / import mode
-
-    def get_include_layerbreak(self) -> bool:
-        return bool(self.parm('include_layerbreak').eval())
-
-    def set_include_layerbreak(self, include_layerbreak: bool):
-        self.parm('include_layerbreak').set(int(include_layerbreak))
-
-    def get_import_mode(self) -> str:
-        """'reference' (pipeline metadata + layerbreak) or 'inline' (baked
-        into the export)."""
-        return self.parm('import_mode').evalAsString()
-
-    def set_import_mode(self, import_mode: str):
-        self.parm('import_mode').set(import_mode)
 
     # Label hook
 

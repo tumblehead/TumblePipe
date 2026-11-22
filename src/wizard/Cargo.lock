@@ -2414,7 +2414,6 @@ dependencies = [
  "egui",
  "tempfile",
  "th_project_core",
- "toml",
  "winit",
 ]
 

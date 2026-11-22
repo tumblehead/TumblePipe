@@ -10,7 +10,7 @@ which is what composition would pick. With none, the project's
 ``root_default_prims.usda`` speaks.
 
 The same pass reads the render settings the dialog can override
-(:data:`SCENE_SETTINGS`: samples, motion blur, DOF), each on its own: the
+(``settings.RENDER_OVERRIDES``: samples, motion blur, DOF), each on its own: the
 strongest layer that authors that attribute on the RenderSettings prim wins,
 then the project default; one nothing authors renders at Karma's own default
 (``None``). The dialog shows them as what ``⟨from scene⟩`` means (#69).
@@ -30,23 +30,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from tumblepipe.farm.submit.settings import RENDER_OVERRIDES
+
 # RenderSettings prims sit near the root (/Render/rendersettings,
 # /scene/Render/rendersettings); not descending further keeps an animation
 # layer's thousands of prims out of the walk.
 _MAX_DEPTH = 3
 
 LAYER_SUFFIXES = ('.usd', '.usda', '.usdc')
-
-#: The dialog's scene overrides and the RenderSettings attribute each one
-#: overrides on the farm. Must match ``batch_submit.RENDER_OVERRIDE_MAP``
-#: (``tests/test_farm_submit_scene_values.py`` pins it); not imported, so
-#: this module stays light on the dialog's worker thread.
-SCENE_SETTINGS = {
-    'samples': 'karma:global:pathtracedsamples',
-    'mblur': 'karma:object:mblur',
-    'dof': 'karma:global:enable_dof',
-}
-
 
 @dataclass(frozen=True)
 class CameraProbe:
@@ -64,7 +55,7 @@ class RenderCamera:
     camera: str | None
     source: str = ''       # the department whose layer authored it, or 'project default'
     error: str | None = None
-    # Settings key (SCENE_SETTINGS) -> (value, source). A key nothing
+    # Settings key (settings.RENDER_OVERRIDES) -> (value, source). A key nothing
     # authors maps to (None, ''): the renderer's own default.
     settings: dict = field(default_factory=dict, compare=False)
 
@@ -176,7 +167,7 @@ def strongest_settings(layers) -> dict:
     wins. One no layer authors is ``(None, '')``: the renderer's default.
     """
     result = {}
-    for key, attribute in SCENE_SETTINGS.items():
+    for key, attribute in RENDER_OVERRIDES.items():
         result[key] = (None, '')
         for source, authored in layers:
             if attribute in authored:
@@ -188,13 +179,6 @@ def strongest_settings(layers) -> dict:
 def _open_layer(path: Path):
     from pxr import Sdf
     return Sdf.Layer.FindOrOpen(str(path))
-
-
-def _layer_camera(path: Path) -> str | None:
-    layer = _open_layer(path)
-    if layer is None:
-        return None
-    return authored_camera(layer)
 
 
 def _latest_version_dir(probe: CameraProbe, directory: Path) -> Path | None:
@@ -227,7 +211,7 @@ def _probe_layers(probe: CameraProbe):
 
 def read_camera(probe: CameraProbe) -> RenderCamera:
     """Worker thread: the camera the strongest published layer names, and
-    the scene's value of each :data:`SCENE_SETTINGS` attribute.
+    the scene's value of each ``settings.RENDER_OVERRIDES`` attribute.
 
     Stops opening layers once the camera and every setting are found; a
     setting nothing authors costs the same walk the camera already made
@@ -235,7 +219,7 @@ def read_camera(probe: CameraProbe) -> RenderCamera:
     """
     try:
         camera, camera_source = None, ''
-        attributes = set(SCENE_SETTINGS.values())
+        attributes = set(RENDER_OVERRIDES.values())
         authored: list = []
         seen: set = set()
         for source, path in _probe_layers(probe):

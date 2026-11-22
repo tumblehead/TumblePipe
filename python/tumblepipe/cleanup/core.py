@@ -129,7 +129,10 @@ class Category:
     about: str
     #: the storage roots it needs read (``archive.inventory.scan``)
     purposes: tuple[str, ...]
-    plan: Callable[[ProjectRoots, object, Settings], CategoryPlan]
+    #: ``(roots, inventory, settings, *, workfiles) -> plan``: ``workfiles``
+    #: (``hip.Workfiles``) the latest workfiles, read once for every
+    #: category that asks
+    plan: Callable[..., CategoryPlan]
     #: ``(category plan, log path) -> (removed, bytes, errors)``
     apply: Callable[[CategoryPlan, Path], tuple[int, int, list[str]]]
 
@@ -172,6 +175,7 @@ def make_plan(
     """A plan for the categories in ``only`` (all of them when None). Reads
     the project; changes nothing."""
     from tumblepipe.archive.inventory import scan
+    from tumblepipe.cleanup import hip
     settings = settings or Settings()
     problem = settings.problem()
     if problem:
@@ -187,10 +191,11 @@ def make_plan(
             progress('Reading the project …')
         inventory = scan(roots, purposes=purposes)
     plan = Plan(roots, settings)
+    workfiles = hip.Workfiles(roots)
     for category in picked:
         if progress:
             progress(f'{category.title} …')
-        plan.categories.append(category.plan(roots, inventory, settings))
+        plan.categories.append(category.plan(roots, inventory, settings, workfiles=workfiles))
     return plan
 
 

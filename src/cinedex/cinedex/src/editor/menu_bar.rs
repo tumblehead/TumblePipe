@@ -18,7 +18,8 @@ use primer::keyboard::{Key, Modifiers, Named};
 use primer::menu::{Accelerator, Menu, MenuItem};
 
 use super::export_dialog::ExportMessage;
-use super::{Editor, Message, OpenDialog};
+use super::file_dialogs::OpenDialog;
+use super::{Editor, Message};
 use crate::editing::Origin;
 use crate::flip;
 use crate::take_menu::TakeAxis;

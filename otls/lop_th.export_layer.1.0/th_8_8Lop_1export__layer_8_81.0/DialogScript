@@ -163,6 +163,39 @@
             nolabel
             default { "" }
         }
+        parm {
+            name    "targets_mode"
+            label   "Targets"
+            type    string
+            joinnext
+            default { "entity" }
+            help    "Where the layer is exported. This entity: the entity above. Chosen: the shots or assets listed here. All shots / All assets: every one in the project when the export runs. With more than one target the layer is cooked once and each target gets its own version, its frames moved so this node's first frame lands on the target's first frame."
+            menu {
+                "entity"        "This entity"
+                "chosen"        "Chosen"
+                "all_shots"     "All shots"
+                "all_assets"    "All assets"
+            }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "targets_browse"
+            label   "Browse..."
+            type    button
+            default { "0" }
+            help    "Pick the shots or assets to export to, several at once. Sets Targets to Chosen."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.lops.export_layer as th_node; th_node.select_targets(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "targets"
+            label   "Chosen Targets"
+            type    string
+            default { "" }
+            hidewhen "{ targets_mode != chosen }"
+            help    "The entities Targets: Chosen exports to, as entity URIs separated by spaces. Browse... fills it in."
+            parmtag { "script_callback_language" "python" }
+        }
     }
 
     groupsimple {

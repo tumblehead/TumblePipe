@@ -28,10 +28,8 @@ pub fn find_latest(root: &Path) -> Option<String> {
     }
 
     // Newest first; the common case stops at the first stat.
-    versions.sort_by(|a, b| b.0.cmp(&a.0));
-    let finished = versions
-        .iter()
-        .find(|(_, name)| root.join(name).join(VERSION_MARKER).is_file());
+    versions.sort_by_key(|(n, _)| std::cmp::Reverse(*n));
+    let finished = versions.iter().find(|(_, name)| root.join(name).join(VERSION_MARKER).is_file());
     finished.or(versions.first()).map(|(_, name)| name.clone())
 }
 

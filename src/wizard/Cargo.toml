@@ -10,7 +10,8 @@
 resolver = "2"
 members = ["core", "tt_setup", "tt_prepare"]
 
-# Mirror src/resolver: small, fast, panic=abort release binaries. Profiles are
+# Small, fast release binaries. They unwind on panic: tt_prepare's launch hook
+# catches one rather than fail the launch. Profiles are
 # workspace-wide — cargo ignores a [profile] table in a member manifest.
 [profile.release]
 lto = "thin"

@@ -328,7 +328,6 @@ class PipelineSettingsWidget(QWidget):
             TEXT_DIM,
         ))
         self._pool_editor = DepartmentPoolEditor(
-            activator=self._catalog._activator,
             refresh=self._catalog._refresh,
             invalidate_cache=self._catalog.invalidate_cache,
             parent=self,
@@ -357,8 +356,7 @@ class PipelineSettingsWidget(QWidget):
         self._farm_title.setStyleSheet(self._defaults_title.styleSheet())
         outer.addWidget(self._farm_title)
         from .farm_defaults import FarmDefaultsEditor
-        self._farm_editor = FarmDefaultsEditor(
-            activator=self._catalog._activator, parent=self)
+        self._farm_editor = FarmDefaultsEditor(parent=self)
         outer.addWidget(self._farm_editor)
 
         self._refresh_list()
@@ -437,20 +435,19 @@ class PipelineSettingsWidget(QWidget):
             return
         from tumblepipe.config import layout_animate
         try:
-            self._catalog._activator.activate(project)
-            layout_animate.set_enabled(bool(checked))
+            layout_animate.set_enabled_in(project.store(), bool(checked))
         except Exception as exc:
             report_failure("Saving Layout in Animate", exc)
 
     def _show_layout_animate(self, project, editable: bool) -> None:
         """The Layout in Animate checkbox for ``project`` (None: off and
-        disabled). Call after something activated ``project``."""
+        disabled), read from that project's own config."""
         self._defaults_project = project if editable else None
         on = False
         if project is not None:
             from tumblepipe.config import layout_animate
             try:
-                on = layout_animate.enabled()
+                on = layout_animate.enabled_in(project.store())
             except Exception as exc:
                 report_failure("Reading Layout in Animate", exc)
         box = self._layout_animate_checkbox
@@ -526,7 +523,6 @@ class PipelineSettingsWidget(QWidget):
             self._farm_editor.set_project(None, editable=False)
             return
         allowed, reason = access.can_edit_project_defaults(project)
-        # set_project activates the project: the checkbox reads its config
         self._pool_editor.set_project(project, editable=allowed, note=reason)
         self._show_layout_animate(project, allowed)
         self._farm_title.setText(f"Farm — {name}")

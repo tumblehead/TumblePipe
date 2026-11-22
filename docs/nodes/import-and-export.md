@@ -279,6 +279,8 @@ Source: [`otls/lop_th.export_layer.1.0`](../../otls/lop_th.export_layer.1.0/th_8
 | Entity | `from_context` | Asset or shot to publish |
 | Channel | `default` | Channel to publish under |
 | Department | `from_context` | Department to publish; menu lists the entity's publishable departments. Any of them, from any of the entity's workfiles: the node publishes the workfile it lives in, so a lookdev export in the model workfile publishes lookdev from there |
+| Targets | This entity | Where the layer is published. **This entity**: the Entity above. **Chosen**: the shots or assets in **Chosen Targets** (**Browse...** picks several and sets Chosen). **All shots** / **All assets**: every one in the project when the export runs, so shots made later are included. See [Exporting to several shots](#exporting-to-several-shots) |
+| Chosen Targets | *(empty)* | With Chosen: the target entity URIs, separated by spaces |
 | Frame Range | From context | From context (the entity's database range, roll included) or From settings. The menu names the frames From context gives, e.g. `(1001-1100)` |
 | First/Last/Step-Frame, Pre/Post-Roll | `1001 1001 1`, `0 0` | Only with From settings. **Step is ignored** — exports always run every frame |
 | Time Offset | From Multi | Where the frame range sits in this scene: the export cooks the range moved by the offset, then moves the written samples back, so the published layer is on the range's own frames. **From Multi** is the shot's place on a Multi's [shared timeline](../asset-browser/multis-and-roots.md#shared-timeline), and no offset in any other workfile; **None** and **Manual** (**Offset Frames**) as on `import_shot` |
@@ -297,6 +299,34 @@ Buttons:
 - **Validate** runs the department's validators on the incoming stage and
   reports pass, warnings, or a list of failures.
 - **Open Location** opens the latest export folder.
+
+### Exporting to several shots
+
+Author a department layer once in a test shot (render settings with mattes
+and LPEs, an even lighting setup) and publish it to many shots with one
+node: set **Targets** to Chosen, All shots or All assets.
+
+- The stage is cooked **once**, in this scene, over this node's Frame Range
+  (the test shot's frames).
+- Each target then gets **its own new version** of the department layer,
+  exactly as if it had been exported on its own: its own layer name, the
+  entity stamp, the `_shared` sublayer when it has one, and its own
+  `context.json`, which also records `exported_from` (the test shot) and
+  `frame_shift`.
+- Each copy's samples are **moved so the test shot's first frame lands on
+  the target's first frame**. A target longer than the test shot holds the
+  last frame; a static asset is not moved.
+- The layer is the same everywhere. An override on a prim a target does not
+  have (a light-link to a prop only in the test shot) is written anyway;
+  USD ignores it in that shot.
+- Refused before anything is cooked: a target of the other kind (a shot
+  node exporting to assets), one that does not exist, or one at another fps
+  than the test shot. The error names them.
+- Layout keys are not written with several targets: they belong to one
+  shot's APEX Animate.
+- On the farm the job is the node's, as always; it writes every target.
+  Downstream Exports and the Build USD task follow the node's own entity
+  only.
 
 The node embeds a USD ROP whose frame range, output path and Save to Disk
 the pipeline drives during an export. Those parms are hidden (from the release after 1.46.0);

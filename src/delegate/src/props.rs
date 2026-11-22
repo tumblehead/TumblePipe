@@ -3,14 +3,14 @@
 //! mesh Hydra can hand over, including broken ones (indices past the
 //! points, NaN points from a bad deformer).
 
+use crate::blur::{self, Blur, Lens};
+use crate::composite::{self, Shading};
 use crate::ffi::{linear_depth, th_render, ThFrame, ThLight, ThMeshView};
 use crate::lights::{LightShape, Lighting, SceneLight, SceneLights};
 use crate::math::{self, Mat4, Vec3};
-use crate::composite::{self, Shading};
-use crate::blur::{self, Blur, Lens};
 use crate::raster::{self, Frame, Mesh};
-use crate::TH_OK;
 use crate::triangulate;
+use crate::TH_OK;
 use proptest::prelude::*;
 
 /// A camera at z = 5 looking down -z with a 90 degree field of view,
@@ -22,18 +22,40 @@ fn camera() -> (Mat4, Mat4) {
     world_to_view[14] = -5.0;
     let (n, f) = (0.1f64, 100.0f64);
     let proj: Mat4 = [
-        1.0, 0.0, 0.0, 0.0, //
-        0.0, 1.0, 0.0, 0.0, //
-        0.0, 0.0, -(f + n) / (f - n), -1.0, //
-        0.0, 0.0, -2.0 * f * n / (f - n), 0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0, //
+        0.0,
+        1.0,
+        0.0,
+        0.0, //
+        0.0,
+        0.0,
+        -(f + n) / (f - n),
+        -1.0, //
+        0.0,
+        0.0,
+        -2.0 * f * n / (f - n),
+        0.0,
     ];
     (math::mul(&world_to_view, &proj), view_to_world)
 }
 
 fn frame(width: usize, height: usize, samples: usize) -> Frame {
     let (world_to_clip, view_to_world) = camera();
-    Frame { width, height, world_to_clip, view_to_world, samples, shading: Shading::Lit, ao: true, blur: Blur::OFF,
-            alpha: false, lights: crate::lights::SceneLights::NONE }
+    Frame {
+        width,
+        height,
+        world_to_clip,
+        view_to_world,
+        samples,
+        shading: Shading::Lit,
+        ao: true,
+        blur: Blur::OFF,
+        alpha: false,
+        lights: crate::lights::SceneLights::NONE,
+    }
 }
 
 /// A sample count the rasteriser has a pattern for.
@@ -74,9 +96,19 @@ fn transforms() -> impl Strategy<Value = Vec<Mat4>> {
 
 fn plain<'a>(points: &'a [Vec3], triangles: &'a [[u32; 3]], transforms: &'a [Mat4]) -> Mesh<'a> {
     Mesh {
-        points, triangles, corner_normals: None, corner_colors: None, corner_uvs: None,
-        base_color: [0.6, 0.5, 0.4], tiles: Vec::new(), transforms, key: None,
-        points_close: None, transform_keys: &[], opacity: 1.0, cull: crate::raster::Cull::Nothing,
+        points,
+        triangles,
+        corner_normals: None,
+        corner_colors: None,
+        corner_uvs: None,
+        base_color: [0.6, 0.5, 0.4],
+        tiles: Vec::new(),
+        transforms,
+        key: None,
+        points_close: None,
+        transform_keys: &[],
+        opacity: 1.0,
+        cull: crate::raster::Cull::Nothing,
     }
 }
 
@@ -301,6 +333,7 @@ proptest! {
         };
         let draw = |v: ThMeshView| {
             let mut color = vec![0.0f32; 24 * 16 * 4];
+            // SAFETY: views of live values and buffers sized for the frame.
             let status = unsafe { th_render(&frame, &v, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) };
             (status, color)
         };
@@ -682,7 +715,8 @@ fn flat_frame(w: usize, h: usize, samples: usize) -> Frame {
 /// the backdrop's.
 fn coverage(image: &raster::Image, w: usize, h: usize, x: usize, y: usize) -> f32 {
     let g = raster::srgb_to_linear(
-        composite::BACKDROP_TOP + (composite::BACKDROP_BOTTOM - composite::BACKDROP_TOP) * y as f32 / (h - 1) as f32);
+        composite::BACKDROP_TOP + (composite::BACKDROP_BOTTOM - composite::BACKDROP_TOP) * y as f32 / (h - 1) as f32,
+    );
     (image.color[y * w + x][0] - g) / (1.0 - g)
 }
 
@@ -700,8 +734,7 @@ fn translation(x: f64, y: f64, z: f64) -> Mat4 {
 
 /// A few quads at their own depths (no two surfaces tie for a sample).
 fn quads() -> impl Strategy<Value = Vec<(f32, f32, f32, [f64; 3])>> {
-    prop::collection::vec((0.3f32..1.5, -0.8f32..0.8, -0.8f32..0.8,
-                           [-1.5f64..1.5, -1.5f64..1.5, -3.0f64..2.0]), 1..4)
+    prop::collection::vec((0.3f32..1.5, -0.8f32..0.8, -0.8f32..0.8, [-1.5f64..1.5, -1.5f64..1.5, -3.0f64..2.0]), 1..4)
 }
 
 proptest! {
@@ -902,7 +935,6 @@ fn a_pinhole_has_no_lens() {
     assert_eq!(Lens::of_camera(0.05, 2.0, 10.0), Some(Lens { radius: 0.0125, focus: 10.0 }));
 }
 
-
 /// A frame is the same picture every time it is drawn, even where surfaces
 /// tie for a sample: many coplanar quads of different colours, one instance
 /// each (each binned by whichever thread is free), keep the same winner.
@@ -913,7 +945,10 @@ fn coplanar_ties_resolve_the_same_every_time() {
     let meshes: Vec<Mesh> = transforms
         .chunks(1)
         .enumerate()
-        .map(|(i, t)| Mesh { base_color: [(i % 4) as f32 / 3.0, (i / 4 % 4) as f32 / 3.0, (i / 16) as f32 / 3.0], ..plain(&points, &QUAD, t) })
+        .map(|(i, t)| Mesh {
+            base_color: [(i % 4) as f32 / 3.0, (i / 4 % 4) as f32 / 3.0, (i / 16) as f32 / 3.0],
+            ..plain(&points, &QUAD, t)
+        })
         .collect();
     let f = Frame { shading: Shading::Albedo, ao: false, ..frame(64, 48, 8) };
     let first = raster::render(&f, &meshes);
@@ -982,22 +1017,52 @@ fn the_abi_carries_motion_and_the_lens() {
     let keys = [one[0], translation(0.0, 0.6, -2.0)];
     let draw = |blur_samples: u32, motion: u32, f_stop: f32, with_close: bool, with_keys: bool| {
         let frame = ThFrame {
-            width: 32, height: 24, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
-            blur_samples, motion, camera_keys: 0, cameras: [0.0; 64],
-            focal_length: 0.5, f_stop, focus_distance: 20.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0,
+            width: 32,
+            height: 24,
+            world_to_clip,
+            view_to_world,
+            samples: 4,
+            shading: 0,
+            ao: 1,
+            blur_samples,
+            motion,
+            camera_keys: 0,
+            cameras: [0.0; 64],
+            focal_length: 0.5,
+            f_stop,
+            focus_distance: 20.0,
+            alpha: 0,
+            gpu: 0,
+            linear_depth: 0,
+            lights: std::ptr::null(),
+            light_count: 0,
+            lighting: 0,
+            opaque: 0,
         };
         let view = ThMeshView {
-            points: points.as_ptr() as *const f32, point_count: 4,
-            triangles: QUAD.as_ptr() as *const u32, triangle_count: 2,
-            corner_normals: std::ptr::null(), corner_colors: std::ptr::null(), corner_uvs: std::ptr::null(),
-            base_color: [0.6, 0.5, 0.4], tiles: std::ptr::null(), tile_count: 0,
-            transforms: one.as_ptr() as *const f64, transform_count: 1, polygonal: 0, key: 0, version: 0,
+            points: points.as_ptr() as *const f32,
+            point_count: 4,
+            triangles: QUAD.as_ptr() as *const u32,
+            triangle_count: 2,
+            corner_normals: std::ptr::null(),
+            corner_colors: std::ptr::null(),
+            corner_uvs: std::ptr::null(),
+            base_color: [0.6, 0.5, 0.4],
+            tiles: std::ptr::null(),
+            tile_count: 0,
+            transforms: one.as_ptr() as *const f64,
+            transform_count: 1,
+            polygonal: 0,
+            key: 0,
+            version: 0,
             points_close: if with_close { close.as_ptr() as *const f32 } else { std::ptr::null() },
             transform_keys: if with_keys { keys.as_ptr() as *const f64 } else { std::ptr::null() },
-            transform_key_count: if with_keys { 2 } else { 0 }, transparency: 0.0, cull: 0,
+            transform_key_count: if with_keys { 2 } else { 0 },
+            transparency: 0.0,
+            cull: 0,
         };
         let mut color = vec![0.0f32; 32 * 24 * 4];
+        // SAFETY: views of live values and buffers sized for the frame.
         assert_eq!(unsafe { th_render(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) }, TH_OK);
         color
     };
@@ -1050,9 +1115,19 @@ proptest! {
 /// A blurred scene: quads at their own places, each still or moving by its
 /// points, its transform keys or both, with one or two instances, smooth or
 /// with authored corner normals.
-fn blur_scene() -> impl Strategy<Value = Vec<(f32, f32, f32, [f64; 3], u8, bool, bool)>> {
-    prop::collection::vec((0.3f32..1.5, -0.8f32..0.8, -0.8f32..0.8, [-1.5f64..1.5, -1.5f64..1.5, -3.0f64..2.0],
-                           0u8..4, any::<bool>(), any::<bool>()), 1..6)
+/// A blurred scene's quad: size, yaw, pitch, place, how it moves (bit 1:
+/// points, bit 2: transform keys), two instances, authored corner normals.
+type BlurQuad = (f32, f32, f32, [f64; 3], u8, bool, bool);
+
+/// A blurred quad built: points, closing points, transforms (1 or 2), keys
+/// (key-major, 2 keys) and corner normals.
+type BuiltQuad = (Vec<Vec3>, Vec<Vec3>, Vec<Mat4>, Vec<Mat4>, Vec<Vec3>);
+
+fn blur_scene() -> impl Strategy<Value = Vec<BlurQuad>> {
+    prop::collection::vec(
+        (0.3f32..1.5, -0.8f32..0.8, -0.8f32..0.8, [-1.5f64..1.5, -1.5f64..1.5, -3.0f64..2.0], 0u8..4, any::<bool>(), any::<bool>()),
+        1..6,
+    )
 }
 
 proptest! {
@@ -1071,9 +1146,7 @@ proptest! {
         camera_moves: bool, budget in prop::sample::select(vec![4usize, 9, 1 << 20]),
         shading in prop::sample::select(vec![Shading::Lit, Shading::Albedo]), ao: bool,
     ) {
-        // Per quad: points, closing points, transforms (1 or 2) and keys
-        // (key-major, 2 keys), corner normals.
-        let built: Vec<(Vec<Vec3>, Vec<Vec3>, Vec<Mat4>, Vec<Mat4>, Vec<Vec3>)> = scene.iter()
+        let built: Vec<BuiltQuad> = scene.iter()
             .map(|&(s, yaw, pitch, at, moves, twice, authored)| {
                 let points = turned_quad(s, yaw, pitch);
                 let close: Vec<Vec3> = points.iter().map(|&p| math::add(p, [0.3, -0.1, 0.05])).collect();
@@ -1119,7 +1192,6 @@ proptest! {
         prop_assert!(shared.depth == reference.depth, "sharing changed the depth");
     }
 }
-
 
 /// Where a still and a moving surface tie for a sample, the one earlier in
 /// instance order wins, as without sharing: the still instances' bands,
@@ -1221,9 +1293,8 @@ fn covers(tris: &[[usize; 3]], q: &[[f64; 2]], area: f64, is_in: impl Fn([f64; 2
     prop_assert_eq!(tris.len(), q.len() - 2);
     let scale = q.iter().map(|p| p[0].abs().max(p[1].abs())).fold(0.0, f64::max);
     let eps = scale * scale * 1e-4;
-    let twice = |t: &[usize; 3]| {
-        (q[t[1]][0] - q[t[0]][0]) * (q[t[2]][1] - q[t[0]][1]) - (q[t[1]][1] - q[t[0]][1]) * (q[t[2]][0] - q[t[0]][0])
-    };
+    let twice =
+        |t: &[usize; 3]| (q[t[1]][0] - q[t[0]][0]) * (q[t[2]][1] - q[t[0]][1]) - (q[t[1]][1] - q[t[0]][1]) * (q[t[2]][0] - q[t[0]][0]);
     let mut sum = 0.0;
     for t in tris {
         prop_assert!(twice(t) >= -eps, "a triangle is turned over: {:?} {}", t, twice(t));
@@ -1372,7 +1443,7 @@ proptest! {
         let mut start = 0usize;
         for (f, &n) in counts.iter().enumerate() {
             if n >= 3 && !holes.contains(&(f as i32)) {
-                expected.extend(std::iter::repeat(f as u32).take(n as usize - 2));
+                expected.extend(std::iter::repeat_n(f as u32, n as usize - 2));
             }
             let range = start as u32..(start + n as usize) as u32;
             for (t, c) in corners.iter().enumerate() {
@@ -1395,15 +1466,12 @@ proptest! {
 
 /// The backdrop of row `y` of `h`, linear, as the post pass draws it.
 fn backdrop_at(y: usize, h: usize) -> f32 {
-    raster::srgb_to_linear(
-        composite::BACKDROP_TOP + (composite::BACKDROP_BOTTOM - composite::BACKDROP_TOP) * y as f32 / (h - 1) as f32)
+    raster::srgb_to_linear(composite::BACKDROP_TOP + (composite::BACKDROP_BOTTOM - composite::BACKDROP_TOP) * y as f32 / (h - 1) as f32)
 }
 
 /// Each quad's corners and its one transform.
 fn quad_geometry(quads: &[(f32, f32, f32, [f64; 3])]) -> Vec<(Vec<Vec3>, [Mat4; 1])> {
-    quads.iter()
-        .map(|&(s, yaw, pitch, at)| (turned_quad(s, yaw, pitch), [translation(at[0], at[1], at[2])]))
-        .collect()
+    quads.iter().map(|&(s, yaw, pitch, at)| (turned_quad(s, yaw, pitch), [translation(at[0], at[1], at[2])])).collect()
 }
 
 fn shading_mode() -> impl Strategy<Value = Shading> {
@@ -1525,20 +1593,37 @@ proptest! {
 #[test]
 fn the_abi_alpha_switch_reaches_the_post_pass() {
     let (world_to_clip, view_to_world) = camera();
-    let mut frame = ThFrame { width: 8, height: 6, world_to_clip, view_to_world, samples: 4, shading: 0, ao: 1,
-                              blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-                              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 1, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0 };
-    let mut color = vec![0.5f32; 8 * 6 * 4];
-    let status = unsafe {
-        th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null())
+    let mut frame = ThFrame {
+        width: 8,
+        height: 6,
+        world_to_clip,
+        view_to_world,
+        samples: 4,
+        shading: 0,
+        ao: 1,
+        blur_samples: 0,
+        motion: 0,
+        camera_keys: 0,
+        cameras: [0.0; 64],
+        focal_length: 0.0,
+        f_stop: 0.0,
+        focus_distance: 0.0,
+        alpha: 1,
+        gpu: 0,
+        linear_depth: 0,
+        lights: std::ptr::null(),
+        light_count: 0,
+        lighting: 0,
+        opaque: 0,
     };
+    let mut color = vec![0.5f32; 8 * 6 * 4];
+    // SAFETY: views of live values and buffers sized for the frame.
+    let status = unsafe { th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) };
     assert_eq!(status, TH_OK);
     assert!(color.iter().all(|&v| v == 0.0), "transparent and empty");
     frame.alpha = 0;
-    let status = unsafe {
-        th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null())
-    };
+    // SAFETY: views of live values and buffers sized for the frame.
+    let status = unsafe { th_render(&frame, std::ptr::null(), 0, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) };
     assert_eq!(status, TH_OK);
     assert!(color.chunks(4).all(|p| p[3] == 1.0 && p[0] > 0.1), "the backdrop, opaque");
 }
@@ -1565,16 +1650,36 @@ fn view_of(points: &[Vec3], triangles: &[[u32; 3]], transforms: &[Mat4]) -> ThMe
         points_close: std::ptr::null(),
         transform_keys: std::ptr::null(),
         transform_key_count: 0,
-        transparency: 0.0, cull: 0,
+        transparency: 0.0,
+        cull: 0,
     }
 }
 
 fn abi_frame(width: u32, height: u32, samples: u32) -> ThFrame {
     let (world_to_clip, view_to_world) = camera();
-    ThFrame { width, height, world_to_clip, view_to_world, samples, shading: 0, ao: 0,
-              blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0 }
+    ThFrame {
+        width,
+        height,
+        world_to_clip,
+        view_to_world,
+        samples,
+        shading: 0,
+        ao: 0,
+        blur_samples: 0,
+        motion: 0,
+        camera_keys: 0,
+        cameras: [0.0; 64],
+        focal_length: 0.0,
+        f_stop: 0.0,
+        focus_distance: 0.0,
+        alpha: 0,
+        gpu: 0,
+        linear_depth: 0,
+        lights: std::ptr::null(),
+        light_count: 0,
+        lighting: 0,
+        opaque: 0,
+    }
 }
 
 proptest! {
@@ -1628,6 +1733,7 @@ proptest! {
         let mut color = vec![0.0f32; w * h * 4];
         let mut depth = vec![0.0f32; w * h];
         let mut ids = vec![7i32; w * h * 2];
+        // SAFETY: views of live values and buffers sized for the frame.
         let status = unsafe {
             crate::ffi::th_render_ids(&abi_f, abi.as_ptr(), abi.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(),
                                       ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
@@ -1736,6 +1842,7 @@ proptest! {
             frame.cameras[16..32].copy_from_slice(&math::mul(&view_to_world, &translation(0.3, 0.1, 0.0)));
         }
         let call_with = |cache: *const crate::ffi::ThCache, cancel: *const std::sync::atomic::AtomicU32,
+                         // SAFETY: callers pass the cache made below or null, a live flag or null, and buffers sized for the frame.
                          color: &mut Vec<f32>, depth: &mut Vec<f32>, ids: &mut Vec<i32>| unsafe {
             crate::ffi::th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(),
                                       depth.as_mut_ptr(), ids.as_mut_ptr(), cancel, cache)
@@ -1767,6 +1874,7 @@ proptest! {
         let (mut ac, mut ad, mut ai) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h], vec![0i32; w * h * 2]);
         prop_assert_eq!(call(std::ptr::null(), &mut ac, &mut ad, &mut ai), TH_OK);
         prop_assert!(ac == rc && ad == rd && ai == ri);
+        // SAFETY: the cache made above, freed once.
         unsafe { crate::ffi::th_cache_free(cache) };
     }
 }
@@ -1781,17 +1889,17 @@ fn a_cancelled_frame_writes_nothing() {
     let mut color = vec![-5.0f32; 16 * 12 * 4];
     let mut ids = vec![-5i32; 16 * 12 * 2];
     let cancel = std::sync::atomic::AtomicU32::new(1);
+    // SAFETY: views of live values and buffers sized for the frame.
     let status = unsafe {
-        crate::ffi::th_render_ids(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(),
-                                  ids.as_mut_ptr(), &cancel, std::ptr::null())
+        crate::ffi::th_render_ids(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), ids.as_mut_ptr(), &cancel, std::ptr::null())
     };
     assert_eq!(status, crate::TH_CANCELLED);
     assert!(color.iter().all(|&c| c == -5.0) && ids.iter().all(|&i| i == -5));
     // Not cancelled, the same call draws the triangle and names it.
     cancel.store(0, std::sync::atomic::Ordering::Relaxed);
+    // SAFETY: views of live values and buffers sized for the frame.
     let status = unsafe {
-        crate::ffi::th_render_ids(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(),
-                                  ids.as_mut_ptr(), &cancel, std::ptr::null())
+        crate::ffi::th_render_ids(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), ids.as_mut_ptr(), &cancel, std::ptr::null())
     };
     assert_eq!(status, TH_OK);
     assert_eq!(&ids[(6 * 16 + 8) * 2..(6 * 16 + 8) * 2 + 2], &[0, 0]);
@@ -1821,6 +1929,7 @@ proptest! {
         let cache = crate::ffi::th_cache_create();
         let draw = |views: &[ThMeshView], cache: *const crate::ffi::ThCache| {
             let (mut color, mut depth) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h]);
+            // SAFETY: views of live values and buffers sized for the frame.
             let status = unsafe {
                 th_render(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(), cache)
             };
@@ -1854,6 +1963,7 @@ proptest! {
             prop_assert_eq!(kept.0, TH_OK);
             prop_assert!(kept == fresh, "a frame drawn with kept normals differs");
         }
+        // SAFETY: the cache made above, freed once.
         unsafe { crate::ffi::th_cache_free(cache) };
     }
 }
@@ -1909,6 +2019,7 @@ proptest! {
             let draw = |cache: *const crate::ffi::ThCache| {
                 let (mut color, mut depth, mut ids) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h], vec![7i32; w * h * 2]);
                 let cancel = std::sync::atomic::AtomicU32::new(0);
+                // SAFETY: views of live values and buffers sized for the frame.
                 let status = unsafe {
                     crate::ffi::th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(),
                                               depth.as_mut_ptr(), ids.as_mut_ptr(), &cancel, cache)
@@ -1921,6 +2032,7 @@ proptest! {
             prop_assert_eq!(kept.0, TH_OK);
             prop_assert!(kept == fresh, "frame {} drawn with the kept cache differs", step);
         }
+        // SAFETY: the cache made above, freed once.
         unsafe { crate::ffi::th_cache_free(cache) };
     }
 
@@ -1970,8 +2082,7 @@ proptest! {
 fn projection(s: f64, near: f64, far: Option<f64>, orthographic: bool) -> Mat4 {
     if orthographic {
         let f = far.unwrap_or(near * 1000.0);
-        return [s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, -2.0 / (f - near), 0.0,
-                0.0, 0.0, -(f + near) / (f - near), 1.0];
+        return [s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, -2.0 / (f - near), 0.0, 0.0, 0.0, -(f + near) / (f - near), 1.0];
     }
     let (p22, p32) = match far {
         Some(f) => (-(f + near) / (f - near), -2.0 * f * near / (f - near)),
@@ -2029,6 +2140,7 @@ proptest! {
         let views = [view_of(&points, &triangles, &transforms)];
         let draw = |frame: &ThFrame| {
             let (mut color, mut depth) = (vec![0.0f32; w * h * 4], vec![0.0f32; w * h]);
+            // SAFETY: views of live values and buffers sized for the frame.
             let status = unsafe {
                 th_render(frame, views.as_ptr(), 1, color.as_mut_ptr(), depth.as_mut_ptr(), std::ptr::null())
             };
@@ -2317,13 +2429,13 @@ fn the_abi_transparency_is_one_minus_the_opacity() {
     let draw = |transparency: f32| {
         let view = ThMeshView { base_color: [1.0, 1.0, 1.0], transparency, ..view_of(&points, &QUAD, &at) };
         let mut color = vec![0.0f32; 8 * 6 * 4];
-        assert_eq!(unsafe { th_render(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) },
-                   TH_OK);
+        // SAFETY: views of live values and buffers sized for the frame.
+        assert_eq!(unsafe { th_render(&frame, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) }, TH_OK);
         color
     };
     let mut empty = vec![0.0f32; 8 * 6 * 4];
-    assert_eq!(unsafe { th_render(&frame, std::ptr::null(), 0, empty.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) },
-               TH_OK);
+    // SAFETY: views of live values and buffers sized for the frame.
+    assert_eq!(unsafe { th_render(&frame, std::ptr::null(), 0, empty.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) }, TH_OK);
     assert_eq!(draw(1.0), empty, "fully transparent draws nothing");
     let half = draw(0.5);
     for y in 0..6 {
@@ -2367,6 +2479,7 @@ proptest! {
                 ThMeshView { base_color: [1.0, 1.0, 1.0], transparency, ..view_of(&front, &QUAD, &at) },
             ];
             let mut color = vec![0.0f32; 8 * 6 * 4];
+            // SAFETY: views of live values and buffers sized for the frame.
             assert_eq!(unsafe { th_render(&frame, views.as_ptr(), 2, color.as_mut_ptr(), std::ptr::null_mut(),
                                           std::ptr::null()) }, TH_OK);
             color
@@ -2403,14 +2516,16 @@ pub(crate) fn sheet(n: usize, heights: &[f32]) -> (Vec<Vec3>, Vec<[u32; 3]>) {
 
 /// A sheet's size, heights, and per triangle the part (0..3) it is in.
 pub(crate) fn parted_sheet() -> impl Strategy<Value = (usize, Vec<f32>, Vec<usize>)> {
-    (3usize..7).prop_flat_map(|n| {
-        (Just(n), prop::collection::vec(-0.6f32..0.6, n * n), prop::collection::vec(0usize..3, 2 * (n - 1) * (n - 1)))
-    })
+    (3usize..7)
+        .prop_flat_map(|n| (Just(n), prop::collection::vec(-0.6f32..0.6, n * n), prop::collection::vec(0usize..3, 2 * (n - 1) * (n - 1))))
 }
 
 /// The sheet's triangles sorted by part (as the shim sorts them), and each
 /// part's run of them.
-pub(crate) fn by_part(triangles: &[[u32; 3]], part: &[usize]) -> (Vec<[u32; 3]>, Vec<(usize, std::ops::Range<usize>)>) {
+/// Each part's run of triangles: `(part, range into the sorted triangles)`.
+pub(crate) type PartRuns = Vec<(usize, std::ops::Range<usize>)>;
+
+pub(crate) fn by_part(triangles: &[[u32; 3]], part: &[usize]) -> (Vec<[u32; 3]>, PartRuns) {
     let mut sorted = Vec::new();
     let mut runs = Vec::new();
     for p in 0..3 {
@@ -2463,6 +2578,7 @@ proptest! {
         frame.ao = 1;
         let draw = |views: &[ThMeshView]| {
             let (mut color, mut depth, mut ids) = (vec![0.0f32; 40 * 30 * 4], vec![0.0f32; 40 * 30], vec![0i32; 40 * 30 * 2]);
+            // SAFETY: views of live values and buffers sized for the frame.
             let status = unsafe {
                 th_render_ids(&frame, views.as_ptr(), views.len() as u32, color.as_mut_ptr(), depth.as_mut_ptr(),
                               ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
@@ -2514,8 +2630,7 @@ pub(crate) fn facing_quad(reversed: bool) -> (Vec<Vec3>, Vec<[u32; 3]>) {
 /// through the transform as normals are, not from any winding on screen;
 /// None when it is too near edge-on to say.
 pub(crate) fn front_faces_camera(xform: &Mat4, reversed: bool) -> Option<bool> {
-    let normal = math::normalize(math::transform_normal([0.0, 0.0, if reversed { -1.0 } else { 1.0 }],
-                                                        &math::normal_matrix(xform)));
+    let normal = math::normalize(math::transform_normal([0.0, 0.0, if reversed { -1.0 } else { 1.0 }], &math::normal_matrix(xform)));
     let centre = math::transform_point([0.0; 3], xform);
     let to_eye = math::normalize(math::sub([0.0, 0.0, 5.0], centre));
     let cos = math::dot(normal, to_eye);
@@ -2577,15 +2692,16 @@ fn cull_through_the_abi() {
         let view = ThMeshView { cull, ..view_of(&points, &triangles, &at) };
         let frame = abi_frame(20, 16, 1);
         let (mut color, mut depth, mut ids) = (vec![0.0f32; 20 * 16 * 4], vec![0.0f32; 20 * 16], vec![0i32; 20 * 16 * 2]);
+        // SAFETY: views of live values and buffers sized for the frame.
         let status = unsafe {
-            th_render_ids(&frame, &view, 1, color.as_mut_ptr(), depth.as_mut_ptr(), ids.as_mut_ptr(),
-                          std::ptr::null(), std::ptr::null())
+            th_render_ids(&frame, &view, 1, color.as_mut_ptr(), depth.as_mut_ptr(), ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
         };
         assert_eq!(status, TH_OK);
         ids.chunks(2).filter(|id| id[0] >= 0).count()
     };
-    for (reversed, cull, drawn) in [(false, 0, true), (false, 1, true), (false, 2, false), (true, 0, true),
-                                    (true, 1, false), (true, 2, true), (true, 7, true)] {
+    for (reversed, cull, drawn) in
+        [(false, 0, true), (false, 1, true), (false, 2, false), (true, 0, true), (true, 1, false), (true, 2, true), (true, 7, true)]
+    {
         assert_eq!(draw(reversed, cull) > 0, drawn, "reversed {reversed}, cull {cull}");
     }
 }
@@ -2651,26 +2767,42 @@ fn mesh_normals_through_the_abi() {
     let (points, triangles) = sheet(4, &heights);
     for polygonal in [0u32, 1] {
         let mut out = vec![0.0f32; triangles.len() * 9];
+        // SAFETY: live points and triangles, and a normal per corner to write.
         let status = unsafe {
-            th_mesh_normals(points.as_ptr() as *const f32, points.len() as u32, triangles.as_ptr() as *const u32,
-                            triangles.len() as u32, polygonal, out.as_mut_ptr())
+            th_mesh_normals(
+                points.as_ptr() as *const f32,
+                points.len() as u32,
+                triangles.as_ptr() as *const u32,
+                triangles.len() as u32,
+                polygonal,
+                out.as_mut_ptr(),
+            )
         };
         assert_eq!(status, TH_OK);
         let want: Vec<f32> = mesh_normals(&points, &triangles, polygonal != 0).into_iter().flatten().collect();
         assert_eq!(out, want);
         if polygonal == 1 {
-            let cusp: Vec<f32> =
-                raster::cusp_normals(&points, &triangles, raster::CUSP_DEGREES).into_iter().flatten().collect();
+            let cusp: Vec<f32> = raster::cusp_normals(&points, &triangles, raster::CUSP_DEGREES).into_iter().flatten().collect();
             assert_eq!(out, cusp);
         } else {
             let smooth = raster::smooth_normals(&points, &triangles);
             assert_eq!(&out[..3], &smooth[triangles[0][0] as usize][..]);
         }
     }
+    // SAFETY: null pointers, or live points and triangles.
     unsafe {
         assert_eq!(th_mesh_normals(std::ptr::null(), 0, std::ptr::null(), 0, 0, std::ptr::null_mut()), TH_OK);
-        assert_eq!(th_mesh_normals(points.as_ptr() as *const f32, points.len() as u32, triangles.as_ptr() as *const u32,
-                                   triangles.len() as u32, 0, std::ptr::null_mut()), crate::TH_ERR_ARGS);
+        assert_eq!(
+            th_mesh_normals(
+                points.as_ptr() as *const f32,
+                points.len() as u32,
+                triangles.as_ptr() as *const u32,
+                triangles.len() as u32,
+                0,
+                std::ptr::null_mut()
+            ),
+            crate::TH_ERR_ARGS
+        );
     }
 }
 
@@ -2693,21 +2825,27 @@ fn facing_transform(facing: Vec3, at: Vec3) -> Mat4 {
 }
 
 fn unit() -> impl Strategy<Value = Vec3> {
-    [-1.0f32..1.0, -1.0f32..1.0, -1.0f32..1.0]
-        .prop_filter("not near zero", |v| math::dot(*v, *v) > 0.05)
-        .prop_map(math::normalize)
+    [-1.0f32..1.0, -1.0f32..1.0, -1.0f32..1.0].prop_filter("not near zero", |v| math::dot(*v, *v) > 0.05).prop_map(math::normalize)
 }
 
 /// A few lights of any kind about the origin, as the shim hands them over.
 fn some_lights() -> impl Strategy<Value = Vec<SceneLight>> {
-    let one = (0u32..6, colour(), 0.1f32..20.0, any::<bool>(), any::<bool>(), point(), unit(),
-               [0.05f32..1.0, 0.1f32..2.0, 0.1f32..2.0, 0.1f32..2.0]);
+    let one = (
+        0u32..6,
+        colour(),
+        0.1f32..20.0,
+        any::<bool>(),
+        any::<bool>(),
+        point(),
+        unit(),
+        [0.05f32..1.0, 0.1f32..2.0, 0.1f32..2.0, 0.1f32..2.0],
+    );
     prop::collection::vec(one, 1..6).prop_map(|lights| {
-        lights.into_iter()
+        lights
+            .into_iter()
             .map(|(kind, color, intensity, normalize, point, at, facing, sizes)| {
                 let shape = LightShape::from_abi(kind).unwrap();
-                SceneLight::placed(shape, math::scale(color, intensity), normalize, point, 0.53, sizes,
-                                   &facing_transform(facing, at))
+                SceneLight::placed(shape, math::scale(color, intensity), normalize, point, 0.53, sizes, &facing_transform(facing, at))
             })
             .collect()
     })
@@ -2794,9 +2932,17 @@ proptest! {
 fn abi_light(kind: u32, intensity: f32, at: Vec3, facing: Vec3) -> ThLight {
     ThLight {
         transform: facing_transform(facing, at),
-        kind, normalize: 1, point: 0,
-        color: [1.0, 0.9, 0.8], intensity, temperature: 0.0,
-        angle: 0.53, radius: 0.2, width: 1.0, height: 1.0, length: 1.0,
+        kind,
+        normalize: 1,
+        point: 0,
+        color: [1.0, 0.9, 0.8],
+        intensity,
+        temperature: 0.0,
+        angle: 0.53,
+        radius: 0.2,
+        width: 1.0,
+        height: 1.0,
+        length: 1.0,
     }
 }
 
@@ -2815,9 +2961,8 @@ fn the_abi_lighting_switch_and_lights_that_add_nothing() {
         f.light_count = lights.len() as u32;
         f.lighting = lighting;
         let mut color = vec![0.0f32; 16 * 12 * 4];
-        let status = unsafe {
-            th_render(&f, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null())
-        };
+        // SAFETY: views of live values and buffers sized for the frame.
+        let status = unsafe { th_render(&f, &view, 1, color.as_mut_ptr(), std::ptr::null_mut(), std::ptr::null()) };
         assert_eq!(status, TH_OK);
         color
     };

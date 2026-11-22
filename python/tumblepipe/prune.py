@@ -121,9 +121,10 @@ def parse_jobs(text: str) -> dict[str, list[str]]:
 
 
 def deadline_command() -> Path | None:
-    from tumblepipe.apps.deadline import _get_deadline_path, DeadlineNotInstalled
+    from tumblepipe.apps.deadline import DeadlineNotInstalled
+    from tumblepipe.apps.deadline import deadline_command as find_deadline_command
     try:
-        path = _get_deadline_path()
+        path = find_deadline_command()
     except (DeadlineNotInstalled, OSError, RuntimeError):
         return None
     return path if Path(path).is_file() else None
@@ -131,19 +132,15 @@ def deadline_command() -> Path | None:
 
 def query_deadline(command: Path, timeout: float = 600) -> dict[str, list[str]]:
     """Every TumblePipe (HPM plugin) job Deadline holds, by job folder."""
-    import subprocess
-    result = subprocess.run(
-        # The field is PluginName (or JobPlugin): `Plugin=HPM` matches no job,
-        # silently, which would make every folder look orphaned.
-        [str(command), '-GetJobsFilter', 'PluginName=HPM'],
-        capture_output=True, text=True, timeout=timeout,
-        encoding='utf-8', errors='replace',
-    )
-    if result.returncode != 0:
+    from tumblepipe.apps.deadline import query
+    # The field is PluginName (or JobPlugin): `Plugin=HPM` matches no job,
+    # silently, which would make every folder look orphaned.
+    answer = query(command, '-GetJobsFilter', 'PluginName=HPM', timeout=timeout)
+    if answer.code != 0:
         raise RuntimeError(
-            f'deadlinecommand exited {result.returncode}: {result.stderr.strip()[:300]}'
+            f'deadlinecommand exited {answer.code}: {answer.stderr.strip()[:300]}'
         )
-    jobs = parse_jobs(result.stdout)
+    jobs = parse_jobs(answer.stdout)
     if not jobs:
         # An empty answer cannot be told apart from a filter or parse that
         # matched nothing, and it would mark every folder orphaned.
@@ -373,4 +370,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == '__main__':
+    from tumblepipe.util.logging import setup_logging
+    setup_logging()
     sys.exit(main())

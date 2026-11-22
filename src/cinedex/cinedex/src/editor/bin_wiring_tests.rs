@@ -18,6 +18,7 @@ use primer::core::measure::{TextLayout, TextMeasurer};
 use primer::core::render::TextSpan;
 use primer::widget::custom::{Cursor, Event, Layout as Placed, LayoutCtx, Limits, Shell, StateStore, Widget, mouse};
 use proptest::prelude::*;
+use th_pipe::media;
 
 use super::bin_panel::{BinMessage, GRID_HEADING, LIST_ROW, TIP_DELAY};
 use super::*;

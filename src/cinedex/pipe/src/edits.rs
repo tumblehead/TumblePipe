@@ -158,4 +158,31 @@ mod tests {
         assert_eq!(sources.take("entity:/shots/S/010", &missing), Ok(None), "no take fits");
         assert!(sources.take("entity:/assets/A/b", &Rule::best()).is_err());
     }
+
+    proptest::proptest! {
+        /// A shot's first frame is the first frame the edit may show of it
+        /// (its range with roll); a shot with no range starts on
+        /// DEFAULT_START_FRAME; a config that cannot be read is an error.
+        #[test]
+        fn a_shots_first_frame_is_the_first_it_has(
+            start in 21i64..3000, length in 1i64..500, roll_start in 0i64..20, roll_end in 0i64..20,
+        ) {
+            let (_dir, root) = make_project();
+            let schemas = format!(
+                r#"{{"properties":{{}},"children":{{"entity":{{"properties":{{"roll_start":{roll_start},"roll_end":{roll_end}}},"children":{{"shots":{{"properties":{{}},"children":{{"sequence":{{"properties":{{}},"children":{{"shot":{{"properties":{{}},"children":{{}}}}}}}}}}}}}}}}}}}}"#
+            );
+            std::fs::write(root.join("_config/db/schemas.json"), schemas).unwrap();
+            let uri = create_shot(&Project::open(&root, &root).unwrap(), "S", "010", start, start + length - 1).unwrap();
+            let project = Project::open(&root, &root).unwrap();
+            let first = crate::timeline::shot_first_frame(&project.config, &uri).unwrap();
+            let shot = Source::Shot { shot: uri.to_string(), take: Rule::best() };
+            proptest::prop_assert_eq!(EditSources::new(&project, 24).available(&shot), Available::Frames(first, start + length - 1 + roll_end));
+            proptest::prop_assert_eq!(first, start - roll_start);
+            let planned = crate::Uri::parse("entity:/shots/S/020").unwrap();
+            proptest::prop_assert_eq!(crate::timeline::shot_first_frame(&project.config, &planned), Ok(th_edit::document::DEFAULT_START_FRAME));
+            std::fs::write(root.join("_config/db/entity.json"), "{ not json").unwrap();
+            let broken = Project::open(&root, &root).unwrap();
+            proptest::prop_assert!(crate::timeline::shot_first_frame(&broken.config, &uri).is_err());
+        }
+    }
 }

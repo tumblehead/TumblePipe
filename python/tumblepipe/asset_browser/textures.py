@@ -78,10 +78,6 @@ def texture_destinations() -> list:
         TextureDestination,
     )
 
-    if "publish" not in getattr(TextureDestination, "__dataclass_fields__", {}):
-        # A tumbletrove before 0.54 can only copy; a copy beside the
-        # publishes would be the unversioned folder this replaced.
-        return []
     try:
         if hou.hipFile.isNewFile():
             return []

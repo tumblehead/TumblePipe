@@ -283,10 +283,6 @@ class _Tool:
         app.run([path_str(self._path), *args], cwd, env)
 
 
-class IConvert(_Tool):
-    TOOL = 'iconvert'
-
-
 class ITileStitch(_Tool):
     TOOL = 'itilestitch'
 

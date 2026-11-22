@@ -30,7 +30,9 @@ use th_media::sound::{Voice, mix};
 use th_media::{ExrView, Frame, Media, MovieDecoder, Pixels};
 
 use crate::colour::{Colour, Lut};
-use crate::editor::{ProjectPaths, Resolved, open_document, resolve};
+use crate::editor::ProjectPaths;
+use crate::editor::document_io::open_document;
+use crate::editor::entries::{Resolved, resolve};
 
 /// The rate the mix is written at.
 pub const AUDIO_RATE: u32 = 48_000;

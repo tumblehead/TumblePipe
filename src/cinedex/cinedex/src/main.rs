@@ -291,7 +291,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opened = (|| {
         let (paths, ocio) = paths_and_ocio()?;
         let colour = Colour::open(&ocio).map_err(|e| format!("the OCIO config: {e}"))?;
-        let (doc, recovered) = editor::open_document(&paths, args.edit.as_deref(), &args.shots)?;
+        let (doc, recovered) = editor::document_io::open_document(&paths, args.edit.as_deref(), &args.shots)?;
         let editor = editor::Editor::new(paths, ocio, doc, colour, recovered);
         Ok::<_, String>(match args.view.clone() {
             Some(shot) => editor.with_view(shot, args.at),
@@ -367,7 +367,7 @@ mod tests {
             ("P:/show", "P:/show/config.ocio", "entity:/edits/Main"),
             ("C:/Users/a b/My Show", "C:/x y/aces.ocio", "entity:/edits/Cut2@v0003"),
         ] {
-            let parsed = parse_args(editor::open_arguments(std::path::Path::new(root), ocio, edit)).unwrap();
+            let parsed = parse_args(editor::document_io::open_arguments(std::path::Path::new(root), ocio, edit)).unwrap();
             assert_eq!(
                 parsed,
                 Args { project: Some(PathBuf::from(root)), ocio: Some(ocio.into()), edit: Some(edit.into()), ..Args::default() }

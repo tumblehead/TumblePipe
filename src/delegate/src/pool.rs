@@ -152,9 +152,11 @@ mod tests {
     #[test]
     fn work_started_inside_a_job_runs_inline() {
         let ran = AtomicUsize::new(0);
-        each_thread(&|| each_thread(&|| {
-            ran.fetch_add(1, Ordering::SeqCst);
-        }));
+        each_thread(&|| {
+            each_thread(&|| {
+                ran.fetch_add(1, Ordering::SeqCst);
+            })
+        });
         assert_eq!(ran.load(Ordering::SeqCst), lock(&pool().state).workers + 1);
     }
 

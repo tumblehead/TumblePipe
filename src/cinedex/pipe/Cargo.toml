@@ -19,7 +19,8 @@ tempfile.workspace = true
 chrono.workspace = true
 
 [features]
-# `th_pipe::testing`: a minimal project on disk, for other crates' tests.
+# `th_pipe::testing`: a minimal project on disk, for other crates' tests;
+# and `events::TEST_JOURNAL` in place of the user's change journal.
 testing = []
 
 [dev-dependencies]

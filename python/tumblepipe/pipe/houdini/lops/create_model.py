@@ -1,34 +1,8 @@
 import hou
 
-from tumblepipe.util.uri import Uri
-from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
+from tumblepipe.pipe.houdini import import_metadata
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
-
-def _metadata_script(asset_uri: Uri) -> str:
-    """Generate Python script for setting asset metadata on the scene prim."""
-    prim_path = uri_to_prim_path(asset_uri)
-    entity_name = asset_uri.segments[-1]
-
-    script = f'''import hou
-
-from tumblepipe.pipe.houdini import prim_metadata
-
-node = hou.pwd()
-stage = node.editableStage()
-root = stage.GetPseudoRoot()
-
-# Set metadata on scene prim
-prim = root.GetPrimAtPath("{prim_path}")
-if prim.IsValid():
-    metadata = {{
-        'uri': '{str(asset_uri)}',
-        'instance': '{entity_name}',
-        'inputs': []
-    }}
-    prim_metadata.set_metadata(prim, metadata)
-'''
-    return script
 
 class CreateModel(EntityNode):
 
@@ -42,7 +16,7 @@ class CreateModel(EntityNode):
         asset_uri = self.get_entity_uri()
         if asset_uri is None:
             return ''
-        return _metadata_script(asset_uri)
+        return import_metadata.model_script(asset_uri)
 
     def _update_labels(self):
         self.parm('asset_label').set(self._entity_label())

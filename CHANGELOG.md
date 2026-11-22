@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.118.1 — 2026-11-22
+
+### Fixes
+- fix(asset-browser): a Multi workfile's Publish hover dates its members' publishes, not "never" (`5fd65b54`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.118.0 (`2f1b3e41`)
+
 ## v1.118.0 — 2026-11-21
 
 ### Features

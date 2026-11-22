@@ -104,9 +104,10 @@ with `from tumblepipe import ...`. Subpackages:
   one category per module (`exports` and `jobs` over the two prunes above,
   `renders`, `caches`, `backups`, `deleted`), each a `plan` giving every file or folder
   it looked at a verdict and a reason, and an `apply` that checks each again
-  before it goes. `core` reads the project once for all of them, `cli` is
-  `python -m tumblepipe.cleanup`, `app` the window (`prune_app.py` still
-  opens it). This is the reference: the Desktop's **Clean Up Project** runs
+  before it goes. `core` reads the project once for all of them, and `hip`
+  finds the latest workfiles and reads each once for the categories that ask
+  (the twin of the Rust port's `hip.rs`), `cli` is
+  `python -m tumblepipe.cleanup`, `app` the window. This is the reference: the Desktop's **Clean Up Project** runs
   its Rust port, `bin/<platform>/cleanup` (`src/cinedex/cleanup` and
   `cleanup-app`), held to it by `tests/test_cleanup_parity.py`, and this
   window only where that is not built.
@@ -191,9 +192,18 @@ Qt and the pipeline clients onto the launch path.
 - `sidebar.py` — the collections tree.
 - `dept_scope.py` — a context's department pool, and the departments one
   entity shows (its assignment plus any with work).
+- `playback.py` — playing shots in Cinedex: selected shot cards, a shots
+  Multi, a sequence, and the toolbar's Open Timeline.
+- `edit_ops.py` — an edit card's actions (open, render, master edit, show
+  on Houdini's timeline) and New / Rename / Delete Edit.
 - `entity_ops.py` — creating, editing and deleting assets and shots, the
   description sidecar, Duplicate, Generate Master, and the per-entity
   actions (Departments…, Database Editor, todos, Submit Jobs…).
+- `quick_actions.py` — the quick-action toolbar (Open Timeline, Save,
+  Publish, Render, Entity Editor, Farm Manager, Update, Reload): its
+  buttons, clicks, right-click menus, busy outline, badges, dot and
+  hovers, and the farm watcher and autosave timer they start; the
+  catalog's `*quick_action*` hooks pass straight through to it.
 - `menus.py` / `deck.py` / `hover.py` — card and deck-item menus (every
   entry its own failure boundary), department decks, hover popups.
 - `refresh.py` — asking the open browsers to repaint (a card, the grid,
@@ -264,12 +274,14 @@ repo, so nothing below registers unless that package is installed.
 `tumblepipe_pipeline.json` is authored, tracked and shipped (Alt+T:
 pipeline HDA submenus). `tumblepipe_recipes.json` and
 `tumblepipe_asset_favorites.json` are generated (or removed, when fewer
-than the two entries a radial ring requires exist) at startup by
-`tumblepipe.startup` from the live `Recipes.hda` and the asset-browser
-favorites, so they cannot drift from what exists — they are gitignored
-and never ship. The directory is registered via
+than the two entries a radial ring requires exist) at startup of a
+graphical session by `tumblepipe.pipe.houdini.radial` from the live
+`Recipes.hda` and the asset-browser favorites, so they cannot drift from
+what exists. They are written to the user's own folder
+(`%LOCALAPPDATA%/tumblepipe/radial_menus` on Windows), never into the
+package; copies older versions wrote here are gitignored and never ship. The directory is registered via
 `radial.add_custom_menu_dir()`. The `network.cop` / `network.vop`
-context menus are built in Python in `tumblepipe.startup` rather than as
+context menus are built in Python in `tumblepipe.pipe.houdini.radial` rather than as
 JSON, and bound with `radial.bind()`: the COP menu on Radial's own
 trigger key, the VOP menu on Alt+E (`VOP_MENU_KEY`).
 

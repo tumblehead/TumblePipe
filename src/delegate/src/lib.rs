@@ -27,6 +27,8 @@
 //! Every exported function runs under `catch_unwind` (`ffi_guard`): a panic
 //! becomes an error code the shim reports, never an unwind into C++.
 
+#![warn(unsafe_op_in_unsafe_fn, clippy::undocumented_unsafe_blocks)]
+
 pub mod blur;
 mod cancel;
 pub mod composite;

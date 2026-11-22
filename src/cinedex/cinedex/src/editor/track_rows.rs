@@ -177,23 +177,13 @@ pub(crate) fn path(layout: &Path) -> PathBuf {
 /// The layout saved at `path`; the default when there is none, or it does
 /// not read.
 pub(crate) fn load(path: &Path) -> TrackLayout {
-    std::fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .map_or_else(TrackLayout::default, |v| TrackLayout::from_json(&v))
+    th_pipe::io::load_or_default(path, TrackLayout::from_json)
 }
 
 /// Save `layout` at `path`, whole: written beside it and renamed over it,
 /// as the panel sizes are.
 pub(crate) fn save(path: &Path, layout: &TrackLayout) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let partial = path.with_extension(format!("json.{}.partial", std::process::id()));
-    std::fs::write(&partial, serde_json::to_vec_pretty(&layout.to_json()).map_err(std::io::Error::other)?)?;
-    std::fs::rename(&partial, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&partial);
-    })
+    th_pipe::io::store_pretty_json(path, &layout.to_json())
 }
 
 #[cfg(test)]
@@ -206,11 +196,23 @@ pub(crate) mod tests {
     use th_edit::document::{ClipRef, Frame, Source, Track, VideoClip, WorkingEdit};
     use th_edit::ops::{Available, Sources, apply};
 
+    proptest! {
+        #[test]
+        fn the_track_layout_is_saved_whole(layout in layout()) {
+            crate::layout_prefs::tests::saved_whole(&|path| save(path, &layout), &layout.to_json())?;
+        }
+    }
+
+    #[test]
+    fn nothing_is_left_when_the_track_layout_is_blocked() {
+        crate::layout_prefs::tests::nothing_left_when_blocked(&|path| save(path, &TrackLayout::default()));
+    }
+
     pub(crate) fn track() -> impl Strategy<Value = TrackRef> {
         (any::<bool>(), 0usize..12).prop_map(|(video, index)| if video { TrackRef::video(index) } else { TrackRef::audio(index) })
     }
 
-    fn layout() -> impl Strategy<Value = TrackLayout> {
+    pub(crate) fn layout() -> impl Strategy<Value = TrackLayout> {
         (prop::collection::vec((track(), -100f32..600.0), 0..12), any::<bool>()).prop_map(|(sets, audio_hidden)| {
             let mut layout = TrackLayout { audio_hidden, ..TrackLayout::default() };
             for (track, height) in sets {

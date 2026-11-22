@@ -59,6 +59,7 @@ the other installed packages' documentation. The same pages are online at
 
 - [Contributing and development](development.md) — tests, harnesses, audits, releases, writing these docs
 - [Changelog](changelog.md) — the release history
+- [Upgrading](upgrading.md) — removed and moved names, and files that changed, for code beyond `tumblepipe.api`
 
 ## Disclaimer
 

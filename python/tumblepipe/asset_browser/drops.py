@@ -104,15 +104,16 @@ def publishes_usd(version_dirs) -> bool:
     )
 
 
-def latest_exports(entity_uri, department: str) -> list:
+def latest_exports(store, entity_uri, department: str) -> list:
     """The latest export version directory of ``department`` in each of
-    the entity's channels (``None`` for a channel with none)."""
-    from tumblepipe.config.channels import list_channels
+    the entity's channels (``None`` for a channel with none), its channels
+    read from its project's ``store``."""
+    from tumblepipe.config.channels import list_channels_in
     from tumblepipe.pipe.paths import latest_export_path
 
     return [
         latest_export_path(entity_uri, channel, department)
-        for channel in list_channels(entity_uri)
+        for channel in list_channels_in(store, entity_uri)
     ]
 
 
@@ -319,15 +320,21 @@ class DropRouter:
                 severity=hou.severityType.Warning,
             )
             return True
-        if asset_proj is not None:
-            self._activate_project(asset_proj)
+        if asset_proj is None:
+            # No registered project: no config to read the layers from.
+            hou.ui.setStatusMessage(
+                f"{asset.id} is not in a registered project",
+                severity=hou.severityType.Warning,
+            )
+            return True
+        self._activate_project(asset_proj)
 
         from tumblepipe.pipe.houdini.lops import import_layer
 
         uri = uris.parse(entity_uri)
         sop_only = [
             dept for dept in deck_keys
-            if not publishes_usd(latest_exports(uri, dept))
+            if not publishes_usd(latest_exports(asset_proj.store(), uri, dept))
         ]
         deck_keys = [dept for dept in deck_keys if dept not in sop_only]
         if not deck_keys:

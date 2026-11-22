@@ -92,18 +92,23 @@ class SceneManager:
         (otherwise a fresh asset workfile would sit at Houdini's 1-240
         default). After that the artist owns it.
 
-        An entity with no frame range gets FPS only.
+        An entity with no frame range gets FPS only, and an id naming no
+        registered project gets nothing: there is no config to read.
         """
         from tumblepipe.pipe.houdini import playbar
         from .discovery import entity_animatable, entity_fps, entity_frame_range
+        proj = self._resolver.project_of(asset_id)
+        if proj is None:
+            return
+        store = proj.store()
         uri = self._resolver.uri_for_ready(asset_id)
-        frame_range = entity_frame_range(self._catalog_id, asset_id, uri)
+        frame_range = entity_frame_range(self._catalog_id, store, asset_id, uri)
         if frame_range is not None and (
             force_frame_range
-            or entity_animatable(self._catalog_id, asset_id, uri)
+            or entity_animatable(self._catalog_id, store, asset_id, uri)
         ):
             playbar.set_frame_range(frame_range)
-        fps = entity_fps(self._catalog_id, asset_id, uri)
+        fps = entity_fps(self._catalog_id, store, asset_id, uri)
         if fps is not None:
             playbar.set_fps(fps)
 
@@ -855,9 +860,11 @@ def _loaded_workfile_entities() -> list[str]:
 
 
 def _multi_members(group_uri) -> list:
-    """Member URIs of the Multi at ``group_uri``; empty when it is gone."""
-    from tumblepipe.config.groups import get_group
-    group = get_group(group_uri)
+    """Member URIs of the Multi at ``group_uri`` in the active project (the
+    open workfile's); empty when it is gone."""
+    from tumblepipe.api import default_client
+    from tumblepipe.config.groups import get_group_in
+    group = get_group_in(default_client().config, group_uri)
     return list(group.members) if group is not None else []
 
 

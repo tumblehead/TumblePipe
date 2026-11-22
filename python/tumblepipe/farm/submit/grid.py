@@ -18,8 +18,12 @@ one-click way to get what the old "publish up to X" form did.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
+from tumblepipe.config.department_off import applied_departments, read_disabled_departments
+from tumblepipe.farm.specs import submission
+from tumblepipe.farm.submit import settings as resolve
+from tumblepipe.farm.submit.review import ReviewRow
 from tumblepipe.pipe import turntable
 
 # ── cell states ───────────────────────────────────────────
@@ -185,9 +189,59 @@ def comp_state(
     return preview_state(comp_mtime, [render_mtime], available=has_workfile or scene)
 
 
-#: The Render modes that render the full range, which a comp can follow
-#: (``batch_submit.RENDER_TASK_KEYS``: those with ``full_render``).
-FULL_RANGE_MODES = ('full', 'preview_then_full')
+def row_states(
+    status,
+    columns: Sequence[Column],
+    properties: dict,
+    publish_departments: Sequence[str],
+    *,
+    cuts: Mapping[str, str | None],
+    scene_comp: bool,
+    context: str,
+) -> dict[str, str]:
+    """``{column key: state}`` of one row from its scan ``status``
+    (``status.RowStatus``).
+
+    A scan error leaves every cell :data:`PENDING`. A department turned off
+    on the entity (#64) is :data:`OFF` on its publish column, and left out of
+    what the row's previews compose. ``cuts`` maps :data:`PLAYBLAST` and
+    :data:`RENDER` to the row's department cut; a preview without a frame
+    range is nothing to do (an asset's turntable renders the studio's
+    frames, #53). The Comp cell measures against the render the Render
+    column does (its cut's newest version), so a new render shows the comp
+    stale; ``scene_comp`` is the open workfile's comp of the shot (#80).
+    """
+    if status.error:
+        return {column.key: PENDING for column in columns}
+    has_range = context == 'assets' or (
+        resolve.nested(properties, 'frame_start') is not None
+        and resolve.nested(properties, 'frame_end') is not None
+    )
+    off = read_disabled_departments(properties)
+    states: dict[str, str] = {}
+    for column in columns:
+        if column.kind == PUBLISH:
+            states[column.key] = OFF if column.department in off else publish_state(
+                status.hip_mtimes.get(column.department),
+                status.export_mtimes.get(column.department),
+                shared=column.department in status.shared,
+            )
+        elif column.kind == COMP:
+            states[column.key] = comp_state(
+                status.comp_workfile, status.comp_mtime, status.render_mtime,
+                scene=scene_comp,
+            )
+        else:
+            cut = applied_departments(preview_cut(publish_departments, cuts[column.kind]), off)
+            preview = (
+                status.playblast_mtime if column.kind == PLAYBLAST else status.render_mtime
+            )
+            states[column.key] = preview_state(
+                preview,
+                [status.export_mtimes.get(name) for name in cut],
+                available=has_range,
+            )
+    return states
 
 
 def scene_comp_errors(settings: dict, aovs: Sequence[str]) -> list[str]:
@@ -201,7 +255,7 @@ def scene_comp_errors(settings: dict, aovs: Sequence[str]) -> list[str]:
     render = bool(settings.get('render'))
     return comp.scene_comp_problems(
         render,
-        render and settings.get('render_mode') in FULL_RANGE_MODES,
+        render and settings.get('render_mode') in submission.FULL_RENDER_MODES,
         read_channel_names(settings) if render else [],
         aovs,
     )
@@ -718,3 +772,141 @@ def edit_summary(ticked: int) -> str:
     renders = 'edit render' if ticked == 1 else 'edit renders'
     edits = 'edit' if ticked == 1 else 'edits'
     return f"{ticked} {renders} — {ticked} {edits}"
+
+
+# ── Resolved rows ─────────────────────────────────────────
+
+#: The render_mode the Range checkboxes send, keyed by (preview, full range)
+#: (``farm.specs.submission.RENDER_TASK_KEYS`` maps it to the render chains).
+#: Neither ticked has no mode: submit refuses it.
+RENDER_MODES = {
+    (False, True): 'full',
+    (True, False): 'first_middle_last',
+    (True, True): 'preview_then_full',
+}
+
+
+def render_step(context: str, step: int) -> int:
+    """The Render's Step as the form's field holds it; 1 on an asset's tab
+    (a turntable renders on the studio's step, and the field is hidden)."""
+    if context == 'assets':
+        return 1
+    return max(1, step)
+
+
+def render_disabled(
+    context: str, step: int, frame_list: str | None, target: str | None = None,
+) -> dict[str, str]:
+    """``{key: why}`` for the Render settings the submit would ignore: those
+    a Step above 1 (``settings.step_disabled``) or a multi-range Frame List
+    (``settings.frame_list_disabled``, none while an Into version ``target``
+    is picked, #92) turn off. None on an asset's tab."""
+    if context == 'assets':
+        return {}
+    return {
+        **resolve.step_disabled(step),
+        **resolve.frame_list_disabled(frame_list, target),
+    }
+
+
+@dataclass(frozen=True)
+class ResolvedRow:
+    """One ticked row as it will be submitted.
+
+    ``errors`` block the submit (``settings.entity_errors``, and a scene
+    comp's); ``stale`` are the unticked departments needing work that a
+    ticked preview composes; ``warnings`` the rest
+    (``settings.entity_warnings``).
+    """
+    uri: str
+    settings: dict
+    warnings: tuple[str, ...]
+    errors: tuple[str, ...]
+    stale: tuple[str, ...]
+
+    def shown(self) -> list[str]:
+        """The Warnings column: blocking errors first (so an elided cell
+        still shows them), then the stale departments, then the warnings."""
+        stale = [f"{', '.join(self.stale)} stale and not ticked"] if self.stale else []
+        return [*self.errors, *stale, *self.warnings]
+
+    def review(self, name: str, steps: list[tuple[str, str]]) -> ReviewRow:
+        """The row on the review sheet, named ``name``, submitting ``steps``."""
+        return ReviewRow(
+            name=name, steps=steps, errors=list(self.errors),
+            stale=list(self.stale), warnings=list(self.warnings),
+        )
+
+    def job_config(self, name: str, context: str, backend: str) -> dict:
+        """What the runner submits for the row (``batch_submit``'s config),
+        with the comp batch the form shows for ``backend`` (#44)."""
+        return {
+            'entity': {'uri': self.uri, 'name': name, 'context': context},
+            'settings': settings_for_backend(self.settings, backend),
+        }
+
+
+def resolve_rows(
+    *,
+    uris: Sequence[str],
+    columns: Sequence[Column],
+    ticks: set,
+    states: Mapping[CellKey, str],
+    properties: Mapping[str, dict],
+    statuses: Mapping[str, Any],
+    scene_comps: Mapping[str, Any],
+    form: dict,
+    pinned: Sequence[str],
+    fallbacks: dict,
+    context: str,
+) -> list[ResolvedRow]:
+    """Every ticked row resolved, in grid order: the single source of truth
+    for the Warnings column and the submit, so what the grid warns about is
+    by construction what gets submitted.
+
+    ``statuses`` are the rows' scans (``status.RowStatus``, missing until
+    read); ``scene_comps`` the open workfile's comps without a
+    th::import_render (#80, ``pipe.comp.SceneComp``: its ``settings()`` and
+    ``aovs``), which a ticked Comp comps, reading the Render beside it.
+    """
+    requested = form[resolve.CHANNEL_LIST_KEY]
+    rows = []
+    for uri in uris:
+        kinds = row_kinds(uri, columns, ticks)
+        if not kinds:
+            continue
+        props = properties.get(uri, {})
+        settings = finish_row_settings(
+            resolve.resolve_settings(
+                props, sections=kinds, form=form, pinned=pinned, fallbacks=fallbacks,
+            ),
+            row_publish_departments(uri, columns, ticks),
+        )
+        status = statuses.get(uri)
+        rendered = None if status is None else status.rendered
+        warnings = resolve.entity_warnings(
+            props, settings,
+            departments=list(props.get('departments') or []) or None,
+            requested=requested,
+            staged=None if status is None or status.error else status.staged,
+            turntable=context == 'assets', rendered=rendered,
+        )
+        errors = resolve.entity_errors(
+            props, settings, requested=requested, rendered=rendered,
+        )
+        scene = scene_comps.get(uri)
+        if scene is not None and settings.get('comp'):
+            settings['comp_scene'] = scene.settings()
+            errors = errors + scene_comp_errors(settings, scene.aovs)
+        stale = unpublished_upstream(
+            uri, columns, ticks, states,
+            cuts={
+                PLAYBLAST: settings.get('pb_department'),
+                RENDER: settings.get('render_department'),
+            },
+        )
+        rows.append(ResolvedRow(
+            uri=uri, settings=settings, warnings=tuple(warnings),
+            errors=tuple(errors), stale=tuple(stale),
+        ))
+    return rows

@@ -33,8 +33,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
+from pathlib import Path
+
+from tumblepipe.util.io import write_bytes_atomic
 
 log = logging.getLogger(__name__)
 
@@ -71,14 +73,7 @@ def strip_file(path: str) -> int:
         return 0
     if len(out) != len(data):  # never: every line keeps its length
         raise RuntimeError("blanking changed the file length")
-    tmp = f"{path}.tp_viewcam.tmp"
-    try:
-        with open(tmp, "wb") as handle:
-            handle.write(out)
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+    write_bytes_atomic(Path(path), out)
     return count
 
 

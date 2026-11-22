@@ -258,7 +258,7 @@ def main() -> int:
         dlg._ticks = {(target, grid.publish_key(d)) for d in departments} | {(target, grid.RENDER)}
         dlg._refresh()
         rows = dlg._resolved_rows()
-        settings = rows[0][1] if rows else {}
+        settings = rows[0].settings if rows else {}
         props = dlg._props[target]
         check("8. a row publishes exactly its ticked departments",
               settings.get("pub_departments") == departments
@@ -302,7 +302,7 @@ def main() -> int:
     dlg._ticks = {(str(shot), grid.COMP)}
     dlg._refresh()
     rows = dlg._resolved_rows()
-    settings = rows[0][1] if rows else {}
+    settings = rows[0].settings if rows else {}
     check("21. a Comp tick shows only the Comp settings and resolves comp + comp_*",
           shown() == [grid.COMP]
           and settings.get("comp") is True and not settings.get("render")
@@ -314,7 +314,7 @@ def main() -> int:
     dlg._rnd_full.setChecked(False)
     dlg._rnd_preview.setChecked(True)
     dlg._refresh()
-    errors = dlg._resolved_rows()[0][3]
+    errors = dlg._resolved_rows()[0].errors
     dlg._rnd_preview.setChecked(False)
     dlg._rnd_full.setChecked(True)
     check("21. Comp beside a preview-only render is blocked",
@@ -421,8 +421,7 @@ def main() -> int:
         try:
             confirm_dlg._ticks = {(preview_shot, grid.PLAYBLAST)}
             confirm_dlg._refresh()
-            settings = confirm_dlg._resolved_rows()[0][1]
-            missing = confirm_dlg._stale_upstream(preview_shot, settings)
+            missing = list(confirm_dlg._resolved_rows()[0].stale)
             confirm_win._on_submit()
             sheet = confirm_win._overlay.content()
             on_overlay = isinstance(sheet, ReviewSheet) and confirm_win._overlay.isVisibleTo(confirm_win)

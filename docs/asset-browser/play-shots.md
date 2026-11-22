@@ -1048,7 +1048,9 @@ with AAC sound and a timecode track from the edit's start timecode. A bar
 shows the frames done; **Cancel** stops it, and nothing is written: the
 movie is made beside the file under a temporary name
 (`.Main_v0003.exporting.mp4`) and only replaces the file once it is
-complete. When it is done, **Play** opens the movie in your
+complete. If another program (Resolve, a player) has the old movie open,
+the export waits up to five seconds for it to let go before it gives up.
+When it is done, **Play** opens the movie in your
 player and **Show in Folder** its folder.
 
 Under the file, the dialog asks what the movie is to be (at first the
@@ -1119,7 +1121,9 @@ The dialog asks for:
   is the first frame (`beauty.1001.exr`).
 
 The file is written under a temporary name (`Main_v0003.xml.partial`) and
-only replaces the file once it is whole. When it is done the dialog lists
+only replaces the file once it is whole, waiting up to five seconds for a
+program that has the old timeline open. A folder of the file's name is
+refused at once. When it is done the dialog lists
 what was carried and, in yellow, everything that was dropped or
 approximated, each with the clips it happened to.
 

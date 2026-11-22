@@ -4,12 +4,12 @@
 //! as a disc that covers its centre and nothing outside it, and through the
 //! ABI the ids name the curves view and instance a pixel sees.
 
+use crate::blur::Blur;
 use crate::composite::Shading;
 use crate::curves::{self, Basis, Camera, Interp, Kind, Made, Strokes, Wrap};
 use crate::ffi::{th_render_scene, ThCurvesView, ThFrame, ThMeshView};
 use crate::math::{self, Mat4, Vec3};
 use crate::raster::{self, Frame};
-use crate::blur::Blur;
 use crate::TH_OK;
 use proptest::prelude::*;
 
@@ -21,18 +21,40 @@ fn camera() -> (Mat4, Mat4) {
     world_to_view[14] = -5.0;
     let (n, f) = (0.1f64, 100.0f64);
     let proj: Mat4 = [
-        1.0, 0.0, 0.0, 0.0, //
-        0.0, 1.0, 0.0, 0.0, //
-        0.0, 0.0, -(f + n) / (f - n), -1.0, //
-        0.0, 0.0, -2.0 * f * n / (f - n), 0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0, //
+        0.0,
+        1.0,
+        0.0,
+        0.0, //
+        0.0,
+        0.0,
+        -(f + n) / (f - n),
+        -1.0, //
+        0.0,
+        0.0,
+        -2.0 * f * n / (f - n),
+        0.0,
     ];
     (math::mul(&world_to_view, &proj), view_to_world)
 }
 
 fn frame(width: usize, height: usize, samples: usize) -> Frame {
     let (world_to_clip, view_to_world) = camera();
-    Frame { width, height, world_to_clip, view_to_world, samples, shading: Shading::Lit, ao: false, blur: Blur::OFF,
-            alpha: false, lights: crate::lights::SceneLights::NONE }
+    Frame {
+        width,
+        height,
+        world_to_clip,
+        view_to_world,
+        samples,
+        shading: Shading::Lit,
+        ao: false,
+        blur: Blur::OFF,
+        alpha: false,
+        lights: crate::lights::SceneLights::NONE,
+    }
 }
 
 fn basis() -> impl Strategy<Value = Basis> {
@@ -60,9 +82,14 @@ fn draw(f: &Frame, s: &Strokes, transform: &Mat4) -> (raster::Image, Made) {
 
 fn strokes<'a>(kind: Kind, wrap: Wrap, points: &'a [Vec3], counts: &'a [i32], widths: &'a [f32]) -> Strokes<'a> {
     Strokes {
-        kind, wrap, points, counts, widths,
+        kind,
+        wrap,
+        points,
+        counts,
+        widths,
         width_interp: if widths.len() == 1 { Interp::Constant } else { Interp::Vertex },
-        colors: &[], color_interp: Interp::Constant,
+        colors: &[],
+        color_interp: Interp::Constant,
     }
 }
 
@@ -396,10 +423,29 @@ proptest! {
 
 fn abi_frame(width: u32, height: u32, samples: u32) -> ThFrame {
     let (world_to_clip, view_to_world) = camera();
-    ThFrame { width, height, world_to_clip, view_to_world, samples, shading: 0, ao: 0,
-              blur_samples: 0, motion: 0, camera_keys: 0, cameras: [0.0; 64],
-              focal_length: 0.0, f_stop: 0.0, focus_distance: 0.0, alpha: 0, gpu: 0, linear_depth: 0,
-            lights: std::ptr::null(), light_count: 0, lighting: 0, opaque: 0 }
+    ThFrame {
+        width,
+        height,
+        world_to_clip,
+        view_to_world,
+        samples,
+        shading: 0,
+        ao: 0,
+        blur_samples: 0,
+        motion: 0,
+        camera_keys: 0,
+        cameras: [0.0; 64],
+        focal_length: 0.0,
+        f_stop: 0.0,
+        focus_distance: 0.0,
+        alpha: 0,
+        gpu: 0,
+        linear_depth: 0,
+        lights: std::ptr::null(),
+        light_count: 0,
+        lighting: 0,
+        opaque: 0,
+    }
 }
 
 fn curves_view(kind: u32, points: &[Vec3], counts: &[i32], transforms: &[Mat4]) -> ThCurvesView {
@@ -408,9 +454,15 @@ fn curves_view(kind: u32, points: &[Vec3], counts: &[i32], transforms: &[Mat4]) 
         point_count: points.len() as u32,
         curve_vertex_counts: counts.as_ptr(),
         curve_count: counts.len() as u32,
-        kind, basis: 1, wrap: 2,
-        widths: std::ptr::null(), width_count: 0, width_interp: 0,
-        colors: std::ptr::null(), color_count: 0, color_interp: 0,
+        kind,
+        basis: 1,
+        wrap: 2,
+        widths: std::ptr::null(),
+        width_count: 0,
+        width_interp: 0,
+        colors: std::ptr::null(),
+        color_count: 0,
+        color_interp: 0,
         base_color: [0.6, 0.5, 0.4],
         transforms: transforms.as_ptr() as *const f64,
         transform_count: transforms.len() as u32,
@@ -422,11 +474,15 @@ fn curves_view(kind: u32, points: &[Vec3], counts: &[i32], transforms: &[Mat4]) 
 
 fn translations() -> impl Strategy<Value = Vec<Mat4>> {
     prop::collection::vec([-2.0f64..2.0, -2.0f64..2.0, -2.0f64..2.0], 1..4).prop_map(|ts| {
-        ts.into_iter().map(|[x, y, z]| {
-            let mut m = math::IDENTITY;
-            m[12] = x; m[13] = y; m[14] = z;
-            m
-        }).collect()
+        ts.into_iter()
+            .map(|[x, y, z]| {
+                let mut m = math::IDENTITY;
+                m[12] = x;
+                m[13] = y;
+                m[14] = z;
+                m
+            })
+            .collect()
     })
 }
 
@@ -434,9 +490,20 @@ fn translations() -> impl Strategy<Value = Vec<Mat4>> {
 fn abi_draw(f: &ThFrame, meshes: &[ThMeshView], curves: &[ThCurvesView]) -> (Vec<f32>, Vec<f32>, Vec<i32>) {
     let n = (f.width * f.height) as usize;
     let (mut color, mut depth, mut ids) = (vec![0.0f32; n * 4], vec![0.0f32; n], vec![7i32; n * 2]);
+    // SAFETY: views of live values and buffers sized for the frame.
     let status = unsafe {
-        th_render_scene(f, meshes.as_ptr(), meshes.len() as u32, curves.as_ptr(), curves.len() as u32,
-                        color.as_mut_ptr(), depth.as_mut_ptr(), ids.as_mut_ptr(), std::ptr::null(), std::ptr::null())
+        th_render_scene(
+            f,
+            meshes.as_ptr(),
+            meshes.len() as u32,
+            curves.as_ptr(),
+            curves.len() as u32,
+            color.as_mut_ptr(),
+            depth.as_mut_ptr(),
+            ids.as_mut_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
     };
     assert_eq!(status, TH_OK);
     (color, depth, ids)
@@ -507,7 +574,8 @@ pub(crate) fn mesh_view(points: &[Vec3], triangles: &[[u32; 3]], transforms: &[M
         points_close: std::ptr::null(),
         transform_keys: std::ptr::null(),
         transform_key_count: 0,
-        transparency: 0.0, cull: 0,
+        transparency: 0.0,
+        cull: 0,
     }
 }
 
@@ -580,4 +648,94 @@ fn a_plan_cuts_the_closing_as_the_opening() {
     let (b, _) = curves::expand(&s, &hairpin, &math::IDENTITY, &cam, Some(&plan));
     assert_eq!(a.points.len(), b.points.len());
     assert_eq!(a.triangles, b.triangles);
+}
+
+/// A mesh or curves view as the shim may pass one: whole, or with its
+/// points, triangles or curve counts, or its transforms, left null.
+#[derive(Debug, Clone, Copy)]
+enum Hole {
+    None,
+    Points,
+    Topology,
+    Transforms,
+}
+
+fn hole() -> impl Strategy<Value = Hole> {
+    prop_oneof![Just(Hole::None), Just(Hole::Points), Just(Hole::Topology), Just(Hole::Transforms)]
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
+
+    // Any mix of null and non-null pointers and zero and non-zero counts:
+    // th_render_scene returns TH_ERR_ARGS exactly when the frame or colour
+    // is null, the image is empty, or a list is null with a non-zero count,
+    // else TH_OK, and never panics (that would come back as TH_ERR_PANIC).
+    // A view with a null part is left out, not read.
+    #[test]
+    fn render_scene_returns_ok_or_bad_arguments(
+        frame_given in any::<bool>(),
+        (width, height) in (0u32..4, 0u32..4),
+        mesh_holes in prop::collection::vec(hole(), 0..4),
+        meshes_null in any::<bool>(),
+        curve_holes in prop::collection::vec(hole(), 0..4),
+        curves_null in any::<bool>(),
+        curve_kind in 0u32..3,
+        (color_given, depth_given, ids_given) in (any::<bool>(), any::<bool>(), any::<bool>()),
+    ) {
+        let frame = abi_frame(width, height, 1);
+        let points: Vec<Vec3> = vec![[-0.5, -0.5, 0.0], [0.5, -0.5, 0.0], [0.0, 0.5, 0.0], [0.5, 0.5, 0.0]];
+        let triangles = [[0u32, 1, 2], [1, 3, 2]];
+        let counts = [4i32];
+        let transforms = [math::IDENTITY, math::IDENTITY];
+        let meshes: Vec<ThMeshView> = mesh_holes
+            .iter()
+            .map(|h| {
+                let v = mesh_view(&points, &triangles, &transforms);
+                match h {
+                    Hole::None => v,
+                    Hole::Points => ThMeshView { points: std::ptr::null(), ..v },
+                    Hole::Topology => ThMeshView { triangles: std::ptr::null(), ..v },
+                    Hole::Transforms => ThMeshView { transforms: std::ptr::null(), ..v },
+                }
+            })
+            .collect();
+        let curves: Vec<ThCurvesView> = curve_holes
+            .iter()
+            .map(|h| {
+                let v = curves_view(curve_kind, &points, &counts, &transforms);
+                match h {
+                    Hole::None => v,
+                    Hole::Points => ThCurvesView { points: std::ptr::null(), ..v },
+                    Hole::Topology => ThCurvesView { curve_vertex_counts: std::ptr::null(), ..v },
+                    Hole::Transforms => ThCurvesView { transforms: std::ptr::null(), ..v },
+                }
+            })
+            .collect();
+        let n = (width * height) as usize;
+        let (mut color, mut depth, mut ids) = (vec![0.0f32; n * 4], vec![0.0f32; n], vec![0i32; n * 2]);
+        let pointer = |given: bool, p: *mut f32| if given { p } else { std::ptr::null_mut() };
+        // SAFETY: each pointer null or a live buffer sized for its count or the frame.
+        let status = unsafe {
+            th_render_scene(
+                if frame_given { &frame } else { std::ptr::null() },
+                if meshes_null { std::ptr::null() } else { meshes.as_ptr() },
+                meshes.len() as u32,
+                if curves_null { std::ptr::null() } else { curves.as_ptr() },
+                curves.len() as u32,
+                pointer(color_given, color.as_mut_ptr()),
+                pointer(depth_given, depth.as_mut_ptr()),
+                if ids_given { ids.as_mut_ptr() } else { std::ptr::null_mut() },
+                std::ptr::null(),
+                std::ptr::null(),
+            )
+        };
+        let bad = !frame_given
+            || !color_given
+            || width == 0
+            || height == 0
+            || (meshes_null && !meshes.is_empty())
+            || (curves_null && !curves.is_empty());
+        prop_assert_eq!(status, if bad { crate::TH_ERR_ARGS } else { TH_OK });
+    }
 }

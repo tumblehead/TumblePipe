@@ -1,14 +1,16 @@
+from pathlib import Path
+
 import hou
 
 from tumblepipe.api import api
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.entities import is_terminal_entity
 import tumblepipe.pipe.houdini.nodes as ns
-from tumblepipe.pipe.houdini.entity_node import EntityNodeError
+from tumblepipe.pipe.houdini.asset_rows import AssetRows
 from tumblepipe.pipe.houdini.sops import import_rig
 from tumblepipe.config.channels import CHANNEL_KEY, list_channels
 from tumblepipe.pipe.houdini import prim_metadata
-from tumblepipe.pipe.paths import list_version_paths
+from tumblepipe.pipe.paths import get_rig_export_path
 from tumblepipe.pipe.usd.instances import copies_are_animated
 
 
@@ -114,160 +116,23 @@ def split_unpublished(rig_imports):
     return to_import, unpublished
 
 
-class ImportRigs(ns.Node):
-    """One rig import per multiparm row. Each row's asset, channel and
-    version are explicit: a row resolves exactly what it names, or raises
-    EntityNodeError — an empty row is unset, never the first asset."""
+class ImportRigs(AssetRows):
+    """One rig import per multiparm row (see AssetRows): the row's asset's
+    published rig, in its channel, at its version."""
 
-    def __init__(self, native):
-        super().__init__(native)
+    COUNT_PARM = 'rig_imports'
+    VERSION_TOKENS = ('latest',)
 
-    def _error(self, message: str) -> EntityNodeError:
-        return EntityNodeError(f'{self.path()}: {message}')
+    def _offers(self, asset_uri: Uri) -> bool:
+        """Only real assets: the template's empty categories list as leaves
+        too, and have no rig to import."""
+        return is_terminal_entity(api.config, asset_uri)
 
-    def list_asset_uris(self) -> list[Uri]:
-        with api.config.coherent():
-            asset_uris = api.config.list_entity_uris(
-                filter=Uri.parse('entity:/assets'),
-                closure=True
-            )
-            return [
-                uri for uri in asset_uris
-                if is_terminal_entity(api.config, uri)
-            ]
+    def _version_folder(self, asset_uri: Uri, channel_name: str) -> Path:
+        return get_rig_export_path(asset_uri, channel_name)
 
-    def list_entity_uris(self, index: int) -> list[Uri]:
-        """List asset URIs excluding those already used by other indices."""
-        all_uris = self.list_asset_uris()
-        if len(all_uris) == 0: return []
-        count = self.parm('rig_imports').eval()
-        used_uris = set()
-        for other_index in range(1, count + 1):
-            if other_index == index: continue
-            other_uri_raw = self.parm(f'entity{other_index}').eval()
-            if len(other_uri_raw) == 0: continue
-            other_uri = Uri.parse(other_uri_raw)
-            if other_uri in all_uris:
-                used_uris.add(other_uri)
-        return [uri for uri in all_uris if uri not in used_uris]
-
-    def get_entity_uri(self, index: int) -> Uri | None:
-        """The row's asset; None for a row with no asset picked yet.
-        Read-only: the channel/version menus call this."""
-        asset_uri_raw = self.parm(f'entity{index}').eval()
-        if len(asset_uri_raw) == 0: return None
-        asset_uri = Uri.parse(asset_uri_raw)
-        if asset_uri in self.list_entity_uris(index):
-            return asset_uri
-        if asset_uri in self.list_asset_uris():
-            raise self._error(
-                f'row {index}: {asset_uri} is already imported by another '
-                'row. Remove one of the rows, or raise its Instances.'
-            )
-        raise self._error(
-            f'row {index}: {asset_uri} is not an asset in the project. '
-            "Pick one with the row's Browse... button."
-        )
-
-    def require_entity_uri(self, index: int) -> Uri:
-        asset_uri = self.get_entity_uri(index)
-        if asset_uri is None:
-            raise self._error(
-                f"row {index} has no asset. Pick one with the row's Browse... "
-                'button, or remove the row.'
-            )
-        return asset_uri
-
-    def get_instances(self, index: int) -> int:
-        return self.parm(f'instances{index}').eval()
-
-    def list_channel_names(self, index: int) -> list[str]:
-        """The row's asset's channels, 'default' first; none while unset."""
-        asset_uri = self.get_entity_uri(index)
-        if asset_uri is None:
-            return []
-        return list_channels(asset_uri)
-
-    def get_channel_name(self, index: int) -> str:
-        """The row's Channel, which must be a channel of the row's asset."""
-        asset_uri = self.require_entity_uri(index)
-        channel_names = list_channels(asset_uri)
-        channel_name = self.parm(f'channel{index}').eval()
-        if channel_name not in channel_names:
-            raise self._error(
-                f"row {index}: channel '{channel_name}' is not a channel of "
-                f"{asset_uri} (listed: {', '.join(channel_names)})"
-            )
-        return channel_name
-
-    def set_channel_name(self, index: int, channel_name: str):
-        """Set channel name for this index."""
-        self.parm(f'channel{index}').set(channel_name)
-
-    def get_rig_imports(self) -> list[tuple[Uri, str, str, int]]:
-        """Returns list of (asset_uri, channel, version, instances) for all rig imports."""
-        rig_imports = []
-        count = self.parm('rig_imports').eval()
-        for index in range(1, count + 1):
-            asset_uri = self.require_entity_uri(index)
-            channel = self.get_channel_name(index)
-            version = self.get_version_name(index)
-            instances = self.get_instances(index)
-            rig_imports.append((asset_uri, channel, version, instances))
-        return rig_imports
-
-    def set_entity_uri(self, index: int, asset_uri: Uri):
-        if asset_uri not in self.list_entity_uris(index):
-            raise self._error(
-                f'row {index}: {asset_uri} is not an asset in the project, '
-                'or another row already imports it'
-            )
-        self.parm(f'entity{index}').set(str(asset_uri))
-
-    def set_instances(self, index: int, instances: int):
-        self.parm(f'instances{index}').set(instances)
-
-    def list_version_names(self, index: int) -> list[str]:
-        """List available versions for the rig at this index."""
-        asset_uri = self.get_entity_uri(index)
-        if asset_uri is None:
-            return ['latest']
-        channel_name = self.get_channel_name(index)
-        export_uri = Uri.parse('export:/') / asset_uri.segments / channel_name / 'rig'
-        asset_path = api.storage.resolve(export_uri)
-        version_paths = list_version_paths(asset_path)
-        version_names = [vp.name for vp in version_paths]
-        return ['latest'] + version_names
-
-    def get_version_name(self, index: int) -> str:
-        """The row's version: 'latest' or a version name."""
-        version_name = self.parm(f'version{index}').eval()
-        if len(version_name) == 0:
-            raise self._error(
-                f"row {index}: version is empty. Pick a version, or 'latest'."
-            )
-        return version_name
-
-    def set_version_name(self, index: int, version_name: str):
-        """Set version name for this index."""
-        self.parm(f'version{index}').set(version_name)
-
-    def _update_labels(self, index: int):
-        """Update label parameters for the given index."""
-        self.parm(f'entity_label{index}').set(
-            self.parm(f'entity{index}').eval() or 'none'
-        )
-
-        # Resolve version name (resolve 'latest' to actual version)
-        version_name = self.get_version_name(index)
-        if version_name == 'latest':
-            asset_uri = self.get_entity_uri(index)
-            if asset_uri is not None:
-                version_name = (
-                    import_rig.latest_rig_version(asset_uri, self.get_channel_name(index))
-                    or version_name
-                )
-        self.parm(f'version_label{index}').set(version_name)
+    def _latest_version(self, asset_uri: Uri, channel_name: str) -> str | None:
+        return import_rig.latest_rig_version(asset_uri, channel_name)
 
     def set_rig_imports(self, rig_imports: list[tuple[Uri, str, str, int]]):
         """Set rig imports from list of (asset_uri, channel, version, instances) tuples."""
@@ -321,6 +186,10 @@ class ImportRigs(ns.Node):
     def execute(self, unrigged=()):
         """Import every row. ``unrigged``: animatable assets Discover found
         with no rig, named in the node comment."""
+        with self._rows_read_once():
+            self._execute(unrigged)
+
+    def _execute(self, unrigged):
 
         # Update labels for all entries
         count = self.parm('rig_imports').eval()
@@ -334,7 +203,7 @@ class ImportRigs(ns.Node):
         ns.clear_network(dive_node, output_node)
 
         # Parameters
-        active_imports, unpublished = split_unpublished(self.get_rig_imports())
+        active_imports, unpublished = split_unpublished(self.get_row_imports())
         unpublished_note = ''.join(
             f'\n{label}: ' + ', '.join(uri.segments[-1] for uri in uris)
             for label, uris in (

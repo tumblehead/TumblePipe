@@ -985,6 +985,18 @@ def best_reads(renders: Mapping, render_department_names: Iterable[str],
     return reads
 
 
+def rendered_range(renders: Mapping, render_department_names: Iterable[str],
+                   channels: Iterable[str]) -> Optional[tuple[int, int]]:
+    """The frames every channel's best render covers now (what a re-comp's
+    default imports read: :func:`best_reads`), None when none is rendered or
+    a range is unknown. ``renders`` as :func:`resolve_render` takes them.
+    Filesystem only: Farm Submit's status scan reads it on a worker thread,
+    the farm's submit when it comps the renders on disk."""
+    return covered_range(
+        read_ranges(renders, best_reads(renders, render_department_names, channels)).values()
+    )
+
+
 def uncovered_frames(frames: Iterable[int], ranges: Mapping[str, Optional[tuple[int, int]]]) -> dict[str, list[int]]:
     """``{channel: frames}`` of ``frames`` outside each read's rendered
     range: the frames a comp would fill with empty (transparent black)

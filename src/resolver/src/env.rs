@@ -10,9 +10,7 @@ pub const EXPORT_PATH_VAR: &str = "TH_EXPORT_PATH";
 pub const LATEST_MODE_VAR: &str = "TH_RESOLVER_LATEST_MODE";
 
 pub fn export_base() -> Option<PathBuf> {
-    std::env::var_os(EXPORT_PATH_VAR)
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
+    std::env::var_os(EXPORT_PATH_VAR).filter(|v| !v.is_empty()).map(PathBuf::from)
 }
 
 /// Latest mode is on when `TH_RESOLVER_LATEST_MODE` is `"1"` and off when it
@@ -24,8 +22,6 @@ pub fn latest_mode() -> ResolveResult<bool> {
         None => Ok(false),
         Some(v) if v == "0" => Ok(false),
         Some(v) if v == "1" => Ok(true),
-        Some(v) => Err(ResolveError::InvalidLatestMode(
-            v.to_string_lossy().into_owned(),
-        )),
+        Some(v) => Err(ResolveError::InvalidLatestMode(v.to_string_lossy().into_owned())),
     }
 }

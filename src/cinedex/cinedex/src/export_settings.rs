@@ -343,22 +343,12 @@ pub fn path(layout: &Path) -> PathBuf {
 /// The settings saved at `path` for an edit `resolution` big; the default
 /// when there are none, or they do not read.
 pub fn load(path: &Path, resolution: [u32; 2]) -> Settings {
-    std::fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .map_or_else(Settings::default, |v| Settings::from_json(&v, resolution))
+    th_pipe::io::load_or_default(path, |value| Settings::from_json(value, resolution))
 }
 
 /// Save `settings` at `path`, whole (written beside it and renamed).
 pub fn save(path: &Path, settings: &Settings) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let partial = path.with_extension(format!("json.{}.partial", std::process::id()));
-    std::fs::write(&partial, serde_json::to_vec_pretty(&settings.to_json()).map_err(std::io::Error::other)?)?;
-    std::fs::rename(&partial, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&partial);
-    })
+    th_pipe::io::store_pretty_json(path, &settings.to_json())
 }
 
 /// The dialog's choice: [`Settings`] with its number fields as typed.
@@ -460,6 +450,18 @@ impl Form {
 pub(crate) mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn the_settings_are_saved_whole(settings in settings()) {
+            crate::layout_prefs::tests::saved_whole(&|path| save(path, &settings), &settings.to_json())?;
+        }
+    }
+
+    #[test]
+    fn nothing_is_left_when_the_settings_are_blocked() {
+        crate::layout_prefs::tests::nothing_left_when_blocked(&|path| save(path, &Settings::default()));
+    }
 
     pub(crate) fn sizes() -> impl Strategy<Value = Size> {
         prop_oneof![

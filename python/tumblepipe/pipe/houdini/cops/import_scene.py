@@ -53,10 +53,6 @@ class ImportScene(EntityNode):
         self._update_labels()
 
 
-def find_scenes() -> list[ImportScene]:
-    return [ImportScene(native) for native in ns.list_by_node_type(TYPE_NAME, 'Cop')]
-
-
 def create(scene, name):
     return ns.create_node(scene, name, ImportScene, TYPE_NAME, 'Cop')
 

@@ -10,12 +10,12 @@ from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
 )
-from tumblepipe.config.channels import CHANNEL_KEY, list_channels, read_published_channel
+from tumblepipe.config.channels import CHANNEL_KEY, list_channels
+from tumblepipe.pipe.houdini import import_metadata
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.config.multi_timeline import shift_range
 from tumblepipe.pipe.houdini import multi_timeline, playbar
 from tumblepipe.pipe.houdini.entity_node import EntityNode, FROM_CONTEXT
-from tumblepipe.pipe.houdini.prim_metadata import ANIMATABLE_KEY
 from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
 from tumblepipe.pipe.houdini.lops import shot_sublayers
 from tumblepipe.pipe.houdini.ui import layer_stack
@@ -104,79 +104,7 @@ def _indent(lines):
     return [f"    {line}" for line in lines]
 
 
-def _set_shot_metadata_script(
-    shot_uri, frame_range, fps, version_name, assets,
-    animated=copies_are_animated
-):
-    """Generate Python script to set shot and asset metadata in USD stage.
 
-    Shot metadata is stored in stage-level customLayerData.
-    Asset metadata is stored as customData on each asset's scene prim,
-    stamped with ``animated(asset_uri)`` (see prim_metadata.ANIMATABLE_KEY).
-    """
-    from tumblepipe.pipe.houdini.prim_queries import uri_to_prim_path
-
-    header = [
-        'import hou',
-        '',
-        'from tumblepipe.pipe.houdini import prim_metadata',
-        '',
-        'node = hou.pwd()',
-        'stage = node.editableStage()',
-        'root = stage.GetPseudoRoot()',
-        '',
-        'def update(root):'
-    ]
-
-    content = [
-        "# Set shot metadata on stage-level customLayerData",
-        "shot_metadata = {",
-        f"    'uri': '{str(shot_uri)}',",
-        f"    'start_frame': {frame_range.start_frame},",
-        f"    'end_frame': {frame_range.end_frame},",
-        f"    'start_roll': {frame_range.start_roll},",
-        f"    'end_roll': {frame_range.end_roll},",
-        f"    'fps': {fps},",
-        f"    'version': '{version_name}',",
-        "    'inputs': []",
-        "}",
-        "prim_metadata.set_shot_metadata(stage, shot_metadata)",
-    ]
-
-    # Set asset metadata on scene prims
-    for asset_info in assets:
-        asset_uri_str = asset_info['asset']
-        asset_uri = Uri.parse(asset_uri_str)
-        asset_prim_path = uri_to_prim_path(asset_uri)
-        asset_name = asset_uri.segments[-1]
-        # Every asset record carries these: the staged build's context.json
-        # writes all four, and _get_scene_assets builds them. Inputs keep the
-        # composition history.
-        asset_channel = read_published_channel(
-            asset_info, where=f'asset record {asset_uri_str}', required=True
-        )
-        asset_inputs = asset_info['inputs']
-        instances = asset_info['instances']
-
-        content.extend([
-            "",
-            f"# Asset: {asset_uri_str}",
-            f"asset_prim = root.GetPrimAtPath('{asset_prim_path}')",
-            "if asset_prim.IsValid():",
-            "    prim_metadata.set_metadata(asset_prim, {",
-            f"        'uri': '{asset_uri_str}',",
-            f"        'instance': '{asset_name}',",
-            f"        '{CHANNEL_KEY}': '{asset_channel}',",
-            f"        'instances': {instances},",
-            f"        '{ANIMATABLE_KEY}': {bool(animated(asset_uri))},",
-            f"        'inputs': {asset_inputs!r}",
-            "    })",
-        ])
-
-    footer = ["", "update(root)"]
-
-    script = header + _indent(content) + footer
-    return '\n'.join(script)
 
 
 def _get_scene_assets(shot_uri: Uri) -> list[dict]:
@@ -572,7 +500,7 @@ class ImportShot(TimeOffsetNode, EntityNode):
             )
 
         # Set the shot metadata script on the metadata pythonscript node
-        metadata_node.parm('python').set(_set_shot_metadata_script(
+        metadata_node.parm('python').set(import_metadata.shot_script(
             shot_uri,
             frame_range,
             fps,
@@ -692,41 +620,12 @@ class ImportShot(TimeOffsetNode, EntityNode):
         # like the GUI import did. Mirrors import_asset's re-established
         # instances via the same util helper.
         if instance_prim_paths:
-            script_lines = [
-                'import hou',
-                '',
-                'from tumblepipe.pipe.houdini import prim_queries',
-                '',
-                'node = hou.pwd()',
-                'stage = node.editableStage()',
-                'root = stage.GetPseudoRoot()',
-                '',
-            ]
-            # Prototypes first: the Duplicate LOP leaves its deactivated
-            # source with whatever transform composed, which for a prim
-            # that never passed an import Transform LOP is none at all.
-            # Authoring here before the copies below lets the op set reach
-            # them through Duplicate's reference arc, matching the GUI
-            # import (see prim_queries.author_identity_placement_ops).
-            for prototype_prim_path in prototype_prim_paths:
-                script_lines += [
-                    f'prim = root.GetPrimAtPath("{prototype_prim_path}")',
-                    'if prim.IsValid():',
-                    '    if not prim_queries.apply_placement_op_order(prim):',
-                    '        prim_queries.author_identity_placement_ops(prim)',
-                    '',
-                ]
-            for instance_prim_path in instance_prim_paths:
-                script_lines += [
-                    f'prim = root.GetPrimAtPath("{instance_prim_path}")',
-                    'if prim.IsValid():',
-                    '    prim_queries.apply_placement_op_order(prim)',
-                    '',
-                ]
             order_node = duplicates_node.createNode(
                 'pythonscript', 'placement_op_order'
             )
-            order_node.parm('python').set('\n'.join(script_lines))
+            order_node.parm('python').set(import_metadata.placement_op_order_script(
+                prototype_prim_paths, instance_prim_paths,
+            ))
             if prev_node:
                 order_node.setInput(0, prev_node)
             prev_node = order_node

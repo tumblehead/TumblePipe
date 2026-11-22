@@ -1,31 +1,18 @@
-import os
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import hou
-
 from tumblepipe.api import api, path_str
 from tumblepipe.apps import mp4
-from tumblepipe.pipe import review_events
-from tumblepipe.util import events
+from tumblepipe.pipe.playblast_publish import publish_playblast, reserved_next_playblast
 from tumblepipe.config.multi_timeline import shift_block_range
 from tumblepipe.config.timeline import BlockRange, get_fps, get_frame_range
 from tumblepipe.pipe.houdini import nodes as ns
-from tumblepipe.pipe.houdini import prim_queries, render_camera, tumbleview
+from tumblepipe.pipe.houdini import render_camera, tumbleview
 from tumblepipe.pipe.houdini.entity_node import FROM_CONTEXT, EntityNode
+from tumblepipe.pipe.houdini.playblast_node import DEFAULT_RES, PlayblastNodeMixin
 from tumblepipe.pipe.houdini.time_offset import TimeOffsetNode
-from tumblepipe.pipe.houdini.lops.playblast import (
-    DEFAULT_RES,
-    camera_error,
-    resolve_camera_path,
-)
-from tumblepipe.pipe.paths import (
-    get_daily_path,
-    get_latest_playblast_path,
-    get_next_playblast_path,
-)
+from tumblepipe.pipe.paths import get_daily_path
 from tumblepipe.pipe.usd.render_settings import live_playblast_keep_paths
 from tumblepipe.util.uri import Uri
 
@@ -55,7 +42,7 @@ class Plan:
         return shift_block_range(self.render_range, self.time_offset)
 
 
-class Playblast(TimeOffsetNode, EntityNode):
+class Playblast(PlayblastNodeMixin, TimeOffsetNode, EntityNode):
     """The SOP th::playblast. Its time offset is its shot's on the open
     Multi's shared timeline (the HDA has no Time Offset parm, so
     TimeOffsetNode reads it as from_multi)."""
@@ -79,45 +66,10 @@ class Playblast(TimeOffsetNode, EntityNode):
         return stage.GetPseudoRoot()
 
 
-    def list_camera_paths(self):
-        root = self._get_stage_root()
-        if root is None: return []
-        return prim_queries.list_stage_cameras(root)
-    
-    def list_camera_names(self):
-        camera_paths = self.list_camera_paths()
-        return [path.rsplit('/', 1)[-1] for path in camera_paths]
-    
     def list_department_names(self):
         # The Department parm defaults to 'from_context' (the workfile's own
         # department); EntityNode.get_department_name resolves it.
         return [FROM_CONTEXT] + super().list_department_names()
-
-    def get_camera_path(self):
-        # An empty Camera is the camera its menu shows (see the LOP's).
-        camera_path = resolve_camera_path(
-            self.parm('camera').eval(), self.list_camera_paths()
-        )
-        if camera_path is None:
-            raise self._error(camera_error(
-                self.parm('camera').eval(), self.list_camera_names()
-            ))
-        return camera_path
-
-    def set_camera_name(self, camera_name):
-        camera_names = self.list_camera_names()
-        if camera_name not in camera_names:
-            raise self._error(
-                f"camera '{camera_name}' is not a camera on the stage "
-                f"(cameras: {', '.join(camera_names) or 'none'})"
-            )
-        self.parm('camera').set(camera_name)
-        self._update_labels()
-
-    def _update_labels(self):
-        """Update label parameters to show current entity/department selection."""
-        self.parm('entity_label').set(self._entity_label())
-        self.parm('department_label').set(self._department_label())
 
     def _initialize(self):
         """Initialize node and update labels to show resolved values."""
@@ -162,12 +114,14 @@ class Playblast(TimeOffsetNode, EntityNode):
         entity_uri, department_name = plan.entity_uri, plan.department_name
         camera_path, render_range = plan.camera_path, plan.render_range
         fps, res = plan.fps, plan.res
-        output_playblast_path = get_next_playblast_path(entity_uri, department_name)
         output_daily_path = get_daily_path(entity_uri, department_name)
 
         root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
         root_temp_path.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir:
+        with (
+            reserved_next_playblast(entity_uri, department_name) as output_playblast_path,
+            TemporaryDirectory(dir=path_str(root_temp_path)) as temp_dir,
+        ):
             temp_dir_path = Path(temp_dir)
             cache_path = temp_dir_path / 'cache.usd'
             jpg_path = temp_dir_path / 'jpg' / 'playblast.$F4.jpg'
@@ -185,12 +139,7 @@ class Playblast(TimeOffsetNode, EntityNode):
             except tumbleview.TumbleViewError as error:
                 raise self._error(str(error)) from None
             mp4.from_jpg(jpg_path, render_range, fps, movie_path)
-
-            output_playblast_path.parent.mkdir(exist_ok=True, parents=True)
-            output_daily_path.parent.mkdir(exist_ok=True, parents=True)
-            shutil.copyfile(movie_path, output_playblast_path)
-            shutil.copyfile(movie_path, output_daily_path)
-        review_events.announce(events.PLAYBLAST, entity_uri, department_name)
+            publish_playblast(movie_path, [output_playblast_path, output_daily_path])
 
     def cache_stage(self, cache_path, camera_path, render_range, fps):
         """Write what the playblast shows to ``cache_path`` over
@@ -222,41 +171,6 @@ class Playblast(TimeOffsetNode, EntityNode):
             cache.parm(name).deleteAllKeyframes()
             cache.parm(name).set(value)
         cache.parm('execute').pressButton()
-
-    def view_latest(self):
-
-        # Parameters and paths
-        entity_uri = self.require_entity_uri()
-        department_name = self.require_department_name()
-        output_playblast_path = get_latest_playblast_path(entity_uri, department_name)
-
-        # Open playblast
-        if output_playblast_path is None or not output_playblast_path.exists():
-            return hou.ui.displayMessage(
-                (
-                    f'No playblast found for {entity_uri}.\n'
-                    f'{output_playblast_path}'
-                ),
-                title='Playblast',
-                severity=hou.severityType.Message
-            )
-        os.startfile(path_str(output_playblast_path))
-
-    def open_location(self):
-
-        # Parameters and paths
-        entity_uri = self.require_entity_uri()
-        department_name = self.require_department_name()
-        output_playblast_path = get_latest_playblast_path(entity_uri, department_name)
-        # No playblast yet → fall back to the (not-yet-populated) output dir.
-        if output_playblast_path is None:
-            output_path = get_next_playblast_path(entity_uri, department_name).parent
-        else:
-            output_path = output_playblast_path.parent
-
-        # Create and open the directory containing the playblast
-        output_path.mkdir(parents=True, exist_ok=True)
-        hou.ui.showInFileBrowser(f'{path_str(output_path)}')
 
 def create(scene, name):
     return ns.create_node(scene, name, Playblast, 'playblast', 'Sop')

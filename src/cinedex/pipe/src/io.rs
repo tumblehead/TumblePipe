@@ -56,17 +56,41 @@ pub fn load_json(path: &Path) -> Result<Value, String> {
     serde_json::from_slice(&bytes).map_err(|e| format!("invalid JSON in {}: {e}", path.display()))
 }
 
-/// The text [`store_json`] writes for `value`: [`to_python_json`], in
-/// `\r\n` lines on Windows, as Python writes a file in text mode.
+/// The text [`store_json`] writes for `value`: [`to_python_json`] and a
+/// final newline, LF on every platform. The bytes `util.io.store_json` and
+/// the config migrator (`th_project_core::to_json_string`) write.
 pub fn python_text(value: &Value) -> String {
-    let text = to_python_json(value);
-    if cfg!(windows) { text.replace('\n', "\r\n") } else { text }
+    to_python_json(value) + "\n"
 }
 
 /// Write `value` to `path` atomically, as `util.io.store_json`: into a
 /// temporary file beside it, then renamed over it ([`replace_file`]). The
 /// file is either whole or untouched.
 pub fn store_json(path: &Path, value: &Value) -> std::io::Result<()> {
+    store_whole(path, python_text(value).as_bytes())
+}
+
+/// Write `value` to `path` as serde_json's pretty print (two-space indent,
+/// no final newline), atomically as [`store_json`]: a user's preferences
+/// file, which another Cinedex of theirs may be reading.
+pub fn store_pretty_json(path: &Path, value: &Value) -> std::io::Result<()> {
+    store_whole(path, &serde_json::to_vec_pretty(value).map_err(std::io::Error::other)?)
+}
+
+/// What `from_json` makes of the JSON at `path`; the default when there is
+/// no file, or it is not JSON (a preferences file: whatever is in it, the
+/// program starts).
+pub fn load_or_default<T: Default>(path: &Path, from_json: impl FnOnce(&Value) -> T) -> T {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .map_or_else(T::default, |value| from_json(&value))
+}
+
+/// Write `bytes` to `path`, making its folder: into a temporary file beside
+/// it, then renamed over it ([`replace_file`]), so the file is either whole
+/// or untouched and no temporary file is left.
+fn store_whole(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let parent = match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent,
         _ => Path::new("."),
@@ -74,7 +98,7 @@ pub fn store_json(path: &Path, value: &Value) -> std::io::Result<()> {
     std::fs::create_dir_all(parent)?;
     let temp = tempfile::Builder::new().prefix(".tmp").suffix(".json").tempfile_in(parent)?;
     let temp_path = temp.into_temp_path();
-    std::fs::write(&temp_path, python_text(value))?;
+    std::fs::write(&temp_path, bytes)?;
     // Renamed by hand, with the retry; the TempPath deletes a leftover.
     replace_file(&temp_path, path)?;
     // The file is gone from under the TempPath now; do not let it try again.
@@ -133,6 +157,7 @@ impl serde_json::ser::Formatter for PythonFormatter<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use serde_json::json;
 
     #[test]
@@ -151,6 +176,88 @@ mod tests {
         store_json(&path, &json!({"a": 1})).unwrap();
         store_json(&path, &json!({"b": 2})).unwrap();
         assert_eq!(load_json(&path).unwrap(), json!({"b": 2}));
+        assert_eq!(std::fs::read(&path).unwrap(), b"{\n    \"b\": 2\n}\n");
         assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
+    }
+
+    /// Any JSON value, a few levels deep, unicode in its strings.
+    fn any_json() -> impl Strategy<Value = Value> {
+        let leaf = prop_oneof![
+            Just(Value::Null),
+            any::<bool>().prop_map(Value::from),
+            any::<i64>().prop_map(Value::from),
+            (-1e6f64..1e6).prop_map(Value::from),
+            "\\PC{0,8}".prop_map(Value::from),
+        ];
+        leaf.prop_recursive(3, 24, 4, |inner| {
+            prop_oneof![
+                prop::collection::vec(inner.clone(), 0..4).prop_map(Value::from),
+                prop::collection::btree_map("\\PC{0,6}", inner, 0..4).prop_map(|m| Value::Object(m.into_iter().collect())),
+            ]
+        })
+    }
+
+    proptest! {
+        /// A stored value loads back the same, written as serde_json's
+        /// pretty print with nothing left beside it; stored again over it,
+        /// the same.
+        #[test]
+        fn pretty_json_stores_whole_and_loads_back(value in any_json(), again in any_json()) {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("prefs").join("layout.json");
+            for value in [&value, &again] {
+                store_pretty_json(&path, value).unwrap();
+                prop_assert_eq!(std::fs::read(&path).unwrap(), serde_json::to_vec_pretty(value).unwrap());
+                prop_assert_eq!(&load_or_default(&path, Value::clone), value);
+                prop_assert_eq!(std::fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
+            }
+        }
+
+        /// No file, or one that is not JSON, loads as the default; JSON is
+        /// handed to `from_json` as it is.
+        #[test]
+        fn a_missing_or_broken_file_loads_the_default(bytes in prop::collection::vec(any::<u8>(), 0..32)) {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("x.json");
+            prop_assert_eq!(load_or_default(&path, |_| 7u8), 0);
+            std::fs::write(&path, &bytes).unwrap();
+            let expected = serde_json::from_slice::<Value>(&bytes).ok();
+            prop_assert_eq!(load_or_default(&path, |v| Some(v.clone())), expected);
+        }
+    }
+
+    /// Where a folder is in the way, a store fails and leaves nothing
+    /// behind. (Not a property: on Windows the failed rename is retried
+    /// for REPLACE_TIMEOUT.)
+    #[test]
+    fn a_blocked_store_leaves_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocked = dir.path().join("blocked.json");
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(store_pretty_json(&blocked, &json!({"a": 1})).is_err());
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert_eq!(std::fs::read_dir(&blocked).unwrap().count(), 0);
+    }
+
+    /// A reader holding the file open without letting it be deleted (as
+    /// another Cinedex reading its prefs can, and every plain Python
+    /// `open()`) only delays a store: it waits the reader out.
+    #[cfg(windows)]
+    #[test]
+    fn a_store_waits_out_a_reader_holding_the_file() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("layout.json");
+        store_pretty_json(&path, &json!({"a": 1})).unwrap();
+        let reader = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(&path).unwrap();
+        let released = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            drop(reader);
+        });
+        store_pretty_json(&path, &json!({"b": 2})).unwrap();
+        released.join().unwrap();
+        assert_eq!(load_or_default(&path, Value::clone), json!({"b": 2}));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }

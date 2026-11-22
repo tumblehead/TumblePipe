@@ -118,8 +118,7 @@ pub fn basis_matrix(basis: Basis) -> [[f32; 4]; 4] {
         Basis::Bezier => [[-1.0, 3.0, -3.0, 1.0], [3.0, -6.0, 3.0, 0.0], [-3.0, 3.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0]],
         Basis::Bspline => {
             let s = 1.0 / 6.0;
-            [[-s, 3.0 * s, -3.0 * s, s], [3.0 * s, -6.0 * s, 3.0 * s, 0.0], [-3.0 * s, 0.0, 3.0 * s, 0.0],
-             [s, 4.0 * s, s, 0.0]]
+            [[-s, 3.0 * s, -3.0 * s, s], [3.0 * s, -6.0 * s, 3.0 * s, 0.0], [-3.0 * s, 0.0, 3.0 * s, 0.0], [s, 4.0 * s, s, 0.0]]
         }
         Basis::CatmullRom => [[-0.5, 1.5, -1.5, 0.5], [1.0, -2.5, 2.0, -0.5], [-0.5, 0.0, 0.5, 0.0], [0.0, 1.0, 0.0, 0.0]],
     }
@@ -144,13 +143,13 @@ pub fn evaluate<const D: usize>(basis: Basis, controls: [[f32; D]; 4], t: f32) -
 pub fn spans(n: usize, basis: Basis, wrap: Wrap) -> Vec<[usize; 4]> {
     match (basis, wrap) {
         (Basis::Bezier, Wrap::Periodic) => {
-            if n < 3 || n % 3 != 0 {
+            if n < 3 || !n.is_multiple_of(3) {
                 return Vec::new();
             }
             (0..n / 3).map(|s| std::array::from_fn(|k| (3 * s + k) % n)).collect()
         }
         (Basis::Bezier, _) => {
-            if n < 4 || (n - 1) % 3 != 0 {
+            if n < 4 || !(n - 1).is_multiple_of(3) {
                 return Vec::new();
             }
             (0..(n - 1) / 3).map(|s| std::array::from_fn(|k| 3 * s + k)).collect()
@@ -274,7 +273,11 @@ impl Camera {
     pub fn toward(&self, p: Vec3) -> Vec3 {
         if self.perspective {
             let d = math::sub(self.eye, p);
-            if math::dot(d, d) > 1e-20 { math::normalize(d) } else { self.back }
+            if math::dot(d, d) > 1e-20 {
+                math::normalize(d)
+            } else {
+                self.back
+            }
         } else {
             self.back
         }
@@ -283,9 +286,8 @@ impl Camera {
     /// `p` in pixels, when it is in front of the camera.
     pub fn screen(&self, p: Vec3) -> Option<[f32; 2]> {
         let c = math::transform_point4(p, &self.world_to_clip);
-        (c[3] > 1e-6 && c.iter().all(|v| v.is_finite())).then(|| {
-            [((c[0] / c[3] + 1.0) * 0.5 * self.width) as f32, ((1.0 - c[1] / c[3]) * 0.5 * self.height) as f32]
-        })
+        (c[3] > 1e-6 && c.iter().all(|v| v.is_finite()))
+            .then(|| [((c[0] / c[3] + 1.0) * 0.5 * self.width) as f32, ((1.0 - c[1] / c[3]) * 0.5 * self.height) as f32])
     }
 }
 
@@ -363,11 +365,8 @@ pub fn expand(s: &Strokes, points: &[Vec3], transform: &Mat4, camera: &Camera, p
                 let verts = &world[cursor..cursor + n];
                 let line = polyline(s, c, verts, cursor, varying_at, &width, &color, camera, plan, &mut used);
                 if let Some((pts, widths, colors, closed)) = line {
-                    let halves: Vec<f32> = pts
-                        .iter()
-                        .zip(&widths)
-                        .map(|(&p, &w)| (0.5 * w * scale).max(0.5 * MIN_CURVE_PIXELS * camera.pixel(p)))
-                        .collect();
+                    let halves: Vec<f32> =
+                        pts.iter().zip(&widths).map(|(&p, &w)| (0.5 * w * scale).max(0.5 * MIN_CURVE_PIXELS * camera.pixel(p))).collect();
                     let n = pts.len();
                     let cap = |i: usize| halves[i].max(0.5 * CAP_PIXELS * camera.pixel(pts[i]));
                     let caps = if n > 0 { [cap(0), cap(n - 1)] } else { [0.0; 2] };
@@ -390,7 +389,13 @@ fn varying_count(kind: Kind, wrap: Wrap, n: usize) -> usize {
         Kind::Points | Kind::Linear => n,
         Kind::Cubic(b) => {
             let s = spans(n, b, wrap).len();
-            if s == 0 { 0 } else if wrap == Wrap::Periodic { s } else { s + 1 }
+            if s == 0 {
+                0
+            } else if wrap == Wrap::Periodic {
+                s
+            } else {
+                s + 1
+            }
         }
     }
 }
@@ -432,8 +437,18 @@ type Line = (Vec<Vec3>, Vec<f32>, Vec<Option<Vec3>>, bool);
 /// One curve (`verts`, world space, starting at vertex `first` and varying
 /// value `varying_first`) as a polyline: points, widths, colours, closed.
 #[allow(clippy::too_many_arguments)]
-fn polyline(s: &Strokes, curve: usize, verts: &[Vec3], first: usize, varying_first: usize, width: &Lookup<f32>,
-            color: &Lookup<Vec3>, camera: &Camera, plan: Option<&Plan>, used: &mut Plan) -> Option<Line> {
+fn polyline(
+    s: &Strokes,
+    curve: usize,
+    verts: &[Vec3],
+    first: usize,
+    varying_first: usize,
+    width: &Lookup<f32>,
+    color: &Lookup<Vec3>,
+    camera: &Camera,
+    plan: Option<&Plan>,
+    used: &mut Plan,
+) -> Option<Line> {
     let n = verts.len();
     let closed = s.wrap == Wrap::Periodic;
     match s.kind {
@@ -458,7 +473,9 @@ fn polyline(s: &Strokes, curve: usize, verts: &[Vec3], first: usize, varying_fir
                     .iter()
                     .map(|sp| {
                         let screen: Option<Vec<[f32; 2]>> = sp.iter().map(|&i| camera.screen(pts[i])).collect();
-                        steps_for(screen.map(|q| q.windows(2).map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt()).sum()))
+                        steps_for(
+                            screen.map(|q| q.windows(2).map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt()).sum()),
+                        )
                     })
                     .collect(),
             };
@@ -508,7 +525,11 @@ fn polyline(s: &Strokes, curve: usize, verts: &[Vec3], first: usize, varying_fir
 
 /// Sides of a disc `r` pixels across its radius: enough to look round.
 pub fn disc_sides(r_pixels: f32) -> usize {
-    if r_pixels.is_finite() { ((std::f32::consts::TAU * r_pixels / 4.0).ceil() as usize).clamp(6, 24) } else { 6 }
+    if r_pixels.is_finite() {
+        ((std::f32::consts::TAU * r_pixels / 4.0).ceil() as usize).clamp(6, 24)
+    } else {
+        6
+    }
 }
 
 /// A unit vector across the view at `p` (facing `toward`), any one.
@@ -580,8 +601,7 @@ const BREAK_DEGREES: f32 = 90.0;
 /// the segment coming in, the start of the one going out; the same two
 /// where the ribbon is not broken), so a shutter's opening and closing line
 /// up vertex for vertex even when a bend sharpens between them.
-fn ribbon(made: &mut Made, pts: &[Vec3], halves: &[f32], colors: &[Option<Vec3>], closed: bool, caps: [f32; 2],
-          camera: &Camera) {
+fn ribbon(made: &mut Made, pts: &[Vec3], halves: &[f32], colors: &[Option<Vec3>], closed: bool, caps: [f32; 2], camera: &Camera) {
     let n = pts.len();
     if n < 2 {
         return;
@@ -714,6 +734,7 @@ pub fn mesh<'a>(made: &'a Made, close: Option<&'a [Vec3]>, base_color: Vec3) -> 
         transform_keys: &[],
         // Ribbons and dots are drawn opaque: a curve's displayOpacity is
         // not read (see-through surfaces are meshes' for now).
-        opacity: 1.0, cull: crate::raster::Cull::Nothing,
+        opacity: 1.0,
+        cull: crate::raster::Cull::Nothing,
     }
 }

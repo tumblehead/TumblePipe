@@ -127,8 +127,15 @@ impl SceneLight {
     /// Y, a disk's radius by the mean of X and Y, a cylinder's length by X
     /// (its axis) and radius by Y and Z, a sphere's radius by all three.
     #[allow(clippy::too_many_arguments)]
-    pub fn placed(shape: LightShape, radiance: Vec3, normalize: bool, point: bool, angle: f32,
-                  [radius, width, height, length]: [f32; 4], to_world: &Mat4) -> SceneLight {
+    pub fn placed(
+        shape: LightShape,
+        radiance: Vec3,
+        normalize: bool,
+        point: bool,
+        angle: f32,
+        [radius, width, height, length]: [f32; 4],
+        to_world: &Mat4,
+    ) -> SceneLight {
         let row = |r: usize| [to_world[r * 4] as f32, to_world[r * 4 + 1] as f32, to_world[r * 4 + 2] as f32];
         let len = |r: usize| math::dot(row(r), row(r)).sqrt();
         let (sx, sy, sz) = (len(0), len(1), len(2));
@@ -163,7 +170,11 @@ impl SceneLight {
             LightShape::Dome => 1.0,
             LightShape::Distant => {
                 let a = (self.angle.abs() * 0.5).to_radians();
-                if self.normalize || a <= 0.0 { 1.0 / PI } else { 2.0 * (1.0 - a.min(PI).cos()) }
+                if self.normalize || a <= 0.0 {
+                    1.0 / PI
+                } else {
+                    2.0 * (1.0 - a.min(PI).cos())
+                }
             }
             LightShape::Sphere if self.normalize => 1.0 / (4.0 * PI),
             LightShape::Sphere if self.point => 1.0 / PI,
@@ -268,8 +279,7 @@ pub(crate) struct Lamp {
 }
 
 impl Lamp {
-    const OFF: Lamp = Lamp { kind: LAMP_DIRECTIONAL, at: [0.0, 0.0, 1.0], axis: [0.0, 0.0, -1.0], color: [0.0; 3],
-                             floor: 1.0 };
+    const OFF: Lamp = Lamp { kind: LAMP_DIRECTIONAL, at: [0.0, 0.0, 1.0], axis: [0.0, 0.0, -1.0], color: [0.0; 3], floor: 1.0 };
 
     /// The unit direction towards it from camera-space point `p`, and the
     /// light it gives there before the surface's cosine.
@@ -313,11 +323,9 @@ impl Lighting {
         use crate::composite::{GROUND, LIGHTS, SKY, SPECULAR};
         let mut lamps = [Lamp::OFF; MAX_LIGHTS];
         for (lamp, &(l, i)) in lamps.iter_mut().zip(&LIGHTS) {
-            *lamp = Lamp { kind: LAMP_DIRECTIONAL, at: math::normalize(l), axis: [0.0, 0.0, -1.0], color: [i; 3],
-                           floor: 1.0 };
+            *lamp = Lamp { kind: LAMP_DIRECTIONAL, at: math::normalize(l), axis: [0.0, 0.0, -1.0], color: [i; 3], floor: 1.0 };
         }
-        Lighting { sky: [SKY; 3], ground: [GROUND; 3], lamps, count: LIGHTS.len(), shine: 0, specular: SPECULAR,
-                   tinted: false }
+        Lighting { sky: [SKY; 3], ground: [GROUND; 3], lamps, count: LIGHTS.len(), shine: 0, specular: SPECULAR, tinted: false }
     }
 
     /// The frame's lighting: `lights` seen from the camera `view_to_world`
@@ -333,8 +341,15 @@ impl Lighting {
             let v = math::sub(p, view.eye);
             [math::dot(v, r), math::dot(v, u), math::dot(v, b)]
         };
-        let mut out = Lighting { sky: [0.0; 3], ground: [0.0; 3], lamps: [Lamp::OFF; MAX_LIGHTS], count: 0, shine: 0,
-                                 specular: SCENE_SPECULAR, tinted: true };
+        let mut out = Lighting {
+            sky: [0.0; 3],
+            ground: [0.0; 3],
+            lamps: [Lamp::OFF; MAX_LIGHTS],
+            count: 0,
+            shine: 0,
+            specular: SCENE_SPECULAR,
+            tinted: true,
+        };
         // The highlight's: the lamp brightest from where the camera is.
         let mut brightest = -1.0f32;
         for l in lights.as_slice() {
@@ -345,8 +360,9 @@ impl Lighting {
                     out.ground = out.sky;
                     continue;
                 }
-                LightShape::Distant => Lamp { kind: LAMP_DIRECTIONAL, at: dir(math::scale(l.facing, -1.0)),
-                                              axis: [0.0, 0.0, -1.0], color, floor: 1.0 },
+                LightShape::Distant => {
+                    Lamp { kind: LAMP_DIRECTIONAL, at: dir(math::scale(l.facing, -1.0)), axis: [0.0, 0.0, -1.0], color, floor: 1.0 }
+                }
                 shape => Lamp {
                     kind: if matches!(shape, LightShape::Rect | LightShape::Disk) { LAMP_FACING } else { LAMP_POINT },
                     at: point(l.position),
@@ -401,7 +417,11 @@ pub fn blackbody(kelvin: f32) -> Vec3 {
     ]
     .map(|c: f64| c.max(0.0) as f32);
     let lum = luminance(rgb);
-    if lum > 0.0 { rgb.map(|c| c / lum) } else { [1.0; 3] }
+    if lum > 0.0 {
+        rgb.map(|c| c / lum)
+    } else {
+        [1.0; 3]
+    }
 }
 
 #[cfg(test)]

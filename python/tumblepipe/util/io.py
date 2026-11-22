@@ -5,7 +5,7 @@ import json
 
 def store_text(path: Path, data: str):
     path.parent.mkdir(parents = True, exist_ok = True)
-    with path.open('w') as file:
+    with path.open('w', encoding = 'utf-8') as file:
         file.write(data)
 
 def load_json(path: Path):
@@ -59,25 +59,28 @@ def replace_file(src, dst, timeout: float = REPLACE_TIMEOUT) -> None:
             delay = min(delay * 2, 0.25)
 
 
-def store_json(path: Path, data: dict):
-    """Write *data* as JSON to *path* atomically.
+def write_bytes_atomic(path: Path, data: bytes) -> None:
+    """Replace *path* with *data* in one step: a reader sees the old file or
+    the new one, never part of it.
 
-    Serializes to a temporary file in the same directory first, then
-    renames it over the target. This guarantees *path* is either
-    fully written or untouched — a crash or force-kill mid-write
-    cannot leave a truncated file. A reader holding *path* open delays
-    the rename (see :func:`replace_file`) instead of failing it.
+    Writes a temporary file in the same folder, then renames it over the
+    target. A crash or force-kill mid-write cannot leave a truncated file,
+    and a write that fails removes its temporary file. A reader holding
+    *path* open delays the rename (see :func:`replace_file`) instead of
+    failing it.
     """
     import os
     import tempfile
+    path = Path(path)
     path.parent.mkdir(parents = True, exist_ok = True)
     fd, tmp = tempfile.mkstemp(
-        suffix = '.json',
+        prefix = f'.{path.name}.',
+        suffix = '.tmp',
         dir = str(path.parent),
     )
     try:
-        with os.fdopen(fd, 'w') as file:
-            json.dump(data, file, indent = 4)
+        with os.fdopen(fd, 'wb') as file:
+            file.write(data)
         replace_file(tmp, str(path))
     except BaseException:
         try:
@@ -85,6 +88,16 @@ def store_json(path: Path, data: dict):
         except OSError:
             pass
         raise
+
+
+def store_json(path: Path, data: dict):
+    """Write *data* as JSON to *path* atomically (:func:`write_bytes_atomic`).
+
+    ``indent=4``, non-ASCII escaped, LF line ends and a final newline: the
+    bytes the Rust config migrator (``th_project_core::to_json_string``)
+    writes, so a migration that changes one key changes one line.
+    """
+    write_bytes_atomic(path, (json.dumps(data, indent = 4) + '\n').encode('ascii'))
 
 
 #: The sidecar a published version folder is finished by.
