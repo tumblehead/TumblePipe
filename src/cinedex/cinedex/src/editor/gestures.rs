@@ -7,7 +7,8 @@
 //! Shift+click picks the range from the anchor to it, in place of what was
 //! picked ([`tracks::picks::range`]); a drag from empty track picks what
 //! its box touches. A click on empty track picks nothing, or the gap under
-//! it.
+//! it. An Alt+drag along empty video track picks nothing: its frames open
+//! New shot over them (`range_shot`).
 //!
 //! **After an edit, an undo or a redo** each picked clip is found again
 //! ([`th_edit::follow`]): a clip that moved stays picked where it went,
@@ -81,6 +82,8 @@ impl Editor {
                 self.set_playing(false);
                 self.move_to(position.min(self.end()));
             }
+            // Frames an Alt+drag swept: a new shot there (`range_shot`).
+            Gesture::Sweep { track, at, frames } => self.swept(track, at, frames),
         }
     }
 

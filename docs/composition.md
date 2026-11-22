@@ -665,9 +665,11 @@ In Houdini, `tumblepipe.pipe.houdini.selection_entities`
 ([source](../python/tumblepipe/pipe/houdini/selection_entities.py)) reads
 the current LOP selection (the viewport and the Scene Graph Tree share
 it): `selected_entities()`, `selected_entity()` (the one entity, or
-`None` for none or several), `selected_entity_departments()` and
+`None` for none or several), `selected_entity_departments()`,
+`jump_entity()` (the selected entity, else the open workfile's asset;
+the rule is `pipe.department_jump.jump_target`) and
 `open_selected_workfile(department, new_instance=False)`, which the
-[Alt+D radial](radial-menus.md#altd-the-selected-assets-workfiles) calls.
+[Alt+D radial](radial-menus.md#altd-jump-to-a-departments-workfile) calls.
 
 ## Dropped-metadata guard
 

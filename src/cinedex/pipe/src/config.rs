@@ -47,6 +47,8 @@ pub enum ConfigError {
     NameTaken(String),
     #[error("Entity name '{wanted}' collides with existing '{existing}' (names may not differ only by case)")]
     RenameCaseCollision { wanted: String, existing: String },
+    #[error("{0} was written by someone else since it was read: read it again before writing")]
+    Changed(String),
 }
 
 /// The entity kinds whose names follow [`is_valid_entity_name`]
@@ -387,6 +389,23 @@ impl Config {
         own.extend(keys);
         insert(&mut data, own, &uri.segments);
         self.write_root(&uri.purpose, data)
+    }
+
+    /// When `purpose`'s file was last written (None: there is none), for
+    /// [`Self::set_own_keys_guarded`].
+    pub fn file_mtime(&self, purpose: &str) -> Option<std::time::SystemTime> {
+        std::fs::metadata(self.db_file(purpose)).and_then(|m| m.modified()).ok()
+    }
+
+    /// [`Self::set_own_keys`], refused ([`ConfigError::Changed`]) when
+    /// `uri`'s file was written since `mtime` ([`Self::file_mtime`]), as
+    /// tumblepipe-mcp's writes are (`db::apply_mut`): whatever was checked
+    /// against what was read then is still what is on disk.
+    pub fn set_own_keys_guarded(&self, uri: &Uri, keys: Properties, mtime: Option<std::time::SystemTime>) -> Result<(), ConfigError> {
+        if self.file_mtime(&uri.purpose) != mtime {
+            return Err(ConfigError::Changed(self.db_file(&uri.purpose).display().to_string()));
+        }
+        self.set_own_keys(uri, keys)
     }
 
     /// Store `properties` as `uri`'s own, verbatim (`set_own_properties`):

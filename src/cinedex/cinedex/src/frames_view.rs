@@ -25,7 +25,11 @@
 //! A render still going: the folder (or batch) is read again every two
 //! seconds off the UI thread, and frames that landed fill their gaps (a
 //! frame that failed to read because it was still being written is read
-//! again once its file changes).
+//! again once its file changes). It can open before the first frame lands
+//! (Remy, 2026-11-20): a folder with no frames yet, there or not, given the
+//! frame list (`--expect`) opens with every frame a gap, the picture saying
+//! it waits for the first frame ([`Source::read_or_wait`]); the first frames
+//! to land take their place, and the version's AOV folders are listed again.
 //!
 //! Two choosers sit before the display's, each only when there is something
 //! to choose. **AOV**: the layers the EXR's header lists (`th_media`'s
@@ -81,6 +85,25 @@ pub(crate) struct Source {
 impl Source {
     pub(crate) fn read(&self) -> Result<Reel, String> {
         open_frames(&self.path).map(|stills| Reel::of(&stills, if stills.exact { &Fill::Exact } else { &self.fill }))
+    }
+
+    /// [`Self::read`], or before the first frame lands, the frame list as
+    /// gaps ([`Reel::waiting`]): for a folder (there or not yet) with no
+    /// frames in it, given the frames it is to have (`--expect`). Anything
+    /// else (a batch, a frame, a movie, no frame list) is read as it is,
+    /// its error kept.
+    pub(crate) fn read_or_wait(&self) -> Result<Reel, String> {
+        self.read().or_else(|error| self.waiting().ok_or(error))
+    }
+
+    fn waiting(&self) -> Option<Reel> {
+        let Fill::List(numbers) = &self.fill else { return None };
+        let name = self.path.file_name()?.to_string_lossy();
+        let named_as_file = th_pipe::preview_place::is_frame_file(&name) || crate::reel::is_movie(&self.path);
+        if numbers.is_empty() || self.path.is_file() || named_as_file || th_pipe::previews::is_batch(&self.path) {
+            return None;
+        }
+        Some(Reel::waiting(&self.path, numbers))
     }
 }
 
@@ -607,6 +630,9 @@ impl FramesView {
         self.scanning = true;
         let epoch = self.epoch;
         let source = self.source.clone();
+        // Still waiting for the first frame: no frames is still waiting. A
+        // folder that empties once frames were shown keeps them instead.
+        let waiting = self.reel.is_waiting();
         let failed: Vec<(FrameKey, PathBuf)> = self
             .failed_at
             .keys()
@@ -615,7 +641,7 @@ impl FramesView {
         Command::perform_blocking(
             move || {
                 let times = failed.into_iter().map(|(k, p)| (k, std::fs::metadata(p).and_then(|m| m.modified()).ok())).collect();
-                (source.read(), times)
+                (if waiting { source.read_or_wait() } else { source.read() }, times)
             },
             move |(reel, times)| Message::Scanned(epoch, reel, times),
         )
@@ -652,10 +678,16 @@ impl FramesView {
                     .is_none_or(|old| old.paths() != reel.groups[g].paths() || self.opened.get(g).is_none_or(|o| o.media.is_none()))
             })
             .collect();
+        // The first frames landed: what is beside them (the version's AOV
+        // folders, made as the render writes them) is listed again.
+        let first_frames = self.reel.is_waiting() && !reel.is_waiting();
         self.reel = reel;
         self.transport.set_len(self.reel.len());
         self.engine.set_timeline(self.timeline());
-        let commands: Vec<Command<Message>> = changed.into_iter().map(|g| self.open(g)).collect();
+        let mut commands: Vec<Command<Message>> = changed.into_iter().map(|g| self.open(g)).collect();
+        if first_frames {
+            commands.push(self.list_beside());
+        }
         self.refresh_shown();
         Command::batch(commands)
     }
@@ -691,6 +723,10 @@ impl FramesView {
         let (g, i) = self.reel.slot_at(position)?;
         let slot = &self.reel.groups[g].slots[i];
         let name = self.frame_text();
+        if self.reel.is_waiting() {
+            let of = self.reel.len();
+            return Some((format!("Waiting for the first frame: none of the {of} frames is rendered yet"), look::quiet()));
+        }
         if !slot.present {
             return Some((format!("Frame {name} is not rendered yet"), look::quiet()));
         }
@@ -757,6 +793,7 @@ impl FramesView {
                     preview: None,
                     farm: None,
                     room: None,
+                    wave: None,
                 }
             })
             .collect();
@@ -1188,6 +1225,35 @@ mod tests {
         let t = Timeline::new(c);
         assert!(t.layers(2, |_| true).is_empty(), "a gap plays nothing");
         assert_eq!(t.layers(5, |_| true)[0].key, FrameKey { source: 0, index: 5 });
+    }
+
+    #[test]
+    fn a_folder_with_no_frames_yet_waits_for_its_frame_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let beauty = dir.path().join("v0003").join("beauty");
+        let list = Fill::List((1001..=1010).collect());
+        let source = Source { path: beauty.clone(), fill: list.clone() };
+        // Not there yet, then there and empty: the frame list as gaps.
+        let waiting = source.read_or_wait().unwrap();
+        assert!(waiting.is_waiting());
+        assert_eq!(waiting.rendered(), (0, 10));
+        assert!(clips(&waiting, 24).is_empty(), "nothing to play yet");
+        assert!(source.read().is_err(), "a plain read still says there are no frames");
+        std::fs::create_dir_all(&beauty).unwrap();
+        assert_eq!(source.read_or_wait().unwrap(), waiting);
+        // The first frame lands: the folder's frames, the rest still gaps.
+        std::fs::write(beauty.join("shot_beauty.1004.exr"), b"").unwrap();
+        let landed = source.read_or_wait().unwrap();
+        assert!(!landed.is_waiting());
+        assert_eq!(landed.rendered(), (1, 10));
+        assert_eq!(landed.groups[0].name, waiting.groups[0].name);
+        // Without a frame list, or for a frame or a movie, nothing to wait for.
+        let empty = dir.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(Source { path: empty.clone(), fill: Fill::Span }.read_or_wait().is_err());
+        assert!(Source { path: empty, fill: Fill::List(Vec::new()) }.read_or_wait().is_err());
+        assert!(Source { path: dir.path().join("gone.1001.exr"), fill: list.clone() }.read_or_wait().is_err());
+        assert!(Source { path: dir.path().join("gone_v0001.mp4"), fill: list }.read_or_wait().is_err());
     }
 
     proptest! {

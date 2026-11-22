@@ -681,7 +681,9 @@ bin.)
 
 Under the picture are the tracks: a ruler, then the video tracks (the top
 track on top), then the audio tracks. Each clip shows its first frame, its
-name and its take, its fades as ramps, and an outline when selected. A
+name and its take, its fades as ramps, and an outline when selected. An
+audio clip shows its waveform, through its in point, gain and fades (a
+flat line while its sound is still being read). A
 shot's clip is coloured by the department its take comes from (every
 animation take the same muted blue, say), so the cut shows at a glance how
 far each shot has got; a clip with nothing to play is hatched, and says
@@ -702,7 +704,9 @@ clip being dragged.
   selects the clip alone.
 - Drag from empty track to **box select**: every clip the box touches, on
   the rows it crosses, is selected (after 4 pixels, so a click stays a
-  click). Dragging on the ruler still scrubs.
+  click). Dragging on the ruler still scrubs. With **Alt** held, a drag
+  along an empty stretch of a video track makes a new shot of that length
+  there instead ([a new shot from the timeline](#the-master-edit)).
 - The selection stays on its clips: move them, trim them, undo, redo, and
   the same clips are selected where they are now. A clip that is gone
   (deleted, joined away, undone out of the cut) is deselected; the
@@ -787,7 +791,9 @@ clip being dragged.
   holds. A trim throws nothing away: the clip only shows less of its shot
   or media, and dragging the edge back out shows the frames again. An edge
   goes out as far as there is footage (a shot's frame range with its roll,
-  a media item's frames) and stops there: a red bar on the edge, hatching
+  a media item's frames; on the master edit with **Sync Shot Ranges** on, a
+  shot's clip goes further and the shot grows with it, see
+  [the master edit](#the-master-edit)) and stops there: a red bar on the edge, hatching
   past it, and *no more footage* beside the frame count. A slip and a roll
   stop the same way. (Up to 1.112.0 a drag past the footage was undone
   whole when you let go, so a trimmed clip dragged out too far snapped back
@@ -811,8 +817,11 @@ clip being dragged.
   trackpad scrolls through time. The wheel alone scrolls the tracks up and
   down when they are taller than the timeline, as before. Under the
   tracks a thin strip shows the whole timeline, its clips and the
-  playhead, with the part you see as a lighter thumb: drag the thumb to
-  scroll, or click the strip to centre the view there. **View > Fit to
+  playhead, with the part you see as a thumb as wide as that part is of
+  the whole: drag the thumb to scroll, drag either end of it to zoom (the
+  other end stays), or click the strip beside it to page a view's width
+  that way (up to 1.119.0 a drag of the thumb stopped after its first move
+  and a click centred the view). **View > Fit to
   Clips** (Shift+F, also in the timeline's right-click menu) shows the
   first clip's start to the last clip's end (at least 8 frames); **Fit
   Timeline** (F) shows everything. Zoomed in, an edit never changes the
@@ -1209,6 +1218,39 @@ cut makes, each with a tick box:
 A change is flagged when the shot's take does not cover the new range (a
 playblast made before the range grew). The ticked changes are written after
 the publish, and the shots bin follows them.
+
+**Edit > Sync Shot Ranges** (on unless you turn it off, for the window's
+session) writes a shot's range as you trim, instead of at the publish.
+While the window is on the master edit's working version, trimming a
+shot's clip sets the shot's frames there and then: trimming the tail sets
+its end frame, trimming the head its start frame (a shot whose renders start
+at 1001, its head trimmed by 8, starts on 1009: frame 1009 is still the
+renders' 1009). A slip moves both, a roll one end of each of the two shots.
+Only the end the clip moved is written. **Undo** moves the clip back and
+writes the frame back, **Redo** again. The edge of a shot's clip then goes
+out past the shot's frames (that is how a shot gets longer); the frames no
+take has yet show as missing until a new playblast or render. The status
+line says what was written. A shot whose range someone else changed since
+the editor read it is left alone, and the status line says so (the publish
+still offers its range). Nothing is written for slugs, media, planned
+shots, any other edit, or a published version; turn it off and the
+publish offers the ranges as before.
+
+**A new shot from the timeline.** Hold **Alt** and drag along an empty
+stretch of a video track: an amber outline shows the frames, with how many.
+Let go, and **New shot** opens over them: its **Frames** are the frames
+dragged, the name is the sequence's next free one, and **Create the shot
+now** is ticked. **Create Shot** makes the shot in the project at once (its
+frames from the project's start frame, 1001 unless the project sets
+another, for the length dragged, on the shared timelines of the Multis
+listing its sequence, as a publish would make it) and puts its clip where
+you dragged. Untick it for **Plan Shot**, a planned shot made when the
+master edit is published. **Placeholder** puts a slug of those frames
+there instead. The drag stays inside the empty stretch it started in, so
+the clip fits; type more frames than that and it goes on the lowest track
+above with room. The clip is one step of undo; a shot made stays made
+(retire it from the master's publish or the Entity Editor). A drag without
+Alt is still the box select, and Alt on a clip still slips or rolls it.
 
 ## Running it by hand
 

@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Sequence
 
+from tumblepipe.farm.submit.stale import stale_review_line
+
 BLOCKED, STALE, WARNED, CLEAN = 0, 1, 2, 3
 
 
@@ -58,6 +60,6 @@ def review_lines(row: ReviewRow) -> list[str]:
     """Everything the artist should read about ``row``, blocking reasons first."""
     lines = [f"Can't submit: {error}" for error in row.errors]
     if row.stale:
-        lines.append(f"Previews {', '.join(row.stale)} as last published (stale, not ticked)")
+        lines.append(stale_review_line(row.stale))
     lines.extend(row.warnings)
     return lines

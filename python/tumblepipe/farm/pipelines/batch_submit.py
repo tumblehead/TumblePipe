@@ -56,6 +56,7 @@ from tumblepipe.pipe import render_layers
 from tumblepipe.pipe import slap_comp
 from tumblepipe.pipe import turntable
 from tumblepipe.pipe.paths.render import list_render_versions
+from tumblepipe.pipe.usd import render_settings
 from tumblepipe.farm.pipelines import publish as publish_pipeline
 from tumblepipe.farm.pipelines._batch import batch_title, new_batch
 
@@ -64,15 +65,30 @@ class BatchSubmitError(Exception):
     pass
 
 
-def _build_render_overrides(settings: dict) -> dict:
+def _build_render_overrides(settings: dict, is_turntable: bool = False) -> dict:
     """``{Karma attribute: value}`` of the render overrides ``settings``
     sends (``submit_settings.RENDER_OVERRIDES``). A key is there only when
-    the artist set it: unset, the scene's own render settings render."""
-    return {
+    the artist set it: unset, the scene's own render settings render.
+
+    Farm Submit's Camera (``submit_settings.CAMERA_KEY``) rides along under
+    ``render_settings.CAMERA_OVERRIDE``, which the collapse authors as the
+    settings prim's ``camera`` relationship and checks is on the stage. An
+    asset's turntable renders the studio's camera (#53), so it sends none.
+    """
+    overrides = {
         attribute: settings[key]
         for key, attribute in submit_settings.RENDER_OVERRIDES.items()
         if key in settings
     }
+    camera = settings.get(submit_settings.CAMERA_KEY)
+    if camera is not None and not is_turntable:
+        path = render_settings.valid_camera_override(camera)
+        if path is None:
+            raise BatchSubmitError(
+                f"Camera '{camera}' is not a prim path like /cameras/render_camera"
+            )
+        overrides[render_settings.CAMERA_OVERRIDE] = path
+    return overrides
 
 
 def publish_department_names(
@@ -682,7 +698,7 @@ def _resolve(entity_uri: Uri, entity_context: str, settings: dict, kinds) -> Ent
             turntable=asset_turntable,
             preview_entry=preview_entry,
             frame_ranges_entry=frame_ranges_entry,
-            overrides=_build_render_overrides(settings),
+            overrides=_build_render_overrides(settings, is_turntable=asset_turntable),
             repair=repair_entry,
         ) if do_render else None,
         playblast=PlayblastPlan(

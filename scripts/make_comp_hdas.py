@@ -7,8 +7,13 @@ The nodes' interfaces and contents are written here, so a change is a
 diff of this file plus the regenerated otls/ sources (see otls/README.md).
 Each node is built as a COP subnet, turned into a digital asset in a temp
 .hda, given its DialogScript and sections, and expanded with ``hotl -t``
-into ``otls/cop_th.<name>.1.0/``, replacing what was there. The Python the
-nodes run lives in ``python/tumblepipe/pipe/houdini/cops/<name>.py``.
+into ``otls/cop_th.<name>.<version>/``, replacing what was there. The
+Python the nodes run lives in ``python/tumblepipe/pipe/houdini/cops/<name>.py``.
+th::import_render is built twice: 2.0, today's, and 1.0, which scenes saved
+with it keep. Name assets (``<name>@<version>``) to build only those and
+leave the rest of otls/ as it is:
+
+    hython scripts/make_comp_hdas.py import_render@2.0
 
 Run it with this checkout's python/ on PYTHONPATH, and no
 HOUDINI_USER_PREF_DIR override: a scratch prefs dir named with __HVER__ makes
@@ -126,10 +131,10 @@ def _entity_parms(module):
         }}"""
 
 
-# th::import_render's outputs (#67, Remy's mockup of 2026-11-12): a
+# th::import_render 1.0's outputs (#67, Remy's mockup of 2026-11-12): a
 # beauty output per channel (rgba, rgba2 .. rgba8; a digital asset's outputs
 # are fixed by its type), the AOV cables, then the scene's. Kept equal to
-# cops.import_render.OUTPUTS by tests/test_import_render_outputs.py.
+# cops.import_render.OUTPUTS_V1 by tests/test_import_render_outputs.py.
 IMPORT_RENDER_CHANNEL_OUTPUTS = 8
 IMPORT_RENDER_OUTPUTS = (
     [('rgba', 'rgba', 'RGBA')]
@@ -493,6 +498,73 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
 
 }}
 """
+
+
+# th::import_render 2.0's outputs (Remy, 2026-11-22: "a cleaner, working
+# import render node"): one beauty (named rgba, labelled beauty; for all
+# channels the channels laid over each other), the AOV cables, a cable of
+# each channel's beauty named after the channel (layers), then the scene's.
+# Kept equal to cops.import_render.OUTPUTS_V2 by
+# tests/test_import_render_outputs.py.
+IMPORT_RENDER_V2_OUTPUTS = (
+    [('rgba', 'beauty', 'RGBA'),
+     ('lpe', 'lpe', 'Cable'), ('aov', 'aov', 'Cable'), ('matte', 'matte', 'Cable'),
+     ('cryptomaterials', 'cryptomaterials', 'Cable'),
+     ('cryptoprimitives', 'cryptoprimitives', 'Cable'),
+     ('layers', 'layers', 'Cable'),
+     ('geometry', 'geometry', 'Geometry'), ('camera', 'camera', 'Metadata')]
+)
+IMPORT_RENDER_V2_HELP = (
+    "A shot's finished render, top to bottom: the beauty (with Channel * every "
+    "channel's beauty laid over each other, the last on top), cables of the light "
+    "groups (lpe, a light mix's), the other AOVs (aov), the mattes, ramps and "
+    "holdouts (matte) and each cryptomatte's rank planes, whole, for a Cryptomatte "
+    "COP's crypto1 (cryptomaterials, cryptoprimitives), a cable of each channel's "
+    "beauty named after the channel (layers), then the staged geometry (geometry) "
+    "and the shot's render camera (camera) for a Rasterize Geometry. AOV Outputs "
+    "gives each pass an output named after it. Under the node: what each channel "
+    "reads, or that it has no render yet."
+)
+# 1.0's parms that carry its beauty outputs, which no 2.0 scene ever saved.
+IMPORT_RENDER_V1_ONLY_PARMS = ('outputs_layout', 'channel_outputs', 'beauty_outputs')
+
+
+def _drop_parm(dialog_script: str, name: str) -> str:
+    """``dialog_script`` without the ``parm { name "<name>" ... }`` block."""
+    start = dialog_script.index(f'        parm {{\n            name    "{name}"')
+    end = dialog_script.index('\n        }\n', start) + len('\n        }\n')
+    return dialog_script[:start] + dialog_script[end:]
+
+
+def _replace_once(text: str, old: str, new: str) -> str:
+    assert text.count(old) == 1, old
+    return text.replace(old, new)
+
+
+def import_render_v2_ds() -> str:
+    """2.0's DialogScript: 1.0's, with 2.0's outputs, help and wording,
+    less :data:`IMPORT_RENDER_V1_ONLY_PARMS`."""
+    text = IMPORT_RENDER_DS.replace('th::import_render::1.0', 'th::import_render::2.0')
+    text = _replace_once(text, _IMPORT_RENDER_OUTPUT_LINES, '\n'.join(
+        f'    output\t{name}\t"{label}"' for name, label, _ in IMPORT_RENDER_V2_OUTPUTS))
+    text = _replace_once(
+        text, f'{{ {_IMPORT_RENDER_SIGNATURE} }}',
+        '{ ' + ' '.join(kind for _, _, kind in IMPORT_RENDER_V2_OUTPUTS) + ' }')
+    old_help = text[text.index('    help {\n\t"') + len('    help {\n\t"'):]
+    old_help = old_help[:old_help.index('"\n    }')]
+    text = _replace_once(text, old_help, IMPORT_RENDER_V2_HELP)
+    for name in IMPORT_RENDER_V1_ONLY_PARMS:
+        text = _drop_parm(text, name)
+    text = _replace_once(text, 'Caches the beauties (rgba .. rgba 8).',
+                         'Caches the beauty and layers.')
+    text = _replace_once(
+        text,
+        'Keep a Cable Unpack beside the node for each AOV cable, with one output '
+        'per AOV in the cable, kept in step with it.',
+        'Keep a Cable Unpack beside the node for each cable (lpe, aov, matte, the '
+        'cryptomattes, layers), with one output per pass in it, named after the '
+        'pass, kept in step with it.')
+    return text
 
 
 LIGHT_MIX_DS = f"""# Dialog script for th::light_mix::1.0
@@ -920,15 +992,18 @@ def _set_io(subnet, inputs, outputs):
 SUBNET_TYPES = {'RGBA': 'vector4', 'Cable': 'cable', 'Geometry': 'geo', 'Metadata': 'metadata'}
 
 
-def build_import_render(root):
+def build_import_render(root, version='1.0'):
     """The dive (File COPs and cable packs, rebuilt by Python; its outputs
     only ever appended to) and an embedded th::import_scene for geometry
-    and camera, wired to the outputs by name. Left to right, as the dive
-    and the comp template read: the dive and the scene, the scene's
-    switches, the outputs."""
+    and camera, wired to ``version``'s outputs by name. Left to right, as
+    the dive and the comp template read: the dive and the scene, the
+    scene's switches, the outputs."""
     from tumblepipe.pipe import comp
     from tumblepipe.pipe.houdini.cops import import_render as module
-    _set_io(root, [], [(name, SUBNET_TYPES[kind]) for name, _, kind in IMPORT_RENDER_OUTPUTS])
+    v2 = version != '1.0'
+    outputs_spec = IMPORT_RENDER_V2_OUTPUTS if v2 else IMPORT_RENDER_OUTPUTS
+    layout = module.LAYOUT_V2 if v2 else module.LAYOUT_V1
+    _set_io(root, [], [(name, SUBNET_TYPES[kind]) for name, _, kind in outputs_spec])
     stride, row = comp.COLUMN_STRIDE, comp.ROW
     dive = root.createNode('subnet', module.DIVE)
     _set_io(dive, [], list(module.DIVE_OUTPUTS))
@@ -975,9 +1050,10 @@ def build_import_render(root):
     if root.node('inputs') is not None:
         root.node('inputs').setPosition(hou.Vector2(-stride, 0))
     dive_index = {name: index for index, (name, _) in enumerate(module.DIVE_OUTPUTS)}
-    sources = {name: (dive, dive_index[label]) for name, label in module.DIVE_SOURCES.items()}
+    sources = {name: (dive, dive_index[label])
+               for name, label in module.dive_sources(layout).items()}
     sources.update(switches)
-    for index, name in enumerate(module.OUTPUTS):
+    for index, name in enumerate(module.LAYOUT_OUTPUTS[layout]):
         outputs.setInput(index, *sources[name])
     return [module.DIVE, module.SCENE, f'{module.SCENE}/lopnet/import_shot']
 
@@ -1089,14 +1165,16 @@ def build_import_scene(root):
     return ['lopnet/import_shot']
 
 
-# (name, label, build, dialog script, min inputs, max inputs). import_scene
-# comes before import_render, which embeds it: each built asset is
-# installed in the session before the next is built.
+# (name, version, label, build, dialog script, min inputs, max inputs).
+# import_scene comes before import_render, which embeds it: each built
+# asset is installed in the session before the next is built.
 NODES = [
-    ('light_mix', 'th light mix', build_light_mix, LIGHT_MIX_DS, 1, 2),
-    ('export_comp', 'th export comp', build_export_comp, EXPORT_COMP_DS, 1, 1),
-    ('import_scene', 'th import scene', build_import_scene, IMPORT_SCENE_DS, 0, 0),
-    ('import_render', 'th import render', build_import_render, IMPORT_RENDER_DS, 0, 0),
+    ('light_mix', '1.0', 'th light mix', build_light_mix, LIGHT_MIX_DS, 1, 2),
+    ('export_comp', '1.0', 'th export comp', build_export_comp, EXPORT_COMP_DS, 1, 1),
+    ('import_scene', '1.0', 'th import scene', build_import_scene, IMPORT_SCENE_DS, 0, 0),
+    ('import_render', '1.0', 'th import render', build_import_render, IMPORT_RENDER_DS, 0, 0),
+    ('import_render', '2.0', 'th import render',
+     lambda root: build_import_render(root, '2.0'), import_render_v2_ds(), 0, 0),
 ]
 
 ON_LOADED = {
@@ -1115,12 +1193,12 @@ ON_LOADED = {
 }
 
 
-def make(name, label, build, dialog_script, min_inputs, max_inputs, temp_dir):
-    type_name = f'th::{name}::1.0'
+def make(name, version, label, build, dialog_script, min_inputs, max_inputs, temp_dir):
+    type_name = f'th::{name}::{version}'
     copnet = hou.node('/img').createNode('copnet', f'build_{name}')
     root = copnet.createNode('subnet', name)
     editable = build(root)
-    hda_path = Path(temp_dir) / f'cop_th.{name}.1.0.hda'
+    hda_path = Path(temp_dir) / f'cop_th.{name}.{version}.hda'
     node = root.createDigitalAsset(
         name = type_name,
         hda_file_name = str(hda_path),
@@ -1154,8 +1232,8 @@ def make(name, label, build, dialog_script, min_inputs, max_inputs, temp_dir):
     return hda_path
 
 
-def expand(hda_path, name):
-    target = OTLS / f'cop_th.{name}.1.0'
+def expand(hda_path, name, version='1.0'):
+    target = OTLS / f'cop_th.{name}.{version}'
     if target.exists():
         shutil.rmtree(target)
     subprocess.run([str(HOTL), '-t', str(target), str(hda_path)], check=True)
@@ -1182,15 +1260,21 @@ def portable_fallbacks(text: bytes) -> bytes:
     return ''.join(f'{line}\n' for line in lines).encode('utf-8')
 
 
-def main():
+def main(only=()):
+    """Build every asset, or only those ``only`` names (``<name>@<version>``);
+    the others are taken from otls/ as they are (import_render embeds
+    import_scene)."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        for name, label, build, dialog_script, min_inputs, max_inputs in NODES:
-            hda_path = make(name, label, build, dialog_script, min_inputs, max_inputs, temp_dir)
+        for name, version, label, build, dialog_script, min_inputs, max_inputs in NODES:
+            if only and f'{name}@{version}' not in only:
+                continue
+            hda_path = make(name, version, label, build, dialog_script,
+                            min_inputs, max_inputs, temp_dir)
             # The asset just built, with its DialogScript and sections, for
             # an asset built after it that embeds it (import_render's scene).
             hou.hda.installFile(str(hda_path), force_use_assets=True)
-            expand(hda_path, name)
+            expand(hda_path, name, version)
 
 
 if __name__ == '__main__':
-    main()
+    main(tuple(sys.argv[1:]))

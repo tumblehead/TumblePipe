@@ -67,6 +67,7 @@ from tumblepipe.farm.specs import preview_frames
 from tumblepipe.farm.specs import repair
 from tumblepipe.farm.specs import submission
 from tumblepipe.pipe.usd.render_overrides import KARMA_SETTINGS
+from tumblepipe.pipe.usd.render_settings import valid_camera_override
 
 # Sentinel: this field has no fallback constant. When it resolves to
 # neither an exception, a pinned form value, nor an entity property, the
@@ -90,6 +91,9 @@ DEFAULT_CHANNEL = 'default'
 #: ``tumblepipe.config.channels.CHANNEL_PROPERTY`` for the same reason as
 #: :data:`DEFAULT_CHANNEL`; ``tests/test_channels.py`` pins the two equal.
 CHANNEL_LIST_KEY = 'channels'
+
+#: The Render section's Camera override field (a farm override, see FIELDS).
+CAMERA_KEY = 'render_camera'
 
 
 @dataclass(frozen=True)
@@ -238,6 +242,11 @@ FIELDS: tuple[Field, ...] = (
           attribute=KARMA_SETTINGS['enablemblur'].attribute),
     Field('dof', 'render', 'DOF', kind='bool', override=True,
           attribute=KARMA_SETTINGS['enabledof'].attribute),
+    # The camera (Remy, 2026-11-20): an override like the three above, sent
+    # only when the artist sets it; unset, the scene's RenderSettings camera
+    # renders. No attribute: the camera is a relationship, which batch_submit
+    # sends under ``render_settings.CAMERA_OVERRIDE`` (shots only).
+    Field(CAMERA_KEY, 'render', 'Camera', kind='str', override=True),
 
     # ── Playblast (shots only) ────────────────────────────
     # The playblast cut mirrors the render cut, so it reads the same
@@ -1221,13 +1230,20 @@ def entity_errors(
         rendered: What its renders on disk cover (``status.RowStatus.rendered``),
             None when none (or not read yet).
     """
-    return submission.problems(
+    problems = submission.problems(
         resolved,
         off=read_disabled_departments(properties),
         rendered=rendered,
         shot=shot_range(properties),
         requested=requested,
     )
+    camera = resolved.get(CAMERA_KEY)
+    if resolved.get('render') and camera is not None and valid_camera_override(camera) is None:
+        problems = [
+            *problems,
+            f"Camera '{camera}' is not a prim path like /cameras/render_camera",
+        ]
+    return problems
 
 
 def _department_warning(

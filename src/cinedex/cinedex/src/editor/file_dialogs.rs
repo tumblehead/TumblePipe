@@ -93,11 +93,14 @@ pub(super) enum Dialog {
         others: Vec<String>,
         tried: bool,
     },
-    /// A planned shot put at the playhead.
+    /// A planned shot put at the playhead, or (`place`) over the frames an
+    /// Alt+drag swept (`range_shot`), the shot made at once when `now`.
     NewShot {
         sequence: String,
         name: editing::Offered,
         frames: String,
+        place: Option<super::range_shot::Place>,
+        now: bool,
     },
     Import {
         path: String,
@@ -259,10 +262,23 @@ fn dialog_element(dialog: &Dialog, title: &str) -> Element<Message> {
                 buttons = buttons.push(choice("ok", "Publish", Message::Confirm)).push(choice("cancel", "Cancel", Message::Dismiss));
             }
         }
-        Dialog::NewShot { sequence, name, frames } => {
+        Dialog::NewShot { sequence, name, frames, place, now } => {
+            page = page.push(heading("New shot"));
+            if let Some(place) = place {
+                page = page.push(label(&super::range_shot::place_words(place)));
+            }
             page = page
-                .push(heading("New shot"))
-                .push(label("A planned shot: it is made when the master edit is published."))
+                .push(
+                    row()
+                        .spacing(8.0)
+                        .align_y(Vertical::Center)
+                        .push(look::tick_box(Id::new("new shot now"), *now, Message::NewShotNow))
+                        .push(
+                            text("Create the shot now (else it is planned: made when the master edit is published)")
+                                .font_size(12.0)
+                                .color(look::text()),
+                        ),
+                )
                 .push(label("Sequence"))
                 .push(field("sequence", sequence, Field::Sequence, "S"))
                 .push(label("Shot"))
@@ -281,7 +297,14 @@ fn dialog_element(dialog: &Dialog, title: &str) -> Element<Message> {
                     |v| Message::Text(Field::Frames, format!("{}", v.round() as i64)),
                     None,
                 ));
-            buttons = buttons.push(choice("ok", "Insert", Message::Confirm)).push(choice("cancel", "Cancel", Message::Dismiss));
+            buttons = match place {
+                // Over the swept frames: a shot, or a placeholder of them.
+                Some(_) => buttons
+                    .push(choice("ok", if *now { "Create Shot" } else { "Plan Shot" }, Message::Confirm))
+                    .push(choice("placeholder", "Placeholder", Message::Alternate))
+                    .push(choice("cancel", "Cancel", Message::Dismiss)),
+                None => buttons.push(choice("ok", "Insert", Message::Confirm)).push(choice("cancel", "Cancel", Message::Dismiss)),
+            };
         }
         Dialog::RenameTrack { name, others, tried, .. } => {
             page = page.push(heading("Rename track")).push(label("Name")).push(field("name", name, Field::Name, "V1"));
@@ -354,7 +377,7 @@ impl Editor {
                 let sequence = self.bin_pick.and_then(|p| self.bins.shots.get(p)).or(self.bins.shots.first()).map(|s| s.sequence.clone());
                 let sequence = sequence.unwrap_or_default();
                 let name = editing::Offered::new(editing::next_shot_name(&self.taken_shot_names(), &sequence));
-                Dialog::NewShot { sequence, name, frames: "48".into() }
+                Dialog::NewShot { sequence, name, frames: "48".into(), place: None, now: false }
             }
         });
     }
@@ -598,7 +621,9 @@ impl Editor {
                     return self.publish(note, ticked);
                 }
                 Some(Dialog::RenameTrack { track, name, others, .. }) => return self.rename_track(track, name, &others),
-                Some(Dialog::NewShot { sequence, name, frames }) => return self.new_shot(&sequence, &name.text, &frames),
+                Some(Dialog::NewShot { sequence, name, frames, place, now }) => {
+                    return self.new_shot(&sequence, &name.text, &frames, place, now);
+                }
                 Some(Dialog::Import { path, item, note }) => {
                     let item = item.text.trim().to_owned();
                     if let Some(problem) = th_pipe::naming::entity_name_problem(&item) {
@@ -644,8 +669,17 @@ impl Editor {
                     }
                     self.leave();
                 }
+                Some(Dialog::NewShot { place: Some(place), frames, .. }) => {
+                    let (place, frames) = (*place, frames.clone());
+                    return self.placeholder(place, &frames);
+                }
                 _ => {}
             },
+            Message::NewShotNow(on) => {
+                if let Some(Dialog::NewShot { now, .. }) = &mut self.dialog {
+                    *now = on;
+                }
+            }
             Message::Dismiss => {
                 if !matches!(self.dialog, Some(Dialog::Busy(_)))
                     && !export_dialog::holds(&self.dialog)

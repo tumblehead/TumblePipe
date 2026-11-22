@@ -208,6 +208,7 @@ mod tests {
                 preview: None,
                 farm: None,
                 room: room(Ranges.available(&c.source), c.source_in, c.duration),
+                wave: None,
             })
             .collect()
     }

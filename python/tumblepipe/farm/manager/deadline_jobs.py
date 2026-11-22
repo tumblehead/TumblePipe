@@ -97,6 +97,20 @@ def control(command: str, job_ids: list[str]) -> str:
     return _command(COMMANDS[command], ','.join(job_ids), envelope=False)
 
 
+def send_priority(job_ids: list[str], value: int) -> str:
+    """Set the jobs' priority: one ``SetJobSetting <ids> Priority <value>``
+    (the job-submission key; ids comma-separated, as deadline-mcp sends)."""
+    if not job_ids:
+        return ''
+    return _command('SetJobSetting', ','.join(job_ids), 'Priority', str(int(value)), envelope=False)
+
+
+def set_priority(job_ids: list[str], value: int) -> int:
+    """Set and check the jobs' priority (``manager.priority.set_priority``)."""
+    from tumblepipe.farm.manager import priority
+    return priority.set_priority(job_ids, value, send_priority, fetch_jobs)
+
+
 def requeue_tasks(job_id: str, task_ids) -> str:
     """Requeue some tasks of a job (Render again, ``manager.render_again``).
     Never an empty list: ``RequeueJobTasks`` without one requeues them all."""

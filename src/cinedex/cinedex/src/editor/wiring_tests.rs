@@ -1553,6 +1553,7 @@ mod dialogs;
 mod flip_and_menus;
 mod picks;
 mod placement;
+mod range_shot;
 
 mod track_menu;
 mod view;

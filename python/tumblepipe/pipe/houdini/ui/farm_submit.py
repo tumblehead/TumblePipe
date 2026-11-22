@@ -142,11 +142,15 @@ def open_grid(seed) -> None:
     its entities' Render cells ticked, its department as the cut and its
     channels checked. The same window the toolbar's Render quick action
     opens (``asset_browser.scene.open_submit_jobs_dialog``), so it replaces
-    an open one. Raises; the caller is the button's boundary."""
+    an open one. The department pins the Render cut outright
+    (``render_department``): a workfile's department no longer does
+    (Remy, 2026-11-20), but the import names the render it means. Raises;
+    the caller is the button's boundary."""
     from tumblepipe.asset_browser.scene import open_submit_jobs_dialog
     open_submit_jobs_dialog(
         list(seed.uris), list(seed.names), seed.context,
         department=seed.department, channels=tuple(seed.channels) or None,
+        render_department=seed.department,
     )
 
 
@@ -154,8 +158,9 @@ def open_comp_grid(shot_uri, department: str | None = None) -> None:
     """Farm Submit's grid with ``shot_uri``'s Render and Comp ticked: a
     th::export_comp no th::import_render feeds comps the render of the
     same submit (#80), so its own Submit sends the artist here.
-    ``department`` (the open workfile's) is the render cut, as from the
-    toolbar. Raises; the caller is the button's boundary."""
+    ``department`` (the open workfile's) pins the Playblast cut, as from the
+    toolbar; the Render cut stays each shot's latest department.
+    Raises; the caller is the button's boundary."""
     from tumblepipe.asset_browser.scene import open_submit_jobs_dialog
     from tumblepipe.farm.submit import grid
     open_submit_jobs_dialog(

@@ -1,4 +1,4 @@
-"""Audit: th::import_render's outputs on a three-layer shot, each cooked.
+"""Audit: th::import_render 1.0's outputs on a three-layer shot, each cooked.
 
     hython scripts/verify_import_render_outputs.py
 
@@ -22,6 +22,9 @@ matte. Then:
   does; switching a one-channel import to another layer renames it; a
   comment someone typed is left alone;
 - the network editor shows the comment (its Display Comment flag).
+
+This audits 1.0, which scenes saved before 2.0 keep (2.0 has one beauty
+output and a layers cable: scripts/verify_import_render_v2.py).
 
 Needs Houdini with the comp HDAs compiled (``hython .ci/compile_hdas.py``)
 and on HOUDINI_OTLSCAN_PATH, and this checkout's python/ on PYTHONPATH; do
@@ -55,6 +58,8 @@ COLOURS = {
 }
 LAYERS = list(COLOURS)
 check = vc.check
+# 1.0's output indices, by name.
+V1 = {name: index for index, name in enumerate(import_render.OUTPUTS_V1)}
 
 
 def stage_shot():
@@ -109,12 +114,12 @@ def check_outputs(node, label, held):
     prefix = (lambda layer: f'{layer}_') if node.is_all_channels() else (lambda layer: '')
     read = list(held.values())
     want_cables = {
-        import_render.LPES_OUTPUT: [f'{prefix(layer)}beauty_key' for layer in read],
-        import_render.AOVS_OUTPUT: [f'{prefix(layer)}depth' for layer in read],
-        import_render.MATTES_OUTPUT: [f'{prefix(layer)}objid_{layer}' for layer in read],
+        V1['lpe']: [f'{prefix(layer)}beauty_key' for layer in read],
+        V1['aov']: [f'{prefix(layer)}depth' for layer in read],
+        V1['matte']: [f'{prefix(layer)}objid_{layer}' for layer in read],
     }
     for output, fields in want_cables.items():
-        name = import_render.OUTPUTS[output]
+        name = import_render.OUTPUTS_V1[output]
         cable = native.cable(output)
         names = sorted(cable.wireNames()) if cable is not None else None
         check(f'{label}: the {name} cable carries each layer\'s field by name',
@@ -144,7 +149,7 @@ def main():
     copnet = hou.node('/stage').createNode('copnet', 'comp')
 
     print('--- all channels in one import')
-    node = import_render.create(copnet, 'import_all')
+    node = import_render.create(copnet, 'import_all', version='1.0')
     node.set_channel_name(comp.ALL_CHANNELS)
     node.execute()
     check('all channels: each layer on an output of its own, in the shot\'s order',
@@ -161,7 +166,7 @@ def main():
           node.native().comment() == 'my note', repr(node.native().comment()))
 
     print('--- one import per layer')
-    one = import_render.create(copnet, 'import_one')
+    one = import_render.create(copnet, 'import_one', version='1.0')
     for layer in LAYERS:
         one.set_channel_name(layer)
         one.execute()

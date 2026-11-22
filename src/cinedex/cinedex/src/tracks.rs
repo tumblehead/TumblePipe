@@ -38,6 +38,7 @@ mod marks;
 pub mod overview;
 pub mod picks;
 mod reach;
+pub mod sweep;
 pub mod tags;
 pub use landing::{Landing, Moving};
 #[cfg(test)]
@@ -92,6 +93,9 @@ pub struct ClipView {
     /// The frames its source has that it does not show ([`room`]): how far
     /// its edges drag out. None: any (a slug), or not known yet.
     pub room: Option<Room>,
+    /// An audio clip's waveform (`waveform`): None on a video clip and
+    /// on a clip with no sound.
+    pub wave: Option<crate::waveform::Wave>,
 }
 
 impl ClipView {
@@ -280,6 +284,9 @@ pub enum Gesture {
     Gap(ClipRef, usize),
     /// A box dragged from empty track: the clips it touches now.
     Box(Vec<ClipRef>),
+    /// An Alt+drag along empty video track let go ([`sweep`]): the track
+    /// and the edit frames it swept, from `at`, `frames` long.
+    Sweep { track: TrackRef, at: EditFrame, frames: EditFrame },
 }
 
 /// What the wheel over the tracks asks for. Ctrl (Cmd) and the wheel
@@ -305,6 +312,19 @@ const BOX_SLOP: f32 = 4.0;
 
 impl<Message> Tracks<Message> {
     /// Each row's clips as `(at, end)`.
+    /// Whether an Alt+drag on row `row` sweeps frames ([`sweep`]): a
+    /// video track's, never the spare layer's.
+    fn sweeps(&self, row: usize) -> bool {
+        self.rows.get(row).is_some_and(|r| !r.spare && r.track.kind == TrackKind::Video)
+    }
+
+    /// The frames an Alt+drag on row `row` from local `from_x` to `to_x`
+    /// sweeps ([`sweep::swept`]).
+    fn swept(&self, row: usize, from_x: f32, to_x: f32, width: f32) -> Option<(EditFrame, EditFrame)> {
+        let spans = self.row_spans().into_iter().nth(row)?;
+        sweep::swept(&spans, self.frame_at(from_x, width), self.frame_at(to_x, width))
+    }
+
     fn row_spans(&self) -> Vec<Vec<(EditFrame, EditFrame)>> {
         self.rows.iter().map(|r| r.clips.iter().map(|c| (c.at, c.at + c.duration)).collect()).collect()
     }
@@ -564,6 +584,10 @@ pub struct Pointer {
     /// A press on empty track is held: where it was (local), and whether
     /// it has been dragged far enough to be a box ([`BOX_SLOP`]).
     marquee: Option<((f32, f32), bool)>,
+    /// An Alt+press on empty video track is held ([`sweep`]): where it was
+    /// (local), its row, and whether it has been dragged far enough to
+    /// sweep ([`BOX_SLOP`]).
+    sweep: Option<((f32, f32), usize, bool)>,
 }
 
 /// The gap between the hatching's lines on a clip with nothing to play.
@@ -878,6 +902,9 @@ impl<Message> Tracks<Message> {
                 if c.missing {
                     p.hatch(rect, look::hatch());
                 }
+                if row.track.kind == TrackKind::Audio {
+                    self.paint_wave(p, c, rect, w);
+                }
                 let mut left = rect.x + INSET;
                 if let Some(handle) = &c.thumbnail {
                     let (iw, ih) = (handle.image().width.max(1) as f32, handle.image().height.max(1) as f32);
@@ -1054,6 +1081,20 @@ impl<Message> Tracks<Message> {
             p.hatch(rect, look::mark());
             outline(p, rect, 2.0, look::mark());
         }
+        if let Some((from, row, true)) = state.sweep
+            && let Some((at, end)) = self.swept(row, from.0, state.at.0, w)
+            && let Some((x0, x1)) = Self::seen(self.x(at, w), self.x(end, w), w)
+        {
+            // The frames swept, outlined in the present's amber, and how
+            // many: what a new shot there would be.
+            let rect =
+                Rectangle { x: x0, y: self.row_top(row) + 1.0, width: (x1 - x0 - 1.0).max(1.0), height: self.rows[row].height - 3.0 };
+            outline(p, rect, 1.0, look::now());
+            let frames = end - at;
+            let words = format!("{frames} frame{}: let go for a new shot", if frames == 1 { "" } else { "s" });
+            let tag = Rectangle { x: x0 + 4.0, y: rect.y + 2.0, width: 260.0, height: 14.0 };
+            p.text(words, tag, H::Left, V::Center, 11.0, look::now());
+        }
         if let Some((from, true)) = state.marquee {
             let (x0, x1) = (from.0.min(state.at.0).max(HEADER), from.0.max(state.at.0).max(HEADER));
             let (y0, y1) = (from.1.min(state.at.1).max(RULER), from.1.max(state.at.1).max(RULER));
@@ -1065,6 +1106,22 @@ impl<Message> Tracks<Message> {
             let accent = look::now();
             p.rect(Point::new(centre - 1.0, 0.0), Size::new(2.0, h), accent);
             p.rect(Point::new(centre - 4.0, 0.0), Size::new(8.0, 3.0), accent);
+        }
+    }
+
+    /// Clip `c`'s waveform over its body drawn at `rect`: a bar per pixel
+    /// column on screen, or a line while its sound is being read.
+    fn paint_wave(&self, p: &mut impl Paint, c: &ClipView, rect: Rectangle, w: f32) {
+        match &c.wave {
+            None => {}
+            Some(crate::waveform::Wave::Pending) => {
+                p.rect(Point::new(rect.x, (rect.y + rect.height / 2.0).floor()), Size::new(rect.width, 1.0), look::wave_pending());
+            }
+            Some(crate::waveform::Wave::Ready(placed)) => {
+                for bar in crate::waveform::bars(placed, rect, |x| self.frame_at(x, w)) {
+                    p.rect(Point::new(bar.x, bar.y), Size::new(bar.width, bar.height), look::wave());
+                }
+            }
         }
     }
 
@@ -1164,6 +1221,16 @@ impl<Message> Tracks<Message> {
                         (Status::Captured, Some((self.on_select)(Some(clip), additive, self.position_at(local.x, w))))
                     }
                     None => {
+                        // Alt on empty video track: a drag from here sweeps
+                        // frames for a new clip ([`sweep`]); the playhead
+                        // comes here, nothing is picked.
+                        if state.modifiers.alt
+                            && let Some(row) = self.row_at(local.y).filter(|&r| self.sweeps(r))
+                        {
+                            state.sweep = Some(((local.x, local.y), row, false));
+                            state.at = (local.x, local.y);
+                            return (Status::Captured, Some((self.on_select)(None, false, self.position_at(local.x, w))));
+                        }
                         // Empty track: the playhead comes here, the gap
                         // under the press is picked, and a drag from here
                         // draws a box.
@@ -1207,6 +1274,14 @@ impl<Message> Tracks<Message> {
                     state.at = local;
                     return (Status::Captured, Some((self.on_drag)()));
                 }
+                if let Some((from, row, drawn)) = state.sweep {
+                    state.at = local;
+                    if !(drawn || (local.0 - from.0).abs() >= BOX_SLOP) {
+                        return (Status::Captured, None);
+                    }
+                    state.sweep = Some((from, row, true));
+                    return (Status::Captured, Some((self.on_drag)()));
+                }
                 if let Some((from, drawn)) = state.marquee {
                     state.at = local;
                     let far = (local.0 - from.0).abs().max((local.1 - from.1).abs()) >= BOX_SLOP;
@@ -1226,6 +1301,14 @@ impl<Message> Tracks<Message> {
                 if let Some((_, drawn)) = state.marquee.take() {
                     // The box goes; what it picked stays picked.
                     return (Status::Captured, drawn.then(|| (self.on_drag)()));
+                }
+                if let Some((from, row, drawn)) = state.sweep.take() {
+                    // Let go: the frames swept go to the editor, which
+                    // offers what to make of them.
+                    let local = cursor.position_relative_to(bounds).map_or(state.at, |p| (p.x, p.y));
+                    let swept = if drawn { self.swept(row, from.0, local.0, w) } else { None };
+                    let gesture = swept.map(|(at, end)| Gesture::Sweep { track: self.rows[row].track, at, frames: end - at });
+                    return (Status::Captured, Some(gesture.map_or_else(|| (self.on_drag)(), self.on_gesture)));
                 }
                 let Some(grab) = state.grab.take() else { return (Status::Ignored, None) };
                 // The cut changed under the pointer: the drag is dropped.
@@ -1342,6 +1425,7 @@ mod tests {
             preview: None,
             farm: None,
             room: None,
+            wave: None,
         }
     }
 

@@ -162,31 +162,59 @@ its newest complete version, or a `v####` pins one (a pin needs a concrete
 department). It reads **one** department's version at a time: the denoise
 publishes every AOV the comp reads, mattes, ramps and cryptomattes as byte copies.
 
-Outputs, top to bottom (#67, after Remy's mockup): `rgba`, `rgba 2` ..
-`rgba 8`, a beauty per channel read (a one-channel import's is `rgba`);
-then a cable per kind of AOV, each field named after its AOV (never a
-beauty): `lpe`, the `beauty_<tag>` light groups (a light mix's input);
-`aov`, the data AOVs (`albedo`, `normal`, `depth`, `uv`, `position`);
-`matte`, the `objid_*` mattes and `ramp_*` ramps (`th::mattes`),
-`holdout_*` holdouts and any cryptomatte without a cable of its own;
-`cryptomaterials` and `cryptoprimitives`, one cable per cryptomatte
-`th::render_vars` renders; and last `geometry` and `camera`, the shot's
-staged geometry and render camera for a Rasterize Geometry (an embedded
-`th::import_scene`). Which cable an AOV rides is `pipe.comp.aov_cable`.
-`geometry` and `camera` are empty until the scene imports: **Update**
-imports it, a workfile open only while one of them is wired, and `camera`
-opens once its camera cooks, so a missing camera prim never stops the
-renders cooking.
+Outputs, top to bottom (`th::import_render::2.0`, Remy 2026-11-22: "a
+cleaner, working import render node"): **beauty** (the `rgba` output), the
+beauty of the channel read, or on **All channels** every channel's beauty
+laid over each other back to front, the last on top, as the template
+stacks them (a premultiplied over, so their alpha is kept); then a cable
+per kind of AOV, each field named after its AOV (never a beauty): `lpe`,
+the `beauty_<tag>` light groups (a light mix's input); `aov`, the data
+AOVs (`albedo`, `normal`, `depth`, `uv`, `position`); `matte`, the
+`objid_*` mattes and `ramp_*` ramps (`th::mattes`), `holdout_*` holdouts
+and any cryptomatte without a cable of its own; `cryptomaterials` and
+`cryptoprimitives`, one cable per cryptomatte `th::render_vars` renders;
+`layers`, each channel's beauty as a field named after the channel (one
+field on a one-channel import), for grading a channel on its own; and last
+`geometry` and `camera`, the shot's staged geometry and render camera for
+a Rasterize Geometry (an embedded `th::import_scene`). Which cable an AOV
+rides is `pipe.comp.aov_cable`. `geometry` and `camera` are empty until
+the scene imports: **Update** imports it, a workfile open only while one
+of them is wired, and `camera` opens once its camera cooks, so a missing
+camera prim never stops the renders cooking.
 
-The eight `rgba` outputs are fixed: a digital asset's outputs come from its
-type, and an instance can neither add outputs nor relabel them (Houdini
-22.0.429; the Composite View's layer menu lists those labels too), so the
-node writes the channel on each in its comment, shown under it in the
-network editor (`rgba: default`, `rgba 2: chars`), and **Reads** names
-them as well (`outputs: rgba default, rgba 2 chars`). A comment you type
-yourself is left alone. A channel keeps its output through every Update; one added
-later takes a free output, and a ninth has none (read it with an import of
-its own).
+A digital asset's outputs are fixed by its type (Houdini 22.0.429: an
+instance can neither add outputs nor relabel them), so a node cannot show
+one output per channel named after it. 2.0 has one beauty output and the
+`layers` cable instead of 1.0's eight `rgba` .. `rgba 8` outputs, most of
+them empty; tick **AOV Outputs** and the `layers` unpack beside the node
+has an output per channel, named after it. The node's comment, shown under
+it in the network editor, says what it read, a line per channel
+(`chars: denoise v0004`, `fx: not rendered yet`); a comment you type
+yourself is left alone.
+
+A node dropped from the Tab menu reads at once: it takes the shot from
+the scene's context, its channel (the first of the shot's channels with a
+complete render when its own has none, as the implicit `default` often
+has not) and the latest render, with no **Update**. When it reads nothing
+its outputs are empty (never an earlier read shown as this one) and it
+says why. A channel not rendered yet is no error: it says `<channel>: not
+rendered yet` under the node and on **Reads**, and fills in when the render
+lands, as a comp is built before its renders. Anything else (no such
+channel, a pin that is not a complete render, a render that cannot be
+comped) is the node's error, red with the reason, and so is every node
+reading it; the comment says `<channel>: cannot comp it (see the node
+error)`.
+
+Scenes saved before 2.0 keep `th::import_render::1.0` and cook as they did
+(below); `import_render.change_version(node, '2.0')` makes one a 2.0 in
+place, each wire on the output of the same name and a beauty taken from
+`rgba 2` .. `rgba 8` on a `layers` Cable Unpack at its channel. 1.0's
+outputs: `rgba`, `rgba 2` .. `rgba 8`, a beauty per channel read (a
+one-channel import's is `rgba`), the channel on each written in the
+node's comment (`rgba: default`, `rgba 2: chars`) and on **Reads**; then
+the same cables, `geometry` and `camera`, without `layers`. A channel
+keeps its output through every Update; one added later takes a free
+output, and a ninth has none.
 
 Tick **AOV Outputs** for a Cable Unpack beside the node per AOV cable, with
 one output per AOV, kept in step with the cable; or Cable Unpack an output
@@ -236,9 +264,9 @@ dilating the mask only hides it). Full resolution, and the farm's comp
 render, are exact.
 
 Channel **All channels** (`*`) reads every channel of the shot in one node:
-each channel's beauty on its own `rgba` output (lay them over each other,
-last on top, as the template stacks them), and the cables only the AOVs,
-as `<channel>_<aov>`. A
+the beauties laid over each other on **beauty** and each on its own
+`layers` field (on 1.0, each on its own `rgba` output), and the cables only
+the AOVs, as `<channel>_<aov>`. A
 channel with nothing rendered yet is
 left out and named on **Reads**. Its Version stays `latest`, and Submit
 freezes each channel it read (plan keys `<node path>#<channel>`). Each File COP asks for

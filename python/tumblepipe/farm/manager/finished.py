@@ -490,7 +490,7 @@ def read_detail(batch: list[rows.JobRow], state: str) -> Detail:
         if written:
             try:
                 target = frames_preview.job_target(job)
-                folder = str(target.folder) if target.enabled else ''
+                folder = str(target.folder) if target.ready else ''
             except Exception:
                 folder = ''
         line = failure_line(job.kind, tasks, errors, rows.frame_count(job.frames))
@@ -498,7 +498,7 @@ def read_detail(batch: list[rows.JobRow], state: str) -> Detail:
                       folder=notify_folder(state, folder, ''))
     try:
         target = frames_preview.best_target([r for r in batch if r.kind in frames_preview.FRAME_KINDS])
-        folder = str(target.folder) if target.enabled else ''
+        folder = str(target.folder) if target.ready else ''
     except Exception:
         folder = ''
     movie = ''

@@ -43,33 +43,35 @@ CABLE_INPUT = 1
 MIX_IO = (('rgba', 'vector4'), ('lpe', 'cable'))
 
 
+# The import outputs a cable on the beauty input is, by name (``aovs``
+# before #67), and the beauty's.
+_CABLE_OUTPUTS = ('aov', 'lpe', 'aovs')
+_BEAUTY_OUTPUT = 'rgba'
+
+
 def swapped_inputs(sources: dict) -> bool:
     """Whether a mix's inputs are the old way round: ``sources`` maps an
-    input index to the import output index reaching it (None when the
-    input reaches no import). A cable (``lpe``, or ``aov``, ``aovs`` before
-    #67) on the beauty input, or the beauty on the cable input, is a mix
-    wired before the inputs swapped."""
-    from tumblepipe.pipe.houdini.cops.import_render import (
-        AOVS_OUTPUT, LPES_OUTPUT, RGBA_OUTPUT,
-    )
-    cables = (AOVS_OUTPUT, LPES_OUTPUT)
+    input index to the name of the import output reaching it (None when
+    the input reaches no import). A cable (``lpe``, or ``aov``, ``aovs``
+    before #67) on the beauty input, or the beauty on the cable input, is
+    a mix wired before the inputs swapped."""
     beauty, cable = sources.get(BEAUTY_INPUT), sources.get(CABLE_INPUT)
-    return (beauty in cables and cable not in cables) or (
-        cable == RGBA_OUTPUT and beauty != RGBA_OUTPUT
+    return (beauty in _CABLE_OUTPUTS and cable not in _CABLE_OUTPUTS) or (
+        cable == _BEAUTY_OUTPUT and beauty != _BEAUTY_OUTPUT
     )
 
 
 def cable_target(output_index: int, import_layout: int) -> int | None:
-    """Where a cable wired straight from an import_render's output
-    ``output_index`` belongs, None when it stays: from ``aov`` of an
-    import on today's outputs it moves to ``lpe``, where the light groups
-    ride since #67 (an import still on the old layout moves it itself when
-    it upgrades)."""
+    """Where a cable wired straight from output ``output_index`` of an
+    import_render on ``import_layout`` belongs, None when it stays: from
+    ``aov`` of a 1.0 import on its #67 outputs, or of a 2.0, it moves to
+    ``lpe``, where the light groups ride since #67 (a 1.0 still on the old
+    layout moves it itself when it upgrades)."""
     from tumblepipe.pipe.houdini.cops.import_render import (
-        AOVS_OUTPUT, LPES_OUTPUT, OUTPUTS_LAYOUT,
+        AOV, LAYOUT_V1, LPE, output_index as index_of, output_name,
     )
-    if import_layout >= OUTPUTS_LAYOUT and output_index == AOVS_OUTPUT:
-        return LPES_OUTPUT
+    if import_layout >= LAYOUT_V1 and output_name(import_layout, output_index) == AOV:
+        return index_of(import_layout, LPE)
     return None
 
 
@@ -99,12 +101,10 @@ class LightMix(ns.Node):
     def order_inputs(self) -> bool:
         """Swap a mix wired the old way round (cable first) into the
         HDA's order; whether it did."""
-        from tumblepipe.pipe.houdini.cops.import_render import upstream_output
+        from tumblepipe.pipe.houdini.cops.import_render import upstream_output_name
         native = self.native()
-        sources = dict()
-        for index in (BEAUTY_INPUT, CABLE_INPUT):
-            found = upstream_output(native, index)
-            sources[index] = None if found is None else found[1]
+        sources = {index: upstream_output_name(native, index)
+                   for index in (BEAUTY_INPUT, CABLE_INPUT)}
         if not swapped_inputs(sources): return False
         wires = {c.inputIndex(): (c.inputNode(), c.outputIndex())
                  for c in native.inputConnections()}
@@ -163,12 +163,12 @@ class LightMix(ns.Node):
         return self.upstream().get_fields()
 
     def connect_beauty(self, source=None):
-        """Wire the upstream import's ``rgba`` into an empty beauty input."""
-        from tumblepipe.pipe.houdini.cops.import_render import RGBA_OUTPUT
+        """Wire the upstream import's ``rgba`` (2.0's ``beauty``) into an
+        empty beauty input."""
         native = self.native()
         if native.input(BEAUTY_INPUT) is not None: return
         source = source or self.upstream()
-        native.setInput(BEAUTY_INPUT, source.native(), RGBA_OUTPUT)
+        native.setInput(BEAUTY_INPUT, source.native(), source.output(_BEAUTY_OUTPUT))
 
     def sync_rows(self):
         """Sync Rows: wire the beauty when its input is empty, add a row for

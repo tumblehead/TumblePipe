@@ -22,6 +22,14 @@ composed stage.
 
 Split like ``submit_status``: :func:`plan_probe` does the config reads on the
 main thread, :func:`read_camera` only opens files, on a worker thread.
+
+The Camera field is a farm override (Remy, 2026-11-20): unset, the scene's
+camera renders; set, the farm renders through it. :func:`effective_camera`
+is the order a render's camera is decided in, :func:`camera_note` what is
+worth a second look (a department left on Houdini's ``/cameras/camera1``,
+the default of every stock Karma / Render Settings LOP, which is how
+Remy's shots came to name a camera nothing defined), :func:`camera_options`
+the field's menu. Pure; ``tests/test_farm_submit_camera.py`` pins them.
 """
 
 from __future__ import annotations
@@ -49,15 +57,29 @@ class CameraProbe:
     version_code: Callable[[str], int] = field(compare=False, repr=False)
 
 
+#: The source of a camera the project's ``root_default_prims.usda`` names.
+PROJECT_DEFAULT = 'project default'
+#: The source of the camera the shot's render settings in config name
+#: (``render.camera``, on the shot's root layer when ``apply_config`` is on).
+SHOT_SETTING = 'shot settings'
+#: The source of Farm Submit's own Camera.
+FARM_SUBMIT = 'Farm Submit'
+
+
 @dataclass(frozen=True)
 class RenderCamera:
     uri: str
     camera: str | None
-    source: str = ''       # the department whose layer authored it, or 'project default'
+    source: str = ''       # the department whose layer authored it, or PROJECT_DEFAULT
     error: str | None = None
     # Settings key (settings.RENDER_OVERRIDES) -> (value, source). A key nothing
     # authors maps to (None, ''): the renderer's own default.
     settings: dict = field(default_factory=dict, compare=False)
+    # Camera prims the layers read define, in reading order (the Camera
+    # field's menu), and those of the project default alone (None when it
+    # was not read): config's camera only reaches a render when it is one.
+    cameras: tuple = field(default=(), compare=False)
+    root_cameras: tuple | None = field(default=None, compare=False)
 
 
 def plan_probe(entity_uri, channel: str, department: str) -> CameraProbe:
@@ -206,7 +228,25 @@ def _probe_layers(probe: CameraProbe):
             if path.suffix in LAYER_SUFFIXES:
                 yield department, path
     if probe.root_defaults is not None and probe.root_defaults.exists():
-        yield 'project default', probe.root_defaults
+        yield PROJECT_DEFAULT, probe.root_defaults
+
+
+def authored_cameras(layer) -> list[str]:
+    """The Camera prims ``layer`` defines near its root (the depth the
+    settings walk reads: ``/cameras/x``, ``/scene/cameras/x``)."""
+    found: list[str] = []
+
+    def visit(spec, depth: int) -> None:
+        if spec.typeName == 'Camera':
+            found.append(str(spec.path))
+        if depth >= _MAX_DEPTH:
+            return
+        for child in spec.nameChildren:
+            visit(child, depth + 1)
+
+    for root in layer.rootPrims:
+        visit(root, 1)
+    return found
 
 
 def read_camera(probe: CameraProbe) -> RenderCamera:
@@ -215,17 +255,24 @@ def read_camera(probe: CameraProbe) -> RenderCamera:
 
     Stops opening layers once the camera and every setting are found; a
     setting nothing authors costs the same walk the camera already made
-    when only the project default names it.
+    when only the project default names it. The project default (one small
+    file) is read either way, for the cameras it defines.
     """
     try:
         camera, camera_source = None, ''
         attributes = set(RENDER_OVERRIDES.values())
         authored: list = []
         seen: set = set()
+        cameras: list[str] = []
+        root_cameras = None
         for source, path in _probe_layers(probe):
             layer = _open_layer(path)
             if layer is None:
                 continue
+            defined = authored_cameras(layer)
+            cameras.extend(c for c in defined if c not in cameras)
+            if source == PROJECT_DEFAULT:
+                root_cameras = tuple(defined)
             if camera is None:
                 camera = authored_camera(layer)
                 camera_source = source if camera else ''
@@ -234,9 +281,118 @@ def read_camera(probe: CameraProbe) -> RenderCamera:
             authored.append((source, values))
             if camera is not None and seen >= attributes:
                 break
+        if root_cameras is None and probe.root_defaults is not None and probe.root_defaults.exists():
+            layer = _open_layer(probe.root_defaults)
+            if layer is not None:
+                root_cameras = tuple(authored_cameras(layer))
+                cameras.extend(c for c in root_cameras if c not in cameras)
         return RenderCamera(
             probe.uri, camera, camera_source,
             settings=strongest_settings(authored),
+            cameras=tuple(cameras), root_cameras=root_cameras,
         )
     except Exception as error:  # noqa: BLE001 — shown in the dialog, not raised
         return RenderCamera(probe.uri, None, error=str(error))
+
+
+# ── the Camera field (Remy, 2026-11-20) ───────────────────
+#
+# Farm Submit's Camera is a farm override like Samples: left unset nothing
+# is sent and the scene's own camera renders (node-authored settings come
+# from the node); set, the farm renders through it (the collapse authors it
+# on the settings prim and refuses one that is not on the stage). The
+# functions below decide what the field shows and offers; pure, no files.
+
+
+def configured_camera(properties) -> str | None:
+    """The camera the shot's render settings in config name, when they reach
+    its renders: ``render.camera`` with ``render.apply_config`` on
+    (``pipe.usd.render_overrides``), as a prim path. None otherwise."""
+    from tumblepipe.config.render_config import valid_camera
+    from tumblepipe.pipe.usd.render_overrides import applies
+
+    render = properties.get('render') if isinstance(properties, dict) else None
+    if not isinstance(render, dict) or not applies(render):
+        return None
+    return valid_camera(render.get('camera'))
+
+
+def effective_camera(override, found: RenderCamera | None, configured: str | None) -> tuple[str | None, str]:
+    """``(camera, source)`` a farm render of one shot goes through, as far as
+    the dialog can tell, strongest first:
+
+    1. Farm Submit's Camera (``override``), when it is a prim path;
+    2. the camera a department's published render settings name
+       (``found.source`` is that department);
+    3. the shot's configured camera (:func:`configured_camera`), which the
+       shot's root layer authors only when the project default defines it;
+    4. the camera the project default names;
+    5. ``(None, '')``: nothing names one.
+
+    The order composition gives the layers (department exports over the
+    root layer over the project default), with the farm's opinion on top.
+    """
+    from tumblepipe.pipe.usd.render_settings import valid_camera_override
+
+    picked = valid_camera_override(override)
+    if picked is not None:
+        return picked, FARM_SUBMIT
+    if found is not None and found.camera and found.source != PROJECT_DEFAULT:
+        return found.camera, found.source
+    defined = found.root_cameras if found is not None else None
+    if configured and defined is not None and configured in defined:
+        return configured, SHOT_SETTING
+    if found is not None and found.camera:
+        return found.camera, PROJECT_DEFAULT
+    return None, ''
+
+
+def camera_note(override, found: RenderCamera | None, configured: str | None) -> str | None:
+    """A line for the artist when the camera the shot renders through is
+    worth a second look, else None. Never when Farm Submit's Camera is set.
+
+    - Houdini's default ``/cameras/camera1`` named by a department: the
+      Camera of a Karma or Render Settings LOP left as created.
+    - A department's camera that is not the shot's configured one.
+    """
+    from tumblepipe.pipe.usd.render_settings import (
+        HOUDINI_DEFAULT_CAMERA, valid_camera_override,
+    )
+
+    if valid_camera_override(override) is not None:
+        return None
+    camera, source = effective_camera(None, found, configured)
+    if camera is None or source in (PROJECT_DEFAULT, SHOT_SETTING):
+        return None
+    if camera == HOUDINI_DEFAULT_CAMERA:
+        return (
+            f"{source}'s export names {camera}, the default of Houdini's "
+            f"Karma LOPs: check the Camera of {source}'s render settings node, "
+            "or pick the camera here"
+        )
+    if configured and camera != configured:
+        return f"{source}'s export names {camera}; the shot's camera setting is {configured}"
+    return None
+
+
+def camera_options(configured, found_list) -> list[str]:
+    """The Camera field's menu: the configured cameras of the shots
+    (``configured``, in order), the cameras each render goes through, then
+    every camera the layers read define, each once. ``found_list`` holds
+    each shot's :class:`RenderCamera` (or None, not read yet)."""
+    options: list[str] = []
+
+    def add(path) -> None:
+        if path and path not in options:
+            options.append(path)
+
+    for path in configured:
+        add(path)
+    for found in found_list:
+        if found is not None:
+            add(found.camera)
+    for found in found_list:
+        if found is not None:
+            for path in found.cameras:
+                add(path)
+    return options

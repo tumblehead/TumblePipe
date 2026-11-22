@@ -1,0 +1,15 @@
+Operator:     th::import_render::2.0
+Label:        th import render
+Path:         oplib:/th::Cop/import_render::2.0?th::Cop/import_render::2.0
+Icon:         $TH_PIPELINE_PATH/resources/ImportAssetLayer.png
+Table:        Cop
+License:      
+Extra:        
+User:         
+Inputs:       0 to 0
+Outputs:      9
+Subnet:       true
+Python:       false
+Empty:        false
+Modified:     Sun Nov 22 14:44:55 2026
+

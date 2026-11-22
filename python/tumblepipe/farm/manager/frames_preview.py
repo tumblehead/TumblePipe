@@ -7,6 +7,14 @@ write frames, render, denoise, composite and slapcomp (partial or full),
 once their output folder holds a frame; otherwise it is disabled and says
 why.
 
+Before the first frame lands (Remy, 2026-11-20) it is offered too, for a
+job that has not ended and whose frame list Cinedex reads: it opens the
+folder the frames will land in (:func:`waiting_folder`, which need not be
+there yet) with the job's frame list, and Cinedex shows every frame as a
+gap ("waiting for the first frame") until they land, then fills them in as
+it does for a render part-way through (``frames_view``). Such a target is
+``waiting``; :attr:`Target.ready` is one with frames on disk.
+
 Where a job's frames are starts where *Open output folder* goes
 (:func:`output_folder` of the job's first output, which the window uses for
 both). A render's or a denoise's first output is its receipt pattern, in
@@ -52,7 +60,7 @@ from typing import Iterable
 
 from tumblepipe import naming
 from tumblepipe.farm.frames import playblast_frames_dir
-from tumblepipe.farm.manager.rows import JobRow, row_entity
+from tumblepipe.farm.manager.rows import JobRow, ended, row_entity
 
 #: The menu item.
 LABEL = 'Preview in Cinedex'
@@ -75,18 +83,29 @@ FRAME_EXTENSIONS = ('exr', 'jpg', 'jpeg')
 #: The AOV a render's, a denoise's or a channel comp's frames are shown from.
 BEAUTY_AOV = 'beauty'
 
+#: The folder of a composite that writes the merged comp (its receipts and
+#: frames in the version folder itself): ``pipe.comp.MERGED_FOLDER``.
+MERGED_COMP_FOLDER = 'slapcomp'
+
 
 @dataclass(frozen=True)
 class Target:
     """What *Preview in Cinedex* does for a selection: open ``folder`` (the
-    frames of ``row``), or nothing, for ``reason``."""
+    frames of ``row``, or with ``waiting`` the folder they will land in), or
+    nothing, for ``reason``."""
     row: JobRow | None = None
     folder: Path | None = None
     reason: str = ''
+    waiting: bool = False
 
     @property
     def enabled(self) -> bool:
         return self.folder is not None
+
+    @property
+    def ready(self) -> bool:
+        """Whether there are frames on disk to show (not only to wait for)."""
+        return self.enabled and not self.waiting
 
 
 # ── where the frames are ──────────────────────────────────
@@ -153,8 +172,46 @@ def version_number(folder: Path | None) -> int:
     return naming.get_version_code(folder.name)
 
 
+def waiting_folder(row: JobRow) -> Path | None:
+    """The folder ``row``'s frames will land in, before any has (it need
+    not be there yet): a playblast's frames folder beside its movie, a
+    slapcomp's and a merged comp's version folder, else (a render, a
+    denoise, a channel's comp) its version folder's ``beauty`` AOV folder;
+    None for a job that writes no frames or names no output."""
+    if not row.outputs:
+        return None
+    if row.kind == PLAYBLAST_KIND:
+        return playblast_frames_dir(Path(row.outputs[0]))
+    if row.kind not in FRAME_KINDS:
+        return None
+    folder = row_output_folder(row)
+    if row.kind == SLAPCOMP or (row.kind == COMPOSITE and folder.parent.name == MERGED_COMP_FOLDER):
+        return folder
+    return folder / BEAUTY_AOV
+
+
+def can_wait(row: JobRow) -> bool:
+    """Whether ``row``'s preview may open before its first frame: it has
+    not ended (frames are still to come) and its frame list is one Cinedex
+    reads, so Cinedex knows which frames to wait for."""
+    return not ended(row) and bool(expected_frames(row.frames))
+
+
 def job_target(row: JobRow) -> Target:
-    """What *Preview in Cinedex* opens for the one job ``row``."""
+    """What *Preview in Cinedex* opens for the one job ``row``: its frames,
+    or before the first one, while it can wait for them (:func:`can_wait`),
+    the folder they will land in."""
+    target = _frames_target(row)
+    if target.enabled or not can_wait(row):
+        return target
+    folder = waiting_folder(row)
+    if folder is None:
+        return target
+    return Target(row, folder, waiting=True)
+
+
+def _frames_target(row: JobRow) -> Target:
+    """What *Preview in Cinedex* opens for ``row`` from the frames on disk."""
     if row.kind == MOVIE_KIND:
         return Target(row, reason=(
             'An mp4 job writes a movie, not frames: preview the job whose '
@@ -204,10 +261,14 @@ def best_target(selected: Iterable[JobRow]) -> Target:
         return Target(reason='Nothing is selected')
     if len(selected) == 1:
         return job_target(selected[0])
-    ready = [target for target in map(job_target, selected) if target.enabled]
-    if not ready:
+    targets = list(map(job_target, selected))
+    ready = [target for target in targets if target.ready]
+    # Frames on disk beat frames still to come; with none on disk, the best
+    # job still rendering is waited for.
+    pool = ready or [target for target in targets if target.enabled]
+    if not pool:
         return Target(reason='No render, denoise or slapcomp job here has frames on disk yet')
-    return max(ready, key=lambda target: rank(target.row))
+    return max(pool, key=lambda target: rank(target.row))
 
 
 # ── how Cinedex plays them ────────────────────────────────

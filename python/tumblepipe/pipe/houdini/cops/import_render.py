@@ -1,40 +1,59 @@
 """th::import_render: a shot's finished renders, into a comp.
 
 The comp's ``import_shot``. It reads one render department's version of one
-channel of a shot, or every channel. Its outputs, top to bottom (#67, after
-Remy's mockup of 2026-11-12):
+channel of a shot, or every channel. A th::import_render::2.0 (today's;
+Remy, 2026-11-22: "a cleaner, working import render node") has nine
+outputs, top to bottom:
 
-    rgba .. rgba 8   each channel's beauty, one output per channel read
+    beauty           the beauty (output name ``rgba``); for all channels the
+                     channels' beauties laid over each other, last on top
     lpe              a cable of the light groups (``beauty_<tag>``), a light mix's
     aov              a cable of the other AOVs (albedo, normal, depth, uv, ...)
     matte            a cable of the mattes, distance ramps and holdouts
     cryptomaterials  a cable of the cryptomaterials rank planes, all of them }
     cryptoprimitives a cable of the cryptoprimitives rank planes            } crypto1
+    layers           a cable of each channel's beauty, named after its channel
     geometry         the staged scene's geometry  } th::import_scene, inside the
     camera           the shot's render camera     } node, for a Rasterize Geometry
 
-Each cable field is named after its AOV; which cable an AOV rides is
-``pipe.comp.aov_cable``. The beauty is in no cable: a light mix takes it on
-its own ``rgba`` input, which is wired for you, and its groups on ``lpe``.
-A Cryptomatte COP reads every field of the cable on its ``crypto1`` and
-needs all of one cryptomatte's rank planes (two ranks each), so each
-cryptomatte th::render_vars renders has a cable of its own to wire there
-whole; any other cryptomatte rides ``matte``.
+Each cable field is named after its AOV (``layers``: its channel); which
+cable an AOV rides is ``pipe.comp.aov_cable``. The beauty is in no AOV
+cable: a light mix takes it on its own ``rgba`` input, which is wired for
+you, and its groups on ``lpe``. A Cryptomatte COP reads every field of the
+cable on its ``crypto1`` and needs all of one cryptomatte's rank planes (two
+ranks each), so each cryptomatte th::render_vars renders has a cable of its
+own to wire there whole; any other cryptomatte rides ``matte``. *AOV
+Outputs* gives each pass an output named after it, on a Cable Unpack beside
+the node per cable.
 
 A digital asset's outputs are fixed by its type (verified in 22.0.429: an
-instance can neither add outputs nor relabel them), so the per-channel
-beauties ride :data:`CHANNEL_OUTPUTS` fixed outputs, ``rgba`` then
-``rgba2`` .. ``rgba8``; those no channel holds are empty. A one-channel
-import's beauty is always ``rgba``. An all-channels import gives each
-channel an output of its own and keeps it there (``channel_outputs``,
-:func:`assign_channel_outputs`): a channel added later takes a free output,
-one not rendered yet keeps its output for when it is, so a wire stays on
-its channel through Updates. Which layer (channel) is on which output is
-written under the node in the network editor, its comment (``rgba: chars``,
-``rgba 2: bg``; :func:`output_names_comment`), and on the Reads label: the
-outputs' own labels cannot change per node, and the Composite View's layer
-menu lists them (C, the first output, then each output that holds
-something, by label).
+instance can neither add outputs nor relabel them, and an asset whose
+DialogScript names no outputs has none, whatever its subnet parms say), so
+outputs named after the passes a render has can only be a Cable Unpack's.
+Under the node, its comment says what each channel reads (``chars: denoise
+v0004``) or that it has nothing yet (:func:`status_comment`).
+
+The node reads nothing when nothing resolves; its outputs are then empty,
+never an earlier read. A channel with no render yet says so under the node
+and is no error (a comp is built before its renders land); any other
+refusal is the node's error too, an Error COP in the dive, so the node and
+everything reading it turn red with the reason (:func:`failure_state`).
+Dropped by hand, it resolves at once: the latest render of the scene's shot.
+
+A th::import_render::1.0 (scenes saved before 2.0 keep theirs, and it keeps
+working; its outputs layout is :data:`LAYOUT_V1`) has a beauty output per
+channel, ``rgba`` then ``rgba2`` .. ``rgba8`` (:data:`CHANNEL_OUTPUTS`;
+those no channel holds are empty), then the cables but ``layers``, then
+``geometry`` and ``camera``. A one-channel import's beauty is always
+``rgba``. An all-channels import gives each channel an output of its own
+and keeps it there (``channel_outputs``, :func:`assign_channel_outputs`): a
+channel added later takes a free output, one not rendered yet keeps its
+output for when it is, so a wire stays on its channel through Updates.
+Which layer (channel) is on which output is written under the node in the
+network editor, its comment (``rgba: chars``, ``rgba 2: bg``;
+:func:`output_names_comment`), and on the Reads label. Code finds an
+output by name on either (:meth:`ImportRender.output`); the module's
+``*_OUTPUT`` indices are today's (2.0's), what :func:`create` makes.
 
 Channel ``*`` (*All channels*) reads every channel of the shot in one node:
 the cables carry every channel's AOVs (``<channel>_<aov>``). A channel with
@@ -54,12 +73,12 @@ Cable Unpack's outputs follow its fields). A companion's wires follow their
 field when its fields change, and a wire on a field that moved to another
 cable (an import built before #67 split the AOVs) moves to that cable's
 companion; a wire on a channel's beauty (TumblePipe 1.99 carried them in
-the AOVs) to the channel's output on the node.
+the AOVs) to the channel's output on the node (1.0).
 
-An import saved before #67 had three outputs: ``rgba`` (for all channels,
+A 1.0 import saved before #67 had three outputs: ``rgba`` (for all channels,
 the channels laid over each other), ``aovs`` (every AOV) and ``beauties``
 (a cable of each channel's beauty). Its ``outputs_layout`` reads 0 (a new
-node's is :data:`OUTPUTS_LAYOUT`); on load and on Update
+1.0 node's is :data:`LAYOUT_V1`); on load and on Update
 (:meth:`ImportRender.upgrade`) a wire on ``aovs`` moves to ``aov`` (a light
 mix's to ``lpe``), a wire on ``rgba`` stays on ``rgba``, or for all channels
 moves to an over chain of the channel outputs kept beside the node, so the
@@ -127,61 +146,128 @@ MISSING_PARM = 'missing_frames'
 MISSING_LABEL_PARM = 'missing_frames_label'
 HELD_PARM = 'held'
 
-# The node's outputs, in order (#67), and their indices: the channel
-# outputs, the AOV cables, then the scene's.
-CHANNEL_OUTPUTS = 8
+# The node's outputs. A digital asset's outputs are its type's, so each
+# outputs layout is a type (version):
+#
+#   th::import_render::2.0 (LAYOUT_V2, today's; Remy 2026-11-22, "a
+#   cleaner import render node"): rgba (labelled ``beauty``), the AOV
+#   cables, ``layers`` (each channel's beauty, by channel name), then the
+#   scene's. Nine outputs, each always meaningful.
+#   th::import_render::1.0 on LAYOUT_V1 (#67): rgba .. rgba8, a beauty per
+#   channel read (the rest empty), the AOV cables, the scene's. Scenes saved
+#   with it keep it, and it keeps working.
+#   th::import_render::1.0 on LAYOUT_LEGACY (before #67): rgba, aovs,
+#   beauties. Moved onto LAYOUT_V1 on load (:meth:`ImportRender.upgrade`).
+#
+# The beauty output is named ``rgba`` in every layout (wires, a light mix's
+# input and the code find it by that name); only 2.0 labels it ``beauty``.
+LAYOUT_LEGACY, LAYOUT_V1, LAYOUT_V2 = 0, 1, 2
+OUTPUTS_LAYOUT = LAYOUT_V2
+CHANNEL_OUTPUTS = 8  # 1.0's beauty outputs
 CHANNEL_OUTPUT_NAMES = ('rgba',) + tuple(f'rgba{i}' for i in range(2, CHANNEL_OUTPUTS + 1))
-LPE, AOV, MATTE = 'lpe', 'aov', 'matte'
+LPE, AOV, MATTE, LAYERS = 'lpe', 'aov', 'matte', 'layers'
 CRYPTO_OUTPUT_NAMES = comp.CRYPTO_CABLES
 CABLE_OUTPUT_NAMES = (LPE, AOV, MATTE) + CRYPTO_OUTPUT_NAMES
-OUTPUTS = CHANNEL_OUTPUT_NAMES + CABLE_OUTPUT_NAMES + ('geometry', 'camera')
+SCENE_OUTPUT_NAMES = ('geometry', 'camera')
+OUTPUTS_V1 = CHANNEL_OUTPUT_NAMES + CABLE_OUTPUT_NAMES + SCENE_OUTPUT_NAMES
+OUTPUTS_V2 = ('rgba',) + CABLE_OUTPUT_NAMES + (LAYERS,) + SCENE_OUTPUT_NAMES
+# The outputs an import saved before #67 had (``rgba`` then laid the
+# channels over each other, ``aovs`` carried every AOV, ``beauties`` each
+# channel's beauty).
+LEGACY_OUTPUTS = ('rgba', 'aovs', 'beauties')
+LAYOUT_OUTPUTS = {LAYOUT_LEGACY: LEGACY_OUTPUTS, LAYOUT_V1: OUTPUTS_V1, LAYOUT_V2: OUTPUTS_V2}
+# The type version each layout's node is (the legacy layout is a 1.0 node
+# saved before #67).
+LAYOUT_VERSIONS = {LAYOUT_LEGACY: '1.0', LAYOUT_V1: '1.0', LAYOUT_V2: '2.0'}
+
+# Today's outputs (2.0) and their indices; output_index() gives another
+# layout's. A workfile template wires import_render.AOVS_OUTPUT on the node
+# import_render.create() makes, which is today's type.
+OUTPUTS = OUTPUTS_V2
 RGBA_OUTPUT = OUTPUTS.index('rgba')
 LPES_OUTPUT = OUTPUTS.index(LPE)
 AOVS_OUTPUT = OUTPUTS.index(AOV)
 MATTES_OUTPUT = OUTPUTS.index(MATTE)
+LAYERS_OUTPUT = OUTPUTS.index(LAYERS)
 GEOMETRY_OUTPUT = OUTPUTS.index('geometry')
 CAMERA_OUTPUT = OUTPUTS.index('camera')
-# Each AOV cable's output (the cables are named as in pipe.comp).
-CABLE_OUTPUTS = {comp.LPES: LPES_OUTPUT, comp.AOVS: AOVS_OUTPUT, comp.MATTES: MATTES_OUTPUT,
-                 **{cable: OUTPUTS.index(cable) for cable in comp.CRYPTO_CABLES}}
+# Each cable's output name (the AOV cables are named as in pipe.comp; the
+# beauties cable is 2.0's ``layers``).
+CABLE_OUTPUT_OF = {comp.LPES: LPE, comp.AOVS: AOV, comp.MATTES: MATTE,
+                   **{cable: cable for cable in comp.CRYPTO_CABLES}}
+BEAUTIES_CABLE = 'beauties'
+# Each AOV cable's output on today's node.
+CABLE_OUTPUTS = {cable: OUTPUTS.index(name) for cable, name in CABLE_OUTPUT_OF.items()}
 OUTPUT_CABLES = {index: cable for cable, index in CABLE_OUTPUTS.items()}
 
 
-def output_label(name: str) -> str:
-    """An output's label: ``rgba 2`` for ``rgba2``, else its name."""
+def output_index(layout: int, name: str) -> int | None:
+    """Output ``name``'s index on a node of ``layout``, None when that
+    layout has no such output."""
+    outputs = LAYOUT_OUTPUTS.get(layout, ())
+    return outputs.index(name) if name in outputs else None
+
+
+def output_name(layout: int, index: int) -> str | None:
+    """The name of output ``index`` of a node of ``layout``, None when it
+    has no such output."""
+    outputs = LAYOUT_OUTPUTS.get(layout, ())
+    return outputs[index] if 0 <= index < len(outputs) else None
+
+
+def output_label(name: str, layout: int = LAYOUT_V1) -> str:
+    """An output's label: 2.0's ``rgba`` is ``beauty``; 1.0's ``rgba2`` is
+    ``rgba 2``; any other its name."""
+    if name == 'rgba' and layout >= LAYOUT_V2:
+        return comp.BEAUTY
     if name.startswith('rgba') and name[4:].isdigit():
         return f'rgba {name[4:]}'
     return name
 
 
-# The outputs an import saved before #67 had (``rgba`` then laid the
-# channels over each other, ``aovs`` carried every AOV, ``beauties`` each
-# channel's beauty), and the layout a node is on: 0 before #67 (a parm such
-# a node never saved reads its default), OUTPUTS_LAYOUT since (set at
-# creation).
-LEGACY_OUTPUTS = ('rgba', 'aovs', 'beauties')
+def output_labels(layout: int) -> tuple:
+    """Every output's label on a node of ``layout``, in order."""
+    return tuple(output_label(name, layout) for name in LAYOUT_OUTPUTS[layout])
+
+
+# The layout a 1.0 node is on: 0 before #67 (a parm such a node never saved
+# reads its default), LAYOUT_V1 since (set at creation). A 2.0 node has no
+# such parm: its type is its layout.
 LEGACY_MOVES = {'rgba': 'rgba', 'aovs': AOV}
 OUTPUTS_LAYOUT_PARM = 'outputs_layout'
-OUTPUTS_LAYOUT = 1
+
+
+def type_layout(type_name: str, layout_parm: int | None) -> int:
+    """The outputs layout of a node of type ``type_name``
+    (``th::import_render::<version>``) whose ``outputs_layout`` parm reads
+    ``layout_parm`` (None when the node has none): 2.0 is LAYOUT_V2; a 1.0
+    node is on its parm's layout, LAYOUT_V1 for an HDA build without it."""
+    version = type_name.split('::')[2] if type_name.count('::') >= 2 else '1.0'
+    if version != '1.0':
+        return LAYOUT_V2
+    if layout_parm is None:
+        return LAYOUT_V1
+    return min(int(layout_parm), LAYOUT_V1)
 
 
 def outputs_layout(native) -> int:
-    """The outputs layout an import_render node is on (an HDA build without
-    the parm is on today's)."""
+    """The outputs layout an import_render node is on (:func:`type_layout`)."""
     parm = native.parm(OUTPUTS_LAYOUT_PARM)
-    return OUTPUTS_LAYOUT if parm is None else int(parm.eval())
+    return type_layout(native.type().name(), None if parm is None else int(parm.eval()))
 
 
 def moved_output(index: int, layout: int) -> int | None:
-    """Where a plain wire on output ``index`` of a node on ``layout``
-    belongs now: ``rgba`` stays, ``aovs`` is ``aov``. None for an index the
-    layout never had, and for ``beauties``, which has no output now (a
-    wire through a Cable Unpack moves per channel, :meth:`ImportRender.upgrade`)."""
-    if layout >= OUTPUTS_LAYOUT:
-        return index if 0 <= index < len(OUTPUTS) else None
+    """Where a plain wire on output ``index`` of a 1.0 node on ``layout``
+    belongs on 1.0's outputs now: ``rgba`` stays, ``aovs`` is ``aov``. None
+    for an index the layout never had, and for ``beauties``, which has no
+    output now (a wire through a Cable Unpack moves per channel,
+    :meth:`ImportRender.upgrade`)."""
+    if layout >= LAYOUT_V1:
+        outputs = LAYOUT_OUTPUTS[min(layout, LAYOUT_V2)]
+        return index if 0 <= index < len(outputs) else None
     if not 0 <= index < len(LEGACY_OUTPUTS): return None
     name = LEGACY_MOVES.get(LEGACY_OUTPUTS[index])
-    return None if name is None else OUTPUTS.index(name)
+    return output_index(LAYOUT_V1, name) if name else None
 
 
 # Which channel is on which channel output, kept in ``channel_outputs``
@@ -300,6 +386,30 @@ def next_comment(current: str, last_written: str | None, wanted: str) -> str | N
     return wanted
 
 
+# What a 2.0 node writes under itself in the network editor (its comment,
+# kept the same way as 1.0's output names): what each channel reads, so a
+# comp's rows say which layer and version each import brings without
+# opening one, and a channel with nothing to read says so where the empty
+# thumbnail is.
+NOT_RENDERED = 'not rendered yet'
+CANNOT_COMP = 'cannot comp it (see the node error)'
+
+
+def status_comment(reads, skipped=(), problem: str | None = None,
+                   channel: str | None = None) -> str:
+    """The 2.0 node's comment: one line per channel read, ``<channel>:
+    <department> <version>`` (``reads``: ``{channel: (department,
+    version)}``, in the shot's channel order), then one per channel left
+    out, ``<channel>: not rendered yet``. When nothing could be read,
+    ``problem`` says why for ``channel`` (``*`` for all channels):
+    :data:`NOT_RENDERED`, or :data:`CANNOT_COMP` for any other refusal."""
+    if problem is not None:
+        return f'{channel}: {problem}' if channel else problem
+    lines = [f'{c}: {d} {v}' for c, (d, v) in reads.items()]
+    lines += [f'{c}: {NOT_RENDERED}' for c in skipped]
+    return '\n'.join(lines)
+
+
 # Inside the dive, left to right (#67, Remy 2026-11-12: the File COPs sat in
 # one row under their long file name labels, the packs and outputs stacked
 # on each other): a row per File COP, the beauties first, then the AOVs by
@@ -312,7 +422,8 @@ DIVE_COLUMNS = {'file': 0, 'cache': 1, 'switch': 2, 'pack': 3, 'outputs': 4}
 
 
 def _CABLES_IN_OUTPUT_ORDER() -> list[str]:
-    return [OUTPUT_CABLES[OUTPUTS.index(name)] for name in CABLE_OUTPUT_NAMES]
+    cable_of = {name: cable for cable, name in CABLE_OUTPUT_OF.items()}
+    return [cable_of[name] for name in CABLE_OUTPUT_NAMES]
 
 
 def dive_rows(plan) -> list[str]:
@@ -324,9 +435,12 @@ def dive_rows(plan) -> list[str]:
     return rows
 
 
-def dive_positions(plan) -> dict[str, tuple[float, float]]:
+def dive_positions(plan, layout: int = OUTPUTS_LAYOUT) -> dict[str, tuple[float, float]]:
     """Where each node of the dive goes, by name: every File COP, its cache
-    and switch, the cable packs and ``outputs``."""
+    and switch, the cable packs and ``outputs``; on 2.0 also the
+    ``beauties`` pack (on the first beauty's row) and the over blends (each
+    on its foreground beauty's row), in the pack column, whose beauty rows
+    the AOV packs leave free."""
     stride = comp.COLUMN_STRIDE
 
     def at(column: str, row: float) -> tuple[float, float]:
@@ -346,6 +460,10 @@ def dive_positions(plan) -> dict[str, tuple[float, float]]:
         row = max(rows.index(fields[0]), next_free) if fields else next_free
         positions[CABLE_PACKS[cable]] = at('pack', row)
         next_free = row + 1
+    if layout >= LAYOUT_V2:
+        positions[BEAUTIES_PACK] = at('pack', 0)
+        for row, (name, _, _) in enumerate(over_chain(plan.beauties), start=1):
+            positions[name] = at('pack', row)
     positions['outputs'] = at('outputs', 0)
     return positions
 
@@ -386,9 +504,10 @@ CACHE_CLEAR_PARM = 'clear_cache'
 # The toggles a read's cache needs on, all of them, by what it reads.
 BEAUTY_CACHE_TOGGLES = (CACHE_PARM,)
 AOV_CACHE_TOGGLES = (CACHE_PARM, CACHE_AOVS_PARM)
-# So, the outputs served from cache by the toggles they need.
+# So, the outputs served from cache by the toggles they need (1.0's
+# beauty outputs and 2.0's rgba and layers carry beauties).
 CACHE_TOGGLES = {
-    **{name: BEAUTY_CACHE_TOGGLES for name in CHANNEL_OUTPUT_NAMES},
+    **{name: BEAUTY_CACHE_TOGGLES for name in CHANNEL_OUTPUT_NAMES + (LAYERS,)},
     **{name: AOV_CACHE_TOGGLES for name in CABLE_OUTPUT_NAMES},
 }
 
@@ -416,28 +535,59 @@ def cache_switch_name(read: str) -> str:
     return f'{read}.read'
 
 
-def cached_outputs(toggles) -> frozenset:
-    """The outputs served from cache, given the toggles on (a set of parm
-    names): those whose CACHE_TOGGLES are all on."""
+def cached_outputs(toggles, layout: int = OUTPUTS_LAYOUT) -> frozenset:
+    """The outputs of a node of ``layout`` served from cache, given the
+    toggles on (a set of parm names): those whose CACHE_TOGGLES are all on."""
     on = set(toggles)
-    return frozenset(name for name, needs in CACHE_TOGGLES.items() if set(needs) <= on)
+    return frozenset(name for name in LAYOUT_OUTPUTS[layout]
+                     if name in CACHE_TOGGLES and set(CACHE_TOGGLES[name]) <= on)
 
 
 # The dive's outputs, as (label, COP subnet output type), only ever
 # appended to: an import saved before ``beauties`` existed has a dive with
 # the first two, one saved before #67 the first three; a build gives it
-# all (``beauties`` is no longer wired). The HDA wires each node output to
-# the dive output of DIVE_SOURCES.
+# all. The HDA wires each node output to the dive output its layout's
+# DIVE_SOURCES names: 1.0 a beauty output per channel (``rgba`` ..
+# ``rgba8``), 2.0 ``over`` (the beauty, or for all channels the beauties
+# laid over each other) on rgba and ``beauties`` (a cable of each channel's
+# beauty) on layers. A dive is built for its layout: a 1.0 node's leaves
+# ``over`` and ``beauties`` unwired (Copernicus cooks every output of a
+# subnet together, so an unused one would still cook).
 DIVE_OUTPUTS = ((('rgba', 'vector4'), ('aovs', 'cable'), ('beauties', 'cable'),
                  ('lpes', 'cable'), ('mattes', 'cable'))
                 + tuple((name, 'vector4') for name in CHANNEL_OUTPUT_NAMES[1:])
-                + tuple((name, 'cable') for name in CRYPTO_OUTPUT_NAMES))
+                + tuple((name, 'cable') for name in CRYPTO_OUTPUT_NAMES)
+                + (('over', 'vector4'),))
 DIVE_INDEX = {label: index for index, (label, _) in enumerate(DIVE_OUTPUTS)}
-DIVE_SOURCES = {
-    **{name: name for name in CHANNEL_OUTPUT_NAMES},
-    LPE: 'lpes', AOV: 'aovs', MATTE: 'mattes',
-    **{name: name for name in CRYPTO_OUTPUT_NAMES},
-}
+_CABLE_SOURCES = {LPE: 'lpes', AOV: 'aovs', MATTE: 'mattes',
+                  **{name: name for name in CRYPTO_OUTPUT_NAMES}}
+DIVE_SOURCES_V1 = {**{name: name for name in CHANNEL_OUTPUT_NAMES}, **_CABLE_SOURCES}
+DIVE_SOURCES_V2 = {'rgba': 'over', **_CABLE_SOURCES, LAYERS: 'beauties'}
+LAYOUT_DIVE_SOURCES = {LAYOUT_V1: DIVE_SOURCES_V1, LAYOUT_V2: DIVE_SOURCES_V2}
+DIVE_SOURCES = DIVE_SOURCES_V2
+
+
+def dive_sources(layout: int) -> dict:
+    """Which dive output each node output of ``layout`` reads (geometry and
+    camera read the embedded scene, not the dive)."""
+    return LAYOUT_DIVE_SOURCES[max(layout, LAYOUT_V1)]
+
+
+def over_chain(beauties) -> list[tuple[str, str, str]]:
+    """2.0's beauty for several channels: the beauties (File COP reads,
+    back to front: the shot's channel order, the last on top, as the comp
+    template stacks its rows) laid over each other, as ``[(blend name,
+    background, foreground)]``, each background the first read or the blend
+    before it. Empty for one beauty or none (it is the beauty itself, or
+    nothing)."""
+    beauties = list(beauties)
+    chain = []
+    back = beauties[0] if beauties else None
+    for step, front in enumerate(beauties[1:], start=1):
+        name = f'over.{step}'  # a period: never a read's name
+        chain.append((name, back, front))
+        back = name
+    return chain
 
 # Parm values the node stores what it last resolved in, so a refresh that
 # resolves the same thing touches nothing.
@@ -467,6 +617,38 @@ MISSING_EMPTY = 1
 # its light groups, raw for data passes.
 COLORSPACE_AUTO = 0
 COLORSPACE_RAW = 1
+
+# When the node reads nothing, its dive is emptied (an empty output never
+# shows an earlier read as if it were this one): a channel with nothing
+# rendered yet (comp.NotRendered) leaves the outputs empty and says so
+# under the node; any other refusal (no such channel, a pin that is not a
+# complete render, a render that cannot be comped) is also the node's
+# error, an Error COP in the dive on the beauty's path, so the node and
+# every node reading it turn red with the reason (a warning there would
+# not reach the node: Houdini 22.0.429 lifts only errors out of a subnet).
+ERROR_NODE = 'error'
+ERROR_SEVERITY = 2  # the Error COP's 'severity1' token: error
+
+
+def default_channel(current: str, channels, rendered) -> str:
+    """The channel a node dropped by hand reads: its Channel when that has
+    a complete render (``rendered``, in the shot's ``channels``) or is All
+    channels, else the first of the shot's channels that has one (a shot
+    rendered as chars and bg, its implicit ``default`` never rendered);
+    unchanged when none has."""
+    rendered = set(rendered)
+    if current == comp.ALL_CHANNELS or current in rendered:
+        return current
+    return next((channel for channel in channels if channel in rendered), current)
+
+
+def failure_state(error: Exception) -> tuple[str, bool]:
+    """What a node that read nothing says under itself, and whether it is
+    the node's error: a channel not rendered yet is no error (a comp is
+    built before its renders land), anything else is."""
+    if isinstance(error, comp.NotRendered):
+        return NOT_RENDERED, False
+    return CANNOT_COMP, True
 
 
 def render_department_names() -> list[str]:
@@ -584,6 +766,26 @@ class ImportRender(TimeOffsetNode, EntityNode):
         shot_uri = self.get_entity_uri()
         if shot_uri is None: return []
         return list_channels(shot_uri)
+
+    def rendered_channels(self) -> tuple[list[str], list[str]]:
+        """``(the shot's channels, those with a complete render on the
+        node's Department)``; both empty when the shot is not known."""
+        try:
+            shot_uri = self.get_entity_uri()
+            if shot_uri is None: return [], []
+            channels = list_channels(shot_uri)
+            renders = get_render_context(shot_uri, purpose='render').renders
+        except Exception:
+            return [], []
+        rendered = []
+        for channel in channels:
+            try:
+                comp.resolve_render(renders, render_department_names(), channel,
+                                    self.get_department_setting(), comp.LATEST)
+            except comp.CompError:
+                continue
+            rendered.append(channel)
+        return channels, rendered
 
     def channel_menu(self) -> list[str]:
         """The Channel menu as token/label pairs: the shot's channels, then
@@ -715,8 +917,12 @@ class ImportRender(TimeOffsetNode, EntityNode):
         """Write which layer each beauty output carries in the node's
         comment, shown under it in the network editor
         (:func:`output_names_comment`); a comment someone typed stays."""
+        self._write_comment(output_names_comment(slots, reads, overflow))
+
+    def _write_comment(self, wanted: str):
+        """Set the node's own comment to ``wanted`` and show it under the
+        node; a comment someone typed stays (:func:`next_comment`)."""
         native = self.native()
-        wanted = output_names_comment(slots, reads, overflow)
         comment = next_comment(native.comment(), native.userData(OUTPUT_NAMES_COMMENT_KEY), wanted)
         if comment is None: return
         native.setComment(comment)
@@ -740,8 +946,17 @@ class ImportRender(TimeOffsetNode, EntityNode):
     def get_outputs_layout(self) -> int:
         return outputs_layout(self.native())
 
+    def is_v2(self) -> bool:
+        """Whether the node is a 2.0 (one beauty output, a layers cable)."""
+        return self.get_outputs_layout() >= LAYOUT_V2
+
+    def output(self, name: str) -> int | None:
+        """Output ``name``'s index on this node (its type's layout), None
+        when it has no such output."""
+        return output_index(self.get_outputs_layout(), name)
+
     def upgrade(self) -> bool:
-        """Move an import saved before #67 onto today's outputs (its
+        """Move a 1.0 import saved before #67 onto 1.0's outputs (its
         channels, from its last build, each on an output of its own): a
         wire on ``aovs`` to ``aov`` (a light mix's on to ``lpe``), on
         ``rgba`` to ``rgba``, or for an import of several channels, whose
@@ -750,7 +965,7 @@ class ImportRender(TimeOffsetNode, EntityNode):
         Cable Unpack to its channel's output. Whether it moved anything (the
         dive then needs a rebuild, which :meth:`execute` sees)."""
         layout = self.get_outputs_layout()
-        if layout >= OUTPUTS_LAYOUT: return False
+        if layout >= LAYOUT_V1: return False
         native = self.native()
         all_channels = self.is_all_channels()
         slots, _ = assign_channel_outputs((), self.read_channels(), all_channels)
@@ -778,7 +993,7 @@ class ImportRender(TimeOffsetNode, EntityNode):
             over = self._over_companion(slots)
             for node, input_index in over_wires:
                 node.setInput(input_index, over, 0)
-        native.parm(OUTPUTS_LAYOUT_PARM).set(OUTPUTS_LAYOUT)
+        native.parm(OUTPUTS_LAYOUT_PARM).set(LAYOUT_V1)
         from tumblepipe.pipe.houdini.cops import light_mix
         for mix in light_mix.find_mixes():
             mix.rewire_cable()
@@ -827,10 +1042,9 @@ class ImportRender(TimeOffsetNode, EntityNode):
 
     def cached_outputs(self) -> frozenset:
         """The outputs served from their Cache COP now."""
-        return cached_outputs(
-            name for name in (CACHE_PARM, CACHE_AOVS_PARM)
-            if self.parm(name) is not None and self.parm(name).eval()
-        )
+        on = [name for name in (CACHE_PARM, CACHE_AOVS_PARM)
+              if self.parm(name) is not None and self.parm(name).eval()]
+        return cached_outputs(on, self.get_outputs_layout())
 
     def clear_cache(self) -> int:
         """Clear Cache: empty every Cache COP in the dive; how many."""
@@ -852,7 +1066,7 @@ class ImportRender(TimeOffsetNode, EntityNode):
     def scene_wired(self) -> bool:
         """Whether anything reads ``geometry`` or ``camera``."""
         return any(
-            c.outputIndex() in (GEOMETRY_OUTPUT, CAMERA_OUTPUT)
+            c.outputIndex() in (self.output('geometry'), self.output('camera'))
             for c in self.native().outputConnections()
         )
 
@@ -908,7 +1122,7 @@ class ImportRender(TimeOffsetNode, EntityNode):
         try:
             resolved = resolve(shot_uri, channel, department, version)
         except comp.CompError as error:
-            raise self._error(str(error)) from None
+            raise self._error(str(error)) from error  # failure_state reads it
         problems = comp.render_problems({channel: resolved.aovs})
         if problems:
             raise self._error(_unbuildable_message(shot_uri, resolved, problems))
@@ -935,7 +1149,7 @@ class ImportRender(TimeOffsetNode, EntityNode):
                 self.get_pins(),
             )
         except comp.CompError as error:
-            raise self._error(str(error)) from None
+            raise self._error(str(error)) from error  # failure_state reads it
         for resolved in reads.values():
             problems = comp.render_problems({resolved.channel: resolved.aovs})
             if problems:
@@ -970,7 +1184,9 @@ class ImportRender(TimeOffsetNode, EntityNode):
         try:
             reads, skipped = self.resolve_all()
         except ns.NodeError as error:
-            self._update_labels(f'none: {str(error).split(": ", 1)[-1]}')
+            reason = str(error).split(': ', 1)[-1]
+            self._update_labels(f'none: {reason}')
+            self._read_nothing(error, reason)
             raise
         shot_uri = self.require_entity_uri()
         key = comp.build_key(
@@ -979,24 +1195,33 @@ class ImportRender(TimeOffsetNode, EntityNode):
         plan = comp.dive_plan(
             {c: r.aovs for c, r in reads.items()}, self.is_all_channels()
         )
+        v2 = self.is_v2()
         previous_slots = self.get_channel_outputs()
-        slots, overflow = assign_channel_outputs(
-            previous_slots, list(reads), self.is_all_channels()
-        )
+        if v2:
+            slots, overflow = None, []
+        else:
+            slots, overflow = assign_channel_outputs(
+                previous_slots, list(reads), self.is_all_channels()
+            )
         offset_unread = self.sync_time_offset()
         held = self._wanted_held(reads)
         rebuilt = (key != previous_key or not self._dive_built(plan, slots)
                    or offset_unread or held != self.get_held())
         if rebuilt:
-            self._drop_moved_wires(previous_slots, slots)
+            if not v2:
+                self._drop_moved_wires(previous_slots, slots)
             follow = self.get_applied_offset() != 0 or self.files_follow_offset()
             self._build(reads, plan, key, slots, follow_offset=follow, held=held)
         self._update_missing_label(reads)
         label = self._label(reads, skipped, previous, previous_key)
-        if self.is_all_channels():
+        if self.is_all_channels() and not v2:
             label += channel_outputs_label(slots, reads, overflow)
         self._update_labels(label)
-        self.show_output_names(slots, list(reads), overflow)
+        if v2:
+            self._write_comment(status_comment(
+                {c: (r.department, r.version) for c, r in reads.items()}, skipped))
+        else:
+            self.show_output_names(slots, list(reads), overflow)
         if rebuilt:
             _sync_downstream_mixes(self.native())
         self.sync_unpacks(plan)
@@ -1041,11 +1266,46 @@ class ImportRender(TimeOffsetNode, EntityNode):
             label += f'; not rendered: {", ".join(skipped)}'
         return label
 
+    def _read_nothing(self, error: Exception, reason: str):
+        """The node reads nothing (``error``, the node's, says why): empty
+        the dive so no output shows an earlier read, say so under the node,
+        and for anything but a channel not rendered yet make it the node's
+        error, with ``reason`` (:func:`failure_state`)."""
+        cause = error.__cause__ if isinstance(error.__cause__, comp.CompError) else error
+        problem, is_error = failure_state(cause)
+        dive = self.native().node(DIVE)
+        if dive is not None:
+            self._clear_dive(dive)
+            if is_error:
+                _error_read(dive, f'{self.path()}: {reason}')
+        for name in (RESOLVED_PARM, FIELDS_PARM, BUILD_KEY_PARM):
+            self.parm(name).set('')
+        held_parm = self.native().parm(HELD_PARM)
+        if held_parm is not None:
+            held_parm.set('')
+        if self.is_v2():
+            self._write_comment(status_comment({}, problem=problem,
+                                               channel=self.get_channel_name()))
+        else:
+            self.show_output_names((), [])
+
+    def _clear_dive(self, dive):
+        """Remove everything the dive was built with and unwire its outputs."""
+        for child in dive.children():
+            if child.name() in ('inputs', 'outputs'): continue
+            child.destroy()
+        _ensure_dive_outputs(dive)
+        outputs = dive.node('outputs')
+        for index in range(len(DIVE_OUTPUTS)):
+            outputs.setInput(index, None)
+
     def _dive_built(self, plan: comp.DivePlan, slots) -> bool:
         dive = self.native().node(DIVE)
         if dive is None or self.get_fields() != list(plan.fields): return False
         if not self.has_packs(): return False
-        if self.get_channel_outputs() != tuple(slots): return False
+        if slots is None:  # 2.0: its beauties pack, wired to layers
+            if dive.node(BEAUTIES_PACK) is None: return False
+        elif self.get_channel_outputs() != tuple(slots): return False
         # A dive built before the frame cache (#73) has no Cache COPs.
         return all(dive.node(name) is not None for read in plan.files
                    for name in (read.name, cache_node_name(read.name)))
@@ -1060,24 +1320,23 @@ class ImportRender(TimeOffsetNode, EntityNode):
     def _build(self, reads: dict[str, comp.Resolved], plan: comp.DivePlan, key: str,
                slots, follow_offset: bool = False, held: dict | None = None):
         """Rebuild the dive: one File COP per AOV read (behind its frame
-        cache), each AOV into the pack of its cable (``pipe.comp.aov_cable``),
-        each channel's beauty to the channel output ``slots`` gives it. Laid
-        out by :func:`dive_positions`. Nothing outside the dive changes.
-        ``follow_offset``: the File COPs read ``applied_offset``. ``held``:
-        the channels whose File COPs hold the nearest rendered frame
-        (:func:`held_ranges`)."""
+        cache), each AOV into the pack of its cable (``pipe.comp.aov_cable``).
+        A 1.0 node: each channel's beauty to the channel output ``slots``
+        gives it. A 2.0 node (``slots`` None): the beauties laid over each
+        other (:func:`over_chain`) to ``over`` and packed by channel name
+        to ``beauties``. Laid out by :func:`dive_positions`. Nothing outside
+        the dive changes. ``follow_offset``: the File COPs read
+        ``applied_offset``. ``held``: the channels whose File COPs hold the
+        nearest rendered frame (:func:`held_ranges`)."""
         held = held or {}
+        layout = self.get_outputs_layout()
+        sources = dive_sources(layout)
         dive = self.native().node(DIVE)
         if dive is None:
             raise self._error(f'the node has no {DIVE} subnet (a broken HDA)')
-        for child in dive.children():
-            if child.name() in ('inputs', 'outputs'): continue
-            child.destroy()
-        _ensure_dive_outputs(dive)
+        self._clear_dive(dive)
         outputs = dive.node('outputs')
-        for index in range(len(DIVE_OUTPUTS)):
-            outputs.setInput(index, None)
-        positions = dive_positions(plan)
+        positions = dive_positions(plan, layout)
         files: dict[str, hou.Node] = dict()
         beauty_reads = set(plan.beauties)
         for read in plan.files:
@@ -1090,12 +1349,28 @@ class ImportRender(TimeOffsetNode, EntityNode):
         for cable in comp.AOV_CABLES:
             cable_fields = list(plan.cable_fields(cable))
             pack = _pack(dive, CABLE_PACKS[cable], [files[f] for f in cable_fields], cable_fields)
-            outputs.setInput(DIVE_INDEX[DIVE_SOURCES[OUTPUTS[CABLE_OUTPUTS[cable]]]], pack, 0)
+            outputs.setInput(DIVE_INDEX[sources[CABLE_OUTPUT_OF[cable]]], pack, 0)
         beauty_of = dict(zip(plan.beauty_fields, plan.beauties))
-        for index, channel in enumerate(slots):
-            if channel not in beauty_of: continue
-            outputs.setInput(DIVE_INDEX[DIVE_SOURCES[CHANNEL_OUTPUT_NAMES[index]]],
-                             files[beauty_of[channel]], 0)
+        if slots is None:
+            pack = _pack(dive, BEAUTIES_PACK, [files[b] for b in plan.beauties],
+                         list(plan.beauty_fields))
+            outputs.setInput(DIVE_INDEX[sources[LAYERS]], pack, 0)
+            front = files[plan.beauties[0]] if plan.beauties else None
+            for name, back, fore in over_chain(plan.beauties):
+                over = dive.createNode('blend', name)
+                over.parm('mode').set('over')
+                # The blend's first input is the background, its second
+                # the foreground laid over it.
+                over.setInput(0, files.get(back) or dive.node(back), 0)
+                over.setInput(1, files[fore], 0)
+                front = over
+            if front is not None:
+                outputs.setInput(DIVE_INDEX[sources['rgba']], front, 0)
+        else:
+            for index, channel in enumerate(slots):
+                if channel not in beauty_of: continue
+                outputs.setInput(DIVE_INDEX[sources[CHANNEL_OUTPUT_NAMES[index]]],
+                                 files[beauty_of[channel]], 0)
         for child in dive.children():
             if child.name() in positions:
                 child.setPosition(hou.Vector2(*positions[child.name()]))
@@ -1111,16 +1386,26 @@ class ImportRender(TimeOffsetNode, EntityNode):
         held_parm = self.native().parm(HELD_PARM)
         if held_parm is not None:
             held_parm.set(format_held(held))
-        self.set_channel_outputs(slots)
+        if slots is not None:
+            self.set_channel_outputs(slots)
 
     # AOV Outputs
 
-    def find_unpack(self, output_index: int = AOVS_OUTPUT):
-        """The Cable Unpack AOV Outputs keeps on ``output_index`` (``lpe``,
-        ``aov`` or ``matte``), None if none."""
-        mark = _UNPACKS[output_index][0]
+    def _output_name(self, output) -> str | None:
+        """``output`` as a name: a name stays, an index is this node's."""
+        if isinstance(output, str): return output
+        return output_name(self.get_outputs_layout(), output)
+
+    def find_unpack(self, output=AOV):
+        """The Cable Unpack AOV Outputs keeps on ``output`` (a name, or
+        this node's output index: ``lpe``, ``aov``, ``matte``, a
+        cryptomatte's, 2.0's ``layers``), None if none."""
+        name = self._output_name(output)
+        index = self.output(name) if name in _UNPACKS else None
+        if index is None: return None
+        mark = _UNPACKS[name][0]
         for connection in self.native().outputConnections():
-            if connection.outputIndex() != output_index: continue
+            if connection.outputIndex() != index: continue
             node = connection.outputNode()
             if node.userData(mark) is not None:
                 return node
@@ -1132,14 +1417,15 @@ class ImportRender(TimeOffsetNode, EntityNode):
         matte and the cryptomattes first, so a wire the ``aov`` unpack drops
         for a field that moved to one of them can move there; a wire on a
         channel's beauty (TumblePipe 1.99 carried them in the AOVs) moves to
-        the channel's output on the node."""
-        firsts = [self.sync_unpack(plan, index) for index in _UNPACKS if index != AOVS_OUTPUT]
+        the channel's output on the node (on 2.0, to the layers unpack)."""
+        names = unpack_outputs(self.get_outputs_layout())
+        firsts = [self.sync_unpack(plan, name) for name in names if name != AOV]
         rehomes = [(u, _unpack_fields(u)) for u in firsts if u is not None]
-        rehomes.append((self.native(), list(self.get_channel_outputs())))
-        self.sync_unpack(plan, AOVS_OUTPUT, rehome=rehomes)
+        if not self.is_v2():
+            rehomes.append((self.native(), list(self.get_channel_outputs())))
+        self.sync_unpack(plan, AOV, rehome=rehomes)
 
-    def sync_unpack(self, plan: comp.DivePlan | None,
-                    output_index: int = AOVS_OUTPUT, rehome=()):
+    def sync_unpack(self, plan: comp.DivePlan | None, output=AOV, rehome=()):
         """Keep the companion unpack on ``output_index`` in step with
         ``plan``: create it beside the node when its toggle is on and its
         cable has fields, give it one typed output per cable field, and
@@ -1147,14 +1433,20 @@ class ImportRender(TimeOffsetNode, EntityNode):
         reads it. Wires follow their field; a wire whose field is gone moves
         to the same-named output of the first ``rehome`` (node, fields) that
         has it. Returns the unpack, None when there is none."""
+        name = self._output_name(output)
+        output_index = self.output(name)
         wanted = self.get_unpack_outputs()
-        mark, suffix, offset = _UNPACKS[output_index]
-        unpack = self.find_unpack(output_index)
+        mark, suffix, offset = _UNPACKS[name]
+        unpack = self.find_unpack(name)
         if wanted and plan is None:
             raise self._error('the outputs need what the node reads: press Update')
-        cable = OUTPUT_CABLES[output_index]
-        fields = list(plan.cable_fields(cable)) if plan else []
-        signatures = plan.signatures if plan else {}
+        if name == LAYERS:
+            fields = list(plan.beauty_fields) if plan else []
+            signatures = plan.beauty_signatures if plan else {}
+        else:
+            cable = {n: c for c, n in CABLE_OUTPUT_OF.items()}[name]
+            fields = list(plan.cable_fields(cable)) if plan else []
+            signatures = plan.signatures if plan else {}
         if not wanted or not fields:
             if unpack is not None and not unpack.outputConnections():
                 unpack.destroy()
@@ -1205,13 +1497,22 @@ class ImportRender(TimeOffsetNode, EntityNode):
 # suffix, offset from the import). Plain tuples: the module imports
 # without Houdini (the tests' hou stub has no Vector2).
 _UNPACKS = {
-    LPES_OUTPUT: (LPES_UNPACK_MARK, '_lpe', (comp.COLUMN_STRIDE, 0.0)),
-    AOVS_OUTPUT: (UNPACK_MARK, UNPACK_SUFFIX, (comp.COLUMN_STRIDE, -comp.ROW)),
-    MATTES_OUTPUT: (MATTES_UNPACK_MARK, '_matte', (comp.COLUMN_STRIDE, -2 * comp.ROW)),
-    **{CABLE_OUTPUTS[cable]: (f'th_import_render_{cable}', f'_{cable}',
-                              (comp.COLUMN_STRIDE, -(3 + step) * comp.ROW))
+    LPE: (LPES_UNPACK_MARK, '_lpe', (comp.COLUMN_STRIDE, 0.0)),
+    AOV: (UNPACK_MARK, UNPACK_SUFFIX, (comp.COLUMN_STRIDE, -comp.ROW)),
+    MATTE: (MATTES_UNPACK_MARK, '_matte', (comp.COLUMN_STRIDE, -2 * comp.ROW)),
+    **{cable: (f'th_import_render_{cable}', f'_{cable}',
+               (comp.COLUMN_STRIDE, -(3 + step) * comp.ROW))
        for step, cable in enumerate(comp.CRYPTO_CABLES)},
+    # 2.0 only: each channel's beauty, by channel name.
+    LAYERS: ('th_import_render_layers', '_layers',
+             (comp.COLUMN_STRIDE, -(3 + len(comp.CRYPTO_CABLES)) * comp.ROW)),
 }
+
+
+def unpack_outputs(layout: int) -> list[str]:
+    """The outputs AOV Outputs keeps a Cable Unpack on for a node of
+    ``layout``: the AOV cables, and on 2.0 ``layers``."""
+    return [name for name in _UNPACKS if output_index(layout, name) is not None]
 
 
 def _unpack_fields(unpack) -> list[str]:
@@ -1271,6 +1572,13 @@ def _cached_read(dive, file_node, toggles):
     name = file_node.name()
     cache = dive.createNode('cache', cache_node_name(name))
     cache.setInput(0, file_node, 0)
+    # Wiring a Cache COP gives it an output (its 'outputs' multiparm) by a
+    # script Houdini does not run inside an OnCreated (hython 22.0.429): a
+    # node dropped by hand, which builds in its OnCreated, had caches with
+    # no output, and every cached output empty.
+    outputs = cache.parm('outputs')
+    if outputs is not None and outputs.eval() < 1:
+        outputs.set(1)
     cache.parm('maxframes').setExpression(
         f'ch("../../{CACHE_FRAMES_PARM}")', hou.exprLanguage.Hscript
     )
@@ -1294,6 +1602,25 @@ def _pack(dive, name: str, sources: list, fields: list[str]):
     for index, field in enumerate(fields):
         pack.parm(f'fieldname{index + 1}').set(field)
     return pack
+
+
+def _error_read(dive, message: str):
+    """An Error COP in the emptied dive saying ``message``, on the path of
+    the beauty outputs (1.0's ``rgba``, 2.0's ``over``): Copernicus cooks
+    every output of the node together, so the node, and whatever reads any
+    of its outputs, fails the cook with the message."""
+    empty = dive.createNode('constant', f'{ERROR_NODE}.empty')
+    empty.setPosition(hou.Vector2(-comp.COLUMN_STRIDE, 0.0))
+    error = dive.createNode('error', ERROR_NODE)
+    error.setInput(0, empty, 0)
+    error.parm('numerror').set(1)
+    error.parm('errormsg1').set(message)
+    error.parm('severity1').set(ERROR_SEVERITY)
+    error.parm('enable1').set(1)
+    for label in ('rgba', 'over'):
+        dive.node('outputs').setInput(DIVE_INDEX[label], error, 0)
+    error.setPosition(hou.Vector2(0.0, 0.0))
+    return error
 
 
 def _configure_file(file_node, aov, field: str, follow_offset: bool = False,
@@ -1370,6 +1697,18 @@ def find_imports(entity_uri: Uri | None = None) -> list[ImportRender]:
 def upstream_output(native, input_index: int = 0):
     """``(import_render, its output index)`` that reaches ``native``'s input
     ``input_index``, following first inputs upstream; None when none does."""
+    found = _upstream_native(native, input_index)
+    return None if found is None else (ImportRender(found[0]), found[1])
+
+
+def upstream_output_name(native, input_index: int = 0) -> str | None:
+    """The name of the import_render output (on its type's layout) that
+    reaches ``native``'s input ``input_index``; None when none does."""
+    found = _upstream_native(native, input_index)
+    return None if found is None else output_name(outputs_layout(found[0]), found[1])
+
+
+def _upstream_native(native, input_index: int):
     seen = set()
     current, index = native, input_index
     while current is not None and current.path() not in seen:
@@ -1381,7 +1720,7 @@ def upstream_output(native, input_index: int = 0):
         if connection is None: return None
         source = connection.inputNode()
         if _is_import_render(source):
-            return ImportRender(source), connection.outputIndex()
+            return source, connection.outputIndex()
         current, index = source, 0
     return None
 
@@ -1416,19 +1755,122 @@ def _refresh_exports():
     export_comp.refresh_warnings()
 
 
-def create(scene, name):
-    return ns.create_node(scene, name, ImportRender, TYPE_NAME, 'Cop')
+def create(scene, name, version: str | None = None):
+    """The import named ``name`` under ``scene``, made from code (it waits
+    for its channel to be set before it resolves): today's type (2.0), or
+    the type ``version`` names (``'1.0'``, as old scenes hold)."""
+    if version is None:
+        return ns.create_node(scene, name, ImportRender, TYPE_NAME, 'Cop')
+    native = scene.node(name)
+    if native is not None: return ImportRender(native)
+    outer, ns._from_code = ns._from_code, True
+    try:
+        return ImportRender(scene.createNode(f'th::{TYPE_NAME}::{version}', name))
+    finally:
+        ns._from_code = outer
+
+
+def version_moves(from_layout: int, to_layout: int, slots, all_channels: bool) -> dict:
+    """Where a wire on each output of a node on ``from_layout`` lands when
+    the node becomes ``to_layout``'s type: ``{output index: (output name,
+    layers field)}``, the field None for a plain output. An output the
+    target has by name keeps its wire there, but for 1.0's beauty outputs
+    going to 2.0: each carries the channel ``slots`` gives it, and lands on
+    ``layers`` at that channel's field, except a one-channel import's
+    ``rgba``, which stays (2.0's rgba of all channels is them laid over each
+    other, not one of them). The rest (a 1.0 beauty output holding no
+    channel, 2.0's layers on a 1.0) are dropped."""
+    moves = {}
+    for index, name in enumerate(LAYOUT_OUTPUTS[from_layout]):
+        beauty = (name in CHANNEL_OUTPUT_NAMES and from_layout < LAYOUT_V2
+                  and (name != 'rgba' or all_channels))
+        if beauty and to_layout >= LAYOUT_V2:
+            slot = CHANNEL_OUTPUT_NAMES.index(name)
+            channel = slots[slot] if slots and slot < len(slots) else None
+            if channel:
+                moves[index] = (LAYERS, channel)
+            continue
+        if output_index(to_layout, name) is not None:
+            moves[index] = (name, None)
+    return moves
+
+
+def change_version(native, version: str):
+    """Make import ``native`` a ``th::import_render::<version>`` in place
+    (its name, parms and position kept), rebuilt, each wire on the output
+    of the same name (:func:`version_moves`): 1.0 -> 2.0 tidies an old comp
+    (a beauty taken from rgba 2 .. rgba 8 lands on a Cable Unpack of
+    ``layers`` beside the node, at its channel). Returns the new node."""
+    old = ImportRender(native)
+    from_layout = old.get_outputs_layout()
+    all_channels = old.is_all_channels()
+    slots = old.get_channel_outputs() if from_layout < LAYOUT_V2 else None
+    wires = [(c.outputIndex(), c.outputNode(), c.inputIndex())
+             for c in native.outputConnections()]
+    for _, node, input_index in wires:
+        node.setInput(input_index, None)
+    outer, ns._from_code = ns._from_code, True
+    try:
+        native = native.changeNodeType(
+            f'th::{TYPE_NAME}::{version}', keep_name=True, keep_parms=True,
+            keep_network_contents=False)
+    finally:
+        ns._from_code = outer
+    node = ImportRender(native)
+    to_layout = node.get_outputs_layout()
+    if native.parm(OUTPUTS_LAYOUT_PARM) is not None:
+        native.parm(OUTPUTS_LAYOUT_PARM).set(LAYOUT_V1)
+    node.parm(BUILD_KEY_PARM).set('')
+    try:
+        node.execute()
+    except ns.NodeError:
+        pass  # said on Reads, under the node, and as its error
+    moves = version_moves(from_layout, to_layout, slots, all_channels)
+    layers_unpack = None
+    for output, reader, input_index in wires:
+        move = moves.get(output)
+        if move is None: continue
+        name, field = move
+        if field is None:
+            reader.setInput(input_index, native, output_index(to_layout, name))
+            continue
+        if layers_unpack is None:
+            layers_unpack = native.parent().createNode(
+                'cableunpack', f'{native.name()}_layers')
+            layers_unpack.setInput(0, native, output_index(to_layout, LAYERS))
+            layers_unpack.setPosition(native.position() + hou.Vector2(comp.COLUMN_STRIDE, 0.0))
+            channels = [s for s in slots if s]
+            layers_unpack.parm('fields').set(len(channels))
+            for index, channel in enumerate(channels, start=1):
+                layers_unpack.parm(f'fieldname{index}').set(channel)
+                layers_unpack.parm(f'fieldtype{index}').set(comp.aov_signature(comp.BEAUTY))
+        fields = _unpack_fields(layers_unpack)
+        if field in fields:
+            reader.setInput(input_index, layers_unpack, fields.index(field))
+    return native
 
 
 def on_created(raw_node):
+    """A new node: styled, and, when an artist drops it (not a workfile
+    template, which sets the channel first and resolves itself), resolved
+    straight away, so it shows the shot's latest render, or says why there
+    is none, without an Update."""
     ns.set_node_style(raw_node, ns.SHAPE_NODE_IMPORT)
-    # A new node is on today's outputs; one saved before #67 never stored
-    # the parm, so it loads at the default, 0.
+    # A new 1.0 node is on 1.0's outputs; one saved before #67 never stored
+    # the parm, so it loads at the default, 0. A 2.0 node has no such parm.
     layout = raw_node.parm(OUTPUTS_LAYOUT_PARM)
     if layout is not None:
-        layout.set(OUTPUTS_LAYOUT)
+        layout.set(LAYOUT_V1)
     node = ImportRender(raw_node)
     node._update_labels()
+    if ns.creating_from_code(): return
+    channel = default_channel(node.get_channel_name(), *node.rendered_channels())
+    if channel != node.get_channel_name():
+        node.set_channel_name(channel)
+    try:
+        node.execute()
+    except Exception:
+        pass  # said on Reads, under the node, and as its error
 
 
 def on_loaded(raw_node):

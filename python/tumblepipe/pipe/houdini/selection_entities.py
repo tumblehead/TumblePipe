@@ -2,18 +2,24 @@
 
 The Houdini side of ``pipe.usd.entity_stamp``: which prims are selected in
 Solaris (the viewport and the Scene Graph Tree share one selection), which
-entities own them, and the one action built on that so far: open the
-selected asset's department workfile.
+entities own them, and the one action built on that so far: the department
+jump (Alt+D), open a department workfile of the selected asset, or of the
+open workfile's own asset when nothing selected names one
+(``pipe.department_jump.jump_target``).
 
-The entity comes from the stamp on the prims and the department from the
-caller. Nothing is read from the node graph or from prim names.
+The entity comes from the stamp on the prims (or the open workfile's
+``context.json``) and the department from the caller. Nothing is read from
+the node graph or from prim names.
 """
 
 import logging
+from pathlib import Path
 
 import hou
 
 from tumblepipe.util.uri import Uri
+from tumblepipe.pipe import department_jump
+from tumblepipe.pipe.department_jump import jump_target
 from tumblepipe.pipe.usd.entity_stamp import PrimEntity, distinct_entities
 
 logger = logging.getLogger(__name__)
@@ -103,9 +109,49 @@ def selected_entity() -> Uri | None:
 def selected_entity_departments() -> list[str]:
     """The departments of the selected entity, in pool order; empty when
     the selection does not name exactly one entity."""
+    return entity_departments(selected_entity())
+
+
+def workfile_context():
+    """The open workfile's pipeline ``Context`` (its ``context.json``,
+    through :func:`scene_context.scene_context`); None for an untitled or
+    off-pipeline scene, and for a Multi's workfile, whose context names its
+    group (``groups:/``), not an entity, so it has no departments to jump
+    between and no entity to save a version of."""
+    from tumblepipe.pipe.houdini.scene_context import scene_context
+
+    try:
+        if not hou.hipFile.path() or hou.hipFile.isNewFile():
+            return None
+        context = scene_context()
+    except Exception:  # noqa: BLE001  an unreadable context is no context
+        logger.debug("Reading the open workfile's context failed", exc_info=True)
+        return None
+    if context is None or context.entity_uri.purpose != 'entity':
+        return None
+    return context
+
+
+def workfile_entity() -> Uri | None:
+    """The entity of the open workfile; None for an untitled or
+    off-pipeline scene."""
+    context = workfile_context()
+    return None if context is None else context.entity_uri
+
+
+def jump_entity() -> Uri | None:
+    """The entity the department jump opens: the one the LOP selection
+    belongs to, else the open workfile's asset
+    (``department_jump.jump_target``)."""
+    selected = [entity.uri for entity in selected_entities()]
+    return jump_target(selected, None if selected else workfile_entity())
+
+
+def entity_departments(entity_uri: Uri | None) -> list[str]:
+    """The departments of *entity_uri*, in pool order; empty for None or
+    an entity the project does not know."""
     from tumblepipe.config.department import list_entity_department_names
 
-    entity_uri = selected_entity()
     if entity_uri is None:
         return []
     try:
@@ -118,42 +164,125 @@ def _status(message: str) -> None:
     hou.ui.setStatusMessage(message, severity=hou.severityType.Warning)
 
 
-def open_selected_workfile(department: str, new_instance: bool = False) -> bool:
-    """Open the ``department`` workfile of the entity that owns the LOP
-    selection: in this session, or in a new Houdini (``new_instance``).
+def save_without_asking() -> bool:
+    """The "save without asking" setting: the Asset Browser's *Autosave
+    (version up) on scene change*, which the jump shares, read fresh from
+    disk. False when the prefs cannot be read."""
+    try:
+        from tumblepipe.asset_browser.prefs import load_prefs
+        return bool(load_prefs().autosave_on_scene_change)
+    except Exception:  # noqa: BLE001  unreadable prefs: keep asking
+        logger.warning("Could not read the autosave preference", exc_info=True)
+        return False
 
-    Returns whether a workfile was opened. A selection that names no
-    entity, or several, opens nothing and says why in the status bar; so
-    does an entity that does not have the department. Must be called on
-    the GUI thread (``workfiles.open_workfile_in_session``).
+
+def set_save_without_asking(value: bool) -> bool:
+    """Save the "save without asking" setting, and bring every open Asset
+    Browser catalog's copy up to date (its scene swap reads its own copy).
+    Returns whether it was saved."""
+    from tumblepipe.asset_browser.prefs import update_prefs
+    from tumblepipe.pipe.houdini.ui.report import report_failure
+
+    value = bool(value)
+    try:
+        update_prefs(autosave_on_scene_change=value)
+    except Exception as error:  # noqa: BLE001  the toggle's boundary
+        report_failure("Saving the autosave preference", error)
+        return False
+    try:
+        from tumbletrove import asset_browser as ab
+        registry = getattr(ab, "_registry", None)
+        for catalog in getattr(registry, "catalogs", None) or ():
+            prefs = getattr(catalog, "_prefs", None)
+            if prefs is not None and hasattr(prefs, "autosave_on_scene_change"):
+                prefs.autosave_on_scene_change = value
+    except Exception:  # noqa: BLE001  no browser open: nothing to update
+        logger.debug("No Asset Browser catalog to update", exc_info=True)
+    hou.ui.setStatusMessage(
+        "Opening another workfile now saves a new version without asking."
+        if value else
+        "Opening another workfile now leaves unsaved work to Houdini's prompt.",
+        severity=hou.severityType.Message,
+    )
+    return True
+
+
+def _save_before_jump(department: str) -> bool:
+    """Deal with the open scene's unsaved work before the jump loads
+    another workfile in this session. Returns whether the jump may go on.
+
+    With *save without asking* on, a pipeline workfile with unsaved
+    changes is written as its next version, noted "Autosave before
+    opening <department>", and the load then has nothing to prompt about.
+    Otherwise the load shows Houdini's own save prompt. A save that fails
+    is reported and stops the jump, so the load never goes ahead over
+    work the artist asked to keep.
     """
-    from tumblepipe.config.department import list_entity_department_names
+    from tumblepipe.pipe.houdini.ui.report import report_failure
+
+    unsaved = not hou.hipFile.isNewFile() and hou.hipFile.hasUnsavedChanges()
+    if not unsaved:
+        return True
+    context = workfile_context()
+    action = department_jump.before_jump(
+        unsaved, context is not None, save_without_asking())
+    if action != department_jump.SAVE:
+        return True
+    try:
+        from tumblepipe.asset_browser.houdini import session_nc_type
+        from tumblepipe.pipe.houdini.workfile_save import commit_next_workfile
+        path = commit_next_workfile(
+            context.entity_uri, context.department_name,
+            prev_context=context, nc_type=session_nc_type(),
+            note=department_jump.jump_note(department),
+        )
+    except Exception as error:  # noqa: BLE001  the jump's boundary
+        report_failure("Saving before opening another workfile", error)
+        return False
+    logger.info("Saved %s before the department jump", path)
+    hou.ui.setStatusMessage(f"Saved {Path(path).name}", severity=hou.severityType.Message)
+    return True
+
+
+def open_selected_workfile(department: str, new_instance: bool = False) -> bool:
+    """Open the ``department`` workfile of the jump's entity
+    (:func:`jump_entity`): in this session, or in a new Houdini
+    (``new_instance``).
+
+    Returns whether a workfile was opened. A selection that names several
+    entities opens nothing and says why in the status bar; so does nothing
+    to open (no entity selected and no asset workfile open) and an entity
+    that does not have the department. In this session, unsaved work is
+    saved first or left to Houdini's prompt (:func:`_save_before_jump`).
+    Must be called on the GUI thread
+    (``workfiles.open_workfile_in_session``).
+    """
     from tumblepipe.pipe.houdini import workfiles
     from tumblepipe.pipe.houdini.ui.report import report_failure
 
     selection = lop_selection()
-    if selection is None:
-        _status("Select a prim in the Solaris viewport first.")
-        return False
-    entities = distinct_entities(*selection)
-    if not entities:
-        _status(
-            "The selection belongs to no pipeline entity. Assets exported "
-            "before the entity stamp need a new export to carry it."
-        )
-        return False
+    entities = distinct_entities(*selection) if selection is not None else []
     if len(entities) > 1:
         names = ", ".join(entity.uri.segments[-1] for entity in entities)
         _status(f"The selection spans several entities ({names}). Select one.")
         return False
+    selected = [entity.uri for entity in entities]
+    entity_uri = jump_target(selected, None if selected else workfile_entity())
+    if entity_uri is None:
+        if selection is not None:
+            _status(
+                "The selection belongs to no pipeline entity. Assets exported "
+                "before the entity stamp need a new export to carry it."
+            )
+        else:
+            _status(
+                "Select an asset in the Solaris viewport, or open an asset's "
+                "workfile, first."
+            )
+        return False
 
-    entity_uri = entities[0].uri
     name = entity_uri.segments[-1]
-    try:
-        departments = list_entity_department_names(entity_uri)
-    except ValueError:
-        departments = []
-    if department not in departments:
+    if department not in entity_departments(entity_uri):
         _status(f"{name} has no {department} department.")
         return False
 
@@ -161,6 +290,8 @@ def open_selected_workfile(department: str, new_instance: bool = False) -> bool:
     try:
         if new_instance:
             return workfiles.open_workfile_in_new_instance(entity_uri, department)
+        if not _save_before_jump(department):
+            return False
         return workfiles.open_workfile_in_session(entity_uri, department)
     except Exception as error:  # noqa: BLE001  the action's boundary
         report_failure(action, error)

@@ -136,7 +136,9 @@ substitutes its own:
 **Cancel**, cancelling the note, or a save that fails leaves you where you
 are, with your changes still open. With the **Autosave (version up) on
 scene change** setting on, the new version is written silently and no
-prompt appears.
+prompt appears. The same setting governs the
+[Alt+D department jump](../radial-menus.md#altd-jump-to-a-departments-workfile),
+whose **Autosave** slot switches it.
 
 Two cases fall through to Houdini's native save prompt instead: an untitled
 or off-pipeline scene (there is no version to bump), and a scene whose dirty

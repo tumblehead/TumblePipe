@@ -214,7 +214,9 @@ class PipelineSettingsWidget(QWidget):
             "(it never overwrites the current workfile in place).\n"
             "The current scene must have a pipeline context (an entity URI "
             "/ department / version); off-pipeline hips fall back to "
-            "Houdini's native prompt."
+            "Houdini's native prompt.\n"
+            "The Alt+D department jump follows this too (its Autosave slot "
+            "switches it); off, the jump shows Houdini's own prompt."
         )
         self._autosave_checkbox.setChecked(
             self._catalog._prefs.autosave_on_scene_change

@@ -15,6 +15,8 @@ from tumblepipe.farm.worker import error, headline
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.config.groups import get_group
+from tumblepipe.config.department import get_disabled_departments
+from tumblepipe.pipe import publish_scope
 from tumblepipe.pipe.paths import (
     get_workfile_context,
 )
@@ -38,11 +40,13 @@ def _no_export_node(entity_uri: Uri, department_name: str, group) -> Exception:
 
     ``NothingToPublish`` when the workfile genuinely has nothing for the
     entity: a Multi workfile with no export node of the member's own (the
-    member never got a column), or a single-entity workfile with no export
-    node at all. Anything else — an export node whose entity does not
-    resolve, or export nodes for this entity that the matcher still rejected
-    — is a resolution problem, and publishing nothing would hide it, so it
-    stays a ``RuntimeError`` that names what the nodes resolved to.
+    member never got a column), a single-entity workfile with no export
+    node at all, or export nodes for the entity and department that are all
+    bypassed or into a department turned off on the entity (the session's
+    publish skips those too). Anything else — an export node whose entity
+    does not resolve, or export nodes for this entity that the matcher still
+    rejected — is a resolution problem, and publishing nothing would hide
+    it, so it stays a ``RuntimeError`` that names what the nodes resolved to.
     """
     nodes = list(map(
         export_layer.ExportLayer,
@@ -59,6 +63,16 @@ def _no_export_node(entity_uri: Uri, department_name: str, group) -> Exception:
         return NothingToPublish(
             f'The workfile has no export nodes; nothing to publish for '
             f'{entity_uri}/{department_name}'
+        )
+    left_out = [
+        path for path, uri, dept in resolved
+        if uri == entity_uri and dept == department_name
+    ]
+    if left_out:
+        return NothingToPublish(
+            f'Every export node for {entity_uri}/{department_name} is '
+            f'bypassed, or the department is turned off on it: '
+            f'{", ".join(left_out)}'
         )
     if group is not None and not unresolved and not targets_entity:
         return NothingToPublish(
@@ -104,7 +118,14 @@ def _update():
 
 def _publish_entity(entity_uri: Uri, department_name: str, render_range=None):
     """Publish one shot or asset's department from the loaded workfile: its
-    shared layers first, then its layer.
+    shared layers first, then its layers.
+
+    The nodes are the ones the publish window runs in the session
+    (``pipe.publish_scope``): every live export node of the entity and
+    department (one per channel, say), never a bypassed one. Taking the
+    first match, bypassed or not, published a Multi's bypassed template
+    export (its unlit chain) instead of the artist's lit one, and the shots
+    rendered with no lights (Auguu, 2026-11-21).
 
     Every node runs here, headless (``force_local``): without it a node's
     ``execute`` opens the export window, which hython has no UI for.
@@ -113,10 +134,20 @@ def _publish_entity(entity_uri: Uri, department_name: str, render_range=None):
     """
 
     def _is_for_entity(node) -> bool:
-        return (
-            node.get_department_name() == department_name
-            and node.get_entity_uri() == entity_uri
+        return publish_scope.publishes(
+            node, {entity_uri}, {department_name}, get_disabled_departments
         )
+
+    export_nodes = list(filter(_is_for_entity, map(
+        export_layer.ExportLayer, ns.list_by_node_type('export_layer', 'Lop')
+    )))
+
+    # Zero matches is either a workfile with nothing for this entity
+    # (skipped) or a matcher/context failure (raised) — see _no_export_node.
+    # Checked before the shared layers run: they are exported for the
+    # entity's layer, and the session runs none without one.
+    if len(export_nodes) == 0:
+        raise _no_export_node(entity_uri, department_name, _get_workfile_group())
 
     split_nodes = filter(_is_for_entity, map(
         layer_split.LayerSplit, ns.list_by_node_type('layer_split', 'Lop')
@@ -125,18 +156,9 @@ def _publish_entity(entity_uri: Uri, department_name: str, render_range=None):
         split_node.execute(force_local=True, render_range=render_range)
         print(f'Exported shared layer: {split_node.path()}')
 
-    export_nodes = list(filter(_is_for_entity, map(
-        export_layer.ExportLayer, ns.list_by_node_type('export_layer', 'Lop')
-    )))
-
-    # Zero matches is either a workfile with nothing for this entity
-    # (skipped) or a matcher/context failure (raised) — see _no_export_node.
-    if len(export_nodes) == 0:
-        raise _no_export_node(entity_uri, department_name, _get_workfile_group())
-
-    export_node = export_nodes[0]
-    export_node.execute(force_local=True, render_range=render_range)
-    print(f'Published {export_node.path()}')
+    for export_node in export_nodes:
+        export_node.execute(force_local=True, render_range=render_range)
+        print(f'Published {export_node.path()}')
 
 def _publish(entity_uri: Uri, department_name: str, render_range=None):
     """Publish the department of a shot, an asset, or each member of a

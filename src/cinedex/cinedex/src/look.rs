@@ -89,6 +89,14 @@ pub fn caution() -> Color {
 pub fn audio() -> Color {
     Color::from_rgb8(50, 55, 62)
 }
+/// An audio clip's waveform, over [`audio`].
+pub fn wave() -> Color {
+    Color::from_rgb8(98, 112, 130)
+}
+/// The line an audio clip shows while its waveform is being read.
+pub fn wave_pending() -> Color {
+    Color::from_rgb8(72, 79, 88)
+}
 /// A video clip with no department (a media item, a slug).
 pub fn clip() -> Color {
     grey(60)

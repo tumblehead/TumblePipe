@@ -228,6 +228,10 @@ def render_average(native, output=0):
 ###############################################################################
 # The checks
 ###############################################################################
+# 1.0's output indices, by name (the module's *_OUTPUT are 2.0's).
+V1 = {name: index for index, name in enumerate(import_render.OUTPUTS_V1)}
+
+
 def pack_fields(node, cable):
     """The fields of an import's ``cable`` (lpes, mattes, aovs) as built."""
     pack = node.native().node(f'{import_render.DIVE}/{import_render.CABLE_PACKS[cable]}')
@@ -275,9 +279,12 @@ def check_single(template, shot_uri, label):
     check(f'{label}: the chars cables carry exactly the comp AOVs, no beauty',
           imports['chars'].get_fields() == ['beauty_key', 'beauty_rim', 'depth', 'objid_hero'],
           str(imports['chars'].get_fields()))
-    want_labels = (['rgba'] + [f'rgba {i}' for i in range(2, import_render.CHANNEL_OUTPUTS + 1)]
-                   + ['lpe', 'aov', 'matte', 'cryptomaterials', 'cryptoprimitives', 'geometry', 'camera'])
-    check(f'{label}: the outputs are rgba .. rgba 8, lpe, aov, matte, geometry, camera (#67)',
+    want_labels = ['beauty', 'lpe', 'aov', 'matte', 'cryptomaterials', 'cryptoprimitives',
+                   'layers', 'geometry', 'camera']
+    check(f'{label}: the template makes 2.0 imports',
+          all(n.native().type().name() == 'th::import_render::2.0' for n in imports.values()),
+          str([n.native().type().name() for n in imports.values()]))
+    check(f'{label}: the outputs are beauty, lpe, aov, matte, the cryptomattes, layers, geometry, camera',
           list(imports['chars'].native().outputLabels()) == want_labels,
           str(imports['chars'].native().outputLabels()))
     want_cables = {comp.LPES: ['beauty_key', 'beauty_rim'], comp.MATTES: ['objid_hero'],
@@ -285,9 +292,11 @@ def check_single(template, shot_uri, label):
     got_cables = {cable: pack_fields(imports['chars'], cable) for cable in want_cables}
     check(f'{label}: light groups ride lpe, the matte matte, depth aov',
           got_cables == want_cables, str(got_cables))
-    check(f'{label}: a one-channel import holds rgba only',
-          imports['chars'].get_channel_outputs()[:2] == ('chars', None),
-          str(imports['chars'].get_channel_outputs()))
+    beauties = imports['chars'].native().node(
+        f'{import_render.DIVE}/{import_render.BEAUTIES_PACK}')
+    check(f'{label}: a one-channel import has its beauty on layers, named after the channel',
+          beauties is not None and beauties.parm('fieldname1').eval() == 'chars'
+          and beauties.parm('fields').eval() == 1)
     check_dive_layout(imports['chars'], label)
     close(f'{label}: import rgba is the beauty', render_average(imports['chars'].native(), 0), CHARS_BEAUTY)
 
@@ -407,8 +416,14 @@ def check_load_old_layout(label):
     output (rgba), the unpack goes, and the import rebuilds, once the load
     has finished."""
     copnet = hou.node('/stage/comp')
-    native = copnet.node('import_chars')
+    # The template makes 2.0s; a scene of 1.103 held a 1.0.
+    native = import_render.change_version(copnet.node('import_chars'), '1.0')
     mix = copnet.node('light_mix_chars')
+    wires = sorted((c.inputIndex(), c.outputIndex()) for c in mix.inputConnections())
+    check(f'{label}: made a 1.0, its light mix keeps rgba and lpe by name',
+          native.type().name() == 'th::import_render::1.0'
+          and wires == [(light_mix.BEAUTY_INPUT, 0), (light_mix.CABLE_INPUT, V1['lpe'])],
+          f'{native.type().name()} {wires}')
     dive = native.node(import_render.DIVE)
     for pack in ('lpes', 'mattes'):
         dive.node(pack).destroy()
@@ -430,11 +445,11 @@ def check_load_old_layout(label):
     mix = hou.node('/stage/comp/light_mix_chars')
     reader = hou.node('/stage/comp/reads_beauties')
     check(f'{label}: an import saved before #67 is on the new outputs once opened',
-          native.parm(import_render.OUTPUTS_LAYOUT_PARM).eval() == import_render.OUTPUTS_LAYOUT)
+          native.parm(import_render.OUTPUTS_LAYOUT_PARM).eval() == import_render.LAYOUT_V1)
     wires = sorted((c.inputIndex(), c.outputIndex()) for c in mix.inputConnections())
     check(f'{label}: its light mix cable moved from aovs to lpe',
           wires == [(light_mix.BEAUTY_INPUT, import_render.RGBA_OUTPUT),
-                    (light_mix.CABLE_INPUT, import_render.LPES_OUTPUT)], str(wires))
+                    (light_mix.CABLE_INPUT, V1['lpe'])], str(wires))
     wired = reader.inputConnections()
     check(f'{label}: a wire on the old beauties chars field is on the chars output',
           len(wired) == 1 and wired[0].inputNode().path() == native.path()
@@ -449,6 +464,15 @@ def check_load_old_layout(label):
     close(f'{label}: the reopened old mix at defaults equals its beauty',
           render_average(mix), CHARS_BEAUTY)
     reader.destroy()
+    # And back to 2.0, as a 1.0 comp is tidied: the mix stays on rgba, lpe.
+    native = import_render.change_version(native, '2.0')
+    wires = sorted((c.inputIndex(), c.outputIndex()) for c in mix.inputConnections())
+    check(f'{label}: a 1.0 made a 2.0 keeps its light mix on beauty and lpe',
+          native.type().name() == 'th::import_render::2.0'
+          and wires == [(light_mix.BEAUTY_INPUT, import_render.RGBA_OUTPUT),
+                        (light_mix.CABLE_INPUT, import_render.LPES_OUTPUT)],
+          f'{native.type().name()} {wires}')
+    close(f'{label}: the 2.0 mix at defaults equals its beauty', render_average(mix), CHARS_BEAUTY)
 
 
 def check_channel_switch(shot_uri, label):
@@ -480,7 +504,7 @@ def check_old_all_channels(node, label, want_fields):
     dive, the null's wire moves to the node's chars output, and wires on
     AOVs that #67 moved to lpe or matte move to those unpacks."""
     native = node.native()
-    for output in (import_render.LPES_OUTPUT, import_render.MATTES_OUTPUT):
+    for output in (import_render.LPE, import_render.MATTE):
         companion = node.find_unpack(output)
         if companion is not None:
             companion.destroy()
@@ -492,7 +516,7 @@ def check_old_all_channels(node, label, want_fields):
     old_fields = ['default', 'chars'] + want_fields
     unpack = native.parent().createNode('cableunpack', f'{native.name()}_aovs')
     unpack.setUserData(import_render.UNPACK_MARK, native.name())
-    unpack.setInput(0, native, import_render.AOVS_OUTPUT)
+    unpack.setInput(0, native, V1['aov'])
     unpack.parm('fields').set(len(old_fields))
     for index, field in enumerate(old_fields, start=1):
         unpack.parm(f'fieldname{index}').set(field)
@@ -504,7 +528,7 @@ def check_old_all_channels(node, label, want_fields):
     matte.setInput(0, unpack, old_fields.index('chars_objid_hero'))
     node.parm(import_render.UNPACK_PARM).set(1)
     node.execute()  # as opening the workfile does
-    mattes = node.find_unpack(import_render.MATTES_OUTPUT)
+    mattes = node.find_unpack(import_render.MATTE)
     check(f'{label}: an old import gets its lpes and mattes packs back', node.has_packs())
     check(f'{label}: the old unpack keeps only the other AOVs',
           list(unpack.outputLabels()) == ['chars_depth'], str(unpack.outputLabels()))
@@ -672,8 +696,8 @@ def check_cache(label):
     want = {f.name(): int(f.name() == beauty) for f in files}
     check(f'{label}: by default the beauty read comes from its cache, the AOV reads raw',
           picks() == want and 1 in want.values() and 0 in want.values(), str(picks()))
-    check(f'{label}: so the channel outputs are cached, as cached_outputs says',
-          node.cached_outputs() == set(import_render.CHANNEL_OUTPUT_NAMES), str(node.cached_outputs()))
+    check(f'{label}: so beauty and layers are cached, as cached_outputs says',
+          node.cached_outputs() == {'rgba', import_render.LAYERS}, str(node.cached_outputs()))
     parm(import_render.CACHE_AOVS_PARM).set(1)
     check(f'{label}: Cache AOVs Too caches every read', set(picks().values()) == {1}, str(picks()))
     parm(import_render.CACHE_PARM).set(0)
@@ -731,13 +755,13 @@ def check_all_channels(shot_uri, label):
     """Channel ``*``: every channel in one node; returns its export and the
     submit, for the worker. The comp is the all-channels import's rgba into
     its own export_comp, in a fresh workfile."""
-    print(f'--- {label}: one import for all channels')
+    print(f'--- {label}: one 1.0 import for all channels (a beauty output each)')
     hou.hipFile.clear(suppress_save_prompt=True)
     hou.playbar.setFrameRange(FIRST, LAST)
     hou.setFrame(FIRST)
     use_context(shot_uri)
     copnet = hou.node('/stage').createNode('copnet', 'comp')
-    node = import_render.create(copnet, 'import_all')
+    node = import_render.create(copnet, 'import_all', version='1.0')
     node.set_channel_name(comp.ALL_CHANNELS)
     node.execute()
     check(f'{label}: the Channel menu offers All channels',
@@ -773,7 +797,7 @@ def check_all_channels(shot_uri, label):
     check_old_all_channels_rgba(node, label, over)
 
     mix = light_mix.create(copnet, 'mix_all')
-    mix.native().setInput(0, node.native(), import_render.AOVS_OUTPUT)
+    mix.native().setInput(0, node.native(), V1['aov'])
     try:
         mix.sync_rows()
         refused = False
@@ -786,13 +810,12 @@ def check_all_channels(shot_uri, label):
     node.parm(import_render.UNPACK_PARM).set(1)
     node.execute()  # as the AOV Outputs callback does
     want_unpacks = {
-        import_render.LPES_OUTPUT: (['chars_beauty_key', 'chars_beauty_rim'], ['RGB', 'RGB']),
-        import_render.MATTES_OUTPUT: (['chars_objid_hero'], ['Mono']),
-        import_render.AOVS_OUTPUT: (['chars_depth'], ['RGB']),
+        import_render.LPE: (['chars_beauty_key', 'chars_beauty_rim'], ['RGB', 'RGB']),
+        import_render.MATTE: (['chars_objid_hero'], ['Mono']),
+        import_render.AOV: (['chars_depth'], ['RGB']),
     }
-    for output, (fields, types) in want_unpacks.items():
-        name = import_render.OUTPUTS[output]
-        unpack = node.find_unpack(output)
+    for name, (fields, types) in want_unpacks.items():
+        unpack = node.find_unpack(name)
         check(f'{label}: AOV Outputs adds a Cable Unpack on {name}', unpack is not None)
         if unpack is None: continue
         check(f'{label}: the {name} unpack has one output per field',

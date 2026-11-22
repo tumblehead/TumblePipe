@@ -5,6 +5,27 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.120.1
+
+### Farm Submit's `department` no longer pins the Render cut
+
+`open_submit_jobs_dialog(..., department=...)` and `SubmitJobsDialog(...,
+department=...)` now pin only the Playblast **Up to** to that department; the
+Render **Up to** stays each shot's configured cut, else its latest department
+turned on (Remy, 2026-11-20). A tool of your own that opens Farm Submit to
+render up to a given department passes `render_department=` as well, as
+th::import_render's **Render** button now does.
+
+### A farm render through a camera that is not on the stage is refused
+
+The collapse job now fails a render whose RenderSettings `camera` names a
+prim the composed stage does not have (typically `/cameras/camera1`, the
+default of Houdini's Karma and Render Settings LOPs, left as created in a
+department workfile), naming the cameras the stage has. Such renders used to
+come back from no camera. Set the Camera on that department's render settings
+node and publish, or pick the camera in Farm Submit's new **Camera** field.
+A settings prim with no `camera` target at all is left to husk, as before.
+
 ## v1.119.0
 
 ### Python names removed or moved

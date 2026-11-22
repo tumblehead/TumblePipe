@@ -103,6 +103,18 @@ impl TimelineView {
         self.held(first)
     }
 
+    /// Showing `shown` frames from `first` (an end of the strip's thumb
+    /// dragged): never fewer than [`SHOWN_MIN`] nor more than the whole
+    /// timeline, inside it.
+    #[must_use]
+    pub(crate) fn showing(self, first: f64, shown: usize) -> Self {
+        if !first.is_finite() {
+            return self;
+        }
+        let shown = shown.clamp(SHOWN_MIN.min(self.span), self.span);
+        Self { shown, ..self }.held(first)
+    }
+
     /// Zoomed by `factor` (above 1: in, fewer frames shown) about frame
     /// `about`, which stays where it is across the width unless an end of
     /// the timeline is reached. Never fewer than [`SHOWN_MIN`] frames nor
@@ -165,6 +177,7 @@ mod tests {
         Zoom(f64, f64),
         FitTo(i64, i64),
         Changed(i64),
+        Showing(f64, usize),
     }
 
     fn doing() -> impl Strategy<Value = Do> {
@@ -174,6 +187,7 @@ mod tests {
             (0f64..1.0, 0.2f64..5.0).prop_map(|(across, factor)| Do::Zoom(across, factor)),
             (0i64..5000, 0i64..5000).prop_map(|(a, b)| Do::FitTo(a, b)),
             (0i64..6000).prop_map(Do::Changed),
+            (-500f64..6000.0, 0usize..7000).prop_map(|(first, shown)| Do::Showing(first, shown)),
         ]
     }
 
@@ -184,6 +198,7 @@ mod tests {
             Do::Zoom(across, factor) => view.zoomed(view.first() + across * view.shown() as f64, factor),
             Do::FitTo(from, to) => view.fitted_to(from, to),
             Do::Changed(length) => view.changed(length, tail),
+            Do::Showing(first, shown) => view.showing(first, shown),
         }
     }
 

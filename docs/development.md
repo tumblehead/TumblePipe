@@ -381,6 +381,17 @@ widget stacks involved are pure PySide6:
   newest `.tools/hpm-fetch` one):
   `uv run --python 3.12 --with pyside6 python scripts/verify_submit_playblast_section.py`.
 
+- `verify_submit_up_to_camera.py` — the Farm Submit dialog's Render Up to,
+  Camera field and stale legend on the real dialog over the template project
+  (Remy, 2026-11-20): the workfile's department pins only the Playblast cut
+  (th::import_render's `render_department` pins the Render cut); the Up to
+  menus list only departments on for every ticked shot; a typed or picked
+  camera pins and is sent, an emptied one is not; a department's
+  `/cameras/camera1` shows as the placeholder with a note naming Houdini's
+  default; the stale legend sits under the grid. The decisions themselves
+  are `tests/test_farm_submit_up_to.py`, `test_farm_submit_camera.py` and
+  `test_farm_submit_stale.py`.
+
 - `verify_archive_app.py` — the archive window end to end, offscreen: read
   a small project, refuse a bad part size, write a split archive, check it,
   restore it under a new name. Run it with Houdini's bundled Python (it has
@@ -783,6 +794,12 @@ workspace:
   feature, default on; on Linux it builds against `libasound2-dev` and
   links `libasound.so.2`): a movie take's sound under its clip, and while there
   is any, playback keeps to the samples played, else to the wall clock.
+  `waveform.rs` is an audio clip's waveform: `Peaks` (min/max per bucket
+  at levels 128 sample frames and 8x coarser each) made beside the decoded
+  `Sound` in `entries::resolve`, off the UI thread; `range` reads the
+  coarsest level with a bucket in the span; `bars` makes one bar per pixel
+  column of the clip on screen through its in point, gain and fades
+  (`editor/waves.rs` places it as `place_sounds` places the sound).
   `colour.rs` bakes the chosen display/view into a 3D LUT through `ocio-rs` (which
   builds OpenColorIO from source); every render frame is drawn through it.
   `take_menu.rs` builds a shot clip's Source, Department and Version
@@ -1297,7 +1314,13 @@ The tests:
   Farm Manager's *Preview in Cinedex* passes `--fps` and `--expect` from
   `farm.manager.frames_preview.launch_options`; the frame list is read by
   `th_playlist::frame_list` (no steps in `FrameRanges`, so a separate
-  grammar), held to the Python by `test_expect_parity`.
+  grammar), held to the Python by `test_expect_parity`. Before a job's
+  first frame, `frames_preview.job_target` hands over the folder the frames
+  will land in (`waiting_folder`, which need not exist yet) for a job that
+  has not ended and has an `--expect` list; Cinedex's
+  `frames_view::Source::read_or_wait` then opens `reel::Reel::waiting` (the
+  list as gaps, stand-in files never read) and the two-second rescan swaps
+  in the folder's real reel once frames land.
   The app icon: `scripts/cinedex_icon.py` draws it (stdlib only; one shape
   list to SVG and to PNG/ICO, small sizes simplified) into
   `src/cinedex/cinedex/icon/`; rerun it after changing the drawing
@@ -1370,6 +1393,28 @@ The tests:
   no clip); `tracks/tags.rs` words the tag beside a drag (which tracks
   follow a trim and which stay); `tracks/picks.rs` finds the gap under a
   frame and the clips of a Shift+click range or a dragged box;
+  `tracks/sweep.rs` the frames an Alt+drag along empty video track sweeps
+  (Remy's RFE, 2026-11-22: from the frame pressed to the one under the
+  pointer, held inside the gap pressed in, so it never covers a clip; Alt
+  because a plain drag there is the box and Alt on a clip its slip or
+  roll), sent on release as `Gesture::Sweep`, which
+  `editor/range_shot.rs` turns into the New shot dialog over those frames
+  (`Dialog::NewShot`'s `place`, "Create the shot now" ticked): Create Shot
+  makes the shot at once through `master::apply` of a `Change::Create`
+  (the publish's own path: `entities::create_shot`, then the Multis), its
+  frames `shot_sync::new_shot_frames` from `master::new_shot_start`, and
+  lays its clip over the frames (`editing::put`, laying over); Plan Shot
+  puts a planned one, Placeholder (`Message::Alternate`) a slug.
+  `editor/shot_sync.rs` is Edit > Sync Shot Ranges (on by default, per
+  session): on the master edit's working version, every edit, undo and redo
+  goes through `changed_by_edit`, which compares the shot uses of `seen`
+  (the cut before) and the cut now and writes each made shot's moved end
+  through `th_pipe::shot_sync` (pure `synced`/`plan`, guarded `write`: the
+  range on disk must still be the Shots bin's, and the file unwritten since
+  that read, `Config::set_own_keys_guarded`); while it syncs, `Open` gives
+  shot sources any frame, so an edge trims past the shot's frames. Both
+  are driven through real pointer events in `wiring_tests/range_shot.rs`
+  on projects on disk;
   `editor/gestures.rs` turns the tracks' `Gesture` (`Range`, `Gap`, `Box`)
   into the selection, keeps the anchor a range is taken from, closes a gap
   (`Op::Shift` on the clip after it) and, after every change of the cut,
@@ -1380,7 +1425,9 @@ The tests:
   timeline shown (`TimelineView`: first frame and frames shown, zoomed
   about a frame, scrolled, fitted to the whole or to the clips, kept
   through edits) and `tracks/overview.rs` the strip under the tracks with
-  its thumb. The tracks draw and hit-test through `first` and `total`, so
+  its thumb (a scrollbar: body drags scroll, end drags `ShowFrames`, a
+  press beside it pages; its draw reads its held grip from the store,
+  which prunes any state no draw reads, so the grip outlives a redraw). The tracks draw and hit-test through `first` and `total`, so
   a scrolled press is on the frame drawn under it, and a clip scrolled
   under the names' column is neither drawn nor pressed. The wheel is the
   tracks' only with Ctrl/Cmd (zoom), Shift or a sideways turn (scroll);
@@ -1560,7 +1607,9 @@ The tests:
   (`review_playlist.py`, `paths/review.py`, `paths/render.py`, as
   `th_playlist::Shot`), and creating shots and retiring entities
   (`shot_batch.create`, `entity_files.delete_entity`,
-  `groups.drop_member_everywhere`). Its JSON writes are Python's
+  `groups.drop_member_everywhere`). `shot_sync` (the master's trims
+  setting shot frames) has no Python twin, so no parity test: its rules
+  are its own proptests. Its JSON writes are Python's
   `json.dump(indent=4)` byte for byte (`ensure_ascii`, `\r\n` on Windows),
   and a rename over a file another process holds open retries for 5 s as
   `util.io.replace_file` does. `edit_files` is an edit's files (working
@@ -1818,7 +1867,7 @@ Qt has no fonts, so text renders as boxes; layout, colours and checkboxes are
 true). It checks that the grid lists the context's terminal entities with one
 publish column per publishable department in pool order; that an open for one
 shot ticks only that shot's Render cell and the opened-from department pins
-both preview cuts; that the status scan finishes with no cell pending; that
+the Playblast cut but not the Render cut; that the status scan finishes with no cell pending; that
 column headers, sequence rows, the filter and **Select stale** tick exactly
 what they should; that a ticked row resolves to exactly its ticked publish
 departments (`pub_departments`) over its own frame range; that a real staged
@@ -2303,6 +2352,21 @@ every shot; and that an asset target is refused before anything is written.
 The target rules and the routing are `tests/test_export_targets.py`. The
 `hython` preflight stage runs it (`PREFLIGHT_HYTHON=verify_export_targets.py`
 runs it alone).
+
+## Multi light publish harness
+
+`scripts/verify_multi_light_publish.py` runs the farm's publish worker on a
+Multi's light workfile in a throwaway project (two shots with animation
+exports, the Multi on a shared timeline), with one member's template export
+node bypassed for a new one after its lights. It checks each member gets a
+light version with its lights, that the staged build and the stage a
+render collapses (cut at light and at render) have them, and that a new
+animation export keeps them. The worker used to publish the first export
+node of the shot and department, bypassed or not, so that shot rendered
+unlit (Auguu, 2026-11-21); the worker and the publish window now pick
+nodes by one rule, `pipe.publish_scope`, and `tests/test_publish_worker.py`
+pins it. It needs the tumbleResolver, so the `hython` stage skips it
+without one (`PREFLIGHT_HYTHON=verify_multi_light_publish.py` runs it alone).
 
 ## Changing a department template
 
@@ -3335,9 +3399,17 @@ deliberately have none.
 ## What a release publishes
 
 A version tag starts `.woodpecker/build-{linux,macos,windows}.yml` and then
-`release.yml`. Each is a thin wrapper around `.ci/ci.sh`, which logs into
-Infisical (every secret comes from there, by its key name), installs hpm and
-uv, and runs `.ci/build_platform.py` or `.ci/release_tumblepipe.py`.
+`release.yml`. Each is a thin wrapper around `.ci/ci.sh`, which reads the
+settings that are not secrets from `.ci/release.env` (hpm's version among
+them), installs hpm and uv, and runs `.ci/build_platform.py` or
+`.ci/release_tumblepipe.py`. The tumblehead org's token and signing key are
+Woodpecker repo secrets (`tumblehead_ci_token`, `creator_signing_key`,
+`creator_signing_key_id`) that Flux writes, readable by tag pipelines only;
+every tag is protected, so only soren-n and Magzor2k can start one.
+`github_token` (the mirror) is a plain Woodpecker secret.
+
+A manual pipeline without `RUN=tests` is a dry run of the three builds:
+each builds and packs, unsigned, and uploads nothing.
 
 To run the tests on all three workers without releasing, start a manual
 pipeline with the variable `RUN=tests` (`tests/README.md`, "On the build

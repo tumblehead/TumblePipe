@@ -15,12 +15,13 @@ status scan is ``tumblepipe.farm.submit.status``.
 The settings stay the per-entity tri-state form it has been since the
 multi-entity rework: left alone a field is *unpinned* and every entity uses
 its own configured value (``⟨per entity⟩`` when they disagree); touching it
-*pins* it for the whole submission. Samples, Motion blur and DOF are the
-exception: they override the scene's render settings, so unpinned they show
-``⟨from scene⟩`` and send nothing; once the published layers are read they
-name the scene's value instead (``from scene: 128``, ``varies: 64–256``;
-``farm.submit.settings.scene_placeholder``). The read-only Camera row and
-those scene values are looked up by ``tumblepipe.farm.submit.camera``.
+*pins* it for the whole submission. Camera, Samples, Motion blur and DOF
+are the exception: they override the scene's render settings, so unpinned
+they show ``⟨from scene⟩`` and send nothing; once the published layers are
+read they name the scene's value instead (``from scene: 128``, ``varies:
+64–256``; ``farm.submit.settings.scene_placeholder``). The scene's camera
+and those values are looked up by ``tumblepipe.farm.submit.camera``, which
+also decides the Camera field's menu and the note under it.
 Resolution order and the rules live in ``submit_settings``. The grid chooses the *steps*; the form never did.
 
 Submit first shows a review over the window (``farm_submit_ui.ReviewSheet``:
@@ -94,6 +95,7 @@ from tumblepipe.farm.submit import grid as grid
 from tumblepipe.farm.submit import remembered
 from tumblepipe.util.qt_lifetime import release_kept_references
 from tumblepipe.farm.submit import review as submit_review
+from tumblepipe.farm.submit import stale as stale_words
 from tumblepipe.farm.submit import status as farm_status
 from tumblepipe.farm.submit import camera as render_camera
 from tumblepipe.farm.submit import settings as resolve
@@ -186,7 +188,7 @@ _COLUMN_TIPS = {
 _STATE_LINES = {
     grid.PUBLISH: (
         (grid.CURRENT, "exported since the workfile was last saved"),
-        (grid.STALE, "workfile saved after its last export"),
+        (grid.STALE, "workfile saved after its latest export: the newest work may not be exported"),
         (grid.NEVER, "never exported"),
         (grid.UNCLAIMED, "(dim) only a Multi's workfile, which never exported it"),
         (grid.NONE, "no workfile: nothing to publish"),
@@ -232,7 +234,7 @@ TIPS = {
             "no workfile of its own: its Multi's workfile has never exported "
             "it, so Select stale skips it (tick it to publish from the Multi)"
         ),
-        grid.STALE: "the workfile was saved after the last export",
+        grid.STALE: stale_words.STALE_PUBLISH_TIP,
         grid.CURRENT: "exported since the last workfile save",
         grid.PENDING: "reading status…",
         grid.OFF: (
@@ -709,7 +711,7 @@ class _PinnedField:
     def __init__(self, key: str, widget: QWidget, kind: str) -> None:
         self.key = key
         self.widget = widget
-        self.kind = kind  # 'spin' | 'check' | 'combo' | 'toggle' | 'line'
+        self.kind = kind  # 'spin' | 'check' | 'combo' | 'toggle' | 'line' | 'editcombo'
         self.pinned = False
 
     # ── state ──────────────────────────────────────
@@ -759,6 +761,9 @@ class _PinnedField:
             # Rows: placeholder, yes, no.
             index = w.currentIndex()
             return resolve.MIXED if index <= 0 else index == 1
+        if self.kind == 'editcombo':
+            # An editable combo (the Camera): its text, empty is unset.
+            return w.currentText().strip() or resolve.MIXED
         text = w.text().strip()
         return text or resolve.MIXED
 
@@ -784,6 +789,8 @@ class _PinnedField:
                 w.setCurrentIndex(index if index > 0 else 0)
         elif self.kind == 'toggle':
             w.setCurrentIndex(0 if value is None else (1 if value else 2))
+        elif self.kind == 'editcombo':
+            w.setEditText('' if value is None else str(value))
         else:
             w.setText('' if value is None else str(value))
 
@@ -922,7 +929,7 @@ class _ContextPane(QWidget):
         dialog: The owning dialog; the footer and accept/close are its.
         entity_uris: Entities to start with ticked, Multis already expanded.
         context: ``'shots'`` or ``'assets'``.
-        department: Department to pin the preview cuts to, or ``None``.
+        department: Department to pin the Playblast cut to, or ``None``.
         tick_kinds: Step kinds to tick for ``entity_uris``.
         channels: Render channels to open checked, or ``None`` for the
             usual seed (``settings.opened_channels``).
@@ -939,6 +946,7 @@ class _ContextPane(QWidget):
         tick_kinds: Sequence[str] = (grid.RENDER,),
         channels: Sequence[str] | None = None,
         active: Sequence[str] = (),
+        render_department: str | None = None,
     ) -> None:
         super().__init__(dialog)
         self._dialog = dialog
@@ -946,6 +954,10 @@ class _ContextPane(QWidget):
         self._noun = grid.context_noun(context)
         # Department the dialog was opened from (a loaded workfile), or None.
         self._open_department = department or None
+        # The Render cut the opener asked for outright (th::import_render's
+        # concrete Department), or None: the workfile's department no longer
+        # pins it (Remy, 2026-11-20).
+        self._open_render_department = render_department or None
         # Channels the opener asked for (import_render's Channel), or None.
         self._open_channels = tuple(channels) if channels else None
         # The open workfile's comps without a th::import_render, by shot
@@ -1017,6 +1029,9 @@ class _ContextPane(QWidget):
         self._states: dict = {}
         self._statuses: dict[str, farm_status.RowStatus] = {}
         self._warnings: dict[str, list[str]] = {}
+        # Each row's Warnings tone (``grid.ResolvedRow.tone``): a row whose
+        # only note is a stale department reads calm, not amber.
+        self._warning_tones: dict[str, str] = {}
         self._zebra: set = set()
         self._hidden: set = set()
         self._items: dict[str, QTreeWidgetItem] = {}
@@ -1050,7 +1065,16 @@ class _ContextPane(QWidget):
         body = QHBoxLayout()
         body.setSpacing(12)
         root.addLayout(body, 1)
-        body.addWidget(self._build_grid(), 1)
+        grid_column = QVBoxLayout()
+        grid_column.setSpacing(4)
+        grid_column.addWidget(self._build_grid(), 1)
+        # What "stale" means, where the label shows (Remy, 2026-11-20): it
+        # read as an alarm while only a tooltip explained it.
+        self._stale_legend = QLabel(stale_words.STALE_LEGEND)
+        self._stale_legend.setWordWrap(True)
+        self._stale_legend.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        grid_column.addWidget(self._stale_legend)
+        body.addLayout(grid_column, 1)
         body.addWidget(self._build_forms())
 
         # The last opening's pins first, then the open workfile's department:
@@ -1766,7 +1790,10 @@ class _ContextPane(QWidget):
             if warnings:
                 font.setPixelSize(12)
                 painter.setFont(font)
-                painter.setPen(QColor(WARNING_COLOUR))
+                # A stale department alone is a note (the artist's call),
+                # in the quiet text colour; anything else stays amber.
+                calm = self._warning_tones.get(uri) == 'note'
+                painter.setPen(QColor(TEXT_SECONDARY if calm else WARNING_COLOUR))
                 painter.drawText(
                     rect.adjusted(10, 0, -4, 0), Qt.AlignVCenter,
                     painter.fontMetrics().elidedText("; ".join(warnings), Qt.ElideRight, rect.width() - 14),
@@ -2040,6 +2067,23 @@ class _ContextPane(QWidget):
         """
         entry = _PinnedField(key, widget, kind)
         self._fields[key] = entry
+        if kind == 'editcombo':
+            # Typed (a user-only textEdited) or picked from the menu (a
+            # user-only activated): pinned. Emptied: back to the scene's.
+            def typed(text, e=entry):
+                if text.strip():
+                    e.pin()
+                else:
+                    e.seed(resolve.MIXED)
+                self._changed()
+
+            def picked(_index, e=entry):
+                e.pin()
+                self._changed()
+
+            widget.lineEdit().textEdited.connect(typed)
+            widget.activated.connect(picked)
+            return widget
         signal_name = {
             'spin': 'valueChanged', 'check': 'clicked',
             'combo': 'activated', 'toggle': 'activated', 'line': 'textEdited',
@@ -2361,14 +2405,35 @@ class _ContextPane(QWidget):
         self._rnd_dept.activated.connect(lambda *_a: self._on_cut_changed())
         form.addRow("Up to:", self._rnd_dept)
 
-        # Read-only: the camera the published layers in the cut name.
-        self._rnd_camera = QLabel("")
-        self._rnd_camera.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        # The camera (Remy, 2026-11-20): a farm override like Samples. Left
+        # empty nothing is sent and the scene's camera renders, shown as the
+        # placeholder (read off the published layers in the cut); typed or
+        # picked, the farm renders through it (farm.submit.camera).
+        self._rnd_camera = QComboBox()
+        self._rnd_camera.setEditable(True)
+        self._rnd_camera.setInsertPolicy(QComboBox.NoInsert)
         # A long path must not widen the fixed-width panel; the tooltip
         # carries it in full.
-        self._rnd_camera.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        self._rnd_camera.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        form.addRow("Camera:", self._rnd_camera)
+        self._rnd_camera.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self._rnd_camera.setMinimumContentsLength(8)
+        self._rnd_camera.lineEdit().setPlaceholderText(FROM_SCENE_TEXT)
+        self._register(resolve.CAMERA_KEY, self._rnd_camera, 'editcombo')
+        camera_layout = QHBoxLayout()
+        camera_layout.setSpacing(6)
+        camera_layout.setContentsMargins(0, 0, 0, 0)
+        camera_layout.addWidget(self._rnd_camera, 1)
+        camera_layout.addWidget(self._revert(resolve.CAMERA_KEY))
+        self._rnd_camera_row = QWidget()
+        self._rnd_camera_row.setLayout(camera_layout)
+        form.addRow("Camera:", self._rnd_camera_row)
+        # Why the scene's camera may be worth a look (camera.camera_note):
+        # Houdini's /cameras/camera1, or not the shot's configured camera.
+        self._rnd_camera_note = QLabel("")
+        self._rnd_camera_note.setWordWrap(True)
+        self._rnd_camera_note.setStyleSheet(f"color: {TEXT_SECONDARY};")
+        form.addRow("", self._rnd_camera_note)
+        form.setRowVisible(self._rnd_camera_note, False)
+        self._rnd_form = form
 
         # Channels — a checkable menu of the channels the ticked entities
         # actually define. The menu spans the submission and the checks are
@@ -2559,7 +2624,7 @@ class _ContextPane(QWidget):
             # and frames, built on the farm, never denoised or synced to an
             # edit (as the studio's own farm render).
             for row in (
-                self._rnd_camera, frames_row, self._rnd_frame_list,
+                self._rnd_camera_row, self._rnd_camera_note, frames_row, self._rnd_frame_list,
                 self._rnd_frame_timeline,
                 self._rnd_frame_list_note, into_row, self._rnd_into_note,
                 rolls_row, denoise_row, modes_row,
@@ -2881,37 +2946,78 @@ class _ContextPane(QWidget):
             self._show_camera(self._camera_keys())
 
     def _show_camera(self, keys: list[tuple[str, str, str]]) -> None:
-        label = self._rnd_camera
+        """Fill the Camera field: its menu, what it shows while empty (the
+        scene's camera), its tooltip and the note under it
+        (``farm.submit.camera``: ``effective_camera``, ``camera_note``,
+        ``camera_options``)."""
+        box = self._rnd_camera
+        entry = self._fields[resolve.CAMERA_KEY]
+        override = entry.value() if entry.pinned else None
+        if override is resolve.MIXED:
+            override = None
+        configured = {
+            key[0]: render_camera.configured_camera(self._props.get(key[0], {}))
+            for key in keys
+        }
         known = [self._cameras[k] for k in keys if k in self._cameras]
-        if not keys or len(known) < len(keys):
-            label.setText("Reading…" if keys else "—")
-            label.setToolTip("")
+        complete = bool(keys) and len(known) == len(keys)
+        found_list = known if complete else []
+        options = render_camera.camera_options(
+            [c for c in configured.values() if c], found_list,
+        )
+        current = box.currentText()
+        if [box.itemText(i) for i in range(box.count())] != options:
+            box.blockSignals(True)
+            try:
+                box.clear()
+                box.addItems(options)
+                box.setEditText(current)
+            finally:
+                box.blockSignals(False)
+        if not complete:
+            box.lineEdit().setPlaceholderText("Reading…" if keys else FROM_SCENE_TEXT)
+            box.setToolTip("")
+            self._rnd_camera_form_note("")
             self._show_scene_values(keys, [])  # back to plain ⟨from scene⟩
             return
-        lines = []
+        lines, scene, notes = [], set(), []
         for key, found in zip(keys, known):
             name = self._uri_objects[key[0]].segments[-1]
-            if found.camera:
-                lines.append(f"{name}: {found.camera}  ({found.source}, {key[1]})")
-            else:
-                lines.append(f"{name}: not found  {found.error or ''}".rstrip())
-        cameras = {found.camera for found in known}
-        if len(cameras) == 1 and None not in cameras:
-            label.setText(known[0].camera)
-            label.setStyleSheet(f"color: {TEXT_PRIMARY};")
-        elif cameras == {None}:
-            label.setText("not found")
-            label.setStyleSheet(f"color: {STALE_COLOUR};")
+            if found.error:
+                lines.append(f"{name}: not read  {found.error}")
+                continue
+            camera, source = render_camera.effective_camera(None, found, configured[key[0]])
+            scene.add(camera)
+            lines.append(
+                f"{name}: {camera}  ({source}, {key[1]})" if camera
+                else f"{name}: none named"
+            )
+            note = render_camera.camera_note(override, found, configured[key[0]])
+            if note:
+                notes.append(note if len(keys) == 1 else f"{name}: {note}")
+        if len(scene) == 1 and None not in scene:
+            placeholder = f"from scene: {next(iter(scene))}"
+        elif scene and scene != {None}:
+            placeholder = f"varies: {PER_ENTITY_TEXT}"
         else:
-            label.setText(PER_ENTITY_TEXT)
-            label.setStyleSheet(f"color: {TEXT_SECONDARY};")
-        label.setToolTip(
-            "The RenderSettings camera the latest published layers in the "
-            "render cut name (strongest department first, then the project "
-            "default). The farm renders through the composed stage's "
-            "camera.\n\n" + "\n".join(lines)
+            placeholder = "from scene: none named"
+        box.lineEdit().setPlaceholderText(placeholder)
+        box.setToolTip(
+            "The camera the farm renders through. Left empty, nothing is sent "
+            "and each shot renders through its scene's camera: the one the "
+            "latest published render settings in the render cut name "
+            "(strongest department first), else the shot's camera setting, "
+            "else the project default. Pick or type a camera to render every "
+            "ticked shot through it instead; the farm refuses one that is not "
+            "on the shot's stage.\n\n" + "\n".join(lines)
         )
+        self._rnd_camera_form_note("\n".join(notes))
         self._show_scene_values(keys, known)
+
+    def _rnd_camera_form_note(self, text: str) -> None:
+        """Show ``text`` under the Camera field, or hide the row when empty."""
+        self._rnd_camera_note.setText(text)
+        self._rnd_form.setRowVisible(self._rnd_camera_note, bool(text))
 
     def _show_scene_values(self, keys, known) -> None:
         """Say what ``⟨from scene⟩`` means on Samples, Motion blur and DOF.
@@ -2970,17 +3076,28 @@ class _ContextPane(QWidget):
     # ── Seeding ───────────────────────────────────────────
 
     def _apply_open_department(self) -> None:
-        """Pin the department the dialog was opened from.
+        """Pin the Playblast cut to the department the dialog was opened from.
 
-        Submitting from a lighting workfile almost always means "preview what
-        I am looking at", for every entity — an explicit intent, so it pins
-        rather than merely seeding. Skipped when the department is not
-        renderable, or when there is no opened-from department.
+        A playblast from an animation workfile means "show what I am looking
+        at", for every entity — an explicit intent, so it pins rather than
+        merely seeding. Skipped when the department is not renderable, or
+        when there is no opened-from department.
+
+        The Render cut is not pinned by it (Remy, 2026-11-20): a render
+        submitted from a layout or animation workfile then left lighting out,
+        a common mistake. It stays on ``⟨per entity⟩``, each shot's configured
+        cut or else its latest department turned on
+        (``grid.preview_department_fallback``), unless the opener asked for a
+        Render cut outright (``render_department``: th::import_render's
+        concrete Department).
         """
-        name = self._open_department
-        if not name or name not in self._renderable_departments:
-            return
-        for key in ('render_department', 'pb_department'):
+        pins = {
+            'pb_department': self._open_department,
+            'render_department': self._open_render_department,
+        }
+        for key, name in pins.items():
+            if not name or name not in self._renderable_departments:
+                continue
             entry = self._fields.get(key)
             if entry is None:
                 continue
@@ -3011,6 +3128,7 @@ class _ContextPane(QWidget):
         of ticks untouched; growing the submission only re-derives what the
         artist did not set.
         """
+        self._refresh_department_options()
         seeded = self._seed_values()
         self._seeding = True
         try:
@@ -3020,6 +3138,37 @@ class _ContextPane(QWidget):
         finally:
             self._seeding = False
         self._refresh_channel_options(initial=initial)
+
+    def _refresh_department_options(self) -> None:
+        """List only the departments turned on for every row the form
+        speaks for in the Up to menus (``grid.active_departments``; Remy,
+        2026-11-20). A pinned pick the list no longer holds stays listed
+        and picked (``grid.department_options``): ticks never change it."""
+        names = grid.active_departments(
+            self._renderable_departments,
+            [self._props.get(u, {}) for u in self._batch()],
+        )
+        for key in ('render_department', 'pb_department'):
+            entry = self._fields.get(key)
+            if entry is None:
+                continue
+            box = entry.widget
+            pinned = entry.value() if entry.pinned else None
+            if pinned is resolve.MIXED:
+                pinned = None
+            options = grid.department_options(names, pinned)
+            if [box.itemData(i) for i in range(1, box.count())] == options:
+                continue
+            box.blockSignals(True)
+            try:
+                box.clear()
+                box.addItem(PER_ENTITY_TEXT)
+                for name in options:
+                    box.addItem(name, name)
+                if pinned is not None:
+                    entry._write(pinned)
+            finally:
+                box.blockSignals(False)
 
     def _refresh_channel_options(self, *, initial: bool = False) -> None:
         """Repopulate the channel menu from the rows being rendered.
@@ -3170,6 +3319,7 @@ class _ContextPane(QWidget):
     def _recompute_warnings(self) -> None:
         rows = self._resolved_rows()
         self._warnings = {row.uri: row.shown() for row in rows if row.shown()}
+        self._warning_tones = {row.uri: row.tone for row in rows}
         # The timelines show the frames of the same rows the warnings read.
         self._update_timelines(rows)
 
@@ -3432,9 +3582,11 @@ class SubmitJobsDialog(QDialog):
             their context with nothing ticked.
         parent: Parent widget. Pass ``hou.qt.mainWindow()`` from Houdini.
         department: Department the dialog was opened *from* — the loaded
-            workfile's. Pins the Render (and Playblast) cut, so submitting
-            from a lighting workfile previews up to lighting. ``None`` falls
-            back to each entity's ``submission.render.department``.
+            workfile's. Pins the Playblast cut, so a playblast from an
+            animation workfile shows up to animation. The Render cut is not
+            pinned (Remy, 2026-11-20): it stays on each entity's
+            ``submission.render.department``, else its latest department
+            turned on.
         tick_kinds: Step kinds to tick for ``entity_uris`` —
             ``grid.RENDER`` by default, what the Render quick action and
             **Submit Jobs…** open with; ``grid.PUBLISH`` is narrowed to
@@ -3461,6 +3613,7 @@ class SubmitJobsDialog(QDialog):
         tick_kinds: Sequence[str] = (grid.RENDER,),
         channels: Sequence[str] | None = None,
         active: Sequence[str] = (),
+        render_department: str | None = None,
     ) -> None:
         super().__init__(parent)
         self._active = tuple(str(uri) for uri in active)
@@ -3476,6 +3629,7 @@ class SubmitJobsDialog(QDialog):
                 )
         self._opened = (context, list(entity_uris), department, tuple(tick_kinds))
         self._opened_channels = tuple(channels or ())
+        self._opened_render_department = render_department or None
         # One pane per context, built the first time its tab is shown and
         # kept until the dialog closes, so switching back finds its ticks.
         self._panes: dict[str, _ContextPane] = {}
@@ -3590,6 +3744,10 @@ class SubmitJobsDialog(QDialog):
             else:
                 pane = _ContextPane(
                     self, uris, context, department=department, tick_kinds=kinds,
+                    render_department=(
+                        self._opened_render_department
+                        if context == opened_context else None
+                    ),
                     channels=grid.tab_channels(
                         context, opened_context, self._opened_channels,
                     ),

@@ -54,6 +54,8 @@ pub(super) struct State {
     pub focused: bool,
     /// View > Flip Horizontally: the picture is mirrored (`flip`).
     pub flipped: bool,
+    /// Edit > Sync Shot Ranges (`shot_sync`).
+    pub sync_ranges: bool,
     /// The cut's end, one past its last frame: where Go to End parks, so
     /// an Insert there appends (#25).
     pub end: usize,
@@ -129,6 +131,16 @@ fn edit_menu(s: &State) -> Vec<Entry> {
         item("&Lift", Message::Lift, s.writable, named(Named::Delete, NONE)),
         item("Ripple &Delete", Message::RippleDelete, s.writable, named(Named::Delete, SHIFT)),
         item("Add &Marker", Message::Marker, s.writable, letter('m', NONE)),
+        Entry::Separator,
+        // Trims of the master edit's shot clips set the shots' frames
+        // (`shot_sync`): it writes only on the master, so it is offered
+        // whatever the edit, a read-only one too.
+        item(
+            if s.sync_ranges { "\u{2713} Sync Shot Ran&ges" } else { "Sync Shot Ran&ges" },
+            Message::SyncRanges(!s.sync_ranges),
+            s.free,
+            None,
+        ),
         Entry::Separator,
         item("Select &All", Message::SelectAll, s.free, letter('a', COMMAND)),
         item("Deselect", Message::ClearSelection, s.free, named(Named::Escape, NONE)),
@@ -313,6 +325,7 @@ impl Editor {
             audio_hidden: self.track_layout.audio_hidden,
             focused: self.solo.is_some() || self.track_layout.audio_hidden,
             flipped: self.flipped,
+            sync_ranges: self.sync_ranges,
             end: self.end(),
         }
     }
@@ -337,7 +350,7 @@ mod tests {
 
     fn state() -> impl Strategy<Value = State> {
         let show = proptest::option::of(prop_oneof![Just(TakeKind::Render), Just(TakeKind::Playblast)]);
-        (any::<[bool; 9]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
+        (any::<[bool; 10]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
             free: b[0],
             writable: b[0] && b[1],
             named: b[2],
@@ -349,6 +362,7 @@ mod tests {
             audio_hidden: b[6],
             focused: b[6] || b[7],
             flipped: b[8],
+            sync_ranges: b[9],
             end,
         })
     }
@@ -570,6 +584,20 @@ mod tests {
             prop_assert!(key_message(&state, Key::Character('h'), NONE).is_none());
         }
 
+        /// Edit > Sync Shot Ranges is there once, ticked exactly while it
+        /// is on, sends the other state, and can be pressed whenever no
+        /// dialog is open, a read-only edit's too (it writes nothing
+        /// itself, and only ever on the master edit).
+        #[test]
+        fn sync_shot_ranges_toggles(state in state()) {
+            let rows: Vec<Row> = items(&state).into_iter().filter(|r| r.2.starts_with("SyncRanges(")).collect();
+            prop_assert_eq!(rows.len(), 1);
+            let (menu, label, message, enabled, keys) = &rows[0];
+            prop_assert_eq!((*menu, *enabled, keys.is_none()), ("&Edit", state.free, true));
+            prop_assert_eq!(label.starts_with('\u{2713}'), state.sync_ranges);
+            prop_assert_eq!(message, &format!("{:?}", Message::SyncRanges(!state.sync_ranges)));
+        }
+
         /// No two items show the same shortcut.
         #[test]
         fn no_two_items_share_a_shortcut(state in state()) {
@@ -619,6 +647,7 @@ mod tests {
             audio_hidden: false,
             focused: false,
             flipped: false,
+            sync_ranges: true,
             end: 99,
         };
         let letters: Vec<char> = headings(&state)

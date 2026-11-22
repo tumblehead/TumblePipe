@@ -27,9 +27,9 @@ from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QStyle,
-    QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QTreeWidgetItem,
-    QVBoxLayout, QWidget,
+    QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
+    QSpinBox, QSplitter, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget,
+    QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from tumbletrove.asset_browser.core.theme import (
@@ -38,8 +38,8 @@ from tumbletrove.asset_browser.core.theme import (
 )
 
 from tumblepipe.farm.local import queue, runner
-from tumblepipe.farm.manager import cleanup, frames_preview, machine, render_again, rows
-from tumblepipe.util import desktop
+from tumblepipe.farm.manager import cleanup, frames_preview, machine, priority, render_again, rows
+from tumblepipe.util import desktop, value_ladder_qt
 
 log = logging.getLogger(__name__)
 
@@ -81,8 +81,9 @@ WHERE = {rows.LOCAL: 'This machine', rows.FARM: 'Farm'}
 PANE_HEADER_HEIGHT = 30
 
 # Job tree columns.
-NAME, WHERE_COL, STATUS, PROGRESS, TASKS, ERRORS, USER, SUBMITTED = range(8)
-JOB_HEADERS = ['Job', 'Where', 'Status', 'Progress', 'Tasks', 'Errors', 'User', 'Submitted']
+NAME, WHERE_COL, STATUS, PROGRESS, TASKS, ERRORS, PRIORITY, USER, SUBMITTED = range(9)
+JOB_HEADERS = ['Job', 'Where', 'Status', 'Progress', 'Tasks', 'Errors', 'Priority', 'User',
+               'Submitted']
 # Task tree columns.
 (T_TASK, T_FRAMES, T_STATUS, T_PROGRESS, T_WORKER, T_STARTED, T_FINISHED, T_TIME,
  T_ERROR) = range(9)
@@ -95,6 +96,8 @@ KEY_ROLE = Qt.UserRole
 PROGRESS_ROLE = Qt.UserRole + 1
 FINISHED_ROLE = Qt.UserRole + 2
 PATH_ROLE = Qt.UserRole + 3
+# The value a job or batch row's priority editor starts at (``priority.start_value``).
+PRIORITY_ROLE = Qt.UserRole + 4
 
 # Labels of the actions, by command; which are offered depends on the source.
 ACTION_LABELS = {
@@ -305,6 +308,9 @@ class ProgressDelegate(QStyledItemDelegate):
     Finished rows get a faint bar: only live and failed work is loud.
     """
 
+    def createEditor(self, parent, option, index):
+        return None  # A farm row is editable for its Priority cell only.
+
     def paint(self, painter: QPainter, option, index) -> None:
         value = index.data(PROGRESS_ROLE)
         if value is None:
@@ -335,6 +341,45 @@ class ProgressDelegate(QStyledItemDelegate):
         # The text gets the row's full height; the bar's would clip it.
         painter.drawText(option.rect, Qt.AlignCenter, index.data(Qt.DisplayRole) or '')
         painter.restore()
+
+
+class ReadOnlyDelegate(QStyledItemDelegate):
+    """The job list's cells are not edited, but for Priority."""
+
+    def createEditor(self, parent, option, index):
+        return None
+
+
+class PriorityDelegate(QStyledItemDelegate):
+    """The Priority cell of a farm job or batch, edited with a spin box
+    (double-click it). The value is not written into the cell: ``commit``
+    sets it on Deadline and the next read of the farm shows it."""
+
+    def __init__(self, parent, commit) -> None:
+        super().__init__(parent)
+        self._commit = commit
+
+    def createEditor(self, parent, option, index):
+        editor = QSpinBox(parent)
+        editor.setRange(priority.MIN_PRIORITY, priority.MAX_PRIORITY)
+        editor.setToolTip(priority.TOOLTIP)
+        editor.setFrame(False)
+        value_ladder_qt.install(editor, default=50)
+        return editor
+
+    def setEditorData(self, editor, index) -> None:
+        value = index.data(PRIORITY_ROLE)
+        editor.setValue(int(value) if value is not None else 50)
+        editor.selectAll()
+        # Only a value the user changed is sent: leaving a mixed batch's
+        # editor untouched must not level its jobs to the value it showed.
+        editor.setProperty('touched', False)
+        editor.valueChanged.connect(lambda _value, e=editor: e.setProperty('touched', True))
+
+    def setModelData(self, editor, model, index) -> None:
+        editor.interpretText()
+        if editor.property('touched'):
+            self._commit(index, editor.value())
 
 
 class ManagerWindow(QWidget):
@@ -394,6 +439,9 @@ class ManagerWindow(QWidget):
         # A job asked for (select_job) before its row has been read: chosen
         # as soon as a refresh brings it in.
         self._pending_select: str | None = None
+        # The project's priority presets for Set priority (read once, off
+        # the GUI thread; none outside a project).
+        self._presets: list[priority.Preset] = []
 
         self._user, self._project = _identity()
 
@@ -460,6 +508,7 @@ class ManagerWindow(QWidget):
         self._machine_timer.start()
         self._refresh_local()
         self._refresh_farm()
+        self._submit(('presets',), _load_presets)
         self._update_actions()
 
     # ── building ──────────────────────────────────────────
@@ -588,12 +637,17 @@ class ManagerWindow(QWidget):
         tree.setAlternatingRowColors(True)
         tree.setUniformRowHeights(True)
         tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        # Only a farm row's Priority cell edits, on a double-click: an edit
+        # that opens takes the double-click, so a batch row does not fold.
+        tree.setItemDelegate(ReadOnlyDelegate(tree))
         tree.setItemDelegateForColumn(PROGRESS, ProgressDelegate(tree))
+        tree.setItemDelegateForColumn(PRIORITY, PriorityDelegate(tree, self._on_priority_edited))
+        tree.setEditTriggers(QAbstractItemView.DoubleClicked)
         header = tree.header()
         header.setSectionResizeMode(NAME, QHeaderView.Stretch)
         # The short columns fit their text, whatever the font (#46: fixed
         # widths clipped "completed" and "Today 14:03" at 1600 px).
-        for column in (WHERE_COL, STATUS, TASKS, ERRORS, USER, SUBMITTED):
+        for column in (WHERE_COL, STATUS, TASKS, ERRORS, PRIORITY, USER, SUBMITTED):
             header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(PROGRESS, QHeaderView.Interactive)
         tree.setColumnWidth(PROGRESS, 140)
@@ -947,6 +1001,11 @@ class ManagerWindow(QWidget):
         elif kind == 'farm_control':
             self._say(f'{ACTION_LABELS[key[1]]} sent to the farm for {_jobs(key[2])}')
             self._refresh_farm()
+        elif kind == 'farm_priority':
+            self._say(f'Priority {result} set on {_jobs(key[2])} on the farm')
+            self._refresh_farm()
+        elif kind == 'presets':
+            self._presets = result
         elif kind == 'farm_cleanup':
             cleaned, skipped = result
             text = f'Clean-up: {_batches(cleaned.batches)} ({_jobs(cleaned.jobs)}) deleted from the farm'
@@ -1014,6 +1073,15 @@ class ManagerWindow(QWidget):
             self._machine_loading = False
             self._machine_stats = None
             log.debug('Farm Manager: sampling this machine failed', exc_info=error)
+            return
+        if kind == 'presets':
+            log.debug('Farm Manager: no priority presets (no project?)', exc_info=error)
+            return
+        if kind == 'farm_priority':
+            self._say(f'Priority {key[1]} not set on the farm', error=True)
+            QMessageBox.warning(self, 'Farm Manager', f'Setting priority {key[1]} failed:\n\n{error}')
+            # Show what the farm has now, whatever part of it took.
+            self._refresh_farm()
             return
         from tumblepipe.apps.deadline import DeadlineNotInstalled
         if kind == 'farm_jobs':
@@ -1148,6 +1216,7 @@ class ManagerWindow(QWidget):
         submitted = _when(row.submitted)
         item.setText(SUBMITTED, '' if submitted == batch_submitted else submitted)
         item.setToolTip(SUBMITTED, row.submitted)
+        self._fill_priority(item, [row])
         if row.preview_ready:
             item.setToolTip(
                 NAME, f'{row.name}\n{row.id}\nPreview frames ready: '
@@ -1177,7 +1246,26 @@ class ManagerWindow(QWidget):
         submitted = _when(first_submitted)
         item.setText(SUBMITTED, submitted)
         item.setToolTip(SUBMITTED, first_submitted)
+        self._fill_priority(item, jobs)
         return submitted
+
+    def _fill_priority(self, item: QTreeWidgetItem, jobs: list[rows.JobRow]) -> None:
+        """The Priority cell: the job's, or a batch's jobs' (``40–60`` when
+        they differ); editable on a farm row only."""
+        values = [row.priority for row in jobs]
+        item.setText(PRIORITY, priority.text(values))
+        item.setData(PRIORITY, PRIORITY_ROLE, priority.start_value(values))
+        item.setTextAlignment(PRIORITY, Qt.AlignCenter)
+        farm = bool(priority.farm_job_ids(jobs))
+        # Set only on a change: a refresh rewriting the cell would reset an
+        # open editor (Qt hands a changed cell's data to its editor).
+        flags = item.flags()
+        wanted = flags | Qt.ItemIsEditable if farm else flags & ~Qt.ItemIsEditable
+        if wanted != flags:
+            item.setFlags(wanted)
+        item.setForeground(PRIORITY, QColor(TEXT_PRIMARY if farm else TEXT_DIM))
+        item.setToolTip(PRIORITY, priority.TOOLTIP + '\nDouble-click to change it.' if farm else
+                        "This machine runs its queue in order: priority is the farm's.")
 
     def _fill_state(self, item: QTreeWidgetItem, status: str, progress: float,
                     tasks: str, errors: int) -> None:
@@ -1593,6 +1681,8 @@ class ManagerWindow(QWidget):
         menu = QMenu(self)
         menu.setToolTipsVisible(True)
         self._add_job_actions(menu)
+        menu.addSeparator()
+        self._add_priority_menu(menu, selected)
         if len(selected) == 1 and selected[0].source == rows.FARM:
             from tumblepipe.farm.manager.run_here import RUNNABLE
             action = menu.addAction('Run on this machine…', lambda: self._run_here(selected[0]))
@@ -1613,14 +1703,74 @@ class ManagerWindow(QWidget):
                        lambda: _copy('\n'.join(row.name for row in selected)))
         menu.exec(self._jobs.viewport().mapToGlobal(position))
 
+    def _add_priority_menu(self, menu: QMenu, selected: list[rows.JobRow]) -> QMenu:
+        """*Set priority* for the selected farm jobs: the project's presets,
+        then *Other…* for any value."""
+        farm = [row for row in selected if row.source == rows.FARM]
+        current = priority.text(row.priority for row in farm)
+        sub = menu.addMenu(f'{priority.LABEL} ({current})' if current else priority.LABEL)
+        sub.setToolTipsVisible(True)
+        sub.menuAction().setToolTip(priority.TOOLTIP if farm else 'Only farm jobs have a priority to set')
+        sub.setEnabled(bool(farm))
+        start = priority.start_value(row.priority for row in farm)
+        for preset in self._presets:
+            action = sub.addAction(preset.label, lambda v=preset.value: self._set_priority(farm, v))
+            action.setCheckable(True)
+            action.setChecked(bool(farm) and all(row.priority == preset.value for row in farm))
+        if self._presets:
+            sub.addSeparator()
+        sub.addAction('Other…', lambda: self._ask_priority(farm, start))
+        return sub
+
+    def _ask_priority(self, farm: list[rows.JobRow], start: int) -> None:
+        value, ok = QInputDialog.getInt(
+            self, 'Farm Manager',
+            f'Priority for {_jobs(len(farm))} on the farm '
+            f'({priority.MIN_PRIORITY}–{priority.MAX_PRIORITY}, higher renders first):',
+            start, priority.MIN_PRIORITY, priority.MAX_PRIORITY,
+        )
+        if ok:
+            self._set_priority(farm, value)
+
+    def _on_priority_edited(self, index, value: int) -> None:
+        """The Priority cell was edited: its job, or its batch's shown jobs."""
+        item = self._jobs.itemFromIndex(index)
+        if item is None:
+            return
+        key = item.data(NAME, KEY_ROLE)
+        if item.parent() is None and key in self._batch_items:
+            keys = [item.child(i).data(NAME, KEY_ROLE) for i in range(item.childCount())]
+        else:
+            keys = [key]
+        self._set_priority([self._rows_by_id[k] for k in keys if k in self._rows_by_id], value)
+
+    def _set_priority(self, selected: list[rows.JobRow], value: int) -> None:
+        """Set ``value`` on the farm jobs among ``selected`` not at it yet."""
+        value = priority.clamp(value)
+        if not priority.farm_job_ids(selected):
+            self._say('Only farm jobs have a priority to set', error=True)
+            return
+        ids = priority.changed(selected, value)
+        if not ids:
+            self._say(f'Already at priority {value}')
+            return
+        self._say(f'Setting priority {value} on {_jobs(len(ids))}…')
+        self._submit(('farm_priority', value, len(ids)), _farm_set_priority, ids, value)
+
     def _add_preview_action(self, menu: QMenu, selected: list[rows.JobRow]):
         """*Preview in Cinedex* (#85): the selected job's frames, or a batch's
-        best (``frames_preview``), enabled only when there are frames to show
-        and otherwise saying why."""
+        best (``frames_preview``), enabled when there are frames to show or,
+        for a job still rendering, frames to wait for, and otherwise saying
+        why."""
         target = frames_preview.best_target(selected)
         action = menu.addAction(frames_preview.LABEL, lambda: self._preview_in_cinedex(target))
         action.setEnabled(target.enabled)
-        if target.enabled:
+        if target.waiting:
+            action.setToolTip(
+                f'Open {target.row.name} in Cinedex: no frame is rendered yet, '
+                f'they show as they land\n{target.folder}'
+            )
+        elif target.enabled:
             action.setToolTip(f'Show the frames of {target.row.name} in Cinedex\n{target.folder}')
         else:
             action.setToolTip(target.reason)
@@ -1991,6 +2141,17 @@ def _read_report(path: str) -> str:
 def _farm_control(command: str, ids: list[str]) -> str:
     from tumblepipe.farm.manager import deadline_jobs
     return deadline_jobs.control(command, ids)
+
+
+def _farm_set_priority(ids: list[str], value: int) -> int:
+    from tumblepipe.farm.manager import deadline_jobs
+    return deadline_jobs.set_priority(ids, value)
+
+
+def _load_presets() -> list[priority.Preset]:
+    """The active project's priority presets (``config.farm``)."""
+    from tumblepipe.config import farm
+    return priority.presets(farm.list_priority_presets())
 
 
 def _farm_cleanup(chosen: list[cleanup.Removal], kind: str) -> tuple[cleanup.Cleaned, int]:

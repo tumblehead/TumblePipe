@@ -115,31 +115,63 @@ Two limits: the list is read **once, at startup**, so a favourite added
 mid-session appears after the next launch; and with fewer than two
 favourites no menu is written and Alt+F does nothing.
 
-## Alt+D: the selected asset's workfiles
+## Alt+D: jump to a department's workfile
 
-Key **Alt+D**, context `viewer.lop` (a Solaris viewport), label **Open
-Workfile**. Select an asset in the viewport, or any prim inside it, and
-the ring offers one slot per asset department of the project, in pool
-order (up to **9**), labelled with the department's short name in
-capitals (MDL, LKD, RIG, ...) or its name when it has none. Picking one
-opens that department's latest workfile of the selected asset in this
-session, with Houdini's own save prompt for unsaved work; **Shift** opens
-it in a new Houdini instead.
+Key **Alt+D**, over any viewport or network editor (contexts `viewer` and
+`network`), label **Open Workfile**. The ring offers one slot per asset
+department of the project, in pool order (up to **8**), labelled with the
+department's short name in capitals (MDL, LKD, RIG, ...) or its name when
+it has none, with the icon the Asset Browser shows for that department.
+Picking one opens that department's latest workfile in this session;
+**Shift** opens it in a new Houdini instead.
 
-Which asset is selected comes from the
-[entity stamp](composition.md#the-entity-stamp-which-asset-a-prim-belongs-to)
-on the prims, never from their names. The slots show the asset's name
-under the label, and are greyed when the selection belongs to no known
-asset, to more than one, or to an asset that does not have that
-department. An asset exported before the stamp existed is known only
-where a TumblePipe import node brought it in; otherwise it needs a new
-export. When there is no workfile for the department, a warning says so.
+Which asset it opens:
 
-Each slot is an action, `tumblepipe.open_selected.<department>`, offered
-in the `viewer.lop` and `network.lop` contexts, so the Radial editor can
-put it on any other menu. The department list is read **once, at
+- **An asset selected in a Solaris viewport**, or any prim inside it. The
+  asset comes from the
+  [entity stamp](composition.md#the-entity-stamp-which-asset-a-prim-belongs-to)
+  on the prims, never from their names. A selection that spans several
+  assets opens nothing.
+- **Otherwise, the asset of the open workfile.** In a model, rig or any
+  other asset department workfile Alt+D jumps between that asset's
+  departments with nothing selected, over the SOP viewport and the network
+  editor as much as over a Solaris viewport. A shot workfile is no
+  fallback: there, select an asset first.
+
+The slots show the asset's name under the label, the open workfile's own
+department is highlighted, and a slot is greyed when there is no asset or
+the asset does not have that department. An asset exported before the
+stamp existed is known only where a TumblePipe import node brought it in;
+otherwise it needs a new export. When there is no workfile for the
+department, a warning says so.
+
+### Unsaved work: the Autosave slot
+
+The last slot, **Autosave**, is a toggle (it stays open when picked; its
+second line reads *on* or *asks*). It is the Asset Browser's
+**Autosave (version up) on scene change** setting, the same saved choice,
+so switching it here switches it there and the other way round.
+
+- **Off** (the default): a jump with unsaved changes shows Houdini's own
+  save prompt, as before.
+- **On**: a jump in this session from a pipeline workfile with unsaved
+  changes first saves it as its next version, noted *Autosave before
+  opening &lt;department&gt;* (the Save button's Autosave notes its versions
+  *Autosave*), and then opens the other department with no prompt. If the
+  save fails, the failure is reported and the jump does not happen. An
+  untitled or off-pipeline scene still gets Houdini's prompt. **Shift**
+  (a new Houdini) never saves anything.
+
+Each department slot is an action, `tumblepipe.open_selected.<department>`,
+and the toggle is `tumblepipe.open_selected.save_without_asking`; all are
+offered in the `viewer` and `network` contexts, so the Radial editor can
+put them on any other menu. The department list is read **once, at
 startup**: a department added mid-session appears after the next launch.
 With fewer than two asset departments no menu is bound.
+
+The department icons come from TumbleTrove's bundled icon set (groom's
+from TumblePipe's own `asset_browser/icons`), so they show without a
+network connection.
 
 ## The two general actions
 
@@ -258,8 +290,8 @@ and logs nothing, and Shift+Space does nothing.
 
 TumblePipe registers no Houdini hotkeys of its own. The only keys it claims
 are the radial keys above (**Alt+T**, **Alt+R**, **Alt+F**, **Alt+E**
-for the VOP menu over a VOP network, and **Alt+D** over a Solaris
-viewport), and only while `tumbleradial` is
+for the VOP menu over a VOP network, and **Alt+D** over any viewport or
+network editor), and only while `tumbleradial` is
 installed. **Shift+Space** belongs to Radial; TumblePipe only supplies the
 menus it opens. The COP menu claims no key; it uses whichever key Radial's
 own menus open with.

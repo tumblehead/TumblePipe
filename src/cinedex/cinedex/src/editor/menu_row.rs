@@ -169,6 +169,7 @@ mod tests {
             audio_hidden: b[6],
             focused: b[6] || b[7],
             flipped: b[8],
+            sync_ranges: b[4],
             end,
         })
     }

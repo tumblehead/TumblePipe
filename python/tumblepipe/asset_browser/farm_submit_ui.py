@@ -49,6 +49,7 @@ from tumblepipe.farm.submit import grid
 from tumblepipe.farm.submit import plan as submit_plan
 from tumblepipe.farm.submit import progress as submit_progress
 from tumblepipe.farm.submit.review import ReviewRow, can_submit, review_lines, review_order
+from tumblepipe.farm.submit.stale import stale_banner
 
 log = logging.getLogger(__name__)
 
@@ -546,8 +547,10 @@ def _subtitle(text: str) -> QLabel:
     return label
 
 
-def _banner(colour: str, text: str, action: QPushButton | None = None) -> QWidget:
-    """A one-line notice with a coloured edge, and an optional action at its end."""
+def _banner(colour: str, text: str, action: QPushButton | None = None,
+            text_colour: str | None = None) -> QWidget:
+    """A one-line notice with a coloured edge, and an optional action at its
+    end. The text takes the edge's colour unless ``text_colour`` names one."""
     box = QFrame()
     box.setObjectName("farmBanner")
     box.setAttribute(Qt.WA_StyledBackground, True)
@@ -559,7 +562,7 @@ def _banner(colour: str, text: str, action: QPushButton | None = None) -> QWidge
     layout.setContentsMargins(12, 8, 8, 8)
     label = QLabel(text)
     label.setWordWrap(True)
-    label.setStyleSheet(f"color: {colour}; font-weight: 600;")
+    label.setStyleSheet(f"color: {text_colour or colour}; font-weight: 600;")
     layout.addWidget(label, 1)
     if action is not None:
         layout.addWidget(action)
@@ -623,8 +626,9 @@ class ReviewSheet(QWidget):
             self.tick_button.clicked.connect(self.tick_stale_requested)
             root.addWidget(_banner(
                 STALE_COLOUR,
-                f"{n} {noun[n != 1]} will preview work that isn't published.",
+                stale_banner(n, noun),
                 self.tick_button,
+                text_colour=TEXT_PRIMARY,
             ))
 
         self.table = QTreeWidget()
@@ -687,7 +691,9 @@ def _review_notes(row: ReviewRow) -> tuple[str, str]:
     lines = review_lines(row)
     if not lines:
         return "Ready", CURRENT_COLOUR
-    colour = ERROR_COLOUR if row.errors else STALE_COLOUR if row.stale else TEXT_SECONDARY
+    # A stale department is the artist's call: its note reads in the quiet
+    # text colour (Remy, 2026-11-20); only a blocked row is coloured.
+    colour = ERROR_COLOUR if row.errors else TEXT_SECONDARY
     return "; ".join(lines), colour
 
 

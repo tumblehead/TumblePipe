@@ -14,7 +14,7 @@ Checks:
  1. The grid lists the context's terminal entities, one publish column per
     publishable department in pool order, then Playblast, Render and Comp.
  2. Opened for one shot, only that shot's Render cell starts ticked, and the
-    opened-from department pins the preview cuts.
+    opened-from department pins the Playblast cut, not the Render cut.
  3. The status scan finishes and leaves no cell pending.
  4. A mouse click on a column header's checkbox ticks every tickable
     visible cell, a second click clears them, and a click on a partly
@@ -157,10 +157,13 @@ def main() -> int:
     check("2. only the opened shot's Render cell starts ticked",
           dlg._ticks == {(str(shot), grid.RENDER)})
     if open_dept:
-        check("2. the opened-from department pins both preview cuts",
-              dlg._fields["render_department"].pinned
+        # The Render cut stays per entity (each shot's latest department
+        # turned on, Remy 2026-11-20); only the Playblast cut follows the
+        # workfile.
+        check("2. the opened-from department pins the Playblast cut, not the Render cut",
+              not dlg._fields["render_department"].pinned
               and dlg._fields["pb_department"].pinned
-              and dlg._fields["render_department"].value() == open_dept)
+              and dlg._fields["pb_department"].value() == open_dept)
     finished = wait_for_scan(dlg)
     pending = [k for k, s in dlg._states.items() if s == grid.PENDING]
     counts = {s: sum(1 for v in dlg._states.values() if v == s)
@@ -587,7 +590,7 @@ def main() -> int:
     stored = prefs_mod.load_prefs().farm_submit
     # A department the project no longer has is dropped, not guessed at.
     record = stored["tabs"][mod.remembered.scope(mod._project_key(), "shots")]
-    record["pinned"]["render_department"] = "no_such_department"
+    record["pinned"]["pb_department"] = "no_such_department"
     prefs_mod.update_prefs(farm_submit=stored)
     again_win = mod.SubmitJobsDialog([], [], "shots", tick_kinds=())
     again = again_win._panes["shots"]
@@ -596,7 +599,7 @@ def main() -> int:
     check("19. the frame range is not remembered",
           not again._fields["first_frame"].pinned)
     check("19. a value the form no longer offers is dropped",
-          not again._fields["render_department"].pinned)
+          not again._fields["pb_department"].pinned)
     check("19. the batch choices come back",
           again._rnd_preview.isChecked() and again._rnd_standalone.isChecked())
     check("19. a collapsed column comes back collapsed, and the size",

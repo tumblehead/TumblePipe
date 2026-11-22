@@ -84,14 +84,19 @@ mod menu_bar;
 mod menu_row;
 mod panels;
 mod playback;
+mod range_shot;
 mod rendering_watch;
+mod shot_sync;
 mod timeline_dialog;
 mod timeline_menu;
 mod timeline_view;
+#[cfg(test)]
+mod timeline_window_tests;
 mod track_order;
 mod track_rows;
 mod transport;
 mod watch;
+mod waves;
 #[cfg(test)]
 mod wiring_tests;
 
@@ -206,8 +211,12 @@ pub enum Message {
     CloseGap(ClipRef),
     /// The wheel over the tracks: zoom or scroll the timeline (`timeline_view`).
     TimelineView(tracks::ViewChange),
-    /// The strip under the tracks was dragged: the first frame to show.
+    /// The strip under the tracks was dragged or paged: the first frame
+    /// to show.
     ScrollTo(f64),
+    /// An end of the strip's thumb was dragged: the first frame to show,
+    /// and how many (`tracks::overview`).
+    ShowFrames(f64, usize),
     /// View > Fit to Clips (Shift+F): the tracks show the first clip's
     /// start to the last clip's end.
     FitClips,
@@ -266,8 +275,14 @@ pub enum Message {
     OpenEdit(String),
     Text(Field, String),
     Confirm,
-    /// The second choice of a dialog that has one (Discard).
+    /// The second choice of a dialog that has one (Discard; New shot's
+    /// Placeholder).
     Alternate,
+    /// New shot's "Create the shot now" ticked or not (`range_shot`).
+    NewShotNow(bool),
+    /// Edit > Sync Shot Ranges: trims of the master edit's shot clips set
+    /// the shots' frames at once, or not (`shot_sync`).
+    SyncRanges(bool),
     Dismiss,
     Saved(Result<(String, String), String>),
     Published(Result<PublishReport, String>),
@@ -387,6 +402,9 @@ pub struct Editor {
     /// The last thing said (a refused op, a save), and whether it is an error.
     status: Option<(String, bool)>,
     burnins: bool,
+    /// Edit > Sync Shot Ranges (`shot_sync`): on unless turned off, for
+    /// this window's session.
+    sync_ranges: bool,
     /// The picture is mirrored left to right (`flip`): for this window's
     /// session only, never in the edit, an export or a burn-in.
     flipped: bool,
@@ -535,6 +553,7 @@ impl Editor {
             dialog,
             status: None,
             burnins: true,
+            sync_ranges: true,
             flipped: false,
             show_live: true,
             show: None,
@@ -728,20 +747,28 @@ impl Editor {
         command
     }
 
+    /// The edit changed by an edit, an undo or a redo: the shots' frames
+    /// follow the master's trims (`shot_sync`), then [`Self::changed`].
+    fn changed_by_edit(&mut self) -> Command<Message> {
+        let synced = self.sync_shot_ranges();
+        Command::batch([self.changed(), synced])
+    }
+
     /// Apply `ops`, one user action, as one undo step: all of them or,
     /// when one is refused, none (the status says why).
     fn edit(&mut self, ops: &[Op<Source>]) -> Command<Message> {
         if ops.is_empty() {
             return Command::none();
         }
+        let shots = self.syncing();
         let result = self.paths.open().map_err(Refused).and_then(|project| {
             let sources = EditSources::new(&project, self.fps());
-            self.doc.apply(ops, &sources)
+            self.doc.apply(ops, &shot_sync::Open { inner: &sources, shots })
         });
         match result {
             Ok(()) => {
                 self.status = None;
-                self.changed()
+                self.changed_by_edit()
             }
             Err(e) => {
                 self.status = Some((format!("Not done: {e}"), true));
@@ -858,7 +885,10 @@ impl Editor {
         let rows = self.shown_tracks().into_iter().map(|track| {
             let views = |source: &Source, at, duration, source_in, fade_in, fade_out, index| {
                 let entry = self.entry_of(source).map(|i| &self.entries[i]);
-                let available = entry.and_then(Entry::resolved).and_then(|r| r.available);
+                // While the master's trims set its shots' frames, a shot
+                // clip trims past them (`shot_sync`).
+                let open = self.syncing() && matches!(source, Source::Shot { .. });
+                let available = entry.and_then(Entry::resolved).and_then(|r| r.available).filter(|_| !open);
                 ClipView {
                     at,
                     duration,
@@ -880,6 +910,7 @@ impl Editor {
                     preview: self.previews.clip_badge(source, entry.and_then(Entry::resolved).map(|r| r.takes.as_slice())),
                     farm: self.farm_job_of(source).map(|job| job.status),
                     room: available.and_then(|a| tracks::room(a, source_in, duration)),
+                    wave: self.clip_wave(track, index),
                 }
             };
             let (name, clips) = match track.kind {
@@ -951,7 +982,9 @@ impl Editor {
             shown: self.timeline_view.shown(),
             clips: edit.tracks().flat_map(|track| edit.spans(track)).collect(),
             playhead: self.position,
+            least: timeline_view::SHOWN_MIN,
             on_scroll: Message::ScrollTo,
+            on_frames: Message::ShowFrames,
         }
     }
 
@@ -1319,8 +1352,9 @@ impl Editor {
     // -- saving ---------------------------------------------------------------
 
     /// Put the planned shot `sequence/name` of `frames` frames at the
-    /// playhead, inserted.
-    fn new_shot(&mut self, sequence: &str, name: &str, frames: &str) -> Command<Message> {
+    /// playhead, inserted; or, with `place` (an Alt+drag's frames), laid
+    /// there (`range_shot`). With `now` the shot is made first.
+    fn new_shot(&mut self, sequence: &str, name: &str, frames: &str, place: Option<range_shot::Place>, now: bool) -> Command<Message> {
         let (sequence, name) = (sequence.trim(), name.trim());
         for (what, value) in [("sequence", sequence), ("shot", name)] {
             if let Some(problem) = th_pipe::naming::entity_name_problem(value) {
@@ -1337,14 +1371,25 @@ impl Editor {
             self.status = Some((format!("{sequence}/{name} exists: pick it in the Shots bin"), true));
             return Command::none();
         }
-        self.dialog = None;
         let first = self.bins.shot_start(sequence);
-        let planned = BinShot { uri, sequence: sequence.into(), name: name.into(), first, last: first + frames - 1 };
+        let Some((first, last)) = th_pipe::shot_sync::new_shot_frames(first, frames) else { return Command::none() };
+        let planned = BinShot { uri, sequence: sequence.into(), name: name.into(), first, last };
+        if now && let Err(e) = self.create_shot_now(&planned) {
+            // The dialog stays, to change the name or untick it.
+            self.status = Some((format!("{sequence}/{name} was not created: {e}"), true));
+            return Command::none();
+        }
+        self.dialog = None;
+        if let Some(place) = place {
+            let refresh = if now { self.refresh_bins() } else { Command::none() };
+            return Command::batch([self.put_over(place, planned.clip(place.at)), refresh]);
+        }
         let track = self.targets().first().map(|c| c.track).filter(|t| t.kind == TrackKind::Video).map_or(0, |t| t.index);
         let clip = planned.clip(self.position as EditFrame);
         let end = editing::put_end(Some(&clip), None);
         let ops = editing::put(&self.doc.edit, Some(clip), None, track, false);
-        self.edit_then_park(&ops, end)
+        let refresh = if now { self.refresh_bins() } else { Command::none() };
+        Command::batch([self.edit_then_park(&ops, end), refresh])
     }
 
     /// Every shot's (sequence, name): the project's, and the planned ones
@@ -1559,13 +1604,13 @@ impl Application for Editor {
             Message::Undo => {
                 if self.doc.undo() {
                     self.status = None;
-                    return self.changed();
+                    return self.changed_by_edit();
                 }
             }
             Message::Redo => {
                 if self.doc.redo() {
                     self.status = None;
-                    return self.changed();
+                    return self.changed_by_edit();
                 }
             }
             Message::Split => {
@@ -1723,7 +1768,9 @@ impl Application for Editor {
             | Message::TickChange(..)
             | Message::SetMaster(..)
             | Message::MasterSet(..)
-            | Message::Imported(..)) => return self.file_update(message),
+            | Message::Imported(..)
+            | Message::NewShotNow(..)) => return self.file_update(message),
+            Message::SyncRanges(on) => self.sync_ranges = on,
             Message::Display(index) => {
                 if self.display.pick_display(index) {
                     self.set_display();
@@ -1740,6 +1787,7 @@ impl Application for Editor {
             Message::FitTimeline => self.fit_timeline(),
             Message::TimelineView(change) => self.timeline_view = timeline_view::viewed(self.timeline_view, change),
             Message::ScrollTo(first) => self.timeline_view = self.timeline_view.scrolled_to(first),
+            Message::ShowFrames(first, shown) => self.timeline_view = self.timeline_view.showing(first, shown),
             Message::FitClips => {
                 let (from, to) = timeline_view::clips_span(&self.doc.edit);
                 self.timeline_view = self.timeline_view.fitted_to(from, to);

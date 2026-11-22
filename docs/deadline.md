@@ -332,7 +332,7 @@ Houdini-side submits set the variable for the call with
 
 The **Farm Manager** shows the jobs on this machine and on the Deadline farm
 in one list. Each batch is a row, with its jobs under it, showing state,
-progress, task count, errors, user and submit time. A dot before each
+progress, task count, errors, priority, user and submit time. A dot before each
 batch, job and task name shows its state in colour, explained by the legend
 at the bottom of the window (hover an entry for what it means), so the list
 reads at a glance without the Status column in view. A failed one's name is
@@ -411,6 +411,20 @@ Desktop (`python -m tumblepipe.farm.manager`).
   *Delete* (asks first). A selected batch row stands for all of its jobs.
   The footer answers each action on its right, and keeps the answer until
   the next one.
+- **Priority:** the *Priority* column shows each farm job's Deadline
+  priority (0–100, higher renders first). A batch row shows its jobs': one
+  number when they agree, the lowest to the highest (`40–60`) when not.
+  Double-click a farm row's Priority cell to change it with a spin box; on
+  a batch row it sets every job of the batch. Leaving the box without
+  changing the number sends nothing, so a mixed batch is not levelled by
+  accident. Or right-click ▸ *Set priority* for the selected jobs (a batch
+  row stands for its jobs): the project's priority presets (Settings ▸
+  Project defaults ▸ Farm), then *Other…* for any value. The change goes
+  to Deadline in one `deadlinecommand SetJobSetting <ids> Priority <value>`,
+  the farm is read again to check it took, and the next refresh shows it.
+  A refusal, or a job Deadline did not change, is a message box naming
+  why. This machine's jobs show the priority they were submitted with,
+  greyed: the local queue runs in order, so there is nothing to change.
 - **Clean up:** the **Clean up ▾** button beside *Refresh* removes finished
   batches. It works on the batches the filters show (*Show*, *Only mine*,
   *Only <project>* and the name filter). Finished batches count even while
@@ -459,7 +473,7 @@ Desktop (`python -m tumblepipe.farm.manager`).
   the jobs and task counts first. Works for local and farm jobs. To render
   frames again after the job is gone, use Farm Submit's
   [Into](asset-browser/submit-jobs.md#repairing-frames).
-- **Right-click menus:** on a job, the same actions plus *Open job folder*,
+- **Right-click menus:** on a job, the same actions plus *Set priority*, *Open job folder*,
   *Open output folder*, *Preview in Cinedex*, *Copy job ID* and *Copy name*.
   On a task, *Open log folder*, *Copy log*, *Copy frames*, *Copy error*,
   *Render again…*, and the job actions (they act on the whole job, as on
@@ -478,8 +492,13 @@ Desktop (`python -m tumblepipe.farm.manager`).
   a slapcomp's or a merged comp's frames are in that folder, a render's, a
   denoise's or a channel comp's in the `beauty` AOV folder under it. It is
   offered for render, denoise, composite and slapcomp jobs (partial or full)
-  once a frame is on disk, local or on the farm; for any other job, or
-  before a frame has landed, it is greyed out and its tooltip says why. An
+  once a frame is on disk, local or on the farm, and also **before the first
+  frame lands**, while the job is queued, pending or rendering (and its frame
+  list is a readable one): Cinedex then opens on the folder the frames will
+  land in, says it is waiting for the first frame, shows every frame of the
+  job's list as a gap, and fills them in as they land. For any other job,
+  or one that ended without writing a frame, it is greyed out and its
+  tooltip says why. An
   mp4 job is not offered (its output is a movie): preview the job whose
   frames it encodes. On a batch row, or with several jobs selected, it opens
   the best frames there are: a full job before any partial one (the preview

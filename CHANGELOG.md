@@ -12,6 +12,106 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.119.0 — 2026-11-22
+
+### Breaking Changes
+- refactor(config)!: set_scene takes a list of AssetEntry only; the legacy dict form is gone (`ebd12b50`)
+- docs(upgrading)!: the generated recipes and favourites radial menus are written to a per-user folder, not the package (`621e6082`)
+- docs(upgrading)!: on Windows, db and local queue files are written LF with a final newline, store_text as UTF-8 (`90dbb9da`)
+- docs(upgrading)!: python -m tumblepipe.prune_app removed; use python -m tumblepipe.cleanup or Clean Up Project (`13e75a71`)
+- docs(upgrading)!: unused Python names removed (rebuild, util.nested, renderer settings, dwab_encode, IConvert, stamp_ttl); multi_timeline placement moved to groups; import wrappers use get_row_imports (`6d7ab75d`)
+
+### Features
+- feat(export-layer): export one layer to several shots or assets (#91) (`e481dd8d`)
+
+### Fixes
+- fix(cinedex): exporting a movie or timeline over one another program is reading waits it out (`c16f1946`)
+- fix(media): FFmpeg objects held by owners that free them; allocations and parameter copies checked; no-stream typed (`30ca66ce`)
+- fix(cinedex): other crates' tests no longer write the user's change journal; cleanup_lines reads requests strictly (`35068e53`)
+- fix(cinedex): one shot-start rule and one timecode formatter; an unreadable shot range is named in the timeline export (`0896f17f`)
+- fix(cinedex): prefs files are written through replace_file, so a second Cinedex reading one no longer fails the save (`642b94de`)
+- fix(tt_prepare): a panic in the launch hook no longer fails the launch; drop the unused toml dependency (`9b2c18eb`)
+- fix(radial): bind the menus before writing any; write the generated menus per user, GUI only (`1af1aa05`)
+- fix(playblast): reserve the version while a local playblast renders; share the node logic and the publish tail (`ec9ee154`)
+- fix(logging): importing tumblepipe no longer reconfigures the host's root logger (`3b259518`)
+
+### Refactors
+- refactor(export-layer): one _finish_version for a single export and each target (`e6896665`)
+- refactor(cinedex): editor.rs split into entries, playback, file_dialogs, document_io and watch; a declined autosave not removed is reported (`ae848fa1`)
+- refactor(delegate): one point motion and one transform-key sampler for meshes and strokes (`da7b6b4a`)
+- refactor(delegate): guard the Rust/C++ ABI on both sides; unsafe code documented and checked (`98aeb1e9`)
+- refactor(wizard): classify each migration step once with Step::kind (`82199f25`)
+- refactor(import): one per-row asset model for import_assets and import_rigs (`964dceb8`)
+- refactor(import): one builder for the import nodes' metadata scripts (`3697eb1b`)
+- refactor(json_editor): one copy of the object and array row operations (`1bb333e9`)
+- refactor(asset_browser): split edit-card actions and playback out of EntityOps (`2c124c3b`)
+- refactor(catalog): move the quick actions into a QuickActions helper (`88e51961`)
+- refactor(cleanup): one shared .hip reader, each latest workfile read once (`8bb27a35`)
+- refactor(farm): one deadlinecommand query runner (`8893be50`)
+- refactor(farm): one table for the Karma render overrides (`86e35d24`)
+- refactor(farm): submit_entity_batch is a resolve phase and per-section builders (`50a1f552`)
+- refactor(farm): Farm Submit's cell states and resolved rows live in farm/submit (`50e56fe3`)
+- refactor(farm): one module for Farm Submit's refusals, shared with the farm (`1c0934b8`)
+- refactor(asset_browser): every config-module call passes its project's store (`5d0953a6`)
+- refactor(groups): store-first cores for groups and multi_timeline (`2bff75d8`)
+- refactor(scene): store-first cores; the Asset Browser passes its project's store (`b486359b`)
+- refactor(config): store-first cores for channels, timeline, layout_animate and farm (`d3234971`)
+- refactor(department): store-first cores; the Asset Browser passes its project's store (`1a7eb80d`)
+- refactor(config): placement lives in groups; no config import cycle (`a4d5f67c`)
+- refactor(io): one atomic-write primitive; db files are LF with a final newline (`b41044b7`)
+- refactor(asset_browser): drop the TumbleTrove version probes below the 0.67 floor (`fabae7a5`)
+- refactor(cleanup): delete the prune_app.py shim (`6d861217`)
+- refactor: delete unreferenced Python code (`27077f49`)
+
+### Documentation
+- docs(upgrading): the next release's notes are v1.119.0's (`3657692b`)
+- docs(cinedex): exports wait out a program holding the old file; the decoder and colour-card tests listed (`e75f0b02`)
+- docs(designs): the nested-asset analysis points at import_metadata._subasset_lines, where the sub-asset lines moved (`b6e49067`)
+
+### Tests
+- test(save-timer): a tick exactly on the late boundary may go either way (`b05d1d1c`)
+- test(farm): re-record Farm Submit's cell states over Into version (#92) (`d1fb0dd0`)
+- test(media): colour-card fixtures catch swapped chroma planes in both Y'CbCr paths (`a20fbb15`)
+- test(cinedex): typing in a dialog never changes the cut; declining an autosave removes it (`6a34e1fd`)
+- test(media): any decode order gives the forward pass's frames in every pixel path; a silent movie has no sound (`fd169473`)
+- test(cinedex): the edit's and a playblast's timecodes are the export's timecode (`bf8103f3`)
+- test(cinedex): every prefs file is saved whole, pretty, and leaves nothing behind (`5494ba02`)
+- test(delegate): motion blur by sampled points, velocities, accelerations and translates draws alike (`448e8aa7`)
+- test(delegate): th_render_scene answers any mix of null pointers and counts with OK or bad arguments (`d5a907ca`)
+- test(tt_prepare): the launch hook always prints the empty payload and exits 0 (`ecdf827c`)
+- test(wizard): every migration step reports each template it changes; record a whole run's tree (`9f891873`)
+- test(radial): record what registering the radial menus writes and binds (`29b5275d`)
+- test(playblast): one spec for the SOP and LOP playblast nodes (`f1a0d0d9`)
+- test(import): record what import_assets and import_rigs make of their rows (`a9187f60`)
+- test(import): pin the arity of every name a stored metadata script calls (`4de8e1e9`)
+- test(import): record what every import node's metadata script does to a stage (`f50113e9`)
+- test(json_editor): drive the four container rows against a plain model (`c50985eb`)
+- test(catalog): pin which action each edit menu entry runs (`b51cfbc3`)
+- test(catalog): pin the quick-action hooks through a real catalog (`d3982185`)
+- test(cleanup): count how often a plan reads each latest workfile (`91f22c5c`)
+- test(farm): pin how the Farm Manager and Clean Up read deadlinecommand (`681240a5`)
+- test(farm): pin which Karma attribute each render override sets on the farm (`ee593b61`)
+- test(farm): record what submit_entity_batch builds, and that it refuses before the farm (`5cafa67d`)
+- test(farm): record Farm Submit's cell states and resolved rows (`da96deb2`)
+- test(farm): Farm Submit refuses a row exactly when the farm would (`f2afe77b`)
+- test(config): two projects stay apart across every browser config module (`6e6b6d1e`)
+- test(config): characterize groups and multi_timeline against a recorded run (`0c7c0fb9`)
+- test(config): characterize config.scene against a recorded run (`4d2c68d1`)
+- test(config): characterize channels, timeline, layout_animate and farm (`5d2f9124`)
+- test(department): characterize the public functions against a recorded run (`915b5110`)
+- test(io): a failed JSON write leaves the old file and no temporary file (`21026513`)
+- test(logging): setup_logging called repeatedly leaves one handler of each kind (`2a5919c8`)
+- test(asset_browser): check the real TumbleTrove types, not stand-ins for SDKs below the floor (`a0c57c3d`)
+- test(cleanup): stop reading the deleted prune_app.py shim; docs too (`766b25b6`)
+- test(storage): read the wizard's PURPOSES however rustfmt wraps it (`cd8d19bb`)
+- test(delegate): a face with no plane has no projection and is fanned (`69086b77`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.118.1 (`1ba29645`)
+
+### Other Changes
+- style(rust): cargo fmt the resolver, wizard and delegate crates under one shared rustfmt.toml (`c9779ba5`)
+
 ## v1.118.1 — 2026-11-22
 
 ### Fixes

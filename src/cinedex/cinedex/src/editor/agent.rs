@@ -95,7 +95,7 @@ impl Editor {
             "edit" => self.agent_edit_ops(params),
             "undo" | "redo" => {
                 let done = if method == "undo" { self.doc.undo() } else { self.doc.redo() };
-                let command = if done { self.changed() } else { Command::none() };
+                let command = if done { self.changed_by_edit() } else { Command::none() };
                 (Ok(json!({"done": done, "length": self.doc.edit.length()})), command)
             }
             "save" => return self.agent_save(call, text("name"), text("note").unwrap_or_default()),
@@ -244,7 +244,7 @@ impl Editor {
             Ok(()) => {
                 self.status = None;
                 let diff = th_edit::diff::diff(&before, &self.doc.edit);
-                let command = self.changed();
+                let command = self.changed_by_edit();
                 (Ok(json!({"dry_run": false, "diff": diff})), command)
             }
             Err(e) => (Err(refused(e.0)), Command::none()),

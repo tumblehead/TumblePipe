@@ -93,11 +93,15 @@ fn dialogs() -> impl Strategy<Value = Dialog> {
             others: vec!["V2".into()],
             tried
         }),
-        (text(), text(), text()).prop_map(|(sequence, name, frames)| Dialog::NewShot {
-            sequence,
-            name: editing::Offered::new(name),
-            frames
-        }),
+        (text(), text(), text(), proptest::option::of((0usize..3, 0i64..100, 1i64..100)), any::<bool>()).prop_map(
+            |(sequence, name, frames, place, now)| Dialog::NewShot {
+                sequence,
+                name: editing::Offered::new(name),
+                frames,
+                place: place.map(|(track, at, frames)| super::super::range_shot::Place { track, at, frames }),
+                now,
+            }
+        ),
         (text(), text(), text()).prop_map(|(path, item, note)| Dialog::Import { path, item: editing::Offered::new(item), note }),
         Just(Dialog::Recover { name: "cut".into() }),
         Just(Dialog::Unsaved),

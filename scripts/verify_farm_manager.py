@@ -26,6 +26,11 @@ real farm (read only: no farm command is sent). Checks:
      row opens its best frames (full before partial: a full render over a
      partial slapcomp; then composite over denoise over render); it starts Cinedex on
      the folder under Open output folder's; a failed launch is a message box
+ 10. Priority (Remy, 2026-11-20), against a fake farm: the column (a
+     batch reads low–high), only a farm row's Priority cell edits (a spin
+     box), an untouched editor sends nothing, an edit sets a batch's jobs in
+     one call and the next read shows it, Set priority lists the presets
+     then Other… and leaves local jobs out, a refusal is a message box
 
 Run (no Houdini licence: Houdini's bundled Python, not hython; see
 ``headless-qt-verify`` in the repo notes):
@@ -500,6 +505,29 @@ def verify_preview_in_cinedex(app: QApplication, win, root: Path, project: str) 
         check('once composited frames land, the batch row opens the composite',
               started and started[-1][4] == str(comp_v), str(started))
 
+        # Before the first frame (Remy, 2026-11-20): a render still queued
+        # opens on the beauty folder its frames will land in.
+        queued_v = shot / 'render' / 'main' / 'v0004'
+        queued = make_batch(
+            root, f'{project} render entity:/shots/sq010/sh050 tester',
+            [[queue.QUEUED]], [[]],
+            [{'name': 'full render main v0004', 'script': f'{workers}/render.py',
+              'outputs': [str(queued_v / 'sh050_main_v0004.####.json')], 'frames': '1001-1010'}],
+        )
+        queued_id = f'local:{queued.name}'
+        win._refresh_local()
+        deadline = time.monotonic() + 10
+        while f'{queued_id}/0' not in win._job_items and time.monotonic() < deadline:
+            pump(app, 0.3)
+        started.clear()
+        _, preview = menu_for(f'{queued_id}/0')
+        check('a render with no frame yet: enabled, the tooltip says they show as they land',
+              preview is not None and preview.isEnabled() and 'as they land' in preview.toolTip(), preview.toolTip())
+        preview.trigger()
+        check('it starts Cinedex on the beauty folder to come, expecting the job\'s frames',
+              started == [['cinedex', '--ocio', 'config.ocio', '--frames', str(queued_v / 'beauty'),
+                           '--fps', '25', '--expect', '1001-1010']], str(started))
+
         warnings = []
 
         class Box(mw.QMessageBox):
@@ -524,6 +552,166 @@ def verify_preview_in_cinedex(app: QApplication, win, root: Path, project: str) 
         (review_playlist.find_player, review_playlist.project_ocio, review_playlist._start) = saved
         frames_preview.row_fps = saved_fps
         mw.QMenu = saved_menu
+
+
+def verify_priority(app: QApplication, win, project: str) -> None:
+    """The Priority column and Set priority (Remy, 2026-11-20), against a
+    fake farm: Deadline's job list and SetJobSetting are replaced, and any
+    real deadlinecommand call fails the check."""
+    from PySide6.QtWidgets import QMenu, QMessageBox, QSpinBox
+    from tumblepipe.farm.manager import deadline_jobs, priority, rows
+    from tumblepipe.farm.manager import window as mw
+
+    sh010 = 'entity:/shots/sq010/sh010'
+    mixed = f'{project} render {sh010} tester 2026/11/20 10:00:00'
+    single = f'{project} playblast {sh010} tester 2026/11/20 11:00:00'
+    docs = [
+        farm_doc('p1', mixed, 1, '2026-11-20T10:00:00.000+01:00', sh010, project, QueuedChunks=1),
+        farm_doc('p2', mixed, 1, '2026-11-20T10:00:00.000+01:00', sh010, project, QueuedChunks=1),
+        farm_doc('q1', single, 1, '2026-11-20T11:00:00.000+01:00', sh010, project, QueuedChunks=1),
+    ]
+    pris = {'p1': 50, 'p2': 70, 'q1': 30}
+    sent: list[tuple[list[str], int]] = []
+    live_calls: list = []
+    refuse = {'now': False}
+
+    def fetch_jobs():
+        out = []
+        for doc in docs:
+            doc = dict(doc, Props=dict(doc['Props'], Pri=pris[doc['_id']]))
+            out.append(rows.farm_job_row(doc))
+        return out
+
+    def send_priority(ids, value):
+        if refuse['now']:
+            raise deadline_jobs.DeadlineError('SetJobSetting exited with code 1: no such job')
+        sent.append((list(ids), value))
+        for job_id in ids:
+            pris[job_id] = value
+        return 'Success'
+
+    def no_real_deadline(*args, **kwargs):
+        live_calls.append(args)
+        raise AssertionError('the priority check reached for the real deadlinecommand')
+
+    warnings: list[str] = []
+    saved = (deadline_jobs.fetch_jobs, deadline_jobs.fetch_tasks, deadline_jobs.send_priority,
+             deadline_jobs._command, QMessageBox.warning)
+    deadline_jobs.fetch_jobs, deadline_jobs.send_priority = fetch_jobs, send_priority
+    deadline_jobs.fetch_tasks = lambda job_id: []
+    deadline_jobs._command = no_real_deadline
+    QMessageBox.warning = staticmethod(lambda parent, title, text, *a, **k: warnings.append(text))
+
+    def wait_for(condition, seconds=10.0):
+        deadline = time.monotonic() + seconds
+        while not condition() and time.monotonic() < deadline:
+            pump(app, 0.1)
+        pump(app, 0.2)
+
+    def reread():
+        win._farm_rows = []
+        win._farm_loading = False
+        win._refresh_farm()
+        wait_for(lambda: bool(win._farm_rows))
+
+    try:
+        win._jobs.clearSelection()
+        wait_for(lambda: not win._futures, 60)
+        win._search.setText('')
+        win._hide_finished.setChecked(False)
+        win._farm_available, win._farm_error = True, None
+        reread()
+        tree = win._jobs
+        check('the job list has a Priority column',
+              tree.headerItem().text(mw.PRIORITY) == 'Priority', tree.headerItem().text(mw.PRIORITY))
+        batch = win._batch_items.get(f'farm:{mixed}')
+        job = win._job_items.get('p2')
+        check('a batch whose jobs differ reads low–high', batch is not None and batch.text(mw.PRIORITY) == '50–70',
+              batch.text(mw.PRIORITY) if batch is not None else 'not listed')
+        check("a job reads its own", job is not None and job.text(mw.PRIORITY) == '70')
+        local = next((item for key, item in win._batch_items.items() if key.startswith('local:')), None)
+        check('a local row is not editable, a farm row is',
+              local is not None and not (local.flags() & mw.Qt.ItemIsEditable)
+              and bool(job.flags() & mw.Qt.ItemIsEditable))
+
+        # Double-click edits only the Priority cell of a farm row.
+        tree.editItem(local, mw.PRIORITY)
+        pump(app, 0.1)
+        check('a local row opens no editor', tree.indexWidget(tree.indexFromItem(local, mw.PRIORITY)) is None)
+        tree.editItem(job, mw.NAME)
+        pump(app, 0.1)
+        check("a farm row's other cells open no editor", tree.indexWidget(tree.indexFromItem(job, mw.NAME)) is None)
+
+        def edit(item, value=None):
+            tree.editItem(item, mw.PRIORITY)
+            pump(app, 0.1)
+            editor = tree.indexWidget(tree.indexFromItem(item, mw.PRIORITY))
+            if not isinstance(editor, QSpinBox):
+                return None
+            start = editor.value()
+            if value is not None:
+                editor.setValue(value)
+            delegate = tree.itemDelegateForColumn(mw.PRIORITY)
+            delegate.commitData.emit(editor)
+            delegate.closeEditor.emit(editor)
+            pump(app, 0.1)
+            return start
+
+        start = edit(batch)
+        check("a farm row's Priority opens a 0..100 spin box at its most common value (the highest of a tie)",
+              start == 70, str(start))
+        pump(app, 0.3)
+        check('leaving it untouched sends nothing (a mixed batch is not levelled)', not sent, str(sent))
+
+        edit(batch, 80)
+        wait_for(lambda: bool(sent))
+        check('editing a batch row sets every job of it in one call', sent == [(['p1', 'p2'], 80)], str(sent))
+        wait_for(lambda: win._batch_items[f'farm:{mixed}'].text(mw.PRIORITY) == '80')
+        check('the next read shows it', win._batch_items[f'farm:{mixed}'].text(mw.PRIORITY) == '80',
+              win._batch_items[f'farm:{mixed}'].text(mw.PRIORITY))
+        check('the footer says so', 'Priority 80 set on 2 jobs' in win._message.text(), win._message.text())
+
+        # The menu: presets, then Other…; only farm jobs.
+        win._presets = priority.presets([('Low', 20), ('Rush', 90)])
+        single_job = win._job_items['q1']
+        tree.clearSelection()
+        single_job.setSelected(True)
+        win._batch_items[f'farm:{mixed}'].setSelected(True)
+        local.setSelected(True)
+        pump(app, 0.2)
+        menu = QMenu()
+        sub = win._add_priority_menu(menu, win._selected_rows())
+        labels = [a.text() for a in sub.actions() if not a.isSeparator()]
+        check('Set priority lists the presets, highest first, then Other…',
+              labels == ['Rush (90)', 'Low (20)', 'Other…'], str(labels))
+        check('and shows the selected farm jobs\' priorities', sub.title() == 'Set priority (30–80)', sub.title())
+        before = len(sent)
+        sub.actions()[0].trigger()
+        wait_for(lambda: len(sent) > before)
+        check('a preset sets the selected farm jobs, local ones left out',
+              sent[before:] == [(['q1', 'p1', 'p2'], 90)] or sent[before:] == [(['p1', 'p2', 'q1'], 90)],
+              str(sent[before:]))
+        reread()
+        tree.clearSelection()
+        local.setSelected(True)
+        pump(app, 0.2)
+        local_menu = QMenu()
+        local_only = win._add_priority_menu(local_menu, win._selected_rows())
+        check('only local jobs selected: Set priority is greyed', not local_only.isEnabled())
+
+        # A refusal is shown, not swallowed.
+        refuse['now'] = True
+        tree.clearSelection()
+        pump(app, 0.1)
+        win._set_priority([win._rows_by_id['q1']], 10)
+        wait_for(lambda: bool(warnings))
+        check('a refused change is a message box naming why',
+              len(warnings) == 1 and 'no such job' in warnings[0], str(warnings))
+        check('and an error in the footer', 'not set' in win._message.text(), win._message.text())
+        check('nothing reached the real Deadline', not live_calls, str(live_calls))
+    finally:
+        (deadline_jobs.fetch_jobs, deadline_jobs.fetch_tasks, deadline_jobs.send_priority,
+         deadline_jobs._command, QMessageBox.warning) = saved
 
 
 def main() -> int:
@@ -685,6 +873,9 @@ def main() -> int:
 
     print('9. Preview in Cinedex on the job menu (#85)')
     verify_preview_in_cinedex(app, win, root, project)
+
+    print('10. Priority: the column, editing it, Set priority (a fake farm)')
+    verify_priority(app, win, project)
 
     if len(sys.argv) > 1:
         win.resize(1500, 900)

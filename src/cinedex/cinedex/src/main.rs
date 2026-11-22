@@ -22,7 +22,9 @@
 //! `--frames`, a window of rendered frames (#75): a local farm batch's ready
 //! previews, a folder's frames, one frame, or a movie, played at `--fps` (24
 //! without), the frames of `--expect` (the render's frame list) not on disk
-//! yet shown as gaps (see `previews`, `reel` and `frames_view`). The
+//! yet shown as gaps (see `previews`, `reel` and `frames_view`); a folder
+//! with no frames yet (or not there yet) given `--expect` opens waiting for
+//! the first frame, every frame a gap. The
 //! project is `--project`, else `$TH_PROJECT_PATH`; the
 //! OCIO config `--ocio`, else `$OCIO`. When either is missing, or the edit
 //! does not open, the window says why. See `editor` for the window and its
@@ -77,6 +79,7 @@ use th_pipe::player_rpc as rpc;
 mod take_menu;
 mod tracks;
 mod video;
+mod waveform;
 
 use std::path::PathBuf;
 
@@ -276,7 +279,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let colour = Colour::open(&ocio).map_err(|e| format!("the OCIO config: {e}"))?;
             let fill = args.expect.clone().map_or(reel::Fill::Span, reel::Fill::List);
             let source = frames_view::Source { path: path.clone(), fill };
-            let reel = source.read()?;
+            // Before the first frame lands, its frame list as gaps.
+            let reel = source.read_or_wait()?;
             Ok::<_, String>(frames_view::FramesView::new(source, reel, colour, args.fps.unwrap_or(24)))
         })();
         match opened {

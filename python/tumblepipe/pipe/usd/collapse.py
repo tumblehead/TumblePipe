@@ -20,8 +20,10 @@ from tumblepipe.pipe.usd.instances import (
     generate_instance_prim_definitions,
 )
 from tumblepipe.pipe.usd.render_settings import (
+    CAMERA_OVERRIDE,
     PLAYBLAST_SETTINGS_PRIM_PATH,
     apply_playblast_dome,
+    check_render_camera,
     find_light_prim_paths,
     find_render_camera_prim_path,
     find_render_settings_prim_path,
@@ -492,6 +494,15 @@ def collapse_latest_references(
         # The playblast renders through the settings authored above, not
         # the project's Karma ones.
         settings_prim_path = PLAYBLAST_SETTINGS_PRIM_PATH
+    else:
+        # A render through a camera that is not on the stage is refused
+        # here rather than rendered from nowhere: Farm Submit's Camera when
+        # it set one, else the one the settings prim names (a department's
+        # Karma LOP left on Houdini's /cameras/camera1, Remy 2026-11-20).
+        check_render_camera(
+            stage, settings_prim_path,
+            (render_overrides or {}).get(CAMERA_OVERRIDE),
+        )
 
     # Generate USDA with absolute filesystem paths (no entity URIs)
     usda_content = generate_usda_content(

@@ -29,6 +29,8 @@ pub struct Resolved {
     /// What plays; None for sound alone, or nothing (see `nothing`).
     pub(crate) media: Option<Arc<Media>>,
     pub(crate) sound: Option<Arc<Sound>>,
+    /// Its sound's peaks, made where the sound is read (`waveform`).
+    pub(crate) peaks: Option<Arc<crate::waveform::Peaks>>,
     /// The frame number of the media's index 0.
     pub(crate) first: EditFrame,
     /// Why nothing plays, when nothing does (a slug, a planned shot, no
@@ -70,6 +72,7 @@ impl Resolved {
             take: None,
             media: None,
             sound: None,
+            peaks: None,
             first: 0,
             nothing: Some(why.into()),
             explained: None,
@@ -164,6 +167,7 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                 }),
                 _ => None,
             };
+            let peaks = sound.as_ref().map(|s| Arc::new(crate::waveform::Peaks::of(s)));
             let first = opened.frame_number(0).unwrap_or(first);
             let under = under.map(|u| takes[u].label.clone());
             Ok(Resolved {
@@ -171,6 +175,7 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                 take: picked,
                 media: Some(opened),
                 sound: sound.map(Arc::new),
+                peaks,
                 first,
                 nothing: None,
                 explained: None,
@@ -198,11 +203,13 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                 None => None,
             };
             let sound = if found.measure.sound { Sound::read(&path).map_err(|e| e.to_string())?.map(Arc::new) } else { None };
+            let peaks = sound.as_deref().map(|s| Arc::new(crate::waveform::Peaks::of(s)));
             Ok(Resolved {
                 takes: vec![take],
                 take: Some(0),
                 media: opened,
                 sound,
+                peaks,
                 first: 0,
                 nothing: None,
                 explained: None,

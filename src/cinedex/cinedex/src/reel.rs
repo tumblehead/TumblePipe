@@ -174,6 +174,26 @@ impl Reel {
         Reel { title: stills.title.clone(), groups }
     }
 
+    /// The reel of a render whose first frame has not landed yet (Remy,
+    /// 2026-11-20): one group, named after `folder` as its frames' group
+    /// will be, with a slot for each of `numbers` (the frame list it
+    /// renders), none on disk. A slot's file is a stand-in, never read:
+    /// once frames land the folder's real reel takes its place, and its
+    /// group opens on their files.
+    pub(crate) fn waiting(folder: &Path, numbers: &[i64]) -> Self {
+        let name = folder.file_name().map_or_else(|| folder.display().to_string(), |n| n.to_string_lossy().into_owned());
+        let slots = slot_numbers(&BTreeSet::new(), &Fill::List(numbers.to_vec()))
+            .into_iter()
+            .map(|number| Slot { number: Some(number), path: folder.join(format!("{name}.{number}")), present: false })
+            .collect();
+        Reel { title: name.clone(), groups: vec![Group { name, slots }] }
+    }
+
+    /// Whether no frame of it is on disk yet: a [`Self::waiting`] reel.
+    pub(crate) fn is_waiting(&self) -> bool {
+        self.rendered().0 == 0
+    }
+
     /// Timeline positions: every group's slots.
     pub(crate) fn len(&self) -> usize {
         self.groups.iter().map(|g| g.slots.len()).sum()
@@ -510,6 +530,30 @@ mod tests {
     }
 
     proptest! {
+        /// Before the first frame, a waiting reel has a slot per frame of
+        /// the list, in order, none on disk; once frames land, the folder's
+        /// reel has the same numbers, under the same group name, with
+        /// those frames on disk.
+        #[test]
+        fn a_waiting_reel_is_the_frame_list_as_gaps(
+            list in prop::collection::vec(990i64..1030, 1..30),
+            landed in prop::collection::btree_set(990i64..1030, 1..6),
+        ) {
+            let waiting = Reel::waiting(Path::new("R:/beauty"), &list);
+            let wanted: Vec<i64> = list.iter().copied().collect::<BTreeSet<i64>>().into_iter().collect();
+            prop_assert_eq!(waiting.groups.len(), 1);
+            prop_assert_eq!(waiting.groups[0].slots.iter().filter_map(|s| s.number).collect::<Vec<_>>(), wanted.clone());
+            prop_assert!(waiting.is_waiting());
+            prop_assert_eq!(waiting.rendered(), (0, wanted.len()));
+            prop_assert_eq!(waiting.clone(), Reel::waiting(Path::new("R:/beauty"), &list), "read again, the same: nothing changes");
+            let numbers: Vec<i64> = landed.iter().copied().collect();
+            let real = Reel::of(&stills(&[("beauty", &numbers)]), &Fill::List(list.clone()));
+            prop_assert!(!real.is_waiting());
+            prop_assert_eq!(&real.groups[0].name, &waiting.groups[0].name);
+            let all: BTreeSet<i64> = wanted.iter().copied().chain(numbers.iter().copied()).collect();
+            prop_assert_eq!(real.groups[0].slots.iter().filter_map(|s| s.number).collect::<BTreeSet<_>>(), all);
+        }
+
         /// Whatever frames are on disk and however the slots are filled,
         /// every frame on disk has a slot that is present, slots go up by
         /// number, the runs cover every position once, alternating within a

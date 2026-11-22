@@ -14,6 +14,7 @@ from tumblepipe.config.department import (
     list_departments,
     list_entity_departments,
 )
+from tumblepipe.pipe import publish_scope
 from tumblepipe.pipe.paths import latest_export_path, Context
 from tumblepipe.util.uri import Uri
 from tumblepipe.pipe.houdini.lops import export_layer, layer_split
@@ -307,16 +308,11 @@ def collect_publish_tasks(context: Context) -> list[ProcessTask]:
 def _publishes(node, owned: set[Uri], departments: list[str]) -> bool:
     """The predicate every collected node passes: live, owned, in scope,
     and not into a department turned off on its entity (#64): a Multi's
-    workfile skips that member, a shot's workfile that department."""
-    if node.native().isBypassed():
-        return False
-    entity_uri = node.get_entity_uri()
-    if entity_uri not in owned:
-        return False
-    department = node.get_department_name()
-    if department not in departments:
-        return False
-    return department not in get_disabled_departments(entity_uri)
+    workfile skips that member, a shot's workfile that department. The
+    farm's publish worker runs the same rule (``pipe.publish_scope``)."""
+    return publish_scope.publishes(
+        node, owned, departments, get_disabled_departments
+    )
 
 
 # The node kinds a publish collects: (wrapper module, node type name,

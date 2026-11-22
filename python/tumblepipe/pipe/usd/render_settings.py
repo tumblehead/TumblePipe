@@ -8,8 +8,96 @@ Zero or several candidates is a raise, never a guess.
 """
 
 
+import re
+
+
 class RenderSettingsError(RuntimeError):
     """The stage's one UsdRender.Settings prim could not be identified."""
+
+
+#: The key of a render-override dict (``{Karma attribute: value}``) that is
+#: not an attribute: Farm Submit's Camera, authored as the settings prim's
+#: ``camera`` relationship (Remy, 2026-11-20).
+CAMERA_OVERRIDE = 'camera'
+
+# A prim path the collapse can write as a relationship target: absolute,
+# each name a USD identifier.
+_PRIM_PATH = re.compile(r'(?:/[A-Za-z_][A-Za-z0-9_]*)+')
+
+
+def valid_camera_override(value) -> str | None:
+    """``value`` as a camera prim path the farm can render through, else
+    None: absolute, each name a USD identifier (``/cameras/render_camera``).
+    Surrounding blanks and one trailing ``/`` are forgiven."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if len(text) > 1:
+        text = text.rstrip('/')
+    return text if _PRIM_PATH.fullmatch(text) else None
+
+
+# Houdini's own LOPs that author a RenderSettings camera (Karma, Karma Render
+# Settings, Karma Render Properties, Render Settings, Karma Render Products)
+# all default it to this path (Houdini 22.0's OPlibLop). A department that
+# drops one in and never sets its Camera exports a camera nobody has.
+HOUDINI_DEFAULT_CAMERA = '/cameras/camera1'
+
+
+def check_render_camera(stage, settings_prim_path: str, override: str | None = None) -> str | None:
+    """The camera a farm render of ``stage`` goes through, checked: the
+    ``override`` (Farm Submit's Camera) when given, else the target of the
+    settings prim's ``camera`` relationship.
+
+    Raises RenderSettingsError when that camera is not on the stage: a
+    render through a camera nobody has is a silently wrong picture (Remy's
+    shots rendered through ``/cameras/camera1``, the default of Houdini's
+    Karma LOPs, which no layer defined). A settings prim with no camera
+    target is left to husk, as before, and returns None.
+    """
+    from pxr import Usd, UsdGeom
+
+    if override is not None:
+        camera_path = valid_camera_override(override)
+        if camera_path is None:
+            raise RenderSettingsError(
+                f'Farm Submit asked for camera {override!r}, which is not a '
+                'prim path like /cameras/render_camera.'
+            )
+        source = 'Farm Submit picked'
+    else:
+        settings_prim = stage.GetPrimAtPath(settings_prim_path)
+        relationship = settings_prim.GetRelationship('camera') if settings_prim else None
+        targets = list(relationship.GetTargets()) if relationship else []
+        if not targets:
+            return None
+        camera_path = targets[0].pathString
+        source = f'{settings_prim_path} names'
+    camera_prim = stage.GetPrimAtPath(camera_path)
+    if camera_prim and camera_prim.IsValid():
+        return camera_path
+    cameras = sorted(
+        prim.GetPath().pathString
+        for prim in Usd.PrimRange.Stage(stage, Usd.PrimAllPrimsPredicate)
+        if prim.IsA(UsdGeom.Camera)
+    )
+    detail = (
+        f' Cameras on the stage: {", ".join(cameras)}.'
+        if cameras else ' The stage carries no camera at all.'
+    )
+    hint = (
+        f' {HOUDINI_DEFAULT_CAMERA} is the default of Houdini\'s Karma and '
+        'Render Settings LOPs: a department\'s workfile probably has one whose '
+        'Camera was never set. Set it there and publish, or pick the camera '
+        'in Farm Submit\'s Camera field.'
+        if camera_path == HOUDINI_DEFAULT_CAMERA else
+        ' Pick an existing camera in Farm Submit\'s Camera field, or set the '
+        'Camera of the department\'s render settings node and publish.'
+    )
+    raise RenderSettingsError(
+        f'{source} camera {camera_path}, which is not on the stage, so the '
+        'render would come from no camera.' + detail + hint
+    )
 
 
 def find_render_settings_prim_path(stage) -> str:
@@ -315,7 +403,9 @@ def generate_render_overrides_section(
 
     Args:
         overrides: Dict mapping Karma attribute names to values
-                   e.g. {'karma:global:pathtracedsamples': 128}
+                   e.g. {'karma:global:pathtracedsamples': 128}; the key
+                   CAMERA_OVERRIDE carries a camera prim path, written as
+                   the ``camera`` relationship
         settings_prim_path: Absolute prim path of the stage's RenderSettings,
                    from find_render_settings_prim_path. One nested `over` per
                    path component — an `over` chain that does not match the
@@ -342,7 +432,16 @@ def generate_render_overrides_section(
 
     body_indent = '    ' * len(names)
     for attr_name, value in overrides.items():
-        if isinstance(value, bool):
+        if attr_name == CAMERA_OVERRIDE:
+            # Farm Submit's Camera: the relationship, not an attribute.
+            camera = valid_camera_override(value)
+            if camera is None:
+                raise RenderSettingsError(
+                    f'Farm Submit asked for camera {value!r}, which is not a '
+                    'prim path like /cameras/render_camera.'
+                )
+            lines.append(f'{body_indent}rel camera = <{camera}>')
+        elif isinstance(value, bool):
             val_str = 'true' if value else 'false'
             lines.append(f'{body_indent}bool {attr_name} = {val_str}')
         elif isinstance(value, int):

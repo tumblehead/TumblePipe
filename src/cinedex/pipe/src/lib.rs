@@ -32,6 +32,7 @@ pub mod preview_place;
 pub mod previews;
 pub mod project;
 pub mod shared_journal;
+pub mod shot_sync;
 pub mod storage;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;

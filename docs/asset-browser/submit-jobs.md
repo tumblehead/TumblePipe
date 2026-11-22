@@ -40,12 +40,23 @@ the tab's context, and the ticks are only a starting point — tick or untick
 any cell, on any entity, before submitting.
 
 When the dialog is opened from a workfile, that workfile's department pins
-the **Up to** department of Playblast and Render (when it is renderable), so
-submitting from a lighting workfile previews up to lighting. From
-`th::import_render`'s **Render**, the import's Department does that instead
-(when it is not `best`), and its Channel replaces the channels the menu
-would otherwise open checked (a channel the shot no longer has falls back to
-them).
+the Playblast **Up to** department (when it is renderable), so a playblast
+from an animation workfile shows up to animation. The Render **Up to** is not
+pinned: it stays `⟨per entity⟩`, each shot's configured
+`submission.render.department`, else its latest department turned on. Up to
+TumblePipe 1.119 the workfile pinned the Render cut too, and a render
+submitted from a layout or animation workfile left lighting out. From
+`th::import_render`'s **Render**, the import's Department pins the Render
+**Up to** (when it is not `best`), and its Channel replaces the channels the
+menu would otherwise open checked (a channel the shot no longer has falls
+back to them).
+
+Both **Up to** menus list only the departments turned on for every ticked
+shot, in pipeline order (all of them while nothing is ticked). A department
+turned off on one ticked shot is a cut Farm Submit refuses for that shot, so
+it is not offered until you untick that shot; a department you picked stays
+picked when the ticks change, and the Warnings column says if it is off on a
+shot.
 
 The dialog is non-modal: Houdini stays usable while it is open. What you
 ask of it before submitting (the review), why it cannot submit yet, and the
@@ -58,8 +69,9 @@ you can go **Back to grid** and submit more.
 Closing the dialog keeps, per project and tab, for the next time it opens:
 
 - the settings you **pinned** (set for the whole submission), except
-  **Frames** (the Render's and the Comp's), which belong to the shots they
-  were typed for;
+  **Frames** (the Render's and the Comp's) and the Render's **Up to** and
+  **Camera**, which belong to the shots they were picked for (a remembered
+  cut left lighting out of the next shot's render);
 - the Render section's **Range**, **Standalone** and **Copy to edit** choices,
   and the Comp section's **Preview frames** and **Copy to edit**;
 - the columns you collapsed.
@@ -68,8 +80,8 @@ And for the dialog as a whole: which settings sections are collapsed, whether
 empty columns collapse by themselves, **Clean up old jobs**, **Run on** and its
 size. A remembered value the project no longer offers (a department since
 removed, say) is dropped, not guessed at. The workfile you open it from still
-wins: its department pins **Up to** over a remembered one, and that pin is
-the workfile's, so it is not remembered for the next opening.
+wins: its department pins the Playblast **Up to** over a remembered one, and
+that pin is the workfile's, so it is not remembered for the next opening.
 
 ### Assets and Shots tabs
 
@@ -183,6 +195,11 @@ a click on the sliver does nothing.
 | `…` | status not read yet | status not read yet | status not read yet |
 | filled in the kind's colour | **will be submitted** | **will be submitted** | **will be submitted** |
 
+A stale publish (`●`) only means the department's workfile was saved after
+its latest export, so the newest work *may* not be exported (a save with
+nothing new in it counts too); whether to publish it first is your call. A
+line under the grid says so, whatever is ticked.
+
 A preview "composes" the departments of its **Up to** cut: a playblast up to
 animation is stale when layout or animation was published after it, not when
 lighting was. Changing a Playblast or Render **Up to** re-reads the preview
@@ -231,10 +248,15 @@ publish what needs it.)
 
 The Warnings column says, per row, what the submission would run into:
 
-- `<departments> stale and not ticked` — a ticked playblast or render would
-  compose departments inside its cut that are stale or never exported and not
-  ticked for publishing. It does not block the submit: previewing what is
-  published is sometimes the point.
+- `<departments>: latest export used (workfile saved since, not ticked)` — a
+  ticked playblast or render composes departments inside its cut that are
+  stale (their workfile was saved after their latest export, so the newest
+  work may not be exported) or never exported, and that are not ticked for
+  publishing. A note, not a problem, in the quiet text colour when it is all
+  the row has to say: it does not block the submit, and previewing what is
+  published is often the point. Tick the departments to publish their work
+  first. Up to TumblePipe 1.119 it read `<departments> stale and not
+  ticked`, in amber, which artists took for an error.
 - `no frame range configured` — the entity has no `frame_start` /
   `frame_end` and you pinned none. Never on an asset: its
   [turntable](#an-assets-turntable) renders on the studio's frames.
@@ -493,7 +515,7 @@ pixel samples: more is cleaner and slower.
 | Field | Per-entity source | Default when unset | Notes |
 |---|---|---|---|
 | **Up to** | `submission.render.department` | last renderable department not turned off on the shot (the whole shot) | Renders every department up to and including this one; departments after it are left out. Also names the render output. |
-| **Camera** | — | read-only | The camera the render looks through: the `camera` of the RenderSettings prim in the latest published layer of the strongest department in the **Up to** cut that sets one, else the project's `root_default_prims.usda`. Read from the first checked channel; the tooltip names the department per entity, and `⟨per entity⟩` means the ticked entities disagree. A preview — the farm still asks the composed stage. |
+| **Camera** | — | `⟨from scene⟩`: nothing sent, each shot renders through its scene's camera | A farm override, like Samples. Left empty, the field's grey text names the scene's camera (`from scene: /cameras/render_camera`, `varies: ⟨per entity⟩` when the shots disagree): the `camera` of the RenderSettings prim in the latest published layer of the strongest department in the **Up to** cut that sets one, else the shot's configured camera (`render.camera`, when `render.apply_config` is on and the project default defines it), else the project's `root_default_prims.usda`. Read from the first checked channel; the tooltip names the camera and where it comes from per shot. Pick a camera from the menu (the shots' configured cameras first, then the cameras the shots render through and the cameras the published layers define) or type a prim path, and every ticked shot renders through it: the farm writes it onto the shot's RenderSettings prim. A path that is not a prim path blocks the row; a camera that is not on the shot's stage fails its collapse job with the cameras the stage has, and so, since TumblePipe 1.120, does a scene camera nothing defines (it used to render from no camera). A note under the field says when the scene's camera is worth a look: a department that names `/cameras/camera1` (the default Camera of Houdini's Karma and Render Settings LOPs, left as created), or a camera other than the shot's configured one. Not remembered for the next opening. Up to TumblePipe 1.119 the field was read-only. |
 | **Channels** | — | the entities' own channel lists | A dropdown of checkboxes (`(none — check at least one)` when nothing is checked) with **All**; click it to pick, it takes no typing. Lists the *union* of the rendering entities' channels, `default` first. Opens with the channels *every* rendering entity starts with checked: its own channels, plus `default` only when it has no others or `default` is one of its [render layers](../nodes/lighting-and-rendering.md#render-layers-from-channel_prims-render-passes) (the remainder, under the slapcomp). So a shot split into `heart`, `background` and `bubbles` by export branches does not also render its whole unsplit scene; check `default` to. When the entities share nothing it opens with `default` if one of them renders unsplit, else with nothing checked. Channels arriving with a later-ticked entity start unchecked. **All** checks every channel in the batch. The checks apply to the whole batch, but each entity renders only the checked channels **it defines** — one render per such channel — and the Warnings column and the review list what each entity skips. See [Channels the farm refuses](#channels-the-farm-refuses). |
 | **Range** | — | Full range ticked | Two checkboxes. **Full range** renders everything and chains slapcomp + MP4; **Preview (first / middle / last)** renders three check frames and posts them to Discord. Tick both to get the preview first, with the full range queued behind it. One of the two must be ticked. |
 | **Preview frames** | — | empty: first / middle / last | The Preview Frames List, shown under **Range** only while **Preview** is ticked, with a [frame timeline](#frame-timelines) under it. Empty, the preview is the first, middle and last frame of the cut, as before. Otherwise type the frames to preview, separated by spaces, e.g. `1012 1040 1077` for key poses: any number, rendered first and in that order, and posted to Discord (the panorama shows the first 8; the message says how many more were rendered). The rest of the range follows as usual. Whole frame numbers only; a repeat counts once. A frame outside the rendered range (rolls included) or not a number is dropped and named in the [Warnings](#warnings) column (and the submit log); when none is left the preview falls back to first / middle / last, with a warning. One list for the whole submission: the grid has no per-shot settings, so different key poses per shot mean one submission per shot. Not remembered for the next opening. |
@@ -729,12 +751,12 @@ So that `⟨from scene⟩` is not a guess, Samples, Motion blur and DOF show the
 scene's value once it is read: `from scene: 128` when every shot being
 rendered agrees, `varies: 64–256` when the samples differ, `varies: off, on`
 for the toggles. `Karma default` means no layer authors the setting, so
-Karma's own default renders. The value is read with the **Camera** row's
+Karma's own default renders. The value is read with the **Camera** field's
 lookup, in the background, never by cooking the stage: for each attribute,
 the latest published layer of the strongest department in the **Up to** cut
 that authors it on the RenderSettings prim, else the project's
 `root_default_prims.usda`. The tooltip lists each shot's value and the
-department it came from. Like the Camera row it is a preview: a setting
+department it came from. Like the Camera field's it is a preview: a setting
 authored somewhere it does not read (a sublayer of an export, an asset)
 composes on the farm without showing here. The fields read `⟨from scene⟩`
 until the lookup is done, or when nothing is ticked for Render. Up to
@@ -766,7 +788,7 @@ the newest comp: the render the Render column measures, the newest version of
 the Render **Up to** department's `default` channel, so changing that cut
 re-reads it. A comp is not a preview of the publishes: a stale department
 does not make it stale, and ticking Comp alone raises no
-`stale and not ticked` warning (Render beside it still does).
+`latest export used` note (Render beside it still does).
 
 #### A comp in the render scene
 

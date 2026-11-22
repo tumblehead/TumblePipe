@@ -198,7 +198,7 @@ def main() -> int:
     check("2. every cell state is reached",
           {grid.PENDING, grid.OFF, grid.NEVER, grid.STALE, grid.CURRENT, grid.NONE} <= states, str(states))
     check("2. rows with a stale upstream line, warnings and blocking errors are reached",
-          any(w and 'stale and not ticked' in w[0] for _u, _s, w, _e in rows)
+          any(w and 'latest export used' in w[0] for _u, _s, w, _e in rows)
           and any(w for _u, _s, w, _e in rows) and any(e for _u, _s, _w, e in rows))
 
     # 3. Errors and off departments

@@ -24,6 +24,7 @@ from tumblepipe.config.department_off import applied_departments, read_disabled_
 from tumblepipe.farm.specs import submission
 from tumblepipe.farm.submit import settings as resolve
 from tumblepipe.farm.submit.review import ReviewRow
+from tumblepipe.farm.submit.stale import stale_note
 from tumblepipe.pipe import turntable
 
 # ── cell states ───────────────────────────────────────────
@@ -449,6 +450,32 @@ def preview_department_fallback(renderable: Sequence[str]):
     return fallback
 
 
+def active_departments(renderable: Sequence[str], properties_list: Sequence[dict]) -> list[str]:
+    """What the Up to menus list for a batch: the renderable departments
+    (pool order) turned on for *every* entity in it (Remy, 2026-11-20).
+
+    A department turned off on one ticked shot is a cut Farm Submit refuses
+    for that shot (#64), so it is not offered while that shot is ticked;
+    untick it, or leave the cut on ``⟨per entity⟩``, where each shot takes
+    its own latest. An empty batch lists them all.
+    """
+    off: set = set()
+    for properties in properties_list:
+        off.update(read_disabled_departments(properties or {}))
+    return [name for name in renderable if name not in off]
+
+
+def department_options(active: Sequence[str], pinned: str | None) -> list[str]:
+    """The Up to menu's rows after its placeholder: ``active`` in pool
+    order, plus a ``pinned`` choice they no longer hold at the end, so a
+    change of ticks never changes the artist's pick behind their back (the
+    Warnings column then says the cut is off on that shot)."""
+    options = list(active)
+    if pinned and pinned not in options:
+        options.append(pinned)
+    return options
+
+
 def preview_cut(departments: Sequence[str], cut: str | None) -> list[str]:
     """The pool departments up to and including ``cut`` (all when unknown)."""
     departments = list(departments)
@@ -827,8 +854,20 @@ class ResolvedRow:
     def shown(self) -> list[str]:
         """The Warnings column: blocking errors first (so an elided cell
         still shows them), then the stale departments, then the warnings."""
-        stale = [f"{', '.join(self.stale)} stale and not ticked"] if self.stale else []
+        stale = [stale_note(self.stale)] if self.stale else []
         return [*self.errors, *stale, *self.warnings]
+
+    @property
+    def tone(self) -> str:
+        """How loudly the Warnings column speaks: ``'error'`` for a blocked
+        row, ``'warning'`` for one with warnings, ``'note'`` when the only
+        thing to say is a stale department (:func:`stale_note`): that is the
+        artist's call, not a problem."""
+        if self.errors:
+            return 'error'
+        if self.warnings:
+            return 'warning'
+        return 'note'
 
     def review(self, name: str, steps: list[tuple[str, str]]) -> ReviewRow:
         """The row on the review sheet, named ``name``, submitting ``steps``."""

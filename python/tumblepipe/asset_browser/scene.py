@@ -877,13 +877,16 @@ def open_submit_jobs_dialog(
     department: str | None = None,
     tick_kinds: tuple[str, ...] = (farm_grid.RENDER,),
     channels: tuple[str, ...] | None = None,
+    render_department: str | None = None,
 ) -> None:
     """Open the Farm Submit grid (:class:`SubmitJobsDialog`) for ``context``.
 
     ``uris`` start with ``tick_kinds`` ticked: Render, for the Render
     quick action and **Submit Jobs…**. ``channels`` opens the Render
-    channel menu on those channels (``*``: all) instead of its usual seed:
-    th::import_render's **Render** button. The owning project must be
+    channel menu on those channels (``*``: all) instead of its usual seed,
+    and ``render_department`` pins the Render cut (the workfile's
+    ``department`` pins only the Playblast's): th::import_render's
+    **Render** button. The owning project must be
     active already, so department lookups resolve against the right install.
 
     Non-modal: Houdini stays usable while the grid is open, and the
@@ -906,6 +909,7 @@ def open_submit_jobs_dialog(
     dialog = SubmitJobsDialog(
         uris, names, context, parent=hou.qt.mainWindow(),
         department=department, tick_kinds=tick_kinds, channels=channels,
+        render_department=render_department,
         # The open workfile's rows are highlighted, whoever opened the grid.
         active=_loaded_workfile_entities(),
     )
