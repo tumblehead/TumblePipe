@@ -31,6 +31,8 @@ real farm (read only: no farm command is sent). Checks:
      box), an untouched editor sends nothing, an edit sets a batch's jobs in
      one call and the next read shows it, Set priority lists the presets
      then Other… and leaves local jobs out, a refusal is a message box
+ 11. closing a window showing This machine raises nothing from its slots
+     (the teardown's emptied Show combo once asked the shut-down executor)
 
 Run (no Houdini licence: Houdini's bundled Python, not hython; see
 ``headless-qt-verify`` in the repo notes):
@@ -714,6 +716,29 @@ def verify_priority(app: QApplication, win, project: str) -> None:
          deadline_jobs._command, QMessageBox.warning) = saved
 
 
+def verify_close(app: QApplication) -> None:
+    """Closing releases the Show combo's model (``release_kept_references``),
+    which emits its currentIndexChanged; up to 1.120.2 that reached
+    ``_refresh_farm`` on the shut-down executor and a traceback
+    (``cannot schedule new futures after shutdown``) printed on every close
+    of a window showing This machine (live check, 2026-11-22)."""
+    from tumblepipe.farm.manager import window as mw
+    errors = []
+    saved = sys.excepthook
+    sys.excepthook = lambda kind, value, tb: errors.append(f'{kind.__name__}: {value}')
+    try:
+        other = mw.ManagerWindow(None, rows.LOCAL)
+        other.show()
+        pump(app, 0.8)
+        other._farm_available = True  # As where a Deadline Client answers.
+        other._farm_loading = False
+        other.close()
+        pump(app, 0.3)
+    finally:
+        sys.excepthook = saved
+    check('closing a window on This machine raises nothing in its slots', not errors, '; '.join(errors))
+
+
 def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     root = queue.root()
@@ -876,6 +901,9 @@ def main() -> int:
 
     print('10. Priority: the column, editing it, Set priority (a fake farm)')
     verify_priority(app, win, project)
+
+    print('11. closing on "Show: This machine" raises nothing')
+    verify_close(app)
 
     if len(sys.argv) > 1:
         win.resize(1500, 900)

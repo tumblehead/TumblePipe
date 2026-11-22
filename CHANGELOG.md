@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.120.2 — 2026-11-22
+
+### Fixes
+- fix(cinedex): an Alt let go while New shot is open no longer makes the next trim a roll (`b78a665c`)
+- fix(cinedex): dragging the strip thumb's left end no longer creeps its right end (`9b5ae621`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.120.1 (`7327c583`)
+
 ## v1.120.1 — 2026-11-22
 
 ### Chores

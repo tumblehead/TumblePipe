@@ -3411,6 +3411,15 @@ every tag is protected, so only soren-n and Magzor2k can start one.
 A manual pipeline without `RUN=tests` is a dry run of the three builds:
 each builds and packs, unsigned, and uploads nothing.
 
+On Linux the compile steps run in an AlmaLinux 8 image with gcc-toolset-11
+(`.ci/linux-el8/Containerfile`), which `ci.sh` builds on the worker with
+podman and `.ci/_build_common.py` re-runs each prepack script in. The worker's
+own Ubuntu 24.04 stamps binaries with glibc 2.39 and its libstdc++, so
+1.40.0 to 1.119.0 shipped Linux binaries no older distro could load. The
+build now refuses any Linux binary needing more than Houdini 22 itself:
+glibc 2.28 and GLIBCXX_3.4.22 (`_packaging.LINUX_FLOORS`). hpm, the HDA
+compile and the upload stay on the host.
+
 To run the tests on all three workers without releasing, start a manual
 pipeline with the variable `RUN=tests` (`tests/README.md`, "On the build
 workers"). Use it before tagging anything that could behave differently on

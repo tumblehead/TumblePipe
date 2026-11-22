@@ -401,6 +401,10 @@ class ManagerWindow(QWidget):
         self._root = queue.root()
         self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix='farm-manager')
         self._futures: dict[Future, tuple] = {}
+        # Set on close: the executor is shut down, and the teardown's own
+        # signals (the Show combo emptied by release_kept_references) must
+        # neither reload the trees nor ask the farm.
+        self._closed = False
         self._local_rows: list[rows.JobRow] = []
         self._local_problems: list[str] = []
         self._farm_rows: list[rows.JobRow] = []
@@ -967,6 +971,8 @@ class ManagerWindow(QWidget):
             self._submit(('farm_tasks', job.id), _fetch_farm_tasks, job.id)
 
     def _submit(self, key: tuple, func, *args) -> None:
+        if self._closed:
+            return
         self._futures[self._executor.submit(func, *args)] = key
 
     def _poll_futures(self) -> None:
@@ -1144,6 +1150,8 @@ class ManagerWindow(QWidget):
         return [row for row in candidates if rows.keep(row, **filters)]
 
     def _on_filters_changed(self, *_args) -> None:
+        if self._closed:
+            return
         self._sync_jobs()
         if self._source.currentData() != rows.LOCAL and not self._farm_rows:
             self._refresh_farm()
@@ -2053,6 +2061,7 @@ class ManagerWindow(QWidget):
     def closeEvent(self, event) -> None:
         for timer in (self._local_timer, self._farm_timer, self._futures_timer, self._machine_timer):
             timer.stop()
+        self._closed = True
         self._executor.shutdown(wait=False, cancel_futures=True)
         super().closeEvent(event)
         if event.isAccepted():
