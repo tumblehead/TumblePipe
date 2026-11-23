@@ -42,6 +42,9 @@ log = logging.getLogger(__name__)
 #: rather than the browser's generic form; see
 #: :meth:`EntityOps.creation_fields`.
 ENTITY_EDITOR = "entity_editor"
+#: The Multis subheader's Multis Board...: the Entity Editor's Multis tab
+#: as a board.
+MULTI_BOARD = "multi_board"
 #: Import Shots from CSV… (#32): a file dialog and the import's plan, not
 #: the generic form; see :meth:`EntityOps.import_shots_csv`.
 IMPORT_SHOTS_CSV = "import_shots_csv"
@@ -235,6 +238,7 @@ class EntityOps:
         editor = CreationOption(ENTITY_EDITOR, "Entity Editor...", "list")
         sequence = CreationOption("new_sequence", "New Sequence...", "folder")
         multi = CreationOption("new_group", "New Multi...", "users")
+        board = CreationOption(MULTI_BOARD, "Multis Board...", "layout-grid")
         root = CreationOption("new_scene", "New Root...", "layers")
         csv_import = CreationOption(
             IMPORT_SHOTS_CSV, "Import Shots from CSV...", "file-input",
@@ -248,7 +252,7 @@ class EntityOps:
         flat_assets = self._flat_bucket(project, "assets") is not None
         flat_shots = self._flat_bucket(project, "shots") is not None
         if scope == "group":
-            return [multi]
+            return [multi, board]
         if scope == "scene":
             return [root]
         if scope == "recipes":
@@ -361,6 +365,21 @@ class EntityOps:
             # it opens once the browser's callback has returned.
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, lambda: self.import_shots_csv(default_proj))
+            return []
+
+        if option_id == MULTI_BOARD:
+            # Like the Entity Editor: no form, the editor opens instead, on
+            # its Multis tab as a board, for the Multis section's context.
+            context = next(
+                (t.partition(":")[2] for t in tags if t.startswith("multi_context:")),
+                "",
+            )
+            if context not in ("shots", "assets"):
+                scope = creation_scope(tags)
+                context = scope if scope in ("shots", "assets") else "shots"
+            window = self.open_entity_editor(default_proj, "multis", context)
+            if window is not None:
+                window.multis_pane.set_view("board")
             return []
 
         if option_id == ENTITY_EDITOR:

@@ -70,9 +70,17 @@ class NotRendered(CompError):
 # AOVs
 ###############################################################################
 # The LPE splits of the beauty a comp reads beside its light groups, on
-# import_render's lpe output (Antoine, 2026-11-22): key and dome light by
-# lobe, and direct and indirect by lobe. A light mix's rows stay the light
-# groups alone (:func:`light_groups`).
+# import_render's lpe output (Antoine, 2026-11-22): every AOV named
+# ``<lobe>_<x>`` for a lobe of LPE_PREFIXES and any suffix ``x``, a light
+# (``diffuse_key``, ``specular_fill``, ``diffuse_rimLight``: th::lpe_tags
+# makes one per tag, whatever the lights are called; 2026-11-23, after
+# diffuse_fill and specular_fill landed on extra) or a path split
+# (``diffuse_direct``, ``specular_indirect``). Plain ``diffuse`` and
+# ``specular``, with no suffix, stay extras (a decision, 2026-11-22). A
+# light mix's rows stay the light groups alone (:func:`light_groups`).
+LPE_PREFIXES = (LIGHT_GROUP_PREFIX, 'diffuse_', 'specular_')
+# Examples of the splits (a key/dome rig's and th::render_vars'); the rule
+# is LPE_PREFIXES, not this list.
 LPE_AOV_NAMES = (
     'diffuse_key', 'specular_key', 'diffuse_dome', 'specular_dome',
     'diffuse_direct', 'specular_direct', 'diffuse_indirect', 'specular_indirect',
@@ -98,11 +106,12 @@ def aov_included(aov_name: str) -> bool:
 
 def is_lpe_aov(aov_name: str) -> bool:
     """Whether an AOV rides import_render's lpe output: a light group
-    (``beauty_<tag>``) or one of :data:`LPE_AOV_NAMES`."""
+    (``beauty_<tag>``) or an LPE split (``diffuse_<x>``, ``specular_<x>``)
+    for any suffix ``x``, in any case (:data:`LPE_PREFIXES`). A prefix
+    alone (``beauty_``, ``diffuse_``) is not one."""
     name = aov_name.lower()
-    if name.startswith(LIGHT_GROUP_PREFIX) and len(name) > len(LIGHT_GROUP_PREFIX):
-        return True
-    return name in LPE_AOV_NAMES
+    return any(name.startswith(prefix) and len(name) > len(prefix)
+               for prefix in LPE_PREFIXES)
 
 
 def aov_signature(aov_name: str) -> str:
@@ -278,8 +287,9 @@ def aov_cable(aov_name: str) -> str:
 
     ``lpes``: a light group, ``beauty_<tag>`` (th::lpe_tags names an LPE
     tag's AOV so; what :func:`light_groups` finds and a light mix grades),
-    and the LPE splits :data:`LPE_AOV_NAMES` (``diffuse_key``,
-    ``specular_dome``, ``diffuse_direct``, ...).
+    and the LPE splits, ``diffuse_<x>`` and ``specular_<x>`` for any ``x``
+    (``diffuse_key``, ``specular_fill``, ``diffuse_direct``, ...:
+    :func:`is_lpe_aov`).
     ``cryptomaterials`` / ``cryptoprimitives``: the rank planes of that
     cryptomatte (``cryptomaterials00``, ``01``, ...). ``mattes``: what
     th::mattes renders (``objid_*`` mattes, ``ramp_*`` distance ramps),

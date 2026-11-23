@@ -87,6 +87,9 @@ mod panels;
 mod playback;
 mod range_shot;
 mod rendering_watch;
+pub(crate) mod review;
+#[cfg(test)]
+mod review_wiring_tests;
 mod shot_sync;
 mod timeline_dialog;
 mod timeline_menu;
@@ -356,6 +359,8 @@ pub enum Message {
     /// Read every shot's takes and the bins again (changes made on another
     /// machine that no journal here announces).
     Refresh,
+    /// Drawing and notes on the frames (`editor/review.rs`).
+    Review(review::ReviewMessage),
     Autosave,
     CloseRequested,
 }
@@ -485,6 +490,9 @@ pub struct Editor {
     /// The one track the timeline shows (its name was double-clicked),
     /// this session. The view's only: every track still plays.
     solo: Option<TrackRef>,
+    /// The review marks read and made, the brush and review mode
+    /// (`editor/review.rs`).
+    review: crate::review::Review,
 }
 
 fn waker(slot: &Arc<Mutex<Option<Sender<Message>>>>) -> impl Fn() + Send + 'static {
@@ -523,6 +531,7 @@ impl Editor {
         let engine = Engine::start(vec![Content::none()], Timeline::new(Vec::new()), BUFFER_BYTES);
         let wake_slot: Arc<Mutex<Option<Sender<Message>>>> = Arc::new(Mutex::new(None));
         engine.set_notifier(waker(&wake_slot));
+        let review = crate::review::Review::new(crate::review::Io::start(waker(&wake_slot)));
         let timeline = engine.timeline();
         let timeline_view = timeline_view::TimelineView::fitted(doc.edit.length(), doc.edit.fps.max(1) as usize);
         let seen = doc.edit.clone();
@@ -600,6 +609,7 @@ impl Editor {
             solo: None,
             layout_path,
             timeline_view,
+            review,
         }
     }
 
@@ -961,6 +971,7 @@ impl Editor {
         Tracks {
             rows: self.rows(),
             markers: self.doc.edit.markers.iter().map(|m| m.at).collect(),
+            reviews: self.review_positions(),
             // Not the cut's length: the span only an explicit fit sets, so
             // a drag, trim or retime never rescales the clips under it.
             total: self.timeline_view.shown(),
@@ -1095,6 +1106,34 @@ impl Editor {
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
+    }
+
+    /// The picture: the video, the burn-ins over it, the review marks over
+    /// them (`editor/review.rs`), or the card saying
+    /// why nothing plays; its right-click menu what the view can do.
+    fn picture_view(&self) -> Element<Message> {
+        let video = shader(self.video()).width(Length::Fill).height(Length::Fill).redraw(false);
+        let mut layers = stack().push(video).width(Length::Fill).height(Length::Fill);
+        // The burn-ins go over the picture unmirrored, so they still read
+        // when it is flipped (`flip`).
+        if let Some(burnin) = self.burnin() {
+            layers = layers.push(canvas(burnin).width(Length::Fill).height(Length::Fill));
+        }
+        // The review marks over both (the comments are in the review
+        // panel, `Editor::review_panel`).
+        if let Some(surface) = self.review_surface() {
+            layers = layers.push(surface);
+        }
+        if self.shown.is_none()
+            && let Some(card) = self.card()
+        {
+            let words = text(card).font_size(15.0).color(look::quiet());
+            layers = layers
+                .push(container(words).width(Length::Fill).height(Length::Fill).align_x(Horizontal::Center).align_y(Vertical::Center));
+        }
+        // A right-click on the picture: what the view of it can do.
+        let (label, flip) = self.flip_row();
+        Roomy::menus(context_menu(Id::new("viewer menu"), layers).item(label, move || flip.clone())).into()
     }
 
     /// The picture as the video view draws it: the frame shown, at the
@@ -1509,6 +1548,11 @@ impl Editor {
     fn leave(&mut self) {
         self.quit = true;
         self.endpoint.release();
+        // The last strokes may still be on their way to the share: the
+        // process ending would drop them.
+        if !self.review.flush(Duration::from_secs(10)) {
+            eprintln!("cinedex: review marks were still being saved when the editor closed");
+        }
         // Undone back to what is saved since the last autosave: drop it.
         if !self.doc.dirty() {
             self.autosave();
@@ -1582,6 +1626,7 @@ impl Application for Editor {
             time::every(JOURNAL_EVERY, || Message::PollJournal),
             time::every(PREVIEWS_EVERY, || Message::PollPreviews),
             time::every(crate::farm_jobs::EVERY, || Message::PollFarm),
+            time::every(crate::review::POLL_EVERY, || Message::Review(review::ReviewMessage::Poll)),
         ]);
         if self.show_live && self.entries.iter().any(|e| e.resolved().is_some_and(|r| r.live.playing().is_some())) {
             autosave = Subscription::batch([autosave, time::every(LIVE_EVERY, || Message::PollLive)]);
@@ -1599,23 +1644,7 @@ impl Application for Editor {
     }
 
     fn view(&self, _window: window::Id) -> Element<Message> {
-        let video = shader(self.video()).width(Length::Fill).height(Length::Fill).redraw(false);
-        let mut layers = stack().push(video).width(Length::Fill).height(Length::Fill);
-        // The burn-ins go over the picture unmirrored, so they still read
-        // when it is flipped (`flip`).
-        if let Some(burnin) = self.burnin() {
-            layers = layers.push(canvas(burnin).width(Length::Fill).height(Length::Fill));
-        }
-        if self.shown.is_none()
-            && let Some(card) = self.card()
-        {
-            let words = text(card).font_size(15.0).color(look::quiet());
-            layers = layers
-                .push(container(words).width(Length::Fill).height(Length::Fill).align_x(Horizontal::Center).align_y(Vertical::Center));
-        }
-        // A right-click on the picture: what the view of it can do.
-        let (label, flip) = self.flip_row();
-        let layers = Roomy::menus(context_menu(Id::new("viewer menu"), layers).item(label, move || flip.clone()));
+        let layers = self.picture_view();
         // The panels resize (`editor/panels.rs`): drag a handle, double-
         // click it to fold the panel to a strip, click the strip to bring it
         // back. The handles stay out of keyboard focus, so the player's keys
@@ -1630,6 +1659,11 @@ impl Application for Editor {
                 .push(self.display_controls())
                 .width(Length::Fill)
                 .height(Length::Fill);
+            // In review mode the review panel stands at the viewer's right.
+            let viewer: Element<Message> = match self.review_panel() {
+                Some(panel) => row().push(viewer).push(panel).width(Length::Fill).height(Length::Fill).into(),
+                None => viewer.into(),
+            };
             panels::bins_split(self.bins_view(), viewer, &self.layout, Message::BinsPanel).into()
         };
         let timeline = column().push(self.timeline_header()).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);
@@ -1679,6 +1713,7 @@ impl Editor {
                 crate::app_icon::apply();
                 self.collect_proxies();
                 self.refresh_shown();
+                self.review_collect();
             }
             Message::Tick => {
                 if self.playing {
@@ -1771,6 +1806,9 @@ impl Editor {
             Message::ClipFieldSet(field) => return self.set_field(field),
             // What the status said was of the cut before: a refusal left
             // there would read as being of what the undo just did.
+            // In review mode Undo and Redo are the review marks'.
+            Message::Undo if self.review.drawing => self.review_handle(review::ReviewMessage::Undo),
+            Message::Redo if self.review.drawing => self.review_handle(review::ReviewMessage::Redo),
             Message::Undo => {
                 if self.doc.undo() {
                     self.status = None;
@@ -1818,6 +1856,7 @@ impl Editor {
             }
             Message::Resolved(index, result) => {
                 self.resolved(index, result);
+                self.review.want(self.review_dirs());
                 if std::mem::take(&mut self.entries[index].again) {
                     return self.refresh_entry(index);
                 }
@@ -2031,7 +2070,9 @@ impl Editor {
                 let changes = self.shared_journal.arrived(changes);
                 return self.apply_journal(Some(changes));
             }
+            Message::Review(message) => self.review_handle(message),
             Message::Refresh => {
+                self.review_refresh();
                 self.bin_thumbs_changed(None);
                 let shots = self.shot_entries().into_iter().map(|(i, _)| i).collect();
                 return Command::batch([self.refresh_entries(shots), self.refresh_bins()]);

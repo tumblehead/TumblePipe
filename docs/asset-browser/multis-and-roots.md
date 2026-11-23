@@ -110,8 +110,10 @@ Departments the Multi does not cover keep the member's own workfiles.
 ### Members
 
 In the Entity Editor, double-click the Multi's **Members** on the Multis tab,
-or the **Multis** cell of the shots on the Shots tab. In the browser, add
-shots or assets to a Multi by:
+or the **Multis** cell of the shots on the Shots tab, or drag cards between
+Multis on the Multis tab's [board](entity-editor.md#the-board) (**Multis
+Board…** on a Multis subheader opens it). In the browser, add shots or
+assets to a Multi by:
 
 - dragging cards onto the Multi's row in the sidebar (the drag label reads
   **Add to *name***);
@@ -238,7 +240,7 @@ two ways, and each has a fix:
 
 | What happened | What is offered |
 |---|---|
-| An export pinned to a shot that is not a member (someone added import and export nodes for SH050 by hand) | Add the shot to the Multi |
+| An export pinned to a shot that is not a member (someone added import and export nodes for SH050 by hand, or SH050 was moved out of the Multi and its graph stayed) | Add the shot to the Multi, or remove its graph from the workfile |
 | A member with no export here (it joined after the workfile was made) | Add its graph to the workfile |
 
 The check runs:
@@ -266,13 +268,27 @@ its entity from the context, as a shot's own workfile has them, is left out.
 > Joining a Multi makes its workfile theirs: once in seqA, SH050 and SH060
 > are worked on in seqA's workfiles for every department it covers (layout,
 > animation, light), not in their own.
+>
+> Or Remove their graphs to delete the nodes only SH050 and SH060 use from
+> this workfile. Nodes the members share stay.
 
 **Add to seqA** adds them as the browser and the Entity Editor do, so the
 overlap rule holds and a shared timeline places them. A shot that cannot
 join is listed with the reason (not a shot of the project, or another
-Multi covers one of the same departments for it) and is not added; when
-none can join, the message only says why. The browser shows the new members
-at once.
+Multi covers one of the same departments for it) and is not added. The
+browser shows the new members at once.
+
+**Remove their graphs** (**Remove its graph** for one shot) is the way out
+when a shot was moved out of the Multi, in the board or the Entity Editor,
+and its graph stayed in the workfile. It deletes the shot's *column*, the
+same selection **Add graph** copies: the nodes on the paths from its imports
+to its export, plus any node named with its suffix. A node several members
+use, like a merge of every export or a shared camera, stays, and so does
+everything outside the shot's column. It is one undo step (Ctrl+Z brings
+the graph back), and the status bar says how many nodes went. It is offered
+for every shot in the message, so when none can join (another Multi covers
+the department for them now, the usual case after a move) it is the only
+action, next to **Not now**.
 
 **Adding graphs.** For members with no export:
 

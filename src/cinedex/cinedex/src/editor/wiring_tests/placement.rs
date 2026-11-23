@@ -35,6 +35,42 @@ impl primer::core::measure::TextMeasurer for Odd {
     }
 }
 
+/// Text that wraps, as the real measurer's does: a fixed advance per
+/// character, lines broken at the last space that fits (or mid-word, for a
+/// word longer than the line).
+struct Wrapping;
+
+impl primer::core::measure::TextMeasurer for Wrapping {
+    fn measure_text(&self, content: &str, size: f32, max_width: Option<f32>) -> Size {
+        self.layout_text(content, size, max_width).size
+    }
+    fn measure_styled(&self, content: &str, _: &[primer::core::render::TextSpan], size: f32, max_width: Option<f32>) -> Size {
+        self.measure_text(content, size, max_width)
+    }
+    fn layout_text(&self, content: &str, size: f32, max_width: Option<f32>) -> primer::core::measure::TextLayout {
+        use primer::core::measure::{TextLayout, TextLine, VisualLines, line_height};
+        let advance = size * 0.55;
+        let chars: Vec<char> = content.chars().collect();
+        let fit = max_width.map_or(usize::MAX, |m| ((m / advance).floor() as usize).max(1));
+        let mut lines = Vec::new();
+        let mut start = 0;
+        while start < chars.len() || lines.is_empty() {
+            let mut end = (start + fit).min(chars.len());
+            if end < chars.len()
+                && let Some(space) = chars[start..end].iter().rposition(|&c| c == ' ').filter(|&i| i > 0)
+            {
+                end = start + space + 1;
+            }
+            let carets: Vec<f32> = (0..=end - start).map(|i| i as f32 * advance).collect();
+            lines.push(TextLine { start, end, width: (end - start) as f32 * advance, carets });
+            start = end;
+        }
+        let width = lines.iter().map(|l| l.width).fold(0.0, f32::max);
+        let height = line_height(size) * lines.len() as f32;
+        TextLayout { lines: VisualLines::new(lines), size: Size::new(width, height) }
+    }
+}
+
 /// A word as the window draws it, and the part of the window it may show
 /// in: the window cut down by every clip it is drawn inside.
 struct Drawn {
@@ -70,9 +106,14 @@ struct Window {
 
 /// The editor's whole window laid out `w` by `h` and drawn.
 fn window(editor: &Editor, w: f32, h: f32) -> Window {
+    window_measured(editor, w, h, &Odd)
+}
+
+/// The window laid out and drawn with `measurer`'s text.
+fn window_measured(editor: &Editor, w: f32, h: f32, measurer: &dyn primer::core::measure::TextMeasurer) -> Window {
     let view = Application::view(editor, window::Id::MAIN);
     let (store, theme) = (StateStore::new(), Theme::dark());
-    let node = view.layout(&Limits::new(Size::ZERO, Size::new(w, h)), LayoutCtx { measurer: &Odd, store: &store, theme: &theme });
+    let node = view.layout(&Limits::new(Size::ZERO, Size::new(w, h)), LayoutCtx { measurer, store: &store, theme: &theme });
     let root = Layout::new(&node);
     // The modal over the page; the page a column of the toolbar, the body
     // and the status line; the body the timeline split.
@@ -87,7 +128,7 @@ fn window(editor: &Editor, w: f32, h: f32) -> Window {
         above[1].bounds()
     });
     let timeline = (!editor.layout.timeline_collapsed).then(|| body[1].bounds());
-    let ctx = Ctx { cursor: Cursor::Unavailable, theme: &theme, store: &store, measurer: &Odd, visible: node.bounds() };
+    let ctx = Ctx { cursor: Cursor::Unavailable, theme: &theme, store: &store, measurer, visible: node.bounds() };
     let mut words = Vec::new();
     drawn(&view.draw(root, ctx), Some(Rectangle { x: 0.0, y: 0.0, width: w, height: h }), &mut words);
     Window { toolbar: parts[0].bounds(), player, timeline, words }
@@ -114,7 +155,8 @@ impl Window {
     }
 
     /// `word` is drawn whole, inside the room it is given, over no other
-    /// word.
+    /// word where that word shows (a word scrolled out under a clip is not
+    /// there).
     fn whole_and_alone(&self, word: &Drawn) -> Result<(), TestCaseError> {
         let at = word.text.bounds;
         let room = word.room.ok_or_else(|| TestCaseError::fail(format!("{:?} is clipped away", word.text.content)))?;
@@ -123,14 +165,8 @@ impl Window {
             if std::ptr::eq(other, word) || other.text.content.trim().is_empty() {
                 continue;
             }
-            prop_assert!(
-                !overlap(at, other.text.bounds),
-                "{:?} at {:?} over {:?} at {:?}",
-                word.text.content,
-                at,
-                other.text.content,
-                other.text.bounds
-            );
+            let Some(shown) = other.room.and_then(|r| r.intersection(other.text.bounds)) else { continue };
+            prop_assert!(!overlap(at, shown), "{:?} at {:?} over {:?} at {:?}", word.text.content, at, other.text.content, shown);
         }
         Ok(())
     }
@@ -195,5 +231,88 @@ proptest! {
             None => prop_assert!(inside(at, window.toolbar), "the timer at {:?} is not in the toolbar {:?}", at, window.toolbar),
         }
         window.whole_and_alone(timers[0])?;
+    }
+
+    /// In review mode the review panel stands at the viewer's right, its
+    /// whole width, beside the picture and not over it: its title, Done and
+    /// Send each drawn once, whole, in it, at any viewer height (what is
+    /// between them scrolls); Live
+    /// and Burn-ins stay on the player's strip, left of it.
+    #[test]
+    fn the_review_panel_stands_at_the_viewers_right(
+        edit in cut(),
+        bins_collapsed in any::<bool>(),
+        timeline_collapsed in any::<bool>(),
+        w in 1000f32..2600.0,
+        h in 600f32..1600.0,
+    ) {
+        let mut bench = Bench::new(&edit, false);
+        bench.editor.layout.bins_collapsed = bins_collapsed;
+        bench.editor.layout.timeline_collapsed = timeline_collapsed;
+        bench.send(Message::Review(crate::editor::review::ReviewMessage::Mode(true)));
+        let window = window(&bench.editor, w, h);
+        let player = window.player.expect("the viewer in Cut");
+        let panel = Rectangle { x: player.x + player.width - crate::editor::review::PANEL_WIDTH, width: crate::editor::review::PANEL_WIDTH, ..player };
+        for name in ["Review", "Done", "Send"] {
+            let found = window.find(|t| t.content == name);
+            prop_assert_eq!(found.len(), 1, "{} drawn {} times", name, found.len());
+            prop_assert!(inside(found[0].text.bounds, panel), "{} at {:?} is not in the panel {:?}", name, found[0].text.bounds, panel);
+            window.whole_and_alone(found[0])?;
+        }
+        let comments = window.find(|t| t.content.starts_with("Comments"));
+        // In a low viewer it is scrolled out of sight, never out of the panel.
+        prop_assert!(comments.len() <= 1);
+        for c in comments {
+            prop_assert!(inside(c.text.bounds, panel), "the comments' heading at {:?} is not in the panel {:?}", c.text.bounds, panel);
+        }
+        for name in ["Live", "Burn-ins"] {
+            let found = window.find(|t| t.content == name);
+            prop_assert_eq!(found.len(), 1, "{} drawn {} times", name, found.len());
+            prop_assert!(!overlap(found[0].text.bounds, panel), "{} at {:?} is in the panel {:?}", name, found[0].text.bounds, panel);
+        }
+    }
+
+    /// However many comments a frame has, however long (a word too long
+    /// for a line among them), the panel keeps its title, Done and Send
+    /// whole in it, and every comment drawn stays within its width.
+    #[test]
+    fn a_long_conversation_stays_in_the_panel(
+        texts in prop::collection::vec(prop_oneof![
+            "[a-z]{1,12}( [a-z]{1,12}){0,60}",
+            "[a-z]{40,120}",
+        ], 0..14),
+        w in 1000f32..2600.0,
+        h in 600f32..1600.0,
+    ) {
+        let share = tempfile::tempdir().unwrap();
+        let mut viewer = crate::editor::review_wiring_tests::Viewer::new(share.path(), (192, 108));
+        let editor = &mut viewer.editor;
+        drop(editor.update(Message::Review(crate::editor::review::ReviewMessage::Mode(true))));
+        let target = editor.review_target().expect("a take to review");
+        for t in &texts {
+            editor.review.draft = crate::review::Draft { text: t.clone(), editing: None };
+            let step = editor.review.note_step(&target.dir, target.frame);
+            editor.review.apply(step);
+        }
+        editor.review.draft = crate::review::Draft::default();
+        prop_assert_eq!(editor.review_comments().len(), texts.len());
+        let window = window_measured(editor, w, h, &Wrapping);
+        let player = window.player.expect("the viewer in Cut");
+        let panel = Rectangle { x: player.x + player.width - crate::editor::review::PANEL_WIDTH, width: crate::editor::review::PANEL_WIDTH, ..player };
+        for name in ["Review", "Done", "Send"] {
+            let found = window.find(|t| t.content == name);
+            prop_assert_eq!(found.len(), 1, "{} drawn {} times", name, found.len());
+            prop_assert!(inside(found[0].text.bounds, panel), "{} at {:?} is not in the panel {:?}", name, found[0].text.bounds, panel);
+            window.whole_and_alone(found[0])?;
+        }
+        for t in &texts {
+            for d in window.find(|x| x.content == *t) {
+                let b = d.text.bounds;
+                prop_assert!(b.x >= panel.x - 1e-3 && b.x + b.width <= panel.x + panel.width + 1e-3, "a comment at {:?} spills out of the panel {:?}", b, panel);
+                if let Some(room) = d.room {
+                    prop_assert!(room.x >= panel.x - 1e-3 && room.x + room.width <= panel.x + panel.width + 1e-3, "a comment's room {:?} spills out of the panel {:?}", room, panel);
+                }
+            }
+        }
     }
 }

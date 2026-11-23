@@ -71,6 +71,11 @@ pub fn buffered() -> Color {
 pub fn mark() -> Color {
     grey(215)
 }
+/// A frame with review marks, on the ruler (`editor/review.rs`): a cool
+/// blue apart from the playhead's amber and the markers' light grey.
+pub fn review() -> Color {
+    Color::from_rgb8(90, 180, 250)
+}
 /// The present moment: the playhead, the timecode, a drag, focus.
 pub fn now() -> Color {
     Color::from_rgb8(240, 180, 60)

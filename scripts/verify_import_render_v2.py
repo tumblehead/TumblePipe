@@ -73,6 +73,30 @@ V2_LABELS = ['beauty', 'lpe', 'aov', 'matte', 'cryptomaterials', 'cryptoprimitiv
 check = vc.check
 
 
+# A light th::lpe_tags named with a capital: its AOV's folder is
+# lowercased by the farm's split, its channels kept the light's case
+# (diffuse_Fill.r in diffuse_fill/), and the File COP, which matches a plane
+# case for case, read it black (2026-11-23). It rides lpe whatever the
+# light is called.
+RECASED_LPE, RECASED_PLANE, RECASED_COLOUR = 'diffuse_fill', 'diffuse_Fill', (0.3, 0.6, 0.9)
+
+
+def stage_recased(shot_uri, department, channel, version, aov, plane, colour):
+    """One AOV of a render whose channels are ``<plane>.r/g/b`` in folder
+    ``aov`` (verify_comp.stage names both after the AOV)."""
+    root = vc.api.storage.resolve(
+        vc.Uri.parse('render:/render') / shot_uri.segments / department / channel / version
+    )
+    stem = '_'.join(shot_uri.segments[1:])
+    (root / aov).mkdir(parents=True, exist_ok=True)
+    names = [f'{plane}.{n}' for n in ('r', 'g', 'b')]
+    for frame in range(vc.FIRST, vc.LAST + 1):
+        out = root / aov / f'{stem}_{channel}_{aov}_{version}.{frame}.exr'
+        vc.oiiotool('--pattern', 'constant:color=' + ','.join(map(str, colour)),
+                    '32x16', 3, '--chnames', ','.join(names),
+                    *vc.CHROMA, '-d', 'float', '-o', out)
+
+
 def stage_shot():
     shot = vc.add_shot('SH100', LAYERS)
     for layer, colour in COLOURS.items():
@@ -80,11 +104,14 @@ def stage_shot():
                 f'objid_{layer}': (1.0,), 'diffuse_key': colour[:3],
                 'transmission': (0.25, 0.25, 0.25)}
         vc.stage(shot, 'render', layer, 'v0001', True, aovs)
+        stage_recased(shot, 'render', layer, 'v0001', RECASED_LPE, RECASED_PLANE, RECASED_COLOUR)
         if layer == 'chars':
             # A denoise: the beauty bare R,G,B,A (the C plane).
             vc.stage(shot, 'denoise', layer, 'v0001', False, {'beauty': colour})
             vc.stage(shot, 'denoise', layer, 'v0001', True,
                      {k: v for k, v in aovs.items() if k != 'beauty'})
+            stage_recased(shot, 'denoise', layer, 'v0001', RECASED_LPE, RECASED_PLANE,
+                          RECASED_COLOUR)
     return shot
 
 
@@ -138,7 +165,7 @@ def check_outputs(node, label, layers):
     prefix = (lambda layer: f'{layer}_') if node.is_all_channels() else (lambda layer: '')
     want_cables = {
         import_render.LPES_OUTPUT: [f'{prefix(layer)}{name}' for layer in layers
-                                    for name in ('beauty_key', 'diffuse_key')],
+                                    for name in ('beauty_key', 'diffuse_key', RECASED_LPE)],
         import_render.AOVS_OUTPUT: [f'{prefix(layer)}depth' for layer in layers],
         import_render.MATTES_OUTPUT: [f'{prefix(layer)}objid_{layer}' for layer in layers],
         import_render.LAYERS_OUTPUT: list(layers),
@@ -157,6 +184,14 @@ def check_outputs(node, label, layers):
             got = [aovs.layer(depth).computeAverage(c)
                    for c in range(aovs.layer(depth).channelCount())]
         check(f'{label}: {depth} is Mono, its depth', close(got, (5.0,)), f'got {got}')
+    lpes = native.cable(import_render.LPES_OUTPUT)
+    for layer in layers:
+        name = f'{prefix(layer)}{RECASED_LPE}'
+        got = None
+        if lpes is not None and name in lpes.wireNames():
+            got = [lpes.layer(name).computeAverage(c) for c in range(3)]
+        check(f'{label}: lpe field {name} (channels {RECASED_PLANE}.r/g/b) is its colour, '
+              'not black', close(got, RECASED_COLOUR), f'got {got}')
     extra = native.cable(import_render.EXTRA_OUTPUT)
     for layer in layers:
         name = f'{prefix(layer)}transmission'
@@ -319,14 +354,14 @@ def main():
     execute(one)
     one.parm(import_render.UNPACK_PARM).set(1)
     execute(one)
-    for name, want in ((import_render.LPE, ['beauty_key', 'diffuse_key']),
+    for name, want in ((import_render.LPE, ['beauty_key', 'diffuse_key', RECASED_LPE]),
                        (import_render.AOV, ['depth']),
                        (import_render.MATTE, ['objid_chars']), (import_render.LAYERS, ['chars']),
                        (import_render.EXTRA, ['transmission'])):
         unpack = one.find_unpack(name)
         labels = list(unpack.outputLabels()) if unpack is not None else None
         check(f'AOV Outputs: a Cable Unpack on {name}, its outputs named after the passes',
-              labels == want, str(labels))
+              labels is not None and sorted(labels) == sorted(want), str(labels))
     layers_unpack = one.find_unpack(import_render.LAYERS)
     if layers_unpack is not None:
         check('AOV Outputs: the layers unpack\'s chars output is the chars beauty',
@@ -389,6 +424,37 @@ def main():
     check(f'1.0 -> 2.0: that wire reads the {on_second} beauty',
           close(layer_average(reads_rgba2, 0), COLOURS[on_second]),
           str(layer_average(reads_rgba2, 0)))
+
+    print('--- a dive saved short of an output (before extras, v1.121.0)')
+    saved = import_render.create(copnet, 'import_saved')
+    saved.set_channel_name('chars')
+    execute(saved)
+    saved_path = saved.native().path()
+    saved.native().node(import_render.DIVE).parm('outputs').set(len(import_render.DIVE_OUTPUTS) - 1)
+    hip = Path(vc.TEMP_ROOT) / 'short_dive.hip'
+    hou.hipFile.save(str(hip))
+    hou.hipFile.clear(suppress_save_prompt=True)
+    hou.hipFile.load(str(hip), suppress_save_prompt=True, ignore_load_warnings=True)
+    loaded = hou.node(saved_path)
+    dive = loaded.node(import_render.DIVE) if loaded is not None else None
+    check('saved short: the load gives the dive every output',
+          dive is not None and dive.parm('outputs').eval() == len(import_render.DIVE_OUTPUTS),
+          str(dive and dive.parm('outputs').eval()))
+    feeds = {}
+    if loaded is not None:
+        for c in loaded.node('outputs').inputConnections():
+            source = c.inputNode()
+            parm = source.parm(f'outputlabel{c.outputIndex() + 1}')
+            feeds[c.inputIndex()] = (source.name(), parm.eval() if parm else None)
+    want = {index: ('dive', import_render.DIVE_SOURCES[name])
+            for index, name in enumerate(import_render.OUTPUTS)
+            if name not in import_render.SCENE_OUTPUT_NAMES}
+    check('saved short: every output is fed from its dive output, extra from extras',
+          all(feeds.get(index) == source for index, source in want.items()), str(feeds))
+    if loaded is not None:
+        names = cable_names(loaded, import_render.EXTRA_OUTPUT)
+        check('saved short: extra carries the transmission', names == ['transmission'],
+              str(names))
 
     print()
     print(f'{len(vc._failures)} failure(s)' if vc._failures else 'all checks passed')

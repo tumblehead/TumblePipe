@@ -18,7 +18,10 @@ Paste as New, a Root's assets edited for every shot using it, a shot given
 its own Root, the Root dialog's shared-Root warning, the Multis tab
 (coverage ticks across a selection, the Multis cell's dialog, overlapping
 coverage refused, a shots Multi's Timeline, the selected Multi's workfiles
-opened or made one at a time, the browser's New Multi…), the Layers
+opened or made one at a time, the browser's New Multi…, the Board: its
+columns, a hover saying what the drop does, a drop, a reorder, Ctrl onto
+New Multi refused by the overlap rule, a New Multi drop with its name
+ready to type, the department lens and undo), the Layers
 cell's dialog (a shot's and a sequence's, Use Selection, match counts, an
 exported channel kept, Inherit) and a Layers value typed, the Shots tab's
 Render settings side panel (a shot's value and its source, All shots and
@@ -395,6 +398,116 @@ check('once made, it shows and opens like the other',
 check('the versions are read again only after one is made',
       workfile_calls.count(('read', 'Crowd')) == reads + 1, workfile_calls)
 
+# ── The Multis board ───────────────────────────────────────────────────────
+
+import json  # noqa: E402
+
+from PySide6.QtCore import QMimeData, QPoint, QPointF  # noqa: E402
+from PySide6.QtGui import QDragMoveEvent, QDropEvent  # noqa: E402
+
+from tumblepipe.asset_browser import multi_board as mb  # noqa: E402
+
+
+_board_mimes = []
+
+
+def _board_event(cls, keys, source, y=10_000, ctrl=False):
+    mime = QMimeData()
+    _board_mimes.append(mime)   # the event does not own it
+    mime.setData(mb.MIME, json.dumps({'source': source, 'keys': keys}).encode('utf-8'))
+    modifiers = Qt.ControlModifier if ctrl else Qt.NoModifier
+    pos = QPoint(10, y) if cls is QDragMoveEvent else QPointF(10, y)
+    return cls(pos, Qt.MoveAction | Qt.CopyAction, mime, Qt.LeftButton, modifiers)
+
+
+def _board_columns():
+    return [c for c in multis.board._columns if isinstance(c, mb._Column)]
+
+
+def _board_keys(column):
+    return [e.key for e in column.cards.entries if e.kind == 'card']
+
+
+def _members():
+    return [(m.name, list(m.members), m.retire) for m in shots.sheet.multis]
+
+
+board = multis.board
+board_start = _members()
+multis.set_view('board')
+app.processEvents()
+check('Board shows the board, with the department lens; Table hides it again',
+      multis.views.currentWidget() is board and not multis._department.isHidden()
+      and multis._search.isHidden())
+free_col, crowd_col = _board_columns()
+check('board: first the shots no Multi has, then a column per Multi, then New Multi',
+      (free_col.multi_id, crowd_col.multi_id) == (None, crowd.id)
+      and isinstance(board._columns[-1], mb._NewColumn), [c.multi_id for c in board._columns])
+by_name = {(r.group, r.name): r.id for r in shots.sheet.rows}
+B_SH010, B_SH020 = by_name['sq010', 'SH010'], by_name['sq010', 'SH020']
+check('board: Crowd\'s column holds SH010, the first column SH020',
+      _board_keys(crowd_col) == [B_SH010] and B_SH020 in _board_keys(free_col),
+      (_board_keys(crowd_col), _board_keys(free_col)))
+check('board: a sequence header in the first column drags the sequence whole',
+      any(e.kind == 'seq' and e.key == shots.sheet.group_member('sq010') for e in free_col.cards.entries))
+
+hover = _board_event(QDragMoveEvent, [B_SH020], None)
+board.drag_over(crowd_col, hover)
+check('board: hovering over a column says what the drop does',
+      hover.isAccepted() and 'Move SH020 here' in crowd_col.banner.text(), crowd_col.banner.text())
+board.clear_drop_state()
+check('board: and stops saying it when the cards leave', crowd_col.banner.isHidden())
+
+board.drop(crowd_col, _board_event(QDropEvent, [B_SH020], None))
+app.processEvents()
+check('board: a drop is an edit: SH020 joins Crowd, last',
+      shots.sheet.multi(crowd.id).members == [B_SH010, B_SH020], shots.sheet.multi(crowd.id).members)
+free_col, crowd_col = _board_columns()
+check('board: its card waits for Apply',
+      [e.pending for e in crowd_col.cards.entries if e.kind == 'card'] == [False, True])
+reaches = [d for d in POOL[:2] if d in shots.sheet.base.publishing]
+check('board: it names the workfiles Apply reaches',
+      (not board.impact.isHidden() and 'SH020' in board.impact.text()) == bool(reaches),
+      board.impact.text())
+
+top = crowd_col.cards.entries[0].rect.top() + 1
+board.drop(crowd_col, _board_event(QDropEvent, [B_SH020], crowd.id, y=top))
+app.processEvents()
+check('board: dropped above SH010 within Crowd, SH020 moves first',
+      shots.sheet.multi(crowd.id).members == [B_SH020, B_SH010], shots.sheet.multi(crowd.id).members)
+
+new_col = board._columns[-1]
+hover = _board_event(QDragMoveEvent, [B_SH020], crowd.id, ctrl=True)
+board.drag_over(new_col, hover)
+check('board: Ctrl onto New Multi with every department is refused: SH020 would be in two',
+      not hover.isAccepted() and 'also covered' in new_col.note.text(), new_col.note.text())
+board.clear_drop_state()
+board.drop(new_col, _board_event(QDropEvent, [B_SH020], crowd.id))
+app.processEvents()
+made = [m for m in shots.sheet.multis if m.is_new]
+check('board: dropped on New Multi, SH020 starts one and leaves Crowd',
+      len(made) == 1 and made[0].members == [B_SH020]
+      and shots.sheet.multi(crowd.id).members == [B_SH010], _members())
+check('board: the new Multi\'s name is ready to type over',
+      app.focusWidget() is getattr(_board_columns()[-1], 'name_edit', None)
+      or _board_columns()[-1].name_edit.selectedText() == made[0].name)
+
+board.set_department(POOL[0])
+check('board: with a department, each shot is in exactly one column',
+      sorted(r.id for c in shots.sheet.board_columns(POOL[0]) for r in c.rows())
+      == sorted(r.id for r in shots.sheet.rows if not r.retire))
+board.set_department(None)
+
+for _ in range(3):
+    multis.undo()
+app.processEvents()
+check('board: undo takes back the drops, one each', _members() == board_start, _members())
+multis.set_view('table')
+check('Table brings the table back', multis.views.currentWidget() is multis.splitter
+      and multis._department.isHidden())
+# Undo puts copies back: the Crowd above is the one before the drops.
+crowd = next(m for m in shots.sheet.multis if m.name == 'Crowd')
+
 # The Multis cell's dialog: SH020 and SH030 join Crowd.
 ids = [r.id for r in shots.sheet.rows if r.group == 'sq010' and r.name in ('SH020', 'SH030')]
 
@@ -526,7 +639,7 @@ ee.NewMultiDialog.exec = _new_chase
 
 # The Multis table scrolls sideways with Shift+wheel, and a click on a
 # cell it can see does not scroll it away from the pointer (#30).
-from PySide6.QtCore import QPoint, QPointF  # noqa: E402
+
 from PySide6.QtGui import QWheelEvent  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 

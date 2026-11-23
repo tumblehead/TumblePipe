@@ -883,6 +883,7 @@ impl FramesView {
         let program = Tracks {
             rows: self.rows(),
             markers: Vec::new(),
+            reviews: Vec::new(),
             total: self.reel.len(),
             playhead: self.transport.position,
             buffered: tracks::ranges(&self.engine.buffered_positions()),

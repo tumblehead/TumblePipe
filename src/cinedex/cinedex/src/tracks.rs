@@ -1,5 +1,5 @@
 //! The editor's tracks under the video: a ruler (frame ticks, markers, the
-//! frames buffered, the playhead) over one row per track, video tracks top
+//! frames with review marks, the frames buffered, the playhead) over one row per track, video tracks top
 //! track on top, then the audio tracks. Each clip shows its source's first
 //! frame, its name and its take, its fades as ramps, and an outline when it
 //! is selected.
@@ -227,6 +227,9 @@ pub struct Tracks<Message> {
     /// Top first (see [`row_order`]).
     pub rows: Vec<RowView>,
     pub markers: Vec<EditFrame>,
+    /// The positions showing a frame with review marks (`editor/review.rs`),
+    /// in order: a line and a key on the ruler each.
+    pub reviews: Vec<usize>,
     /// Edit frames the width spans, from frame `first` on.
     pub total: usize,
     /// The edit frame at the left edge of the tracks' time: what the
@@ -1119,6 +1122,18 @@ impl<Message> Tracks<Message> {
                 }
             }
         }
+        // Review marks: a line down the ruler and a key at its foot, as
+        // quads (no geometry); one per pixel column when zoomed out.
+        let mut last_x = f32::NEG_INFINITY;
+        for &r in &self.reviews {
+            let x = self.x(r as EditFrame, w) + slot / 2.0;
+            if !(HEADER..=w).contains(&x) || x - last_x < 2.0 {
+                continue;
+            }
+            last_x = x;
+            p.rect(Point::new(x - 1.0, 0.0), Size::new(2.0, RULER), look::review());
+            p.rect(Point::new(x - 3.0, RULER - 6.0), Size::new(6.0, 6.0), look::review());
+        }
         let marker = look::mark();
         for &m in &self.markers {
             let x = self.x(m, w) + slot / 2.0;
@@ -1755,6 +1770,7 @@ mod tests {
         Tracks {
             rows,
             markers,
+            reviews: Vec::new(),
             total,
             playhead: 0,
             buffered: vec![(0, total / 2)],
@@ -1852,6 +1868,7 @@ mod tests {
         Tracks {
             rows,
             markers: Vec::new(),
+            reviews: Vec::new(),
             total: TOTAL,
             playhead: 0,
             buffered: Vec::new(),

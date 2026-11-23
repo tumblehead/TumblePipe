@@ -32,6 +32,7 @@ pub mod player_rpc;
 pub mod preview_place;
 pub mod previews;
 pub mod project;
+pub mod review;
 pub mod shared_journal;
 pub mod shot_audio;
 pub mod shot_sync;

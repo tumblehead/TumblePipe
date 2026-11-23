@@ -52,7 +52,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox, QFormLayout,
     QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
     QMenu, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter,
-    QStackedWidget, QStyle,
+    QSizePolicy, QStackedWidget, QStyle,
     QStyledItemDelegate, QStyleOptionViewItem, QTabBar, QTableView,
     QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
@@ -4344,7 +4344,7 @@ class _MultiWorkfiles(QWidget):
     def source(self) -> EntityEditorSource:
         return self._pane.window_.source
 
-    def _versions(self, multi: es.Multi) -> dict:
+    def versions(self, multi: es.Multi) -> dict:
         """``{department: latest version}``, read once per Multi until the
         sheet is replaced (an Apply, a reload) or a workfile is made."""
         sheet = self._pane.sheet
@@ -4394,7 +4394,7 @@ class _MultiWorkfiles(QWidget):
         if not departments:
             self.note.setText(why or 'It covers no department, so it has no workfiles.')
             return
-        versions = {} if multi.is_new else self._versions(multi)
+        versions = {} if multi.is_new else self.versions(multi)
         ready = not why and not self._busy
         for row, department in enumerate(departments):
             version = versions.get(department)
@@ -4413,7 +4413,7 @@ class _MultiWorkfiles(QWidget):
             else:
                 button = _button(
                     'Making…' if self._busy == department else 'New from Template',
-                    lambda d=department: self._new(multi, d),
+                    lambda d=department: self.new(multi, d),
                     tip=f"Make {multi.name}'s first {department} workfile from "
                         'the department template, with a graph per member. '
                         'It replaces the open scene.',
@@ -4433,7 +4433,9 @@ class _MultiWorkfiles(QWidget):
             return
         self.source.open_multi_workfile(multi.origin.uri, department)
 
-    def _new(self, multi: es.Multi, department: str) -> None:
+    def new(self, multi: es.Multi, department: str) -> None:
+        """Make the department's first workfile of the Multi (the board's
+        chips use it too)."""
         if self._busy:
             return
         self._busy = department
@@ -4502,6 +4504,38 @@ class _MultiPane(QWidget):
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(lambda text: self.proxy.set_text(text))
         top.addWidget(self._search, 1)
+        # Board: the search's place goes to a spacer, then the department
+        # lens and the Table | Board switch.
+        self._board_spacer = QWidget()
+        self._board_spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        top.addWidget(self._board_spacer, 1)
+        self._department_label = QLabel('Department')
+        top.addWidget(self._department_label)
+        self._department = QComboBox()
+        self._department.setStyleSheet(COMBO_STYLE)
+        self._department.setToolTip(
+            'Show only the Multis covering one department: each '
+            'shot or asset is then in exactly one column'
+        )
+        self._department.activated.connect(
+            lambda i: self.board.set_department(self._department.itemData(i))
+        )
+        top.addWidget(self._department)
+        self._view_buttons = {}
+        for view, text, tip in (
+            ('table', 'Table', 'The Multis as a table: one row each'),
+            ('board', 'Board', 'The Multis as columns of cards: drag shots '
+                               'or assets between them'),
+        ):
+            button = QToolButton()
+            button.setText(text)
+            button.setCheckable(True)
+            button.setToolTip(tip)
+            button.setObjectName(f'multi_view_{view}')
+            button.clicked.connect(lambda _c=False, v=view: self.set_view(v))
+            self._view_buttons[view] = button
+            top.addWidget(button)
+        self.view = 'table'
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.setChildrenCollapsible(False)
         left = QWidget()
@@ -4539,7 +4573,12 @@ class _MultiPane(QWidget):
         self.splitter.addWidget(self.side)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 0)
-        outer.addWidget(self.splitter, 1)
+        from .multi_board import MultiBoard
+        self.board = MultiBoard(self)
+        self.views = QStackedWidget()
+        self.views.addWidget(self.splitter)
+        self.views.addWidget(self.board)
+        outer.addWidget(self.views, 1)
 
         actions = QHBoxLayout()
         actions.addWidget(_button(
@@ -4548,10 +4587,12 @@ class _MultiPane(QWidget):
                 'start with the rows selected on the Shots or Assets tab.',
         ))
         actions.addSpacing(scaled(24))
-        actions.addWidget(_button(
+        # The table's: on the board each column's ⋯ menu has them.
+        self.revert_button = _button(
             'Revert', self._revert_selected,
             tip='Drop the selected Multis\' edits; new Multis are removed.',
-        ))
+        )
+        actions.addWidget(self.revert_button)
         self.retire_button = _button(
             'Retire', self._toggle_retire, style=_BUTTON_DANGER_STYLE,
             tip='Retire the selected Multis on Apply: they leave the project; '
@@ -4570,7 +4611,42 @@ class _MultiPane(QWidget):
         table.selectionModel().currentRowChanged.connect(
             lambda *_a: table.viewport().update()
         )
+        self._show_view()
         self.refresh()
+
+    def set_view(self, view: str) -> None:
+        """'table' or 'board'."""
+        if view not in ('table', 'board'):
+            return
+        self.view = view
+        self._show_view()
+        self.refresh()
+
+    def _show_view(self) -> None:
+        board = self.view == 'board'
+        self.views.setCurrentWidget(self.board if board else self.splitter)
+        for view, button in self._view_buttons.items():
+            button.setChecked(view == self.view)
+        for widget in (self._department_label, self._department, self._board_spacer):
+            widget.setVisible(board)
+        self._search.setVisible(not board)
+        self.revert_button.setVisible(not board)
+        self.retire_button.setVisible(not board)
+
+    def _fill_departments(self) -> None:
+        combo, sheet = self._department, self.sheet
+        wanted = self.board.department
+        combo.clear()
+        combo.addItem('All', None)
+        for department in sheet.base.pool:
+            combo.addItem(department, department)
+        index = combo.findData(wanted)
+        combo.setCurrentIndex(max(index, 0))
+
+    def show_in_table(self, multi_id: int) -> None:
+        self.set_view('table')
+        self.select_cells([(multi_id, 0)], (multi_id, 0))
+        self.table.scrollTo(self._index_of(multi_id, 0))
 
     def current_multi(self) -> es.Multi | None:
         """The Multi the side panel shows the workfiles of: the current
@@ -4603,6 +4679,9 @@ class _MultiPane(QWidget):
             self.select_cells(selection)
         self.update_buttons()
         self.workfiles.fill()
+        self._fill_departments()
+        if self.view == 'board':
+            self.board.refresh()
 
     def _multi_id(self, index) -> int:
         return self.model.id_at(self.proxy.mapToSource(index).row())
@@ -4780,6 +4859,8 @@ class _MultiPane(QWidget):
         if multi is not None:
             self.select_cells([(multi.id, 0)], (multi.id, 0))
             self.table.scrollTo(self._index_of(multi.id, 0))
+            if self.view == 'board':
+                self.board.scroll_to(multi.id)
 
 
 # ---------------------------------------------------------------------------

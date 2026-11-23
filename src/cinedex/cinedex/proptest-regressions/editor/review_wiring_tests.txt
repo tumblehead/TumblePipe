@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 19f8f49fe15e13d302c9bbcc615ec1d7e7cf16b8f990b520408d83e1f224e2e4 # shrinks to frame = (64, 64), flipped = true, strokes = [(0, [(0.05, 0.05)])], pressure = None
+cc 2a69bfc5afc9bcc103eb705ea0c76fe6b97d33a9b1b9824d35228837ec9870a6 # shrinks to clips = [Placed_ { track: 0, item: "plate", at: 2, from: 1003, len: 3 }, Placed_ { track: 1, item: "plate", at: 2, from: 1007, len: 1 }], marked = {(0, 1003)}, here = 0

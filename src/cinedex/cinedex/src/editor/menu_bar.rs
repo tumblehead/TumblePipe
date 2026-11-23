@@ -19,9 +19,11 @@ use primer::menu::{Accelerator, Menu, MenuItem};
 
 use super::export_dialog::ExportMessage;
 use super::file_dialogs::OpenDialog;
+use super::review::ReviewMessage;
 use super::{Editor, Message};
 use crate::editing::Origin;
 use crate::flip;
+use crate::review::Tool;
 use crate::take_menu::TakeAxis;
 use th_edit::document::TakeKind;
 
@@ -59,6 +61,15 @@ pub(super) struct State {
     /// The cut's end, one past its last frame: where Go to End parks, so
     /// an Insert there appends (#25).
     pub end: usize,
+    /// Review mode is on (`editor/review.rs`): Undo and Redo are the
+    /// review marks'.
+    pub reviewing: bool,
+    /// The brush is the eraser.
+    pub eraser: bool,
+    /// The frame shown is a take's, so it can take marks.
+    pub reviewable: bool,
+    /// The review marks are drawn over the picture.
+    pub marks_shown: bool,
 }
 
 /// One row of a menu. A handful are built per frame, so the size of a
@@ -123,9 +134,12 @@ fn file_menu(s: &State) -> Vec<Entry> {
 
 fn edit_menu(s: &State) -> Vec<Entry> {
     let picked = s.writable && s.picked;
+    let undoes = s.writable || (s.free && s.reviewing);
     vec![
-        item("&Undo", Message::Undo, s.writable, letter('z', COMMAND)),
-        item("&Redo", Message::Redo, s.writable, letter('z', COMMAND_SHIFT)),
+        // In review mode they are the review marks' (a read-only edit's
+        // frames take marks too).
+        item(if s.reviewing { "&Undo Review Mark" } else { "&Undo" }, Message::Undo, undoes, letter('z', COMMAND)),
+        item(if s.reviewing { "&Redo Review Mark" } else { "&Redo" }, Message::Redo, undoes, letter('z', COMMAND_SHIFT)),
         Entry::Separator,
         item("&Split at Playhead", Message::Split, s.writable, letter('s', NONE)),
         item("&Lift", Message::Lift, s.writable, named(Named::Delete, NONE)),
@@ -170,6 +184,9 @@ fn playback_menu(s: &State) -> Vec<Entry> {
         item("Forward One Second", Message::Seconds(1), s.free, named(Named::ArrowRight, ALT)),
         item("Previous Edit Point", Message::Cut(-1), s.free, named(Named::ArrowLeft, COMMAND)),
         item("Next Edit Point", Message::Cut(1), s.free, named(Named::ArrowRight, COMMAND)),
+        // The frames with review marks (`editor/review.rs`).
+        item("Previous Reviewed Frame", Message::Review(ReviewMessage::Jump(-1)), s.free, named(Named::ArrowLeft, SHIFT)),
+        item("Next Reviewed Frame", Message::Review(ReviewMessage::Jump(1)), s.free, named(Named::ArrowRight, SHIFT)),
         Entry::Separator,
         item("Go to &Start", Message::Seek(0), s.free, named(Named::Home, NONE)),
         item("Go to &End", Message::Seek(s.end), s.free, named(Named::End, NONE)),
@@ -178,6 +195,7 @@ fn playback_menu(s: &State) -> Vec<Entry> {
 
 fn view_menu(s: &State) -> Vec<Entry> {
     let label = if s.burnins { "Hide &Burn-ins" } else { "Show &Burn-ins" };
+    let erasing = s.reviewing && s.eraser;
     let mark = |show: Option<TakeKind>, plain: &'static str, marked: &'static str| if s.show == show { marked } else { plain };
     vec![
         item(label, Message::Burnins(!s.burnins), s.free, letter('b', NONE)),
@@ -204,6 +222,29 @@ fn view_menu(s: &State) -> Vec<Entry> {
         // track still plays. A double-click on a track's name solos it.
         item(if s.audio_hidden { "Show &Audio Tracks" } else { "Hide &Audio Tracks" }, Message::HideAudio(!s.audio_hidden), s.free, None),
         item("Show All &Tracks", Message::ShowAllTracks, s.free && s.focused, None),
+        Entry::Separator,
+        // Reviewing (`editor/review.rs`): no new title for it, the bar in
+        // the toolbar's row must fit the narrowest window with the timer.
+        // None of it changes the edit, so a read-only one's too.
+        item(
+            if s.reviewing { "\u{2713} Re&view Mode" } else { "Re&view Mode" },
+            Message::Review(ReviewMessage::Mode(!s.reviewing)),
+            s.free,
+            letter('d', NONE),
+        ),
+        item(
+            if erasing { "\u{2713} &Eraser" } else { "&Eraser" },
+            Message::Review(ReviewMessage::Tool(if erasing { Tool::Pen } else { Tool::Eraser })),
+            s.free,
+            letter('e', NONE),
+        ),
+        item("Clear Frame's Dra&wings", Message::Review(ReviewMessage::Clear), s.free && s.reviewable, None),
+        item(
+            if s.marks_shown { "\u{2713} Show Review &Marks" } else { "Show Review &Marks" },
+            Message::Review(ReviewMessage::Shown(!s.marks_shown)),
+            s.free,
+            None,
+        ),
         Entry::Separator,
         item("&Refresh", Message::Refresh, s.free, letter('r', COMMAND)),
     ]
@@ -240,6 +281,8 @@ pub(super) fn key_message(state: &State, key: Key, modifiers: Modifiers) -> Opti
         Key::Named(Named::ArrowLeft) if command => Some(Message::Cut(-1)),
         Key::Named(Named::ArrowRight) if modifiers.alt => Some(Message::Seconds(1)),
         Key::Named(Named::ArrowLeft) if modifiers.alt => Some(Message::Seconds(-1)),
+        Key::Named(Named::ArrowRight) if modifiers.shift => Some(Message::Review(ReviewMessage::Jump(1))),
+        Key::Named(Named::ArrowLeft) if modifiers.shift => Some(Message::Review(ReviewMessage::Jump(-1))),
         Key::Named(Named::ArrowRight) => Some(Message::Step(1)),
         Key::Named(Named::ArrowLeft) => Some(Message::Step(-1)),
         Key::Named(Named::PageUp) if command => Some(Message::TakeStep(TakeAxis::Department, -1)),
@@ -272,6 +315,11 @@ pub(super) fn key_message(state: &State, key: Key, modifiers: Modifiers) -> Opti
         Key::Character('v' | 'V') if bare => Some(Message::Show(next_show(state.show))),
         Key::Character('f' | 'F') if bare && modifiers.shift => Some(Message::FitClips),
         Key::Character('f' | 'F') if bare => Some(Message::FitTimeline),
+        Key::Character('d' | 'D') if bare => Some(Message::Review(ReviewMessage::Mode(!state.reviewing))),
+        Key::Character('e' | 'E') if bare => {
+            let erasing = state.reviewing && state.eraser;
+            Some(Message::Review(ReviewMessage::Tool(if erasing { Tool::Pen } else { Tool::Eraser })))
+        }
         _ => None,
     }
 }
@@ -327,6 +375,10 @@ impl Editor {
             flipped: self.flipped,
             sync_ranges: self.sync_ranges,
             end: self.end(),
+            reviewing: self.review.drawing,
+            eraser: self.review.brush.tool == Tool::Eraser,
+            reviewable: self.review_target().is_some(),
+            marks_shown: self.review.shown,
         }
     }
 
@@ -350,7 +402,7 @@ mod tests {
 
     fn state() -> impl Strategy<Value = State> {
         let show = proptest::option::of(prop_oneof![Just(TakeKind::Render), Just(TakeKind::Playblast)]);
-        (any::<[bool; 10]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
+        (any::<[bool; 14]>(), proptest::option::of(any::<bool>()), 0usize..10_000, show).prop_map(|(b, master, end, show)| State {
             free: b[0],
             writable: b[0] && b[1],
             named: b[2],
@@ -364,6 +416,10 @@ mod tests {
             flipped: b[8],
             sync_ranges: b[9],
             end,
+            reviewing: b[10],
+            eraser: b[11],
+            reviewable: b[12],
+            marks_shown: b[13],
         })
     }
 
@@ -502,12 +558,42 @@ mod tests {
             }
         }
 
-        /// What changes the cut is greyed on an edit that cannot change.
+        /// What changes the cut is greyed on an edit that cannot change;
+        /// in review mode Undo and Redo are the review marks', so not then.
         #[test]
         fn a_read_only_edit_greys_what_writes(state in state()) {
             let state = State { writable: false, ..state };
             for (menu, label, message, enabled, _) in items(&state) {
-                prop_assert!(!(enabled && writes(&message)), "{} > {} ({}) is enabled read-only", menu, label, message);
+                let marks = state.reviewing && (message == "Undo" || message == "Redo");
+                prop_assert!(!(enabled && writes(&message)) || marks, "{} > {} ({}) is enabled read-only", menu, label, message);
+            }
+        }
+
+        /// Review mode: D sends the other state and E the other brush (the
+        /// eraser, turning review mode on, unless it is the eraser now),
+        /// each ticked exactly while it is so; Shift+Left and Shift+Right
+        /// go to the frames with marks, and none of it needs a writable
+        /// edit.
+        #[test]
+        fn the_review_keys(state in state()) {
+            let state = State { free: true, writable: false, ..state };
+            let sent = |key: Key, held: Modifiers| key_message(&state, key, held).map(|m| format!("{m:?}"));
+            let erasing = state.reviewing && state.eraser;
+            prop_assert_eq!(sent(Key::Character('d'), NONE), Some(format!("Review(Mode({}))", !state.reviewing)));
+            prop_assert_eq!(sent(Key::Character('e'), NONE), Some(format!("Review(Tool({:?}))", if erasing { Tool::Pen } else { Tool::Eraser })));
+            let (back, on) = (sent(Key::Named(Named::ArrowLeft), SHIFT), sent(Key::Named(Named::ArrowRight), SHIFT));
+            prop_assert_eq!(back.as_deref(), Some("Review(Jump(-1))"));
+            prop_assert_eq!(on.as_deref(), Some("Review(Jump(1))"));
+            let rows: Vec<Row> = items(&state).into_iter().filter(|r| r.2.starts_with("Review(")).collect();
+            prop_assert_eq!(rows.len(), 6);
+            let ticked = |words: &str| rows.iter().find(|r| r.1.replace('&', "").contains(words)).map(|r| (r.0, r.1.starts_with('\u{2713}')));
+            prop_assert_eq!(ticked("Review Mode"), Some(("&View", state.reviewing)));
+            prop_assert_eq!(ticked("Eraser"), Some(("&View", erasing)));
+            prop_assert_eq!(ticked("Show Review Marks"), Some(("&View", state.marks_shown)));
+            for (menu, label, message, enabled, _) in &rows {
+                let clear = message == "Review(Clear)";
+                prop_assert_eq!(*enabled, !clear || state.reviewable, "{}", label);
+                prop_assert_eq!(*menu, if message.starts_with("Review(Jump(") { "&Playback" } else { "&View" });
             }
         }
 
@@ -649,6 +735,10 @@ mod tests {
             flipped: false,
             sync_ranges: true,
             end: 99,
+            reviewing: false,
+            eraser: false,
+            reviewable: true,
+            marks_shown: true,
         };
         let letters: Vec<char> = headings(&state)
             .iter()

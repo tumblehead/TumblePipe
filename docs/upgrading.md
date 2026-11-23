@@ -5,6 +5,49 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.124.0
+
+### Every light's diffuse_ and specular_ AOV is an LPE split
+
+`comp.is_lpe_aov` (and so `aov_cable`, `aov_signature`, `is_colour_aov`)
+takes any `beauty_<x>`, `diffuse_<x>` or `specular_<x>`, for any non-empty
+suffix and in any case (`comp.LPE_PREFIXES`), where it took only the
+light groups and the eight names of `comp.LPE_AOV_NAMES`; that tuple
+stays, as examples. `diffuse_fill`, `specular_rimLight`, ... now ride
+th::import_render's **lpe** cable (RGB, in the scene's colour space)
+instead of **extra**. Plain `diffuse` and `specular` stay extras;
+`light_groups` (a light mix's rows) is unchanged.
+
+### A File COP asks for the plane as the EXR spells it
+
+`exr.cop_plane_name(channel_names, aov_name)` returns the prefix of the
+`<plane>.<channel>` channels that is `aov_name` in any case, else their one
+prefix, still `C` for bare channels and `aov_name` when the channels are
+unreadable or name several other planes. It returned `aov_name` for any
+prefixed file, and a light's `diffuse_Fill.r` in folder `diffuse_fill`
+read black. The farm's split (`exr.split_subimages`) now renames a part's
+channels unless their plane is its lowercased name case for case (new
+`exr.channel_needs_rename`), so it writes `diffuse_fill.r`. A channel's
+plane is everything before its last dot (new `exr.channel_plane`), for the
+split and `cop_plane_name` alike: a channel that only starts with the
+part's name (`color.R` in part `c`, `beauty_fill_rim.r` in `beauty_fill`)
+is renamed too, and `exr._rename_channel` keeps the suffix after the last
+dot (`a.b.z` becomes `<part>.z`, no longer `<part>.b.z`).
+
+### th::import_render 2.0: Import Geometry and Import Camera
+
+New parms `import_geometry` and `import_camera` (on by default), with
+`import_render.IMPORT_GEOMETRY_PARM` / `IMPORT_CAMERA_PARM`,
+`ImportRender.imports_geometry()`, `imports_camera()`, `scene_wanted()`,
+`wired_scene_outputs()` and the pure `import_render.scene_state(geometry,
+camera, camera_problems, version_label, wired=())`. With both off
+`ImportRender.import_scene()` and `execute(scene=True)` import nothing and
+close both outputs; with geometry off `import_scene()` sets the embedded
+`th::import_shot`'s `loadpayloads` to 0. A 1.0 node has neither parm and
+imports both. `import_render.dive_outputs_missing(dive)` is new: a dive
+short of `DIVE_OUTPUTS` (saved before v1.121.0) is rebuilt, and OnLoaded
+adds its missing outputs after the load.
+
 ## v1.123.0
 
 ### A comp of a check render goes on any frames inside its range, the frames it lacks held

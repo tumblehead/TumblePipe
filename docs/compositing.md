@@ -168,8 +168,10 @@ beauty of the channel read, or on **All channels** every channel's beauty
 laid over each other back to front, the last on top, as the template
 stacks them (a premultiplied over, so their alpha is kept); then a cable
 per kind of AOV, each field named after its AOV (never a beauty): `lpe`,
-the `beauty_<tag>` light groups (a light mix's input) and the LPE splits
-(`diffuse_key`, `specular_dome`, `diffuse_direct`, ...); `aov`, the data
+the `beauty_<tag>` light groups (a light mix's input) and the LPE splits,
+every `diffuse_<x>` and `specular_<x>` whatever the light or path is
+called (`diffuse_key`, `specular_fill`, `diffuse_direct`, ...; plain
+`diffuse` and `specular` are extras); `aov`, the data
 AOVs (`albedo`, `normal`, `depth` as Mono, `uv`, `position`); `matte`, the
 `objid_*` mattes and `ramp_*` ramps (`th::mattes`), `holdout_*` holdouts
 and any cryptomatte without a cable of its own; `cryptomaterials` and
@@ -187,7 +189,11 @@ of them is wired, and both open only once its camera cooks too (the
 embedded import cooks its two outputs together), so a missing camera prim
 never stops the renders cooking. Up to TumblePipe 1.121.0 `geometry`
 opened without the camera, and a camera that could not cook failed every
-output of the node, the renders too.
+output of the node, the renders too. A comp that never rasterizes can turn
+off **Import Geometry** and **Import Camera** (Scene folder, 2.0; on by
+default): both off, the scene is never imported and both outputs stay
+empty; Import Geometry off composes the shot without its payloads, for the
+camera alone.
 
 A digital asset's outputs are fixed by its type (Houdini 22.0.429: an
 instance can neither add outputs nor relabel them), so a node cannot show

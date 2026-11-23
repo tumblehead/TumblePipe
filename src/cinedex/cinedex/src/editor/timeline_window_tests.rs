@@ -17,7 +17,7 @@ use primer::widget::custom::{Ctx, Cursor, Event, Layout as Placed, LayoutCtx, Li
 use super::*;
 use crate::tracks::overview;
 
-struct FixedText;
+pub(super) struct FixedText;
 
 impl TextMeasurer for FixedText {
     fn measure_text(&self, content: &str, size: f32, _: Option<f32>) -> Size {
@@ -35,7 +35,7 @@ impl TextMeasurer for FixedText {
 }
 
 #[derive(Default)]
-struct Kept(Vec<String>);
+pub(super) struct Kept(Vec<String>);
 
 impl Clipboard for Kept {
     fn read(&mut self) -> Option<String> {

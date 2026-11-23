@@ -452,9 +452,53 @@ again. A Multi that has workfiles cannot be renamed (they would stay under
 the old name): retire it and add a new one. A member added to a Multi whose
 workfile already exists has no graph in it yet: the next save of that
 workfile, or **Sync with Multi**, offers to add one, copied from another
-member's. The other way round, an export added by hand for a shot that is
-not a member offers to add the shot. See
+member's. The other way round, an export for a shot that is not a member
+(added by hand, or left behind when the shot moved to another Multi) offers
+to add the shot or to remove its graph. See
 [Keeping the workfile and the Multi in step](multis-and-roots.md#keeping-the-workfile-and-the-multi-in-step).
+
+### The board
+
+**Board**, at the right of the top row, shows the Multis as columns of
+cards; **Table** goes back. The browser's **Multis Board…** (the right-click
+menu of a Multis subheader) opens the editor straight on it.
+
+- The first column, **Not in a Multi**, holds the shots (or assets) no
+  Multi has, under their sequence or category. Then a column per Multi, its
+  members as cards in member order, and last **+ New Multi**.
+- Drag a card to another Multi to **move** it there: it leaves the Multi it
+  came from. Hold **Ctrl** to **add** it and leave it where it was. Drop it
+  on the first column to take it out of its Multi. Drop it within its Multi
+  to change the order (the order Play in Cinedex plays and a shared
+  timeline places new members in). Ctrl+click selects several
+  cards to drag together.
+- Drag a sequence's header from the first column to list the sequence
+  whole. A Multi that lists one shows it as one stacked card: double-click
+  it to see its shots. They come from the sequence and cannot be dragged
+  out alone; drag the sequence.
+- While cards hover over a column it says what the drop does (*Move SH060
+  here · leaves debris · placed at 1177*), or turns red with why it is
+  refused: the drop would put a department of a shot in two Multis, the
+  same rule the table checks. With Ctrl held, it also says whether a plain
+  move would go through.
+- Dropped on **+ New Multi**, the cards start a new Multi named `multi1`
+  (and so on), its name ready to type over.
+- **Department** shows only the Multis covering one department. Each shot
+  is then in exactly one column, and the first column is the shots with
+  their own workfile for that department.
+- Each column's head has its name (type to rename), its departments as
+  chips with their latest workfile (click one to open the workfile, make it
+  from the template, or stop covering it; **+** covers another), its
+  timeline with the frames a shared one spans, and **⋯** for Open
+  Workfile, Timeline, Repack, Revert and Retire. A shared timeline's cards
+  show where each shot will sit once Apply places it.
+- An amber card name waits for Apply. Above Apply, **Workfiles these
+  changes reach** names each Multi whose members change and that has a
+  workfile in a department that publishes: its next save offers to add the
+  joining shots' graphs and remove the leaving ones'.
+
+Every drop is one edit like any other: Undo and Redo take it back, and it
+reaches the project only on Apply.
 
 ## Adding assets and shots
 

@@ -53,6 +53,10 @@ pub struct Resolved {
     /// (`th_edit::ops::Sources`): how far a clip of it trims out
     /// (`tracks::room`).
     pub(super) available: Option<Available>,
+    /// The folder of the review marks of the take that plays (`review`):
+    /// None while nothing does, or a live playblast does (it keeps no
+    /// frames to review).
+    pub(crate) review: Option<std::path::PathBuf>,
 }
 
 impl Resolved {
@@ -81,6 +85,7 @@ impl Resolved {
             lacks: None,
             // A slug and a planned shot have any frame.
             available: Some(Available::Any),
+            review: None,
         }
     }
 }
@@ -169,6 +174,14 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
             };
             let peaks = sound.as_ref().map(|s| Arc::new(crate::waveform::Peaks::of(s)));
             let first = opened.frame_number(0).unwrap_or(first);
+            // With a live playblast over it the picture is not the take's.
+            let review = match under {
+                Some(_) => None,
+                None => th_pipe::review::take_dir(&project, shot, chosen).unwrap_or_else(|e| {
+                    eprintln!("cinedex: no review folder for {shot}: {e}");
+                    None
+                }),
+            };
             let under = under.map(|u| takes[u].label.clone());
             Ok(Resolved {
                 takes,
@@ -183,6 +196,7 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                 under,
                 lacks,
                 available,
+                review,
             })
         }
         Source::Media { item, version } => {
@@ -204,6 +218,9 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
             };
             let sound = if found.measure.sound { Sound::read(&path).map_err(|e| e.to_string())?.map(Arc::new) } else { None };
             let peaks = sound.as_deref().map(|s| Arc::new(crate::waveform::Peaks::of(s)));
+            let review = th_pipe::review::media_dir(&project, item, &found.version)
+                .map_err(|e| eprintln!("cinedex: no review folder for {item}: {e}"))
+                .ok();
             Ok(Resolved {
                 takes: vec![take],
                 take: Some(0),
@@ -217,6 +234,7 @@ pub(crate) fn resolve(paths: &ProjectPaths, source: &Source, fps: u32, live: boo
                 under: None,
                 lacks: None,
                 available,
+                review,
             })
         }
     }

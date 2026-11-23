@@ -16,7 +16,9 @@ again for this workfile* silences the after-save check for that Multi and
 department for the rest of the session; Sync with Multi still answers.
 
 An export pinned to a shot that is not a member offers to add the shot to
-the Multi (``config.groups.add_member``, so the overlap rule holds). A
+the Multi (``config.groups.add_member``, so the overlap rule holds), or to
+remove its graph from the workfile (the nodes only that shot uses, in one
+undo step), as after a shot was moved to another Multi. A
 member with no export here offers to add its graph: a copy of another
 member's column, placed at a free spot to the right, every node renamed to
 the new member's suffix and every parm pinned to the old member pinned to
@@ -363,6 +365,25 @@ def template_graph(
     return new
 
 
+def remove_graphs(
+    group: groups_mod.Group, department: str, strangers: list[str],
+    network: str = STAGE,
+) -> int:
+    """Delete the graphs of ``strangers`` from the workfile, in one undo
+    step; the number of nodes deleted."""
+    graph = read_graph(department, network)
+    paths = policy.plan_removal(graph, strangers, group.members, department)
+    removed = 0
+    with hou.undos.group(f'Remove graphs: {policy.listing(strangers)}'):
+        for path in reversed(paths):
+            node = hou.node(path)
+            if node is None:
+                continue
+            node.destroy()
+            removed += 1
+    return removed
+
+
 def _run_imports(nodes: list) -> tuple[int, int]:
     """Run the import nodes among ``nodes`` (and in them), as a new
     workfile's are; ``(run, failed)``."""
@@ -425,12 +446,12 @@ def add_graphs(
 # Asking
 # ---------------------------------------------------------------------------
 
-def _ask(text: str, buttons: tuple[str, ...], severity=None) -> int:
+def _ask(text: str, buttons: tuple[str, ...], severity=None, default: int = 0) -> int:
     """The artist's choice; closing the window is the choice before the
     last (Not now), never Don't ask again."""
     close = len(buttons) - 2 if len(buttons) > 2 else 0
     return hou.ui.displayMessage(
-        text, buttons=buttons, default_choice=0, close_choice=close,
+        text, buttons=buttons, default_choice=default, close_choice=close,
         title=TITLE, severity=severity or hou.severityType.Message,
     )
 
@@ -486,12 +507,15 @@ def sync(on_demand: bool = False) -> bool:
     if difference.strangers:
         admission = policy.admit(group_uri, difference.strangers)
         text = policy.strangers_prompt(name, department, admission, group.departments)
+        remove = policy.remove_label(len(difference.strangers))
         if admission.addable:
-            choice = _ask(text, (f'Add to {name}', 'Not now', _DONT_ASK))
-            if choice == 2:
+            choice = _ask(text, (f'Add to {name}', remove, 'Not now', _DONT_ASK))
+            if choice == 3:
                 _quiet.add(group_uri, department)
                 return False
-            if choice == 0:
+            if choice == 1:
+                changed = _remove_strangers(group, department, difference.strangers)
+            elif choice == 0:
                 result = policy.add_members(group_uri, admission.addable)
                 if result.addable:
                     changed = True
@@ -499,12 +523,16 @@ def sync(on_demand: bool = False) -> bool:
                 if result.refused:
                     _tell(policy.strangers_prompt(
                         name, department, policy.Admission((), result.refused), (),
+                        removable=False,
                     ), hou.severityType.Warning)
         else:
-            choice = _ask(text, ('OK', _DONT_ASK), hou.severityType.Warning)
-            if choice == 1:
+            # Enter is Not now: removing deletes nodes.
+            choice = _ask(text, (remove, 'Not now', _DONT_ASK), hou.severityType.Warning, default=1)
+            if choice == 2:
                 _quiet.add(group_uri, department)
                 return False
+            if choice == 0:
+                changed = _remove_strangers(group, department, difference.strangers)
     if difference.missing:
         group = groups_mod.get_group(group_uri) or group
         missing = [m for m in difference.missing if m in {str(x) for x in group.members}]
@@ -527,6 +555,23 @@ def sync(on_demand: bool = False) -> bool:
                         f'Sync with Multi: added graphs for {policy.listing(added)}',
                     )
     return changed
+
+
+def _remove_strangers(group, department: str, strangers) -> bool:
+    """Remove the strangers' graphs and say so; whether any node went."""
+    names = policy.listing(list(strangers))
+    try:
+        removed = remove_graphs(group, department, list(strangers))
+    except hou.Error as exc:
+        _tell(f'Removing the graphs failed: {exc}', hou.severityType.Warning)
+        return False
+    if removed:
+        hou.ui.setStatusMessage(
+            f'Sync with Multi: removed the graphs of {names} ({removed} nodes)',
+        )
+    else:
+        _tell(f'No nodes of {names} found to remove.')
+    return bool(removed)
 
 
 def _members_changed(group_uri: Uri) -> None:

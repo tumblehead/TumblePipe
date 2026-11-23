@@ -80,6 +80,8 @@ mod reel;
 mod render;
 mod rendering;
 mod reveal;
+mod review;
+mod review_view;
 mod save_dialog;
 mod sense;
 mod shot_audio;

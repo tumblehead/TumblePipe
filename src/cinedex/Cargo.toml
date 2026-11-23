@@ -34,7 +34,7 @@ serde_json = "1"
 # and tray icons): on Linux that feature links GTK and libxdo, which artists'
 # machines would then need installed. cinedex/Cargo.toml turns it on for
 # macOS only, where the editor's menu is the global menu bar.
-primer = { git = "http://10.100.36.15:3000/soren-n/primer.git", rev = "edbd5f2a7703920955d067a18f19bb0ef54d4cc5", default-features = false }
+primer = { git = "http://10.100.36.15:3000/soren-n/primer.git", rev = "10fdf59fa95ff5a291798270383ce231a6253b1b", default-features = false }
 exr = "1.74"
 half = { version = "2", features = ["bytemuck"] }
 thiserror = "2"

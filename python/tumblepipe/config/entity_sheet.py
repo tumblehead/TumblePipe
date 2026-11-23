@@ -523,6 +523,9 @@ class MultiRecord:
     departments: tuple[str, ...]
     shared_timeline: bool = False
     timeline_bookmarks: bool = False
+    #: Each placed member's start on the shared timeline (member URI ->
+    #: frame), as stored; the board shows where members will sit.
+    timeline_starts: Mapping[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -567,6 +570,9 @@ class Base:
     multis: tuple[MultiRecord, ...] = ()
     #: The departments a Multi of this kind can cover, in pipeline order.
     pool: tuple[str, ...] = ()
+    #: The pool departments that publish: only their workfiles hold
+    #: exports, so only they fall out of step with their Multi.
+    publishing: tuple[str, ...] = ()
     #: Each stored group's own values of the kind's fields.
     group_own: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
     #: The kind root's (all shots') own values of :data:`EVERYONE_FIELDS`,
@@ -650,10 +656,17 @@ def _load_multis(config, kind: Kind) -> tuple[MultiRecord, ...]:
         # key a default, so a Multi may lack one (config.groups).
         props = config.get_properties(uri) or {}
         shared = bool(props.get('shared_timeline', False))
+        starts = {}
+        for member, frame in (props.get('timeline_starts') or {}).items():
+            try:
+                starts[str(member)] = int(frame)
+            except (TypeError, ValueError):
+                continue
         found.append(MultiRecord(
             uri.segments[1], uri,
             tuple(props.get('members', [])), tuple(props.get('departments', [])),
             shared, shared and bool(props.get('timeline_bookmarks', False)),
+            starts,
         ))
     return tuple(found)
 
@@ -704,6 +717,11 @@ def load(config, kind: Kind = SHOTS_KIND) -> Base:
             pool=tuple(
                 d.name for d in
                 list_departments_in(config, kind.key, include_generated=False)
+            ),
+            publishing=tuple(
+                d.name for d in
+                list_departments_in(config, kind.key, include_generated=False)
+                if d.publishable
             ),
             group_own={
                 g: _own_fields(config, kind, kind.root / g, for_new_group) for g in groups
@@ -797,7 +815,10 @@ class Multi:
 
     @property
     def members_changed(self) -> bool:
-        return set(self.members) != set(self.base_members)
+        # In order: a shared timeline places new members, and Play in
+        # Cinedex plays them, in member order, so the Multis board's
+        # reorder is an edit.
+        return list(self.members) != list(self.base_members)
 
     @property
     def departments_changed(self) -> bool:
@@ -821,6 +842,68 @@ class Multi:
             or self.members_changed or self.departments_changed
             or self.timeline_changed
         )
+
+
+# ── The Multis board ─────────────────────────────────────
+# The Entity Editor's Multis tab can show the kind's Multis as a board: a
+# column per Multi, its members as cards in member order, and a column of
+# the rows no Multi has. These are what it draws; the edits are the
+# Sheet's (``move_to_multi``, ``move_members``, ``add_multi_from``).
+
+@dataclass(frozen=True)
+class BoardCard:
+    """One card on the board. ``key`` is the member as the Multi lists it,
+    what the board's drags carry: a row id, a group's member string (a
+    sequence or category listed whole) or a stray's URI string. ``rows``
+    are the live rows it stands for: the row, every row of the group, none
+    for a stray. ``pending``: Apply changes whether its column has it."""
+    kind: str                     # 'row' | 'group' | 'stray'
+    key: object
+    label: str
+    rows: tuple['Row', ...]
+    pending: bool = False
+
+
+@dataclass(frozen=True)
+class BoardGroup:
+    """The rows of one group in the column of rows no Multi has: ``total``
+    is how many live rows the group has in all."""
+    group: str
+    total: int
+    cards: tuple[BoardCard, ...]
+
+
+@dataclass(frozen=True)
+class BoardColumn:
+    """A Multi's column (``multi_id``), its cards in member order; or, with
+    ``multi_id`` None, the rows no shown Multi has, by group."""
+    multi_id: int | None
+    cards: tuple[BoardCard, ...] = ()
+    groups: tuple[BoardGroup, ...] = ()
+
+    def rows(self) -> list['Row']:
+        """Every row the column holds, each once."""
+        seen, out = set(), []
+        cards = [c for c in self.cards] + [c for g in self.groups for c in g.cards]
+        for card in cards:
+            for row in card.rows:
+                if row.id not in seen:
+                    seen.add(row.id)
+                    out.append(row)
+        return out
+
+
+@dataclass(frozen=True)
+class WorkfileImpact:
+    """What an Apply changes for a stored Multi's workfiles: the members
+    that join it (their graphs are not in its workfiles yet) and those that
+    leave it (their graphs still are). ``workfiles`` are its covered
+    departments that have one, with the latest version's label. Each
+    workfile's next save offers to bring it in step (``pipe.multi_sync``)."""
+    multi: str
+    workfiles: tuple[tuple[str, str], ...]
+    joins: tuple[str, ...]
+    leaves: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -1054,8 +1137,8 @@ class Sheet:
         sheet listed whole and then removed) is no change."""
         if multi.is_new or multi.renamed or multi.retire or multi.departments_changed:
             return True
-        live = {m for m in multi.members if self._live_member(multi, m)}
-        return live != set(multi.base_members)
+        live = [m for m in multi.members if self._live_member(multi, m)]
+        return live != list(multi.base_members)
 
     def summary(self) -> Summary:
         known = set(self.base.groups)
@@ -1904,6 +1987,309 @@ class Sheet:
                     multi.timeline_bookmarks = multi.origin.timeline_bookmarks
                     multi.retire = False
         return changed
+
+    # ── The Multis board ─────────────────────────────────
+
+    def _member_pending(self, multi: Multi, key) -> bool:
+        """Whether Apply changes ``multi`` having this card: a row it did
+        not have before (listed or through a group), a group it did not
+        list."""
+        if isinstance(key, int):
+            row = self._by_id.get(key)
+            return row is not None and not self.covers(multi, row, base=True)
+        return key not in multi.base_members
+
+    def _group_rows(self, group: str, natural: bool = True) -> tuple[Row, ...]:
+        rows = self.rows_in(group) if natural else [r for r in self._rows if r.group == group]
+        return tuple(row for row in rows if not row.retire)
+
+    def board_columns(self, department: str | None = None) -> list[BoardColumn]:
+        """The board: first the rows no shown Multi has, by group, then a
+        column per Multi not being retired, its cards in member order. With
+        ``department``, only the Multis covering it are shown, and each row
+        is then in exactly one column (the overlap rule)."""
+        shown = [
+            m for m in self._multis
+            if not m.retire and (department is None or department in m.departments)
+        ]
+        columns, covered = [], set()
+        for multi in shown:
+            cards = []
+            for member in multi.members:
+                if isinstance(member, int):
+                    row = self._by_id.get(member)
+                    if row is None or row.retire:
+                        continue
+                    cards.append(BoardCard(
+                        'row', member, row.name, (row,), self._member_pending(multi, member),
+                    ))
+                    covered.add(member)
+                    continue
+                group = self._member_group(member)
+                if group is not None:
+                    rows = self._group_rows(group)
+                    cards.append(BoardCard(
+                        'group', member, group, rows, self._member_pending(multi, member),
+                    ))
+                    covered.update(row.id for row in rows)
+                elif self._live_member(multi, member):
+                    cards.append(BoardCard('stray', member, member.rsplit('/', 1)[-1], ()))
+            columns.append(BoardColumn(multi.id, tuple(cards)))
+        free = []
+        for group in self.groups():
+            rows = self._group_rows(group)
+            mine = [row for row in rows if row.id not in covered]
+            if not mine:
+                continue
+            free.append(BoardGroup(group, len(rows), tuple(
+                BoardCard('row', row.id, row.name, (row,), any(
+                    self.covers(m, row, base=True) for m in shown
+                ))
+                for row in mine
+            )))
+        return [BoardColumn(None, (), tuple(free)), *columns]
+
+    def _addable(self, multi: Multi, key) -> bool:
+        """Whether ``key`` (a card's member) can be listed in ``multi``: a
+        live row it does not have yet, or a group of the sheet it does not
+        list yet. A stray never moves."""
+        if isinstance(key, int):
+            row = self._by_id.get(key)
+            return row is not None and not row.retire and not self.covers(multi, row)
+        return self._member_group(key) is not None and key not in multi.members
+
+    def _insert_members(self, multi: Multi, keys: list, before) -> bool:
+        add = [k for k in keys if self._addable(multi, k)]
+        if not add:
+            return False
+        self._changing()
+        at = multi.members.index(before) if before in multi.members else len(multi.members)
+        multi.members[at:at] = add
+        return True
+
+    def move_members(self, multi_id: int, members: Iterable, before=None) -> bool:
+        """Reorder: put these members of the Multi (in its order) right
+        before the member ``before``, or last."""
+        multi = self.multi(multi_id)
+        wanted = set(members)
+        keys = [m for m in multi.members if m in wanted and m != before]
+        if multi.retire or not keys:
+            return False
+        rest = [m for m in multi.members if m not in wanted or m == before]
+        at = rest.index(before) if before in rest else len(rest)
+        order = rest[:at] + keys + rest[at:]
+        if order == multi.members:
+            return False
+        self._changing()
+        multi.members[:] = order
+        return True
+
+    def move_to_multi(
+        self, members: Iterable, source: int | None, target: int | None,
+        before=None, copy: bool = False,
+    ) -> bool:
+        """The board's drop, as one edit: ``members`` (cards' keys) from
+        Multi ``source`` (None: from the rows no Multi has) to Multi
+        ``target`` (None: just out of ``source``), right before the member
+        ``before`` (None: last). ``copy`` (Ctrl) leaves them in ``source``.
+        Within one Multi it is a reorder. A row ``source`` has only through
+        a listed group stays in it: :meth:`drop_problem` says so first."""
+        keys = list(dict.fromkeys(members))
+        src = self.multi(source) if source is not None else None
+        dst = self.multi(target) if target is not None else None
+        if (src is not None and src.retire) or (dst is not None and dst.retire):
+            return False
+        if dst is not None and dst is src:
+            return self.move_members(dst.id, keys, before)
+        changed = False
+        with self.batch():
+            if dst is not None:
+                changed |= self._insert_members(dst, keys, before)
+            if src is not None and not copy:
+                take = [k for k in keys if k in src.members]
+                if take:
+                    self._changing()
+                    src.members[:] = [m for m in src.members if m not in take]
+                    changed = True
+        return changed
+
+    def card_label(self, key) -> str:
+        """A board card's name: the row's, or a member URI's last part."""
+        if isinstance(key, int):
+            row = self._by_id.get(key)
+            return row.name if row is not None else str(key)
+        return str(key).rsplit('/', 1)[-1]
+
+    def drop_problem(
+        self, members: Iterable, source: int | None, target: int | None,
+        copy: bool = False, before=None,
+    ) -> str:
+        """Why the board's drop (as :meth:`move_to_multi` takes it) is
+        refused, or '': the overlap rule as the target would have it after
+        the drop, a row that comes from a group its Multi lists, a Multi
+        being retired, or nothing to add. Changes nothing."""
+        keys = list(dict.fromkeys(members))
+        src = self.multi(source) if source is not None else None
+        dst = self.multi(target) if target is not None else None
+        for multi in (src, dst):
+            if multi is not None and multi.retire:
+                return f'Multi {multi.name} is being retired'
+        if src is not None and src is not dst and not copy:
+            for key in keys:
+                row = self._by_id.get(key) if isinstance(key, int) else None
+                if row is not None and key not in src.members and self.covers(src, row):
+                    return f'{row.name} comes from {row.group}; move {row.group} instead'
+        if dst is None or dst is src:
+            return ''
+        if not any(self._addable(dst, k) for k in keys):
+            names = ', '.join(self.card_label(k) for k in keys)
+            verb = 'is' if len(keys) == 1 else 'are'
+            return f'{names} {verb} already in {dst.name}'
+        with self._trial():
+            self.move_to_multi(keys, source, target, before, copy)
+            return self._overlap(self.multi(target))
+
+    @contextmanager
+    def _trial(self) -> Iterator[None]:
+        """Try board moves and put the sheet back after, in place: the same
+        Multi and Row objects (a caller may hold them), their member lists
+        as they were, no undo step. Only for what the board's moves change:
+        member lists and new Multis."""
+        multis = list(self._multis)
+        members = [list(m.members) for m in multis]
+        saved = (self._next_multi_id, list(self._undo), list(self._redo), self._batch_saved)
+        try:
+            yield
+        finally:
+            for multi, kept in zip(multis, members):
+                multi.members[:] = kept
+            self._multis[:] = multis
+            self._next_multi_id, self._undo, self._redo, self._batch_saved = saved
+            self._problems = None
+            self._multi_problems = None
+
+    def free_multi_name(self, stem: str = 'multi') -> str:
+        """The first ``<stem><n>`` no Multi has: a new Multi's starting name."""
+        n = 1
+        while self.multi_name_problem(f'{stem}{n}'):
+            n += 1
+        return f'{stem}{n}'
+
+    def add_multi_from(
+        self, members: Iterable, source: int | None = None, copy: bool = False,
+        departments: Iterable[str] | None = None,
+    ) -> int:
+        """The board's New Multi drop: a new Multi (named
+        :meth:`free_multi_name`, to rename in place) holding ``members``,
+        moved from ``source`` as :meth:`move_to_multi` moves them. One edit;
+        the new Multi's id."""
+        with self.batch():
+            multi_id = self.add_multi(self.free_multi_name(), (), departments)
+            self.move_to_multi(members, source, multi_id, None, copy)
+        return multi_id
+
+    def new_multi_problem(
+        self, members: Iterable, source: int | None = None, copy: bool = False,
+        departments: Iterable[str] | None = None,
+    ) -> str:
+        """Why :meth:`add_multi_from` with these arguments is refused, or
+        '': a row that comes from a group its Multi lists, or the overlap
+        rule as the new Multi would have it. Changes nothing."""
+        keys = list(dict.fromkeys(members))
+        if source is not None and not copy:
+            problem = self.drop_problem(keys, source, None)
+            if problem:
+                return problem
+        with self._trial():
+            multi_id = self.add_multi_from(keys, source, copy, departments)
+            return self._overlap(self.multi(multi_id))
+
+    def _row_uri(self, row: Row) -> str:
+        """The URI a row's member is stored under: as stored (a rename
+        reaches the Multis on Apply), or a new row's to be."""
+        if row.origin is not None:
+            return str(row.origin.uri)
+        return str(self.kind.root / row.group / row.name)
+
+    def _resolved_rows(self, multi: Multi) -> list[Row]:
+        """``multi``'s live rows as ``config.groups.resolve_members`` orders
+        them: member order, a listed group's rows in place, each once."""
+        seen, out = set(), []
+        for member in multi.members:
+            if isinstance(member, int):
+                rows = [self._by_id[member]] if member in self._by_id else []
+            else:
+                group = self._member_group(member)
+                rows = list(self._group_rows(group, natural=False)) if group else []
+            for row in rows:
+                if row.id not in seen and not row.retire:
+                    seen.add(row.id)
+                    out.append(row)
+        return out
+
+    def predicted_starts(self, multi: Multi) -> dict[int, int]:
+        """Where each row of ``multi`` sits on its shared timeline once
+        Apply has placed them (``config.groups.place``): stored starts
+        kept, the rest after the last frame any placed member reaches, by
+        the sheet's frame ranges. By row id; empty without a shared
+        timeline. A row with no frame range is left out."""
+        if not multi.shared_timeline:
+            return {}
+        from tumblepipe.config.groups import place
+        from tumblepipe.config.timeline import FrameRange
+        rows = self._resolved_rows(multi)
+        ranges = {}
+        for row in rows:
+            start, end = self.value(row, FRAME_START), self.value(row, FRAME_END)
+            ok = isinstance(start, int) and isinstance(end, int) and start <= end
+            ranges[self._row_uri(row)] = FrameRange(start, end, 0, 0) if ok else None
+        stored = dict(multi.origin.timeline_starts) if multi.origin is not None else {}
+        starts = place(stored, [Uri.parse(self._row_uri(row)) for row in rows], ranges)
+        return {
+            row.id: starts[self._row_uri(row)]
+            for row in rows if self._row_uri(row) in starts
+        }
+
+    def workfile_impact(
+        self, latest: Callable[[Uri, str], str | None],
+        publishes: Callable[[str], bool] = lambda department: True,
+    ) -> list[WorkfileImpact]:
+        """What Apply changes for the stored Multis' workfiles: for each
+        Multi whose members change and that has a workfile in a department
+        it covers (``latest(multi uri, department)``: its latest version's
+        label, or None) that publishes (``publishes``; a ``composite``
+        workfile holds no exports to fall out of step), who joins and who
+        leaves. A Multi being retired or renamed is left out: its
+        workfiles stay as they are."""
+        found = []
+        for multi in self._multis:
+            # Not gated on the member list: a retired row leaves too.
+            if multi.is_new or multi.retire or multi.renamed:
+                continue
+            joins = [
+                row.name for row in self._rows
+                if not row.retire and self.covers(multi, row)
+                and not self.covers(multi, row, base=True)
+            ]
+            leaves = [
+                row.name for row in self._rows
+                if self.covers(multi, row, base=True)
+                and (row.retire or not self.covers(multi, row))
+            ]
+            if not joins and not leaves:
+                continue
+            workfiles = []
+            for department in multi.departments:
+                if department not in multi.origin.departments or not publishes(department):
+                    continue
+                version = latest(multi.origin.uri, department)
+                if version:
+                    workfiles.append((department, version))
+            if workfiles:
+                found.append(WorkfileImpact(
+                    multi.name, tuple(workfiles), tuple(joins), tuple(leaves),
+                ))
+        return found
 
     def multi_problems(self) -> dict[int, str]:
         """Why each touched Multi cannot be applied, by Multi id. Untouched

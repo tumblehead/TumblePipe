@@ -1002,6 +1002,60 @@ def check_scene(shot_uri):
           layer is not None and layer.bufferResolution()[0] == 1600,
           str(errors or (layer and layer.bufferResolution())))
 
+    # Import Geometry / Import Camera (2.0, 2026-11-23): off, the work is
+    # skipped, not only the output hidden.
+    from tumblepipe.pipe.houdini.cops.import_scene import ImportScene
+    runs = []
+    saved_execute = ImportScene.execute
+    ImportScene.execute = lambda self: runs.append(1)
+    try:
+        geometry_parm = render_native.parm(import_render.IMPORT_GEOMETRY_PARM)
+        camera_parm = render_native.parm(import_render.IMPORT_CAMERA_PARM)
+        check('import_render 2.0: Import Geometry and Import Camera, both on by default',
+              geometry_parm is not None and camera_parm is not None
+              and geometry_parm.eval() == 1 and camera_parm.eval() == 1)
+        camera_parm.set(0)
+        render.import_scene()
+        label = render_native.parm(import_render.SCENE_LABEL_PARM).eval()
+        check('import_render: Import Camera off: camera shut, geometry open, Scene Reads says '
+              'the wired camera is empty',
+              render_native.parm(import_render.CAMERA_READY_PARM).eval() == 0
+              and render_native.parm(import_render.SCENE_READY_PARM).eval() == 1
+              and 'camera off' in label and 'camera wired but empty' in label, label)
+        close('import_render: rgba still cooks with the camera off',
+              render_average(render_native, import_render.RGBA_OUTPUT), DEFAULT_BEAUTY)
+        camera_parm.set(1)
+        geometry_parm.set(0)
+        render.import_scene()
+        check('import_render: Import Geometry off: the shot is composed without payloads, '
+              'geometry shut, camera open',
+              inner is not None and inner.parm('loadpayloads').eval() == 0
+              and render_native.parm(import_render.SCENE_READY_PARM).eval() == 0
+              and render_native.parm(import_render.CAMERA_READY_PARM).eval() == 1,
+              render_native.parm(import_render.SCENE_LABEL_PARM).eval())
+        camera_parm.set(0)
+        before = len(runs)
+        render.execute(scene=True)  # Update
+        label = render_native.parm(import_render.SCENE_LABEL_PARM).eval()
+        check('import_render: both off: Update imports no scene, both outputs shut, '
+              'Scene Reads says so',
+              len(runs) == before
+              and render_native.parm(import_render.SCENE_READY_PARM).eval() == 0
+              and render_native.parm(import_render.CAMERA_READY_PARM).eval() == 0
+              and label.startswith(import_render.SCENE_OFF_LABEL), label)
+        close('import_render: rgba still cooks with the scene off',
+              render_average(render_native, import_render.RGBA_OUTPUT), DEFAULT_BEAUTY)
+        geometry_parm.set(1)
+        camera_parm.set(1)
+        render.import_scene()
+        check('import_render: both on again: payloads loaded, both outputs open',
+              inner is not None and inner.parm('loadpayloads').eval() == 1
+              and render_native.parm(import_render.SCENE_READY_PARM).eval() == 1
+              and render_native.parm(import_render.CAMERA_READY_PARM).eval() == 1,
+              render_native.parm(import_render.SCENE_LABEL_PARM).eval())
+    finally:
+        ImportScene.execute = saved_execute
+
 
 def run_worker(shot_uri, submit, label, recomp=False, want_merged=None, renders=None):
     """The hython half on the config the job would pass. A re-comp (Farm

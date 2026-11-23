@@ -550,10 +550,11 @@ and on Windows and Linux a bar drawn at the top of the window (press a
 title, or Alt with its underlined letter, or F10). **File** (open,
 save, publish, the master edit, new shot, import media), **Edit** (undo,
 redo, split, lift, ripple delete, marker, selection, and putting the bin's
-pick in the cut), **Playback** (play, step, jump by a second or to an edit
-point, the start and end) and **View** (burn-ins, fitting the timeline,
-which tracks have a row, and **Refresh**, which
-reads every shot's takes and the bins again). Each item shows its
+pick in the cut), **Playback** (play, step, jump by a second, to an edit
+point or to a frame with review marks, the start and end) and **View**
+(burn-ins, fitting the timeline, which tracks have a row, review mode and
+the review marks, see [Reviewing frames](#reviewing-frames), and
+**Refresh**, which reads every shot's takes and the bins again). Each item shows its
 shortcut, and is greyed while it does not apply: while a dialog is open, or
 the cut's actions on a published edit. With a menu open, an item's
 underlined letter chooses it. The single-letter keys (**S** split, **M**
@@ -1037,6 +1038,75 @@ kept in `layout.json` in a `tumblepipe/cinedex`
 folder of your own (`%LOCALAPPDATA%` on Windows, `~/.config` on Linux,
 `~/Library/Application Support` on macOS); delete it to start from the
 default sizes, and the list, again.
+
+### Reviewing frames
+
+You can draw on a frame and comment on it, and everyone with access to the
+project sees it, adds to it and changes it. Nothing to save: each stroke
+and comment is written to the project share as you make it.
+
+Turn on review mode with **D** or **View > Review Mode**; **D** again,
+or **Done** at the top of the review panel, turns it off. The review panel
+opens at the right of the picture, and the picture takes the brush. At the
+top of the panel, under **Draw**:
+
+- **Pen** draws in the colour picked from the swatches, at the **Size**
+  set by the slider (pixels of a full-HD picture, so a line looks the same
+  on any take). With **Pen pressure sets the width** ticked, a pen's
+  pressure sets the line's width; a mouse always draws the full width. A
+  ring shows where the brush is and how wide it draws.
+- **Eraser** (also **E**, which turns review mode on with the eraser, and
+  back to the pen) takes off every stroke it touches, anyone's.
+- **Clear Frame** takes off every stroke of the frame (not its comments).
+- **Undo** and **Redo**, and **Ctrl+Z** and **Ctrl+Shift+Z** while review
+  mode is on, undo and redo what you drew, erased, cleared and wrote in
+  this session. With review mode off they undo the edit's changes as
+  always.
+
+Under it, **Comments** is the conversation on the frame shown: every
+comment on it, oldest first, each with who wrote it and when (and who
+changed it last). Type in the field under them and press **Enter** (or
+**Send**) to add yours; with comments there already it is a reply, at the
+bottom of the list. **Edit** on a comment puts it in the field to change it
+(Enter or **Save** saves it; clear the text to delete it; **Cancel** leaves
+it), and **✕** deletes it. Anyone may change or delete anyone's comment.
+A long conversation scrolls. Step to another frame and the panel shows
+that frame's comments.
+
+Marks belong to the take, not to the edit: they are on the frame of the
+take they were drawn on, in every edit that shows that take, and stay there
+when the clip is trimmed or moved. Another version of the shot has its own
+marks. The strokes follow the picture: a clip's transform moves them with
+it, and **Shift+H** (flipped) mirrors them with the picture. Marks are made
+on a shot's playblast, render or check render, or on a media item; a slug,
+a gap or a live playblast takes none.
+
+The frames of the cut whose picture has marks show on the ruler as a blue
+line with a key at its foot. A marked frame under a clip on a higher track
+is not on screen, so it has no key there. **Shift+Right** goes to the next of them after the
+playhead, **Shift+Left** to the one before (**Playback > Next Reviewed
+Frame** and **Previous Reviewed Frame**).
+
+The marks show over the picture whether review mode is on or not;
+**View > Show Review Marks** hides them. Another machine's marks come in by
+themselves: the frame on screen's take is read every few seconds, the cut's
+other takes in turn, and all of them on **View > Refresh**.
+
+They are kept in the project's render folder, under
+`review/<playblast|render|check>/<shot>/<department>/<version>/` for a
+shot's take and `review/media/<item>/<version>/` for a media item, one
+small JSON file per stroke or note, so two people marking the same frame
+never overwrite each other. Your name on a note is `TH_USER`, the
+TumblePipe user Desktop starts the editor as; started without one, a note
+says *someone*.
+
+Pen pressure works with a tablet on Windows, through Windows Ink or, with
+*Use Windows Ink* off in a Wacom driver, through the driver itself
+(Wintab), and on macOS. On Linux a pen draws as a mouse does, at the full
+width. On Windows, turning the pen over and drawing with its eraser end
+erases, whichever of **Pen** and **Eraser** is picked; the tip draws again
+after. The eraser takes off every stroke along its path, however fast it
+is swiped.
 
 ## Saving and publishing
 

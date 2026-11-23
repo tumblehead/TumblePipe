@@ -12,6 +12,29 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.123.0 — 2026-11-23
+
+### Features
+- feat(comp): comp a check render on any frames inside its range, the missing ones held (`6ed48f96`)
+
+### Fixes
+- fix(comp): a check comp's warning says black where Missing Frames is Empty (`d9302df6`)
+
+### Documentation
+- docs(upgrading): v1.123.0 (`4f12e915`)
+- docs: a comp of a check render on any frames inside it, the missing frames held (`c20ea790`)
+
+### Tests
+- test(comp): the held frame agrees across the check comp paths, scene comp jobs and cook (`0ea99321`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.122.0 (`5d95fcdb`)
+
+### Other Changes
+- Merge pull request 'ci: hpm v0.43.1' (#96) from ci-hpm-0.43.1 into master (`0a689bbe`)
+- Merge pull request 'farm: hpm v0.43.1 by default, in lockstep with deadline-hpm-plugin' (#97) from farm-hpm-0.43.1 into master (`e01ac3b3`)
+- farm: hpm v0.43.1 by default, in lockstep with deadline-hpm-plugin (`a6dba1a6`)
+
 ## v1.122.0 — 2026-11-23
 
 ### Features

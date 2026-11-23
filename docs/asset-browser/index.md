@@ -416,6 +416,7 @@ registered.
 | **Entity Editor** | a window, not a form | Every asset and shot of the project as spreadsheets: add shots, assets, sequences and categories, retime, choose a shot's assets, set up Multis, rename, retire. See [The Entity Editor](entity-editor.md). |
 | **New sequence** | **Sequence** (free text) | Creates an empty sequence. Refuses a name already used by a category. |
 | **New Multi** | a window, not a form | The [Entity Editor](entity-editor.md#multis)'s Multis tab, asking for a **Name**, a shots Multi's **Timeline** and the departments, in the context it was chosen from (`shots` elsewhere). See [Multis and Roots](multis-and-roots.md#creating-a-multi). |
+| **Multis Board** (on a Multis subheader) | a window, not a form | The Entity Editor's Multis tab as a [board](entity-editor.md#the-board): a column per Multi, shots or assets dragged between them. |
 | **New Root** | **Name** | See [Multis and Roots](multis-and-roots.md#creating-a-root). |
 | **New Recipe** | **Name**; **Description**; **Tags** | Saves the nodes selected in the network editor. See [Recipes](recipes.md#saving-a-recipe). |
 | **New Edit** | **Name** | An edit with nothing saved yet: **Open in Editor** on its card opens it empty, for its first **Save**. Refuses a name the project has, in any case (*There is already an edit 'X'.*). See [Playing shots in the editor](play-shots.md). |

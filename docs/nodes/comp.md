@@ -18,7 +18,7 @@ the composite template makes one per shot channel. Outputs of
 | Output | Type | What it is |
 |---|---|---|
 | **beauty** (`rgba`) | RGBA | The beauty of the channel read (its A is the channel's alpha); on **All channels** every channel's beauty laid over each other, back to front, the last on top |
-| **lpe** | Cable | The light groups (`beauty_<tag>`, the LPE tags' AOVs): a light mix's input; and the LPE splits when the render has them: `diffuse_key`, `specular_key`, `diffuse_dome`, `specular_dome`, `diffuse_direct`, `specular_direct`, `diffuse_indirect`, `specular_indirect` (a light mix's rows stay the light groups) |
+| **lpe** | Cable | The light groups (`beauty_<tag>`, the LPE tags' AOVs): a light mix's input; and the LPE splits when the render has them: every `diffuse_<x>` and `specular_<x>`, whatever follows the underscore, so each light's (`diffuse_key`, `specular_fill`, `diffuse_rimLight`, ...) and the path splits (`diffuse_direct`, `specular_indirect`, ...) (a light mix's rows stay the light groups). Plain `diffuse` and `specular` go on **extra** |
 | **aov** | Cable | The geometry and camera data: `albedo`, `normal`, `depth` (Mono, one channel), `uv`, `position` |
 | **matte** | Cable | The `objid_*` mattes and `ramp_*` distance ramps (`th::mattes`), `holdout_*` holdouts, and any cryptomatte other than the two below |
 | **cryptomaterials** | Cable | Every rank plane of the `cryptomaterials` cryptomatte (`cryptomaterials00`, `01`, `02`), whole: wire it straight into a Cryptomatte COP's **crypto1** |
@@ -154,6 +154,7 @@ then show its first or last frame instead of black.
 | Offset Frames | `0` | Manual only |
 | Missing Frames | Automatic | What a frame the render does not have reads as. **Automatic**: empty (black), as ever, unless the version is a check render, which holds. **Empty (Black)**: always empty. **Hold Nearest Frame**: the nearest rendered frame, the earlier one when two are as near; a frame before the render's first shows its first, one after its last its last. The line under it says what is in use and why (`Automatic: holding the nearest rendered frame (a check render, every 5th frame)`). See [Reading a check render](#reading-a-check-render) |
 | Scene › Department, Version | `from_context`, `latest` | The staged shot **geometry** and **camera** read, through a [`th::import_scene`](#thimport_scene-cop) inside the node; its shot and channel are this node's (`default` for All channels) |
+| Scene › Import Geometry, Import Camera | on, on | 2.0 only. Off leaves that output empty and skips its work: with both off the scene is never imported (nothing composed, no camera cooked); with Import Geometry off the shot is composed without its payloads, for the camera alone. Reads names a wired output left empty |
 | Scene › Reads | | What the scene imported, or why **geometry** / **camera** are still empty |
 | Scene › Camera, Primitives, Purpose, Time Sample, Static Frame | `/cameras/render_camera`, `/*`, Render, Animated | As on `th::import_scene` |
 | Cache › Cache | on | Keeps each frame a beauty read cooks in memory, so the playbar plays a frame it has read once without reading the network again (the **rgba** outputs); see [the frame cache](#the-frame-cache) |
@@ -206,7 +207,22 @@ its two outputs together), so a scene without the camera prim never stops
 the renders cooking; **Reads** says why. Changing a Scene Department,
 Version or Camera imports it again. Up to TumblePipe 1.121.0 **geometry**
 opened without the camera, and a camera that could not cook failed every
-output, the renders too.
+output, the renders too. **Import Geometry** and **Import Camera** (2.0, on
+by default; TumblePipe 1.124.0) leave either out for a comp that does not
+rasterize: both off, nothing is imported on Update or on opening the
+workfile, and both outputs stay empty; Import Geometry off composes the shot
+without its payloads, for the camera alone. The renders, Submit Composite
+and the farm's comp never need the scene, so they work the same; a Rasterize
+Geometry on an output left empty draws nothing, and **Reads** says the
+output is wired but empty.
+
+A light's AOVs keep the case of the light's LPE tag in the EXR
+(`diffuse_Fill.r` in the `diffuse_fill` folder); the import asks for the
+plane as the file spells it. Up to TumblePipe 1.123.0 it asked for the
+lower-case name, and such an LPE read black until **Add AOVs from File**.
+From TumblePipe 1.124.0 the farm writes every channel of an AOV on its
+folder's name (`diffuse_fill.r`), whatever the render called it, so new
+renders read under the AOV's own name.
 
 An import made before #67 (TumblePipe 1.103 and older) had three outputs:
 **rgba** (for All channels, the channels laid over each other), **aovs**

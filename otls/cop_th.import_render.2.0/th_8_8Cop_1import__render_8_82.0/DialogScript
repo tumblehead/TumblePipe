@@ -18,7 +18,7 @@
     signature	default	Default	{ }	{ RGBA Cable Cable Cable Cable Cable Cable Geometry Metadata Cable }
 
     help {
-	"A shot's finished render, top to bottom: the beauty (with Channel * every channel's beauty laid over each other, the last on top), cables of the light groups and LPE splits (lpe: a light mix's groups, and diffuse/specular key, dome, direct and indirect), the geometry and camera data (aov: albedo, normal, depth as Mono, uv, position), the mattes, ramps and holdouts (matte) and each cryptomatte's rank planes, whole, for a Cryptomatte COP's crypto1 (cryptomaterials, cryptoprimitives), a cable of each channel's beauty named after the channel (layers), the staged geometry (geometry) and the shot's render camera (camera) for a Rasterize Geometry, then every other AOV (extra: transmission, sss, emission, shadow, ...). AOV Outputs gives each pass an output named after it. Under the node: what each channel reads, or that it has no render yet."
+	"A shot's finished render, top to bottom: the beauty (with Channel * every channel's beauty laid over each other, the last on top), cables of the light groups and LPE splits (lpe: a light mix's groups, and every diffuse_<x> and specular_<x>, per light or direct/indirect), the geometry and camera data (aov: albedo, normal, depth as Mono, uv, position), the mattes, ramps and holdouts (matte) and each cryptomatte's rank planes, whole, for a Cryptomatte COP's crypto1 (cryptomaterials, cryptoprimitives), a cable of each channel's beauty named after the channel (layers), the staged geometry (geometry) and the shot's render camera (camera) for a Rasterize Geometry (Scene: Import Geometry and Import Camera leave either out, empty), then every other AOV (extra: transmission, sss, emission, shadow, ...). AOV Outputs gives each pass an output named after it. Under the node: what each channel reads, or that it has no render yet."
     }
 
     groupsimple {
@@ -247,6 +247,25 @@
         name    "scene_group"
         label   "Scene"
 
+        parm {
+            name    "import_geometry"
+            label   "Import Geometry"
+            type    toggle
+            joinnext
+            default { "1" }
+            help    "Import the staged shot's geometry for the geometry output. Off: geometry stays empty, and the shot is composed without its payloads (for the camera alone); with Import Camera off too, nothing is imported at all."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.scene_changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "import_camera"
+            label   "Import Camera"
+            type    toggle
+            default { "1" }
+            help    "Import the shot's render camera for the camera output. Off: camera stays empty (a Rasterize Geometry reading it draws nothing); with Import Geometry off too, nothing is imported at all."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.cops.import_render as th_node; th_node.scene_changed(kwargs)" }
+        parmtag { "script_callback_language" "python" }
+        }
         parm {
             name    "scene_department"
             label   "Department"

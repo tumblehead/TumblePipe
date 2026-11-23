@@ -8,8 +8,9 @@ outputs, top to bottom:
     beauty           the beauty (output name ``rgba``); for all channels the
                      channels' beauties laid over each other, last on top
     lpe              a cable of the light groups (``beauty_<tag>``), a light
-                     mix's, and the LPE splits (diffuse_key, specular_dome,
-                     diffuse_direct, ...: ``pipe.comp.LPE_AOV_NAMES``)
+                     mix's, and the LPE splits, ``diffuse_<x>`` and
+                     ``specular_<x>`` for any light or path x (diffuse_key,
+                     specular_fill, diffuse_direct, ...: ``pipe.comp.is_lpe_aov``)
     aov              a cable of the geometry and camera data (albedo, normal,
                      depth (Mono), uv, position)
     matte            a cable of the mattes, distance ramps and holdouts
@@ -71,7 +72,10 @@ import is frozen per channel (``pipe.comp.plan_key``).
 channels), its department, version, camera and geometry the *Scene*
 folder's. It imports when Update is pressed, and on any other run only
 while ``geometry`` or ``camera`` is wired: an import_shot import composes a
-whole stage, and most comps never rasterize.
+whole stage, and most comps never rasterize. 2.0's *Import Geometry* and
+*Import Camera* (on by default) leave either out: both off, the scene is
+never imported and both outputs stay empty; geometry off, the shot is
+composed without its payloads, for the camera (:func:`scene_state`).
 
 *AOV Outputs* keeps a companion Cable Unpack beside the node per AOV cable
 with fields (``lpe``, ``aov``, ``matte``), with an output per field (a
@@ -502,6 +506,38 @@ SCENE = 'scene'
 SCENE_READY_PARM = 'scene_ready'
 CAMERA_READY_PARM = 'camera_ready'
 SCENE_LABEL_PARM = 'scene_label'
+# 2.0's Import Geometry and Import Camera (on by default; 2026-11-23: "they
+# take long to import and make the scene heavy"). Both off: the embedded
+# import_scene never imports (no th::import_shot run, nothing composed) and
+# geometry and camera stay empty. Geometry off: the shot is composed
+# without its payloads, for the camera alone, and geometry stays empty.
+# Camera off: camera stays empty (the import_scene still cooks its camera
+# beside the geometry: it cooks its outputs together). A node without the
+# toggle (1.0) imports both, as ever.
+IMPORT_GEOMETRY_PARM = 'import_geometry'
+IMPORT_CAMERA_PARM = 'import_camera'
+SCENE_OFF_LABEL = 'off: Import Geometry and Import Camera are off'
+
+
+def scene_state(geometry: bool, camera: bool, camera_problems,
+                version_label: str, wired=()) -> tuple[bool, bool, str]:
+    """``(scene_ready, camera_ready, Scene Reads)`` for Import Geometry and
+    Import Camera, the camera's cook problems (once the scene is imported)
+    and the scene outputs ``wired`` (names): an output opens only when it
+    is imported and the camera cooks; Scene Reads says what was read, why
+    both stay empty, which is off, and that a wired one is empty for it
+    (a Rasterize Geometry reading it draws nothing)."""
+    off = [name for name, on in (('geometry', geometry), ('camera', camera)) if not on]
+    wired_off = [name for name in off if name in wired]
+    note = (f'{" and ".join(wired_off)} wired but empty' if wired_off else '')
+    if not geometry and not camera:
+        return False, False, '; '.join(p for p in (SCENE_OFF_LABEL, note) if p)
+    ready = not camera_problems
+    label = scene_label(version_label, camera_problems)
+    if off:
+        label = '; '.join(p for p in (label, f'{off[0]} off (Import {off[0].capitalize()})', note)
+                          if p)
+    return geometry and ready, camera and ready, label
 
 # The frame cache (#73, Remy): a File COP read is wire-bound (~0.5 s a 1080p
 # frame from the server), so every read in the dive passes through a Cache
@@ -1083,18 +1119,50 @@ class ImportRender(TimeOffsetNode, EntityNode):
 
     def scene_wired(self) -> bool:
         """Whether anything reads ``geometry`` or ``camera``."""
-        return any(
-            c.outputIndex() in (self.output('geometry'), self.output('camera'))
-            for c in self.native().outputConnections()
-        )
+        return bool(self.wired_scene_outputs())
+
+    def wired_scene_outputs(self) -> set[str]:
+        """Which of ``geometry`` and ``camera`` something reads."""
+        index = {self.output(name): name for name in SCENE_OUTPUT_NAMES}
+        return {index[c.outputIndex()] for c in self.native().outputConnections()
+                if c.outputIndex() in index}
+
+    def _scene_off(self):
+        """Close both scene outputs: Import Geometry and Import Camera off."""
+        self._set_scene_state(*scene_state(False, False, [], '',
+                                           self.wired_scene_outputs()))
+
+    def imports_geometry(self) -> bool:
+        """Import Geometry (on for a node without it, 1.0)."""
+        parm = self.parm(IMPORT_GEOMETRY_PARM)
+        return parm is None or bool(parm.eval())
+
+    def imports_camera(self) -> bool:
+        """Import Camera (on for a node without it, 1.0)."""
+        parm = self.parm(IMPORT_CAMERA_PARM)
+        return parm is None or bool(parm.eval())
+
+    def scene_wanted(self) -> bool:
+        """Whether the node imports the scene at all."""
+        return self.imports_geometry() or self.imports_camera()
 
     def import_scene(self):
         """Run the embedded th::import_scene and open the geometry and
         camera outputs to it, once it imported and its Camera Import
         cooks. Scene Reads says what it read, or why the outputs stay
-        empty; raises the import's error after saying so."""
+        empty; raises the import's error after saying so. With Import
+        Geometry and Import Camera both off nothing is imported and both
+        outputs close; with Import Geometry off the shot is composed
+        without its payloads."""
         scene = self.scene()
         if scene is None: return
+        if not self.scene_wanted():
+            self._scene_off()
+            return
+        shot = scene.embedded()
+        payloads = shot.parm('loadpayloads') if shot is not None else None
+        if payloads is not None and payloads.eval() != int(self.imports_geometry()):
+            payloads.set(int(self.imports_geometry()))
         try:
             scene.execute()
         except Exception as error:
@@ -1108,12 +1176,17 @@ class ImportRender(TimeOffsetNode, EntityNode):
         stay empty while it does not: Copernicus cooks every output of the
         embedded import_scene together, so reading only its geometry
         cooked the failing camera too, and that failed every output of
-        this node, the renders as well."""
+        this node, the renders as well. An output whose Import toggle is
+        off stays empty (:func:`scene_state`); with both off the camera
+        is not even cooked."""
         scene = self.scene()
         if scene is None: return
-        problems = _cook_problems(scene.native().node('camera'))
-        label = scene_label(scene.parm('version_label').eval(), problems)
-        self._set_scene_state(not problems, not problems, label)
+        geometry, camera = self.imports_geometry(), self.imports_camera()
+        problems = (_cook_problems(scene.native().node('camera'))
+                    if geometry or camera else [])
+        wired = self.wired_scene_outputs() if not (geometry and camera) else ()
+        self._set_scene_state(*scene_state(
+            geometry, camera, problems, scene.parm('version_label').eval(), wired))
 
     def _set_scene_state(self, scene_ready: bool, camera_ready: bool, label: str):
         for name, value in ((SCENE_READY_PARM, int(scene_ready)),
@@ -1194,7 +1267,9 @@ class ImportRender(TimeOffsetNode, EntityNode):
         Scene Reads and never stops the renders.
         """
         self.upgrade()
-        if scene or (scene is None and self.scene_wired()):
+        if not self.scene_wanted():
+            self._scene_off()
+        elif scene or (scene is None and self.scene_wired()):
             try:
                 self.import_scene()
             except Exception:
@@ -1341,6 +1416,9 @@ class ImportRender(TimeOffsetNode, EntityNode):
     def _dive_built(self, plan: comp.DivePlan, slots) -> bool:
         dive = self.native().node(DIVE)
         if dive is None or self.get_fields() != list(plan.fields): return False
+        # A dive saved short of an output (before extras) leaves the HDA's
+        # output wired to it dangling: rebuilt, it gets them all.
+        if dive_outputs_missing(dive): return False
         if not self.has_packs(): return False
         if slots is None:  # 2.0: its beauties pack, wired to layers
             if dive.node(BEAUTIES_PACK) is None: return False
@@ -1595,12 +1673,22 @@ def _set_unpack_fields(unpack, fields: list[str], signatures, rehome=()):
         node.setInput(input_index, unpack if home is None else rehomes[home][0], index)
 
 
+def dive_outputs_missing(dive) -> bool:
+    """Whether the dive has fewer outputs than DIVE_OUTPUTS. The dive is
+    an editable node, so a scene keeps the outputs it was saved with; the
+    HDA's own outputs node (not editable) is wired from the definition, by
+    the dive's connector, so an import saved before ``extras`` (v1.121.0)
+    had its ``extra`` output wired to a dive output that was not there
+    until the dive was rebuilt (2026-11-23)."""
+    parm = dive.parm('outputs')
+    return parm is not None and parm.eval() < len(DIVE_OUTPUTS)
+
+
 def _ensure_dive_outputs(dive):
     """Give the dive every output in DIVE_OUTPUTS (an import saved before
     ``beauties`` existed has two, one saved before #67 three; the channel
-    outputs came after)."""
-    if dive.parm('outputs') is None: return
-    if dive.parm('outputs').eval() >= len(DIVE_OUTPUTS): return
+    outputs came after; one saved before v1.121.0 had no ``extras``)."""
+    if not dive_outputs_missing(dive): return
     dive.parm('outputs').set(len(DIVE_OUTPUTS))
     for index, (label, kind) in enumerate(DIVE_OUTPUTS, start=1):
         dive.parm(f'outputlabel{index}').set(label)
@@ -1931,11 +2019,23 @@ def on_loaded(raw_node):
     rebuild it (:meth:`ImportRender.upgrade`, then :meth:`execute`), once
     the scene has loaded: rewiring and rebuilding inside the load is what
     crashed Houdini for th::light_mix (``pipe.houdini.after_load``). An
-    import on today's outputs is left to the scene refresh."""
+    import on today's outputs is left to the scene refresh, but for a dive
+    saved short of an output (:func:`dive_outputs_missing`), which gets
+    them all straight after the load, so no output of the node is left
+    wired to a dive output that is not there."""
     from tumblepipe.pipe.houdini import after_load
+    session_id = raw_node.sessionId()
+    dive = raw_node.node(DIVE)
+    if dive is not None and dive_outputs_missing(dive):
+        def add_outputs():
+            native = hou.nodeBySessionId(session_id)
+            found = native.node(DIVE) if native is not None else None
+            if found is not None:
+                _ensure_dive_outputs(found)
+
+        after_load.run(add_outputs)
     parm = raw_node.parm(OUTPUTS_LAYOUT_PARM)
     if parm is None or int(parm.eval()) >= OUTPUTS_LAYOUT: return
-    session_id = raw_node.sessionId()
 
     def upgrade():
         native = hou.nodeBySessionId(session_id)

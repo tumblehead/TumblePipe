@@ -15,7 +15,8 @@ Two differences, for the workfile's department only:
   Offered: add it to the Multi, through ``config.groups.add_member`` as the
   browser and the Entity Editor do, so the overlap rule holds (a member's
   department covered by one Multi only). A stranger that cannot join is
-  listed with the reason.
+  listed with the reason. Or removed: its graph is deleted from the workfile
+  (:func:`plan_removal`), the way out after a shot moved to another Multi.
 * **missing**: a member with no export here. Offered: add its graph, a copy
   of another member's *column* (:func:`column`) re-pinned to it, or, with
   no column to copy, the department template's.
@@ -583,6 +584,25 @@ def plan_copies(
     ]
 
 
+def plan_removal(
+    graph: Graph, removing: Iterable[Uri | str], members: Iterable[Uri | str],
+    department: str,
+) -> list[str]:
+    """The nodes to delete to take ``removing`` (strangers: shots with a
+    graph here that the Multi does not have) out of the workfile, in
+    network order: each one's *column* (:func:`column`, as copying selects
+    it), less anything a member that stays uses too. Nodes outside every
+    column are never in it, and neither are the nodes members share (a
+    camera, a merge of every export). Nodes only the removed ones share
+    go with them."""
+    gone_keys = {str(r) for r in removing}
+    keep = [str(m) for m in members if str(m) not in gone_keys]
+    gone: set[str] = set()
+    for member in dict.fromkeys(str(r) for r in removing):
+        gone.update(column(graph, member, [*keep, member], department))
+    return [node.path for node in graph.nodes if node.path in gone]
+
+
 # ---------------------------------------------------------------------------
 # Asking
 # ---------------------------------------------------------------------------
@@ -591,12 +611,18 @@ def _is(names: Sequence) -> str:
     return 'is' if len(names) == 1 else 'are'
 
 
+def remove_label(count: int) -> str:
+    """The button that deletes the strangers' graphs."""
+    return 'Remove its graph' if count == 1 else 'Remove their graphs'
+
+
 def strangers_prompt(
     multi: str, department: str, admission: Admission,
-    covers: Sequence[str],
+    covers: Sequence[str], removable: bool = True,
 ) -> str:
     """The question for exports pinned to shots (assets) that are not
-    members of the Multi."""
+    members of the Multi. ``removable``: also offer to remove their graphs
+    from the workfile (off for a notice after the artist chose to add)."""
     parts = []
     if admission.addable:
         names = listing(admission.addable)
@@ -630,6 +656,13 @@ def strangers_prompt(
                  'and they cannot join'
         )
         parts.append(f'{lead}:\n{lines}')
+    if removable:
+        strangers = [*admission.addable, *(u for u, _ in admission.refused)]
+        parts.append(
+            f'Or {remove_label(len(strangers))} to delete the nodes only '
+            f'{listing(strangers)} {"uses" if len(strangers) == 1 else "use"} from this workfile. Nodes the members '
+            'share stay.'
+        )
     return '\n\n'.join(parts)
 
 

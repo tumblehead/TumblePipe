@@ -928,6 +928,54 @@ workspace:
   Python (found under `$HFS` as `scripts/farm_launcher.py` finds it), which
   opens the Farm Submit window ticked on those shots. Nothing in Cinedex
   submits; in tests the launch is recorded and nothing is started.
+  Review marks (drawing and notes on frames, for everyone on the project;
+  [Reviewing frames](asset-browser/play-shots.md#reviewing-frames)) are in
+  three layers. `th_pipe::review` is the files: a take's folder
+  (`take_dir`, `media_dir`: `render:/review/<kind>/<entity>/<department>/
+  <version>`, None for a live playblast), one file per mark named
+  `<frame>.<id>.json` (`id` = 13-digit Unix milliseconds, `-`, 16 random
+  hex digits, so names sort in the order made), written under a temporary
+  name and renamed over (`write`, retrying while Windows refuses a file
+  another reader holds), and read leniently (`decode`: an unknown `kind`
+  or a broken file is skipped, an unknown field ignored). A stroke is
+  `{"kind":"stroke","frame","author","created","color":"#rrggbb","size",
+  "points":[x,y,pressure,...]}`, its points 0 to 1 of the take's frame
+  (top left 0,0) and its size a share of the frame's height; a note is
+  `{"kind":"note",...,"text","edited","edited_by"}`. `sync` reads only the
+  files whose (mtime, length) changed since the stamps held, and leaves out
+  one it cannot open just then. `cinedex::review` is the model:
+  `Geometry` (a take's frame to the screen and back, through the video's
+  fit, the clip's `Placement` and the flip), `runs` and `touches` (a stroke
+  as constant-width polylines, and what the eraser hits), each folder as
+  read and as changed here (`Folder`), the session's undo steps (`Change`,
+  an eraser drag one step through `join`), and `Io`, one thread doing the
+  writes and reads in order, so a read queued after a write sees it; a read
+  asked before a change made here is dropped (`Folder::synced`), and the
+  editor waits for the queue (`flush`) as it closes. `review_view.rs` is
+  the surface over the picture (a custom widget painting its meshes one
+  band up with `RenderNode::layer`, or the video's shader band would cover
+  them), taking Primer's `mouse::Event::Pressure` and
+  `mouse::Event::Eraser` (Primer 0.21: Windows Ink and Wintab on Windows,
+  the tablet event's pressure on macOS; Eraser, Windows only, just before
+  the press of a stroke made with the pen's eraser end, which then erases
+  whatever the tool). The eraser tests the path between two events
+  (`review::swept`), not only where it was seen. `editor/review.rs` wires it: the target
+  at the playhead (the top layer of the frame shown, its frame number by
+  `Media::frame_number`), the review panel at the viewer's right (the
+  brush, then the frame's notes as a conversation, `conversation`: oldest
+  first), `review_positions` for the
+  ruler (`Tracks::reviews`: only positions whose top layer is the marked
+  frame), Shift+Left/Right, and polling
+  (`review::POLL_EVERY` for the frame shown, one other folder of the cut
+  per tick). `editor/review_wiring_tests.rs` lays the real `picture_view`
+  out, draws strokes through it with a pen's pressure (drawn and pruned
+  between events), and has a second editor read them from the same share;
+  its `Viewer::cut` builds any cut of media items, for the ruler/jump and
+  undo-routing properties. The model's properties play two reviewers by
+  turns and reads still in flight against the share; th_pipe's check that
+  an incremental `sync` ends as a fresh read and that `decode` takes any
+  file. `wiring_tests/placement.rs` lays a long conversation out with
+  `Wrapping` (a measurer that wraps; `Odd` never does).
 - `cleanup` (`th_cleanup`): Clean Up Project's rules, a port of
   `python/tumblepipe/cleanup` with no FFmpeg, OCIO or GUI: the six
   categories' plans and applies, the overview the window shows, the

@@ -519,19 +519,41 @@ IMPORT_RENDER_V2_OUTPUTS = (
 IMPORT_RENDER_V2_HELP = (
     "A shot's finished render, top to bottom: the beauty (with Channel * every "
     "channel's beauty laid over each other, the last on top), cables of the light "
-    "groups and LPE splits (lpe: a light mix's groups, and diffuse/specular key, "
-    "dome, direct and indirect), the geometry and camera data (aov: albedo, normal, "
+    "groups and LPE splits (lpe: a light mix's groups, and every diffuse_<x> and "
+    "specular_<x>, per light or direct/indirect), the geometry and camera data (aov: albedo, normal, "
     "depth as Mono, uv, position), the mattes, ramps and "
     "holdouts (matte) and each cryptomatte's rank planes, whole, for a Cryptomatte "
     "COP's crypto1 (cryptomaterials, cryptoprimitives), a cable of each channel's "
     "beauty named after the channel (layers), the staged geometry (geometry) "
-    "and the shot's render camera (camera) for a Rasterize Geometry, then every "
+    "and the shot's render camera (camera) for a Rasterize Geometry (Scene: Import "
+    "Geometry and Import Camera leave either out, empty), then every "
     "other AOV (extra: transmission, sss, emission, shadow, ...). AOV Outputs "
     "gives each pass an output named after it. Under the node: what each channel "
     "reads, or that it has no render yet."
 )
 # 1.0's parms that carry its beauty outputs, which no 2.0 scene ever saved.
 IMPORT_RENDER_V1_ONLY_PARMS = ('outputs_layout', 'channel_outputs', 'beauty_outputs')
+# 2.0's Import Geometry and Import Camera (2026-11-23: the scene takes long
+# to import and makes the scene heavy), first in its Scene folder; on, so a
+# saved node imports as before (cops.import_render.scene_state).
+IMPORT_RENDER_V2_SCENE_TOGGLES = f"""        parm {{
+            name    "import_geometry"
+            label   "Import Geometry"
+            type    toggle
+            joinnext
+            default {{ "1" }}
+            help    "Import the staged shot's geometry for the geometry output. Off: geometry stays empty, and the shot is composed without its payloads (for the camera alone); with Import Camera off too, nothing is imported at all."
+            {_callback('import_render', 'scene_changed')}
+        }}
+        parm {{
+            name    "import_camera"
+            label   "Import Camera"
+            type    toggle
+            default {{ "1" }}
+            help    "Import the shot's render camera for the camera output. Off: camera stays empty (a Rasterize Geometry reading it draws nothing); with Import Geometry off too, nothing is imported at all."
+            {_callback('import_render', 'scene_changed')}
+        }}
+"""
 
 
 def _drop_parm(dialog_script: str, name: str) -> str:
@@ -569,6 +591,9 @@ def import_render_v2_ds() -> str:
         'Keep a Cable Unpack beside the node for each cable (lpe, aov, matte, the '
         'cryptomattes, layers), with one output per pass in it, named after the '
         'pass, kept in step with it.')
+    scene_department = '        parm {\n            name    "scene_department"'
+    text = _replace_once(text, scene_department,
+                         IMPORT_RENDER_V2_SCENE_TOGGLES + scene_department)
     return text
 
 

@@ -173,6 +173,10 @@ mod tests {
             focused: b[6] || b[7],
             flipped: b[8],
             sync_ranges: b[4],
+            reviewing: b[1],
+            eraser: b[2],
+            reviewable: b[3],
+            marks_shown: b[5],
             show,
             end,
         })

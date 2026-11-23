@@ -312,14 +312,34 @@ def cryptomatte_compression(crypto: Cryptomatte, image_infos: list[ImageInfo]) -
     compression = (rank.compression or '').split(':', 1)[0].lower()
     return compression if compression in LOSSLESS_COMPRESSIONS else 'zips'
 
+def channel_plane(channel: str) -> Optional[str]:
+    """The plane a channel is on: everything before its last dot
+    (``beauty_Fill.r`` -> ``beauty_Fill``, ``a.b.r`` -> ``a.b``), None for a
+    bare channel (``R``). The one rule the split's rename and the comp's
+    reader (:func:`cop_plane_name`) share."""
+    return channel.rsplit('.', 1)[0] if '.' in channel else None
+
 def _rename_channel(image_name: str, channel: str) -> str:
-    # Map common channel suffixes to new names
-    for suffix in ('R', 'G', 'B', 'A'):
-        if channel == suffix or channel.endswith(f'.{suffix}'):
-            return f'{image_name}.{suffix}'
-    # For other channels, use the subimage name as prefix
-    channel_suffix = channel.split('.', 1)[-1] if '.' in channel else channel
-    return f'{image_name}.{channel_suffix}'
+    """``channel`` on the plane ``image_name``: its suffix (after the last
+    dot, :func:`channel_plane`; the whole name when bare) behind
+    ``image_name``. ``beauty_Fill.r`` -> ``beauty_fill.r``, ``R`` ->
+    ``beauty.R``; ``a.b.z`` -> ``<image_name>.z`` (the suffix was everything
+    after the first dot, ``<image_name>.b.z``, a plane the reader does not
+    ask for)."""
+    suffix = channel.rsplit('.', 1)[-1]
+    return f'{image_name}.{suffix}'
+
+def channel_needs_rename(image_name: str, channel: str) -> bool:
+    """Whether the split renames ``channel`` of the part ``image_name`` (the
+    part's lowercased name, its AOV folder's): unless its plane
+    (:func:`channel_plane`, the reader's rule) is that name, case for case.
+    A Copernicus File COP matches a plane name case for case, so a light's
+    ``beauty_Fill.r`` (th::lpe_tags names a light's AOVs after its tag) is
+    written ``beauty_fill.r``, the name the comp asks for; it read black
+    before (2026-11-23). A channel that only starts with the name
+    (``color.R`` in part ``c``, ``beauty_fill_rim.r`` in ``beauty_fill``)
+    is on another plane and is renamed too."""
+    return channel_plane(channel) != image_name
 
 def _stage_subimage(temp_path, temp_image_path, image_info, index_name):
     # Returns the file to copy to the output location; channels are renamed to
@@ -331,10 +351,7 @@ def _stage_subimage(temp_path, temp_image_path, image_info, index_name):
     # blacked out every denoise-off slapcomp until v1.23.4).
     image_name = image_info.name
     channels = image_info.channels or []
-    needs_renaming = any(
-        not channel.lower().startswith(image_name.lower())
-        for channel in channels
-    )
+    needs_renaming = any(channel_needs_rename(image_name, c) for c in channels)
     if not needs_renaming: return temp_image_path
 
     temp_renamed_path = temp_path / f'renamed_{index_name}.exr'
@@ -541,14 +558,27 @@ def read_channel_names(input_path: Path) -> Optional[list[str]]:
 UNPREFIXED_PLANE_NAME = 'C'
 
 def cop_plane_name(channel_names: Optional[list[str]], aov_name: str) -> str:
-    """The name a File COP finds an AOV file's channels under.
+    """The name a File COP finds an AOV file's channels under: the plane
+    as the file's header spells it, which is what the File COP's Add AOVs
+    from File reads too.
 
-    ``aov_name`` when the channels are `<aov>.`-prefixed (or can't be read --
-    what the comp always asked for), ``C`` when they are bare.
+    The File COP matches a plane name case for case, and an AOV's name is
+    its folder's, lowercased, while a render's channels keep the case Karma
+    wrote: th::lpe_tags names a light's AOVs after the light's tag
+    (``beauty_Fill.r`` in folder ``beauty_fill``), which read black
+    (2026-11-23). So: the prefix of the `<plane>.<channel>` channels that is
+    ``aov_name`` in any case, else their one prefix when they share one;
+    ``C`` when the channels are bare; ``aov_name`` when they can't be read
+    (what the comp always asked for) or name several other planes.
     """
     if not channel_names: return aov_name
-    if any('.' in channel for channel in channel_names): return aov_name
-    return UNPREFIXED_PLANE_NAME
+    planes = [channel_plane(channel) for channel in channel_names if '.' in channel]
+    if not planes: return UNPREFIXED_PLANE_NAME
+    if aov_name in planes: return aov_name
+    for plane in planes:
+        if plane.lower() == aov_name.lower(): return plane
+    if len(set(planes)) == 1: return planes[0]
+    return aov_name
 
 def _channel_selector(channel_count: int) -> Optional[str]:
     """oiiotool `--ch` selection normalizing an AOV to 3 channels.
