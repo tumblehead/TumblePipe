@@ -111,6 +111,13 @@ Launch the project once. The Desktop then installs the newest TumblePipe the
 project can use (a project pinned to an older version stays on it), and the
 menu shows **Open Cinedex**.
 
+From TumblePipe 1.125.0, **Open Cinedex** is an app: a button with Cinedex's
+icon on the project card (left of the Houdini edition picker) and an entry in
+the card's right-click menu, no longer a Scripts panel entry. That needs
+TumbleTrove Desktop 0.78.0 or newer (hpm 0.44.0): an older Desktop cannot
+install TumblePipe 1.125.0 at all, since its hpm refuses the manifest's app
+fields. Update the Desktop.
+
 ### Cinedex's Open in Houdini starts a new Houdini instead of using mine
 
 Cinedex opens the workfile in your Houdini only when that Houdini started
@@ -422,10 +429,11 @@ shot stage as it stands on the shot's first frame, so it holds still.
 Existing scenes pick both up when opened. On 1.88, hiding the ghost in the
 dive's viewer restores playback speed.
 
-### Joint meshes, spline curves or a face board at `/Geometry` after `th::animate`
+### Joint meshes, spline curves or a face board at `/Geometry` (or `/scene`) after `th::animate`
 
-The stage after `th::animate` has a root-level `/Geometry` beside `/CHAR`,
-holding the rig's joint and spline viz, face board or skeleton display. The
+The stage after `th::animate` has a root-level `/Geometry` (`/scene` from
+1.125, where geometry with no path lands) beside `/CHAR`, holding the
+rig's joint and spline viz, face board or skeleton display. The
 Scene Invoke's **Shapes** pattern picks every shape the rig has: `*`,
 Houdini's default, or `* Base`. Only `Base` carries the paths that put the
 geometry under `/CHAR/<character>/geo`; the helper shapes have none. Set
@@ -433,7 +441,7 @@ Shapes to `Base`: on an old dive's own Scene Invoke (a dive from before
 1.92), or in `th::animate`'s Characters folder. After 1.93 `th::animate`
 leaves those shapes out and warns about it. A character whose shapes all
 lack a path is a rig not built for the pipeline: it lands at `/Geometry`
-whatever the pattern. Up to 1.104 joint viz drawn as spheres (TumbleRig's
+(`/scene` from 1.125) whatever the pattern. Up to 1.104 joint viz drawn as spheres (TumbleRig's
 example rigs) still got through an own Scene Invoke on `*`; `th::animate`
 now also leaves out every shape its own Shapes does not pick, whichever
 Scene Invoke made it.

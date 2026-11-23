@@ -181,13 +181,18 @@ class ImportRigs(AssetRows):
                 self.parm(f'version{index}').eval() or 'latest',
             )
         self.set_rig_imports(keep_row_choices(rows, current))
-        self.execute(unrigged)
+        return self.execute(unrigged)
 
     def execute(self, unrigged=()):
         """Import every row. ``unrigged``: animatable assets Discover found
-        with no rig, named in the node comment."""
+        with no rig, named in the node comment.
+
+        Returns the rows' copies warnings (``import_rig.copies_warning``:
+        characters the shot stage lacks, or stage copies no character is
+        named for), one line each, '' when there are none; the node comment
+        has them too."""
         with self._rows_read_once():
-            self._execute(unrigged)
+            return self._execute(unrigged)
 
     def _execute(self, unrigged):
 
@@ -218,13 +223,14 @@ class ImportRigs(AssetRows):
             ns.set_node_comment(
                 context, f"Bypassed: No rigs configured{unpublished_note}")
             context.bypass(True)
-            return
+            return ''
         # Undo a bypass left by an earlier empty run, or the node reports
         # "Imported" while passing nothing through.
         ns.clear_auto_bypass(context)
 
         # Build asset nodes
         prev_node = None
+        warnings = []
         for asset_uri, channel, version, instances in active_imports:
 
             # Create node name from URI segments (include channel for uniqueness)
@@ -241,7 +247,9 @@ class ImportRigs(AssetRows):
                 rig_node.latest()
             else:
                 rig_node.set_version_name(version)
-            rig_node.execute()
+            warning = rig_node.execute()
+            if warning and warning not in warnings:
+                warnings.append(warning)
 
             # Connect the rig
             if prev_node is not None:
@@ -260,8 +268,9 @@ class ImportRigs(AssetRows):
         ns.set_node_comment(
             context,
             f"Imported: {rig_count} rig{'s' if rig_count != 1 else ''}"
-            f"{unpublished_note}",
+            f"{unpublished_note}{import_rig.comment_note(warnings)}",
         )
+        return '\n'.join(warnings)
 
 def create(scene, name):
     return ns.create_node(scene, name, ImportRigs, 'import_rigs', 'Sop')
@@ -270,7 +279,7 @@ def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportRigs(raw_node)
     try:
-        node.execute()
+        import_rig.announce_warning(node.execute())
     finally:
         import_rig._refresh_ghost(raw_node)
 
@@ -279,7 +288,7 @@ def discover(kwargs):
     node = ImportRigs(kwargs['node'])
     try:
         with ns.node_errors_as_message('Discover Rigs'):
-            node.discover()
+            import_rig.announce_warning(node.discover())
     finally:
         import_rig._refresh_ghost(kwargs['node'])
 

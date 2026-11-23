@@ -76,7 +76,8 @@ def no_frame_cache():
             parm.set(0)
 
 
-def resolve_imports(entity_uri: Uri, frames=None, follows=None) -> tuple[dict | None, bool, str | None]:
+def resolve_imports(entity_uri: Uri, frames=None, follows=None,
+                    exports=None) -> tuple[dict | None, bool, str | None]:
     """A re-comp's imports: every import_render of the shot resolved on
     its own settings now. ``(plan, check, None)`` with what each read and
     whether one is a check render, or ``(None, False, error)``.
@@ -89,7 +90,11 @@ def resolve_imports(entity_uri: Uri, frames=None, follows=None) -> tuple[dict | 
     Beside a stepped render (``follows``, ``[{channel, department,
     version}]``) each import is first pinned to that render
     (``pipe.comp.follow_pins``), so it reads the check render and not the
-    shot's older published render."""
+    shot's older published render.
+
+    An import imports its scene only for a geometry or camera output one
+    of ``exports`` (the export_comps the job renders) reads
+    (``ImportRender.execute``'s ``reaching``)."""
     from tumblepipe.pipe.houdini.cops import import_render
     import tumblepipe.pipe.houdini.nodes as ns
     for native in ns.list_by_node_type(import_render.TYPE_NAME, 'Cop'):
@@ -109,7 +114,7 @@ def resolve_imports(entity_uri: Uri, frames=None, follows=None) -> tuple[dict | 
                 (department, version), = pins.values()
                 node.pin(department, version)
         try:
-            reads, node_states = node.resolve_states()
+            reads, node_states = node.resolve_states(reaching=exports)
         except ns.NodeError as exc:
             return None, False, str(exc)
         for state in node_states:
@@ -136,6 +141,29 @@ def resolve_imports(entity_uri: Uri, frames=None, follows=None) -> tuple[dict | 
         if note:
             print(f'WARNING: comps {note}: a check comp')
     return comp.freeze_plan(states), check, None
+
+
+def shut_unread_scenes(exports) -> list[str]:
+    """Close the geometry and camera outputs of every import_render that
+    none of ``exports`` (the export_comps the job renders) reads, and
+    return the paths of those it closed. A workfile saved after an Update
+    keeps them open, and an open scene output cooks with the renders the
+    comp reads (Copernicus cooks every output of a node together): the
+    job then composed and unpacked the shot's whole stage for nothing, and
+    Antoine's comp segfaulted in that unpack (2026-11-23)."""
+    from tumblepipe.pipe.houdini.cops.import_render import (
+        TYPE_NAME, ImportRender, CAMERA_READY_PARM, SCENE_READY_PARM)
+    import tumblepipe.pipe.houdini.nodes as ns
+    closed = []
+    for native in ns.list_by_node_type(TYPE_NAME, 'Cop'):
+        node = ImportRender(native)
+        flags = [native.parm(name) for name in (SCENE_READY_PARM, CAMERA_READY_PARM)]
+        was = [bool(p.eval()) for p in flags if p is not None]
+        node.shut_unread_scene(node.scene_outputs_read(exports))
+        now = [bool(p.eval()) for p in flags if p is not None]
+        if was != now:
+            closed.append(native.path())
+    return closed
 
 
 def report_uncovered(entity_uri: Uri, reads: dict, frames) -> list[str]:
@@ -192,7 +220,7 @@ def record_reads(exports: list[dict], reads: dict, check_render: bool = False):
         store_json(context_path, context)
 
 
-def pin_imports(imports: dict, entity_uri: Uri) -> tuple[str | None, bool]:
+def pin_imports(imports: dict, entity_uri: Uri, exports=None) -> tuple[str | None, bool]:
     """Set every import_render to the version the submit froze and point it
     there: ``(None, check)``, ``check`` whether one reads a check render
     (the submit checked it against the comp's frames), or ``(error,
@@ -201,7 +229,11 @@ def pin_imports(imports: dict, entity_uri: Uri) -> tuple[str | None, bool]:
     The worker loads a copy of the workfile from the job's data folder, where
     'from_context' resolves no shot, so an import on it is pointed at the
     job's shot (one job comps one shot; a Multi's imports are pinned to
-    their member already)."""
+    their member already).
+
+    An import imports its scene only for a geometry or camera output one
+    of ``exports`` (the export_comps the job renders) reads
+    (``ImportRender.execute``'s ``reaching``)."""
     from tumblepipe.pipe.houdini.cops.import_render import ImportRender
     import tumblepipe.pipe.houdini.nodes as ns
     check = False
@@ -225,7 +257,7 @@ def pin_imports(imports: dict, entity_uri: Uri) -> tuple[str | None, bool]:
                 ), False
             node.pin(department, version)
         try:
-            reads = node.execute()
+            reads = node.execute(reaching=exports)
         except ns.NodeError as exc:
             return str(exc), False
         frozen = set(pins)
@@ -287,6 +319,12 @@ def main(
             return error(f'{export_node.path()} has no render node')
         targets.append((export, export_node, render_node))
 
+    # Only a scene output an export reads is imported and open: an open
+    # one cooks the shot's stage with the renders.
+    export_nodes = [node for _, node, _ in targets]
+    for path in shut_unread_scenes(export_nodes):
+        print(f'  {path}: geometry and camera closed, no export reads them')
+
     # A comp of its submit's render reads that render through its Slap
     # Comp Imports (#80); otherwise pin the imports to what the submit
     # froze, or (a re-comp) resolve them now.
@@ -305,13 +343,14 @@ def main(
     else:
         if imports:
             headline('Pinning imports')
-            problem, check_render = pin_imports(imports, entity_uri)
+            problem, check_render = pin_imports(imports, entity_uri, export_nodes)
             if problem is not None:
                 return error(problem)
             plan = imports
         else:
             headline('Resolving imports')
-            plan, check_render, problem = resolve_imports(entity_uri, comp_frames, follows)
+            plan, check_render, problem = resolve_imports(
+                entity_uri, comp_frames, follows, export_nodes)
             if problem is not None:
                 return error(problem)
         try:

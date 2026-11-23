@@ -785,21 +785,47 @@ same, or delete it, to clear the warning. Skeletons are not shapes and are
 never left out this way. Up to 1.104 an own Scene Invoke on `*` sent the
 joint and spline viz of TumbleRig rigs to `/Geometry`.
 
+**Geometry with no `path` lands in the shot's scene scope, `/scene`.** A
+prop you add in the dive, say a `toothbrush` mesh merged after the Scene
+Invoke, comes to the stage as `/scene/toothbrush` (its `name`, or its
+relative `path`, under `/scene`; geometry with neither gets a name from
+the SOP Import under `/scene`). It is published with the animation, and the
+shot export's root-prim check (`shot_root_prims`) accepts `/scene`. A path
+that starts with `/`, a character's, is used as it is. Up to 1.124 such
+geometry landed at a root-level `/Geometry`, a SOP Import's own default,
+and every animation publish failed with "Disallowed root prim 'Geometry'".
+Give the geometry a path under a character to animate it as part of that
+character instead.
+
 Keep Shapes at `Base`. A wider pattern (`*`, Houdini's default, or `* Base`)
 also outputs the rig's helper shapes: joint and spline viz, the face board,
-the skeleton display. They have no `path`, so they would land at a
-root-level `/Geometry`, outside every character, and be published with the
-animation. `th::animate` leaves
-out a character's path-less shapes when the character has geometry with
-paths, and says so in a warning on the node and on the status bar. A
-character with no path at all (a rig not built for the pipeline) is kept,
-lands at `/Geometry`, and is named in the warning. A skeleton turned on in
-the Characters list is not a helper shape: it has its path (`skel/Base`)
-and stays. Up to 1.93 the helper shapes went through. When SOPs after the
-Scene Invoke put out unpacked geometry, nothing is left out, but shapes
-with no `path` are named in the same kind of warning, since they too land
-at `/Geometry` (up to 1.108 they did so silently). Give them a path under
-the character, or leave them out of the dive's output.
+the skeleton display. They have no `path`, so they would land in `/scene`,
+outside every character, and be published with the animation.
+`th::animate` leaves out a character's path-less shapes when the character
+has geometry with paths, and says so in a warning on the node and on the
+status bar. A character with no path at all (a rig not built for the
+pipeline) is kept, lands in `/scene`, and is named in the warning. A
+skeleton turned on in the Characters list is not a helper shape: it has its
+path (`skel/Base`) and stays. Up to 1.93 the helper shapes went through.
+When SOPs after the Scene Invoke put out unpacked geometry, nothing is left
+out; shapes with no `path` are named in a status-bar note saying where in
+`/scene` they land (no warning on the node: a prop added in the dive is
+meant to be there). From 1.109 to 1.124 that was a warning, since they
+landed at `/Geometry`; up to 1.108 they did so silently.
+
+Each character lands on the stage prim of its name, so the rigs in the
+dive must make the copies the input stage holds. For every live
+`th::import_rig` in the dive (the ones `th::import_rigs` builds too) whose
+characters differ from the stage's copies of its asset (`Roommate0` ..
+`Roommate2` against one `/CHAR/Roommate`, after Instances was set by hand),
+the same warning, on `points_sops/placed` and the status bar, carries a
+line per asset naming the rig's characters and the stage's copies: a
+character the stage lacks would land as a new prim at the origin with no
+lookdev, and a stage copy no character is named for stays unanimated. Set
+the instances on the shot's scene in the Entity Editor and press
+**Discover** on `th::import_rigs`; see
+[`th::import_rig`](assets.md#thimport_rig-sop) for the text. Nothing is
+blocked; it cooks as before. Up to 1.124 this went unsaid.
 
 The node reads the dive's output the way Houdini does for a SOP network:
 the Output SOP whose **Output Index** is 0, whatever it is called, or the

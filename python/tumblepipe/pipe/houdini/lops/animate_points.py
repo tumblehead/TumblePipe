@@ -121,16 +121,25 @@ Import ("not indexed"), is never sampled as the other defaults are
 (`_unindexes_nothing`): the block as a time sample reads as indexed with no
 indices, which `displayColor` did on every frame up to 1.112.
 
+Geometry with no `path` lands in the shot's scene scope (`LOOSE_SCOPE`,
+`/scene`): it is the three imports' Path Prefix. A SOP Import's own is
+`/Geometry`, a root the shot export refuses ("Disallowed root prim
+'Geometry'"). A prop added in the dive (Remy 2026-11-23: a toothbrush) is
+`/scene/<its name>` and publishes with the animation (`landing_path`); an
+absolute path, a character's, is used as it is.
+
 Only shapes with somewhere to go reach the imports (`points_sops/placed`,
 `placed_shapes`). A Scene Invoke whose Shapes pattern is wider than
 `Base` (Houdini's own default is `*`) also outputs a rig's helper shapes,
 a TumbleRig rig's joint and spline viz, face board and skeleton display.
-They carry no `path`, so a SOP Import would put them under a root-level
-`/Geometry`, outside every character, and the animation layer would
-publish them. In a character that has geometry with paths, its path-less
-shapes made of points (meshes, curves) are left out, with a warning on the
-node and one status-bar message. A character with no path anywhere (a rig
-not built for the pipeline) is kept as it is and named in the warning.
+They carry no `path`, so they would land in `/scene`, outside every
+character, and the animation layer would publish them. In a character
+that has geometry with paths, its path-less shapes made of points (meshes,
+curves) are left out, with a warning on the node and one status-bar
+message. A character with no path anywhere (a rig not built for the
+pipeline) is kept as it is and named in the warning. Unpacked geometry
+with no path (SOPs after the Scene Invoke, a prop made in the dive) is
+kept, with a status-bar note saying where it lands (`loose_message`).
 
 What comes to the stage is the node's to say, on its Attributes folder,
 with defaults that are what the node did before it had the folder.
@@ -164,6 +173,25 @@ REST = 'REST'
 CURRENT = 'CURRENT'
 SCENE = 'scene'
 DIVE = 'anim_dive'
+
+#: Where the dive's geometry with no `path` lands: the Path Prefix of the
+#: three SOP Imports (static, remainder, full; the HDA says it, and
+#: tests/test_animate_points.py holds the two the same). The shot's scene
+#: scope, a root the shot export allows (`validators.shot_structure`
+#: ALLOWED_ROOT_PRIMS); a SOP Import's own default, `/Geometry`, it refuses.
+LOOSE_SCOPE = '/scene'
+
+
+def landing_path(path: str, name: str) -> str:
+    """Where th::animate's imports (Path Attributes `path,name`, Path Prefix
+    `LOOSE_SCOPE`, absolute paths not prefixed) put a prim with `path` and
+    `name` ('' for none): an absolute path as it is, else the relative path
+    or, with none, the name under `LOOSE_SCOPE`. With neither, the SOP
+    Import names the prim under `LOOSE_SCOPE`: `LOOSE_SCOPE` is returned."""
+    if path.startswith('/'):
+        return path
+    rest = (path or name).strip('/')
+    return f'{LOOSE_SCOPE}/{rest}' if rest else LOOSE_SCOPE
 
 # SOP primitive types a SOP Import turns into a UsdGeomPointBased prim;
 # the per-frame copy covers these, `remainder_import` the rest.
@@ -1953,8 +1981,8 @@ def shapes_to_leave_out(shapes) -> list[int]:
     its prims has a `path`, and whether all of them are made of points
     (meshes, curves; not cameras or other packed prims). Left out are the
     path-less, points-only shapes of a character that has a shape with a
-    path: helper geometry (viz, face boards) a SOP Import would put at
-    `/Geometry`. A character with no path anywhere keeps everything.
+    path: helper geometry (viz, face boards) that would land in
+    `LOOSE_SCOPE`. A character with no path anywhere keeps everything.
     """
     if not any(has_path for _, has_path, _ in shapes):
         return []
@@ -1982,19 +2010,19 @@ def unplaced_message(left_out: dict, pathless: list, unpicked: dict | None = Non
                           for character, shapes in sorted(left_out.items()))
         parts.append(
             f'th::animate left out rig shapes with no path ({named}): they '
-            'would land at /Geometry, outside the characters. The Scene '
+            f'would land in {LOOSE_SCOPE}, outside the characters. The Scene '
             "Invoke's Shapes pattern picks them; set it to Base to output "
             'only the characters\' geometry.')
     if pathless:
         parts.append(
             'th::animate: no shape of ' + ', '.join(sorted(pathless))
-            + ' has a path attribute, so its geometry lands at /Geometry, '
+            + f' has a path attribute, so its geometry lands in {LOOSE_SCOPE}, '
             'not under /CHAR. Is it a rig built for the pipeline?')
     return '\n'.join(parts)
 
 
 def loose_shapes(paths, names, points_only) -> list[str]:
-    """The shapes of unpacked dive output that would land at /Geometry:
+    """The shapes of unpacked dive output that land in `LOOSE_SCOPE`:
     the `name` (or '' when unnamed) of every prim with no `path` (`paths`
     and `names` per prim; `names` None without the attribute), once each,
     in prim order, if `points_only(prim index)` (asked once per name) says
@@ -2013,20 +2041,20 @@ def loose_shapes(paths, names, points_only) -> list[str]:
 
 
 def loose_message(shapes) -> str:
-    """The warning for `loose_shapes`: '' when there are none."""
+    """The note for `loose_shapes`: '' when there are none. A note, not a
+    warning: geometry added in the dive is a prop of the shot, and lands
+    in its scene scope (`landing_path`)."""
     if not shapes:
         return ''
-    named = [shape for shape in shapes if shape]
+    named = [landing_path('', shape) for shape in shapes if shape]
     shown = ', '.join(named[:5]) + (f' and {len(named) - 5} more' if len(named) > 5 else '')
     if len(named) < len(shapes):
-        shown = (shown + ' and ' if shown else '') + 'geometry with no name'
-    one = len(shapes) == 1
+        shown = (shown + ' and ' if shown else '') + f'geometry with no name in {LOOSE_SCOPE}'
     return (
-        f'th::animate: {shown} in anim_dive {"has" if one else "have"} no path '
-        f'attribute, so {"it lands" if one else "they land"} at /Geometry, '
-        'outside the characters, and {} published with the animation. Give '
-        '{} a path under the character, or leave {} out of the dive\'s output.'
-    ).format(*(('is', 'it', 'it') if one else ('are', 'them', 'them')))
+        "th::animate: anim_dive's geometry with no path attribute lands in "
+        f"the shot's scene scope ({shown}) and is published with the "
+        'animation. A path under a character puts it there instead.'
+    )
 
 
 def _loose_in(geo) -> list[str]:
@@ -2046,10 +2074,11 @@ def _loose_in(geo) -> list[str]:
                                        else prims[index].type() == hou.primType.Polygon))
 
 
-def _warn(sop_node, animate_node, message) -> None:
-    """`message` as a warning on `sop_node`, and on the status bar once
-    per change for th::animate `animate_node`."""
-    if message:
+def _warn(sop_node, animate_node, message, warning: bool = True) -> None:
+    """`message` as a warning on `sop_node` (with `warning` False not: a
+    note), and on the status bar once per change for th::animate
+    `animate_node`."""
+    if message and warning:
         add_warning = getattr(sop_node, 'addWarning', None)
         if add_warning is not None:
             add_warning(message)
@@ -2070,6 +2099,49 @@ def _has_path(geo) -> bool:
         return False
 
 
+def rig_copies_message(sop_node) -> str:
+    """The rig imports in the anim_dive of the th::animate ``sop_node``
+    sits in whose characters are not the copies its shot stage holds
+    (``import_rig.copies_warning``), one line per asset; '' when every
+    live th::import_rig matches, or outside a th::animate.
+
+    The characters land on the stage prims of their names: one the stage
+    lacks is a new prim at the origin with no lookdev, a stage copy no
+    character is named for stays unanimated. A warning only: reading the
+    rig nodes never fails the cook.
+    """
+    from tumblepipe.pipe.houdini import shot_start
+    from tumblepipe.pipe.houdini.lops import animate_ghost
+    from tumblepipe.pipe.houdini.sops import import_rig
+    try:
+        # `placed` sits in points_sops; the rigs are in the node's anim_dive
+        animate = shot_start.animate_node(sop_node)
+        dive = animate.node('anim_dive') if animate is not None else None
+        stage = import_rig._shot_stage(sop_node)
+        if dive is None or stage is None:
+            return ''
+        messages = []
+        for node in animate_ghost._rig_nodes(dive):
+            if not animate_ghost._is_import_rig(node):
+                continue
+            if not animate_ghost._is_live(node, dive):
+                continue
+            asset_uri = import_rig._imported_asset_uri(node)
+            if asset_uri is None:
+                continue
+            message = import_rig.copies_warning(
+                stage, asset_uri, node.parm('instances').eval())
+            if message and message not in messages:
+                messages.append(message)
+        return '\n'.join(messages)
+    except Exception:
+        return ''
+
+
+def _joined(*messages) -> str:
+    return '\n'.join(message for message in messages if message)
+
+
 def placed_shapes(sop_node) -> None:
     """The `placed` Python SOP after `scene`: the dive's packed folders
     without the shapes th::animate's Shapes does not pick
@@ -2078,12 +2150,20 @@ def placed_shapes(sop_node) -> None:
     shapes `shapes_to_leave_out` names, a warning on this node
     naming them, and one status-bar message per change. Geometry that is
     not packed folders (SOPs after the Scene Invoke) passes through as it
-    is, with a warning naming its shapes with no path (`loose_shapes`)."""
+    is, with a status-bar note naming its shapes with no path and where
+    they land (`loose_shapes`). Either way the rig imports whose characters
+    are not the shot stage's copies (`rig_copies_message`) are a warning on
+    this node; with them, the note rides in it."""
     from tumblepipe.pipe.houdini.lops import animate_invoke
     geo = sop_node.geometry()
     animate_node = sop_node.parent().parent() if sop_node.parent() else None
+    rig_copies = rig_copies_message(sop_node)
     if not _has_packed(geo):
-        _warn(sop_node, animate_node, loose_message(_loose_in(geo)))
+        # The loose geometry alone is a note (it lands in /scene and
+        # publishes); a rig copies mismatch makes it a warning.
+        _warn(sop_node, animate_node,
+              _joined(rig_copies, loose_message(_loose_in(geo))),
+              warning=bool(rig_copies))
         return
     pattern = animate_invoke.shapes_pattern(animate_node)
     left_out, pathless, unpicked = {}, [], {}
@@ -2124,7 +2204,8 @@ def placed_shapes(sop_node) -> None:
                     shapes[i][0] or f'shape {entries[i]}' for i in drop)
         inner.deletePrims(doomed)
         folder.setEmbeddedGeometry(inner)
-    _warn(sop_node, animate_node, unplaced_message(left_out, pathless, unpicked, pattern or ''))
+    _warn(sop_node, animate_node, _joined(
+        rig_copies, unplaced_message(left_out, pathless, unpicked, pattern or '')))
 
 
 def _name(prim) -> str:

@@ -443,12 +443,11 @@ Content-Type: text/plain
 
 comment ""
 position 0 -6
-connectornextid 2
+connectornextid 1
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault off exposed on lowdetail off mediumdetail off highdetail on
 outputsNamed3
 {
 0 "geometry"
-1 "camera"
 }
 inputsNamed3
 {
@@ -1256,6 +1255,67 @@ Content-Type: text/plain
 1
 
 --HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/scene_camera.init"
+Content-Type: text/plain
+
+type = cameraimport
+matchesdef = 1
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/scene_camera.def"
+Content-Type: text/plain
+
+comment ""
+position 2 -9
+connectornextid 1
+flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress off colordefault on exposed on lowdetail off mediumdetail off highdetail on
+outputsNamed3
+{
+0 "camera_ref"
+}
+inputsNamed3
+{
+}
+inputs
+{
+}
+stat
+{
+  create -1
+  modify -1
+  author tumblehead@judas-3070
+  access 0777
+}
+color UT_Color RGB 0.8 0.8 0.8 
+delscript ""
+exprlanguage hscript
+end
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/scene_camera.parm"
+Content-Type: text/plain
+
+{
+version 0.8
+signature	[ 0	locks=0 ]	(	m	)
+camera	[ 0	locks=0 ]	(	../scene/objnet/camera	)
+setclipping	[ 0	locks=0 ]	(	"off"	)
+near	[ 0	locks=0 ]	(	0.01	)
+far	[ 0	locks=0 ]	(	10000	)
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
+Content-Disposition: attachment; filename="hdaroot/scene_camera.userdata"
+Content-Type: text/plain
+
+{
+	"___Version___":{
+		"type":"string",
+		"value":"___EXTERNAL___"
+	}
+}
+
+--HOUDINIMIMEBOUNDARY0xD3ADD339-0x00000F49-0x56B122C9-0x00000001HOUDINIMIMEBOUNDARY
 Content-Disposition: attachment; filename="hdaroot/geometry_out.init"
 Content-Type: text/plain
 
@@ -1353,12 +1413,12 @@ outputsNamed3
 inputsNamed3
 {
 0 	"" "" 1 "input1"
-1 	scene 1 1 "input2"
+1 	scene_camera 0 1 "input2"
 }
 inputs
 {
 0 	"" 0 1
-1 	scene 1 1
+1 	scene_camera 0 1
 }
 stat
 {
@@ -1411,11 +1471,12 @@ Content-Type: text/plain
 Content-Disposition: attachment; filename="hdaroot.order"
 Content-Type: text/plain
 
-6
+7
 inputs
 outputs
 dive
 scene
+scene_camera
 geometry_out
 camera_out
 

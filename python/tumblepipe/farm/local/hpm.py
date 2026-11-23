@@ -25,9 +25,11 @@ from pathlib import Path
 EXECUTABLE_ENV = 'TH_LOCAL_FARM_HPM'
 VERSION_ENV = 'HPM_VERSION'
 RELEASES_REPO = '3db-dk/hpm'
-# Keep in lockstep with deadline-hpm-plugin's DEFAULT_HPM_VERSION, so a local
-# task runs under the hpm a render node would.
-DEFAULT_VERSION = 'v0.43.1'
+# Keep in lockstep with deadline-hpm-plugin's DEFAULT_HPM_VERSION and with
+# the HpmVersion Deadline jobs carry (apps.deadline.HPM_VERSION), so a local
+# task runs under the hpm a render node would. 0.44.0+: hpm.toml's scripts
+# use `app`/`icon`, which an earlier hpm refuses.
+DEFAULT_VERSION = 'v0.44.0'
 # The operating system's own CA bundles: macOS, Debian/Ubuntu, RHEL/Rocky.
 SYSTEM_CA_FILES = (
     '/etc/ssl/cert.pem',

@@ -184,8 +184,11 @@ every other AOV the render has (`transmission`, `sss`, `emission`,
 motion vectors, ...; not on a 1.0 node). An `alpha` AOV and the `*_mse`
 variance passes are never read. Which cable an AOV
 rides is `pipe.comp.aov_cable`. `geometry` and `camera` are empty until
-the scene imports: **Update** imports it, a workfile open only while one
-of them is wired, and both open only once its camera cooks too (the
+the scene imports, and only an output something is wired to is ever
+imported (Update and a workfile open alike; on the farm, only an output the
+rendered export reads), since an open scene output cooks the whole staged
+shot with the renders; wire it, then **Update**. Both open only once its
+camera cooks too (the
 embedded import cooks its two outputs together), so a missing camera prim
 never stops the renders cooking. Up to TumblePipe 1.121.0 `geometry`
 opened without the camera, and a camera that could not cook failed every

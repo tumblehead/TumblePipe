@@ -296,7 +296,7 @@
             label   "Reads"
             type    label
             default { "not imported: press Update" }
-            help    "Update imports the scene; a refresh does only while geometry or camera is wired. geometry and camera stay empty until it has imported."
+            help    "Update, and any refresh, imports the scene only for a geometry or camera output something is wired to (on the farm: that the rendered export reads); an output nothing reads stays empty and never cooks the scene, so wire it first, then Update."
         }
         parm {
             name    "scene_ready"

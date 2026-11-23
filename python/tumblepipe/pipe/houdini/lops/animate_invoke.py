@@ -50,7 +50,7 @@ OUTPUT_INFIX = '_output_'
 # pattern; a dive with its own Scene Invoke is held to it after the fact
 # (`animate_points.placed_shapes`), so an old dive whose invoke keeps
 # Houdini's default `*` does not send the rig's joint and spline viz (which
-# can be spheres, not points) to /Geometry.
+# can be spheres, not points) to the stage (`/scene`, outside the characters).
 
 
 def shape_stem(name: str) -> str:

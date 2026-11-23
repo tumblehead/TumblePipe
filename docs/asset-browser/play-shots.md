@@ -1115,8 +1115,10 @@ the project's edits, each with its newest working version and newest
 published one; the edit chosen opens in a window of its own (an untitled
 window it was chosen from closes when it holds nothing of yours: empty, or
 the project's shots unchanged since it opened). **Open Cinedex** in
-TumbleTrove Desktop's Scripts panel (the project card's right-click menu,
-under tumblepipe; called **Edits** up to 1.104) starts the editor on the whole film: the project's
+TumbleTrove Desktop (from 1.125.0 a button with Cinedex's icon on the project
+card, and in the card's right-click menu, with TumbleTrove Desktop 0.78.0 or
+newer; before that in the Scripts panel, called **Edits** up to 1.104)
+starts the editor on the whole film: the project's
 [master edit](#the-master-edit), or when the project has none, an untitled
 edit of every shot.
 **Save** writes

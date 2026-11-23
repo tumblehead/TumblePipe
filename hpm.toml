@@ -4,7 +4,7 @@
 [package]
 path = "tumblehead/tumblepipe"
 name = "TumblePipe"
-version = "1.124.0"
+version = "1.125.0"
 description = "A small studio pipeline for animation and VFX projects in Houdini"
 readme = "README.md"
 documentation = "https://tumblepipe.readthedocs.io"
@@ -282,11 +282,18 @@ description = "Free space: delete old export, render and cache versions, Houdini
 # asset browser's Edits section open the other edits. Started like
 # Farm Submit, so $OCIO and $TH_PROJECT_PATH are a Houdini session's. The
 # key stays `edits` (the Desktop keys a script by it); only the label moved.
+# `app = true` (hpm 0.44.0+, TumbleTrove Desktop 0.78.0+) makes it a launch
+# button on the project card instead of a Scripts entry; `icon` is drawn by
+# scripts/cinedex_icon.py with the exe's icon. An hpm before 0.44.0 refuses
+# the whole manifest, so CI (.ci/release.env), the local farm and the farm's
+# Deadline jobs (tumblepipe.farm.local.hpm.DEFAULT_VERSION) run 0.44.0+.
 [scripts.edits]
 cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app edits"
 python = "3.11"
 label = "Open Cinedex"
 description = "Open Cinedex on the project's master edit (else every shot), without opening Houdini"
+app = true
+icon = "resources/cinedex.svg"
 
 [scripts.rebuild-caches]
 cmd = "python \"$HPM_PACKAGE_ROOT/scripts/farm_launcher.py\" --app rebuild"

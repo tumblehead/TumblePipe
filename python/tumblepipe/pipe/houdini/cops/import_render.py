@@ -70,12 +70,18 @@ import is frozen per channel (``pipe.comp.plan_key``).
 ``geometry`` and ``camera`` come from an embedded th::import_scene
 (:data:`SCENE`): its shot and channel are this node's (``default`` for all
 channels), its department, version, camera and geometry the *Scene*
-folder's. It imports when Update is pressed, and on any other run only
-while ``geometry`` or ``camera`` is wired: an import_shot import composes a
-whole stage, and most comps never rasterize. 2.0's *Import Geometry* and
-*Import Camera* (on by default) leave either out: both off, the scene is
-never imported and both outputs stay empty; geometry off, the shot is
-composed without its payloads, for the camera (:func:`scene_state`).
+folder's. It imports, on Update and on any other run, only for an output
+something reads (wired; on the farm, read by the export_comps it renders:
+:func:`outputs_reaching`), and an output nothing reads stays closed: an
+open one cooks with every other output of the node, so the renders a comp
+reads pulled the whole staged shot, payloads and all (Antoine's farm comp
+segfaulted unpacking it, 2026-11-23). ``camera`` reads the embedded
+import's camera straight (:data:`SCENE_CAMERA`), so a camera alone unpacks
+no geometry, and the payloads load only for a read ``geometry``. 2.0's
+*Import Geometry* and *Import Camera* (on by default) leave either out:
+both off, the scene is never imported and both outputs stay empty;
+geometry off, the shot is composed without its payloads, for the camera
+(:func:`scene_state`).
 
 *AOV Outputs* keeps a companion Cable Unpack beside the node per AOV cable
 with fields (``lpe``, ``aov``, ``matte``), with an output per field (a
@@ -517,27 +523,109 @@ SCENE_LABEL_PARM = 'scene_label'
 IMPORT_GEOMETRY_PARM = 'import_geometry'
 IMPORT_CAMERA_PARM = 'import_camera'
 SCENE_OFF_LABEL = 'off: Import Geometry and Import Camera are off'
+# Nothing reads geometry or camera (Antoine's farm comp, 2026-11-23: a comp
+# of the renders alone segfaulted unpacking the shot's stage). An open
+# scene output cooks with every other output of the node (Copernicus cooks
+# a subnet's outputs together), so the beauty a comp renders pulled the
+# whole staged shot, payloads and all, through a SOP Import nobody read.
+# The scene is imported and its outputs opened only for an output that is
+# read, so a comp of images never composes or unpacks the stage.
+SCENE_UNREAD_LABEL = 'not imported: nothing reads geometry or camera (wire one, then Update)'
+# The embedded Camera Import (2.0 and 1.0 since 1.125.0), beside the
+# embedded import_scene rather than its camera output: the import_scene
+# cooks its own outputs together, so a camera read through it unpacked the
+# whole stage as well. This one reads the import_scene's lopimportcam
+# straight, so a camera alone composes the stage (without payloads, unless
+# geometry is read too) and unpacks nothing.
+SCENE_CAMERA = 'scene_camera'
+
+
+def scene_reads(geometry: bool, camera: bool, read=()) -> tuple[bool, bool]:
+    """``(geometry, camera)``: which of the scene outputs the node imports,
+    each only with its Import toggle on and something reading it (``read``,
+    the output names read: :meth:`ImportRender.scene_outputs_read`). Neither:
+    nothing is imported. The payloads load only for geometry."""
+    return geometry and 'geometry' in read, camera and 'camera' in read
 
 
 def scene_state(geometry: bool, camera: bool, camera_problems,
-                version_label: str, wired=()) -> tuple[bool, bool, str]:
+                version_label: str, wired=(), read=None) -> tuple[bool, bool, str]:
     """``(scene_ready, camera_ready, Scene Reads)`` for Import Geometry and
-    Import Camera, the camera's cook problems (once the scene is imported)
-    and the scene outputs ``wired`` (names): an output opens only when it
-    is imported and the camera cooks; Scene Reads says what was read, why
-    both stay empty, which is off, and that a wired one is empty for it
-    (a Rasterize Geometry reading it draws nothing)."""
+    Import Camera, the camera's cook problems (once the scene is imported),
+    the scene outputs ``wired`` (names) and those ``read`` (default: the
+    wired ones; on the farm, those the rendered exports read): an output
+    opens only when it is imported, read and the camera cooks; Scene Reads
+    says what was read, why both stay empty, which is off, that a wired one
+    is empty for it (a Rasterize Geometry reading it draws nothing), and
+    one left unimported because nothing reads it."""
+    read = set(wired) if read is None else set(read)
     off = [name for name, on in (('geometry', geometry), ('camera', camera)) if not on]
     wired_off = [name for name in off if name in wired]
     note = (f'{" and ".join(wired_off)} wired but empty' if wired_off else '')
     if not geometry and not camera:
         return False, False, '; '.join(p for p in (SCENE_OFF_LABEL, note) if p)
+    take_geometry, take_camera = scene_reads(geometry, camera, read)
+    if not take_geometry and not take_camera:
+        return False, False, '; '.join(p for p in (SCENE_UNREAD_LABEL, note) if p)
     ready = not camera_problems
+    unread = [name for name, on, taken in (('geometry', geometry, take_geometry),
+                                           ('camera', camera, take_camera))
+              if on and not taken]
     label = scene_label(version_label, camera_problems)
+    parts = [label]
     if off:
-        label = '; '.join(p for p in (label, f'{off[0]} off (Import {off[0].capitalize()})', note)
-                          if p)
-    return geometry and ready, camera and ready, label
+        parts.append(f'{off[0]} off (Import {off[0].capitalize()})')
+    parts.append(note)
+    if unread:
+        parts.append(f'{unread[0]} not imported: nothing reads it')
+    return (take_geometry and ready, take_camera and ready,
+            '; '.join(p for p in parts if p))
+
+
+def outputs_reaching(source, targets, inputs_of) -> set[int]:
+    """The outputs of ``source`` that some node of ``targets`` reads,
+    directly or through the nodes between: ``inputs_of(node)`` gives what
+    a node reads, ``(upstream node, its output index)`` pairs (an index
+    below 0 for a node read as a whole, such as a subnet's parent through
+    its indirect inputs). The walk stops at ``source``."""
+    found, seen = set(), set()
+    stack = list(targets)
+    while stack:
+        node = stack.pop()
+        if node in seen or node == source: continue
+        seen.add(node)
+        for upstream, index in inputs_of(node):
+            if upstream is None: continue
+            if upstream == source:
+                if index >= 0:
+                    found.add(index)
+                continue
+            stack.append(upstream)
+    return found
+
+
+def _wired_inputs(native) -> list:
+    """``native``'s wired inputs as ``(upstream node, output index)``; an
+    input wired to its subnet's own inputs reads what the subnet's inputs
+    are wired to."""
+    pairs = []
+    for connection in native.inputConnections():
+        upstream = connection.inputNode()
+        if upstream is not None:
+            pairs.append((upstream, connection.outputIndex()))
+        elif native.parent() is not None:
+            pairs += _wired_inputs(native.parent())
+    return pairs
+
+
+def _reads_of(native) -> list:
+    """What ``native`` reads, for :func:`outputs_reaching`: its wired
+    inputs and, for a subnet (a light mix, any HDA), its children, which
+    the subnet's outputs read."""
+    pairs = _wired_inputs(native)
+    if not _is_import_render(native):
+        pairs += [(child, -1) for child in native.children()]
+    return pairs
 
 # The frame cache (#73, Remy): a File COP read is wire-bound (~0.5 s a 1080p
 # frame from the server), so every read in the dive passes through a Cache
@@ -1127,10 +1215,39 @@ class ImportRender(TimeOffsetNode, EntityNode):
         return {index[c.outputIndex()] for c in self.native().outputConnections()
                 if c.outputIndex() in index}
 
+    def scene_outputs_read(self, reaching=None) -> set[str]:
+        """Which of ``geometry`` and ``camera`` are read: wired to anything,
+        or, given ``reaching`` (nodes: the farm's export_comps), wired so
+        that one of those nodes reads it (:func:`outputs_reaching`)."""
+        if reaching is None:
+            return self.wired_scene_outputs()
+        index = {self.output(name): name for name in SCENE_OUTPUT_NAMES}
+        found = outputs_reaching(self.native(), reaching, _reads_of)
+        return {index[i] for i in found if i in index}
+
+    def _scene_taken(self, read) -> tuple[bool, bool]:
+        return scene_reads(self.imports_geometry(), self.imports_camera(), read)
+
+    def shut_unread_scene(self, read):
+        """Close each scene output nothing ``read`` (names) imports, so no
+        cook of the node pulls the scene for it; opens none. Nothing read at
+        all: both close and Scene Reads says why. Returns whether any scene
+        output is still to import."""
+        take_geometry, take_camera = self._scene_taken(read)
+        if not take_geometry and not take_camera:
+            self._set_scene_state(*scene_state(
+                self.imports_geometry(), self.imports_camera(), [], '',
+                self.wired_scene_outputs(), read))
+            return False
+        for name, taken in ((SCENE_READY_PARM, take_geometry), (CAMERA_READY_PARM, take_camera)):
+            parm = self.parm(name)
+            if not taken and parm is not None and parm.eval():
+                parm.set(0)
+        return True
+
     def _scene_off(self):
         """Close both scene outputs: Import Geometry and Import Camera off."""
-        self._set_scene_state(*scene_state(False, False, [], '',
-                                           self.wired_scene_outputs()))
+        self.shut_unread_scene(set())
 
     def imports_geometry(self) -> bool:
         """Import Geometry (on for a node without it, 1.0)."""
@@ -1146,47 +1263,53 @@ class ImportRender(TimeOffsetNode, EntityNode):
         """Whether the node imports the scene at all."""
         return self.imports_geometry() or self.imports_camera()
 
-    def import_scene(self):
+    def import_scene(self, read=None):
         """Run the embedded th::import_scene and open the geometry and
         camera outputs to it, once it imported and its Camera Import
         cooks. Scene Reads says what it read, or why the outputs stay
-        empty; raises the import's error after saying so. With Import
-        Geometry and Import Camera both off nothing is imported and both
-        outputs close; with Import Geometry off the shot is composed
-        without its payloads."""
+        empty; raises the import's error after saying so. Only an output
+        something reads (``read``, names; default: the wired ones) with its
+        Import toggle on is imported (:func:`scene_reads`): none, nothing
+        is imported and both outputs close; the shot's payloads load only
+        for geometry."""
         scene = self.scene()
         if scene is None: return
-        if not self.scene_wanted():
-            self._scene_off()
+        read = self.wired_scene_outputs() if read is None else set(read)
+        take_geometry, take_camera = self._scene_taken(read)
+        if not take_geometry and not take_camera:
+            self.shut_unread_scene(read)
             return
         shot = scene.embedded()
         payloads = shot.parm('loadpayloads') if shot is not None else None
-        if payloads is not None and payloads.eval() != int(self.imports_geometry()):
-            payloads.set(int(self.imports_geometry()))
+        if payloads is not None and payloads.eval() != int(take_geometry):
+            payloads.set(int(take_geometry))
         try:
             scene.execute()
         except Exception as error:
             self._set_scene_state(False, False, f'none: {error}')
             raise
-        self.open_scene_outputs()
+        self.open_scene_outputs(read)
 
-    def open_scene_outputs(self):
+    def open_scene_outputs(self, read=None):
         """Open ``geometry`` and ``camera`` to the imported scene once its
         Camera Import cooks (checked here, once, not on every cook). Both
         stay empty while it does not: Copernicus cooks every output of the
         embedded import_scene together, so reading only its geometry
         cooked the failing camera too, and that failed every output of
         this node, the renders as well. An output whose Import toggle is
-        off stays empty (:func:`scene_state`); with both off the camera
-        is not even cooked."""
+        off, or that nothing reads (``read``, names; default: the wired
+        ones), stays empty (:func:`scene_state`): an open one cooks the
+        scene with every other output of the node. With neither imported
+        the camera is not even cooked."""
         scene = self.scene()
         if scene is None: return
+        wired = self.wired_scene_outputs()
+        read = wired if read is None else set(read)
         geometry, camera = self.imports_geometry(), self.imports_camera()
         problems = (_cook_problems(scene.native().node('camera'))
-                    if geometry or camera else [])
-        wired = self.wired_scene_outputs() if not (geometry and camera) else ()
+                    if any(self._scene_taken(read)) else [])
         self._set_scene_state(*scene_state(
-            geometry, camera, problems, scene.parm('version_label').eval(), wired))
+            geometry, camera, problems, scene.parm('version_label').eval(), wired, read))
 
     def _set_scene_state(self, scene_ready: bool, camera_ready: bool, label: str):
         for name, value in ((SCENE_READY_PARM, int(scene_ready)),
@@ -1254,7 +1377,7 @@ class ImportRender(TimeOffsetNode, EntityNode):
         if text is not None:
             self.parm('version_label').set(text)
 
-    def execute(self, scene: bool | None = None) -> dict[str, comp.Resolved]:
+    def execute(self, scene: bool | None = None, reaching=None) -> dict[str, comp.Resolved]:
         """Resolve, and point the File COPs at it when what the node reads
         changed. Returns ``{channel: Resolved}``.
 
@@ -1262,16 +1385,19 @@ class ImportRender(TimeOffsetNode, EntityNode):
         (:meth:`upgrade`). A rebuild syncs the downstream light mixes' rows;
         the AOV Outputs unpacks follow what it reads; every
         export_comp re-checks the channels it reads. The embedded scene
-        imports when ``scene`` is True (Update), or when None and
-        ``geometry`` or ``camera`` is wired; a scene that fails says so on
-        Scene Reads and never stops the renders.
+        imports, on Update (``scene`` True) and on any refresh (None), only
+        for a ``geometry`` or ``camera`` that is read (wired, or with
+        ``reaching``, the farm's export_comps, read by one of them) with its
+        Import toggle on; ``scene`` False leaves it be. A scene output
+        nothing reads is closed whatever ``scene`` says, so a cook of the
+        renders never pulls the scene (:meth:`shut_unread_scene`). A scene
+        that fails says so on Scene Reads and never stops the renders.
         """
         self.upgrade()
-        if not self.scene_wanted():
-            self._scene_off()
-        elif scene or (scene is None and self.scene_wired()):
+        read = self.scene_outputs_read(reaching)
+        if self.shut_unread_scene(read) and scene is not False:
             try:
-                self.import_scene()
+                self.import_scene(read)
             except Exception:
                 pass  # said on Scene Reads; the renders do not wait on it
         previous = self.get_resolved()
@@ -1339,12 +1465,13 @@ class ImportRender(TimeOffsetNode, EntityNode):
             raise self._error(refusal)
         return states
 
-    def resolve_states(self) -> tuple[dict[str, comp.Resolved], list[comp.ImportState]]:
-        """Execute, and say what it read and what a submit freezes, with no
-        word yet on its check renders: Submit Composite knows the comp's
-        frames only once every import has resolved (From Config is what
-        they all cover), then checks each (``pipe.comp.check_render_refusal``)."""
-        reads = self.execute()
+    def resolve_states(self, reaching=None) -> tuple[dict[str, comp.Resolved], list[comp.ImportState]]:
+        """Execute (``reaching``: as :meth:`execute`'s), and say what it read
+        and what a submit freezes, with no word yet on its check renders:
+        Submit Composite knows the comp's frames only once every import has
+        resolved (From Config is what they all cover), then checks each
+        (``pipe.comp.check_render_refusal``)."""
+        reads = self.execute(reaching=reaching)
         all_channels = self.is_all_channels()
         return reads, [
             comp.ImportState(

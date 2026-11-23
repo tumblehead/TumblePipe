@@ -4295,7 +4295,7 @@ Content-Disposition: attachment; filename="hdaroot/points_sops/placed.def"
 Content-Type: text/plain
 
 sopflags sopflags = 
-comment "Leaves out rig shapes with no path, which would land at /Geometry (animate_points.placed_shapes)."
+comment "Leaves out rig shapes with no path, which would land in /scene outside the characters (animate_points.placed_shapes)."
 position 0 -1
 connectornextid 2
 flags =  lock off model off template off footprint off xray off bypass off display off render off highlight off unload off savedata off compress on colordefault on exposed on displaycomment on
@@ -4473,8 +4473,8 @@ enable_group	[ 0	locks=0 ]	(	"on"	)
 group	[ 0	locks=0 ]	(	"@intrinsic:typename=Poly @intrinsic:typename=PolySoup @intrinsic:typename=Mesh @intrinsic:typename=NURBCurve @intrinsic:typename=BezierCurve @intrinsic:typename=Part"	)
 enable_grouptype	[ 0	locks=0 ]	(	"off"	)
 grouptype	[ 0	locks=0 ]	(	primitive	)
-enable_pathprefix	[ 0	locks=0 ]	(	"off"	)
-pathprefix	[ 0	locks=0 ]	(	/	)
+enable_pathprefix	[ 0	locks=0 ]	(	"on"	)
+pathprefix	[ 0	locks=0 ]	(	/scene	)
 enable_savepath	[ 0	locks=0 ]	(	"off"	)
 savepath	[ 0	locks=0 ]	(	""	)
 separator_extraconfig	[ 0	locks=0 ]	(	)
@@ -4712,8 +4712,8 @@ enable_group	[ 0	locks=0 ]	(	"off"	)
 group	[ 0	locks=0 ]	(	""	)
 enable_grouptype	[ 0	locks=0 ]	(	"off"	)
 grouptype	[ 0	locks=0 ]	(	primitive	)
-enable_pathprefix	[ 0	locks=0 ]	(	"off"	)
-pathprefix	[ 0	locks=0 ]	(	/	)
+enable_pathprefix	[ 0	locks=0 ]	(	"on"	)
+pathprefix	[ 0	locks=0 ]	(	/scene	)
 enable_savepath	[ 0	locks=0 ]	(	"off"	)
 savepath	[ 0	locks=0 ]	(	""	)
 separator_extraconfig	[ 0	locks=0 ]	(	)
@@ -4887,8 +4887,8 @@ enable_group	[ 0	locks=0 ]	(	"off"	)
 group	[ 0	locks=0 ]	(	""	)
 enable_grouptype	[ 0	locks=0 ]	(	"off"	)
 grouptype	[ 0	locks=0 ]	(	primitive	)
-enable_pathprefix	[ 0	locks=0 ]	(	"off"	)
-pathprefix	[ 0	locks=0 ]	(	/	)
+enable_pathprefix	[ 0	locks=0 ]	(	"on"	)
+pathprefix	[ 0	locks=0 ]	(	/scene	)
 enable_savepath	[ 0	locks=0 ]	(	"off"	)
 savepath	[ 0	locks=0 ]	(	""	)
 separator_extraconfig	[ 0	locks=0 ]	(	)

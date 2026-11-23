@@ -137,10 +137,13 @@ For the **HPM** plugin specifically — **no per-node setup is required**:
 
 - The `hpm` CLI is **self-bootstrapped** under `~/.deadline/hpm` on the first
   job (version from `HpmVersion` → `HPM_VERSION` env → the plugin's pinned
-  default, `v0.43.1`). No manual install needed. The studio pins one hpm for CI,
-  submitters and the farm with the Infisical `HPM_VERSION` knob (prod); bump the
-  plugin's `DEFAULT_HPM_VERSION` and `farm/local/hpm.py`'s `DEFAULT_VERSION`
-  with it, so a worker without the env var runs the same hpm.
+  default, `v0.44.0`). No manual install needed. TumblePipe's jobs send
+  `HpmVersion` (`apps.deadline.HPM_VERSION`, `v0.44.0`): its `hpm.toml`
+  declares script `app`/`icon` fields, which an hpm before 0.44.0 refuses, so
+  a job never runs under an older one. Bump the plugin's `DEFAULT_HPM_VERSION`,
+  `apps.deadline.HPM_VERSION`, `farm/local/hpm.py`'s `DEFAULT_VERSION` and
+  `.ci/release.env`'s `HPM_VERSION` together, so CI, the local farm and every
+  worker run the same hpm.
 - Each job carries an `hpm.toml` built from the **project's own** `hpm.toml`:
   its `[dependencies]` (TumbleRig and anything else the project uses, at the
   project's pinned versions — TumblePipe itself pinned to the version that

@@ -953,15 +953,19 @@ def check_scene(shot_uri):
           and types[import_render.GEOMETRY_OUTPUT] == 'Geometry', str(types))
     imported = []
     saved = import_render.ImportRender.import_scene
-    import_render.ImportRender.import_scene = lambda self: (imported.append(1), saved(self))
+    import_render.ImportRender.import_scene = lambda self, *args: (imported.append(1), saved(self, *args))
     try:
         render.execute()
         check('import_render: a refresh with camera and scene unwired imports no scene',
               not imported)
         render.execute(scene=True)  # Update
-        check('import_render: Update imports the scene', len(imported) == 1)
+        check('import_render: Update with camera and scene unwired imports no scene '
+              '(Antoine 2026-11-23: an unread scene cooked with the renders)', not imported)
         probe = copnet.createNode('null', 'reads_camera')
         probe.setInput(0, render_native, import_render.CAMERA_OUTPUT)
+        render.execute(scene=True)  # Update
+        check('import_render: Update imports the scene while camera is wired',
+              len(imported) == 1)
         render.execute()
         check('import_render: a refresh imports the scene while camera is wired',
               len(imported) == 2)
@@ -984,14 +988,14 @@ def check_scene(shot_uri):
           render_native.parm(import_render.CAMERA_READY_PARM).eval() == 0)
     close('import_render: rgba still cooks beside a scene without a camera',
           render_average(render_native, import_render.RGBA_OUTPUT), DEFAULT_BEAUTY)
+    raster = copnet.createNode('rasterizegeo', 'raster_render')
+    raster.setInput(0, render_native, import_render.CAMERA_OUTPUT)
+    raster.setInput(1, render_native, import_render.GEOMETRY_OUTPUT)
     render.open_scene_outputs()
     check('import_render: camera and scene open once the camera cooks',
           render_native.parm(import_render.CAMERA_READY_PARM).eval() == 1
           and render_native.parm(import_render.SCENE_READY_PARM).eval() == 1,
           render_native.parm(import_render.SCENE_LABEL_PARM).eval())
-    raster = copnet.createNode('rasterizegeo', 'raster_render')
-    raster.setInput(0, render_native, import_render.CAMERA_OUTPUT)
-    raster.setInput(1, render_native, import_render.GEOMETRY_OUTPUT)
     try:
         raster.cook(force=True)
         errors = raster.errors()

@@ -382,7 +382,7 @@ IMPORT_RENDER_DS = f"""# Dialog script for th::import_render::1.0
             label   "Reads"
             type    label
             default {{ "not imported: press Update" }}
-            help    "Update imports the scene; a refresh does only while geometry or camera is wired. geometry and camera stay empty until it has imported."
+            help    "Update, and any refresh, imports the scene only for a geometry or camera output something is wired to (on the farm: that the rendered export reads); an output nothing reads stays empty and never cooks the scene, so wire it first, then Update."
         }}
         parm {{
             name    "scene_ready"
@@ -542,7 +542,7 @@ IMPORT_RENDER_V2_SCENE_TOGGLES = f"""        parm {{
             type    toggle
             joinnext
             default {{ "1" }}
-            help    "Import the staged shot's geometry for the geometry output. Off: geometry stays empty, and the shot is composed without its payloads (for the camera alone); with Import Camera off too, nothing is imported at all."
+            help    "Import the staged shot's geometry for the geometry output, while something reads it. Off (or not read): geometry stays empty, and the shot is composed without its payloads (for the camera alone); with the camera off or not read too, nothing is imported at all."
             {_callback('import_render', 'scene_changed')}
         }}
         parm {{
@@ -550,7 +550,7 @@ IMPORT_RENDER_V2_SCENE_TOGGLES = f"""        parm {{
             label   "Import Camera"
             type    toggle
             default {{ "1" }}
-            help    "Import the shot's render camera for the camera output. Off: camera stays empty (a Rasterize Geometry reading it draws nothing); with Import Geometry off too, nothing is imported at all."
+            help    "Import the shot's render camera for the camera output, while something reads it; a camera alone unpacks no geometry. Off: camera stays empty (a Rasterize Geometry reading it draws nothing); with geometry off or not read too, nothing is imported at all."
             {_callback('import_render', 'scene_changed')}
         }}
 """
@@ -1067,12 +1067,18 @@ def build_import_render(root, version='1.0'):
     # every output of a subnet together, the embedded import_scene's too,
     # so a camera that cannot cook failed the renders as well. An unread
     # switch input is an empty output.
+    # The camera is read beside the import_scene, from its lopimportcam,
+    # not through its camera output: the import_scene cooks its outputs
+    # together, so a camera read through it unpacked the whole stage too.
+    camera = root.createNode('cameraimport', module.SCENE_CAMERA)
+    camera.parm('camera').set(f'../{module.SCENE}/objnet/camera')
+    camera.setPosition(hou.Vector2(stride / 2, -3 * row))
     switches = dict()
-    for step, (name, output, ready) in enumerate((
-            ('geometry', 0, module.SCENE_READY_PARM),
-            ('camera', 1, module.CAMERA_READY_PARM))):
+    for step, (name, source, output, ready) in enumerate((
+            ('geometry', scene, 0, module.SCENE_READY_PARM),
+            ('camera', camera, 0, module.CAMERA_READY_PARM))):
         switch = root.createNode('switch', f'{name}_out')
-        switch.setInput(1, scene, output)
+        switch.setInput(1, source, output)
         switch.parm('input').setExpression(f'ch("../{ready}")', hou.exprLanguage.Hscript)
         switch.setPosition(hou.Vector2(stride, -(2 + step) * row))
         switches[name] = (switch, 0)

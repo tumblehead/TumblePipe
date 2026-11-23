@@ -23,6 +23,10 @@ Outputs, in ``src/cinedex/cinedex/icon/``:
   icon and the macOS Dock icon embed some of them (``src/app_icon.rs``);
 - ``cinedex.ico``: 16 to 256 px, which ``build.rs`` embeds in the Windows
   executable (Explorer, the taskbar and the window's title bar show it).
+
+And one copy that ships in the package (``src/`` does not):
+``resources/cinedex.svg``, the ``icon`` of hpm.toml's ``[scripts.edits]``
+app, the Open Cinedex button TumbleTrove Desktop shows on a project card.
 """
 
 from __future__ import annotations
@@ -38,6 +42,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'src' / 'cinedex' / 'cinedex' / 'icon'
 
 PNG_SIZES = (16, 32, 48, 64, 128, 256, 512)
+# Drawn files also written outside OUT: path -> the name in outputs().
+COPIES = {ROOT / 'resources' / 'cinedex.svg': 'cinedex.svg'}
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 SAMPLES = 4  # per axis
 
@@ -273,9 +279,14 @@ def same_file(name: str, committed: bytes, drawn: bytes) -> bool:
 
 
 def stale(files: dict[str, bytes]) -> list[str]:
-    """The icon files missing from ``OUT`` or not showing what ``files`` do."""
-    return [name for name, data in files.items()
-            if not (OUT / name).is_file() or not same_file(name, (OUT / name).read_bytes(), data)]
+    """The icon files missing from ``OUT``, or from a ``COPIES`` path, or
+    not showing what ``files`` do: names in ``OUT``, copies by their path
+    from the repo root."""
+    targets = [(name, OUT / name, data) for name, data in files.items()]
+    targets += [(path.relative_to(ROOT).as_posix(), path, files[name])
+                for path, name in COPIES.items() if name in files]
+    return [label for label, path, data in targets
+            if not path.is_file() or not same_file(path.name, path.read_bytes(), data)]
 
 
 def main() -> int:
@@ -293,6 +304,10 @@ def main() -> int:
     for name, data in files.items():
         (OUT / name).write_bytes(data)
         print(f'wrote {OUT / name} ({len(data)} bytes)')
+    for path, name in COPIES.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(files[name])
+        print(f'wrote {path} ({len(files[name])} bytes)')
     return 0
 
 

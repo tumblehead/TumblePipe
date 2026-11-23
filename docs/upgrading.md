@@ -5,6 +5,79 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.125.0
+
+### Open Cinedex is a Desktop app; hpm 0.44.0 everywhere
+
+hpm.toml's `[scripts.edits]` (Open Cinedex) declares `app = true` and
+`icon = "resources/cinedex.svg"`, so TumbleTrove Desktop 0.78.0+ shows it as a
+button on the project card. An hpm before 0.44.0 refuses a manifest with
+either field, so this release needs hpm 0.44.0+ wherever TumblePipe is
+installed: `.ci/release.env` `HPM_VERSION`, the local farm's
+`farm.local.hpm.DEFAULT_VERSION` and the new `apps.deadline.HPM_VERSION`
+(all `v0.44.0`), which every Deadline job now sends as the HPM plugin's
+`HpmVersion` (it wins over a worker's `HPM_VERSION`). A Desktop older than
+0.78.0 cannot install it. `scripts/cinedex_icon.py` also writes
+`resources/cinedex.svg` (its new `COPIES`; `--check` covers it).
+
+### th::animate puts geometry with no path in /scene, not /Geometry
+
+th::animate's three SOP Imports (`static_import`, `remainder_import`,
+`full_import`) set their Path Prefix to `/scene`
+(`animate_points.LOOSE_SCOPE`), where a SOP Import's own default put the
+dive's geometry with no `path` at `/Geometry`, a root the shot export
+refuses (`shot_root_prims`: "Disallowed root prim 'Geometry'"). A prop
+added in the dive is now `/scene/<name>` (new
+`animate_points.landing_path(path, name)` says where a prim lands) and
+publishes with the animation; absolute paths are unchanged. Existing
+scenes pick it up when opened, and an animation layer published again
+moves such a prop from `/Geometry/<name>` to `/scene/<name>`: anything
+downstream that reads it at `/Geometry` (a light's link, a material
+binding) needs the new path. `loose_message` is a status-bar note now, no
+longer a warning on `points_sops/placed` (`_warn` takes `warning=False`),
+and it and `unplaced_message` say `/scene`. The rig check's "No shape of
+the rig has a path attribute" stays an error, with the new reason.
+
+### th::import_rig(s) warn when the rig's copies are not the shot stage's
+
+New pure `import_rig.stage_copies(asset_uri, children)` and
+`copies_message(asset_uri, instances, on_stage)`, with `copies_warning`,
+`comment_note`, `announce_warning` and `ImportRig.stage_copies_warning()`;
+`animate_points.rig_copies_message(sop_node)`. `ImportRig.execute()`,
+`ImportRigs.execute()` and `ImportRigs.discover()` return the warnings (a
+string, '' for none) where they returned None. On th::animate's unpacked
+dive output a rig copies mismatch is a warning on `points_sops/placed`;
+geometry with no path alone stays a status-bar note.
+
+### th::import_render imports only the scene outputs something reads
+
+An open `geometry` or `camera` output cooks the embedded scene with every
+other output of the node, so a comp of the renders alone unpacked the whole
+staged shot (a farm comp segfaulted in that unpack). Now:
+
+- `ImportRender.execute(scene=None, reaching=None)` imports the scene, on
+  Update (`scene=True`) and on a refresh alike, only for an output that is
+  read (`scene_outputs_read(reaching)`: wired, or with `reaching`, a list of
+  nodes, read by one of them) with its Import toggle on; an output nothing
+  reads is closed whatever `scene` says. `execute(scene=True)` with nothing
+  wired no longer imports. `scene=False` still never imports.
+- `import_scene(read=None)` and `open_scene_outputs(read=None)` take the
+  output names read (default: the wired ones); the shot's payloads load
+  only for a read geometry.
+- `import_render.scene_state(geometry, camera, camera_problems,
+  version_label, wired=(), read=None)` opens an output only when it is also
+  read; nothing read gives `SCENE_UNREAD_LABEL`. New: `scene_reads(geometry,
+  camera, read)`, `outputs_reaching(source, targets, inputs_of)`,
+  `ImportRender.shut_unread_scene(read)`, `resolve_states(reaching=None)`.
+- The composite worker: `pin_imports(imports, entity_uri, exports=None)` and
+  `resolve_imports(..., exports=None)` pass the export_comps it renders as
+  `reaching`; new `shut_unread_scenes(exports)` closes every import's scene
+  outputs no export reads before the first frame.
+- th::import_render 1.0 and 2.0 read `camera` from a new embedded Camera
+  Import, `scene_camera` (`import_render.SCENE_CAMERA`), on the embedded
+  import_scene's `objnet/camera`, not through the import_scene's camera
+  output, which cooked its geometry too.
+
 ## v1.124.0
 
 ### Every light's diffuse_ and specular_ AOV is an LPE split

@@ -71,6 +71,165 @@ def instance_names(asset_uri: Uri, instances: int) -> list[str]:
     return [f'{base_name}{index}' for index in range(instances)]
 
 
+def _is_copy_name(asset_name: str, name: str) -> bool:
+    """Whether ``name`` is a name ``instance_names`` gives some count of
+    ``asset_name`` copies: the asset name, or it with a number after."""
+    rest = name[len(asset_name):] if name.startswith(asset_name) else None
+    return rest is not None and (rest == '' or rest.isdigit())
+
+
+def stage_copies(asset_uri: Uri, children) -> list[str]:
+    """The copies of ``asset_uri`` the shot stage holds, in order.
+
+    ``children`` is ``(name, uri, active)`` per child prim of the asset's
+    parent prim (``/CHAR`` for ``entity:/assets/CHAR/Roommate``): its name,
+    the asset its pipeline metadata names (None without metadata) and
+    whether it is active. A copy is an active child naming the asset; the
+    Duplicate LOP deactivates the source it copies (``Roommate`` behind
+    ``Roommate0..2``), so that one is not. A child with no metadata (an
+    inline import replaces it with a marker) counts by its name.
+
+    The channel plays no part: an asset's prims are named the same in
+    every channel.
+    """
+    asset_name = asset_uri.segments[-1]
+    copies = []
+    for name, uri, active in children:
+        if not active:
+            continue
+        if uri is None:
+            if _is_copy_name(asset_name, name):
+                copies.append(name)
+            continue
+        try:
+            same = Uri.parse(uri) == asset_uri
+        except Exception:
+            same = False
+        if same:
+            copies.append(name)
+    return copies
+
+
+def _shown(names: list[str]) -> str:
+    """``names`` for a message: the first five, then a count of the rest."""
+    if not names:
+        return 'none'
+    shown = ', '.join(names[:5])
+    if len(names) > 5:
+        shown += f' and {len(names) - 5} more'
+    return shown
+
+
+def copies_message(asset_uri: Uri, instances: int, on_stage: list[str]) -> str:
+    """The warning when a rig import of ``instances`` copies of
+    ``asset_uri`` does not make the characters the shot stage holds
+    (``on_stage``, from ``stage_copies``); '' when it does, or when it
+    imports none.
+
+    The rig's characters are placed, animated and published onto the stage
+    prims of the same name. One the stage lacks lands as a new prim at the
+    origin with no lookdev; a stage copy no character is named for stays
+    in its rest pose. Both happened silently when Instances was set by hand
+    on th::import_rigs instead of on the shot's scene (David).
+    """
+    if instances <= 0:
+        return ''
+    made = instance_names(asset_uri, instances)
+    missing = [name for name in made if name not in on_stage]
+    extra = [name for name in on_stage if name not in made]
+    if not missing and not extra:
+        return ''
+    asset_name = asset_uri.segments[-1]
+    parts = [
+        f'{asset_name}: the rig import makes {len(made)} '
+        f'{"character" if len(made) == 1 else "characters"} '
+        f'({_shown(made)}), the shot stage has {len(on_stage)} '
+        f'{"copy" if len(on_stage) == 1 else "copies"} ({_shown(on_stage)}).'
+    ]
+    if missing:
+        one = len(missing) == 1
+        parts.append(
+            f'{_shown(missing)} {"is" if one else "are"} not on the stage: '
+            f'{"it starts" if one else "they start"} at the origin with no '
+            'lookdev.'
+        )
+    if extra:
+        one = len(extra) == 1
+        parts.append(
+            f'{_shown(extra)} on the stage {"is" if one else "are"} not '
+            'animated.'
+        )
+    parts.append(
+        f'Set the instances of {asset_name} on the shot\'s scene in the '
+        'Entity Editor, then press Discover on th::import_rigs.'
+    )
+    return ' '.join(parts)
+
+
+def _stage_children(stage, asset_uri: Uri) -> list[tuple]:
+    """``stage_copies``' ``children`` read from ``stage``."""
+    parent_path = '/' + '/'.join(asset_uri.segments[1:-1])
+    parent = stage.GetPrimAtPath(parent_path)
+    if not parent.IsValid():
+        return []
+    children = []
+    for prim in parent.GetAllChildren():
+        custom_data = prim.GetCustomData() or {}
+        uri = custom_data.get('uri')
+        children.append((
+            prim.GetName(),
+            uri if isinstance(uri, str) else None,
+            prim.IsActive(),
+        ))
+    return children
+
+
+def copies_warning(stage, asset_uri: Uri, instances: int) -> str:
+    """``copies_message`` for a rig import against shot stage ``stage``."""
+    return copies_message(
+        asset_uri, instances, stage_copies(asset_uri, _stage_children(stage, asset_uri))
+    )
+
+
+def add_warning(node, message: str) -> None:
+    """``message`` as a warning on ``node``, without failing its cook.
+
+    Houdini shows it on that node only: a warning inside a subnet or a
+    locked HDA does not reach the node around it (checked in hython 22.0),
+    so th::import_rig(s) also put it in their comment at Import
+    (``comment_note``) and on the status bar (``announce_warning``)."""
+    if not message:
+        return
+    add = getattr(node, 'addWarning', None)
+    if add is not None:
+        add(message)
+
+
+def comment_note(warnings) -> str:
+    """``warnings`` (copies messages, '' for none) as lines to append to a
+    node comment, each wrapped to a readable width; '' when there are none."""
+    import textwrap
+
+    lines = []
+    for warning in warnings:
+        if warning:
+            lines += textwrap.wrap(f'Warning: {warning}', 72)
+    return ''.join(f'\n{line}' for line in lines)
+
+
+def announce_warning(message: str) -> None:
+    """``message`` on the status bar as a warning (and printed); nothing
+    for ''."""
+    if not message:
+        return
+    import hou
+
+    print(message)
+    if hou.isUIAvailable():
+        hou.ui.setStatusMessage(
+            message.replace('\n', ' '), severity=hou.severityType.Warning)
+
+
 # The top world control TumbleRig builds on every rig (apex_joints: Main,
 # then Layout, Offset_NN chained under it). Its t/r/s are the rig parms
 # Main_t/Main_r/Main_s, with no rest offset and no parent, so setting them
@@ -221,13 +380,17 @@ def place_characters(sop_node):
     if asset_uri is None or geo.findPrimAttrib('name') is None:
         return
 
-    names = set(instance_names(asset_uri, import_node.parm('instances').eval()))
+    instances = import_node.parm('instances').eval()
+    names = set(instance_names(asset_uri, instances))
     prim_parent_path = '/'.join(asset_uri.segments[1:-1])
 
     keyed = layout_keys_rows.keyed_placement(sop_node)
     stage = _shot_stage(sop_node)
     if stage is None:
         return
+    # Characters the stage has no prim for, or stage copies no character
+    # is named for: a warning, the cook goes on.
+    add_warning(sop_node, copies_warning(stage, asset_uri, instances))
     # Once per cook: the start frame reads the workfile's context and the
     # shot's range from the project drive (12 calls, about 1 s, per edit
     # for one import of 12 pawns).
@@ -405,9 +568,29 @@ class ImportRig(EntityNode):
         # Disable bypass
         bypass_node.parm('input').set(1)
 
-        # Set success comment
+        # Set success comment, with the characters the shot stage lacks or
+        # has more of (copies_warning) as a warning
+        warning = self.stage_copies_warning()
         asset_name = asset_uri.segments[-1]
-        ns.set_node_comment(context, f"Imported: {asset_name}\n{version_name}")
+        ns.set_node_comment(
+            context,
+            f"Imported: {asset_name}\n{version_name}{comment_note([warning])}",
+        )
+        return warning
+
+    def stage_copies_warning(self) -> str:
+        """``copies_warning`` for this import against the shot stage of the
+        th::animate it sits in; '' outside one, or without an asset. A
+        warning only: a stage that cannot be read gives '', never an error
+        that stops the import."""
+        try:
+            stage = _shot_stage(self.native())
+            asset_uri = self.get_entity_uri()
+            if stage is None or asset_uri is None:
+                return ''
+            return copies_warning(stage, asset_uri, self.get_instances())
+        except Exception:
+            return ''
 
 def create(scene, name):
     return ns.create_node(scene, name, ImportRig, 'import_rig', 'Sop')
@@ -428,7 +611,7 @@ def execute(kwargs):
     raw_node = kwargs['node']
     node = ImportRig(raw_node)
     try:
-        node.execute()
+        announce_warning(node.execute())
     finally:
         _refresh_ghost(raw_node)
 
@@ -437,6 +620,6 @@ def select(kwargs):
     node = ImportRig(kwargs['node'])
     if node.pick_entity('Select Asset'):
         try:
-            node.execute()
+            announce_warning(node.execute())
         finally:
             _refresh_ghost(kwargs['node'])

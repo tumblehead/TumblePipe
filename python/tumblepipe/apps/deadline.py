@@ -16,6 +16,12 @@ from tumblepipe.apps import app
 # (see deadline-hpm-plugin).
 PLUGIN = 'HPM'
 
+# The hpm a job runs under, sent as the plugin's HpmVersion (which wins over
+# a render node's $HPM_VERSION and the plugin's default): hpm.toml declares
+# script `app`/`icon` fields, and an hpm before 0.44.0 refuses the manifest.
+# The local runner pins the same (tumblepipe.farm.local.hpm.DEFAULT_VERSION).
+HPM_VERSION = 'v0.44.0'
+
 # Matches the .hpm/packages/<name>@<version>/<relative...> segment of a script
 # path.
 _HPM_PACKAGE_RE = re.compile(r'(?:^|/)\.hpm/packages/([^/]+@[^/]+)/(.+)$')
@@ -389,7 +395,8 @@ class Job:
             'Package': package_spec,
             'ScriptFile': relative_script,
             'Arguments': arguments,
-            'StartupDirectory': path_str(job_path / 'data')
+            'StartupDirectory': path_str(job_path / 'data'),
+            'HpmVersion': HPM_VERSION,
         }
         if env_file_path is not None:
             result['EnvironmentFile'] = path_str(env_file_path)

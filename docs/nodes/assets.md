@@ -360,6 +360,32 @@ import it bypasses itself and passes the input through, with the comment
 *Bypassed: No asset selected* / *No versions available* / *Rig file not
 found*; on success *Imported: <asset>* and the version.
 
+Inside `th::animate`, the characters must be the copies the shot stage
+holds: each lands on the stage prim of its name. The stage's copies of the
+asset are the active children of `/<category>` whose pipeline metadata
+names it (the source a Duplicate LOP deactivates is not one; a prim with no
+metadata, from an inline import, counts by its name), whatever the
+channel. When they differ (Instances set by hand to 3 while the shot's
+scene has one Roommate, say), a character the stage lacks would land as a
+new prim at the origin with no lookdev and a stage copy no character is
+named for would stay unanimated, so the node warns, naming both sides:
+
+> Roommate: the rig import makes 3 characters (Roommate0, Roommate1,
+> Roommate2), the shot stage has 1 copy (Roommate). Roommate0, Roommate1,
+> Roommate2 are not on the stage: they start at the origin with no lookdev.
+> Roommate on the stage is not animated. Set the instances of Roommate on
+> the shot's scene in the Entity Editor, then press Discover on
+> th::import_rigs.
+
+It is a warning only; the rig still imports and cooks. **Import** adds it
+to the comment, under *Imported*, and to the status bar, and the `place`
+SOP inside raises it as a cook warning whenever the stage changes. Houdini
+shows a warning only on the node that raised it, not on the subnet or
+asset around it, so the comment is where to look. The fix is upstream: set
+the asset's instances on the shot's scene (the Entity Editor's scene
+assets) so the shot stage has the copies, then **Discover** on
+`th::import_rigs`, which sets each row's Instances from the stage.
+
 ## `th::import_rigs` (SOP)
 
 Several rigs in one node, one row each, with a version pin per row.
@@ -394,7 +420,12 @@ resolves per rig at import time), and comments *Imported: N rigs*. A
 `latest` row whose asset has no rig published is skipped and named on a
 second line, *No rig published: Tree, Rock*; a pinned version must exist.
 With nothing to import the node bypasses itself with *Bypassed: No rigs
-configured*.
+configured*. A row whose characters are not the copies the shot stage
+holds (Instances set by hand, not from the shot's scene) adds its
+[`th::import_rig` warning](#thimport_rig-sop) to the comment, once per
+asset, and to the status bar. Set the instances on the shot's scene in the
+Entity Editor and press **Discover**: the rows then take their Instances
+from the stage.
 
 The animation shot template fills the rows once, when the workfile is
 created, the way Discover does from the imported shot. Rows are not

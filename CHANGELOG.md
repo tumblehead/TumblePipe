@@ -12,6 +12,48 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.124.0 — 2026-11-23
+
+### Features
+- feat(cinedex): Primer 0.21.0 pen input; the eraser end erases; swipes erase all they cross (`04febfdc`)
+- feat(cinedex): review in a panel at the viewer's right, comments as a conversation (`b60558af`)
+- feat(cinedex): draw on frames and write notes on them, for everyone (`be2e6b1d`)
+- feat(th_pipe): review marks on a take's frames, one file per mark (`160773b5`)
+- feat(browser): Multis Board... on a Multis subheader; docs for the board (`b16a74df`)
+- feat(multi_sync): Remove their graphs for strangers, the way out after a shot leaves a Multi (`2046d7bb`)
+- feat(entity-editor): the Multis board, Board | Table on the Multis tab (`3fbc9bc3`)
+- feat(entity-editor): the Multis board's model in the entity sheet (`e91cb890`)
+- feat(import_render): Import Geometry and Import Camera toggles on 2.0 (`51568621`)
+
+### Fixes
+- fix(cinedex): no ruler key for a marked frame hidden under a higher track (`ab6be480`)
+- fix(multi_sync): one stranger uses, and Enter is Not now when Remove comes first (`b14ffa35`)
+- fix(entity-editor): board chips wrap at the column's width; the top bar keeps its spacing (`6f3c34de`)
+- fix(exr): the split and the comp's reader share one plane rule (`cb52aca1`)
+- fix(import_render): extra is fed from the dive's extras in saved scenes too (`064e4184`)
+- fix(import_render): an LPE whose light has capitals no longer reads black (`ef5c887d`)
+- fix(import_render): every light's diffuse_/specular_ LPE rides lpe (`fd4ccbf3`)
+
+### Documentation
+- docs(cinedex): ruler keys follow the picture on top; the review properties (`335c445e`)
+- docs(cinedex): a frame's notes sit at the viewer's top left (`cbc1369f`)
+- docs(tests): the import_render wiring, scene toggle and per-light LPE properties (`208b4408`)
+- docs(import_render): per-light LPE rule, header-cased planes, scene toggles (`65aa0e69`)
+
+### Tests
+- test(review): sharing, undo, reading and the panel as properties (`a7ec1d59`)
+- test(multi-board): board moves in the Multi sheet's random edits, hover checks, Apply and reload (`7ecc05c1`)
+- test(multi_sync): keep the harness import that puts the package on the path (`620b8fc8`)
+- test(farm-submit): the Render Edit tooltip wording is checked outside the movie path (`0e8da8a2`)
+- test(import_render): Import Geometry / Import Camera never reach the comp (`601b438b`)
+- test(import_render): a dive saved short of outputs is repaired in full, once (`0fb7b4d4`)
+- test(exr): the split renames a plain part's recased channels to its folder's name (`e95a7dec`)
+- test(import_render): hython checks for a recased LPE and a dive saved short (`4a310fa4`)
+
+### Chores
+- chore(multi-board): public names for what the board calls, dead code out; docs for its tests (`624806bb`)
+- chore: changelog and HDA parm snapshot for v1.123.0 (`b8f1fcd4`)
+
 ## v1.123.0 — 2026-11-23
 
 ### Features

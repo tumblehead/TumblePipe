@@ -154,7 +154,7 @@ then show its first or last frame instead of black.
 | Offset Frames | `0` | Manual only |
 | Missing Frames | Automatic | What a frame the render does not have reads as. **Automatic**: empty (black), as ever, unless the version is a check render, which holds. **Empty (Black)**: always empty. **Hold Nearest Frame**: the nearest rendered frame, the earlier one when two are as near; a frame before the render's first shows its first, one after its last its last. The line under it says what is in use and why (`Automatic: holding the nearest rendered frame (a check render, every 5th frame)`). See [Reading a check render](#reading-a-check-render) |
 | Scene › Department, Version | `from_context`, `latest` | The staged shot **geometry** and **camera** read, through a [`th::import_scene`](#thimport_scene-cop) inside the node; its shot and channel are this node's (`default` for All channels) |
-| Scene › Import Geometry, Import Camera | on, on | 2.0 only. Off leaves that output empty and skips its work: with both off the scene is never imported (nothing composed, no camera cooked); with Import Geometry off the shot is composed without its payloads, for the camera alone. Reads names a wired output left empty |
+| Scene › Import Geometry, Import Camera | on, on | 2.0 only. Off leaves that output empty and skips its work: with both off the scene is never imported (nothing composed, no camera cooked); with Import Geometry off the shot is composed without its payloads, for the camera alone. On, an output is still imported only while something is wired to it. Reads names a wired output left empty |
 | Scene › Reads | | What the scene imported, or why **geometry** / **camera** are still empty |
 | Scene › Camera, Primitives, Purpose, Time Sample, Static Frame | `/cameras/render_camera`, `/*`, Render, Animated | As on `th::import_scene` |
 | Cache › Cache | on | Keeps each frame a beauty read cooks in memory, so the playbar plays a frame it has read once without reading the network again (the **rgba** outputs); see [the frame cache](#the-frame-cache) |
@@ -199,10 +199,22 @@ An all-channels **cryptomaterials** cable carries every channel's planes
 several cryptomattes on one cable, untested in a Cryptomatte COP: for picking
 mattes, read the channel with an import of its own.
 
-**geometry** and **camera** stay empty until the scene has imported:
-**Update** imports it, and opening the workfile does too while either output
-is wired (a staged shot composed with payloads is a big read most comps never
-need). Both open only once its camera cooks too (the embedded import cooks
+**geometry** and **camera** stay empty until the scene has imported, and
+only an output something is wired to is ever imported: **Update** imports
+the wired ones, and opening the workfile does too (a staged shot composed
+with payloads is a big read most comps never need). Wire **geometry** or
+**camera** first, then press **Update**; with neither wired, Update imports
+nothing and **Reads** says *nothing reads geometry or camera*. An open
+scene output cooks with every other output of the node (Copernicus cooks a
+node's outputs together), so up to TumblePipe 1.124.0 a workfile saved
+after an Update unpacked the whole staged shot on every frame a comp of the
+renders cooked, even with nothing wired to geometry or camera (a farm comp
+segfaulted in that unpack, 2026-11-23). The farm's comp opens only the
+scene outputs the export it renders reads, and closes the rest before its
+first frame. **camera** alone composes the shot without its payloads and
+unpacks no geometry (it reads the embedded import's camera directly, since
+TumblePipe 1.125.0; through the import, it unpacked the geometry too).
+Both open only once its camera cooks too (the embedded import cooks
 its two outputs together), so a scene without the camera prim never stops
 the renders cooking; **Reads** says why. Changing a Scene Department,
 Version or Camera imports it again. Up to TumblePipe 1.121.0 **geometry**

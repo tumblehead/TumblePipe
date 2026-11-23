@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>Cinedex</title>
+  <rect x="8" y="8" width="240" height="240" rx="48" fill="#4a4a4a"/>
+  <rect x="14" y="14" width="228" height="228" rx="42" fill="#1e1e1e"/>
+  <rect x="30" y="72" width="196" height="112" rx="10" fill="#e1e1e1"/>
+  <rect x="42" y="80" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="42" y="164" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="70" y="80" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="70" y="164" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="98" y="80" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="98" y="164" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="126" y="80" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="126" y="164" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="154" y="80" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="154" y="164" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="182" y="80" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="182" y="164" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="210" y="80" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="210" y="164" width="16" height="12" rx="3" fill="#1e1e1e"/>
+  <rect x="44" y="102" width="76" height="52" rx="6" fill="#343434"/>
+  <rect x="136" y="102" width="76" height="52" rx="6" fill="#343434"/>
+  <rect x="121" y="56" width="14" height="158" rx="2" fill="#f0b43c"/>
+  <polygon points="100,34 156,34 128,70" fill="#f0b43c"/>
+</svg>

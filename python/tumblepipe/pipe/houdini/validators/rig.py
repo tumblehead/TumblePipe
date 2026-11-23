@@ -25,10 +25,10 @@ The checks:
   rig whose graph already has a normals node anywhere is left alone.
 - **The shapes carry a path under the asset** (error). th::animate places a
   character's geometry by its prims' ``path``: a rig none of whose shapes
-  has one lands at ``/Geometry``, and then every animation publish of every
-  shot fails validation ("Disallowed root prim 'Geometry'"). A path outside
-  the asset prim (``/CHAR/hero``) is no better: the geometry does not
-  compose with the asset. Path-less helper shapes of a rig that has paths
+  has one lands in the shot's ``/scene`` (``/Geometry`` up to 1.124, which
+  failed every animation publish), beside the asset instead of on it, in
+  every shot. A path outside the asset prim (``/CHAR/hero``) is no better:
+  the geometry does not compose with the asset. Path-less helper shapes of a rig that has paths
   are fine, th::animate leaves those out.
 """
 
@@ -144,8 +144,7 @@ def check_shape_paths(
     if not any(paths for _, paths in shape_paths):
         result.add_error(
             "No shape of the rig has a path attribute: th::animate would put "
-            "its geometry at /Geometry, and every animation publish would "
-            "fail (\"Disallowed root prim 'Geometry'\")",
+            "its geometry in /scene, beside the asset instead of on it",
             prim_path=shape_paths[0][0],
             suggestion=PATH_SUGGESTION.format(example=example),
         )
