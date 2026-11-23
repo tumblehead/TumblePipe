@@ -823,7 +823,10 @@ line per asset naming the rig's characters and the stage's copies: a
 character the stage lacks would land as a new prim at the origin with no
 lookdev, and a stage copy no character is named for stays unanimated. Set
 the instances on the shot's scene in the Entity Editor and press
-**Discover** on `th::import_rigs`; see
+**Discover** on `th::import_rigs`, or, when the rig makes more characters
+than the stage has copies, press **Set Scene Copies** on `th::import_rigs`,
+which writes the count into the shot's scene after a confirm, re-imports
+the shot and runs Discover; see
 [`th::import_rig`](assets.md#thimport_rig-sop) for the text. Nothing is
 blocked; it cooks as before. Up to 1.124 this went unsaid.
 

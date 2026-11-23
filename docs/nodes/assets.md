@@ -373,8 +373,9 @@ named for would stay unanimated, so the node warns, naming both sides:
 > Roommate: the rig import makes 3 characters (Roommate0, Roommate1,
 > Roommate2), the shot stage has 1 copy (Roommate). Roommate0, Roommate1,
 > Roommate2 are not on the stage: they start at the origin with no lookdev.
-> Roommate on the stage is not animated. Set the instances of Roommate on
-> the shot's scene in the Entity Editor, then press Discover on
+> Roommate on the stage is not animated. Press Set Scene Copies on
+> th::import_rigs to set the shot's scene to 3 copies of Roommate, or set
+> its instances in the Entity Editor, then press Discover on
 > th::import_rigs.
 
 It is a warning only; the rig still imports and cooks. **Import** adds it
@@ -384,7 +385,36 @@ shows a warning only on the node that raised it, not on the subnet or
 asset around it, so the comment is where to look. The fix is upstream: set
 the asset's instances on the shot's scene (the Entity Editor's scene
 assets) so the shot stage has the copies, then **Discover** on
-`th::import_rigs`, which sets each row's Instances from the stage.
+`th::import_rigs`, which sets each row's Instances from the stage. When
+the stage has *more* copies than the rig makes, Discover alone is the fix,
+and the warning's last sentence says only that.
+
+**Set Scene Copies** (beside **Import**) does the upstream fix in one
+click when the rig makes more characters than the stage has copies.
+[`sops/scene_copies.py`](../../python/tumblepipe/pipe/houdini/sops/scene_copies.py):
+
+1. It finds the shot from the `th::import_shot` up the inputs of the
+   `th::animate` the node sits in, and the scene (Root) the shot uses
+   (set on it or inherited from its sequence).
+2. It asks first: a dialog names the shot, its Root, the asset and the
+   old -> new count (and, when the count comes from a parent Root, that
+   the shot's Root gets its own entry), and the other shots using that
+   Root, since every department reads it. Cancel writes nothing.
+3. It writes the count into the Root through `config.scene`, the store
+   the Entity Editor writes: the Root's own entry keeps its channel and
+   place; an asset only a parent Root lists gets an own entry, which wins
+   over the parent's. A parent Root is never written. An asset the Root
+   does not list at all is refused (its stage copies come from somewhere
+   else; adding it is the Entity Editor's call).
+4. It stages the Root as the Entity Editor's Apply does
+   (`root_staging.sync_roots` for the shot), re-imports the
+   `th::import_shot` so the stage holds the new copies, and imports again
+   (inside `th::import_rigs`, that node's **Discover** runs once the click
+   is done). A `th::import_shot` pinned to a version keeps the copies it
+   was built with, and the status bar says to set it to `latest`.
+
+When the Root already lists the count (the stage is only stale), nothing
+is written and no dialog shows: it re-stages, re-imports and imports.
 
 ## `th::import_rigs` (SOP)
 
@@ -426,6 +456,16 @@ holds (Instances set by hand, not from the shot's scene) adds its
 asset, and to the status bar. Set the instances on the shot's scene in the
 Entity Editor and press **Discover**: the rows then take their Instances
 from the stage.
+
+**Set Scene Copies** (beside **Import**) does that in one click for every
+row whose Instances makes more characters than the stage has copies:
+after one confirm listing the shot, its Root and each asset's old -> new
+count, it writes the rows' Instances into the shot's Root, stages it,
+re-imports the shot's `th::import_shot` and runs **Discover**, so every
+character lands on a stage copy with its lookdev. See
+[`th::import_rig`](#thimport_rig-sop) for what it writes and what it
+refuses. Rows the stage already matches, or has more copies of, are left
+alone (Discover is their fix).
 
 The animation shot template fills the rows once, when the workfile is
 created, the way Discover does from the imported shot. Rows are not

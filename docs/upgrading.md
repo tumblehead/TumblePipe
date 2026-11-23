@@ -5,6 +5,25 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## Unreleased
+
+### Set Scene Copies on th::import_rig(s) writes the rig's copy count into the shot's scene
+
+th::import_rigs and th::import_rig get a `set_scene_copies` button (no
+parm removed or renamed), calling `import_rigs.set_scene_copies(kwargs)` /
+`import_rig.set_scene_copies(kwargs)`. New module
+`tumblepipe.pipe.houdini.sops.scene_copies`: pure `wanted_copies`,
+`scene_entry`, `plan_copies`, `apply_copies`, `copies_title`,
+`copies_question` and `CopiesChange`; `write_copies_in(store, scene_uri,
+changes)` writes a Root through `config.scene.set_scene_assets_in`, and
+`set_scene_copies(shot_uri, wanted, *, store, confirm, restage, reimport,
+rediscover)` runs the whole action. `import_rig.copies_message` ends
+differently when the rig makes more characters than the stage has copies:
+"Press Set Scene Copies on th::import_rigs to set the shot's scene to N
+copies of <asset>, or set its instances in the Entity Editor, then press
+Discover on th::import_rigs." (other mismatches keep the 1.125.0 text). A
+tool matching the old sentence word for word needs the new one.
+
 ## v1.125.0
 
 ### Open Cinedex is a Desktop app; hpm 0.44.0 everywhere

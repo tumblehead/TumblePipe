@@ -159,10 +159,20 @@ def copies_message(asset_uri: Uri, instances: int, on_stage: list[str]) -> str:
             f'{_shown(extra)} on the stage {"is" if one else "are"} not '
             'animated.'
         )
-    parts.append(
-        f'Set the instances of {asset_name} on the shot\'s scene in the '
-        'Entity Editor, then press Discover on th::import_rigs.'
-    )
+    if len(made) > len(on_stage):
+        # More characters than stage copies: the scene's count is the fix,
+        # and Set Scene Copies writes it (sops.scene_copies).
+        parts.append(
+            f'Press Set Scene Copies on th::import_rigs to set the shot\'s '
+            f'scene to {len(made)} {"copy" if len(made) == 1 else "copies"} '
+            f'of {asset_name}, or set its instances in the Entity Editor, '
+            'then press Discover on th::import_rigs.'
+        )
+    else:
+        parts.append(
+            f'Set the instances of {asset_name} on the shot\'s scene in the '
+            'Entity Editor, then press Discover on th::import_rigs.'
+        )
     return ' '.join(parts)
 
 
@@ -614,6 +624,13 @@ def execute(kwargs):
         announce_warning(node.execute())
     finally:
         _refresh_ghost(raw_node)
+
+def set_scene_copies(kwargs):
+    """The Set Scene Copies button: write this import's copy count into the
+    shot's scene (after a confirm), re-import the shot and import again
+    (``sops.scene_copies``)."""
+    from tumblepipe.pipe.houdini.sops import scene_copies
+    scene_copies.from_import_rig(kwargs)
 
 def select(kwargs):
     """Entity button: pick the asset, then import its rig."""

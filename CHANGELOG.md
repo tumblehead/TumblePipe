@@ -12,6 +12,23 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.125.0 — 2026-11-23
+
+### Features
+- feat(animate): th::animate puts dive geometry with no path in /scene (`60917035`)
+- feat(desktop): Open Cinedex is a TumbleTrove Desktop app, with Cinedex's icon (`532fce7c`)
+
+### Fixes
+- fix(import_render): never cook the scene for a comp that does not read it (`c81fe61a`)
+- fix(import_rigs): warn when the rig copies are not the shot stage's (`76881fea`)
+
+### Tests
+- test(animate): a rig copies mismatch warns on unpacked dive output, loose geometry alone stays a note (`a8464aaf`)
+
+### Chores
+- chore(farm): hpm v0.44.0 for CI, the local farm and every Deadline job (`f6402ec0`)
+- chore: changelog and HDA parm snapshot for v1.124.0 (`7e742dab`)
+
 ## v1.124.0 — 2026-11-23
 
 ### Features

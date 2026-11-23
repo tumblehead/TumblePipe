@@ -292,6 +292,13 @@ def discover(kwargs):
     finally:
         import_rig._refresh_ghost(kwargs['node'])
 
+def set_scene_copies(kwargs):
+    """The Set Scene Copies button: write the rows' copy counts into the
+    shot's scene (after a confirm), re-import the shot and Discover
+    (``sops.scene_copies``)."""
+    from tumblepipe.pipe.houdini.sops import scene_copies
+    scene_copies.from_import_rigs(kwargs)
+
 def select(kwargs):
     """A row's Entity button: pick that row's asset."""
     from tumblepipe.pipe.houdini.ui.widgets import EntitySelectorDialog

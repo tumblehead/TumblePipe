@@ -159,8 +159,18 @@
             name    "import"
             label   "Import"
             type    button
+            joinnext
             default { "0" }
             parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.execute(kwargs)" }
+            parmtag { "script_callback_language" "python" }
+        }
+        parm {
+            name    "set_scene_copies"
+            label   "Set Scene Copies"
+            type    button
+            default { "0" }
+            help    "For each row that makes more characters than the shot stage has copies: after a confirm naming the shot, its scene and each old -> new count, write the row's Instances into the shot's scene (as the Entity Editor does), stage it, re-import the shot and Discover, so every character lands on a stage copy with its lookdev."
+            parmtag { "script_callback" "import tumblepipe.pipe.houdini.sops.import_rigs as th_node; th_node.set_scene_copies(kwargs)" }
             parmtag { "script_callback_language" "python" }
         }
     }
