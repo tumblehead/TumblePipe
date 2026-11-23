@@ -477,31 +477,43 @@ def _moved(entity_uri: Uri, new_uri: Uri, raw: str) -> str:
     depth = len(entity_uri.segments)
     return str(Uri(member.purpose, [*new_uri.segments, *member.segments[depth:]]))
 
+def _set_all_members(store: JsonConfigStore, before, change) -> None:
+    """Give each Multi of ``before`` (``_members_of``) the members and
+    timeline starts ``change(members, starts)`` makes of its own. All or
+    nothing: each Multi is its own write, so when one fails those already
+    written are put back before the error goes on. The callers' rollback
+    (:func:`restore_members_in`) never sees a list that was not returned."""
+    done = []
+    try:
+        for group_uri, members, starts in before:
+            _set_members(store, group_uri, *change(members, starts))
+            done.append((group_uri, members, starts))
+    except BaseException:
+        restore_members_in(store, done)
+        raise
+
+
 def drop_member_everywhere_in(store: JsonConfigStore, entity_uri: Uri) -> list[tuple[Uri, list[str], dict[str, int]]]:
     """Take ``entity_uri`` (and anything under it) out of every Multi, and
     off its shared timeline. Returns what each changed Multi held before,
-    for :func:`restore_members`."""
+    for :func:`restore_members`; when a write fails, no Multi is changed."""
     before = _members_of(store, entity_uri)
-    for group_uri, members, starts in before:
-        _set_members(store, 
-            group_uri,
-            [m for m in members if not _is_or_under(entity_uri, Uri.parse(m))],
-            {m: s for m, s in starts.items() if not _is_or_under(entity_uri, Uri.parse(m))},
-        )
+    _set_all_members(store, before, lambda members, starts: (
+        [m for m in members if not _is_or_under(entity_uri, Uri.parse(m))],
+        {m: s for m, s in starts.items() if not _is_or_under(entity_uri, Uri.parse(m))},
+    ))
     return before
 
 def rename_member_everywhere_in(store: JsonConfigStore, entity_uri: Uri, new_uri: Uri) -> list[tuple[Uri, list[str], dict[str, int]]]:
     """Rewrite ``entity_uri`` (and anything under it) to ``new_uri`` in
     every Multi's member list, keeping its place, and its place on the
     shared timeline. Returns what each changed Multi held before, for
-    :func:`restore_members`."""
+    :func:`restore_members`; when a write fails, no Multi is changed."""
     before = _members_of(store, entity_uri)
-    for group_uri, members, starts in before:
-        _set_members(store, 
-            group_uri,
-            [_moved(entity_uri, new_uri, m) for m in members],
-            {_moved(entity_uri, new_uri, m): s for m, s in starts.items()},
-        )
+    _set_all_members(store, before, lambda members, starts: (
+        [_moved(entity_uri, new_uri, m) for m in members],
+        {_moved(entity_uri, new_uri, m): s for m, s in starts.items()},
+    ))
     return before
 
 def restore_members_in(store: JsonConfigStore, saved: list[tuple[Uri, list[str], dict[str, int]]]):

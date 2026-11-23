@@ -2687,7 +2687,9 @@ class _ContextPane(QWidget):
         ))
         self._comp_step = self._spin('comp_step', 1, 100)
         self._comp_step.setToolTip(
-            "Comp every Nth frame of the range (1: every frame)."
+            "Comp every Nth frame of the range (1: every frame). Above 1 "
+            "it is a check comp: not published, no daily, no Copy to edit. "
+            "A comp of a check render needs a Step its frames are all on."
         )
         self._comp_batch = self._spin('comp_batch_size', 1, 1000)
         self._comp_batch.setToolTip("Frames per farm task of the comp.")

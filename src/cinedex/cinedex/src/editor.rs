@@ -1528,6 +1528,136 @@ impl Application for Editor {
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
+        let command = self.handle(message);
+        // Primer ends a run only on Command::quit (since 0.16): emptying
+        // windows() closed the window and left the process running.
+        if self.quit { Command::batch([command, Command::quit()]) } else { command }
+    }
+
+    fn on_key(&self, _window: window::Id, key: Key, modifiers: Modifiers) -> Option<Message> {
+        if let Some(cancel) = self.bin_escape(&key) {
+            return Some(cancel);
+        }
+        menu_bar::key_message(&self.menu_state(), key, modifiers)
+    }
+
+    /// The platform's menu bar (macOS's), or none where the toolbar's row
+    /// draws the menus itself (`menu_row`): given one there, Primer would
+    /// stack a bar of its own above the view.
+    fn menu(&self) -> Option<primer::menu::Menu<Message>> {
+        (!menu_row::in_window()).then(|| self.menu_bar())
+    }
+
+    fn on_close_requested(&self, _window: window::Id) -> Option<Message> {
+        Some(Message::CloseRequested)
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        let slot = Arc::clone(&self.wake_slot);
+        let engine_events = subscription::channel(subscription::hash_id(&"cinedex editor engine"), 4, move |sender| async move {
+            let mut sender = sender;
+            let _ = sender.try_send(Message::Start);
+            *slot.lock().unwrap() = Some(sender);
+            futures::future::pending::<()>().await;
+        });
+        // The endpoint Houdini's Live view reaches this player through,
+        // for as long as the editor runs: the slot holds it, and quitting
+        // (`leave`) releases it, its file with it. This task never ends,
+        // so dropping the server here would never happen.
+        let players = th_pipe::live::players_dir(&th_pipe::live::this_live_root(), &th_pipe::storage::slashed(&self.paths.root));
+        let events = self.events.clone();
+        let slot = self.endpoint.clone();
+        let rpc = subscription::channel(subscription::hash_id(&"cinedex rpc"), 8, move |sender| async move {
+            let sender = Mutex::new(sender);
+            let server = crate::rpc::serve(&players, events, move |call| sender.lock().unwrap().try_send(Message::Rpc(call)).is_ok());
+            match server {
+                Ok(server) => slot.hold(server),
+                Err(e) => eprintln!("cinedex: no Live view endpoint: {e}"),
+            }
+            futures::future::pending::<()>().await;
+        });
+        let mut autosave = Subscription::batch([
+            time::every(AUTOSAVE, || Message::Autosave),
+            rpc,
+            time::every(JOURNAL_EVERY, || Message::PollJournal),
+            time::every(PREVIEWS_EVERY, || Message::PollPreviews),
+            time::every(crate::farm_jobs::EVERY, || Message::PollFarm),
+        ]);
+        if self.show_live && self.entries.iter().any(|e| e.resolved().is_some_and(|r| r.live.playing().is_some())) {
+            autosave = Subscription::batch([autosave, time::every(LIVE_EVERY, || Message::PollLive)]);
+        }
+        // The board shows which workfiles a Houdini has open: ask while it
+        // is on screen (a local call), not while cutting.
+        if self.mode == 1 && self.desktop.is_some() {
+            return Subscription::batch([engine_events, autosave, time::every(SESSIONS_EVERY, || Message::PollSessions)]);
+        }
+        if !self.playing {
+            return Subscription::batch([engine_events, autosave]);
+        }
+        let half_frame = Duration::from_secs_f64(0.5 / f64::from(self.fps()));
+        Subscription::batch([engine_events, autosave, time::every(half_frame, || Message::Tick)])
+    }
+
+    fn view(&self, _window: window::Id) -> Element<Message> {
+        let video = shader(self.video()).width(Length::Fill).height(Length::Fill).redraw(false);
+        let mut layers = stack().push(video).width(Length::Fill).height(Length::Fill);
+        // The burn-ins go over the picture unmirrored, so they still read
+        // when it is flipped (`flip`).
+        if let Some(burnin) = self.burnin() {
+            layers = layers.push(canvas(burnin).width(Length::Fill).height(Length::Fill));
+        }
+        if self.shown.is_none()
+            && let Some(card) = self.card()
+        {
+            let words = text(card).font_size(15.0).color(look::quiet());
+            layers = layers
+                .push(container(words).width(Length::Fill).height(Length::Fill).align_x(Horizontal::Center).align_y(Vertical::Center));
+        }
+        // A right-click on the picture: what the view of it can do.
+        let (label, flip) = self.flip_row();
+        let layers = Roomy::menus(context_menu(Id::new("viewer menu"), layers).item(label, move || flip.clone()));
+        // The panels resize (`editor/panels.rs`): drag a handle, double-
+        // click it to fold the panel to a strip, click the strip to bring it
+        // back. The handles stay out of keyboard focus, so the player's keys
+        // keep working after a drag. The sizes are remembered for this user.
+        let middle: Element<Message> = if self.mode == 1 {
+            self.board_view()
+        } else {
+            let viewer = column()
+                .push(self.player_header())
+                .push(layers)
+                .push(self.transport_bar())
+                .push(self.display_controls())
+                .width(Length::Fill)
+                .height(Length::Fill);
+            panels::bins_split(self.bins_view(), viewer, &self.layout, Message::BinsPanel).into()
+        };
+        let timeline = column().push(self.timeline_header()).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);
+        let body = panels::timeline_split(middle, timeline, self.timeline_height(), self.layout.timeline_collapsed, Message::TimelinePanel);
+        // The status line is always there, empty when there is nothing to
+        // say: a refused drag putting it up (and the next edit taking it
+        // down) used to move the whole timeline up and down.
+        let (words, error) = self.status.clone().unwrap_or_default();
+        let colour = if error { look::error() } else { look::text() };
+        let status = container(text(words).font_size(13.0).color(colour))
+            .padding(Padding::from([0.0, 14.0]))
+            .width(Length::Fill)
+            .height(Length::fixed(STATUS_HEIGHT))
+            .align_y(Vertical::Center)
+            .background(look::panel());
+        let page = column().push(self.toolbar()).push(body).push(status).width(Length::Fill).height(Length::Fill);
+        let mut root = modal(page);
+        if let Some(view) = self.dialog_view() {
+            root = root.dialog(Id::new("dialog"), view).on_dismiss(|| Message::Dismiss);
+        }
+        root.into()
+    }
+}
+
+impl Editor {
+    /// The model's side of [`Application::update`], which quits the run
+    /// once this left (see [`Self::leave`]).
+    fn handle(&mut self, message: Message) -> Command<Message> {
         match message {
             Message::Start if !self.started => {
                 self.started = true;
@@ -1935,125 +2065,6 @@ impl Application for Editor {
             }
         }
         Command::none()
-    }
-
-    fn on_key(&self, _window: window::Id, key: Key, modifiers: Modifiers) -> Option<Message> {
-        if let Some(cancel) = self.bin_escape(&key) {
-            return Some(cancel);
-        }
-        menu_bar::key_message(&self.menu_state(), key, modifiers)
-    }
-
-    /// The platform's menu bar (macOS's), or none where the toolbar's row
-    /// draws the menus itself (`menu_row`): given one there, Primer would
-    /// stack a bar of its own above the view.
-    fn menu(&self) -> Option<primer::menu::Menu<Message>> {
-        (!menu_row::in_window()).then(|| self.menu_bar())
-    }
-
-    fn on_close_requested(&self, _window: window::Id) -> Option<Message> {
-        Some(Message::CloseRequested)
-    }
-
-    fn subscription(&self) -> Subscription<Message> {
-        let slot = Arc::clone(&self.wake_slot);
-        let engine_events = subscription::channel(subscription::hash_id(&"cinedex editor engine"), 4, move |sender| async move {
-            let mut sender = sender;
-            let _ = sender.try_send(Message::Start);
-            *slot.lock().unwrap() = Some(sender);
-            futures::future::pending::<()>().await;
-        });
-        // The endpoint Houdini's Live view reaches this player through,
-        // for as long as the editor runs: the slot holds it, and quitting
-        // (`leave`) releases it, its file with it. This task never ends,
-        // so dropping the server here would never happen.
-        let players = th_pipe::live::players_dir(&th_pipe::live::this_live_root(), &th_pipe::storage::slashed(&self.paths.root));
-        let events = self.events.clone();
-        let slot = self.endpoint.clone();
-        let rpc = subscription::channel(subscription::hash_id(&"cinedex rpc"), 8, move |sender| async move {
-            let sender = Mutex::new(sender);
-            let server = crate::rpc::serve(&players, events, move |call| sender.lock().unwrap().try_send(Message::Rpc(call)).is_ok());
-            match server {
-                Ok(server) => slot.hold(server),
-                Err(e) => eprintln!("cinedex: no Live view endpoint: {e}"),
-            }
-            futures::future::pending::<()>().await;
-        });
-        let mut autosave = Subscription::batch([
-            time::every(AUTOSAVE, || Message::Autosave),
-            rpc,
-            time::every(JOURNAL_EVERY, || Message::PollJournal),
-            time::every(PREVIEWS_EVERY, || Message::PollPreviews),
-            time::every(crate::farm_jobs::EVERY, || Message::PollFarm),
-        ]);
-        if self.show_live && self.entries.iter().any(|e| e.resolved().is_some_and(|r| r.live.playing().is_some())) {
-            autosave = Subscription::batch([autosave, time::every(LIVE_EVERY, || Message::PollLive)]);
-        }
-        // The board shows which workfiles a Houdini has open: ask while it
-        // is on screen (a local call), not while cutting.
-        if self.mode == 1 && self.desktop.is_some() {
-            return Subscription::batch([engine_events, autosave, time::every(SESSIONS_EVERY, || Message::PollSessions)]);
-        }
-        if !self.playing {
-            return Subscription::batch([engine_events, autosave]);
-        }
-        let half_frame = Duration::from_secs_f64(0.5 / f64::from(self.fps()));
-        Subscription::batch([engine_events, autosave, time::every(half_frame, || Message::Tick)])
-    }
-
-    fn view(&self, _window: window::Id) -> Element<Message> {
-        let video = shader(self.video()).width(Length::Fill).height(Length::Fill).redraw(false);
-        let mut layers = stack().push(video).width(Length::Fill).height(Length::Fill);
-        // The burn-ins go over the picture unmirrored, so they still read
-        // when it is flipped (`flip`).
-        if let Some(burnin) = self.burnin() {
-            layers = layers.push(canvas(burnin).width(Length::Fill).height(Length::Fill));
-        }
-        if self.shown.is_none()
-            && let Some(card) = self.card()
-        {
-            let words = text(card).font_size(15.0).color(look::quiet());
-            layers = layers
-                .push(container(words).width(Length::Fill).height(Length::Fill).align_x(Horizontal::Center).align_y(Vertical::Center));
-        }
-        // A right-click on the picture: what the view of it can do.
-        let (label, flip) = self.flip_row();
-        let layers = Roomy::menus(context_menu(Id::new("viewer menu"), layers).item(label, move || flip.clone()));
-        // The panels resize (`editor/panels.rs`): drag a handle, double-
-        // click it to fold the panel to a strip, click the strip to bring it
-        // back. The handles stay out of keyboard focus, so the player's keys
-        // keep working after a drag. The sizes are remembered for this user.
-        let middle: Element<Message> = if self.mode == 1 {
-            self.board_view()
-        } else {
-            let viewer = column()
-                .push(self.player_header())
-                .push(layers)
-                .push(self.transport_bar())
-                .push(self.display_controls())
-                .width(Length::Fill)
-                .height(Length::Fill);
-            panels::bins_split(self.bins_view(), viewer, &self.layout, Message::BinsPanel).into()
-        };
-        let timeline = column().push(self.timeline_header()).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);
-        let body = panels::timeline_split(middle, timeline, self.timeline_height(), self.layout.timeline_collapsed, Message::TimelinePanel);
-        // The status line is always there, empty when there is nothing to
-        // say: a refused drag putting it up (and the next edit taking it
-        // down) used to move the whole timeline up and down.
-        let (words, error) = self.status.clone().unwrap_or_default();
-        let colour = if error { look::error() } else { look::text() };
-        let status = container(text(words).font_size(13.0).color(colour))
-            .padding(Padding::from([0.0, 14.0]))
-            .width(Length::Fill)
-            .height(Length::fixed(STATUS_HEIGHT))
-            .align_y(Vertical::Center)
-            .background(look::panel());
-        let page = column().push(self.toolbar()).push(body).push(status).width(Length::Fill).height(Length::Fill);
-        let mut root = modal(page);
-        if let Some(view) = self.dialog_view() {
-            root = root.dialog(Id::new("dialog"), view).on_dismiss(|| Message::Dismiss);
-        }
-        root.into()
     }
 }
 

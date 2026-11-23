@@ -13,7 +13,7 @@ from tumblepipe.api import (
 from tumblepipe.util.uri import Uri
 from tumblepipe.config.timeline import BlockRange
 from tumblepipe.apps import exr, mp4
-from tumblepipe.pipe import review_events
+from tumblepipe.pipe import comp, review_events
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import print_env
 from tumblepipe.farm.frames import frame_file
@@ -108,16 +108,36 @@ def main(
     return 0
 
 
+def outputs_to_write(config: dict) -> list[Path]:
+    """The configured outputs, less the dailies (``daily_paths``) when a
+    version they publish turned out unpublished when the job runs
+    (``publish_contexts``, ``pipe.comp.read_unpublished_reason``): a comp
+    learns whether it reads a check render only when its worker runs,
+    after this job was queued. The skip is a ``WARNING:`` line."""
+    output_paths = list(map(Path, config['output_paths']))
+    reason = comp.read_unpublished_reason(config.get('publish_contexts', ()))
+    if reason is None:
+        return output_paths
+    dailies = set(map(Path, config.get('daily_paths', ())))
+    for daily in sorted(dailies):
+        print(f'WARNING: daily {path_str(daily)} skipped: {reason}')
+    return [path for path in output_paths if path not in dailies]
+
+
 def from_config(config: dict, _frame_span: BlockRange) -> int:
     """Encode the configured range (the one Deadline task spans it), or
     a multi-range render's frames back to back."""
+    output_paths = outputs_to_write(config)
+    if not output_paths:
+        print('Nothing to encode')
+        return 0
     ranges = frame_ranges.from_config(config)
     if ranges is not None:
         return main(
             frame_ranges.frames(ranges, config['step_size']),
             config['fps'],
             Path(config['input_path']),
-            list(map(Path, config['output_paths'])),
+            output_paths,
             back_to_back = True
         )
     return main(
@@ -128,7 +148,7 @@ def from_config(config: dict, _frame_span: BlockRange) -> int:
         ),
         config['fps'],
         Path(config['input_path']),
-        list(map(Path, config['output_paths']))
+        output_paths
     )
 
 

@@ -124,7 +124,9 @@ render; ``pipe.comp.resolve_render``). The frames a version has are those its
 ``context.json`` records, so the File COPs' file names carry the nearest
 frame as HScript arithmetic (:func:`frame_token`): no cook lists a
 directory. What was built is kept in ``held``; changing the setting
-rebuilds the dive. A submit refuses an import reading a check render
+rebuilds the dive. A submit of a comp reading a check render goes to the
+farm only when every frame the comp renders is one the check render has
+(a Step 2 comp of a Step 2 render), and is refused otherwise
 (``comp.check_render_refusal``).
 """
 
@@ -493,7 +495,9 @@ SCENE = 'scene'
 # Whether the scene imported, and its camera cooks: the geometry and camera
 # outputs read the embedded import_scene only then (Copernicus cooks every
 # output of the node together, so a camera that cannot cook would fail the
-# renders as well), and are empty before.
+# renders as well), and are empty before. Both flags open together: the
+# embedded import_scene cooks its own outputs together too, so geometry
+# alone still cooked the failing camera (1.121.0 and older).
 SCENE_READY_PARM = 'scene_ready'
 CAMERA_READY_PARM = 'camera_ready'
 SCENE_LABEL_PARM = 'scene_label'
@@ -1084,10 +1088,10 @@ class ImportRender(TimeOffsetNode, EntityNode):
         )
 
     def import_scene(self):
-        """Run the embedded th::import_scene and open the camera and scene
-        outputs to it: scene once it imported, camera once its Camera
-        Import cooks too. Scene Reads says what it read, or why an output
-        stays empty; raises the import's error after saying so."""
+        """Run the embedded th::import_scene and open the geometry and
+        camera outputs to it, once it imported and its Camera Import
+        cooks. Scene Reads says what it read, or why the outputs stay
+        empty; raises the import's error after saying so."""
         scene = self.scene()
         if scene is None: return
         try:
@@ -1098,15 +1102,17 @@ class ImportRender(TimeOffsetNode, EntityNode):
         self.open_scene_outputs()
 
     def open_scene_outputs(self):
-        """Open ``scene`` to the imported scene, and ``camera`` when its
-        Camera Import cooks (checked here, once, not on every cook)."""
+        """Open ``geometry`` and ``camera`` to the imported scene once its
+        Camera Import cooks (checked here, once, not on every cook). Both
+        stay empty while it does not: Copernicus cooks every output of the
+        embedded import_scene together, so reading only its geometry
+        cooked the failing camera too, and that failed every output of
+        this node, the renders as well."""
         scene = self.scene()
         if scene is None: return
-        label = scene.parm('version_label').eval()
         problems = _cook_problems(scene.native().node('camera'))
-        if problems:
-            label = f'{label}; no camera: {problems[0]}'
-        self._set_scene_state(True, not problems, label)
+        label = scene_label(scene.parm('version_label').eval(), problems)
+        self._set_scene_state(not problems, not problems, label)
 
     def _set_scene_state(self, scene_ready: bool, camera_ready: bool, label: str):
         for name, value in ((SCENE_READY_PARM, int(scene_ready)),
@@ -1244,15 +1250,26 @@ class ImportRender(TimeOffsetNode, EntityNode):
         _refresh_exports()
         return reads
 
-    def import_states(self) -> list[comp.ImportState]:
+    def import_states(self, frames: comp.Frames | None = None) -> list[comp.ImportState]:
         """Execute, and say what a submit freezes: one state per channel
-        read, keyed by ``pipe.comp.plan_key``."""
-        reads = self.execute()
-        refusal = comp.check_render_refusal(reads.values())
+        read, keyed by ``pipe.comp.plan_key``. Raises the node's error when
+        a check render it reads lacks a frame of the comp's ``frames``
+        (``(first, last, step)``; ``pipe.comp.check_render_refusal``), and
+        for any check render when they are not known (None)."""
+        reads, states = self.resolve_states()
+        refusal = comp.check_render_refusal(reads.values(), frames)
         if refusal:
             raise self._error(refusal)
+        return states
+
+    def resolve_states(self) -> tuple[dict[str, comp.Resolved], list[comp.ImportState]]:
+        """Execute, and say what it read and what a submit freezes, with no
+        word yet on its check renders: Submit Composite knows the comp's
+        frames only once every import has resolved (From Config is what
+        they all cover), then checks each (``pipe.comp.check_render_refusal``)."""
+        reads = self.execute()
         all_channels = self.is_all_channels()
-        return [
+        return reads, [
             comp.ImportState(
                 node_path = comp.plan_key(self.path(), channel, all_channels),
                 channel = channel,
@@ -1663,6 +1680,16 @@ def _configure_file(file_node, aov, field: str, follow_offset: bool = False,
     file_node.parm('aovs').set(1)
     file_node.parm('aov1').set(comp.aov_plane_name(aov))
     file_node.parm('type1').set(comp.aov_signature(field))
+
+
+def scene_label(version_label: str, camera_problems) -> str:
+    """Scene Reads after an import: what it read, then why geometry and
+    camera stay empty when its camera does not cook."""
+    parts = [version_label] if version_label else []
+    if camera_problems:
+        parts.append('geometry and camera empty, the camera does not cook: '
+                     f'{camera_problems[0]}')
+    return '; '.join(parts)
 
 
 def _cook_problems(native) -> list[str]:

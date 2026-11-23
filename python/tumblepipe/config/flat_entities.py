@@ -20,6 +20,12 @@ shots in one sequence (``000``) goes on using it; otherwise the bucket is
 already spells it if it has one, and never a name the other kind uses (a
 browser card id is ``PROJECT/<bucket>/<name>``, and the kind is read back
 from whether the bucket is a category).
+
+Turning a kind flat then offers, with a confirmation, to remove the
+buckets that are still empty (a new project's CHAR / PROP / SET):
+:func:`removable_buckets`. The bucket is chosen first, so it is never
+offered, and removing the offered ones leaves it the one
+:func:`choose_bucket` would pick again.
 """
 
 from __future__ import annotations
@@ -112,6 +118,47 @@ def name_taken(
     return None
 
 
+def removable_buckets(
+    kind: str,
+    entities: Collection[tuple[str, ...]],
+    bucket: str,
+    *,
+    listed: Collection[tuple[str, ...]] = (),
+    configured: Collection[str] = (),
+) -> list[str]:
+    """The buckets of ``kind`` that turning flat may offer to remove,
+    sorted: the empty ones other than the implicit ``bucket``.
+
+    Empty means nothing would be lost or left pointing at it:
+
+    - no entity under it (``entities``, URI segment tuples). Only assets
+      live under a category and only shots under a sequence (the entity
+      schema), so this is every asset or shot it holds;
+    - no Multi lists it or anything under it, or has it on its shared
+      timeline (``listed``, entity paths): a Multi that lists a category or
+      sequence takes in what is made there later;
+    - no settings of its own (``configured``, bucket names): channels,
+      departments, frame range or render settings set on the category or
+      sequence row would go with it.
+
+    Names are compared by casefold (the store refuses case variants), so
+    a differently spelled bucket, Multi member or setting keeps a bucket
+    too.
+    """
+    _check_kind(kind)
+    keep = {bucket.casefold()}
+    keep.update(path[1].casefold() for path in entities
+                if len(path) >= 3 and path[0] == kind)
+    keep.update(path[1].casefold() for path in listed
+                if len(path) >= 2 and path[0] == kind)
+    keep.update(name.casefold() for name in configured)
+    return sorted(
+        (name for name in buckets(entities, kind)
+         if name.casefold() not in keep),
+        key=lambda name: (name.casefold(), name),
+    )
+
+
 # --------------------------------------------------------------------------- #
 # The store
 # --------------------------------------------------------------------------- #
@@ -159,3 +206,36 @@ def set_flat_in(store, kind: str, on: bool) -> str | None:
     own[KEYS[kind]] = bucket
     store.set_own_properties(PROJECT_URI, own)
     return bucket
+
+
+def _listed_paths(store) -> set[tuple[str, ...]]:
+    """The entity paths a Multi of either kind lists or has on its shared
+    timeline, as stored (a listed sequence stays a sequence)."""
+    from tumblepipe.config.groups import list_groups_in
+    out: set[tuple[str, ...]] = set()
+    for context in KINDS:
+        for group in list_groups_in(store, context):
+            for uri in group.listed():
+                out.add(tuple(uri.segments))
+            for raw in group.timeline_starts:
+                out.add(tuple(Uri.parse(raw).segments))
+    return out
+
+
+def removable_buckets_in(store, kind: str) -> list[str]:
+    """:func:`removable_buckets` for the project of ``store``: the empty
+    categories / sequences a flat ``kind`` may offer to remove, sorted.
+    ``[]`` when ``kind`` is not flat."""
+    _check_kind(kind)
+    bucket = flat_bucket_in(store, kind)
+    if bucket is None:
+        return []
+    entities = _entity_paths(store)
+    configured = {
+        name for name in buckets(entities, kind)
+        if store.get_own_properties(Uri.parse(f'entity:/{kind}/{name}'))
+    }
+    return removable_buckets(
+        kind, entities, bucket,
+        listed=_listed_paths(store), configured=configured,
+    )

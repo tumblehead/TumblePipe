@@ -137,3 +137,40 @@ proptest! {
         prop_assert!(!bench.editor.doc.can_undo());
     }
 }
+
+/// What a person does at closing time: close the window, Don't save, Cancel.
+fn closing_steps() -> impl Strategy<Value = Vec<Message>> {
+    prop::collection::vec(prop_oneof![Just(Message::CloseRequested), Just(Message::Alternate), Just(Message::Dismiss)], 1..6)
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+
+    /// Primer ends a run only on `Command::quit` (since 0.16): an editor
+    /// that only emptied `windows()` closed its window and left the process
+    /// running, headless, one more for every Play in Cinedex (GUI check of
+    /// 1.121.0, 2026-11-22). On a clean or changed cut, over any closing
+    /// steps, an update quits the run exactly when it leaves the editor
+    /// quitting, and a changed cut never quits on the close alone.
+    #[test]
+    fn leaving_the_editor_quits_the_run(changed: bool, steps in closing_steps()) {
+        let (_dir, mut editor, _autosave) = on_disk(&slug_cut(), "cut");
+        editor.dialog = None;
+        editor.recovered = None;
+        if changed {
+            editor.doc.edit.video[0].name = "V9".into();
+        }
+        for step in steps {
+            let closing = matches!(step, Message::CloseRequested) && editor.dialog.is_none();
+            let command = editor.update(step);
+            prop_assert_eq!(command.is_quit(), editor.quit);
+            if closing && changed {
+                prop_assert!(!editor.quit, "a changed cut quit on the close alone");
+            }
+            if editor.quit {
+                prop_assert!(Application::windows(&editor).is_empty());
+                break;
+            }
+        }
+    }
+}

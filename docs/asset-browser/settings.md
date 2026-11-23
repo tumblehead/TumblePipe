@@ -164,6 +164,38 @@ bucket's name ([`config.flat_entities`](../../python/tumblepipe/config/flat_enti
 a project that never set them is not flat. Turning one off shows the
 categories (sequences) again; nothing moves.
 
+### Removing the empty categories (sequences)
+
+Turning **Flat asset list** on picks the hidden bucket first, then offers to
+remove the categories that are still empty, a new project's CHAR, PROP and
+SET among them: **Remove empty categories** lists them by name. **Remove**
+deletes them the way the sidebar's **Delete category…** does; **Cancel**
+keeps them all and the list stays flat, since flat is what the checkbox
+asked for and the removal only tidies up after it. Kept ones are hidden
+while the list is flat and show again when it is turned off. **Flat shot
+list** does the same with empty sequences (a sequence is empty once all its
+shots are deleted, or when it was made with **New Sequence…** and never
+used). Nothing is asked when there is nothing to remove.
+
+A category (sequence) is offered only when nothing would be lost or left
+pointing at it:
+
+- it holds no asset (shot), the only thing that lives in one;
+- no Multi lists it, or has it on its shared timeline: a Multi that lists a
+  category (sequence) takes in what is made there later;
+- it has no settings of its own (channels, departments, a frame range or
+  render settings set on its row in the Entity Editor or the Database
+  Editor), which would go with it;
+- it is not the hidden bucket itself, which is never offered. Removing the
+  others leaves the bucket the one the rule above picks again, so with
+  CHAR, PROP and SET all empty the bucket is `ASSETS` and after removing
+  them `ASSETS` is the project's only category.
+
+The list is worked out again after **Remove**, so one that gained an asset
+or a Multi while the dialog was open is kept, and the dialog says so.
+Someone who cannot edit the project defaults never gets the offer, and
+nothing is removed for them.
+
 ## The department pool editor
 
 Under **Project defaults** on the Projects page, **Department pool —

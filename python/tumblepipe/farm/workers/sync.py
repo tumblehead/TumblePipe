@@ -240,6 +240,12 @@ def from_config(config: dict, render_range: BlockRange) -> int:
         return error(f'Invalid entity type: {entity_uri.segments[0]} (expected shots)')
     if len(entity_uri.segments) < 3:
         return error(f'Invalid entity URI: {entity_uri} (expected entity:/shots/sequence/shot)')
+    # A comp's Copy to edit was queued before its worker knew whether it
+    # reads a check render: skip, before anything is copied, if it did.
+    reason = comp.read_unpublished_reason(config.get('publish_contexts', ()))
+    if reason is not None:
+        print(f'WARNING: Copy to edit skipped: {reason}')
+        return 0
     return main(entity_uri, config['purpose'], render_range)
 
 if __name__ == '__main__':

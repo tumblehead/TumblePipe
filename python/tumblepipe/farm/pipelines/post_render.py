@@ -145,9 +145,21 @@ def write_framestack_context(
     ))
 
 
-def sync_job_for(shot: Shot) -> Job:
+def _publish_entry(publish_contexts: list[Path] | None) -> dict:
+    """The ``publish_contexts`` a job config carries: the ``context.json``
+    of each version it publishes, read when the job runs; ``{}`` for none
+    (a render's, known published or not when it is submitted)."""
+    if publish_contexts is None: return {}
+    return dict(publish_contexts = list(map(path_str, publish_contexts)))
+
+
+def sync_job_for(shot: Shot, publish_contexts: list[Path] | None = None) -> Job:
     """Copy the shot's best AOVs into the edit, resolved when the job runs
-    (so the frames rendered by the jobs it waits for are included)."""
+    (so the frames rendered by the jobs it waits for are included).
+
+    ``publish_contexts`` (a comp's): the ``context.json`` of the versions
+    it follows; the job syncs nothing if one turned out unpublished when it
+    runs (a comp that read a check render, ``pipe.comp.unpublished_reason``)."""
     if shot.entity_uri.segments[0] != 'shots':
         raise ValueError(f'Copy to edit only syncs shots: {shot.entity_uri}')
     return sync_job.build(dict(
@@ -157,11 +169,24 @@ def sync_job_for(shot: Shot) -> Job:
         entity_uri = str(shot.entity_uri),
         first_frame = shot.first_frame,
         last_frame = shot.last_frame,
-        purpose = shot.purpose
+        purpose = shot.purpose,
+        **_publish_entry(publish_contexts)
     ), dict(), shot.staging_path)
 
 
-def _mp4_job(shot: Shot, title: str, priority: int, input_path: Path, output_paths: list[Path]) -> Job:
+def _mp4_job(
+    shot: Shot,
+    title: str,
+    priority: int,
+    input_path: Path,
+    output_paths: list[Path],
+    daily_paths: list[Path] = (),
+    publish_contexts: list[Path] | None = None
+    ) -> Job:
+    """Encode ``input_path`` into ``output_paths`` and ``daily_paths``; with
+    ``publish_contexts`` the dailies are written only if every version
+    there is still published when the job runs."""
+    gated = publish_contexts is not None and bool(daily_paths)
     return mp4_job.build(dict(
         title = title,
         fps = require_fps(shot.entity_uri),
@@ -171,8 +196,12 @@ def _mp4_job(shot: Shot, title: str, priority: int, input_path: Path, output_pat
         last_frame = shot.last_frame,
         step_size = shot.step_size,
         input_path = path_str(input_path),
-        output_paths = list(map(path_str, output_paths)),
-        **shot.frame_ranges_entry
+        output_paths = list(map(path_str, [*output_paths, *daily_paths])),
+        **shot.frame_ranges_entry,
+        **({} if not gated else dict(
+            daily_paths = list(map(path_str, daily_paths)),
+            **_publish_entry(publish_contexts)
+        ))
     ), dict(), shot.staging_path)
 
 
@@ -181,16 +210,20 @@ def layer_mp4_job(
     render_department: str,
     channel: str,
     version_name: str,
-    priority: int
+    priority: int,
+    publish_contexts: list[Path] | None = None
     ) -> Job:
     """A channel's beauty, encoded to its versioned review mp4 and daily
-    (no daily for a multi-range render: it is not published)."""
+    (no daily for a multi-range render: it is not published; with
+    ``publish_contexts``, see :func:`sync_job_for`, none if the version
+    turned out unpublished when the job runs)."""
     uri, purpose = shot.entity_uri, shot.purpose
     output_paths = [
         get_layer_playblast_path(uri, render_department, channel, version_name, purpose),
     ]
+    daily_paths = []
     if shot.publishes:
-        output_paths.append(get_layer_daily_path(uri, render_department, channel, purpose))
+        daily_paths.append(get_layer_daily_path(uri, render_department, channel, purpose))
     return _mp4_job(
         shot,
         f'mp4 layer {render_department} {channel} {version_name}',
@@ -199,7 +232,9 @@ def layer_mp4_job(
             uri, render_department, channel, version_name,
             'beauty', '####', 'exr', purpose
         ),
-        output_paths
+        output_paths,
+        daily_paths,
+        publish_contexts
     )
 
 
@@ -244,13 +279,22 @@ def slapcomp_job_for(
     return job, version_name
 
 
-def slapcomp_mp4_job(shot: Shot, render_department: str, version_name: str, priority: int) -> Job:
+def slapcomp_mp4_job(
+    shot: Shot,
+    render_department: str,
+    version_name: str,
+    priority: int,
+    publish_contexts: list[Path] | None = None
+    ) -> Job:
     """The slapcomp, encoded to the department's review mp4 and daily
-    (no daily for a multi-range render: it is not published)."""
+    (no daily for a multi-range render: it is not published; with
+    ``publish_contexts``, see :func:`sync_job_for`, none if the version
+    turned out unpublished when the job runs)."""
     uri, purpose = shot.entity_uri, shot.purpose
     output_paths = [get_playblast_path(uri, render_department, version_name, purpose)]
+    daily_paths = []
     if shot.publishes:
-        output_paths.append(get_daily_path(uri, render_department, purpose))
+        daily_paths.append(get_daily_path(uri, render_department, purpose))
     return _mp4_job(
         shot,
         f'mp4 slapcomp {render_department} {version_name}',
@@ -259,7 +303,9 @@ def slapcomp_mp4_job(shot: Shot, render_department: str, version_name: str, prio
             uri, render_department, SLAPCOMP_CHANNEL, version_name,
             '####', 'exr', purpose
         ),
-        output_paths
+        output_paths,
+        daily_paths,
+        publish_contexts
     )
 
 

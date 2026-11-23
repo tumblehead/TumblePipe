@@ -12,6 +12,45 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.121.0 — 2026-11-22
+
+### Features
+- feat: flat asset and shot lists in the Entity Editor, CSV import, Play and Cinedex (`06d5ab2a`)
+- feat(houdini): Load Audio from Edit sets a shot scene's audio from the master edit (`0472dc6c`)
+- feat(cinedex): --shot-audio mixes the edit's audio tracks over a shot (`9f3af574`)
+- feat(import-render): LPE splits on lpe, Mono depth and an extra output (`a27fcf68`)
+- feat(cinedex): clip menu on every clip, snapping trims, insert-reorder, clip edges (`3b0d69a9`)
+- feat(cinedex): Convert to Shot on an animatic clip, swappable back to the original (`2fb3c8d2`)
+- feat(asset-browser): flat asset and shot lists for tiny projects (`ff0e81d2`)
+
+### Fixes
+- fix(cinedex): Live view loop keeps a piece's own clip over a longer one showing its frames (`c26bf1c4`)
+- fix(cinedex): New shot on a flat project goes into its sequence, by a name no shot has (`796b66ec`)
+- fix(cinedex): a converted clip's original follows splits, trims, moves and joins (`9d4bad03`)
+- fix(cinedex): shot_audio test edit sets VideoClip.original (`23787f52`)
+- fix(import-render): best/latest reads a check render when there is no complete one (`e2994f09`)
+- fix(cinedex): Play on shots opens the saved edit holding them, not an untitled one (`96d566e2`)
+- fix(root-layer): a shot's root layer follows its frame range and fps (`54d086e6`)
+
+### Documentation
+- docs(cinedex): the old timeline behaviour lasted up to 1.120.3 (`28307335`)
+- docs(compositing): import_render's LPE splits, Mono depth and extra output (`a356db3f`)
+- docs(asset-browser): flat asset and shot lists in the Entity Editor, CSV import and Cinedex New shot (`2b9cbe7b`)
+- docs(cinedex): clip menu, snapping trims, insert-reorder, clip edges; Load Audio from Edit (`e113e713`)
+- docs(upgrading): v1.121.0 section (`33bb07fe`)
+- docs(cinedex): name the Flat shot list setting as Settings shows it (`3c58aa48`)
+- docs(cinedex): what a converted clip's animatic does on split, join and trim; New shot on a flat project (`58f01ca7`)
+
+### Tests
+- test(cinedex): the clip popup's Convert to Shot and clip-menu rows, as one list (`b2a98efe`)
+- test(th_edit): saved edits stay compatible with VideoClip.original (`69467d54`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.120.3 (`b9e77983`)
+
+### Other Changes
+- style(cinedex): cargo fmt bins.rs (`f462536d`)
+
 ## v1.120.3 — 2026-11-22
 
 ### Fixes

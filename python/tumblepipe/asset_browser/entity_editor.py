@@ -2662,7 +2662,10 @@ class _SheetPane(QWidget):
         self._group_filter.setStyleSheet(COMBO_STYLE)
         self._group_filter.setMinimumWidth(scaled(150))
         self._group_filter.setToolTip(f'Show one {kind.group}, or all of them.')
-        self._group_filter.currentIndexChanged.connect(self._apply_filter)
+        # The artist's choice; code that sets the picker filters itself
+        # (``currentIndexChanged`` also fires as the combo empties when the
+        # window is deleted).
+        self._group_filter.activated.connect(self._apply_filter)
         top.addWidget(self._group_filter)
         # A flat kind has no groups to pick from.
         self._group_filter.setVisible(self.flat_group is None)
@@ -3028,7 +3031,6 @@ class _SheetPane(QWidget):
         if have == wanted and tips == ['', *(problems.get(g, '') for g in wanted[1:])]:
             return
         current = combo.currentData() or ''
-        combo.blockSignals(True)
         combo.clear()
         combo.addItem(f'All {_plurals(self.kind.group)}', '')
         stored = set(self.sheet.base.groups)
@@ -3037,7 +3039,6 @@ class _SheetPane(QWidget):
             if group in problems:
                 combo.setItemData(combo.count() - 1, problems[group], Qt.ToolTipRole)
         combo.setCurrentIndex(max(combo.findData(current), 0))
-        combo.blockSignals(False)
         if (combo.currentData() or '') != current:
             # The group shown is gone (undone, removed): show them all, not
             # an empty sheet still filtered on it.
@@ -3635,6 +3636,7 @@ class _SheetPane(QWidget):
         # A flat kind's picker is hidden: always the whole list.
         found = self._group_filter.findData(group) if self.flat_group is None else 0
         self._group_filter.setCurrentIndex(max(found, 0))
+        self._apply_filter()
         if name:
             row = next((r for r in self.sheet.rows if r.group == group and r.name == name), None)
             if row is not None:
@@ -4488,8 +4490,11 @@ class _MultiPane(QWidget):
         self._context.setStyleSheet(COMBO_STYLE)
         self._context.addItem('Shots', 'shots')
         self._context.addItem('Assets', 'assets')
-        self._context.currentIndexChanged.connect(
-            lambda _i: self.set_context(self._context.currentData())
+        # ``activated``: the artist's choice only. ``currentIndexChanged``
+        # also fires with index -1 (data None) when the combo empties as the
+        # window is deleted, which made this pane look up a None tab.
+        self._context.activated.connect(
+            lambda i: self.set_context(self._context.itemData(i))
         )
         top.addWidget(self._context)
         self._search = QLineEdit()
@@ -4581,11 +4586,7 @@ class _MultiPane(QWidget):
         if key == self.key:
             return
         self.key = key
-        index = self._context.findData(key)
-        if self._context.currentIndex() != index:
-            self._context.blockSignals(True)
-            self._context.setCurrentIndex(index)
-            self._context.blockSignals(False)
+        self._context.setCurrentIndex(self._context.findData(key))
         self.table.selectionModel().clearSelection()
         self.refresh()
         self.window_.update_footer()

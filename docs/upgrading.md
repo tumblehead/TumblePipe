@@ -5,6 +5,89 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.122.0
+
+### A comp of a check render goes on the frames it has; stepped comps are not published
+
+`comp.check_render_refusal(reads)` used to refuse any read of a check
+render. It now takes the comp's frames, `check_render_refusal(reads,
+frames=(first, last, step))`, and refuses only when a check render read
+lacks one of them (Soren, 2026-11-22), naming the Step that would go.
+Called without `frames` it refuses every check render, as before.
+`Resolved` gained `check_range` (a check render's recorded first and last
+frame; `comp.check_frames(read)` gives its frames), and `comp` gained
+`frames_inside`, `frames_that_fit`, `is_check_comp` and `check_comp_note`.
+`ImportRender.import_states(frames=None)` passes them on; the new
+`resolve_states()` returns the reads with the states, without the check.
+
+A shot comp on a Step above 1, or one that reads a check render, is now a
+*check comp*: its frame stacks record `"published": false` in their
+`context.json`, no daily is written and Copy to edit is skipped. Before,
+a stepped comp published like any other. The composite pipeline config
+takes an optional `settings.reads_check_render` (bool; Submit Composite
+sets it), and each composite job's config, and its worker's context, carries
+`comp_frames = [first, last, step]`. In
+`farm.workers.composite_houdini`, `pin_imports` now returns
+`(problem, reads_check_render)` and `resolve_imports(entity_uri, frames)`
+returns `(plan, reads_check_render, problem)`; `record_reads` takes a third
+argument, `check_render`.
+
+Farm Submit takes a Comp beside a stepped render when every comp frame is
+one the render makes. `farm.specs.submission.problems` no longer says
+`Comp follows a published render, and stepped renders are not published`;
+`stepped_comp_problems(settings)` says `Comp beside a stepped render comps
+only frames it renders: …` for one that does not. Such a comp reads that
+render: `composite.chained_config(..., follows_check_render=True)` sets
+`settings.reads_check_render` and, for a re-comp, a top-level `follows`
+(`[{channel, department, version}]`, also on each composite job and its
+worker context), which the worker pins the imports to (`comp.follow_pins`;
+`resolve_imports(entity_uri, frames, follows)`).
+
+### A comp's daily and Copy to edit read its `published` flag when they run
+
+A comp that learns on the farm that it reads a check render (a Farm Submit
+Comp alone resolving its imports, an import pinned to a check render) is
+marked `"published": false` by its worker, after its daily and sync were
+queued (Soren, 2026-11-23). The mp4 job config and worker context take two
+optional keys, `daily_paths` (the outputs that are dailies, each one of
+`output_paths`) and `publish_contexts` (the `context.json` paths of the
+versions the dailies publish); the sync job config and context take
+`publish_contexts`. When one of those records `"published": false`, the mp4
+worker writes the other outputs and no daily, the sync worker copies
+nothing, and both print a `WARNING:` line and exit 0. The composite pipeline
+sets them; the render pipeline's configs are unchanged. A missing
+`context.json` or `published` key is published. New helpers:
+`comp.unpublished_reason(contexts)`, `comp.read_unpublished_reason(paths)`,
+`farm.checks.valid_publish_contexts`, `farm.workers.mp4.outputs_to_write`;
+`post_render.layer_mp4_job`, `slapcomp_mp4_job` and `sync_job_for` take an
+optional `publish_contexts`.
+
+### `cinedex --shot-audio` takes a working version, and a place wins over a name
+
+`--shot-audio entity:/edits/<name>@vNNNN_working` now mixes that working
+version; `@vNNNN` is still a published version and a bare name the newest
+working one. Load Audio from Edit always names the version it picked the
+tracks in, and `pipe.shot_audio.export_shot_audio` raises (writing no WAV
+and no sidecar) when Cinedex reports another version. `--tracks A2` now
+means the second audio track even when another track is named `A2`; before,
+both were mixed. A tool of your own that picks tracks by a name looking like
+a place (`A1`, `A2`...) passes the place instead. Each mix now has a sidecar,
+`<wav>.json` (edit, version, places, track names), which the refresh on
+workfile open reads; `pipe.houdini.shot_audio.load` and `export_shot_audio`
+take `places`.
+
+### Failed config writes leave nothing behind
+
+`config.store` drops a purpose's cached tree when writing it fails, so the
+session reads disk again instead of a change that never landed.
+`config.groups.drop_member_everywhere_in` and `rename_member_everywhere_in`
+are all or nothing: when a Multi write fails they put back the Multis they
+already wrote before raising. `entity_files.rename_entity` renames the entity
+back when updating its Multis fails, and `entity_ops.delete_bucket` takes a
+deleted category or sequence out of the Multis that list it.
+`config.flat_entities.removable_buckets` / `removable_buckets_in` name the
+empty buckets the flat toggle offers to remove.
+
 ## v1.121.0
 
 ### `comp.resolve_render` can return a check render for `latest`

@@ -21,7 +21,10 @@ def build(config, paths, staging_path):
         output_paths = config['output_paths'],
         # A multi-range render's frames only (#84)
         **({} if 'frame_ranges' not in config
-           else dict(frame_ranges = config['frame_ranges']))
+           else dict(frame_ranges = config['frame_ranges'])),
+        # A comp's: its dailies skipped when it turned out unpublished
+        **{key: config[key] for key in ('daily_paths', 'publish_contexts')
+           if key in config}
     ), staging_path,
         name = config['title'],
         pool = config['pool_name'],

@@ -1138,7 +1138,12 @@ impl Application for FramesView {
                 self.refresh_shown();
             }
             Message::Ignore => {}
-            Message::Quit => self.quit = true,
+            // Primer ends a run only on Command::quit (since 0.16): emptying
+            // windows() closed the window and left the process running.
+            Message::Quit => {
+                self.quit = true;
+                return Command::quit();
+            }
         }
         Command::none()
     }
@@ -1429,6 +1434,24 @@ mod tests {
         let mut drawn = Vec::new();
         crate::menu_words::tests::texts(&toolbar.draw(Layout::new(&node), ctx), &mut drawn);
         drawn.into_iter().map(|text| text.content).collect()
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(8))]
+
+        /// Quit (File > Exit, Quit Cinedex) ends the run, after any flips
+        /// before it: Primer ends one only on `Command::quit` (since 0.16),
+        /// so emptying `windows()` alone closed the window and left the
+        /// process running (GUI check of 1.121.0, 2026-11-22).
+        #[test]
+        fn only_quit_ends_the_run(flips in 0usize..4) {
+            let mut view = window();
+            for _ in 0..flips {
+                prop_assert!(!view.update(Message::Flip).is_quit());
+            }
+            let command = view.update(Message::Quit);
+            prop_assert!(command.is_quit() && view.windows().is_empty());
+        }
     }
 
     /// Flip Horizontally flips the picture and back: the video view is

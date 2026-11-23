@@ -42,7 +42,7 @@ sys.path.insert(0, str(REPO / 'tests'))
 import _harness  # noqa: E402,F401  (temp project, python/ on sys.path)
 from _harness import reset_project  # noqa: E402
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QEvent, Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QMessageBox, QPushButton  # noqa: E402
 
 from tumblepipe.api import default_client  # noqa: E402
@@ -64,6 +64,20 @@ def check(name: str, ok: bool, detail: object = '') -> None:
     print(f'{"OK  " if ok else "FAIL"} {name}' + (f'  ({detail})' if detail and not ok else ''))
     if not ok:
         failures.append(name)
+
+
+# A Python exception raised in a slot or a Qt virtual is printed and then
+# lost: Qt carries on. Keep them, so one fails the run (the Multis tab's
+# context picker raised KeyError: None as each window was deleted).
+escaped = []
+
+
+def _escaped(kind, value, tb):
+    escaped.append(f'{kind.__name__}: {value}')
+    sys.__excepthook__(kind, value, tb)
+
+
+sys.excepthook = _escaped
 
 
 # ── A project ──────────────────────────────────────────────────────────────
@@ -689,7 +703,9 @@ window.show_kind('shots')
 check('a New Sequence… button', any(
     b.text() == 'New Sequence…' for b in shots.findChildren(QPushButton)
 ))
-taken = ee.NewGroupDialog(shots.sheet)
+# Parented, as the pane makes it: a parentless dialog was left for
+# Python's exit to delete after QApplication, which aborted a run in four.
+taken = ee.NewGroupDialog(shots.sheet, parent=shots)
 taken._name.setText('SQ010')
 check('a name taken in another case is refused',
       'differs only by case' in taken.problem() and not taken._create.isEnabled(), taken.problem())
@@ -1311,8 +1327,15 @@ check('they resolve the sequence\'s Root', all(
     config.get_properties(SHOTS / 'sq020' / s).get('scene') == 'scenes:/town' for s in ('SH010', 'SH020')
 ))
 
+# Closed, the window is deleted (WA_DeleteOnClose) with its Multis tab
+# and filters, and nothing it holds answers on the way out.
+import shiboken6  # noqa: E402
+before = len(escaped)
 window.close()
+app.sendPostedEvents(None, QEvent.DeferredDelete)
 app.processEvents()
+check('the closed window is deleted', not shiboken6.isValid(window))
+check('nothing raises while the window is deleted', len(escaped) == before, escaped[before:])
 
 # ── A flat shot list (config.flat_entities) ────────────────────────────────
 
@@ -1366,6 +1389,12 @@ check('flat: a name another sequence has is refused',
       'sq020' in problems.get(pasted['SH090'].id, ''), problems)
 check('flat: a new name is fine', pasted['SH777'].id not in problems, problems)
 flat_window.close()
+app.sendPostedEvents(None, QEvent.DeferredDelete)
 app.processEvents()
+check('no Python exception escaped into Qt during the run', not escaped, escaped)
+# What is left at exit Python deletes after QApplication is gone, which
+# aborts the process (0xC0000409) now and then after ALL OK.
+check('no window or dialog is left for the exit to delete',
+      not QApplication.topLevelWidgets(), [type(w).__name__ for w in QApplication.topLevelWidgets()])
 print('ALL OK' if not failures else f'{len(failures)} FAILED: {failures}')
 sys.exit(1 if failures else 0)

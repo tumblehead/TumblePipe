@@ -12,6 +12,11 @@ nodes (``th::import_render``, ``th::light_mix``, ``th::export_comp``; see
 - the light mix's rows (:func:`light_groups`, :func:`sync_rows`);
 - what a submit freezes (:func:`freeze_plan`) and records
   (:func:`provenance`);
+- whether a comp of a check render goes to the farm
+  (:func:`check_render_refusal`), and whether a comp is a check comp
+  (:func:`is_check_comp`), and whether a comp version a daily or Copy to
+  edit follows turned out unpublished when they run
+  (:func:`unpublished_reason`);
 - which shot channels no import reads (:func:`unread_channels`);
 - the composite version a submit writes (:func:`next_version_name`);
 - the template's layout (:func:`template_layout`).
@@ -23,6 +28,7 @@ export_comp}.py``; the farm half is ``farm/pipelines/composite.py``.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence
@@ -443,6 +449,10 @@ class Resolved:
     # check render: ``(version, step)``, which the label names (the
     # Version menu offers it by hand).
     newer_check: Optional[tuple[str, int]] = None
+    # A check render's recorded ``(first, last)``: with ``check_step``, the
+    # frames it has (:func:`check_frames`), which a comp of it must keep to
+    # (:func:`check_render_refusal`).
+    check_range: Optional[tuple[int, int]] = None
 
     @property
     def fields(self) -> list[str]:
@@ -532,23 +542,6 @@ def version_items(complete: Iterable[str], checks: Iterable[tuple[str, int]]) ->
     ]
 
 
-def check_render_refusal(reads: Iterable[Resolved]) -> Optional[str]:
-    """Why a comp reading ``reads`` is not sent to the farm, None when it
-    is: a check render has gaps, and a comp of it (its frames held) would
-    be published as the shot's comp. It is for looking at in the session."""
-    checks = [read for read in reads if read.check_step is not None]
-    if not checks: return None
-    named = ', '.join(
-        f'{read.channel}: {check_version_label(f"{read.department} {read.version}", read.check_step)}'
-        for read in checks
-    )
-    return (
-        f'reads a check render ({named}); a check render is not comped on '
-        'the farm: render the channel in full (Step 1), or pick a '
-        'published version'
-    )
-
-
 @dataclass(frozen=True)
 class Newest:
     """A department's newest complete version of a channel, and where it
@@ -634,8 +627,14 @@ def _fresh_candidates(renders: Mapping, candidates: list[str], channel: str,
 def _read(renders: Mapping, channel: str, department: str, version: str,
           check_step: Optional[int] = None,
           newer_check: Optional[tuple[str, int]] = None) -> Resolved:
-    """:class:`Resolved` for ``department``'s ``version`` of ``channel``."""
+    """:class:`Resolved` for ``department``'s ``version`` of ``channel``; a
+    check render's (``check_step``) with the range it records."""
     layer = renders[department].layers[channel][version]
+    check_range = None
+    if check_step is not None:
+        frame_range = layer.get_frame_range()
+        if frame_range is not None:
+            check_range = (frame_range.first_frame, frame_range.last_frame)
     return Resolved(
         channel = channel,
         department = department,
@@ -646,6 +645,7 @@ def _read(renders: Mapping, channel: str, department: str, version: str,
         }),
         check_step = check_step,
         newer_check = newer_check,
+        check_range = check_range,
     )
 
 
@@ -674,8 +674,9 @@ def resolve_render(
     way, and the import holds its frames over the gaps (Antoine,
     2026-11-22: a stepped first render read as nothing at all). A complete
     render is preferred over a newer check render: a check render is a
-    look, never the shot's comp (a submit refuses it,
-    :func:`check_render_refusal`), so it never takes ``latest`` from a
+    look, never the shot's comp (a comp of one goes to the farm only on its
+    frames, :func:`check_render_refusal`, and is a check comp, never
+    published, :func:`is_check_comp`), so it never takes ``latest`` from a
     finished render; the label names the newer check render instead
     (:attr:`Resolved.newer_check`), which the Version menu offers by hand.
     """
@@ -773,6 +774,236 @@ def resolve_channels(
         raise first_skip or CompError('the shot has no channels')
     all_channels_fields({c: r.fields for c, r in reads.items()})
     return reads, skipped
+
+
+###############################################################################
+# A comp of a check render (Antoine, 2026-11-22)
+###############################################################################
+# A comp's frames: ``(first, last, step)``, every ``step``-th frame from
+# ``first`` up to ``last`` (export_comp's Frame Range and Step; a re-comp's
+# frames and Step). A check render's are its recorded range on its step.
+Frames = tuple[int, int, int]
+
+
+def frames_of(frames: Frames) -> list[int]:
+    """Every frame of ``frames``, in order."""
+    first, last, step = frames
+    return list(range(first, last + 1, max(1, step)))
+
+
+def last_frame_of(frames: Frames) -> int:
+    """The last frame ``frames`` renders: ``last`` itself only when it is
+    on the step."""
+    first, last, step = frames
+    step = max(1, step)
+    return first + (last - first) // step * step
+
+
+def frames_inside(frames: Frames, within: Frames) -> bool:
+    """Whether every frame of ``frames`` is one of ``within``'s: from a
+    frame on ``within``'s step, inside its range, and (more than one frame)
+    on a step that is a multiple of its step. No frames at all are inside
+    anything."""
+    first, last, step = frames
+    if first > last: return True
+    within_first, within_last, within_step = within
+    within_step = max(1, within_step)
+    end = last_frame_of(frames)
+    if first < within_first or end > within_last: return False
+    if (first - within_first) % within_step: return False
+    return end == first or max(1, step) % within_step == 0
+
+
+def check_frames(read: Resolved) -> Optional[Frames]:
+    """The frames a check render read has, ``(first, last, step)``; None
+    for a complete read, or a check render whose range is not known."""
+    if read.check_step is None or read.check_range is None: return None
+    return read.check_range[0], read.check_range[1], read.check_step
+
+
+def frames_that_fit(frames: Frames, checks: Sequence[Frames]) -> Optional[Frames]:
+    """What a comp could render in place of ``frames`` so that every check
+    render of ``checks`` has all of it: from the first frame of ``frames``'
+    range that every check render has, on the smallest step at least
+    ``frames``' own that is a multiple of every check render's step, up to
+    the last such frame inside the range and every check render. None when
+    no frame of the range is in every check render (two check renders off
+    each other's step, or a range they do not reach)."""
+    first, last, step = frames
+    common_step, low, high = 1, first, last
+    for check_first, check_last, check_step in checks:
+        common_step = math.lcm(common_step, max(1, check_step))
+        low, high = max(low, check_first), min(high, check_last)
+    # The frames every check render has repeat every common_step frames.
+    start = next((
+        frame for frame in range(low, min(high, low + common_step - 1) + 1)
+        if all((frame - check_first) % max(1, check_step) == 0
+               for check_first, _, check_step in checks)
+    ), None)
+    if start is None: return None
+    fit_step = -(-max(1, step) // common_step) * common_step
+    return start, last_frame_of((start, high, fit_step)), fit_step
+
+
+def comp_frames_text(frames: Frames) -> str:
+    """A comp's frames in a message: ``1001-1122, every frame``, ``1001-1122,
+    every 2nd frame``."""
+    from tumblepipe.pipe.hold_frames import _ordinal
+    first, last, step = frames
+    every = 'every frame' if step <= 1 else f'every {_ordinal(step)} frame'
+    return f'{first}-{last}, {every}'
+
+
+def fit_text(frames: Frames, fit: Frames) -> str:
+    """What to set so a comp renders ``fit`` instead of ``frames``: its Step
+    alone when its range on that step fits; with the first frame when only
+    the start is off the check render's frames; else the frames too."""
+    first, last, _ = frames
+    fit_first, fit_last, fit_step = fit
+    if fit_first == first and fit_last == last_frame_of((first, last, fit_step)):
+        return f'comp on Step {fit_step}'
+    if fit_last == last_frame_of((fit_first, last, fit_step)):
+        return f'comp on Step {fit_step} from frame {fit_first}'
+    return f'comp frames {fit_first}-{fit_last} on Step {fit_step}'
+
+
+def _check_read_text(read: Resolved) -> str:
+    label = check_version_label(f'{read.department} {read.version}', read.check_step)
+    if read.check_range is not None:
+        label += f' over {read.check_range[0]}-{read.check_range[1]}'
+    return f'{read.channel}: {label}'
+
+
+def check_render_refusal(reads: Iterable[Resolved], frames: Optional[Frames] = None) -> Optional[str]:
+    """Why a comp of ``frames`` reading ``reads`` is not sent to the farm,
+    None when it is.
+
+    A check render has only every Nth frame. A comp of one goes to the
+    farm when every frame it renders is one every check render it reads
+    has (:func:`frames_inside`; Soren, 2026-11-22): a Step 2 comp of a
+    Step 2 render from the same first frame. It comes out stepped, a check
+    comp itself, never published (:func:`is_check_comp`). Any other frame
+    would be a held one, so such a comp is refused, and the message names
+    the frames that would go (:func:`frames_that_fit`). A complete read
+    never refuses. ``frames`` None (not known) refuses every check render,
+    as before.
+    """
+    checks = [read for read in reads if read.check_step is not None]
+    if not checks: return None
+    if frames is None:
+        named = ', '.join(_check_read_text(read) for read in checks)
+        return (
+            f'reads a check render ({named}), and the frames the comp renders '
+            'are not known: render the channel in full (Step 1), or pick a '
+            'published version'
+        )
+    short = [
+        read for read in checks
+        if check_frames(read) is None or not frames_inside(frames, check_frames(read))
+    ]
+    if not short: return None
+    named = ', '.join(_check_read_text(read) for read in short)
+    noun, verb = ('check render', 'does') if len(short) == 1 else ('check renders', 'do')
+    known = [check_frames(read) for read in checks]
+    fit = None if None in known else frames_that_fit(frames, known)
+    full = 'render the channel in full (Step 1), or pick a published version'
+    if fit is not None:
+        fix = f'{fit_text(frames, fit)}, {full}'
+    elif None in known:
+        fix = full
+    else:
+        fix = (
+            f'no frame of {frames[0]}-{frames[1]} is in every check render '
+            f'it reads, so {full}'
+        )
+    return (
+        f'comps {comp_frames_text(frames)}, but {noun} {named} {verb} not '
+        f'have all of those frames: {fix}'
+    )
+
+
+def follow_pins(
+    follows: Iterable[Mapping],
+    channel: str,
+    all_channels: bool,
+    version: str,
+    ) -> dict[str, tuple[str, str]]:
+    """What a re-comp beside a stepped render pins an import to, so it
+    reads that check render and not the shot's older published render
+    (Soren, 2026-11-22): ``follows`` is the render's ``[{channel,
+    department, version}]``. An all-channels import is pinned on every
+    channel the render made (it reads only ``latest``); a one-channel import
+    on ``latest`` to its own channel's, when the render made it; a version
+    the artist picked stays. ``{channel: (department, version)}``."""
+    by_channel = {
+        follow['channel']: (follow['department'], follow['version'])
+        for follow in follows
+    }
+    if all_channels:
+        return by_channel
+    if version != LATEST or channel not in by_channel:
+        return {}
+    return {channel: by_channel[channel]}
+
+
+def is_check_comp(step: int, reads_check_render: bool) -> bool:
+    """Whether a shot's comp is a check comp, never published (no daily, no
+    Copy to edit, ``"published": false`` in its ``context.json``): on a
+    Step above 1, its frames have gaps, as a stepped render's do
+    (``farm.pipelines.render.is_check_render``); and a comp that reads a
+    check render is a look at one, whatever its step."""
+    return step > 1 or reads_check_render
+
+
+def check_comp_note(step: int, reads_check_render: bool, copy_to_edit: bool = False) -> str:
+    """Why a comp is a check comp (:func:`is_check_comp`) and what that
+    skips, for a Submit to say; empty for a comp that publishes."""
+    from tumblepipe.pipe.hold_frames import _ordinal
+    if not is_check_comp(step, reads_check_render): return ''
+    why = []
+    if step > 1:
+        why.append(f'every {_ordinal(step)} frame')
+    if reads_check_render:
+        why.append('reads a check render')
+    text = f'{" and ".join(why)}: a check comp, not published, no daily'
+    if copy_to_edit:
+        text += ', Copy to edit skipped'
+    return text
+
+
+def unpublished_reason(contexts: Iterable[tuple[str, Optional[Mapping]]]) -> Optional[str]:
+    """Why a job that publishes a comp version (its daily mp4, its Copy to
+    edit) must skip it, None when every version is published.
+
+    ``contexts`` is ``[(name, context.json data or None)]``, the versions
+    the job follows. A comp learns only when it runs whether it reads a
+    check render (a re-comp resolves its imports then, Soren 2026-11-23):
+    the worker's ``record_reads`` writes ``"published": false``, after the
+    daily and the sync were queued. A missing ``context.json`` or one with
+    no ``published`` is published, so versions written before the flag
+    keep publishing (``pipe.paths.render.is_published``)."""
+    from tumblepipe.pipe.hold_frames import _ordinal
+    for name, context in contexts:
+        if context is None or context.get('published', True) is not False:
+            continue
+        step = context.get('step_size', 1)
+        if isinstance(step, int) and not isinstance(step, bool) and step > 1:
+            why = f'every {_ordinal(step)} frame'
+        else:
+            why = 'reads a check render'
+        return f'{name} {why}: a check comp, not published'
+    return None
+
+
+def read_unpublished_reason(context_paths: Iterable) -> Optional[str]:
+    """:func:`unpublished_reason` of the ``context.json`` files at
+    ``context_paths`` (a missing file is published)."""
+    from tumblepipe.util.io import load_json_if_exists
+    contexts = []
+    for path in context_paths:
+        path = Path(path)
+        contexts.append((path.parent.as_posix(), load_json_if_exists(path)))
+    return unpublished_reason(contexts)
 
 
 ###############################################################################

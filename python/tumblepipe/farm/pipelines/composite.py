@@ -50,10 +50,12 @@ config = {
         'step_size': 'int',
         'batch_size': 'int',
         'copy_to_edit': 'bool',
-        'preview_frame_list': ['int']   # optional: the partial's frames, in
+        'preview_frame_list': ['int'],  # optional: the partial's frames, in
                                         # order, inside the range and on the
                                         # step (farm.specs.preview_frames); absent:
-                                        # first, middle and last
+                                        # first, middle and last (on the step)
+        'reads_check_render': 'bool'    # optional, default False: an import
+                                        # reads a check render
     },
     'exports': [{'node_path': '/stage/comp/export_comp', 'layer': 'comp'}],
     # A node path '' (a re-comp): the shot's export_comp on that layer.
@@ -62,6 +64,10 @@ config = {
             'channel': 'chars', 'department': 'denoise', 'version': 'v0004'
         }
     },
+    'follows': [      # optional: a re-comp beside a stepped render, the
+                      # render its imports are pinned to when it runs
+        {'channel': 'chars', 'department': 'denoise', 'version': 'v0004'}
+    ],
     'renders': [      # optional (#80): the render of the same submit
         {'channel': 'chars', 'department': 'denoise', 'version': 'v0004'}
     ],
@@ -72,6 +78,18 @@ config = {
 }
 
 ``tasks.*.channel_name`` is the Discord channel the notify posts to.
+
+A **check comp** (``pipe.comp.is_check_comp``: a Step above 1, or an import
+reading a check render, ``settings.reads_check_render``) is written and
+encoded like any comp, but never published, as a check render is not: its
+frame stacks record ``"published": false``, no daily is written and Copy to
+edit is skipped. A re-comp that turns out to read a check render when it
+runs is marked so by its worker; its daily mp4 and Copy to edit, queued
+before anyone knew, read that flag when they run (``publish_contexts``,
+``pipe.comp.unpublished_reason``) and skip with a ``WARNING:`` line, still
+exiting 0 (Soren, 2026-11-23). Every composite job carries the comp's
+frames (``comp_frames``): a re-comp's worker comps a check render only when
+it has every one of them (``pipe.comp.check_render_refusal``).
 """
 
 from pathlib import Path
@@ -116,6 +134,8 @@ def _valid_settings(settings) -> bool:
     if not check_int(settings, 'batch_size'): return False
     if not check_bool(settings, 'copy_to_edit'): return False
     if not valid_preview_frame_list(settings, settings['step_size']): return False
+    if 'reads_check_render' in settings and not check_bool(settings, 'reads_check_render'):
+        return False
     return True
 
 
@@ -163,23 +183,42 @@ def is_valid_config(config) -> bool:
     if 'renders' in config:
         if not valid_renders(config['renders']): return False
         if config['imports']: return False
+    if 'follows' in config:
+        # A re-comp beside a stepped render: the render it reads.
+        if not valid_renders(config['follows']): return False
+        if 'renders' in config or config['imports']: return False
     if not _valid_tasks(config.get('tasks')): return False
     return True
 
 
+def default_preview_frames(first_frame: int, last_frame: int, step_size: int) -> tuple[int, ...] | None:
+    """A stepped comp's preview with no Preview Frames List: its first,
+    middle and last frame *on its step*. The range's last frame can be off
+    the step, a frame the comp never renders and a check render does not
+    have. None on Step 1 (or with no frames): the shot's own first, middle
+    and last."""
+    if step_size <= 1 or first_frame > last_frame:
+        return None
+    frames = comp.frames_of((first_frame, last_frame, step_size))
+    return frames[0], frames[(len(frames) - 1) // 2], frames[-1]
+
+
 def _shot(config: dict, staging_path: Path) -> post_render.Shot:
     settings = config['settings']
+    first, last, step = settings['first_frame'], settings['last_frame'], settings['step_size']
     return post_render.Shot(
         entity_uri = Uri.parse(config['entity']['uri']),
         department = config['entity']['department'],
         purpose = settings['purpose'],
         user_name = settings['user_name'],
         pool_name = settings['pool_name'],
-        first_frame = settings['first_frame'],
-        last_frame = settings['last_frame'],
-        step_size = settings['step_size'],
+        first_frame = first,
+        last_frame = last,
+        step_size = step,
         staging_path = staging_path,
-        preview_frames = tuple(settings.get(PREVIEW_FRAMES_KEY) or ()) or None,
+        preview_frames = (tuple(settings.get(PREVIEW_FRAMES_KEY) or ())
+                          or default_preview_frames(first, last, step)),
+        check_render = comp.is_check_comp(step, settings.get('reads_check_render', False)),
     )
 
 
@@ -223,6 +262,10 @@ def _composite_job(config, shot, paths, version_name, partial) -> Job:
         batch_size = 1 if partial else settings['batch_size'],
         receipt_path = path_str(receipt_path),
         input_path = settings['input_path'],
+        # The whole comp's frames, a partial's too (its own are the preview
+        # frames on step 1): what a re-comp's worker checks a check render
+        # against.
+        comp_frames = [shot.first_frame, shot.last_frame, shot.step_size],
         exports = [
             dict(
                 node_path = export['node_path'],
@@ -233,7 +276,23 @@ def _composite_job(config, shot, paths, version_name, partial) -> Job:
         ],
         imports = config['imports'],
         **({} if 'renders' not in config else dict(renders = config['renders'])),
+        **({} if 'follows' not in config else dict(follows = config['follows'])),
     ), paths, shot.staging_path)
+
+
+def _receipt_path(shot, layer: str, version_name: str) -> Path:
+    """A written layer's receipt pattern; its context.json sits beside it."""
+    return get_frame_path(
+        shot.entity_uri, COMPOSITE_DEPARTMENT, comp.output_folder(layer),
+        version_name, '####', 'json', shot.purpose
+    )
+
+
+def _context_path(shot, layer: str, version_name: str) -> Path:
+    """A written layer's context.json, where the worker's ``record_reads``
+    says ``"published": false`` once the comp read a check render: the
+    daily and Copy to edit read it when they run."""
+    return _receipt_path(shot, layer, version_name).parent / 'context.json'
 
 
 def _write_contexts(config, shot, version_name):
@@ -250,10 +309,7 @@ def _write_contexts(config, shot, version_name):
         folder = comp.output_folder(export['layer'])
         post_render.write_framestack_context(
             shot,
-            get_frame_path(
-                shot.entity_uri, COMPOSITE_DEPARTMENT, folder, version_name,
-                '####', 'json', shot.purpose
-            ),
+            _receipt_path(shot, export['layer'], version_name),
             COMPOSITE_DEPARTMENT, folder, version_name,
             reads = reads,
         )
@@ -313,19 +369,31 @@ def _build(config, paths, temp_path, jobs, deps, depends_on) -> list[str]:
     )
     deps['full_composite'] = full_after
     terminal_jobs = []
+    # The daily and Copy to edit read the comp's published flag when they
+    # run: a comp learns only then whether it reads a check render (a
+    # re-comp resolves its imports in its worker; Soren, 2026-11-23).
     for layer in channel_layers:
         jobs[f'layer_mp4_{layer}'] = post_render.layer_mp4_job(
-            shot, COMPOSITE_DEPARTMENT, layer, version_name, settings['priority']
+            shot, COMPOSITE_DEPARTMENT, layer, version_name, settings['priority'],
+            publish_contexts = [_context_path(shot, layer, version_name)],
         )
         deps[f'layer_mp4_{layer}'] = ['full_composite']
         terminal_jobs.append(f'layer_mp4_{layer}')
-    if settings['copy_to_edit']:
-        jobs['sync'] = post_render.sync_job_for(shot)
+    if settings['copy_to_edit'] and not shot.publishes:
+        logging.warning(
+            f'{shot.entity_uri}: Copy to edit skipped: a check comp is not '
+            'published (comp.is_check_comp)'
+        )
+    if settings['copy_to_edit'] and shot.publishes:
+        jobs['sync'] = post_render.sync_job_for(shot, publish_contexts = [
+            _context_path(shot, layer, version_name) for layer in layers
+        ])
         deps['sync'] = ['full_composite']
         terminal_jobs.append('sync')
     if merged:
         jobs['slapcomp_mp4'] = post_render.slapcomp_mp4_job(
-            shot, COMPOSITE_DEPARTMENT, version_name, settings['priority']
+            shot, COMPOSITE_DEPARTMENT, version_name, settings['priority'],
+            publish_contexts = [_context_path(shot, comp.MERGED_LAYER, version_name)],
         )
         deps['slapcomp_mp4'] = ['full_composite']
         jobs['slapcomp_notify'] = post_render.slapcomp_notify_job(
@@ -452,15 +520,34 @@ def chained_config(
     shot_uri: Uri,
     block: dict,
     renders: list[dict],
+    follows_check_render: bool = False,
     **kwargs,
     ) -> dict:
     """The comp a render carries (its config's ``composite`` block): a comp
     of this render (:func:`scene_config`) when the block names a ``scene``,
     else a re-comp of the shot's newest composite workfile
-    (:func:`recomp_config`), which reads the renders on its own."""
+    (:func:`recomp_config`), which reads the renders on its own.
+
+    Beside a stepped render (``follows_check_render``; Soren, 2026-11-22)
+    the comp reads that render, a check render, and so is a check comp
+    (``settings.reads_check_render``): a re-comp's imports are pinned to
+    ``renders`` when it runs (``follows``), not left to resolve ``latest``,
+    which would read the shot's older published render. Farm Submit took
+    it only with every comp frame one the render makes
+    (``farm.specs.submission.stepped_comp_problems``); the worker checks
+    again (``pipe.comp.check_render_refusal``)."""
     if block.get('scene') is not None:
-        return scene_config(shot_uri, block, renders, **kwargs)
-    return recomp_config(shot_uri, block, **kwargs)
+        config = scene_config(shot_uri, block, renders, **kwargs)
+    else:
+        config = recomp_config(shot_uri, block, **kwargs)
+        if follows_check_render:
+            config['follows'] = [
+                dict(channel = r['channel'], department = r['department'], version = r['version'])
+                for r in renders
+            ]
+    if follows_check_render:
+        config['settings']['reads_check_render'] = True
+    return config
 
 
 def _chained_config(shot_uri, block, workfile: Path, exports: list[dict], *,

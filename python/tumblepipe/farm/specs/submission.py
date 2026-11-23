@@ -16,9 +16,11 @@ each section's fields. The rules:
   range (rolls included);
 - an Into version (#92, ``farm.specs.repair``) that cannot go with the
   rest: no Frame List, a preview, a Step above 1, not a version name;
-- Comp beside a render that is not published: a multi-range or stepped one
-  (beside an Into version the version decides, at the farm, which reads
-  it);
+- Comp beside a render that is not published: a multi-range one (beside
+  an Into version the version decides, at the farm, which reads it), or a
+  stepped one with a comp frame the render does not make (Soren,
+  2026-11-22: on frames it makes, the comp reads that render, a check
+  comp);
 - Comp beside a render of check frames only (no ``full_render``);
 - comp frames that end before they start, or, beside a render, reach
   outside the frames it renders (beside an Into version, outside the
@@ -183,6 +185,69 @@ def comp_frame_problems(frames: Range, follows: Range, *, inside: bool) -> list[
     return []
 
 
+def comp_step(settings: dict) -> int:
+    """The Comp's Step, 1 when unset or not a whole number above 0."""
+    step = _int(settings.get('comp_step'))
+    return step if step is not None and step > 0 else 1
+
+
+def stepped_comp_problems(settings: dict) -> list[str]:
+    """Why a Comp beside a stepped render (Farm Submit's Step above 1, one
+    range) makes no comp: it comps a frame the render does not make (Soren,
+    2026-11-22). Every comp frame must be one of the render's stepped
+    frames (from the first frame of its range, rolls included): its Step a
+    multiple of the render's, from a frame the render makes. Such a comp
+    reads that render and is a check comp (``pipe.comp.is_check_comp``).
+    The problem names the Step, and start, that would go
+    (``pipe.comp.frames_that_fit``). Frames that end before they start, or
+    reach past the render, are :func:`comp_frame_problems`' to say."""
+    from tumblepipe.pipe import comp as pipe_comp
+    step = render_step(settings)
+    span = rendered_span(settings)
+    if step <= 1 or span is None:
+        return []
+    first, last = comp_frames(
+        settings.get('comp_first_frame'), settings.get('comp_last_frame'), span,
+    )
+    if first > last or first < span[0] or last > span[1]:
+        return []
+    frames, render = (first, last, comp_step(settings)), (span[0], span[1], step)
+    if pipe_comp.frames_inside(frames, render):
+        return []
+    fit = pipe_comp.frames_that_fit(frames, [render])
+    if fit is None:
+        fix = f"no frame of {first}-{last} is one it renders, so "
+    else:
+        fix = f"{pipe_comp.fit_text(frames, fit)}, "
+    return [
+        f"Comp beside a stepped render comps only frames it renders: the comp "
+        f"is {pipe_comp.comp_frames_text(frames)}, the render every "
+        f"{_ordinal(step)} frame of {span[0]}-{span[1]}: {fix}set the "
+        f"render's Step to 1, or untick Comp"
+    ]
+
+
+def comp_reads_check_render(settings: dict) -> bool:
+    """Whether the Comp reads a check render it is submitted beside: the
+    render is ticked, renders the full range (the render a comp waits
+    for), on a Step above 1, into new versions. Such a comp is a check comp
+    whatever its own Step (``pipe.comp.is_check_comp``; the farm marks it
+    so, ``pipelines.render.build``'s ``follows_check_render``), a one-frame
+    Comp on Step 1 too."""
+    return (
+        bool(settings.get('comp')) and bool(settings.get('render'))
+        and settings.get('render_mode') in FULL_RENDER_MODES
+        and render_step(settings) > 1
+        and not repair.is_repair(into_version(settings))
+    )
+
+
+def _ordinal(step: int) -> str:
+    if step % 100 in (11, 12, 13):
+        return f"{step}th"
+    return f"{step}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(step % 10, 'th')}"
+
+
 def turned_off_problems(settings: dict, off: Collection[str]) -> list[str]:
     """A step aimed at a department turned off on the entity (#64): the
     Render or Playblast cut, or a ticked publish (``pub_departments``)."""
@@ -246,12 +311,8 @@ def problems(
             f"Comp follows a published render, and "
             f"{frame_ranges.NOT_PUBLISHED}: untick Comp, or render one range"
         )
-    if comp and render and render_step(settings) > 1:
-        found.append(
-            f"Comp follows a published render, and "
-            f"{frame_ranges.STEPPED_NOT_PUBLISHED}: untick Comp, or set the "
-            "render's Step to 1"
-        )
+    if comp and render and not frame_ranges.is_multi(ranges) and not repairing:
+        found.extend(stepped_comp_problems(settings))
     if comp and render and settings.get('render_mode') not in FULL_RENDER_MODES:
         found.append(
             "Comp waits for the full render: tick Full range in the Render "

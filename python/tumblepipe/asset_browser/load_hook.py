@@ -10,6 +10,11 @@ actions go through ``hou.hipFile.load`` like everything else.
 GUI sessions only: hython and farm jobs must render the versions they were
 submitted with. Gated on the ``auto_refresh_on_open`` Browser setting.
 
+The same open makes a shot scene's sound from the edit (Load Audio from
+Edit) again when the master edit has a newer version
+(``pipe.houdini.shot_audio.refresh_on_open``), in the background; only for
+a scene already playing such a mix.
+
 The same callback hears every save, the Browser's and Houdini's own, and
 has a Multi's workfile checked against its Multi once the save is done
 (``pipe.houdini.multi_sync``): one callback for both, so a save never asks
@@ -85,10 +90,29 @@ def _apply_multi_timeline() -> None:
         )
 
 
+def _refresh_edit_audio() -> None:
+    """Make a shot scene's sound from the edit again when the master edit
+    has a newer version (``pipe.houdini.shot_audio.refresh_on_open``):
+    only for a scene already playing an edit's mix, whatever the import
+    refresh setting (it is about import nodes); the mix runs in the
+    background and says what it did. Upkeep: a failure is logged, not
+    shown."""
+    import logging
+
+    try:
+        from tumblepipe.pipe.houdini import shot_audio
+        shot_audio.refresh_on_open()
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Keeping the scene's edit audio up to date failed"
+        )
+
+
 def _on_scene_opened() -> None:
     _apply_context_options()
     _refresh_if_enabled()
     _apply_multi_timeline()
+    _refresh_edit_audio()
 
 
 def _on_scene_saved() -> None:

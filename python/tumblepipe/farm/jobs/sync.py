@@ -13,7 +13,10 @@ def build(config, paths, staging_path):
     )
     job = farm_job('sync', dict(
         entity_uri = config['entity_uri'],
-        purpose = config['purpose']
+        purpose = config['purpose'],
+        # A comp's: skipped when it turned out unpublished
+        **({} if 'publish_contexts' not in config
+           else dict(publish_contexts = config['publish_contexts']))
     ), staging_path,
         name = config['title'],
         pool = config['pool_name'],

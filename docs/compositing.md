@@ -183,8 +183,11 @@ motion vectors, ...; not on a 1.0 node). An `alpha` AOV and the `*_mse`
 variance passes are never read. Which cable an AOV
 rides is `pipe.comp.aov_cable`. `geometry` and `camera` are empty until
 the scene imports: **Update** imports it, a workfile open only while one
-of them is wired, and `camera` opens once its camera cooks, so a missing
-camera prim never stops the renders cooking.
+of them is wired, and both open only once its camera cooks too (the
+embedded import cooks its two outputs together), so a missing camera prim
+never stops the renders cooking. Up to TumblePipe 1.121.0 `geometry`
+opened without the camera, and a camera that could not cook failed every
+output of the node, the renders too.
 
 A digital asset's outputs are fixed by its type (Houdini 22.0.429: an
 instance can neither add outputs nor relabel them), so a node cannot show
@@ -444,7 +447,11 @@ Farm Submit's **Comp** column re-comps a shot without opening its workfile:
 the shot's newest composite workfile (a Multi's, when one covers the shot)
 is submitted as one merged-comp version, on its own over the renders on
 disk, or ticked beside **Render** to start after that render's denoise. Its
-imports on `latest` resolve when the job runs. The cell shows whether the
+imports on `latest` resolve when the job runs; one that resolves to a
+[check render](nodes/comp.md#reading-a-check-render) without every frame
+the comp renders fails the job, naming the **Step** that would go. Beside
+a stepped render the imports read that render instead (pinned to its
+versions when the job runs), and the comp is a check comp. The cell shows whether the
 newest comp is older than the newest render. Its settings follow the
 node's: **Preview frames**, **Frames** (the render's range, else the shot's,
 unless you type your own), **Step**, **Batch**, **Pool**, **Priority** and
@@ -487,6 +494,28 @@ The job chains on Deadline, or in the same order on this machine:
 3. a review *MP4* per channel layer, *Copy to edit* when ticked,
 4. for the merged comp, the department's *MP4* and *daily* and a Discord
    *notify*.
+
+A comp on a **Step** above 1, or one that reads a check render, is a
+*check comp* (Soren, 2026-11-22): a composite version to look at, never
+the shot's comp. Its frame stacks record `"published": false` in their
+`context.json`, its MP4s are written without the daily, and *Copy to edit*
+is left out of the chain, with a `WARNING:` line in the submit log (Submit
+lists the check comps before it sends them; Farm Submit's Warnings column
+names a stepped Comp, and a Comp beside a stepped render). See
+[Reading a check render](nodes/comp.md#reading-a-check-render).
+
+Some comps learn only on the farm that they read a check render: a Farm
+Submit **Comp** on its own resolves its imports when its job runs (on Step
+1 over one frame, a check render's frame is "inside"), and an import can be
+pinned by hand to a check render. The comp still completes, and its worker
+marks its `context.json` `"published": false`; the daily MP4 and *Copy to
+edit*, queued before anyone knew, read that flag when they run and skip
+(Soren, 2026-11-23). The MP4 job still writes the versioned review movie and
+logs `WARNING: daily <path> skipped: <version> reads a check render: a check
+comp, not published`; the sync job copies nothing and logs `WARNING: Copy
+to edit skipped: …`. Both end as succeeded, so nothing after them fails. A
+version written before the flag, or with no `context.json`, publishes as
+before.
 
 There is no oiiotool slapcomp in the composite chain: the merged comp is
 the cross-channel layer, so the player shows it as the department's take

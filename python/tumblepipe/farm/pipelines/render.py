@@ -402,6 +402,11 @@ def build(
                              version = review_versions[channel])
                         for channel in slapcomp_channels
                     ],
+                    # Beside a stepped render (Soren, 2026-11-22) the comp
+                    # reads this render, a check render: a check comp.
+                    follows_check_render = (
+                        repair is None and is_check_render(shot.entity_uri, shot.step_size)
+                    ),
                     user_name = settings['user_name'],
                     purpose = settings['purpose'],
                     # A repair comps its whole version (#92)

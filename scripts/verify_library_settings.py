@@ -18,7 +18,12 @@ refused with nothing listed; Remove; another project's list is its own;
 Apply writes ``library_paths`` to ``projects.json`` and the catalog's
 sidebar then has the library's section; the Flat asset / shot list
 checkboxes follow the project-defaults gate, Flat shot list writes
-``flat_shots`` and the sidebar's Shots section drops its sequence rows.
+``flat_shots`` and the sidebar's Shots section drops its sequence rows;
+turning a flat list on offers to remove the empty categories / sequences by
+name (never one holding an entity, listed by a Multi, with settings of its
+own, or the bucket), Cancel keeps them with the list still flat, Remove
+deletes exactly those, flat off then shows the rest, and someone who may
+not edit the project defaults is offered nothing and loses nothing.
 Prints OK/FAIL per check; exits 1 on any FAIL.
 """
 
@@ -87,6 +92,22 @@ QInputDialog.getText = staticmethod(lambda *a, **k: names.pop(0))
 QMessageBox.warning = staticmethod(lambda parent, title, text, *a, **k: warnings.append(text))
 QMessageBox.information = staticmethod(lambda *a, **k: None)
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
+
+# The offer to remove empty categories / sequences: what it showed, and
+# Remove (True) or Cancel (False), in order. Without an answer queued it
+# fails the check instead of blocking on a modal.
+from tumbletrove.asset_browser.ui import dialogs as tt_dialogs  # noqa: E402
+
+offers: list[tuple[str, str, str]] = []
+answers: list[bool] = []
+
+
+def _confirm_destructive(parent, title, message, action_label='Delete'):
+    offers.append((title, message, action_label))
+    return answers.pop(0) if answers else False
+
+
+tt_dialogs.confirm_destructive = _confirm_destructive
 
 from tumblepipe.asset_browser.settings_widget import PipelineSettingsWidget  # noqa: E402
 
@@ -189,6 +210,111 @@ if editable:
     flat_boxes['shots'].setChecked(False)
     app.processEvents()
     check('turning it off drops flat_shots', not flat_entities.is_flat_in(store, 'shots'))
+    check('nothing to remove (the template has no sequence): no offer shown', not offers, offers)
+
+    # Turning flat on offers to remove the empty categories / sequences.
+    from tumblepipe.config import groups  # noqa: E402
+    from tumblepipe.util.uri import Uri  # noqa: E402
+    client = catalog._clients.get(launched)
+
+    def buckets_now(kind):
+        paths = {tuple(u.segments) for u in store.list_entity_uris(None, closure=True)}
+        return flat_entities.buckets(paths, kind)
+
+    def offered(i=-1):
+        title, message, action = offers[i]
+        listed = [line.strip()[1:].strip() for line in message.splitlines()
+                  if line.strip().startswith('•')]
+        return title, listed, action
+
+    def rows_of(section_id, kind):
+        catalog.invalidate_cache()
+        section = next(c for c in walk(catalog.get_collections()) if c.id == section_id)
+        return {c.label for c in section.children if c.kind == kind}
+
+    client.config.add_entity(Uri.parse('entity:/assets/PROP/hero'), {'name': 'hero'})
+    catalog.invalidate_cache()
+    warned = len(warnings)
+    answers.append(False)
+    flat_boxes['assets'].setChecked(True)
+    app.processEvents()
+    check('Flat asset list offers the empty categories by name: CHAR and SET, never '
+          'PROP (holds hero) or the bucket ASSETS',
+          len(offers) == 1 and offered() == ('Remove empty categories', ['CHAR', 'SET'], 'Remove')
+          and 'into ASSETS' in offers[-1][1], offers)
+    check('Cancel keeps every category and the list stays flat in ASSETS',
+          buckets_now('assets') == {'ASSETS', 'CHAR', 'PROP', 'SET'}
+          and flat_entities.flat_bucket_in(store, 'assets') == 'ASSETS'
+          and flat_boxes['assets'].isChecked(), buckets_now('assets'))
+    flat_boxes['assets'].setChecked(False)
+    app.processEvents()
+    answers.append(True)
+    flat_boxes['assets'].setChecked(True)
+    app.processEvents()
+    check('Remove deletes exactly the listed ones; ASSETS and PROP stay, still flat',
+          len(offers) == 2 and offered()[1] == ['CHAR', 'SET']
+          and buckets_now('assets') == {'ASSETS', 'PROP'}
+          and flat_entities.flat_bucket_in(store, 'assets') == 'ASSETS'
+          and len(warnings) == warned, (buckets_now('assets'), warnings[warned:]))
+    flat_boxes['assets'].setChecked(False)
+    app.processEvents()
+    check('turning it off shows exactly the remaining categories',
+          rows_of(f'{launched}:assets_section', 'category') == {'ASSETS', 'PROP'},
+          rows_of(f'{launched}:assets_section', 'category'))
+    flat_boxes['assets'].setChecked(True)
+    app.processEvents()
+    check('on again: the same bucket, nothing empty left, no offer',
+          len(offers) == 2 and flat_entities.flat_bucket_in(store, 'assets') == 'ASSETS')
+    flat_boxes['assets'].setChecked(False)
+    app.processEvents()
+
+    # Sequences: SQ1 empty, SQ2 holds a shot, SQ3 is empty but a Multi lists
+    # it, SQ4 is empty with a frame range of its own; SHOTS is left over
+    # from the Flat shot list check above.
+    client.config.add_entity(Uri.parse('entity:/shots/SQ1'), {})
+    client.config.add_entity(Uri.parse('entity:/shots/SQ2/sh010'),
+                             {'frame_start': 1001, 'frame_end': 1010})
+    client.config.add_entity(Uri.parse('entity:/shots/SQ3'), {})
+    groups.add_group_in(client.config, 'shots', 'M1', [Uri.parse('entity:/shots/SQ3')], [])
+    client.config.add_entity(Uri.parse('entity:/shots/SQ4'), {'frame_start': 1001})
+    catalog.invalidate_cache()
+    answers.append(True)
+    flat_boxes['shots'].setChecked(True)
+    app.processEvents()
+    check('Flat shot list offers only SQ1: not SQ2 (a shot), SQ3 (a Multi), SQ4 '
+          '(its own settings) or the bucket SHOTS',
+          len(offers) == 3 and offered() == ('Remove empty sequences', ['SQ1'], 'Remove'), offers[2:])
+    check('Remove deletes SQ1 and nothing else',
+          buckets_now('shots') == {'SHOTS', 'SQ2', 'SQ3', 'SQ4'}
+          and flat_entities.flat_bucket_in(store, 'shots') == 'SHOTS', buckets_now('shots'))
+    flat_boxes['shots'].setChecked(False)
+    app.processEvents()
+
+    # Someone who may not edit the project defaults: nothing written,
+    # offered or removed, even when the toggle is called directly.
+    client.config.add_entity(Uri.parse('entity:/assets/VEH'), {})
+    project = catalog._registry.get(launched)
+    widget._show_layout_animate(project, False)
+    widget._on_flat_toggled('assets', True)
+    check('read-only: the toggle writes nothing and offers nothing',
+          len(offers) == 3 and not flat_entities.is_flat_in(store, 'assets')
+          and 'VEH' in buckets_now('assets'))
+    widget._show_project_defaults()
+    gate = {'TT_PROJECT_NAME': launched, 'TT_ORGANIZATION_SLUG': 'studio',
+            'TT_ORGANIZATION_ROLE': 'MEMBER'}
+    saved_env = {k: os.environ.get(k) for k in gate}
+    os.environ.update(gate)
+    flat_entities.set_flat_in(store, 'assets', True)
+    widget._offer_remove_empty(project, 'assets')
+    for k, v in saved_env.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    check('a member who is not an owner or admin is never offered a removal',
+          len(offers) == 3 and 'VEH' in buckets_now('assets'))
+    flat_entities.set_flat_in(store, 'assets', False)
+    widget._show_project_defaults()
 
 if len(sys.argv) > 1:
     widget.grab().save(sys.argv[1])

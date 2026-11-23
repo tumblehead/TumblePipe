@@ -1274,10 +1274,13 @@ impl<Message> Tracks<Message> {
     }
 
     /// Where clip `c` of the row at `top` is drawn: the part of it in the
-    /// tracks' time; None when it is scrolled out of sight.
+    /// tracks' time; None when it is scrolled out of sight. It never reaches
+    /// past its last frame: zoomed out, a clip under a pixel wide is a sliver,
+    /// not a pixel over the clip after it (a missing clip's hatching striped
+    /// its neighbour).
     fn clip_rect(&self, c: &ClipView, top: f32, tall: f32, w: f32) -> Option<Rectangle> {
         let (x0, x1) = (self.x(c.at, w), self.x(c.at + c.duration, w));
-        let (x0, x1) = Self::seen(x0, (x1 - 1.0).max(x0 + 1.0), w)?;
+        let (x0, x1) = Self::seen(x0, (x1 - 1.0).max(x0 + 1.0).min(x1), w)?;
         Some(Rectangle { x: x0, y: top + 1.0, width: x1 - x0, height: tall - 3.0 })
     }
 

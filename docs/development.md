@@ -171,10 +171,18 @@ refuses an AI-generated report/summary `.md` (matched by content markers,
 not filename). Given file paths it checks only those; with no arguments (as
 preflight runs it) it scans the whole tree.
 
-The hook **blocks** if `uv`/`ruff` isn't on `PATH`, rather than skipping. A
+`.ci/quality_gates/check_combo_teardown.py` (run by `test_quality_gates`)
+refuses a combo box handler on `currentIndexChanged` / `currentTextChanged`
+that reads the current item without testing it: a combo emits those with
+nothing chosen (index -1, data None) as it empties while its window is
+deleted, so such a handler ran on every close of the Entity Editor. Follow
+`activated` / `textActivated` for the artist's choice, or test for None.
+An allowance in the gate needs a reason.
+
+Preflight **fails** if `uv`/`ruff` isn't on `PATH`, rather than skipping. A
 gate that silently passes when it cannot run is worse than no gate: it
-prints the same shape as a real run, so an unlinted commit looks identical
-to a linted one. `git commit --no-verify` bypasses it for a single commit.
+prints the same shape as a real run, so an unlinted change looks identical
+to a linted one.
 
 ## Running the tests before a push
 
@@ -2247,7 +2255,20 @@ nearest rendered frame (against a brute-force search, ties to the earlier
 frame, and by the pixels), through plain HScript in the file names; Empty
 leaves the gaps black; Hold on a published version holds its first and
 last frame; a time offset shifts what is held; a submit's freeze of such
-an import is refused.
+an import takes it on the check render's own frames (every 4th) and is
+refused on every frame (naming Step 4), off its first frame (naming the
+frame to start on) and with the frames not known.
+
+`scripts/verify_recomp_follows.py` runs a Farm Submit re-comp beside a
+stepped render on real `th::import_render` nodes: two channels, each with
+a published render and a newer check render (every 2nd frame), and an
+import on `latest`, an all-channels import and an import pinned by hand.
+The worker's `composite_houdini.resolve_imports` with a `follows` list
+pins the first two to the followed check render on every channel (an
+unfollowed channel stays on `latest`), leaves the hand-pinned one alone,
+does the same again unchanged, takes the comp on the check render's
+frames (and a multiple of its Step), and refuses every frame, a start off
+its first frame and frames not known, naming the import and the fix.
 
 ## Slap comp harness
 

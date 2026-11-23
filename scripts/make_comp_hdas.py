@@ -1037,9 +1037,10 @@ def build_import_render(root, version='1.0'):
     for name in ('timesample', 'staticimportframe'):
         scene.parm(name).setExpression(f'ch("../{name}")', hou.exprLanguage.Hscript)
     scene.setPosition(hou.Vector2(0, -2 * row))
-    # The scene reaches its outputs only once it imported (camera: and its
-    # camera cooks): Copernicus cooks every output of the subnet together,
-    # so a camera that cannot cook failed the renders too. An unread
+    # The scene reaches its outputs only once it imported and its camera
+    # cooks (open_scene_outputs sets both flags together): Copernicus cooks
+    # every output of a subnet together, the embedded import_scene's too,
+    # so a camera that cannot cook failed the renders as well. An unread
     # switch input is an empty output.
     switches = dict()
     for step, (name, output, ready) in enumerate((

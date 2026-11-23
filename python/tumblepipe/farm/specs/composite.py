@@ -27,13 +27,22 @@ config = {
     # optional (#80): the render of the same submit the comp reads through
     # its Slap Comp Import nodes, in the render's channel order; with it,
     # imports is empty
-    'renders': [{'channel': 'chars', 'department': 'denoise', 'version': 'v0004'}]
+    'renders': [{'channel': 'chars', 'department': 'denoise', 'version': 'v0004'}],
+    # optional: the whole comp's frames, [first, last, step] (a partial's
+    # too); a re-comp's worker comps a check render only when it has every
+    # one (pipe.comp.check_render_refusal); without it, never
+    'comp_frames': [1, 100, 1],
+    # optional: a re-comp beside a stepped render, the render (a check
+    # render) its imports are pinned to when it runs (pipe.comp.follow_pins);
+    # with it, imports is empty
+    'follows': [{'channel': 'chars', 'department': 'denoise', 'version': 'v0004'}]
 }
 
 The worker's context is the config without the scheduling keys, keeping
-``step_size`` (Deadline hands the worker a span; the step is the config's).
-The hython config replaces it with the span the worker was handed and the
-``frames`` of it still missing their receipts.
+``step_size`` (Deadline hands the worker a span; the step is the config's)
+and ``comp_frames``. The hython config replaces them with the span the
+worker was handed and the ``frames`` of it still missing their receipts,
+keeping ``comp_frames``.
 """
 
 from tumblepipe.farm.checks import (
@@ -83,6 +92,16 @@ def valid_renders(renders) -> bool:
     return len(set(channels)) == len(channels)
 
 
+def valid_comp_frames(frames) -> bool:
+    """A composite job's ``comp_frames``: ``[first, last, step]``, whole
+    numbers (not bools), first no later than last, step above 0."""
+    if not isinstance(frames, list) or len(frames) != 3: return False
+    if not all(isinstance(value, int) and not isinstance(value, bool) for value in frames):
+        return False
+    first, last, step = frames
+    return first <= last and step > 0
+
+
 def valid_scene(scene) -> bool:
     """A re-comp block's optional ``scene`` (#80): the workfile comp to
     render instead of the shot's newest composite workfile, ``{path,
@@ -114,6 +133,11 @@ def _valid_composite(config) -> bool:
         if not valid_renders(config['renders']): return False
         # The render of its submit is all it reads: nothing is frozen.
         if config['imports']: return False
+    if 'comp_frames' in config and not valid_comp_frames(config['comp_frames']):
+        return False
+    if 'follows' in config:
+        if not valid_renders(config['follows']): return False
+        if config['imports'] or 'renders' in config: return False
     return True
 
 

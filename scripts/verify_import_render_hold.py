@@ -25,7 +25,10 @@ is, so a cooked pixel tells which file was read. Then:
   as before; Hold Nearest Frame holds its first and last frame there;
 - with a time offset, the scene's frame less the offset is what is held;
 - an all-channels import (``latest`` only) holds nothing on Automatic;
-- a submit's freeze of an import reading a check render is refused.
+- a submit's freeze of an import reading a check render takes it on the
+  check render's own frames (every 4th), and refuses every frame of it
+  (naming Step 4), frames off its first (naming the frame to start on),
+  and frames not known.
 
 Needs Houdini with the comp HDAs compiled and on HOUDINI_OTLSCAN_PATH, and
 this checkout's python/ on PYTHONPATH (the preflight ``hython`` stage sets
@@ -230,13 +233,29 @@ def main():
     node.execute()
 
     print('--- a submit')
-    try:
-        node.import_states()
-        refused = ''
-    except ns.NodeError as error:
-        refused = str(error)
-    check('a submit of an import reading a check render is refused, saying why',
+
+    def submit_refusal(frames=None):
+        try:
+            node.import_states(frames)
+        except ns.NodeError as error:
+            return str(error)
+        return ''
+
+    refused = submit_refusal()
+    check('a submit of an import reading a check render, its frames not known, is refused, saying why',
           'check render' in refused and 'v0002' in refused, refused)
+    # Soren, 2026-11-22: a comp on the check render's own frames goes.
+    check('a submit of a comp on the check render\'s frames (every 4th) freezes it',
+          submit_refusal((FIRST, LAST, STEP)) == ''
+          and [(s.resolved_department, s.resolved_version)
+               for s in node.import_states((FIRST, LAST, STEP))] == [('render', 'v0002')],
+          submit_refusal((FIRST, LAST, STEP)))
+    refused = submit_refusal((FIRST, LAST, 1))
+    check('a submit of every frame of it is refused, naming Step 4',
+          'v0002' in refused and f'comp on Step {STEP},' in refused, refused)
+    refused = submit_refusal((FIRST + 1, LAST, STEP))
+    check('a submit off its first frame is refused, naming the frame to start on',
+          f'comp on Step {STEP} from frame {FIRST + STEP},' in refused, refused)
     native.parm('version').set('latest')
     node.execute()
     check('back on latest, a submit freezes the published version',

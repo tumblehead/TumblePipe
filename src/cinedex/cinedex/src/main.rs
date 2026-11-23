@@ -7,7 +7,7 @@
 //! cinedex [--project <root>] [--ocio <config>] --shots <shot uri>...
 //! cinedex [--project <root>] [--ocio <config>]
 //! cinedex [--project <root>] [--ocio <config>] --render entity:/edits/<name>@vNNNN --out <dir>
-//! cinedex [--project <root>] --shot-audio entity:/edits/<name>[@vNNNN] --shot <shot uri> --out <wav> [--tracks <name,...>] [--first <frame> --last <frame>]
+//! cinedex [--project <root>] --shot-audio entity:/edits/<name>[@vNNNN | @vNNNN_working] --shot <shot uri> --out <wav> [--tracks <A1 | name,...>] [--first <frame> --last <frame>]
 //! cinedex [--project <root>] --mcp
 //! cinedex [--ocio <config>] --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]
 //! ```
@@ -19,8 +19,9 @@
 //! `--render`, no window: the published version's frames, mix
 //! and `render.json` written into `--out` for the farm (see `render`);
 //! `--shot-audio`, no window: the edit's audio tracks (all, or `--tracks`)
-//! over the shot's frames mixed into the WAV `--out`, a JSON summary
-//! printed, for the shot's Houdini scene (see `shot_audio`);
+//! of its newest working version, or the version `@vNNNN` (published) or
+//! `@vNNNN_working` names, over the shot's frames mixed into the WAV
+//! `--out`, a JSON summary naming the version mixed printed, for the shot's Houdini scene (see `shot_audio`);
 //! `--mcp`, no window: an MCP server on stdin/stdout giving an agent the
 //! running players' commands (see `mcp` and `agent`);
 //! `--frames`, a window of rendered frames (#75): a local farm batch's ready
@@ -137,7 +138,7 @@ impl Application for Failed {
     }
 }
 
-const USAGE: &str = "usage: cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>... | --render entity:/edits/<name>@vNNNN --out <dir> | --shot-audio entity:/edits/<name>[@vNNNN] --shot <shot uri> --out <wav> [--tracks <name,...>] [--first <frame> --last <frame>] | --mcp | --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]]";
+const USAGE: &str = "usage: cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>... | --render entity:/edits/<name>@vNNNN --out <dir> | --shot-audio entity:/edits/<name>[@vNNNN | @vNNNN_working] --shot <shot uri> --out <wav> [--tracks <A1 | name,...>] [--first <frame> --last <frame>] | --mcp | --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]]";
 
 /// What the arguments ask the editor for.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -213,7 +214,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     if out.edit.is_some() && !out.shots.is_empty() {
         return Err("--edit and --shots do not go together".into());
     }
-    if out.shot_audio.is_some() {
+    if let Some(target) = &out.shot_audio {
+        th_pipe::shot_audio::parse_edit_target(target).map_err(|e| format!("--shot-audio {e}"))?;
         if out.shot.is_none() || out.out.is_none() {
             return Err("--shot-audio wants --shot and --out".into());
         }
@@ -433,6 +435,9 @@ mod tests {
             (a.tracks, a.first, a.last, a.out),
             (vec!["Dialog".to_string(), "A2".into()], Some(993), Some(1100), Some(PathBuf::from("D:/a.wav")))
         );
+        let a = args("--shot-audio entity:/edits/Main@v0007_working --shot entity:/shots/A/010 --out D:/a.wav").unwrap();
+        assert_eq!(a.shot_audio.as_deref(), Some("entity:/edits/Main@v0007_working"));
+        assert!(args("--shot-audio entity:/edits/Main@latest --shot entity:/shots/A/010 --out D:/a.wav").is_err(), "no version");
         assert!(args("--shot-audio entity:/edits/Main --out D:/a.wav").is_err(), "no --shot");
         assert!(args("--shot-audio entity:/edits/Main --shot entity:/shots/A/010").is_err(), "no --out");
         assert!(

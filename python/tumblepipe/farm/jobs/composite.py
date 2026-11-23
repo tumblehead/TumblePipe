@@ -26,7 +26,11 @@ def build(config, paths, staging_path):
         exports = config['exports'],
         imports = config['imports'],
         # A comp of its submit's render (#80) reads it, not imports.
-        **({} if 'renders' not in config else dict(renders = config['renders']))
+        **({} if 'renders' not in config else dict(renders = config['renders'])),
+        # A re-comp beside a stepped render: the render it reads.
+        **({} if 'follows' not in config else dict(follows = config['follows'])),
+        # What a re-comp's worker checks a check render against.
+        **({} if 'comp_frames' not in config else dict(comp_frames = config['comp_frames']))
     ), staging_path,
         name = config['title'],
         pool = config['pool_name'],

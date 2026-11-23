@@ -472,7 +472,8 @@ the same name starts empty and the old work can still be recovered by hand.
 If a folder can't be moved (a file open in another program), nothing is
 moved and nothing is deleted. **Delete category '…'…**
 and **Delete sequence '…'…** refuse while the bucket still holds entities
-(*Category 'X' still contains 3 assets.*) and confirm when it is empty.
+(*Category 'X' still contains 3 assets.*) and confirm when it is empty; a
+Multi that listed the deleted category or sequence no longer lists it.
 
 An edit card's menu ends with **Rename Edit…** and **Delete Edit…**.
 **Rename Edit…** asks for the new name (letters and digits, not one the
@@ -544,22 +545,69 @@ be timed against it. Open the shot's workfile and click it:
 - The mix is a 48 kHz 16-bit stereo WAV under the edit's renders,
   `render:/edits/<edit>/audio/<version>/<SEQ>_<SHOT>_<tracks>.wav`, where
   `<version>` is `vNNNN` for a published version and `vNNNN_working` for a
-  working one, and `<tracks>` is `all` or the tracks picked (`dialog-fx`).
-  Running it again for the same version and tracks overwrites it.
+  working one, and `<tracks>` is `all` or the places of the tracks picked
+  (`a1-a3` for the first and third). Running it again for the same version
+  and tracks overwrites it. Next to it, `<wav>.json` records what it was
+  made of: the edit version, the shot and its frames, and the tracks by
+  place and by name, with the names of all the edit's audio tracks then
+  (see below).
 - It sets Houdini's Audio Panel to that file, playing from the shot's
   first frame with no offset, in timeline mode (it plays and scrubs with
   the playbar). The Audio Panel is saved with the hip, so the sound stays
-  with the workfile.
+  with the workfile, and is made again from the master edit's newer
+  versions when the workfile opens (see
+  [Kept up to date](#kept-up-to-date-when-the-workfile-opens)).
 - The message names the edit version, the tracks, how many clips sound
   over the shot's frames (none: the file is silent) and the file. It warns
   when the scene plays at another fps than the edit is cut at: the sound
   starts on the shot's first frame but drifts from the picture after it.
 
 It is refused, with the reason, when the shot is not in the master edit,
-or is in it twice (which clip's sound it should have is not clear). Run it
-again after the cut or its sound changes: the scene keeps playing the file
-it was given. The mix is made by Cinedex (`cinedex --shot-audio`, see
-[Running it by hand](play-shots.md#running-it-by-hand)).
+or is in it twice (which clip's sound it should have is not clear). The
+mix is made by Cinedex (`cinedex --shot-audio`, see
+[Running it by hand](play-shots.md#running-it-by-hand)), from exactly the
+edit version whose tracks were picked: one saved while it mixes does not
+change the mix.
+
+#### Kept up to date when the workfile opens
+
+A scene that plays a mix made this way stays on the cut's newest sound by
+itself. Whenever a shot's workfile opens in Houdini with a UI (File >
+Open, the Browser, a recent file; never in hython or on the farm), and its
+Audio Panel plays such a mix of that shot, TumblePipe checks the master
+edit:
+
+- When the master edit has a newer version than the one the mix came from
+  (the same pick as above: its newest working version, else its latest
+  published one), the mix is made again from it, with the same tracks, and
+  the Audio Panel plays the new file. The scene opens at once: the mix is
+  made in the background and set when it is done (a few seconds), and the
+  console and status bar say so (`Edit audio: SQ010/SH020 now plays Main
+  (working v0012; it played working v0011), tracks Dialog, FX.`). Save the
+  scene to keep the new file; until then it is made again on each open.
+- The tracks are followed by name, not place: moving, adding, removing or
+  renaming the edit's other tracks does not change which ones the scene
+  hears. Several tracks of one name (or several without one) are told
+  apart by their order among themselves. A mix of every track (`all`) is
+  made of every track the newer version has, new ones included.
+- When a track it had is gone, or its name now fits more or fewer tracks
+  than it did (which one is meant is no longer clear), the scene keeps its
+  sound and the note says why: run Load Audio from Edit to pick the tracks
+  again. So it does when the master edit is now another edit, or the
+  project has none, or the newer version does not read or has no audio
+  tracks.
+- Up to date, nothing is said. A scene that plays any other sound, or none
+  (or whose audio is off, or from CHOPs), is left alone.
+- A mix made before the `.json` was written (TumblePipe 1.121) is read
+  from its file name: `all` is every track; for places (`a1-a3`) the names
+  are read from the edit version it was made from. When that version is
+  gone too, the same places are taken and the note says the names were
+  not recorded: run Load Audio from Edit once to have them followed by
+  name.
+
+The Audio Panel is read with `audiopanel` (or, when that prints nothing,
+from the end of the hip on disk); the mix is made as Load Audio from Edit
+makes it, writing its own `.json`.
 
 ## Dragging into Houdini
 

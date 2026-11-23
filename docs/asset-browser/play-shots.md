@@ -413,11 +413,15 @@ No farm reachable shows no badges, and no error.
 Pressing **Live** in Houdini also shows the shot in the editor, on the
 project's [master edit](#the-master-edit): an editor open on it comes to the
 front without taking the keyboard from Houdini, and when none is open one
-starts on it. The view loops from the start of the shot before to the end
-of the shot after (the edit's start or end where there is none), plays,
-and puts the playhead on the frame Houdini is at; **Live** is turned on if
-it was off. A shot in the edit more than once is shown where it first
-comes. The toolbar shows the loop's first and last timecode
+starts on it. The view is the shot's clip: the earliest one on any video
+track when the shot is in the edit more than once. It loops from the start
+of the clip just before that clip on its track to the end of the clip just
+after it, whatever those clips show (another shot, media or a slug), with
+any gap between them; where the shot's clip has no clip before or after it
+on its track, the loop starts or ends with the shot's clip itself. It plays
+and puts the playhead on the frame Houdini is at (the clip's nearest frame
+when Houdini is outside the shot); **Live** is turned on if it was off.
+The toolbar shows the loop's first and last timecode
 (`Loop 00:00:05:00–00:00:13:00 ✕`); press it, or move the playhead outside
 the loop, to play the whole edit again. The loop keeps to its clips while
 the cut is edited: moved, trimmed or split, they are still the ones it
@@ -1355,7 +1359,7 @@ The editor ships inside the TumblePipe package, as
 ```
 cinedex [--project <root>] [--ocio <config>] [--edit entity:/edits/<name>[@vNNNN] [--view <shot uri> [--at <frame>]] | --shots <shot uri>...]
 cinedex [--project <root>] --mcp
-cinedex [--project <root>] --shot-audio entity:/edits/<name>[@vNNNN] --shot <shot uri> --out <wav> [--tracks <name,...>] [--first <frame> --last <frame>]
+cinedex [--project <root>] --shot-audio entity:/edits/<name>[@vNNNN | @vNNNN_working] --shot <shot uri> --out <wav> [--tracks <A1 | name,...>] [--first <frame> --last <frame>]
 cinedex [--ocio <config>] --frames <batch folder | frames folder | frame | movie> [--fps <rate>] [--expect <frame list>]
 ```
 
@@ -1370,13 +1374,22 @@ edit as [Live view](#live-view) shows a shot, `--at` at that shot frame.
 `--shot-audio` opens no window either: it mixes the edit's sound over a
 shot into a WAV, what **Load Audio from Edit** runs (see
 [The edit's sound in a shot scene](index.md#the-edits-sound-in-a-shot-scene)).
-The edit is its newest working version, or with `@vNNNN` that published
-version (an edit never saved has no sound and is refused). `--shot` is the
+The edit is its newest working version, with `@vNNNN` that published
+version, or with `@vNNNN_working` that working version (an edit never
+saved has no sound and is refused, as is a version it does not have).
+Load Audio from Edit and its refresh always name the version: the tracks
+are asked for by their places in it, so a working version saved in the
+meantime must not be the one mixed. The summary's `version` and
+`published` say which was, and TumblePipe refuses a mix of any other than
+it asked for. `--shot` is the
 shot (`entity:/shots/SQ010/SH020`), which must have one clip in the edit
-(none, or two, is refused). `--tracks` picks the audio tracks by name or
-by place (`A1` is the first audio track; case ignored), comma-separated;
-without it every audio track is mixed, and a word naming no track is
-refused with the tracks the edit has. `--first` and `--last` (together)
+(none, or two, is refused). `--tracks` picks the audio tracks by place
+(`A1` is the first audio track) or by name, comma-separated, case
+ignored; a place wins over a name, so with a track named `A1` sitting
+second, `A1` is the first track and `A2` that one (the editor names new
+tracks `A1`, `A2`, ... and they keep the name when moved). Without it
+every audio track is mixed, and a word naming no track is refused with
+the tracks the edit has. `--first` and `--last` (together)
 are the shot frames to cover; without them the shot's range with its
 roll, else its clip's frames. The WAV (48 kHz, 16-bit, stereo) starts on
 the first of those frames; its folders are made. It mixes as a farm

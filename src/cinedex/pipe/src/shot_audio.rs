@@ -84,12 +84,46 @@ pub fn sample_window(first: Frame, frames: u64, fps: u32, rate: u32) -> (i64, u6
     (start, (sample(first + frames as i64) - start) as u64)
 }
 
+/// Which document of an edit `cinedex --shot-audio` mixes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditDocument {
+    /// Its newest working version, whichever that is when it is opened.
+    Newest,
+    /// That published version (`@vNNNN`).
+    Published(String),
+    /// That working version (`@vNNNN_working`, as its mix's folder is
+    /// named): the document Load Audio from Edit read its tracks' places
+    /// from, not a newer one saved since.
+    Working(String),
+}
+
+/// `target` (`entity:/edits/<name>`, `...@vNNNN` or `...@vNNNN_working`)
+/// read as the edit's URI and the document asked for. Anything after `@`
+/// that is not a version, with or without `_working`, is refused.
+pub fn parse_edit_target(target: &str) -> Result<(String, EditDocument), String> {
+    let Some((uri, after)) = target.rsplit_once('@') else { return Ok((target.to_owned(), EditDocument::Newest)) };
+    let (version, working) = match after.strip_suffix("_working") {
+        Some(version) => (version, true),
+        None => (after, false),
+    };
+    if !crate::naming::is_valid_version_name(version) {
+        return Err(format!("{target}: {after:?} is not a version (vNNNN for a published one, vNNNN_working for a working one)"));
+    }
+    let version = version.to_owned();
+    Ok((uri.to_owned(), if working { EditDocument::Working(version) } else { EditDocument::Published(version) }))
+}
+
 /// The audio tracks (indices of `names`, the edit's audio tracks' names in
-/// order) that `wanted` asks for: all of them when it is empty; else each
-/// track whose name is one of `wanted` (case and surrounding space aside),
-/// or whose place is (`A1` the first audio track, as the editor labels a
-/// track without a name). A word naming no track is refused, so a typo is
-/// not a silent mix without it.
+/// order) that `wanted` asks for: all of them when it is empty; else, for
+/// each word, the track at that place when it is one (`A1` the first audio
+/// track, as the editor labels a track without a name; case aside), else
+/// each track it names (case and surrounding space aside). A place wins
+/// over a name: the editor names new tracks `A1`, `A2`, ... and they keep
+/// those names when moved, so a track named `A1` may sit second, and `A1`
+/// asking for the first must not pick it too (Load Audio from Edit asks by
+/// place, and so does its refresh once it has followed the tracks by
+/// name). A word naming no track is refused, so a typo is not a silent mix
+/// without it.
 pub fn select_tracks(names: &[String], wanted: &[String]) -> Result<Vec<usize>, String> {
     if wanted.is_empty() {
         return Ok((0..names.len()).collect());
@@ -98,8 +132,10 @@ pub fn select_tracks(names: &[String], wanted: &[String]) -> Result<Vec<usize>, 
     let mut picked = Vec::new();
     for word in wanted {
         let word = word.trim();
-        let hits: Vec<usize> =
-            (0..names.len()).filter(|&i| names[i].trim().eq_ignore_ascii_case(word) || label(i).eq_ignore_ascii_case(word)).collect();
+        let hits: Vec<usize> = match (0..names.len()).find(|&i| label(i).eq_ignore_ascii_case(word)) {
+            Some(place) => vec![place],
+            None => (0..names.len()).filter(|&i| names[i].trim().eq_ignore_ascii_case(word)).collect(),
+        };
         if hits.is_empty() {
             let have: Vec<String> =
                 (0..names.len()).map(|i| if names[i].trim().is_empty() { label(i) } else { names[i].clone() }).collect();
@@ -215,13 +251,13 @@ mod tests {
             }
         }
 
-        /// No words is every track; each word picks the tracks it names, by
-        /// name or place, once each and in track order; a word naming none
-        /// is refused.
+        /// No words is every track; a word that is a place picks that track
+        /// alone, any other word the tracks it names; once each and in
+        /// track order; a word naming none is refused.
         #[test]
-        fn tracks_are_picked_by_name_or_place(
-            names in prop::collection::vec(prop::sample::select(vec!["Dialog", "Music", "SFX", "", "dialog "]), 0..6),
-            wanted in prop::collection::vec(prop::sample::select(vec!["dialog", "MUSIC", "A1", "a3", "Nope"]), 0..4),
+        fn tracks_are_picked_by_place_else_name(
+            names in prop::collection::vec(prop::sample::select(vec!["Dialog", "Music", "SFX", "", "dialog ", "A1", "a2", "A3"]), 0..6),
+            wanted in prop::collection::vec(prop::sample::select(vec!["dialog", "MUSIC", "A1", "a3", "A2", "Nope"]), 0..4),
         ) {
             let names: Vec<String> = names.into_iter().map(str::to_owned).collect();
             let wanted: Vec<String> = wanted.into_iter().map(str::to_owned).collect();
@@ -230,7 +266,9 @@ mod tests {
                 prop_assert_eq!(got, Ok((0..names.len()).collect::<Vec<_>>()));
                 return Ok(());
             }
-            let hit = |w: &str, i: usize| names[i].trim().eq_ignore_ascii_case(w) || format!("A{}", i + 1).eq_ignore_ascii_case(w);
+            let place = |w: &str, i: usize| format!("A{}", i + 1).eq_ignore_ascii_case(w);
+            let is_place = |w: &str| (0..names.len()).any(|i| place(w, i));
+            let hit = |w: &str, i: usize| if is_place(w) { place(w, i) } else { names[i].trim().eq_ignore_ascii_case(w) };
             let every_word_hits = wanted.iter().all(|w| (0..names.len()).any(|i| hit(w, i)));
             match got {
                 Ok(picked) => {
@@ -239,6 +277,46 @@ mod tests {
                     prop_assert_eq!(picked, want);
                 }
                 Err(_) => prop_assert!(!every_word_hits),
+            }
+        }
+
+        /// A target reads back as the edit and the document it names: no
+        /// `@` the newest working version, `@vNNNN` that published one,
+        /// `@vNNNN_working` that working one; anything else after `@` is
+        /// refused.
+        #[test]
+        fn edit_targets_name_their_document(
+            name in "[A-Za-z][A-Za-z0-9]{0,8}", code in 1u64..100_000, kind in 0u8..3,
+            junk in prop::sample::select(vec!["", "v1", "v12a", "latest", "v0003_Working", "_working", "v0003_working_working", "0003"]),
+        ) {
+            let uri = format!("entity:/edits/{name}");
+            let version = crate::naming::version_name(code);
+            let (target, want) = match kind {
+                0 => (uri.clone(), EditDocument::Newest),
+                1 => (format!("{uri}@{version}"), EditDocument::Published(version.clone())),
+                _ => (format!("{uri}@{version}_working"), EditDocument::Working(version.clone())),
+            };
+            prop_assert_eq!(parse_edit_target(&target), Ok((uri.clone(), want)));
+            let bad = format!("{uri}@{junk}");
+            prop_assert!(parse_edit_target(&bad).is_err(), "{} was read", bad);
+        }
+
+        /// Asking for tracks by place picks exactly those tracks, whatever
+        /// they are named (a track named `A1` sitting second included):
+        /// what Load Audio from Edit and its refresh rely on.
+        #[test]
+        fn places_pick_exactly_their_tracks(
+            names in prop::collection::vec(prop::sample::select(vec!["A1", "A2", "a3", "A4", "Dialog", ""]), 1..6),
+            mask in prop::collection::vec(any::<bool>(), 6),
+        ) {
+            let names: Vec<String> = names.into_iter().map(str::to_owned).collect();
+            let want: Vec<usize> = (0..names.len()).filter(|&i| mask[i]).collect();
+            let words: Vec<String> = want.iter().map(|i| format!("A{}", i + 1)).collect();
+            let got = select_tracks(&names, &words);
+            if want.is_empty() {
+                prop_assert_eq!(got, Ok((0..names.len()).collect::<Vec<_>>()));
+            } else {
+                prop_assert_eq!(got, Ok(want));
             }
         }
     }

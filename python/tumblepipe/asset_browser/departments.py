@@ -193,7 +193,9 @@ class DepartmentPoolEditor(QWidget):
         self._context_combo.setStyleSheet(COMBO_STYLE)
         self._context_combo.setToolTip(
             "Which pool: the shot, asset or render departments.")
-        self._context_combo.currentTextChanged.connect(self._on_context_changed)
+        # The artist's choice only: ``currentTextChanged`` also fires with ''
+        # as the combo empties when the page is deleted.
+        self._context_combo.textActivated.connect(self._on_context_changed)
         outer.addWidget(self._context_combo)
 
         row = QHBoxLayout()
@@ -323,6 +325,8 @@ class DepartmentPoolEditor(QWidget):
         self._revert_btn.setEnabled(dirty)
 
     def _on_context_changed(self, context: str) -> None:
+        if context == self._context:
+            return
         self._context = context
         self._current = None
         self._refresh_list()

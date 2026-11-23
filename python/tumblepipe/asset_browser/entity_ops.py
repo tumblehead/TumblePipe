@@ -1350,9 +1350,19 @@ class EntityOps:
             # caller to refresh.
             self._index.invalidate()
             return True, f"{label.capitalize()} '{bucket_name}' was already empty."
+        # A Multi may list the bucket (it then stands for what is made in
+        # it): it leaves those Multis, as a deleted shot leaves its own
+        # (entity_files.delete_entity). Left listed, the Multi would hold a
+        # member that is no entity at all. Put back if the removal fails.
+        from tumblepipe.config.groups import (
+            drop_member_everywhere_in, restore_members_in,
+        )
+        memberships = []
         try:
+            memberships = drop_member_everywhere_in(client.config, uri)
             client.config.remove_entity(uri)
         except Exception as exc:
+            restore_members_in(client.config, memberships)
             return False, f"failed to remove {label} '{bucket_name}': {exc}"
         if kind == "category":
             self._index.invalidate(shots=False)

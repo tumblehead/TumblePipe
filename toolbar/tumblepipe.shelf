@@ -40,7 +40,14 @@ shot's frames, roll included, as the edit plays them (each clip's gain and
 fades), and sets the mix as the scene's audio, from the shot's first frame.
 Past the shot's clip you hear the edit around the cut. The WAV is written
 under the edit's renders, named after the edit version it came from; the
-Audio Panel is saved with the scene. Run it again after the cut changes.]]></helpText>
+Audio Panel is saved with the scene.
+
+It keeps itself up to date: whenever this workfile opens and the master
+edit has a newer version, the mix is made again from it in the background
+with the same tracks, followed by name (moving or renaming the edit's other
+tracks changes nothing), and the scene plays the new file. When a track it
+had is gone, or its name now fits more or fewer tracks, the scene keeps its
+sound and the console says why: run this tool again to pick the tracks.]]></helpText>
     <script scriptType="python"><![CDATA[from tumblepipe.pipe.houdini import shot_audio
 shot_audio.load_audio_dialog()]]></script>
   </tool>

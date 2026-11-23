@@ -30,7 +30,9 @@ def main(
     exports: list[dict],
     imports: dict,
     entity_json: dict,
-    renders: list | None = None
+    renders: list | None = None,
+    comp_frames: list | None = None,
+    follows: list | None = None
     ) -> int:
 
     # Check that OCIO has been set
@@ -76,7 +78,12 @@ def main(
             input_path = path_str(input_path),
             exports = exports,
             imports = imports,
-            **({} if renders is None else dict(renders = renders))
+            **({} if renders is None else dict(renders = renders)),
+            # The whole comp's frames: what a re-comp checks a check
+            # render it reads against.
+            **({} if comp_frames is None else dict(comp_frames = comp_frames)),
+            # A re-comp beside a stepped render reads that render.
+            **({} if follows is None else dict(follows = follows))
         ))
 
         # Run script in hython
@@ -118,6 +125,8 @@ def from_config(config: dict, frame_span: BlockRange) -> int:
         config['imports'],
         config['entity'],
         config.get('renders'),
+        config.get('comp_frames'),
+        config.get('follows'),
     )
 
 

@@ -125,3 +125,10 @@ def valid_channel_name(settings) -> bool:
     """A ``channel_name`` naming one channel."""
     if not isinstance(settings, dict): return False
     return isinstance(settings.get('channel_name'), str)
+
+
+def valid_publish_contexts(config) -> bool:
+    """An optional ``publish_contexts``: the ``context.json`` paths of the
+    versions a daily mp4 or a Copy to edit publishes, read when the job
+    runs (``pipe.comp.read_unpublished_reason``)."""
+    return 'publish_contexts' not in config or is_str_list(config['publish_contexts'])

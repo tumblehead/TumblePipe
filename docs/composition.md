@@ -802,7 +802,10 @@ governed by the **Auto-import latest on workfile open** preference (Asset
 Browser → pipeline settings, *on* by default), persisted to
 `$HOUDINI_USER_PREF_DIR/asset_browser/pipeline_prefs.json`; disabling it
 restores load-time-frozen behavior. hython and farm jobs never refresh:
-they keep the versions they were submitted with.
+they keep the versions they were submitted with. The same load also makes
+a shot scene's sound from the edit again from the master edit's newer
+version, whatever this preference, when the scene plays one (see
+[Kept up to date when the workfile opens](asset-browser/index.md#kept-up-to-date-when-the-workfile-opens)).
 
 The refresh runs the nodes only when something they read has moved. After
 running them it keeps, in the scene, a fingerprint per node of what it read:

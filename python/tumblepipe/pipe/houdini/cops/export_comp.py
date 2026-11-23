@@ -14,6 +14,13 @@ here, so the farm renders what the artist saw; the workfile itself is not
 changed. Before it submits, it lists the shot channels no import reads and
 asks.
 
+An import reading a check render (Farm Submit's Step) is frozen only when
+every frame the comp renders, its range on its Step, is one the check
+render has (Soren, 2026-11-22: a Step 2 comp of a Step 2 render); else
+Submit refuses, naming the Step that would go. Such a comp, and any comp
+on a Step above 1, is a check comp: never published, no daily, Copy to
+Edit skipped (``comp.is_check_comp``), and Submit says so before it sends.
+
 A shot no import_render reads (a slap comp in the render scene) has
 nothing to comp on its own: it comps the render of the same Farm Submit
 (#80), so Submit refuses with :class:`NoRenderToComp` and offers to open
@@ -200,13 +207,19 @@ class ShotSubmit:
     # The frames every frozen read covers (comp.covered_range), None when
     # unknown: what From Context comps (#43).
     covered: tuple | None = None
+    # An import reads a check render (on the comp's frames, or the submit
+    # is refused): the comp is a check comp, never published
+    # (comp.is_check_comp).
+    reads_check_render: bool = False
 
 
 def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
     """What a Submit from ``clicked`` sends: one ShotSubmit per shot with an
     export_comp in the workfile, each export_comp in exactly one, each
     shot's imports resolved and frozen. Raises the node error of the first
-    import or export that does not resolve."""
+    import or export that does not resolve, and of an import reading a
+    check render that lacks a frame of the comp's (:func:`comp_frames`,
+    ``comp.check_render_refusal``)."""
     from tumblepipe.pipe.houdini.cops.import_render import find_imports
     clicked_shot = clicked.require_entity_uri()
     submits: dict[str, ShotSubmit] = dict()
@@ -229,9 +242,11 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
             if channel not in submits[key].unread
         ]
     for submit in submits.values():
-        states = []
+        states, node_reads = [], []
         for node in find_imports(submit.shot_uri):
-            states += node.import_states()
+            resolved_reads, node_states = node.resolve_states()
+            node_reads.append((node, resolved_reads))
+            states += node_states
         if not states:
             # A comp with no import reads the render of its Farm Submit
             # (#80); this Submit renders nothing.
@@ -245,6 +260,25 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
         except comp.CompError as error:
             raise submit.settings._error(str(error)) from None
         submit.covered = _covered(submit.shot_uri, reads)
+        # A check render is comped only on frames it has (Soren,
+        # 2026-11-22): known now, From Config being what the reads cover.
+        # Every read of the shot at once, so the frames the refusal names
+        # fit every check render; the first import short of them says so.
+        frames = comp_frames(submit)
+        refusal = comp.check_render_refusal(
+            [resolved for _, resolved_reads in node_reads for resolved in resolved_reads.values()],
+            frames,
+        )
+        if refusal:
+            short = next(
+                node for node, resolved_reads in node_reads
+                if comp.check_render_refusal(resolved_reads.values(), frames)
+            )
+            raise short._error(refusal)
+        submit.reads_check_render = any(
+            resolved.check_step is not None
+            for _, resolved_reads in node_reads for resolved in resolved_reads.values()
+        )
     return list(submits.values())
 
 
@@ -264,6 +298,13 @@ def comp_range(submit: ShotSubmit) -> tuple[int, int]:
         return submit.covered
     render_range = node.get_frame_range().full_range()
     return render_range.first_frame, render_range.last_frame
+
+
+def comp_frames(submit: ShotSubmit) -> comp.Frames:
+    """Every frame ``submit`` renders, ``(first, last, step)``: its range
+    (:func:`comp_range`) on the node's Step."""
+    first, last = comp_range(submit)
+    return first, last, submit.settings.get_step_size()
 
 
 def job_config(submit: ShotSubmit, department: str, input_path: str) -> dict:
@@ -288,6 +329,7 @@ def job_config(submit: ShotSubmit, department: str, input_path: str) -> dict:
             step_size = node.get_step_size(),
             batch_size = node.get_batch_size(),
             copy_to_edit = node.get_copy_to_edit(),
+            reads_check_render = submit.reads_check_render,
             **preview_entry,
         ),
         exports = submit.exports,
@@ -323,6 +365,21 @@ def preview_drops(submits: list[ShotSubmit]) -> list[str]:
     return lines
 
 
+def check_comps(submits: list[ShotSubmit]) -> list[str]:
+    """A line per shot whose comp is a check comp (``comp.is_check_comp``:
+    on a Step above 1, or reading a check render): written to look at,
+    never published, so no daily, and Copy to Edit skipped."""
+    lines = []
+    for submit in submits:
+        node = submit.settings
+        note = comp.check_comp_note(
+            node.get_step_size(), submit.reads_check_render, node.get_copy_to_edit()
+        )
+        if note:
+            lines.append(f'{submit.shot_uri}: {note}')
+    return lines
+
+
 def _confirm_unread(submits: list[ShotSubmit]) -> bool:
     lines = [
         f'{submit.shot_uri}: {", ".join(submit.unread)}'
@@ -330,7 +387,8 @@ def _confirm_unread(submits: list[ShotSubmit]) -> bool:
     ]
     outside = outside_renders(submits)
     drops = preview_drops(submits)
-    if not lines and not outside and not drops: return True
+    checks = check_comps(submits)
+    if not lines and not outside and not drops and not checks: return True
     if not hou.isUIAvailable(): return True
     message = ''
     if lines:
@@ -353,6 +411,13 @@ def _confirm_unread(submits: list[ShotSubmit]) -> bool:
             + '\n'.join(drops) + '\n\n'
             'Previews use the frames that are left (first, middle and last '
             'when none are).'
+        )
+    if checks:
+        message += ('\n\n' if message else '') + (
+            'These comps are check comps:\n\n' + '\n'.join(checks) + '\n\n'
+            'A check comp is a composite version to look at, never the '
+            "shot's comp. For one that publishes, comp on Step 1 from "
+            'published renders.'
         )
     choice = hou.ui.displayMessage(
         message,

@@ -426,9 +426,20 @@ class JsonConfigStore:
 
         The stamp is taken *after* writing so this process does not mistake its
         own write for an external change and pointlessly reload it.
+
+        ``data`` is usually the cached tree itself, changed in place by the
+        caller (``remove_entity``, ``set_own_properties``): when the write
+        fails, that copy no longer matches the file, so it is dropped and
+        the next read reloads what is on disk. Kept, the session would go on
+        seeing a change that was never written (an entity gone that is
+        still there).
         """
         now = _clock()
-        store_json(self.db_file(purpose), data)
+        try:
+            store_json(self.db_file(purpose), data)
+        except BaseException:
+            self.refresh_cache(purpose)
+            raise
         self._cache[purpose] = data
         self._stamps[purpose] = self._stamp(purpose)
         self._checked_at[purpose] = now

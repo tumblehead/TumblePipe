@@ -173,7 +173,10 @@ def rename_entity(entity_uri: Uri, new_name: str) -> Uri:
     would leave all of that under the old name and the renamed entity empty:
     refused with :class:`EntityHasFiles`. Duplicate it under the new name
     instead. Every Multi listing the entity lists it under its new name.
-    Works on the active project.
+    All or nothing: when a Multi's write fails (none of them is then
+    changed, ``rename_member_everywhere``), the config row is renamed back
+    before the error propagates, so no Multi is left listing a name that is
+    gone. Works on the active project.
     """
     if has_entity_files(entity_uri):
         raise EntityHasFiles(
@@ -186,5 +189,15 @@ def rename_entity(entity_uri: Uri, new_name: str) -> Uri:
     from tumblepipe.config.groups import rename_member_everywhere
     new_uri = Uri(entity_uri.purpose, [*entity_uri.segments[:-1], new_name])
     api.config.rename_entity(entity_uri, new_name)
-    rename_member_everywhere(entity_uri, new_uri)
+    try:
+        rename_member_everywhere(entity_uri, new_uri)
+    except BaseException:
+        try:
+            api.config.rename_entity(new_uri, entity_uri.segments[-1])
+        except Exception:
+            logger.exception(
+                'Renaming %s back to %s failed: the config row keeps the new name',
+                new_uri, entity_uri.segments[-1],
+            )
+        raise
     return new_uri

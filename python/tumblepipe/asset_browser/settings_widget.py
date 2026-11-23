@@ -41,6 +41,44 @@ from .libraries import (
 from .departments import GHOST_STYLE, LIST_STYLE, DepartmentPoolEditor
 
 
+#: (bucket word, plural) per flat kind: also the ``kind`` that
+#: ``catalog.delete_bucket`` takes.
+_BUCKET_WORDS = {"assets": ("category", "categories"),
+                 "shots": ("sequence", "sequences")}
+
+
+def remove_empty_message(kind: str, bucket: str, names: list[str]) -> str:
+    """The text of the offer to remove the empty ``names`` once ``kind``
+    (``"assets"`` / ``"shots"``) is flat, ``bucket`` its implicit one."""
+    word, words = _BUCKET_WORDS[kind]
+    entity = "asset" if kind == "assets" else "shot"
+    listing = "\n".join(f"  • {name}" for name in names)
+    these = (f"This {word} holds" if len(names) == 1
+             else f"These {words} hold")
+    them = "it" if len(names) == 1 else "them"
+    return (
+        f"The {entity} list is flat now: new {entity}s go into {bucket}, "
+        f"which the browser does not show.\n\n"
+        f"{these} no {entity}s and nothing else uses {them}:\n\n"
+        f"{listing}\n\n"
+        f"Remove {them}? Cancel keeps {them}, hidden while the list is flat; "
+        f"turning the flat list off shows {them} again."
+    )
+
+
+def confirm_remove_empty(parent, kind: str, bucket: str,
+                         names: list[str]) -> bool:
+    """Whether the artist removes the empty ``names`` (Cancel is the
+    default button)."""
+    from tumbletrove.asset_browser.ui.dialogs import confirm_destructive
+    words = _BUCKET_WORDS[kind][1]
+    return confirm_destructive(
+        parent, title=f"Remove empty {words}",
+        message=remove_empty_message(kind, bucket, names),
+        action_label="Remove",
+    )
+
+
 def _small_label(text: str, color: str) -> QLabel:
     label = QLabel(text)
     label.setWordWrap(True)
@@ -358,13 +396,18 @@ class PipelineSettingsWidget(QWidget):
              "New assets all go into one category the browser does not "
              "show: no category rows in the sidebar, no Category in New "
              "Asset. Existing categories and their assets stay where they "
-             "are; turning this off shows the categories again."),
+             "are; turning this off shows the categories again.\n"
+             "Turning it on offers to remove the categories that are "
+             "still empty (a new project's CHAR, PROP and SET), and asks "
+             "first."),
             ("shots", "Flat shot list (no sequences)",
              "New shots all go into one sequence the browser does not "
              "show: no sequence rows in the sidebar, no Sequence in New "
              "Shot. A project that keeps all its shots in one sequence "
              "goes on using it. Turning this off shows the sequences "
-             "again."),
+             "again.\n"
+             "Turning it on offers to remove the sequences that are "
+             "still empty, and asks first."),
         ):
             box = QCheckBox(label)
             box.setToolTip(tip)
@@ -468,7 +511,8 @@ class PipelineSettingsWidget(QWidget):
     def _on_flat_toggled(self, kind: str, checked: bool) -> None:
         """A flat asset / shot list on or off for the selected project,
         written at once like Layout in Animate; the sidebars and New Asset
-        / New Shot follow."""
+        / New Shot follow. Turned on, it then offers to remove the empty
+        categories / sequences (:meth:`_offer_remove_empty`)."""
         project = self._defaults_project
         if project is None:
             return
@@ -478,9 +522,64 @@ class PipelineSettingsWidget(QWidget):
         except Exception as exc:
             report_failure("Saving the flat list setting", exc)
             return
+        if checked:
+            self._offer_remove_empty(project, kind)
         self._catalog.invalidate_cache()
         self._catalog._refresh.sidebar()
         self._catalog._refresh.grid()
+
+    def _offer_remove_empty(self, project, kind: str) -> None:
+        """Offer to remove the categories (``kind="assets"``) or sequences
+        (``"shots"``) a flat ``project`` leaves empty, listing them; never
+        without the artist's OK.
+
+        The flat setting is already saved: the implicit bucket was chosen
+        first, so it is never offered. Cancel keeps them all and the list
+        stays flat, since flat is what the checkbox asked for and the
+        removal is only a tidy-up on top of it; kept ones are hidden while
+        the list is flat and show again when it is turned off. Removal goes
+        through the browser's own Delete category / sequence
+        (``catalog.delete_bucket``), after the list is worked out again
+        from the config, so one that gained an asset or a Multi while the
+        dialog was open is kept. Nothing is removed by someone who may not
+        edit the project's defaults.
+        """
+        from tumblepipe.config import flat_entities
+        allowed, _reason = access.can_edit_project_defaults(project)
+        if not allowed:
+            return
+        store = project.store()
+        try:
+            names = flat_entities.removable_buckets_in(store, kind)
+            bucket = flat_entities.flat_bucket_in(store, kind) or ""
+        except Exception as exc:
+            report_failure(f"Finding the empty {_BUCKET_WORDS[kind][1]}", exc)
+            return
+        if not names or not confirm_remove_empty(self, kind, bucket, names):
+            return
+        try:
+            still = set(flat_entities.removable_buckets_in(store, kind))
+        except Exception as exc:
+            report_failure(f"Finding the empty {_BUCKET_WORDS[kind][1]}", exc)
+            return
+        word, words = _BUCKET_WORDS[kind]
+        problems = []
+        for name in names:
+            if name not in still:
+                problems.append(
+                    f"{word.capitalize()} '{name}' was kept: it is no longer "
+                    f"empty.")
+                continue
+            try:
+                ok, message = self._catalog.delete_bucket(
+                    project.name, word, name)
+            except Exception as exc:
+                ok, message = False, f"Removing {word} '{name}' failed: {exc}"
+            if not ok:
+                problems.append(message)
+        if problems:
+            QMessageBox.warning(
+                self, f"Remove empty {words}", "\n".join(problems))
 
     def _show_layout_animate(self, project, editable: bool) -> None:
         """The Layout in Animate checkbox for ``project`` (None: off and

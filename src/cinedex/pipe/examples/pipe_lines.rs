@@ -2,8 +2,9 @@
 //! one JSON reply per stdout line, for `tests/test_pipe_parity.py` and
 //! `tests/test_live_parity.py`, `tests/test_previews_parity.py` and
 //! `tests/test_frame_list_parity.py`, `tests/test_expect_parity.py`,
-//! `tests/test_number_expr_parity.py` and
-//! `tests/test_edit_document_parity.py`, which ask Python the same and
+//! `tests/test_number_expr_parity.py`,
+//! `tests/test_edit_document_parity.py` and
+//! `tests/test_shot_audio_parity.py`, which ask Python the same and
 //! compare.
 //!
 //! The project is the one the request names (`project`, `pipeline`,
@@ -201,6 +202,29 @@ fn live_answer(request: &Value) -> Option<Result<Value, String>> {
             let entities: Vec<Vec<String>> =
                 serde_json::from_value(request.get("entities").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
             th_pipe::flat_entities::name_taken(kind, text(request, "name")?, &entities).map(|b| json!(b))
+        }),
+        // The audio tracks (indices of `names`, an edit's audio tracks'
+        // names in order) `cinedex --shot-audio --tracks` mixes for the
+        // words `wanted` (`shot_audio::select_tracks`), or its refusal
+        // (`test_shot_audio_parity`).
+        "select_tracks" => texts(request, "names").and_then(|names| {
+            let wanted = texts(request, "wanted")?;
+            Ok(match th_pipe::shot_audio::select_tracks(&names, &wanted) {
+                Ok(picked) => json!({"picked": picked}),
+                Err(why) => json!({"refused": why}),
+            })
+        }),
+        // The edit and document `cinedex --shot-audio <target>` mixes
+        // (`shot_audio::parse_edit_target`): `{"uri", "newest": true}` or
+        // `{"uri", "version", "published"}`, or its refusal.
+        "edit_target" => text(request, "target").map(|target| {
+            use th_pipe::shot_audio::{EditDocument, parse_edit_target};
+            match parse_edit_target(target) {
+                Ok((uri, EditDocument::Newest)) => json!({"uri": uri, "newest": true}),
+                Ok((uri, EditDocument::Published(version))) => json!({"uri": uri, "version": version, "published": true}),
+                Ok((uri, EditDocument::Working(version))) => json!({"uri": uri, "version": version, "published": false}),
+                Err(why) => json!({"refused": why}),
+            }
         }),
         // A job's frame list as `cinedex --expect` reads it: its frames.
         "expect_frames" => text(request, "text").and_then(th_playlist::frame_list::parse_frame_list).map(|frames| json!(frames)),

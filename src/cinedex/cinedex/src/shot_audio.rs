@@ -19,7 +19,8 @@
 use std::path::Path;
 
 use th_edit::document::Source;
-use th_pipe::shot_audio::{edit_window, sample_window, select_tracks, shot_clip};
+use th_pipe::edit_files;
+use th_pipe::shot_audio::{EditDocument, edit_window, parse_edit_target, sample_window, select_tracks, shot_clip};
 
 use crate::editing::Origin;
 use crate::editor::ProjectPaths;
@@ -28,8 +29,9 @@ use crate::editor::entries::{Resolved, resolve};
 use crate::render::{AUDIO_RATE, voice, write_wav};
 
 /// Mix `shot`'s sound from edit `edit` (`entity:/edits/<name>@vNNNN`, a
-/// published version, or `entity:/edits/<name>`, its newest working one)
-/// into `out`; the summary.
+/// published version, `...@vNNNN_working`, a working one, or
+/// `entity:/edits/<name>`, its newest working one) into `out`; the
+/// summary, which names the version mixed.
 pub fn export(
     paths: &ProjectPaths,
     edit: &str,
@@ -38,14 +40,32 @@ pub fn export(
     tracks: &[String],
     out: &Path,
 ) -> Result<serde_json::Value, String> {
-    let (doc, _) = open_document(paths, Some(edit), &[])?;
-    let version = match &doc.origin {
-        Origin::Published { version, .. } => Some(version.clone()),
-        Origin::Working { version: Some(version), .. } => Some(version.clone()),
-        _ => None,
+    let (edit_uri, document) = parse_edit_target(edit)?;
+    let (edit_doc, version, published) = match document {
+        // That working version, never a newer one saved since: the
+        // tracks were picked by place in it (Load Audio from Edit).
+        EditDocument::Working(version) => {
+            let project = paths.open()?;
+            let name = edit_files::edit_name(&th_pipe::Uri::parse_address(&edit_uri).map_err(|e| e.to_string())?)?;
+            if !edit_files::list_edits(&project)?.contains(&name) {
+                return Err(format!("there is no edit {name}"));
+            }
+            if !edit_files::working_versions(&project, &name)?.contains(&version) {
+                return Err(format!("edit {name} has no working version {version}"));
+            }
+            (edit_files::load_working(&project, &name, &version)?, version, false)
+        }
+        EditDocument::Newest | EditDocument::Published(_) => {
+            let (doc, _) = open_document(paths, Some(edit), &[])?;
+            let (version, published) = match &doc.origin {
+                Origin::Published { version, .. } => (Some(version.clone()), true),
+                Origin::Working { version: Some(version), .. } => (Some(version.clone()), false),
+                _ => (None, false),
+            };
+            let Some(version) = version else { return Err(format!("{edit} has no saved version: it has no sound yet")) };
+            (doc.edit, version, published)
+        }
     };
-    let Some(version) = version else { return Err(format!("{edit} has no saved version: it has no sound yet")) };
-    let edit_doc = doc.edit;
     let fps = edit_doc.fps.max(1);
     let uri = th_pipe::Uri::parse_address(shot).map_err(|e| e.to_string())?;
     let clip = shot_clip(&edit_doc, &uri, |s| match s {
@@ -104,9 +124,9 @@ pub fn export(
     let track_names: Vec<String> =
         picked.iter().map(|&i| if names[i].trim().is_empty() { format!("A{}", i + 1) } else { names[i].clone() }).collect();
     Ok(serde_json::json!({
-        "edit": edit.split('@').next().unwrap_or(edit),
+        "edit": edit_uri,
         "version": version,
-        "published": matches!(doc.origin, Origin::Published { .. }),
+        "published": published,
         "shot": shot,
         "first": first,
         "last": last,
@@ -222,6 +242,38 @@ mod tests {
                 .is_err_and(|e| e.contains("Nope"))
         );
         assert!(export(&paths, "entity:/edits/Main", "entity:/shots/SQ010/SH020", None, &[], &only).is_err_and(|e| e.contains("not in")));
+    }
+
+    /// A working version asked for by `@vNNNN_working` is mixed as it is,
+    /// a newer one saved since notwithstanding (its tracks' places were
+    /// read from it), and the summary names it; the edit by name is its
+    /// newest working version; a working version it does not have is
+    /// refused, as is a target that names no version.
+    #[test]
+    fn a_working_version_asked_for_is_the_one_mixed() {
+        let (dir, paths) = project();
+        let project = paths.open().unwrap();
+        // v0002: Music first, Dialog gone.
+        let mut newer = th_pipe::edit_files::load_working(&project, "Main", "v0001").unwrap();
+        newer.audio.reverse();
+        newer.audio.pop();
+        th_pipe::edit_files::save_working(&project, "Main", &newer, None, "").unwrap();
+        let out = dir.path().join("out").join("a1.wav");
+        let shot = "entity:/shots/SQ010/SH010";
+        let summary = export(&paths, "entity:/edits/Main@v0001_working", shot, None, &["A1".into()], &out).unwrap();
+        assert_eq!(
+            (&summary["edit"], &summary["version"], &summary["published"], &summary["tracks"]),
+            (
+                &serde_json::json!("entity:/edits/Main"),
+                &serde_json::json!("v0001"),
+                &serde_json::json!(false),
+                &serde_json::json!(["Dialog"])
+            )
+        );
+        let summary = export(&paths, "entity:/edits/Main", shot, None, &["A1".into()], &out).unwrap();
+        assert_eq!((&summary["version"], &summary["tracks"]), (&serde_json::json!("v0002"), &serde_json::json!(["Music"])));
+        assert!(export(&paths, "entity:/edits/Main@v0009_working", shot, None, &[], &out).is_err_and(|e| e.contains("v0009")));
+        assert!(export(&paths, "entity:/edits/Main@latest", shot, None, &[], &out).is_err());
     }
 
     proptest! {

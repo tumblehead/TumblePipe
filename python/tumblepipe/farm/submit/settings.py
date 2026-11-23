@@ -890,6 +890,7 @@ def entity_warnings(
                     f"{follow_first}-{follow_last}: a frame no render "
                     f"made is missing from the comp"
                 )
+    warnings.extend(comp_step_warnings(resolved))
 
     if into_version(resolved) == repair.TARGET_NEW:
         warnings.extend(frame_list_warnings(resolved))
@@ -1081,6 +1082,25 @@ def step_warnings(resolved: dict) -> list[str]:
     if resolved.get('copy_to_edit'):
         text += ', Copy to edit skipped'
     return [text]
+
+
+def comp_step_warnings(resolved: dict) -> list[str]:
+    """The Warnings-column line of a check comp: not published, so no daily
+    (and Copy to edit skipped), as a stepped render
+    (``pipe.comp.is_check_comp``). A Comp on a Step above 1 is one, and so
+    is a Comp beside a stepped render, which reads that check render
+    (``submission.comp_reads_check_render``), on any Step. A comp that
+    reads a check render on disk is one too, which only the farm knows
+    when it resolves the imports."""
+    from tumblepipe.pipe import comp
+    if not resolved.get('comp'):
+        return []
+    step = _int(resolved.get('comp_step')) or 1
+    note = comp.check_comp_note(
+        step, submission.comp_reads_check_render(resolved),
+        bool(resolved.get('comp_copy_to_edit')),
+    )
+    return [f"comp {note}"] if note else []
 
 
 def frame_list_warnings(resolved: dict) -> list[str]:

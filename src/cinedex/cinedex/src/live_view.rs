@@ -4,8 +4,8 @@
 //!
 //! On the master edit, the view is the shot's first clip (the earliest on
 //! the video tracks), looping from the start of the clip before it on its
-//! track to the end of the clip after it (the edit's ends where there is
-//! none), the playhead on the frame Houdini is at. The window comes to the
+//! track to the end of the clip after it (the shot's clip's own ends where
+//! there is none), the playhead on the frame Houdini is at. The window comes to the
 //! front without taking the keyboard from Houdini (`crate::raise`; a
 //! minimised one on Linux does take it, the only way GNOME restores it).
 //!

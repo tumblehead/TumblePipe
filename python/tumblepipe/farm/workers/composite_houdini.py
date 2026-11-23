@@ -9,7 +9,11 @@ RV and Nuke.
 A re-comp (Farm Submit's Comp column) froze nothing: ``imports`` is empty,
 so every import of the shot resolves on its own settings now, and its
 export has no node path, so the shot's export_comp on that layer is found.
-Either way each written layer's ``context.json`` records what was read.
+An import that resolves to a check render fails the job unless the check
+render has every frame of the comp (``comp_frames``,
+``comp.check_render_refusal``). Either way each written layer's
+``context.json`` records what was read, and ``"published": false`` when a
+read is a check render (a check comp, ``comp.is_check_comp``).
 
 A comp of its submit's render (#80: a workfile comp with no
 th::import_render, ``renders`` set) points the Slap Comp Import nodes its
@@ -69,27 +73,56 @@ def no_frame_cache():
             parm.set(0)
 
 
-def resolve_imports(entity_uri: Uri) -> tuple[dict | None, str | None]:
+def resolve_imports(entity_uri: Uri, frames=None, follows=None) -> tuple[dict | None, bool, str | None]:
     """A re-comp's imports: every import_render of the shot resolved on
-    its own settings now. ``(plan, None)`` with what each read, or
-    ``(None, error)``."""
+    its own settings now. ``(plan, check, None)`` with what each read and
+    whether one is a check render, or ``(None, False, error)``.
+
+    A check render is read only when it has every frame of the comp's
+    ``frames`` (``[first, last, step]``, the job's ``comp_frames``;
+    ``pipe.comp.check_render_refusal``); without them, never.
+
+    Beside a stepped render (``follows``, ``[{channel, department,
+    version}]``) each import is first pinned to that render
+    (``pipe.comp.follow_pins``), so it reads the check render and not the
+    shot's older published render."""
     from tumblepipe.pipe.houdini.cops import import_render
     import tumblepipe.pipe.houdini.nodes as ns
     for native in ns.list_by_node_type(import_render.TYPE_NAME, 'Cop'):
         _point_at_shot(native, entity_uri)
         _own_frames(native)
-    states = []
+    states, node_reads = [], []
+    frames = None if frames is None else tuple(frames)
     for node in import_render.find_imports(entity_uri):
+        if follows:
+            all_channels = node.is_all_channels()
+            pins = comp.follow_pins(
+                follows, node.get_channel_name(), all_channels, node.get_version_setting(),
+            )
+            if all_channels:
+                node.pin_channels(pins)
+            elif pins:
+                (department, version), = pins.values()
+                node.pin(department, version)
         try:
-            node_states = node.import_states()
+            reads, node_states = node.resolve_states()
         except ns.NodeError as exc:
-            return None, str(exc)
+            return None, False, str(exc)
         for state in node_states:
             print(f'  {node.path()}: {state.channel} {state.resolved_department} {state.resolved_version}')
+        node_reads.append((node, reads))
         states += node_states
     if not states:
-        return None, f'the workfile has no th::import_render for {entity_uri}'
-    return comp.freeze_plan(states), None
+        return None, False, f'the workfile has no th::import_render for {entity_uri}'
+    # Every read at once, as Submit Composite checks them.
+    every = [read for _, reads in node_reads for read in reads.values()]
+    refusal = comp.check_render_refusal(every, frames)
+    if refusal:
+        short = next(node for node, reads in node_reads
+                     if comp.check_render_refusal(reads.values(), frames))
+        return None, False, f'{short.path()}: {refusal}'
+    check = any(read.check_step is not None for read in every)
+    return comp.freeze_plan(states), check, None
 
 
 def report_uncovered(entity_uri: Uri, reads: dict, frames) -> list[str]:
@@ -130,21 +163,27 @@ def find_export(layer: str, entity_uri: Uri):
     return found[0], None
 
 
-def record_reads(exports: list[dict], reads: dict):
+def record_reads(exports: list[dict], reads: dict, check_render: bool = False):
     """Write what the comp read (``{channel: {department, version}}``,
     ``comp.provenance``) into each written layer's context.json (the
     version folder: the merged comp's frames sit in it, a channel's in its
-    ``beauty`` folder)."""
+    ``beauty`` folder). A comp that read a check render is a check comp
+    (``comp.is_check_comp``): its context.json says ``"published": false``,
+    so nothing takes it for the shot's comp, whatever the submit knew."""
     for export in exports:
         context_path = comp.layer_context_dir(export['output_path'], export['layer']) / 'context.json'
         context = load_json_if_exists(context_path) or dict()
         context['reads'] = reads
+        if check_render:
+            context['published'] = False
         store_json(context_path, context)
 
 
-def pin_imports(imports: dict, entity_uri: Uri) -> str | None:
+def pin_imports(imports: dict, entity_uri: Uri) -> tuple[str | None, bool]:
     """Set every import_render to the version the submit froze and point it
-    there; the error text when one cannot be.
+    there: ``(None, check)``, ``check`` whether one reads a check render
+    (the submit checked it against the comp's frames), or ``(error,
+    False)`` when one cannot be.
 
     The worker loads a copy of the workfile from the job's data folder, where
     'from_context' resolves no shot, so an import on it is pointed at the
@@ -152,12 +191,13 @@ def pin_imports(imports: dict, entity_uri: Uri) -> str | None:
     their member already)."""
     from tumblepipe.pipe.houdini.cops.import_render import ImportRender
     import tumblepipe.pipe.houdini.nodes as ns
+    check = False
     # An all-channels import is frozen per channel (plan key
     # "<node path>#<channel>"): gather its pins first.
     for node_path, pins in comp.pins_by_node(imports).items():
         native = hou.node(node_path)
         if native is None:
-            return f'Import not found: {node_path}'
+            return f'Import not found: {node_path}', False
         node = ImportRender(native)
         _point_at_shot(native, entity_uri)
         _own_frames(native)
@@ -169,21 +209,22 @@ def pin_imports(imports: dict, entity_uri: Uri) -> str | None:
                 return (
                     f'{node_path} reads channel "{node.get_channel_name()}", '
                     f'the submit froze "{channel}"'
-                )
+                ), False
             node.pin(department, version)
         try:
             reads = node.execute()
         except ns.NodeError as exc:
-            return str(exc)
+            return str(exc), False
         frozen = set(pins)
         if set(reads) != frozen:
             return (
                 f'{node_path} reads channels {sorted(reads)}, the submit '
                 f'froze {sorted(frozen)}'
-            )
+            ), False
         for channel, resolved in reads.items():
             print(f'  {node_path}: {channel} {resolved.department} {resolved.version}')
-    return None
+        check = check or any(resolved.check_step is not None for resolved in reads.values())
+    return None, check
 
 
 def main(
@@ -194,7 +235,9 @@ def main(
     exports: list[dict],
     imports: dict,
     entity_json: dict,
-    renders: list | None = None
+    renders: list | None = None,
+    comp_frames: list | None = None,
+    follows: list | None = None
     ) -> int:
 
     # Check that OCIO has been set
@@ -245,16 +288,17 @@ def main(
         except (slap_comp.SceneCompError, comp.CompError) as exc:
             return error(str(exc))
         reads = comp.render_reads(renders)
+        check_render = False
     else:
         if imports:
             headline('Pinning imports')
-            problem = pin_imports(imports, entity_uri)
+            problem, check_render = pin_imports(imports, entity_uri)
             if problem is not None:
                 return error(problem)
             plan = imports
         else:
             headline('Resolving imports')
-            plan, problem = resolve_imports(entity_uri)
+            plan, check_render, problem = resolve_imports(entity_uri, comp_frames, follows)
             if problem is not None:
                 return error(problem)
         try:
@@ -307,7 +351,7 @@ def main(
 
         # What the comp read, then the receipts: a frame is done when every
         # layer of it is written
-        record_reads(exports, reads)
+        record_reads(exports, reads, check_render)
         headline('Creating output receipts')
         for frame_index, layers in written.items():
             current_receipt_path = frame_file(receipt_path, frame_index)
@@ -334,6 +378,8 @@ def from_config(config: dict) -> int:
         config['imports'],
         config['entity'],
         config.get('renders'),
+        config.get('comp_frames'),
+        config.get('follows'),
     )
 
 
