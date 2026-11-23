@@ -12,6 +12,47 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.122.0 — 2026-11-23
+
+### Features
+- feat(farm-submit): a Comp beside a stepped render goes on frames it renders (`a00b102e`)
+- feat(comp): comp a check render on the frames it has, as a check comp (`ea30fd7f`)
+- feat(houdini): a shot scene's edit audio follows the master edit's new versions (`a21aab96`)
+- feat(asset-browser): turning a flat list on offers to remove the empty categories (`52443e18`)
+
+### Fixes
+- fix(cinedex): a clip zoomed under a pixel no longer draws over the next (`3374aa7b`)
+- fix(entity-files): a rename whose Multi update fails is renamed back (`c344a779`)
+- fix(shot-audio): mix exactly the edit version the tracks were picked in (`c8428b21`)
+- fix(comp): a comp's daily and Copy to edit read its published flag when they run (`0f480562`)
+- fix(groups): taking an entity out of its Multis is all or nothing (`fda5cf33`)
+- fix(config): a failed write no longer leaves the change in the store's cache (`bba4e7bd`)
+- fix(farm-submit): the Warnings column names a Comp beside a stepped render as a check comp (`4d7c0442`)
+- fix(entity-editor): pickers answer the artist, not their own teardown (`5dd35f22`)
+- fix(cinedex): --tracks takes a place before a track of that name (`c404c7f1`)
+- fix(asset-browser): Delete category / sequence takes it out of the Multis that list it (`cae7a8c0`)
+- fix(cinedex): closing the editor ends its process (`bd474824`)
+- fix(import-render): a camera that cannot cook no longer fails the renders (`6204c8b1`)
+
+### Documentation
+- docs(upgrading): v1.122.0 (`6743c62c`)
+- docs: upgrading notes for shot audio, Cinedex --shot-audio and failed writes; combo gate (`29e5ac5f`)
+- docs(compositing): a comp's daily and Copy to edit skip once it reads a check render (`23defe65`)
+- docs(cinedex): say exactly what Live view loops over (`b24bf083`)
+- docs(compositing): a comp of a check render on its frames, and check comps (`3663a600`)
+- docs(cinedex): --shot-audio usage names track places (`ba5cc496`)
+
+### Tests
+- test(quality-gates): combo handlers must expect nothing chosen (`666e9507`)
+- test(asset-browser): deletes and Multi edits never leave a Multi listing a missing entity (`a14b62c3`)
+- test(shot-audio): Python's track asks against Cinedex's pick, and a flat list after removal (`2b68249e`)
+- test(comp): the seams of a comp of a check render, and the re-comp's follows in hython (`6e8042ef`)
+- test(farm): re-record Farm Submit's cell states over stepped comps (`fc7122d9`)
+- test(entity-editor): no exit abort, and say how a Qt harness ended (`60bd0548`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.121.0 (`e5b8fe26`)
+
 ## v1.121.0 — 2026-11-22
 
 ### Features

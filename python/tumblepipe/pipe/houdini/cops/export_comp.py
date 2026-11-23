@@ -14,11 +14,15 @@ here, so the farm renders what the artist saw; the workfile itself is not
 changed. Before it submits, it lists the shot channels no import reads and
 asks.
 
-An import reading a check render (Farm Submit's Step) is frozen only when
-every frame the comp renders, its range on its Step, is one the check
-render has (Soren, 2026-11-22: a Step 2 comp of a Step 2 render); else
-Submit refuses, naming the Step that would go. Such a comp, and any comp
-on a Step above 1, is a check comp: never published, no daily, Copy to
+An import reading a check render (Farm Submit's Step) is frozen on any
+frames inside the check render's range (Soren, 2026-11-23: a Step 1 comp of
+a Step 2 render); a frame the check render lacks is held from its nearest
+rendered frame, as the import holds it here (``comp.held_frames``), and
+Submit names the held frames before it sends; an import whose Missing
+Frames is Empty leaves them black, and Submit says that instead
+(``comp.missing_note``). A comp reaching outside the
+check render's range is refused, naming the range. Such a comp, and any
+comp on a Step above 1, is a check comp: never published, no daily, Copy to
 Edit skipped (``comp.is_check_comp``), and Submit says so before it sends.
 
 A shot no import_render reads (a slap comp in the render scene) has
@@ -207,10 +211,14 @@ class ShotSubmit:
     # The frames every frozen read covers (comp.covered_range), None when
     # unknown: what From Context comps (#43).
     covered: tuple | None = None
-    # An import reads a check render (on the comp's frames, or the submit
-    # is refused): the comp is a check comp, never published
+    # An import reads a check render (inside its range, or the submit is
+    # refused): the comp is a check comp, never published
     # (comp.is_check_comp).
     reads_check_render: bool = False
+    # The frames of the comp a check render it reads lacks, held from the
+    # nearest rendered frame, or black where the import's Missing Frames
+    # is Empty (comp.missing_note); empty when none.
+    held: str = ''
 
 
 def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
@@ -218,7 +226,7 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
     export_comp in the workfile, each export_comp in exactly one, each
     shot's imports resolved and frozen. Raises the node error of the first
     import or export that does not resolve, and of an import reading a
-    check render that lacks a frame of the comp's (:func:`comp_frames`,
+    check render the comp's frames reach outside of (:func:`comp_frames`,
     ``comp.check_render_refusal``)."""
     from tumblepipe.pipe.houdini.cops.import_render import find_imports
     clicked_shot = clicked.require_entity_uri()
@@ -260,24 +268,25 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
         except comp.CompError as error:
             raise submit.settings._error(str(error)) from None
         submit.covered = _covered(submit.shot_uri, reads)
-        # A check render is comped only on frames it has (Soren,
-        # 2026-11-22): known now, From Config being what the reads cover.
-        # Every read of the shot at once, so the frames the refusal names
-        # fit every check render; the first import short of them says so.
+        # A check render is comped inside its range, the frames it lacks
+        # held (Soren, 2026-11-23): known now, From Config being what the
+        # reads cover. Every read of the shot at once, so the range the
+        # refusal names is inside every check render; the first import
+        # short of it says so.
         frames = comp_frames(submit)
-        refusal = comp.check_render_refusal(
-            [resolved for _, resolved_reads in node_reads for resolved in resolved_reads.values()],
-            frames,
-        )
+        every = [resolved for _, resolved_reads in node_reads for resolved in resolved_reads.values()]
+        refusal = comp.check_render_refusal(every, frames)
         if refusal:
             short = next(
                 node for node, resolved_reads in node_reads
                 if comp.check_render_refusal(resolved_reads.values(), frames)
             )
             raise short._error(refusal)
-        submit.reads_check_render = any(
-            resolved.check_step is not None
-            for _, resolved_reads in node_reads for resolved in resolved_reads.values()
+        submit.reads_check_render = any(resolved.check_step is not None for resolved in every)
+        submit.held = comp.missing_note(
+            [(node.get_missing_setting(), resolved)
+             for node, resolved_reads in node_reads for resolved in resolved_reads.values()],
+            frames,
         )
     return list(submits.values())
 
@@ -368,12 +377,15 @@ def preview_drops(submits: list[ShotSubmit]) -> list[str]:
 def check_comps(submits: list[ShotSubmit]) -> list[str]:
     """A line per shot whose comp is a check comp (``comp.is_check_comp``:
     on a Step above 1, or reading a check render): written to look at,
-    never published, so no daily, and Copy to Edit skipped."""
+    never published, so no daily, and Copy to Edit skipped. A comp that
+    holds frames of a check render names them, and those an import on
+    Missing Frames Empty leaves black (``comp.missing_note``)."""
     lines = []
     for submit in submits:
         node = submit.settings
         note = comp.check_comp_note(
-            node.get_step_size(), submit.reads_check_render, node.get_copy_to_edit()
+            node.get_step_size(), submit.reads_check_render, node.get_copy_to_edit(),
+            submit.held,
         )
         if note:
             lines.append(f'{submit.shot_uri}: {note}')
@@ -419,6 +431,11 @@ def _confirm_unread(submits: list[ShotSubmit]) -> bool:
             "shot's comp. For one that publishes, comp on Step 1 from "
             'published renders.'
         )
+        if any(submit.held for submit in submits):
+            message += (
+                ' A held frame shows the nearest frame the check render '
+                'has (th::import_render\'s Missing Frames).'
+            )
     choice = hou.ui.displayMessage(
         message,
         buttons = ('Submit anyway', 'Cancel'),

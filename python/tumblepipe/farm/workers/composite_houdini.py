@@ -9,9 +9,12 @@ RV and Nuke.
 A re-comp (Farm Submit's Comp column) froze nothing: ``imports`` is empty,
 so every import of the shot resolves on its own settings now, and its
 export has no node path, so the shot's export_comp on that layer is found.
-An import that resolves to a check render fails the job unless the check
-render has every frame of the comp (``comp_frames``,
-``comp.check_render_refusal``). Either way each written layer's
+An import that resolves to a check render fails the job when the comp's
+frames (``comp_frames``) reach outside the check render's range
+(``comp.check_render_refusal``); inside it, the frames the check render
+lacks are held from the nearest rendered one, by the import's own Missing
+Frames (``pipe.hold_frames``), as in the session, or black on Empty: the log
+says which (``comp.missing_note``). Either way each written layer's
 ``context.json`` records what was read, and ``"published": false`` when a
 read is a check render (a check comp, ``comp.is_check_comp``).
 
@@ -78,9 +81,10 @@ def resolve_imports(entity_uri: Uri, frames=None, follows=None) -> tuple[dict | 
     its own settings now. ``(plan, check, None)`` with what each read and
     whether one is a check render, or ``(None, False, error)``.
 
-    A check render is read only when it has every frame of the comp's
-    ``frames`` (``[first, last, step]``, the job's ``comp_frames``;
-    ``pipe.comp.check_render_refusal``); without them, never.
+    A check render is read only when the comp's ``frames`` (``[first,
+    last, step]``, the job's ``comp_frames``) are inside its range
+    (``pipe.comp.check_render_refusal``), the frames it lacks held; without
+    them, never.
 
     Beside a stepped render (``follows``, ``[{channel, department,
     version}]``) each import is first pinned to that render
@@ -122,6 +126,15 @@ def resolve_imports(entity_uri: Uri, frames=None, follows=None) -> tuple[dict | 
                      if comp.check_render_refusal(reads.values(), frames))
         return None, False, f'{short.path()}: {refusal}'
     check = any(read.check_step is not None for read in every)
+    if check and frames is not None:
+        # Each import's own Missing Frames decides: held from the nearest
+        # rendered frame, or black on Empty.
+        note = comp.missing_note(
+            [(node.get_missing_setting(), read) for node, reads in node_reads for read in reads.values()],
+            frames,
+        )
+        if note:
+            print(f'WARNING: comps {note}: a check comp')
     return comp.freeze_plan(states), check, None
 
 

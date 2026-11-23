@@ -125,8 +125,9 @@ render; ``pipe.comp.resolve_render``). The frames a version has are those its
 frame as HScript arithmetic (:func:`frame_token`): no cook lists a
 directory. What was built is kept in ``held``; changing the setting
 rebuilds the dive. A submit of a comp reading a check render goes to the
-farm only when every frame the comp renders is one the check render has
-(a Step 2 comp of a Step 2 render), and is refused otherwise
+farm on any frames inside the check render's range, the frames it lacks
+held as here (a Step 1 comp of a Step 2 render; ``comp.held_frames``), and
+is refused when the comp reaches outside it
 (``comp.check_render_refusal``).
 """
 
@@ -1253,9 +1254,10 @@ class ImportRender(TimeOffsetNode, EntityNode):
     def import_states(self, frames: comp.Frames | None = None) -> list[comp.ImportState]:
         """Execute, and say what a submit freezes: one state per channel
         read, keyed by ``pipe.comp.plan_key``. Raises the node's error when
-        a check render it reads lacks a frame of the comp's ``frames``
-        (``(first, last, step)``; ``pipe.comp.check_render_refusal``), and
-        for any check render when they are not known (None)."""
+        the comp's ``frames`` (``(first, last, step)``) reach outside a
+        check render it reads (``pipe.comp.check_render_refusal``; inside
+        it, the frames it lacks are held), and for any check render when
+        they are not known (None)."""
         reads, states = self.resolve_states()
         refusal = comp.check_render_refusal(reads.values(), frames)
         if refusal:

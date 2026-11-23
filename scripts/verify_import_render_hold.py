@@ -25,10 +25,11 @@ is, so a cooked pixel tells which file was read. Then:
   as before; Hold Nearest Frame holds its first and last frame there;
 - with a time offset, the scene's frame less the offset is what is held;
 - an all-channels import (``latest`` only) holds nothing on Automatic;
-- a submit's freeze of an import reading a check render takes it on the
-  check render's own frames (every 4th), and refuses every frame of it
-  (naming Step 4), frames off its first (naming the frame to start on),
-  and frames not known.
+- a submit's freeze of an import reading a check render takes it on any
+  frames inside its range (Soren, 2026-11-23): its own (every 4th, none
+  held), every frame (the 9 between held, ``comp.held_frames``, as the
+  File COPs hold them), and frames off its first; it refuses frames
+  reaching outside its range (naming the range) and frames not known.
 
 Needs Houdini with the comp HDAs compiled and on HOUDINI_OTLSCAN_PATH, and
 this checkout's python/ on PYTHONPATH (the preflight ``hython`` stage sets
@@ -244,18 +245,32 @@ def main():
     refused = submit_refusal()
     check('a submit of an import reading a check render, its frames not known, is refused, saying why',
           'check render' in refused and 'v0002' in refused, refused)
-    # Soren, 2026-11-22: a comp on the check render's own frames goes.
-    check('a submit of a comp on the check render\'s frames (every 4th) freezes it',
+    # Soren, 2026-11-23: a comp of a check render goes on any frames inside
+    # its range, the frames it lacks held.
+    check('a submit of a comp on the check render\'s frames (every 4th) freezes it, holding none',
           submit_refusal((FIRST, LAST, STEP)) == ''
           and [(s.resolved_department, s.resolved_version)
-               for s in node.import_states((FIRST, LAST, STEP))] == [('render', 'v0002')],
+               for s in node.import_states((FIRST, LAST, STEP))] == [('render', 'v0002')]
+          and comp.held_frames(node.execute().values(), (FIRST, LAST, STEP)) == [],
           submit_refusal((FIRST, LAST, STEP)))
-    refused = submit_refusal((FIRST, LAST, 1))
-    check('a submit of every frame of it is refused, naming Step 4',
-          'v0002' in refused and f'comp on Step {STEP},' in refused, refused)
-    refused = submit_refusal((FIRST + 1, LAST, STEP))
-    check('a submit off its first frame is refused, naming the frame to start on',
-          f'comp on Step {STEP} from frame {FIRST + STEP},' in refused, refused)
+    held = comp.held_frames(node.execute().values(), (FIRST, LAST, 1))
+    lacking = [f for f in range(FIRST, LAST + 1) if (f - FIRST) % STEP]
+    check('a submit of every frame of it (Step 1) freezes it, holding the frames between',
+          submit_refusal((FIRST, LAST, 1)) == '' and held == lacking,
+          f'{submit_refusal((FIRST, LAST, 1))} {held}')
+    # The frames held are the ones the File COPs read from another frame.
+    moved = [f for f in range(FIRST, LAST + 1) if read_frames(node, f) != {f}]
+    check('the frames a submit says are held are the ones the dive reads from a nearer rendered frame',
+          moved == lacking, f'{moved} {lacking}')
+    note = comp.held_note(node.execute().values(), (FIRST, LAST, 1))
+    check('the held note names every frame and the check render\'s step',
+          note == f'every frame of {FIRST}-{LAST} from a render every 4th frame: '
+                  f'{len(lacking)} frames held', note)
+    check('a submit off its first frame freezes it too',
+          submit_refusal((FIRST + 1, LAST, STEP)) == '', submit_refusal((FIRST + 1, LAST, STEP)))
+    refused = submit_refusal((FIRST - 1, LAST, 1))
+    check('a submit reaching outside its range is refused, naming the range',
+          'v0002' in refused and f'comp inside {FIRST}-{LAST},' in refused, refused)
     native.parm('version').set('latest')
     node.execute()
     check('back on latest, a submit freezes the published version',

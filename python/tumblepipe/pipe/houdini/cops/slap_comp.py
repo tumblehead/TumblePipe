@@ -14,6 +14,9 @@ the same Farm Submit (Soren, 2026-11-12):
   Slap Comp Import at the frames that render wrote, a File COP per AOV and
   channel (several channels' beauties laid over each other, back to front,
   ``pipe.comp.slap_reads``), wired where the Slap Comp Import's output was.
+  A render on a Step above 1 is read holding its nearest rendered frame
+  over the frames it lacks (``pipe.comp.slap_frame_token``), as
+  th::import_render's Missing Frames does.
 
 What is decided lives in ``pipe.comp`` (``SceneComp``, ``slap_reads``,
 ``scene_comp_problems``); this is the Houdini half.
@@ -164,7 +167,8 @@ def _unlock_parents(native):
 
 def _configure_file(file_node, aov, label: str, type_token: str):
     render_range = aov.get_frame_range()
-    file_node.parm('filename').set(path_str(aov.get_aov_frame_path('$F4')))
+    file_node.parm('filename').set(path_str(aov.get_aov_frame_path(
+        comp.slap_frame_token(render_range))))
     if render_range is not None:
         file_node.parm('videoframestart').deleteAllKeyframes()
         file_node.parm('videoframestart').set(render_range.first_frame)

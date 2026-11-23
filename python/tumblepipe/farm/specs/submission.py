@@ -191,40 +191,31 @@ def comp_step(settings: dict) -> int:
     return step if step is not None and step > 0 else 1
 
 
-def stepped_comp_problems(settings: dict) -> list[str]:
-    """Why a Comp beside a stepped render (Farm Submit's Step above 1, one
-    range) makes no comp: it comps a frame the render does not make (Soren,
-    2026-11-22). Every comp frame must be one of the render's stepped
-    frames (from the first frame of its range, rolls included): its Step a
-    multiple of the render's, from a frame the render makes. Such a comp
-    reads that render and is a check comp (``pipe.comp.is_check_comp``).
-    The problem names the Step, and start, that would go
-    (``pipe.comp.frames_that_fit``). Frames that end before they start, or
-    reach past the render, are :func:`comp_frame_problems`' to say."""
-    from tumblepipe.pipe import comp as pipe_comp
-    step = render_step(settings)
+def stepped_comp_frames(settings: dict) -> tuple[tuple[int, int, int], tuple[int, int, int]] | None:
+    """``(comp, render)``, each ``(first, last, step)``, of a Comp that
+    reads the stepped render beside it (:func:`comp_reads_check_render`),
+    its frames inside the render's; None for any other Comp.
+
+    Such a comp goes on any frames inside the render's (Soren,
+    2026-11-23: a Step 1 comp of a Step 2 render): a frame the render does
+    not make is held from the nearest one it does, and the Warnings column
+    says how many (``pipe.comp.held_text``). It is a check comp
+    (``pipe.comp.is_check_comp``). Frames that end before they start, or
+    reach past the render, are :func:`comp_frame_problems`' to refuse."""
+    if not comp_reads_check_render(settings):
+        return None
+    ranges, _error = frame_list(settings)
+    if frame_ranges.is_multi(ranges):
+        return None     # refused on its own: Comp follows one range
     span = rendered_span(settings)
-    if step <= 1 or span is None:
-        return []
+    if span is None:
+        return None
     first, last = comp_frames(
         settings.get('comp_first_frame'), settings.get('comp_last_frame'), span,
     )
     if first > last or first < span[0] or last > span[1]:
-        return []
-    frames, render = (first, last, comp_step(settings)), (span[0], span[1], step)
-    if pipe_comp.frames_inside(frames, render):
-        return []
-    fit = pipe_comp.frames_that_fit(frames, [render])
-    if fit is None:
-        fix = f"no frame of {first}-{last} is one it renders, so "
-    else:
-        fix = f"{pipe_comp.fit_text(frames, fit)}, "
-    return [
-        f"Comp beside a stepped render comps only frames it renders: the comp "
-        f"is {pipe_comp.comp_frames_text(frames)}, the render every "
-        f"{_ordinal(step)} frame of {span[0]}-{span[1]}: {fix}set the "
-        f"render's Step to 1, or untick Comp"
-    ]
+        return None
+    return (first, last, comp_step(settings)), (span[0], span[1], render_step(settings))
 
 
 def comp_reads_check_render(settings: dict) -> bool:
@@ -240,12 +231,6 @@ def comp_reads_check_render(settings: dict) -> bool:
         and render_step(settings) > 1
         and not repair.is_repair(into_version(settings))
     )
-
-
-def _ordinal(step: int) -> str:
-    if step % 100 in (11, 12, 13):
-        return f"{step}th"
-    return f"{step}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(step % 10, 'th')}"
 
 
 def turned_off_problems(settings: dict, off: Collection[str]) -> list[str]:
@@ -311,8 +296,6 @@ def problems(
             f"Comp follows a published render, and "
             f"{frame_ranges.NOT_PUBLISHED}: untick Comp, or render one range"
         )
-    if comp and render and not frame_ranges.is_multi(ranges) and not repairing:
-        found.extend(stepped_comp_problems(settings))
     if comp and render and settings.get('render_mode') not in FULL_RENDER_MODES:
         found.append(
             "Comp waits for the full render: tick Full range in the Render "

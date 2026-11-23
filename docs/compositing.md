@@ -448,10 +448,15 @@ the shot's newest composite workfile (a Multi's, when one covers the shot)
 is submitted as one merged-comp version, on its own over the renders on
 disk, or ticked beside **Render** to start after that render's denoise. Its
 imports on `latest` resolve when the job runs; one that resolves to a
-[check render](nodes/comp.md#reading-a-check-render) without every frame
-the comp renders fails the job, naming the **Step** that would go. Beside
-a stepped render the imports read that render instead (pinned to its
-versions when the job runs), and the comp is a check comp. The cell shows whether the
+[check render](nodes/comp.md#reading-a-check-render) comps on any frames
+inside its range, each frame it lacks holding the nearest one it has (the
+log names how many, `WARNING: comps every frame of … : N frames held`), or
+black where the import's **Missing Frames** is Empty (`… : N frames black
+(Missing Frames: Empty)`),
+and a comp reaching outside its range fails the job, naming the range.
+Beside a stepped render the imports read that render instead (pinned to
+its versions when the job runs), on any **Step** of the comp, holding the
+frames the render does not make, and the comp is a check comp. The cell shows whether the
 newest comp is older than the newest render. Its settings follow the
 node's: **Preview frames**, **Frames** (the render's range, else the shot's,
 unless you type your own), **Step**, **Batch**, **Pool**, **Priority** and
@@ -500,13 +505,17 @@ A comp on a **Step** above 1, or one that reads a check render, is a
 the shot's comp. Its frame stacks record `"published": false` in their
 `context.json`, its MP4s are written without the daily, and *Copy to edit*
 is left out of the chain, with a `WARNING:` line in the submit log (Submit
-lists the check comps before it sends them; Farm Submit's Warnings column
-names a stepped Comp, and a Comp beside a stepped render). See
+lists the check comps before it sends them, with the frames each holds;
+Farm Submit's Warnings column names a stepped Comp, and a Comp beside a
+stepped render, with the frames it holds). A frame a check render lacks is
+held from the nearest frame it has, on the farm as in the session
+(Soren, 2026-11-23: a Step 1 comp of a Step 2 render); nothing that reads a
+check render publishes. See
 [Reading a check render](nodes/comp.md#reading-a-check-render).
 
 Some comps learn only on the farm that they read a check render: a Farm
-Submit **Comp** on its own resolves its imports when its job runs (on Step
-1 over one frame, a check render's frame is "inside"), and an import can be
+Submit **Comp** on its own resolves its imports when its job runs (on any
+frames inside a check render's range, it reads it), and an import can be
 pinned by hand to a check render. The comp still completes, and its worker
 marks its `context.json` `"published": false`; the daily MP4 and *Copy to
 edit*, queued before anyone knew, read that flag when they run and skip

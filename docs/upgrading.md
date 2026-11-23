@@ -5,6 +5,49 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.123.0
+
+### A comp of a check render goes on any frames inside its range, the frames it lacks held
+
+`comp.check_render_refusal(reads, frames)` now refuses only a comp whose
+range (`first` to `last`) reaches outside a check render's recorded range,
+or a check render whose range is not known (Soren, 2026-11-23: a Step 1
+comp of a Step 2 render). The message names the range to comp inside
+(`comps …, reaching outside check render …: comp inside 1001-1122, or
+render the channel in full (Step 1), or pick a published version`), no
+longer a Step. Without `frames` it still refuses every check render. A
+frame inside the range the check render lacks is held from the nearest
+frame it has, as th::import_render's Missing Frames holds it. New in
+`comp`: `frames_in_range`, `frames_held(frames, checks)`,
+`held_frames(reads, frames)`, `held_text(frames, checks)`,
+`held_note(reads, frames)` (`every frame of 1001-1122 from a render every
+2nd frame: 61 frames held`, empty when none is held) and
+`slap_frame_token(frame_range)`. `check_comp_note` takes an optional
+fourth argument, `held` (a `held_text`), which leads the note when given.
+`held_text` and `held_note` take an optional `shows` (`comp.HELD`, the
+default; `comp.BLACK`; `comp.HELD_UNLESS_EMPTY`), and
+`comp.missing_note(reads, frames)` takes each import's `(Missing Frames,
+read)`: the frames an import holds are `held`, those an import on Empty
+leaves black `black (Missing Frames: Empty)`, as its File COPs read them.
+Submit Composite's check comp list and the re-comp worker's log use it;
+Farm Submit's Warnings line, which cannot know the imports, says `held
+(black on an import set to Missing Frames: Empty)`.
+`frames_inside`, `frames_that_fit` and `fit_text` are removed.
+
+`farm.specs.submission.stepped_comp_problems` is removed: Farm Submit takes
+a Comp beside a stepped render on any frames inside the render's, and one
+reaching past it is refused by `comp_frame_problems` as before.
+`stepped_comp_frames(settings)` returns `(comp, render)` frames, each
+`(first, last, step)`, for a Comp that reads the stepped render beside it,
+and the Warnings column (`farm.submit.settings.comp_step_warnings`) names
+the frames it holds. `export_comp.ShotSubmit` gained `held` (its
+`comp.held_note`), which `check_comps` lists. The re-comp worker
+(`composite_houdini.resolve_imports`) logs a `WARNING:` line naming the
+frames it holds, and a scene comp (#80) of a stepped render reads each
+frame through `comp.slap_frame_token`, holding the nearest rendered frame.
+Every comp that reads a check render is still a check comp, never
+published.
+
 ## v1.122.0
 
 ### A comp of a check render goes on the frames it has; stepped comps are not published

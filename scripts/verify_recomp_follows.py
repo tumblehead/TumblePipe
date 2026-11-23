@@ -9,7 +9,8 @@ published one. The composite job carries ``follows`` (the render's
 ``[{channel, department, version}]``) and ``comp_frames``; the worker
 (``farm.workers.composite_houdini.resolve_imports``) pins each import to
 it (``pipe.comp.follow_pins``) and checks the comp's frames against the
-check renders it then reads (``pipe.comp.check_render_refusal``). The
+check renders it then reads (``pipe.comp.check_render_refusal``: inside
+their range, the frames they lack held; Soren, 2026-11-23). The
 property tests pin both pure halves; this runs them on real
 th::import_render nodes, which no test did.
 
@@ -29,10 +30,12 @@ import of ``chars`` the artist pinned to v0001. Then:
 - the same again changes nothing (pinning is idempotent);
 - following only ``default``: the all-channels import reads v0002 of it
   and latest (v0001) of ``chars``;
-- on every frame (Step 1), or off the render's first frame, or with the
-  frames not known, the worker refuses, naming the import, the check
-  render, and the Step (and start) that would go; the message's Step is
-  one it then takes.
+- on every frame (Step 1), or off the render's first frame, it reads the
+  check render too, logging a WARNING that names the frames it holds
+  (a Step 1 comp of a Step 2 render, Antoine and Magnus);
+- reaching outside the render's range, or with the frames not known, the
+  worker refuses, naming the import, the check render, and the range to
+  comp inside, which it then takes.
 
 Needs Houdini with the comp HDAs compiled and on HOUDINI_OTLSCAN_PATH, and
 this checkout's python/ on PYTHONPATH (the preflight ``hython`` stage sets
@@ -40,6 +43,8 @@ both, and HOUDINI_USE_HFS_OCL=0). Exits 1 on any failure; nothing outside a
 temp dir is written.
 """
 
+import contextlib
+import io
 import json
 import shutil
 import sys
@@ -188,19 +193,43 @@ def main():
           reads_of(everything) == {'default': ('render', 'v0002'), 'chars': ('render', 'v0001')},
           str(reads_of(everything)))
 
-    print('--- frames the check render does not have')
-    for label, bad, step_text in (
-        ('every frame (Step 1)', (FIRST, LAST, 1), f'comp on Step {STEP},'),
+    print('--- frames the check render does not have: held')
+    held_count = len([f for f in range(FIRST, LAST + 1) if (f - FIRST) % STEP])
+    for label, frames_held, held_text in (
+        ('every frame (Step 1)', (FIRST, LAST, 1),
+         f'every frame of {FIRST}-{LAST} from a render every 2nd frame: {held_count} frames held'),
         ('off its first frame', (FIRST + 1, LAST, STEP),
-         f'comp on Step {STEP} from frame {FIRST + STEP},'),
+         f'every 2nd frame of {FIRST + 1}-{LAST} from a render every 2nd frame'),
     ):
         fresh()
-        plan, read_check, problem = run(bad, follows(*CHANNELS))
-        check(f'a re-comp of {label} is refused, naming the import, the check render and the fix',
-              plan is None and read_check is False and problem is not None
-              and problem.startswith(f'{latest.path()}: ')
-              and 'render v0002' in problem and step_text in problem,
-              str(problem))
+        log = io.StringIO()
+        with contextlib.redirect_stdout(log):
+            plan, read_check, problem = run(frames_held, follows(*CHANNELS))
+        check(f'a re-comp of {label} reads the check render, a check comp',
+              problem is None and read_check is True
+              and reads_of(latest) == {'default': ('render', 'v0002')},
+              f'{problem} {read_check}')
+        check(f'a re-comp of {label} logs the frames it holds',
+              f'WARNING: comps {held_text}' in log.getvalue(), log.getvalue()[-600:])
+        # What the farm comp renders: the worker's import holds a frame the
+        # check render lacks from the nearest one it has, as in the session.
+        dive = latest.native().node(import_render.DIVE)
+        read = {int(f.parm('filename').evalAtFrame(FIRST + 1).rsplit('.', 2)[-2])
+                for f in dive.children() if f.type().name() == 'file'}
+        check(f'a re-comp of {label}: the import holds frame {FIRST + 1} from {FIRST}',
+              read == {FIRST}, str(read))
+    fresh()
+    outside = (FIRST - 1, LAST, 1)
+    plan, read_check, problem = run(outside, follows(*CHANNELS))
+    check('a re-comp reaching outside the check render is refused, naming the import, the check render and the range',
+          plan is None and read_check is False and problem is not None
+          and problem.startswith(f'{latest.path()}: ')
+          and 'render v0002' in problem and f'comp inside {FIRST}-{LAST},' in problem,
+          str(problem))
+    fresh()
+    plan, read_check, problem = run((FIRST, LAST, 1), follows(*CHANNELS))
+    check('the range it names goes',
+          problem is None and read_check is True, str(problem))
     fresh()
     plan, read_check, problem = run(None, follows(*CHANNELS))
     check('a re-comp whose frames are not known is refused',

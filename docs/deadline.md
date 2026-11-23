@@ -137,7 +137,7 @@ For the **HPM** plugin specifically — **no per-node setup is required**:
 
 - The `hpm` CLI is **self-bootstrapped** under `~/.deadline/hpm` on the first
   job (version from `HpmVersion` → `HPM_VERSION` env → the plugin's pinned
-  default, `v0.40.1`). No manual install needed. The studio pins one hpm for CI,
+  default, `v0.43.1`). No manual install needed. The studio pins one hpm for CI,
   submitters and the farm with the Infisical `HPM_VERSION` knob (prod); bump the
   plugin's `DEFAULT_HPM_VERSION` and `farm/local/hpm.py`'s `DEFAULT_VERSION`
   with it, so a worker without the env var runs the same hpm.

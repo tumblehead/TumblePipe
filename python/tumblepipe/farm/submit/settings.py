@@ -1091,14 +1091,24 @@ def comp_step_warnings(resolved: dict) -> list[str]:
     is a Comp beside a stepped render, which reads that check render
     (``submission.comp_reads_check_render``), on any Step. A comp that
     reads a check render on disk is one too, which only the farm knows
-    when it resolves the imports."""
+    when it resolves the imports. A Comp on frames the stepped render does
+    not make names how many it holds (``submission.stepped_comp_frames``,
+    ``pipe.comp.held_text``): ``comp every frame of 1001-1122 from a render
+    every 2nd frame: 61 frames held (black on an import set to Missing
+    Frames: Empty), a check comp, ...``."""
     from tumblepipe.pipe import comp
     if not resolved.get('comp'):
         return []
     step = _int(resolved.get('comp_step')) or 1
+    beside = submission.stepped_comp_frames(resolved)
+    # Farm Submit never opens a re-comp's workfile, so cannot know each
+    # import's Missing Frames: Empty leaves the frames black, and the line
+    # says so (the worker's log names which).
+    held = '' if beside is None else comp.held_text(
+        beside[0], [beside[1]], comp.HELD_UNLESS_EMPTY)
     note = comp.check_comp_note(
         step, submission.comp_reads_check_render(resolved),
-        bool(resolved.get('comp_copy_to_edit')),
+        bool(resolved.get('comp_copy_to_edit')), held,
     )
     return [f"comp {note}"] if note else []
 

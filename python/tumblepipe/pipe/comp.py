@@ -12,9 +12,9 @@ nodes (``th::import_render``, ``th::light_mix``, ``th::export_comp``; see
 - the light mix's rows (:func:`light_groups`, :func:`sync_rows`);
 - what a submit freezes (:func:`freeze_plan`) and records
   (:func:`provenance`);
-- whether a comp of a check render goes to the farm
-  (:func:`check_render_refusal`), and whether a comp is a check comp
-  (:func:`is_check_comp`), and whether a comp version a daily or Copy to
+- whether a comp of a check render goes to the farm and which frames it
+  holds (:func:`check_render_refusal`, :func:`held_frames`), whether a
+  comp is a check comp (:func:`is_check_comp`), and whether a comp version a daily or Copy to
   edit follows turned out unpublished when they run
   (:func:`unpublished_reason`);
 - which shot channels no import reads (:func:`unread_channels`);
@@ -28,7 +28,6 @@ export_comp}.py``; the farm half is ``farm/pipelines/composite.py``.
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Optional, Sequence
@@ -450,8 +449,9 @@ class Resolved:
     # Version menu offers it by hand).
     newer_check: Optional[tuple[str, int]] = None
     # A check render's recorded ``(first, last)``: with ``check_step``, the
-    # frames it has (:func:`check_frames`), which a comp of it must keep to
-    # (:func:`check_render_refusal`).
+    # frames it has (:func:`check_frames`): a comp of it keeps inside the
+    # range (:func:`check_render_refusal`) and holds the frames between
+    # (:func:`held_frames`).
     check_range: Optional[tuple[int, int]] = None
 
     @property
@@ -674,8 +674,8 @@ def resolve_render(
     way, and the import holds its frames over the gaps (Antoine,
     2026-11-22: a stepped first render read as nothing at all). A complete
     render is preferred over a newer check render: a check render is a
-    look, never the shot's comp (a comp of one goes to the farm only on its
-    frames, :func:`check_render_refusal`, and is a check comp, never
+    look, never the shot's comp (a comp of one goes to the farm only inside
+    its range, :func:`check_render_refusal`, and is a check comp, never
     published, :func:`is_check_comp`), so it never takes ``latest`` from a
     finished render; the label names the newer check render instead
     (:attr:`Resolved.newer_check`), which the Version menu offers by hand.
@@ -777,7 +777,7 @@ def resolve_channels(
 
 
 ###############################################################################
-# A comp of a check render (Antoine, 2026-11-22)
+# A comp of a check render (Antoine, 2026-11-22; Soren, 2026-11-23)
 ###############################################################################
 # A comp's frames: ``(first, last, step)``, every ``step``-th frame from
 # ``first`` up to ``last`` (export_comp's Frame Range and Step; a re-comp's
@@ -799,19 +799,16 @@ def last_frame_of(frames: Frames) -> int:
     return first + (last - first) // step * step
 
 
-def frames_inside(frames: Frames, within: Frames) -> bool:
-    """Whether every frame of ``frames`` is one of ``within``'s: from a
-    frame on ``within``'s step, inside its range, and (more than one frame)
-    on a step that is a multiple of its step. No frames at all are inside
-    anything."""
-    first, last, step = frames
+def frames_in_range(frames: Frames, within: Frames) -> bool:
+    """Whether the range of ``frames``, first to last, lies inside
+    ``within``'s, on its step or not (a frame between two of ``within``'s
+    is held from the nearer, ``pipe.hold_frames``). The range, not only
+    the frames on its step, as Farm Submit keeps a comp inside the render
+    beside it (``farm.specs.submission.comp_frame_problems``). An empty
+    range is inside anything."""
+    first, last, _ = frames
     if first > last: return True
-    within_first, within_last, within_step = within
-    within_step = max(1, within_step)
-    end = last_frame_of(frames)
-    if first < within_first or end > within_last: return False
-    if (first - within_first) % within_step: return False
-    return end == first or max(1, step) % within_step == 0
+    return within[0] <= first and last <= within[1]
 
 
 def check_frames(read: Resolved) -> Optional[Frames]:
@@ -821,28 +818,22 @@ def check_frames(read: Resolved) -> Optional[Frames]:
     return read.check_range[0], read.check_range[1], read.check_step
 
 
-def frames_that_fit(frames: Frames, checks: Sequence[Frames]) -> Optional[Frames]:
-    """What a comp could render in place of ``frames`` so that every check
-    render of ``checks`` has all of it: from the first frame of ``frames``'
-    range that every check render has, on the smallest step at least
-    ``frames``' own that is a multiple of every check render's step, up to
-    the last such frame inside the range and every check render. None when
-    no frame of the range is in every check render (two check renders off
-    each other's step, or a range they do not reach)."""
-    first, last, step = frames
-    common_step, low, high = 1, first, last
-    for check_first, check_last, check_step in checks:
-        common_step = math.lcm(common_step, max(1, check_step))
-        low, high = max(low, check_first), min(high, check_last)
-    # The frames every check render has repeat every common_step frames.
-    start = next((
-        frame for frame in range(low, min(high, low + common_step - 1) + 1)
-        if all((frame - check_first) % max(1, check_step) == 0
-               for check_first, _, check_step in checks)
-    ), None)
-    if start is None: return None
-    fit_step = -(-max(1, step) // common_step) * common_step
-    return start, last_frame_of((start, high, fit_step)), fit_step
+def frames_held(frames: Frames, checks: Sequence[Frames]) -> list[int]:
+    """The frames of ``frames`` some check render of ``checks`` does not
+    have, in order: a comp shows each held from the nearest frame the check
+    render has (``pipe.hold_frames.held_frame``)."""
+    has = [set(frames_of(check)) for check in checks]
+    return [
+        frame for frame in frames_of(frames)
+        if any(frame not in frames_has for frames_has in has)
+    ]
+
+
+def held_frames(reads: Iterable[Resolved], frames: Frames) -> list[int]:
+    """:func:`frames_held` of the check renders among ``reads`` whose
+    frames are known (:func:`check_frames`)."""
+    checks = [check_frames(read) for read in reads]
+    return frames_held(frames, [check for check in checks if check is not None])
 
 
 def comp_frames_text(frames: Frames) -> str:
@@ -854,17 +845,60 @@ def comp_frames_text(frames: Frames) -> str:
     return f'{first}-{last}, {every}'
 
 
-def fit_text(frames: Frames, fit: Frames) -> str:
-    """What to set so a comp renders ``fit`` instead of ``frames``: its Step
-    alone when its range on that step fits; with the first frame when only
-    the start is off the check render's frames; else the frames too."""
-    first, last, _ = frames
-    fit_first, fit_last, fit_step = fit
-    if fit_first == first and fit_last == last_frame_of((first, last, fit_step)):
-        return f'comp on Step {fit_step}'
-    if fit_last == last_frame_of((fit_first, last, fit_step)):
-        return f'comp on Step {fit_step} from frame {fit_first}'
-    return f'comp frames {fit_first}-{fit_last} on Step {fit_step}'
+#: What a comp frame a check render lacks shows, for :func:`held_text`:
+#: held from the nearest rendered frame; black, its import's Missing Frames
+#: on Empty (``pipe.hold_frames.holds``); or, where the imports are not
+#: known (Farm Submit never opens a re-comp's workfile), either.
+HELD = 'held'
+BLACK = 'black (Missing Frames: Empty)'
+HELD_UNLESS_EMPTY = 'held (black on an import set to Missing Frames: Empty)'
+
+
+def held_text(frames: Frames, checks: Sequence[Frames], shows: str = HELD) -> str:
+    """What a comp of ``frames`` holds of the check renders ``checks``, for
+    a warning (Soren, 2026-11-23): ``every frame of 1001-1122 from a render
+    every 2nd frame: 61 frames held``. Empty when every comp frame is one
+    each check render has. ``shows`` says what those frames show
+    (:data:`HELD`, :data:`BLACK`, :data:`HELD_UNLESS_EMPTY`)."""
+    from tumblepipe.pipe.hold_frames import _ordinal
+    held = frames_held(frames, checks)
+    if not held: return ''
+    first, last, step = frames
+    every = 'every frame' if step <= 1 else f'every {_ordinal(step)} frame'
+    steps = sorted({
+        max(1, check[2]) for check in checks
+        if not set(frames_of(frames)) <= set(frames_of(check))
+    })
+    named = [f'every {_ordinal(each)} frame' if each > 1 else 'every frame' for each in steps]
+    source = (
+        f'a render {named[0]}' if len(named) == 1
+        else f'renders {", ".join(named[:-1])} and {named[-1]}'
+    )
+    noun = 'frame' if len(held) == 1 else 'frames'
+    return f'{every} of {first}-{last} from {source}: {len(held)} {noun} {shows}'
+
+
+def held_note(reads: Iterable[Resolved], frames: Frames, shows: str = HELD) -> str:
+    """:func:`held_text` of the check renders among ``reads`` whose frames
+    are known."""
+    checks = [check_frames(read) for read in reads]
+    return held_text(frames, [check for check in checks if check is not None], shows)
+
+
+def missing_note(reads: Iterable[tuple[str, Resolved]], frames: Frames) -> str:
+    """What a comp of ``frames`` shows where the check renders it reads
+    lack a frame, ``reads`` being ``(Missing Frames, read)`` of each
+    import's reads: :func:`held_note` of the reads their import holds
+    (``pipe.hold_frames.holds``), and of those it leaves empty, black
+    (:data:`BLACK`), ``; `` between. Empty when no check render lacks a
+    comp frame. The import's File COPs read exactly that
+    (``cops.import_render.held_ranges``)."""
+    from tumblepipe.pipe.hold_frames import holds
+    holding, empty = [], []
+    for setting, read in reads:
+        (holding if holds(setting, read.check_step) else empty).append(read)
+    notes = [held_note(holding, frames), held_note(empty, frames, BLACK)]
+    return '; '.join(note for note in notes if note)
 
 
 def _check_read_text(read: Resolved) -> str:
@@ -879,47 +913,47 @@ def check_render_refusal(reads: Iterable[Resolved], frames: Optional[Frames] = N
     None when it is.
 
     A check render has only every Nth frame. A comp of one goes to the
-    farm when every frame it renders is one every check render it reads
-    has (:func:`frames_inside`; Soren, 2026-11-22): a Step 2 comp of a
-    Step 2 render from the same first frame. It comes out stepped, a check
-    comp itself, never published (:func:`is_check_comp`). Any other frame
-    would be a held one, so such a comp is refused, and the message names
-    the frames that would go (:func:`frames_that_fit`). A complete read
-    never refuses. ``frames`` None (not known) refuses every check render,
-    as before.
+    farm on any frames inside the check render's range (Soren,
+    2026-11-23: a Step 1 comp of a Step 2 render): a frame the check render
+    lacks is held from its nearest rendered frame, as th::import_render
+    holds it in the session (:func:`held_frames`, which a Submit warns
+    of). Such a comp is a check comp, never published
+    (:func:`is_check_comp`). A comp reaching outside a check render's
+    range is refused, naming the range it must keep to, and so is one of
+    a check render whose range is not known. A complete read never
+    refuses. ``frames`` None (not known) refuses every check render.
     """
     checks = [read for read in reads if read.check_step is not None]
     if not checks: return None
+    full = 'render the channel in full (Step 1), or pick a published version'
     if frames is None:
         named = ', '.join(_check_read_text(read) for read in checks)
         return (
             f'reads a check render ({named}), and the frames the comp renders '
-            'are not known: render the channel in full (Step 1), or pick a '
-            'published version'
+            f'are not known: {full}'
+        )
+    unknown = [read for read in checks if read.check_range is None]
+    if unknown:
+        named = ', '.join(_check_read_text(read) for read in unknown)
+        noun = 'check render' if len(unknown) == 1 else 'check renders'
+        return (
+            f'reads {noun} {named} whose frames are not known (no recorded '
+            f'range): {full}'
         )
     short = [
         read for read in checks
-        if check_frames(read) is None or not frames_inside(frames, check_frames(read))
+        if not frames_in_range(frames, check_frames(read))
     ]
     if not short: return None
     named = ', '.join(_check_read_text(read) for read in short)
-    noun, verb = ('check render', 'does') if len(short) == 1 else ('check renders', 'do')
-    known = [check_frames(read) for read in checks]
-    fit = None if None in known else frames_that_fit(frames, known)
-    full = 'render the channel in full (Step 1), or pick a published version'
-    if fit is not None:
-        fix = f'{fit_text(frames, fit)}, {full}'
-    elif None in known:
-        fix = full
+    noun = 'check render' if len(short) == 1 else 'check renders'
+    low = max(read.check_range[0] for read in checks)
+    high = min(read.check_range[1] for read in checks)
+    if low <= high:
+        fix = f'comp inside {low}-{high}, or {full}'
     else:
-        fix = (
-            f'no frame of {frames[0]}-{frames[1]} is in every check render '
-            f'it reads, so {full}'
-        )
-    return (
-        f'comps {comp_frames_text(frames)}, but {noun} {named} {verb} not '
-        f'have all of those frames: {fix}'
-    )
+        fix = f'no frame is inside every check render it reads, so {full}'
+    return f'comps {comp_frames_text(frames)}, reaching outside {noun} {named}: {fix}'
 
 
 def follow_pins(
@@ -955,11 +989,20 @@ def is_check_comp(step: int, reads_check_render: bool) -> bool:
     return step > 1 or reads_check_render
 
 
-def check_comp_note(step: int, reads_check_render: bool, copy_to_edit: bool = False) -> str:
+def check_comp_note(step: int, reads_check_render: bool, copy_to_edit: bool = False,
+                    held: str = '') -> str:
     """Why a comp is a check comp (:func:`is_check_comp`) and what that
-    skips, for a Submit to say; empty for a comp that publishes."""
+    skips, for a Submit to say; empty for a comp that publishes. ``held``
+    is :func:`held_text` of the check renders it reads: when it holds
+    frames, that is the why (``every frame of 1001-1122 from a render every
+    2nd frame: 61 frames held, a check comp, not published, no daily``)."""
     from tumblepipe.pipe.hold_frames import _ordinal
-    if not is_check_comp(step, reads_check_render): return ''
+    if not is_check_comp(step, reads_check_render or bool(held)): return ''
+    if held:
+        text = f'{held}, a check comp, not published, no daily'
+        if copy_to_edit:
+            text += ', Copy to edit skipped'
+        return text
     why = []
     if step > 1:
         why.append(f'every {_ordinal(step)} frame')
@@ -1619,6 +1662,21 @@ def slap_aov(aov_name: str) -> str:
     TumblePipe's ``beauty``; any other name as it is."""
     name = aov_name.strip()
     return BEAUTY if name in SLAP_BEAUTY_ALIASES else name
+
+
+def slap_frame_token(frame_range) -> str:
+    """The frame in a scene comp's File COP file name (#80): ``$F4``, or,
+    for a render on a Step above 1 (a check render), the nearest frame it
+    rendered (``pipe.hold_frames.hold_expression``), so a comp on frames
+    the render lacks holds them as th::import_render does (Soren,
+    2026-11-23). ``frame_range`` is the render's recorded range (a
+    ``FrameRange`` or None, not known)."""
+    from tumblepipe.pipe.hold_frames import hold_expression
+    step = getattr(frame_range, 'step_size', 1) if frame_range is not None else 1
+    if step <= 1:
+        return '$F4'
+    held = hold_expression(frame_range.first_frame, frame_range.last_frame, step)
+    return f'`padzero(4, {held})`'
 
 
 def slap_reads(aov_names: Iterable[str], channels: Sequence[str]) -> dict[str, list[str]]:

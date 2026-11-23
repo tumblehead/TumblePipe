@@ -2259,6 +2259,13 @@ an import takes it on the check render's own frames (every 4th) and is
 refused on every frame (naming Step 4), off its first frame (naming the
 frame to start on) and with the frames not known.
 
+`scripts/verify_slap_hold.py` stages the same renders and swaps a scene
+comp's Slap Comp Import (#80, `cops.slap_comp.swap_imports`) onto the
+check render: every scene frame reads the nearest rendered frame through
+plain HScript, a held frame cooks that frame's pixels (the block
+downstream too), a th::import_render pinned to the same check render reads
+the same file on every frame, and onto the published render it reads `$F4`.
+
 `scripts/verify_recomp_follows.py` runs a Farm Submit re-comp beside a
 stepped render on real `th::import_render` nodes: two channels, each with
 a published render and a newer check render (every 2nd frame), and an

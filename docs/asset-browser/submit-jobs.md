@@ -325,23 +325,21 @@ The Warnings column says, per row, what the submission would run into:
 - `Into version renders the Frame list into an existing version: …`,
   `… untick Preview`, `… set the Step to 1` — **Into** is set without a
   **Frame list**, beside **Preview**, or on a **Step** above 1. **Blocks**.
-- `Comp beside a stepped render comps only frames it renders: the comp is
-  999-1103, every frame, the render every 2nd frame of 999-1103: comp on
-  Step 2, set the render's Step to 1, or untick Comp` (`comp on Step 2 from
-  frame 1001, …` when the Comp's first frame is off the render's) — Comp
-  is ticked beside a [stepped render](#stepped-renders) and comps a frame
-  the render does not make. **Blocks**: set the Comp's **Step** (and
-  **Frames**, when it names a start) as it says, set the Render's **Step**
-  to 1, or untick Comp. A Comp whose every frame the render makes (its
-  Step a multiple of the render's, from a frame the render makes) goes,
-  and reads that render (Soren, 2026-11-22).
 - `comp every Nth frame: a check comp, not published, no daily` (`…, Copy
   to edit skipped` with the Comp's **Copy to edit** ticked) — the Comp's
   **Step** is above 1. `comp reads a check render: …` (or `comp every Nth
   frame and reads a check render: …`) — the Comp is ticked beside a full
   render on a **Step** above 1, which it reads, so it is a check comp on
-  any Step of its own, a one-frame Comp on Step 1 too. A warning, not a
-  block.
+  any Step of its own, a one-frame Comp on Step 1 too. `comp every frame
+  of 999-1103 from a render every 2nd frame: 52 frames held (black on an
+  import set to Missing Frames: Empty), a check comp, not published, no
+  daily` — such a Comp on frames the render does not make (a Step 1 Comp
+  beside a Step 2 render, say): each holds the nearest frame the render
+  makes (Soren, 2026-11-23), unless a re-comp's import has **Missing
+  Frames** on Empty, which leaves them black (Farm Submit does not open the
+  comp workfile to know; the job's log says which). A warning, not a block; a
+  Comp whose frames reach past the render is blocked by `the comp frames
+  … reach outside the render's …`.
 - `render preview frames: …, dropped` / `comp preview frames: …, dropped`
   — the **Preview frames** list names a word that is not a frame number, a
   frame outside the range (the render's with its rolls; the comp's
@@ -646,12 +644,12 @@ It is a check render, for looking at lighting across a shot cheaply:
   frames have gaps, and a daily, the edit and a comp all want every frame.
   The frames stay in their render version on disk, to view, but no daily
   is written, **Copy to edit** is greyed out (its tooltip saying why, its
-  tick back when the Step is 1 again), and a **Comp** beside it goes only
-  on frames it renders (a Step 2 comp beside a Step 2 render, from the
-  render's first frame): it then reads this render, not the shot's older
-  published one, and is a check comp, not published either (the comp's
-  **Step** row below); on any other frames it blocks the row, naming the
-  Step that would go. Each frame stack it writes records `"published": false` in its
+  tick back when the Step is 1 again), and a **Comp** beside it goes on
+  any frames inside the render's, on any **Step** (a Step 1 comp of a
+  Step 2 render, say): it reads this render, not the shot's older
+  published one, each frame the render does not make holding the nearest
+  one it does (the [Warnings](#warnings) column says how many), and is a
+  check comp, not published either (the comp's **Step** row below). Each frame stack it writes records `"published": false` in its
   `context.json`, so nothing that *chooses* the shot's render takes it:
   a comp's `latest` and `th::import_render`'s default, the edit sync, the
   take a shot opens on in Cinedex (its Best available, a department's
@@ -668,9 +666,10 @@ It is a check render, for looking at lighting across a shot cheaply:
   the channel has no published render yet, holding each rendered frame
   over the gaps
   ([Reading a check render](../nodes/comp.md#reading-a-check-render)). Such
-  a comp goes to the farm only on frames the check render has (a Step 2
-  comp of a Step 2 render, say); on any other frames Submit refuses, naming
-  the Step that would go. It is then a check comp, not published either.
+  a comp goes to the farm on any frames inside the check render's range,
+  the frames it lacks held, and Submit names them; one reaching outside
+  the range is refused, naming it. It is then a check comp, not published
+  either.
 - The note under the **Frame list** counts the frames on the step, and the
   [Warnings](#warnings) column says `every Nth frame (<n> frames): stepped
   renders are not published, no daily`.
@@ -854,7 +853,7 @@ dialog's way: a field you leave alone follows each shot.
 | **Range** | — | off | **Preview frames (first / middle / last)**: comp those three frames first and post them to Discord (`previews`); the full comp waits for them. The node's **Preview Frames**. Beside a render, the preview frames still wait for the whole render. |
 | **Preview frames** | — | empty: first / middle / last | The comp's Preview Frames List, as the Render's (above) and the node's **Preview Frames › List**: shown only while its **Range** box is ticked, with a [frame timeline](#frame-timelines) under it; frames to comp first, space separated, in that order. Read against the comp's frames on its **Step**: a frame outside them or off the step is dropped with a warning. Without a render beside it, the Warnings column checks against the shot's range and the submit against what the renders on disk cover, so the submit log has the final word. |
 | **Frames** | — | `⟨full range⟩` | Left on `⟨full range⟩`, the comp comps every frame of the render ticked beside it (its **Frames** with the rolls), or, ticked alone, the shot's range from the config with its rolls (the node's **From Config**). Type a first and/or last frame to comp from or to it instead (the node's **From Settings**); the other end keeps following. Beside a render the frames must lie inside the render's; past them, or the wrong way round, the row is blocked (see [Warnings](#warnings)). ↺ goes back to `⟨full range⟩`. Not remembered for the next opening. |
-| **Step** | — | 1 | Comp every Nth frame of the range. Above 1 the comp is a check comp, like a [stepped render](#stepped-renders): each frame stack records `"published": false`, its MP4 is written but no daily, and **Copy to edit** is skipped; the [Warnings](#warnings) column says so. A comp that reads a check render is one too, whatever its Step, and goes to the farm only when its frames are all frames the check render has ([Reading a check render](../nodes/comp.md#reading-a-check-render)). A Comp on its own finds out what its imports read only when its job runs (Step 1 over one frame of a check render goes): its daily MP4 and Copy to edit then read the comp's `published` flag when they run and skip with a `WARNING:` line in their log, still ending as succeeded; the versioned MP4 is written. |
+| **Step** | — | 1 | Comp every Nth frame of the range. Above 1 the comp is a check comp, like a [stepped render](#stepped-renders): each frame stack records `"published": false`, its MP4 is written but no daily, and **Copy to edit** is skipped; the [Warnings](#warnings) column says so. A comp that reads a check render is one too, whatever its Step, and goes to the farm on any frames inside the check render's range, the frames it lacks held from the nearest it has ([Reading a check render](../nodes/comp.md#reading-a-check-render)). A Comp on its own finds out what its imports read only when its job runs (Step 1 over one frame of a check render goes): its daily MP4 and Copy to edit then read the comp's `published` flag when they run and skip with a `WARNING:` line in their log, still ending as succeeded; the versioned MP4 is written. |
 | **Batch** | — | 5 | Frames per farm task of the comp. With **Run on: This machine** the field reads *one task on this machine*: the local queue runs one task at a time, so the comp runs its whole range as one task (each task costs a few seconds of Houdini start-up). A comp's time limit is 20 minutes per frame, on the farm and here, so the one local task is not stopped halfway. |
 | **Pool** | `farm.default_pool` | `general` | A dropdown of the project's farm pools, the project default marked `(project default)`, as a `th::` node's **Pool** menu offers them. `⟨per entity⟩` leaves each shot on its own pool. A project that lists no pools gets a text field instead. |
 | **Priority** | `farm.priority` | 50 | |
