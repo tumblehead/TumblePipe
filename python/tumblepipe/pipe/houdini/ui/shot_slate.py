@@ -461,6 +461,35 @@ def _frame_rect(vp, widget, xform, focal, aperture, aspect):
 _VP_WIDGETS = {}
 _VP_SEARCH_EVERY = 1.0
 
+#: hou calls that spin Qt's event loop while they build or switch a viewer.
+#: The slate's timer can fire inside them, on a viewer Houdini is still
+#: setting up or one whose RE_Window it just deleted: TH Roto Mask opens a
+#: floating viewer, cd's it and enters a state from its shelf script (field
+#: crashes cr_2e4ab60a6b0b5567 / cr_7947d3491c8b9d6a, Houdini 22.0.508).
+VIEWER_CHANGE_CALLS = frozenset((
+    'enterCurrentNodeState', 'setCurrentState', 'enterViewState',
+    'enterTemplateState', 'enterCurrentNodeTemplateState', 'cd', 'setPwd'))
+
+
+def changing_viewer(frame=None) -> bool:
+    """A hou call from VIEWER_CHANGE_CALLS is on the Python stack."""
+    import sys
+    f = frame if frame is not None else sys._getframe(1)
+    while f is not None:
+        code = f.f_code
+        if code.co_name in VIEWER_CHANGE_CALLS and code.co_filename.endswith('hou.py'):
+            return True
+        f = f.f_back
+    return False
+
+
+def _forget_widget(key, widget_id):
+    """Qt destroyed the cached RE_Window: drop it. isVisible() on a widget
+    Houdini deleted is an access violation, not a RuntimeError."""
+    entry = _VP_WIDGETS.get(key)
+    if entry is not None and id(entry[0]) == widget_id:
+        _VP_WIDGETS.pop(key, None)
+
 
 def _viewport_widget(sv):
     """The Scene Viewer's RE_Window (one Qt widget holds all its viewports):
@@ -489,6 +518,12 @@ def _viewport_widget(sv):
             if area.contains(centre) and c.width() * c.height() > best_area:
                 best, best_area = c, c.width() * c.height()
         _VP_WIDGETS[sv.name()] = (best, now)
+        if best is not None:
+            try:
+                best.destroyed.connect(
+                    lambda *_a, k=sv.name(), i=id(best): _forget_widget(k, i))
+            except Exception:
+                pass
         return best
     except Exception:
         return None
@@ -820,6 +855,8 @@ def _app_active():
 def tick():
     """Place the chip in every Scene Viewer looking through a camera."""
     import hou
+    if changing_viewer():
+        return      # a viewer is being built or switched: place it next tick
     _PLACED.clear()
     try:
         if enabled() and _app_active() and workfile() is not None:

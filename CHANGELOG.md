@@ -12,6 +12,14 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.128.1 — 2026-11-24
+
+### Fixes
+- fix(comp): From Config spans the reads when every read holds (`a1afc855`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.128.0 (`06aa4aad`)
+
 ## v1.128.0 — 2026-11-24
 
 ### Fixes
