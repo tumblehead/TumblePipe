@@ -386,21 +386,25 @@ _selection_read: tuple | None = None
 
 def _selected_asset() -> tuple[str, frozenset]:
     """``(name, departments)`` of the entity the jump opens (the one the
-    LOP selection belongs to, else the open workfile's asset);
-    ``("", frozenset())`` when there is none."""
+    LOP selection belongs to, else the open workfile's asset) and its
+    active departments; ``("", frozenset())`` when there is none."""
     name, departments, _current = _jump_read()
     return name, departments
 
 
-def _jump_read() -> tuple[str, frozenset, str]:
-    """``(name, departments, current)``: the jump's entity, its
-    departments, and the department of the open workfile when it is that
-    entity's ("" otherwise). Read at most every :data:`_SELECTION_TTL`."""
+def _jump_read(fresh: bool = False) -> tuple[str, frozenset, str]:
+    """``(name, departments, current)``: the jump's entity, its active
+    departments (``selection_entities.entity_active_departments``: a
+    workfile, not turned off), and the department of the open workfile
+    when it is that entity's ("" otherwise). Read at most every
+    :data:`_SELECTION_TTL`; ``fresh`` reads again regardless, as the menu
+    does when it opens, so it never shows the last selection's ring."""
     global _selection_read
     import time
 
     now = time.monotonic()
-    if _selection_read is not None and now - _selection_read[0] < _SELECTION_TTL:
+    if (not fresh and _selection_read is not None
+            and now - _selection_read[0] < _SELECTION_TTL):
         return _selection_read[1:]
     name, departments, current = "", frozenset(), ""
     try:
@@ -409,7 +413,7 @@ def _jump_read() -> tuple[str, frozenset, str]:
         if entity_uri is not None:
             name = entity_uri.segments[-1]
             departments = frozenset(
-                selection_entities.entity_departments(entity_uri))
+                selection_entities.entity_active_departments(entity_uri))
             context = selection_entities.workfile_context()
             if context is not None and context.entity_uri == entity_uri:
                 current = context.department_name or ""
@@ -472,10 +476,12 @@ def register_open_selected_actions(radial, departments) -> list[str]:
     """Register one "open the <department> workfile" action per department
     of the department jump; returns their keys, in the order given.
 
-    Shift opens the workfile in a new Houdini. A slice is greyed while the
-    jump has no entity (:func:`_selected_asset`) or the entity lacks the
-    department; its second line names the entity it would open, and the
-    open workfile's own department is highlighted.
+    Shift opens the workfile in a new Houdini. The ring shows only the
+    jump entity's active departments (:func:`_build_selection_menu`); a
+    slice is greyed while the jump has no entity (:func:`_selected_asset`)
+    or the department is not active on it. Its second line names the
+    entity it would open, and the open workfile's own department is
+    highlighted.
     """
     # Icons only where a radial can be drawn: every hython, farm tasks
     # included, registers these actions, and would otherwise import the
@@ -540,15 +546,18 @@ def radial_icon_for(name: str, resolve=None) -> str:
 
 
 def _build_selection_menu(radial):
-    """The department jump: one slice per asset department of the project,
-    each opening that department's workfile of the jump's entity, and the
-    "save without asking" toggle last. None when the project has fewer
-    than two departments (a ring needs two) or its departments cannot be
-    read.
+    """The department jump: one slice per active department of the jump's
+    entity, each opening that department's workfile, and the "save without
+    asking" toggle last. None when the project has fewer than two
+    departments or its departments cannot be read.
 
     The pool is read once, here: a department added mid-session appears
     after the next launch. Generated departments have no workfile and get
-    no slice. The ring holds :data:`RING_MAX` slots, one of them the toggle.
+    no slice. Which of the pool's slices show is picked each time the menu
+    opens (``department_jump.ring_departments``), from the jump's entity
+    at that moment: its active departments, or the whole pool greyed when
+    there are none. The ring holds :data:`RING_MAX` slots, one of them the
+    toggle, so it always has the two a ring needs.
     """
     try:
         from tumblepipe.config.department import list_departments
@@ -563,11 +572,29 @@ def _build_selection_menu(radial):
     keys = register_open_selected_actions(radial, departments)
     if len(keys) < 2:
         return None
+    from tumblepipe.pipe.department_jump import ring_departments
+
     toggle = register_save_toggle_action(radial)
-    items = [radial.item_from_action(key, close_on_select=True)
-             for key in keys[:RING_MAX - 1]]
-    items.append(radial.item_from_action(toggle, close_on_select=False))
-    return radial.menu(items, label="Open Workfile")
+    pool = [department.name for department in departments]
+    slices = {
+        name: radial.item_from_action(key, close_on_select=True)
+        for name, key in zip(pool, keys)
+    }
+    toggle_item = radial.item_from_action(toggle, close_on_select=False)
+
+    def items_for(active) -> list:
+        names = ring_departments(pool, active, RING_MAX - 1)
+        return [slices[name] for name in names] + [toggle_item]
+
+    menu = None
+
+    def _pick_slices():
+        # Radial runs this as the key goes down, before the ring is drawn.
+        _name, active, _current = _jump_read(fresh=True)
+        menu.items = items_for(active)
+
+    menu = radial.menu(items_for(()), label="Open Workfile", press_fn=_pick_slices)
+    return menu
 
 
 # ── Binding the context menus ────────────────────────────────────────────────

@@ -31,6 +31,7 @@ from tumblepipe.util.uri import Uri
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode, FROM_CONTEXT
 from tumblepipe.pipe.houdini.frame_range import FrameRangeNode, FrameRangeSource
+from tumblepipe.pipe.houdini import sim_start
 from tumblepipe.pipe.paths import (
     list_version_paths,
     get_workspace_relpath,
@@ -237,7 +238,16 @@ class CacheBase(FrameRangeNode, EntityNode):
         )
         native = self.native()
         self._point_inner_cache(output_path)
-        native.parm('cache/execute').pressButton()
+        # A rig that simulates (TumbleRig Motion Effects, Collisions, Wobl...)
+        # caches From Start Frame: its sims are first brought to the frame
+        # before the cache's first one, replayed from the scene's start, so
+        # the cache is the same whatever was played before (sim_start).
+        with sim_start.forced():
+            inputs = native.inputs()
+            if sim_start.available() and inputs:
+                sim_start.prime(inputs[0],
+                                self.get_frame_range().full_range().first_frame)
+            native.parm('cache/execute').pressButton()
         native.parm('cache/loadfromdisk').set(1)
         self.set_version_name(version_name)
         self._save_context(output_path.parent, cache_name, version_name)

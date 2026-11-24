@@ -160,6 +160,40 @@ def entity_departments(entity_uri: Uri | None) -> list[str]:
         return []
 
 
+def entity_active_departments(entity_uri: Uri | None) -> list[str]:
+    """The departments of *entity_uri* the jump offers
+    (``department_jump.active_departments``): in pool order, the ones with
+    a workfile (its own, or a Multi's that covers it) that are not turned
+    off on the entity, plus the open workfile's department when the open
+    workfile is this entity's. Empty for None or an unknown entity."""
+    from tumblepipe.config.department import get_disabled_departments
+    from tumblepipe.pipe.department_jump import active_departments
+    from tumblepipe.pipe.houdini.workfiles import latest_workfile
+
+    names = entity_departments(entity_uri)
+    if not names:
+        return []
+    try:
+        off = get_disabled_departments(entity_uri)
+    except ValueError:
+        off = []
+    context = workfile_context()
+    current = (
+        context.department_name
+        if context is not None and context.entity_uri == entity_uri else None
+    )
+
+    def has_work(name: str) -> bool:
+        try:
+            return latest_workfile(entity_uri, name) is not None
+        except Exception:  # noqa: BLE001  a path that cannot resolve has no work
+            logger.debug("Resolving the %s workfile of %s failed",
+                         name, entity_uri, exc_info=True)
+            return False
+
+    return active_departments(names, has_work, off, current)
+
+
 def _status(message: str) -> None:
     hou.ui.setStatusMessage(message, severity=hou.severityType.Warning)
 

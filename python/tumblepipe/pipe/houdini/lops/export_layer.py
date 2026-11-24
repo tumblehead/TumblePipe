@@ -17,7 +17,7 @@ from tumblepipe.config.channels import CHANNEL_KEY, list_channels
 from tumblepipe.config.multi_timeline import shift_block_range
 from tumblepipe.config.timeline import require_fps
 from tumblepipe.pipe import export_targets
-from tumblepipe.pipe.houdini import prim_metadata, prim_queries
+from tumblepipe.pipe.houdini import prim_metadata, prim_queries, sim_start
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.farm_node import FarmNode
@@ -453,11 +453,15 @@ class ExportLayer(FrameRangeNode, TimeOffsetNode, FarmNode, EntityNode):
             layer_file_name = get_layer_file_name(
                 entity_uri, channel_name, department_name, version_name
             )
-            self._write_layer(
-                temp_path, layer_file_name,
-                shift_block_range(render_range, time_offset),
-                self.get_batch_size(),
-            )
+            # TumbleRig sims (Motion Effects, Collisions, Wobl...) export From
+            # Start Frame in a GUI publish too, as they do on the farm: the
+            # same frames whatever was played before (sim_start).
+            with sim_start.forced():
+                self._write_layer(
+                    temp_path, layer_file_name,
+                    shift_block_range(render_range, time_offset),
+                    self.get_batch_size(),
+                )
             if time_offset != 0:
                 report_progress(f"moving frames back by {time_offset}")
                 shift_directory(temp_path, -time_offset)

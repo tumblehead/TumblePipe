@@ -99,3 +99,37 @@ def radial_icon(spec: str, resolve: Callable[[str], "Path | None"]) -> str:
     if found is not None:
         return "lucide:" + Path(found).with_suffix("").as_posix()
     return "lucide:" + spec
+
+
+def active_departments(
+    departments: Iterable[str],
+    has_work: Callable[[str], bool],
+    turned_off: Iterable[str] = (),
+    current: str | None = None,
+) -> list[str]:
+    """The departments of *departments* the jump offers, in the order
+    given: those with a workfile (``has_work(name)``) that are not turned
+    off on the entity (*turned_off*, #64).
+
+    Discord, Remy 2026-11-22: the jump "should only show active
+    departments", the ones the Asset Browser lights up on the entity's
+    card. *current* is the open workfile's department when it is this
+    entity's: it always stays, turned off or not, so the ring never hides
+    the department you are in.
+    """
+    off = set(turned_off)
+    return [
+        name for name in departments
+        if name == current or (name not in off and has_work(name))
+    ]
+
+
+def ring_departments(pool: Iterable[str], active: Iterable[str], slots: int) -> list[str]:
+    """The departments the jump's ring shows, in pool order, at most
+    *slots*: the active ones, or the whole pool (greyed by the ring) when
+    the jump has no entity or its entity has no work yet, so the ring
+    still says what it is for."""
+    pool = list(pool)
+    wanted = set(active)
+    shown = [name for name in pool if name in wanted]
+    return (shown or pool)[:max(slots, 0)]

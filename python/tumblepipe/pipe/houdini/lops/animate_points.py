@@ -157,6 +157,8 @@ import time
 import hou
 import numpy as np
 
+from tumblepipe.pipe.houdini import sim_start
+
 STAMP = '__th_pt'
 COUNT = '__th_count'
 STAMP_PRIMVAR = f'primvars:{STAMP}'
@@ -1481,6 +1483,9 @@ def apply(lop_node) -> None:
     left_out = _left_out_primvars(  # reads the first frame too
         lop_node, sops, mapping, bool(option(animate, 'asset_primvars', 1)))
     hide_parts = bool(option(animate, 'hide_parts', 1)) and can_split(mapping)
+    # `output` is `points_sops/placed`, which catches the rigs' sims up in its
+    # own cook (`placed_shapes`, sim_start.settle): this read, the imports and
+    # anything else reading the SOPs get the same frame.
     geo = output.geometry()
     if geo is None:
         raise hou.NodeError('\n'.join(output.errors()) or f'anim_dive: {output.name()} has no geometry.')
@@ -1718,6 +1723,16 @@ def sample_defaults(layer, paths, frame) -> None:
                 if layer.GetNumTimeSamplesForPath(attr.path): continue
                 if _unindexes_nothing(attr, attr.default): continue
                 layer.SetTimeSample(attr.path, frame, attr.default)
+
+
+def sim_start_frame(sops):
+    """The frame the static import reads (`points_sops/at_start`): the shot's
+    first frame, where a replay of the rigs' sims starts (before the prewarm)."""
+    try:
+        node = None if sops is None else sops.node('at_start')
+        return float(node.evalParm('frame')) if node is not None else None
+    except Exception:
+        return None
 
 
 def rest_point_count(sops) -> int | None:
@@ -2156,6 +2171,15 @@ def placed_shapes(sop_node) -> None:
     this node; with them, the note rides in it."""
     from tumblepipe.pipe.houdini.lops import animate_invoke
     geo = sop_node.geometry()
+    # A rig that simulates (TumbleRig Motion Effects, Collisions, Wobl...) only
+    # steps frame after frame. Whatever reads these SOPs (the imports, a SOP
+    # Import in a CFX scene, a cache, a DOP) may ask for any frame, so the rigs
+    # are caught up here first: replayed from the shot's start, or as far back
+    # as their nodes remember, when their sims are not at the frame before.
+    settled = sim_start.settle(sop_node, start=sim_start_frame(sop_node.parent()))
+    if settled is not None:
+        geo.clear()
+        geo.merge(settled)
     animate_node = sop_node.parent().parent() if sop_node.parent() else None
     rig_copies = rig_copies_message(sop_node)
     if not _has_packed(geo):

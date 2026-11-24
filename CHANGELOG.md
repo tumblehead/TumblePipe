@@ -12,6 +12,15 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.126.0 — 2026-11-23
+
+### Fixes
+- fix(import_rigs): Set Scene Copies writes nothing without a UI to confirm (`c3462b94`)
+- fix(import_rigs): Set Scene Copies writes the rig's copy count into the shot's scene (`7c655feb`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.125.0 (`05dd3ffe`)
+
 ## v1.125.0 — 2026-11-23
 
 ### Features

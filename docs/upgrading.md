@@ -5,7 +5,32 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
-## Unreleased
+## v1.127.0
+
+### The department jump (Alt+D) shows only the entity's active departments
+
+`radial._selected_asset()` (and `_jump_read`) now return the jump entity's
+active departments: a workfile of its own or a covering Multi's, not turned
+off on the entity, plus the open workfile's own department. That is new
+`selection_entities.entity_active_departments(entity_uri)`, built on the pure
+`department_jump.active_departments` and `ring_departments`. A slice whose
+department has no work on the entity is greyed, where 1.126.0 enabled every
+department the entity had. The menu picks its slices as it opens (its
+`press_fn`); with no entity, or none active, it shows the pool greyed as
+before.
+
+### Rigs that simulate are caught up for every reader of th::animate's SOPs
+
+New module `tumblepipe.pipe.houdini.sim_start` (`available`, `settle`,
+`geometry`, `forced`, `prime`) calls the replay of the shared kit
+(`ttkit.sim_replay`), else `TumbleRig.sim_start`. With neither installed,
+every call is a plain cook and nothing changes. th::animate's
+`points_sops/placed` settles the rigs' sims before its cook. Exports and
+th::cache write with sims forced From Start Frame, and th::cache primes them
+to its first frame. `animate_points.sim_start_frame(sops)` is new. It takes
+effect with the TumbleRig release that has `sim_start.settle`.
+
+## v1.126.0
 
 ### Set Scene Copies on th::import_rig(s) writes the rig's copy count into the shot's scene
 
