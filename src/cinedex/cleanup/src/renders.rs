@@ -467,7 +467,7 @@ fn pinned(
     notes.push(format!("Read {read} latest workfile(s) for the render versions they name."));
     if unreadable > 0 {
         notes.push(format!(
-            "{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: render versions they name are NOT protected."
+            "{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: render versions only they load are not kept for them."
         ));
     }
 

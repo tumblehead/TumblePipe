@@ -311,7 +311,7 @@ def pinned(
     if unreadable:
         notes.append(
             f'{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: '
-            'render versions they name are NOT protected.'
+            'render versions only they load are not kept for them.'
         )
 
     by_edit: set[str] = set()

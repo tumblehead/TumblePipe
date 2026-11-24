@@ -33,7 +33,7 @@ pub const FIELDS: [(&str, &[Field]); 6] = [
             field("check_render_days", "Checks older than", "days", "Check renders older than this many days go.", 0, 3650),
         ],
     ),
-    ("caches", &[field("keep_caches", "Keep", "newest finished", "Keep the newest finished versions of each th::cache.", 1, 50)]),
+    ("caches", &[field("keep_caches", "Keep", "newest", "Keep the newest versions of each th::cache.", 1, 50)]),
     (
         "backups",
         &[
@@ -50,7 +50,14 @@ pub const FIELDS: [(&str, &[Field]); 6] = [
     ),
     (
         "deleted",
-        &[field("deleted_days", "Deleted over", "days ago", "Entities deleted more than this many days ago go for good.", 0, 3650)],
+        &[field(
+            "deleted_days",
+            "Deleted over",
+            "days ago",
+            "Entities deleted more than this many days ago are removed from _deleted.",
+            0,
+            3650,
+        )],
     ),
 ];
 
@@ -118,6 +125,20 @@ pub fn read_field(field: &Field, text: &str, current: i64) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    /// What the cleanup removes is made again from its workfile, so no
+    /// field says a purge is dangerous or final (`words_stay_calm`).
+    #[test]
+    fn no_field_alarms() {
+        const ALARM: [&str; 7] = ["danger", "unsafe", "safely", "undone", "for good", "irrevers", "permanent"];
+        for field in super::all_fields() {
+            for text in [field.label, field.unit, field.tip] {
+                let lower = text.to_lowercase();
+                assert!(!ALARM.iter().any(|word| lower.contains(word)), "{}: {text}", field.name);
+                assert!(!text.split(|c: char| !c.is_alphanumeric()).any(|w| w == "NOT" || w == "NEVER"), "{}: {text}", field.name);
+            }
+        }
+    }
+
     use super::*;
     use proptest::prelude::*;
 

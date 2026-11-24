@@ -241,11 +241,14 @@ pub struct LiveFarm;
 
 impl Farm for LiveFarm {
     fn deadline_jobs(&self) -> Result<HashMap<String, Vec<String>>, String> {
+        // No Deadline here: the project renders on the local farm, so no
+        // Deadline job uses any folder (`jobs._ask_deadline`).
         let Some(command) = deadline_command() else {
-            return Err("Deadline is not installed on this machine: no job folder can be deleted safely.".into());
+            return Ok(HashMap::new());
         };
-        query_deadline(&command, DEADLINE_TIMEOUT)
-            .map_err(|error| format!("Deadline could not be asked ({error}): no job folder will be deleted."))
+        query_deadline(&command, DEADLINE_TIMEOUT).map_err(|error| {
+            format!("Deadline could not be asked ({error}), so every farm job folder is kept. The other categories are not affected.")
+        })
     }
 
     fn local_folders(&self) -> Result<HashSet<String>, String> {

@@ -196,6 +196,39 @@ pub fn confirm_lines(view: &Overview) -> Vec<String> {
         .collect()
 }
 
+/// The categories a workfile makes again: an export, render or cache by
+/// exporting, rendering or caching again, a farm job folder by the next
+/// submit. What the cleanup removes is a risk to no one, and the words say
+/// so plainly: no "dangerous", no "can't be undone" (`overview.REMAKEABLE`).
+pub const REMAKEABLE: [&str; 4] = ["exports", "renders", "caches", "jobs"];
+
+/// How the confirmation names a category no workfile makes again.
+fn not_remakeable_noun(category: &CategoryOverview) -> &str {
+    match category.key.as_str() {
+        "backups" => "Houdini backups",
+        "deleted" => "deleted entities",
+        _ => &category.title,
+    }
+}
+
+/// The confirmation's sentence for the categories about to be purged: how
+/// many items go, and which of them a workfile can make again
+/// (`overview.confirm_note`).
+pub fn confirm_note<'a>(categories: impl IntoIterator<Item = &'a CategoryOverview>) -> String {
+    let deleting: Vec<&CategoryOverview> = categories.into_iter().filter(|c| c.to_delete > 0).collect();
+    let count: usize = deleting.iter().map(|c| c.to_delete).sum();
+    let head = format!("{} old item{} will be removed from disk.", thousands(count), if count == 1 { "" } else { "s" });
+    let others: Vec<&CategoryOverview> = deleting.iter().copied().filter(|c| !REMAKEABLE.contains(&c.key.as_str())).collect();
+    if deleting.is_empty() || others.len() == deleting.len() {
+        return head;
+    }
+    if others.is_empty() {
+        return format!("{head} Each can be made again from its workfile.");
+    }
+    let names: Vec<&str> = others.iter().map(|c| not_remakeable_noun(c)).collect();
+    format!("{head} All but the {} can be made again from their workfiles.", names.join(" and "))
+}
+
 /// One row of the tree: its cells ([`COLUMNS`]), how it is drawn, a
 /// tooltip, its children and whether it starts open.
 #[derive(Debug, Clone, PartialEq, Eq)]

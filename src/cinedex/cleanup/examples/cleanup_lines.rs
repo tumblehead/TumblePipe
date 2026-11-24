@@ -259,6 +259,7 @@ fn handle(request: Request) -> Result<Value, String> {
                 "delete_label": overview::delete_label(Some(&view)),
                 "warnings": overview::warnings(&view),
                 "confirm": overview::confirm_lines(&view),
+                "confirm_note": overview::confirm_note(&view.categories),
                 "deleted_rows": overview::deleted_rows(&plan, &results).iter().map(row_json).collect::<Vec<_>>(),
             }))
         }

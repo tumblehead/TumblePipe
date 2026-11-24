@@ -5,17 +5,14 @@
 folder, or under the proxy root, and nothing removes the old ones. A cache
 is the one derived thing other files point straight into: a cache node
 loads the exact version it is set to, and a published export references a
-cache's files by absolute path instead of copying them. So a version goes
-only when all of these hold:
+cache's files by absolute path instead of copying them. Like every derived
+thing the cleanup removes, a cache is made again by caching again, so
+whether its ``context.json`` record is there, or names a workfile still in
+the project, does not matter. A version goes when all of these hold:
 
-- it **finished** and says what made it (its ``context.json`` sidecar), and
-  the workfile that made it is still there: it could be made again
-  (``tumblepipe.archive rebuild``). A cache with no record, or whose
-  workfile is gone, is never deleted here;
-- at least ``keep_caches`` newer finished versions of the same cache exist;
-- it is not the **highest** version of its cache: the next one takes the
-  highest number plus one, and a node set to the old version would load the
-  new files;
+- at least ``keep_caches`` newer versions of the same cache exist (so the
+  highest, whose number plus one the next cache takes, always stays: a node
+  set to it would load the new files);
 - no **latest workfile** names it: a node whose Name and Version are its
   (in any department: a cache node can load another department's), or any
   path into it;
@@ -43,7 +40,6 @@ from tumblepipe.cleanup.core import (
     KEEP_FILE, RECENT_DAYS, Category, CategoryPlan, Entry, Settings, delete_entries, recently_written,
     under_context, within,
 )
-from tumblepipe.pipe import cache_context
 
 CACHE_DIRS = ('cache', 'lops_cache')
 PURPOSES = (*WORKFILE_PURPOSES[:3], 'proxy')       # assets, shots, groups, proxy
@@ -52,11 +48,8 @@ _INTO = re.compile(r'(?:^|/)((?:cache|lops_cache)/[^/"\'\s]+/v\d{4,})(?![0-9])')
 
 
 class Reason:
-    PRUNE = 'older than the newest {keep} finished versions, and its workfile can make it again'
-    KEEP_NEWEST = 'one of the newest {keep} finished versions'
-    KEEP_HIGHEST = 'the highest version of its cache: its number would be used again'
-    KEEP_NO_RECORD = 'no record of what made it (or unfinished): it could not be made again'
-    KEEP_NO_WORKFILE = 'the workfile that made it is gone: it could not be made again'
+    PRUNE = 'older than the newest {keep} versions'
+    KEEP_NEWEST = 'one of the newest {keep} versions'
     KEEP_WORKFILE = 'a latest workfile names it'
     KEEP_EXPORT = 'an export references it'
     KEEP_NO_USD = 'the exports could not be read here (no USD): nothing is deleted'
@@ -192,7 +185,7 @@ def named_by_workfiles(
     if unreadable:
         notes.append(
             f'{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: '
-            'cache versions they name are NOT protected.'
+            'cache versions only they load are not kept for them.'
         )
     return named
 
@@ -240,15 +233,6 @@ def referenced_by_exports(roots, units: dict, notes: list[str], errors: list[str
 # ── the plan ───────────────────────────────────────────────────────────────
 
 
-def _producer_workfile(context: dict, project_path: Path) -> bool:
-    """Whether the workfile the sidecar names is still in the project."""
-    workfile = ((context.get('producer') or {}).get('workfile') or {}).get('path')
-    node = (context.get('producer') or {}).get('node')
-    if not workfile or not node or Path(workfile).is_absolute():
-        return False
-    return long_path(Path(project_path) / workfile).is_file()
-
-
 def plan(
     roots, inventory, settings: Settings, *, workfiles: hip.Workfiles, now: float | None = None,
 ) -> CategoryPlan:
@@ -265,23 +249,12 @@ def plan(
         series[unit.series].append(unit)
     for group in series.values():
         group.sort(key=lambda u: u.code)
-        highest = group[-1].code
-        contexts = {u.key: cache_context.load_cache_context(long_path(out.payload[u.purpose].joinpath(*u.parts)))
-                    for u in group}
-        finished = [u for u in group if contexts[u.key] is not None]
-        newest = {u.key for u in finished[-keep:]}
+        newest = {u.key for u in group[-keep:]}
         for unit in group:
-            context = contexts[unit.key]
             if unit.marked:
                 verdict = (False, Reason.KEEP_MARKED)
-            elif context is None:
-                verdict = (False, Reason.KEEP_NO_RECORD)
             elif unit.key in newest:
                 verdict = (False, Reason.KEEP_NEWEST.format(keep=keep))
-            elif unit.code == highest:
-                verdict = (False, Reason.KEEP_HIGHEST)
-            elif not _producer_workfile(context, roots.project_path):
-                verdict = (False, Reason.KEEP_NO_WORKFILE)
             else:
                 verdict = (True, Reason.PRUNE.format(keep=keep))
             verdicts[unit.key] = verdict
@@ -332,8 +305,6 @@ def apply(category_plan: CategoryPlan, log_path: Path) -> tuple[int, int, list[s
         path = long_path(entry.path)
         if not path.is_dir() or path.is_symlink():
             return 'not a folder'
-        if cache_context.load_cache_context(path) is None:
-            return 'it has no record of what made it'
         if (path / KEEP_FILE).exists():
             return f'it holds a {KEEP_FILE} file'
         if recently_written(entry.path, time.time(), RECENT_DAYS):
@@ -345,7 +316,6 @@ def apply(category_plan: CategoryPlan, log_path: Path) -> tuple[int, int, list[s
 
 CATEGORY = Category(
     'caches', 'Old cache versions',
-    'th::cache versions older than the newest few, that their workfile can make again and that no latest '
-    'workfile or export still loads',
+    'th::cache versions older than the newest few, that no latest workfile or export still loads',
     PURPOSES, plan, apply,
 )

@@ -448,8 +448,7 @@ def summary(plan: Plan) -> list[str]:
     if plan.hips_unreadable:
         lines.append(
             f'{len(plan.hips_unreadable)} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: '
-            'versions they pin are NOT protected. Save them as .hip to protect them, or prune '
-            'only where they are not.'
+            'versions only they load are not kept for them. Save them as .hip to have them read.'
         )
     per_entity: dict[str, list[Verdict]] = defaultdict(list)
     for verdict in plan.prunable:

@@ -206,11 +206,16 @@ purge can be paused, resumed or stopped: it stops between items, what went
 stays gone, and the window scans again to show what is left. Everything
 removed is written to `export/other/logs/cleanup-<date>.log`.
 
+Everything the cleanup removes is made by a workfile: an export, render or
+cache is exported, rendered or cached again from it, a farm job folder is
+written again by the next submit. Houdini backups and deleted entities are the
+exceptions, and they go only past the ages set for them.
+
 | Category | What goes | What always stays |
 |---|---|---|
 | **Old export versions** | versions older than the newest 3 finished of each export | anything a current staged build or a latest workfile loads ([below](#pruning-old-export-versions)) |
 | **Old render versions** | versions older than the newest 2 complete of each render layer; check renders older than 14 days, with their review movies | the highest version of a layer, and anything a workfile, an edit or a kept composite names ([below](#old-render-versions)) |
-| **Old cache versions** | `th::cache` versions older than the newest 2 finished of each cache, that their workfile can make again | anything a latest workfile or an export on disk still loads ([below](#old-cache-versions)) |
+| **Old cache versions** | `th::cache` versions older than the newest 2 of each cache, with or without a record of what made them | anything a latest workfile or an export on disk still loads ([below](#old-cache-versions)) |
 | **Houdini backups** | `backup/*_bakN.hip` of a workfile version that has since been saved as a newer version; of the latest version, all but the newest 5 | any backup newer than 7 days ([below](#houdini-backups)) |
 | **Farm job folders** | folders neither Deadline nor the local farm can run from again | anything requeueable ([below](#pruning-farm-job-folders)) |
 | **Deleted entities** | `_deleted/<date>-<time>/` folders older than 30 days | anything else in a `_deleted` folder |
@@ -268,13 +273,13 @@ A cache is the one derived thing other files point straight into: a
 `th::cache` node loads the exact version it is set to, and a published
 export references a cache's files instead of copying them. So a
 `cache/<name>/vNNNN` or `lops_cache/<name>/vNNNN` folder (in a workfile
-folder or under the proxy root) goes only when none of these is true:
+folder or under the proxy root) goes only when none of these is true. Whether
+it has a `context.json` record, or names a workfile still in the project, does
+not matter: it is made again by caching again.
 
 | Kept because | |
 |---|---|
-| it has **no record** of what made it | no `context.json` sidecar: unfinished, or cached before TumblePipe wrote one. It could not be made again, so it is never deleted here |
-| **its workfile is gone** | the workfile version its record names is not in the project any more |
-| it is one of the **newest 2 finished** versions, or the **highest** | a number used twice would hand a node set to the old version the new files |
+| it is one of the **newest 2** versions | so the highest always stays: a number used twice would hand a node set to the old version the new files |
 | a **latest workfile** names it | a node whose Name and Version are its, in any department, or any path into it. A path is matched by how it ends (drives and shares are spelled differently per machine), so it also keeps the cache of the same name under the proxy root |
 | an **export** references it | every USD layer under the export root is read for the files it references. Where USD cannot be loaded, no cache is deleted |
 | it was written to in the last two days, or holds a `.keep` file | |
@@ -319,7 +324,10 @@ folders and 25 GB. The prune asks Deadline which jobs still use each folder:
 | no Deadline job uses it any more (the jobs were deleted from Deadline) | yes, once it is older than `--min-age-days` |
 | a batch in this machine's local farm queue runs from it (queued, failed or done) | no, the batch can be retried |
 | it was written for the local farm and no batch here uses it | yes, once it is older than `--local-min-age-days`: the batch may be in another machine's queue |
-| Deadline cannot be asked, or reports no TumblePipe jobs at all | nothing is pruned |
+| Deadline is installed here but cannot be asked, or reports no TumblePipe jobs at all | nothing is pruned |
+
+On a machine without Deadline the project renders on the local farm, so no
+Deadline job uses any folder: folders go by the age and local-queue rows above.
 
 Without `--apply` it only lists what it would delete. With it, it deletes
 those folders and writes their names to
@@ -350,8 +358,8 @@ that:
 a `.hiplc` / `.hipnc` holds the same text sections as a `.hip`, each behind
 a `HouLC`/`HouNC` header in place of cpio's. One in any other form (no such
 header, or a first section that is not text) is not guessed at: the listing
-says how many latest workfiles it could not read, and versions they pin are
-not protected. An older workfile's pins are not read either: open it
+says how many latest workfiles it could not read: versions only they load
+are not kept for them, and are exported again from those workfiles if wanted. An older workfile's pins are not read either: open it
 on latest, or re-export what it needs.
 
 `--context` narrows it to shots, assets or a path under them

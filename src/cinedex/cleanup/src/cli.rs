@@ -26,7 +26,7 @@ fn options(defaults: &Settings) -> Vec<(&'static str, &'static str, String)> {
             "CHECK_RENDER_DAYS",
             format!("delete a check render once it is this old (default {})", format_g(defaults.check_render_days)),
         ),
-        ("--keep-caches", "KEEP_CACHES", format!("finished versions to keep of every th::cache (default {})", defaults.keep_caches)),
+        ("--keep-caches", "KEEP_CACHES", format!("versions to keep of every th::cache (default {})", defaults.keep_caches)),
         (
             "--keep-backups",
             "KEEP_BACKUPS",

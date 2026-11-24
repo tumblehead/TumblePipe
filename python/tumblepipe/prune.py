@@ -333,7 +333,10 @@ def main(argv: list[str] | None = None) -> int:
     command = deadline_command()
     jobs = None
     if command is None:
-        print('Deadline is not installed on this machine: nothing can be pruned safely.')
+        # No Deadline here: the project renders on the local farm, so no
+        # Deadline job uses any folder and the local queue alone protects.
+        print('Deadline is not installed on this machine: folders go by age and the local farm queue.')
+        jobs = {}
     else:
         print(f'Asking Deadline ({command}) …', flush=True)
         try:

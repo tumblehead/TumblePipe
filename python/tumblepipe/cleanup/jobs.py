@@ -1,8 +1,10 @@
 """Farm job folders: ``tumblepipe.prune``, as a cleanup category.
 
 Deadline is asked which jobs still use each folder, and this machine's local
-farm queue which batches do. When Deadline cannot be asked nothing goes, and
-the listing says why.
+farm queue which batches do. On a machine without Deadline no Deadline job
+can use a folder (the project renders on the local farm), so folders go by
+age and the local queue alone. When Deadline is there but cannot be asked
+nothing goes, and the listing says why.
 """
 
 from __future__ import annotations
@@ -14,14 +16,15 @@ from tumblepipe.cleanup.core import Category, CategoryPlan, Entry, Settings, exp
 
 
 def _ask_deadline() -> tuple[dict | None, str | None]:
-    """``(jobs by folder, None)``, or ``(None, why Deadline gave none)``."""
+    """``(jobs by folder, None)``, or ``(None, why Deadline gave none)``.
+    Without Deadline on this machine no Deadline job names any folder."""
     command = prune.deadline_command()
     if command is None:
-        return None, 'Deadline is not installed on this machine: no job folder can be deleted safely.'
+        return {}, None
     try:
         return prune.query_deadline(command), None
     except (OSError, RuntimeError, ValueError) as error:
-        return None, f'Deadline could not be asked ({error}): no job folder will be deleted.'
+        return None, f'Deadline could not be asked ({error}), so every farm job folder is kept. The other categories are not affected.'
 
 
 def plan(roots, _inventory, settings: Settings, *, workfiles) -> CategoryPlan:

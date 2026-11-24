@@ -2,17 +2,16 @@
 //!
 //! `th::cache` writes `<department>/cache/<name>/vNNNN` (SOP) or
 //! `.../lops_cache/<name>/vNNNN` (LOP) in a workfile folder or under the
-//! proxy root. A cache is the one derived thing other files point straight
-//! into, so a version goes only when it finished and says what made it, that
-//! workfile is still there, at least `keep_caches` newer finished versions
-//! exist, it is not the highest, no latest workfile names it, no export
+//! proxy root. A cache is made again by caching again, so its record does
+//! not matter; but it is the one derived thing other files point straight
+//! into, so a version goes only when at least `keep_caches` newer versions
+//! exist (the highest always stays), no latest workfile names it, no export
 //! layer on disk references it, nothing was written to it lately and it is
 //! not marked `.keep`.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde_json::Value;
 use th_pipe::naming::is_valid_version_name;
 
 use crate::core::{
@@ -21,7 +20,7 @@ use crate::core::{
 };
 use crate::fsx;
 use crate::hip;
-use crate::inventory::{Inventory, load_cache_context, version_code};
+use crate::inventory::{Inventory, version_code};
 use crate::py;
 use crate::roots::ProjectRoots;
 use crate::usd;
@@ -31,7 +30,7 @@ pub const PURPOSES: [&str; 4] = ["assets", "shots", "groups", "proxy"];
 pub const CATEGORY: Category = Category {
     key: "caches",
     title: "Old cache versions",
-    about: "th::cache versions older than the newest few, that their workfile can make again and that no latest workfile or export still loads",
+    about: "th::cache versions older than the newest few, that no latest workfile or export still loads",
     purposes: &PURPOSES,
 };
 
@@ -39,14 +38,11 @@ const CACHE_DIRS: [&str; 2] = ["cache", "lops_cache"];
 const LAYERS: [&str; 3] = [".usd", ".usda", ".usdc"];
 
 pub fn reason_prune(keep: i64) -> String {
-    format!("older than the newest {keep} finished versions, and its workfile can make it again")
+    format!("older than the newest {keep} versions")
 }
 pub fn reason_keep_newest(keep: i64) -> String {
-    format!("one of the newest {keep} finished versions")
+    format!("one of the newest {keep} versions")
 }
-pub const KEEP_HIGHEST: &str = "the highest version of its cache: its number would be used again";
-pub const KEEP_NO_RECORD: &str = "no record of what made it (or unfinished): it could not be made again";
-pub const KEEP_NO_WORKFILE: &str = "the workfile that made it is gone: it could not be made again";
 pub const KEEP_WORKFILE: &str = "a latest workfile names it";
 pub const KEEP_EXPORT: &str = "an export references it";
 pub const KEEP_NO_USD: &str = "the exports could not be read here (no USD): nothing is deleted";
@@ -275,7 +271,7 @@ fn named_by_workfiles(
     notes.push(format!("Read {read} latest workfile(s) for the cache versions they name."));
     if unreadable > 0 {
         notes.push(format!(
-            "{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: cache versions they name are NOT protected."
+            "{unreadable} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: cache versions only they load are not kept for them."
         ));
     }
     named
@@ -333,19 +329,7 @@ fn referenced_by_exports(
     Some(named_by_paths(units, order, &paths))
 }
 
-/// Whether the workfile the sidecar names is still in the project.
-fn producer_workfile(context: &Value, project_path: &Path) -> bool {
-    let producer = context.get("producer").filter(|p| py::truthy(p));
-    let workfile = producer.and_then(|p| p.get("workfile")).filter(|w| py::truthy(w)).and_then(|w| w.get("path")).filter(|p| py::truthy(p));
-    let node = producer.and_then(|p| p.get("node")).filter(|n| py::truthy(n));
-    let (Some(Value::String(workfile)), Some(_)) = (workfile, node) else { return false };
-    // A rooted path without a drive is not absolute on Windows: it joins
-    // onto the project's drive, as `Path / workfile` does in Python.
-    !Path::new(workfile).is_absolute() && project_path.join(workfile).is_file()
-}
-
-/// The category's plan (`caches.plan`). An error where Python's raises: a
-/// sidecar that cannot be read.
+/// The category's plan (`caches.plan`).
 pub fn plan(
     roots: &ProjectRoots,
     inventory: Option<&Inventory>,
@@ -378,26 +362,13 @@ pub fn plan(
     }
     for (_, mut group) in series {
         group.sort_by_key(|u| u.code);
-        let highest = group[group.len() - 1].code;
-        let mut contexts: HashMap<Key, Option<Value>> = HashMap::new();
+        let take = usize::try_from(keep).unwrap_or(0).min(group.len());
+        let newest: HashSet<Key> = group[group.len() - take..].iter().map(|u| u.key()).collect();
         for unit in &group {
-            contexts.insert(unit.key(), load_cache_context(&unit_path(unit))?);
-        }
-        let finished: Vec<&&Unit> = group.iter().filter(|u| contexts[&u.key()].is_some()).collect();
-        let take = usize::try_from(keep).unwrap_or(0).min(finished.len());
-        let newest: HashSet<Key> = finished[finished.len() - take..].iter().map(|u| u.key()).collect();
-        for unit in &group {
-            let context = &contexts[&unit.key()];
             let verdict = if unit.marked {
                 (false, reason_keep_marked())
-            } else if context.is_none() {
-                (false, KEEP_NO_RECORD.to_string())
             } else if newest.contains(&unit.key()) {
                 (false, reason_keep_newest(keep))
-            } else if unit.code == highest {
-                (false, KEEP_HIGHEST.to_string())
-            } else if !producer_workfile(context.as_ref().expect("has a record"), &roots.project_path) {
-                (false, KEEP_NO_WORKFILE.to_string())
             } else {
                 (true, reason_prune(keep))
             };
@@ -454,8 +425,8 @@ pub fn plan(
     Ok(out)
 }
 
-/// Delete the cache versions marked to go, each still a recorded cache
-/// version folder in its root, unmarked and not written to since.
+/// Delete the cache versions marked to go, each still a cache version
+/// folder in its root, unmarked and not written to since.
 pub fn apply(category: &CategoryPlan, log_path: &Path, steer: &Steer<'_>) -> Result<Outcome, String> {
     let root_paths = match &category.payload {
         Payload::Roots(roots) => roots.clone(),
@@ -486,11 +457,6 @@ pub fn apply(category: &CategoryPlan, log_path: &Path, steer: &Steer<'_>) -> Res
         let link = std::fs::symlink_metadata(&entry.path).map(|m| m.file_type().is_symlink()).unwrap_or(false);
         if !entry.path.is_dir() || link {
             return Some("not a folder".into());
-        }
-        match load_cache_context(&entry.path) {
-            Ok(Some(_)) => {}
-            Ok(None) => return Some("it has no record of what made it".into()),
-            Err(error) => return Some(error),
         }
         if entry.path.join(KEEP_FILE).exists() {
             return Some(format!("it holds a {KEEP_FILE} file"));

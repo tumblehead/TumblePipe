@@ -5,6 +5,32 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.127.1
+
+### Farm job folders are cleaned up on a machine without Deadline
+
+`tumblepipe.cleanup.jobs._ask_deadline()` returns `({}, None)` when no
+`deadlinecommand` is found (it returned `(None, problem)`), and
+`python -m tumblepipe.prune` plans with `jobs={}` there: folders go by
+`--min-age-days` and the local farm queue instead of all being kept. The Rust
+`LiveFarm::deadline_jobs` does the same. Deadline installed but not answering
+still keeps every folder, with a reworded note.
+
+### Old cache versions go with or without a record
+
+`cleanup.caches` no longer keeps a version for having no `context.json` or
+for naming a workfile no longer in the project: the newest `keep_caches`
+versions by number stay (the highest among them), and the latest-workfile,
+export, recent and `.keep` guards are unchanged. `caches.Reason.KEEP_NO_RECORD`,
+`KEEP_NO_WORKFILE` and `KEEP_HIGHEST` (Rust: the same constants and
+`producer_workfile`) are removed; `PRUNE` and `KEEP_NEWEST` drop "finished".
+
+### The Purge confirm says what a workfile makes again
+
+New `cleanup.overview.confirm_note(categories)` / `REMAKEABLE` (Rust:
+`overview::confirm_note`), used by both windows' confirm in place of "This
+cannot be undone."
+
 ## v1.127.0
 
 ### The department jump (Alt+D) shows only the entity's active departments

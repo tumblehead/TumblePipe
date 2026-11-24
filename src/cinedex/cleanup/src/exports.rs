@@ -446,7 +446,7 @@ pub fn plan(
     out.notes.push(format!("Read {} latest workfile(s) for pinned versions.", export_plan.hips_read));
     if !export_plan.hips_unreadable.is_empty() {
         out.notes.push(format!(
-            "{} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: versions they pin are NOT protected.",
+            "{} latest workfile(s) are .hiplc/.hipnc in a form that cannot be read: versions only they load are not kept for them.",
             export_plan.hips_unreadable.len()
         ));
     }

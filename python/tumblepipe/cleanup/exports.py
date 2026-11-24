@@ -25,7 +25,7 @@ def plan(roots, inventory, settings: Settings, *, workfiles: hip.Workfiles) -> C
     if export_plan.hips_unreadable:
         out.notes.append(
             f'{len(export_plan.hips_unreadable)} latest workfile(s) are .hiplc/.hipnc in a form that '
-            'cannot be read: versions they pin are NOT protected.'
+            'cannot be read: versions only they load are not kept for them.'
         )
     out.errors = list(export_plan.errors)
     return out

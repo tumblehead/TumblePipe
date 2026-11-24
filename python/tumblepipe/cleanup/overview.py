@@ -181,6 +181,30 @@ def confirm_lines(view: Overview) -> tuple[str, ...]:
     )
 
 
+#: The categories a workfile makes again: an export, render or cache by
+#: exporting, rendering or caching again, a farm job folder by the next
+#: submit. What the cleanup removes is a risk to no one, and the words say
+#: so plainly: no "dangerous", no "can't be undone".
+REMAKEABLE = ('exports', 'renders', 'caches', 'jobs')
+#: How the confirmation names a category no workfile makes again.
+NOT_REMAKEABLE_NOUN = {'backups': 'Houdini backups', 'deleted': 'deleted entities'}
+
+
+def confirm_note(categories) -> str:
+    """The confirmation's sentence for the categories about to be purged:
+    how many items go, and which of them a workfile can make again."""
+    deleting = [c for c in categories if c.to_delete]
+    count = sum(c.to_delete for c in deleting)
+    head = f'{count:,} old item{"" if count == 1 else "s"} will be removed from disk.'
+    others = [c for c in deleting if c.key not in REMAKEABLE]
+    if not deleting or len(others) == len(deleting):
+        return head
+    if not others:
+        return f'{head} Each can be made again from its workfile.'
+    names = ' and '.join(NOT_REMAKEABLE_NOUN.get(c.key, c.title) for c in others)
+    return f'{head} All but the {names} can be made again from their workfiles.'
+
+
 @dataclass(frozen=True)
 class Row:
     """One row of the tree: its cells (:data:`COLUMNS`), how it is drawn,

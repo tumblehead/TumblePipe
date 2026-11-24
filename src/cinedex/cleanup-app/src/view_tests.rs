@@ -1131,7 +1131,7 @@ fn closing_mid_purge_stops_after_the_item_under_way() {
 }
 
 /// The Confirm is short: the size in its title, one sentence with the count
-/// and that it is final, no per-category list (the main screen shows that),
+/// and what a workfile can make again, no per-category list (the main screen shows that),
 /// Cancel before Purge, and neither Enter nor Esc purges: both cancel.
 #[test]
 fn the_confirm_is_short_and_never_purges_on_a_key() {
@@ -1145,8 +1145,8 @@ fn the_confirm_is_short_and_never_purges_on_a_key() {
     let frame = screen.draw(&sheet);
     assert!(find(&frame, "Free up 4 B?").is_some(), "the title names the size");
     assert!(
-        find(&frame, &format!("1 old item will be removed from disk for good. {CONSEQUENCE}")).is_some(),
-        "one sentence: the count, and that it is final"
+        find(&frame, "1 old item will be removed from disk.").is_some(),
+        "one sentence: the count, and (a deleted entity) nothing more"
     );
     assert!(find(&frame, results::TO_PURGE.0).is_none(), "no per-category table");
     let cancel = find(&frame, "Cancel").expect("Cancel");

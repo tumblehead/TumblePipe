@@ -1282,15 +1282,11 @@ impl Window {
 
     /// What the Confirm sheet says, owned so the modal can build it
     /// whenever it asks. The main screen already shows what goes and why,
-    /// so the Confirm only names the size, the count and that it is final.
+    /// so the Confirm only names the size, the count and what of it a
+    /// workfile can make again (`overview::confirm_note`).
     fn confirm_data(&self) -> Option<Confirm> {
         self.plan.as_ref()?;
-        let count = self.count();
-        let old = if count == 1 { "old item" } else { "old items" };
-        Some(Confirm {
-            title: format!("Free up {}?", human(self.size())),
-            body: format!("{} {old} will be removed from disk for good. {CONSEQUENCE}", thousands(count)),
-        })
+        Some(Confirm { title: format!("Free up {}?", human(self.size())), body: overview::confirm_note(self.chosen()) })
     }
 }
 
@@ -1327,12 +1323,9 @@ fn row_with_icon<Message: 'static>(mark: Element<Message>, words: Element<Messag
 struct Confirm {
     /// "Free up 9.2 GB?"
     title: String,
-    /// One sentence: how many go, and that it is final.
+    /// One sentence: how many go, and what a workfile can make again.
     body: String,
 }
-
-/// That a purge is final, said once.
-const CONSEQUENCE: &str = "This can't be undone.";
 
 /// The Confirm: a short title, one sentence, and `Cancel` then `Purge`.
 /// No act is the default but Cancel.
@@ -1638,7 +1631,9 @@ mod tests {
         assert!(window.confirm.is_some());
         let data = window.confirm_data().unwrap();
         assert_eq!(data.title, "Free up 4 B?");
-        assert_eq!(data.body, "1 old item will be removed from disk for good. This can't be undone.");
+        // A deleted entity: no workfile makes it again, and the words say
+        // only what happens.
+        assert_eq!(data.body, "1 old item will be removed from disk.");
         let _ = window.view(window::Id::MAIN);
 
         // Cancel changes nothing; Confirm purges what was ticked.

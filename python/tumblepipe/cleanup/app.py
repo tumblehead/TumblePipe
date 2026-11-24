@@ -42,7 +42,7 @@ _FIELDS = {
         ('keep_renders', 'Keep the newest', 'complete versions', 1, 50),
         ('check_render_days', 'Check renders older than', 'days', 0, 3650),
     ),
-    'caches': (('keep_caches', 'Keep the newest', 'finished versions', 1, 50),),
+    'caches': (('keep_caches', 'Keep the newest', 'versions', 1, 50),),
     'backups': (
         ('keep_backups', 'Keep the newest', "of the latest version's", 0, 100),
         ('backup_days', 'None newer than', 'days', 0, 3650),
@@ -237,9 +237,8 @@ QPushButton:disabled {{ background-color: {BG_MID}; color: {TEXT_DIM}; border-co
             root.setSpacing(12)
             root.addWidget(_title(f'Delete from {project}?'))
             root.addWidget(_banner(
-                ERROR_COLOUR,
-                f'{overview.plural(view.to_delete, "item")}, {core.human(view.size)} in all. '
-                'This cannot be undone.',
+                STALE_COLOUR,
+                f'{core.human(view.size)} in all. {overview.confirm_note(view.categories)}',
             ))
             self.lines = QTreeWidget()
             self.lines.setStyleSheet(_list_style())

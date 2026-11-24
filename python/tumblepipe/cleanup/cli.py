@@ -34,7 +34,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('--check-render-days', type=float, default=defaults.check_render_days,
                         help=f'delete a check render once it is this old (default {defaults.check_render_days:g})')
     parser.add_argument('--keep-caches', type=int, default=defaults.keep_caches,
-                        help=f'finished versions to keep of every th::cache (default {defaults.keep_caches})')
+                        help=f'versions to keep of every th::cache (default {defaults.keep_caches})')
     parser.add_argument('--keep-backups', type=int, default=defaults.keep_backups,
                         help="Houdini backups to keep of each department's latest workfile version "
                              f'(default {defaults.keep_backups})')

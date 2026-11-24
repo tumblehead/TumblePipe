@@ -12,6 +12,19 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.127.0 — 2026-11-24
+
+### Fixes
+- fix: Magnus's radial and sim branches pass the suite on v1.126.0 (`a1928e9d`)
+- fix(animate): rigs that simulate are caught up for every reader of th::animate's SOPs (`9e924f92`)
+- fix(radial): the department jump (Alt+D) shows only active departments (`31872825`)
+
+### Tests
+- test(animate): verify_animate_sim_start names sim_start_frame, and says the kit must be on the path (`edf41d33`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.126.0 (`156f08d0`)
+
 ## v1.126.0 — 2026-11-23
 
 ### Fixes
