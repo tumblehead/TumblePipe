@@ -29,8 +29,8 @@ config = {
     # imports is empty
     'renders': [{'channel': 'chars', 'department': 'denoise', 'version': 'v0004'}],
     # optional: the whole comp's frames, [first, last, step] (a partial's
-    # too); a re-comp's worker comps a check render only when they are
-    # inside its range (pipe.comp.check_render_refusal); without it, never
+    # too); a re-comp's worker comps a check render on any of them, the
+    # frames it lacks held (pipe.comp.check_render_refusal); without it, never
     'comp_frames': [1, 100, 1],
     # optional: a re-comp beside a stepped render, the render (a check
     # render) its imports are pinned to when it runs (pipe.comp.follow_pins);

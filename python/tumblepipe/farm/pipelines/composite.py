@@ -88,9 +88,9 @@ runs is marked so by its worker; its daily mp4 and Copy to edit, queued
 before anyone knew, read that flag when they run (``publish_contexts``,
 ``pipe.comp.unpublished_reason``) and skip with a ``WARNING:`` line, still
 exiting 0 (Soren, 2026-11-23). Every composite job carries the comp's
-frames (``comp_frames``): a re-comp's worker comps a check render only when
-they are inside its range (``pipe.comp.check_render_refusal``), holding the
-frames it lacks.
+frames (``comp_frames``): a re-comp's worker comps a check render on any of
+them (``pipe.comp.check_render_refusal``), holding the frames it lacks, its
+first and last outside its range.
 """
 
 from pathlib import Path
@@ -534,9 +534,10 @@ def chained_config(
     (``settings.reads_check_render``): a re-comp's imports are pinned to
     ``renders`` when it runs (``follows``), not left to resolve ``latest``,
     which would read the shot's older published render. Farm Submit took
-    it on any frames inside the render's, the frames the render does not
-    make held (``farm.specs.submission.stepped_comp_frames``); the worker
-    checks the range again (``pipe.comp.check_render_refusal``)."""
+    it on any frames, the frames the render does not make held, its first
+    and last outside its range (``farm.specs.submission.stepped_comp_frames``);
+    the worker checks the check render again
+    (``pipe.comp.check_render_refusal``)."""
     if block.get('scene') is not None:
         config = scene_config(shot_uri, block, renders, **kwargs)
     else:

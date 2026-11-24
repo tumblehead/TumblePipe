@@ -12,6 +12,22 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.127.1 — 2026-11-24
+
+### Fixes
+- fix(cleanup): old cache versions go with or without a record of what made them (`cc88b88c`)
+- fix(cleanup): the words say what a purge does, not that it is dangerous (`2d723cda`)
+- fix(cleanup): farm job folders are cleaned up on a machine without Deadline (`a198501f`)
+
+### Tests
+- test(cleanup): no word a person reads calls the cleanup dangerous or final (`57484009`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.127.0 (`fe77edda`)
+
+### Other Changes
+- style(cleanup): rustfmt the cleanup wording changes (`89fa4a54`)
+
 ## v1.127.0 — 2026-11-24
 
 ### Fixes

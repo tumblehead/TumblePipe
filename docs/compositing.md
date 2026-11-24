@@ -457,15 +457,15 @@ the shot's newest composite workfile (a Multi's, when one covers the shot)
 is submitted as one merged-comp version, on its own over the renders on
 disk, or ticked beside **Render** to start after that render's denoise. Its
 imports on `latest` resolve when the job runs; one that resolves to a
-[check render](nodes/comp.md#reading-a-check-render) comps on any frames
-inside its range, each frame it lacks holding the nearest one it has (the
-log names how many, `WARNING: comps every frame of … : N frames held`), or
-black where the import's **Missing Frames** is Empty (`… : N frames black
-(Missing Frames: Empty)`),
-and a comp reaching outside its range fails the job, naming the range.
+[check render](nodes/comp.md#reading-a-check-render) comps on any frames,
+each frame it lacks holding the nearest one it has (its first before its
+range, its last after it; the log names how many, `WARNING: comps every
+frame of … : N frames held`), or black where the import's **Missing
+Frames** is Empty (`… : N frames black (Missing Frames: Empty)`).
 Beside a stepped render the imports read that render instead (pinned to
-its versions when the job runs), on any **Step** of the comp, holding the
-frames the render does not make, and the comp is a check comp. The cell shows whether the
+its versions when the job runs), on any **Step** and any frames of the
+comp, holding the frames the render does not make, and the comp is a
+check comp. The cell shows whether the
 newest comp is older than the newest render. Its settings follow the
 node's: **Preview frames**, **Frames** (the render's range, else the shot's,
 unless you type your own), **Step**, **Batch**, **Pool**, **Priority** and

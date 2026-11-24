@@ -26,10 +26,11 @@ is, so a cooked pixel tells which file was read. Then:
 - with a time offset, the scene's frame less the offset is what is held;
 - an all-channels import (``latest`` only) holds nothing on Automatic;
 - a submit's freeze of an import reading a check render takes it on any
-  frames inside its range (Soren, 2026-11-23): its own (every 4th, none
-  held), every frame (the 9 between held, ``comp.held_frames``, as the
-  File COPs hold them), and frames off its first; it refuses frames
-  reaching outside its range (naming the range) and frames not known.
+  frames (Soren, 2026-11-23/24): its own (every 4th, none held), every
+  frame (the 9 between held, ``comp.held_frames``, as the File COPs hold
+  them), frames off its first, and frames reaching past its range (held
+  from its first and last frame, as the File COPs read them); it refuses
+  frames not known.
 
 Needs Houdini with the comp HDAs compiled and on HOUDINI_OTLSCAN_PATH, and
 this checkout's python/ on PYTHONPATH (the preflight ``hython`` stage sets
@@ -268,9 +269,13 @@ def main():
                   f'{len(lacking)} frames held', note)
     check('a submit off its first frame freezes it too',
           submit_refusal((FIRST + 1, LAST, STEP)) == '', submit_refusal((FIRST + 1, LAST, STEP)))
-    refused = submit_refusal((FIRST - 1, LAST, 1))
-    check('a submit reaching outside its range is refused, naming the range',
-          'v0002' in refused and f'comp inside {FIRST}-{LAST},' in refused, refused)
+    past = submit_refusal((FIRST - 1, LAST + 1, 1))
+    held_past = comp.held_frames(node.execute().values(), (FIRST - 1, LAST + 1, 1))
+    check('a submit reaching past its range freezes it, holding its first and last frame there',
+          past == '' and held_past == [FIRST - 1, *lacking, LAST + 1]
+          and read_frames(node, FIRST - 1) == {FIRST}
+          and read_frames(node, LAST + 1) == {comp.last_frame_of((FIRST, LAST, STEP))},
+          f'{past} {held_past}')
     native.parm('version').set('latest')
     node.execute()
     check('back on latest, a submit freezes the published version',

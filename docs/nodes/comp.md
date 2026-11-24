@@ -112,8 +112,8 @@ then show its first or last frame instead of black.
 - All channels read `latest` only, so each channel reads a check render
   only when it has no complete one; **Hold Nearest Frame** still holds
   each channel's first and last frame.
-- **A comp of a check render goes to the farm on any frames inside its
-  range** (Soren, 2026-11-23). Submit (and a re-comp from Farm Submit)
+- **A comp of a check render goes to the farm on any frames** (Soren,
+  2026-11-23 and 2026-11-24). Submit (and a re-comp from Farm Submit)
   sends it on any **Step**: a Step 1 comp of a Step 2 render comps every
   frame, and each frame the check render lacks holds the nearest frame it
   has, as the import holds it here (the farm's import does the same, with
@@ -124,14 +124,22 @@ then show its first or last frame instead of black.
   the farm as here, and Submit says so instead: `…: 61 frames black
   (Missing Frames: Empty)`.
   A comp on the check render's own frames (a Step 2 export_comp of a Step 2
-  render on **From Config**) holds nothing. A comp reaching outside the
-  check render's range stops on the import, naming the range to comp
-  inside: `comps 1001-1130, every frame, reaching outside check render
-  default: render v0014 (check, every 5th) over 1001-1122: comp inside
-  1001-1122, or render the channel in full (Step 1), or pick a published
-  version`. All channels, and several imports, are checked together: the
-  range named is inside every check render the comp reads (`no frame is
-  inside every check render it reads` when none is).
+  render on **From Config**) holds nothing. A comp longer than the check
+  render goes too: frames before its range hold its first frame and frames
+  after it hold its last, as the import shows them here, and Submit counts
+  them with the other held frames (a one-frame check render of `BG` comped
+  over 1001-1185 shows that one frame throughout). On Missing Frames:
+  Empty those frames are black, and Submit counts them as black. Only a
+  check render whose range is not known (no recorded range) stops on the
+  import.
+- **From Config follows the reads that do not hold.** export_comp's
+  Frame Range **From Config** comps the frames every read covers, but a
+  read whose import holds missing frames (a check render on Automatic, any
+  read on Hold Nearest Frame) does not narrow it, since it shows its first
+  and last frame past its range: a one-frame check render beside a
+  185-frame render comps the 185 frames. When every read holds, it comps
+  the frames they all cover. Farm Submit's **Comp** on its own does the
+  same with the renders on disk, taking a check render as held.
 - **A comp that reads a check render is a check comp, never the shot's
   comp**, and so is any shot comp on a **Step** above 1, whatever it reads
   (its frames have gaps, as a stepped render's do). It is a composite
@@ -318,7 +326,7 @@ Source: [`otls/cop_th.export_comp.1.0`](../../otls/cop_th.export_comp.1.0/th_8_8
 | Jobs › Preview Frames | off | Also render first, middle and last frame as a quick task, posted before the full range |
 | Jobs › Preview Frames › List | empty | Beside the toggle (enabled while it is on). Empty: first, middle and last. Otherwise the frames to preview, space separated, in that order (key poses, say), any number; the panorama posted to Discord shows the first 8. A frame outside the comp's frames or off **Step**, or a word that is not a whole number, is dropped and named in **Warning** (checked against the node's Frame Range) and again by Submit (against the frames it comps); with none left the preview is first, middle and last |
 | Jobs › Frame Range | From Config | The menu shows the frames From Config gives, e.g. `From Config (1001-1100)`. The frames every import's render covers (each frozen read's `context.json` range, intersected), else the shot's range plus roll; or From Settings (**Start/End-Frame**, **Pre/Post-Roll**). Submit warns when a range reaches past the renders: those frames comp over empty input. The farm log also has a `WARNING:` line per channel for any frame its render does not cover |
-| Jobs › Step, Batch Size | `1`, `5` | Above 1 the comp is a [check comp](#reading-a-check-render): not published, no daily, no Copy to Edit. A comp of a check render goes on any Step inside its range, the frames it lacks held |
+| Jobs › Step, Batch Size | `1`, `5` | Above 1 the comp is a [check comp](#reading-a-check-render): not published, no daily, no Copy to Edit. A comp of a check render goes on any Step and frames, the frames it lacks held |
 | Jobs › Copy to Edit | off | Sync the comp into the edit when it is done |
 | Farm › Pool, Priority | the project's default pool, `50` | |
 

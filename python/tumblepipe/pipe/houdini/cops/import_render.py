@@ -135,10 +135,10 @@ render; ``pipe.comp.resolve_render``). The frames a version has are those its
 frame as HScript arithmetic (:func:`frame_token`): no cook lists a
 directory. What was built is kept in ``held``; changing the setting
 rebuilds the dive. A submit of a comp reading a check render goes to the
-farm on any frames inside the check render's range, the frames it lacks
-held as here (a Step 1 comp of a Step 2 render; ``comp.held_frames``), and
-is refused when the comp reaches outside it
-(``comp.check_render_refusal``).
+farm on any frames, the frames it lacks held as here, its first before its
+range and its last after it (a Step 1 comp of a Step 2 render;
+``comp.held_frames``), and is refused only when the check render's range
+is not known (``comp.check_render_refusal``).
 """
 
 import hou
@@ -1454,11 +1454,12 @@ class ImportRender(TimeOffsetNode, EntityNode):
 
     def import_states(self, frames: comp.Frames | None = None) -> list[comp.ImportState]:
         """Execute, and say what a submit freezes: one state per channel
-        read, keyed by ``pipe.comp.plan_key``. Raises the node's error when
-        the comp's ``frames`` (``(first, last, step)``) reach outside a
-        check render it reads (``pipe.comp.check_render_refusal``; inside
-        it, the frames it lacks are held), and for any check render when
-        they are not known (None)."""
+        read, keyed by ``pipe.comp.plan_key``. Raises the node's error for
+        a check render it reads whose range is not known, and for any check
+        render when the comp's ``frames`` (``(first, last, step)``) are not
+        known (None) (``pipe.comp.check_render_refusal``); on any other
+        frames the ones a check render lacks are held, its first and last
+        outside its range."""
         reads, states = self.resolve_states()
         refusal = comp.check_render_refusal(reads.values(), frames)
         if refusal:
@@ -1469,7 +1470,8 @@ class ImportRender(TimeOffsetNode, EntityNode):
         """Execute (``reaching``: as :meth:`execute`'s), and say what it read
         and what a submit freezes, with no word yet on its check renders:
         Submit Composite knows the comp's frames only once every import has
-        resolved (From Config is what they all cover), then checks each
+        resolved (From Config is what the reads that do not hold cover),
+        then checks each
         (``pipe.comp.check_render_refusal``)."""
         reads = self.execute(reaching=reaching)
         all_channels = self.is_all_channels()

@@ -9,11 +9,12 @@ RV and Nuke.
 A re-comp (Farm Submit's Comp column) froze nothing: ``imports`` is empty,
 so every import of the shot resolves on its own settings now, and its
 export has no node path, so the shot's export_comp on that layer is found.
-An import that resolves to a check render fails the job when the comp's
-frames (``comp_frames``) reach outside the check render's range
-(``comp.check_render_refusal``); inside it, the frames the check render
-lacks are held from the nearest rendered one, by the import's own Missing
-Frames (``pipe.hold_frames``), as in the session, or black on Empty: the log
+An import that resolves to a check render fails the job only when the
+comp's frames (``comp_frames``) or the check render's range are not known
+(``comp.check_render_refusal``); otherwise the frames of the comp the check
+render lacks are held from the nearest rendered one (its first before its
+range, its last after it), by the import's own Missing Frames
+(``pipe.hold_frames``), as in the session, or black on Empty: the log
 says which (``comp.missing_note``). Either way each written layer's
 ``context.json`` records what was read, and ``"published": false`` when a
 read is a check render (a check comp, ``comp.is_check_comp``).
@@ -82,10 +83,10 @@ def resolve_imports(entity_uri: Uri, frames=None, follows=None,
     its own settings now. ``(plan, check, None)`` with what each read and
     whether one is a check render, or ``(None, False, error)``.
 
-    A check render is read only when the comp's ``frames`` (``[first,
-    last, step]``, the job's ``comp_frames``) are inside its range
-    (``pipe.comp.check_render_refusal``), the frames it lacks held; without
-    them, never.
+    A check render is read on any of the comp's ``frames`` (``[first,
+    last, step]``, the job's ``comp_frames``), the frames it lacks held
+    (``pipe.comp.check_render_refusal``); without them, or without its
+    recorded range, never.
 
     Beside a stepped render (``follows``, ``[{channel, department,
     version}]``) each import is first pinned to that render
@@ -166,13 +167,32 @@ def shut_unread_scenes(exports) -> list[str]:
     return closed
 
 
-def report_uncovered(entity_uri: Uri, reads: dict, frames) -> list[str]:
+def held_channels(entity_uri: Uri) -> set[str]:
+    """The channels every import of the shot reading them holds (its File
+    COPs show the nearest rendered frame, its first and last outside its
+    range: ``ImportRender.get_held``), as last built; empty when they
+    cannot be read. One rule with Submit Composite's (``comp.read_holds``)."""
+    from tumblepipe.pipe.houdini.cops.import_render import find_imports
+    pairs = []
+    try:
+        for node in find_imports(entity_uri):
+            holding = node.get_held()
+            pairs += [(channel, channel in holding) for channel in node.read_channels()]
+    except Exception as exc:
+        print(f'WARNING: could not read what the imports hold: {exc}')
+        return set()
+    return {channel for channel, holds in comp.read_holds(pairs).items() if holds}
+
+
+def report_uncovered(entity_uri: Uri, reads: dict, frames, held=()) -> list[str]:
     """Print, and return, a warning line per channel whose render does not
-    cover all of ``frames``."""
+    cover all of ``frames``; a channel of ``held`` (:func:`held_channels`)
+    shows its first and last frame there, so it is left out."""
     from tumblepipe.pipe.paths import get_render_context
     try:
         renders = get_render_context(entity_uri, purpose='render').renders
-        ranges = comp.read_ranges(renders, reads)
+        ranges = comp.read_ranges(
+            renders, {c: r for c, r in reads.items() if c not in set(held)})
     except Exception as exc:
         print(f'WARNING: could not read the rendered ranges: {exc}')
         return []
@@ -359,8 +379,10 @@ def main(
             return error(str(exc))
     # A read's File COPs fill a frame it has no render of with empty
     # input (import_render.MISSING_EMPTY), so such a frame comps to
-    # transparent black without failing: say so in the log (#43).
-    report_uncovered(entity_uri, reads, render_range)
+    # transparent black without failing: say so in the log (#43). An
+    # import that holds shows the read's first or last frame there.
+    report_uncovered(entity_uri, reads, render_range,
+                     () if renders else held_channels(entity_uri))
 
     root_temp_path = api.storage.resolve(Uri.parse('temp:/'))
     root_temp_path.mkdir(parents=True, exist_ok=True)

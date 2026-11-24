@@ -459,8 +459,8 @@ class Resolved:
     # Version menu offers it by hand).
     newer_check: Optional[tuple[str, int]] = None
     # A check render's recorded ``(first, last)``: with ``check_step``, the
-    # frames it has (:func:`check_frames`): a comp of it keeps inside the
-    # range (:func:`check_render_refusal`) and holds the frames between
+    # frames it has (:func:`check_frames`): a comp of it holds the frames
+    # between, and its first and last frame before and after the range
     # (:func:`held_frames`).
     check_range: Optional[tuple[int, int]] = None
 
@@ -684,8 +684,8 @@ def resolve_render(
     way, and the import holds its frames over the gaps (Antoine,
     2026-11-22: a stepped first render read as nothing at all). A complete
     render is preferred over a newer check render: a check render is a
-    look, never the shot's comp (a comp of one goes to the farm only inside
-    its range, :func:`check_render_refusal`, and is a check comp, never
+    look, never the shot's comp (a comp of one goes to the farm on any
+    frames, :func:`check_render_refusal`, and is a check comp, never
     published, :func:`is_check_comp`), so it never takes ``latest`` from a
     finished render; the label names the newer check render instead
     (:attr:`Resolved.newer_check`), which the Version menu offers by hand.
@@ -831,7 +831,8 @@ def check_frames(read: Resolved) -> Optional[Frames]:
 def frames_held(frames: Frames, checks: Sequence[Frames]) -> list[int]:
     """The frames of ``frames`` some check render of ``checks`` does not
     have, in order: a comp shows each held from the nearest frame the check
-    render has (``pipe.hold_frames.held_frame``)."""
+    render has (``pipe.hold_frames.held_frame``), its first frame before
+    its range and its last after it."""
     has = [set(frames_of(check)) for check in checks]
     return [
         frame for frame in frames_of(frames)
@@ -923,15 +924,16 @@ def check_render_refusal(reads: Iterable[Resolved], frames: Optional[Frames] = N
     None when it is.
 
     A check render has only every Nth frame. A comp of one goes to the
-    farm on any frames inside the check render's range (Soren,
-    2026-11-23: a Step 1 comp of a Step 2 render): a frame the check render
-    lacks is held from its nearest rendered frame, as th::import_render
-    holds it in the session (:func:`held_frames`, which a Submit warns
-    of). Such a comp is a check comp, never published
-    (:func:`is_check_comp`). A comp reaching outside a check render's
-    range is refused, naming the range it must keep to, and so is one of
-    a check render whose range is not known. A complete read never
-    refuses. ``frames`` None (not known) refuses every check render.
+    farm on any frames (Soren, 2026-11-23: a Step 1 comp of a Step 2
+    render; 2026-11-24: a 185-frame comp of a one-frame check render): a
+    frame the check render lacks is held from its nearest rendered frame,
+    its first before its range and its last after it, as th::import_render
+    holds it in the session (:func:`held_frames`, which a Submit warns of;
+    black on an import set to Missing Frames: Empty, :func:`missing_note`).
+    Such a comp is a check comp, never published (:func:`is_check_comp`).
+    A comp of a check render whose range is not known is refused, and so
+    is any check render when ``frames`` is None (not known). A complete
+    read never refuses.
     """
     checks = [read for read in reads if read.check_step is not None]
     if not checks: return None
@@ -950,20 +952,7 @@ def check_render_refusal(reads: Iterable[Resolved], frames: Optional[Frames] = N
             f'reads {noun} {named} whose frames are not known (no recorded '
             f'range): {full}'
         )
-    short = [
-        read for read in checks
-        if not frames_in_range(frames, check_frames(read))
-    ]
-    if not short: return None
-    named = ', '.join(_check_read_text(read) for read in short)
-    noun = 'check render' if len(short) == 1 else 'check renders'
-    low = max(read.check_range[0] for read in checks)
-    high = min(read.check_range[1] for read in checks)
-    if low <= high:
-        fix = f'comp inside {low}-{high}, or {full}'
-    else:
-        fix = f'no frame is inside every check render it reads, so {full}'
-    return f'comps {comp_frames_text(frames)}, reaching outside {noun} {named}: {fix}'
+    return None
 
 
 def follow_pins(
@@ -1338,6 +1327,32 @@ def covered_range(ranges: Iterable[Optional[tuple[int, int]]]) -> Optional[tuple
     return first, last
 
 
+def holding_covered_range(
+    reads: Iterable[tuple[Optional[tuple[int, int]], bool]],
+    ) -> Optional[tuple[int, int]]:
+    """What a comp of ``reads`` covers on From Config, each read a
+    ``(range, holds)`` pair, ``holds`` whether its import holds missing
+    frames (``pipe.hold_frames.holds``: a check render on Automatic, any
+    read on Hold). A holding read shows its first frame before its range
+    and its last after it, so it does not narrow the comp (Soren,
+    2026-11-24: a one-frame check render beside a 185-frame render comped
+    one frame): :func:`covered_range` of the reads that do not hold, or of
+    every read when they all hold."""
+    reads = list(reads)
+    narrowing = [frame_range for frame_range, holds in reads if not holds]
+    return covered_range(narrowing if narrowing else [frame_range for frame_range, _ in reads])
+
+
+def read_holds(reads: Iterable[tuple[str, bool]]) -> dict[str, bool]:
+    """``{channel: holds}`` of ``(channel, holds)`` pairs, one per import
+    reading the channel: a channel holds only when every import reading it
+    does (one that leaves the frames empty shows them empty)."""
+    holding: dict[str, bool] = dict()
+    for channel, holds in reads:
+        holding[channel] = holding.get(channel, True) and holds
+    return holding
+
+
 def read_ranges(renders: Mapping, reads: Mapping[str, Mapping]) -> dict[str, Optional[tuple[int, int]]]:
     """``{channel: (first, last)}`` each read covers, from its frame
     stack's ``context.json`` (None where it is gone or has none).
@@ -1365,15 +1380,22 @@ def best_reads(renders: Mapping, render_department_names: Iterable[str],
     now, as :func:`provenance` records it; a channel with nothing to read
     is left out (one with only a check render is not: ``latest`` reads
     it)."""
+    return {
+        channel: dict(department = resolved.department, version = resolved.version)
+        for channel, resolved in _best_resolved(renders, render_department_names, channels).items()
+    }
+
+
+def _best_resolved(renders: Mapping, render_department_names: Iterable[str],
+                   channels: Iterable[str]) -> dict[str, Resolved]:
     departments = list(render_department_names)
-    reads: dict[str, dict] = dict()
+    resolved: dict[str, Resolved] = dict()
     for channel in channels:
         try:
-            resolved = resolve_render(renders, departments, channel)
+            resolved[channel] = resolve_render(renders, departments, channel)
         except CompError:
             continue
-        reads[channel] = dict(department = resolved.department, version = resolved.version)
-    return reads
+    return resolved
 
 
 def rendered_range(renders: Mapping, render_department_names: Iterable[str],
@@ -1382,9 +1404,21 @@ def rendered_range(renders: Mapping, render_department_names: Iterable[str],
     default imports read: :func:`best_reads`), None when none is rendered or
     a range is unknown. ``renders`` as :func:`resolve_render` takes them.
     Filesystem only: Farm Submit's status scan reads it on a worker thread,
-    the farm's submit when it comps the renders on disk."""
-    return covered_range(
-        read_ranges(renders, best_reads(renders, render_department_names, channels)).values()
+    the farm's submit when it comps the renders on disk.
+
+    A check render does not narrow it (:func:`holding_covered_range`), as
+    export_comp's From Config: Farm Submit never opens the workfile, so it
+    takes the imports on Automatic, where a check render holds its first
+    and last frame past its range (an import on Empty leaves those black,
+    which the worker's log says, ``missing_note``)."""
+    from tumblepipe.pipe.hold_frames import AUTO, holds
+    resolved = _best_resolved(renders, render_department_names, channels)
+    ranges = read_ranges(renders, {
+        channel: dict(department = read.department, version = read.version)
+        for channel, read in resolved.items()
+    })
+    return holding_covered_range(
+        (ranges[channel], holds(AUTO, read.check_step)) for channel, read in resolved.items()
     )
 
 

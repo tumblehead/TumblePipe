@@ -5,6 +5,42 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.128.0
+
+### A comp of a check render holds its first and last frame past its range
+
+`comp.check_render_refusal(reads, frames)` no longer refuses a comp that
+reaches outside a check render's range: frames before the range hold its
+first frame and frames after it its last, as th::import_render's File COPs
+show them in the session and on the farm. `frames_held` / `held_note` /
+`missing_note` count those frames with the other held frames (black on an
+import set to Missing Frames: Empty). It still refuses a check render with
+no recorded range, and any check render when `frames` is None. The comp is
+still a check comp. Farm Submit's `submission.stepped_comp_frames` takes
+a Comp beside a stepped render on any frames, and `submission.problems`
+no longer refuses its frames for reaching past that render (a render on
+Step 1 still keeps the comp inside it; frames that end before they start
+are still refused).
+
+### From Config is not narrowed by a read that holds
+
+New `comp.holding_covered_range(pairs)` (each pair `(range, holds)`) and
+`comp.read_holds(pairs)` (`{channel: holds}`, a channel holding only when
+every import reading it does). export_comp's From Config is the
+intersection of the reads whose import does not hold missing frames, or of
+every read when all hold (`covered_range` itself is unchanged).
+`export_comp._covered` is replaced by `_read_ranges(shot_uri, reads)` (the
+ranges on disk; `plan_submits` applies the holds), and the new
+`ShotSubmit.empty_reads` (`{channel: range}` of the reads whose import
+leaves missing frames empty) drives `outside_renders`: a line exactly when
+a comp frame on its Step is past one of them, now also when they share no
+frame (it was silent there) and no longer for a last frame off the Step.
+`comp.rendered_range` (Farm Submit's renders on disk) takes a check render
+as held, as an import on Automatic does.
+`composite_houdini.report_uncovered` takes an optional `held` set of
+channels (`held_channels(entity_uri)`) that it leaves out of its
+`comp over empty input` warning.
+
 ## v1.127.1
 
 ### Farm job folders are cleaned up on a machine without Deadline

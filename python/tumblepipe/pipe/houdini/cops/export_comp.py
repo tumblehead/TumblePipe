@@ -15,13 +15,13 @@ changed. Before it submits, it lists the shot channels no import reads and
 asks.
 
 An import reading a check render (Farm Submit's Step) is frozen on any
-frames inside the check render's range (Soren, 2026-11-23: a Step 1 comp of
-a Step 2 render); a frame the check render lacks is held from its nearest
-rendered frame, as the import holds it here (``comp.held_frames``), and
-Submit names the held frames before it sends; an import whose Missing
-Frames is Empty leaves them black, and Submit says that instead
-(``comp.missing_note``). A comp reaching outside the
-check render's range is refused, naming the range. Such a comp, and any
+frames (Soren, 2026-11-23: a Step 1 comp of a Step 2 render; 2026-11-24: a
+comp longer than the check render); a frame the check render lacks is held
+from its nearest rendered frame, its first before its range and its last
+after it, as the import holds it here (``comp.held_frames``), and Submit
+names the held frames before it sends; an import whose Missing Frames is
+Empty leaves them black, and Submit says that instead
+(``comp.missing_note``). Such a comp, and any
 comp on a Step above 1, is a check comp: never published, no daily, Copy to
 Edit skipped (``comp.is_check_comp``), and Submit says so before it sends.
 
@@ -42,7 +42,7 @@ from tumblepipe.api import path_str, get_user_name, api
 from tumblepipe.config.channels import list_channels
 from tumblepipe.farm.specs import preview_frames
 from tumblepipe.util.uri import Uri
-from tumblepipe.pipe import comp
+from tumblepipe.pipe import comp, hold_frames
 import tumblepipe.pipe.houdini.nodes as ns
 from tumblepipe.pipe.houdini.entity_node import EntityNode
 from tumblepipe.pipe.houdini.farm_node import FarmNode
@@ -208,16 +208,21 @@ class ShotSubmit:
     exports: list = field(default_factory=list)     # [{node_path, layer}]
     plan: dict = field(default_factory=dict)        # comp.freeze_plan
     unread: list = field(default_factory=list)
-    # The frames every frozen read covers (comp.covered_range), None when
+    # The frames every frozen read covers, but for reads whose import
+    # holds missing frames (comp.holding_covered_range), None when
     # unknown: what From Context comps (#43).
     covered: tuple | None = None
-    # An import reads a check render (inside its range, or the submit is
-    # refused): the comp is a check comp, never published
-    # (comp.is_check_comp).
+    # {channel: (first, last)} of the reads whose import leaves missing
+    # frames empty (None where the range is not known): a comp frame past
+    # one comps over empty input (outside_renders).
+    empty_reads: dict = field(default_factory=dict)
+    # An import reads a check render: the comp is a check comp, never
+    # published (comp.is_check_comp).
     reads_check_render: bool = False
     # The frames of the comp a check render it reads lacks, held from the
-    # nearest rendered frame, or black where the import's Missing Frames
-    # is Empty (comp.missing_note); empty when none.
+    # nearest rendered frame (its first or last outside its range), or
+    # black where the import's Missing Frames is Empty (comp.missing_note);
+    # empty when none.
     held: str = ''
 
 
@@ -226,8 +231,9 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
     export_comp in the workfile, each export_comp in exactly one, each
     shot's imports resolved and frozen. Raises the node error of the first
     import or export that does not resolve, and of an import reading a
-    check render the comp's frames reach outside of (:func:`comp_frames`,
-    ``comp.check_render_refusal``)."""
+    check render whose frames are not known (``comp.check_render_refusal``;
+    the comp's frames, :func:`comp_frames`, outside a check render's range
+    hold its first and last frame)."""
     from tumblepipe.pipe.houdini.cops.import_render import find_imports
     clicked_shot = clicked.require_entity_uri()
     submits: dict[str, ShotSubmit] = dict()
@@ -267,12 +273,26 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
             reads = comp.provenance(submit.plan)
         except comp.CompError as error:
             raise submit.settings._error(str(error)) from None
-        submit.covered = _covered(submit.shot_uri, reads)
-        # A check render is comped inside its range, the frames it lacks
-        # held (Soren, 2026-11-23): known now, From Config being what the
-        # reads cover. Every read of the shot at once, so the range the
-        # refusal names is inside every check render; the first import
-        # short of it says so.
+        # From Config: a read whose import holds missing frames (a check
+        # render on Automatic, any read on Hold) shows its first and last
+        # frame past its range, so it does not narrow it (Soren,
+        # 2026-11-24).
+        holding = comp.read_holds(
+            (channel, hold_frames.holds(node.get_missing_setting(), resolved.check_step))
+            for node, resolved_reads in node_reads for channel, resolved in resolved_reads.items()
+        )
+        ranges = _read_ranges(submit.shot_uri, reads)
+        submit.covered = comp.holding_covered_range(
+            (ranges.get(channel), holding.get(channel, False)) for channel in reads
+        )
+        submit.empty_reads = {
+            channel: ranges.get(channel) for channel in reads
+            if not holding.get(channel, False)
+        }
+        # A check render is comped on any frames, the frames it lacks held
+        # (Soren, 2026-11-23/24): known now, From Config being what the
+        # reads cover. A check render with no recorded range is refused;
+        # the first import reading one says so.
         frames = comp_frames(submit)
         every = [resolved for _, resolved_reads in node_reads for resolved in resolved_reads.values()]
         refusal = comp.check_render_refusal(every, frames)
@@ -291,17 +311,24 @@ def plan_submits(clicked: ExportComp) -> list[ShotSubmit]:
     return list(submits.values())
 
 
-def _covered(shot_uri: Uri, reads: dict) -> tuple | None:
+def _read_ranges(shot_uri: Uri, reads: dict) -> dict:
+    """``{channel: (first, last)}`` each of ``reads`` (``comp.provenance``)
+    rendered, from the frame stacks on disk (``comp.read_ranges``). From
+    Config is what they cover, but for the reads whose import holds
+    (``comp.holding_covered_range``)."""
     from tumblepipe.pipe.paths import get_render_context
     renders = get_render_context(shot_uri, purpose = 'render').renders
-    return comp.covered_range(comp.read_ranges(renders, reads).values())
+    return comp.read_ranges(renders, reads)
 
 
 def comp_range(submit: ShotSubmit) -> tuple[int, int]:
     """The frames ``submit`` comps: with Frame Range From Context, the
     frames every read covers (the renders' ranges, which can be shorter
-    than the shot's with its roll), else the shot's; any other source as
-    the node says."""
+    than the shot's with its roll), but for a read whose import holds
+    missing frames, which shows its first and last frame past its range
+    (a check render on Automatic: Antoine's one-frame BG beside a 185-frame
+    render comped one frame, 2026-11-24); else the shot's; any other
+    source as the node says."""
     node = submit.settings
     if node.get_frame_range_source() == FrameRangeSource.ENTITY and submit.covered is not None:
         return submit.covered
@@ -348,17 +375,23 @@ def job_config(submit: ShotSubmit, department: str, input_path: str) -> dict:
 
 
 def outside_renders(submits: list[ShotSubmit]) -> list[str]:
-    """A line per shot whose comp frames reach past what its reads
-    rendered: those frames comp over empty input (#43)."""
+    """A line per shot with a comp frame past a read whose import leaves
+    missing frames empty (``ShotSubmit.empty_reads``): those frames comp
+    over empty input (#43). A read whose import holds shows its first or
+    last frame there, and a read of unknown range vouches for nothing, so
+    neither makes a line; the frames are the comp's on its Step."""
     lines = []
     for submit in submits:
-        if submit.covered is None: continue
-        first, last = comp_range(submit)
-        if first < submit.covered[0] or last > submit.covered[1]:
-            lines.append(
-                f'{submit.shot_uri}: the comp is {first}-{last}, the renders '
-                f'it reads cover {submit.covered[0]}-{submit.covered[1]}'
-            )
+        frames = comp_frames(submit)
+        if not any(comp.uncovered_frames(comp.frames_of(frames), submit.empty_reads).values()):
+            continue
+        cover = comp.covered_range(r for r in submit.empty_reads.values() if r is not None)
+        covers = ('share no frame' if cover is None
+                  else f'cover {cover[0]}-{cover[1]}')
+        lines.append(
+            f'{submit.shot_uri}: the comp is {frames[0]}-{frames[1]}, the renders '
+            f'it reads {covers}'
+        )
     return lines
 
 

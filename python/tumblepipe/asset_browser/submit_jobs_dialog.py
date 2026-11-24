@@ -2676,8 +2676,9 @@ class _ContextPane(QWidget):
             "beside it, or, with no render, the frames the shot's renders on "
             "disk cover (else the shot's range with its rolls) — an "
             "export_comp's From Context. Type a "
-            "frame to comp from or to it instead; with a render it must lie "
-            "inside the render's frames."
+            "frame to comp from or to it instead; with a render on Step 1 "
+            "it must lie inside the render's frames (past a stepped render, "
+            "the comp holds its first and last frame)."
         )
         self._comp_first.setToolTip(frames_tip)
         self._comp_last.setToolTip(frames_tip)
@@ -2689,8 +2690,8 @@ class _ContextPane(QWidget):
         self._comp_step.setToolTip(
             "Comp every Nth frame of the range (1: every frame). Above 1 "
             "it is a check comp: not published, no daily, no Copy to edit. "
-            "A comp of a check render goes on any Step inside its range: "
-            "the frames it lacks hold the nearest rendered one."
+            "A comp of a check render goes on any Step and frames: the "
+            "frames it lacks hold the nearest rendered one."
         )
         self._comp_batch = self._spin('comp_batch_size', 1, 1000)
         self._comp_batch.setToolTip("Frames per farm task of the comp.")

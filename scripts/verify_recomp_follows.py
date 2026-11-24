@@ -9,8 +9,9 @@ published one. The composite job carries ``follows`` (the render's
 ``[{channel, department, version}]``) and ``comp_frames``; the worker
 (``farm.workers.composite_houdini.resolve_imports``) pins each import to
 it (``pipe.comp.follow_pins``) and checks the comp's frames against the
-check renders it then reads (``pipe.comp.check_render_refusal``: inside
-their range, the frames they lack held; Soren, 2026-11-23). The
+check renders it then reads (``pipe.comp.check_render_refusal``: any
+frames, the frames they lack held, their first and last past their range;
+Soren, 2026-11-23/24). The
 property tests pin both pure halves; this runs them on real
 th::import_render nodes, which no test did.
 
@@ -33,9 +34,9 @@ import of ``chars`` the artist pinned to v0001. Then:
 - on every frame (Step 1), or off the render's first frame, it reads the
   check render too, logging a WARNING that names the frames it holds
   (a Step 1 comp of a Step 2 render, Antoine and Magnus);
-- reaching outside the render's range, or with the frames not known, the
-  worker refuses, naming the import, the check render, and the range to
-  comp inside, which it then takes.
+- reaching past the render's range it reads the check render too, the
+  import holding its first frame before it (Soren, 2026-11-24); with the
+  frames not known, the worker refuses.
 
 Needs Houdini with the comp HDAs compiled and on HOUDINI_OTLSCAN_PATH, and
 this checkout's python/ on PYTHONPATH (the preflight ``hython`` stage sets
@@ -221,15 +222,12 @@ def main():
     fresh()
     outside = (FIRST - 1, LAST, 1)
     plan, read_check, problem = run(outside, follows(*CHANNELS))
-    check('a re-comp reaching outside the check render is refused, naming the import, the check render and the range',
-          plan is None and read_check is False and problem is not None
-          and problem.startswith(f'{latest.path()}: ')
-          and 'render v0002' in problem and f'comp inside {FIRST}-{LAST},' in problem,
-          str(problem))
-    fresh()
-    plan, read_check, problem = run((FIRST, LAST, 1), follows(*CHANNELS))
-    check('the range it names goes',
-          problem is None and read_check is True, str(problem))
+    dive = latest.native().node(import_render.DIVE)
+    read = {int(f.parm('filename').evalAtFrame(FIRST - 1).rsplit('.', 2)[-2])
+            for f in dive.children() if f.type().name() == 'file'}
+    check('a re-comp reaching past the check render reads it, holding its first frame before it',
+          problem is None and read_check is True and read == {FIRST},
+          f'{problem} {read}')
     fresh()
     plan, read_check, problem = run(None, follows(*CHANNELS))
     check('a re-comp whose frames are not known is refused',

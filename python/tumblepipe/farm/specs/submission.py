@@ -172,7 +172,10 @@ def comp_frames(own_first: Any, own_last: Any, follows: Range) -> Range:
 
 def comp_frame_problems(frames: Range, follows: Range, *, inside: bool) -> list[str]:
     """Why the comp's ``frames`` make no comp: they end before they start,
-    or, ``inside`` a render it reads, reach outside the ``follows`` it makes."""
+    or, ``inside`` a render it reads, reach outside the ``follows`` it makes
+    (frames past a published render would comp over empty input; past a
+    stepped render they hold its first and last frame, so :func:`problems`
+    passes ``inside`` False beside one, :func:`stepped_comp_frames`)."""
     first, last = frames
     if first > last:
         return [f"the comp frames {first}-{last} end before they start"]
@@ -193,15 +196,16 @@ def comp_step(settings: dict) -> int:
 
 def stepped_comp_frames(settings: dict) -> tuple[tuple[int, int, int], tuple[int, int, int]] | None:
     """``(comp, render)``, each ``(first, last, step)``, of a Comp that
-    reads the stepped render beside it (:func:`comp_reads_check_render`),
-    its frames inside the render's; None for any other Comp.
+    reads the stepped render beside it (:func:`comp_reads_check_render`);
+    None for any other Comp.
 
-    Such a comp goes on any frames inside the render's (Soren,
-    2026-11-23: a Step 1 comp of a Step 2 render): a frame the render does
-    not make is held from the nearest one it does, and the Warnings column
-    says how many (``pipe.comp.held_text``). It is a check comp
-    (``pipe.comp.is_check_comp``). Frames that end before they start, or
-    reach past the render, are :func:`comp_frame_problems`' to refuse."""
+    Such a comp goes on any frames (Soren, 2026-11-23: a Step 1 comp of a
+    Step 2 render; 2026-11-24: past the render too): a frame the render
+    does not make is held from the nearest one it does, its first before
+    its range and its last after it, and the Warnings column says how many
+    (``pipe.comp.held_text``). It is a check comp
+    (``pipe.comp.is_check_comp``). Frames that end before they start are
+    :func:`comp_frame_problems`' to refuse."""
     if not comp_reads_check_render(settings):
         return None
     ranges, _error = frame_list(settings)
@@ -213,7 +217,7 @@ def stepped_comp_frames(settings: dict) -> tuple[tuple[int, int, int], tuple[int
     first, last = comp_frames(
         settings.get('comp_first_frame'), settings.get('comp_last_frame'), span,
     )
-    if first > last or first < span[0] or last > span[1]:
+    if first > last:
         return None
     return (first, last, comp_step(settings)), (span[0], span[1], render_step(settings))
 
@@ -309,7 +313,10 @@ def problems(
                     settings.get('comp_first_frame'), settings.get('comp_last_frame'),
                     follows,
                 ),
-                follows, inside=bool(render) and not repairing,
+                # Beside a stepped render, frames past it hold its first
+                # and last frame (Soren, 2026-11-24).
+                follows, inside=(bool(render) and not repairing
+                                 and not comp_reads_check_render(settings)),
             ))
     if render and not settings.get(CHANNELS_KEY):
         checked = list(requested or ())
