@@ -12,6 +12,21 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.128.0 — 2026-11-24
+
+### Fixes
+- fix(comp): Submit's reach-past confirm speaks for every comp frame past a read that does not hold (`cb5d7056`)
+- fix(comp): a check render holds its first and last frame past its range (`874b6523`)
+
+### Refactors
+- refactor(comp): the worker's held_channels is comp.read_holds, Submit's rule (`c4460a51`)
+
+### Documentation
+- docs(comp): a check render holds past its range; From Config follows reads that do not hold (`6bc95fcf`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.127.1 (`b7a0b22d`)
+
 ## v1.127.1 — 2026-11-24
 
 ### Fixes

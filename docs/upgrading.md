@@ -5,6 +5,19 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.128.1
+
+### From Config spans the reads when every read holds
+
+`comp.holding_covered_range(pairs)` used to fall back to the intersection
+of every read when all of them hold missing frames, so a one-frame check
+render beside a longer check render still comped one frame on From Config.
+When every read holds it now returns the span of their known ranges (the
+earliest first frame to the latest last), None when no range is known; a
+holding read of unknown range is ignored. With some read that does not
+hold it is unchanged. Farm Submit's `comp.rendered_range` follows, as it
+takes every check render as held.
+
 ## v1.128.0
 
 ### A comp of a check render holds its first and last frame past its range

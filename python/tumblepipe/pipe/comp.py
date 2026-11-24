@@ -1336,11 +1336,21 @@ def holding_covered_range(
     read on Hold). A holding read shows its first frame before its range
     and its last after it, so it does not narrow the comp (Soren,
     2026-11-24: a one-frame check render beside a 185-frame render comped
-    one frame): :func:`covered_range` of the reads that do not hold, or of
-    every read when they all hold."""
+    one frame): :func:`covered_range` of the reads that do not hold.
+
+    When every read holds, the span of their known ranges, the earliest
+    first frame to the latest last (Soren, 2026-11-24: Antoine's CHARAr
+    was a Step 2 check render too, and the intersection of 1001-1001 and
+    1001-1185 still comped one frame): each read shows a frame on all of
+    it, its own or one held. None when no read's range is known."""
     reads = list(reads)
     narrowing = [frame_range for frame_range, holds in reads if not holds]
-    return covered_range(narrowing if narrowing else [frame_range for frame_range, _ in reads])
+    if narrowing:
+        return covered_range(narrowing)
+    known = [frame_range for frame_range, _ in reads if frame_range is not None]
+    if not known:
+        return None
+    return min(first for first, _ in known), max(last for _, last in known)
 
 
 def read_holds(reads: Iterable[tuple[str, bool]]) -> dict[str, bool]:

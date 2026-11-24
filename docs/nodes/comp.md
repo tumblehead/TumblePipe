@@ -138,7 +138,10 @@ then show its first or last frame instead of black.
   read on Hold Nearest Frame) does not narrow it, since it shows its first
   and last frame past its range: a one-frame check render beside a
   185-frame render comps the 185 frames. When every read holds, it comps
-  the frames they all cover. Farm Submit's **Comp** on its own does the
+  from the earliest first frame of the reads to the latest last, each read
+  showing its own frames there or held ones: a one-frame BG check render
+  beside a 185-frame CHARAr check render comps the 185 frames too. Farm
+  Submit's **Comp** on its own does the
   same with the renders on disk, taking a check render as held.
 - **A comp that reads a check render is a check comp, never the shot's
   comp**, and so is any shot comp on a **Step** above 1, whatever it reads
