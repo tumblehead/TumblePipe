@@ -113,7 +113,28 @@ impl Colour {
     /// The config at `path`. A config without a default display and view
     /// has nothing to show a render as, so it does not open.
     pub fn open(path: &str) -> Result<Self, String> {
-        let config = Config::from_file(path).map_err(|e| format!("{path}: {e}"))?;
+        Self::of(path, Config::from_file(path).map_err(|e| format!("{path}: {e}"))?)
+    }
+
+    /// The config at `path` from its `text`, read off the UI thread (an
+    /// OCIO config cannot be handed between threads; its text can). Its
+    /// folder is its working dir, as [`Self::open`] makes it: the search
+    /// path and LUT files are found from there.
+    pub fn parse(path: &str, text: &str) -> Result<Self, String> {
+        let config = Config::from_stream(text).map_err(|e| format!("{path}: {e}"))?;
+        if let Some(dir) = std::path::Path::new(path).parent().filter(|d| !d.as_os_str().is_empty()) {
+            config.set_working_dir(dir.to_string_lossy()).map_err(|e| format!("{path}: {e}"))?;
+        }
+        Self::of(path, config)
+    }
+
+    /// OCIO's own raw config: what the window shows through until the
+    /// project's is in (nothing plays before then).
+    pub fn raw() -> Result<Self, String> {
+        Self::of("the raw OCIO config", Config::raw().map_err(|e| format!("the raw OCIO config: {e}"))?)
+    }
+
+    fn of(path: &str, config: Config) -> Result<Self, String> {
         let display = config.default_display().filter(|d| !d.is_empty()).ok_or_else(|| format!("{path} has no default display"))?;
         let view =
             config.default_view(&display).filter(|v| !v.is_empty()).ok_or_else(|| format!("{path} has no view for display '{display}'"))?;
@@ -229,6 +250,85 @@ mod tests {
                 prop_assert!((shown[c] - curve(v(i))).abs() < 2e-3);
             }
         }
+    }
+
+    /// A config whose one view reads a LUT file by a relative search path:
+    /// found only from the config's own folder.
+    const HALF_CONFIG: &str = "ocio_profile_version: 2
+
+search_path: luts
+roles:
+  default: raw
+  scene_linear: raw
+
+displays:
+  sRGB:
+    - !<View> {name: Half, colorspace: half}
+    - !<View> {name: Raw, colorspace: raw}
+
+colorspaces:
+  - !<ColorSpace>
+    name: raw
+  - !<ColorSpace>
+    name: half
+    from_scene_reference: !<FileTransform> {src: half.spi1d, interpolation: linear}
+";
+
+    const HALF_LUT: &str = "Version 1\nFrom 0.0 1.0\nLength 2\nComponents 1\n{\n0.0\n0.5\n}\n";
+
+    /// The half config written to a folder of its own; its path, slashed.
+    fn half_config(dir: &std::path::Path) -> String {
+        std::fs::create_dir_all(dir.join("luts")).unwrap();
+        std::fs::write(dir.join("luts/half.spi1d"), HALF_LUT).unwrap();
+        std::fs::write(dir.join("half.ocio"), HALF_CONFIG).unwrap();
+        dir.join("half.ocio").to_string_lossy().replace('\\', "/")
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(16))]
+
+        /// A config parsed from its text (read off the UI thread) shows
+        /// what the same config opened from its file shows: its LUT files
+        /// are found from its folder, wherever the process runs.
+        #[test]
+        fn a_parsed_config_shows_what_the_opened_one_does(
+            rgb in [0.0f32..1.0, 0.0f32..1.0, 0.0f32..1.0],
+            // Project folders with spaces and letters past ASCII; never a
+            // Windows device name (NUL, AUX) or a trailing space.
+            folder in "cfg[ A-Za-z0-9_æøåé-]{0,10}x",
+        ) {
+            let dir = tempfile::tempdir().unwrap();
+            let path = half_config(&dir.path().join(folder));
+            let mut opened = Colour::open(&path).unwrap();
+            let mut parsed = Colour::parse(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+            prop_assert_eq!(parsed.default(), opened.default());
+            let a = opened.lut("raw", "sRGB", "Half").unwrap().sample(rgb);
+            let b = parsed.lut("raw", "sRGB", "Half").map_err(TestCaseError::fail)?.sample(rgb);
+            prop_assert_eq!(a, b);
+            // The LUT halves: the file was read, not skipped. The baked
+            // lattice is off by up to ~0.03 near the top of the range; a
+            // skipped file would show the value itself, up to 0.5 more.
+            for c in 0..3 {
+                prop_assert!((b[c] - rgb[c] * 0.5).abs() < 5e-2, "channel {} shows {} for {}", c, b[c], rgb[c]);
+            }
+        }
+    }
+
+    /// The project template's config parses as it opens.
+    #[test]
+    fn the_template_config_parses() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/project_template/_config/ocio/tumblehead.ocio");
+        let path = path.to_string_lossy().replace('\\', "/");
+        let opened = Colour::open(&path).unwrap();
+        let parsed = Colour::parse(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(parsed.default(), opened.default());
+        assert_eq!(parsed.displays(), opened.displays());
+    }
+
+    #[test]
+    fn the_raw_config_has_a_view() {
+        let raw = Colour::raw().unwrap();
+        assert!(!raw.default().0.is_empty() && !raw.default().1.is_empty());
     }
 
     #[test]

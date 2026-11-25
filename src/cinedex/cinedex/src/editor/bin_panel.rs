@@ -483,7 +483,10 @@ impl Editor {
     /// yet, a few at a time (`bin_thumbs`). Called on the journal's tick
     /// and whenever one comes back.
     pub(super) fn bin_thumbs_pump(&mut self) -> Command<Message> {
-        if self.mode != 0 || self.layout.bins_collapsed {
+        // A thumbnail is shown through the project's OCIO config, read at
+        // the edit's rate: both come with the edit (`editor/opening.rs`).
+        // One shown through the stand-in config meanwhile fails for good.
+        if self.mode != 0 || self.layout.bins_collapsed || self.opening.is_some() {
             return Command::none();
         }
         let order = self.bin_keys();
@@ -706,7 +709,8 @@ impl Editor {
             grid_box,
             GRID_TIP,
         ));
-        let writable = !self.doc.read_only();
+        // Nothing goes into a cut that is still opening.
+        let writable = !self.doc.read_only() && self.opening.is_none();
         let put = |id: &'static str, label: &str, overlay: bool| {
             let b = look::button(Id::new(id), text(label.to_owned()).font_size(12.0)).padding(Padding::from([3.0, 8.0])).focusable(false);
             // The editor's own handler puts every picked item.
@@ -733,7 +737,17 @@ impl Editor {
             );
         }
         let mut page = column().spacing(8.0).padding(Padding::from([10.0, 10.0])).push(top);
-        if count == 0 {
+        if count == 0 && self.bins_reading > 0 {
+            // Not empty: not read yet. Saying "no shots" here misleads.
+            let what = if self.bin_tab == 0 { "Reading the project's shots\u{2026}" } else { "Reading the media\u{2026}" };
+            page = page.push(
+                row()
+                    .spacing(8.0)
+                    .align_y(Vertical::Center)
+                    .push(spinner().diameter(12.0).color(look::quiet()))
+                    .push(text(what).font_size(12.0).color(look::quiet())),
+            );
+        } else if count == 0 {
             let empty = if self.bin_tab == 0 {
                 "The project has no shots yet: New shot… plans one in the cut"
             } else {

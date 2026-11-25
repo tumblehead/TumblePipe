@@ -136,7 +136,10 @@ impl Editor {
         Command::batch(commands)
     }
 
-    pub(super) fn refresh_bins(&self) -> Command<Message> {
+    /// Read the bins again in the background; the status line says so
+    /// until the answer is in (`bins_reading`).
+    pub(super) fn refresh_bins(&mut self) -> Command<Message> {
+        self.bins_reading += 1;
         let paths = self.paths.clone();
         let fps = self.fps();
         Command::perform_blocking(move || load_bins(&paths, fps), Message::Bins)

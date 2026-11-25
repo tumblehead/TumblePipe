@@ -12,6 +12,30 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.129.1 — 2026-11-25
+
+### Documentation
+- docs(animate): layout keys with rooms in series; two troubleshooting entries (`9f949201`)
+
+### Tests
+- test(animate): verify_animate_sim_start loop part: a branch reading placed back is not cooked by the settle (`fd9c91f7`)
+- test(animate): Segments invoke each character once; Frames hide on a real layer (`06c10b5d`)
+
+## v1.129.0 — 2026-11-25
+
+### Features
+- feat(animate): warn when a Scene Animate replaces a character's keys from above it (`a3358729`)
+- feat(animate): per-character Frames and Segments on th::animate (`a046dbea`)
+
+### Documentation
+- docs(animate): several rooms or segments in one shot (`0a6f1af0`)
+
+### Tests
+- test: slate tick/search seams and hou stub hipFile coverage (`6e97f734`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.128.2 (`3a3f41ab`)
+
 ## v1.128.2 — 2026-11-24
 
 ### Fixes

@@ -778,8 +778,25 @@ workspace:
   the Settings numbers in `settings/widgets.py`, a create dialog's `int`
   fields in `asset_browser/ui/browser.py`) have no maths until the SDK
   takes the same hook.
-  `main.rs` reads the arguments and opens the OCIO config; when it fails,
-  or the edit does not open, the window says why. `display.rs` is the
+  `main.rs` reads the arguments and opens the window at once, on an empty
+  stand-in edit and OCIO's raw config (`Editor::opening`).
+  `editor/opening.rs` reads the edit and the OCIO config's *text* off the
+  UI thread (an `ocio-rs` `Config` cannot cross threads;
+  `Colour::parse` builds it from the text with the config's folder as
+  working dir, so search paths and LUT files resolve as with
+  `Colour::open`; `ocio://` built-ins and `.ocioz` archives go to
+  `Colour::open`), and `Message::Loaded` installs both. Until then
+  `opening::waits` lets through only reads, polls and looking over the
+  bins (anything else is answered "Wait: still opening …"), the Live view
+  endpoint is not subscribed, and bin thumbnails are not read (through the
+  stand-in config a scene-linear one fails for good). A failed read leaves
+  the window saying why. The status line's right end names every read
+  under way (`opening::activity_words`: the edit, `bins_reading`, the
+  shots resolving, the board), the pattern for any new background work:
+  keep a count or flag the view can read, not a modal dialog.
+  `CINEDEX_STARTUP_TIMES=1` prints each startup step's seconds on stderr.
+  `editor/opening_wiring_tests.rs` holds the opening window to the window
+  that read its edit first. `display.rs` is the
   display and view the picture shows through, and opens a take's media off
   the UI thread. `engine.rs` decodes *sources* (a
   take's media each) placed as *clips* on a `Timeline` of tracks (position,

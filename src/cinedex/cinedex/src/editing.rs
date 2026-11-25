@@ -38,7 +38,7 @@ pub enum Origin {
 }
 
 /// The working edit being edited.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Document {
     pub edit: WorkingEdit,
     history: History<Source>,

@@ -118,6 +118,28 @@ TumbleTrove Desktop 0.78.0 or newer (hpm 0.44.0): an older Desktop cannot
 install TumblePipe 1.125.0 at all, since its hpm refuses the manifest's app
 fields. Update the Desktop.
 
+### Cinedex says "Opening…" for a long time
+
+Cinedex's window opens at once and reads the edit, the project's OCIO config
+and the bins behind it. Meanwhile the viewer and the timeline say what is
+opening, the bins say they are being read, and the right end of the status
+line names every read under way: the edit, the bins, the shots' takes, the
+board. Editing waits for the edit. A key or button pressed meanwhile is
+answered in the status line with "Wait: still opening …", and nothing
+changes.
+
+When it stays on "Opening…":
+
+- The project is on a slow server drive, and each read crosses the network.
+  The status line shows which read is still going.
+- To see where the time goes, a TD can start Cinedex from a terminal with
+  `CINEDEX_STARTUP_TIMES=1` set. It prints each startup step's seconds since
+  launch (launched, editor made, first view, edit open). Send those lines
+  with the report.
+- The viewer says "Nothing to open: …": the edit or the OCIO config could
+  not be read, and the line says why. Close the window and open another
+  edit.
+
 ### Cinedex's Open in Houdini starts a new Houdini instead of using mine
 
 Cinedex opens the workfile in your Houdini only when that Houdini started

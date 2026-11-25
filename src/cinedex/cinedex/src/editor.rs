@@ -83,6 +83,9 @@ mod file_dialogs;
 mod gestures;
 mod menu_bar;
 mod menu_row;
+pub(crate) mod opening;
+#[cfg(test)]
+mod opening_wiring_tests;
 mod panels;
 mod playback;
 mod range_shot;
@@ -247,6 +250,9 @@ pub enum Message {
     /// screen, or hide it.
     ShowLayer(usize, bool),
     Bins(Result<BinData, String>),
+    /// The edit and the OCIO config the window opened on are read
+    /// (`editor/opening.rs`).
+    Loaded(Result<Box<opening::Loaded>, String>),
     /// The middle of the window: 0 the cut (bins and viewer), 1 the board.
     Mode(usize),
     Board(Result<Board, String>),
@@ -399,6 +405,8 @@ pub struct Editor {
     /// under it (None on a track's name) and the track of its row.
     menu_empty: Option<(Option<usize>, Option<TrackRef>)>,
     bins: BinData,
+    /// Bin reads under way (`refresh_bins`): each one's answer counts down.
+    bins_reading: usize,
     bin_tab: usize,
     bin_pick: Option<usize>,
     /// The bins' thumbnails and grid presses (`editor/bin_panel.rs`).
@@ -449,6 +457,11 @@ pub struct Editor {
     /// once the editor starts.
     pending_view: Option<(String, Option<i64>)>,
     started: bool,
+    /// What the window waits for before it can edit: its edit being read
+    /// in the background, or why it did not open (`editor/opening.rs`).
+    opening: Option<opening::Opening>,
+    /// What to read once the window shows: taken by the first `Start`.
+    open_request: Option<opening::Request>,
     quit: bool,
     /// Quit once the save under way lands.
     quit_after_save: bool,
@@ -512,6 +525,13 @@ impl Editor {
         Self::with(paths, ocio, doc, colour, recovered, speaker, Some(layout_prefs::path()))
     }
 
+    /// The window on what `request` asks for, before it is read: it shows
+    /// at once, says what is opening, and reads the edit and the OCIO config
+    /// at `ocio` in the background (`editor/opening.rs`).
+    pub fn opening(paths: ProjectPaths, ocio: String, request: opening::Request) -> Result<Self, String> {
+        Ok(Self::new(paths, ocio, opening::placeholder(), Colour::raw()?, None).waiting_for(request))
+    }
+
     /// [`Self::new`] with its sound out and the file its panel sizes are
     /// kept in given: the tests' editor has no speaker, and its prefs are
     /// not this user's. No `layout_path` keeps them for the session only.
@@ -561,6 +581,7 @@ impl Editor {
             menu_clip: None,
             menu_empty: None,
             bins: BinData::default(),
+            bins_reading: 0,
             bin_tab: 0,
             bin_pick: None,
             bin_state,
@@ -590,6 +611,8 @@ impl Editor {
             live_loop: None,
             pending_view: None,
             started: false,
+            opening: None,
+            open_request: None,
             quit: false,
             quit_after_save: false,
             wake_slot,
@@ -1567,7 +1590,10 @@ impl Application for Editor {
         if self.quit {
             return Vec::new();
         }
-        let title = format!("{} - Cinedex", self.doc.title());
+        let title = match &self.opening {
+            Some(opening) => format!("{} - Cinedex", opening.title()),
+            None => format!("{} - Cinedex", self.doc.title()),
+        };
         vec![window::Window::new(window::Id::MAIN).title(title).app_id(crate::APP_ID).size(Size::new(1440.0, 940.0)).theme(theme())]
     }
 
@@ -1620,6 +1646,10 @@ impl Application for Editor {
             }
             futures::future::pending::<()>().await;
         });
+        // The endpoint opens once the edit is in, as it did when the edit
+        // was read before the window: Live view and agents ask a window
+        // about the edit it plays.
+        let rpc = if self.opening.is_none() { rpc } else { Subscription::none() };
         let mut autosave = Subscription::batch([
             time::every(AUTOSAVE, || Message::Autosave),
             rpc,
@@ -1644,6 +1674,10 @@ impl Application for Editor {
     }
 
     fn view(&self, _window: window::Id) -> Element<Message> {
+        crate::startup_mark("first view");
+        if let Some(opening) = &self.opening {
+            return self.view_while_opening(opening);
+        }
         let layers = self.picture_view();
         // The panels resize (`editor/panels.rs`): drag a handle, double-
         // click it to fold the panel to a strip, click the strip to bring it
@@ -1668,18 +1702,7 @@ impl Application for Editor {
         };
         let timeline = column().push(self.timeline_header()).push(self.tracks_view()).width(Length::Fill).height(Length::Fill);
         let body = panels::timeline_split(middle, timeline, self.timeline_height(), self.layout.timeline_collapsed, Message::TimelinePanel);
-        // The status line is always there, empty when there is nothing to
-        // say: a refused drag putting it up (and the next edit taking it
-        // down) used to move the whole timeline up and down.
-        let (words, error) = self.status.clone().unwrap_or_default();
-        let colour = if error { look::error() } else { look::text() };
-        let status = container(text(words).font_size(13.0).color(colour))
-            .padding(Padding::from([0.0, 14.0]))
-            .width(Length::Fill)
-            .height(Length::fixed(STATUS_HEIGHT))
-            .align_y(Vertical::Center)
-            .background(look::panel());
-        let page = column().push(self.toolbar()).push(body).push(status).width(Length::Fill).height(Length::Fill);
+        let page = column().push(self.toolbar()).push(body).push(self.status_line()).width(Length::Fill).height(Length::Fill);
         let mut root = modal(page);
         if let Some(view) = self.dialog_view() {
             root = root.dialog(Id::new("dialog"), view).on_dismiss(|| Message::Dismiss);
@@ -1689,26 +1712,62 @@ impl Application for Editor {
 }
 
 impl Editor {
+    /// The edit is in (at start, or once read in the background): play
+    /// it, resolving its shots, and show a Live view asked for on the
+    /// command line.
+    fn begin_editing(&mut self) -> Command<Message> {
+        let mut commands = vec![self.changed()];
+        if let Some((shot, frame)) = self.pending_view.take() {
+            // Houdini started this player on the master edit for it.
+            let (result, command) = self.view_shot(&shot, frame, false);
+            if let Err(e) = result {
+                self.status = Some((format!("Live view: {}", e.message), true));
+            }
+            commands.push(command);
+        }
+        Command::batch(commands)
+    }
+
+    /// The status line: the last thing said at its left, the reads under
+    /// way at its right beside a turning ring (`opening::activity_words`).
+    /// It is always there, empty when there is nothing to say: a refused
+    /// drag putting it up (and the next edit taking it down) used to move
+    /// the whole timeline up and down.
+    fn status_line(&self) -> Element<Message> {
+        let (words, error) = self.status.clone().unwrap_or_default();
+        let colour = if error { look::error() } else { look::text() };
+        let mut line =
+            row().spacing(8.0).align_y(Vertical::Center).push(container(text(words).font_size(13.0).color(colour)).width(Length::Fill));
+        if let Some(busy) = self.activity() {
+            line = line.push(spinner().diameter(12.0).color(look::quiet())).push(text(busy).font_size(12.0).color(look::quiet()));
+        }
+        container(line)
+            .padding(Padding::from([0.0, 14.0]))
+            .width(Length::Fill)
+            .height(Length::fixed(STATUS_HEIGHT))
+            .align_y(Vertical::Center)
+            .background(look::panel())
+            .into()
+    }
+
     /// The model's side of [`Application::update`], which quits the run
     /// once this left (see [`Self::leave`]).
     fn handle(&mut self, message: Message) -> Command<Message> {
+        if self.opening.is_some() && opening::waits(&message) {
+            self.wait_for_opening();
+            return Command::none();
+        }
         match message {
             Message::Start if !self.started => {
                 self.started = true;
                 crate::app_icon::apply();
-                let resolve = self.changed();
-                let mut commands = vec![resolve, self.refresh_bins()];
-                if let Some((shot, frame)) = self.pending_view.take() {
-                    // Houdini started this player on the master edit for it.
-                    let (result, command) = self.view_shot(&shot, frame, false);
-                    if let Err(e) = result {
-                        self.status = Some((format!("Live view: {}", e.message), true));
-                    }
-                    commands.push(command);
+                if let Some(request) = self.open_request.take() {
+                    return self.start_opening(request);
                 }
-                return Command::batch(commands);
+                return Command::batch([self.refresh_bins(), self.begin_editing()]);
             }
             Message::Start => {}
+            Message::Loaded(result) => return self.loaded(result),
             Message::Wake => {
                 crate::app_icon::apply();
                 self.collect_proxies();
@@ -1892,13 +1951,16 @@ impl Editor {
                 }
             }),
             Message::ShowLayer(layer, shown) => self.change_view(|_, _, hidden| *hidden = layer_view::set_shown(*hidden, layer, shown)),
-            Message::Bins(result) => match result {
-                Ok(bins) => {
-                    self.bins = bins;
-                    return self.refresh_board();
+            Message::Bins(result) => {
+                self.bins_reading = self.bins_reading.saturating_sub(1);
+                match result {
+                    Ok(bins) => {
+                        self.bins = bins;
+                        return self.refresh_board();
+                    }
+                    Err(e) => self.status = Some((format!("The bins: {e}"), true)),
                 }
-                Err(e) => self.status = Some((format!("The bins: {e}"), true)),
-            },
+            }
             Message::Mode(mode) => {
                 self.mode = mode;
                 if mode == 1 {

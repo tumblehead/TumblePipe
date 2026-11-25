@@ -103,6 +103,27 @@ use colour::Colour;
 /// `cinedex.desktop` file's Name when there is one.
 pub(crate) const APP_ID: &str = "cinedex";
 
+/// With `CINEDEX_STARTUP_TIMES=1`, a startup step's seconds since launch
+/// on stderr, each step once: where the time goes before the edit shows
+/// on a project on a server drive (docs/troubleshooting.md). Called from
+/// every view too: off, it costs two loads.
+pub(crate) fn startup_mark(step: &str) {
+    use std::sync::{Mutex, OnceLock};
+    static START: OnceLock<std::time::Instant> = OnceLock::new();
+    static ON: OnceLock<bool> = OnceLock::new();
+    static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    let start = *START.get_or_init(std::time::Instant::now);
+    if !*ON.get_or_init(|| std::env::var_os("CINEDEX_STARTUP_TIMES").is_some_and(|v| !v.is_empty() && v != "0")) {
+        return;
+    }
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if seen.iter().any(|s| s == step) {
+        return;
+    }
+    seen.push(step.to_owned());
+    eprintln!("cinedex startup: {:>7.3} s  {step}", start.elapsed().as_secs_f64());
+}
+
 /// The window shown when there is nothing to open, saying why.
 struct Failed {
     message: String,
@@ -355,18 +376,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         return Ok(());
     }
+    startup_mark("launched");
+    // The window shows at once; the edit and the OCIO config are read
+    // behind it (`editor/opening.rs`), on a server drive too.
     let opened = (|| {
         let (paths, ocio) = paths_and_ocio()?;
-        let colour = Colour::open(&ocio).map_err(|e| format!("the OCIO config: {e}"))?;
-        let (doc, recovered) = editor::document_io::open_document(&paths, args.edit.as_deref(), &args.shots)?;
-        // Play in Houdini opens the edit used last (`recent_edits`).
-        if let editing::Origin::Working { name, .. } | editing::Origin::Published { name, .. } = &doc.origin {
-            let file = recent_edits::path(&layout_prefs::path());
-            if let Err(e) = recent_edits::note(&file, &th_pipe::storage::slashed(&paths.root), name) {
-                eprintln!("cinedex: the edit opened was not noted in {}: {e}", file.display());
-            }
-        }
-        let editor = editor::Editor::new(paths, ocio, doc, colour, recovered);
+        let request = editor::opening::Request { edit: args.edit.clone(), shots: args.shots.clone() };
+        let editor = editor::Editor::opening(paths, ocio, request)?;
+        startup_mark("editor made");
         Ok::<_, String>(match args.view.clone() {
             Some(shot) => editor.with_view(shot, args.at),
             None => editor,

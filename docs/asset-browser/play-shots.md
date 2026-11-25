@@ -518,6 +518,17 @@ At the top of the window is the toolbar: the menus (on Windows and Linux),
 is doing (**Showing renders**, **Flipped**). The edit's name and version
 (with `*` while it has unsaved changes) are in the window's title.
 
+The window opens at once, before its edit is read. While the edit and the
+project's colour config load, the viewer and the timeline say what is
+opening ("Opening Main v0003…"), and the bins list the shots as soon as
+they are read. Editing waits for the edit: a key or button pressed
+meanwhile is answered "Wait: still opening …" in the status line, and
+nothing changes. If the edit cannot be read, the viewer says why ("Nothing
+to open: …"); close the window. At the right end of the status line, a
+turning ring names whatever is still loading, then and later: the edit,
+the bins, the shots' takes, the board. See
+[Cinedex says "Opening…" for a long time](../troubleshooting.md#cinedex-says-opening-for-a-long-time).
+
 The switches of what the picture shows sit on the player, in the strip
 right over the picture, at its right: **Live** (play this machine's live
 playblasts over the shots' takes, on by default; see
