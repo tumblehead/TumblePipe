@@ -1044,6 +1044,17 @@ the Copy Animation. On a **New Layer** the copied keys go on an animation
 layer, and a Scene Animate below that keys the character replaces only his
 base keys and keeps the layer, so the copied keys still play.
 
+**Layout's keys go into the first Scene Animate.** With *Layout in
+Animate* on, the template's [`th::layout_keys`](assets.md#thlayout_keys-sop)
+copies layout's keys into the Scene Animate nearest below it: with the rooms
+in series, the first room's, for every character. A character you then key
+in a later room's Scene Animate takes his entry from there on, layout's keys
+as they were included, and `th::animate` warns that the first room's keys
+for him do nothing: a later **Copy from Layout** reaches only the first
+room. To keep a character's layout keys copyable, turn his row off on that
+`th::layout_keys` and put another `th::layout_keys` just above his room's
+Scene Animate, with his row on.
+
 With every room in one chain, every character is on stage for the whole
 shot. Give each a range in the **Frames** column of the
 [Characters](#characters) list: outside it the character is hidden, so the

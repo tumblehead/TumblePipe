@@ -458,6 +458,33 @@ both dives now give the same result, and you can delete that Scene Invoke
 again (see [`th::animate` → What the dive must
 contain](nodes/import-and-export.md#what-the-dive-must-contain)).
 
+### Characters from two rooms never show in the same frame after `th::animate`
+
+The dive has a Scene Animate per room side by side, and a Switch picks one
+room per frame. A Switch shows one Scene Animate on each frame, so a
+character animated in one room and one animated in another can never be in
+frame together. Chain the rooms' Scene Animates in series instead and drop
+the Switch: a Scene Animate passes on the characters it does not key, so
+the last one has every room's animation. Hide each room's characters
+outside their frames with **Frames** on the Characters list, and take a
+character from different rooms over different frames with **Segments** (see
+[Several rooms or segments in one
+shot](nodes/import-and-export.md#several-rooms-or-segments-in-one-shot)).
+
+### Keys I change on a character in one Scene Animate do nothing
+
+Another Scene Animate below it in the dive keys the same character, and a
+Scene Animate's keys for a character replace the ones it is given, whole.
+Touching one of his controls there was enough, and since what it saved
+can carry your keys as they were then, the shot can look right while your
+changes never reach it. From 1.129 `th::animate` warns, naming the
+character and both nodes. Key each character in one Scene Animate, move
+keys between them with TumbleRig's Copy Animation, or have Copy Animation
+put them on a New Layer, which a Scene Animate below keeps. Layout's keys
+land in the first Scene Animate below `th::layout_keys`, so the same holds
+for them (see [Several rooms or segments in one
+shot](nodes/import-and-export.md#several-rooms-or-segments-in-one-shot)).
+
 ### A character's shading turns with the world after `th::animate`, not with the character
 
 The character moves, but it is lit from the side it faced at the shot's

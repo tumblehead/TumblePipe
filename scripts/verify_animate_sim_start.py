@@ -27,6 +27,11 @@ keyed to swing and walk over 1..48. One part per process:
             starts mid-shot (wifi_retina, tumblerig__help 2026-11-21: Motion
             Effects missing on a SOP Import of the character). `placed`
             catches the rigs up in its own cook, so it equals cfx_ref.
+    loop    a Scene Invoke in the dive's unpicked Switch input reads
+            `placed` back (NRI, 2026-11-24: a publish failed with "Infinite
+            recursion in evaluation"). The settle must not cook it from
+            inside `placed`, and must still catch the rig up. Prints PASS /
+            FAIL itself (kit 0.6.0 / TumbleRig 1.25.5: FAIL).
 
     hython scripts/verify_animate_sim_start.py <part> <out.json>
     python scripts/verify_animate_sim_start.py --compare <dir>
@@ -226,6 +231,47 @@ def main():
         r.parent().node('jiggle').bypass(True)
     animate = build(stage, r)
     res, info = {}, {'part': PART}
+    if PART == 'loop':
+        # NRI, tumblepipe crash 2026-11-24: "infinite recursion" on publish.
+        # A Scene Invoke in a branch the dive does not cook (a Switch's other
+        # input) that reads th::animate's own SOPs back: the settle replayed it
+        # from inside `placed`'s cook, so `placed` cooked itself.
+        dive = animate.node('anim_dive')
+        back = dive.createNode('object_merge', 'read_back')
+        back.parm('objpath1').set(animate.node('points_sops/placed').path())
+        # the same rig (it simulates) beside what th::animate placed, as a
+        # character following another one's animation would read it
+        both = dive.createNode('merge', 'rig_and_placed')
+        both.setInput(0, dive.node('add'))
+        both.setInput(1, back)
+        other = dive.createNode('apex::sceneinvoke::2.0', 'other')
+        other.setInput(0, both)
+        switch = dive.createNode('switch', 'pick')
+        switch.setInput(0, dive.node('add'))
+        switch.setInput(1, other)
+        dive.node('scene_animate').setInput(0, switch)
+        info['loop_errors'] = []
+        for f in (MID, MID + 1, FIRST + 3):
+            hou.setFrame(f)
+            try:
+                animate.cook(force=True)
+            except hou.OperationFailed:
+                pass
+            stage = animate.stage()
+            res[str(f)] = points(stage, f) if stage is not None else []
+            info['loop_errors'] += [e for n in (animate, animate.node('points_sops/placed'))
+                                    for e in n.errors()]
+        placed = animate.node('points_sops/placed')
+        from ttkit import sim_replay
+        info['sim_invokes'] = [i.path() for i in sim_replay._sim_invokes(placed.inputs()[0])]
+        # the read-back branch is never cooked by the dive: a settle that cooks
+        # it from inside `placed` makes `placed` cook itself ("Infinite
+        # recursion in evaluation", on the read-back or on `placed`)
+        info['loop_errors'] += list(other.errors()) + list(back.errors())
+        print('PASS' if not info['loop_errors'] and all(res.values())
+              and sim_replay.stats()['replays'] > 0  # the rig is still caught up
+              else 'FAIL', 'loop', info['loop_errors'][:3])
+
     if PART in ('invoke', 'invoke_bypass'):
         # the same rig and keys through a plain Scene Invoke (no th::animate)
         dive = animate.node('anim_dive')
