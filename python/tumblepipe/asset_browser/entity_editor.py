@@ -5265,7 +5265,8 @@ class EntityEditorWindow(QDialog):
                 return False
         error = None
         staged = ''
-        staging_error = None
+        # What failed after the writes landed, each said in the warning.
+        follow_ups: list[str] = []
         overlaps_before = self.source.overlaps()
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
@@ -5290,7 +5291,10 @@ class EntityEditorWindow(QDialog):
                     )
                 ])
             except Exception as exc:
-                staging_error = exc
+                follow_ups.append(
+                    f'The new members could not be placed on their shared '
+                    f'timeline:\n\n{exc}'
+                )
             # A shot imports its Root's assets from files (the Root's
             # export, its root layer, its staged build), not from the
             # database: stage them now, or the layout workfile opened next
@@ -5298,7 +5302,11 @@ class EntityEditorWindow(QDialog):
             try:
                 staged = self.source.stage_roots()
             except Exception as exc:
-                staging_error = exc
+                follow_ups.append(
+                    f'The shots could not be brought up to date with their '
+                    f'Roots:\n\n{exc}\n\nRun Stage Root & Rebuild Shots… on '
+                    'the Root card in the browser.'
+                )
         finally:
             QApplication.restoreOverrideCursor()
         for pane in self.panes.values():
@@ -5313,12 +5321,9 @@ class EntityEditorWindow(QDialog):
                 'Apply again.',
             )
             return False
-        if staging_error is not None:
+        if follow_ups:
             QMessageBox.warning(
-                self, 'Entity Editor',
-                'Applied, but the shots could not be brought up to date with '
-                f'their Roots:\n\n{staging_error}\n\nRun Stage Root & '
-                'Rebuild Shots… on the Root card in the browser.',
+                self, 'Entity Editor', 'Applied, but:\n\n' + '\n\n'.join(follow_ups),
             )
         # A longer shot can now run into the next on a shared timeline:
         # say so and offer Repack, never repack unasked.

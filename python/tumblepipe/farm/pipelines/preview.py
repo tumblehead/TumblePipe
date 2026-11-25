@@ -392,78 +392,20 @@ def collapse_playblast_input(
 
 
 def render_config(
-    entity_uri: Uri,
-    *,
-    department: str,
-    channels: list[str],
+    request: dict,
     input_paths: dict[str, str],
     render_settings_path: Path,
-    user_name: str,
-    pool_name: str,
-    priority: int,
-    tile_count: int,
-    first_frame: int,
-    last_frame: int,
-    batch_size: int,
-    denoise: bool,
-    copy_to_edit: bool,
-    task_keys: list[str],
-    composite: dict | None = None,
-    cut_range: list[int] | None = None,
-    preview_frame_list: list[int] | None = None,
-    frame_ranges: list[list[int]] | None = None,
-    step_size: int = 1,
-    repair: dict | None = None,
 ) -> dict:
-    """The ``render/job.py`` config for a direct render of collapsed inputs.
-
-    ``repair`` (``farm.specs.repair``, #92) renders the frames into existing
-    versions instead of new ones; None for new versions.
-
-    ``frame_ranges`` (``farm.specs.frame_ranges``, #84) makes it a
-    multi-range render of only those frames; None renders first..last.
-    ``step_size`` renders every Nth of them (Farm Submit's Step).
-
-    ``render_settings_path`` is absolute: the job builder reads it locally.
-    ``input_paths`` are relative, resolved in the job data dir on the farm.
-    ``composite`` is the re-comp to chain after the render (Farm Submit's
-    Comp column; ``specs.composite.valid_recomp``), None for none.
-    """
-    config = dict(
-        entity=dict(uri=str(entity_uri), department=department),
-        settings=dict(
-            user_name=user_name,
-            purpose='render',
-            pool_name=pool_name,
-            channel_names=channels,
-            render_department_name=department,
-            render_settings_path=path_str(render_settings_path),
-            input_paths=input_paths,
-            tile_count=tile_count,
-            first_frame=first_frame,
-            last_frame=last_frame,
-            step_size=step_size,
-            batch_size=batch_size,
-            copy_to_edit=copy_to_edit,
-            **({} if cut_range is None else dict(cut_range=list(cut_range))),
-            **({} if not preview_frame_list
-               else dict(preview_frame_list=list(preview_frame_list))),
-            **({} if not frame_ranges
-               else dict(frame_ranges=[list(pair) for pair in frame_ranges])),
-            **({} if repair is None else dict(repair=dict(repair))),
-        ),
-        tasks={
-            task_key: dict(
-                priority=priority,
-                denoise=denoise,
-                channel_name='renders',
-            )
-            for task_key in task_keys
-        },
-    )
-    if composite is not None:
-        config['composite'] = dict(composite)
-    return config
+    """The render pipeline config (``pipelines/render.py``) of a render
+    ``request`` (``specs.render_pipeline.valid_request``) over the inputs
+    this path to the farm made: ``input_paths`` relative, resolved in the
+    job data dir on the farm, and ``render_settings_path`` absolute, read
+    locally by the job builder."""
+    return dict(request, settings=dict(
+        request['settings'],
+        input_paths=dict(input_paths),
+        render_settings_path=path_str(render_settings_path),
+    ))
 
 
 def playblast_config(

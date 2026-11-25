@@ -1,16 +1,13 @@
 """The sync job: runs ``workers/sync.py`` to copy a shot's AOVs to the edit."""
 
-import json
-
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import sync as sync_spec
 
 
 def build(config, paths, staging_path):
     """The sync job for ``config`` (``specs.sync.is_valid_config``)."""
-    assert sync_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(sync_spec.is_valid_config, config, 'sync')
     job = farm_job('sync', dict(
         entity_uri = config['entity_uri'],
         purpose = config['purpose'],

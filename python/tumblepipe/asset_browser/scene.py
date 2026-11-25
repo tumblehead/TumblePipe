@@ -415,7 +415,10 @@ class SceneManager:
         the error dialog on failure (``report_failures=False``) — a failed
         emergency save is logged and reported to the status bar, never modal.
         """
-        self._save_scene(refresh_cb, prompt_note=False, report_failures=False)
+        self._save_scene(
+            refresh_cb, prompt_note=False, report_failures=False,
+            if_newer="save",
+        )
 
     def autosave_current_scene(self) -> None:
         """Write the next workfile version noted "Autosave", inline.
@@ -425,11 +428,16 @@ class SceneManager:
         nothing modal open. Like the emergency save it never prompts for a
         note and never opens a dialog: a failure every few minutes goes to
         the status bar.
+
+        It waits while a newer version than the open one exists
+        (``if_newer="wait"``): a second Houdini left open on an older
+        version autosaved it over newer work, every few minutes, and
+        opening the scene loaded the old content (NRI, 2026-11-25).
         """
         from .save_timer import AUTOSAVE_NOTE
         self._save_scene(
             prompt_note=False, report_failures=False,
-            note=AUTOSAVE_NOTE, failure_label="Autosave",
+            note=AUTOSAVE_NOTE, failure_label="Autosave", if_newer="wait",
         )
 
     def _prompt_version_note(self, prev_ctx) -> str | None:
@@ -487,7 +495,7 @@ class SceneManager:
     def _save_scene(
         self, refresh_cb=None, prompt_note: bool = False,
         report_failures: bool = True, note: str = "",
-        failure_label: str = "Emergency save",
+        failure_label: str = "Emergency save", if_newer: str = "ask",
     ) -> None:
         """Write the next workfile version of the loaded scene's context,
         and report what went wrong.
@@ -501,9 +509,19 @@ class SceneManager:
         opt-in, and the one caller that wants it says so. ``note`` is the
         version note when not prompting; ``failure_label`` names the save in
         the status-bar line a quiet (``report_failures=False``) failure gets.
+        ``if_newer`` is what happens when a newer version than the open one
+        exists (:meth:`_commit_scene_version`).
         """
+        from tumblepipe.pipe.houdini.workfile_save import NewerVersionSaved
         try:
-            self._commit_scene_version(prompt_note, note)
+            self._commit_scene_version(prompt_note, note, if_newer)
+        except NewerVersionSaved as exc:
+            # Not a failure: the save waits on purpose, and says why.
+            log.info("%s waits: %s", failure_label, exc)
+            import hou
+            hou.ui.setStatusMessage(
+                f"{failure_label}: {exc}", severity=hou.severityType.Warning,
+            )
         except NoSceneContext as exc:
             # A dialog, not a status line: a Save that saved nothing must
             # not look like a Save that worked.
@@ -527,16 +545,28 @@ class SceneManager:
                 refresh_cb()
 
     def _commit_scene_version(
-        self, prompt_note: bool, note: str = "",
+        self, prompt_note: bool, note: str = "", if_newer: str = "ask",
     ) -> Path | None:
         """Write the next workfile version of the loaded scene's context, on
         the calling thread, and return its path; ``None`` when the artist
-        cancelled the version note. Raises :class:`NoSceneContext` for a
-        scene outside the pipeline, and whatever else fails.
+        cancelled the version note or the newer-version question. Raises
+        :class:`NoSceneContext` for a scene outside the pipeline, and
+        whatever else fails.
+
+        ``if_newer`` is what happens when a version newer than the open one
+        was saved since (another Houdini, another artist): ``"ask"`` asks
+        the artist (:func:`confirm_save_over_newer`), ``"wait"`` raises
+        :class:`NewerVersionSaved` without saving (Autosave), ``"save"``
+        saves anyway (the crash-time emergency save, which must not stop).
         """
         import hou
         from tumblepipe.pipe.paths import get_workfile_context
-        from tumblepipe.pipe.houdini.workfile_save import commit_next_workfile
+        from tumblepipe.pipe.houdini.workfile_save import (
+            NewerVersionSaved,
+            commit_next_workfile,
+            confirm_save_over_newer,
+            newer_than_open,
+        )
 
         hip_path = Path(hou.hipFile.path())
         prev_ctx = get_workfile_context(hip_path)
@@ -561,6 +591,16 @@ class SceneManager:
         scene_proj = self._resolver.project_for_path(hip_path)
         if scene_proj is not None:
             self._activator.activate(scene_proj)
+
+        # Every save writes "latest + 1" from what is open here, so an
+        # older version still open would land on top of newer work.
+        if if_newer == "wait":
+            latest = newer_than_open(prev_ctx)
+            if latest is not None:
+                raise NewerVersionSaved(prev_ctx, latest)
+        elif if_newer == "ask" and not confirm_save_over_newer(prev_ctx):
+            log.info("Save cancelled: a newer version than the open one exists")
+            return None
 
         # Reserve + save + record the next version as one atomic commit
         # (pointer written last). Match Houdini's Ctrl+S extension
@@ -773,8 +813,11 @@ class SceneManager:
             return False
 
         # Opt-in: version up silently, no prompt.
+        # A newer version than the open one still asks first: the artist
+        # is here, and a cancel cancels the swap.
         if self._prefs.autosave_on_scene_change:
-            self._commit_scene_version(prompt_note=False)
+            if self._commit_scene_version(prompt_note=False) is None:
+                return None
             return True
 
         # Otherwise ask — but "Save" always means a new version, never an

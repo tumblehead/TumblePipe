@@ -14,34 +14,18 @@ from pathlib import Path
 
 from tumblepipe.api import path_str
 from tumblepipe.apps.deadline import Job
-from tumblepipe.farm.checks import (
-    check_int,
-    check_str,
-    valid_channel_name,
-    valid_frame_range,
-)
+from tumblepipe.farm.checks import checked
+from tumblepipe.farm.specs import build_pipeline as build_pipeline_spec
 from tumblepipe.farm.jobs import build as build_job
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.pipe.paths import next_staged_file_path
 from tumblepipe.util.uri import Uri
 
 
-def is_valid_config(config) -> bool:
-    if not isinstance(config, dict): return False
-    if not check_str(config, 'entity_uri'): return False
-    if not valid_channel_name(config): return False
-    if not check_int(config, 'priority'): return False
-    if not check_str(config, 'pool_name'): return False
-    has_range = ('first_frame' in config, 'last_frame' in config)
-    if has_range == (True, True):
-        return valid_frame_range(config, step=False)
-    return has_range == (False, False)
-
-
 def create(config: dict, staging_path: Path) -> Job:
     """The build job for ``config``, for a caller chaining several (a
     submission rebuilding several channels of one entity needs one each)."""
-    assert is_valid_config(config), f'Invalid build config: {config}'
+    checked(build_pipeline_spec.is_valid_config, config, 'build pipeline')
     entity_uri = Uri.parse(config['entity_uri'])
     channel_name = config['channel_name']
     output_path = next_staged_file_path(entity_uri, channel_name)

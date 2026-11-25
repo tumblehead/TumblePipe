@@ -5,6 +5,63 @@ TumblePipe beyond `tumblepipe.api` and the names the
 shipped HDAs call (those keep working). Each entry also leads its release's
 notes under **Breaking Changes** in the [changelog](changelog.md).
 
+## v1.131.0
+
+### Farm configs refused with ValueError, checked at build
+
+Every farm job (`farm/jobs/*.py`) and pipeline now refuses an invalid
+config with a `ValueError` (`farm.checks.checked`) instead of an `assert`,
+so the check survives `python -O`. The render, playblast and composite
+pipelines now validate their config when `build()` runs; before, only the
+jobs they built did, so a bad config could pass the submit. Code that
+caught `AssertionError` from a job builder catches `ValueError`.
+
+The pipeline config validators moved into `farm/specs`:
+`pipelines.build.is_valid_config` -> `specs.build_pipeline`,
+`pipelines.playblast.is_valid_config` -> `specs.playblast_pipeline`,
+`pipelines.composite.is_valid_config` (and `valid_exports`) ->
+`specs.composite_pipeline`, `pipelines.edit_render.is_valid_config` ->
+`specs.edit_render_pipeline`. `pipelines.composite.valid_imports` is now
+`specs.composite.valid_imports`.
+
+### One render request from Farm Submit to the farm
+
+`farm.pipelines.preview.render_config(request, input_paths,
+render_settings_path)` now takes a render request
+(`farm.specs.render_pipeline.valid_request`: a render pipeline config
+without those two paths) instead of 20 keyword arguments. The direct,
+collapse and stage paths now build that one request.
+
+The collapse job config's shot render is now
+`render: {'request': {...}, 'overrides': {...}}`, and an asset's turntable
+moved from `render` with `turntable: True` to its own `turntable` block.
+The stage job config is unchanged. `valid_render_settings` no longer
+checks `render_settings_path`; each spec that carries the path checks it
+itself. Every render source now refuses a Step below 1, and a render
+request with no render task.
+
+Queued jobs are not affected: a job runs the package version it was
+submitted with.
+
+### Composite refuses fewer than two COPs
+
+`tools.coputils.composite(nodes, mode)` raises
+`pipe.houdini.nodes.NodeError` when given fewer than two nodes and creates
+nothing. It used to return quietly for none and raise IndexError for one.
+The radial COP menu shows the message.
+
+### One rule for a comp after a render
+
+`farm.specs.render_pipeline.comp_follows(settings)` is gone. Call
+`valid_comp_after(settings, task_keys, composite)` instead: the render
+pipeline, stage and collapse specs now share it. Stage and collapse configs
+are refused where the render pipeline already refused them: a comp after a
+preview-only render, or a step-1 comp whose own frames reach outside the
+render's. A render pipeline or collapse config with a comp after a stepped
+shot render is now accepted as a check comp, as the stage already did. The
+collapse job asserts its spec, so a Publish + stepped Render + Comp used to
+fail at submit.
+
 ## v1.128.1
 
 ### From Config spans the reads when every read holds

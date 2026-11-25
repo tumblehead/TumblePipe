@@ -158,8 +158,11 @@ so switching it here switches it there and the other way round.
   changes first saves it as its next version, noted *Autosave before
   opening &lt;department&gt;* (the Save button's Autosave notes its versions
   *Autosave*), and then opens the other department with no prompt. If the
-  save fails, the failure is reported and the jump does not happen. An
-  untitled or off-pipeline scene still gets Houdini's prompt. **Shift**
+  save fails, the failure is reported and the jump does not happen. If a
+  version newer than the open one was saved meanwhile (another Houdini, say),
+  the save asks first, and **Cancel** saves nothing and does not jump
+  ([Workfiles → When a newer version was saved meanwhile](asset-browser/workfiles.md#when-a-newer-version-was-saved-meanwhile)).
+  An untitled or off-pipeline scene still gets Houdini's prompt. **Shift**
   (a new Houdini) never saves anything.
 
 Each department slot is an action, `tumblepipe.open_selected.<department>`,

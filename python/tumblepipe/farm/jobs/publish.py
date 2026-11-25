@@ -1,7 +1,6 @@
 """The publish job: runs ``workers/publish.py`` over a bundled workfile."""
 
-import json
-
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import publish as publish_spec
 
@@ -13,9 +12,7 @@ PRIORITY = 90
 
 def build(config, paths, staging_path):
     """The publish job for ``config`` (``specs.publish.is_valid_config``)."""
-    assert publish_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(publish_spec.is_valid_config, config, 'publish')
     entity = config['entity']
     settings = config['settings']
     job = farm_job('publish', config, staging_path,

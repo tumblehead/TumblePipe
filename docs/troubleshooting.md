@@ -225,6 +225,16 @@ isn't.
 
 ## Saving, exporting, publishing
 
+### Opening a workfile loads an older scene, though its version is the newest
+
+A second Houdini still open on an older version (opened for reference, or
+left behind) saved or autosaved it as the next version, on top of the newer
+work. Nothing is lost: the newer scene is still in its own version. Open it
+from the version dropdown ([Picking an older version](asset-browser/workfiles.md#picking-an-older-version))
+and save; it becomes the newest version again. From TumblePipe 1.131.0
+a save in that situation asks first and Autosave waits
+([When a newer version was saved meanwhile](asset-browser/workfiles.md#when-a-newer-version-was-saved-meanwhile)).
+
 ### Export or Publish "did nothing"
 
 It no longer can: an action you clicked either succeeds, or tells you why it

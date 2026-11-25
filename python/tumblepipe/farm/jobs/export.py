@@ -1,17 +1,14 @@
 """The export job: runs ``workers/export.py``, which exports a workfile's
 stage and submits its render (the lookdev turntable)."""
 
-import json
-
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import export as export_spec
 
 
 def build(config, paths, staging_path):
     """The export job for ``config`` (``specs.export.is_valid_config``)."""
-    assert export_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(export_spec.is_valid_config, config, 'export')
     entity = config['entity']
     settings = config['settings']
     job = farm_job('export', config, staging_path,

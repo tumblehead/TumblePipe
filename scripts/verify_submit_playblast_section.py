@@ -24,9 +24,9 @@ Run (no Houdini, no project):
     QT_QPA_PLATFORM=offscreen TUMBLETROVE_PYTHON=<tumbletrove>/python \\
         uv run --python 3.12 --with pyside6 python scripts/verify_submit_playblast_section.py
 
-``TUMBLETROVE_PYTHON`` defaults to the newest ``.tools/hpm-fetch/
-tumbletrove-tumbletrove-*/python`` (``.ci/fetch_hpm_packages.py`` lays it
-out). Set ``PLAYBLAST_SECTION_SCREENSHOT=<png>`` to also save the section
+``TUMBLETROVE_PYTHON`` defaults to the newest TumbleTrove hpm has
+fetched or installed (``.ci/hpm_packages.py``; ``TEST_HPM_FETCH_DIR``
+names a folder ``.ci/fetch_hpm_packages.py`` laid out). Set ``PLAYBLAST_SECTION_SCREENSHOT=<png>`` to also save the section
 under each renderer (``<png>`` gets ``_viewport`` / ``_karma`` suffixes).
 """
 
@@ -38,15 +38,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / 'python'))
 
 
-def _tumbletrove_python() -> Path | None:
-    configured = os.environ.get('TUMBLETROVE_PYTHON')
-    if configured:
-        return Path(configured)
-    fetched = sorted((REPO_ROOT / '.tools' / 'hpm-fetch').glob('tumbletrove-tumbletrove-*/python'))
-    return fetched[-1] if fetched else None
+sys.path.insert(0, str(REPO_ROOT / '.ci'))
+from hpm_packages import tumbletrove_python  # noqa: E402
 
-
-_tt = _tumbletrove_python()
+_tt = tumbletrove_python()
 if _tt is None or not _tt.is_dir():
     sys.exit("No tumbletrove python found: set TUMBLETROVE_PYTHON (see the docstring).")
 sys.path.insert(0, str(_tt))

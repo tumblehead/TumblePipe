@@ -22,11 +22,13 @@ import logging
 
 from tumblepipe.api import path_str
 from tumblepipe.apps.deadline import Job
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.jobs import denoise as denoise_job
 from tumblepipe.farm.jobs import render as render_job
 from tumblepipe.farm.pipelines import post_render
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
 from tumblepipe.farm.specs import frame_ranges
+from tumblepipe.farm.specs import render_pipeline as render_pipeline_spec
 from tumblepipe.farm.specs import repair as repair_spec
 from tumblepipe.farm.specs.preview_frames import CONFIG_KEY as PREVIEW_FRAMES_KEY
 from tumblepipe.pipe import render_layers, slap_comp
@@ -268,8 +270,11 @@ def build(
     ) -> list[str]:
     """Add the render jobs of ``config`` to ``jobs``/``deps``, after
     ``depends_on``; returns the names later work should depend on."""
+    # Every caller (direct, collapse, stage, export) lands here: checked
+    # before a job is built, so a bad config fails at submit, not on a node.
+    checked(render_pipeline_spec.is_valid_config, config, 'render pipeline')
     depends_on = list(depends_on or [])
-    # Every caller (direct, collapse, stage, export) lands here: band once
+    # Every caller lands here: band once
     # for all.
     config = dict(config, tasks=banded_priorities(config['tasks']))
     settings = config['settings']

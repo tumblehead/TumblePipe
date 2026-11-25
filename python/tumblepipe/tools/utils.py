@@ -4,7 +4,7 @@ Two entry points, and they are the whole surface:
 
 - ``create_cop_reference`` — ``vop_th.triplanar_projection``'s
   ``script_action`` parm tag;
-- ``create_recipe`` — ``tumblepipe.startup``.
+- ``create_recipe`` — the radial Recipes menu (``pipe.houdini.radial``).
 
 ``create_floating_network_editor`` and ``randomize_color`` are not called
 from outside this module; they exist because ``create_cop_reference`` calls

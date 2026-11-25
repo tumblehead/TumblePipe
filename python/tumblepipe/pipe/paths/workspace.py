@@ -324,6 +324,30 @@ def latest_hip_file_path_with_context(
         return tracked_path
     return glob_path
 
+def newer_saved_version(
+    entity_uri: Uri,
+    department_name: str,
+    version_name: Optional[str]
+    ) -> Optional[str]:
+    """The latest workfile version, when it is newer than *version_name* (the
+    version a session has open); ``None`` when *version_name* is the latest.
+
+    Every save writes "latest + 1" from whatever the session has open. A
+    second Houdini still holding an older version, opened for reference, so
+    saved its old scene on top of newer work, and opening the scene then
+    loaded the old content (NRI, 2026-11-25: a Multi's v0099-v0103 were
+    earlier scenes than v0098). The save paths ask this before they save.
+    A version name that is missing or not a version answers ``None``.
+    """
+    if not version_name or not naming.is_valid_version_name(version_name):
+        return None
+    latest = latest_hip_file_path_with_context(entity_uri, department_name)
+    if latest is None:
+        return None
+    if _version_code(latest) > naming.get_version_code(version_name):
+        return version_of(latest)
+    return None
+
 def next_hip_file_path(
     entity_uri: Uri,
     department_name: str,

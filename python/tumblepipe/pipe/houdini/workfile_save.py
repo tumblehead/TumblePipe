@@ -19,6 +19,7 @@ from tumblepipe.pipe.context import (
 )
 from tumblepipe.pipe.paths import (
     Context,
+    newer_saved_version,
     release_reserved_version,
     reserve_next_hip_file_path,
 )
@@ -142,6 +143,62 @@ def commit_next_workfile(
     except OSError as exc:
         raise WorkfileHistoryError(next_path, exc, entry_pending=False) from exc
     return next_path
+
+
+def newer_than_open(context: Context | None) -> str | None:
+    """The version saved after the one this session has open (*context*),
+    or ``None``: the open version is the latest, there is no context, or
+    the workspace could not be read (logged; a slow share must not stop a
+    save)."""
+    if context is None:
+        return None
+    try:
+        return newer_saved_version(
+            context.entity_uri, context.department_name, context.version_name,
+        )
+    except Exception:  # noqa: BLE001  the check must never stop a save
+        logger.warning("Could not look for a newer workfile version", exc_info=True)
+        return None
+
+
+class NewerVersionSaved(RuntimeError):
+    """A newer version of the open workfile was saved after this session
+    opened it, so a save here would put the older scene on top of it."""
+
+    def __init__(self, context: Context, latest: str):
+        self.open_version = context.version_name
+        self.latest = latest
+        super().__init__(
+            f"{latest} was saved after {self.open_version}, the version "
+            f"open in this Houdini (perhaps from another Houdini). Autosave "
+            f"waits, so this scene does not become newer than {latest}. "
+            f"Save to keep this scene as the newest version, or open {latest}."
+        )
+
+
+def confirm_save_over_newer(context: Context | None) -> bool:
+    """Ask before a save that would put this session's scene on top of a
+    newer version (:func:`newer_than_open`). True: go ahead and save.
+
+    Saving is still offered: an artist who opened an older version on
+    purpose, to go back to it, wants exactly that.
+    """
+    latest = newer_than_open(context)
+    if latest is None:
+        return True
+    choice = hou.ui.displayMessage(
+        f"{latest} was saved after {context.version_name}, the version you "
+        f"have open (perhaps from another Houdini).\n\n"
+        f"Saving makes this scene the newest version, so opening the "
+        f"{context.department_name} workfile then loads it instead of "
+        f"{latest}. {latest} stays as it is.",
+        buttons=("Save as newest", "Cancel"),
+        severity=hou.severityType.Warning,
+        default_choice=1,
+        close_choice=1,
+        title="Newer version saved",
+    )
+    return choice == 0
 
 
 @dataclass(frozen=True)

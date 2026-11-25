@@ -136,7 +136,9 @@ substitutes its own:
 **Cancel**, cancelling the note, or a save that fails leaves you where you
 are, with your changes still open. With the **Autosave (version up) on
 scene change** setting on, the new version is written silently and no
-prompt appears. The same setting governs the
+prompt appears. Either way, if a version newer than the one you have open
+was saved meanwhile, the save asks first, and cancelling it leaves you where
+you are ([When a newer version was saved meanwhile](#when-a-newer-version-was-saved-meanwhile)). The same setting governs the
 [Alt+D department jump](../radial-menus.md#altd-jump-to-a-departments-workfile),
 whose **Autosave** slot switches it.
 
@@ -171,6 +173,25 @@ save without waiting for Houdini's event loop, for use while Houdini is
 showing its crash-report dialog. It never prompts, and reports failure on the
 status bar only.
 
+### When a newer version was saved meanwhile
+
+Every save writes the number after the latest, whatever you have open. So
+a second Houdini still open on an older version (opened for reference, or
+left behind) would save that older scene as the newest version, and the
+next person to open the workfile would get the old content. Before saving,
+TumblePipe checks whether a newer version than the one you have open was
+saved since you opened it:
+
+- **Save**, and saving before you switch scenes or jump to another
+  department, ask first: *v0098 was saved after v0097, the version you have
+  open (perhaps from another Houdini).* **Save as newest** saves anyway
+  (what you want after opening an older version to go back to it), and
+  **Cancel** saves nothing. v0098 stays as it is either way.
+- **Autosave** waits and says so on the status bar until you save by hand
+  or open the newest version.
+- **Emergency Save** saves anyway: during a crash keeping the work comes
+  first, and it is still a new version, never written over v0098.
+
 ### Autosave and the unsaved warning
 
 The Save button's right-click menu has two more submenus. Both are off by
@@ -180,8 +201,9 @@ default and remember your choice between sessions.
   version of the open workfile, with the note *Autosave*, once that long has
   passed since the last save while the scene has unsaved changes. It waits
   while a dialog or menu is open or the timeline is playing, and does nothing
-  in an untitled or off-pipeline scene. It never prompts. A failed autosave
-  is reported on the status bar and tried again after the next interval.
+  in an untitled or off-pipeline scene, or while a newer version than the
+  open one exists (see above). It never prompts. A failed autosave is
+  reported on the status bar and tried again after the next interval.
 - **Warn When Unsaved** (*Off*, *After 15 min / 30 min / 1 hour*): the Save
   button shows its warning badge once the scene has had unsaved changes for
   that long. Saving clears it.
@@ -331,6 +353,11 @@ press the play button, or right-click the row for **Open vNNNN**. The
 choice is remembered for the session only. A Multi's detail panel works the
 same way: its dropdown lists every saved version of the Multi's workfile in
 that department.
+
+Saving an older version you opened asks once, because newer versions exist:
+**Save as newest** makes your scene the newest version and leaves the
+newer ones as they are ([When a newer version was saved meanwhile](#when-a-newer-version-was-saved-meanwhile)). That is also how to bring an older
+version back as the latest.
 
 ## Context options
 

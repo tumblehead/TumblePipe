@@ -1,8 +1,8 @@
 """The playblast job: runs ``workers/playblast.py`` (husk with our viewport delegate, or a Karma XPU preview)."""
 
 from pathlib import Path
-import json
 
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import playblast as playblast_spec
 
@@ -15,9 +15,7 @@ PLAYBLAST_GROUP = 'karma'
 
 def build(config, paths, staging_path):
     """The playblast job for ``config`` (``specs.playblast.is_valid_config``)."""
-    assert playblast_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(playblast_spec.is_valid_config, config, 'playblast')
     job = farm_job('playblast', dict(
         first_frame = config['first_frame'],
         last_frame = config['last_frame'],

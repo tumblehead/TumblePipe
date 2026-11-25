@@ -1,8 +1,8 @@
 """The render job: runs ``workers/render.py`` (husk) over a stage."""
 
 from pathlib import Path
-import json
 
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, schedule_frames
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import render as render_spec
@@ -11,9 +11,7 @@ from tumblepipe.farm.specs import repair as repair_spec
 
 def build(config, paths, staging_path):
     """The render job for ``config`` (``specs.render.is_valid_config``)."""
-    assert render_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(render_spec.is_valid_config, config, 'render')
     context = dict(
         tile_count = config['tile_count'],
         # The farm hands a task only its first and last frame

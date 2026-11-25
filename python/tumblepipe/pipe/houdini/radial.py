@@ -195,11 +195,14 @@ def _register_general_actions(radial) -> None:
 # Copernicus network.
 
 def _cop_nodes_call(fn_name: str, *args):
-    """Callback running a tumblepipe.tools.coputils helper on the selection."""
+    """Callback running a tumblepipe.tools.coputils helper on the selection.
+    A helper refusing the selection (NodeError) shows a message."""
     def _cb():
         import hou
+        from tumblepipe.pipe.houdini.nodes import node_errors_as_message
         from tumblepipe.tools import coputils
-        getattr(coputils, fn_name)(list(hou.selectedNodes()), *args)
+        with node_errors_as_message("COP menu"):
+            getattr(coputils, fn_name)(list(hou.selectedNodes()), *args)
     return _cb
 
 

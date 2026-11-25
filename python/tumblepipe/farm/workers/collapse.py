@@ -31,9 +31,9 @@ SCRIPT_PATH = Path(__file__).parent / 'collapse_houdini.py'
 
 
 def _submit_render(config, result, output_dir) -> None:
-    entity_uri = Uri.parse(config['entity']['uri'])
-    render = config['render']
-    channels = render['channel_names']
+    request = config['render']['request']
+    entity_uri = Uri.parse(request['entity']['uri'])
+    channels = request['settings']['channel_names']
     paths = {}
     # AOV names are read now, after the publish, so an AOV the publish added
     # is rendered.
@@ -43,29 +43,7 @@ def _submit_render(config, result, output_dir) -> None:
     input_paths = result['render_inputs']
     for name in input_paths.values():
         paths[output_dir / name] = Path(name)
-    render_pipeline.submit(preview.render_config(
-        entity_uri,
-        department=render['department'],
-        channels=channels,
-        input_paths=input_paths,
-        render_settings_path=settings_path,
-        user_name=config['settings']['user_name'],
-        pool_name=render['pool_name'],
-        priority=render['priority'],
-        tile_count=render['tile_count'],
-        first_frame=render['first_frame'],
-        last_frame=render['last_frame'],
-        batch_size=render['batch_size'],
-        denoise=render['denoise'],
-        copy_to_edit=render['copy_to_edit'],
-        task_keys=render['task_keys'],
-        composite=render.get('composite'),
-        cut_range=render.get('cut_range'),
-        preview_frame_list=render.get('preview_frame_list'),
-        frame_ranges=render.get('frame_ranges'),
-        step_size=render.get('step_size', 1),
-        repair=render.get('repair'),
-    ), paths)
+    render_pipeline.submit(preview.render_config(request, input_paths, settings_path), paths)
 
 
 def _submit_turntables(config, result, output_dir) -> None:
@@ -78,10 +56,9 @@ def _submit_turntables(config, result, output_dir) -> None:
     from tumblepipe.pipe import turntable
 
     entity_uri = Uri.parse(config['entity']['uri'])
-    render = config['render']
+    render = config['turntable']
     frames = turntable.TurntableFrames(
-        render['first_frame'], render['last_frame'],
-        render.get('step_size', turntable.FARM_STEP),
+        render['first_frame'], render['last_frame'], render['step_size'],
     )
     for channel_name, built in result['turntables'].items():
         settings_path = output_dir / built['render_settings']
@@ -146,10 +123,11 @@ def main(config: dict, _frame_span: BlockRange) -> int:
         # Submit the previews with the snapshots bundled. Both are attempted
         # even if the first fails, so one bad preview does not cost the other.
         failed = []
-        render_submit = (
-            _submit_turntables if 'turntables' in result else _submit_render
-        )
-        for kind, submit in (('render', render_submit), ('playblast', _submit_playblast)):
+        for kind, submit in (
+            ('render', _submit_render),
+            ('turntable', _submit_turntables),
+            ('playblast', _submit_playblast),
+        ):
             if kind not in config:
                 continue
             try:

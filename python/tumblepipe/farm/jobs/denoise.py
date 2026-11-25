@@ -1,8 +1,8 @@
 """The denoise job: runs ``workers/denoise.py`` over a render's AOVs."""
 
 from pathlib import Path
-import json
 
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, schedule_frames
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import denoise as denoise_spec
@@ -11,9 +11,7 @@ from tumblepipe.farm.specs import repair as repair_spec
 
 def build(config, paths, staging_path):
     """The denoise job for ``config`` (``specs.denoise.is_valid_config``)."""
-    assert denoise_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(denoise_spec.is_valid_config, config, 'denoise')
 
     # Only the path keys, force_cpu and the step reach the worker; the other
     # scheduling keys are consumed here, and Deadline appends the task's

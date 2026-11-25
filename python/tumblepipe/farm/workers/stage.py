@@ -15,6 +15,7 @@ from tumblepipe.util.uri import Uri
 from tumblepipe.apps.houdini import Hython
 from tumblepipe.farm import worker
 from tumblepipe.farm.env import get_hython_env, job_data_dir, print_env
+from tumblepipe.farm.pipelines import preview
 from tumblepipe.farm.pipelines import render as render_pipeline
 from tumblepipe.farm.specs import stage as stage_spec
 from tumblepipe.farm.worker import error
@@ -30,20 +31,11 @@ def main(config: dict, _frame_span: BlockRange) -> int:
     # Get config data
     entity_uri = Uri.parse(config['entity']['uri'])
     department_name = config['entity']['department']
-    user_name = config['settings']['user_name']
-    purpose = config['settings']['purpose']
-    pool_name = config['settings']['pool_name']
-    channel_names = config['settings']['channel_names']
-    render_department_name = config['settings']['render_department_name']
+    settings = config['settings']
+    channel_names = settings['channel_names']
     # Bundled into the job's data dir and addressed relative to it.
-    relative_render_settings_path = Path(config['settings']['render_settings_path'])
+    relative_render_settings_path = Path(settings['render_settings_path'])
     render_settings_path = job_data_dir() / relative_render_settings_path
-    tile_count = config['settings']['tile_count']
-    first_frame = config['settings']['first_frame']
-    last_frame = config['settings']['last_frame']
-    step_size = config['settings']['step_size']
-    batch_size = config['settings']['batch_size']
-    copy_to_edit = config['settings']['copy_to_edit']
 
     # Get hython ready
     hython = Hython()
@@ -78,10 +70,10 @@ def main(config: dict, _frame_span: BlockRange) -> int:
                 department = department_name
             ),
             settings = dict(
-                first_frame = first_frame,
-                last_frame = last_frame,
+                first_frame = settings['first_frame'],
+                last_frame = settings['last_frame'],
                 render_settings_path = path_str(render_settings_path),
-                render_department_name = render_department_name
+                render_department_name = settings['render_department_name']
             ),
             output_paths = {
                 channel_name: path_str(stage_path)
@@ -103,44 +95,16 @@ def main(config: dict, _frame_span: BlockRange) -> int:
             if not stage_path.exists():
                 return error(f'Stage not exported: {stage_path}')
 
-        # Submit the render pipe tasks with all render layers
-        tasks = config['tasks'].copy()
-        tasks.pop('stage')
-        render_pipeline.submit(dict(
-            entity = dict(
-                uri = str(entity_uri),
-                department = department_name
-            ),
-            settings = dict(
-                user_name = user_name,
-                purpose = purpose,
-                pool_name = pool_name,
-                channel_names = channel_names,
-                render_department_name = render_department_name,
-                render_settings_path = path_str(render_settings_path),
-                input_paths = {
-                    channel_name: path_str(relative_stage_path)
-                    for channel_name, relative_stage_path in relative_stage_paths.items()
-                },
-                tile_count = tile_count,
-                first_frame = first_frame,
-                last_frame = last_frame,
-                step_size = step_size,
-                batch_size = batch_size,
-                copy_to_edit = copy_to_edit,
-                **({} if 'cut_range' not in config['settings']
-                   else dict(cut_range = config['settings']['cut_range'])),
-                **({} if 'preview_frame_list' not in config['settings']
-                   else dict(preview_frame_list = config['settings']['preview_frame_list'])),
-                **({} if 'frame_ranges' not in config['settings']
-                   else dict(frame_ranges = config['settings']['frame_ranges'])),
-                # Into version (#92): into existing versions
-                **({} if 'repair' not in config['settings']
-                   else dict(repair = config['settings']['repair']))
-            ),
-            tasks = tasks,
-            # The re-comp after the render (Farm Submit's Comp column)
-            **({} if config.get('composite') is None else dict(composite = config['composite']))
+        # Submit the render pipeline over the stages: the render request
+        # this job carries (specs.stage), without its own stage task.
+        tasks = {key: task for key, task in config['tasks'].items() if key != 'stage'}
+        render_pipeline.submit(preview.render_config(
+            dict(config, tasks = tasks),
+            {
+                channel_name: path_str(relative_stage_path)
+                for channel_name, relative_stage_path in relative_stage_paths.items()
+            },
+            render_settings_path,
         ), {
             render_settings_path: relative_render_settings_path,
             export_path: relative_export_path

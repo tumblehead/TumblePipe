@@ -1,10 +1,10 @@
 """The build job: runs ``workers/build.py`` to write an entity's staged USD."""
 
 from pathlib import Path
-import json
 
 from tumblepipe.config.entities import get_entity_type
 from tumblepipe.config.timeline import get_export_frame_range
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import build as build_spec
 from tumblepipe.util.uri import Uri
@@ -32,9 +32,7 @@ def build_range(config) -> tuple[int, int] | None:
 
 def build(config, paths, staging_path):
     """The build job for ``config`` (``specs.build.is_valid_config``)."""
-    assert build_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(build_spec.is_valid_config, config, 'build')
     context = {
         'entity_uri': config['entity_uri'],
         'output_path': config['output_path'],

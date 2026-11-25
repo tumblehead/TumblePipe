@@ -1,7 +1,6 @@
 """The notify job: runs ``workers/notify.py`` to post to Discord."""
 
-import json
-
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import notify as notify_spec
 
@@ -14,9 +13,7 @@ PRIORITY = 100
 
 def build(config, paths, staging_path):
     """The notify job for ``config`` (``specs.notify.is_valid_config``)."""
-    assert notify_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(notify_spec.is_valid_config, config, 'notify')
     job = farm_job('notify', dict(
         user_name = config['user_name'],
         channel_name = config['channel_name'],

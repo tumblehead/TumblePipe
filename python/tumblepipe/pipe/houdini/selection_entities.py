@@ -250,7 +250,10 @@ def _save_before_jump(department: str) -> bool:
     opening <department>", and the load then has nothing to prompt about.
     Otherwise the load shows Houdini's own save prompt. A save that fails
     is reported and stops the jump, so the load never goes ahead over
-    work the artist asked to keep.
+    work the artist asked to keep. When a version newer than the open one
+    was saved meanwhile (another Houdini), the save asks first
+    (``workfile_save.confirm_save_over_newer``); Cancel saves nothing and
+    stops the jump.
     """
     from tumblepipe.pipe.houdini.ui.report import report_failure
 
@@ -262,6 +265,12 @@ def _save_before_jump(department: str) -> bool:
         unsaved, context is not None, save_without_asking())
     if action != department_jump.SAVE:
         return True
+    from tumblepipe.pipe.houdini.workfile_save import confirm_save_over_newer
+    if not confirm_save_over_newer(context):
+        # A newer version than the open one exists and the artist kept
+        # it the newest: no save, and no load over the unsaved work.
+        _status("Opening another workfile cancelled: nothing was saved.")
+        return False
     try:
         from tumblepipe.asset_browser.houdini import session_nc_type
         from tumblepipe.pipe.houdini.workfile_save import commit_next_workfile

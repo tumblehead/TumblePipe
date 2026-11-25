@@ -653,10 +653,9 @@ class JsonView(QTreeView):
                 # OVERRIDE and REDUNDANT fields: revert to inherited value
                 if item._origin in (FieldOrigin.OVERRIDE, FieldOrigin.REDUNDANT):
                     # Get inherited value from parent's _inherited_data
-                    inherited_data = getattr(parent, '_inherited_data', {})
-                    inherited_value = inherited_data.get(key)
-                    if inherited_value is not None:
-                        parent._set_field_to_inherited(key, inherited_value)
+                    inherited_data = getattr(parent, '_inherited_data', None) or {}
+                    if key in inherited_data:
+                        parent._set_field_to_inherited(key, inherited_data[key])
                     else:
                         parent._remove_field(key)
                 else:  # LOCAL fields: remove entirely

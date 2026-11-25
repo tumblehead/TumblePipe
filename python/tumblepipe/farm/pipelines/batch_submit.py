@@ -796,30 +796,44 @@ def _preview_builds(plan: EntityPlan, last_publish, temp_path, jobs, deps) -> li
     return build_names
 
 
-def _collapse_render(render: RenderPlan, comp_block: dict | None) -> dict:
-    """The collapse job's render: a turntable's on the studio's frames, else
-    a collapsed snapshot of the staged file with the overrides baked onto
-    its render-settings prim."""
-    if render.turntable:
-        return dict(
-            department=render.department,
-            channel_names=list(render.channels),
-            overrides=render.overrides,
-            task_keys=list(render.task_keys),
+def _render_request(plan: EntityPlan, user_name: str) -> dict:
+    """The render request of ``plan``'s render and re-comp
+    (``specs.render_pipeline.valid_request``): what the direct, collapse
+    and stage paths each hand the render pipeline, with the paths they
+    make for themselves added (``preview.render_config``)."""
+    render = plan.render
+    request = dict(
+        entity=dict(uri=str(plan.uri), department=render.department),
+        settings=dict(
+            user_name=user_name,
+            purpose='render',
             pool_name=render.pool,
-            priority=render.priority,
+            channel_names=list(render.channels),
+            render_department_name=render.department,
             tile_count=render.tile_count,
             first_frame=render.first_frame,
             last_frame=render.last_frame,
             step_size=render.step,
             batch_size=render.batch_size,
-            # As the studio's own farm render: no denoise, no edit.
-            denoise=False,
-            copy_to_edit=False,
-            cut_range=render.cut_range,
-            turntable=True,
+            copy_to_edit=render.copy_to_edit,
+            cut_range=list(render.cut_range),
             **render.preview_entry,
-        )
+            **render.frame_ranges_entry,
+            **_repair_entry(render.repair),
+        ),
+        tasks={
+            task_key: dict(priority=render.priority, denoise=render.denoise, channel_name='renders')
+            for task_key in render.task_keys
+        },
+    )
+    if plan.comp is not None:
+        request['composite'] = dict(plan.comp)
+    return request
+
+
+def _collapse_turntable(render: RenderPlan) -> dict:
+    """The collapse job's turntable: the studio's frames on its step, with
+    the overrides the studio's render settings take (#53)."""
     return dict(
         department=render.department,
         channel_names=list(render.channels),
@@ -830,17 +844,13 @@ def _collapse_render(render: RenderPlan, comp_block: dict | None) -> dict:
         tile_count=render.tile_count,
         first_frame=render.first_frame,
         last_frame=render.last_frame,
+        step_size=render.step,
         batch_size=render.batch_size,
-        # Sent only off step 1: a collapse job from before the Step names
-        # none (specs.collapse).
-        **({} if render.step == 1 else {'step_size': render.step}),
-        denoise=render.denoise,
-        copy_to_edit=render.copy_to_edit,
+        # As the studio's own farm render: no denoise, no edit.
+        denoise=False,
+        copy_to_edit=False,
         cut_range=render.cut_range,
         **render.preview_entry,
-        **render.frame_ranges_entry,
-        **_repair_entry(render.repair),
-        **({} if comp_block is None else {'composite': comp_block}),
     )
 
 
@@ -868,8 +878,14 @@ def _collapse_config(plan: EntityPlan, after_publish: bool, user_name: str) -> d
             priority=publish_job.PRIORITY,
         ),
     )
-    if collapses_render:
-        config['render'] = _collapse_render(render, plan.comp)
+    if collapses_render and render.turntable:
+        config['turntable'] = _collapse_turntable(render)
+    elif collapses_render:
+        # A snapshot of the staged file, the overrides baked onto its
+        # render-settings prim.
+        config['render'] = dict(
+            request=_render_request(plan, user_name), overrides=render.overrides,
+        )
     if playblast is not None:
         config['playblast'] = dict(
             department=playblast.department,
@@ -899,27 +915,7 @@ def _direct_render_jobs(
         preview.aov_names(entity_uri, render.channels),
     )
     render_config = preview.render_config(
-        entity_uri,
-        department=render.department,
-        channels=render.channels,
-        input_paths=input_paths,
-        render_settings_path=render_settings_path,
-        user_name=user_name,
-        pool_name=render.pool,
-        priority=render.priority,
-        tile_count=render.tile_count,
-        first_frame=render.first_frame,
-        last_frame=render.last_frame,
-        step_size=render.step,
-        batch_size=render.batch_size,
-        denoise=render.denoise,
-        copy_to_edit=render.copy_to_edit,
-        task_keys=list(render.task_keys),
-        composite=plan.comp,
-        cut_range=render.cut_range,
-        preview_frame_list=render.preview_entry.get(preview_frames.CONFIG_KEY),
-        frame_ranges=render.frame_ranges_entry.get(frame_ranges.CONFIG_KEY),
-        repair=render.repair,
+        _render_request(plan, user_name), input_paths, render_settings_path,
     )
     try:
         render_pipeline.build(
@@ -943,37 +939,14 @@ def _stage_render_job(plan: EntityPlan, preview_deps, user_name, temp_path, jobs
     )
     relative_render_settings_path = render_settings_path.relative_to(temp_path)
 
+    request = _render_request(plan, user_name)
     stage_config = dict(
-        entity=dict(
-            uri=str(plan.uri),
-            department=render.department
-        ),
+        request,
         settings=dict(
-            user_name=user_name,
-            purpose='render',
-            pool_name=render.pool,
-            channel_names=render.channels,
-            render_department_name=render.department,
+            request['settings'],
             render_settings_path=path_str(relative_render_settings_path),
-            tile_count=render.tile_count,
-            first_frame=render.first_frame,
-            last_frame=render.last_frame,
-            step_size=render.step,
-            batch_size=render.batch_size,
-            copy_to_edit=render.copy_to_edit,
-            cut_range=render.cut_range,
-            **render.preview_entry,
-            **render.frame_ranges_entry,
-            **_repair_entry(render.repair),
         ),
-        **({} if plan.comp is None else {'composite': plan.comp}),
-        tasks={
-            'stage': dict(priority=render.priority, channel_name='exports'),
-            **{
-                task_key: dict(priority=render.priority, denoise=render.denoise, channel_name='renders')
-                for task_key in render.task_keys
-            }
-        }
+        tasks=dict(request['tasks'], stage=dict(priority=render.priority, channel_name='exports')),
     )
 
     # The stage job gates the render chain it submits, so it runs in that

@@ -12,6 +12,20 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.130.0 — 2026-11-25
+
+### Features
+- feat(cinedex): open the window at once, read the edit behind it (`acfb908e`)
+
+### Documentation
+- docs(cinedex): the window that opens before its edit (`558a3a2c`)
+
+### Tests
+- test(cinedex): properties for opening behind the read; a blank --edit is named (`681b6abe`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.129.0 and v1.129.1 (`52449485`)
+
 ## v1.129.1 — 2026-11-25
 
 ### Documentation

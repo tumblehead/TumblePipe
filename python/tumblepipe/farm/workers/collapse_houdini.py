@@ -100,17 +100,17 @@ def main(config: dict) -> int:
     paths = {}
     result = {}
     try:
-        if 'render' in config and config['render'].get('turntable'):
+        if 'turntable' in config:
             headline('Collapse the asset and build its turntables')
-            result['turntables'] = _turntables(entity_uri, config['render'], output_dir)
+            result['turntables'] = _turntables(entity_uri, config['turntable'], output_dir)
         elif 'render' in config:
             headline('Collapse render inputs')
-            render = config['render']
+            settings = config['render']['request']['settings']
             result['render_inputs'] = preview.collapse_render_inputs(
                 entity_uri,
-                render['channel_names'],
-                render['department'],
-                render['overrides'],
+                settings['channel_names'],
+                settings['render_department_name'],
+                config['render']['overrides'],
                 output_dir,
                 paths,
             )

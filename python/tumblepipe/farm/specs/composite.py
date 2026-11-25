@@ -70,7 +70,9 @@ def _valid_exports(exports) -> bool:
     return len(set(layers)) == len(layers)
 
 
-def _valid_imports(imports) -> bool:
+def valid_imports(imports) -> bool:
+    """``{node path: {channel, department, version}}``; empty for a
+    re-comp, whose worker resolves the imports when it runs."""
     if not isinstance(imports, dict): return False
     for node_path, pin in imports.items():
         if not isinstance(node_path, str) or not node_path: return False
@@ -128,7 +130,7 @@ def _valid_composite(config) -> bool:
     if not check_str(config, 'receipt_path'): return False
     if not check_str(config, 'input_path'): return False
     if not _valid_exports(config.get('exports')): return False
-    if not _valid_imports(config.get('imports')): return False
+    if not valid_imports(config.get('imports')): return False
     if 'renders' in config:
         if not valid_renders(config['renders']): return False
         # The render of its submit is all it reads: nothing is frozen.

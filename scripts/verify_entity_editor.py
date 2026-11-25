@@ -1343,13 +1343,34 @@ import dataclasses  # noqa: E402
 from tumblepipe.asset_browser import timeline_repack  # noqa: E402
 _reads = iter([{}, {'groups:/shots/Chase': [('a', 'b')]}])
 _offered, _repacked = [], []
+
+
+def _place_fails(uris):
+    raise RuntimeError('place: timeline locked')
+
+
+def _stage_fails():
+    raise RuntimeError('stage: Root export missing')
+
+
+# Placing new members and staging Roots both fail after the writes: the
+# warning names both (the stage error used to overwrite the place error).
 window.source = dataclasses.replace(
     window.source, overlaps=lambda: next(_reads, {}), repack=_repacked.append,
+    place=_place_fails, stage_roots=_stage_fails,
 )
 _offer = timeline_repack.offer_repack
 timeline_repack.offer_repack = lambda parent, found, repack: _offered.append(found) or []
+_warnings = []
+_warning = QMessageBox.warning
+QMessageBox.warning = staticmethod(lambda parent, title, text, *a, **k: _warnings.append(text))
 ok = window.apply()
+QMessageBox.warning = _warning
 timeline_repack.offer_repack = _offer
+window.source = dataclasses.replace(window.source, place=lambda uris: None, stage_roots=lambda: '')
+check('Apply names every follow-up step that failed, place and stage both',
+      len(_warnings) == 1 and 'timeline locked' in _warnings[0] and 'Root export missing' in _warnings[0],
+      _warnings)
 check('Apply offers Repack for the overlap it made, and repacks nothing unasked',
       _offered == [{'groups:/shots/Chase': [('a', 'b')]}] and _repacked == [], (_offered, _repacked))
 check('Apply succeeds', ok and applied == [True])

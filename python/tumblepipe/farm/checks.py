@@ -8,6 +8,7 @@ crashing the check. Import-light: workers load it.
 """
 
 from functools import partial
+import json
 from typing import Callable
 
 
@@ -132,3 +133,13 @@ def valid_publish_contexts(config) -> bool:
     versions a daily mp4 or a Copy to edit publishes, read when the job
     runs (``pipe.comp.read_unpublished_reason``)."""
     return 'publish_contexts' not in config or is_str_list(config['publish_contexts'])
+
+
+def checked(is_valid: Callable, config, name: str) -> None:
+    """Refuse a ``name`` config that ``is_valid`` (a ``specs`` validator)
+    refuses: a ValueError naming it, raised before anything reaches the
+    farm. (An assert would vanish under ``python -O``.)"""
+    if not is_valid(config):
+        raise ValueError(
+            f'Invalid {name} config: {json.dumps(config, indent=4, default=str)}'
+        )

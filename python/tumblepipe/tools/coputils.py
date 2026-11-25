@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import hou # type: ignore
+
+from tumblepipe.pipe.houdini.nodes import NodeError
 
 #region composite
 def composite(nodes: list[hou.Node], mode: str):
-    if len(nodes) == 0: return
+    if len(nodes) < 2:
+        raise NodeError(f"Composite ({mode}) blends two COPs: select two, the first is input 1.")
     layout_nodes = list(nodes)
     network = nodes[0].parent()
     blend_node = network.createNode('blend', f"{nodes[0]}_{mode}_{nodes[1]}")

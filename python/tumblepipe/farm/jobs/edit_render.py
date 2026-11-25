@@ -2,8 +2,8 @@
 edit version into a movie."""
 
 from pathlib import Path
-import json
 
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import edit_render as edit_render_spec
 
@@ -14,9 +14,7 @@ MAX_MINUTES = 240
 
 def build(config, paths, staging_path):
     """The Render Edit job for ``config`` (``specs.edit_render.is_valid_config``)."""
-    assert edit_render_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(edit_render_spec.is_valid_config, config, 'edit_render')
     job = farm_job('edit_render', dict(
         edit_uri = config['edit_uri'],
         version = config['version'],

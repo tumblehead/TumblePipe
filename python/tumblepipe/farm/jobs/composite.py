@@ -2,8 +2,8 @@
 renders its ``th::export_comp`` nodes with the imports pinned."""
 
 from pathlib import Path
-import json
 
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_batched
 from tumblepipe.farm.specs import composite as composite_spec
 
@@ -15,9 +15,7 @@ FRAME_MINUTES = 20
 
 def build(config, paths, staging_path):
     """The composite job for ``config`` (``specs.composite.is_valid_config``)."""
-    assert composite_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(composite_spec.is_valid_config, config, 'composite')
     job = farm_job('composite', dict(
         entity = config['entity'],
         step_size = config['step_size'],

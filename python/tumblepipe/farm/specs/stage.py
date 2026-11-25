@@ -46,23 +46,14 @@ houdini_config = {
 }
 """
 
-from tumblepipe.farm.specs.composite import valid_recomp
 from tumblepipe.farm.checks import (
-    check_bool,
     check_int,
     check_str,
     check_str_dict,
-    valid_channel_names,
     valid_entity,
     valid_frame_range,
 )
-from tumblepipe.farm.specs import frame_ranges
-from tumblepipe.farm.specs import repair
-from tumblepipe.farm.specs.render_pipeline import (
-    comp_follows,
-    valid_render_settings,
-    valid_render_tasks,
-)
+from tumblepipe.farm.specs.render_pipeline import valid_request
 
 
 def _valid_stage(stage) -> bool:
@@ -73,24 +64,11 @@ def _valid_stage(stage) -> bool:
 
 
 def is_valid_config(config) -> bool:
-    if not isinstance(config, dict): return False
-    if 'entity' not in config: return False
-    if not valid_entity(config['entity']): return False
-    settings = config.get('settings')
-    if not valid_render_settings(settings): return False
-    if not valid_channel_names(settings): return False
-    if not check_bool(settings, 'copy_to_edit'): return False
-    tasks = config.get('tasks')
-    if not valid_render_tasks(tasks): return False
-    if not _valid_stage(tasks.get('stage')): return False
-    if not repair.valid_entry(settings, tasks): return False
-    if 'composite' in config:
-        if not valid_recomp(config['composite']): return False
-        if repair.CONFIG_KEY in settings:
-            # A repair's version decides whether it is published (#92)
-            if not comp_follows(settings): return False
-        # A multi-range render is not published: no comp follows it (#84).
-        elif frame_ranges.CONFIG_KEY in settings: return False
+    """A render request (``specs.render_pipeline.valid_request``) with the
+    render settings bundled with the job and the stage task."""
+    if not valid_request(config): return False
+    if not check_str(config['settings'], 'render_settings_path'): return False
+    if not _valid_stage(config['tasks'].get('stage')): return False
     return True
 
 

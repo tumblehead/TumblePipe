@@ -56,8 +56,9 @@ used to disagree, one saying `PYTHONIOENCODING=utf-8`.)
 `tests/README.md` covers writing new properties and the design of the
 project-fixture bootstrap (`_harness.py`).
 
-Two modules also need **cargo** on `PATH` (or in rustup's default
-`~/.cargo/bin`). `test_resolver_parity` checks that every path the Python
+Thirteen modules also need **cargo** on `PATH` (or in rustup's default
+`~/.cargo/bin`): every module that imports `tests/_cargo.py`, the
+`*_parity` modules among them. For example, `test_resolver_parity` checks that every path the Python
 writers publish to is the path the Rust resolver in `src/resolver` resolves
 the recorded URI to. `test_wizard_json_parity` checks that the `_config`
 migrator in `src/wizard` rewrites JSON byte for byte as `json.dump` wrote it.
@@ -73,9 +74,10 @@ the seed that run writes: it records a bug that never existed.
 
 The asset-browser catalog tests (`test_catalog*.py`) and the docs link
 check run against the **shipped TumbleTrove SDK**: `tests/_catalog.py`
-puts the `python/` dir of the newest `tumbletrove` package hpm has
-fetched (`~/.hpm/fetch/tumbletrove-tumbletrove-<version>/python`), else a
-sibling `tumbletrove` checkout's `python/`, on `sys.path`, and refuses one
+puts the `python/` dir of the newest complete `tumbletrove` package hpm
+has fetched (`~/.hpm/fetch/tumbletrove-tumbletrove-<version>`) or installed
+(`~/.hpm/packages/tumbletrove@<version>`) on `sys.path` (`.ci/hpm_packages.py`,
+the finder preflight and the Qt harnesses share), and refuses one
 older than `hpm.toml [dependencies]` requires. `TUMBLETROVE_PYTHON` names
 an SDK `python/` dir outright and skips that floor — the way to run a
 branch against an unreleased SDK checkout, whose manifest still carries
@@ -386,7 +388,7 @@ widget stacks involved are pure PySide6:
   materials / Clay menu (not a tri-state box that reads as checked) that
   seeds, pins and unpins, and the rows the chosen Renderer ignores are
   greyed out. Needs tumbletrove's Python (`TUMBLETROVE_PYTHON`, else the
-  newest `.tools/hpm-fetch` one):
+  newest one hpm has fetched or installed):
   `uv run --python 3.12 --with pyside6 python scripts/verify_submit_playblast_section.py`.
 
 - `verify_submit_up_to_camera.py` — the Farm Submit dialog's Render Up to,
@@ -555,6 +557,17 @@ dialog, so putting a modal in front of it is exactly the wrong move. The
 Autosave (`asset_browser/save_timer.py`) runs unasked every few minutes, so a
 failure dialog each time would be worse than the failure. Both log and take
 the status bar instead.
+
+Every save writes "latest + 1" from whatever the session has open, so each
+save path also says what happens when a version newer than the open one
+exists (`SceneManager._commit_scene_version(if_newer=...)`): `"ask"`
+(`workfile_save.confirm_save_over_newer`) where an artist is there to answer,
+`"wait"` (raises `NewerVersionSaved`, shown on the status bar) for the
+timed Autosave, `"save"` only for the emergency save. A new save path must
+pick one; one that calls `commit_next_workfile` directly (the Alt+D jump)
+calls `confirm_save_over_newer` itself. The open version comes from the
+hip's own name (`get_workfile_context`), never the `context.json`
+pointer, which always names the latest. `test_save_over_newer` pins it.
 
 ### Where the logs are
 
@@ -3586,8 +3599,8 @@ so the rules are:
 `tests/test_docs_tree.py` renders the tree with TumbleTrove's own renderer
 and follows every link, anchor and source link, and fails when a page is
 missing from `index.md` or carries more than one title. It needs a
-`tumbletrove` with the `docs` module (0.27.0+): the newest one hpm has
-fetched, a sibling `tumbletrove` checkout, or `TUMBLETROVE_PYTHON`. It runs
+`tumbletrove` with the `docs` module (0.27.0+): the SDK the catalog tests
+load (`TUMBLETROVE_PYTHON`, else the newest one hpm has). It runs
 with the rest of the suite (and so on the push hook).
 
 To preview the offline rendering outside Houdini, with a TumbleTrove

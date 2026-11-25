@@ -1,17 +1,14 @@
 """The stage job: runs ``workers/stage.py``, which builds a shot's render
 stages and submits their render."""
 
-import json
-
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import stage as stage_spec
 
 
 def build(config, paths, staging_path):
     """The stage job for ``config`` (``specs.stage.is_valid_config``)."""
-    assert stage_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(stage_spec.is_valid_config, config, 'stage')
     entity = config['entity']
     settings = config['settings']
     job = farm_job('stage', config, staging_path,

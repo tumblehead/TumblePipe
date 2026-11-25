@@ -1,17 +1,15 @@
 """The mp4 job: runs ``workers/mp4.py`` to encode a frame sequence."""
 
 from pathlib import Path
-import json
 
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import mp4 as mp4_spec
 
 
 def build(config, paths, staging_path):
     """The mp4 job for ``config`` (``specs.mp4.is_valid_config``)."""
-    assert mp4_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(mp4_spec.is_valid_config, config, 'mp4')
     job = farm_job('mp4', dict(
         first_frame = config['first_frame'],
         last_frame = config['last_frame'],

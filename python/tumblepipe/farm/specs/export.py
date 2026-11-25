@@ -74,6 +74,7 @@ def is_valid_config(config) -> bool:
     if not valid_entity(config['entity']): return False
     settings = config.get('settings')
     if not valid_render_settings(settings): return False
+    if not check_str(settings, 'render_settings_path'): return False
     if not valid_channel_name(settings): return False
     tasks = config.get('tasks')
     if not valid_render_tasks(tasks): return False

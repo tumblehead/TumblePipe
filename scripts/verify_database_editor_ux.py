@@ -23,6 +23,8 @@ Covers the commit model fixed on 2026-07-08 (each case prints PASS / FAIL):
          pristine document: local values, inherited overrides (back to
          INHERITED origin), fields added this session (removed), and fields
          nested in an object inside an array.
+    S.   Delete on an override reverts it to the inherited value, a JSON
+         null one too (it used to remove a field inherited as null).
 
   URI tree (DatabaseUriView / UriDelegate):
     N.   A rename emits exactly one change on Enter (previously one per
@@ -243,6 +245,21 @@ def run_json_cases(app):
           (view.to_json(), view.has_change()),
           view.to_json() == {"arr": [{"x": 1}]} and not view.has_change())
     host.close()
+
+    # S: Delete on an override reverts it to the inherited value, a JSON
+    # null one too (it used to remove a field whose inherited value is null)
+    for inherited in (5, None):
+        view, host, other = json_view(value={"note": "x"}, inherited={"note": inherited})
+        assert view._model._fields["note"]._origin == FieldOrigin.OVERRIDE
+        view.setCurrentIndex(field_index(view, "note", 0))
+        view._delete_selected_items()
+        app.processEvents()
+        item = view._model._fields.get("note")
+        check(f"S delete override of inherited {inherited!r} reverts to it",
+              (view.to_json(), item and item._origin),
+              view.to_json() == {} and item is not None
+              and item._origin == FieldOrigin.INHERITED)
+        host.close()
 
 
 class _StubAdapter:

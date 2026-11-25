@@ -20,8 +20,14 @@ config = {
         'pool_name': 'string',
         'priority': 'int'
     },
-    'render': {                          # optional
-        'department': 'string',          # cut: pool departments up to this one
+    'render': {                          # optional: a shot's render
+        'request': {...},                # specs.render_pipeline.valid_request,
+                                         # submitted over the snapshot
+        'overrides': {'karma:attr': value}   # baked into the snapshot
+    },
+    'turntable': {                       # optional, never with render: an
+                                         # asset's turntable (#53)
+        'department': 'string',
         'channel_names': ['string'],
         'overrides': {'karma:attr': value},
         'task_keys': ['full_render' | 'partial_render'],  # one or both
@@ -30,20 +36,12 @@ config = {
         'tile_count': 'int',
         'first_frame': 'int',
         'last_frame': 'int',
+        'step_size': 'int',
         'batch_size': 'int',
         'denoise': 'bool',
         'copy_to_edit': 'bool',
         'cut_range': ['int', 'int'],     # optional: specs.render_pipeline.valid_cut_range
-        'preview_frame_list': ['int'],  # optional: specs.render_pipeline.valid_preview_frame_list
-        'frame_ranges': [['int', 'int']],  # optional, shots only: a multi-range
-                                         # render (farm.specs.frame_ranges, #84)
-        'repair': {...},                 # optional, shots only: into existing
-                                         # versions (farm.specs.repair, #92)
-        'composite': {...},              # optional: specs.composite.valid_recomp
-        'turntable': 'bool',             # optional: an asset's turntable (#53)
-        'step_size': 'int'               # optional (default 1): a turntable's
-                                         # step, or Farm Submit's Step for a
-                                         # shot (a check render: no composite)
+        'preview_frame_list': ['int']    # optional: specs.render_pipeline.valid_preview_frame_list
     },
     'playblast': {                       # optional
         'department': 'string',
@@ -54,9 +52,10 @@ config = {
     }
 }
 
-At least one of ``render`` / ``playblast`` must be present.
+At least one of ``render``, ``turntable`` and ``playblast`` is present,
+never both ``render`` and ``turntable``.
 
-A ``turntable`` render is an asset's (#53): the worker snapshots the asset
+A ``turntable`` is an asset's render (#53): the worker snapshots the asset
 and builds a ``th::lookdev_studio`` workfile per channel, exports it as the
 export job exports a studio's (``export_houdini``), then submits the render
 a studio's Submit Render To Farm does, on its ``step_size``. Its preview
@@ -65,7 +64,6 @@ frames sit on that step, and it carries no composite.
 
 from tumblepipe.farm.specs import frame_ranges
 from tumblepipe.farm.specs import repair
-from tumblepipe.farm.specs.composite import valid_recomp
 from tumblepipe.farm.checks import (
     valid_entity,
     check_str,
@@ -78,9 +76,9 @@ from tumblepipe.farm.checks import (
 from tumblepipe.farm.specs.playblast import DEFAULT_LOOK, valid_look
 from tumblepipe.farm.specs.render_pipeline import (
     RENDER_TASK_KEYS,
-    comp_follows,
     valid_cut_range,
     valid_preview_frame_list,
+    valid_request,
 )
 
 
@@ -99,40 +97,36 @@ def _valid_settings(settings):
 
 
 def _valid_render(render):
+    """A shot's render: the render request its worker submits over the
+    snapshot, and the Karma overrides baked into the snapshot's
+    render-settings prim."""
     if not isinstance(render, dict): return False
-    if not check_str(render, 'department'): return False
-    if not valid_channel_names(render): return False
-    if not isinstance(render.get('overrides'), dict): return False
-    task_keys = render.get('task_keys')
+    request = render.get('request')
+    if not valid_request(request): return False
+    # Only the render chains: the collapse job is the request's one carrier.
+    if not set(request['tasks']) <= set(RENDER_TASK_KEYS): return False
+    return isinstance(render.get('overrides'), dict)
+
+
+def _valid_turntable(turntable):
+    """An asset's turntable (#53): the studio's frames on its own step,
+    never a Frame list, a repair (#92) or a comp."""
+    if not isinstance(turntable, dict): return False
+    if not check_str(turntable, 'department'): return False
+    if not valid_channel_names(turntable): return False
+    if not isinstance(turntable.get('overrides'), dict): return False
+    task_keys = turntable.get('task_keys')
     if not isinstance(task_keys, list) or not task_keys: return False
     if any(key not in RENDER_TASK_KEYS for key in task_keys): return False
-    if not check_str(render, 'pool_name'): return False
-    for key in ('priority', 'tile_count', 'first_frame', 'last_frame', 'batch_size'):
-        if not check_int(render, key): return False
-    if not check_bool(render, 'denoise'): return False
-    if not check_bool(render, 'copy_to_edit'): return False
-    if not valid_cut_range(render): return False
-    if not frame_ranges.valid_entry(render): return False
-    if 'turntable' in render and not check_bool(render, 'turntable'): return False
-    if 'step_size' in render and not check_int(render, 'step_size'): return False
-    step = render.get('step_size', 1)
-    if step < 1: return False
-    if not valid_preview_frame_list(render, step): return False
-    if not repair.valid_entry(
-        dict(render, step_size=step), task_keys
-    ): return False
-    if render.get('turntable'):
-        # A turntable renders the studio's frames, never a frame list, and
-        # whole versions, never into an existing one (#92).
-        if frame_ranges.CONFIG_KEY in render: return False
-        if repair.CONFIG_KEY in render: return False
-        # A turntable is an asset's: no shot comp follows it.
-        return 'composite' not in render
-    if 'composite' in render:
-        if not valid_recomp(render['composite']): return False
-        # A comp follows a published render (#84, the Step, #92)
-        if not comp_follows(dict(render, step_size=step)): return False
-    return True
+    if not check_str(turntable, 'pool_name'): return False
+    for key in ('priority', 'tile_count', 'first_frame', 'last_frame', 'step_size', 'batch_size'):
+        if not check_int(turntable, key): return False
+    if turntable['step_size'] < 1: return False
+    if not check_bool(turntable, 'denoise'): return False
+    if not check_bool(turntable, 'copy_to_edit'): return False
+    if not valid_cut_range(turntable): return False
+    if not valid_preview_frame_list(turntable, turntable['step_size']): return False
+    return not set(turntable) & {frame_ranges.CONFIG_KEY, repair.CONFIG_KEY, 'composite'}
 
 
 def _valid_playblast(playblast):
@@ -154,9 +148,12 @@ def is_valid_config(config):
     if not valid_entity(config['entity']): return False
     if not _valid_settings(config.get('settings')): return False
     has_render = 'render' in config
+    has_turntable = 'turntable' in config
     has_playblast = 'playblast' in config
-    if not (has_render or has_playblast): return False
+    if not (has_render or has_turntable or has_playblast): return False
+    if has_render and has_turntable: return False
     if has_render and not _valid_render(config['render']): return False
+    if has_turntable and not _valid_turntable(config['turntable']): return False
     if has_playblast and not _valid_playblast(config['playblast']): return False
     return True
 

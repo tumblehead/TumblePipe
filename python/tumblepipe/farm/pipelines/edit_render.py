@@ -20,33 +20,17 @@ becomes this config by :func:`config_from_row`.
 
 from pathlib import Path
 
-from tumblepipe import naming
 from tumblepipe.api import path_str
 from tumblepipe.apps.deadline import Job
-from tumblepipe.farm.checks import check_int, check_str
 from tumblepipe.farm.jobs import edit_render as edit_render_job
 from tumblepipe.farm.pipelines._batch import batch_title, submit_batch
-from tumblepipe.farm.specs.edit_render import is_edit_uri
+from tumblepipe.farm.specs import edit_render_pipeline as edit_render_pipeline_spec
 from tumblepipe.pipe import edits
 from tumblepipe.util.uri import Uri
 
 
 class EditRenderError(ValueError):
     """The edit version cannot be rendered."""
-
-
-def is_valid_config(config) -> bool:
-    if not isinstance(config, dict): return False
-    edit = config.get('edit')
-    if not isinstance(edit, dict): return False
-    if not is_edit_uri(edit.get('uri')): return False
-    if not check_str(edit, 'version'): return False
-    if not naming.is_valid_version_name(edit['version']): return False
-    settings = config.get('settings')
-    if not isinstance(settings, dict): return False
-    if not check_str(settings, 'pool_name'): return False
-    if not check_int(settings, 'priority'): return False
-    return True
 
 
 def config_from_row(row: dict) -> dict:
@@ -83,7 +67,7 @@ def build(
     depends_on: list[str] | None = None
     ) -> list[str]:
     """Add the Render Edit job after ``depends_on``; returns it."""
-    if not is_valid_config(config):
+    if not edit_render_pipeline_spec.is_valid_config(config):
         raise EditRenderError(f'Invalid Render Edit config: {config!r}')
     name = edits.edit_name(Uri.parse(config['edit']['uri']))
     version = config['edit']['version']

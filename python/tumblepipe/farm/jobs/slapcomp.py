@@ -1,17 +1,15 @@
 """The slapcomp job: runs ``workers/slapcomp.py`` over the channels' beauties."""
 
 from pathlib import Path
-import json
 
+from tumblepipe.farm.checks import checked
 from tumblepipe.farm.deadline import farm_job, run_once
 from tumblepipe.farm.specs import slapcomp as slapcomp_spec
 
 
 def build(config, paths, staging_path):
     """The slapcomp job for ``config`` (``specs.slapcomp.is_valid_config``)."""
-    assert slapcomp_spec.is_valid_config(config), (
-        f'Invalid config: {json.dumps(config, indent=4)}'
-    )
+    checked(slapcomp_spec.is_valid_config, config, 'slapcomp')
     job = farm_job('slapcomp', dict(
         first_frame = config['first_frame'],
         last_frame = config['last_frame'],

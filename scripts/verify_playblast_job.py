@@ -31,6 +31,7 @@ def main() -> int:
     from tumblepipe.config.entities import is_terminal_entity
     from tumblepipe.farm.specs import playblast as playblast_spec
     from tumblepipe.farm.pipelines import playblast as playblast_pipeline
+    from tumblepipe.farm.specs import playblast_pipeline as playblast_pipeline_spec
     from tumblepipe.pipe.paths import (
         get_next_playblast_path,
         get_daily_path,
@@ -86,14 +87,14 @@ def main() -> int:
             channel_name="renders",
         ),
     )
-    check("job validator accepts a well-formed config", playblast_pipeline.is_valid_config(good_job))
+    check("job validator accepts a well-formed config", playblast_pipeline_spec.is_valid_config(good_job))
     check(
         "job validator rejects a missing entity",
-        not playblast_pipeline.is_valid_config({"settings": good_job["settings"]}),
+        not playblast_pipeline_spec.is_valid_config({"settings": good_job["settings"]}),
     )
     check(
         "job validator rejects missing settings keys",
-        not playblast_pipeline.is_valid_config(
+        not playblast_pipeline_spec.is_valid_config(
             {"entity": good_job["entity"], "settings": {"user_name": "x"}}
         ),
     )
