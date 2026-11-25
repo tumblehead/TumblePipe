@@ -757,8 +757,26 @@ node invokes it, and the **Characters** folder decides what comes out:
   pattern), `Base` by default.
 - **Characters** list, a row per character (**Discover** adds a row for
   each character in the dive's scene): **Geometry** outputs its shapes,
-  **Skeleton** its posed skeleton, for CFX. A character with no row outputs
-  its geometry and no skeleton.
+  **Skeleton** its posed skeleton, for CFX, and **Frames** the frames it
+  shows on (below). A character with no row outputs its geometry and no
+  skeleton, on every frame.
+
+**Frames** hides a character outside the frames you give it: whole frames
+and ranges of them, separated by spaces or commas (`1001-1100 1250-1300
+1400`). Empty, the character shows on every frame, as before. On every
+other frame the character's own prim (`/<category>/<character>`) is
+invisible, so nothing of it renders or shows in a playblast: the geometry
+the node animates, its skeleton, and parts the rig does not output that sit
+under the character (a groom). On its frames everything is exactly as
+without Frames. The character is still cooked on every frame, so its
+animation is there when it comes back into frame, and the shot still
+exports as one layer. Use it for a shot that pans across rooms, so the
+characters of the rooms out of frame do not render (see [Several rooms or
+segments in one shot](#several-rooms-or-segments-in-one-shot)). The frames
+are the workfile's playbar frames: in a Multi's workfile, the shared
+timeline's. A character in several rows shows wherever any of them shows
+it. Text that is not frames is a warning naming the row, and that
+character shows on every frame until it is fixed.
 
 A skeleton is the rig's `Base.skel` output, one polyline per bone, and goes
 to `/<category>/<character>/skel/Base` (beside the character's `geo`) as one
@@ -947,6 +965,98 @@ Source: [`otls/lop_th.animate.2.0`](../../otls/lop_th.animate.2.0/th_8_8Lop_1ani
 [`lops/animate_xforms.py`](../../python/tumblepipe/pipe/houdini/lops/animate_xforms.py),
 [`lops/animate_points.py`](../../python/tumblepipe/pipe/houdini/lops/animate_points.py),
 [`lops/animate_invoke.py`](../../python/tumblepipe/pipe/houdini/lops/animate_invoke.py).
+
+### Segments
+
+**Segments** take some characters from another stream of the dive on some
+frames: one character, or the camera, animated in the kitchen's Scene
+Animate on some frames and in the bathroom's on others. Most shots do not
+need them; see [Several rooms or segments in one
+shot](#several-rooms-or-segments-in-one-shot) first.
+
+The dive's streams are its Output SOPs. **Output Index 0** is the default
+stream, read as always (the Output SOP with index 0, whatever its name, or
+the display node). Wire each other source into an Output SOP of its own
+with Output Index 1 and up, ending in its own Scene Animate: an APEX
+scene, with no Scene Invoke, like the default stream. Then add a row to
+**Segments** for each stretch:
+
+| Column | What it does |
+|---|---|
+| Frames | The frames the row covers, written as on the Characters list. Empty is every frame |
+| Output | The stream the characters come from, by its Output Index (the menu lists the dive's Output SOPs 1 and up) |
+| Characters | Which characters the row takes, a pattern of the scene's characters: `*` (the default), names, `^name` to leave one out |
+
+On each frame, each character comes from the **last** row that covers the
+frame, picks the character and whose stream has it; where no row does, it
+comes from Output 0. Everything lands on the same stage prims, so a
+character keeps its lookdev and the shot exports as one layer. A
+character's rig is the same in every stream, so it can change stream from
+one frame to the next; a pose that does not match at the change pops, as it
+would with a Switch. **Frames** on the Characters list still apply on top.
+
+A row is ignored, with a warning on the node naming it, when its Frames are
+not frames, its Output has no Output SOP, is past Output Index 8 (the
+streams the node can read), or is not an APEX scene. When Output 0 is itself
+invoked geometry (a dive with its own Scene Invoke, from before 1.92),
+Segments do not apply and the node says so. A node with no Segments rows
+cooks exactly as before: each extra stream is invoked only on the frames it
+supplies a character, and only for those characters.
+Source: [`lops/animate_segments.py`](../../python/tumblepipe/pipe/houdini/lops/animate_segments.py),
+[`lops/animate_frames.py`](../../python/tumblepipe/pipe/houdini/lops/animate_frames.py).
+
+### Several rooms or segments in one shot
+
+A shot that pans across rooms (a bedroom, a kitchen, a bathroom) is
+animated in one `th::animate`, with a Scene Animate per room. **Chain them
+in series**: `th::import_rigs` → the bedroom's Scene Animate → the
+kitchen's → the bathroom's → `output0`. A Scene Animate passes on the
+characters it does not key, so the last one outputs every room's
+animation, and characters keyed in different rooms can share a frame. Do
+not put the rooms side by side behind a Switch that picks one per frame:
+the Switch shows one Scene Animate on each frame, so characters from two
+of them are never in frame together.
+
+**Key each character, and the camera, in one Scene Animate.** A Scene
+Animate's keys for a character replace the ones it is given, whole. If the
+kitchen's Scene Animate holds keys for a Traveler that the bedroom's also
+keys, the bedroom's keys for him do nothing. Touching one of his controls
+in the kitchen's Animate is enough (a touch is a key), and what the
+kitchen saves for him can include the bedroom's keys as they were then, so
+the shot can look right while what you change on him in the bedroom never
+reaches it. `th::animate` warns when a Scene Animate replaces keys
+from above it, on `points_sops/placed` and on the status bar, naming the
+character, the Scene Animate whose keys win and the node whose keys are
+lost (*in anim_dive, kitchen holds its own keys for Traveler0, so
+Traveler0's keys from bedroom above it do nothing*). It looks at every
+Output SOP in the dive. Nothing changes in what cooks. A Scene Animate
+that keys nothing, or keys only characters nothing above it keys, is no
+problem.
+
+**Move keys between rooms with TumbleRig's Copy Animation**
+(`th::apex_copy_animation`), wired into the chain: input 1 is the chain,
+input 2 the Scene Animate to copy from, and From and To name the
+character. **Time Offset** moves the keys in time, for a Traveler who
+walks out of the bedroom into the kitchen later in the shot. On **Base
+Animation** (the default) the keys merge into the character's own; a
+Scene Animate below that keys him replaces them, and the warning names
+the Copy Animation. On a **New Layer** the copied keys go on an animation
+layer, and a Scene Animate below that keys the character replaces only his
+base keys and keeps the layer, so the copied keys still play.
+
+With every room in one chain, every character is on stage for the whole
+shot. Give each a range in the **Frames** column of the
+[Characters](#characters) list: outside it the character is hidden, so the
+other rooms do not render, and it is still cooked, so its animation is
+there when it comes back into frame.
+
+When one character, or the camera, has to come from different Scene
+Animates over different frames, use [Segments](#segments): wire each
+source into an Output SOP of its own in the dive (Output Index 1 and up)
+and add a row of **Frames**, **Output** and **Characters** for each
+stretch. Where rows overlap, the last row that matches a frame and a
+character wins. The warning above covers those outputs too.
+Source: [`lops/animate_keys.py`](../../python/tumblepipe/pipe/houdini/lops/animate_keys.py).
 
 ### Live Playblast
 

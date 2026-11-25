@@ -73,8 +73,62 @@
                 name    "skeleton#"
                 label   "Skeleton"
                 type    toggle
+                joinnext
                 default { "0" }
                 help    "Output the character's posed skeleton (its rig's Base.skel), as curves under /<category>/<character>/skel, for CFX."
+            }
+            parm {
+                name    "frames#"
+                label   "Frames"
+                type    string
+                default { "" }
+                help    "The frames the character shows on: whole frames and ranges separated by spaces (1001-1100 1250-1300 1400), the workfile's playbar frames (in a Multi, the shared timeline's). Empty: every frame. On every other frame nothing of the character renders (its geometry, skeleton and what sits under its prim, a groom too): it is invisible there, and still animated."
+            }
+        }
+
+    }
+
+    groupsimple {
+        name    "segments_folder"
+        label   "Segments"
+
+        multiparm {
+            name    "segments"
+            label    "Segments"
+            default 0
+
+            parm {
+                name    "segment_frames#"
+                label   "Frames"
+                type    string
+                joinnext
+                default { "" }
+                help    "The frames this row covers: whole frames and ranges separated by spaces (1001-1100 1400), the workfile's playbar frames. Empty: every frame."
+            }
+            parm {
+                name    "segment_output#"
+                label   "Output"
+                type    string
+                joinnext
+                default { "1" }
+                help    "The stream of anim_dive the row's characters come from on its frames: an Output SOP with Output Index 1 or more, ending in its own Scene Animate (an APEX scene, no Scene Invoke). Output 0 is the default stream, used wherever no row covers a character."
+                menu {
+                    [ "from tumblepipe.pipe.houdini.lops import animate_segments" ]
+                    [ "return animate_segments.output_menu(kwargs['node'])" ]
+                    language python
+                }
+            }
+            parm {
+                name    "segment_characters#"
+                label   "Characters"
+                type    string
+                default { "*" }
+                help    "The characters the row takes from its Output, a pattern of the scene's characters (* for all, names separated by spaces, ^name to leave one out). On each frame a character comes from the last row that covers the frame and picks it."
+                menutoggle {
+                    [ "from tumblepipe.pipe.houdini.lops import animate_invoke" ]
+                    [ "return animate_invoke.character_menu(kwargs['node'])" ]
+                    language python
+                }
             }
         }
 

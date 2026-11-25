@@ -175,11 +175,12 @@ def rows(animate_node) -> list[tuple[str, bool, bool]]:
     return result
 
 
-def geometry_pattern(table) -> str:
+def geometry_pattern(table, taken=()) -> str:
     """The invoke's Characters pattern: every character but those whose row
-    turns Geometry off."""
+    turns Geometry off, and those another stream supplies on this frame
+    (`taken`: the node's Segments, `animate_segments.taken`)."""
     off = [name for name, geometry, _skeleton in table if not geometry]
-    return ' '.join(['*'] + [f'^{name}' for name in off])
+    return ' '.join(['*'] + [f'^{name}' for name in off] + [f'^{name}' for name in taken])
 
 
 def skeleton_characters(table, characters) -> list[str]:
@@ -202,14 +203,23 @@ def _skeletons(sop_node) -> list[str]:
     animate = _animate_node(sop_node)
     if animate is None:
         return []
-    return skeleton_characters(rows(animate), _dive_characters(sop_node))
+    from tumblepipe.pipe.houdini.lops import animate_segments
+    taken = set(animate_segments.taken(sop_node))
+    characters = [name for name in _dive_characters(sop_node) if name not in taken]
+    return skeleton_characters(rows(animate), characters)
 
 
-# Expressions on points_sops/invoke and points_sops/skeletons.
+# Expressions on points_sops/invoke and points_sops/skeletons. A character
+# the node's Segments take from another stream on this frame comes from that
+# stream's invoke instead (`animate_segments`); with no Segments rows
+# `taken` is empty and these are what they always were.
 
 def invoke_characters(sop_node) -> str:
     animate = _animate_node(sop_node)
-    return geometry_pattern(rows(animate)) if animate is not None else '*'
+    if animate is None:
+        return '*'
+    from tumblepipe.pipe.houdini.lops import animate_segments
+    return geometry_pattern(rows(animate), animate_segments.taken(sop_node))
 
 
 def skeleton_count(sop_node) -> int:
@@ -232,6 +242,12 @@ def character_prefix(folder_geo, character: str) -> str:
     """Where a character's prims go: `/<category>/<character>`, read from
     the first path on its shapes (`/<category>/<character>/geo/...`), else
     `/<character>`."""
+    return shape_prefix(folder_geo) or f'/{character}'
+
+
+def shape_prefix(folder_geo) -> str | None:
+    """`/<category>/<character>` from the first path on the shapes of a
+    character's folder (`folder_geo`), None when no shape has one."""
     if folder_geo is not None and folder_geo.findPrimAttrib('name') is not None:
         for shape in folder_geo.prims():
             if shape.type() != hou.primType.PackedGeometry:
@@ -245,7 +261,7 @@ def character_prefix(folder_geo, character: str) -> str:
                 parts = [part for part in path.split('/') if part]
                 if len(parts) >= 2:
                     return f'/{parts[0]}/{parts[1]}'
-    return f'/{character}'
+    return None
 
 
 def skeleton_prim_path(prefix: str, shape_name: str) -> str:
@@ -279,9 +295,14 @@ def _skeleton_geometry(source, path: str):
 def skeleton_paths(sop_node) -> None:
     """The `skeleton_paths` Python SOP: give each invoked skeleton its prim
     path (`skeleton_prim_path`) and nothing but its points."""
-    geo = sop_node.geometry()
     dive = sop_node.node('../dive')
-    scene = dive.geometry() if dive is not None else None
+    name_skeletons(sop_node.geometry(), dive.geometry() if dive is not None else None)
+
+
+def name_skeletons(geo, scene) -> None:
+    """Give each skeleton the invoke put in `geo` (packed folders, changed
+    in place) its prim path and nothing but its points; the character's
+    prefix is read from its folder in `scene`, the APEX scene invoked."""
     scene_folders = {}
     if scene is not None and scene.findPrimAttrib('name') is not None:
         for prim in scene.prims():

@@ -1533,6 +1533,10 @@ def apply(lop_node) -> None:
     if hide_parts:
         author_parts(layer, mapping, parts, holes, frame)
     sample_defaults(layer, paths, frame)
+    # The Characters list's Frames hide a character outside them, over what
+    # is written above; and what is wrong with the Frames and Segments.
+    from tumblepipe.pipe.houdini.lops import animate_frames
+    animate_frames.apply(lop_node, layer, frame)
 
 
 def _incoming_stage(lop_node):
@@ -2167,9 +2171,11 @@ def placed_shapes(sop_node) -> None:
     not packed folders (SOPs after the Scene Invoke) passes through as it
     is, with a status-bar note naming its shapes with no path and where
     they land (`loose_shapes`). Either way the rig imports whose characters
-    are not the shot stage's copies (`rig_copies_message`) are a warning on
-    this node; with them, the note rides in it."""
-    from tumblepipe.pipe.houdini.lops import animate_invoke
+    are not the shot stage's copies (`rig_copies_message`), and the
+    characters a Scene Animate of the dive keys over keys from above it
+    (`animate_keys.double_keys_warning`), are a warning on this node; with
+    them, the note rides in it."""
+    from tumblepipe.pipe.houdini.lops import animate_invoke, animate_keys
     geo = sop_node.geometry()
     # A rig that simulates (TumbleRig Motion Effects, Collisions, Wobl...) only
     # steps frame after frame. Whatever reads these SOPs (the imports, a SOP
@@ -2181,7 +2187,8 @@ def placed_shapes(sop_node) -> None:
         geo.clear()
         geo.merge(settled)
     animate_node = sop_node.parent().parent() if sop_node.parent() else None
-    rig_copies = rig_copies_message(sop_node)
+    rig_copies = _joined(rig_copies_message(sop_node),
+                         animate_keys.double_keys_warning(animate_node))
     if not _has_packed(geo):
         # The loose geometry alone is a note (it lands in /scene and
         # publishes); a rig copies mismatch makes it a warning.

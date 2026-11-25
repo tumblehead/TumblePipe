@@ -1,5 +1,5 @@
 {
-	"values":["22.0.368"
+	"values":["22.0.368","22.0.508"
 	],
 	"indexes":{
 		"hdaroot/points_sops/current_shapes.userdata":0,
@@ -42,6 +42,34 @@
 		"hdaroot/points_sops/invoke.userdata":0,
 		"hdaroot/static_import.userdata":0,
 		"hdaroot/points_sops/skeletons.userdata":0,
-		"hdaroot/item_kind.userdata":0
+		"hdaroot/item_kind.userdata":0,
+		"hdaroot/points_sops/stream8_invoke.userdata":1,
+		"hdaroot/points_sops/stream8_on.userdata":1,
+		"hdaroot/points_sops/stream2.userdata":1,
+		"hdaroot/points_sops/stream3_invoke.userdata":1,
+		"hdaroot/points_sops/stream7_on.userdata":1,
+		"hdaroot/points_sops/stream7_invoke.userdata":1,
+		"hdaroot/points_sops/stream7.userdata":1,
+		"hdaroot/points_sops/stream1.userdata":1,
+		"hdaroot/points_sops/stream5_invoke.userdata":1,
+		"hdaroot/points_sops/stream1_on.userdata":1,
+		"hdaroot/points_sops/stream8.userdata":1,
+		"hdaroot/points_sops/stream6_on.userdata":1,
+		"hdaroot/points_sops/stream5_on.userdata":1,
+		"hdaroot/points_sops/stream6.userdata":1,
+		"hdaroot/points_sops/stream4_invoke.userdata":1,
+		"hdaroot/points_sops/stream4_on.userdata":1,
+		"hdaroot/points_sops/segments_none.userdata":1,
+		"hdaroot/points_sops/stream4.userdata":1,
+		"hdaroot/points_sops/stream2_invoke.userdata":1,
+		"hdaroot/points_sops/stream5.userdata":1,
+		"hdaroot/points_sops/stream6_invoke.userdata":1,
+		"hdaroot/points_sops/stream3_on.userdata":1,
+		"hdaroot/points_sops/segments_join.userdata":1,
+		"hdaroot/points_sops/segments.userdata":1,
+		"hdaroot/points_sops/stream3.userdata":1,
+		"hdaroot/points_sops/stream1_invoke.userdata":1,
+		"hdaroot/points_sops/stream2_on.userdata":1,
+		"hdaroot/points_sops/streams.userdata":1
 	}
 }

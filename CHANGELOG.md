@@ -12,6 +12,17 @@ uv run --no-project python scripts/generate_changelog.py
 
 CI and build commits are omitted deliberately.
 
+## v1.128.2 — 2026-11-24
+
+### Fixes
+- fix(slate): forget a destroyed RE_Window; no tick inside a hou viewer change (`64637949`)
+
+### Tests
+- test: hou stub hipFile has hasUnsavedChanges (`d8b0b1ed`)
+
+### Chores
+- chore: changelog and HDA parm snapshot for v1.128.1 (`a4a0958a`)
+
 ## v1.128.1 — 2026-11-24
 
 ### Fixes
